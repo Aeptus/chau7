@@ -22,8 +22,16 @@ final class AppEventEmitter {
 
     private var configObserver: Any?
 
+    /// Last `AppEventConfig` we configured timers for. Used to filter the
+    /// raw `UserDefaults.didChangeNotification` (which fires on EVERY
+    /// preference change in the app) down to "the appEventConfig actually
+    /// changed" — avoids tearing down and rebuilding all the timers on
+    /// every unrelated settings write.
+    private var lastObservedConfig: AppEventConfig
+
     init(eventPublisher: AIEventPublishing?) {
         self.eventPublisher = eventPublisher
+        self.lastObservedConfig = FeatureSettings.shared.appEventConfig
         setupTimers()
         observeConfigChanges()
     }
@@ -31,14 +39,16 @@ final class AppEventEmitter {
     // MARK: - Configuration
 
     private func observeConfigChanges() {
-        // Observe changes to appEventConfig
         configObserver = NotificationCenter.default.addObserver(
             forName: UserDefaults.didChangeNotification,
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            // Reconfigure timers when settings change
-            self?.setupTimers()
+            guard let self else { return }
+            let nextConfig = config
+            guard nextConfig != lastObservedConfig else { return }
+            lastObservedConfig = nextConfig
+            setupTimers()
         }
     }
 
@@ -232,20 +242,7 @@ final class AppEventEmitter {
     }
 
     private func getCurrentMemoryUsageMB() -> Int {
-        var info = mach_task_basic_info()
-        var count = mach_msg_type_number_t(MemoryLayout<mach_task_basic_info>.size) / 4
-
-        let result = withUnsafeMutablePointer(to: &info) {
-            $0.withMemoryRebound(to: integer_t.self, capacity: 1) {
-                task_info(mach_task_self_, task_flavor_t(MACH_TASK_BASIC_INFO), $0, &count)
-            }
-        }
-
-        guard result == KERN_SUCCESS else {
-            return 0
-        }
-
-        return Int(info.resident_size / 1024 / 1024)
+        ProcessMemory.residentBytes().map { Int($0 / 1024 / 1024) } ?? 0
     }
 
     // MARK: - Event Emission

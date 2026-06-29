@@ -552,18 +552,7 @@ fn filter_generic_lint(output: &str) -> String {
 
 /// Compact file path (remove common prefixes)
 fn compact_path(path: &str) -> String {
-    // Remove common prefixes like /Users/..., /home/..., C:\
-    let path = path.replace('\\', "/");
-
-    if let Some(pos) = path.rfind("/src/") {
-        format!("src/{}", &path[pos + 5..])
-    } else if let Some(pos) = path.rfind("/lib/") {
-        format!("lib/{}", &path[pos + 5..])
-    } else if let Some(pos) = path.rfind('/') {
-        path[pos + 1..].to_string()
-    } else {
-        path
-    }
+    crate::utils::compact_path(path, &["src", "lib"])
 }
 
 #[cfg(test)]

@@ -538,10 +538,23 @@ final class RustTerminalFFI {
     // Function types matching chau7_terminal.h
     private typealias CreateFn = @convention(c) (UInt16, UInt16, UnsafePointer<CChar>?) -> OpaquePointer?
     private typealias CreateWithEnvFn = @convention(c) (UInt16, UInt16, UnsafePointer<CChar>?, UnsafePointer<UnsafePointer<CChar>?>?, UnsafePointer<UnsafePointer<CChar>?>?, Int) -> OpaquePointer?
+    private typealias CreateWithLaunchFn = @convention(c) (
+        UInt16,
+        UInt16,
+        UnsafePointer<CChar>?,
+        UnsafePointer<UnsafePointer<CChar>?>?,
+        UnsafePointer<UnsafePointer<CChar>?>?,
+        Int,
+        UnsafePointer<UnsafePointer<CChar>?>?,
+        Int,
+        UnsafePointer<CChar>?
+    ) -> OpaquePointer?
     private typealias DestroyFn = @convention(c) (OpaquePointer?) -> Void
     private typealias SendBytesFn = @convention(c) (OpaquePointer?, UnsafePointer<UInt8>?, Int) -> Void
     private typealias SendTextFn = @convention(c) (OpaquePointer?, UnsafePointer<CChar>?) -> Void
     private typealias ResizeFn = @convention(c) (OpaquePointer?, UInt16, UInt16) -> Void
+    /// Re-deliver SIGWINCH to the PTY foreground pgrp (defeats TUI startup width-latch race)
+    private typealias NudgeWinsizeFn = @convention(c) (OpaquePointer?) -> Void
     // Use UnsafeMutableRawPointer since Swift structs aren't directly C-representable
     private typealias GetGridFn = @convention(c) (OpaquePointer?) -> UnsafeMutableRawPointer?
     private typealias FreeGridFn = @convention(c) (UnsafeMutableRawPointer?) -> Void
@@ -622,10 +635,12 @@ final class RustTerminalFFI {
     private struct Functions {
         let create: CreateFn
         let createWithEnv: CreateWithEnvFn? // Optional - older libraries may not have this
+        let createWithLaunch: CreateWithLaunchFn? // Optional - adds shell argv + cwd
         let destroy: DestroyFn
         let sendBytes: SendBytesFn
         let sendText: SendTextFn
         let resize: ResizeFn
+        let nudgeWinsize: NudgeWinsizeFn? // Optional - older libraries may not have this
         let getGrid: GetGridFn
         let freeGrid: FreeGridFn
         let scrollPosition: ScrollPositionFn
@@ -698,7 +713,12 @@ final class RustTerminalFFI {
     }
 
     private static let lock = NSLock()
-    private static var loadAttempted = false
+    /// When the last load attempt failed. Failed loads RETRY after a cooldown
+    /// instead of giving up for the app's lifetime — a transient dlopen
+    /// failure (e.g. mid-hot-swap binary copy) used to permanently disable
+    /// terminal creation until relaunch.
+    private static var lastFailedLoadAt: Date?
+    private static let loadRetryCooldown: TimeInterval = 5
     private static var dylibHandle: UnsafeMutableRawPointer?
     private static var functions: Functions?
 
@@ -706,6 +726,8 @@ final class RustTerminalFFI {
     static var isAvailable: Bool {
         Log.trace("RustTerminalFFI: Checking library availability")
         ensureLoaded()
+        lock.lock()
+        defer { lock.unlock() }
         let available = functions != nil
         Log.trace("RustTerminalFFI: isAvailable = \(available)")
         return available
@@ -719,11 +741,10 @@ final class RustTerminalFFI {
             Log.trace("RustTerminalFFI: ensureLoaded - Already loaded")
             return
         }
-        if loadAttempted {
-            Log.trace("RustTerminalFFI: ensureLoaded - Previous attempt failed")
+        if let lastFailedLoadAt, Date().timeIntervalSince(lastFailedLoadAt) < loadRetryCooldown {
+            Log.trace("RustTerminalFFI: ensureLoaded - Previous attempt failed recently; retry after cooldown")
             return
         }
-        loadAttempted = true
 
         Log.info("RustTerminalFFI: Starting library load")
         let candidates = libraryCandidates()
@@ -734,8 +755,14 @@ final class RustTerminalFFI {
             if let handle = dlopen(path, RTLD_NOW) {
                 Log.trace("RustTerminalFFI: dlopen succeeded for: \(path)")
                 dylibHandle = handle
+                if !verifyABIContract(handle: handle, path: path) {
+                    dlclose(handle)
+                    dylibHandle = nil
+                    continue
+                }
                 if let f = loadFunctions(from: handle) {
                     functions = f
+                    lastFailedLoadAt = nil
                     Log.info("RustTerminalFFI: Successfully loaded library from \(path)")
                     return
                 } else {
@@ -753,7 +780,66 @@ final class RustTerminalFFI {
                 }
             }
         }
-        Log.error("RustTerminalFFI: Failed to load library from any candidate path")
+        lastFailedLoadAt = Date()
+        Log.error("RustTerminalFFI: Failed to load library from any candidate path (will retry after \(loadRetryCooldown)s)")
+    }
+
+    /// ABI version this build of the Swift mirrors was written against.
+    /// Must match `CHAU7_TERMINAL_ABI_VERSION` in rust/chau7_terminal/src/ffi.rs.
+    private static let expectedABIVersion: UInt32 = 1
+
+    #if DEBUG
+    /// Clears the failed-load cooldown so tests can point CHAU7_RUST_LIB_PATH
+    /// at a freshly built dylib and retry immediately.
+    static func resetLoadStateForTesting() {
+        lock.lock()
+        defer { lock.unlock() }
+        lastFailedLoadAt = nil
+    }
+    #endif
+
+    /// Verifies the dylib's ABI version and `#[repr(C)]` struct layouts against
+    /// the hand-mirrored Swift types before binding any symbols. Struct drift
+    /// between the two languages is silent memory corruption on every frame —
+    /// refusing to bind (and surfacing the terminal-creation error card) is
+    /// strictly better. Pre-probe dylibs (no version symbol) load as before.
+    private static func verifyABIContract(handle: UnsafeMutableRawPointer, path: String) -> Bool {
+        typealias U32Fn = @convention(c) () -> UInt32
+        typealias SizeFn = @convention(c) () -> Int
+
+        guard let versionSym = dlsym(handle, "chau7_terminal_abi_version") else {
+            Log.info("RustTerminalFFI: dylib has no ABI version probe (pre-probe build); loading without verification")
+            return true
+        }
+        let version = unsafeBitCast(versionSym, to: U32Fn.self)()
+        guard version == expectedABIVersion else {
+            Log.error("RustTerminalFFI: ABI version mismatch at \(path): dylib=\(version), expected=\(expectedABIVersion) — refusing to bind")
+            return false
+        }
+
+        // Compare against Swift's stride, not size: C's sizeof includes tail
+        // padding (what array indexing and pointer math use), which is stride
+        // in Swift terms — e.g. CellData is size 18 / stride 20 vs C's 20.
+        let layoutProbes: [(symbol: String, expected: Int, type: String)] = [
+            ("chau7_terminal_sizeof_grid_snapshot", MemoryLayout<RustGridSnapshot>.stride, "GridSnapshot"),
+            ("chau7_terminal_sizeof_cell_data", MemoryLayout<RustCellData>.stride, "CellData"),
+            ("chau7_terminal_sizeof_debug_state", MemoryLayout<RustDebugState>.stride, "DebugState"),
+            ("chau7_terminal_sizeof_image_data", MemoryLayout<RustTerminalFFI.FFIImageData>.stride, "FFIImageData"),
+            ("chau7_terminal_sizeof_shell_event", MemoryLayout<RustShellEvent>.stride, "FFIShellEvent")
+        ]
+        for probe in layoutProbes {
+            guard let sym = dlsym(handle, probe.symbol) else {
+                Log.warn("RustTerminalFFI: layout probe \(probe.symbol) missing; skipping")
+                continue
+            }
+            let rustSize = unsafeBitCast(sym, to: SizeFn.self)()
+            guard rustSize == probe.expected else {
+                Log.error("RustTerminalFFI: layout mismatch for \(probe.type) at \(path): rust=\(rustSize) bytes, swift=\(probe.expected) bytes — refusing to bind")
+                return false
+            }
+        }
+        Log.info("RustTerminalFFI: ABI contract verified (version \(version), \(layoutProbes.count) layout probes)")
+        return true
     }
 
     private static func libraryCandidates() -> [String] {
@@ -834,6 +920,11 @@ final class RustTerminalFFI {
             Log.info("RustTerminalFFI: createWithEnv symbol not found (optional)")
         }
 
+        let createWithLaunchSym = loadSymbol("chau7_terminal_create_with_launch")
+        if createWithLaunchSym == nil {
+            Log.info("RustTerminalFFI: createWithLaunch symbol not found (optional, shell argv/cwd unavailable)")
+        }
+
         let setColorsSym = loadSymbol("chau7_terminal_set_colors")
         if setColorsSym == nil {
             Log.info("RustTerminalFFI: setColors symbol not found (optional)")
@@ -842,6 +933,11 @@ final class RustTerminalFFI {
         let clearScrollbackSym = loadSymbol("chau7_terminal_clear_scrollback")
         if clearScrollbackSym == nil {
             Log.info("RustTerminalFFI: clearScrollback symbol not found (optional)")
+        }
+
+        let nudgeWinsizeSym = loadSymbol("chau7_terminal_nudge_winsize")
+        if nudgeWinsizeSym == nil {
+            Log.info("RustTerminalFFI: nudgeWinsize symbol not found (optional, startup SIGWINCH nudge unavailable)")
         }
 
         // Selection management symbols (start, update, select-all via Rust FFI)
@@ -1039,10 +1135,12 @@ final class RustTerminalFFI {
         return Functions(
             create: unsafeBitCast(createSym, to: CreateFn.self),
             createWithEnv: createWithEnvSym.map { unsafeBitCast($0, to: CreateWithEnvFn.self) },
+            createWithLaunch: createWithLaunchSym.map { unsafeBitCast($0, to: CreateWithLaunchFn.self) },
             destroy: unsafeBitCast(destroySym, to: DestroyFn.self),
             sendBytes: unsafeBitCast(sendBytesSym, to: SendBytesFn.self),
             sendText: unsafeBitCast(sendTextSym, to: SendTextFn.self),
             resize: unsafeBitCast(resizeSym, to: ResizeFn.self),
+            nudgeWinsize: nudgeWinsizeSym.map { unsafeBitCast($0, to: NudgeWinsizeFn.self) },
             getGrid: unsafeBitCast(getGridSym, to: GetGridFn.self),
             freeGrid: unsafeBitCast(freeGridSym, to: FreeGridFn.self),
             scrollPosition: unsafeBitCast(scrollPositionSym, to: ScrollPositionFn.self),
@@ -1144,12 +1242,24 @@ final class RustTerminalFFI {
         Log.info("RustTerminalFFI[\(instanceId)]: SUCCESS - Terminal created")
     }
 
-    /// Create a terminal with environment variables
-    init?(cols: UInt16, rows: UInt16, shell: String?, environment: [String: String]) {
+    /// Create a terminal with environment variables, optional shell argv
+    /// (e.g. bash's `--rcfile` for interactive shell integration), and an
+    /// optional explicit working directory.
+    init?(
+        cols: UInt16,
+        rows: UInt16,
+        shell: String?,
+        environment: [String: String],
+        args: [String] = [],
+        workingDirectory: String? = nil
+    ) {
         Self.instanceCounter += 1
         self.instanceId = Self.instanceCounter
 
-        Log.info("RustTerminalFFI[\(instanceId)]: Creating terminal with cols=\(cols), rows=\(rows), shell=\(shell ?? "<default>"), env=\(environment.count) vars")
+        Log
+            .info(
+                "RustTerminalFFI[\(instanceId)]: Creating terminal with cols=\(cols), rows=\(rows), shell=\(shell ?? "<default>"), env=\(environment.count) vars, args=\(args.count), cwd=\(workingDirectory ?? "<inherit>")"
+            )
 
         Self.ensureLoaded()
         guard let fns = Self.functions else {
@@ -1159,42 +1269,62 @@ final class RustTerminalFFI {
 
         let termPtr: OpaquePointer?
 
-        // Use createWithEnv if available and we have environment variables
-        if let createWithEnv = fns.createWithEnv, !environment.isEmpty {
-            Log.trace("RustTerminalFFI[\(instanceId)]: Using createWithEnv with \(environment.count) environment variables")
-
-            // Prepare C string arrays for environment
+        if fns.createWithLaunch != nil || (fns.createWithEnv != nil && !environment.isEmpty) {
+            // Duplicate each string into C-allocated NUL-terminated buffers
+            // whose lifetime explicitly spans the create call. Pointers
+            // obtained inside withUnsafeBufferPointer must not escape the
+            // closure, so collecting baseAddresses that way would be UB.
             var keys: [UnsafePointer<CChar>?] = []
             var values: [UnsafePointer<CChar>?] = []
-            var keyData: [ContiguousArray<CChar>] = []
-            var valueData: [ContiguousArray<CChar>] = []
-
+            keys.reserveCapacity(environment.count)
+            values.reserveCapacity(environment.count)
             for (key, value) in environment {
-                keyData.append(ContiguousArray(key.utf8CString))
-                valueData.append(ContiguousArray(value.utf8CString))
+                keys.append(UnsafePointer(strdup(key)))
+                values.append(UnsafePointer(strdup(value)))
+            }
+            let argv: [UnsafePointer<CChar>?] = args.map { UnsafePointer(strdup($0)) }
+            let cwdPtr: UnsafePointer<CChar>? = workingDirectory.map { UnsafePointer(strdup($0)) }
+            let shellPtr: UnsafePointer<CChar>? = shell.map { UnsafePointer(strdup($0)) }
+            defer {
+                keys.forEach { free(UnsafeMutablePointer(mutating: $0)) }
+                values.forEach { free(UnsafeMutablePointer(mutating: $0)) }
+                argv.forEach { free(UnsafeMutablePointer(mutating: $0)) }
+                free(UnsafeMutablePointer(mutating: cwdPtr))
+                free(UnsafeMutablePointer(mutating: shellPtr))
             }
 
-            // Get pointers to the data
-            for i in 0 ..< keyData.count {
-                keys.append(keyData[i].withUnsafeBufferPointer { $0.baseAddress })
-                values.append(valueData[i].withUnsafeBufferPointer { $0.baseAddress })
-            }
-
-            // Call with environment
-            termPtr = keys.withUnsafeBufferPointer { keysPtr in
-                values.withUnsafeBufferPointer { valuesPtr in
-                    if let shell = shell {
-                        return shell.withCString { shellPtr in
-                            createWithEnv(cols, rows, shellPtr, keysPtr.baseAddress, valuesPtr.baseAddress, environment.count)
+            if let createWithLaunch = fns.createWithLaunch {
+                Log.trace("RustTerminalFFI[\(instanceId)]: Using createWithLaunch (env=\(environment.count), args=\(args.count))")
+                termPtr = keys.withUnsafeBufferPointer { keysPtr in
+                    values.withUnsafeBufferPointer { valuesPtr in
+                        argv.withUnsafeBufferPointer { argvPtr in
+                            createWithLaunch(
+                                cols, rows, shellPtr,
+                                keysPtr.baseAddress, valuesPtr.baseAddress, environment.count,
+                                argvPtr.baseAddress, args.count,
+                                cwdPtr
+                            )
                         }
-                    } else {
-                        return createWithEnv(cols, rows, nil, keysPtr.baseAddress, valuesPtr.baseAddress, environment.count)
                     }
                 }
+            } else if let createWithEnv = fns.createWithEnv {
+                if !args.isEmpty || workingDirectory != nil {
+                    Log.warn("RustTerminalFFI[\(instanceId)]: createWithLaunch unavailable — dropping \(args.count) shell arg(s) and cwd")
+                }
+                termPtr = keys.withUnsafeBufferPointer { keysPtr in
+                    values.withUnsafeBufferPointer { valuesPtr in
+                        createWithEnv(cols, rows, shellPtr, keysPtr.baseAddress, valuesPtr.baseAddress, environment.count)
+                    }
+                }
+            } else {
+                termPtr = nil
             }
         } else {
             // Fall back to basic create
-            Log.trace("RustTerminalFFI[\(instanceId)]: Using basic create (createWithEnv not available or no env vars)")
+            Log.trace("RustTerminalFFI[\(instanceId)]: Using basic create (launch/env symbols not available or no env vars)")
+            if !args.isEmpty || workingDirectory != nil {
+                Log.warn("RustTerminalFFI[\(instanceId)]: basic create — dropping \(args.count) shell arg(s) and cwd")
+            }
             if let shell = shell {
                 termPtr = shell.withCString { fns.create(cols, rows, $0) }
             } else {
@@ -1324,6 +1454,15 @@ final class RustTerminalFFI {
         Self.functions?.resize(terminal, cols, rows)
     }
 
+    /// Re-deliver SIGWINCH to the PTY foreground process group without changing
+    /// the winsize, forcing a full-screen TUI to re-read the terminal width.
+    /// No-op on older dylibs that lack the symbol.
+    func nudgeWinsize() {
+        guard let nudge = Self.functions?.nudgeWinsize else { return }
+        Log.trace("RustTerminalFFI[\(instanceId)]: nudgeWinsize - re-delivering SIGWINCH")
+        nudge(terminal)
+    }
+
     func getGrid() -> (snapshot: UnsafeMutablePointer<RustGridSnapshot>, free: () -> Void)? {
         guard let fns = Self.functions else {
             Log.warn("RustTerminalFFI[\(instanceId)]: getGrid - Library not loaded")
@@ -1406,7 +1545,7 @@ final class RustTerminalFFI {
                 lineText.append(" ")
                 continue
             }
-            lineText.append(cell.clusterString(buffer: snapshot.clusters_utf8))
+            lineText.append(cell.clusterString(buffer: snapshot.clusters_utf8, bufferLength: snapshot.clusters_len))
         }
         while lineText.last == " " {
             lineText.removeLast()
@@ -1492,6 +1631,10 @@ final class RustTerminalFFI {
     }
 
     /// Poll for PTY data. Returns true if grid changed.
+    /// Trace-only diagnostics, but mutated from both the event-drain thread
+    /// and the background drain queue — lock for strictness (taken only when
+    /// trace logging is enabled).
+    private static let pollDiagnosticsLock = NSLock()
     private static var pollCounter: UInt64 = 0
     private static var lastPollLogTime: CFAbsoluteTime = 0
 
@@ -1514,26 +1657,31 @@ final class RustTerminalFFI {
         // disabled so a release build does no per-poll work here. `isTraceEnabled` is a
         // cached `static let`, so the guard is a single bool load.
         if Log.isTraceEnabled {
-            Self.pollCounter += 1
             let now = CFAbsoluteTimeGetCurrent()
+            Self.pollDiagnosticsLock.lock()
+            Self.pollCounter += 1
+            let pollNumber = Self.pollCounter
             let shouldLog = changed || hasMetadata || (now - Self.lastPollLogTime > 5.0) // every 5s or on change
+            if shouldLog {
+                Self.lastPollLogTime = now
+            }
+            Self.pollDiagnosticsLock.unlock()
             if shouldLog {
                 if changed {
                     Log.traceThrottled(
                         "rust-terminal-poll-\(instanceId)",
                         interval: 5.0,
-                        "RustTerminalFFI[\(instanceId)]: poll - Grid CHANGED flags=\(rawFlags) (poll #\(Self.pollCounter), timeout=\(timeout)ms)"
+                        "RustTerminalFFI[\(instanceId)]: poll - Grid CHANGED flags=\(rawFlags) (poll #\(pollNumber), timeout=\(timeout)ms)"
                     )
                 } else if hasMetadata {
                     Log.traceThrottled(
                         "rust-terminal-poll-\(instanceId)",
                         interval: 5.0,
-                        "RustTerminalFFI[\(instanceId)]: poll - Metadata changed flags=\(rawFlags) (poll #\(Self.pollCounter), timeout=\(timeout)ms)"
+                        "RustTerminalFFI[\(instanceId)]: poll - Metadata changed flags=\(rawFlags) (poll #\(pollNumber), timeout=\(timeout)ms)"
                     )
                 } else {
-                    Log.trace("RustTerminalFFI[\(instanceId)]: poll - Status check (poll #\(Self.pollCounter))")
+                    Log.trace("RustTerminalFFI[\(instanceId)]: poll - Status check (poll #\(pollNumber))")
                 }
-                Self.lastPollLogTime = now
             }
         }
 
@@ -2268,6 +2416,20 @@ final class RustTerminalView: NSView {
     /// Callback when shell produces no PTY output within the startup timeout
     var onShellStartupSlow: (() -> Void)?
 
+    /// Why terminal creation failed — drives the user-visible error state.
+    enum TerminalCreateFailureKind {
+        /// libchau7_terminal.dylib failed to load or bind symbols.
+        case engineUnavailable
+        /// The dylib is loaded but chau7_terminal_create returned null
+        /// (PTY allocation or shell spawn failed).
+        case spawnFailed
+    }
+
+    /// Callback when terminal creation fails outright (no PTY, no shell).
+    /// Distinct from `onShellStartupSlow`: a failed create can never produce
+    /// output, so the "initializing" indicator would be a lie.
+    var onTerminalCreateFailed: ((TerminalCreateFailureKind) -> Void)?
+
     /// Current working directory
     var currentDirectory: String = RuntimeIsolation.homePath()
 
@@ -2338,7 +2500,7 @@ final class RustTerminalView: NSView {
         isLivePollingActive
     }
 
-    private var isInteractive = false
+    private(set) var isInteractive = false
     private(set) var currentRenderPhase: TabRenderPhase = .hidden
     private var authoritativeRevealPending = false
     var retainedFrameContentVersion: UInt64 = 0
@@ -2392,6 +2554,23 @@ final class RustTerminalView: NSView {
 
     /// One-shot timer that fires onShellStartupSlow if no PTY output arrives
     var shellStartupTimeoutWork: DispatchWorkItem?
+
+    /// Pending post-resize SIGWINCH re-delivery timers (coalesced).
+    ///
+    /// A full-screen relative-cursor TUI (e.g. Claude Code's Ink) caches the
+    /// terminal width when it boots and only re-reads it on a `resize` event.
+    /// If a `resize()` lands during that ~1-2s boot — before the TUI installs
+    /// its SIGWINCH handler — it misses the size change, keeps a stale width,
+    /// and (because it only diff-repaints) corrupts its output for the rest of
+    /// the session. After every real resize we re-deliver SIGWINCH once the boot
+    /// window has elapsed so a late-attached handler still re-reads the size.
+    /// Anchored to the last resize and coalesced so a window drag doesn't queue
+    /// a nudge per intermediate size.
+    var winsizeNudgeWork: [DispatchWorkItem] = []
+    /// Delays (seconds) after the last resize at which to re-deliver SIGWINCH.
+    /// Two ticks bracket fast and slow TUI boots without flicker (SIGWINCH to an
+    /// idle shell or an already-correct TUI is a harmless no-op repaint).
+    private static let winsizeNudgeDelays: [TimeInterval] = [0.7, 1.8]
     /// Explicit shell bootstrap state. This must not depend on whether a timeout
     /// work item is currently enqueued, because early polling pauses can cancel
     /// and recreate timers without meaning that the shell has produced output.
@@ -2420,9 +2599,21 @@ final class RustTerminalView: NSView {
     var previousCursorCol: UInt16 = 0
     var previousCursorRow: UInt16 = 0
 
-    /// Rate limiting for grid sync (target ~60fps max)
+    /// Rate limiting for grid sync.
     var lastSyncTime: CFAbsoluteTime = 0
-    static let minSyncInterval: CFAbsoluteTime = 1.0 / 120.0 // Allow up to 120fps for responsiveness
+
+    /// Minimum interval between grid syncs (and therefore draws, since a sync
+    /// schedules the next display). The focused view follows the user's
+    /// `activePollingRateCap` (`displayNative` → up to 120fps); visible but
+    /// non-focused views are throttled to `inactiveMaxFPS` — they stay
+    /// event-driven for PTY responsiveness but only present at this slower
+    /// rate, cutting GPU + grid-sync cost for content the user isn't watching
+    /// closely. Pure + clamped for testability.
+    static func minSyncInterval(isInteractive: Bool, activeCapHz: Int?, inactiveMaxFPS: Int) -> CFAbsoluteTime {
+        let fps = isInteractive ? (activeCapHz ?? 120) : inactiveMaxFPS
+        let clamped = max(1, min(fps, 120))
+        return 1.0 / CFAbsoluteTime(clamped)
+    }
 
     /// Statistics for debugging
     var fullSyncCount: UInt64 = 0
@@ -2507,8 +2698,24 @@ final class RustTerminalView: NSView {
 
     // MARK: - Lifecycle State
 
-    /// Flag to prevent event drain callbacks from accessing deallocated view
-    var isBeingDeallocated = false
+    /// Flag to prevent event drain callbacks from accessing deallocated view.
+    /// Lock-guarded: written in deinit/teardown on main, read on the drain
+    /// thread — a plain Bool there is formally a data race.
+    var isBeingDeallocated: Bool {
+        get {
+            Self.deallocationFlagLock.lock()
+            defer { Self.deallocationFlagLock.unlock() }
+            return _isBeingDeallocated
+        }
+        set {
+            Self.deallocationFlagLock.lock()
+            defer { Self.deallocationFlagLock.unlock() }
+            _isBeingDeallocated = newValue
+        }
+    }
+
+    private static let deallocationFlagLock = NSLock()
+    private var _isBeingDeallocated = false
 
     /// Returns true when the PTY echo is likely disabled (password prompt detected).
     /// Exposes the termios-derived echo state for history filtering. The
@@ -2657,6 +2864,15 @@ final class RustTerminalView: NSView {
     /// Environment variables to pass to the shell (set before first layout)
     var configuredEnvironment: [String: String]?
 
+    /// Shell argv passed to the spawn (e.g. bash's `--rcfile` so interactive
+    /// bash sources Chau7's shell integration). Set before first layout.
+    var configuredShellArguments: [String] = []
+
+    /// Explicit working directory for the spawned shell. Without it the child
+    /// inherits the app's cwd (often `/` when launched from Finder) and the
+    /// start directory depends entirely on rc-file `cd`. Set before first layout.
+    var configuredWorkingDirectory: String?
+
     /// Whether the Rust terminal has been started
     var isTerminalStarted = false
 
@@ -2701,6 +2917,30 @@ final class RustTerminalView: NSView {
         }
         configuredEnvironment = environment
         Log.info("RustTerminalView[\(viewId)]: Environment configured with \(environment.count) variables")
+    }
+
+    /// Configure shell argv before terminal starts. Must be called before first layout.
+    func configureShellArguments(_ args: [String]) {
+        guard !isTerminalStarted else {
+            Log.warn("RustTerminalView[\(viewId)]: configureShellArguments called after terminal started, ignoring")
+            return
+        }
+        configuredShellArguments = args
+        if !args.isEmpty {
+            Log.info("RustTerminalView[\(viewId)]: Shell arguments configured: \(args.joined(separator: " "))")
+        }
+    }
+
+    /// Configure the spawn working directory before terminal starts. Must be called before first layout.
+    func configureWorkingDirectory(_ directory: String?) {
+        guard !isTerminalStarted else {
+            Log.warn("RustTerminalView[\(viewId)]: configureWorkingDirectory called after terminal started, ignoring")
+            return
+        }
+        configuredWorkingDirectory = directory
+        if let directory {
+            Log.info("RustTerminalView[\(viewId)]: Working directory configured: \(directory)")
+        }
     }
 
     /// Set up rendering views (deferred terminal creation)
@@ -2761,27 +3001,43 @@ final class RustTerminalView: NSView {
 
         // Create Rust terminal (owns PTY and state)
         // Use environment-aware init if environment was configured, otherwise use basic init
-        if let env = configuredEnvironment {
-            Log.info("RustTerminalView[\(viewId)]: startTerminal - Creating with \(env.count) environment variables")
-            rustTerminal = RustTerminalFFI(cols: UInt16(cols), rows: UInt16(rows), shell: configuredShell, environment: env)
+        if configuredEnvironment != nil || !configuredShellArguments.isEmpty || configuredWorkingDirectory != nil {
+            let env = configuredEnvironment ?? [:]
+            Log.info("RustTerminalView[\(viewId)]: startTerminal - Creating with \(env.count) environment variables, \(configuredShellArguments.count) shell arg(s)")
+            rustTerminal = RustTerminalFFI(
+                cols: UInt16(cols),
+                rows: UInt16(rows),
+                shell: configuredShell,
+                environment: env,
+                args: configuredShellArguments,
+                workingDirectory: configuredWorkingDirectory
+            )
         } else {
             rustTerminal = RustTerminalFFI(cols: UInt16(cols), rows: UInt16(rows), shell: configuredShell)
         }
 
         if rustTerminal == nil {
-            Log.warn("RustTerminalView[\(viewId)]: startTerminal - Failed to create Rust terminal")
-        } else {
-            Log.info("RustTerminalView[\(viewId)]: startTerminal - Rust terminal created successfully")
-
-            // Phase 4: Configure image protocol interceptor based on user settings.
-            // iTerm2 is enabled by default (matches FeatureSettings.isInlineImagesEnabled).
-            // Sixel/Kitty are gated by SixelKittyBridge toggles.
-            let iterm2Enabled = FeatureSettings.shared.isInlineImagesEnabled
-            let sixelEnabled = SixelKittyBridge.shared.isSixelEnabled
-            let kittyEnabled = SixelKittyBridge.shared.isKittyGraphicsEnabled
-            rustTerminal?.setImageProtocols(sixel: sixelEnabled, kitty: kittyEnabled, iterm2: iterm2Enabled)
-            Log.info("RustTerminalView[\(viewId)]: Image protocols configured - iTerm2=\(iterm2Enabled), Sixel=\(sixelEnabled), Kitty=\(kittyEnabled)")
+            let kind: TerminalCreateFailureKind = RustTerminalFFI.isAvailable ? .spawnFailed : .engineUnavailable
+            Log.error("RustTerminalView[\(viewId)]: startTerminal - Failed to create Rust terminal (\(kind))")
+            // Reset so a user-triggered retry can run startTerminal again, and
+            // bail before arming the "shell initializing" timeout — a failed
+            // create can never produce output, so that indicator would lie.
+            isTerminalStarted = false
+            isAwaitingInitialPTYOutput = false
+            onTerminalCreateFailed?(kind)
+            return
         }
+
+        Log.info("RustTerminalView[\(viewId)]: startTerminal - Rust terminal created successfully")
+
+        // Phase 4: Configure image protocol interceptor based on user settings.
+        // iTerm2 is enabled by default (matches FeatureSettings.isInlineImagesEnabled).
+        // Sixel/Kitty are gated by SixelKittyBridge toggles.
+        let iterm2Enabled = FeatureSettings.shared.isInlineImagesEnabled
+        let sixelEnabled = SixelKittyBridge.shared.isSixelEnabled
+        let kittyEnabled = SixelKittyBridge.shared.isKittyGraphicsEnabled
+        rustTerminal?.setImageProtocols(sixel: sixelEnabled, kitty: kittyEnabled, iterm2: iterm2Enabled)
+        Log.info("RustTerminalView[\(viewId)]: Image protocols configured - iTerm2=\(iterm2Enabled), Sixel=\(sixelEnabled), Kitty=\(kittyEnabled)")
 
         if let initialOutput, !initialOutput.isEmpty {
             injectOutput(initialOutput)
@@ -2814,11 +3070,30 @@ final class RustTerminalView: NSView {
         Log.info("RustTerminalView[\(viewId)]: startTerminal - Complete")
     }
 
+    /// Re-deliver SIGWINCH to the foreground TUI a short while after a resize, so
+    /// a renderer that booted during the resize (and missed the kernel's SIGWINCH
+    /// before attaching its handler) still re-reads the authoritative width.
+    /// Coalesced: each call cancels the prior pending nudges and re-anchors to now.
+    func scheduleWinsizeNudge() {
+        winsizeNudgeWork.forEach { $0.cancel() }
+        winsizeNudgeWork.removeAll(keepingCapacity: true)
+        guard rustTerminal != nil else { return }
+        for delay in Self.winsizeNudgeDelays {
+            let work = DispatchWorkItem { [weak self] in
+                guard let self, !self.isBeingDeallocated else { return }
+                rustTerminal?.nudgeWinsize()
+            }
+            winsizeNudgeWork.append(work)
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
+        }
+    }
+
     deinit {
         Log.info("RustTerminalView[\(viewId)]: deinit - Starting cleanup")
         // Set flag to prevent event drain callbacks from accessing deallocated view
         isBeingDeallocated = true
         shellStartupTimeoutWork?.cancel()
+        winsizeNudgeWork.forEach { $0.cancel() }
         removeWindowNotificationObservers()
         stopPollingLoop()
         stopAutoScrollTimer()
@@ -3060,6 +3335,7 @@ final class RustTerminalView: NSView {
                 cols = newCols
                 rows = newRows
                 rustTerminal?.resize(cols: UInt16(cols), rows: UInt16(rows))
+                scheduleWinsizeNudge()
                 needsGridSync = true
                 logRenderSurfaceReport(reason: "terminal-resize", force: true)
             }
@@ -3099,12 +3375,19 @@ final class RustTerminalView: NSView {
     func desiredPollingMode() -> VisibleTerminalPollingMode {
         let hasVisibleWindow: Bool
         let isWindowMiniaturized: Bool
+        let isWindowOccluded: Bool
         if let window {
             hasVisibleWindow = window.isVisible
             isWindowMiniaturized = window.isMiniaturized
+            // isVisible stays true for fully covered windows; occlusion is
+            // the signal that nobody can see the pixels. The occlusion-state
+            // window notification re-runs this policy on change, and the
+            // re-expose path forces a grid sync + immediate poll.
+            isWindowOccluded = !window.occlusionState.contains(.visible)
         } else {
             hasVisibleWindow = false
             isWindowMiniaturized = false
+            isWindowOccluded = false
         }
 
         return VisibleTerminalPollingPolicy.mode(
@@ -3116,6 +3399,7 @@ final class RustTerminalView: NSView {
                 isHidden: isHidden,
                 hasVisibleWindow: hasVisibleWindow,
                 isWindowMiniaturized: isWindowMiniaturized,
+                isWindowOccluded: isWindowOccluded,
                 isInteractive: isInteractive
             )
         )
@@ -3219,6 +3503,7 @@ final class RustTerminalView: NSView {
 
     func applyRenderPhase(_ phase: TabRenderPhase, isInteractive: Bool, reason: String) {
         let previousPhase = currentRenderPhase
+        let becameInteractive = isInteractive && !self.isInteractive
         currentRenderPhase = phase
         self.isInteractive = isInteractive
         let shouldHide = !phase.keepsVisibleSurface
@@ -3241,6 +3526,12 @@ final class RustTerminalView: NSView {
         refreshRenderPipelineProfilingState(mode: "\(currentRenderLoopMode):\(phase.rawValue)")
         Log.trace("RustTerminalView[\(viewId)]: applyRenderPhase -> \(phase.rawValue) (\(reason))")
 
+        // Focusing a previously-throttled view: force one immediate sync so the
+        // user sees current content without waiting out the inactive-fps gap.
+        if becameInteractive {
+            syncGridToRenderer(force: true)
+        }
+
         if previousPhase != phase {
             let resolvedTabID = UUID(uuidString: tabIdentifier)
             ScrollbackMemoryManager.shared.handlePhaseTransition(
@@ -3256,6 +3547,12 @@ final class RustTerminalView: NSView {
                 from: previousPhase,
                 to: phase
             )
+            // .hidden demotion flushes the Rust scrollback ring to disk —
+            // keeping the Swift-side [String] duplicate of that exact buffer
+            // resident would defeat the entire reclamation.
+            if phase == .hidden {
+                cachedBufferLines = nil
+            }
         }
     }
 

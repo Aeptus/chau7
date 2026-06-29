@@ -1,0 +1,207 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+  cat <<'USAGE'
+Usage: scripts/pentagi-mcp-local-preflight [--sni-proxy] [--no-compose]
+
+Prepare and verify the local PentAGI MCP execution environment without touching
+tools/pentagi-mcp source files.
+
+Environment overrides:
+  TARGET_URL              HTTPS target to verify from the host (default: https://localhost:8443/)
+  TARGET_PORT             Host target port for sandbox probes (default: parsed from TARGET_URL, fallback 8443)
+  PENTAGI_DIR             Upstream PentAGI checkout path (default: $HOME/pentagi)
+  PENTAGI_LISTEN_PORT     Host port for PentAGI UI to avoid target collision (default: 18443)
+  SANDBOX_NAME            Tool container name used by PENTAGI_CONTAINER (default: pentagi-sandbox)
+  SANDBOX_IMAGE           Tool container image (default: vxcontrol/kali-linux)
+
+Options:
+  --sni-proxy             Start sandbox-local 127.0.0.1:$TARGET_PORT -> host.docker.internal:$TARGET_PORT.
+                          Useful when the target TLS certificate/config only accepts SNI "localhost".
+  --no-compose            Skip starting the upstream PentAGI compose stack; still ensure the sandbox exists.
+  -h, --help              Show this help.
+USAGE
+}
+
+START_SNI_PROXY=0
+START_COMPOSE=1
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --sni-proxy)
+      START_SNI_PROXY=1
+      ;;
+    --no-compose)
+      START_COMPOSE=0
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      echo "unknown argument: $1" >&2
+      usage >&2
+      exit 2
+      ;;
+  esac
+  shift
+done
+
+TARGET_URL=${TARGET_URL:-https://localhost:8443/}
+TARGET_PORT=${TARGET_PORT:-}
+PENTAGI_DIR=${PENTAGI_DIR:-"$HOME/pentagi"}
+PENTAGI_LISTEN_PORT=${PENTAGI_LISTEN_PORT:-18443}
+SANDBOX_NAME=${SANDBOX_NAME:-pentagi-sandbox}
+SANDBOX_IMAGE=${SANDBOX_IMAGE:-vxcontrol/kali-linux}
+
+if [[ -z "$TARGET_PORT" ]]; then
+  TARGET_PORT=$(python3 - "$TARGET_URL" <<'PY'
+from urllib.parse import urlparse
+import sys
+url = urlparse(sys.argv[1])
+print(url.port or (443 if url.scheme == "https" else 80))
+PY
+)
+fi
+
+need_cmd() {
+  if ! command -v "$1" >/dev/null 2>&1; then
+    echo "missing required command: $1" >&2
+    exit 1
+  fi
+}
+
+compose_cmd() {
+  if docker compose version >/dev/null 2>&1; then
+    printf 'docker compose'
+  elif command -v docker-compose >/dev/null 2>&1; then
+    printf 'docker-compose'
+  else
+    echo "missing Docker Compose: neither 'docker compose' nor 'docker-compose' works" >&2
+    exit 1
+  fi
+}
+
+patch_env_value() {
+  local file=$1
+  local key=$2
+  local value=$3
+  python3 - "$file" "$key" "$value" <<'PY'
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+key = sys.argv[2]
+value = sys.argv[3]
+lines = path.read_text().splitlines()
+needle = key + "="
+for i, line in enumerate(lines):
+    if line.startswith(needle):
+        lines[i] = f"{key}={value}"
+        break
+else:
+    lines.append(f"{key}={value}")
+path.write_text("\n".join(lines) + "\n")
+PY
+}
+
+echo "== host preflight =="
+need_cmd docker
+need_cmd git
+need_cmd curl
+need_cmd python3
+docker info >/dev/null
+echo "docker: ok"
+
+host_status=$(curl -sk -o /dev/null -w '%{http_code}' --max-time 5 "$TARGET_URL" || true)
+if [[ "$host_status" == "000" || -z "$host_status" ]]; then
+  echo "target did not answer from host: $TARGET_URL (http_code=$host_status)" >&2
+  exit 1
+fi
+echo "target: $TARGET_URL -> $host_status"
+
+COMPOSE=$(compose_cmd)
+echo "compose: $COMPOSE"
+
+if [[ "$START_COMPOSE" == "1" ]]; then
+  echo "== PentAGI compose =="
+  if [[ ! -d "$PENTAGI_DIR/.git" ]]; then
+    git clone https://github.com/vxcontrol/pentagi.git "$PENTAGI_DIR"
+  fi
+  if [[ ! -f "$PENTAGI_DIR/.env" ]]; then
+    cp "$PENTAGI_DIR/.env.example" "$PENTAGI_DIR/.env"
+  fi
+  patch_env_value "$PENTAGI_DIR/.env" OPEN_AI_KEY sk-placeholder
+  patch_env_value "$PENTAGI_DIR/.env" PENTAGI_LISTEN_PORT "$PENTAGI_LISTEN_PORT"
+  patch_env_value "$PENTAGI_DIR/.env" PUBLIC_URL "https://localhost:$PENTAGI_LISTEN_PORT"
+  patch_env_value "$PENTAGI_DIR/.env" CORS_ORIGINS "https://localhost:$PENTAGI_LISTEN_PORT"
+  (
+    cd "$PENTAGI_DIR"
+    # shellcheck disable=SC2086
+    $COMPOSE up -d
+  )
+fi
+
+echo "== sandbox =="
+if docker ps --format '{{.Names}}' | grep -Fxq "$SANDBOX_NAME"; then
+  echo "$SANDBOX_NAME: already running"
+elif docker ps -a --format '{{.Names}}' | grep -Fxq "$SANDBOX_NAME"; then
+  docker start "$SANDBOX_NAME" >/dev/null
+  echo "$SANDBOX_NAME: started"
+else
+  docker run -d \
+    --name "$SANDBOX_NAME" \
+    --init \
+    --network pentagi-network \
+    --cap-add NET_ADMIN \
+    --cap-add NET_RAW \
+    --add-host host.docker.internal:host-gateway \
+    "$SANDBOX_IMAGE" sleep infinity >/dev/null
+  echo "$SANDBOX_NAME: created"
+fi
+
+docker exec "$SANDBOX_NAME" sh -c '
+  missing=0
+  for tool in nmap sqlmap msfconsole nuclei feroxbuster searchsploit; do
+    if command -v "$tool" >/dev/null 2>&1; then
+      printf "OK   %s -> %s\n" "$tool" "$(command -v "$tool")"
+    else
+      printf "MISS %s\n" "$tool"
+      missing=1
+    fi
+  done
+  exit "$missing"
+'
+
+echo "== sandbox reachability =="
+docker exec "$SANDBOX_NAME" sh -c "getent hosts host.docker.internal || true"
+docker exec "$SANDBOX_NAME" sh -c "curl -sk -o /dev/null -w 'hostdocker_status=%{http_code}\n' --max-time 5 https://host.docker.internal:$TARGET_PORT/ || true"
+docker exec "$SANDBOX_NAME" sh -c "curl -sk --connect-to localhost:$TARGET_PORT:host.docker.internal:$TARGET_PORT -o /dev/null -w 'localhost_sni_status=%{http_code}\n' --max-time 5 https://localhost:$TARGET_PORT/ || true"
+
+if [[ "$START_SNI_PROXY" == "1" ]]; then
+  echo "== sandbox localhost SNI proxy =="
+  docker exec "$SANDBOX_NAME" sh -c "command -v socat >/dev/null"
+  docker exec "$SANDBOX_NAME" sh -c "
+    if ss -ltn '( sport = :$TARGET_PORT )' | grep -q ':$TARGET_PORT'; then
+      echo 'proxy: listener already present'
+    else
+      nohup socat TCP-LISTEN:$TARGET_PORT,bind=127.0.0.1,fork,reuseaddr TCP:host.docker.internal:$TARGET_PORT >/tmp/pentagi-mcp-socat.log 2>&1 &
+      echo \$! >/tmp/pentagi-mcp-socat.pid
+      echo \"proxy_pid=\$(cat /tmp/pentagi-mcp-socat.pid)\"
+    fi
+    curl -sk -o /dev/null -w 'proxy_status=%{http_code}\n' --max-time 5 https://localhost:$TARGET_PORT/
+  "
+fi
+
+cat <<EOF
+
+Ready.
+Set MCP environment to:
+  PENTAGI_CONTAINER=$SANDBOX_NAME
+
+For Claude Code:
+  claude mcp add pentagi --scope user --env PENTAGI_CONTAINER=$SANDBOX_NAME -- pentagi-mcp
+
+For Codex:
+  codex mcp add pentagi --env PENTAGI_CONTAINER=$SANDBOX_NAME -- pentagi-mcp
+EOF

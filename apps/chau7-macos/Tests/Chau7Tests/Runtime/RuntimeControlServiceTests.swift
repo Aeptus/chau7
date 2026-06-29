@@ -1,6 +1,6 @@
 import XCTest
-#if !SWIFT_PACKAGE
 @testable import Chau7
+import Chau7Core
 
 private struct MockInteractiveBackend: AgentBackend {
     let name: String
@@ -29,18 +29,34 @@ private struct MockInteractiveBackend: AgentBackend {
 final class RuntimeControlServiceTests: XCTestCase {
     private var appModel: AppModel!
     private var overlayModel: OverlayTabsModel!
+    private var savedPermissionMode: MCPPermissionMode!
+    private var tempDirs: [String] = []
+
+    /// Creates a real directory under /tmp — tab creation validates that the
+    /// requested working directory exists on disk.
+    private func makeTempDir(_ name: String) -> String {
+        let path = "/tmp/\(name)-\(UUID().uuidString)"
+        try? FileManager.default.createDirectory(atPath: path, withIntermediateDirectories: true)
+        tempDirs.append(path)
+        return path
+    }
 
     override func setUp() {
         super.setUp()
         UserDefaults.standard.removeObject(forKey: SavedTabState.userDefaultsKey)
         UserDefaults.standard.removeObject(forKey: SavedMultiWindowState.userDefaultsKey)
+        savedPermissionMode = FeatureSettings.shared.mcpPermissionMode
         FeatureSettings.shared.mcpPermissionMode = .allowAll
         appModel = AppModel()
         overlayModel = OverlayTabsModel(appModel: appModel, restoreState: false)
         TerminalControlService.shared.register(overlayModel)
+        // Under swift test there is no NSApplication/AppDelegate; provide the
+        // active model explicitly so window resolution never touches NSApp.
+        TerminalControlService.shared.activeOverlayModelProvider = { [weak overlayModel] in overlayModel }
     }
 
     override func tearDown() {
+        TerminalControlService.shared.activeOverlayModelProvider = nil
         RuntimeControlService.shared.launchReadinessProbe = nil
         for session in RuntimeSessionManager.shared.allSessions(includeStopped: false) {
             _ = RuntimeSessionManager.shared.stopSession(id: session.id)
@@ -48,8 +64,13 @@ final class RuntimeControlServiceTests: XCTestCase {
         if let overlayModel {
             TerminalControlService.shared.unregister(overlayModel)
         }
+        FeatureSettings.shared.mcpPermissionMode = savedPermissionMode
         UserDefaults.standard.removeObject(forKey: SavedTabState.userDefaultsKey)
         UserDefaults.standard.removeObject(forKey: SavedMultiWindowState.userDefaultsKey)
+        for dir in tempDirs {
+            try? FileManager.default.removeItem(atPath: dir)
+        }
+        tempDirs = []
         overlayModel = nil
         appModel = nil
         super.tearDown()
@@ -109,7 +130,7 @@ final class RuntimeControlServiceTests: XCTestCase {
             name: "runtime_session_create",
             arguments: [
                 "backend": "shell",
-                "directory": "/tmp/runtime-create-\(UUID().uuidString)"
+                "directory": makeTempDir("runtime-create")
             ]
         )
 
@@ -129,7 +150,7 @@ final class RuntimeControlServiceTests: XCTestCase {
             name: "runtime_session_create",
             arguments: [
                 "backend": "shell",
-                "directory": "/tmp/runtime-no-visible-tab-\(UUID().uuidString)"
+                "directory": makeTempDir("runtime-no-visible-tab")
             ]
         )
 
@@ -151,7 +172,7 @@ final class RuntimeControlServiceTests: XCTestCase {
             name: "runtime_session_create",
             arguments: [
                 "backend": "shell",
-                "directory": "/tmp/runtime-attach-\(UUID().uuidString)",
+                "directory": makeTempDir("runtime-attach"),
                 "attach_tab_id": attachTabID
             ]
         )
@@ -166,13 +187,25 @@ final class RuntimeControlServiceTests: XCTestCase {
     }
 
     func testRuntimeSessionCreatePersistsDelegationMetadata() throws {
+        // Parent must be a real session — runtime_session_create now validates
+        // that parent_session_id resolves before accepting delegation metadata.
+        let parentResponse = RuntimeControlService.shared.handleToolCall(
+            name: "runtime_session_create",
+            arguments: [
+                "backend": "shell",
+                "directory": makeTempDir("runtime-delegation-parent")
+            ]
+        )
+        let parentJSON = try XCTUnwrap(parseJSONObject(parentResponse))
+        let parentSessionID = try XCTUnwrap(parentJSON["session_id"] as? String)
+
         let response = RuntimeControlService.shared.handleToolCall(
             name: "runtime_session_create",
             arguments: [
                 "backend": "shell",
-                "directory": "/tmp/runtime-delegation-\(UUID().uuidString)",
+                "directory": makeTempDir("runtime-delegation"),
                 "purpose": "code_review",
-                "parent_session_id": "rs_parent123",
+                "parent_session_id": parentSessionID,
                 "parent_run_id": "run_parent123",
                 "delegation_depth": 1,
                 "task_metadata": [
@@ -188,14 +221,14 @@ final class RuntimeControlServiceTests: XCTestCase {
         let taskMetadata = try XCTUnwrap(json["task_metadata"] as? [String: Any])
 
         XCTAssertEqual(json["purpose"] as? String, "code_review")
-        XCTAssertEqual(json["parent_session_id"] as? String, "rs_parent123")
+        XCTAssertEqual(json["parent_session_id"] as? String, parentSessionID)
         XCTAssertEqual(json["parent_run_id"] as? String, "run_parent123")
         XCTAssertEqual(json["delegation_depth"] as? Int, 1)
         XCTAssertEqual(taskMetadata["review_scope"] as? String, "commits")
         XCTAssertEqual(taskMetadata["audience"] as? String, "main-agent")
 
         XCTAssertEqual(session.config.purpose, "code_review")
-        XCTAssertEqual(session.config.parentSessionID, "rs_parent123")
+        XCTAssertEqual(session.config.parentSessionID, parentSessionID)
         XCTAssertEqual(session.config.parentRunID, "run_parent123")
         XCTAssertEqual(session.config.delegationDepth, 1)
         XCTAssertEqual(session.config.taskMetadata["review_scope"], "commits")
@@ -222,7 +255,7 @@ final class RuntimeControlServiceTests: XCTestCase {
             name: "runtime_session_create",
             arguments: [
                 "backend": backendName,
-                "directory": "/tmp/runtime-starting-\(UUID().uuidString)"
+                "directory": makeTempDir("runtime-starting")
             ]
         )
 
@@ -237,17 +270,20 @@ final class RuntimeControlServiceTests: XCTestCase {
     func testRuntimeTurnSendPromotesInteractiveSessionOnceLaunchProbeIsReady() throws {
         let backendName = "mock-interactive-send-\(UUID().uuidString)"
         RuntimeControlService.registerBackend(name: backendName) { MockInteractiveBackend(name: backendName) }
+        // Not ready at create time (otherwise create itself promotes the
+        // session); flips to ready before the send below.
+        var isReady = false
         RuntimeControlService.shared.launchReadinessProbe = { _ in
             RuntimeLaunchReadinessSnapshot(
-                shellLoading: false,
+                shellLoading: !isReady,
                 isAtPrompt: true,
                 effectiveStatus: "idle",
                 rawStatus: "idle",
-                activeApp: "MockInteractive",
-                rawActiveApp: "MockInteractive",
-                aiProvider: backendName,
-                activeRunProvider: backendName,
-                processNames: [backendName]
+                activeApp: isReady ? "MockInteractive" : nil,
+                rawActiveApp: isReady ? "MockInteractive" : nil,
+                aiProvider: isReady ? backendName : nil,
+                activeRunProvider: isReady ? backendName : nil,
+                processNames: isReady ? [backendName] : []
             )
         }
 
@@ -255,7 +291,7 @@ final class RuntimeControlServiceTests: XCTestCase {
             name: "runtime_session_create",
             arguments: [
                 "backend": backendName,
-                "directory": "/tmp/runtime-promote-\(UUID().uuidString)"
+                "directory": makeTempDir("runtime-promote")
             ]
         )
 
@@ -263,6 +299,8 @@ final class RuntimeControlServiceTests: XCTestCase {
         let sessionID = try XCTUnwrap(json["session_id"] as? String)
         let session = try XCTUnwrap(RuntimeSessionManager.shared.session(id: sessionID))
         XCTAssertEqual(session.state, .starting)
+
+        isReady = true
 
         let sendResponse = RuntimeControlService.shared.handleToolCall(
             name: "runtime_turn_send",
@@ -313,7 +351,7 @@ final class RuntimeControlServiceTests: XCTestCase {
             name: "runtime_session_create",
             arguments: [
                 "backend": backendName,
-                "directory": "/tmp/runtime-initial-\(UUID().uuidString)",
+                "directory": makeTempDir("runtime-initial"),
                 "initial_prompt": "review this change"
             ]
         )
@@ -352,7 +390,7 @@ final class RuntimeControlServiceTests: XCTestCase {
             name: "runtime_session_create",
             arguments: [
                 "backend": backendName,
-                "directory": "/tmp/runtime-code-review-\(UUID().uuidString)",
+                "directory": makeTempDir("runtime-code-review"),
                 "purpose": "code_review",
                 "initial_prompt": "review this staged diff"
             ]
@@ -387,7 +425,7 @@ final class RuntimeControlServiceTests: XCTestCase {
             name: "runtime_session_create",
             arguments: [
                 "backend": backendName,
-                "directory": "/tmp/runtime-wait-\(UUID().uuidString)",
+                "directory": makeTempDir("runtime-wait"),
                 "initial_prompt": "review this change"
             ]
         )
@@ -445,7 +483,7 @@ final class RuntimeControlServiceTests: XCTestCase {
             name: "runtime_session_create",
             arguments: [
                 "backend": backendName,
-                "directory": "/tmp/runtime-recover-\(UUID().uuidString)",
+                "directory": makeTempDir("runtime-recover"),
                 "initial_prompt": "review this change"
             ]
         )
@@ -471,14 +509,18 @@ final class RuntimeControlServiceTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(probeAttempts, 4)
     }
 
-    func testRuntimeTurnWaitDispatchesDeferredInitialPromptAfterLegacyTimeoutWindow() throws {
+    func testDeferredInitialPromptStillDispatchesAfterRepeatedNotReadyProbes() throws {
+        // Prompt delivery is now event-driven (terminal readiness-change
+        // notifications) rather than a legacy background retry loop. Verify the
+        // deferred prompt is never abandoned: after many not-ready probes, the
+        // first ready readiness event still dispatches it.
         let backendName = "mock-interactive-slow-recover-\(UUID().uuidString)"
         RuntimeControlService.registerBackend(name: backendName) { MockInteractiveBackend(name: backendName) }
 
         var probeAttempts = 0
         RuntimeControlService.shared.launchReadinessProbe = { _ in
             probeAttempts += 1
-            if probeAttempts < 17 {
+            if probeAttempts < 6 {
                 return RuntimeLaunchReadinessSnapshot(
                     shellLoading: true,
                     isAtPrompt: true,
@@ -508,7 +550,7 @@ final class RuntimeControlServiceTests: XCTestCase {
             name: "runtime_session_create",
             arguments: [
                 "backend": backendName,
-                "directory": "/tmp/runtime-slow-recover-\(UUID().uuidString)",
+                "directory": makeTempDir("runtime-slow-recover"),
                 "initial_prompt": "review this change"
             ]
         )
@@ -516,10 +558,23 @@ final class RuntimeControlServiceTests: XCTestCase {
         let json = try XCTUnwrap(parseJSONObject(response))
         let sessionID = try XCTUnwrap(json["session_id"] as? String)
         let session = try XCTUnwrap(RuntimeSessionManager.shared.session(id: sessionID))
+        let terminalSession = try XCTUnwrap(tabSession(for: session))
+        XCTAssertEqual(session.turnCount, 0)
 
-        XCTAssertTrue(waitUntil(timeout: 10.0) { session.turnCount == 1 && session.state == .busy })
+        // Fire readiness-change events until the probe reports ready and the
+        // deferred prompt goes out.
+        let dispatched = waitUntil(timeout: 10.0) {
+            NotificationCenter.default.post(
+                name: .terminalSessionRuntimeReadinessChanged,
+                object: terminalSession,
+                userInfo: ["source": "test_probe"]
+            )
+            return session.turnCount == 1 && session.state == .busy
+        }
+
+        XCTAssertTrue(dispatched)
         XCTAssertNil(session.pendingInitialPrompt)
-        XCTAssertGreaterThanOrEqual(probeAttempts, 17)
+        XCTAssertGreaterThanOrEqual(probeAttempts, 6)
     }
 
     func testRuntimeTurnWaitReconcilesBusyInteractiveSessionOnceTerminalSettles() throws {
@@ -546,7 +601,7 @@ final class RuntimeControlServiceTests: XCTestCase {
             name: "runtime_session_create",
             arguments: [
                 "backend": backendName,
-                "directory": "/tmp/runtime-settle-\(UUID().uuidString)",
+                "directory": makeTempDir("runtime-settle"),
                 "initial_prompt": "review this change"
             ]
         )
@@ -587,7 +642,7 @@ final class RuntimeControlServiceTests: XCTestCase {
             name: "runtime_session_create",
             arguments: [
                 "backend": "shell",
-                "directory": "/tmp/runtime-result-\(UUID().uuidString)",
+                "directory": makeTempDir("runtime-result"),
                 "result_schema": [
                     "type": "object",
                     "required": ["summary", "findings"],
@@ -653,7 +708,7 @@ final class RuntimeControlServiceTests: XCTestCase {
             name: "runtime_session_create",
             arguments: [
                 "backend": "shell",
-                "directory": "/tmp/runtime-parent-\(UUID().uuidString)",
+                "directory": makeTempDir("runtime-parent"),
                 "policy": [
                     "allow_child_delegation": false,
                     "max_delegation_depth": 0
@@ -667,7 +722,7 @@ final class RuntimeControlServiceTests: XCTestCase {
             name: "runtime_session_create",
             arguments: [
                 "backend": "shell",
-                "directory": "/tmp/runtime-child-\(UUID().uuidString)",
+                "directory": makeTempDir("runtime-child"),
                 "parent_session_id": parentSessionID,
                 "delegation_depth": 1
             ]
@@ -682,7 +737,7 @@ final class RuntimeControlServiceTests: XCTestCase {
             name: "runtime_session_create",
             arguments: [
                 "backend": "shell",
-                "directory": "/tmp/runtime-tree-\(UUID().uuidString)"
+                "directory": makeTempDir("runtime-tree")
             ]
         )
         let parentJSON = try XCTUnwrap(parseJSONObject(parentResponse))
@@ -692,7 +747,7 @@ final class RuntimeControlServiceTests: XCTestCase {
             name: "runtime_session_create",
             arguments: [
                 "backend": "shell",
-                "directory": "/tmp/runtime-tree-child-\(UUID().uuidString)",
+                "directory": makeTempDir("runtime-tree-child"),
                 "parent_session_id": parentSessionID,
                 "delegation_depth": 1
             ]
@@ -717,7 +772,7 @@ final class RuntimeControlServiceTests: XCTestCase {
             name: "runtime_session_create",
             arguments: [
                 "backend": "shell",
-                "directory": "/tmp/runtime-stop-close-\(UUID().uuidString)"
+                "directory": makeTempDir("runtime-stop-close")
             ]
         )
 
@@ -772,4 +827,3 @@ final class RuntimeControlServiceTests: XCTestCase {
         return condition()
     }
 }
-#endif

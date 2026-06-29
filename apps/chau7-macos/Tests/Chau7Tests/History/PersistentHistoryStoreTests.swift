@@ -1,5 +1,4 @@
 import XCTest
-#if !SWIFT_PACKAGE
 import SQLite3
 @testable import Chau7
 @testable import Chau7Core
@@ -285,4 +284,3 @@ final class PersistentHistoryStoreTests: XCTestCase {
         XCTAssertEqual(imported.first?.directory, "/test")
     }
 }
-#endif

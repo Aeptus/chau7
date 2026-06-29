@@ -143,58 +143,40 @@ final class TerminalMigrationWizard {
 
     func importProfile(_ profile: ImportableProfile) {
         importStatus = .importing
+        applyAndCreate(profile)
+        importStatus = .complete
+    }
 
+    func importProfiles(_ profiles: [ImportableProfile]) {
+        importStatus = .importing
+        importErrors = []
+        for profile in profiles {
+            applyAndCreate(profile)
+        }
+        importStatus = .complete
+        Log.info("TerminalMigrationWizard: batch import complete (\(profiles.count) profiles)")
+    }
+
+    /// Captures the current font settings, applies the profile's values, snapshots
+    /// it via createProfile, then restores the originals. Each iteration restores
+    /// to the original, so capturing per-call matches the batch's capture-once.
+    private func applyAndCreate(_ profile: ImportableProfile) {
         let settings = FeatureSettings.shared
-
-        // Save original settings
         let originalFont = settings.fontFamily
         let originalSize = settings.fontSize
         let originalCursor = settings.cursorStyle
 
-        // Apply profile values temporarily for createProfile snapshot
         if let font = profile.fontFamily { settings.fontFamily = font }
         if let size = profile.fontSize { settings.fontSize = size }
         if let cursor = profile.cursorStyle { settings.cursorStyle = cursor }
 
         _ = settings.createProfile(name: "Imported: \(profile.name)")
 
-        // Restore original settings
         settings.fontFamily = originalFont
         settings.fontSize = originalSize
         settings.cursorStyle = originalCursor
 
-        importStatus = .complete
         Log.info("TerminalMigrationWizard: imported '\(profile.name)' from \(profile.source.displayName)")
-    }
-
-    func importProfiles(_ profiles: [ImportableProfile]) {
-        importStatus = .importing
-        importErrors = []
-
-        let settings = FeatureSettings.shared
-
-        // Save original settings so we can restore after import
-        let originalFont = settings.fontFamily
-        let originalSize = settings.fontSize
-        let originalCursor = settings.cursorStyle
-
-        for profile in profiles {
-            // Apply profile values temporarily for createProfile snapshot
-            if let font = profile.fontFamily { settings.fontFamily = font }
-            if let size = profile.fontSize { settings.fontSize = size }
-            if let cursor = profile.cursorStyle { settings.cursorStyle = cursor }
-
-            _ = settings.createProfile(name: "Imported: \(profile.name)")
-            Log.info("TerminalMigrationWizard: imported '\(profile.name)' from \(profile.source.displayName)")
-
-            // Reset to original before next iteration
-            settings.fontFamily = originalFont
-            settings.fontSize = originalSize
-            settings.cursorStyle = originalCursor
-        }
-
-        importStatus = .complete
-        Log.info("TerminalMigrationWizard: batch import complete (\(profiles.count) profiles)")
     }
 }
 

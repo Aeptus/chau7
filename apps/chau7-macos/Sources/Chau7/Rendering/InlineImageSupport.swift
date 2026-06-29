@@ -22,14 +22,6 @@ final class InlineImageHandler {
 
     // MARK: - Protocol Detection
 
-    /// Checks if data contains an iTerm2 image sequence start
-    func containsImageSequence(_ data: Data) -> Bool {
-        // Look for ESC ] 1337 ; File =
-        let marker = "\u{1b}]1337;File="
-        guard let str = String(data: data, encoding: .utf8) else { return false }
-        return str.contains(marker)
-    }
-
     /// Parse and extract image data from the escape sequence
     func parseImageSequence(_ text: String) -> InlineImage? {
         // Match: ESC ] 1337 ; File = [args] : base64data BEL
@@ -267,104 +259,6 @@ final class InlineImageView: NSView {
            let data = bitmap.representation(using: .png, properties: [:]),
            FileOperations.writeData(data, to: tempURL) {
             NSWorkspace.shared.open(tempURL)
-        }
-    }
-}
-
-// MARK: - imgcat Script Generator
-
-/// Generates the imgcat script for users
-enum ImgcatScript {
-    static let script = """
-    #!/bin/bash
-    # imgcat - Display images inline in Chau7 terminal
-    # Based on iTerm2's imgcat protocol
-    # Usage: imgcat [options] <image_file>
-    #        cat image.png | imgcat
-
-    print_image() {
-        local file="$1"
-        local name="${2:-$(basename "$file")}"
-
-        if [ -z "$file" ] || [ "$file" = "-" ]; then
-            # Read from stdin
-            local data=$(base64)
-            name="${name:-image}"
-        else
-            if [ ! -f "$file" ]; then
-                echo "imgcat: $file: No such file" >&2
-                return 1
-            fi
-            local data=$(base64 < "$file")
-        fi
-
-        # Get file size
-        local size=${#data}
-
-        # Print iTerm2 image escape sequence
-        printf '\\e]1337;File=name=%s;size=%d;inline=1:%s\\a' \\
-            "$(echo -n "$name" | base64)" "$size" "$data"
-    }
-
-    # Handle options
-    while getopts "h" opt; do
-        case $opt in
-            h)
-                echo "Usage: imgcat [options] <image_file>"
-                echo "       cat image.png | imgcat"
-                echo ""
-                echo "Display images inline in the terminal."
-                echo ""
-                echo "Options:"
-                echo "  -h    Show this help message"
-                exit 0
-                ;;
-        esac
-    done
-    shift $((OPTIND-1))
-
-    # Main
-    if [ $# -eq 0 ]; then
-        # Read from stdin
-        print_image "-"
-    elif [ "$1" = "-" ]; then
-        print_image "-"
-    else
-        for file in "$@"; do
-            print_image "$file"
-        done
-    fi
-
-    echo ""  # Newline after image
-    """
-
-    /// Install the imgcat script to ~/bin or /usr/local/bin
-    static func install(to directory: String = "~/bin") -> Bool {
-        let expandedPath = RuntimeIsolation.expandTilde(in: directory)
-        let scriptPath = (expandedPath as NSString).appendingPathComponent("imgcat")
-
-        do {
-            // Create directory if needed
-            try FileManager.default.createDirectory(
-                atPath: expandedPath,
-                withIntermediateDirectories: true,
-                attributes: nil
-            )
-
-            // Write script
-            try script.write(toFile: scriptPath, atomically: true, encoding: .utf8)
-
-            // Make executable
-            try FileManager.default.setAttributes(
-                [.posixPermissions: 0o755],
-                ofItemAtPath: scriptPath
-            )
-
-            Log.info("Installed imgcat to \(scriptPath)")
-            return true
-        } catch {
-            Log.error("Failed to install imgcat: \(error)")
-            return false
         }
     }
 }

@@ -32,20 +32,8 @@ struct DiffViewerPaneView: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if diff.hunks.isEmpty {
-                VStack(spacing: 8) {
-                    Image(systemName: "checkmark.circle")
-                        .font(.title)
-                        .foregroundStyle(.green)
-                    Text(L("splitPane.diff.noChanges", "No changes"))
-                        .font(.body)
-                        .foregroundStyle(.secondary)
-                    Text(diff.diffMode == .workingTree
-                        ? L("splitPane.diff.noWorkingChanges", "Working tree is clean for this file")
-                        : L("splitPane.diff.noStagedChanges", "No staged changes for this file"))
-                        .font(.caption)
-                        .foregroundStyle(.tertiary)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                emptyState(for: diff.summary)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 UnifiedDiffContent(hunks: diff.hunks)
             }
@@ -54,57 +42,90 @@ struct DiffViewerPaneView: View {
         .onTapGesture { onFocus() }
     }
 
-    private var diffHeader: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "arrow.left.arrow.right")
-                .font(.system(size: 11))
-                .foregroundStyle(.secondary)
-
-            Text(diff.fileName)
-                .font(.system(size: 11, weight: .medium))
-                .lineLimit(1)
-                .truncationMode(.middle)
-
-            if diff.additions > 0 || diff.deletions > 0 {
-                HStack(spacing: 4) {
-                    Text("+\(diff.additions)")
-                        .foregroundStyle(.green)
-                    Text("-\(diff.deletions)")
-                        .foregroundStyle(.red)
-                }
-                .font(.system(size: 10, weight: .medium, design: .monospaced))
-            }
-
-            Spacer()
-
-            // Mode toggle
-            Picker("", selection: $diff.diffMode) {
-                Text(L("splitPane.diff.working", "Working")).tag(DiffMode.workingTree)
-                Text(L("splitPane.diff.staged", "Staged")).tag(DiffMode.staged)
-            }
-            .pickerStyle(.segmented)
-            .frame(width: 140)
-            .onChange(of: diff.diffMode) { diff.refresh() }
-
-            Button { diff.refresh() } label: {
-                Image(systemName: "arrow.clockwise")
-                    .font(.system(size: 10))
+    /// Empty-state body — explains *why* there are no hunks. Binary and
+    /// rename-only diffs used to be indistinguishable from "no changes",
+    /// which made the diff viewer feel broken on a rename or a PNG change.
+    @ViewBuilder
+    private func emptyState(for summary: DiffSummary) -> some View {
+        switch summary {
+        case .binary:
+            VStack(spacing: 8) {
+                Image(systemName: "doc.fill")
+                    .font(.title)
                     .foregroundStyle(.secondary)
-            }
-            .buttonStyle(.plain)
-            .help(L("splitPane.diff.refresh", "Refresh Diff"))
-
-            Button { onClose() } label: {
-                Image(systemName: "xmark")
-                    .font(.system(size: 10))
+                Text(L("splitPane.diff.binary", "Binary file"))
+                    .font(.body)
                     .foregroundStyle(.secondary)
+                Text(L("splitPane.diff.binaryHelp", "Git reports the file changed but cannot show a textual diff."))
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+                    .multilineTextAlignment(.center)
             }
-            .buttonStyle(.plain)
-            .help(L("splitPane.diff.close", "Close Diff"))
+        case .renamed(let from, let to):
+            VStack(spacing: 8) {
+                Image(systemName: "arrow.right.circle")
+                    .font(.title)
+                    .foregroundStyle(.secondary)
+                Text(L("splitPane.diff.renamed", "File renamed"))
+                    .font(.body)
+                    .foregroundStyle(.secondary)
+                Text("\(from) → \(to)")
+                    .font(.caption.monospaced())
+                    .foregroundStyle(.tertiary)
+                    .multilineTextAlignment(.center)
+            }
+        case .content:
+            VStack(spacing: 8) {
+                Image(systemName: "checkmark.circle")
+                    .font(.title)
+                    .foregroundStyle(.green)
+                Text(L("splitPane.diff.noChanges", "No changes"))
+                    .font(.body)
+                    .foregroundStyle(.secondary)
+                Text(diff.diffMode == .workingTree
+                    ? L("splitPane.diff.noWorkingChanges", "Working tree is clean for this file")
+                    : L("splitPane.diff.noStagedChanges", "No staged changes for this file"))
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+            }
         }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 5)
-        .background(Color(nsColor: .controlBackgroundColor))
+    }
+
+    private var diffHeader: some View {
+        PaneHeaderBar(
+            icon: "arrow.left.arrow.right",
+            closeHelp: L("splitPane.diff.close", "Close Diff"),
+            onClose: onClose,
+            title: { PaneHeaderTitle(diff.fileName) },
+            titleAccessory: {
+                if diff.additions > 0 || diff.deletions > 0 {
+                    HStack(spacing: 4) {
+                        Text("+\(diff.additions)")
+                            .foregroundStyle(.green)
+                        Text("-\(diff.deletions)")
+                            .foregroundStyle(.red)
+                    }
+                    .font(.system(size: 10, weight: .medium, design: .monospaced))
+                }
+            },
+            trailing: {
+                Picker("", selection: $diff.diffMode) {
+                    Text(L("splitPane.diff.working", "Working")).tag(DiffMode.workingTree)
+                    Text(L("splitPane.diff.staged", "Staged")).tag(DiffMode.staged)
+                }
+                .pickerStyle(.segmented)
+                .frame(width: 140)
+                .onChange(of: diff.diffMode) { diff.refresh() }
+
+                Button { diff.refresh() } label: {
+                    Image(systemName: "arrow.clockwise")
+                        .font(.system(size: 10))
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .help(L("splitPane.diff.refresh", "Refresh Diff"))
+            }
+        )
     }
 }
 

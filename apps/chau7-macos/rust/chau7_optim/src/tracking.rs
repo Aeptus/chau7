@@ -230,40 +230,43 @@ impl Tracker {
         }
 
         let conn = Connection::open(&db_path)?;
-        conn.execute(
-            "CREATE TABLE IF NOT EXISTS commands (
-                id INTEGER PRIMARY KEY,
-                timestamp TEXT NOT NULL,
-                original_cmd TEXT NOT NULL,
-                rtk_cmd TEXT NOT NULL,
-                input_tokens INTEGER NOT NULL,
-                output_tokens INTEGER NOT NULL,
-                saved_tokens INTEGER NOT NULL,
-                savings_pct REAL NOT NULL
-            )",
-            [],
-        )?;
 
-        conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_timestamp ON commands(timestamp)",
-            [],
-        )?;
-
-        // Migration: add exec_time_ms column if it doesn't exist
-        let _ = conn.execute(
-            "ALTER TABLE commands ADD COLUMN exec_time_ms INTEGER DEFAULT 0",
-            [],
-        );
-
-        // Migration: add session_id column for per-tab CTO tracking
-        let _ = conn.execute(
-            "ALTER TABLE commands ADD COLUMN session_id TEXT DEFAULT ''",
-            [],
-        );
-        conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_session_id ON commands(session_id)",
-            [],
-        )?;
+        // Run schema setup/migrations only once per database, guarded by
+        // PRAGMA user_version, instead of re-issuing CREATE TABLE/INDEX and two
+        // ALTERs on every command — Tracker::new() reopens the DB on the hot CLI
+        // path (38 TimedExecution sites).
+        const SCHEMA_VERSION: i64 = 1;
+        let user_version: i64 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
+        if user_version < SCHEMA_VERSION {
+            conn.execute_batch(
+                "CREATE TABLE IF NOT EXISTS commands (
+                    id INTEGER PRIMARY KEY,
+                    timestamp TEXT NOT NULL,
+                    original_cmd TEXT NOT NULL,
+                    rtk_cmd TEXT NOT NULL,
+                    input_tokens INTEGER NOT NULL,
+                    output_tokens INTEGER NOT NULL,
+                    saved_tokens INTEGER NOT NULL,
+                    savings_pct REAL NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_timestamp ON commands(timestamp);
+                CREATE TABLE IF NOT EXISTS tracker_meta (key TEXT PRIMARY KEY, value TEXT);",
+            )?;
+            // These ALTERs harmlessly error if the column already exists (for DBs
+            // created before user_version tracking); ignore those errors.
+            let _ = conn.execute(
+                "ALTER TABLE commands ADD COLUMN exec_time_ms INTEGER DEFAULT 0",
+                [],
+            );
+            let _ = conn.execute(
+                "ALTER TABLE commands ADD COLUMN session_id TEXT DEFAULT ''",
+                [],
+            );
+            conn.execute_batch(
+                "CREATE INDEX IF NOT EXISTS idx_session_id ON commands(session_id);",
+            )?;
+            conn.execute_batch(&format!("PRAGMA user_version = {SCHEMA_VERSION};"))?;
+        }
 
         Ok(Self { conn })
     }
@@ -328,10 +331,31 @@ impl Tracker {
     }
 
     fn cleanup_old(&self) -> Result<()> {
+        // A Tracker is created per command, so record() used to run a full
+        // DELETE scan on every invocation. Gate it to at most once per day via a
+        // marker row (no row yet -> default "" -> runs once).
+        let today = Utc::now().format("%Y-%m-%d").to_string();
+        let last: String = self
+            .conn
+            .query_row(
+                "SELECT value FROM tracker_meta WHERE key = 'last_cleanup'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap_or_default();
+        if last == today {
+            return Ok(());
+        }
+
         let cutoff = Utc::now() - chrono::Duration::days(HISTORY_DAYS);
         self.conn.execute(
             "DELETE FROM commands WHERE timestamp < ?1",
             params![cutoff.to_rfc3339()],
+        )?;
+        self.conn.execute(
+            "INSERT INTO tracker_meta (key, value) VALUES ('last_cleanup', ?1)
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            params![today],
         )?;
         Ok(())
     }

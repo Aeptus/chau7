@@ -64,7 +64,18 @@ extension TerminalSessionModel {
         guard !sanitizedText.isEmpty else { return }
         let echoDisabled = activeTerminalView?.isPtyEchoDisabled ?? false
 
-        if !sanitizedText.isEmpty {
+        // Input latency tracks per-keystroke echo responsiveness (local PTY/UI
+        // lag). A submission (Enter) is followed by the command's own output,
+        // whose arrival time is the command's *runtime*, not UI lag — measuring
+        // it inflated shell tabs to multi-second "input latency". So start the
+        // timer only for character/edit input, and drop any pending measurement
+        // on submission so the command's first output can't stop a stale
+        // keystroke timer. (The AI path already clears this; see
+        // detectAICommandIfNeeded.)
+        let isSubmission = sanitizedText.contains("\n") || sanitizedText.contains("\r")
+        if isSubmission {
+            clearPendingInputLatencyMeasurement()
+        } else {
             markInputLatencyStart()
         }
         inputBuffer.append(sanitizedText)
@@ -73,7 +84,7 @@ extension TerminalSessionModel {
                 self?.aiLogSession?.recordInput(sanitizedText)
             }
         }
-        if sanitizedText.contains("\n") || sanitizedText.contains("\r") {
+        if isSubmission {
             processInputBuffer()
             markRunning()
         }
@@ -840,6 +851,9 @@ extension TerminalSessionModel {
     }
 
     private func hasAuthoritativeNotifications(for provider: String?) -> Bool {
+        if let override = TerminalSessionModel.hasAuthoritativeNotificationsOverrideForTesting {
+            return override
+        }
         guard let normalizedProvider = AIResumeParser.normalizeProviderName(provider ?? "") else {
             return false
         }
@@ -1130,9 +1144,11 @@ extension TerminalSessionModel {
 
     private func applyOutputPatternScanResult(_ result: CompletedOutputPatternScan) {
         guard result.generation == aiDetectionGeneration else { return }
+        let corroborated = result.matched.map { outputMatchCorroboratedByProcessTree($0.appName) } ?? false
         guard applyAIDetectionOutputMatch(
             appName: result.matched?.appName,
-            authoritativeAppName: result.authoritativeAppName
+            authoritativeAppName: result.authoritativeAppName,
+            corroborated: corroborated
         ),
             let app = aiDetection.currentApp else { return }
 
@@ -1325,7 +1341,7 @@ extension TerminalSessionModel {
         let tabID = ownerTabID?.uuidString ?? tabIdentifier
         let sessionID = proxyCorrelationSessionID
         MainActor.assumeIsolated {
-            _ = ProxyManager.shared.recordPromptInjectionSessionEvent(
+            ProxyManager.shared.recordPromptInjectionSessionEvent(
                 event,
                 sessionID: sessionID,
                 tabID: tabID
@@ -1395,6 +1411,11 @@ extension TerminalSessionModel {
         }
 
         if isSystemRestoreInput {
+            // System restore input is excluded from command-block/history
+            // tracking, but it still occupies a buffer row that later
+            // user/agent input must not be misattributed to — record it as
+            // a `.system` source so the user-input tracker can distinguish it.
+            recordUserInputLineIfNeeded(isSystemRestoreInput: true)
             pendingCommandLine = nil
             clearPendingAITiming()
             clearWaitingInputFallbackTracking()
@@ -1644,19 +1665,34 @@ extension TerminalSessionModel {
             "restoreAIMetadata resolved session=\(tabIdentifier) provider=\(normalizedProvider ?? "nil") activeAppName=\(activeAppName ?? "nil") displayName=\(aiDisplayAppName ?? "nil")"
         )
 
-        agentStartedAt = startedAt
+        // Only overwrite lifecycle fields when the caller actually provides a
+        // value. Several call sites invoke this with just provider/sessionId
+        // (session-context resolvers that re-assert AI identity) and leave the
+        // lifecycle args nil; assigning unconditionally there would clobber
+        // freshly-restored agentLaunchCommand / agentStartedAt / lastExitCode
+        // / lastExitAt back to nil. This mirrors the existing conditional
+        // handling of lastInputAt / lastOutputAt / lastStatus.
+        if let startedAt {
+            agentStartedAt = startedAt
+        }
         if let lastInputAt {
             self.lastInputAt = lastInputAt
         }
         if let lastOutputAt {
             self.lastOutputAt = lastOutputAt
         }
-        lastAgentLaunchCommand = launchCommand
+        if let launchCommand {
+            lastAgentLaunchCommand = launchCommand
+        }
         if let lastStatus {
             status = lastStatus.restoredFromPersistence
         }
-        self.lastExitCode = lastExitCode
-        self.lastExitAt = lastExitAt
+        if let lastExitCode {
+            self.lastExitCode = lastExitCode
+        }
+        if let lastExitAt {
+            self.lastExitAt = lastExitAt
+        }
 
         if let sessionId {
             let trimmed = sessionId.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -2218,16 +2254,35 @@ extension TerminalSessionModel {
     @discardableResult
     func applyAIDetectionOutputMatch(
         appName: String?,
-        authoritativeAppName: String?
+        authoritativeAppName: String?,
+        corroborated: Bool
     ) -> Bool {
         let changed = aiDetection.handleOutputMatch(
             appName: appName,
-            authoritativeAppName: authoritativeAppName
+            authoritativeAppName: authoritativeAppName,
+            corroborated: corroborated
         )
         if changed {
             aiDetectionGeneration &+= 1
         }
         return changed
+    }
+
+    /// True when the live child-process tree contains a process matching the
+    /// given AI tool. Used to corroborate an output-pattern match before it is
+    /// allowed to *originate* a tool identity on a tab that has none — so
+    /// incidental output (an API URL, a doc string) can't flip a plain shell.
+    /// `processGroup` is populated by the live process-tree snapshot; when it is
+    /// unavailable, the match is treated as uncorroborated (origination denied).
+    private func outputMatchCorroboratedByProcessTree(_ appName: String) -> Bool {
+        guard let tool = AIToolRegistry.tool(named: appName) else { return false }
+        guard let children = processGroup?.children, !children.isEmpty else { return false }
+        let display = tool.displayName.lowercased()
+        let commandNames = Set(tool.commandNames)
+        return children.contains { child in
+            let name = child.name.lowercased()
+            return commandNames.contains(name) || name.contains(display)
+        }
     }
 
     private func logBestEffortOutputSheddingIfNeeded() {

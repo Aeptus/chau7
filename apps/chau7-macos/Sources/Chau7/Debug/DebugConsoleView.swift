@@ -2460,7 +2460,7 @@ struct DebugConsoleView: View {
                 }
 
                 GroupBox("Notification Reliability") {
-                    let history = NotificationManager.shared.history.recent(limit: 100)
+                    let history = NotificationServices.current?.manager.history.recent(limit: 100) ?? []
                     let completed = history.filter { $0.deliveryState == NotificationHistory.DeliveryState.completed.rawValue }.count
                     let dropped = history.filter { $0.deliveryState == NotificationHistory.DeliveryState.dropped.rawValue }.count
                     let retries = history.filter { $0.deliveryState == NotificationHistory.DeliveryState.retryScheduled.rawValue }.count

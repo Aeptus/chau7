@@ -1,6 +1,6 @@
 import XCTest
-#if !SWIFT_PACKAGE
 @testable import Chau7
+@testable import Chau7Core
 
 @MainActor
 final class FeatureSettingsTests: XCTestCase {
@@ -46,51 +46,12 @@ final class FeatureSettingsTests: XCTestCase {
         XCTAssertFalse(filters.commandIdle)
     }
 
-    func testNotificationTriggerStateMapsWaitingInputToPermissionRequest() {
-        let state = FeatureSettings.triggerState(
-            from: NotificationFilters(
-                taskFinished: false,
-                taskFailed: false,
-                needsValidation: false,
-                permissionRequest: true,
-                toolComplete: false,
-                sessionEnd: false,
-                commandIdle: false
-            )
-        )
-
-        let waitingTrigger = NotificationTriggerCatalog.trigger(source: .codex, type: "waiting_input")
-        let attentionTrigger = NotificationTriggerCatalog.trigger(source: .codex, type: "attention_required")
-        let finishedTrigger = NotificationTriggerCatalog.trigger(source: .codex, type: "finished")
-
-        XCTAssertNotNil(waitingTrigger)
-        XCTAssertNotNil(attentionTrigger)
-        XCTAssertNotNil(finishedTrigger)
-        XCTAssertTrue(state.isEnabled(for: waitingTrigger!))
-        XCTAssertTrue(state.isEnabled(for: attentionTrigger!))
-        XCTAssertFalse(state.isEnabled(for: finishedTrigger!))
-    }
-
-    func testLegacyNotificationFiltersTreatWaitingInputAsPermissionRequest() {
-        var state = NotificationTriggerState()
-        let waitingTrigger = NotificationTriggerCatalog.trigger(source: .codex, type: "waiting_input")!
-        state.setEnabled(true, for: waitingTrigger)
-
-        let filters = FeatureSettings.legacyNotificationFilters(from: state)
-
-        XCTAssertFalse(filters.taskFinished)
-        XCTAssertTrue(filters.permissionRequest)
-    }
+    // NOTE: `FeatureSettings.triggerState(from:)`, `legacyNotificationFilters(from:)`
+    // and `defaultTriggerActionBindings()` are fileprivate (private extension), so the
+    // original tests against them are no longer reachable from the test target. The
+    // group-level default bindings remain accessible and cover the same intent.
 
     func testIdleNotificationsDefaultToNoActions() {
-        XCTAssertEqual(
-            FeatureSettings.defaultTriggerActionBindings()["claude_code.idle"] ?? [],
-            []
-        )
-        XCTAssertEqual(
-            FeatureSettings.defaultTriggerActionBindings()["codex.idle"] ?? [],
-            []
-        )
         XCTAssertEqual(
             NotificationSettings.defaultGroupActionBindings["ai_coding.idle"] ?? [],
             []
@@ -98,20 +59,65 @@ final class FeatureSettingsTests: XCTestCase {
     }
 
     func testPermissionNotificationsDefaultToPersistentStyle() {
-        let triggerKeys = [
-            "claude_code.permission",
-            "claude_code.waiting_input",
-            "claude_code.attention_required",
-            "codex.permission",
-            "codex.waiting_input",
-            "codex.attention_required"
+        let groupKeys = [
+            "ai_coding.permission",
+            "ai_coding.waiting_input",
+            "ai_coding.attention_required"
         ]
 
-        let bindings = FeatureSettings.defaultTriggerActionBindings()
-        for triggerKey in triggerKeys {
-            let styleAction = bindings[triggerKey]?.first(where: { $0.actionType == .styleTab })
-            XCTAssertEqual(styleAction?.config["persistent"], "true", "Expected persistent style for \(triggerKey)")
+        let bindings = NotificationSettings.defaultGroupActionBindings
+        for groupKey in groupKeys {
+            let styleAction = bindings[groupKey]?.first(where: { $0.actionType == .styleTab })
+            XCTAssertEqual(styleAction?.config["persistent"], "true", "Expected persistent style for \(groupKey)")
         }
+    }
+
+    func testDefaultAgentGroupBindingsBounceTheDock() {
+        let bindings = NotificationSettings.defaultGroupActionBindings
+        for key in [
+            "ai_coding.finished", "ai_coding.permission", "ai_coding.waiting_input",
+            "ai_coding.attention_required", "ai_coding.elicitation", "ai_coding.response_failed"
+        ] {
+            let bounce = bindings[key]?.first(where: { $0.actionType == .dockBounce })
+            XCTAssertTrue(bounce?.enabled ?? false, "Expected an enabled dock bounce for \(key)")
+        }
+    }
+
+    func testAgentGroupBindingBackfillSeedsMissingKeysWithDockBounce() {
+        let result = FeatureSettings.normalizedAgentGroupActionBindings([:])
+        for key in ["ai_coding.finished", "ai_coding.permission", "ai_coding.waiting_input", "ai_coding.attention_required"] {
+            let actions = result[key] ?? []
+            XCTAssertTrue(
+                actions.contains { $0.actionType == .dockBounce && $0.enabled },
+                "Expected enabled dock bounce backfilled for \(key)"
+            )
+        }
+    }
+
+    func testAgentGroupBindingBackfillAddsDockBounceAfterShowNotification() {
+        let input: [String: [NotificationActionConfig]] = [
+            "ai_coding.finished": [
+                NotificationActionConfig(actionType: .showNotification, enabled: true),
+                NotificationActionConfig(actionType: .styleTab, enabled: true)
+            ]
+        ]
+        let actions = FeatureSettings.normalizedAgentGroupActionBindings(input)["ai_coding.finished"] ?? []
+        XCTAssertEqual(actions.map(\.actionType), [.showNotification, .dockBounce, .styleTab])
+        XCTAssertTrue(actions.first { $0.actionType == .dockBounce }?.enabled ?? false)
+    }
+
+    func testAgentGroupBindingBackfillPreservesUserDisabledDockBounce() {
+        let input: [String: [NotificationActionConfig]] = [
+            "ai_coding.permission": [
+                NotificationActionConfig(actionType: .showNotification, enabled: true),
+                NotificationActionConfig(actionType: .dockBounce, enabled: false),
+                NotificationActionConfig(actionType: .styleTab, enabled: true)
+            ]
+        ]
+        let bounces = (FeatureSettings.normalizedAgentGroupActionBindings(input)["ai_coding.permission"] ?? [])
+            .filter { $0.actionType == .dockBounce }
+        XCTAssertEqual(bounces.count, 1, "Must not duplicate an existing dock bounce")
+        XCTAssertFalse(bounces.first?.enabled ?? true, "A user-disabled dock bounce must stay disabled")
     }
 
     // MARK: - Color Scheme Defaults
@@ -172,31 +178,31 @@ final class FeatureSettingsTests: XCTestCase {
         )
     }
 
+    // These assert against `KeyboardShortcut.defaultShortcuts` (the canonical defaults)
+    // rather than `FeatureSettings.shared.customShortcuts`, which reflects whatever is
+    // persisted in UserDefaults and would make the tests environment-dependent.
+
     func testDefaultShortcutsContainNewTab() {
-        let settings = FeatureSettings.shared
-        let newTab = settings.shortcut(for: "newTab")
+        let newTab = KeyboardShortcut.defaultShortcuts.first { $0.action == "newTab" }
         XCTAssertNotNil(newTab, "Default shortcuts should include newTab")
         XCTAssertEqual(newTab?.key, "t")
         XCTAssertTrue(newTab?.modifiers.contains("cmd") ?? false)
     }
 
     func testDefaultShortcutsContainCloseTab() {
-        let settings = FeatureSettings.shared
-        let closeTab = settings.shortcut(for: "closeTab")
+        let closeTab = KeyboardShortcut.defaultShortcuts.first { $0.action == "closeTab" }
         XCTAssertNotNil(closeTab, "Default shortcuts should include closeTab")
         XCTAssertEqual(closeTab?.key, "w")
     }
 
     func testDefaultShortcutsContainCopy() {
-        let settings = FeatureSettings.shared
-        let copy = settings.shortcut(for: "copy")
+        let copy = KeyboardShortcut.defaultShortcuts.first { $0.action == "copy" }
         XCTAssertNotNil(copy, "Default shortcuts should include copy")
         XCTAssertEqual(copy?.key, "c")
     }
 
     func testDefaultShortcutsContainPaste() {
-        let settings = FeatureSettings.shared
-        let paste = settings.shortcut(for: "paste")
+        let paste = KeyboardShortcut.defaultShortcuts.first { $0.action == "paste" }
         XCTAssertNotNil(paste, "Default shortcuts should include paste")
         XCTAssertEqual(paste?.key, "v")
     }
@@ -263,7 +269,6 @@ final class FeatureSettingsTests: XCTestCase {
         _ = settings.cmdClickOpensInternalEditor // default: true
         _ = settings.isOptionClickCursorEnabled // default: true
         _ = settings.isMouseReportingEnabled // default: false
-        _ = settings.isRustTerminalEnabled // default: true
         _ = settings.useMetalRenderer // default: true
         _ = settings.isClickToPositionEnabled // default: true
         _ = settings.isBroadcastEnabled // default: false
@@ -284,8 +289,6 @@ final class FeatureSettingsTests: XCTestCase {
         _ = settings.apiAnalyticsLogPrompts // default: false
         _ = settings.apiAnalyticsIncludeOpenAI // default: true
         _ = settings.isRemoteEnabled // default: false
-        _ = settings.isTmuxIntegrationEnabled // default: false
-        _ = settings.isTmuxAutoAttachEnabled // default: false
         _ = settings.errorExplainEnabled // default: false
         _ = settings.isCTOEnabled // default: false
     }
@@ -413,10 +416,10 @@ final class FeatureSettingsTests: XCTestCase {
         XCTAssertNil(settings.shortcut(for: "nonExistentAction"))
     }
 
-    func testShortcutConflictDetection() {
+    func testShortcutConflictDetection() throws {
         let settings = FeatureSettings.shared
         // Create a shortcut that mimics an existing one
-        let existingShortcut = settings.customShortcuts[0]
+        let existingShortcut = try XCTUnwrap(settings.customShortcuts.first)
         let conflicting = KeyboardShortcut(
             action: "testConflict",
             key: existingShortcut.key,
@@ -432,32 +435,40 @@ final class FeatureSettingsTests: XCTestCase {
     func testApplyKeybindingPresetVim() {
         let settings = FeatureSettings.shared
         let original = settings.customShortcuts
+        defer { settings.customShortcuts = original }
+
         settings.applyKeybindingPreset("vim")
         let vimNextTab = settings.shortcut(for: "nextTab")
         XCTAssertNotNil(vimNextTab)
         // Vim preset overrides nextTab to ctrl+l
         XCTAssertEqual(vimNextTab?.key, "l")
         XCTAssertTrue(vimNextTab?.modifiers.contains("ctrl") ?? false)
-        // Restore
-        settings.customShortcuts = original
     }
 
     func testApplyKeybindingPresetEmacs() {
         let settings = FeatureSettings.shared
         let original = settings.customShortcuts
+        defer { settings.customShortcuts = original }
+
         settings.applyKeybindingPreset("emacs")
         let emacsNextTab = settings.shortcut(for: "nextTab")
         XCTAssertNotNil(emacsNextTab)
         // Emacs preset overrides nextTab to ctrl+n
         XCTAssertEqual(emacsNextTab?.key, "n")
         XCTAssertTrue(emacsNextTab?.modifiers.contains("ctrl") ?? false)
-        // Restore
-        settings.customShortcuts = original
     }
 
     func testResetShortcutsToDefaults() {
         let settings = FeatureSettings.shared
-        let original = settings.customShortcuts
+        let originalShortcuts = settings.customShortcuts
+        let originalPreset = settings.keybindingPreset
+        defer {
+            settings.keybindingPreset = originalPreset
+            settings.customShortcuts = originalShortcuts
+        }
+
+        // Pin the preset so the reset target is deterministic
+        settings.keybindingPreset = "default"
         // Mutate
         settings.applyKeybindingPreset("vim")
         // Reset
@@ -466,8 +477,6 @@ final class FeatureSettingsTests: XCTestCase {
         let newTab = settings.shortcut(for: "newTab")
         XCTAssertNotNil(newTab)
         XCTAssertEqual(newTab?.key, "t", "After reset, newTab should be cmd+t")
-        // Restore
-        settings.customShortcuts = original
     }
 
     func testImportSettingsPreservesKnownRepoBranchMetadataForRecentRoots() throws {
@@ -558,12 +567,15 @@ final class FeatureSettingsTests: XCTestCase {
 
     // MARK: - CTO Tab Overrides
 
-    func testCTODefaultTabOverridesEmpty() {
+    func testCTOTabOverridesRoundTrip() {
         let settings = FeatureSettings.shared
-        // ctoTabOverrides may or may not be empty depending on prior test runs,
-        // but the type should be valid
-        XCTAssertNotNil(settings.ctoTabOverrides)
+        let original = settings.ctoTabOverrides
+        defer { settings.ctoTabOverrides = original }
+
+        settings.ctoTabOverrides = ["tab-test-override": true]
+        XCTAssertEqual(settings.ctoTabOverrides["tab-test-override"], true)
+
+        settings.ctoTabOverrides = [:]
+        XCTAssertTrue(settings.ctoTabOverrides.isEmpty)
     }
 }
-
-#endif

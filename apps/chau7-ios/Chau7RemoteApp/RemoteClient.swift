@@ -780,8 +780,14 @@ final class RemoteClient {
         applyPendingInteractivePrompts(payload.prompts)
     }
 
+    /// Only ingest terminal frames when foregrounded and full-streaming is
+    /// selected. Single source for the ingest guards below.
+    private var isStreamingTerminalOutput: Bool {
+        currentAppState == .foreground && desiredStreamMode == .full
+    }
+
     private func appendOutput(_ data: Data, tabID: UInt32) {
-        guard currentAppState == .foreground, desiredStreamMode == .full else { return }
+        guard isStreamingTerminalOutput else { return }
         let signpostID = OSSignpostID(log: perfLog)
         os_signpost(
             .begin,
@@ -812,7 +818,7 @@ final class RemoteClient {
     }
 
     private func storeSnapshot(_ data: Data, tabID: UInt32) {
-        guard currentAppState == .foreground, desiredStreamMode == .full else { return }
+        guard isStreamingTerminalOutput else { return }
         let resolvedTabID = resolvedTabID(for: tabID)
         outputStore.replaceSnapshot(data, for: resolvedTabID)
         terminalRenderer.replaceSnapshot(for: resolvedTabID)
@@ -822,7 +828,7 @@ final class RemoteClient {
     }
 
     private func storeGridSnapshot(_ data: Data, tabID: UInt32) {
-        guard currentAppState == .foreground, desiredStreamMode == .full else { return }
+        guard isStreamingTerminalOutput else { return }
         let resolvedTabID = resolvedTabID(for: tabID)
         guard let renderState = RemoteTerminalRenderStateDecoder.decodeGridSnapshot(data) else {
             return
@@ -1448,7 +1454,7 @@ final class RemoteClient {
     }
 
     private func flushPendingOutput(for tabID: UInt32? = nil) {
-        guard currentAppState == .foreground, desiredStreamMode == .full else {
+        guard isStreamingTerminalOutput else {
             if tabID == nil {
                 outputFlushTask?.cancel()
                 outputFlushTask = nil

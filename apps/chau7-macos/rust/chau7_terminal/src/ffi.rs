@@ -212,6 +212,145 @@ pub unsafe extern "C" fn chau7_terminal_create_with_env(
     }
 }
 
+/// Create a new terminal with environment variables, shell argv, and an
+/// explicit working directory.
+///
+/// # Safety
+/// - `shell` must be a valid null-terminated C string, or null for default shell
+/// - `env_keys`/`env_values` must be arrays of valid null-terminated C strings of length `env_count`
+/// - `args` must be an array of valid null-terminated C strings of length `args_count`, or null when `args_count == 0`
+/// - `cwd` must be a valid null-terminated C string, or null to inherit the process cwd
+/// - Returns null on failure
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn chau7_terminal_create_with_launch(
+    cols: u16,
+    rows: u16,
+    shell: *const c_char,
+    env_keys: *const *const c_char,
+    env_values: *const *const c_char,
+    env_count: usize,
+    args: *const *const c_char,
+    args_count: usize,
+    cwd: *const c_char,
+) -> *mut Chau7Terminal {
+    unsafe {
+        init_logging();
+
+        info!(
+            "chau7_terminal_create_with_launch(cols={}, rows={}, env_count={}, args_count={}, cwd={})",
+            cols,
+            rows,
+            env_count,
+            args_count,
+            !cwd.is_null()
+        );
+
+        let shell_str = if shell.is_null() {
+            ""
+        } else {
+            match CStr::from_ptr(shell).to_str() {
+                Ok(s) => s,
+                Err(e) => {
+                    error!(
+                        "chau7_terminal_create_with_launch: Invalid shell string: {}",
+                        e
+                    );
+                    return std::ptr::null_mut();
+                }
+            }
+        };
+
+        let mut env_vars: Vec<(String, String)> = Vec::with_capacity(env_count);
+        if env_count > 0 && !env_keys.is_null() && !env_values.is_null() {
+            for i in 0..env_count {
+                let key_ptr = *env_keys.add(i);
+                let value_ptr = *env_values.add(i);
+                if key_ptr.is_null() || value_ptr.is_null() {
+                    warn!(
+                        "chau7_terminal_create_with_launch: Null env pointer at index {}",
+                        i
+                    );
+                    continue;
+                }
+                let key = match CStr::from_ptr(key_ptr).to_str() {
+                    Ok(s) => s.to_string(),
+                    Err(_) => continue,
+                };
+                let value = match CStr::from_ptr(value_ptr).to_str() {
+                    Ok(s) => s.to_string(),
+                    Err(_) => continue,
+                };
+                env_vars.push((key, value));
+            }
+        }
+        let env_refs: Vec<(&str, &str)> = env_vars
+            .iter()
+            .map(|(k, v)| (k.as_str(), v.as_str()))
+            .collect();
+
+        let mut shell_args: Vec<String> = Vec::with_capacity(args_count);
+        if args_count > 0 && !args.is_null() {
+            for i in 0..args_count {
+                let arg_ptr = *args.add(i);
+                if arg_ptr.is_null() {
+                    warn!(
+                        "chau7_terminal_create_with_launch: Null arg pointer at index {}",
+                        i
+                    );
+                    continue;
+                }
+                match CStr::from_ptr(arg_ptr).to_str() {
+                    Ok(s) => shell_args.push(s.to_string()),
+                    Err(e) => {
+                        warn!(
+                            "chau7_terminal_create_with_launch: Invalid arg at index {}: {}",
+                            i, e
+                        );
+                    }
+                }
+            }
+        }
+
+        let cwd_str: Option<String> = if cwd.is_null() {
+            None
+        } else {
+            match CStr::from_ptr(cwd).to_str() {
+                Ok(s) if !s.is_empty() => Some(s.to_string()),
+                Ok(_) => None,
+                Err(e) => {
+                    warn!(
+                        "chau7_terminal_create_with_launch: Invalid cwd string: {}",
+                        e
+                    );
+                    None
+                }
+            }
+        };
+
+        match Chau7Terminal::new_with_launch(
+            cols,
+            rows,
+            shell_str,
+            &env_refs,
+            &shell_args,
+            cwd_str.as_deref(),
+        ) {
+            Ok(terminal) => {
+                let ptr = Box::into_raw(Box::new(terminal));
+                info!(
+                    "chau7_terminal_create_with_launch: Success, returning {:p}",
+                    ptr
+                );
+                ptr
+            }
+            Err(e) => {
+                error!("chau7_terminal_create_with_launch: Failed: {}", e);
+                std::ptr::null_mut()
+            }
+        }
+    }
+}
+
 /// Destroy a terminal instance
 ///
 /// # Safety
@@ -301,8 +440,30 @@ pub unsafe extern "C" fn chau7_terminal_resize(term: *mut Chau7Terminal, cols: u
             warn!("chau7_terminal_resize: term is null");
             return;
         }
-        let terminal = &mut *term;
+        // Shared reference: drain threads concurrently hold &Chau7Terminal for
+        // poll_events; resize is internally synchronized (mutexes + atomics).
+        let terminal = &*term;
         terminal.resize(cols, rows);
+    }
+}
+
+/// Re-deliver `SIGWINCH` to the PTY's foreground process group without changing
+/// the winsize, forcing a full-screen TUI to re-read the terminal width.
+///
+/// Used once shortly after the child produces its first output to defeat the
+/// startup race where the child caches a stale width (see `Chau7Terminal::nudge_winsize`).
+///
+/// # Safety
+/// - `term` must be a valid pointer
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn chau7_terminal_nudge_winsize(term: *mut Chau7Terminal) {
+    unsafe {
+        if term.is_null() {
+            warn!("chau7_terminal_nudge_winsize: term is null");
+            return;
+        }
+        let terminal = &*term;
+        terminal.nudge_winsize();
     }
 }
 
@@ -924,23 +1085,6 @@ pub unsafe extern "C" fn chau7_terminal_clear_scrollback(term: *mut Chau7Termina
         }
         let terminal = &*term;
         terminal.clear_scrollback();
-    }
-}
-
-/// Set Unicode ambiguous-width treatment (1 = single, 2 = double).
-///
-/// # Safety
-/// - `term` must be a valid pointer
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn chau7_terminal_set_ambiguous_width(term: *mut Chau7Terminal, width: u8) {
-    unsafe {
-        trace!("chau7_terminal_set_ambiguous_width({:p}, {})", term, width);
-        if term.is_null() {
-            warn!("chau7_terminal_set_ambiguous_width: term is null");
-            return;
-        }
-        let terminal = &*term;
-        terminal.set_ambiguous_width(width);
     }
 }
 
@@ -1893,4 +2037,46 @@ pub unsafe extern "C" fn chau7_terminal_has_pending_images(term: *mut Chau7Termi
         let terminal = &*term;
         terminal.image_store.lock().has_pending()
     }
+}
+
+// ============================================================================
+// ABI contract probes
+// ============================================================================
+
+/// Bumped whenever any `#[repr(C)]` struct shared with Swift changes layout
+/// or any entry point changes semantics incompatibly. Swift checks this right
+/// after dlopen and refuses to bind on mismatch — struct drift between the
+/// hand-mirrored Swift types and these definitions is silent memory
+/// corruption at 60fps otherwise.
+pub const CHAU7_TERMINAL_ABI_VERSION: u32 = 1;
+
+#[unsafe(no_mangle)]
+pub extern "C" fn chau7_terminal_abi_version() -> u32 {
+    CHAU7_TERMINAL_ABI_VERSION
+}
+
+/// Layout probes: Swift asserts its mirrored struct sizes match at load time.
+#[unsafe(no_mangle)]
+pub extern "C" fn chau7_terminal_sizeof_grid_snapshot() -> usize {
+    std::mem::size_of::<GridSnapshot>()
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn chau7_terminal_sizeof_cell_data() -> usize {
+    std::mem::size_of::<CellData>()
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn chau7_terminal_sizeof_debug_state() -> usize {
+    std::mem::size_of::<DebugState>()
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn chau7_terminal_sizeof_image_data() -> usize {
+    std::mem::size_of::<FFIImageData>()
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn chau7_terminal_sizeof_shell_event() -> usize {
+    std::mem::size_of::<FFIShellEvent>()
 }

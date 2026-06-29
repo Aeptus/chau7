@@ -115,9 +115,13 @@ final class DangerousCommandGuard {
         self.isEnabled = defaults.object(forKey: "feature.dangerousCommandGuard") as? Bool ?? true
         self.allowList = Set(defaults.stringArray(forKey: "dangerousGuard.allowList") ?? [])
         self.blockList = Set(defaults.stringArray(forKey: "dangerousGuard.blockList") ?? [])
-        // Load per-directory allowlists
-        if let data = defaults.data(forKey: "dangerousGuard.directoryAllowLists"),
-           let decoded = try? JSONDecoder().decode([String: [String]].self, from: data) {
+        // Load per-directory allowlists. Fails safe (empty = more prompts),
+        // but corruption is logged instead of silently resetting.
+        if let decoded = Persist.decodeLogged(
+            [String: [String]].self,
+            from: defaults.data(forKey: "dangerousGuard.directoryAllowLists"),
+            context: "dangerousGuard.directoryAllowLists"
+        ) {
             self.directoryAllowLists = decoded.mapValues { Set($0) }
         } else {
             self.directoryAllowLists = [:]
@@ -411,10 +415,12 @@ final class DangerousCommandGuard {
     }
 
     private func saveAllowList() {
+        guard testPatternsOverride == nil else { return }
         UserDefaults.standard.set(Array(allowList), forKey: "dangerousGuard.allowList")
     }
 
     private func saveBlockList() {
+        guard testPatternsOverride == nil else { return }
         UserDefaults.standard.set(Array(blockList), forKey: "dangerousGuard.blockList")
     }
 
@@ -435,8 +441,9 @@ final class DangerousCommandGuard {
     }
 
     private func saveDirectoryAllowLists() {
+        guard testPatternsOverride == nil else { return }
         let serializable = directoryAllowLists.mapValues { Array($0) }
-        if let data = try? JSONEncoder().encode(serializable) {
+        if let data = Persist.encodeLogged(serializable, context: "dangerousGuard.directoryAllowLists") {
             UserDefaults.standard.set(data, forKey: "dangerousGuard.directoryAllowLists")
         }
     }

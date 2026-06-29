@@ -159,19 +159,11 @@ private struct RunRow: View {
     }
 
     private var providerColor: Color {
-        switch run.provider.lowercased() {
-        case "claude": return .purple
-        case "codex": return .green
-        case "cline": return .orange
-        case "chatgpt": return .teal
-        default: return .secondary
-        }
+        ProviderColors.color(for: run.provider)
     }
 
     private func formatTokens(_ count: Int) -> String {
-        if count >= 1_000_000 { return String(format: "%.1fM", Double(count) / 1_000_000) }
-        if count >= 1000 { return String(format: "%.0fK", Double(count) / 1000) }
-        return "\(count)"
+        CountFormat.abbreviated(count)
     }
 }
 

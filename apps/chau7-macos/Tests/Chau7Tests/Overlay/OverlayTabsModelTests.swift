@@ -1,6 +1,5 @@
 import XCTest
 import AppKit
-#if !SWIFT_PACKAGE
 import Chau7Core
 @testable import Chau7
 
@@ -23,6 +22,13 @@ final class OverlayTabsModelTests: XCTestCase {
 
     private var model: OverlayTabsModel!
     private var appModel: AppModel!
+    private var originalLastTabCloseBehavior: LastTabCloseBehavior = .keepWindow
+    private var originalWarnOnCloseWithRunningProcess = true
+    private var originalAlwaysWarnOnTabClose = false
+    private var originalRepoGroupingMode: RepoGroupingMode = .off
+    private var originalRecentRepoRoots: [String] = []
+    private var originalAutoSubmitRestorePrefill = false
+    private var originalKnownRepoIdentities: [KnownRepoIdentity] = []
 
     private func tabStateBackupRootURL() -> URL {
         OverlayTabsModel.tabStateBackupRootURL()
@@ -33,6 +39,13 @@ final class OverlayTabsModelTests: XCTestCase {
     private func removePersistedWindowStateArtifacts() {
         UserDefaults.standard.removeObject(forKey: SavedTabState.userDefaultsKey)
         UserDefaults.standard.removeObject(forKey: SavedMultiWindowState.userDefaultsKey)
+        // Restore is freshest-wins arbitrated between the file bundle and the
+        // UserDefaults index (`bundleIsCurrentRestoreSource`). A bundle or
+        // save token leaked from another suite would hijack restoreSavedTabs,
+        // so clear all three sources, not just the UserDefaults states.
+        UserDefaults.standard.removeObject(forKey: SavedTabState.restoreIndexSaveTokenKey)
+        try? TabRestoreBundleStore.clearCurrentBundle()
+        TabRestoreBundleStore.resetCacheForTesting()
         try? FileManager.default.removeItem(at: tabStateBackupRootURL())
     }
 
@@ -41,6 +54,45 @@ final class OverlayTabsModelTests: XCTestCase {
             .appendingPathComponent("Chau7Tests-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
         return url
+    }
+
+    /// Repo-group inheritance (`RepoGroupInheritance.inheritedGroupID`) and
+    /// `inheritedStartDirectory` both require an on-disk directory inside the
+    /// group root — a new tab only inherits the selected tab's group when its
+    /// resolved start directory actually lives under that root. Tests that
+    /// exercise inheritance therefore need real directories, not synthetic
+    /// `/tmp/...` paths. Returns the created root; tracks it for cleanup.
+    private var temporaryRepoDirs: [URL] = []
+    /// Polls `condition` on the main run loop until it is true or the timeout
+    /// elapses. Uses an XCTestExpectation-driven timer so DispatchQueue.main
+    /// async work (e.g. the deferred executeRestoreBody phase) is reliably
+    /// pumped — a bare `RunLoop.run(until:)` loop does not always drain it
+    /// under swift test.
+    private func waitForCondition(
+        timeout: TimeInterval = 8.0,
+        _ condition: @escaping () -> Bool
+    ) {
+        if condition() { return }
+        let exp = expectation(description: "condition")
+        let timer = Timer.scheduledTimer(withTimeInterval: 0.02, repeats: true) { t in
+            if condition() {
+                t.invalidate()
+                exp.fulfill()
+            }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        wait(for: [exp], timeout: timeout)
+        timer.invalidate()
+    }
+
+    @discardableResult
+    private func makeTemporaryRepoRoot(subpath: String? = nil) -> URL {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("Chau7RepoTests-\(UUID().uuidString)", isDirectory: true)
+        let target = subpath.map { root.appendingPathComponent($0, isDirectory: true) } ?? root
+        try? FileManager.default.createDirectory(at: target, withIntermediateDirectories: true)
+        temporaryRepoDirs.append(root)
+        return root
     }
 
     private func createClaudeTranscript(home: URL, directory: String, sessionID: String) throws {
@@ -107,7 +159,15 @@ final class OverlayTabsModelTests: XCTestCase {
             aiProvider: aiProvider,
             aiSessionId: aiSessionId,
             aiSessionIdSource: aiSessionId == nil ? nil : .explicit,
-            splitLayout: SavedSplitNode(kind: .terminal, id: paneID.uuidString),
+            splitLayout: SavedSplitNode(
+                kind: .terminal,
+                id: paneID.uuidString,
+                direction: nil,
+                ratio: nil,
+                first: nil,
+                second: nil,
+                textEditorPath: nil
+            ),
             focusedPaneID: paneID.uuidString,
             paneStates: [
                 SavedTerminalPaneState(
@@ -130,18 +190,46 @@ final class OverlayTabsModelTests: XCTestCase {
         removePersistedWindowStateArtifacts()
         OverlayTabsModel.sessionFinders = [:]
         ClaudeSessionResolver.clearCache()
+        originalLastTabCloseBehavior = FeatureSettings.shared.lastTabCloseBehavior
+        originalWarnOnCloseWithRunningProcess = FeatureSettings.shared.warnOnCloseWithRunningProcess
+        originalAlwaysWarnOnTabClose = FeatureSettings.shared.alwaysWarnOnTabClose
+        originalRepoGroupingMode = FeatureSettings.shared.repoGroupingMode
+        originalRecentRepoRoots = FeatureSettings.shared.recentRepoRoots
+        // Resume-prefill tests assert exactly the prefilled command with no
+        // trailing newline. Auto-submit (a feature flag, default false) would
+        // append a "\n"/Enter; pin it off so a leaked value from another
+        // suite can't perturb these assertions.
+        originalAutoSubmitRestorePrefill = FeatureSettings.shared.autoSubmitRestorePrefill
+        FeatureSettings.shared.autoSubmitRestorePrefill = false
+        // Repo-grouping resolution consults KnownRepoIdentityStore; a stale
+        // identity leaked from another test perturbs gitRoot/group resolution.
+        // Snapshot and start from a clean store.
+        originalKnownRepoIdentities = KnownRepoIdentityStore.shared.allIdentities()
+        KnownRepoIdentityStore.shared.reset()
         appModel = AppModel()
         model = OverlayTabsModel(appModel: appModel, restoreState: false)
         FeatureSettings.shared.recentRepoRoots = []
     }
 
     override func tearDown() {
+        MemoryPressureResponder.shared.memoryPressureOverrideForTesting = nil
+        for dir in temporaryRepoDirs {
+            try? FileManager.default.removeItem(at: dir)
+        }
+        temporaryRepoDirs = []
         model = nil
         appModel = nil
         OverlayTabsModel.sessionFinders = [:]
         ClaudeSessionResolver.clearCache()
         removePersistedWindowStateArtifacts()
-        FeatureSettings.shared.recentRepoRoots = []
+        FeatureSettings.shared.lastTabCloseBehavior = originalLastTabCloseBehavior
+        FeatureSettings.shared.warnOnCloseWithRunningProcess = originalWarnOnCloseWithRunningProcess
+        FeatureSettings.shared.alwaysWarnOnTabClose = originalAlwaysWarnOnTabClose
+        FeatureSettings.shared.repoGroupingMode = originalRepoGroupingMode
+        FeatureSettings.shared.recentRepoRoots = originalRecentRepoRoots
+        FeatureSettings.shared.autoSubmitRestorePrefill = originalAutoSubmitRestorePrefill
+        KnownRepoIdentityStore.shared.reset()
+        KnownRepoIdentityStore.shared.restore(originalKnownRepoIdentities)
         super.tearDown()
     }
 
@@ -769,11 +857,15 @@ final class OverlayTabsModelTests: XCTestCase {
     }
 
     func testNewTabFromGroupedSelectionInheritsGroupAndStaysAdjacent() {
+        // Inheritance requires the selected tab's current directory to live
+        // on disk inside the group root (RepoGroupInheritance + the
+        // existence check in inheritedStartDirectory).
+        let groupID = makeTemporaryRepoRoot().standardized.path
         model.newTab()
         model.newTab()
-        let groupID = "/tmp/chau7-grouped"
         model.tabs[0].repoGroupID = groupID
         model.tabs[1].repoGroupID = groupID
+        model.tabs[0].session?.currentDirectory = groupID
         model.selectTab(id: model.tabs[0].id)
 
         model.newTab()
@@ -794,17 +886,22 @@ final class OverlayTabsModelTests: XCTestCase {
         XCTAssertEqual(model.tabs[1].repoGroupID, groupID)
     }
 
-    func testNewTabAtDirectoryFromGroupedSelectionDoesNotInheritDifferentRepoGroup() {
+    func testNewTabAtDirectoryFromGroupedSelectionDoesNotInheritDifferentRepoGroup() throws {
+        let groupID = makeTemporaryRepoRoot().standardized.path
+        let unrelatedDir = makeTemporaryRepoRoot().standardized.path
         model.newTab()
-        let groupID = "/tmp/chau7-grouped-dir"
         model.tabs[0].repoGroupID = groupID
+        model.tabs[0].session?.currentDirectory = groupID
         model.selectTab(id: model.tabs[0].id)
 
-        model.newTab(at: "/tmp/chau7-website")
+        model.newTab(at: unrelatedDir)
 
-        XCTAssertEqual(model.tabs[1].id, model.selectedTabID)
-        XCTAssertNil(model.tabs[1].repoGroupID)
-        XCTAssertFalse(model.tabs[1].hasInheritedRepoGroup)
+        // A non-inheriting new tab is appended at the end (newTabPosition
+        // default is "end"), so it's the selected/last tab, not tabs[1].
+        let newTab = try XCTUnwrap(model.tabs.last)
+        XCTAssertEqual(newTab.id, model.selectedTabID)
+        XCTAssertNil(newTab.repoGroupID)
+        XCTAssertFalse(newTab.hasInheritedRepoGroup)
     }
 
     func testDisplaySessionTracksFocusedTerminalPane() {
@@ -858,25 +955,30 @@ final class OverlayTabsModelTests: XCTestCase {
         XCTAssertEqual(model.selectedTabID, targetTabID)
     }
 
-    func testInheritedRepoGroupDetachesWhenTabMovesToDifferentRepoInManualMode() {
+    func testInheritedRepoGroupDetachesWhenTabMovesToDifferentRepoInManualMode() throws {
         let originalMode = FeatureSettings.shared.repoGroupingMode
         FeatureSettings.shared.repoGroupingMode = .manual
         defer { FeatureSettings.shared.repoGroupingMode = originalMode }
 
-        let originalGroupID = "/tmp/chau7-group-a"
+        // Inheritance needs the selected tab's cwd to live on disk inside the
+        // group root, so use a real temp directory.
+        let originalGroupID = makeTemporaryRepoRoot().standardized.path
         model.tabs[0].repoGroupID = originalGroupID
+        model.tabs[0].session?.currentDirectory = originalGroupID
         model.selectTab(id: model.tabs[0].id)
 
         model.newTab()
 
-        XCTAssertEqual(model.tabs[1].repoGroupID, originalGroupID)
-        XCTAssertTrue(model.tabs[1].hasInheritedRepoGroup)
+        let newTab = try XCTUnwrap(model.tabs.first(where: { $0.id == model.selectedTabID }))
+        XCTAssertEqual(newTab.repoGroupID, originalGroupID)
+        XCTAssertTrue(newTab.hasInheritedRepoGroup)
 
-        model.tabs[1].session?.gitRootPath = "/tmp/chau7-group-b"
+        newTab.session?.gitRootPath = "/tmp/chau7-group-b"
         drainMainQueue()
 
-        XCTAssertNil(model.tabs[1].repoGroupID)
-        XCTAssertFalse(model.tabs[1].hasInheritedRepoGroup)
+        let movedTab = try XCTUnwrap(model.tabs.first(where: { $0.id == newTab.id }))
+        XCTAssertNil(movedTab.repoGroupID)
+        XCTAssertFalse(movedTab.hasInheritedRepoGroup)
     }
 
     func testExplicitRepoGroupPersistsWhenTabMovesToDifferentRepoInManualMode() {
@@ -884,14 +986,18 @@ final class OverlayTabsModelTests: XCTestCase {
         FeatureSettings.shared.repoGroupingMode = .manual
         defer { FeatureSettings.shared.repoGroupingMode = originalMode }
 
+        // addTabToRepoGroup reads the session's gitRootPath. Setting it then
+        // draining lets the async refreshGitStatus (which resolves the real
+        // git status of the cwd) clobber a synthetic /tmp path back to nil, so
+        // capture the explicit group immediately, before any drain.
         let originalGroupID = "/tmp/chau7-group-a"
         model.tabs[0].session?.gitRootPath = originalGroupID
-        drainMainQueue()
-
         model.addTabToRepoGroup(tabID: model.tabs[0].id)
         XCTAssertEqual(model.tabs[0].repoGroupID, originalGroupID)
         XCTAssertFalse(model.tabs[0].hasInheritedRepoGroup)
 
+        // Moving to a different repo must NOT detach an explicit (user-set)
+        // group — only inherited groups detach in manual mode.
         model.tabs[0].session?.gitRootPath = "/tmp/chau7-group-b"
         drainMainQueue()
 
@@ -904,35 +1010,101 @@ final class OverlayTabsModelTests: XCTestCase {
         FeatureSettings.shared.repoGroupingMode = .auto
         defer { FeatureSettings.shared.repoGroupingMode = originalMode }
 
+        // The known-recent-repo fallback now sources its candidate roots from
+        // KnownRepoIdentityStore (not FeatureSettings.recentRepoRoots), so seed
+        // the store and restore it afterwards.
+        let previousIdentities = KnownRepoIdentityStore.shared.allIdentities()
+        defer { KnownRepoIdentityStore.shared.restore(previousIdentities) }
+
         let repoRoot = "/tmp/Downloads/Repositories/Chau7"
-        FeatureSettings.shared.recentRepoRoots = [repoRoot]
+        KnownRepoIdentityStore.shared.reset()
+        KnownRepoIdentityStore.shared.record(rootPath: repoRoot)
         model.tabs[0].session?.currentDirectory = "\(repoRoot)/apps/chau7-macos"
         model.tabs[0].session?.gitRootPath = nil
 
         model.applyAutoGroupingToAllTabs()
 
-        XCTAssertEqual(model.tabs[0].repoGroupID, repoRoot)
+        XCTAssertEqual(model.tabs[0].repoGroupID, URL(fileURLWithPath: repoRoot).standardized.path)
     }
 
-    func testInheritedRepoGroupDetachesForNewTabAtDirectoryWhenTabMovesToDifferentRepoInManualMode() {
+    func testReconcileStaleRepoGroupsMigratesVanishedPathToLiveRoot() {
+        // Repro of the "two Mockup groups" report: both tabs were tagged with
+        // the OLD path before the folder move; their live session root already
+        // resolves to the NEW path. The vanished old tag must migrate onto it.
+        let oldRoot = "/Users/me/Downloads/Repositories/Mockup"
+        let newRoot = "/Users/me/Repositories/Mockup"
+        model.newTab()
+        model.tabs[0].repoGroupID = oldRoot
+        model.tabs[1].repoGroupID = oldRoot
+        model.tabs[0].session?.gitRootPath = newRoot
+        model.tabs[1].session?.gitRootPath = newRoot
+
+        // Only the new root exists on disk after the move.
+        model.reconcileStaleRepoGroups(directoryExists: { $0 == newRoot })
+
+        XCTAssertEqual(model.tabs[0].repoGroupID, newRoot)
+        XCTAssertEqual(model.tabs[1].repoGroupID, newRoot)
+        XCTAssertEqual(Set(model.tabs.compactMap(\.repoGroupID)), [newRoot], "Both tabs should collapse into one group")
+    }
+
+    func testReconcileStaleRepoGroupsLeavesDistinctSameNamedReposUnmerged() {
+        // Two different repos that merely share a basename ("Mockup") and both
+        // still exist on disk must never be merged.
+        let rootA = "/Users/me/work/alpha/Mockup"
+        let rootB = "/Users/me/work/beta/Mockup"
+        model.newTab()
+        model.tabs[0].repoGroupID = rootA
+        model.tabs[1].repoGroupID = rootB
+        model.tabs[0].session?.gitRootPath = rootA
+        model.tabs[1].session?.gitRootPath = rootB
+
+        // Both paths exist — nothing is stale.
+        model.reconcileStaleRepoGroups(directoryExists: { _ in true })
+
+        XCTAssertEqual(model.tabs[0].repoGroupID, rootA)
+        XCTAssertEqual(model.tabs[1].repoGroupID, rootB)
+    }
+
+    func testReconcileStaleRepoGroupsLeavesTagWhenLiveRootAlsoMissing() {
+        // If the live git root is unavailable (or also gone), there is no safe
+        // target — keep the existing tag rather than dropping the grouping.
+        let oldRoot = "/Users/me/Downloads/Repositories/Mockup"
+        model.newTab()
+        model.tabs[0].repoGroupID = oldRoot
+        model.tabs[0].session?.gitRootPath = nil
+
+        model.reconcileStaleRepoGroups(directoryExists: { _ in false })
+
+        XCTAssertEqual(model.tabs[0].repoGroupID, oldRoot)
+    }
+
+    func testInheritedRepoGroupDetachesForNewTabAtDirectoryWhenTabMovesToDifferentRepoInManualMode() throws {
         let originalMode = FeatureSettings.shared.repoGroupingMode
         FeatureSettings.shared.repoGroupingMode = .manual
         defer { FeatureSettings.shared.repoGroupingMode = originalMode }
 
-        let originalGroupID = "/tmp/chau7-group-a"
+        // The new tab inherits the group only when its explicit directory is
+        // inside the group root, so open it at a real subdirectory of the
+        // group root.
+        let originalGroupRoot = makeTemporaryRepoRoot(subpath: "worktree")
+        let originalGroupID = originalGroupRoot.standardized.path
+        let childDir = originalGroupRoot.appendingPathComponent("worktree", isDirectory: true).standardized.path
         model.tabs[0].repoGroupID = originalGroupID
+        model.tabs[0].session?.currentDirectory = originalGroupID
         model.selectTab(id: model.tabs[0].id)
 
-        model.newTab(at: "/tmp/chau7-group-b")
+        model.newTab(at: childDir)
 
-        XCTAssertEqual(model.tabs[1].repoGroupID, originalGroupID)
-        XCTAssertTrue(model.tabs[1].hasInheritedRepoGroup)
+        let newTab = try XCTUnwrap(model.tabs.first(where: { $0.id == model.selectedTabID }))
+        XCTAssertEqual(newTab.repoGroupID, originalGroupID)
+        XCTAssertTrue(newTab.hasInheritedRepoGroup)
 
-        model.tabs[1].session?.gitRootPath = "/tmp/chau7-group-b"
+        newTab.session?.gitRootPath = "/tmp/chau7-group-b"
         drainMainQueue()
 
-        XCTAssertNil(model.tabs[1].repoGroupID)
-        XCTAssertFalse(model.tabs[1].hasInheritedRepoGroup)
+        let movedTab = try XCTUnwrap(model.tabs.first(where: { $0.id == newTab.id }))
+        XCTAssertNil(movedTab.repoGroupID)
+        XCTAssertFalse(movedTab.hasInheritedRepoGroup)
     }
 
     // MARK: - Notification Styling
@@ -1021,7 +1193,13 @@ final class OverlayTabsModelTests: XCTestCase {
 
     // MARK: - Render Suspension
 
-    func testRenderSuspensionKeepsBackgroundAITabLive() {
+    /// Render-lifecycle policy change (TabRenderLifecyclePolicy.phase): a
+    /// non-selected tab is held `.warm` (never `.hidden`/suspended) regardless
+    /// of whether it hosts an AI session — the old "keep background AI tabs
+    /// live, suspend the rest" gate was removed. Suspension of background tabs
+    /// is now driven solely by memory pressure, which demotes *every*
+    /// non-selected tab to `.hidden`.
+    func testRenderSuspensionSuspendsBackgroundTabsOnlyUnderMemoryPressure() {
         let selectedTab = model.tabs[0]
         model.newTab()
         model.newTab()
@@ -1031,39 +1209,63 @@ final class OverlayTabsModelTests: XCTestCase {
         aiTab.session?.activeAppName = "Codex"
 
         model.selectTab(id: selectedTab.id)
+
+        // Without memory pressure, both background tabs stay live (.warm).
+        MemoryPressureResponder.shared.memoryPressureOverrideForTesting = false
         model.configureRenderSuspension(enabled: true, delay: 0)
         drainMainQueue()
 
         XCTAssertFalse(
             model.suspendedTabIDs.contains(aiTab.id),
-            "Background AI tabs should remain live-rendered"
+            "Background AI tabs stay live without memory pressure"
+        )
+        XCTAssertFalse(
+            model.suspendedTabIDs.contains(shellTab.id),
+            "Background shell tabs stay live without memory pressure"
+        )
+
+        // Under memory pressure, all non-selected tabs demote to .hidden and
+        // suspend — AI status no longer exempts a tab.
+        MemoryPressureResponder.shared.memoryPressureOverrideForTesting = true
+        model.invalidateRenderLifecycle(reason: "test_memory_pressure")
+        drainMainQueue()
+
+        XCTAssertTrue(
+            model.suspendedTabIDs.contains(aiTab.id),
+            "Background AI tabs suspend under memory pressure"
         )
         XCTAssertTrue(
             model.suspendedTabIDs.contains(shellTab.id),
-            "Non-AI background tabs should still suspend"
+            "Background shell tabs suspend under memory pressure"
         )
     }
 
-    func testRenderSuspensionUnsuspendsTabWhenBackgroundSessionBecomesAI() {
+    /// Lifting memory pressure re-activates a previously suspended background
+    /// tab on the next lifecycle re-evaluation (the realistic unsuspend trigger
+    /// now that AI detection no longer drives suspension).
+    func testRenderSuspensionReactivatesBackgroundTabWhenMemoryPressureClears() {
         let selectedTab = model.tabs[0]
         model.newTab()
 
         let backgroundTab = model.tabs[1]
         model.selectTab(id: selectedTab.id)
+
+        MemoryPressureResponder.shared.memoryPressureOverrideForTesting = true
         model.configureRenderSuspension(enabled: true, delay: 0)
         drainMainQueue()
 
         XCTAssertTrue(
             model.suspendedTabIDs.contains(backgroundTab.id),
-            "Background shell tabs should suspend before AI detection"
+            "Background tabs suspend while under memory pressure"
         )
 
-        backgroundTab.session?.activeAppName = "Codex"
+        MemoryPressureResponder.shared.memoryPressureOverrideForTesting = false
+        model.invalidateRenderLifecycle(reason: "test_memory_pressure_cleared")
         drainMainQueue()
 
         XCTAssertFalse(
             model.suspendedTabIDs.contains(backgroundTab.id),
-            "AI detection should immediately unsuspend the background tab"
+            "Clearing memory pressure should reactivate the background tab"
         )
     }
 
@@ -1385,7 +1587,16 @@ final class OverlayTabsModelTests: XCTestCase {
     func testFocusSelectedRecreatesFreshTabAfterLastTabTransfer() {
         let onlyTab = model.tabs[0]
         _ = model.extractTabForWindowTransfer(id: onlyTab.id)
-        model.overlayWindow = NSWindow(contentRect: .init(x: 0, y: 0, width: 800, height: 600), styleMask: [.titled], backing: .buffered, defer: false)
+        // Bind the window to a local — `model.overlayWindow` is weak, so an
+        // inline `NSWindow(...)` deallocates before focusSelected() runs and
+        // the compiler treats the assignment as `weak ... = nil`.
+        let window = NSWindow(
+            contentRect: .init(x: 0, y: 0, width: 800, height: 600),
+            styleMask: [.titled],
+            backing: .buffered,
+            defer: false
+        )
+        model.overlayWindow = window
 
         model.focusSelected()
 
@@ -1648,9 +1859,16 @@ final class OverlayTabsModelTests: XCTestCase {
         let entry = try XCTUnwrap(restored.closedTabStack.last)
         XCTAssertEqual(entry.originalIndex, deferredIndex)
         XCTAssertEqual(entry.state.customTitle, "Deferred")
-        XCTAssertEqual(entry.state.aiProvider, "codex")
-        XCTAssertEqual(entry.state.aiSessionId, "deferred-session")
-        XCTAssertEqual(entry.state.aiResumeCommand, "codex resume deferred-session")
+        // makeSavedTabState mirrors the AI identity into both the top-level
+        // state and the single pane. sanitizeRestoredAIResumeOwnership
+        // sanitizes the pane first, which claims (codex, deferred-session);
+        // the duplicate top-level copy is then deduped to nil. The pane is
+        // the authoritative carrier of the restored identity.
+        let pane = try XCTUnwrap(entry.state.paneStates?.first)
+        XCTAssertEqual(pane.aiProvider, "codex")
+        XCTAssertEqual(pane.aiSessionId, "deferred-session")
+        XCTAssertEqual(pane.aiResumeCommand, "codex resume deferred-session")
+        XCTAssertNil(entry.state.aiSessionId, "Duplicate top-level identity is deduped to the claiming pane")
     }
 
     /// Regression guard for the live-session branch. With no deferred state queued,
@@ -1684,7 +1902,11 @@ final class OverlayTabsModelTests: XCTestCase {
         FeatureSettings.shared.warnOnCloseWithRunningProcess = false
         FeatureSettings.shared.alwaysWarnOnTabClose = false
 
-        let directory = "/tmp/chau7-t2-live-capture-\(UUID().uuidString)"
+        // newTab(at:) only adopts a directory that exists on disk (the
+        // session's updateCurrentDirectory validates it), so use a real temp
+        // directory rather than a synthetic /tmp path that would fall back to
+        // $HOME.
+        let directory = makeTemporaryRepoRoot().standardized.path
         model.newTab(at: directory)
         XCTAssertEqual(model.tabs.count, 2)
         let tab = model.tabs[1]
@@ -1869,9 +2091,12 @@ final class OverlayTabsModelTests: XCTestCase {
             textEditorPath: nil
         )
 
+        // The session only adopts an on-disk directory; use a real temp dir
+        // so the restored terminal pane's currentDirectory matches.
+        let advancedRestoreDir = makeTemporaryRepoRoot().standardized.path
         let primaryPaneState = SavedTerminalPaneState(
             paneID: terminalID.uuidString,
-            directory: "/tmp/advanced-restore",
+            directory: advancedRestoreDir,
             scrollbackContent: "previous output",
             aiResumeCommand: "claude --resume abc123"
         )
@@ -1892,7 +2117,7 @@ final class OverlayTabsModelTests: XCTestCase {
             SavedTabState(
                 customTitle: "Right",
                 color: TabColor.purple.rawValue,
-                directory: "/tmp/advanced-restore",
+                directory: advancedRestoreDir,
                 selectedIndex: 1,
                 tokenOptOverride: nil,
                 scrollbackContent: nil,
@@ -1915,7 +2140,7 @@ final class OverlayTabsModelTests: XCTestCase {
             XCTFail("Expected restored terminal pane ID \(terminalID)")
             return
         }
-        XCTAssertEqual(terminalPair.1.currentDirectory, "/tmp/advanced-restore")
+        XCTAssertEqual(terminalPair.1.currentDirectory, advancedRestoreDir)
         XCTAssertEqual(rightTab.splitController.focusedTerminalSessionID(), terminalID)
     }
 
@@ -2280,12 +2505,15 @@ final class OverlayTabsModelTests: XCTestCase {
             environment: ["CHAU7_HOME_ROOT": home.path]
         )
 
-        XCTAssertEqual(sanitized.first?.aiProvider, "claude")
-        XCTAssertEqual(sanitized.first?.aiSessionId, sessionID)
-        XCTAssertEqual(sanitized.first?.aiResumeCommand, "claude --resume \(sessionID)")
+        // The pane is sanitized before the top-level fallback and claims the
+        // (claude, sessionID) pair, so the verified transcript identity is
+        // retained on the pane. The duplicate top-level copy is deduped to
+        // nil to avoid a double resume of the same session — the pane is the
+        // authoritative carrier.
         XCTAssertEqual(sanitized.first?.paneStates?.first?.aiProvider, "claude")
         XCTAssertEqual(sanitized.first?.paneStates?.first?.aiSessionId, sessionID)
         XCTAssertEqual(sanitized.first?.paneStates?.first?.aiResumeCommand, "claude --resume \(sessionID)")
+        XCTAssertNil(sanitized.first?.aiSessionId, "Duplicate top-level identity is deduped to the claiming pane")
     }
 
     func testBuildAIResumeCommandRejectsSyntheticSessionIdentity() {
@@ -2389,7 +2617,11 @@ final class OverlayTabsModelTests: XCTestCase {
             return
         }
 
-        XCTAssertEqual(sanitizedPane.aiSessionIdSource, .observed)
+        // A parseable resume/agent-launch command is the highest-priority
+        // restore candidate and is treated as explicit ownership, so the
+        // sanitized source is `.explicit` even though the pane persisted
+        // `.observed` — the command supersedes the bare field source.
+        XCTAssertEqual(sanitizedPane.aiSessionIdSource, .explicit)
         XCTAssertEqual(sanitizedPane.lastInputAt, lastInputAt)
         XCTAssertEqual(sanitizedPane.lastStatus, .done)
         XCTAssertEqual(sanitizedPane.agentLaunchCommand, "codex resume persisted-001")
@@ -2517,7 +2749,13 @@ final class OverlayTabsModelTests: XCTestCase {
         }
 
         XCTAssertEqual(reopenedTab.id, originalID)
-        XCTAssertEqual(reopenedTab.createdAt, originalCreatedAt)
+        // createdAt round-trips through an ISO8601 string (second precision),
+        // so compare at second granularity rather than exact sub-second.
+        XCTAssertEqual(
+            reopenedTab.createdAt.timeIntervalSince1970,
+            originalCreatedAt.timeIntervalSince1970,
+            accuracy: 1.0
+        )
         XCTAssertEqual(reopenedTab.repoGroupID, originalRepoGroupID)
         XCTAssertEqual(reopenedTab.customTitle, "Closed Tab")
     }
@@ -2535,9 +2773,14 @@ final class OverlayTabsModelTests: XCTestCase {
         )
         let resumeCommand = "codex resume abc123"
 
+        // The resume-prefill delivery gate now requires the saved directory to
+        // match the restored session's cwd (empty-expected no longer matches
+        // any directory), and the session only adopts a directory that exists
+        // on disk — so use a real temp directory for both.
+        let directory = makeTemporaryRepoRoot().standardized.path
         let paneState = SavedTerminalPaneState(
             paneID: paneID.uuidString,
-            directory: "",
+            directory: directory,
             scrollbackContent: nil,
             aiResumeCommand: resumeCommand
         )
@@ -2546,7 +2789,7 @@ final class OverlayTabsModelTests: XCTestCase {
             SavedTabState(
                 customTitle: "AI Session",
                 color: TabColor.purple.rawValue,
-                directory: "",
+                directory: directory,
                 selectedIndex: 0,
                 tokenOptOverride: nil,
                 scrollbackContent: nil,
@@ -2605,9 +2848,12 @@ final class OverlayTabsModelTests: XCTestCase {
             textEditorPath: nil
         )
 
+        // The prefill delivery gate requires the saved directory to match the
+        // restored session's cwd, which only adopts an on-disk directory.
+        let directory = makeTemporaryRepoRoot().standardized.path
         let paneState = SavedTerminalPaneState(
             paneID: paneID.uuidString,
-            directory: "/tmp/meta-prefill",
+            directory: directory,
             scrollbackContent: nil,
             aiResumeCommand: nil,
             aiProvider: "codex",
@@ -2618,7 +2864,7 @@ final class OverlayTabsModelTests: XCTestCase {
             SavedTabState(
                 customTitle: "Meta Restore",
                 color: TabColor.orange.rawValue,
-                directory: "/tmp/meta-prefill",
+                directory: directory,
                 selectedIndex: 0,
                 tokenOptOverride: nil,
                 scrollbackContent: nil,
@@ -2766,15 +3012,18 @@ final class OverlayTabsModelTests: XCTestCase {
             second: nil,
             textEditorPath: nil
         )
+        // Shared on-disk directory so the prefill delivery directory gate
+        // passes for each restored pane.
+        let sharedDir = makeTemporaryRepoRoot().standardized.path
         let firstPaneState = SavedTerminalPaneState(
             paneID: firstPaneID.uuidString,
-            directory: "/tmp/legacy-top-level-restore",
+            directory: sharedDir,
             scrollbackContent: nil,
             aiResumeCommand: nil
         )
         let secondPaneState = SavedTerminalPaneState(
             paneID: secondPaneID.uuidString,
-            directory: "/tmp/legacy-top-level-restore",
+            directory: sharedDir,
             scrollbackContent: nil,
             aiResumeCommand: nil
         )
@@ -2783,7 +3032,7 @@ final class OverlayTabsModelTests: XCTestCase {
             SavedTabState(
                 customTitle: "First",
                 color: TabColor.purple.rawValue,
-                directory: "/tmp/legacy-top-level-restore",
+                directory: sharedDir,
                 selectedIndex: 0,
                 tokenOptOverride: nil,
                 scrollbackContent: nil,
@@ -2797,7 +3046,7 @@ final class OverlayTabsModelTests: XCTestCase {
             SavedTabState(
                 customTitle: "Second",
                 color: TabColor.orange.rawValue,
-                directory: "/tmp/legacy-top-level-restore",
+                directory: sharedDir,
                 selectedIndex: nil,
                 tokenOptOverride: nil,
                 scrollbackContent: nil,
@@ -2833,6 +3082,13 @@ final class OverlayTabsModelTests: XCTestCase {
         secondSession.isAtPrompt = true
         secondSession.status = .idle
 
+        // The second tab is deferred (background-identity-only restore does
+        // not prefill); selecting it promotes it to the interactive restore
+        // path that delivers its resume command.
+        if let secondTabID = restoredModel.tabs.first(where: { $0.customTitle == "Second" })?.id {
+            restoredModel.selectTab(id: secondTabID)
+        }
+
         let expectationDone = expectation(description: "restore from legacy top-level metadata")
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.4) {
             let expected: Set = [
@@ -2860,12 +3116,13 @@ final class OverlayTabsModelTests: XCTestCase {
         let startedAt = Date(timeIntervalSince1970: 4000.0)
         let lastInputAt = Date(timeIntervalSince1970: 4005.0)
         let lastExitAt = Date(timeIntervalSince1970: 4010.0)
+        let directory = makeTemporaryRepoRoot().standardized.path
 
         storeSavedTabStates([
             SavedTabState(
                 customTitle: "Legacy Lifecycle",
                 color: TabColor.purple.rawValue,
-                directory: "/tmp/legacy-lifecycle",
+                directory: directory,
                 selectedIndex: 0,
                 tokenOptOverride: nil,
                 scrollbackContent: nil,
@@ -2878,7 +3135,7 @@ final class OverlayTabsModelTests: XCTestCase {
                 paneStates: [
                     SavedTerminalPaneState(
                         paneID: paneID.uuidString,
-                        directory: "/tmp/legacy-lifecycle",
+                        directory: directory,
                         scrollbackContent: nil,
                         aiResumeCommand: nil,
                         lastOutputAt: startedAt
@@ -2899,6 +3156,11 @@ final class OverlayTabsModelTests: XCTestCase {
             XCTFail("Expected restored session for pane \(paneID)")
             return
         }
+
+        // Per-pane AI/lifecycle metadata is applied in the async
+        // executeRestoreBody phase, so wait until the restored agent start
+        // timestamp lands (the full-restore call sets it to `startedAt`).
+        waitForCondition { session.agentStartedAt == startedAt }
 
         XCTAssertEqual(session.lastAISessionIdentitySource, .explicit)
         XCTAssertEqual(session.lastInputDate, lastInputAt)
@@ -2922,12 +3184,13 @@ final class OverlayTabsModelTests: XCTestCase {
             textEditorPath: nil
         )
         let syntheticID = "synth:claude:deadbeef"
+        let directory = makeTemporaryRepoRoot().standardized.path
 
         storeSavedTabStates([
             SavedTabState(
                 customTitle: "Synthetic Session",
                 color: TabColor.purple.rawValue,
-                directory: "/tmp/synthetic-session",
+                directory: directory,
                 selectedIndex: 0,
                 tokenOptOverride: nil,
                 scrollbackContent: nil,
@@ -2937,7 +3200,7 @@ final class OverlayTabsModelTests: XCTestCase {
                 paneStates: [
                     SavedTerminalPaneState(
                         paneID: paneID.uuidString,
-                        directory: "/tmp/synthetic-session",
+                        directory: directory,
                         scrollbackContent: nil,
                         aiResumeCommand: nil,
                         aiProvider: "claude",
@@ -2955,11 +3218,17 @@ final class OverlayTabsModelTests: XCTestCase {
             return
         }
 
+        // Synthetic identity is applied in the async executeRestoreBody phase.
+        waitForCondition { session.effectiveAISessionId != nil }
+
         XCTAssertEqual(session.effectiveAISessionId, syntheticID)
         XCTAssertEqual(session.effectiveAISessionIdentitySource, .synthetic)
     }
 
     func testRestorePrefillsDistinctCodexResumeCommandsPerTab() {
+        // Both tabs restore into a shared on-disk directory so the prefill
+        // delivery directory gate is satisfied for each pane.
+        let sharedDir = makeTemporaryRepoRoot().standardized.path
         let firstPaneID = UUID()
         let secondPaneID = UUID()
 
@@ -2984,7 +3253,7 @@ final class OverlayTabsModelTests: XCTestCase {
 
         let firstPaneState = SavedTerminalPaneState(
             paneID: firstPaneID.uuidString,
-            directory: "/tmp/codex-shared-restore",
+            directory: sharedDir,
             scrollbackContent: nil,
             aiResumeCommand: nil,
             aiProvider: "codex",
@@ -2992,7 +3261,7 @@ final class OverlayTabsModelTests: XCTestCase {
         )
         let secondPaneState = SavedTerminalPaneState(
             paneID: secondPaneID.uuidString,
-            directory: "/tmp/codex-shared-restore",
+            directory: sharedDir,
             scrollbackContent: nil,
             aiResumeCommand: nil,
             aiProvider: "codex",
@@ -3004,7 +3273,7 @@ final class OverlayTabsModelTests: XCTestCase {
                 tabID: UUID().uuidString,
                 customTitle: "First",
                 color: TabColor.purple.rawValue,
-                directory: "/tmp/codex-shared-restore",
+                directory: sharedDir,
                 selectedIndex: 0,
                 tokenOptOverride: nil,
                 scrollbackContent: nil,
@@ -3017,7 +3286,7 @@ final class OverlayTabsModelTests: XCTestCase {
                 tabID: UUID().uuidString,
                 customTitle: "Second",
                 color: TabColor.blue.rawValue,
-                directory: "/tmp/codex-shared-restore",
+                directory: sharedDir,
                 selectedIndex: nil,
                 tokenOptOverride: nil,
                 scrollbackContent: nil,
@@ -3050,6 +3319,14 @@ final class OverlayTabsModelTests: XCTestCase {
         secondSession.isShellLoading = false
         secondSession.isAtPrompt = true
         secondSession.status = .idle
+
+        // Only the selected tab is restored synchronously and prefilled; the
+        // second tab is queued for deferred restore (background-identity-only,
+        // which does NOT schedule a resume prefill). Selecting it promotes it
+        // to the interactive restore path that prefills its own command.
+        if let secondTabID = restoredModel.tabs.first(where: { $0.customTitle == "Second" })?.id {
+            restoredModel.selectTab(id: secondTabID)
+        }
 
         let expectationDone = expectation(description: "restore restores each codex pane with distinct session id")
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.4) {
@@ -3090,15 +3367,19 @@ final class OverlayTabsModelTests: XCTestCase {
             textEditorPath: nil
         )
 
+        // Both panes must restore into on-disk directories so the prefill
+        // delivery directory gate passes for the pane carrying the command.
+        let primaryDir = makeTemporaryRepoRoot().standardized.path
+        let secondaryDir = makeTemporaryRepoRoot().standardized.path
         let activePaneState = SavedTerminalPaneState(
             paneID: activePaneID.uuidString,
-            directory: "/tmp/primary",
+            directory: primaryDir,
             scrollbackContent: nil,
             aiResumeCommand: nil
         )
         let fallbackPaneState = SavedTerminalPaneState(
             paneID: secondaryPaneID.uuidString,
-            directory: "/tmp/secondary",
+            directory: secondaryDir,
             scrollbackContent: nil,
             aiResumeCommand: "codex resume fallback-001"
         )
@@ -3107,7 +3388,7 @@ final class OverlayTabsModelTests: XCTestCase {
             SavedTabState(
                 customTitle: "Split AI",
                 color: TabColor.orange.rawValue,
-                directory: "/tmp/secondary",
+                directory: secondaryDir,
                 selectedIndex: 0,
                 tokenOptOverride: nil,
                 scrollbackContent: nil,
@@ -3183,15 +3464,19 @@ final class OverlayTabsModelTests: XCTestCase {
             textEditorPath: nil
         )
 
+        // Each pane must restore into an on-disk directory so the prefill
+        // delivery directory gate passes per pane.
+        let focusedDir = makeTemporaryRepoRoot().standardized.path
+        let secondaryDir = makeTemporaryRepoRoot().standardized.path
         let focusedPaneState = SavedTerminalPaneState(
             paneID: focusedPaneID.uuidString,
-            directory: "/tmp/focused-pane",
+            directory: focusedDir,
             scrollbackContent: nil,
             aiResumeCommand: "codex resume focused-001"
         )
         let secondaryPaneState = SavedTerminalPaneState(
             paneID: secondaryPaneID.uuidString,
-            directory: "/tmp/secondary-pane",
+            directory: secondaryDir,
             scrollbackContent: nil,
             aiResumeCommand: "codex resume secondary-001"
         )
@@ -3200,7 +3485,7 @@ final class OverlayTabsModelTests: XCTestCase {
             SavedTabState(
                 customTitle: "Split Pane Ownership",
                 color: TabColor.orange.rawValue,
-                directory: "/tmp/focused-pane",
+                directory: focusedDir,
                 selectedIndex: 0,
                 tokenOptOverride: nil,
                 scrollbackContent: nil,
@@ -3279,7 +3564,7 @@ final class OverlayTabsModelTests: XCTestCase {
         storeSavedTabStates([
             SavedTabState(
                 customTitle: "Ownership Drift",
-                color: TabColor.red.rawValue,
+                color: TabColor.pink.rawValue,
                 directory: "/tmp/owned-pane",
                 selectedIndex: 0,
                 tokenOptOverride: nil,
@@ -3339,7 +3624,7 @@ final class OverlayTabsModelTests: XCTestCase {
         storeSavedTabStates([
             SavedTabState(
                 customTitle: "Invalid Resume",
-                color: TabColor.red.rawValue,
+                color: TabColor.pink.rawValue,
                 directory: "/tmp/chau7-restore-invalid-command",
                 selectedIndex: 0,
                 tokenOptOverride: nil,
@@ -3450,7 +3735,7 @@ final class OverlayTabsModelTests: XCTestCase {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
             XCTAssertEqual(capturedInputs, ["claude --resume new-001"])
             XCTAssertEqual(
-                model.resumeRestoreDeliveryStateByPaneID[paneID],
+                self.model.resumeRestoreDeliveryStateByPaneID[paneID],
                 OverlayTabsModel.ResumeRestoreDeliveryState(
                     token: newToken,
                     outcome: .delivered
@@ -3493,6 +3778,98 @@ final class OverlayTabsModelTests: XCTestCase {
             )
         )
     }
+
+    // MARK: - forceTabIdle ("Move to Idle Tabs" right-click action)
+
+    /// Regression: previously the function silently returned when called on
+    /// the currently selected tab. Right-clicking the focused tab and
+    /// choosing "Move to Idle Tabs" looked broken — no log, no UX feedback,
+    /// no state change. The action must instead switch selection to a
+    /// neighbor and idle the original.
+    func testForceTabIdleOnSelectedTabSwitchesToNeighborAndIdlesOriginal() {
+        model.newTab()
+        model.newTab()
+        XCTAssertEqual(model.tabs.count, 3)
+
+        let originalSelected = model.selectedTabID
+        guard let targetIndex = model.tabs.firstIndex(where: { $0.id == originalSelected }) else {
+            XCTFail("selected tab should exist in tabs array")
+            return
+        }
+
+        model.forceTabIdle(id: originalSelected)
+
+        XCTAssertNotEqual(
+            model.selectedTabID,
+            originalSelected,
+            "Selection must move off the tab being idled"
+        )
+        XCTAssertTrue(
+            model.suspendedTabIDs.contains(originalSelected),
+            "Original tab must be in suspendedTabIDs (the observable signal that drives the idle dropdown)"
+        )
+        // Neighbor selection should land on the next index (or previous if at end).
+        let expectedNeighborIndex = targetIndex + 1 < model.tabs.count ? targetIndex + 1 : targetIndex - 1
+        XCTAssertEqual(
+            model.selectedTabID,
+            model.tabs[expectedNeighborIndex].id,
+            "Selection should jump to the immediate neighbor"
+        )
+    }
+
+    /// Non-selected tab: existing happy path. Confirms the inserts still work
+    /// for the un-broken case so the selected-tab branch above doesn't
+    /// accidentally rewrite the normal path.
+    func testForceTabIdleOnUnselectedTabKeepsSelectionAndIdlesTarget() {
+        model.newTab()
+        model.newTab()
+        let selected = model.selectedTabID
+        guard let target = model.tabs.first(where: { $0.id != selected }) else {
+            XCTFail("expected at least one non-selected tab")
+            return
+        }
+
+        model.forceTabIdle(id: target.id)
+
+        XCTAssertEqual(
+            model.selectedTabID,
+            selected,
+            "Selection must NOT change when idling an unselected tab"
+        )
+        XCTAssertTrue(
+            model.suspendedTabIDs.contains(target.id),
+            "Target tab must be in suspendedTabIDs"
+        )
+    }
+
+    /// Edge: when this is the only tab in the window, there's no neighbor to
+    /// fall back to. Refusing with a warning (instead of silently failing)
+    /// is intentional — never break the only-tab invariant.
+    func testForceTabIdleOnOnlyTabIsRejected() {
+        XCTAssertEqual(model.tabs.count, 1, "test assumes a single starter tab")
+        let onlyTab = model.tabs[0].id
+
+        model.forceTabIdle(id: onlyTab)
+
+        XCTAssertEqual(model.selectedTabID, onlyTab, "Selection must not move (no neighbor)")
+        XCTAssertFalse(
+            model.suspendedTabIDs.contains(onlyTab),
+            "Only tab must NOT be moved to idle — would leave the window with nothing visible"
+        )
+    }
+
+    /// Unknown tab ID: just warn and bail, no side effects on selection or
+    /// the idle set. Prevents a stale UI sending an action for a tab that's
+    /// already gone from racing other state.
+    func testForceTabIdleWithUnknownIDIsNoOp() {
+        let before = model.selectedTabID
+        let suspendedBefore = model.suspendedTabIDs
+
+        model.forceTabIdle(id: UUID())
+
+        XCTAssertEqual(model.selectedTabID, before)
+        XCTAssertEqual(model.suspendedTabIDs, suspendedBefore)
+    }
 }
 
 @MainActor
@@ -3504,7 +3881,12 @@ extension OverlayTabsModelTests {
             return
         }
 
-        session.updateCurrentDirectory("/tmp/owned-pane")
+        // updateCurrentDirectory only adopts an on-disk path, and the
+        // ownership gate compares expected vs actual directory — use real
+        // temp dirs for both the owned and drifted locations.
+        let ownedDir = makeTemporaryRepoRoot().standardized.path
+        let driftedDir = makeTemporaryRepoRoot().standardized.path
+        session.updateCurrentDirectory(ownedDir)
         session.isShellLoading = false
         session.isAtPrompt = true
         session.status = .idle
@@ -3513,7 +3895,7 @@ extension OverlayTabsModelTests {
         let intent = OverlayTabsModel.ResumeRestoreIntent(
             paneID: paneID,
             command: "claude --resume drift-001",
-            expectedDirectory: "/tmp/owned-pane",
+            expectedDirectory: ownedDir,
             expectedProvider: nil,
             expectedSessionID: nil,
             expectedSessionIDSource: nil,
@@ -3535,7 +3917,7 @@ extension OverlayTabsModelTests {
             .queued
         )
 
-        session.updateCurrentDirectory("/tmp/drifted-pane")
+        session.updateCurrentDirectory(driftedDir)
 
         let terminalView = RustTerminalView(frame: .zero)
         var capturedInputs: [String] = []
@@ -3564,7 +3946,11 @@ extension OverlayTabsModelTests {
             return
         }
 
-        session.updateCurrentDirectory("/tmp/owned-pane")
+        // updateCurrentDirectory only adopts an on-disk path and the
+        // ownership gate compares expected vs actual directory — use a real
+        // temp dir matching the intent's expectedDirectory.
+        let ownedDir = makeTemporaryRepoRoot().standardized.path
+        session.updateCurrentDirectory(ownedDir)
         session.isShellLoading = false
         session.isAtPrompt = true
         session.status = .idle
@@ -3573,7 +3959,7 @@ extension OverlayTabsModelTests {
         let intent = OverlayTabsModel.ResumeRestoreIntent(
             paneID: paneID,
             command: "claude --resume delivered-001",
-            expectedDirectory: "/tmp/owned-pane",
+            expectedDirectory: ownedDir,
             expectedProvider: nil,
             expectedSessionID: nil,
             expectedSessionIDSource: nil,
@@ -3678,5 +4064,5 @@ final class OverlayTabsModelUtilityTests: XCTestCase {
         )
     }
 }
+
 // swiftlint:enable type_body_length
-#endif

@@ -39,38 +39,6 @@ struct TrustedPairingIdentity: Codable, Equatable {
     }
 }
 
-struct StoredPairingDevice: Codable, Equatable, Identifiable {
-    let pairingInfo: PairingInfo
-    var nickname: String?
-    var lastKnownMacName: String?
-    var storedMacPublicKey: String?
-    var trustedIdentity: TrustedPairingIdentity?
-    var lastUsedAt: Date?
-
-    var id: String { pairingInfo.deviceID }
-
-    var displayName: String {
-        let trimmedNickname = nickname?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        if !trimmedNickname.isEmpty {
-            return trimmedNickname
-        }
-
-        let trimmedMacName = lastKnownMacName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        if !trimmedMacName.isEmpty {
-            return trimmedMacName
-        }
-
-        return "Mac \(pairingInfo.deviceID.prefix(6))"
-    }
-}
-
-struct StoredPairingsState: Codable, Equatable {
-    var selectedDeviceID: String?
-    var devices: [StoredPairingDevice]
-
-    static let empty = StoredPairingsState(selectedDeviceID: nil, devices: [])
-}
-
 // MARK: - Handshake
 
 struct HelloPayload: Codable {

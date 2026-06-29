@@ -1,5 +1,4 @@
 import XCTest
-#if !SWIFT_PACKAGE
 @testable import Chau7
 
 @MainActor
@@ -13,6 +12,11 @@ final class TabAttentionReconciliationTests: XCTestCase {
         UserDefaults.standard.removeObject(forKey: SavedMultiWindowState.userDefaultsKey)
         appModel = AppModel()
         model = OverlayTabsModel(appModel: appModel, restoreState: false)
+        // TabAttentionStatePolicy suppresses the visible attention style on
+        // the *selected* tab (selected_tab_suppresses_visible_style) — the
+        // bell exists to flag background tabs. These tests exercise the
+        // background-tab attention machinery on tabs[0], so deselect it.
+        model.selectedTabID = UUID()
     }
 
     override func tearDown() {
@@ -25,11 +29,14 @@ final class TabAttentionReconciliationTests: XCTestCase {
 
     func testAppliesPersistentStyleForWaitingSession() throws {
         let session = try XCTUnwrap(model.tabs[0].session)
+        // The status didSet posts terminalSessionRuntimeReadinessChanged,
+        // which the model observes on the main queue and synchronously
+        // reconciles — so the attention style is applied right here.
         session.status = .waitingForInput
 
         let changed = model.reconcileTabAttentionStyles(reason: "test")
 
-        XCTAssertEqual(changed, 1)
+        XCTAssertEqual(changed, 0, "explicit reconcile must be idempotent after the status-change observer applied attention")
         XCTAssertEqual(model.tabs[0].stateAttentionKind, .waitingForInput)
         XCTAssertTrue(model.tabs[0].notificationStyle?.persistent == true)
         XCTAssertEqual(model.tabs[0].notificationStyle?.icon, TabNotificationStyle.attention.icon)
@@ -52,11 +59,13 @@ final class TabAttentionReconciliationTests: XCTestCase {
         let session = try XCTUnwrap(model.tabs[0].session)
         session.status = .approvalRequired
         _ = model.reconcileTabAttentionStyles(reason: "test-apply")
+        // The .running transition auto-reconciles via the runtime-readiness
+        // observer and clears the owned style synchronously.
         session.status = .running
 
         let changed = model.reconcileTabAttentionStyles(reason: "test-clear")
 
-        XCTAssertEqual(changed, 1)
+        XCTAssertEqual(changed, 0, "explicit reconcile must be idempotent after the status-change observer cleared attention")
         XCTAssertEqual(model.tabs[0].stateAttentionKind, .none)
         XCTAssertNil(model.tabs[0].notificationStyle)
     }
@@ -90,14 +99,17 @@ final class TabAttentionReconciliationTests: XCTestCase {
         session.lastAISessionIdentitySource = .observed
         session.status = .running
 
-        let changed = model.assertNotificationAttention(
+        _ = model.assertNotificationAttention(
             tabID: model.tabs[0].id,
             kind: .waitingForInput,
             sessionID: "session-1",
             reason: "test-notification"
         )
 
-        XCTAssertTrue(changed)
+        // No assertion on the returned change flag: promoting the session
+        // status inside assertNotificationAttention already triggers the
+        // runtime-readiness observer, which applies the style before the
+        // method's own reconcile pass runs.
         XCTAssertEqual(session.status, .waitingForInput)
         XCTAssertEqual(model.tabs[0].stateAttentionKind, .waitingForInput)
         XCTAssertTrue(model.tabs[0].notificationStyle?.persistent == true)
@@ -161,4 +173,3 @@ final class TabAttentionReconciliationTests: XCTestCase {
         XCTAssertNotNil(model.tabs[0].notificationStyle)
     }
 }
-#endif

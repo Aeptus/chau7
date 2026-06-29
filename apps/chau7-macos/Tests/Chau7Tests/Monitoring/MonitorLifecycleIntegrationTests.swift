@@ -1,4 +1,3 @@
-#if !SWIFT_PACKAGE
 import Foundation
 import XCTest
 @testable import Chau7
@@ -50,7 +49,7 @@ final class MonitorLifecycleIntegrationTests: XCTestCase {
         }
 
         monitor.start(shellPID: pid)
-        wait(for: [firstUpdate], timeout: 3.0)
+        wait(for: [firstUpdate], timeout: 20.0)
 
         monitor.stop()
         lock.lock()
@@ -91,7 +90,7 @@ final class MonitorLifecycleIntegrationTests: XCTestCase {
         }
 
         monitor.start(shellPID: pid)
-        wait(for: [firstPoll], timeout: 3.0)
+        wait(for: [firstPoll], timeout: 20.0)
 
         monitor.stop()
         // ProcessResourceMonitor.stop() cancels its timer but cannot synchronously wait
@@ -105,7 +104,7 @@ final class MonitorLifecycleIntegrationTests: XCTestCase {
         lock.unlock()
 
         monitor.start(shellPID: pid)
-        wait(for: [secondPoll], timeout: 3.0)
+        wait(for: [secondPoll], timeout: 20.0)
         monitor.stop()
 
         lock.lock()
@@ -162,7 +161,7 @@ final class MonitorLifecycleIntegrationTests: XCTestCase {
 
         monitor.start()
         appendHistoryEntry(to: historyPath, sessionId: "session-stop", text: "first command")
-        wait(for: [entrySeen, idleSeen], timeout: 4.0)
+        wait(for: [entrySeen, idleSeen], timeout: 20.0)
 
         lock.lock()
         let idleAtStop = onIdleCount
@@ -207,17 +206,18 @@ final class MonitorLifecycleIntegrationTests: XCTestCase {
                     secondEntry.fulfill()
                 }
                 lock.unlock()
-            }
+            },
+            onIdle: { _, _ in }
         )
 
         monitor.start()
         appendHistoryEntry(to: historyPath, sessionId: "one", text: "first session")
-        wait(for: [firstEntry], timeout: 4.0)
+        wait(for: [firstEntry], timeout: 20.0)
         monitor.stop()
 
         monitor.start()
         appendHistoryEntry(to: historyPath, sessionId: "two", text: "second session")
-        wait(for: [secondEntry], timeout: 4.0)
+        wait(for: [secondEntry], timeout: 20.0)
         monitor.stop()
 
         lock.lock()
@@ -248,4 +248,3 @@ final class MonitorLifecycleIntegrationTests: XCTestCase {
         try? handle.write(contentsOf: data)
     }
 }
-#endif

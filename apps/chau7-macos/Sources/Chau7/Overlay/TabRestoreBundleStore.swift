@@ -95,18 +95,38 @@ struct TabRestoreBundleEnvelope: Codable, Equatable {
     let reason: String
     let sourceFingerprint: String
     let windows: [[TabRestoreManifest]]
+    /// Token of the save cycle this bundle belongs to. The UserDefaults
+    /// restore index stamps the same token on every save, so restore can tell
+    /// whether the bundle still reflects the latest save (token equality)
+    /// even though unchanged-content saves skip rewriting the sidecars.
+    /// Optional: manifests written before this field decode as nil.
+    let saveToken: String?
 
     init(
         savedAt: Date,
         reason: TabStateSaveReason,
         sourceFingerprint: String,
-        windows: [[TabRestoreManifest]]
+        windows: [[TabRestoreManifest]],
+        saveToken: String? = nil
     ) {
         self.schemaVersion = 1
         self.savedAt = savedAt
         self.reason = reason.rawValue
         self.sourceFingerprint = sourceFingerprint
         self.windows = windows
+        self.saveToken = saveToken
+    }
+
+    /// Copy carrying a refreshed save token + timestamp; used when an
+    /// unchanged-content save skips rewriting sidecars but must still mark
+    /// the bundle as belonging to the latest save cycle.
+    init(refreshing existing: TabRestoreBundleEnvelope, savedAt: Date, saveToken: String?) {
+        self.schemaVersion = existing.schemaVersion
+        self.savedAt = savedAt
+        self.reason = existing.reason
+        self.sourceFingerprint = existing.sourceFingerprint
+        self.windows = existing.windows
+        self.saveToken = saveToken
     }
 }
 
@@ -127,6 +147,7 @@ enum TabRestoreBundleStore {
         windowStates: [[SavedTabState]],
         reason: TabStateSaveReason,
         sourceData: Data?,
+        saveToken: String? = nil,
         rootURL: URL = defaultRootURL(),
         fileManager: FileManager = .default,
         now: Date = Date()
@@ -141,6 +162,14 @@ enum TabRestoreBundleStore {
         if sourceFingerprint == lastPersistedSourceFingerprint,
            fileManager.fileExists(atPath: currentURL.appendingPathComponent(manifestFileName).path),
            let existing = loadEnvelope(rootURL: rootURL, fileManager: fileManager) {
+            // Content unchanged — skip the sidecar rewrite, but stamp the new
+            // save token onto the manifest so the freshness arbiter knows this
+            // bundle still belongs to the latest save cycle.
+            if let saveToken, existing.saveToken != saveToken {
+                let refreshed = TabRestoreBundleEnvelope(refreshing: existing, savedAt: now, saveToken: saveToken)
+                try writeJSON(refreshed, to: currentURL.appendingPathComponent(manifestFileName))
+                return refreshed
+            }
             return existing
         }
 
@@ -156,12 +185,20 @@ enum TabRestoreBundleStore {
                 sourceFingerprint: sourceFingerprint,
                 bundleRootURL: tempURL,
                 fileManager: fileManager,
-                now: now
+                now: now,
+                saveToken: saveToken
             )
             try writeJSON(envelope, to: tempURL.appendingPathComponent(manifestFileName))
 
-            try? fileManager.removeItem(at: currentURL)
-            try fileManager.moveItem(at: tempURL, to: currentURL)
+            // Atomic swap: delete-then-move leaves a no-bundle window if the
+            // process dies between the two calls (restore then silently
+            // degrades to the scrollback-stripped index). replaceItemAt keeps
+            // the old bundle in place until the new one takes over.
+            if fileManager.fileExists(atPath: currentURL.path) {
+                _ = try fileManager.replaceItemAt(currentURL, withItemAt: tempURL)
+            } else {
+                try fileManager.moveItem(at: tempURL, to: currentURL)
+            }
             lastPersistedSourceFingerprint = sourceFingerprint
             return envelope
         } catch {
@@ -188,11 +225,15 @@ enum TabRestoreBundleStore {
         let url = rootURL
             .appendingPathComponent(currentDirectoryName, isDirectory: true)
             .appendingPathComponent(manifestFileName)
-        guard fileManager.fileExists(atPath: url.path),
-              let data = try? Data(contentsOf: url) else {
+        // A corrupt manifest must be distinguishable from "no bundle" in the
+        // logs — restore silently falling through to the stripped index was
+        // undiagnosable when this decode was a bare try?.
+        switch Persist.loadLogged(TabRestoreBundleEnvelope.self, from: url, context: "restoreBundle.manifest", decoder: decoder) {
+        case .loaded(let envelope):
+            return envelope
+        case .notFound, .failed:
             return nil
         }
-        return try? decoder.decode(TabRestoreBundleEnvelope.self, from: data)
     }
 
     static func clearCurrentBundle(
@@ -216,7 +257,8 @@ enum TabRestoreBundleStore {
         sourceFingerprint: String,
         bundleRootURL: URL,
         fileManager: FileManager,
-        now: Date
+        now: Date,
+        saveToken: String? = nil
     ) throws -> TabRestoreBundleEnvelope {
         let windows = try windowStates.enumerated().map { windowIndex, states in
             try states.enumerated().map { tabIndex, state in
@@ -233,7 +275,8 @@ enum TabRestoreBundleStore {
             savedAt: now,
             reason: reason,
             sourceFingerprint: sourceFingerprint,
-            windows: windows
+            windows: windows,
+            saveToken: saveToken
         )
     }
 
@@ -493,13 +536,37 @@ enum TabRestoreBundleStore {
         fileManager: FileManager
     ) -> T? {
         let url = bundleRootURL.appendingPathComponent(ref.path)
+        // TEMP instrumentation (RestoreDecodeProfiler) — measure read/sha/decode
+        // cost to size the scrollback-out-of-JSON win before building it.
+        let readStart = CFAbsoluteTimeGetCurrent()
         guard fileManager.fileExists(atPath: url.path),
-              let data = try? Data(contentsOf: url),
-              data.count == ref.byteCount,
-              sha256Hex(data) == ref.sha256 else {
+              let data = try? Data(contentsOf: url) else {
+            Log.error("restoreBundle.context missing/unreadable path=\(ref.path)")
             return nil
         }
-        return try? decoder.decode(type, from: data)
+        let readMs = (CFAbsoluteTimeGetCurrent() - readStart) * 1000
+
+        let shaStart = CFAbsoluteTimeGetCurrent()
+        let digest = sha256Hex(data)
+        let shaMs = (CFAbsoluteTimeGetCurrent() - shaStart) * 1000
+        guard data.count == ref.byteCount, digest == ref.sha256 else {
+            Log.error("restoreBundle.context integrity mismatch path=\(ref.path) bytes=\(data.count)/\(ref.byteCount)")
+            return nil
+        }
+
+        let decodeStart = CFAbsoluteTimeGetCurrent()
+        let decoded = Persist.decodeLogged(type, from: data, context: "restoreBundle.context(\(ref.path))", decoder: decoder)
+        let decodeMs = (CFAbsoluteTimeGetCurrent() - decodeStart) * 1000
+
+        RestoreDecodeProfiler.record(
+            path: ref.path,
+            bytes: data.count,
+            readMs: readMs,
+            shaMs: shaMs,
+            decodeMs: decodeMs,
+            onMainThread: Thread.isMainThread
+        )
+        return decoded
     }
 
     private static func writeJSON(_ value: some Encodable, to url: URL) throws {
@@ -549,4 +616,57 @@ enum TabRestoreBundleStore {
         decoder.dateDecodingStrategy = .iso8601
         return decoder
     }()
+}
+
+/// TEMP startup instrumentation. Sums the per-sidecar read + SHA-256 integrity +
+/// JSON-decode cost across a restore so we can size the payoff of moving
+/// scrollback out of inline JSON before building it. Each call logs its own
+/// timing plus a running cumulative; read the LAST `restoreBundle.decodeProfile`
+/// line after launching the full session for the totals. Remove once measured.
+enum RestoreDecodeProfiler {
+    private static let lock = NSLock()
+    private static var count = 0
+    private static var mainThreadCount = 0
+    private static var totalBytes = 0
+    private static var totalReadMs = 0.0
+    private static var totalShaMs = 0.0
+    private static var totalDecodeMs = 0.0
+
+    static func record(
+        path: String,
+        bytes: Int,
+        readMs: Double,
+        shaMs: Double,
+        decodeMs: Double,
+        onMainThread: Bool
+    ) {
+        lock.lock()
+        count += 1
+        if onMainThread { mainThreadCount += 1 }
+        totalBytes += bytes
+        totalReadMs += readMs
+        totalShaMs += shaMs
+        totalDecodeMs += decodeMs
+        let snapshot = (
+            count: count,
+            mainThreadCount: mainThreadCount,
+            bytes: totalBytes,
+            read: totalReadMs,
+            sha: totalShaMs,
+            decode: totalDecodeMs
+        )
+        lock.unlock()
+
+        Log.info(String(
+            format: "restoreBundle.decodeProfile path=%@ main=%@ bytes=%d read=%.1fms sha=%.1fms decode=%.1fms"
+                + " | cumulative ctx=%d (mainThread=%d) bytes=%.1fMB read=%.0fms sha=%.0fms decode=%.0fms total=%.0fms",
+            (path as NSString).lastPathComponent,
+            onMainThread ? "Y" : "N",
+            bytes, readMs, shaMs, decodeMs,
+            snapshot.count, snapshot.mainThreadCount,
+            Double(snapshot.bytes) / 1_048_576.0,
+            snapshot.read, snapshot.sha, snapshot.decode,
+            snapshot.read + snapshot.sha + snapshot.decode
+        ))
+    }
 }

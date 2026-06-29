@@ -16,6 +16,14 @@ enum SavedSplitNodeKind: String, Codable {
 }
 
 final class SavedSplitNode: Codable, Equatable {
+    /// Schema version of this persisted split tree. Bump when a new pane
+    /// kind is added or a field's interpretation changes so old binaries
+    /// reading a newer snapshot fail loudly (the caller substitutes a
+    /// default layout) instead of silently decoding the parts they
+    /// understand and dropping the rest.
+    static let currentVersion = 1
+
+    let version: Int
     let kind: SavedSplitNodeKind
     let id: String
     let direction: SplitDirection?
@@ -31,6 +39,7 @@ final class SavedSplitNode: Codable, Equatable {
     let dashboardRepoGroupID: String?
 
     init(
+        version: Int = SavedSplitNode.currentVersion,
         kind: SavedSplitNodeKind,
         id: String,
         direction: SplitDirection?,
@@ -45,6 +54,7 @@ final class SavedSplitNode: Codable, Equatable {
         repoDirectory: String? = nil,
         dashboardRepoGroupID: String? = nil
     ) {
+        self.version = version
         self.kind = kind
         self.id = id
         self.direction = direction
@@ -60,8 +70,67 @@ final class SavedSplitNode: Codable, Equatable {
         self.dashboardRepoGroupID = dashboardRepoGroupID
     }
 
+    enum CodingKeys: String, CodingKey {
+        case version, kind, id, direction, ratio, first, second
+        case textEditorPath, previewFilePath, diffFilePath, diffDirectory, diffMode
+        case repoDirectory, dashboardRepoGroupID
+    }
+
+    convenience init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        // Pre-versioned snapshots (everything currently on disk) are read
+        // as version 1; future bumps will fail loudly on snapshots written
+        // by a newer binary.
+        let version = try container.decodeIfPresent(Int.self, forKey: .version) ?? 1
+        if version > SavedSplitNode.currentVersion {
+            throw DecodingError.dataCorruptedError(
+                forKey: .version,
+                in: container,
+                debugDescription:
+                "SavedSplitNode version \(version) is newer than supported version " +
+                    "\(SavedSplitNode.currentVersion); falling back to a default layout."
+            )
+        }
+
+        try self.init(
+            version: version,
+            kind: container.decode(SavedSplitNodeKind.self, forKey: .kind),
+            id: container.decode(String.self, forKey: .id),
+            direction: container.decodeIfPresent(SplitDirection.self, forKey: .direction),
+            ratio: container.decodeIfPresent(Double.self, forKey: .ratio),
+            first: container.decodeIfPresent(SavedSplitNode.self, forKey: .first),
+            second: container.decodeIfPresent(SavedSplitNode.self, forKey: .second),
+            textEditorPath: container.decodeIfPresent(String.self, forKey: .textEditorPath),
+            previewFilePath: container.decodeIfPresent(String.self, forKey: .previewFilePath),
+            diffFilePath: container.decodeIfPresent(String.self, forKey: .diffFilePath),
+            diffDirectory: container.decodeIfPresent(String.self, forKey: .diffDirectory),
+            diffMode: container.decodeIfPresent(String.self, forKey: .diffMode),
+            repoDirectory: container.decodeIfPresent(String.self, forKey: .repoDirectory),
+            dashboardRepoGroupID: container.decodeIfPresent(String.self, forKey: .dashboardRepoGroupID)
+        )
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(version, forKey: .version)
+        try container.encode(kind, forKey: .kind)
+        try container.encode(id, forKey: .id)
+        try container.encodeIfPresent(direction, forKey: .direction)
+        try container.encodeIfPresent(ratio, forKey: .ratio)
+        try container.encodeIfPresent(first, forKey: .first)
+        try container.encodeIfPresent(second, forKey: .second)
+        try container.encodeIfPresent(textEditorPath, forKey: .textEditorPath)
+        try container.encodeIfPresent(previewFilePath, forKey: .previewFilePath)
+        try container.encodeIfPresent(diffFilePath, forKey: .diffFilePath)
+        try container.encodeIfPresent(diffDirectory, forKey: .diffDirectory)
+        try container.encodeIfPresent(diffMode, forKey: .diffMode)
+        try container.encodeIfPresent(repoDirectory, forKey: .repoDirectory)
+        try container.encodeIfPresent(dashboardRepoGroupID, forKey: .dashboardRepoGroupID)
+    }
+
     static func == (lhs: SavedSplitNode, rhs: SavedSplitNode) -> Bool {
-        lhs.kind == rhs.kind &&
+        lhs.version == rhs.version &&
+            lhs.kind == rhs.kind &&
             lhs.id == rhs.id &&
             lhs.direction == rhs.direction &&
             lhs.ratio == rhs.ratio &&
@@ -93,161 +162,93 @@ enum PaneType: String, Codable {
     case dashboard
 }
 
-/// Represents a node in the split pane tree
+/// Represents a node in the split pane tree. Leaves are any PaneNode
+/// (TerminalPane, TextEditorPane, FilePreviewPane, DiffViewerPane,
+/// RepositoryPane, DashboardPane); branches are splits. The single
+/// `findLeaf` / `collectLeaves` / `walkLeaves` visitors collapse what
+/// used to be ~17 hand-rolled 7-case switches.
 indirect enum SplitNode: Identifiable {
-    case terminal(id: UUID, session: TerminalSessionModel)
-    case textEditor(id: UUID, editor: TextEditorModel)
-    case filePreview(id: UUID, preview: FilePreviewModel)
-    case diffViewer(id: UUID, diff: DiffViewerModel)
-    case repositoryPane(id: UUID, repo: RepositoryPaneModel)
-    case dashboard(id: UUID, dashboard: AgentDashboardModel)
+    case leaf(any PaneNode)
     case split(id: UUID, direction: SplitDirection, first: SplitNode, second: SplitNode, ratio: CGFloat)
 
     var id: UUID {
         switch self {
-        case .terminal(let id, _),
-             .textEditor(let id, _),
-             .filePreview(let id, _),
-             .diffViewer(let id, _),
-             .repositoryPane(let id, _),
-             .dashboard(let id, _):
-            return id
-        case .split(let id, _, _, _, _):
-            return id
+        case .leaf(let pane): return pane.id
+        case .split(let id, _, _, _, _): return id
         }
     }
 
-    /// Gets all pane IDs in this subtree
+    // MARK: - Visitors
+
+    /// Visits each leaf in tree order and concatenates the extracted lists.
+    func collectLeaves<T>(_ extract: (any PaneNode) -> [T]) -> [T] {
+        switch self {
+        case .leaf(let pane): return extract(pane)
+        case .split(_, _, let first, let second, _):
+            return first.collectLeaves(extract) + second.collectLeaves(extract)
+        }
+    }
+
+    /// Returns the first non-nil result of `extract` over the leaves in
+    /// tree order. Used by every `findX` / `findFirstX` accessor.
+    func findLeaf<T>(_ extract: (any PaneNode) -> T?) -> T? {
+        switch self {
+        case .leaf(let pane): return extract(pane)
+        case .split(_, _, let first, let second, _):
+            return first.findLeaf(extract) ?? second.findLeaf(extract)
+        }
+    }
+
+    /// Applies `action` to each leaf in tree order. Used for resource
+    /// cleanup (`closeAllSessions` → `dispose`) and similar walks.
+    func walkLeaves(_ action: (any PaneNode) -> Void) {
+        switch self {
+        case .leaf(let pane): action(pane)
+        case .split(_, _, let first, let second, _):
+            first.walkLeaves(action)
+            second.walkLeaves(action)
+        }
+    }
+
+    // MARK: - Accessors
+
+    /// Gets all pane IDs in this subtree.
     var allPaneIDs: [UUID] {
-        switch self {
-        case .terminal(let id, _),
-             .textEditor(let id, _),
-             .filePreview(let id, _),
-             .diffViewer(let id, _),
-             .repositoryPane(let id, _),
-             .dashboard(let id, _):
-            return [id]
-        case .split(_, _, let first, let second, _):
-            return first.allPaneIDs + second.allPaneIDs
-        }
+        collectLeaves { [$0.id] }
     }
 
-    /// Gets all terminal IDs in this subtree
+    /// Gets all terminal IDs in this subtree.
     var allTerminalIDs: [UUID] {
-        switch self {
-        case .terminal(let id, _):
-            return [id]
-        case .textEditor, .filePreview, .diffViewer, .repositoryPane, .dashboard:
-            return []
-        case .split(_, _, let first, let second, _):
-            return first.allTerminalIDs + second.allTerminalIDs
-        }
+        collectLeaves { ($0 as? TerminalPane).map { [$0.id] } ?? [] }
     }
 
-    /// Gets all terminal sessions in this subtree
+    /// Gets all terminal sessions in this subtree.
     var allSessions: [TerminalSessionModel] {
-        switch self {
-        case .terminal(_, let session):
-            return [session]
-        case .textEditor, .filePreview, .diffViewer, .repositoryPane, .dashboard:
-            return []
-        case .split(_, _, let first, let second, _):
-            return first.allSessions + second.allSessions
-        }
+        collectLeaves { ($0 as? TerminalPane).map { [$0.session] } ?? [] }
     }
 
     /// Returns terminal panes as `(id, session)` pairs in tree order.
     var terminalSessionPairs: [(id: UUID, session: TerminalSessionModel)] {
-        switch self {
-        case .terminal(let id, let session):
-            return [(id: id, session: session)]
-        case .textEditor, .filePreview, .diffViewer, .repositoryPane, .dashboard:
-            return []
-        case .split(_, _, let first, let second, _):
-            return first.terminalSessionPairs + second.terminalSessionPairs
+        collectLeaves { pane -> [(id: UUID, session: TerminalSessionModel)] in
+            guard let terminal = pane as? TerminalPane else { return [] }
+            return [(id: terminal.id, session: terminal.session)]
         }
     }
 
+    /// Gets all text editor models in this subtree.
     var allEditors: [TextEditorModel] {
-        switch self {
-        case .terminal, .filePreview, .diffViewer, .repositoryPane, .dashboard:
-            return []
-        case .textEditor(_, let editor):
-            return [editor]
-        case .split(_, _, let first, let second, _):
-            return first.allEditors + second.allEditors
-        }
+        collectLeaves { ($0 as? TextEditorPane).map { [$0.editor] } ?? [] }
     }
 
-    /// Returns a persistence-safe snapshot of this node.
+    // MARK: - Persistence (kind-dispatched)
+
+    /// Returns a persistence-safe snapshot of this node. Each leaf serializes
+    /// itself via `PaneNode.savedRepresentation()`, so a new pane kind adds
+    /// one conformer method instead of editing a central switch.
     var savedRepresentation: SavedSplitNode {
         switch self {
-        case .terminal(let id, _):
-            return SavedSplitNode(
-                kind: .terminal,
-                id: id.uuidString,
-                direction: nil,
-                ratio: nil,
-                first: nil,
-                second: nil,
-                textEditorPath: nil
-            )
-        case .textEditor(let id, let editor):
-            return SavedSplitNode(
-                kind: .textEditor,
-                id: id.uuidString,
-                direction: nil,
-                ratio: nil,
-                first: nil,
-                second: nil,
-                textEditorPath: editor.filePath
-            )
-        case .filePreview(let id, let preview):
-            return SavedSplitNode(
-                kind: .filePreview,
-                id: id.uuidString,
-                direction: nil,
-                ratio: nil,
-                first: nil,
-                second: nil,
-                textEditorPath: nil,
-                previewFilePath: preview.filePath
-            )
-        case .diffViewer(let id, let diff):
-            return SavedSplitNode(
-                kind: .diffViewer,
-                id: id.uuidString,
-                direction: nil,
-                ratio: nil,
-                first: nil,
-                second: nil,
-                textEditorPath: nil,
-                diffFilePath: diff.filePath,
-                diffDirectory: diff.directory,
-                diffMode: diff.diffMode.rawValue
-            )
-        case .repositoryPane(let id, let repo):
-            return SavedSplitNode(
-                kind: .repositoryPane,
-                id: id.uuidString,
-                direction: nil,
-                ratio: nil,
-                first: nil,
-                second: nil,
-                textEditorPath: nil,
-                repoDirectory: repo.directory
-            )
-        case .dashboard(let id, let dashboard):
-            return SavedSplitNode(
-                kind: .dashboard,
-                id: id.uuidString,
-                direction: nil,
-                ratio: nil,
-                first: nil,
-                second: nil,
-                textEditorPath: nil,
-                dashboardRepoGroupID: dashboard.repoGroupID
-            )
+        case .leaf(let pane):
+            return pane.savedRepresentation()
         case .split(let id, let direction, let first, let second, let ratio):
             return SavedSplitNode(
                 kind: .split,
@@ -271,79 +272,21 @@ extension SplitNode {
         return fromSavedNode(node, appModel: appModel, paneStates: [:])
     }
 
-    /// Reconstructs a split tree from persisted data.
+    /// Reconstructs a split tree from persisted data. Routes leaf
+    /// reconstruction through `PaneFactoryRegistry`, so adding a new pane
+    /// kind is a registry entry + a `makeFromSaved` static — no edits
+    /// required to this function.
     static func fromSavedNode(
         _ node: SavedSplitNode,
         appModel: AppModel,
         paneStates: [UUID: SavedTerminalPaneState]
     ) -> SplitNode {
         let resolvedID = UUID(uuidString: node.id) ?? UUID()
+        let context = PaneFactoryContext(appModel: appModel, paneStates: paneStates)
 
-        switch node.kind {
-        case .terminal:
-            let session = TerminalSessionModel(appModel: appModel)
-            if let state = paneStates[resolvedID] {
-                if let knownRepoRoot = OverlayTabsModel.normalizedSavedRepoField(state.knownRepoRoot) {
-                    KnownRepoIdentityStore.shared.record(
-                        rootPath: knownRepoRoot,
-                        branch: OverlayTabsModel.normalizedSavedRepoField(state.knownGitBranch)
-                    )
-                }
-                let restoreDirectory = state.preferredRestoreDirectory
-                if !restoreDirectory.isEmpty {
-                    session.updateCurrentDirectory(restoreDirectory)
-                }
-                // Eagerly seed the AI provider so the tab title shows
-                // "Codex"/"Claude"/etc. on first render — without this, the
-                // provider-driven fallback in `aiDisplayAppName` returns nil
-                // until the deferred per-tab `restoreTabState` runs (which
-                // only fires for the currently-selected tab at launch, plus
-                // each tab the user subsequently clicks). Setting just
-                // `lastAIProvider` is enough: the `Self.displayName(
-                // fromProvider:)` branch lights up the correct name, and
-                // the later full `restoreAIMetadata` call overwrites with
-                // the same value + fills in `activeAppName`.
-                if let normalized = AIResumeParser.normalizeProviderName(state.aiProvider ?? "") {
-                    session.lastAIProvider = normalized
-                }
-            }
-            return .terminal(id: resolvedID, session: session)
-        case .textEditor:
-            let editor = TextEditorModel()
-            if let path = node.textEditorPath,
-               !path.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                editor.loadFile(at: path)
-            }
-            return .textEditor(id: resolvedID, editor: editor)
-        case .filePreview:
-            let preview = FilePreviewModel()
-            if let path = node.previewFilePath,
-               !path.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                preview.loadFile(at: path)
-            }
-            return .filePreview(id: resolvedID, preview: preview)
-        case .diffViewer:
-            let diff = DiffViewerModel()
-            if let file = node.diffFilePath, let dir = node.diffDirectory,
-               !file.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                let mode = node.diffMode.flatMap(DiffMode.init(rawValue:)) ?? .workingTree
-                diff.loadDiff(file: file, in: dir, mode: mode)
-            }
-            return .diffViewer(id: resolvedID, diff: diff)
-        case .repositoryPane:
-            let repo = RepositoryPaneModel()
-            if let dir = node.repoDirectory,
-               !dir.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                repo.load(directory: dir)
-            }
-            return .repositoryPane(id: resolvedID, repo: repo)
-        case .dashboard:
-            let repoGroupID = node.dashboardRepoGroupID ?? ""
-            let dashboard = AgentDashboardModel(repoGroupID: repoGroupID)
-            return .dashboard(id: resolvedID, dashboard: dashboard)
-        case .split:
+        if node.kind == .split {
             guard let firstSaved = node.first, let secondSaved = node.second else {
-                return .terminal(id: resolvedID, session: TerminalSessionModel(appModel: appModel))
+                return fallbackLeaf(id: resolvedID, context: context)
             }
             return .split(
                 id: resolvedID,
@@ -353,203 +296,109 @@ extension SplitNode {
                 ratio: CGFloat(node.ratio ?? 0.5)
             )
         }
+
+        guard let paneType = node.kind.paneType,
+              let factory = PaneFactoryRegistry.factories[paneType] else {
+            return fallbackLeaf(id: resolvedID, context: context)
+        }
+        return .leaf(factory(node, context))
     }
-    // Closes all terminal sessions in this subtree
-    // NOTE: Methods below are kept in an extension to keep SplitNode behavior
-    // in one cohesive area and to avoid moving the core tree-representation
-    // model around.
+
+    /// Emergency fallback when a snapshot is malformed (e.g. a `.split`
+    /// node without children, or a `kind` that has no registered
+    /// factory). Returns a fresh terminal pane so the tree still has a
+    /// shape rather than crashing the restore.
+    private static func fallbackLeaf(id: UUID, context: PaneFactoryContext) -> SplitNode {
+        let session = TerminalSessionModel(appModel: context.appModel)
+        return .leaf(TerminalPane(id: id, session: session))
+    }
 }
 
 extension SplitNode {
-    /// Closes all terminal sessions in this subtree
+    /// Releases each leaf's resources (TerminalPane closes its PTY; the
+    /// rest are no-ops via the protocol default). Replaces the old
+    /// per-case switch over terminal/editor/preview/etc.
     func closeAllSessions() {
-        switch self {
-        case .terminal(_, let session):
-            session.closeSession()
-        case .textEditor, .filePreview, .diffViewer, .repositoryPane, .dashboard:
-            break
-        case .split(_, _, let first, let second, _):
-            first.closeAllSessions()
-            second.closeAllSessions()
-        }
+        walkLeaves { $0.dispose() }
     }
 
-    /// Finds a terminal session by ID
+    /// Finds a terminal session by ID.
     func findSession(id: UUID) -> TerminalSessionModel? {
-        switch self {
-        case .terminal(let termId, let session):
-            return termId == id ? session : nil
-        case .textEditor, .filePreview, .diffViewer, .repositoryPane, .dashboard:
-            return nil
-        case .split(_, _, let first, let second, _):
-            return first.findSession(id: id) ?? second.findSession(id: id)
-        }
+        findLeaf { ($0 as? TerminalPane).flatMap { $0.id == id ? $0.session : nil } }
     }
 
-    /// Finds a text editor model by ID
+    /// Finds a text editor model by ID.
     func findEditor(id: UUID) -> TextEditorModel? {
-        switch self {
-        case .terminal, .filePreview, .diffViewer, .repositoryPane, .dashboard:
-            return nil
-        case .textEditor(let editorId, let editor):
-            return editorId == id ? editor : nil
-        case .split(_, _, let first, let second, _):
-            return first.findEditor(id: id) ?? second.findEditor(id: id)
-        }
+        findLeaf { ($0 as? TextEditorPane).flatMap { $0.id == id ? $0.editor : nil } }
     }
 
-    /// Finds the first text editor in the tree
+    /// Finds the first text editor in the tree.
     func findFirstEditor() -> TextEditorModel? {
-        switch self {
-        case .terminal, .filePreview, .diffViewer, .repositoryPane, .dashboard:
-            return nil
-        case .textEditor(_, let editor):
-            return editor
-        case .split(_, _, let first, let second, _):
-            return first.findFirstEditor() ?? second.findFirstEditor()
-        }
+        findLeaf { ($0 as? TextEditorPane)?.editor }
     }
 
-    /// Finds a file preview model by ID
+    /// Finds a file preview model by ID.
     func findFilePreview(id: UUID) -> FilePreviewModel? {
-        switch self {
-        case .terminal, .textEditor, .diffViewer, .repositoryPane, .dashboard:
-            return nil
-        case .filePreview(let paneId, let preview):
-            return paneId == id ? preview : nil
-        case .split(_, _, let first, let second, _):
-            return first.findFilePreview(id: id) ?? second.findFilePreview(id: id)
-        }
+        findLeaf { ($0 as? FilePreviewPane).flatMap { $0.id == id ? $0.preview : nil } }
     }
 
-    /// Finds the first file preview in the tree
+    /// Finds the first file preview in the tree.
     func findFirstFilePreview() -> FilePreviewModel? {
-        switch self {
-        case .terminal, .textEditor, .diffViewer, .repositoryPane, .dashboard:
-            return nil
-        case .filePreview(_, let preview):
-            return preview
-        case .split(_, _, let first, let second, _):
-            return first.findFirstFilePreview() ?? second.findFirstFilePreview()
-        }
+        findLeaf { ($0 as? FilePreviewPane)?.preview }
     }
 
-    /// Finds a diff viewer model by ID
+    /// Finds a diff viewer model by ID.
     func findDiffViewer(id: UUID) -> DiffViewerModel? {
-        switch self {
-        case .terminal, .textEditor, .filePreview, .repositoryPane, .dashboard:
-            return nil
-        case .diffViewer(let paneId, let diff):
-            return paneId == id ? diff : nil
-        case .split(_, _, let first, let second, _):
-            return first.findDiffViewer(id: id) ?? second.findDiffViewer(id: id)
-        }
+        findLeaf { ($0 as? DiffViewerPane).flatMap { $0.id == id ? $0.diff : nil } }
     }
 
-    /// Finds the first diff viewer in the tree
+    /// Finds the first diff viewer in the tree.
     func findFirstDiffViewer() -> DiffViewerModel? {
-        switch self {
-        case .terminal, .textEditor, .filePreview, .repositoryPane, .dashboard:
-            return nil
-        case .diffViewer(_, let diff):
-            return diff
-        case .split(_, _, let first, let second, _):
-            return first.findFirstDiffViewer() ?? second.findFirstDiffViewer()
-        }
+        findLeaf { ($0 as? DiffViewerPane)?.diff }
     }
 
-    /// Finds a repository pane model by ID
+    /// Finds a repository pane model by ID.
     func findRepositoryPane(id: UUID) -> RepositoryPaneModel? {
-        switch self {
-        case .repositoryPane(let paneId, let repo):
-            return paneId == id ? repo : nil
-        case .terminal, .textEditor, .filePreview, .diffViewer, .dashboard:
-            return nil
-        case .split(_, _, let first, let second, _):
-            return first.findRepositoryPane(id: id) ?? second.findRepositoryPane(id: id)
-        }
+        findLeaf { ($0 as? RepositoryPane).flatMap { $0.id == id ? $0.repo : nil } }
     }
 
-    /// Finds the first repository pane in the tree
+    /// Finds the first repository pane in the tree.
     func findFirstRepositoryPane() -> RepositoryPaneModel? {
-        switch self {
-        case .repositoryPane(_, let repo):
-            return repo
-        case .terminal, .textEditor, .filePreview, .diffViewer, .dashboard:
-            return nil
-        case .split(_, _, let first, let second, _):
-            return first.findFirstRepositoryPane() ?? second.findFirstRepositoryPane()
-        }
+        findLeaf { ($0 as? RepositoryPane)?.repo }
     }
 
-    /// Whether the tree contains a repository pane
+    /// Whether the tree contains a repository pane.
     var hasRepositoryPane: Bool {
         findFirstRepositoryPane() != nil
     }
 
-    /// Finds the first pane ID matching the given type.
+    /// Finds the first pane ID matching the given kind.
     func firstPaneID(ofType type: PaneType) -> UUID? {
-        switch self {
-        case .terminal(let id, _):
-            return type == .terminal ? id : nil
-        case .textEditor(let id, _):
-            return type == .textEditor ? id : nil
-        case .filePreview(let id, _):
-            return type == .filePreview ? id : nil
-        case .diffViewer(let id, _):
-            return type == .diffViewer ? id : nil
-        case .repositoryPane(let id, _):
-            return type == .repositoryPane ? id : nil
-        case .dashboard(let id, _):
-            return type == .dashboard ? id : nil
-        case .split(_, _, let first, let second, _):
-            return first.firstPaneID(ofType: type) ?? second.firstPaneID(ofType: type)
-        }
+        findLeaf { $0.kind == type ? $0.id : nil }
     }
 
-    /// Gets the pane type for a given ID
+    /// Gets the pane type for a given ID.
     func paneType(for id: UUID) -> PaneType? {
-        switch self {
-        case .terminal(let paneId, _):
-            return paneId == id ? .terminal : nil
-        case .textEditor(let paneId, _):
-            return paneId == id ? .textEditor : nil
-        case .filePreview(let paneId, _):
-            return paneId == id ? .filePreview : nil
-        case .diffViewer(let paneId, _):
-            return paneId == id ? .diffViewer : nil
-        case .repositoryPane(let paneId, _):
-            return paneId == id ? .repositoryPane : nil
-        case .dashboard(let paneId, _):
-            return paneId == id ? .dashboard : nil
-        case .split(_, _, let first, let second, _):
-            return first.paneType(for: id) ?? second.paneType(for: id)
-        }
+        findLeaf { $0.id == id ? $0.kind : nil }
     }
 
-    /// Checks if tree has any text editors
+    /// Checks if the tree has any text editors.
     var hasTextEditor: Bool {
-        switch self {
-        case .terminal, .filePreview, .diffViewer, .repositoryPane, .dashboard:
-            return false
-        case .textEditor:
-            return true
-        case .split(_, _, let first, let second, _):
-            return first.hasTextEditor || second.hasTextEditor
-        }
+        findLeaf { ($0 as? TextEditorPane) != nil ? true : nil } ?? false
     }
 }
 
 // MARK: - Text Editor Model
 
-/// Model for a text editor pane
+/// Model for a text editor pane. Owns the file buffer, dirty/conflict
+/// tracking, autosave debounce, and external-change detection. The
+/// runbook-code-block state machine and sequential runner live on a
+/// dedicated `RunbookCodeBlockTracker` exposed as `runbook`; the
+/// `markCodeBlockQueued` / `codeBlockState` / `runMarkdownBlocksSequentially`
+/// methods stay on the model as thin delegates for backwards compat with
+/// existing view code.
 @Observable
 final class TextEditorModel: Identifiable {
-    struct RunbookCodeBlockKey: Hashable {
-        let lineNumber: Int
-        let normalizedCommand: String
-    }
-
     let id = UUID()
 
     var content = ""
@@ -563,7 +412,11 @@ final class TextEditorModel: Identifiable {
     var externalConflictMessage: String?
     var isAutoSaveEnabled = false
     var scrollToLine: Int? // F03: Line to scroll to after loading (set after content loads)
-    var codeBlockRunStates: [RunbookCodeBlockKey: RunbookCodeBlockState] = [:]
+
+    /// Runbook code-block state machine + sequential runner. Exposed so the
+    /// SwiftUI runbook view can observe state transitions directly without
+    /// going through TextEditorModel.
+    let runbook = RunbookCodeBlockTracker()
 
     /// Pending line to scroll to after next load completes
     @ObservationIgnored
@@ -573,19 +426,13 @@ final class TextEditorModel: Identifiable {
     @ObservationIgnored
     private var loadingToken: UUID?
     @ObservationIgnored
-    private var autoSaveWorkItem: DispatchWorkItem?
-    @ObservationIgnored
-    private var autoSaveClearWorkItem: DispatchWorkItem?
+    private let autoSaver = EditorAutoSaver()
     @ObservationIgnored
     private var fileMonitor: FileMonitor?
     @ObservationIgnored
     private var loadedContentHash: String?
     @ObservationIgnored
     private var isApplyingExternalReload = false
-    @ObservationIgnored
-    private var pendingRunbookPollWorkItems: [RunbookCodeBlockKey: DispatchWorkItem] = [:]
-    @ObservationIgnored
-    private var runbookExecutionGenerations: [RunbookCodeBlockKey: Int] = [:]
     @ObservationIgnored
     var untitledSaveHandler: ((TextEditorModel) -> Bool)?
 
@@ -744,6 +591,23 @@ final class TextEditorModel: Identifiable {
         loadFile(at: path, scrollToLine: nil)
     }
 
+    /// Drop unsaved edits, restoring the editor to the last persisted file
+    /// content if known. Used by the close-pane "Don't Save" path so the
+    /// autosave debounce timer can't resurrect the discarded edits, and so
+    /// any restore-on-relaunch path sees a clean editor.
+    func discardPendingChanges() {
+        autoSaver.cancelPendingSave()
+        isDirty = false
+        hasSaveConflict = false
+        hasExternalChangeConflict = false
+        externalConflictMessage = nil
+        if let path = filePath,
+           let diskContent = try? String(contentsOfFile: path, encoding: .utf8) {
+            content = diskContent
+            loadedContentHash = Self.contentHash(diskContent)
+        }
+    }
+
     func toggleCheckbox(lineNumber: Int) {
         guard let path = filePath, !isDirty else {
             updateContent(toggleCheckboxInContent(content, lineNumber: lineNumber))
@@ -776,45 +640,39 @@ final class TextEditorModel: Identifiable {
         }
     }
 
-    func markCodeBlockQueued(_ code: String, lineNumber: Int, tabID: String) {
-        let key = Self.runbookCodeBlockKey(for: code, lineNumber: lineNumber)
-        codeBlockRunStates[key] = .running
-        pendingRunbookPollWorkItems[key]?.cancel()
-        let generation = (runbookExecutionGenerations[key] ?? 0) + 1
-        runbookExecutionGenerations[key] = generation
-        let submittedAt = Date()
-        pollForCommandCompletion(
-            command: code,
-            key: key,
-            generation: generation,
-            tabID: tabID,
-            submittedAt: submittedAt,
-            attemptsRemaining: 120
-        )
+    /// Delegates to `runbook.runMarkdownBlocksSequentially`. Kept on the
+    /// model so existing view code (`editor.runMarkdownBlocksSequentially(...)`)
+    /// continues to compile after the runbook extraction.
+    func runMarkdownBlocksSequentially(
+        _ blocks: [(line: Int, code: String)],
+        send: @escaping (String, Int) -> Void
+    ) {
+        runbook.runMarkdownBlocksSequentially(blocks, send: send)
     }
 
+    /// Delegates to `runbook.markCodeBlockQueued`.
+    func markCodeBlockQueued(_ code: String, lineNumber: Int, tabID: String) {
+        runbook.markCodeBlockQueued(code, lineNumber: lineNumber, tabID: tabID)
+    }
+
+    /// Delegates to `runbook.codeBlockState`.
     func codeBlockState(for code: String, lineNumber: Int) -> RunbookCodeBlockState? {
-        codeBlockRunStates[Self.runbookCodeBlockKey(for: code, lineNumber: lineNumber)]
+        runbook.codeBlockState(for: code, lineNumber: lineNumber)
     }
 
     deinit {
-        autoSaveWorkItem?.cancel()
-        autoSaveClearWorkItem?.cancel()
         stopWatchingCurrentFile()
-        for workItem in pendingRunbookPollWorkItems.values {
-            workItem.cancel()
-        }
+        // Autosave + runbook work items are owned by their respective
+        // helpers (`autoSaver`, `runbook`) and cancelled in their own
+        // deinits when the model drops the last reference.
     }
 
     private func scheduleAutoSaveIfNeeded() {
         guard isAutoSaveEnabled, filePath != nil else { return }
-        autoSaveWorkItem?.cancel()
-        let workItem = DispatchWorkItem { [weak self] in
+        autoSaver.scheduleSave { [weak self] in
             guard let self, isDirty else { return }
             _ = save()
         }
-        autoSaveWorkItem = workItem
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2.5, execute: workItem)
     }
 
     private func startWatchingCurrentFile() {
@@ -866,72 +724,16 @@ final class TextEditorModel: Identifiable {
 
     private func setAutoSaveStatusMessage(_ message: String?) {
         autoSaveStatusMessage = message
-        autoSaveClearWorkItem?.cancel()
+        autoSaver.cancelStatusClear()
         guard message != nil else { return }
-        let workItem = DispatchWorkItem { [weak self] in
+        autoSaver.scheduleStatusClear { [weak self] in
             self?.autoSaveStatusMessage = nil
         }
-        autoSaveClearWorkItem = workItem
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0, execute: workItem)
-    }
-
-    private func pollForCommandCompletion(
-        command: String,
-        key: RunbookCodeBlockKey,
-        generation: Int,
-        tabID: String,
-        submittedAt: Date,
-        attemptsRemaining: Int
-    ) {
-        guard attemptsRemaining > 0 else {
-            codeBlockRunStates[key] = .failed
-            pendingRunbookPollWorkItems.removeValue(forKey: key)
-            return
-        }
-        let workItem = DispatchWorkItem { [weak self] in
-            guard let self else { return }
-            let block = MainActor.assumeIsolated {
-                CommandBlockManager.shared.blocksForTab(tabID)
-            }.reversed().first { candidate in
-                candidate.startTime >= submittedAt.addingTimeInterval(-1)
-                    && Self.normalizedRunbookKey(for: candidate.command) == key.normalizedCommand
-            }
-            guard runbookExecutionGenerations[key] == generation else {
-                pendingRunbookPollWorkItems.removeValue(forKey: key)
-                return
-            }
-            if let block, !block.isRunning {
-                codeBlockRunStates[key] = block.isSuccess ? .succeeded : .failed
-                pendingRunbookPollWorkItems.removeValue(forKey: key)
-                return
-            }
-            pollForCommandCompletion(
-                command: command,
-                key: key,
-                generation: generation,
-                tabID: tabID,
-                submittedAt: submittedAt,
-                attemptsRemaining: attemptsRemaining - 1
-            )
-        }
-        pendingRunbookPollWorkItems[key] = workItem
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25, execute: workItem)
     }
 
     private static func contentHash(_ content: String) -> String {
         let digest = SHA256.hash(data: Data(content.utf8))
         return digest.map { String(format: "%02x", $0) }.joined()
-    }
-
-    private static func normalizedRunbookKey(for command: String) -> String {
-        command.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
-    private static func runbookCodeBlockKey(for command: String, lineNumber: Int) -> RunbookCodeBlockKey {
-        RunbookCodeBlockKey(
-            lineNumber: lineNumber,
-            normalizedCommand: normalizedRunbookKey(for: command)
-        )
     }
 
     private static func shouldAutoEnableAutoSave(for path: String) -> Bool {
@@ -947,12 +749,6 @@ final class TextEditorModel: Identifiable {
         }
         return false
     }
-}
-
-enum RunbookCodeBlockState {
-    case running
-    case succeeded
-    case failed
 }
 
 // MARK: - File Preview Model
@@ -1067,6 +863,20 @@ enum DiffLineType {
     case hunkHeader(String)
 }
 
+/// What the parser learned about the diff beyond the hunk content. Lets the
+/// empty-state UI explain *why* there are no hunks instead of always
+/// claiming "no changes" for files that are actually binary or renamed.
+enum DiffSummary: Equatable {
+    /// Normal textual diff (hunks may or may not be present).
+    case content
+    /// Git reported `Binary files a/foo and b/foo differ` — no textual hunks.
+    case binary
+    /// Git reported `rename from`/`rename to` lines; if textual hunks also
+    /// appear in the diff (rename + edit) they're still parsed normally and
+    /// the summary just adds the rename context.
+    case renamed(from: String, to: String)
+}
+
 /// A parsed hunk from unified diff output
 struct DiffHunk: Identifiable {
     let id = UUID()
@@ -1093,6 +903,9 @@ final class DiffViewerModel: Identifiable {
     var rawDiff = ""
     var additions = 0
     var deletions = 0
+    /// What the parser detected outside the hunk lines (binary, rename, or
+    /// plain content). Drives the empty-state UI when there are no hunks.
+    var summary: DiffSummary = .content
     var protectedAccessSnapshot = ProtectedPathAccessPolicy.accessSnapshot(
         root: nil,
         isProtectedPath: false,
@@ -1167,6 +980,7 @@ final class DiffViewerModel: Identifiable {
         hunks = parsed.hunks
         additions = parsed.additions
         deletions = parsed.deletions
+        summary = parsed.summary
         diffMode = effectiveMode
         isLoading = false
         Log.info("Loaded diff: \(file) (\(parsed.hunks.count) hunks, +\(parsed.additions)/-\(parsed.deletions))")
@@ -1263,10 +1077,13 @@ final class DiffViewerModel: Identifiable {
         let hunks: [DiffHunk]
         let additions: Int
         let deletions: Int
+        let summary: DiffSummary
     }
 
     static func parseUnifiedDiff(_ raw: String) -> ParseResult {
-        guard !raw.isEmpty else { return ParseResult(hunks: [], additions: 0, deletions: 0) }
+        guard !raw.isEmpty else {
+            return ParseResult(hunks: [], additions: 0, deletions: 0, summary: .content)
+        }
 
         var hunks: [DiffHunk] = []
         var currentLines: [DiffLineType] = []
@@ -1274,6 +1091,9 @@ final class DiffViewerModel: Identifiable {
         var oldStart = 0, oldCount = 0, newStart = 0, newCount = 0
         var totalAdditions = 0, totalDeletions = 0
         var inHunk = false
+        var isBinary = false
+        var renameFrom: String?
+        var renameTo: String?
 
         for line in raw.components(separatedBy: "\n") {
             if line.hasPrefix("@@") {
@@ -1310,8 +1130,18 @@ final class DiffViewerModel: Identifiable {
                 } else if line.hasPrefix("\\") {
                     // "\ No newline at end of file" — skip
                 }
+            } else {
+                // Pre-hunk header lines from `git diff`: detect binary and
+                // rename markers so the empty-state UI can explain *why*
+                // there are no hunks instead of just showing "no changes".
+                if line.hasPrefix("Binary files ") || line.hasPrefix("GIT binary patch") {
+                    isBinary = true
+                } else if line.hasPrefix("rename from ") {
+                    renameFrom = String(line.dropFirst("rename from ".count))
+                } else if line.hasPrefix("rename to ") {
+                    renameTo = String(line.dropFirst("rename to ".count))
+                }
             }
-            // Skip diff header lines (diff --git, index, ---, +++)
         }
 
         // Flush last hunk
@@ -1324,7 +1154,21 @@ final class DiffViewerModel: Identifiable {
             ))
         }
 
-        return ParseResult(hunks: hunks, additions: totalAdditions, deletions: totalDeletions)
+        let summary: DiffSummary
+        if isBinary {
+            summary = .binary
+        } else if let from = renameFrom, let to = renameTo {
+            summary = .renamed(from: from, to: to)
+        } else {
+            summary = .content
+        }
+
+        return ParseResult(
+            hunks: hunks,
+            additions: totalAdditions,
+            deletions: totalDeletions,
+            summary: summary
+        )
     }
 
     private static func parseHunkHeader(_ header: String) -> (oldStart: Int, oldCount: Int, newStart: Int, newCount: Int) {
@@ -1370,6 +1214,17 @@ final class SplitPaneController {
     @ObservationIgnored
     private weak var appModel: AppModel?
 
+    /// Modal dialogs (close-confirm, Save As) are injected so headless tests
+    /// can drive the close-time decision path without spinning AppKit.
+    @ObservationIgnored
+    private let dialogs: Dialogs
+
+    /// Main-queue scheduling abstraction used by the markdown runbook
+    /// sequencer and the deferred-append polling so virtual-time tests can
+    /// step those loops without sleeping.
+    @ObservationIgnored
+    private let mainScheduler: MainScheduler
+
     /// The owning tab's UUID, propagated to new terminal sessions so events
     /// carry a deterministic tabID for the TabResolver fast-path.
     @ObservationIgnored
@@ -1396,15 +1251,7 @@ final class SplitPaneController {
 
     /// Send a command to the first terminal session in this split tree (for markdown runbooks).
     func sendCommandToTerminal(_ command: String, sourceEditor: TextEditorModel? = nil, sourceLineNumber: Int? = nil) {
-        func findSession(_ node: SplitNode) -> TerminalSessionModel? {
-            switch node {
-            case .terminal(_, let session): return session
-            case .textEditor, .filePreview, .diffViewer, .repositoryPane, .dashboard: return nil
-            case .split(_, _, let first, let second, _):
-                return findSession(first) ?? findSession(second)
-            }
-        }
-        guard let session = findSession(root) else { return }
+        guard let session = root.findLeaf({ ($0 as? TerminalPane)?.session }) else { return }
         session.sendInput(command)
         if let sourceEditor, let sourceLineNumber, let tabID = session.ownerTabID?.uuidString {
             sourceEditor.markCodeBlockQueued(command, lineNumber: sourceLineNumber, tabID: tabID)
@@ -1431,28 +1278,49 @@ final class SplitPaneController {
         }
     }
 
-    init(appModel: AppModel) {
+    init(
+        appModel: AppModel,
+        dialogs: Dialogs = SystemDialogs(),
+        mainScheduler: MainScheduler = SystemMainScheduler()
+    ) {
         self.appModel = appModel
+        self.dialogs = dialogs
+        self.mainScheduler = mainScheduler
         let session = TerminalSessionModel(appModel: appModel)
         let id = UUID()
-        self.root = .terminal(id: id, session: session)
+        self.root = .leaf(TerminalPane(id: id, session: session))
         self.focusedPaneID = id
         self.presentationTerminalPaneID = id
         configureTerminalSession(session)
     }
 
     /// Initialize with an existing terminal session
-    init(appModel: AppModel, session: TerminalSessionModel) {
+    init(
+        appModel: AppModel,
+        session: TerminalSessionModel,
+        dialogs: Dialogs = SystemDialogs(),
+        mainScheduler: MainScheduler = SystemMainScheduler()
+    ) {
         self.appModel = appModel
+        self.dialogs = dialogs
+        self.mainScheduler = mainScheduler
         let id = UUID()
-        self.root = .terminal(id: id, session: session)
+        self.root = .leaf(TerminalPane(id: id, session: session))
         self.focusedPaneID = id
         self.presentationTerminalPaneID = id
         configureTerminalSession(session)
     }
 
-    init(appModel: AppModel, root: SplitNode, focusedPaneID: UUID? = nil) {
+    init(
+        appModel: AppModel,
+        root: SplitNode,
+        focusedPaneID: UUID? = nil,
+        dialogs: Dialogs = SystemDialogs(),
+        mainScheduler: MainScheduler = SystemMainScheduler()
+    ) {
         self.appModel = appModel
+        self.dialogs = dialogs
+        self.mainScheduler = mainScheduler
         self.root = root
         if let focusedPaneID, root.allPaneIDs.contains(focusedPaneID) {
             self.focusedPaneID = focusedPaneID
@@ -1537,20 +1405,18 @@ final class SplitPaneController {
         )
     }
 
-    var attachedSessionNotePath: String? {
-        guard let repoRoot = currentRepoRootForSessionNote(),
-              let ownerTabID else {
+    /// Builds a `SessionNoteCoordinator` for the current tab and repo, or
+    /// nil when either piece is missing (no tabID assigned, or no terminal
+    /// session has reported a git root yet).
+    private func sessionNoteCoordinator() -> SessionNoteCoordinator? {
+        guard let tabID = ownerTabID, let repoRoot = currentRepoRootForSessionNote() else {
             return nil
         }
-        return SessionNoteAttachmentLocator.filePath(repoRoot: repoRoot, tabID: ownerTabID)
+        return SessionNoteCoordinator(tabID: tabID, repoRoot: repoRoot)
     }
 
-    private var existingAttachedSessionNotePath: String? {
-        guard let path = attachedSessionNotePath,
-              FileManager.default.fileExists(atPath: path) else {
-            return nil
-        }
-        return path
+    var attachedSessionNotePath: String? {
+        sessionNoteCoordinator()?.attachedNotePath
     }
 
     private func currentRepoRootForSessionNote() -> String? {
@@ -1568,28 +1434,13 @@ final class SplitPaneController {
         return nil
     }
 
-    private func ensureSessionNoteFileExists(at path: String) {
-        let url = URL(fileURLWithPath: path)
-        FileOperations.createDirectory(at: url.deletingLastPathComponent())
-        guard !FileManager.default.fileExists(atPath: url.path) else { return }
-        _ = FileOperations.writeString("", to: url.path)
-    }
-
     private func resolvedTextEditorFilePath(_ filePath: String?) -> String? {
-        guard let filePath else {
-            return preparedAttachedSessionNotePath()
-        }
-        return filePath
-    }
-
-    private func preparedAttachedSessionNotePath() -> String? {
-        guard let path = attachedSessionNotePath else { return nil }
-        ensureSessionNoteFileExists(at: path)
-        return path
+        if let filePath { return filePath }
+        return sessionNoteCoordinator()?.prepareNoteFile()
     }
 
     func attachUntitledSessionNoteEditorsIfPossible() {
-        guard let notePath = preparedAttachedSessionNotePath() else { return }
+        guard let notePath = sessionNoteCoordinator()?.prepareNoteFile() else { return }
         for editor in root.allEditors where editor.filePath == nil {
             editor.loadFile(at: notePath)
         }
@@ -1597,19 +1448,13 @@ final class SplitPaneController {
 
     @discardableResult
     private func saveUntitledEditorToAttachedSessionNote(_ editor: TextEditorModel) -> Bool {
-        guard let repoRoot = currentRepoRootForSessionNote(),
-              let ownerTabID else {
-            return false
-        }
-
-        let path = SessionNoteAttachmentLocator.filePath(repoRoot: repoRoot, tabID: ownerTabID)
-        ensureSessionNoteFileExists(at: path)
+        guard let path = sessionNoteCoordinator()?.prepareNoteFile() else { return false }
         return editor.saveAs(to: path)
     }
 
     func restoreAttachedSessionNoteIfNeeded() {
         guard root.firstPaneID(ofType: .textEditor) == nil,
-              let notePath = existingAttachedSessionNotePath else {
+              let notePath = sessionNoteCoordinator()?.existingNotePath else {
             return
         }
         let preservedFocus = focusedPaneID
@@ -1627,7 +1472,7 @@ final class SplitPaneController {
         let newSession = TerminalSessionModel(appModel: appModel)
         configureTerminalSession(newSession)
         let newID = UUID()
-        let newNode = SplitNode.terminal(id: newID, session: newSession)
+        let newNode = SplitNode.leaf(TerminalPane(id: newID, session: newSession))
 
         root = splitNode(root, targetID: focusedPaneID, direction: direction, newNode: newNode)
         focusedPaneID = newID
@@ -1642,7 +1487,7 @@ final class SplitPaneController {
             editor.loadFile(at: path, scrollToLine: scrollToLine)
         }
         let newID = UUID()
-        let newNode = SplitNode.textEditor(id: newID, editor: editor)
+        let newNode = SplitNode.leaf(TextEditorPane(id: newID, editor: editor))
 
         root = splitNode(root, targetID: focusedPaneID, direction: direction, newNode: newNode)
         focusedPaneID = newID
@@ -1675,7 +1520,7 @@ final class SplitPaneController {
             preview.loadFile(at: path, scrollToLine: scrollToLine)
         }
         let newID = UUID()
-        let newNode = SplitNode.filePreview(id: newID, preview: preview)
+        let newNode = SplitNode.leaf(FilePreviewPane(id: newID, preview: preview))
 
         root = splitNode(root, targetID: focusedPaneID, direction: direction, newNode: newNode)
         focusedPaneID = newID
@@ -1706,7 +1551,7 @@ final class SplitPaneController {
         let diff = DiffViewerModel()
         diff.loadDiff(file: filePath, in: directory, mode: mode)
         let newID = UUID()
-        let newNode = SplitNode.diffViewer(id: newID, diff: diff)
+        let newNode = SplitNode.leaf(DiffViewerPane(id: newID, diff: diff))
 
         root = splitNode(root, targetID: focusedPaneID, direction: direction, newNode: newNode)
         focusedPaneID = newID
@@ -1729,7 +1574,7 @@ final class SplitPaneController {
         repo.tabID = ownerTabID
         repo.load(directory: directory)
         let newID = UUID()
-        let newNode = SplitNode.repositoryPane(id: newID, repo: repo)
+        let newNode = SplitNode.leaf(RepositoryPane(id: newID, repo: repo))
 
         root = splitNode(root, targetID: focusedPaneID, direction: direction, newNode: newNode)
         focusedPaneID = newID
@@ -1756,13 +1601,8 @@ final class SplitPaneController {
 
     private func splitNode(_ node: SplitNode, targetID: UUID, direction: SplitDirection, newNode: SplitNode) -> SplitNode {
         switch node {
-        case .terminal(let id, _),
-             .textEditor(let id, _),
-             .filePreview(let id, _),
-             .diffViewer(let id, _),
-             .repositoryPane(let id, _),
-             .dashboard(let id, _):
-            if id == targetID {
+        case .leaf(let pane):
+            if pane.id == targetID {
                 return .split(
                     id: UUID(),
                     direction: direction,
@@ -1789,10 +1629,30 @@ final class SplitPaneController {
         closePane(id: focusedPaneID)
     }
 
-    /// Closes a specific pane by ID
+    /// Closes a specific pane by ID. For a dirty text editor that the user did
+    /// not opt into auto-save for, prompts to save/discard/cancel — Cancel
+    /// aborts the close. Auto-save-enabled editors (session notes, plan.md)
+    /// flush silently on close because the user has already opted into
+    /// continuous saving; suppressing the prompt for those files preserves
+    /// the type-and-⌃⌘W flow that `.chau7/sessions/<tab>/note.md` relies on.
+    /// This is the single source of truth for close-time save decisions; the
+    /// per-view close button and the ⌃⌘W menu both flow through here.
     func closePane(id: UUID) {
         // Don't close if it's the only pane
         guard root.allPaneIDs.count > 1 else { return }
+
+        if let editor = root.findEditor(id: id), editor.isDirty {
+            if editor.isAutoSaveEnabled {
+                if editor.filePath != nil {
+                    _ = editor.save()
+                } else {
+                    _ = editor.saveUntitledIfPossible()
+                }
+            } else {
+                let confirmer = PaneCloseConfirmer(dialogs: dialogs)
+                if confirmer.confirmCloseDirty(editor) == .abort { return }
+            }
+        }
 
         let result = removeNode(root, targetID: id)
         if let newRoot = result.node {
@@ -1808,25 +1668,12 @@ final class SplitPaneController {
 
     private func removeNode(_ node: SplitNode, targetID: UUID) -> (node: SplitNode?, siblingID: UUID?) {
         switch node {
-        case .terminal(let id, let session):
-            if id == targetID {
-                session.closeSession()
-                return (nil, nil)
-            }
-            return (node, nil)
-
-        case .textEditor(let id, let editor):
-            if id == targetID {
-                flushEditorBeforeClosing(editor)
-                return (nil, nil)
-            }
-            return (node, nil)
-
-        case .filePreview(let id, _),
-             .diffViewer(let id, _),
-             .repositoryPane(let id, _),
-             .dashboard(let id, _):
-            if id == targetID {
+        case .leaf(let pane):
+            if pane.id == targetID {
+                // The close-time save/discard decision is made by `closePane`
+                // before it ever reaches this case. Disposing the pane lets
+                // TerminalPane close its PTY; other panes are no-ops.
+                pane.dispose()
                 return (nil, nil)
             }
             return (node, nil)
@@ -1853,15 +1700,6 @@ final class SplitPaneController {
             }
             // Both removed (shouldn't happen normally)
             return (nil, nil)
-        }
-    }
-
-    private func flushEditorBeforeClosing(_ editor: TextEditorModel) {
-        guard editor.isDirty else { return }
-        if editor.filePath != nil {
-            _ = editor.save()
-        } else {
-            _ = editor.saveUntitledIfPossible()
         }
     }
 
@@ -1911,17 +1749,7 @@ final class SplitPaneController {
 
     /// Gets the first terminal session in the tree
     var primarySession: TerminalSessionModel? {
-        func findFirst(_ node: SplitNode) -> TerminalSessionModel? {
-            switch node {
-            case .terminal(_, let session):
-                return session
-            case .textEditor, .filePreview, .diffViewer, .repositoryPane, .dashboard:
-                return nil
-            case .split(_, _, let first, let second, _):
-                return findFirst(first) ?? findFirst(second)
-            }
-        }
-        return findFirst(root)
+        root.findLeaf { ($0 as? TerminalPane)?.session }
     }
 
     // MARK: - Resize
@@ -1933,7 +1761,7 @@ final class SplitPaneController {
 
     private func adjustRatioInNode(_ node: SplitNode, targetID: UUID, delta: CGFloat) -> SplitNode {
         switch node {
-        case .terminal, .textEditor, .filePreview, .diffViewer, .repositoryPane, .dashboard:
+        case .leaf:
             return node
 
         case .split(let id, let dir, let first, let second, var ratio):
@@ -1963,7 +1791,7 @@ final class SplitPaneController {
 
     private func updateRatioInNode(_ node: SplitNode, splitID: UUID, newRatio: CGFloat) -> SplitNode {
         switch node {
-        case .terminal, .textEditor, .filePreview, .diffViewer, .repositoryPane, .dashboard:
+        case .leaf:
             return node
 
         case .split(let id, let dir, let first, let second, let ratio):
@@ -1986,13 +1814,41 @@ final class SplitPaneController {
 
     // MARK: - Text Editor Operations
 
-    /// Appends selected text from terminal to the first text editor
+    /// Appends selected text from the terminal to the side text editor,
+    /// opening one if none exists. ⇧⌥⌘E used to log a warning and do nothing
+    /// when no editor was open, which made the shortcut feel broken — the
+    /// implicit mental model is "send selection to editor", so we now create
+    /// the editor on demand. The new editor attaches to the tab-scoped
+    /// session note (when a repo root is known) via the existing untitled
+    /// auto-attach plumbing, so the appended selection lands somewhere
+    /// durable instead of being thrown away on tab close.
     func appendSelectionToEditor(_ text: String) {
         if let editor = root.findFirstEditor() {
             editor.appendText(text)
-        } else {
-            Log.warn("No text editor pane open to append to")
+            return
         }
+        splitWithTextEditor(direction: .horizontal)
+        guard let editor = root.findFirstEditor() else {
+            Log.warn("Failed to open text editor for selection append")
+            return
+        }
+        appendTextAfterEditorLoad(editor, text: text)
+    }
+
+    /// The freshly created editor may still be loading its attached session
+    /// note off the background queue, so we defer the append until the load
+    /// settles. After a short timeout we append anyway — losing the user's
+    /// selection because we waited for a load that never resolved would be
+    /// worse than appending into the in-memory buffer.
+    private func appendTextAfterEditorLoad(_ editor: TextEditorModel, text: String) {
+        Polling.untilTrue(
+            on: mainScheduler,
+            every: 0.05,
+            attempts: 40,
+            predicate: { [weak editor] in editor?.isLoading == false },
+            onSettled: { [weak editor] in editor?.appendText(text) },
+            onTimeout: { [weak editor] in editor?.appendText(text) }
+        )
     }
 
     /// Checks if there's a text editor open

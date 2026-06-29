@@ -18,6 +18,15 @@
 #include <stdbool.h>
 #include <stddef.h>
 
+/*
+ Bumped whenever any `#[repr(C)]` struct shared with Swift changes layout
+ or any entry point changes semantics incompatibly. Swift checks this right
+ after dlopen and refuses to bind on mismatch — struct drift between the
+ hand-mirrored Swift types and these definitions is silent memory
+ corruption at 60fps otherwise.
+ */
+#define CHAU7_TERMINAL_ABI_VERSION 1
+
 #define POLL_EVENT_GRID_CHANGED (1 << 0)
 
 #define POLL_EVENT_METADATA_CHANGED (1 << 1)
@@ -407,6 +416,27 @@ struct Chau7Terminal *chau7_terminal_create_with_env(uint16_t cols,
                                                      size_t env_count);
 
 /*
+ Create a new terminal with environment variables, shell argv, and an
+ explicit working directory.
+
+ # Safety
+ - `shell` must be a valid null-terminated C string, or null for default shell
+ - `env_keys`/`env_values` must be arrays of valid null-terminated C strings of length `env_count`
+ - `args` must be an array of valid null-terminated C strings of length `args_count`, or null when `args_count == 0`
+ - `cwd` must be a valid null-terminated C string, or null to inherit the process cwd
+ - Returns null on failure
+ */
+struct Chau7Terminal *chau7_terminal_create_with_launch(uint16_t cols,
+                                                        uint16_t rows,
+                                                        const char *shell,
+                                                        const char *const *env_keys,
+                                                        const char *const *env_values,
+                                                        size_t env_count,
+                                                        const char *const *args,
+                                                        size_t args_count,
+                                                        const char *cwd);
+
+/*
  Destroy a terminal instance
 
  # Safety
@@ -439,6 +469,18 @@ void chau7_terminal_send_text(struct Chau7Terminal *term, const char *text);
  - `term` must be a valid pointer
  */
 void chau7_terminal_resize(struct Chau7Terminal *term, uint16_t cols, uint16_t rows);
+
+/*
+ Re-deliver `SIGWINCH` to the PTY's foreground process group without changing
+ the winsize, forcing a full-screen TUI to re-read the terminal width.
+
+ Used once shortly after the child produces its first output to defeat the
+ startup race where the child caches a stale width (see `Chau7Terminal::nudge_winsize`).
+
+ # Safety
+ - `term` must be a valid pointer
+ */
+void chau7_terminal_nudge_winsize(struct Chau7Terminal *term);
 
 /*
  Get a snapshot of the current grid state
@@ -650,14 +692,6 @@ void chau7_terminal_set_colors(struct Chau7Terminal *term,
  - `term` must be a valid pointer
  */
 void chau7_terminal_clear_scrollback(struct Chau7Terminal *term);
-
-/*
- Set Unicode ambiguous-width treatment (1 = single, 2 = double).
-
- # Safety
- - `term` must be a valid pointer
- */
-void chau7_terminal_set_ambiguous_width(struct Chau7Terminal *term, uint8_t width);
 
 /*
  Set the scrollback buffer size (number of lines)
@@ -967,5 +1001,20 @@ void chau7_terminal_set_image_protocols(struct Chau7Terminal *term,
  - `term` must be a valid pointer
  */
 bool chau7_terminal_has_pending_images(struct Chau7Terminal *term);
+
+uint32_t chau7_terminal_abi_version(void);
+
+/*
+ Layout probes: Swift asserts its mirrored struct sizes match at load time.
+ */
+size_t chau7_terminal_sizeof_grid_snapshot(void);
+
+size_t chau7_terminal_sizeof_cell_data(void);
+
+size_t chau7_terminal_sizeof_debug_state(void);
+
+size_t chau7_terminal_sizeof_image_data(void);
+
+size_t chau7_terminal_sizeof_shell_event(void);
 
 #endif  /* CHAU7_TERMINAL_H */

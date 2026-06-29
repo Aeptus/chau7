@@ -125,6 +125,30 @@ final class RustMetalDisplayCoordinator: NSObject {
 
         super.init()
 
+        // A GPU-failed frame already consumed its render request; without a
+        // forced full-refresh redraw the view would strand on a stale frame
+        // until the next PTY change.
+        renderer.onCommandBufferError = { [weak self] in
+            guard let self else { return }
+            Log.warn("RustMetalDisplayCoordinator: GPU frame failed; forcing full-refresh redraw")
+            tripleBuffer.markFullRefresh()
+            requestSyncRender()
+            scheduleDisplay()
+        }
+
+        // Dragging the window between Retina and non-Retina displays changes
+        // the backing scale; without reconfiguring, glyphs render at the old
+        // scale (blurry or oversampled) until the next tab switch/font change.
+        metalView.onBackingPropertiesChanged = { [weak self] in
+            guard let self else { return }
+            if configureFont() {
+                Log.info("RustMetalDisplayCoordinator: backing scale changed; reconfigured font and forcing full refresh")
+                tripleBuffer.markFullRefresh()
+                requestSyncRender()
+                scheduleDisplay()
+            }
+        }
+
         metalView.isPaused = true
         // enableSetNeedsDisplay = true lets us mark the view dirty via
         // needsDisplay. Core Animation coalesces multiple marks within one
@@ -651,37 +675,38 @@ final class RustMetalDisplayCoordinator: NSObject {
 
     // MARK: - Memory Volatility
 
+    /// Whether the renderer's GPU resources are currently marked volatile.
+    /// Window-level state: this coordinator is shared by every tab in its
+    /// window, so volatility may only apply while the whole window is
+    /// invisible (driven by `TerminalMemoryReclaimer` under critical
+    /// pressure). Promotion happens at the top of the next draw.
+    private(set) var texturesAreVolatile = false
+
     /// Marks the renderer's GPU textures and buffers as volatile. The OS may
     /// reclaim them under memory pressure; if it does, the next promotion will
     /// rebuild. If no pressure occurs, the data is preserved and promotion is
     /// free.
     func markTexturesVolatile() {
+        guard !texturesAreVolatile else { return }
+        texturesAreVolatile = true
         _ = renderer.setAtlasPurgeableState(.volatile)
+        Log.info("RustMetalDisplayCoordinator: GPU resources marked volatile")
     }
 
     /// Marks the renderer's GPU resources as non-volatile and detects whether
-    /// the OS reclaimed them while volatile. If reclaimed, clears the CPU glyph
-    /// cache so the next draw re-rasterizes into a fresh atlas.
+    /// the OS reclaimed *any* of them while volatile. If reclaimed, the
+    /// renderer rewrites the static vertex quad itself and we clear the CPU
+    /// glyph cache + force a full refresh so the next draw re-rasterizes.
     func markTexturesNonVolatileAndRebuildIfNeeded() {
+        guard texturesAreVolatile else { return }
+        texturesAreVolatile = false
         let prior = renderer.setAtlasPurgeableState(.nonVolatile)
         if prior == .empty {
-            Log.info("RustMetalDisplayCoordinator: atlas reclaimed by OS — rebuilding on next draw")
+            Log.info("RustMetalDisplayCoordinator: GPU resources reclaimed by OS — rebuilding on next draw")
             renderer.clearGlyphCache()
             tripleBuffer.markFullRefresh()
             requestSyncRender()
             scheduleDisplay()
-        }
-    }
-}
-
-// MARK: - TabMetalVolatility
-
-extension RustMetalDisplayCoordinator: TabMetalVolatility {
-    func setTexturesVolatile(_ volatile: Bool) {
-        if volatile {
-            markTexturesVolatile()
-        } else {
-            markTexturesNonVolatileAndRebuildIfNeeded()
         }
     }
 }
@@ -702,6 +727,9 @@ extension RustMetalDisplayCoordinator: MTKViewDelegate {
 
     func draw(in view: MTKView) {
         Self.drawCallCount += 1
+        // Promote volatile GPU resources before any encode touches them —
+        // a no-op flag check in the common case.
+        markTexturesNonVolatileAndRebuildIfNeeded()
         // A `metalView.needsDisplay = true` set before the bound view flipped
         // to drain-only (typical during a tab switch — `applyRenderPhase(.warm)`
         // sets `notifyUpdateChanges = false` synchronously, but a CADisplayLink

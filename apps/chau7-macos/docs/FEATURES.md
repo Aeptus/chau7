@@ -57,7 +57,8 @@ Chau7 recognizes AI CLIs the moment they launch — no configuration required. T
 Detection methods:
 - Live process-tree resolution. Each session polls `ps` descendants of its shell PID and matches executable basenames against the registry — the OS is the ground truth for identity. A tab labeled Codex that starts running Claude updates to Claude within ~1.5s without requiring user action.
 - Command line tokenization with wrapper skipping (env, sudo, npx, bunx, pnpm). Command detection gates output scanning to prevent false positives.
-- Output banner matching for all supported CLIs. Patterns require tool-specific context to avoid substring collisions.
+- Output banner matching for all supported CLIs. Patterns require tool-specific context to avoid substring collisions, and exclude API-endpoint/website substrings (e.g. `openai.com/v1`) that appear in ordinary project code rather than CLI banners.
+- Corroborated output origination. An output-pattern match can only *originate* a new tool identity on a tab that has none when a live process-tree signal corroborates it; otherwise output matching only *confirms* an already-established identity. This prevents incidental output — an API URL printed by a `git push` in a repo that uses that API — from flipping a plain shell to an AI tool.
 - Custom detection rules with display name, tab color, and logo.
 
 ### AI Features
@@ -66,7 +67,7 @@ Detection methods:
 - **Auto tab theming** — tabs adopt the brand color of the active AI agent.
 - **LLM error explanation** — one-click error analysis via OpenAI, Anthropic, Ollama, or custom endpoint.
 - **Claude Code deep integration** — monitor hook events: prompts, tools, permissions, responses.
-- **AI event notifications** — finished, failed, permission, needs_validation, tool_complete, session_end, idle. Default policy: finished, failed, and permission. Noisier triggers available in settings. Banners include repo/tab/directory context in the subtitle when available.
+- **AI event notifications** — finished, failed, permission, needs_validation, tool_complete, session_end, idle. Default policy scopes notifications to two moments: the agent is waiting on you (permission / waiting_input / attention_required / elicitation) and the agent has finished working (finished / failed / response_failed). All of those bounce the Dock icon by default — once for completion, continuously (critical) until focused for approval/feedback. Noise sources — shell `command_finished`/`command_failed`, AI `idle`, and `tool_failed` — are off by default and toggleable in settings. Banners include repo/tab/directory context in the subtitle when available.
 - **Resilient waiting-input attention** — waiting-input and attention-required events keep persistent tab highlights even when duplicate suppression, rate limits, or disabled idle actions suppress the follow-up notification path.
 - **State-driven tab attention** — terminal session state is reduced through a pure policy so `waitingForInput` / `approvalRequired` tabs have a single source of truth independent of banner delivery. The overlay reconciler repairs missing highlights from live state without replaying native notifications, and `attentionReport` diagnostics expose state/style mismatches in snapshots and tab summaries.
 - **Terminal wait-pattern backstop** — terminal-side AI prompt detection emits lower-confidence attention events as soon as a TUI appears blocked, closing provider-hook delays while preserving authoritative hook precedence.
@@ -79,11 +80,27 @@ Detection methods:
 - **Notification delivery ledger** — lifecycle tracking for debugging: coalescing, retry scheduling, drop reasons, and real UI outcomes.
 - **PTY output logging** — capture raw terminal output for AI tool sessions.
 - **Codex session resolver** — maps Codex sessions to working directories with LRU caching.
+- **Generation-tokened event drain** — drain runloops capture a generation at start; any start/stop invalidates older loops, and the log sink, deallocation flags, and poll diagnostics are lock-guarded.
+- **Queue-confined monitors** — dev-server detection, file tailers, shell-event detection, the shared process-tree snapshotter, and the remote IPC server each confine mutable state to one owning queue, so UI calls can never race their timers.
+- **Retry-not-give-up watchdogs** — file monitors re-arm with backoff after delete/replace, tailers re-arm on rename with bounded per-tick reads, and the terminal dylib loader retries after a cooldown instead of disabling terminals until relaunch.
 - **Pane-owned AI restore** — split tabs restore resume commands from each saved terminal pane’s own metadata instead of inferring ownership from whichever pane is focused after layout rebuild.
 - **Restore ownership validation** — pane resume prefills now verify directory and restored AI identity before insertion, so stale retries fail closed instead of landing in the wrong pane.
 - **Restore delivery ledger** — pane resume restore now records scheduled, queued, delivered, rejected, and superseded outcomes per pane so stale retries are explicit in logs and tests instead of silent.
 - **Restore supersession guard** — stale retry callbacks can no longer overwrite a newer pane’s delivered restore outcome, so the ledger keeps the winning pane state instead of regressing to `superseded`.
-- **Autosaved side-panel notes** — default text side panels attach to the tab-scoped `.chau7/sessions/<tab-id>/note.md` as soon as they open, auto-save edits, and flush dirty content before closing.
+- **Identity-tolerant resume prefill** — resume-prefill validation treats unresolved current AI identity as a soft match instead of rejecting, so the prefill survives the post-launch window before output-derived provider/session corroboration completes. Confirmed mismatches still reject.
+- **Canonical directory match for resume prefill** — directory-ownership comparison canonicalizes both expected and live paths via symlink resolution, tilde expansion, and standardization before comparing, so `/var` ↔ `/private/var`, trailing slashes, `..` segments, and historical `~/proj` saves no longer produce string-inequality rejection on equivalent paths.
+- **Phase-independent idle scrollback flush** — warm-idle tabs flush their scrollback ring to disk losslessly (ANSI/SGR preserved via the lossless capture FFI) and shrink to the viewport floor without changing render phase. On reselection the cached ANSI buffer is replayed and the ring grows back to the configured capacity, so long-lived background tabs free history memory without losing colors or re-pour fidelity. TUI / alternate-screen tabs are skipped.
+- **Restore-time re-resolution of AI session commands** — when autosave captured a pane's identity during the post-launch corroboration window, the saved `aiResumeCommand` is nil because `buildAIResumeCommand` correctly refuses synthetic session IDs. On restore the pipeline now scans the provider's transcript files (`~/.claude/projects/<dir-as-dashes>/*.jsonl`, `~/.codex/sessions/...`) for the best match against the saved directory + last-input recency and reconstructs a real `claude --resume <id>` / `codex resume <id>` from the result. When autosave captured **no** identity at all (provider AND session AND command all nil — fired before any corroboration), the helper scans BOTH providers' transcripts and picks whichever has a match closer to the saved activity timestamp, or the newest transcript overall when the activity timestamps didn't survive. The Codex resolver anchors its day-directory search at the saved activity timestamp (not "today") and walks up to 14 day folders, so tabs last used a week+ ago are recoverable. Tabs that previously came back blank after restart are now restored with the correct resume prefill.
+- **Live process tree is authoritative for AI-running state** — `isAIRunning` (the predicate that drives logo opacity in the tab strip and hover card) now treats a non-nil `liveAgentName` as definitive proof an AI tool is active, regardless of whether `activeAppName` has been cleared by the state machine on prompt-return. Closes the regression introduced when output-detection corroboration tightened and URL fingerprints were purged — tabs running Codex / Claude whose output didn't contain a fresh corroborating signal were rendering at the dimmed opacity even though the agent was visibly in the process tree. The display chain (`aiDisplayAppName`) also picks up `lastDetectedAppName` as an additional fallback so future independent clearing of `lastAIProvider` can't strip the logo silently.
+- **Dimmed AI tab logo stays legible** — the "not currently running" opacity for the tab-strip agent logo moved from 0.35 to 0.6. The previous value was effectively invisible against the dark tab background, so restored tabs with a correctly stored provider (e.g. an old "Debug 2" tab whose Claude process had exited) looked like they had no icon at all. The dimmed cue is preserved; it's just readable now.
+- **AI display name reads a single canonical field** — `aiDisplayAppName` collapsed from a four-rung fallback (`liveAgentName → activeAppName → lastDetectedAppName → lastAIProvider`) to a single read of `lastAIProvider`. Every detection write path — process-tree subscription, output match, history adoption, restore — now writes through to `lastAIProvider` (via `updateLastDetectedApp`) so the canonical persisted field is always current. The previous chain had grown one rung per regression where some write path forgot to update another field; closing the writer holes makes the readers trivial and removes a recurring class of "icon disappears after restore" bugs.
+- **Restore re-resolution refuses to fabricate identity from cwd alone** — when autosave landed with no provider, no session id, and no resume command on a pane, the restore pipeline used to ask "what is the newest claude or codex transcript in this directory?" and hand the answer back as the tab's identity. For directories with many tabs that collapsed every nil-identity sibling onto the same most-recent session — N tabs all restored with the same `claude --resume <id>`, including former codex tabs whose identity was lost. `reResolveResumeCommand` now refuses to guess when the saved trio is entirely nil, and even when at least the provider tag survives, it dedups its on-disk candidate against the session ids already claimed by other tabs' saved state. Tabs in a shared cwd are restored to distinct sessions or come back blank, never to a duplicate.
+- **Resume prefill never silently abandons after retry exhaustion** — the queued resume command used to retry with an eager 0.3–3s backoff up to 20 times (~30s), then return `.queued` and reset the retry counter without scheduling another attempt. During a multi-tab cold boot many shells race for resources and the first selected tab's OSC 133 prompt can arrive well after that window — leaving `pendingPrefillInput` set but nothing actively trying to drain it, so the prefill only appeared if the user happened to switch tabs and back (recreating the view triggered `attachRustTerminal → flushPendingPrefillInputIfReady`). The retry pacer now falls through to a 5s heartbeat past retry 20, so the prefill is delivered the moment the shell becomes ready without requiring user interaction.
+- **Tab selection drains queued resume prefill** — `selectTab` now walks the newly selected tab's terminal sessions and calls `flushPendingPrefillInputIfReady` on each. The user looking at a tab is a natural kick for any queued resume command that was waiting on a cold-boot shell — pairs with the 5s heartbeat above so users who do switch around see the prefill instantly, and users who don't still get it within 5s of the shell settling.
+- **"Move to Idle Tabs" works on the selected tab** — the right-click action used to silently no-op when invoked on the currently selected tab (the previous guard rejected `id == selectedTabID` with no log line, no state change, no UX feedback). Selection now jumps to the immediate neighbor first, then the original tab moves into the idle dropdown. Refuses cleanly with a warning when this is the only tab in the window so the user is never left with an empty bar. The `idleTabs` view predicate also reads the observable `suspendedTabIDs` set directly so SwiftUI re-evaluates immediately on the manual move (the session's `lastInputAt` / `lastOutputAt` are `@ObservationIgnored` to avoid keystroke-frequency view thrashing).
+- **Side-panel markdown editor defaults to source** — opening a `.md` / `.markdown` file in the text side panel now shows the raw source editor by default; the runbook preview is one toolbar-button click away. The previous default landed users in the rendered runbook view, which had no editor affordances and made simple edits awkward.
+- **Runbook view actually renders inline markdown** — every paragraph, heading, list item, and checkbox label now renders `**bold**`, `*italic*`, `` `inline code` ``, and `[link](url)` as styled glyphs via `AttributedString(markdown:options:.inlineOnlyPreservingWhitespace)`. The previous build called `Text(verbatim:)` on every line, so users saw literal `**` and `_` characters in the preview. Block-level constructs (headings, fences, lists, checkboxes) are still parsed first by the structural layer, so the inline-only mode never reinterprets a leading `#` as a heading marker. Code-block content is pinned to `Text(verbatim:)` so it can never be reinterpreted as markdown. Malformed inline markup falls back to a partially-parsed rendering so content is never silently dropped.
+- **Autosaved side-panel notes** — default text side panels attach to the tab-scoped `.chau7/sessions/<tab-id>/note.md` as soon as they open, auto-save edits, and flush dirty content silently on close. Regular files (non-auto-save) prompt to save / discard / cancel via a single dialog hosted on the split-pane controller, so the X button and ⌃⌘W share one decision path and "Don't Save" actually discards.
 - **Single Live Selected-Tab Surface** — selected tabs now render through one live surface only; the old snapshot/cursor handoff no longer stacks on top of the live terminal during tab switches.
 - **On-Demand Deferred Restore** — non-selected restored tabs stay deferred until the user selects them, instead of auto-restoring and mutating visible tabs immediately after launch.
 - **Identity-only background restore** — deferred background tabs hydrate provider/session facts for routing and titles without activating AI live-render state, restoring command blocks, or queuing resume input until selected.
@@ -116,16 +133,21 @@ Supported commands (46 parsers):
 
 ### History Storage
 
-- Persistent SQLite-backed AI session and command history with reliable clear-all semantics.
+- Persistent SQLite-backed AI session and command history with reliable clear-all semantics. All store mutators are serialized on one queue, and age-based clears keep the cached record count honest so the size trim can never delete valid records.
 
 ## API Analytics & Token Tracking
 
 - **TLS/WSS proxy** — Go-based `chau7-proxy` intercepts API calls to Claude, OpenAI (Codex), Gemini, Anthropic with TLS and WebSocket support.
+- **Orphan-proof helpers** — chau7-proxy and chau7-remote exit when the parent app dies (no port-holding orphans after a crash), and the proxy's auto-restart backs off exponentially instead of crash-looping every 2 seconds.
 - **Token counting & cost calculation** — full token breakdown per call: input, output, cache creation, cache read, and reasoning tokens. Accurate cost calculation using provider-specific cache pricing (Anthropic 0.1x/1.25x, OpenAI 0.5x). Fallback estimation when extraction fails.
 - **Latency tracking** — total request duration and time-to-first-token (TTFT) per API call.
+- **Echo-only input latency** — per-session input latency measures keystroke→echo responsiveness only; command submission (Enter) is excluded for every session, so a slow command's runtime is never miscounted as UI lag.
+- **Configurable telemetry retention** — AI run history and full transcripts in `runs.db` are pruned at launch to a user-set window (default 30 days; `0` = keep forever, set in Settings → Logs & History), cascading to child rows and reclaiming disk with a full `VACUUM`, so the database can't grow without bound.
+- **Bounded AI event queues** — the append-only hook event logs (`claude-events.jsonl`, `.ai-events.log`) are compacted to their most recent slice at monitor start (before tailing, while quiescent), so the transient event queues can't grow without bound; the durable record stays in the telemetry database.
 - **Task detection & assessment** — auto-detect AI task candidates with confidence scoring; approve or fail with notes.
 - **Baseline estimator** — calculate token savings from context caching.
-- **Analytics dashboard** — command stats, error rates, API usage, and timing. Adaptive polling (2s active, 5s idle, 10s no agents), proxy health monitoring, timeline pagination, and per-agent cost display with cache/reasoning token breakdown.
+- **Analytics dashboard** — command stats, error rates, API usage, and timing. Adaptive polling (2s active, 5s idle, 10s no agents), proxy health monitoring, timeline pagination, and per-agent cost display with cache/reasoning token breakdown. Poll-cycle tracker state is confined to a serial refresh queue so commit actions and live polling can never race each other's bookkeeping.
+- **Non-blocking session-event reporting** — prompt-injection session events post to the proxy asynchronously; a slow or wedged proxy can never freeze typing while the app waits for the local HTTP round-trip.
 - **Background completion extraction for Codex/OpenAI runs** — run-end finalization no longer waits on heavy transcript extraction for OpenAI-family sessions. Completed rows are persisted immediately, then richer turns and tool calls are backfilled asynchronously when extraction finishes.
 - **Recent proxy call context** — recent API calls in the Debug Console include local hour, repo name, and endpoint context for faster investigation.
 - **Repo-level aggregated metrics** — per-repository stats (commands, success rate, AI runs, tokens, cost, providers, top tools) in Debug Console, Data Explorer, and hover card.
@@ -164,6 +186,8 @@ On every launch, Chau7 automatically registers itself as an MCP server in:
 
 Registration only occurs if the AI tool's config directory exists — no files are created for tools you don't use.
 
+Every cross-window tab operation dispatches to the main thread before touching tab models, so MCP calls are safe from any dispatch queue.
+
 ### Safety Controls
 
 - **Enable/disable toggle** — `mcpEnabled` setting (default: on).
@@ -189,6 +213,31 @@ Registration only occurs if the AI tool's config directory exists — no files a
 | `tab_output` | Get recent terminal output (last N lines, max 10000) with 512KB cap. `source='pty_log'` returns ANSI-stripped PTY log (full AI session). `wait_for_stable_ms` polls buffer until stable. |
 | `tab_set_cto` | Set per-tab CTO override (default/forceOn/forceOff) — recalculates flag files |
 | `tab_rename` | Set a custom title for a tab — pass empty string to clear |
+
+### Agent Orchestration (1 tool)
+
+| Tool | Description |
+| --- | --- |
+| `agent_launch` | Launch one or more AI coding agents (Claude Code, Codex, …) in fresh tabs in a single call — composes `tab_create` + `tab_wait_ready` + `tab_exec` (+ best-effort prompt injection). Params: `directory`, `agent_command` (default `claude`), `prompt`, `count`, `pr_number`, `window_id`, `ready_timeout_ms`. Returns the created tab IDs; collect each agent's output with `tab_output(source='pty_log')` |
+
+Fan a review across N parallel agents — e.g. three agents reviewing PR #323:
+
+```json
+{
+  "name": "agent_launch",
+  "arguments": {
+    "directory": "/path/to/repo",
+    "count": 3,
+    "pr_number": 323,
+    "agent_command": "claude",
+    "prompt": "Review this PR for correctness, security, and test coverage."
+  }
+}
+```
+
+- When `pr_number` is set, each tab runs `gh pr checkout <pr> && <agent_command>` before the agent starts.
+- Prompt delivery is **best-effort**: the prompt is typed in once the agent attaches (reported per agent as `sent` / `agent_not_detected` / `skipped`). For full reliability, embed the task in `agent_command` if the CLI supports it.
+- `count` is capped by the MCP tab limit; a creation failure (e.g. limit reached) stops the batch early.
 
 ### Repository (4 tools)
 
@@ -241,25 +290,40 @@ The app still contains internal runtime orchestration used by dashboard and revi
 ## Terminal Core
 
 - **Rust terminal backend** — custom emulator via FFI: fast, memory-safe, correct.
+- **Pinned FFI contract** — the terminal dylib exports an ABI version and struct-layout probes that Swift verifies before binding any symbols, and an integration test exercises the real built dylib end-to-end on every test run.
+- **Rust acceleration layer** — ANSI segment parsing, pattern matching, escape sanitizing, command-risk detection, and dim patching run in `chau7_parse` with Swift fallbacks; the dylib's symbol exports are verified at build time.
+- **Lock-free PTY resize** — window resizes ioctl the PTY winsize on a dup'd fd, so a child that stops reading stdin can never stall the UI thread mid-drag.
+- **Lossless PTY teardown** — kernel-buffered output is fully drained after the child hangs up (bounded runaway guard), so a fast-exiting command's final burst always reaches the screen.
+- **Hostile-input-hardened FFI** — selection coordinates clamp to live grid bounds and reader-pool spawn failure degrades to a clean creation error, so no FFI-reachable input or resource exhaustion can abort the process.
+- **Thread-safe FFI resize** — `chau7_terminal_resize` binds a shared reference (dimensions stored atomically), so a main-thread resize can never alias the drain threads' concurrent poll access.
+- **Post-resize SIGWINCH nudge** — after each resize, Chau7 re-delivers `SIGWINCH` to the PTY foreground process group (`chau7_terminal_nudge_winsize`) a short, coalesced moment later, so a full-screen TUI that booted during the resize and missed the kernel's signal (e.g. Claude Code's Ink caching a stale width) still re-reads the authoritative size instead of corrupting its diff-repainted output for the rest of the session.
+- **Owned C-string env marshalling** — terminal creation duplicates environment keys/values into C-owned buffers freed after the FFI call, so the spawned shell's environment never depends on Swift buffer pointers outliving their guaranteed scope.
 - **Terminal runtime facts** — Rust exposes alternate-screen state through FFI/debug snapshots so Swift can reason about TUI surfaces generically instead of matching individual providers.
 - **Generic TUI scroll policy** — a pure Chau7Core policy routes scrolls to normal scrollback, mouse-aware TUI apps, or transcript history based on runtime terminal state.
 - **Per-tab transcript capture** — each terminal session keeps a bounded PTY transcript ring with command-boundary backfill so late AI detection can still seed accurate session logs.
 - **TUI transcript overlay** — alternate-screen TUIs without normal scrollback can show recent transcript history on scroll-up, while mouse-reporting TUIs keep receiving wheel events.
 - **Fixed-delay startup reveal** — Chau7 reveals restored windows after a short splash delay instead of waiting for the full restore queue to drain, matching the lighter release-era startup contract.
 - **Stabilized tab restore path** — restored scrollback replays through the shell again, with restore-artifact filtering preserved, to avoid post-relaunch history corruption while keeping fast visible startup.
+- **Corruption-tolerant persisted lookups** — dictionary builds over persisted keys (pane states, tab IDs, repo roots, shortcut actions) use first-wins uniquing, so duplicate keys in stored data degrade gracefully instead of crashing restore or settings.
+- **Restore-time tab identity dedup** — every saved tab restores exactly once across all windows (first occurrence wins, within and across window snapshots), so duplicated-window snapshots from past incidents converge back to a single copy instead of cascading across restarts.
+- **Change-aware quit snapshot** — quitting reuses the cached autosave snapshot only when a structural fingerprint of the live windows still matches; any tab/pane/title/directory/AI-session change since the last autosave forces a fresh capture, so the last seconds of work always survive a quit.
+- **Freshest-wins restore arbitration** — every save stamps a shared token on the restore bundle and the UserDefaults index; at launch the source whose token reflects the latest save wins, so a bundle whose writes silently failed can never resurrect a stale session over fresher index data.
+- **Crash-safe bundle swap** — the restore bundle directory is replaced with safe-save semantics (old bundle stays until the new one takes over), and manifest/sidecar corruption is logged instead of silently degrading restore to a weaker source.
 - Full ANSI/VT100 with 16-color, 256-color, and 24-bit true color support.
 - Emoji-aware glyph coloring renders real emoji, including achromatic FE0F symbols, with embedded color while keeping terminal UI symbols and box drawing tintable by ANSI foreground color in Metal.
+- ASCII glyph fast path: single-byte printable cells (the vast majority of a text screen) resolve their Metal glyph through a flat style-indexed array, avoiding the per-cell `Data` allocation and dictionary hash the per-frame instance-buffer build previously incurred; multi-byte clusters (emoji, box-drawing, wide CJK, ligatures) keep the full cache path.
 - International Option-key punctuation input preserved for programming characters like brackets and braces.
 - Kitty keyboard protocol (full progressive enhancement).
 - Inline images: iTerm2 (ESC ] 1337), Sixel, and Kitty image protocols.
 - Configurable cursor styles (block, underline, bar) with optional blinking.
 - Large configurable scrollback buffer with GPU-accelerated scrolling; active, passive-visible, and warm tabs preserve the configured capacity across render phase changes, while hidden tabs flush and verify the disk cache before RAM reclamation.
-- Shell selection: Zsh, Bash, Fish, or custom path — Apple Silicon and Intel native.
+- Shell selection: Zsh, Bash, Fish, or custom path — Apple Silicon and Intel native. The passwd default shell is verified to exist before spawning (missing binaries fall back to `/bin/zsh`), and an outright terminal-creation failure shows a localized error card with a Retry button instead of a blank tab.
+- Bash shell integration spawns interactive bash with `--rcfile` pointing at Chau7's integration bashrc, and every shell starts in its intended working directory via an explicit spawn cwd (no reliance on rc-file `cd`).
 - Dead key and IME support with proper `NSTextInputClient` marked text handling.
 - Shell integration via OSC 7 for working directory tracking.
 - OSC 133 (FinalTerm) shell integration: prompt start (A), command start (B), output start (C), command finished with exit code (D). Parsed in Rust interceptor, feeds ShellEventDetector. When present, heuristic fallbacks are suppressed.
 - File drag-and-drop: drop files to paste shell-escaped paths; Option+drop images for base64 data URIs.
-- Markdown runbooks: open .md files in the editor pane with executable code blocks.
+- Markdown runbooks: open .md files in the editor pane with executable code blocks; Run All sends each block to the terminal only after the previous one finishes (succeeded or failed), so a long-running command never paste-bombs the next one into the shell. Parsed sections are cached, so the rich render does not walk the whole file again every time a code block flips state.
 - Native macOS cut/copy/paste shortcuts are preserved inside split-pane text editors before terminal-specific fallbacks run.
 - Show Changed Files (Cmd+Option+G): git diff snapshot per command shows which files were modified.
 - Idle tabs dropdown: tabs idle beyond a configurable threshold (default 10 min) are grouped into a compact chip in the tab bar.
@@ -268,7 +332,7 @@ The app still contains internal runtime orchestration used by dashboard and revi
 - Branch, repo-root, exit, and foreign notification OSC 9 messages are buffered across PTY chunks before dispatch, so startup metadata survives split terminal reads.
 - Detached HEAD is treated as a no-branch state instead of a branch named `HEAD`, and cached branch identity is cleared when the shell reports the detached sentinel.
 - Split pane file preview: read-only viewer with syntax highlighting and image support (Cmd+Opt+P).
-- Split pane diff viewer: unified git diff with colored additions/deletions and Working/Staged toggle (Cmd+Opt+Shift+D).
+- Split pane diff viewer: unified git diff with colored additions/deletions and Working/Staged toggle (Cmd+Opt+Shift+D). Binary changes and pure renames show a dedicated empty-state explaining *why* there are no hunks instead of a misleading "no changes" panel.
 - `chau7://` URL scheme: ssh, run, cd, and open actions from external apps (with confirmation).
 - Default start directory and optional startup commands.
 - Copy on select, Option+click cursor positioning, paste escaping.
@@ -280,6 +344,15 @@ The app still contains internal runtime orchestration used by dashboard and revi
 ## Performance
 
 Chau7's rendering pipeline is purpose-built for latency-sensitive terminal work:
+
+- GPU in-flight gating: shared Metal buffers and the glyph atlas are never rewritten while a committed frame is still reading them, and GPU-failed frames force a full-refresh redraw instead of stranding the view on stale content.
+- Slot-clipped glyph rasterization: overhanging glyphs (combining marks, italic overhang, ligature swashes, emoji fallbacks) cannot paint into neighboring atlas slots and corrupt cached glyphs.
+- Display-scale awareness: moving a window between Retina and non-Retina displays reconfigures the glyph atlas at the new backing scale and redraws immediately.
+- Occlusion-aware rendering: fully covered windows stop live grid syncs and GPU presents (1Hz background drain), with an immediate refresh on re-expose.
+- Wired memory reclamation: tab snapshots, scrollback-line duplicates, and search buffers clear on tab close, on `.hidden` demotion, and under OS memory pressure; orphaned scrollback cache files are swept at startup.
+- Window-level GPU volatility: under critical pressure the glyph atlas and Metal buffers of fully invisible windows become OS-reclaimable, with reclaim-safe rebuild (including the static vertex quad) on the window's next draw.
+- Self-imposed footprint ceiling: the app polls its own memory footprint against a quarter-of-RAM ceiling (clamped 4-12GB) and proactively flushes non-selected tabs' scrollback before the OS pressure signal would ever arrive.
+- Bounded auxiliary caches: clipboard history items cap at 100KB each, session-resolver caches cap at 256 entries, closed AI-monitor sessions evict after a grace period, and aborted graphics sequences release their buffer capacity.
 
 | Layer | What It Does |
 | --- | --- |
@@ -308,6 +381,7 @@ Chau7's rendering pipeline is purpose-built for latency-sensitive terminal work:
 | **Background window render backpressure** | Only the key window owns live selected-tab presentation; visible selected tabs in main-but-not-key or otherwise non-input-priority windows keep a retained passive surface and drain through the shared background path instead of driving full live Metal sync |
 | **Adaptive render-loop throttling** | Active tab drops to ~10 Hz after idle, snaps back instantly on PTY data or user input — cuts wakeups and CPU on idle AI sessions |
 | **Configurable active-tab refresh cap** | Display Native / 60 Hz / 30 Hz picker lets users trade scroll fluidity for battery; default follows the screen's native refresh |
+| **LRU-backed syntax-highlight cache** | Terminal-output highlighter uses `NSCache` (bounded LRU with cost-based eviction and an OS-pressure hook) instead of a dictionary with order-unspecified prefix eviction, so hot lines stay cached on busy streams |
 
 ## Tabs, Panes & Windows
 
@@ -328,11 +402,30 @@ Chau7's rendering pipeline is purpose-built for latency-sensitive terminal work:
 
 - Horizontal (`Cmd+Opt+H`) and vertical (`Cmd+Opt+V`) splits with draggable dividers.
 - Arbitrary nesting via binary tree layout controller.
-- Built-in text editor in split panes — syntax highlighting, line numbers, bracket matching, find/replace.
+- Persisted split-pane trees carry a schema version, so a future Chau7 build that adds a new pane kind can't silently mis-decode through an older binary — older code surfaces a clear error and falls back to a default layout instead.
+- Modal dialogs (close-confirm, Save As) and main-queue polling are injected through `Dialogs` and `MainScheduler` protocols, so the entire close-time decision path and the markdown runbook sequential runner are unit-driveable end-to-end without an AppKit modal loop or real sleeps.
+- Each side-panel leaf (`TerminalPane`, `TextEditorPane`, `FilePreviewPane`, `DiffViewerPane`, `RepositoryPane`, `DashboardPane`) conforms to a single `PaneNode` protocol that owns its `kind`, `hasUnsavedWork`, and `dispose()` contract — adding a new pane kind no longer touches every traversal helper across the tree.
+- `SplitNode` is a 2-case enum (`.leaf(any PaneNode)` / `.split`) with three visitor primitives (`collectLeaves`, `findLeaf`, `walkLeaves`); the dozens of per-kind accessors like `allTerminalIDs`, `findFirstEditor`, `firstPaneID(ofType:)` ride on top of those three visitors instead of duplicating a 7-case switch each.
+- Each `PaneNode` conformer owns its `savedRepresentation()`, so persistence-side OCP is strictly additive — adding a new pane kind is a protocol method override instead of a central encode-switch edit.
+- The split-pane controller delegates two responsibility clusters to focused types: `PaneCloseConfirmer` owns the close-time save/discard/cancel dialog policy (testable with a `FakeDialogs`), and `SessionNoteCoordinator` owns the tab-scoped `.chau7/sessions/<tabID>/note.md` path math and prepare-on-demand step (testable without any controller in the picture).
+- The text editor model delegates two more clusters: `RunbookCodeBlockTracker` owns the markdown-runbook state machine and sequential runner (exposed as `editor.runbook` and observable directly), and `EditorAutoSaver` owns the debounced save and status-clear work-item bookkeeping. Both are unit-testable in isolation without touching the model.
+- The repo pane delegates commit-draft persistence + conventional-prefix rules to a `RepoCommitDraftStore` value type that takes UserDefaults injection, so the per-directory `repoPaneDraft.*` round-trip is unit-driveable against a scratch suite.
+- History section (commit log, stash list, search text, filtered-commits) is its own `RepoHistoryState` `@Observable` accessed as `repo.history`, so a search-text bump only re-renders the history view and leaves status / commit-composer / branches untouched.
+- File preview and diff viewer headers share one `PaneHeaderBar` component (icon, title, close button + two `@ViewBuilder` slots for per-pane embellishments) instead of each spelling out its own `HStack`.
+- Pane callbacks (`onFocus`, `onUpdateRatio`, `onClosePane`, `onFilePathClicked`, `onRunCommand`) ride on a single `PaneEnvironment` value exposed via SwiftUI's `@Environment` instead of being threaded through every `SplitNodeView` initializer.
+- A Liskov-style test suite iterates every shipping `PaneNode` conformer and asserts the protocol invariants (id/kind agreement, dispose idempotency, persistence round-trip, hasUnsavedWork policy, existential round-trip) — adding a new pane kind extends one fixture and inherits every invariant automatically.
+- A `PaneConformanceKit` test bundle exposes every PaneNode contract invariant as a reusable assertion function plus a single `assertContract` entry point; the parametrized driver runs the full kit over every pane kind × edit state × persistence round-trip, so a new pane kind extending the catalog inherits every check automatically.
+- Every pane in the side-panel tree (Terminal / TextEditor / FilePreview / DiffViewer / Repository / Dashboard) renders its header chrome through one shared `PaneHeaderBar` component with a `title` ViewBuilder slot for interactive titles + `titleAccessory` and `trailing` slots for per-pane embellishments.
+- The markdown runbook view takes one `RunbookHost` protocol instead of five separate closures; `TextEditorPaneView` builds a `RunbookHostAdapter` that bridges the editor and the send-to-terminal closure.
+- The decode side of split-pane persistence routes through a `PaneFactoryRegistry` keyed on `PaneType`, mirroring the per-pane `savedRepresentation()` on the encode side — adding a new pane kind requires zero edits to existing files (one new pane file + one registry entry).
+- The Repository pane model's five sections (Commit, Status, History, Branches, Session) each ride on their own `@Observable` sub-state (`repo.commit`, `repo.status`, `repo.history`, `repo.branchState`, `repo.session`), so a mutation in one section re-renders only the view subtree that reads it.
+- Built-in text editor in split panes (`Cmd+Opt+E`) — syntax highlighting, line numbers, bracket matching (`()`, `[]`, `{}`, `<>` — UTF-16 in-place scan, no per-keystroke array allocation), auto-indent, scroll-to-line, find/replace.
+- Word-wrap-aware scrolling: with word wrap on (the default) wrapped lines never show a horizontal scroll bar, and the line-number gutter re-tiles the scroll view when its width changes so it can't push content into a spurious lateral scroll; turning word wrap off restores the horizontal scroller for long-line editing.
 - Repo-scoped session notes for the split text editor: untitled panes can save directly to `.chau7/sessions/<tab-id>/note.md` inside the active repository, and reopen the matching note for whichever repo the tab is currently in.
 - Click-to-copy document name in the editor pane header.
 - Multi-language syntax: HTML, CSS, JavaScript, Python, and more.
-- Repository pane (`Cmd+Opt+B`): full git UI — stage, commit (⌘Enter), branch, push/pull, stash, history with search. Session-aware: shows only agent-touched files with diff stats when an AI is active, resets after push. Ahead/behind indicator, hover tooltips, conventional commit chips.
+- Append terminal selection to editor (`Shift+Cmd+Opt+E`) — selecting text in the terminal and hitting the shortcut appends it to the side editor; if no editor pane is open, one is opened on demand so the shortcut never silently fails.
+- Repository pane (`Cmd+Opt+B`): full git UI — stage, commit (⌘Enter), branch, push/pull, stash, history with search. Session-aware: shows only agent-touched files with diff stats when an AI is active, resets after push. Ahead/behind indicator, hover tooltips, conventional commit chips. Supporting value types live in a dedicated `RepositoryPaneTypes.swift` as a first scaffolding step toward separating status / commit / history into their own observable sub-states.
 
 ### Windows
 
@@ -394,10 +487,17 @@ Chau7's rendering pipeline is purpose-built for latency-sensitive terminal work:
 - Dock badge and bounce (critical/non-critical).
 - Configurable sounds (Glass, Purr, etc.) with volume control.
 - Command idle detection with configurable threshold. Fires once per session, resets only on real user activity.
-- Auto tab styling on events with auto-clear timeout. Deduplicates redundant re-applies, clears persistent approval styling as soon as the approval is resolved, and can highlight every affected tab for file conflicts.
+- Auto tab styling on events with auto-clear timeout. Deduplicates redundant re-applies, clears persistent approval styling as soon as the approval is resolved, and can highlight every affected tab for file conflicts. The live-tab lookup, deferred-retry scheduler, auto-clear timer, and redundant re-apply suppression all live on a dedicated `StyleTabCoordinator` so the path is unit-testable in isolation.
 - Visual bell mode (screen flash), combinable with audible bell.
 - Bell rate limiting with configurable minimum interval, scoped per trigger and tab/session/directory identity.
 - Rate limiting and per-trigger enable/disable.
+- Authoritative-routing retry, post-close suppression, fallback-shadow suppression, and repeat suppression all run through one `NotificationDeliveryPolicy` per-step verdict (`pass` / `drop` / `scheduleRetry`) so the manager's `processEvent` stays a thin orchestrator.
+- Per-repo event filtering and notification routing key off the `AIEvent.repoPath` field; explicit-tab rebinds round-trip every field via `AIEvent.replacingTabID(_:)` so `repoPath` survives even when the session-resolver corrects an explicit tab ID to a different one.
+- Action `runScript` enforces its configured timeout with SIGTERM → SIGKILL escalation via a shared `ProcessRunner` so trap-immune or I/O-blocked scripts can't hang past the timeout.
+- Webhook / Slack / Discord notification actions use a dedicated ephemeral `URLSession` (15s request timeout, 30s resource timeout, no cookie storage) instead of `URLSession.shared`, so bad endpoints fail fast and can't pollute the shared cookie jar.
+- Every notification action is implemented as a `NotificationActionHandler` registered in a per-type registry (24 actions grouped into 7 category files: Basic / Automation / Integration / DevOps / Productivity / Accessibility / TimeTracking). The executor is a thin dispatcher; adding a new action requires one handler type + one registry entry, no edits to the executor.
+- The notification system consults a single `NotificationDeliveryHost` protocol for tab title, repo name, active-tab check, and tab routing — `TerminalControlService` conforms, and the app wires it via `NotificationManager.setHost(_:)` at startup. Replaces five separate closure properties that all routed to the same service.
+- Notification manager + action executor are constructed via a single `NotificationServices` composition root (no `.shared` singletons): `init()` wires the executor as the manager's action dispatcher and the manager as the executor's publisher, then AppModel holds the bundle as `notifications: NotificationServices?` injected at app startup. View-layer callsites that can't easily thread an explicit reference find the same instance via `NotificationServices.current`.
 - Tab highlights for all user-facing event types: permission, waiting_input, finished, failed, idle, tool_failed, response_failed, elicitation, attention_required, error, context_limit.
 - Process exit confirmation on Cmd+Q with running process name listing.
 - Isolated test mode disables notification-center integration to keep side effects out of the test app.
@@ -423,7 +523,7 @@ Chau7's rendering pipeline is purpose-built for latency-sensitive terminal work:
 - Settings profiles — save, load, export, import named configurations.
 - Per-folder config: `.chau7/config.toml` in any repo for project-specific settings.
 - Config file watcher — auto-reload on changes, no restart needed.
-- Optional iCloud sync across devices.
+- Optional iCloud sync across devices — freshness-guarded: only blobs strictly newer than this Mac's last synced state apply, newer-format exports are refused, and fields absent from a blob keep their local value instead of resetting to defaults.
 - Reset individual settings or all to defaults.
 
 ## Accessibility & Localization
@@ -626,6 +726,10 @@ Legacy `AI_*` and `SMART_OVERLAY_*` environment variables are still supported.
 - Contextual power user tips.
 
 ## Quality Gates
+
+- The full XCTest suite (3120 tests) compiles and runs under `swift test` — no test files are gated out of the package build, and a pre-commit guard rejects new `#if !SWIFT_PACKAGE` gates.
+- Distribution versions derive from git tags and fail loudly when underivable; the Rust toolchain is pinned; app signing is strictly inside-out (no `--deep`); and the pre-commit guard rejects new `#if !SWIFT_PACKAGE` test gates so dead tests cannot be reintroduced.
+- Persistence paths follow the `Persist` logged-failure convention end to end: settings, SSH profiles, remote approval frames, telemetry responses, repo injection rules, and scrollback reloads log corruption and write failures instead of silently degrading.
 
 - **Registry-driven hook policy** — `.husky/pre-commit` and `.husky/pre-push` only select `pnpm quality:staged` or `pnpm quality:prepush`; the gate contract lives in `scripts/quality/registry.mjs`.
 - **Affected-surface pre-push** — pre-push reads Git update lines, resolves changed files against the pushed remote SHA or a conservative fallback base, and automatically upgrades to `prepush-full` for high-impact infrastructure, dependency, config, generator, workflow, or shared-contract changes.

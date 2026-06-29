@@ -154,16 +154,6 @@ struct OverlayTab: Identifiable, Equatable {
         splitController.presentationSession
     }
 
-    var agentCount: Int {
-        splitController.root.allSessions.reduce(into: 0) { count, session in
-            if session.aiDisplayAppName != nil
-                || session.effectiveAIProvider != nil
-                || session.effectiveAISessionId != nil {
-                count += 1
-            }
-        }
-    }
-
     init(appModel: AppModel) {
         self.id = UUID()
         self.splitController = SplitPaneController(appModel: appModel)
@@ -179,7 +169,9 @@ struct OverlayTab: Identifiable, Equatable {
 
     /// Whether this tab is a multi-agent dashboard (no terminal).
     var isDashboard: Bool {
-        if case .dashboard = splitController.root { return true }
+        if case .leaf(let pane) = splitController.root, pane is DashboardPane {
+            return true
+        }
         return false
     }
 
@@ -788,6 +780,10 @@ struct SavedTabState: Codable {
     let previewSnapshotPNGData: Data?
 
     static let userDefaultsKey = "com.chau7.savedTabState"
+    /// Token of the save cycle that produced the current restore index.
+    /// Matched against the bundle manifest's `saveToken` at restore so the
+    /// freshest source wins (see `RestoreSourceArbiter`).
+    static let restoreIndexSaveTokenKey = "com.chau7.savedTabState.saveToken"
 
     init(
         tabID: String? = nil,
@@ -885,8 +881,11 @@ extension SavedTabState {
 
         let mergedPaneStates: [SavedTerminalPaneState]?
         if let paneStates {
+            // First-wins uniquing: paneStates come from decoded disk backups, so a
+            // corrupt/merged backup with duplicate paneIDs must not crash restore.
             let fallbackByPaneID = Dictionary(
-                uniqueKeysWithValues: (fallback.paneStates ?? []).map { ($0.paneID, $0) }
+                (fallback.paneStates ?? []).map { ($0.paneID, $0) },
+                uniquingKeysWith: { first, _ in first }
             )
             mergedPaneStates = paneStates.map { pane in
                 pane.mergedAIResumePayload(with: fallbackByPaneID[pane.paneID])
@@ -1180,11 +1179,6 @@ final class OverlayTabsModel {
     @ObservationIgnored var renderSuspensionDelay: TimeInterval = 5.0
     @ObservationIgnored var needsFreshTabOnShow = false
     @ObservationIgnored var isDiagnosticsLoggingEnabled = false
-    /// Auto-save timer moved to AppDelegate for coordinated multi-window saves.
-    /// Last archived snapshot fingerprint to avoid writing duplicate archive files.
-    @ObservationIgnored var lastArchivedTabStateFingerprint: Int?
-    /// Minimum time between archived snapshots unless we're terminating.
-    @ObservationIgnored var lastArchivedTabStateAt: Date = .distantPast
     /// CTO notification observer tokens (stored for cleanup in deinit)
     @ObservationIgnored var ctoModeObserver: NSObjectProtocol?
     @ObservationIgnored var renderSuspensionObserver: NSObjectProtocol?
@@ -1478,16 +1472,12 @@ final class OverlayTabsModel {
 
     // MARK: - Tab State Serialization
 
-    /// Saves current tab state to disk backups. Does NOT write to UserDefaults —
-    /// that is handled centrally by AppDelegate.saveAllWindowStates() to avoid
-    /// multi-window race conditions.
-    func saveTabState(reason: TabStateSaveReason = .manual) {
-        let states = exportTabStates()
-        guard !states.isEmpty else { return }
-        guard let data = Persist.encodeLogged(states, context: "saveTabState[\(reason.rawValue)]") else { return }
-        persistTabStateBackups(data: data, reason: reason)
-        Log.trace("Saved \(states.count) tab state(s) to disk backup [\(reason.rawValue)]")
-    }
+    //
+    // The single-model save path (`saveTabState`/instance `persistTabStateBackups`)
+    // is gone: it had zero production callers and maintained instance-level
+    // archive fingerprints parallel to the static multi-window pair used by
+    // `persistWindowStateBackups` — two accounting systems for the same
+    // archive directory, waiting to desync the 300s/dedup throttles.
 
     /// Builds `[SavedTerminalPaneState]` from a tab's live sessions.
     ///
@@ -1628,6 +1618,26 @@ final class OverlayTabsModel {
 
     /// Exports current tab states without persisting to disk.
     /// Used by AppDelegate to collect all windows' states for multi-window save.
+    /// Cheap structural fingerprint of the live tab state — every field the
+    /// termination save would silently lose by reusing a stale cached
+    /// snapshot (tab identity/order, titles, colors, selection, repo group,
+    /// pane layout, directories, AI session identity), EXCEPT scrollback
+    /// content, whose capture is the expensive part the cache exists to
+    /// avoid. Costs a few string concatenations per tab; no FFI calls.
+    func liveStateSignature() -> [String] {
+        var parts: [String] = [selectedTabID.uuidString]
+        for tab in tabs {
+            var piece = "\(tab.id.uuidString)|\(tab.customTitle ?? "")|\(tab.color.rawValue)|\(tab.repoGroupID ?? "")"
+            for (paneID, session) in tab.splitController.terminalSessions {
+                let provider = session.effectiveAIProvider ?? session.lastAIProvider ?? ""
+                let sessionId = session.effectiveAISessionId ?? ""
+                piece += "|\(paneID.uuidString)|\(session.currentDirectory)|\(provider)|\(sessionId)"
+            }
+            parts.append(piece)
+        }
+        return parts
+    }
+
     func exportTabStates() -> [SavedTabState] {
         let selectedID = selectedTabID
         let maxLines = FeatureSettings.shared.restoredScrollbackLines
@@ -1862,6 +1872,12 @@ extension OverlayTabsModel: TabSnapshotReleaser {
             tabs[index].restorePreviewSnapshot = nil
         case .releaseAll:
             tabs[index].restorePreviewSnapshot = nil
+            tabs[index].cachedSnapshot = nil
+            // Session-side snapshot mirror: a full Retina window bitmap per
+            // pane that no reclamation path used to clear.
+            for (_, session) in tabs[index].splitController.terminalSessions {
+                session.lastRenderedSnapshot = nil
+            }
         }
     }
 }

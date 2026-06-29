@@ -1,5 +1,4 @@
 import XCTest
-#if !SWIFT_PACKAGE
 @testable import Chau7
 @testable import Chau7Core
 
@@ -269,4 +268,3 @@ final class ScriptingAPITests: XCTestCase {
         }
     }
 }
-#endif

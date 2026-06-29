@@ -73,6 +73,7 @@ enum RestoreBootstrapPhase: String {
 /// - Note: Thread Safety - Properties must be modified on main thread.
 ///   Callbacks may arrive on background threads and dispatch to main via DispatchQueue.main.async.
 @Observable
+// swiftlint:disable:next type_body_length
 final class TerminalSessionModel {
     private enum PendingTerminalAction {
         case text(String)
@@ -319,19 +320,19 @@ final class TerminalSessionModel {
     @ObservationIgnored private var liveAgentSubscription: ProcessTreeSnapshotService.Subscription?
 
     /// Effective app name for UI branding and diagnostics.
-    /// Prefers the live process-tree signal. Falls back to `activeAppName` (set by
-    /// command/output detection) and finally to persisted provider metadata. Each
-    /// layer is a weaker guess — the live signal is always authoritative when present.
+    ///
+    /// Single source of truth: `lastAIProvider`. Every detection path
+    /// (live process tree, command match, output match, history adoption,
+    /// restore) writes through to this field, so a single read is always
+    /// the current answer. Live vs. not-running distinction is the
+    /// `isAIRunning` predicate, not which field gets read.
+    ///
+    /// The previous four-rung fallback chain (`liveAgentName → activeAppName
+    /// → lastDetectedAppName → lastAIProvider`) was the accumulated scar
+    /// of each detection write path forgetting to update one of the
+    /// others. Closing the writer holes makes the readers trivial.
     var aiDisplayAppName: String? {
-        if let live = liveAgentName?.trimmingCharacters(in: .whitespacesAndNewlines),
-           !live.isEmpty {
-            return live
-        }
-        if let active = activeAppName?.trimmingCharacters(in: .whitespacesAndNewlines),
-           !active.isEmpty {
-            return active
-        }
-        return Self.displayName(fromProvider: lastAIProvider)
+        Self.displayName(fromProvider: lastAIProvider)
     }
 
     var effectiveAIProvider: String? {
@@ -398,7 +399,21 @@ final class TerminalSessionModel {
     /// True when an AI tool is actively detected as running (colored icon).
     /// False when the tool has finished / shell prompt returned (grey icon),
     /// or when the session was restored from disk but not yet re-detected live.
+    ///
+    /// **Process tree is authoritative.** If `liveAgentName` is set the
+    /// `ProcessTreeSnapshotService` saw a known AI binary in the tab's
+    /// process tree right now — the tool IS running regardless of state-
+    /// machine bookkeeping. `activeAppName` gets cleared on prompt-return
+    /// (the AIDetectionState exits `.detected`), and post-b39a863a's
+    /// corroboration tightening + URL-fingerprint purge there are tabs
+    /// where output detection never re-fires after a restore even though
+    /// Codex/Claude is running, leaving the logo stuck at 0.35 opacity.
+    /// Trusting the live process-tree signal closes that hole.
     var isAIRunning: Bool {
+        if let live = liveAgentName?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !live.isEmpty {
+            return true
+        }
         guard activeAppName != nil else { return false }
         return !aiDetection.isRestored
     }
@@ -520,6 +535,17 @@ final class TerminalSessionModel {
     /// Set to true when no PTY output arrives within the startup timeout (shell may be hung).
     /// Cleared automatically on first output.
     var shellStartupSlow = false
+
+    /// Set when terminal creation failed outright (engine missing or PTY/shell
+    /// spawn failure). Drives the error card + retry button in the overlay;
+    /// cleared by `retryTerminalStart()`.
+    var terminalCreateFailure: RustTerminalView.TerminalCreateFailureKind?
+
+    /// Re-attempts terminal startup after an outright creation failure.
+    func retryTerminalStart() {
+        terminalCreateFailure = nil
+        rustTerminalView?.startTerminal()
+    }
 
     /// Last time output was observed for this terminal session.
     /// Used by tab restore logic to choose the best-matching AI session when
@@ -1155,6 +1181,12 @@ final class TerminalSessionModel {
     static let aiExitMarkerSuffix = Data([0x07])
     static let aiExitMarkerKeepBytes = max(0, aiExitMarkerPrefix.count - 1)
 
+    /// Test-only override for `hasAuthoritativeNotifications(for:)`. When set,
+    /// it forces the result regardless of the developer machine's real
+    /// ~/.codex/config.toml hook installation so waiting-input fallback tests
+    /// are hermetic. Production never sets this; reset to nil in tearDown.
+    static var hasAuthoritativeNotificationsOverrideForTesting: Bool?
+
     struct AILogContext {
         let toolName: String
         let commandLine: String?
@@ -1356,6 +1388,15 @@ final class TerminalSessionModel {
             )
             if resolved != liveAgentName {
                 liveAgentName = resolved
+            }
+            // Write through to the canonical persisted field so a single
+            // read of `lastAIProvider` (used by `aiDisplayAppName`) is
+            // always current with the process tree. Only on a non-nil
+            // resolve — the process exiting is signalled by liveAgentName
+            // going nil, but we WANT the persisted provider to survive
+            // process exit so the icon doesn't strip itself.
+            if let resolved {
+                updateLastDetectedApp(resolved)
             }
         }
     }
@@ -1649,6 +1690,22 @@ final class TerminalSessionModel {
           [ -f "$CHAU7_USER_ZDOTDIR/.zprofile" ] && source "$CHAU7_USER_ZDOTDIR/.zprofile"
           [ -f "$CHAU7_USER_ZDOTDIR/.zlogin" ] && source "$CHAU7_USER_ZDOTDIR/.zlogin"
         fi
+        # Per-tab isolated command history. macOS /etc/zshrc derives HISTFILE from
+        # ZDOTDIR (HISTFILE=${ZDOTDIR:-$HOME}/.zsh_history); because Chau7 points
+        # ZDOTDIR at a shared temp integration dir, every tab inadvertently collapsed
+        # onto one throwaway history file (and SHELL_SESSIONS_DISABLE=1 turns off the
+        # per-session isolation Terminal.app would otherwise provide). Re-anchor
+        # HISTFILE on the stable per-tab CHAU7_TAB_ID — which survives tab restore —
+        # so each tab keeps its own history and a reloaded tab reloads exactly its
+        # own, not the merged history of every tab. Set after the user's config so it
+        # wins. zsh reads HISTFILE once after the rc files, so this value is the one
+        # loaded.
+        if [ -n "$CHAU7_TAB_ID" ]; then
+          mkdir -p "$CHAU7_USER_HOME/.chau7/history" 2>/dev/null
+          export HISTFILE="$CHAU7_USER_HOME/.chau7/history/${CHAU7_TAB_ID}.zsh_history"
+          HISTSIZE=100000
+          SAVEHIST=100000
+        fi
         # Ensure Codex's npm-managed Volta image bin stays ahead of the legacy ~/.volta/bin shim.
         path=("${(s/:/)PATH}")
         for _codex_image_bin in "$CHAU7_USER_HOME/.volta/tools/image/node/"*"/bin"(N); do
@@ -1727,6 +1784,14 @@ final class TerminalSessionModel {
         export CHAU7_USER_HOME="${CHAU7_USER_HOME:-${HOME:-\(fallbackHome)}}"
         [ -f "$CHAU7_USER_HOME/.bashrc" ] && source "$CHAU7_USER_HOME/.bashrc"
         [ -f "$CHAU7_USER_HOME/.bash_profile" ] && source "$CHAU7_USER_HOME/.bash_profile"
+        # Per-tab isolated command history (mirrors the zsh integration). Keyed off
+        # the stable CHAU7_TAB_ID so each tab keeps its own history across restore.
+        if [ -n "$CHAU7_TAB_ID" ]; then
+          mkdir -p "$CHAU7_USER_HOME/.chau7/history" 2>/dev/null
+          export HISTFILE="$CHAU7_USER_HOME/.chau7/history/${CHAU7_TAB_ID}.bash_history"
+          HISTSIZE=100000
+          HISTFILESIZE=100000
+        fi
         # Chau7 default start directory
         if [ -n "$CHAU7_START_DIR" ] && [ -d "$CHAU7_START_DIR" ]; then
           cd "$CHAU7_START_DIR"
@@ -1788,6 +1853,12 @@ final class TerminalSessionModel {
         end
         if test -f "$CHAU7_USER_XDG_CONFIG_HOME/fish/config.fish"
           source "$CHAU7_USER_XDG_CONFIG_HOME/fish/config.fish"
+        end
+        # Per-tab isolated command history (mirrors zsh/bash). fish keys history by
+        # session name; derive a stable per-tab name from CHAU7_TAB_ID (hyphens are
+        # not valid in a fish history session name, so swap them for underscores).
+        if test -n "$CHAU7_TAB_ID"
+          set -gx fish_history (string replace -a -- - _ "chau7_$CHAU7_TAB_ID")
         end
         # Chau7 default start directory
         if test -n "$CHAU7_START_DIR"; and test -d "$CHAU7_START_DIR"
@@ -1856,6 +1927,162 @@ final class TerminalSessionModel {
         } catch {
             Log.error("Failed to create shell integration files: \(error)")
         }
+
+        // Bound the accumulation of per-tab shell history files (one accrues per
+        // tab ever opened; closed tabs leave orphans). Off the main thread so it
+        // never delays launch; reads only static files (restore state + history).
+        DispatchQueue.global(qos: .utility).async {
+            pruneOrphanShellHistory()
+        }
+    }
+
+    /// Minimum command-history lines each closed tab retains while still on disk,
+    /// so a tab's most recent commands are never fully discarded by trimming.
+    static let minShellHistoryLinesPerTab = 5
+
+    /// Default total budget when the `shellHistoryMaxLines` setting is unset.
+    static let defaultShellHistoryMaxLines = 1000
+
+    /// Prune accumulated per-tab shell history. Per-tab history lives in
+    /// `~/.chau7/history/<tab-id>.<shell>_history`; one file accrues for every tab
+    /// ever opened, so closed tabs leave orphans. The budget (total input lines kept
+    /// across closed tabs) comes from the `shellHistoryMaxLines` setting.
+    ///
+    /// This is shell command history ONLY (what you type at the zsh/bash prompt).
+    /// AI agent transcripts live in `~/.claude` and `~/.codex` and are never touched.
+    static func pruneOrphanShellHistory() {
+        let maxLines = UserDefaults.standard
+            .object(forKey: "terminal.shellHistoryMaxLines") as? Int ?? defaultShellHistoryMaxLines
+        pruneOrphanShellHistory(
+            in: RuntimeIsolation.urlInHome(".chau7/history"),
+            protectedTabIDs: restorableTabIDs(),
+            maxLines: maxLines
+        )
+    }
+
+    /// Testable core. Keep every tab still in `protectedTabIDs` untouched; bound the
+    /// remaining (closed-tab) history to `maxLines` total input lines by dropping the
+    /// OLDEST commands first. Closed tabs are trimmed oldest-first to their most
+    /// recent `minLinesPerTab` commands before any whole file is removed, so a closed
+    /// tab keeps a little history until the budget genuinely can't fit it.
+    static func pruneOrphanShellHistory(
+        in dir: URL,
+        protectedTabIDs: Set<String>,
+        maxLines: Int,
+        minLinesPerTab: Int = minShellHistoryLinesPerTab
+    ) {
+        let fm = FileManager.default
+        guard let entries = try? fm.contentsOfDirectory(
+            at: dir,
+            includingPropertiesForKeys: [.contentModificationDateKey],
+            options: [.skipsHiddenFiles]
+        ) else { return }
+
+        let historyFiles = entries.filter {
+            let name = $0.lastPathComponent
+            return name.hasSuffix(".zsh_history") || name.hasSuffix(".bash_history")
+        }
+        guard !historyFiles.isEmpty else { return }
+
+        func tabID(of url: URL) -> String {
+            let name = url.lastPathComponent
+            return name.firstIndex(of: ".").map { String(name[..<$0]) } ?? name
+        }
+
+        // Orphans (closed tabs) oldest (least-recently-used) first.
+        var orphans = historyFiles
+            .filter { !protectedTabIDs.contains(tabID(of: $0)) }
+            .map { url -> (url: URL, lines: Int, mtime: Date) in
+                let mtime = (try? url.resourceValues(forKeys: [.contentModificationDateKey])
+                    .contentModificationDate) ?? .distantPast
+                return (url, inputLineCount(of: url), mtime)
+            }
+            .sorted { $0.mtime < $1.mtime }
+
+        var total = orphans.reduce(0) { $0 + $1.lines }
+        guard total > maxLines else { return }
+
+        let floor = max(0, minLinesPerTab)
+        var trimmed = 0
+        var removed = 0
+
+        // Pass 1: trim the oldest tabs down to the per-tab floor (drop their oldest
+        // commands, keep the most recent `floor`).
+        for index in orphans.indices {
+            if total <= maxLines { break }
+            let orphan = orphans[index]
+            guard orphan.lines > floor else { continue }
+            if keepLastLines(of: orphan.url, count: floor) {
+                total -= (orphan.lines - floor)
+                orphans[index].lines = floor
+                trimmed += 1
+            }
+        }
+
+        // Pass 2: if still over budget (too many closed tabs even at the floor),
+        // remove whole oldest tabs until under.
+        if total > maxLines {
+            for orphan in orphans {
+                if total <= maxLines { break }
+                try? fm.removeItem(at: orphan.url)
+                total -= orphan.lines
+                removed += 1
+            }
+        }
+
+        if trimmed > 0 || removed > 0 {
+            Log.info(
+                "ShellHistory: pruned closed-tab history (trimmed \(trimmed), removed \(removed)); "
+                    + "corpus now ~\(total) lines (cap \(maxLines), floor \(floor)/tab)"
+            )
+        }
+    }
+
+    private static func inputLineCount(of url: URL) -> Int {
+        guard let data = try? Data(contentsOf: url) else { return 0 }
+        return data.reduce(into: 0) { count, byte in if byte == 0x0A { count += 1 } }
+    }
+
+    /// Rewrite `url` keeping only its last `count` newline-delimited lines (the most
+    /// recent commands), dropping the oldest. Returns false on read/write failure.
+    @discardableResult
+    private static func keepLastLines(of url: URL, count: Int) -> Bool {
+        guard count >= 0, let content = try? String(contentsOf: url, encoding: .utf8) else { return false }
+        var lines = content.components(separatedBy: "\n")
+        if lines.last?.isEmpty == true { lines.removeLast() } // ignore the trailing newline
+        guard lines.count > count else { return true } // already within the floor
+        let kept = lines.suffix(count)
+        let text = count == 0 ? "" : kept.joined(separator: "\n") + "\n"
+        do {
+            try text.write(to: url, atomically: true, encoding: .utf8)
+            return true
+        } catch {
+            return false
+        }
+    }
+
+    /// Tab IDs that may still be restored, gathered from every restore source, so
+    /// pruning never deletes the history of a tab the user is about to get back.
+    private static func restorableTabIDs() -> Set<String> {
+        var ids = Set<String>()
+        func add(_ windows: [[SavedTabState]]?) {
+            windows?.forEach { window in
+                window.forEach { if let id = $0.tabID { ids.insert(id) } }
+            }
+        }
+        // Primary: the file-based restore bundle (authoritative — UserDefaults is
+        // often nearly empty when the bundle holds the real window state).
+        add(TabRestoreBundleStore.loadCurrentWindowStates())
+        // UserDefaults multi-window + legacy single-window keys.
+        if let data = UserDefaults.standard.data(forKey: SavedMultiWindowState.userDefaultsKey),
+           let multi = try? JSONDecoder().decode(SavedMultiWindowState.self, from: data) {
+            add(multi.windows)
+        }
+        if let data = UserDefaults.standard.data(forKey: SavedTabState.userDefaultsKey),
+           let single = try? JSONDecoder().decode([SavedTabState].self, from: data) {
+            add([single])
+        }
+        return ids
     }
 
     private func syncRustTerminalObservabilityScope() {
@@ -2716,18 +2943,38 @@ final class TerminalSessionModel {
         // No view yet — wait for attachRustTerminal to call us again.
         guard existingRustTerminalView != nil else { return .queued }
 
-        // View exists but shell isn't ready — schedule a retry.
-        guard pendingPrefillRetries < 20 else {
-            Log.warn("Resume prefill: retries exhausted, waiting for next prompt (\(text.prefix(60)))")
-            pendingPrefillRetries = 0 // reset so handlePromptDetected can restart
-            return .queued
-        }
+        // View exists but shell isn't ready — schedule a retry. Within the
+        // first ~30s use the eager 0.3–3s backoff. After that, fall back to
+        // a slow heartbeat (5s) so the queued prefill is never silently
+        // abandoned: during a multi-tab cold boot, OSC 133 from the shell
+        // can take well over 30s to arrive, and without this the prefill
+        // would only ever appear if the user happened to switch away and
+        // back (recreating the view triggers `attachRustTerminal` →
+        // `flushPendingPrefillInputIfReady`).
         pendingPrefillRetries += 1
-        let delay = min(0.3 + Double(pendingPrefillRetries) * 0.3, 3.0)
+        if pendingPrefillRetries == Self.prefillEagerRetryLimit + 1 {
+            Log.warn("Resume prefill: eager retries exhausted, switching to 5s heartbeat (\(text.prefix(60)))")
+        }
+        let delay = Self.nextPrefillRetryDelay(retries: pendingPrefillRetries)
         DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
             self?.flushPendingPrefillInputIfReady()
         }
         return .queued
+    }
+
+    /// Threshold between the eager 0.3–3s retry window and the 5s heartbeat.
+    /// Visible for tests.
+    static let prefillEagerRetryLimit = 20
+    static let prefillHeartbeatDelay: TimeInterval = 5.0
+
+    /// Pure decision for retry pacing. Extracted so the eager-vs-heartbeat
+    /// switchover is unit-testable without standing up a live session or
+    /// waiting on real timers.
+    static func nextPrefillRetryDelay(retries: Int) -> TimeInterval {
+        if retries <= prefillEagerRetryLimit {
+            return min(0.3 + Double(retries) * 0.3, 3.0)
+        }
+        return prefillHeartbeatDelay
     }
 
     func canPrefillInput() -> Bool {
@@ -2924,7 +3171,15 @@ final class TerminalSessionModel {
               result != nil else {
             return "/bin/zsh"
         }
-        return String(cString: pwd.pw_shell)
+        let shell = String(cString: pwd.pw_shell)
+        // The passwd entry can point at a deleted binary (e.g. an uninstalled
+        // Homebrew shell). Spawning that yields a permanently blank tab, so
+        // verify and fall back to the system zsh.
+        guard FileManager.default.isExecutableFile(atPath: shell) else {
+            Log.warn("systemDefaultShell: passwd shell \(shell) is missing or not executable; falling back to /bin/zsh")
+            return "/bin/zsh"
+        }
+        return shell
     }
 
     private static let defaultLsColors = "exfxcxdxbxegedabagacad"
@@ -3559,8 +3814,14 @@ final class TerminalSessionModel {
     /// and bumps the refreshGitStatus generation counter so any in-flight .blocked
     /// resolves don't overwrite the authoritative state.
     func handleShellRepoRootReport(_ root: String) {
-        let normalized = URL(fileURLWithPath: root).standardized.path
-        guard !normalized.isEmpty else { return }
+        // Empty/whitespace or relative reports are garbage (e.g. a precmd hook
+        // firing outside a repo) — resolving them against the cwd would mark
+        // the session as a git repo at a bogus path.
+        let trimmed = root.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, trimmed.hasPrefix("/") else { return }
+        // standardizingPath collapses `//` and `/./` segments, which
+        // URL.standardized leaves in place for `//`.
+        let normalized = (trimmed as NSString).standardizingPath
 
         // Cancel pending refreshGitStatus completions that would clobber our state.
         gitStatusGeneration &+= 1

@@ -131,10 +131,19 @@ struct Snippet: Identifiable, Codable, Equatable {
     var validatedKey: Character? {
         guard let key = key, !key.isEmpty else { return nil }
         let normalized = key.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        guard normalized.count == 1, let char = normalized.first, char >= "a", char <= "z" else {
+        guard normalized.count == 1, let char = normalized.first, char.isSnippetKeyLetter else {
             return nil
         }
         return char
+    }
+}
+
+private extension Character {
+    /// A single lowercase Latin letter a–z — the snippet hotkey alphabet.
+    /// (Shared predicate only; `validatedKey` and `normalizeKey` keep their
+    /// distinct length semantics.)
+    var isSnippetKeyLetter: Bool {
+        self >= "a" && self <= "z"
     }
 }
 
@@ -756,7 +765,7 @@ final class SnippetManager {
     /// Returns nil if invalid or empty
     private static func normalizeKey(_ input: String) -> String? {
         let trimmed = input.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        guard let first = trimmed.first, first >= "a", first <= "z" else {
+        guard let first = trimmed.first, first.isSnippetKeyLetter else {
             return nil
         }
         return String(first)

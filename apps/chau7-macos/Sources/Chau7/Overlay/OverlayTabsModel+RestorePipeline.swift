@@ -99,7 +99,11 @@ extension OverlayTabsModel {
         // Primary: the file-based restore bundle keeps multi-MB scrollback in
         // integrity-checked sidecars. The load is all-or-nothing (a corrupt sidecar
         // yields nil), so any failure falls through to the UserDefaults/backup chain.
-        if let bundleWindows = TabRestoreBundleStore.loadCurrentWindowStates(),
+        // Freshest-wins: if the bundle's save token no longer matches the index's
+        // (bundle writes failed while the index kept saving), the bundle is a
+        // stale session — skip it rather than resurrect old tabs.
+        if bundleIsCurrentRestoreSource(),
+           let bundleWindows = TabRestoreBundleStore.loadCurrentWindowStates(),
            let primaryWindowStates = bundleWindows.first,
            !primaryWindowStates.isEmpty {
             let mergedWindows = mergedWindowStatesWithBackupFallbacks(baseWindows: bundleWindows)
@@ -151,6 +155,19 @@ extension OverlayTabsModel {
         return restoreSavedTabsFromBackups(appModel: appModel)
     }
 
+    /// Freshest-wins arbitration between the file bundle and the UserDefaults
+    /// restore index. Shared by the primary-window restore and
+    /// `AppDelegate.restoreAdditionalWindows` so both resolve the same source.
+    static func bundleIsCurrentRestoreSource() -> Bool {
+        let indexToken = UserDefaults.standard.string(forKey: SavedTabState.restoreIndexSaveTokenKey)
+        let bundleToken = TabRestoreBundleStore.loadEnvelope()?.saveToken
+        let isCurrent = RestoreSourceArbiter.bundleIsCurrent(bundleToken: bundleToken, indexToken: indexToken)
+        if !isCurrent {
+            Log.warn("restore: bundle save token \(bundleToken ?? "<none>") lags index token \(indexToken ?? "<none>"); preferring the fresher UserDefaults index")
+        }
+        return isCurrent
+    }
+
     /// Decode from pre-decoded states (multi-window restore — avoids UserDefaults round-trip).
     static func decodeRestorableTabs(fromStates states: [SavedTabState], appModel: AppModel) -> RestorableTabsPayload? {
         guard !states.isEmpty else { return nil }
@@ -180,8 +197,18 @@ extension OverlayTabsModel {
         var selectedID: UUID?
         var fallbackSelectedIndex: Int?
         var persistedStates: [SavedTabState] = []
+        var seenTabIDs = Set<UUID>()
 
         for (i, state) in hydratedStates.enumerated() {
+            // Within-window dedup: a corrupt/merged snapshot can carry the same
+            // tab twice. Duplicate IDs poison tab routing and re-persist on the
+            // next autosave, so the first occurrence wins and later copies are
+            // dropped instead of hydrated.
+            if let stateTabID = Self.validatedUUID(from: state.tabID), !seenTabIDs.insert(stateTabID).inserted {
+                Log.warn("restoreSavedTabs: dropping duplicate tab ID \(stateTabID) at index \(i); first occurrence already restored")
+                continue
+            }
+
             if selectedID == nil, let selected = Self.validatedUUID(from: state.selectedTabID) {
                 selectedID = selected
             } else if state.selectedTabID != nil {
@@ -464,6 +491,7 @@ extension OverlayTabsModel {
     static func clearPersistedWindowState() {
         UserDefaults.standard.removeObject(forKey: SavedTabState.userDefaultsKey)
         UserDefaults.standard.removeObject(forKey: SavedMultiWindowState.userDefaultsKey)
+        UserDefaults.standard.removeObject(forKey: SavedTabState.restoreIndexSaveTokenKey)
         try? TabRestoreBundleStore.clearCurrentBundle()
         if let root = tabStateBackupRootURL(),
            FileManager.default.fileExists(atPath: root.path) {
@@ -481,28 +509,6 @@ extension OverlayTabsModel {
                 }
             }
         }
-    }
-
-    func persistTabStateBackups(data: Data, reason: TabStateSaveReason) {
-        do {
-            try Self.writeLatestTabStateBackup(data)
-            if shouldArchiveTabStateBackup(data: data, reason: reason) {
-                try Self.writeArchivedTabStateBackup(data, reason: reason)
-                lastArchivedTabStateFingerprint = data.hashValue
-                lastArchivedTabStateAt = Date()
-            }
-        } catch {
-            Log.warn("Failed to persist tab state backup [\(reason.rawValue)]: \(error)")
-        }
-    }
-
-    func shouldArchiveTabStateBackup(data: Data, reason: TabStateSaveReason) -> Bool {
-        if reason == .termination || reason == .restoreSource {
-            return true
-        }
-        let fingerprint = data.hashValue
-        guard lastArchivedTabStateFingerprint != fingerprint else { return false }
-        return Date().timeIntervalSince(lastArchivedTabStateAt) >= 300
     }
 
     static func shouldArchiveMultiWindowBackup(data: Data, reason: TabStateSaveReason) -> Bool {
@@ -1061,24 +1067,80 @@ extension OverlayTabsModel {
         targetTabID: UUID,
         useResumeRetryScheduler: Bool
     ) {
+        // Gather session IDs already claimed by OTHER tabs' saved state so
+        // the re-resolver never hands out the same `claude --resume <id>` to
+        // a sibling tab whose autosave dropped its identity. Excludes the
+        // current tab — its own paneStates are about to be resolved here.
+        let claimedSessionIds = Self.claimedSessionIdsForRestore(
+            in: persistedRestoreFallbackStatesByTabID,
+            excludingTabID: targetTabID
+        )
+
         let resumeIntents = currentSessions.compactMap { paneID, _ -> ResumeRestoreIntent? in
-            guard let paneState = resolvedPaneStates[paneID],
-                  let command = Self.normalizedResumeCommand(paneState.aiResumeCommand) else {
-                return nil
+            guard let paneState = resolvedPaneStates[paneID] else { return nil }
+
+            // Primary path: pane state already carries a normalized resume
+            // command from autosave (real session identity was known).
+            if let command = Self.normalizedResumeCommand(paneState.aiResumeCommand) {
+                return ResumeRestoreIntent(
+                    paneID: paneID,
+                    command: command,
+                    // Use the same effective directory as the launch path
+                    // (`SplitPaneController.fromSavedNode` → `preferredRestoreDirectory`)
+                    // so the directoryMatches gate doesn't reject delivery when
+                    // codex's session cwd differs from the shell-cwd we saved.
+                    expectedDirectory: paneState.preferredRestoreDirectory,
+                    expectedProvider: paneState.aiProvider,
+                    expectedSessionID: paneState.aiSessionId,
+                    expectedSessionIDSource: paneState.aiSessionIdSource,
+                    isFocusedPane: paneID == focusedTerminalPaneID
+                )
             }
-            return ResumeRestoreIntent(
-                paneID: paneID,
-                command: command,
-                // Use the same effective directory as the launch path
-                // (`SplitPaneController.fromSavedNode` → `preferredRestoreDirectory`)
-                // so the directoryMatches gate doesn't reject delivery when
-                // codex's session cwd differs from the shell-cwd we saved.
-                expectedDirectory: paneState.preferredRestoreDirectory,
-                expectedProvider: paneState.aiProvider,
-                expectedSessionID: paneState.aiSessionId,
-                expectedSessionIDSource: paneState.aiSessionIdSource,
-                isFocusedPane: paneID == focusedTerminalPaneID
-            )
+
+            // Fallback path: pane state has no usable command. Two cases:
+            //   * provider set, cmd nil — autosave landed during the
+            //     synthetic-identity window (buildAIResumeCommand correctly
+            //     refused). Re-resolve a real session ID from the named
+            //     provider's transcripts.
+            //   * provider nil, cmd nil — autosave fired before ANY identity
+            //     corroboration (this is the wider hole behind the "no
+            //     resume command candidate" log line at startup). Scan BOTH
+            //     providers' transcripts for the saved directory and pick
+            //     whichever has a transcript closer to the saved activity
+            //     timestamp.
+            if let resolved = Self.reResolveResumeCommand(
+                paneState: paneState,
+                claimedSessionIds: claimedSessionIds
+            ) {
+                Log.info(
+                    """
+                    restoreTabState: re-resolved resume command for tab=\(targetTabID) pane=\(paneID) \
+                    savedProvider=\(paneState.aiProvider ?? "nil") \
+                    savedSession=\(paneState.aiSessionId?.prefix(8) ?? "nil") \
+                    savedSource=\(paneState.aiSessionIdSource?.rawValue ?? "nil") \
+                    resolvedProvider=\(resolved.provider) \
+                    resolvedSession=\(resolved.sessionId.prefix(8))
+                    """
+                )
+                return ResumeRestoreIntent(
+                    paneID: paneID,
+                    command: resolved.command,
+                    expectedDirectory: paneState.preferredRestoreDirectory,
+                    // Use the resolved provider when autosave captured none —
+                    // otherwise the validator's identity check has only the
+                    // session ID to work with and the launched tab would
+                    // need to corroborate Codex/Claude in the live tree
+                    // before delivery (and we know it WILL because we
+                    // just found that provider's transcript on disk).
+                    expectedProvider: paneState.aiProvider ?? resolved.provider,
+                    expectedSessionID: resolved.sessionId,
+                    // The newly-resolved session ID came off disk → observed.
+                    expectedSessionIDSource: .observed,
+                    isFocusedPane: paneID == focusedTerminalPaneID
+                )
+            }
+
+            return nil
         }
         if resumeIntents.isEmpty {
             Log.info("restoreTabState: no resume command candidate found for tab=\(targetTabID)")
@@ -1127,6 +1189,152 @@ extension OverlayTabsModel {
                 )
             }
         }
+    }
+
+    /// When `paneState.aiResumeCommand` is nil but a provider is known,
+    /// scan the provider's session files for the best match against the
+    /// saved directory + last-input recency, then construct a fresh
+    /// `claude --resume <id>` / `codex resume <id>` from the result.
+    ///
+    /// The autosave path drops the command when identity is synthetic
+    /// (see `buildAIResumeCommand(provider:sessionId:sessionIdSource:)` —
+    /// returns nil for `sessionIdSource == .synthetic`). This recovers
+    /// from that loss at restore time using the same on-disk transcripts
+    /// the live identity resolver consults. Both branches return nil
+    /// gracefully when the provider isn't claude/codex, the directory is
+    /// empty, no transcripts exist, or the resolved session ID fails the
+    /// downstream safety gate.
+    static func reResolveResumeCommand(
+        paneState: SavedTerminalPaneState,
+        claimedSessionIds: Set<String> = []
+    ) -> (command: String, sessionId: String, provider: String)? {
+        guard paneState.aiResumeCommand == nil else { return nil }
+        // Refuse to fabricate identity from cwd alone. When the autosave
+        // captured no provider, no session id, AND no command, the only
+        // signal left is "this pane lived in directory X." That collapses
+        // every nil-identity tab in a shared cwd to the same "newest
+        // transcript wins" answer — N tabs all restored with the same
+        // `claude --resume <id>` command, including former codex tabs.
+        // The recovery is only safe when at least the provider tag survived,
+        // proving an AI process really did run here.
+        guard paneState.aiProvider != nil || paneState.aiSessionId != nil else { return nil }
+        let directory: String
+        if let aiDir = paneState.aiResumeDirectory, !aiDir.isEmpty {
+            directory = aiDir
+        } else {
+            directory = paneState.directory
+        }
+        guard !directory.isEmpty else { return nil }
+
+        // Which providers to try. If autosave captured a provider, try only
+        // that one (the user's tab was definitively that tool). If autosave
+        // captured nothing (the entire identity trio was nil — fired during
+        // the window before any corroboration), try BOTH — pick whichever
+        // has a transcript closer to the saved activity time.
+        let candidateProviders: [String]
+        if let providerStr = paneState.aiProvider,
+           let normalized = AIResumeParser.normalizeProviderName(providerStr) {
+            candidateProviders = [normalized]
+        } else {
+            candidateProviders = ["claude", "codex"]
+        }
+
+        let referenceDate = paneState.lastInputAt ?? paneState.lastOutputAt
+        var bestMatch: (provider: String, sessionId: String, touchedAt: Date)?
+        for provider in candidateProviders {
+            let candidates: [(sessionId: String, lastActivity: Date)]
+            switch provider {
+            case "claude":
+                candidates = ClaudeSessionResolver.sessionCandidates(forDirectory: directory)
+            case "codex":
+                // Restore path: anchor the day-directory search at the
+                // pane's saved activity time, not at "today" — a tab last
+                // used a week ago lives in last week's day folder, not
+                // today's. Bump the day window to 14 so we actually reach
+                // it. Live-detection callers keep the narrow default.
+                candidates = CodexSessionResolver.sessionCandidates(
+                    forDirectory: directory,
+                    referenceDate: referenceDate,
+                    maxDays: 14
+                )
+            default:
+                // Surface a one-shot trace so adding a new CLI without
+                // wiring its resolver is visible.
+                Log.trace(
+                    "restoreTabState: re-resolution skipped for unsupported provider=\(provider)"
+                )
+                continue
+            }
+            // Drop candidates already claimed by another tab's saved state.
+            // Without this, every nil-cmd tab in a shared cwd resolves to
+            // the same "newest transcript in this dir" and the user sees
+            // N tabs all restored with the same `claude --resume <id>`.
+            let filteredCandidates = candidates.filter { !claimedSessionIds.contains($0.sessionId) }
+            let touchedAtBySession = Dictionary(
+                uniqueKeysWithValues: filteredCandidates.map { ($0.sessionId, $0.lastActivity) }
+            )
+            let asTuples = filteredCandidates.map { (sessionId: $0.sessionId, touchedAt: $0.lastActivity) }
+            // Primary: closest-in-time-to-referenceDate. `bestSessionMatch`
+            // refuses to guess when there are multiple candidates and no
+            // usable reference date — for the general API that's correct,
+            // but on the restore path we'd rather give the user their most
+            // recent session in this directory than leave them blank. So
+            // we fall back to "newest transcript wins" when the primary
+            // matcher returns nil. The .sorted{ first.lastActivity > second.lastActivity }
+            // in the resolver guarantees `candidates.first` is already the
+            // newest, so this is just `candidates.first?.sessionId`.
+            let sessionId = AIResumeParser.bestSessionMatch(
+                candidates: asTuples,
+                referenceDate: referenceDate
+            ) ?? filteredCandidates.first?.sessionId
+            guard let sessionId else { continue }
+            let touchedAt = touchedAtBySession[sessionId] ?? Date.distantPast
+
+            if let current = bestMatch {
+                if touchedAt > current.touchedAt {
+                    bestMatch = (provider, sessionId, touchedAt)
+                }
+            } else {
+                bestMatch = (provider, sessionId, touchedAt)
+            }
+        }
+
+        guard let match = bestMatch else { return nil }
+
+        // `buildAIResumeCommand` accepts a display-name string and normalizes
+        // it internally. Use the canonical lowercase provider name — it
+        // round-trips through the parser the same as "Claude" / "Codex".
+        guard let command = Self.buildAIResumeCommand(
+            provider: match.provider,
+            sessionId: match.sessionId
+        ) else { return nil }
+        guard let normalized = Self.normalizedResumeCommand(command) else { return nil }
+        return (command: normalized, sessionId: match.sessionId, provider: match.provider)
+    }
+
+    /// Collects every `aiSessionId` already pinned to a tab's saved state,
+    /// excluding the tab currently being resolved. Used to dedup re-resolution
+    /// across the restore set: a session ID that another tab already owns is
+    /// not a valid candidate for a sibling tab whose autosave dropped its
+    /// own identity. The top-level `SavedTabState.aiSessionId` and each
+    /// pane's `aiSessionId` are both honored — autosave may store either
+    /// or both depending on the schema vintage.
+    static func claimedSessionIdsForRestore(
+        in fallbackStatesByTabID: [UUID: SavedTabState],
+        excludingTabID: UUID
+    ) -> Set<String> {
+        var claimed: Set<String> = []
+        for (tabID, state) in fallbackStatesByTabID where tabID != excludingTabID {
+            if let sessionId = state.aiSessionId, !sessionId.isEmpty {
+                claimed.insert(sessionId)
+            }
+            for pane in state.paneStates ?? [] {
+                if let sessionId = pane.aiSessionId, !sessionId.isEmpty {
+                    claimed.insert(sessionId)
+                }
+            }
+        }
+        return claimed
     }
 
     /// Async-dispatched body of `restoreTabState`. Originally an inline

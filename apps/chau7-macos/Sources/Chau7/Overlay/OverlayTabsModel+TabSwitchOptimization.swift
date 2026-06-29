@@ -312,6 +312,18 @@ extension OverlayTabsModel {
         return result == .alertFirstButtonReturn
     }
 
+    /// Releases per-tab resources that otherwise outlive the closed tab for
+    /// the app's lifetime: the on-disk scrollback cache + its per-tab IO
+    /// queue, accumulated command blocks, and the pinned restore-fallback
+    /// state (full scrollback text per pane).
+    private func purgeClosedTabResources(tabID: UUID) {
+        ScrollbackMemoryManager.shared.purgeCache(for: tabID)
+        MainActor.assumeIsolated {
+            CommandBlockManager.shared.clearBlocks(tabID: tabID.uuidString)
+        }
+        persistedRestoreFallbackStatesByTabID.removeValue(forKey: tabID)
+    }
+
     func closeTab(id: UUID, skipWarning: Bool = false) {
         dispatchPrecondition(condition: .onQueue(.main))
         dismissHoverCard()
@@ -333,7 +345,7 @@ extension OverlayTabsModel {
             guard let idx = tabs.firstIndex(where: { $0.id == id }) else { return }
             let aiSessionID = tabs[idx].session?.effectiveAISessionId
             MainActor.assumeIsolated {
-                NotificationActionExecutor.shared.cancelPendingStyleWork(tabID: id, sessionID: aiSessionID)
+                NotificationServices.current?.executor.cancelPendingStyleWork(tabID: id, sessionID: aiSessionID)
             }
 
             // Clean up per-tab state before replacing.
@@ -350,6 +362,7 @@ extension OverlayTabsModel {
             let dir = inheritedStartDirectory()
             tabs[idx].restorePreviewSnapshot = nil
             tabs[idx].splitController.root.closeAllSessions()
+            purgeClosedTabResources(tabID: id)
             if closeWindow {
                 Log.info("closeTab: last tab - user chose to close window")
                 tabs[idx] = makeFreshTab(inheritedDirectory: dir)
@@ -402,7 +415,7 @@ extension OverlayTabsModel {
         captureClosedTabSnapshot(tab: tabs[index], at: initialIndex)
         let aiSessionID = tabs[index].session?.effectiveAISessionId
         MainActor.assumeIsolated {
-            NotificationActionExecutor.shared.cancelPendingStyleWork(tabID: id, sessionID: aiSessionID)
+            NotificationServices.current?.executor.cancelPendingStyleWork(tabID: id, sessionID: aiSessionID)
         }
 
         // Clean up per-tab command history (keyed on ownerTabID so it survives
@@ -438,6 +451,7 @@ extension OverlayTabsModel {
         // Close all sessions in the split pane tree (not just primary)
         tabs[index].restorePreviewSnapshot = nil
         tabs[index].splitController.root.closeAllSessions()
+        purgeClosedTabResources(tabID: id)
 
         if isLastTabNow {
             // Last tab was already handled above (early return with prompt)
@@ -680,6 +694,10 @@ extension OverlayTabsModel {
             tab.tokenOptOverride = override
             tab.session?.tokenOptOverride = override
         }
+        // Restore repo group membership, mirroring the launch-time restore
+        // path (decodeRestorableTabs). Without this a reopened tab silently
+        // drops its repo group.
+        tab.repoGroupID = state.repoGroupID
 
         tabs.insert(tab, at: insertIndex)
         selectedTabID = tab.id
@@ -814,6 +832,18 @@ extension OverlayTabsModel {
         )
         _ = refreshSelectedTabInPlaceIfPossible(reason: "select_tab")
         focusSelected()
+        // Cold-boot race: the first selected tab's restore queues a resume
+        // prefill before the Rust view attaches and before the shell emits
+        // OSC 133. If the shell takes longer than the eager-retry window to
+        // settle, the prefill sits queued silently until something kicks
+        // `flushPendingPrefillInputIfReady` again. Tab activation is a
+        // natural kick — the user just looked at the tab — so re-drain
+        // every pane's pending prefill here.
+        if let selectedTab = tabs.first(where: { $0.id == id }) {
+            for (_, session) in selectedTab.splitController.terminalSessions {
+                session.flushPendingPrefillInputIfReady()
+            }
+        }
         updateSnippetContextForSelection()
         if isSearchVisible {
             refreshSearch()
@@ -881,6 +911,12 @@ extension OverlayTabsModel {
         for i in 0 ..< tabs.count {
             if abs(i - currentIndex) > 2 {
                 tabs[i].cachedSnapshot = nil
+                // The session-side mirror (one full Retina window bitmap per
+                // ever-selected tab) used to have zero clearing sites — across
+                // dozens of tabs that pinned 0.5GB+ of invisible NSImage data.
+                for (_, session) in tabs[i].splitController.terminalSessions {
+                    session.lastRenderedSnapshot = nil
+                }
             }
         }
     }

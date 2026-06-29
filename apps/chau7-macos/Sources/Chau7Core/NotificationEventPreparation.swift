@@ -75,21 +75,10 @@ public enum NotificationEventPreparation {
             return nil
         }
 
-        return AIEvent(
-            id: event.id,
-            source: event.source,
-            type: event.type,
-            rawType: event.rawType,
-            tool: event.tool,
-            title: event.title,
-            message: event.message,
-            notificationType: event.notificationType,
-            ts: event.ts,
-            directory: event.directory,
-            tabID: resolvedTabID,
-            sessionID: event.sessionID,
-            producer: event.producer,
-            reliability: event.reliability
-        )
+        // Use replacingTabID(_:) so repoPath + every other field round-
+        // trip cleanly — the hand-rolled rebuild this replaced was
+        // silently dropping repoPath, which downstream relies on for
+        // per-repo event filtering.
+        return event.replacingTabID(resolvedTabID)
     }
 }

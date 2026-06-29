@@ -46,7 +46,18 @@ final class FileTailer<T> {
 
     /// Starts monitoring the file for new content.
     /// - Parameter prefillLines: Number of existing lines to read initially (0 = start fresh)
+    ///
+    /// All tailer state (offset/buffer/handles/sources) is confined to the
+    /// private serial queue — the kqueue/timer handlers run there, so start
+    /// and stop must hop instead of mutating from the caller's thread while
+    /// a tick is mid-flight.
     func start(prefillLines: Int = 0) {
+        queue.async { [self] in
+            startOnQueue(prefillLines: prefillLines)
+        }
+    }
+
+    private func startOnQueue(prefillLines: Int) {
         if createIfMissing, !FileManager.default.fileExists(atPath: fileURL.path) {
             Log.warn("File not found. Creating empty file at \(fileURL.path)")
             FileManager.default.createFile(atPath: fileURL.path, contents: Data(), attributes: nil)
@@ -60,21 +71,7 @@ final class FileTailer<T> {
         Log.trace("FileTailer start. path=\(fileURL.path) offset=\(offset)")
 
         // Primary: kqueue file system monitoring (fires immediately on write)
-        let fd = Darwin.open(fileURL.path, O_EVTONLY)
-        if fd >= 0 {
-            monitorFD = fd
-            let source = DispatchSource.makeFileSystemObjectSource(
-                fileDescriptor: fd,
-                eventMask: [.write, .extend, .rename],
-                queue: queue
-            )
-            source.setEventHandler { [weak self] in
-                self?.tick()
-            }
-            source.setCancelHandler { Darwin.close(fd) }
-            source.resume()
-            fsSource = source
-        }
+        armFileSystemSourceOnQueue()
 
         // Safety-net: slow poll at 5x the original interval catches edge cases
         // (NFS, file replacement, kqueue not available)
@@ -94,16 +91,64 @@ final class FileTailer<T> {
     }
 
     /// Stops monitoring and cleans up resources.
+    ///
+    /// Strong self capture is deliberate: teardown must run even if the owner
+    /// releases the tailer right after calling stop (the queue briefly extends
+    /// the tailer's lifetime). DispatchSource.cancel() does not wait for an
+    /// in-flight handler, so closing the read handle from the caller's thread
+    /// raced a tick mid-read on the queue.
     func stop() {
+        queue.async { [self] in
+            fsSource?.cancel()
+            fsSource = nil
+            monitorFD = -1
+            timer?.cancel()
+            timer = nil
+            buffer = ""
+            try? readHandle?.close()
+            readHandle = nil
+            Log.trace("FileTailer stop. path=\(fileURL.path)")
+        }
+    }
+
+    /// (Re)creates the kqueue source. O_EVTONLY watches the original inode —
+    /// after the tailed file is atomically replaced (rename), the old source
+    /// never fires again and the tailer silently degrades to the 5x-slower
+    /// safety poll, so a rename event re-arms against the new inode.
+    private func armFileSystemSourceOnQueue() {
         fsSource?.cancel()
         fsSource = nil
         monitorFD = -1
-        timer?.cancel()
-        timer = nil
-        buffer = ""
-        try? readHandle?.close()
-        readHandle = nil
-        Log.trace("FileTailer stop. path=\(fileURL.path)")
+
+        let fd = Darwin.open(fileURL.path, O_EVTONLY)
+        guard fd >= 0 else {
+            // Path momentarily gone (mid-replace): the safety poll keeps
+            // tailing; retry the re-arm shortly.
+            queue.asyncAfter(deadline: .now() + 1.0) { [weak self] in
+                guard let self, timer != nil else { return }
+                armFileSystemSourceOnQueue()
+            }
+            return
+        }
+        monitorFD = fd
+        let source = DispatchSource.makeFileSystemObjectSource(
+            fileDescriptor: fd,
+            eventMask: [.write, .extend, .rename],
+            queue: queue
+        )
+        source.setEventHandler { [weak self, weak source] in
+            guard let self else { return }
+            tick()
+            if let source, source.data.contains(.rename) {
+                queue.asyncAfter(deadline: .now() + 0.2) { [weak self] in
+                    guard let self, timer != nil else { return }
+                    armFileSystemSourceOnQueue()
+                }
+            }
+        }
+        source.setCancelHandler { Darwin.close(fd) }
+        source.resume()
+        fsSource = source
     }
 
     private func openReadHandle() {
@@ -129,8 +174,21 @@ final class FileTailer<T> {
 
         do {
             try handle.seek(toOffset: offset)
-            let data = try handle.readToEnd() ?? Data()
+            // Bounded gulp: readToEnd() loaded the entire unread region in one
+            // allocation, so a runaway writer (multi-GB JSONL) was read fully
+            // into memory. Read at most a few buffers per tick and reschedule
+            // to keep draining.
+            let perTickBudget = maxBufferSize * 4
+            var data = Data()
+            while data.count < perTickBudget,
+                  let chunk = try handle.read(upToCount: 256 * 1024),
+                  !chunk.isEmpty {
+                data.append(chunk)
+            }
             if data.isEmpty { return }
+            if data.count >= perTickBudget {
+                queue.async { [weak self] in self?.tick() }
+            }
 
             offset += UInt64(data.count)
             Log.trace("FileTailer read \(data.count) bytes. path=\(fileURL.path)")

@@ -140,60 +140,74 @@ final class TerminalControlService {
         }
     }
 
+    /// The AcrossWindows family honors the class contract ("safe to call from
+    /// any thread — dispatches to main as needed") by wrapping in onMain:
+    /// they read allModels/model.tabs and call OverlayTabsModel mutators,
+    /// which are main-thread-owned state.
     @discardableResult
     func applyNotificationStyleAcrossWindows(to tabID: UUID, stylePreset: String, config: [String: String]) -> UUID? {
-        let models = allModels
-        var foundTab = false
-        for (_, model) in models {
-            guard model.tabs.contains(where: { $0.id == tabID }) else { continue }
-            foundTab = true
-            if model.applyNotificationStyle(to: tabID, stylePreset: stylePreset, config: config) {
+        onMain {
+            let models = self.allModels
+            var foundTab = false
+            for (_, model) in models {
+                guard model.tabs.contains(where: { $0.id == tabID }) else { continue }
+                foundTab = true
+                if model.applyNotificationStyle(to: tabID, stylePreset: stylePreset, config: config) {
+                    return tabID
+                }
+            }
+            if foundTab {
+                Log.debug("applyNotificationStyle: tabID \(tabID) already matched requested style")
                 return tabID
             }
+            Log.warn("applyNotificationStyle: tabID \(tabID) not found across \(models.count) windows (\(models.flatMap(\.model.tabs).count) total tabs)")
+            return nil
         }
-        if foundTab {
-            Log.debug("applyNotificationStyle: tabID \(tabID) already matched requested style")
-            return tabID
-        }
-        Log.warn("applyNotificationStyle: tabID \(tabID) not found across \(models.count) windows (\(models.flatMap(\.model.tabs).count) total tabs)")
-        return nil
     }
 
     func tabExistsAcrossWindows(tabID: UUID) -> Bool {
-        allTabs.contains { $0.id == tabID }
+        onMain {
+            self.allTabs.contains { $0.id == tabID }
+        }
     }
 
     @discardableResult
     func focusTabAcrossWindows(tabID: UUID) -> Bool {
-        for (_, model) in allModels {
-            if model.focusTab(id: tabID) {
-                return true
+        onMain {
+            for (_, model) in self.allModels {
+                if model.focusTab(id: tabID) {
+                    return true
+                }
             }
+            Log.warn("focusTab: Explicit tabID not found across windows for tab \(tabID)")
+            return false
         }
-        Log.warn("focusTab: Explicit tabID not found across windows for tab \(tabID)")
-        return false
     }
 
     @discardableResult
     func badgeTabAcrossWindows(tabID: UUID, text: String, color: String) -> Bool {
-        for (_, model) in allModels {
-            if model.setBadge(on: tabID, text: text, color: color) {
-                return true
+        onMain {
+            for (_, model) in self.allModels {
+                if model.setBadge(on: tabID, text: text, color: color) {
+                    return true
+                }
             }
+            Log.warn("setBadge: Explicit tabID not found across windows for tab \(tabID)")
+            return false
         }
-        Log.warn("setBadge: Explicit tabID not found across windows for tab \(tabID)")
-        return false
     }
 
     @discardableResult
     func insertSnippetAcrossWindows(id snippetID: String, tabID: UUID, autoExecute: Bool) -> Bool {
-        for (_, model) in allModels {
-            if model.insertSnippet(id: snippetID, on: tabID, autoExecute: autoExecute) {
-                return true
+        onMain {
+            for (_, model) in self.allModels {
+                if model.insertSnippet(id: snippetID, on: tabID, autoExecute: autoExecute) {
+                    return true
+                }
             }
+            Log.warn("insertSnippet: Explicit tabID not found across windows for tab \(tabID)")
+            return false
         }
-        Log.warn("insertSnippet: Explicit tabID not found across windows for tab \(tabID)")
-        return false
     }
 
     /// Updates a tab's session-tracked cwd across all windows.
@@ -312,20 +326,22 @@ final class TerminalControlService {
 
     @discardableResult
     func clearPersistentNotificationStyleAcrossWindows(tabID: UUID) -> Bool {
-        for (_, model) in allModels {
-            if model.clearPersistentNotificationStyle(on: tabID) {
-                return true
+        onMain {
+            for (_, model) in self.allModels {
+                if model.clearPersistentNotificationStyle(on: tabID) {
+                    return true
+                }
             }
+            // Tab exists in a model but style clear failed — likely a lazy-loaded tab
+            // whose view hasn't materialized yet (e.g., Window 2 background tabs).
+            let tabExistsInModel = self.allTabs.contains { $0.id == tabID }
+            if tabExistsInModel {
+                Log.debug("clearPersistentStyle: tabID \(tabID) exists but no persistent style to clear")
+            } else {
+                Log.warn("clearPersistentStyle: tabID \(tabID) not found across windows")
+            }
+            return false
         }
-        // Tab exists in a model but style clear failed — likely a lazy-loaded tab
-        // whose view hasn't materialized yet (e.g., Window 2 background tabs).
-        let tabExistsInModel = allTabs.contains { $0.id == tabID }
-        if tabExistsInModel {
-            Log.debug("clearPersistentStyle: tabID \(tabID) exists but no persistent style to clear")
-        } else {
-            Log.warn("clearPersistentStyle: tabID \(tabID) not found across windows")
-        }
-        return false
     }
 
     @discardableResult
@@ -691,6 +707,118 @@ final class TerminalControlService {
             "waited_ms": waitedMs,
             "status": lastSnapshot
         ])
+    }
+
+    /// High-level orchestration: launch `count` agents in fresh tabs, each
+    /// optionally checking out a PR and receiving a task prompt. Composes
+    /// createTab + waitForTabReady + execInTab (+ best-effort prompt injection)
+    /// so MCP callers get a one-call "spawn agents" entrypoint instead of
+    /// wiring the primitives themselves. Runs off the main thread (like
+    /// waitForTabReady), so its per-agent waits don't block the UI.
+    func launchAgents(
+        directory: String?,
+        windowID: Int?,
+        agentCommand: String,
+        prompt: String?,
+        count: Int,
+        prNumber: Int?,
+        readyTimeoutMs: Int
+    ) -> String {
+        let clampedCount = max(1, min(count, Self.absoluteMaxTabs))
+        let boundedTimeout = max(1000, min(readyTimeoutMs, 120_000))
+        let launchCommand = Self.agentLaunchCommand(agentCommand: agentCommand, prNumber: prNumber)
+
+        var agents: [[String: Any]] = []
+        for index in 0 ..< clampedCount {
+            // 1. Open the tab.
+            guard let tabID = decodeJSONObject(
+                createTab(directory: directory, windowID: windowID, context: "agent_launch")
+            )?["tab_id"] as? String else {
+                agents.append([
+                    "index": index, "status": "failed", "stage": "create",
+                    "error": "tab creation failed (MCP tab limit or no window?)"
+                ])
+                // A creation failure recurs (e.g. tab limit), so stop early.
+                break
+            }
+
+            // 2. Wait for the shell to accept a launch command.
+            guard decodeJSONObject(
+                waitForTabReady(tabID: tabID, timeoutMs: boundedTimeout)
+            )?["can_accept_exec"] as? Bool == true else {
+                agents.append([
+                    "index": index, "tab_id": tabID, "status": "failed",
+                    "stage": "wait_ready", "error": "tab did not become ready before timeout"
+                ])
+                continue
+            }
+
+            // 3. Start the agent (optionally after checking out the PR).
+            if let execError = decodeJSONObject(execInTab(tabID: tabID, command: launchCommand))?["error"] as? String {
+                agents.append([
+                    "index": index, "tab_id": tabID, "status": "failed",
+                    "stage": "exec", "launch_command": launchCommand, "error": execError
+                ])
+                continue
+            }
+
+            // 4. Best-effort: once the agent attaches, hand it the prompt.
+            var promptStatus = "skipped"
+            if let prompt, !prompt.isEmpty {
+                promptStatus = injectPromptWhenAgentAttaches(
+                    tabID: tabID, prompt: prompt, timeoutMs: boundedTimeout
+                ) ? "sent" : "agent_not_detected"
+            }
+
+            agents.append([
+                "index": index, "tab_id": tabID, "status": "launched",
+                "launch_command": launchCommand, "prompt": promptStatus
+            ])
+        }
+
+        var result: [String: Any] = [
+            "requested": count,
+            "launched": agents.filter { ($0["status"] as? String) == "launched" }.count,
+            "agent_command": agentCommand,
+            "agents": agents,
+            "next": "Collect each agent's output with tab_output(source='pty_log')."
+        ]
+        if let prNumber { result["pr_number"] = prNumber }
+        return encodeAny(result)
+    }
+
+    /// Builds the shell command that starts an agent, prefixing a PR checkout
+    /// when a PR number is supplied so the agent opens on the PR's branch.
+    static func agentLaunchCommand(agentCommand: String, prNumber: Int?) -> String {
+        guard let prNumber else { return agentCommand }
+        return "gh pr checkout \(prNumber) && \(agentCommand)"
+    }
+
+    /// Polls until the tab reports an attached AI provider, then types the
+    /// prompt and submits it. Best-effort: returns false if no agent attaches
+    /// before the timeout (the tab is still launched; the caller can drive it
+    /// via tab_send_input / tab_submit_prompt).
+    private func injectPromptWhenAgentAttaches(tabID: String, prompt: String, timeoutMs: Int) -> Bool {
+        let deadline = Date().addingTimeInterval(Double(timeoutMs) / 1000.0)
+        while Date() < deadline {
+            Thread.sleep(forTimeInterval: 0.25)
+            let attached = onMain { () -> Bool in
+                guard let (_, session) = self.resolveTab(tabID) else { return false }
+                return session.lastAIProvider != nil
+            }
+            guard attached else { continue }
+            // Give the agent's input box a beat to accept typed text, then submit.
+            _ = sendInput(tabID: tabID, input: prompt)
+            Thread.sleep(forTimeInterval: 0.3)
+            _ = submitPrompt(tabID: tabID)
+            return true
+        }
+        return false
+    }
+
+    private func decodeJSONObject(_ json: String) -> [String: Any]? {
+        guard let data = json.data(using: .utf8) else { return nil }
+        return (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
     }
 
     func sendInput(tabID: String, input: String) -> String {
@@ -1200,13 +1328,15 @@ final class TerminalControlService {
     }
 
     private func findSession(for tabID: UUID) -> TerminalSessionModel? {
-        for (_, model) in allModels {
-            if let tab = model.tabs.first(where: { $0.id == tabID }),
-               let session = tab.session {
-                return session
+        onMain {
+            for (_, model) in self.allModels {
+                if let tab = model.tabs.first(where: { $0.id == tabID }),
+                   let session = tab.session {
+                    return session
+                }
             }
+            return nil
         }
-        return nil
     }
 
     private func resolveTabIDLocked(for target: TabTarget, strictSession: Bool = false) -> UUID? {

@@ -1,5 +1,4 @@
 import XCTest
-#if !SWIFT_PACKAGE
 @testable import Chau7
 import Chau7Core
 
@@ -8,7 +7,20 @@ final class TerminalSessionModelTests: XCTestCase {
     private func flushMainQueue() async {
         let expectation = expectation(description: "main queue flush")
         DispatchQueue.main.async { expectation.fulfill() }
-        await fulfillment(of: [expectation], timeout: 1.0)
+        await fulfillment(of: [expectation], timeout: 5.0)
+    }
+
+    /// Polls the main run loop until `condition` holds (or the timeout
+    /// elapses) so tests don't depend on fixed asyncAfter delays.
+    private func waitUntil(
+        timeout: TimeInterval = 5,
+        _ condition: () -> Bool
+    ) {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if condition() { return }
+            RunLoop.main.run(until: Date().addingTimeInterval(0.01))
+        }
     }
 
     // MARK: - CommandStatus Enum
@@ -1106,7 +1118,19 @@ final class TerminalSessionModelTests: XCTestCase {
 
     func testHandlePromptDetectedEmitsWaitingInputFallbackForSupportedAITool() async {
         RuntimeSessionManager.shared.resetForTesting()
-        let model = AppModel()
+        // The fallback is suppressed when the developer machine's real
+        // ~/.codex/config.toml has the notify hook installed — force the
+        // "no authoritative notifications" case so the test is hermetic.
+        TerminalSessionModel.hasAuthoritativeNotificationsOverrideForTesting = false
+        defer { TerminalSessionModel.hasAuthoritativeNotificationsOverrideForTesting = nil }
+        // recentEvents is only populated when the notification ingress accepts
+        // the event, which requires a NotificationServices instance. Isolated
+        // test mode keeps NotificationManager off UNUserNotificationCenter,
+        // which crashes in bundle-less test processes (mirrors
+        // AppModelEventRoutingTests).
+        setenv("CHAU7_ISOLATED_TEST_MODE", "1", 1)
+        _ = NSApplication.shared
+        let model = AppModel(notifications: NotificationServices())
         let session = TerminalSessionModel(appModel: model)
         let tabID = UUID()
 
@@ -1123,7 +1147,10 @@ final class TerminalSessionModelTests: XCTestCase {
         DispatchQueue.main.async { expectation.fulfill() }
         await fulfillment(of: [expectation], timeout: 1.0)
 
-        let event = model.recentEvents.last
+        // handlePromptDetected also finishes the pending heuristic command,
+        // which records a shell `process_ended` event after the fallback —
+        // look the waiting_input event up instead of relying on order.
+        let event = model.recentEvents.last(where: { $0.type == "waiting_input" })
         XCTAssertEqual(event?.source, .codex)
         XCTAssertEqual(event?.type, "waiting_input")
         XCTAssertEqual(event?.tabID, tabID)
@@ -1315,15 +1342,41 @@ final class TerminalSessionModelTests: XCTestCase {
 
     func testUserCommandClearsResumePrefillFallbackSuppression() async {
         RuntimeSessionManager.shared.resetForTesting()
-        let model = AppModel()
+        // Hermetic: don't let the real ~/.codex/config.toml notify hook
+        // suppress the codex waiting-input fallback.
+        TerminalSessionModel.hasAuthoritativeNotificationsOverrideForTesting = false
+        defer { TerminalSessionModel.hasAuthoritativeNotificationsOverrideForTesting = nil }
+        // recentEvents is only populated when the notification ingress accepts
+        // the event, which requires a NotificationServices instance. Isolated
+        // test mode keeps NotificationManager off UNUserNotificationCenter,
+        // which crashes in bundle-less test processes (mirrors
+        // AppModelEventRoutingTests).
+        setenv("CHAU7_ISOLATED_TEST_MODE", "1", 1)
+        _ = NSApplication.shared
+        let model = AppModel(notifications: NotificationServices())
         let session = TerminalSessionModel(appModel: model)
         let tabID = UUID()
+
+        let settings = FeatureSettings.shared
+        let originalAutoSubmit = settings.autoSubmitRestorePrefill
+        settings.autoSubmitRestorePrefill = false
+        defer { settings.autoSubmitRestorePrefill = originalAutoSubmit }
 
         session.ownerTabID = tabID
         session.currentDirectory = "/tmp/mockup"
         session.lastDetectedAppName = "Codex"
         session.lastAIProvider = "codex"
-        session.prefillInput("codex resume 019d0000-0000-7000-8000-000000000000")
+        // The prefill must actually deliver (view attached, prompt seen) —
+        // an undelivered prefill keeps hasPendingResumePrefillActivity true,
+        // which suppresses the waiting-input fallback regardless of the
+        // per-user-command suppression this test exercises.
+        session.attachRustTerminal(RustTerminalView(frame: .zero))
+        session.isShellLoading = false
+        session.isAtPrompt = true
+        XCTAssertEqual(
+            session.prefillInput("codex resume 019d0000-0000-7000-8000-000000000000"),
+            .delivered
+        )
 
         XCTAssertTrue(session.suppressWaitingInputFallbackUntilNextUserCommand)
 
@@ -1338,7 +1391,10 @@ final class TerminalSessionModelTests: XCTestCase {
         DispatchQueue.main.async { expectation.fulfill() }
         await fulfillment(of: [expectation], timeout: 1.0)
 
-        let event = model.recentEvents.last
+        // A shell `process_ended` event from the finished heuristic command
+        // may follow the fallback — look the waiting_input event up instead
+        // of relying on order.
+        let event = model.recentEvents.last(where: { $0.type == "waiting_input" })
         XCTAssertEqual(event?.type, "waiting_input")
         XCTAssertEqual(event?.tabID, tabID)
         RuntimeSessionManager.shared.resetForTesting()
@@ -1362,7 +1418,7 @@ final class TerminalSessionModelTests: XCTestCase {
         XCTAssertTrue(blocks[0].isRunning)
     }
 
-    func testHandlePromptDetectedFinishesHeuristicCommandBlockWithoutExitCode() async {
+    func testHandlePromptDetectedFinishesHeuristicCommandBlockWithoutExitCode() async throws {
         let model = AppModel()
         let session = TerminalSessionModel(appModel: model)
         let tabID = UUID()
@@ -1381,7 +1437,7 @@ final class TerminalSessionModelTests: XCTestCase {
         XCTAssertNil(block.exitCode)
     }
 
-    func testHandlePromptDetectedUsesShellReportedHeuristicExitCode() async {
+    func testHandlePromptDetectedUsesShellReportedHeuristicExitCode() async throws {
         let model = AppModel()
         let session = TerminalSessionModel(appModel: model)
         let tabID = UUID()
@@ -1402,7 +1458,7 @@ final class TerminalSessionModelTests: XCTestCase {
         XCTAssertEqual(block.exitCode, 17)
     }
 
-    func testHeuristicFallbackTimeoutMarksSyntheticExitCode() async {
+    func testHeuristicFallbackTimeoutMarksSyntheticExitCode() async throws {
         let model = AppModel()
         let session = TerminalSessionModel(appModel: model)
         let tabID = UUID()
@@ -1417,6 +1473,13 @@ final class TerminalSessionModelTests: XCTestCase {
         session.lastInputAt = Date.distantPast
         session.lastOutputAt = Date.distantPast
         session.commandStartedAt = Date.distantPast
+        // First idle tick marks the long-silent command as .stuck and returns;
+        // the next tick (status .stuck) runs the fallback-completion path that
+        // stamps the synthetic timeout exit code. Mirrors the production idle
+        // timer, which fires repeatedly.
+        session.markIdleIfNeeded()
+        await flushMainQueue()
+        XCTAssertEqual(session.status, .stuck)
         session.markIdleIfNeeded()
         await flushMainQueue()
 
@@ -1425,7 +1488,7 @@ final class TerminalSessionModelTests: XCTestCase {
         XCTAssertFalse(block.isRunning)
     }
 
-    func testCommandBlockCapturesCurrentRuntimeTurnID() async {
+    func testCommandBlockCapturesCurrentRuntimeTurnID() async throws {
         RuntimeSessionManager.shared.resetForTesting()
         let model = AppModel()
         let session = TerminalSessionModel(appModel: model)
@@ -1516,12 +1579,12 @@ final class TerminalSessionModelTests: XCTestCase {
 
     // MARK: - Terminal View Accessors
 
-    func testExistingTerminalViewNilByDefault() {
+    func testExistingTerminalContainerViewNilByDefault() {
         let model = AppModel()
         let session = TerminalSessionModel(appModel: model)
         XCTAssertNil(
-            session.existingTerminalView,
-            "No terminal view should be attached by default"
+            session.existingTerminalContainerView,
+            "No terminal container view should be attached by default"
         )
     }
 
@@ -1645,12 +1708,8 @@ final class TerminalSessionModelTests: XCTestCase {
 
         session.attachRustTerminal(terminalView)
 
-        let expectationDone = expectation(description: "queued prefill is flushed on attach")
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-            XCTAssertEqual(capturedInputs, ["claude --resume abc123"])
-            expectationDone.fulfill()
-        }
-        wait(for: [expectationDone], timeout: 1.0)
+        waitUntil { !capturedInputs.isEmpty }
+        XCTAssertEqual(capturedInputs, ["claude --resume abc123"])
     }
 
     func testQueuedInputAndEnterFlushInOriginalOrderOnAttach() throws {
@@ -1666,12 +1725,8 @@ final class TerminalSessionModelTests: XCTestCase {
 
         session.attachRustTerminal(terminalView)
 
-        let expectationDone = expectation(description: "queued text and enter flush in order")
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-            XCTAssertEqual(capturedInputs, ["hello", "\r"])
-            expectationDone.fulfill()
-        }
-        wait(for: [expectationDone], timeout: 1.0)
+        waitUntil { capturedInputs.count >= 2 }
+        XCTAssertEqual(capturedInputs, ["hello", "\r"])
     }
 
     func testPrefillInputAppliesImmediatelyWhenTerminalIsReady() {
@@ -1687,12 +1742,29 @@ final class TerminalSessionModelTests: XCTestCase {
         session.attachRustTerminal(terminalView)
         session.prefillInput("claude --resume xyz789")
 
-        let expectationDone = expectation(description: "prefill inserted on ready terminal")
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-            XCTAssertEqual(capturedInputs, ["claude --resume xyz789"])
-            expectationDone.fulfill()
-        }
-        wait(for: [expectationDone], timeout: 1.0)
+        waitUntil { !capturedInputs.isEmpty }
+        XCTAssertEqual(capturedInputs, ["claude --resume xyz789"])
+    }
+
+    /// The eager 0.3–3s backoff caps at retry 20; after that the retry
+    /// pacer must fall back to a 5s heartbeat rather than silently giving
+    /// up. Cold-boot regression: when OSC 133 takes longer than the eager
+    /// window to arrive (common with many shells racing during multi-tab
+    /// restore), the original code returned `.queued` with no scheduled
+    /// follow-up, leaving the prefill stuck until the user happened to
+    /// trigger an `attachRustTerminal` by switching tabs.
+    func testPrefillRetryDelayFallsBackToHeartbeatAfterEagerExhaustion() {
+        // Eager backoff: monotonically growing then clamped to 3.0.
+        XCTAssertEqual(TerminalSessionModel.nextPrefillRetryDelay(retries: 1), 0.6, accuracy: 0.0001)
+        XCTAssertEqual(TerminalSessionModel.nextPrefillRetryDelay(retries: 9), 3.0, accuracy: 0.0001)
+        XCTAssertEqual(TerminalSessionModel.nextPrefillRetryDelay(retries: 20), 3.0, accuracy: 0.0001)
+
+        // Heartbeat: every retry past the eager limit returns the same 5s
+        // delay. Crucially NON-ZERO and bounded — the pre-fix code returned
+        // .queued with no follow-up scheduled at this point.
+        XCTAssertEqual(TerminalSessionModel.nextPrefillRetryDelay(retries: 21), 5.0, accuracy: 0.0001)
+        XCTAssertEqual(TerminalSessionModel.nextPrefillRetryDelay(retries: 100), 5.0, accuracy: 0.0001)
+        XCTAssertEqual(TerminalSessionModel.nextPrefillRetryDelay(retries: 10000), 5.0, accuracy: 0.0001)
     }
 
     func testPrefillInputTracksResumeMetadataImmediately() {
@@ -1727,11 +1799,19 @@ final class TerminalSessionModelTests: XCTestCase {
     }
 
     func testPrefillInputWaitsForReadySessionState() {
+        let settings = FeatureSettings.shared
+        let originalAutoSubmit = settings.autoSubmitRestorePrefill
+        settings.autoSubmitRestorePrefill = false
+        defer { settings.autoSubmitRestorePrefill = originalAutoSubmit }
+
         let model = AppModel()
         let session = TerminalSessionModel(appModel: model)
+        // Not ready: shell hasn't reported a prompt yet. (Prompt detection is
+        // authoritative over laggy status transitions, so a `.running` status
+        // alone no longer blocks delivery — see `isPrefillReady`.)
         session.isShellLoading = false
-        session.isAtPrompt = true
-        session.status = .running
+        session.isAtPrompt = false
+        session.status = .idle
 
         let terminalView = RustTerminalView(frame: .zero)
         var capturedInputs: [String] = []
@@ -1739,29 +1819,27 @@ final class TerminalSessionModelTests: XCTestCase {
         session.attachRustTerminal(terminalView)
 
         session.prefillInput("claude --resume blocked")
-        let notReadyExpectation = expectation(description: "command waits while session is running")
+        // Negative check: give the main queue a real window to (incorrectly)
+        // deliver the command while no prompt has been seen.
+        let notReadyExpectation = expectation(description: "command waits until the shell shows a prompt")
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
             XCTAssertTrue(capturedInputs.isEmpty)
             notReadyExpectation.fulfill()
         }
-        wait(for: [notReadyExpectation], timeout: 1.0)
+        wait(for: [notReadyExpectation], timeout: 5.0)
 
-        session.status = .idle
+        session.isAtPrompt = true
         session.prefillInput("claude --resume now")
 
-        let readyExpectation = expectation(description: "command inserts once session becomes ready")
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-            XCTAssertEqual(capturedInputs, ["claude --resume now"])
-            readyExpectation.fulfill()
-        }
-        wait(for: [readyExpectation], timeout: 1.0)
+        waitUntil { !capturedInputs.isEmpty }
+        XCTAssertEqual(capturedInputs, ["claude --resume now"])
     }
 
     func testBuildEnvironmentIncludesUserShellConfigHints() {
         let model = AppModel()
         let session = TerminalSessionModel(appModel: model)
         let environment = Dictionary(
-            uniqueKeysWithValues: session.buildEnvironment().compactMap { entry in
+            uniqueKeysWithValues: session.buildEnvironment().compactMap { entry -> (String, String)? in
                 let parts = entry.split(separator: "=", maxSplits: 1).map(String.init)
                 guard parts.count == 2 else { return nil }
                 return (parts[0], parts[1])
@@ -1777,7 +1855,7 @@ final class TerminalSessionModelTests: XCTestCase {
         let model = AppModel()
         let session = TerminalSessionModel(appModel: model)
         let environment = Dictionary(
-            uniqueKeysWithValues: session.buildEnvironment().compactMap { entry in
+            uniqueKeysWithValues: session.buildEnvironment().compactMap { entry -> (String, String)? in
                 let parts = entry.split(separator: "=", maxSplits: 1).map(String.init)
                 guard parts.count == 2 else { return nil }
                 return (parts[0], parts[1])
@@ -1795,7 +1873,7 @@ final class TerminalSessionModelTests: XCTestCase {
         session.ownerTabID = ownerTabID
 
         let environment = Dictionary(
-            uniqueKeysWithValues: session.buildEnvironment().compactMap { entry in
+            uniqueKeysWithValues: session.buildEnvironment().compactMap { entry -> (String, String)? in
                 let parts = entry.split(separator: "=", maxSplits: 1).map(String.init)
                 guard parts.count == 2 else { return nil }
                 return (parts[0], parts[1])
@@ -1809,7 +1887,7 @@ final class TerminalSessionModelTests: XCTestCase {
         let model = AppModel()
         let session = TerminalSessionModel(appModel: model)
         let environment = Dictionary(
-            uniqueKeysWithValues: session.buildEnvironment().compactMap { entry in
+            uniqueKeysWithValues: session.buildEnvironment().compactMap { entry -> (String, String)? in
                 let parts = entry.split(separator: "=", maxSplits: 1).map(String.init)
                 guard parts.count == 2 else { return nil }
                 return (parts[0], parts[1])
@@ -1826,7 +1904,7 @@ final class TerminalSessionModelTests: XCTestCase {
         let first = session.proxyCorrelationSessionID
         let second = session.prepareProxyCorrelationSessionForShellLaunch()
         let environment = Dictionary(
-            uniqueKeysWithValues: session.buildEnvironment().compactMap { entry in
+            uniqueKeysWithValues: session.buildEnvironment().compactMap { entry -> (String, String)? in
                 let parts = entry.split(separator: "=", maxSplits: 1).map(String.init)
                 guard parts.count == 2 else { return nil }
                 return (parts[0], parts[1])
@@ -1863,8 +1941,9 @@ final class TerminalSessionModelTests: XCTestCase {
     /// flip becomes its own (mostly-no-op) recalc and inflates the
     /// `recalcCount` denominator in `decisionsChangeRatePercent`.
     func testRecalculateCTOFlagDebouncesBurstsIntoOneDecision() async {
+        let originalMode = FeatureSettings.shared.tokenOptimizationMode
         FeatureSettings.shared.tokenOptimizationMode = .allTabs
-        defer { FeatureSettings.shared.tokenOptimizationMode = .off }
+        defer { FeatureSettings.shared.tokenOptimizationMode = originalMode }
         CTORuntimeMonitor.shared.reset()
 
         let model = AppModel()
@@ -1878,16 +1957,26 @@ final class TerminalSessionModelTests: XCTestCase {
         // Before the debounce window elapses, no decision has been recorded.
         XCTAssertEqual(CTORuntimeMonitor.shared.snapshot().recalcCount, 0)
 
-        // Wait past the 50ms debounce + a generous main-queue settling margin.
-        try? await Task.sleep(nanoseconds: 150_000_000)
+        // Poll until the debounced decision lands (50ms window), then allow a
+        // settling margin so any extra burst decisions would also land before
+        // we assert exactly one was recorded.
+        let deadline = Date().addingTimeInterval(5)
+        while CTORuntimeMonitor.shared.snapshot().recalcCount == 0, Date() < deadline {
+            try? await Task.sleep(nanoseconds: 20_000_000)
+        }
+        try? await Task.sleep(nanoseconds: 100_000_000)
 
         let snapshot = CTORuntimeMonitor.shared.snapshot()
         XCTAssertEqual(snapshot.recalcCount, 1, "5 burst calls should yield 1 recorded decision")
+
+        // Clean up the flag file the .allTabs decision just created.
+        CTOFlagManager.removeFlag(sessionID: session.tabIdentifier)
     }
 
     func testRecalculateCTOFlagFlushImmediatelyBypassesDebounce() {
+        let originalMode = FeatureSettings.shared.tokenOptimizationMode
         FeatureSettings.shared.tokenOptimizationMode = .allTabs
-        defer { FeatureSettings.shared.tokenOptimizationMode = .off }
+        defer { FeatureSettings.shared.tokenOptimizationMode = originalMode }
         CTORuntimeMonitor.shared.reset()
 
         let model = AppModel()
@@ -1905,4 +1994,3 @@ final class TerminalSessionModelTests: XCTestCase {
         CTOFlagManager.removeFlag(sessionID: session.tabIdentifier)
     }
 }
-#endif

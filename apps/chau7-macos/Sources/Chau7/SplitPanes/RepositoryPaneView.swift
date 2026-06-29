@@ -30,9 +30,9 @@ struct RepositoryPaneView: View {
             headerBar
             Divider()
 
-            if repo.isLoading, repo.commits.isEmpty {
+            if repo.isLoading, repo.history.commits.isEmpty {
                 loadingView
-            } else if repo.isSessionMode {
+            } else if repo.session.isSessionMode {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 12) {
                         errorBanner
@@ -67,7 +67,7 @@ struct RepositoryPaneView: View {
                 repo.refreshAll()
             }
         }
-        .onChange(of: repo.commitMessage) {
+        .onChange(of: repo.commit.message) {
             draftPersistWork?.cancel()
             let work = DispatchWorkItem { [weak repo] in repo?.persistDraft() }
             draftPersistWork = work
@@ -78,29 +78,30 @@ struct RepositoryPaneView: View {
     // MARK: - Header Bar
 
     private var headerBar: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "arrow.triangle.branch")
-                .font(.system(size: 11))
-                .foregroundStyle(.secondary)
-
-            if let branch = repo.currentBranch {
-                Button {
-                    showBranchPicker.toggle()
-                } label: {
-                    HStack(spacing: 3) {
-                        Text(branch)
-                            .font(.system(size: 11, weight: .semibold))
-                            .lineLimit(1)
-                        Image(systemName: "chevron.down")
-                            .font(.system(size: 8))
+        PaneHeaderBar(
+            icon: "arrow.triangle.branch",
+            onClose: onClose,
+            title: {
+                if let branch = repo.branchState.currentBranch {
+                    Button {
+                        showBranchPicker.toggle()
+                    } label: {
+                        HStack(spacing: 3) {
+                            Text(branch)
+                                .font(.system(size: 11, weight: .semibold))
+                                .lineLimit(1)
+                            Image(systemName: "chevron.down")
+                                .font(.system(size: 8))
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .popover(isPresented: $showBranchPicker) {
+                        branchPickerPopover
                     }
                 }
-                .buttonStyle(.plain)
-                .popover(isPresented: $showBranchPicker) {
-                    branchPickerPopover
-                }
-
-                if let ab = repo.aheadBehind, ab.ahead > 0 || ab.behind > 0 {
+            },
+            titleAccessory: {
+                if let ab = repo.branchState.aheadBehind, ab.ahead > 0 || ab.behind > 0 {
                     HStack(spacing: 2) {
                         if ab.ahead > 0 {
                             Text("↑\(ab.ahead)")
@@ -113,64 +114,51 @@ struct RepositoryPaneView: View {
                                 .foregroundStyle(.orange)
                         }
                     }
-                    .help(L("repo.aheadBehind.help", "↑ commits ahead of remote, ↓ commits behind"))
+                    .help(L("repo.branchState.aheadBehind.help", "↑ commits ahead of remote, ↓ commits behind"))
                 }
-            }
 
-            if repo.isSessionMode, let summary = repo.turnSummary {
-                HStack(spacing: 3) {
-                    Circle()
-                        .fill(sessionStateColor(summary.sessionState))
-                        .frame(width: 6, height: 6)
-                    Text(summary.backendName.capitalized)
-                        .font(.system(size: 9, weight: .medium))
+                if repo.session.isSessionMode, let summary = repo.session.turnSummary {
+                    HStack(spacing: 3) {
+                        Circle()
+                            .fill(sessionStateColor(summary.sessionState))
+                            .frame(width: 6, height: 6)
+                        Text(summary.backendName.capitalized)
+                            .font(.system(size: 9, weight: .medium))
+                            .foregroundStyle(.secondary)
+                    }
+                } else if repo.branchState.currentBranch != nil {
+                    Text(repo.repoName)
+                        .font(.system(size: 11))
                         .foregroundStyle(.secondary)
+                        .lineLimit(1)
                 }
-            } else {
-                Text(repo.repoName)
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-            }
+            },
+            trailing: {
+                // Session/Git mode toggle
+                if repo.session.turnSummary != nil {
+                    Button {
+                        repo.session.forceGitMode.toggle()
+                        repo.session.isSessionMode = !repo.session.forceGitMode
+                    } label: {
+                        Text(repo.session.isSessionMode ? L("repo.switchToGit", "Git") : L("repo.switchToSession", "Session"))
+                            .font(.system(size: 9))
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.blue)
+                    .help(repo.session.isSessionMode ? L("repo.switchToGit.help", "Switch to full git view") : L("repo.switchToSession.help", "Switch to session view"))
+                }
 
-            Spacer()
-
-            // Session/Git mode toggle
-            if repo.turnSummary != nil {
                 Button {
-                    repo.forceGitMode.toggle()
-                    repo.isSessionMode = !repo.forceGitMode
+                    repo.refreshAll()
                 } label: {
-                    Text(repo.isSessionMode ? L("repo.switchToGit", "Git") : L("repo.switchToSession", "Session"))
-                        .font(.system(size: 9))
+                    Image(systemName: "arrow.clockwise")
+                        .font(.system(size: 11))
                 }
                 .buttonStyle(.plain)
-                .foregroundStyle(.blue)
-                .help(repo.isSessionMode ? L("repo.switchToGit.help", "Switch to full git view") : L("repo.switchToSession.help", "Switch to session view"))
+                .disabled(repo.isLoading)
+                .help(L("Refresh", "Refresh"))
             }
-
-            Button {
-                repo.refreshAll()
-            } label: {
-                Image(systemName: "arrow.clockwise")
-                    .font(.system(size: 11))
-            }
-            .buttonStyle(.plain)
-            .disabled(repo.isLoading)
-            .help(L("Refresh", "Refresh"))
-
-            Button {
-                onClose()
-            } label: {
-                Image(systemName: "xmark")
-                    .font(.system(size: 10, weight: .semibold))
-            }
-            .buttonStyle(.plain)
-            .help(L("Close Pane", "Close Pane"))
-        }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 4)
-        .background(Color(nsColor: .controlBackgroundColor))
+        )
     }
 
     // MARK: - Loading
@@ -234,30 +222,30 @@ struct RepositoryPaneView: View {
     private var changesSection: some View {
         collapsibleSection(title: L("repo.section.changes", "Changes"), count: changeCount, isExpanded: $changesExpanded) {
             VStack(alignment: .leading, spacing: 2) {
-                if !repo.conflictedFiles.isEmpty {
+                if !repo.status.conflictedFiles.isEmpty {
                     sectionLabel(L("repo.section.conflicts", "CONFLICTS"), color: .red)
-                    ForEach(repo.conflictedFiles, id: \.self) { file in
+                    ForEach(repo.status.conflictedFiles, id: \.self) { file in
                         conflictRow(file)
                     }
                 }
 
-                if !repo.stagedFiles.isEmpty {
+                if !repo.status.stagedFiles.isEmpty {
                     sectionLabel(L("repo.section.staged", "STAGED"), color: .green)
-                    ForEach(repo.stagedFiles) { file in
+                    ForEach(repo.status.stagedFiles) { file in
                         fileRow(file, staged: true)
                     }
                 }
 
-                if !repo.unstagedFiles.isEmpty {
+                if !repo.status.unstagedFiles.isEmpty {
                     sectionLabel(L("repo.section.modified", "MODIFIED"), color: .orange)
-                    ForEach(repo.unstagedFiles) { file in
+                    ForEach(repo.status.unstagedFiles) { file in
                         fileRow(file, staged: false)
                     }
                 }
 
-                if !repo.untrackedFiles.isEmpty {
+                if !repo.status.untrackedFiles.isEmpty {
                     sectionLabel(L("repo.section.untracked", "UNTRACKED"), color: .secondary)
-                    ForEach(repo.untrackedFiles, id: \.self) { file in
+                    ForEach(repo.status.untrackedFiles, id: \.self) { file in
                         untrackedRow(file)
                     }
                 }
@@ -269,7 +257,7 @@ struct RepositoryPaneView: View {
                             .buttonStyle(.plain)
                             .foregroundStyle(.blue)
 
-                        if !repo.stagedFiles.isEmpty {
+                        if !repo.status.stagedFiles.isEmpty {
                             Button(L("repo.unstageAll", "Unstage All")) { repo.unstageAll() }
                                 .font(.system(size: 10))
                                 .buttonStyle(.plain)
@@ -290,7 +278,7 @@ struct RepositoryPaneView: View {
     }
 
     private var changeCount: Int {
-        repo.stagedFiles.count + repo.unstagedFiles.count + repo.untrackedFiles.count + repo.conflictedFiles.count
+        repo.status.stagedFiles.count + repo.status.unstagedFiles.count + repo.status.untrackedFiles.count + repo.status.conflictedFiles.count
     }
 
     // MARK: - Session Changes Section
@@ -364,7 +352,7 @@ struct RepositoryPaneView: View {
 
     private var turnSummarySection: some View {
         collapsibleSection(title: L("repo.section.turnSummary", "Turn Summary"), isExpanded: $turnSummaryExpanded) {
-            if let summary = repo.turnSummary {
+            if let summary = repo.session.turnSummary {
                 VStack(alignment: .leading, spacing: 4) {
                     // Tools used
                     if !summary.toolsUsed.isEmpty {
@@ -461,7 +449,7 @@ struct RepositoryPaneView: View {
             Spacer()
 
             // Diff stats
-            if let stat = repo.diffStats[file.path] {
+            if let stat = repo.status.diffStats[file.path] {
                 HStack(spacing: 2) {
                     if stat.additions > 0 {
                         Text("+\(stat.additions)")
@@ -529,7 +517,7 @@ struct RepositoryPaneView: View {
                     }
                 }
 
-                TextEditor(text: $repo.commitMessage)
+                TextEditor(text: $repo.commit.message)
                     .font(.system(size: 11))
                     .frame(minHeight: 40, maxHeight: 80)
                     .scrollContentBackground(.hidden)
@@ -541,7 +529,7 @@ struct RepositoryPaneView: View {
                             .stroke(Color.secondary.opacity(0.2), lineWidth: 1)
                     )
                     .overlay(alignment: .topLeading) {
-                        if repo.commitMessage.isEmpty {
+                        if repo.commit.message.isEmpty {
                             Text(L("placeholder.commitMessage", "Commit message..."))
                                 .font(.system(size: 11))
                                 .foregroundStyle(.tertiary)
@@ -552,11 +540,11 @@ struct RepositoryPaneView: View {
                     }
 
                 HStack {
-                    Toggle(L("repo.amend", "Amend"), isOn: $repo.isAmend)
+                    Toggle(L("repo.amend", "Amend"), isOn: $repo.commit.isAmend)
                         .toggleStyle(.checkbox)
                         .font(.system(size: 10))
 
-                    if repo.isSessionMode {
+                    if repo.session.isSessionMode {
                         Button {
                             repo.askAgentForCommitMessage()
                         } label: {
@@ -571,15 +559,15 @@ struct RepositoryPaneView: View {
                     Spacer()
 
                     Button {
-                        repo.commit()
+                        repo.performCommit()
                     } label: {
-                        Text(repo.stagedFiles.isEmpty
+                        Text(repo.status.stagedFiles.isEmpty
                             ? L("repo.commit", "Commit")
-                            : String(format: L("repo.commitStaged", "Commit (%d staged)"), repo.stagedFiles.count))
+                            : String(format: L("repo.commitStaged", "Commit (%d staged)"), repo.status.stagedFiles.count))
                             .font(.system(size: 10, weight: .medium))
                     }
-                    .disabled(repo.commitMessage.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                        || (repo.stagedFiles.isEmpty && !repo.isAmend))
+                    .disabled(repo.commit.message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                        || (repo.status.stagedFiles.isEmpty && !repo.commit.isAmend))
                     .keyboardShortcut(.return, modifiers: .command)
                     .buttonStyle(.borderedProminent)
                     .controlSize(.small)
@@ -592,19 +580,19 @@ struct RepositoryPaneView: View {
     // MARK: - History Section
 
     private var historySection: some View {
-        collapsibleSection(title: L("repo.section.history", "History"), count: repo.commits.count, isExpanded: $historyExpanded) {
+        collapsibleSection(title: L("repo.section.history", "History"), count: repo.history.commits.count, isExpanded: $historyExpanded) {
             VStack(alignment: .leading, spacing: 4) {
                 // Search bar
                 HStack(spacing: 4) {
                     Image(systemName: "magnifyingglass")
                         .font(.system(size: 9))
                         .foregroundStyle(.tertiary)
-                    TextField(L("placeholder.searchCommits", "Search commits..."), text: $repo.historySearchText)
+                    TextField(L("placeholder.searchCommits", "Search commits..."), text: $repo.history.historySearchText)
                         .textFieldStyle(.plain)
                         .font(.system(size: 10))
-                    if !repo.historySearchText.isEmpty {
+                    if !repo.history.historySearchText.isEmpty {
                         Button {
-                            repo.historySearchText = ""
+                            repo.history.historySearchText = ""
                         } label: {
                             Image(systemName: "xmark.circle.fill")
                                 .font(.system(size: 9))
@@ -625,7 +613,7 @@ struct RepositoryPaneView: View {
                         .transition(.opacity)
                 }
 
-                ForEach(repo.filteredCommits) { commit in
+                ForEach(repo.history.filteredCommits) { commit in
                     HStack(spacing: 6) {
                         Text(commit.shortHash)
                             .font(.system(size: 9, design: .monospaced))
@@ -684,7 +672,7 @@ struct RepositoryPaneView: View {
     // MARK: - Stash Section
 
     private var stashSection: some View {
-        collapsibleSection(title: L("repo.section.stash", "Stash"), count: repo.stashes.count, isExpanded: $stashExpanded) {
+        collapsibleSection(title: L("repo.section.stash", "Stash"), count: repo.history.stashes.count, isExpanded: $stashExpanded) {
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 4) {
                     TextField(L("placeholder.stashMessage", "Stash message (optional)"), text: $stashMessage)
@@ -699,7 +687,7 @@ struct RepositoryPaneView: View {
                     .controlSize(.small)
                 }
 
-                ForEach(repo.stashes) { stash in
+                ForEach(repo.history.stashes) { stash in
                     HStack(spacing: 6) {
                         Text("stash@{\(stash.index)}")
                             .font(.system(size: 9, design: .monospaced))
@@ -725,7 +713,7 @@ struct RepositoryPaneView: View {
                     .help(stash.hoverText)
                 }
 
-                if repo.stashes.isEmpty {
+                if repo.history.stashes.isEmpty {
                     Text(L("repo.noStashes", "No stashes"))
                         .font(.system(size: 10))
                         .foregroundStyle(.secondary)
@@ -738,7 +726,7 @@ struct RepositoryPaneView: View {
     // MARK: - Branches Section
 
     private var branchesSection: some View {
-        collapsibleSection(title: L("repo.section.branches", "Branches"), count: repo.branches.count, isExpanded: $branchesExpanded) {
+        collapsibleSection(title: L("repo.section.branches", "Branches"), count: repo.branchState.branches.count, isExpanded: $branchesExpanded) {
             VStack(alignment: .leading, spacing: 4) {
                 // Create branch
                 HStack(spacing: 4) {
@@ -756,19 +744,19 @@ struct RepositoryPaneView: View {
                 }
 
                 // Branch list
-                ForEach(repo.branches, id: \.self) { branch in
+                ForEach(repo.branchState.branches, id: \.self) { branch in
                     HStack(spacing: 6) {
-                        Image(systemName: branch == repo.currentBranch ? "circle.fill" : "circle")
+                        Image(systemName: branch == repo.branchState.currentBranch ? "circle.fill" : "circle")
                             .font(.system(size: 6))
-                            .foregroundStyle(branch == repo.currentBranch ? .green : .secondary)
+                            .foregroundStyle(branch == repo.branchState.currentBranch ? .green : .secondary)
 
                         Text(branch)
-                            .font(.system(size: 10, weight: branch == repo.currentBranch ? .semibold : .regular))
+                            .font(.system(size: 10, weight: branch == repo.branchState.currentBranch ? .semibold : .regular))
                             .lineLimit(1)
 
                         Spacer()
 
-                        if branch != repo.currentBranch {
+                        if branch != repo.branchState.currentBranch {
                             Button(L("repo.switchBranch", "Switch")) { repo.switchBranch(branch) }
                                 .font(.system(size: 9))
                                 .buttonStyle(.plain)
@@ -781,7 +769,7 @@ struct RepositoryPaneView: View {
                         }
                     }
                     .padding(.vertical, 1)
-                    .help(repo.branchDetails[branch]?.hoverText ?? branch)
+                    .help(repo.branchState.branchDetails[branch]?.hoverText ?? branch)
                 }
 
                 Divider().padding(.vertical, 4)
@@ -818,7 +806,7 @@ struct RepositoryPaneView: View {
                 .font(.system(size: 11, weight: .semibold))
                 .padding(.bottom, 4)
 
-            ForEach(repo.branches, id: \.self) { branch in
+            ForEach(repo.branchState.branches, id: \.self) { branch in
                 Button {
                     repo.switchBranch(branch)
                     showBranchPicker = false
@@ -827,7 +815,7 @@ struct RepositoryPaneView: View {
                         Text(branch)
                             .font(.system(size: 11))
                         Spacer()
-                        if branch == repo.currentBranch {
+                        if branch == repo.branchState.currentBranch {
                             Image(systemName: "checkmark")
                                 .font(.system(size: 10))
                         }

@@ -14,6 +14,10 @@ public struct VisibleTerminalPollingContext: Equatable {
     public var isHidden: Bool
     public var hasVisibleWindow: Bool
     public var isWindowMiniaturized: Bool
+    /// True when the window is fully covered by other windows.
+    /// `NSWindow.isVisible` stays true for occluded windows, so without this
+    /// the selected tab keeps rendering up to ~15fps for pixels nobody sees.
+    public var isWindowOccluded: Bool
     public var isInteractive: Bool
 
     public init(
@@ -24,6 +28,7 @@ public struct VisibleTerminalPollingContext: Equatable {
         isHidden: Bool,
         hasVisibleWindow: Bool,
         isWindowMiniaturized: Bool,
+        isWindowOccluded: Bool = false,
         isInteractive: Bool
     ) {
         self.isTerminalStarted = isTerminalStarted
@@ -33,6 +38,7 @@ public struct VisibleTerminalPollingContext: Equatable {
         self.isHidden = isHidden
         self.hasVisibleWindow = hasVisibleWindow
         self.isWindowMiniaturized = isWindowMiniaturized
+        self.isWindowOccluded = isWindowOccluded
         self.isInteractive = isInteractive
     }
 }
@@ -49,7 +55,8 @@ public enum VisibleTerminalPollingPolicy {
         guard context.allowsLivePresentation,
               !context.isHidden,
               context.hasVisibleWindow,
-              !context.isWindowMiniaturized else {
+              !context.isWindowMiniaturized,
+              !context.isWindowOccluded else {
             return .backgroundDrain
         }
         // Any visible window's selected tab (allowsLivePresentation == true)

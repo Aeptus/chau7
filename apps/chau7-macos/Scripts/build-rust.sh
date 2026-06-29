@@ -101,6 +101,9 @@ if [[ "$UNIVERSAL_BUILD" == true ]]; then
         if [[ -f "$ARM64_LIB" && -f "$X86_64_LIB" ]]; then
             echo "Creating universal binary for $crate..."
             lipo -create "$ARM64_LIB" "$X86_64_LIB" -output "$UNIVERSAL_LIB"
+            # Normalize the install name: cargo's default embeds the absolute
+            # build path, leaking the build machine layout into signed artifacts.
+            install_name_tool -id "@rpath/$dylib" "$UNIVERSAL_LIB"
             echo "Created: $UNIVERSAL_LIB"
         else
             echo "Warning: Could not create universal binary for $crate" >&2
@@ -142,6 +145,9 @@ else
 
         if [[ -f "$SRC_LIB" ]]; then
             cp "$SRC_LIB" "$DEST_LIB"
+            # Normalize the install name: cargo's default embeds the absolute
+            # build path, leaking the build machine layout into signed artifacts.
+            install_name_tool -id "@rpath/$dylib" "$DEST_LIB"
             echo "Copied: $DEST_LIB"
         else
             echo "Warning: $dylib not found for $crate at $SRC_LIB" >&2

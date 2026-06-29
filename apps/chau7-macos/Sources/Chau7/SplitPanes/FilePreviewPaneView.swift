@@ -13,51 +13,36 @@ struct FilePreviewPaneView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // Header bar
-            HStack(spacing: 8) {
-                Image(systemName: "eye")
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
+            PaneHeaderBar(
+                icon: "eye",
+                closeHelp: L("splitPane.preview.close", "Close Preview"),
+                onClose: onClose,
+                title: { PaneHeaderTitle(preview.fileName) },
+                titleAccessory: {
+                    // File-type icon (right after the title) shows the
+                    // OS-derived icon for the preview's content type.
+                    if let path = preview.filePath {
+                        Image(nsImage: {
+                            if let contentType = UTType(filenameExtension: (path as NSString).pathExtension) {
+                                return NSWorkspace.shared.icon(for: contentType)
+                            }
+                            return NSWorkspace.shared.icon(for: .data)
+                        }())
+                            .resizable()
+                            .frame(width: 14, height: 14)
+                    }
 
-                if let path = preview.filePath {
-                    Image(nsImage: {
-                        if let contentType = UTType(filenameExtension: (path as NSString).pathExtension) {
-                            return NSWorkspace.shared.icon(for: contentType)
-                        }
-                        return NSWorkspace.shared.icon(for: .data)
-                    }())
-                        .resizable()
-                        .frame(width: 14, height: 14)
+                    if preview.isImageFile {
+                        Text(L("pane.image", "IMAGE"))
+                            .font(.system(size: 9, weight: .semibold))
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal, 4)
+                            .padding(.vertical, 1)
+                            .background(Color.secondary.opacity(0.15))
+                            .cornerRadius(3)
+                    }
                 }
-
-                Text(preview.fileName)
-                    .font(.system(size: 11, weight: .medium))
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-
-                if preview.isImageFile {
-                    Text(L("pane.image", "IMAGE"))
-                        .font(.system(size: 9, weight: .semibold))
-                        .foregroundStyle(.secondary)
-                        .padding(.horizontal, 4)
-                        .padding(.vertical, 1)
-                        .background(Color.secondary.opacity(0.15))
-                        .cornerRadius(3)
-                }
-
-                Spacer()
-
-                Button { onClose() } label: {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 10))
-                        .foregroundStyle(.secondary)
-                }
-                .buttonStyle(.plain)
-                .help(L("splitPane.preview.close", "Close Preview"))
-            }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 5)
-            .background(Color(nsColor: .controlBackgroundColor))
+            )
 
             Divider()
 

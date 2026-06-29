@@ -15,6 +15,9 @@ enum ClaudeSessionResolver {
 
     private static let cacheLock = NSLock()
     private static var metadataCache: [String: Candidate] = [:]
+    /// Bounds the cache: keys are distinct session IDs seen for the process
+    /// lifetime, so without a cap the map only ever grows.
+    private static let metadataCacheMaxEntries = 256
 
     static func metadata(
         forSessionID sessionId: String,
@@ -71,10 +74,57 @@ enum ClaudeSessionResolver {
 
         if transcriptPath == nil {
             cacheLock.lock()
+            if metadataCache.count >= Self.metadataCacheMaxEntries {
+                metadataCache.removeAll(keepingCapacity: true)
+            }
             metadataCache[normalizedSessionId] = candidate
             cacheLock.unlock()
         }
         return candidate
+    }
+
+    /// Reverse lookup: given a saved working directory, list every
+    /// candidate session ID Claude has a transcript for, ranked by
+    /// transcript file mtime (newest first). Used by the restore pipeline
+    /// to recover a real `--resume <id>` command for tabs that were
+    /// autosaved with a synthetic identity (no real session ID yet) —
+    /// without it, `buildAIResumeCommand` returns nil for synthetic
+    /// sources and nothing gets prefilled on restart.
+    ///
+    /// Scans `~/.claude/projects/<dir-as-dashes>/<sessionId>.jsonl` —
+    /// the canonical layout Claude writes to on disk. Sessions whose
+    /// session ID would be rejected by `AIResumeParser.isValidSessionId`
+    /// (e.g. shell-metacharacter contamination) are filtered out so the
+    /// resulting command is always safe to feed to `isSafeResumeCommand`.
+    static func sessionCandidates(
+        forDirectory directory: String,
+        fileManager: FileManager = .default,
+        environment: [String: String] = ProcessInfo.processInfo.environment
+    ) -> [(sessionId: String, lastActivity: Date)] {
+        let projectsRoot = RuntimeIsolation.urlInHome(
+            ".claude/projects",
+            fileManager: fileManager,
+            environment: environment
+        )
+        let projectDirName = normalizedSessionDirectory(directory)
+            .replacingOccurrences(of: "/", with: "-")
+        guard !projectDirName.isEmpty else { return [] }
+        let projectDir = projectsRoot.appendingPathComponent(projectDirName, isDirectory: true)
+        guard let files = try? fileManager.contentsOfDirectory(atPath: projectDir.path) else {
+            return []
+        }
+        var results: [(sessionId: String, lastActivity: Date)] = []
+        for file in files {
+            guard file.hasSuffix(".jsonl") else { continue }
+            let sessionId = String(file.dropLast(".jsonl".count))
+            guard AIResumeParser.isValidSessionId(sessionId) else { continue }
+            let path = projectDir.appendingPathComponent(file).path
+            let touchedAt = (
+                try? fileManager.attributesOfItem(atPath: path)[.modificationDate] as? Date
+            ) ?? Date.distantPast
+            results.append((sessionId: sessionId, lastActivity: touchedAt))
+        }
+        return results.sorted { $0.lastActivity > $1.lastActivity }
     }
 
     static func restoreDirectory(

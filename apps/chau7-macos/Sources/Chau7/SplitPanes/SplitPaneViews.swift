@@ -15,21 +15,19 @@ struct SplitPaneView: View {
             node: controller.root,
             focusedID: controller.focusedPaneID,
             renderPhase: renderPhase,
-            isInteractive: isInteractive,
-            onFocus: { id in
-                controller.setFocusedPane(id)
-            },
+            isInteractive: isInteractive
+        )
+        .environment(\.paneEnvironment, PaneEnvironment(
+            onFocus: { id in controller.setFocusedPane(id) },
             onUpdateRatio: { splitID, newRatio in
                 controller.updateRatio(splitID: splitID, newRatio: newRatio)
             },
-            onClosePane: { id in
-                controller.closePane(id: id)
-            },
+            onClosePane: { id in controller.closePane(id: id) },
             onFilePathClicked: controller.onFilePathClicked,
             onRunCommand: { [weak controller] command, lineNumber, editor in
                 controller?.sendCommandToTerminal(command, sourceEditor: editor, sourceLineNumber: lineNumber)
             }
-        )
+        ))
     }
 }
 
@@ -38,65 +36,13 @@ struct SplitNodeView: View {
     let focusedID: UUID
     let renderPhase: TabRenderPhase
     let isInteractive: Bool
-    let onFocus: (UUID) -> Void
-    let onUpdateRatio: (UUID, CGFloat) -> Void
-    let onClosePane: (UUID) -> Void
-    var onFilePathClicked: ((String, Int?, Int?) -> Void)? // F03: Internal editor callback
-    var onRunCommand: ((String, Int?, TextEditorModel?) -> Void)? // Markdown runbook: send command to terminal
+
+    @Environment(\.paneEnvironment) private var env
 
     var body: some View {
         switch node {
-        case .terminal(let id, let session):
-            TerminalPaneView(
-                id: id,
-                session: session,
-                renderPhase: renderPhase,
-                isInteractive: isInteractive,
-                onFocus: { onFocus(id) },
-                onFilePathClicked: onFilePathClicked
-            )
-
-        case .textEditor(let id, let editor):
-            TextEditorPaneView(
-                id: id,
-                editor: editor,
-                onFocus: { onFocus(id) },
-                onClose: { onClosePane(id) },
-                onRunCommand: onRunCommand
-            )
-
-        case .filePreview(let id, let preview):
-            FilePreviewPaneView(
-                id: id,
-                preview: preview,
-                onFocus: { onFocus(id) },
-                onClose: { onClosePane(id) }
-            )
-
-        case .diffViewer(let id, let diff):
-            DiffViewerPaneView(
-                id: id,
-                diff: diff,
-                onFocus: { onFocus(id) },
-                onClose: { onClosePane(id) }
-            )
-
-        case .repositoryPane(let id, let repo):
-            RepositoryPaneView(
-                id: id,
-                repo: repo,
-                onFocus: { onFocus(id) },
-                onClose: { onClosePane(id) },
-                onFileClicked: { path, dir in
-                    let absolutePath = URL(fileURLWithPath: path, relativeTo: URL(fileURLWithPath: dir)).path
-                    onFilePathClicked?(absolutePath, nil, nil)
-                }
-            )
-
-        case .dashboard(_, let dashboard):
-            AgentDashboardView(model: dashboard) { path in
-                onFilePathClicked?(path, nil, nil)
-            }
+        case .leaf(let pane):
+            leafView(for: pane)
 
         case .split(let splitID, let direction, let first, let second, let ratio):
             SplitContainerView(
@@ -107,18 +53,78 @@ struct SplitNodeView: View {
                 modelRatio: ratio,
                 focusedID: focusedID,
                 renderPhase: renderPhase,
-                isInteractive: isInteractive,
-                onFocus: onFocus,
-                onUpdateRatio: onUpdateRatio,
-                onClosePane: onClosePane,
-                onFilePathClicked: onFilePathClicked,
-                onRunCommand: onRunCommand
+                isInteractive: isInteractive
             )
+        }
+    }
+
+    /// Dispatches on the concrete pane type. Adding a new pane kind means
+    /// adding one case here and one PaneNode conformer — the traversal
+    /// helpers stay untouched.
+    @ViewBuilder
+    private func leafView(for pane: any PaneNode) -> some View {
+        switch pane {
+        case let p as TerminalPane:
+            TerminalPaneView(
+                id: p.id,
+                session: p.session,
+                renderPhase: renderPhase,
+                isInteractive: isInteractive,
+                onFocus: { env?.onFocus(p.id) },
+                onFilePathClicked: env?.onFilePathClicked
+            )
+
+        case let p as TextEditorPane:
+            TextEditorPaneView(
+                id: p.id,
+                editor: p.editor,
+                onFocus: { env?.onFocus(p.id) },
+                onClose: { env?.onClosePane(p.id) },
+                onRunCommand: env?.onRunCommand
+            )
+
+        case let p as FilePreviewPane:
+            FilePreviewPaneView(
+                id: p.id,
+                preview: p.preview,
+                onFocus: { env?.onFocus(p.id) },
+                onClose: { env?.onClosePane(p.id) }
+            )
+
+        case let p as DiffViewerPane:
+            DiffViewerPaneView(
+                id: p.id,
+                diff: p.diff,
+                onFocus: { env?.onFocus(p.id) },
+                onClose: { env?.onClosePane(p.id) }
+            )
+
+        case let p as RepositoryPane:
+            RepositoryPaneView(
+                id: p.id,
+                repo: p.repo,
+                onFocus: { env?.onFocus(p.id) },
+                onClose: { env?.onClosePane(p.id) },
+                onFileClicked: { path, dir in
+                    let absolutePath = URL(fileURLWithPath: path, relativeTo: URL(fileURLWithPath: dir)).path
+                    env?.onFilePathClicked?(absolutePath, nil, nil)
+                }
+            )
+
+        case let p as DashboardPane:
+            AgentDashboardView(model: p.dashboard) { path in
+                env?.onFilePathClicked?(path, nil, nil)
+            }
+
+        default:
+            EmptyView()
         }
     }
 }
 
-/// Separate view for split container to hold @State for smooth dragging
+/// Separate view for split container to hold @State for smooth dragging.
+/// Reads `onUpdateRatio` from `@Environment(\.paneEnvironment)` instead of
+/// taking it as an init parameter.
 struct SplitContainerView: View {
     let splitID: UUID
     let direction: SplitDirection
@@ -128,12 +134,8 @@ struct SplitContainerView: View {
     let focusedID: UUID
     let renderPhase: TabRenderPhase
     let isInteractive: Bool
-    let onFocus: (UUID) -> Void
-    let onUpdateRatio: (UUID, CGFloat) -> Void
-    let onClosePane: (UUID) -> Void
-    var onFilePathClicked: ((String, Int?, Int?) -> Void)? // F03: Internal editor callback
-    var onRunCommand: ((String, Int?, TextEditorModel?) -> Void)? // Markdown runbook
 
+    @Environment(\.paneEnvironment) private var env
     @State private var liveRatio: CGFloat = 0.5
 
     var body: some View {
@@ -148,7 +150,7 @@ struct SplitContainerView: View {
                 baseRatio: modelRatio,
                 totalSize: totalSize,
                 onDragEnd: { newRatio in
-                    onUpdateRatio(splitID, newRatio)
+                    env?.onUpdateRatio(splitID, newRatio)
                 }
             )
 
@@ -179,12 +181,7 @@ struct SplitContainerView: View {
             node: node,
             focusedID: focusedID,
             renderPhase: renderPhase,
-            isInteractive: isInteractive,
-            onFocus: onFocus,
-            onUpdateRatio: onUpdateRatio,
-            onClosePane: onClosePane,
-            onFilePathClicked: onFilePathClicked,
-            onRunCommand: onRunCommand
+            isInteractive: isInteractive
         )
     }
 }
@@ -225,142 +222,126 @@ struct TextEditorPaneView: View {
     @State private var showFilePicker = false
     @State private var isMarkdownMode = false
     @State private var showCopiedToast = false
+    @State private var editorSelectedRange = NSRange(location: 0, length: 0)
+    @State private var editorConfig = EditorConfig.load()
 
     private var isMarkdownFile: Bool {
         guard let filePath = editor.filePath?.lowercased() else { return false }
         return filePath.hasSuffix(".md") || filePath.hasSuffix(".markdown")
     }
 
+    private var editorLanguage: EditorLanguage {
+        EditorLanguage.detect(from: editor.fileName)
+    }
+
     var body: some View {
         VStack(spacing: 0) {
-            // Header bar
-            HStack(spacing: 8) {
-                Image(systemName: "doc.text")
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-
-                Text(editor.fileName)
-                    .font(.system(size: 11, weight: .medium))
-                    .lineLimit(1)
-                    .onTapGesture {
-                        NSPasteboard.general.clearContents()
-                        NSPasteboard.general.setString(editor.fileName, forType: .string)
-                        withAnimation(.easeInOut(duration: 0.15)) { showCopiedToast = true }
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
-                            withAnimation(.easeInOut(duration: 0.3)) { showCopiedToast = false }
+            PaneHeaderBar(
+                icon: "doc.text",
+                onClose: onClose,
+                title: {
+                    Text(editor.fileName)
+                        .font(.system(size: 11, weight: .medium))
+                        .lineLimit(1)
+                        .onTapGesture {
+                            NSPasteboard.general.clearContents()
+                            NSPasteboard.general.setString(editor.fileName, forType: .string)
+                            withAnimation(.easeInOut(duration: 0.15)) { showCopiedToast = true }
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+                                withAnimation(.easeInOut(duration: 0.3)) { showCopiedToast = false }
+                            }
                         }
-                    }
-                    .help(L("Copy file name", "Copy file name"))
-
-                if showCopiedToast {
-                    Text(L("pane.copied", "Copied"))
-                        .font(.system(size: 9, weight: .medium))
-                        .foregroundStyle(.secondary)
-                        .transition(.opacity)
-                }
-
-                if editor.isAutoSaveEnabled, let autoSaveStatusMessage = editor.autoSaveStatusMessage {
-                    Text(autoSaveStatusMessage)
-                        .font(.system(size: 9, weight: .medium))
-                        .foregroundStyle(.secondary)
-                } else if editor.isDirty {
-                    Circle()
-                        .fill(Color.orange)
-                        .frame(width: 6, height: 6)
-                }
-
-                if editor.hasExternalChangeConflict {
-                    Button {
-                        editor.reloadFromDisk()
-                    } label: {
-                        Text(L("editor.reloadPrompt", "Reload?"))
+                        .help(L("Copy file name", "Copy file name"))
+                },
+                titleAccessory: {
+                    if showCopiedToast {
+                        Text(L("pane.copied", "Copied"))
                             .font(.system(size: 9, weight: .medium))
-                            .foregroundStyle(.orange)
+                            .foregroundStyle(.secondary)
+                            .transition(.opacity)
                     }
-                    .buttonStyle(.plain)
-                    .help(editor.externalConflictMessage ?? L("editor.externalChangeConflict", "File changed externally. Reload?"))
-                }
 
-                if isMarkdownFile, editor.planProgress.total > 0 {
-                    Text("\(editor.planProgress.checked)/\(editor.planProgress.total)")
-                        .font(.system(size: 9, design: .monospaced))
-                        .foregroundStyle(.secondary)
-                        .help(L("editor.planProgress", "Completed tasks"))
-                }
-
-                Spacer()
-
-                // Open file button
-                Button {
-                    showFilePicker = true
-                } label: {
-                    Image(systemName: "folder")
-                        .font(.system(size: 11))
-                }
-                .buttonStyle(.plain)
-                .help(L("Open File", "Open File"))
-
-                // Save button
-                Button {
-                    if editor.filePath != nil {
-                        editor.save()
-                    } else if !editor.saveUntitledIfPossible() {
-                        saveAs()
+                    if editor.isAutoSaveEnabled, let autoSaveStatusMessage = editor.autoSaveStatusMessage {
+                        Text(autoSaveStatusMessage)
+                            .font(.system(size: 9, weight: .medium))
+                            .foregroundStyle(.secondary)
+                    } else if editor.isDirty {
+                        Circle()
+                            .fill(Color.orange)
+                            .frame(width: 6, height: 6)
                     }
-                } label: {
-                    Image(systemName: "square.and.arrow.down")
-                        .font(.system(size: 11))
-                }
-                .buttonStyle(.plain)
-                .disabled(!editor.isDirty && editor.filePath != nil)
-                .help(L("Save", "Save"))
 
-                // Markdown toggle (only shown for .md files)
-                if isMarkdownFile {
-                    Button {
-                        isMarkdownMode.toggle()
-                    } label: {
-                        Image(systemName: isMarkdownMode ? "doc.plaintext" : "doc.richtext")
+                    if editor.hasExternalChangeConflict {
+                        Button {
+                            editor.reloadFromDisk()
+                        } label: {
+                            Text(L("editor.reloadPrompt", "Reload?"))
+                                .font(.system(size: 9, weight: .medium))
+                                .foregroundStyle(.orange)
+                        }
+                        .buttonStyle(.plain)
+                        .help(editor.externalConflictMessage ?? L("editor.externalChangeConflict", "File changed externally. Reload?"))
+                    }
+
+                    if isMarkdownFile, editor.planProgress.total > 0 {
+                        Text("\(editor.planProgress.checked)/\(editor.planProgress.total)")
+                            .font(.system(size: 9, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                            .help(L("editor.planProgress", "Completed tasks"))
+                    }
+                },
+                trailing: {
+                    // Open file
+                    Button { showFilePicker = true } label: {
+                        Image(systemName: "folder")
                             .font(.system(size: 11))
                     }
                     .buttonStyle(.plain)
-                    .help(isMarkdownMode ? L("pane.showSource", "Show Source") : L("pane.showRunbook", "Show Runbook"))
+                    .help(L("Open File", "Open File"))
 
-                    if isMarkdownMode, onRunCommand != nil {
-                        Button {
-                            let blocks = parseMarkdown(editor.content)
-                                .compactMap { s -> (Int, String)? in
-                                    if case .codeBlock(_, let code, let lineNumber) = s.kind { return (lineNumber, code) }
-                                    return nil
-                                }
-                            // Stagger block execution so the shell processes each sequentially
-                            for (i, block) in blocks.enumerated() {
-                                DispatchQueue.main.asyncAfter(deadline: .now() + Double(i) * 0.5) { [onRunCommand, editor] in
-                                    onRunCommand?("\(block.1)\n", block.0, editor)
-                                }
-                            }
-                        } label: {
-                            Label(L("pane.runAll", "Run All"), systemImage: "play.fill")
-                                .font(.system(size: 10))
+                    // Save
+                    Button {
+                        if editor.filePath != nil {
+                            editor.save()
+                        } else if !editor.saveUntitledIfPossible() {
+                            saveAs()
                         }
-                        .buttonStyle(.bordered)
-                        .controlSize(.mini)
+                    } label: {
+                        Image(systemName: "square.and.arrow.down")
+                            .font(.system(size: 11))
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(!editor.isDirty && editor.filePath != nil)
+                    .help(L("Save", "Save"))
+
+                    // Markdown Source ⇄ Preview toggle (only for .md files), with a
+                    // ⌘⇧P shortcut scoped to the editor pane while it's on screen.
+                    if isMarkdownFile {
+                        Button {
+                            isMarkdownMode.toggle()
+                        } label: {
+                            Image(systemName: isMarkdownMode ? "doc.plaintext" : "doc.richtext")
+                                .font(.system(size: 11))
+                        }
+                        .buttonStyle(.plain)
+                        .keyboardShortcut("p", modifiers: [.command, .shift])
+                        .help(isMarkdownMode
+                            ? L("pane.showSource", "Show Source (⌘⇧P)")
+                            : L("pane.showPreview", "Show Preview (⌘⇧P)"))
+
+                        if isMarkdownMode, onRunCommand != nil {
+                            Button {
+                                runAllMarkdownBlocks()
+                            } label: {
+                                Label(L("pane.runAll", "Run All"), systemImage: "play.fill")
+                                    .font(.system(size: 10))
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.mini)
+                        }
                     }
                 }
-
-                // Close button
-                Button {
-                    attemptClose()
-                } label: {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 10, weight: .semibold))
-                }
-                .buttonStyle(.plain)
-                .help(L("Close Pane", "Close Pane"))
-            }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 4)
-            .background(Color(nsColor: .controlBackgroundColor))
+            )
 
             Divider()
 
@@ -372,51 +353,37 @@ struct TextEditorPaneView: View {
                 MarkdownRunbookView(
                     content: editor.content,
                     fileName: editor.fileName,
-                    onRunBlock: { code, lineNumber in
-                        onRunCommand?("\(code)\n", lineNumber, editor)
-                    },
-                    onRunAll: { [onRunCommand, editor] in
-                        let blocks = parseMarkdown(editor.content)
-                            .compactMap { section -> (Int, String)? in
-                                if case .codeBlock(_, let code, let lineNumber) = section.kind { return (lineNumber, code) }
-                                return nil
-                            }
-                        for (i, block) in blocks.enumerated() {
-                            DispatchQueue.main.asyncAfter(deadline: .now() + Double(i) * 0.5) {
-                                onRunCommand?("\(block.1)\n", block.0, editor)
-                            }
+                    host: RunbookHostAdapter(
+                        editor: editor,
+                        sendCommand: { command, lineNumber in
+                            onRunCommand?(command, lineNumber, editor)
                         }
-                    },
-                    codeBlockState: { code, lineNumber in
-                        editor.codeBlockState(for: code, lineNumber: lineNumber)
-                    },
-                    onToggleCheckbox: { lineNumber in
-                        editor.toggleCheckbox(lineNumber: lineNumber)
-                    },
-                    onContentChange: { newContent in
-                        editor.updateContent(newContent)
-                    }
+                    )
                 )
             } else {
-                TextEditorContent(
+                EnhancedEditorView(
                     text: Binding(
                         get: { editor.content },
                         set: { editor.updateContent($0) }
                     ),
-                    editor: editor
+                    selectedRange: $editorSelectedRange,
+                    language: editorLanguage,
+                    config: editorConfig,
+                    onSave: { _ = editor.save() },
+                    scrollToLine: editor.scrollToLine,
+                    onScrollHandled: { editor.scrollToLine = nil }
                 )
-                .font(.system(size: 12, design: .monospaced))
             }
         }
         .contentShape(Rectangle())
         .onAppear {
-            isMarkdownMode = isMarkdownFile
+            isMarkdownMode = false
         }
         .onTapGesture {
             onFocus()
         }
         .onChange(of: editor.filePath) {
-            isMarkdownMode = isMarkdownFile
+            isMarkdownMode = false
         }
         .fileImporter(
             isPresented: $showFilePicker,
@@ -447,159 +414,21 @@ struct TextEditorPaneView: View {
         }
     }
 
-    private func attemptClose() {
-        // If content is dirty and not empty, prompt to save
-        if editor.isDirty, !editor.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            let alert = NSAlert()
-            alert.messageText = L("alert.closeEditor.title", "Save changes?")
-            alert.informativeText = L("alert.closeEditor.message", "Your changes will be lost if you don't save them.")
-            alert.alertStyle = .warning
-            alert.addButton(withTitle: L("button.save", "Save"))
-            alert.addButton(withTitle: L("button.dontSave", "Don't Save"))
-            alert.addButton(withTitle: L("button.cancel", "Cancel"))
-
-            let response = alert.runModal()
-            switch response {
-            case .alertFirstButtonReturn:
-                // Save
-                if editor.filePath != nil {
-                    editor.save()
-                    onClose()
-                } else if editor.saveUntitledIfPossible() {
-                    onClose()
-                } else {
-                    // Need to save as first
-                    let panel = NSSavePanel()
-                    panel.allowedContentTypes = [.plainText]
-                    panel.canCreateDirectories = true
-                    panel.nameFieldStringValue = L("editor.defaultFilename", "untitled.txt")
-
-                    if panel.runModal() == .OK, let url = panel.url {
-                        if editor.saveAs(to: url.path) {
-                            onClose()
-                        }
-                    }
-                    // If save was cancelled, don't close
-                }
-            case .alertSecondButtonReturn:
-                // Don't save - just close
-                onClose()
-            default:
-                // Cancel - do nothing
-                break
+    /// Send every fenced code block to the terminal one at a time, waiting
+    /// for each to settle before sending the next. The previous behaviour
+    /// fired all blocks with a fixed 0.5s stagger, which paste-bombed the
+    /// shell when an early block took longer than 0.5s — interleaving
+    /// commands and leading to out-of-order execution.
+    private func runAllMarkdownBlocks() {
+        guard let send = onRunCommand else { return }
+        let blocks = parseMarkdown(editor.content).compactMap { section -> (line: Int, code: String)? in
+            if case .codeBlock(_, let code, let lineNumber) = section.kind {
+                return (line: lineNumber, code: code)
             }
-        } else {
-            // Content is clean or empty - close directly
-            onClose()
+            return nil
         }
-    }
-}
-
-// MARK: - Text Editor Content (NSTextView wrapper for better performance)
-
-struct TextEditorContent: NSViewRepresentable {
-    @Binding var text: String
-    var editor: TextEditorModel
-
-    func makeNSView(context: Context) -> NSScrollView {
-        let scrollView = NSTextView.scrollableTextView()
-        guard let textView = scrollView.documentView as? NSTextView else {
-            Log.error("TextEditorContent: documentView is not NSTextView")
-            return scrollView
-        }
-
-        textView.isEditable = true
-        textView.isSelectable = true
-        textView.allowsUndo = true
-        textView.font = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
-        textView.backgroundColor = NSColor.textBackgroundColor
-        textView.textColor = NSColor.textColor
-        textView.delegate = context.coordinator
-        textView.isAutomaticQuoteSubstitutionEnabled = false
-        textView.isAutomaticDashSubstitutionEnabled = false
-        textView.isAutomaticTextReplacementEnabled = false
-
-        return scrollView
-    }
-
-    func updateNSView(_ scrollView: NSScrollView, context: Context) {
-        guard let textView = scrollView.documentView as? NSTextView else { return }
-        if textView.string != text {
-            // Preserve selection and scroll position
-            let selectedRanges = textView.selectedRanges
-            let visibleRect = textView.visibleRect
-            textView.string = text
-            textView.selectedRanges = selectedRanges
-            textView.scrollToVisible(visibleRect)
-        }
-
-        // F03: Handle scroll-to-line request
-        // Note: scrollToLine is set only after content loads (see TextEditorModel.loadFile)
-        if let line = editor.scrollToLine {
-            scrollToLine(line, in: textView)
-            // Clear synchronously to prevent re-triggering
-            // This is safe because we're already on main thread in updateNSView
-            editor.scrollToLine = nil
-        }
-    }
-
-    /// Scrolls the text view to show the specified line number (1-based)
-    private func scrollToLine(_ lineNumber: Int, in textView: NSTextView) {
-        let text = textView.string as NSString
-        var currentLine = 1
-        var lineStart = 0
-
-        // Find the character index at the start of the target line
-        for i in 0 ..< text.length {
-            if currentLine == lineNumber {
-                lineStart = i
-                break
-            }
-            if text.character(at: i) == 0x0A { // newline
-                currentLine += 1
-            }
-        }
-
-        // If we didn't find the line, scroll to end
-        if currentLine < lineNumber {
-            lineStart = text.length
-        }
-
-        // Create a range at the line start and scroll to it
-        let range = NSRange(location: lineStart, length: 0)
-        textView.scrollRangeToVisible(range)
-        textView.setSelectedRange(range)
-        Log.info("Scrolled editor to line \(lineNumber)")
-    }
-
-    static func dismantleNSView(_ scrollView: NSScrollView, coordinator: Coordinator) {
-        // Clear the undo stack to prevent use-after-free when the NSTextView
-        // is deallocated but NSUndoManager still holds references to it.
-        if let textView = scrollView.documentView as? NSTextView {
-            textView.undoManager?.removeAllActions()
-        }
-    }
-
-    func makeCoordinator() -> Coordinator {
-        Coordinator(self)
-    }
-
-    class Coordinator: NSObject, NSTextViewDelegate {
-        var parent: TextEditorContent
-
-        init(_ parent: TextEditorContent) {
-            self.parent = parent
-        }
-
-        func textDidChange(_ notification: Notification) {
-            guard let textView = notification.object as? NSTextView else { return }
-            if EnvVars.isEnabled(EnvVars.inputDiagnostics) {
-                let preview = textView.string.suffix(12)
-                Log.info(
-                    "TextEditorContent: textDidChange length=\(textView.string.count) tail='\(preview)'"
-                )
-            }
-            parent.text = textView.string
+        editor.runMarkdownBlocksSequentially(blocks) { [editor] command, lineNumber in
+            send(command, lineNumber, editor)
         }
     }
 }
@@ -615,6 +444,9 @@ struct SplitDivider: View {
 
     @State private var isDragging = false
     @State private var dragStartRatio: CGFloat = 0.5
+    /// Tracks whether we pushed a resize cursor, so push/pop stay balanced
+    /// even if the divider is torn down (closePane/promote) while hovered.
+    @State private var isHovered = false
 
     var body: some View {
         Rectangle()
@@ -623,13 +455,22 @@ struct SplitDivider: View {
             .contentShape(Rectangle())
             .onHover { hovering in
                 if hovering {
+                    guard !isHovered else { return }
                     if isVertical {
                         NSCursor.resizeLeftRight.push()
                     } else {
                         NSCursor.resizeUpDown.push()
                     }
-                } else {
+                    isHovered = true
+                } else if isHovered {
                     NSCursor.pop()
+                    isHovered = false
+                }
+            }
+            .onDisappear {
+                if isHovered {
+                    NSCursor.pop()
+                    isHovered = false
                 }
             }
             .gesture(

@@ -19,6 +19,21 @@ set -euo pipefail
 
 APP_NAME="Chau7"
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+# Distribution builds must carry a real version: derive from the latest tag
+# when CHAU7_VERSION isn't set, and fail loudly when neither is available —
+# a hardcoded "1.0" default silently shipped before.
+if [[ -z "${CHAU7_VERSION:-}" ]]; then
+    DERIVED_VERSION="$(git -C "$ROOT_DIR" describe --tags --abbrev=0 2>/dev/null | sed -E 's/^v//' || true)"
+    if [[ -z "$DERIVED_VERSION" ]]; then
+        echo "ERROR: CHAU7_VERSION is not set and no git tag is reachable to derive it from." >&2
+        echo "       Set CHAU7_VERSION=x.y.z or create a vx.y.z tag before building a distribution." >&2
+        exit 1
+    fi
+    export CHAU7_VERSION="$DERIVED_VERSION"
+    echo "==> Version derived from latest tag: $CHAU7_VERSION"
+fi
+
 DIST_DIR="$ROOT_DIR/dist"
 BUILD_DIR="$ROOT_DIR/.build/release"
 APP_DIR="$DIST_DIR/$APP_NAME.app"

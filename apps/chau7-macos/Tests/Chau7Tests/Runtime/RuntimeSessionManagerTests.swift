@@ -1,5 +1,4 @@
 import XCTest
-#if !SWIFT_PACKAGE
 @testable import Chau7
 import Chau7Core
 
@@ -23,6 +22,8 @@ final class RuntimeSessionManagerTests: XCTestCase {
             backend: ClaudeCodeBackend(),
             config: SessionConfig(directory: cwd, provider: "claude")
         )
+        // createSession starts sessions in .starting; tests drive readiness explicitly.
+        first.transition(.backendReady)
         XCTAssertNotNil(first.startTurn(prompt: "first prompt"))
 
         manager.handleClaudeEvent(
@@ -43,6 +44,8 @@ final class RuntimeSessionManagerTests: XCTestCase {
             backend: ClaudeCodeBackend(),
             config: SessionConfig(directory: cwd, provider: "claude")
         )
+        // createSession starts sessions in .starting; tests drive readiness explicitly.
+        second.transition(.backendReady)
         XCTAssertNotNil(second.startTurn(prompt: "second prompt"))
 
         manager.handleClaudeEvent(
@@ -71,6 +74,8 @@ final class RuntimeSessionManagerTests: XCTestCase {
             backend: ClaudeCodeBackend(),
             config: SessionConfig(directory: cwd, provider: "claude")
         )
+        // createSession starts sessions in .starting; tests drive readiness explicitly.
+        first.transition(.backendReady)
         XCTAssertNotNil(first.startTurn(prompt: "first prompt"))
 
         manager.handleClaudeEvent(
@@ -93,6 +98,8 @@ final class RuntimeSessionManagerTests: XCTestCase {
             backend: ClaudeCodeBackend(),
             config: SessionConfig(directory: cwd, provider: "claude")
         )
+        // createSession starts sessions in .starting; tests drive readiness explicitly.
+        second.transition(.backendReady)
         XCTAssertNotNil(second.startTurn(prompt: "second prompt"))
 
         manager.handleClaudeEvent(
@@ -122,6 +129,8 @@ final class RuntimeSessionManagerTests: XCTestCase {
             backend: ClaudeCodeBackend(),
             config: SessionConfig(directory: cwd, provider: "claude")
         )
+        // createSession starts sessions in .starting; tests drive readiness explicitly.
+        session.transition(.backendReady)
 
         manager.handleClaudeEvent(
             ClaudeCodeEvent(
@@ -142,7 +151,7 @@ final class RuntimeSessionManagerTests: XCTestCase {
             .events
             .filter { $0.type == RuntimeEventType.notification.rawValue }
         XCTAssertEqual(notificationEvents.count, 1)
-        XCTAssertEqual(notificationEvents.first?.data?["message"], "Heads up")
+        XCTAssertEqual(notificationEvents.first?.data["message"], "Heads up")
     }
 
     func testToolLifecycleJournalsCorrelationDurationAndResultMetadata() throws {
@@ -153,6 +162,8 @@ final class RuntimeSessionManagerTests: XCTestCase {
             backend: ClaudeCodeBackend(),
             config: SessionConfig(directory: cwd, provider: "claude")
         )
+        // createSession starts sessions in .starting; tests drive readiness explicitly.
+        session.transition(.backendReady)
 
         manager.handleClaudeEvent(
             ClaudeCodeEvent(
@@ -205,6 +216,8 @@ final class RuntimeSessionManagerTests: XCTestCase {
             backend: ClaudeCodeBackend(),
             config: SessionConfig(directory: cwd, provider: "claude")
         )
+        // createSession starts sessions in .starting; tests drive readiness explicitly.
+        first.transition(.backendReady)
         XCTAssertNotNil(first.startTurn(prompt: "first prompt"))
 
         let second = manager.createSession(
@@ -212,6 +225,8 @@ final class RuntimeSessionManagerTests: XCTestCase {
             backend: ClaudeCodeBackend(),
             config: SessionConfig(directory: cwd, provider: "claude")
         )
+        // createSession starts sessions in .starting; tests drive readiness explicitly.
+        second.transition(.backendReady)
         XCTAssertNotNil(second.startTurn(prompt: "second prompt"))
 
         manager.handleClaudeEvent(
@@ -242,6 +257,8 @@ final class RuntimeSessionManagerTests: XCTestCase {
             backend: ClaudeCodeBackend(),
             config: SessionConfig(directory: cwd, provider: "claude")
         )
+        // createSession starts sessions in .starting; tests drive readiness explicitly.
+        session.transition(.backendReady)
 
         manager.handleClaudeEvent(
             ClaudeCodeEvent(
@@ -271,6 +288,8 @@ final class RuntimeSessionManagerTests: XCTestCase {
             backend: ClaudeCodeBackend(),
             config: SessionConfig(directory: cwd, provider: "claude")
         )
+        // createSession starts sessions in .starting; tests drive readiness explicitly.
+        session.transition(.backendReady)
         let turnID = try XCTUnwrap(session.startTurn(prompt: "Please continue"))
         session.journalUserInput(prompt: "Please continue")
 
@@ -307,6 +326,8 @@ final class RuntimeSessionManagerTests: XCTestCase {
                 model: "claude-sonnet-4"
             )
         )
+        // createSession starts sessions in .starting; tests drive readiness explicitly.
+        session.transition(.backendReady)
 
         let turnID = try XCTUnwrap(session.startTurn(prompt: "Track cost"))
         session.addTokens(input: 500_000, output: 0, cacheCreation: 0, cacheRead: 0)
@@ -351,6 +372,8 @@ final class RuntimeSessionManagerTests: XCTestCase {
             backend: GenericShellBackend(),
             config: SessionConfig(directory: "/tmp/runtime-reconcile-\(UUID().uuidString)", provider: "shell")
         )
+        // createSession starts sessions in .starting; tests drive readiness explicitly.
+        session.transition(.backendReady)
 
         let turnID = try XCTUnwrap(session.startTurn(prompt: "Continue"))
 
@@ -389,6 +412,8 @@ final class RuntimeSessionManagerTests: XCTestCase {
             backend: ClaudeCodeBackend(),
             config: SessionConfig(directory: cwd, provider: "claude")
         )
+        // createSession starts sessions in .starting; tests drive readiness explicitly.
+        session.transition(.backendReady)
 
         manager.handleClaudeEvent(
             ClaudeCodeEvent(
@@ -421,4 +446,3 @@ final class RuntimeSessionManagerTests: XCTestCase {
             .filter { $0.type == RuntimeEventType.notification.rawValue }
     }
 }
-#endif

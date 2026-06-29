@@ -67,6 +67,9 @@ final class ProxyManager {
     // MARK: - Private Properties
 
     @ObservationIgnored private var process: Process?
+    /// Restart-backoff bookkeeping for the unexpected-exit auto-restart.
+    @ObservationIgnored private var restartAttempts = 0
+    @ObservationIgnored private var processStartedAt: Date?
     @ObservationIgnored private var outputPipe: Pipe?
     @ObservationIgnored private var errorPipe: Pipe?
     @ObservationIgnored private var isStopping = false
@@ -229,6 +232,9 @@ final class ProxyManager {
         env["CHAU7_TLS_PORT"] = String(port + 1)
         env["CHAU7_TLS_CERT"] = tlsCertPath.path
         env["CHAU7_TLS_KEY"] = tlsKeyPath.path
+        // Parent-death detection: the proxy exits when this app dies, so an
+        // orphan can never hold the port against the relaunched app.
+        env["CHAU7_PARENT_PID"] = String(ProcessInfo.processInfo.processIdentifier)
         process.environment = env
 
         // Setup pipes for output
@@ -271,10 +277,20 @@ final class ProxyManager {
                         object: ProxyStatusEvent.stopped(error: error)
                     )
 
-                    // Auto-restart after unexpected termination (e.g. killed by agent)
+                    // Auto-restart with exponential backoff. A fixed 2s retry
+                    // forever turned a persistent failure (port held, bad
+                    // config) into a 2s crash loop; backoff caps at 60s and
+                    // never gives up (watchdogs retry, not quit) — the
+                    // attempt counter resets after a healthy >60s run.
+                    if let startedAt = self.processStartedAt,
+                       Date().timeIntervalSince(startedAt) > 60 {
+                        self.restartAttempts = 0
+                    }
+                    self.restartAttempts += 1
+                    let delay = min(pow(2.0, Double(self.restartAttempts)), 60.0)
                     let restartPort = self.port
-                    self.logger.info("Auto-restarting proxy in 2s...")
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
+                    self.logger.info("Auto-restarting proxy in \(delay, privacy: .public)s (attempt \(self.restartAttempts, privacy: .public))...")
+                    DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
                         guard let self, !self.isRunning, !self.isStopping else { return }
                         start(port: restartPort)
                     }
@@ -292,6 +308,7 @@ final class ProxyManager {
         do {
             try process.run()
             self.process = process
+            processStartedAt = Date()
             isRunning = true
             lastError = nil
 
@@ -427,37 +444,73 @@ final class ProxyManager {
     }
 
     /// Gets current proxy statistics
-    func getStats() async -> APICallStats? {
+    /// GET <path> and decode the 200 response. Centralizes the isRunning guard,
+    /// URL construction, status check, and error logging shared by the
+    /// stats/task endpoints. `decode` may throw so decode errors route through
+    /// the same warning log.
+    private func requestJSON<T>(
+        path: String,
+        queryItems: [URLQueryItem]? = nil,
+        errorLabel: String,
+        decode: (Data) throws -> T?
+    ) async -> T? {
         guard isRunning else { return nil }
-
-        guard let url = apiURL(path: "/stats") else {
-            logger.error("Invalid proxy URL for stats")
+        guard let url = apiURL(path: path, queryItems: queryItems) else {
+            logger.error("Invalid proxy URL for \(errorLabel)")
             return nil
         }
-
         do {
             let (data, response) = try await URLSession.shared.data(from: url)
-
-            guard let httpResponse = response as? HTTPURLResponse,
-                  httpResponse.statusCode == 200 else {
+            guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
                 return nil
             }
-
-            // Parse stats response
-            if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
-                return APICallStats(
-                    callCount: json["calls_today"] as? Int ?? 0,
-                    totalInputTokens: json["input_tokens_today"] as? Int ?? 0,
-                    totalOutputTokens: json["output_tokens_today"] as? Int ?? 0,
-                    totalCost: json["cost_today"] as? Double ?? 0.0,
-                    averageLatencyMs: json["avg_latency_ms"] as? Double ?? 0.0
-                )
-            }
-
-            return nil
+            return try decode(data)
         } catch {
-            logger.warning("Stats fetch failed: \(error.localizedDescription)")
+            logger.warning("\(errorLabel) failed: \(error.localizedDescription)")
             return nil
+        }
+    }
+
+    /// POST `body` as JSON to <path> and decode the 200 response.
+    private func postJSON<T>(
+        path: String,
+        body: some Encodable,
+        errorLabel: String,
+        decode: (Data) throws -> T?
+    ) async -> T? {
+        guard isRunning else { return nil }
+        guard let url = apiURL(path: path) else {
+            logger.error("Invalid proxy URL for \(errorLabel)")
+            return nil
+        }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        do {
+            request.httpBody = try JSONEncoder().encode(body)
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
+                return nil
+            }
+            return try decode(data)
+        } catch {
+            logger.warning("\(errorLabel) failed: \(error.localizedDescription)")
+            return nil
+        }
+    }
+
+    func getStats() async -> APICallStats? {
+        await requestJSON(path: "/stats", errorLabel: "stats") { data in
+            guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                return nil
+            }
+            return APICallStats(
+                callCount: json["calls_today"] as? Int ?? 0,
+                totalInputTokens: json["input_tokens_today"] as? Int ?? 0,
+                totalOutputTokens: json["output_tokens_today"] as? Int ?? 0,
+                totalCost: json["cost_today"] as? Double ?? 0.0,
+                averageLatencyMs: json["avg_latency_ms"] as? Double ?? 0.0
+            )
         }
     }
 
@@ -465,41 +518,29 @@ final class ProxyManager {
 
     /// Gets the current task candidate for a tab
     func getTaskCandidate(tabId: String) async -> TaskCandidate? {
-        guard isRunning else { return nil }
+        struct CandidateResponse: Decodable {
+            let hasCandidate: Bool
+            let candidateId: String?
+            let suggestedName: String?
+            let trigger: String?
+            let graceRemainingMs: Int64?
+            let confidence: Double?
 
-        guard let url = apiURL(path: "/task/candidate", queryItems: [URLQueryItem(name: "tab_id", value: tabId)]) else {
-            logger.error("Invalid proxy URL for task candidate")
-            return nil
+            enum CodingKeys: String, CodingKey {
+                case hasCandidate = "has_candidate"
+                case candidateId = "candidate_id"
+                case suggestedName = "suggested_name"
+                case trigger
+                case graceRemainingMs = "grace_remaining_ms"
+                case confidence
+            }
         }
-
-        do {
-            let (data, response) = try await URLSession.shared.data(from: url)
-
-            guard let httpResponse = response as? HTTPURLResponse,
-                  httpResponse.statusCode == 200 else {
-                return nil
-            }
-
-            struct CandidateResponse: Decodable {
-                let hasCandidate: Bool
-                let candidateId: String?
-                let suggestedName: String?
-                let trigger: String?
-                let graceRemainingMs: Int64?
-                let confidence: Double?
-
-                enum CodingKeys: String, CodingKey {
-                    case hasCandidate = "has_candidate"
-                    case candidateId = "candidate_id"
-                    case suggestedName = "suggested_name"
-                    case trigger
-                    case graceRemainingMs = "grace_remaining_ms"
-                    case confidence
-                }
-            }
-
+        return await requestJSON(
+            path: "/task/candidate",
+            queryItems: [URLQueryItem(name: "tab_id", value: tabId)],
+            errorLabel: "task candidate"
+        ) { data in
             let resp = try JSONDecoder().decode(CandidateResponse.self, from: data)
-
             guard resp.hasCandidate,
                   let candidateId = resp.candidateId,
                   let suggestedName = resp.suggestedName,
@@ -507,7 +548,6 @@ final class ProxyManager {
                   let graceRemainingMs = resp.graceRemainingMs else {
                 return nil
             }
-
             return TaskCandidate(
                 id: candidateId,
                 tabId: tabId,
@@ -519,70 +559,54 @@ final class ProxyManager {
                 gracePeriodEnd: Date().addingTimeInterval(Double(graceRemainingMs) / 1000.0),
                 createdAt: Date()
             )
-        } catch {
-            logger.warning("Failed to get task candidate: \(error.localizedDescription)")
-            return nil
         }
     }
 
     /// Gets the current active task for a tab
     func getCurrentTask(tabId: String) async -> TrackedTask? {
-        guard isRunning else { return nil }
+        struct CurrentTaskResponse: Decodable {
+            let hasTask: Bool
+            let taskId: String?
+            let taskName: String?
+            let state: String?
+            let totalCalls: Int?
+            let totalTokens: Int?
+            let totalCostUSD: Double?
+            let durationSec: Int64?
+            let startMethod: String?
+            let trigger: String?
+            let projectPath: String?
+            // v1.2: Baseline metrics
+            let baselineTotalTokens: Int?
+            let tokensSaved: Int?
 
-        guard let url = apiURL(path: "/task/current", queryItems: [URLQueryItem(name: "tab_id", value: tabId)]) else {
-            logger.error("Invalid proxy URL for current task")
-            return nil
+            enum CodingKeys: String, CodingKey {
+                case hasTask = "has_task"
+                case taskId = "task_id"
+                case taskName = "task_name"
+                case state
+                case totalCalls = "total_calls"
+                case totalTokens = "total_tokens"
+                case totalCostUSD = "total_cost_usd"
+                case durationSec = "duration_sec"
+                case startMethod = "start_method"
+                case trigger
+                case projectPath = "project_path"
+                case baselineTotalTokens = "baseline_total_tokens"
+                case tokensSaved = "tokens_saved"
+            }
         }
-
-        do {
-            let (data, response) = try await URLSession.shared.data(from: url)
-
-            guard let httpResponse = response as? HTTPURLResponse,
-                  httpResponse.statusCode == 200 else {
-                return nil
-            }
-
-            struct CurrentTaskResponse: Decodable {
-                let hasTask: Bool
-                let taskId: String?
-                let taskName: String?
-                let state: String?
-                let totalCalls: Int?
-                let totalTokens: Int?
-                let totalCostUSD: Double?
-                let durationSec: Int64?
-                let startMethod: String?
-                let trigger: String?
-                let projectPath: String?
-                // v1.2: Baseline metrics
-                let baselineTotalTokens: Int?
-                let tokensSaved: Int?
-
-                enum CodingKeys: String, CodingKey {
-                    case hasTask = "has_task"
-                    case taskId = "task_id"
-                    case taskName = "task_name"
-                    case state
-                    case totalCalls = "total_calls"
-                    case totalTokens = "total_tokens"
-                    case totalCostUSD = "total_cost_usd"
-                    case durationSec = "duration_sec"
-                    case startMethod = "start_method"
-                    case trigger
-                    case projectPath = "project_path"
-                    case baselineTotalTokens = "baseline_total_tokens"
-                    case tokensSaved = "tokens_saved"
-                }
-            }
-
+        return await requestJSON(
+            path: "/task/current",
+            queryItems: [URLQueryItem(name: "tab_id", value: tabId)],
+            errorLabel: "current task"
+        ) { data in
             let resp = try JSONDecoder().decode(CurrentTaskResponse.self, from: data)
-
             guard resp.hasTask,
                   let taskId = resp.taskId,
                   let taskName = resp.taskName else {
                 return nil
             }
-
             return TrackedTask(
                 id: taskId,
                 candidateId: nil,
@@ -601,25 +625,11 @@ final class ProxyManager {
                 baselineTotalTokens: resp.baselineTotalTokens ?? 0,
                 tokensSaved: resp.tokensSaved ?? 0
             )
-        } catch {
-            logger.warning("Failed to get current task: \(error.localizedDescription)")
-            return nil
         }
     }
 
     /// Starts a new task manually
     func startTask(tabId: String, taskName: String?, candidateId: String? = nil) async -> TrackedTask? {
-        guard isRunning else { return nil }
-
-        guard let url = apiURL(path: "/task/start") else {
-            logger.error("Invalid proxy URL for start task")
-            return nil
-        }
-
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-
         struct StartRequest: Encodable {
             let tabId: String
             let taskName: String?
@@ -631,33 +641,21 @@ final class ProxyManager {
                 case candidateId = "candidate_id"
             }
         }
+        struct StartResponse: Decodable {
+            let taskId: String
+            let taskName: String
 
-        do {
-            request.httpBody = try JSONEncoder().encode(StartRequest(
-                tabId: tabId,
-                taskName: taskName,
-                candidateId: candidateId
-            ))
-
-            let (data, response) = try await URLSession.shared.data(for: request)
-
-            guard let httpResponse = response as? HTTPURLResponse,
-                  httpResponse.statusCode == 200 else {
-                return nil
+            enum CodingKeys: String, CodingKey {
+                case taskId = "task_id"
+                case taskName = "task_name"
             }
-
-            struct StartResponse: Decodable {
-                let taskId: String
-                let taskName: String
-
-                enum CodingKeys: String, CodingKey {
-                    case taskId = "task_id"
-                    case taskName = "task_name"
-                }
-            }
-
+        }
+        return await postJSON(
+            path: "/task/start",
+            body: StartRequest(tabId: tabId, taskName: taskName, candidateId: candidateId),
+            errorLabel: "start task"
+        ) { data in
             let resp = try JSONDecoder().decode(StartResponse.self, from: data)
-
             return TrackedTask(
                 id: resp.taskId,
                 candidateId: candidateId,
@@ -676,25 +674,11 @@ final class ProxyManager {
                 baselineTotalTokens: 0,
                 tokensSaved: 0
             )
-        } catch {
-            logger.warning("Failed to start task: \(error.localizedDescription)")
-            return nil
         }
     }
 
     /// Dismisses a pending task candidate
     func dismissCandidate(tabId: String, candidateId: String) async -> Bool {
-        guard isRunning else { return false }
-
-        guard let url = apiURL(path: "/task/dismiss") else {
-            logger.error("Invalid proxy URL for dismiss candidate")
-            return false
-        }
-
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-
         struct DismissRequest: Encodable {
             let tabId: String
             let candidateId: String
@@ -704,45 +688,20 @@ final class ProxyManager {
                 case candidateId = "candidate_id"
             }
         }
-
-        do {
-            request.httpBody = try JSONEncoder().encode(DismissRequest(
-                tabId: tabId,
-                candidateId: candidateId
-            ))
-
-            let (data, response) = try await URLSession.shared.data(for: request)
-
-            guard let httpResponse = response as? HTTPURLResponse,
-                  httpResponse.statusCode == 200 else {
-                return false
-            }
-
-            struct DismissResponse: Decodable {
-                let dismissed: Bool
-            }
-
-            let resp = try JSONDecoder().decode(DismissResponse.self, from: data)
-            return resp.dismissed
-        } catch {
-            logger.warning("Failed to dismiss candidate: \(error.localizedDescription)")
-            return false
+        struct DismissResponse: Decodable {
+            let dismissed: Bool
         }
+        return await postJSON(
+            path: "/task/dismiss",
+            body: DismissRequest(tabId: tabId, candidateId: candidateId),
+            errorLabel: "dismiss candidate"
+        ) { data in
+            try JSONDecoder().decode(DismissResponse.self, from: data).dismissed
+        } ?? false
     }
 
     /// Assesses a task as success or failure
     func assessTask(taskId: String, approved: Bool, note: String? = nil) async -> Bool {
-        guard isRunning else { return false }
-
-        guard let url = apiURL(path: "/task/assess") else {
-            logger.error("Invalid proxy URL for assess task")
-            return false
-        }
-
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-
         struct AssessRequest: Encodable {
             let taskId: String
             let approved: Bool
@@ -754,44 +713,29 @@ final class ProxyManager {
                 case note
             }
         }
-
-        do {
-            request.httpBody = try JSONEncoder().encode(AssessRequest(
-                taskId: taskId,
-                approved: approved,
-                note: note
-            ))
-
-            let (data, response) = try await URLSession.shared.data(for: request)
-
-            guard let httpResponse = response as? HTTPURLResponse,
-                  httpResponse.statusCode == 200 else {
-                return false
-            }
-
-            struct AssessResponse: Decodable {
-                let success: Bool
-            }
-
-            let resp = try JSONDecoder().decode(AssessResponse.self, from: data)
-            return resp.success
-        } catch {
-            logger.warning("Failed to assess task: \(error.localizedDescription)")
-            return false
+        struct AssessResponse: Decodable {
+            let success: Bool
         }
+        return await postJSON(
+            path: "/task/assess",
+            body: AssessRequest(taskId: taskId, approved: approved, note: note),
+            errorLabel: "assess task"
+        ) { data in
+            try JSONDecoder().decode(AssessResponse.self, from: data).success
+        } ?? false
     }
 
     func recordPromptInjectionSessionEvent(
         _ event: PromptInjectionSessionEvent,
         sessionID: String,
         tabID: String
-    ) -> Bool {
-        guard isRunning else { return false }
-        guard !sessionID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return false }
+    ) {
+        guard isRunning else { return }
+        guard !sessionID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
 
         guard let url = apiURL(path: "/injection/session-event") else {
             logger.error("Invalid proxy URL for prompt injection session event")
-            return false
+            return
         }
 
         struct SessionEventRequest: Encodable {
@@ -819,33 +763,23 @@ final class ProxyManager {
                     tabID: tabID
                 )
             )
-
-            let semaphore = DispatchSemaphore(value: 0)
-            var success = false
-            var requestError: Error?
-
-            let task = URLSession.shared.dataTask(with: request) { _, response, error in
-                requestError = error
-                if let httpResponse = response as? HTTPURLResponse {
-                    success = (200 ..< 300).contains(httpResponse.statusCode)
-                }
-                semaphore.signal()
-            }
-            task.resume()
-
-            if semaphore.wait(timeout: .now() + 0.75) == .timedOut {
-                task.cancel()
-                logger.warning("Timed out recording prompt injection session event")
-                return false
-            }
-            if let requestError {
-                logger.warning("Failed to record prompt injection session event: \(requestError.localizedDescription)")
-                return false
-            }
-            return success
         } catch {
-            logger.warning("Failed to record prompt injection session event: \(error.localizedDescription)")
-            return false
+            logger.warning("Failed to encode prompt injection session event: \(error.localizedDescription)")
+            return
+        }
+
+        // Fire-and-forget: this runs on the user-typing path (@MainActor), and
+        // no caller consumes the outcome — blocking main on a local HTTP
+        // round-trip froze input for up to 750ms when the proxy was slow.
+        Task.detached(priority: .utility) { [logger] in
+            do {
+                let (_, response) = try await URLSession.shared.data(for: request)
+                if let http = response as? HTTPURLResponse, !(200 ..< 300).contains(http.statusCode) {
+                    logger.warning("Prompt injection session event rejected: HTTP \(http.statusCode)")
+                }
+            } catch {
+                logger.warning("Failed to record prompt injection session event: \(error.localizedDescription)")
+            }
         }
     }
 

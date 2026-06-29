@@ -171,19 +171,7 @@ fn filter_golangci_json(output: &str) -> String {
 
 /// Compact file path (remove common prefixes)
 fn compact_path(path: &str) -> String {
-    let path = path.replace('\\', "/");
-
-    if let Some(pos) = path.rfind("/pkg/") {
-        format!("pkg/{}", &path[pos + 5..])
-    } else if let Some(pos) = path.rfind("/cmd/") {
-        format!("cmd/{}", &path[pos + 5..])
-    } else if let Some(pos) = path.rfind("/internal/") {
-        format!("internal/{}", &path[pos + 10..])
-    } else if let Some(pos) = path.rfind('/') {
-        path[pos + 1..].to_string()
-    } else {
-        path
-    }
+    crate::utils::compact_path(path, &["pkg", "cmd", "internal"])
 }
 
 #[cfg(test)]

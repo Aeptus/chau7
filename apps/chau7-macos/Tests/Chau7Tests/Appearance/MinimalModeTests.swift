@@ -1,11 +1,9 @@
 import XCTest
-#if !SWIFT_PACKAGE
 @testable import Chau7
 
 @MainActor
 final class MinimalModeTests: XCTestCase {
 
-    /// Use a unique suite key prefix to avoid polluting real UserDefaults
     private let testKeys = [
         "feature.minimalMode",
         "minimal.hideTabBar",
@@ -14,20 +12,51 @@ final class MinimalModeTests: XCTestCase {
         "minimal.hideSidebar"
     ]
 
+    // Snapshot of the singleton's state so tests restore exactly what they found
+    // (MinimalMode.shared persists every mutation straight into UserDefaults).
+    private var savedIsEnabled = false
+    private var savedHideTabBar = true
+    private var savedHideTitleBar = true
+    private var savedHideStatusBar = true
+    private var savedHideSidebar = true
+    private var savedDefaults: [String: Any] = [:]
+
     override func setUp() {
         super.setUp()
-        // Clear all test keys before each test
+        let mode = MinimalMode.shared
+        savedIsEnabled = mode.isEnabled
+        savedHideTabBar = mode.hideTabBar
+        savedHideTitleBar = mode.hideTitleBar
+        savedHideStatusBar = mode.hideStatusBar
+        savedHideSidebar = mode.hideSidebar
+
         let defaults = UserDefaults.standard
+        savedDefaults = [:]
         for key in testKeys {
+            if let value = defaults.object(forKey: key) {
+                savedDefaults[key] = value
+            }
             defaults.removeObject(forKey: key)
         }
     }
 
     override func tearDown() {
-        // Clean up after tests
+        // Restore the singleton's in-memory state (the didSets re-persist it),
+        // then restore the exact prior UserDefaults values.
+        let mode = MinimalMode.shared
+        mode.isEnabled = savedIsEnabled
+        mode.hideTabBar = savedHideTabBar
+        mode.hideTitleBar = savedHideTitleBar
+        mode.hideStatusBar = savedHideStatusBar
+        mode.hideSidebar = savedHideSidebar
+
         let defaults = UserDefaults.standard
         for key in testKeys {
-            defaults.removeObject(forKey: key)
+            if let value = savedDefaults[key] {
+                defaults.set(value, forKey: key)
+            } else {
+                defaults.removeObject(forKey: key)
+            }
         }
         super.tearDown()
     }
@@ -110,37 +139,10 @@ final class MinimalModeTests: XCTestCase {
         XCTAssertTrue(UserDefaults.standard.bool(forKey: "minimal.hideSidebar"))
     }
 
-    // MARK: - Default Values
-
-    func testDefaultHideFlags() {
-        // When no UserDefaults are set, all hide flags should default to true
-        let defaults = UserDefaults.standard
-        for key in testKeys where key.hasPrefix("minimal.") {
-            defaults.removeObject(forKey: key)
-        }
-
-        // Verify the default values are true (all elements hidden when minimal mode is on)
-        XCTAssertTrue(
-            defaults.object(forKey: "minimal.hideTabBar") == nil
-                || defaults.bool(forKey: "minimal.hideTabBar"),
-            "hideTabBar should default to true"
-        )
-        XCTAssertTrue(
-            defaults.object(forKey: "minimal.hideTitleBar") == nil
-                || defaults.bool(forKey: "minimal.hideTitleBar"),
-            "hideTitleBar should default to true"
-        )
-        XCTAssertTrue(
-            defaults.object(forKey: "minimal.hideStatusBar") == nil
-                || defaults.bool(forKey: "minimal.hideStatusBar"),
-            "hideStatusBar should default to true"
-        )
-        XCTAssertTrue(
-            defaults.object(forKey: "minimal.hideSidebar") == nil
-                || defaults.bool(forKey: "minimal.hideSidebar"),
-            "hideSidebar should default to true"
-        )
-    }
+    // NOTE: the old testDefaultHideFlags was removed — it asserted
+    // `object(forKey:) == nil || bool(forKey:)` right after removing the keys,
+    // which is vacuously true and verified nothing about MinimalMode. The
+    // singleton's defaults cannot be re-derived after first access (private init).
 
     // MARK: - Notification Name
 
@@ -151,4 +153,3 @@ final class MinimalModeTests: XCTestCase {
         )
     }
 }
-#endif

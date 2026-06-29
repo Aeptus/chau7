@@ -204,6 +204,10 @@ final class RemoteControlManager {
         let relayURL = FeatureSettings.shared.remoteRelayURL.trimmingCharacters(in: .whitespacesAndNewlines)
         env["CHAU7_RELAY_URL"] = relayURL
         env["CHAU7_MAC_NAME"] = Host.current().localizedName ?? "Mac"
+        // Parent-death detection: an orphaned agent would reconnect to the
+        // relaunched app's single-client IPC socket and fight the fresh agent
+        // for the one client slot, plus duplicate its identity on the relay.
+        env["CHAU7_PARENT_PID"] = String(ProcessInfo.processInfo.processIdentifier)
         process.environment = env
 
         let outputPipe = Pipe()
@@ -542,7 +546,8 @@ final class RemoteControlManager {
                 contextNote: context.contextNote,
                 sessionID: context.sessionID
             )
-            guard let data = try? JSONEncoder().encode(payload) else { continue }
+            // Security-adjacent flow: a dropped approval frame must be visible.
+            guard let data = Persist.encodeLogged(payload, context: "remote.approvalRequest") else { continue }
             sendFrame(type: .approvalRequest, tabID: RemoteTabRegistry.unscopedTabID, payload: data)
         }
     }
@@ -1000,7 +1005,9 @@ final class RemoteControlManager {
     }
 
     private func registerApprovalContext(requestID: String, payload: Data) {
-        guard let approval = try? JSONDecoder().decode(ApprovalRequestPayload.self, from: payload) else {
+        guard let approval = Persist.decodeLogged(ApprovalRequestPayload.self, from: payload, context: "remote.approvalContext(\(requestID), \(payload.count)B)") else {
+            // A malformed approval request must not vanish silently — the
+            // approval card loses all its context downstream.
             return
         }
 

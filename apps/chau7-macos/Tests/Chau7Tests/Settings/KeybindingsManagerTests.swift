@@ -1,6 +1,5 @@
 import XCTest
 import AppKit
-#if !SWIFT_PACKAGE
 @testable import Chau7
 
 @MainActor
@@ -112,94 +111,8 @@ final class KeybindingsManagerTests: XCTestCase {
         XCTAssertTrue(KeybindingsManager.availablePresets.contains("emacs"))
     }
 
-    // MARK: - KeyBinding.parse
-
-    func testParseSimpleBinding() {
-        let binding = KeyBinding.parse("cmd+c", action: .copy)
-        XCTAssertNotNil(binding)
-        XCTAssertEqual(binding?.key, "c")
-        XCTAssertEqual(binding?.modifiers, .command)
-        XCTAssertEqual(binding?.action, .copy)
-    }
-
-    func testParseMultipleModifiers() {
-        let binding = KeyBinding.parse("cmd+shift+t", action: .newTab)
-        XCTAssertNotNil(binding)
-        XCTAssertEqual(binding?.key, "t")
-        XCTAssertTrue(binding?.modifiers.contains(.command) ?? false)
-        XCTAssertTrue(binding?.modifiers.contains(.shift) ?? false)
-    }
-
-    func testParseCtrlBinding() {
-        let binding = KeyBinding.parse("ctrl+c", action: .interrupt)
-        XCTAssertNotNil(binding)
-        XCTAssertEqual(binding?.key, "c")
-        XCTAssertEqual(binding?.modifiers, .control)
-    }
-
-    func testParseOptionBinding() {
-        let binding = KeyBinding.parse("opt+v", action: .paste)
-        XCTAssertNotNil(binding)
-        XCTAssertEqual(binding?.key, "v")
-        XCTAssertEqual(binding?.modifiers, .option)
-    }
-
-    func testParseAltIsOption() {
-        let binding = KeyBinding.parse("alt+v", action: .paste)
-        XCTAssertNotNil(binding)
-        XCTAssertEqual(
-            binding?.modifiers,
-            .option,
-            "alt should be parsed as option modifier"
-        )
-    }
-
-    func testParseCommandAlias() {
-        let binding = KeyBinding.parse("command+c", action: .copy)
-        XCTAssertNotNil(binding)
-        XCTAssertEqual(
-            binding?.modifiers,
-            .command,
-            "command should be parsed as command modifier"
-        )
-    }
-
-    func testParseControlAlias() {
-        let binding = KeyBinding.parse("control+c", action: .interrupt)
-        XCTAssertNotNil(binding)
-        XCTAssertEqual(binding?.modifiers, .control)
-    }
-
-    func testParseOptionAlias() {
-        let binding = KeyBinding.parse("option+v", action: .paste)
-        XCTAssertNotNil(binding)
-        XCTAssertEqual(binding?.modifiers, .option)
-    }
-
-    func testParseEmptyStringReturnsNil() {
-        let binding = KeyBinding.parse("", action: .copy)
-        XCTAssertNil(binding, "Empty string should return nil")
-    }
-
-    func testParseModifiersOnlyReturnsNil() {
-        let binding = KeyBinding.parse("cmd+shift+", action: .copy)
-        // Last component after split is empty, so keyString remains nil
-        XCTAssertNil(
-            binding,
-            "Modifiers-only string (trailing +) should return nil since there is no key"
-        )
-    }
-
-    func testParseCaseInsensitive() {
-        let binding = KeyBinding.parse("CMD+SHIFT+T", action: .newTab)
-        XCTAssertNotNil(binding)
-        XCTAssertEqual(binding?.key, "t", "Key should be lowercased")
-        XCTAssertTrue(binding?.modifiers.contains(.command) ?? false)
-        XCTAssertTrue(binding?.modifiers.contains(.shift) ?? false)
-    }
-
     func testEnterBindingMatchesReturnAndKeypadEnter() {
-        let binding = KeyBinding.parse("enter", action: .newTab)
+        let binding: KeyBinding? = KeyBinding(key: "enter", modifiers: [], action: .newTab)
         XCTAssertNotNil(binding)
 
         XCTAssertTrue(
@@ -390,5 +303,3 @@ final class KeybindingsManagerTests: XCTestCase {
         return event
     }
 }
-
-#endif

@@ -1,5 +1,4 @@
 import XCTest
-#if !SWIFT_PACKAGE
 @testable import Chau7
 
 final class RenderPipelineProfilerTests: XCTestCase {
@@ -124,4 +123,3 @@ final class RenderPipelineProfilerTests: XCTestCase {
         XCTAssertEqual(snapshot.liveViews[0].syncBytes, 2048)
     }
 }
-#endif

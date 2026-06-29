@@ -131,8 +131,6 @@ final class RemoteIPCServer {
             guard let self else { return }
             guard clientFD >= 0 else { return }
             let fd = clientFD
-            // Re-validate fd hasn't been closed/recycled since we captured it
-            guard clientFD == fd else { return }
 
             var offset = 0
             while offset < data.count {
@@ -144,9 +142,9 @@ final class RemoteIPCServer {
                 guard written > 0 else {
                     let err = String(cString: strerror(errno))
                     logger.error("IPC write failed: \(err, privacy: .public)")
-                    Task { @MainActor [weak self] in
-                        self?.disconnectClient(notify: true)
-                    }
+                    // Already on the IPC queue — disconnect inline. Hopping
+                    // to MainActor mutated queue-owned client state off-queue.
+                    disconnectClient(notify: true)
                     return
                 }
 
@@ -206,9 +204,8 @@ final class RemoteIPCServer {
         var readBuffer = [UInt8](repeating: 0, count: 4096)
         let bytesRead = read(clientFD, &readBuffer, readBuffer.count)
         if bytesRead <= 0 {
-            Task { @MainActor [weak self] in
-                self?.disconnectClient(notify: true)
-            }
+            // Already on the IPC queue — disconnect inline.
+            disconnectClient(notify: true)
             return
         }
 
@@ -230,6 +227,8 @@ final class RemoteIPCServer {
         }
     }
 
+    /// Must run on the IPC serial queue — clientFD/clientSource/buffer are
+    /// queue-owned.
     private func disconnectClient(notify: Bool) {
         let hadClient = clientFD >= 0
 

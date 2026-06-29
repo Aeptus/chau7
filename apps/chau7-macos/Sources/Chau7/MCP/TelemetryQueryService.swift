@@ -231,18 +231,22 @@ final class TelemetryQueryService {
 
     // MARK: - Encoding
 
+    /// Encode failures still degrade to valid-but-empty JSON for the MCP
+    /// client, but they are logged — an empty response that's actually an
+    /// encode bug was previously indistinguishable from "no data".
     private func encode(_ value: some Encodable) -> String {
-        guard let data = try? encoder.encode(value) else { return "{}" }
+        guard let data = Persist.encodeLogged(value, context: "telemetry.encode(\(type(of: value)))", encoder: encoder) else { return "{}" }
         return String(data: data, encoding: .utf8) ?? "{}"
     }
 
     private func encodeArray(_ values: [some Encodable]) -> String {
-        guard let data = try? encoder.encode(values) else { return "[]" }
+        guard let data = Persist.encodeLogged(values, context: "telemetry.encodeArray(\(type(of: values)))", encoder: encoder) else { return "[]" }
         return String(data: data, encoding: .utf8) ?? "[]"
     }
 
     private func encodeAny(_ value: Any) -> String {
         guard let data = try? JSONSerialization.data(withJSONObject: value, options: [.sortedKeys]) else {
+            Log.error("TelemetryQueryService: JSONSerialization failed for \(type(of: value))")
             return "[]"
         }
         return String(data: data, encoding: .utf8) ?? "[]"
@@ -265,7 +269,7 @@ final class TelemetryQueryService {
     }
 
     private func projectRun(_ run: TelemetryRun, activeRunIDs: Set<String>) -> [String: Any] {
-        guard let data = try? encoder.encode(run),
+        guard let data = Persist.encodeLogged(run, context: "telemetry.projectRun(\(run.id))", encoder: encoder),
               var json = (try? JSONSerialization.jsonObject(with: data) as? [String: Any]) else {
             return [:]
         }

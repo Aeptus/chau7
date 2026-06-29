@@ -301,7 +301,15 @@ final class ScriptingAPI {
     // MARK: - Handlers
 
     private func handleListTabs() -> [String: Any] {
-        controlPlaneCall(name: "tab_list", arguments: [:]) ?? ["tabs": []]
+        // tab_list returns a top-level JSON array, which parseJSONResponse
+        // (dictionary-only) cannot represent — decode it explicitly.
+        let raw = controlPlane.call(name: "tab_list", arguments: [:])
+        if let data = raw.data(using: .utf8),
+           let tabs = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] {
+            return ["result": tabs]
+        }
+        // Dictionary payloads here are error responses — surface them as-is.
+        return parseJSONResponse(raw) ?? ["result": [] as [[String: Any]]]
     }
 
     private func handleGetTab(_ params: [String: Any]) -> [String: Any] {
@@ -513,7 +521,10 @@ final class ScriptingAPI {
     }
 
     private func handleListSnippets() -> [String: Any] {
-        ["result": [] as [[String: Any]]]
+        let snippets = SnippetManager.shared.entries.map { entry -> [String: Any] in
+            ["title": entry.snippet.title, "body": entry.snippet.body]
+        }
+        return ["result": snippets]
     }
 
     private func handleRunSnippet(_ params: [String: Any]) async -> [String: Any] {

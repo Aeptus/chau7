@@ -11,12 +11,22 @@ final class MemoryPressureResponder {
     static let shared = MemoryPressureResponder()
 
     private var source: DispatchSourceMemoryPressure?
+    private var footprintTimer: DispatchSourceTimer?
     private let queue = DispatchQueue(label: "com.chau7.memory-pressure", qos: .utility)
     private let stateLock = NSLock()
     private var lastCriticalAt: Date?
     private let criticalSuppressionWindow: TimeInterval = 30
     private var lastPressureAt: Date?
     private let memoryPressureWindow: TimeInterval = 90
+    private var lastSelfTriggerAt: Date?
+    private let selfTriggerCooldown: TimeInterval = 60
+    private static let footprintCheckInterval: TimeInterval = 30
+
+    /// Test-only override forcing `isUnderMemoryPressure` to a fixed value.
+    /// Production never sets this; tests use it to exercise the
+    /// memory-pressure branch of the render-lifecycle policy deterministically
+    /// without a real OS pressure event. Reset to `nil` in tearDown.
+    var memoryPressureOverrideForTesting: Bool?
 
     private init() {}
 
@@ -31,12 +41,81 @@ final class MemoryPressureResponder {
         }
         pressureSource.resume()
         source = pressureSource
+
+        // Proactive ceiling check: on big-RAM Macs the OS pressure signal
+        // fires very late (the 31GB incident hit jetsam before any signal
+        // shrank a cache). Poll our own phys_footprint and synthesize
+        // pressure when it crosses the self-imposed ceiling, driving the
+        // same demote-to-.hidden + reclaim machinery the OS signal does.
+        let timer = DispatchSource.makeTimerSource(queue: queue)
+        timer.schedule(
+            deadline: .now() + Self.footprintCheckInterval,
+            repeating: Self.footprintCheckInterval,
+            leeway: .seconds(5)
+        )
+        timer.setEventHandler { [weak self] in
+            self?.checkFootprintCeiling()
+        }
+        timer.resume()
+        footprintTimer = timer
+
         Log.info("MemoryPressureResponder: started")
     }
 
     func stop() {
         source?.cancel()
         source = nil
+        footprintTimer?.cancel()
+        footprintTimer = nil
+    }
+
+    /// Self-imposed footprint ceiling: a quarter of physical memory, clamped
+    /// to [4GB, 12GB]. A terminal that grows past this has runaway
+    /// accumulation regardless of how much RAM the machine has.
+    static func footprintCeilingBytes(physicalBytes: UInt64) -> UInt64 {
+        let quarter = physicalBytes / 4
+        let floor: UInt64 = 4 << 30
+        let cap: UInt64 = 12 << 30
+        return min(max(quarter, floor), cap)
+    }
+
+    private func checkFootprintCeiling(now: Date = Date()) {
+        let used = reportedResidentBytes()
+        guard used > 0 else { return }
+        let physical = UInt64(ProcessInfo.processInfo.physicalMemory)
+        let ceiling = Self.footprintCeilingBytes(physicalBytes: physical)
+        guard used > ceiling else { return }
+
+        stateLock.lock()
+        let recentlyTriggered = lastSelfTriggerAt.map { now.timeIntervalSince($0) < selfTriggerCooldown } ?? false
+        if !recentlyTriggered {
+            lastSelfTriggerAt = now
+            lastPressureAt = now
+        }
+        stateLock.unlock()
+        guard !recentlyTriggered else { return }
+
+        // 1.5x the ceiling escalates to the aggressive tier.
+        let level: MemoryPressureLevel = used > ceiling + ceiling / 2 ? .critical : .warning
+        if level == .critical {
+            stateLock.lock()
+            lastCriticalAt = now
+            stateLock.unlock()
+        }
+        let reclaimed = MemoryPressureCoordinator.shared.reclaim(level)
+        NotificationCenter.default.post(name: .chau7MemoryPressureChanged, object: nil)
+        IncidentBreadcrumbStore.shared.recordMemoryPressure(
+            level: level == .critical ? .critical : .warning,
+            residentBytes: used,
+            physicalBytes: physical,
+            reclaimedBytes: reclaimed,
+            synchronously: level == .critical
+        )
+        Log.warn(
+            "MemoryPressureResponder: self-imposed footprint ceiling exceeded " +
+                "(rss=\(used / (1024 * 1024))MB > ceiling=\(ceiling / (1024 * 1024))MB) — " +
+                "synthesized \(level) pressure (reclaimed=\(reclaimed / (1024 * 1024))MB)"
+        )
     }
 
     /// The OS pressure API does not emit a "back to normal" event. Treat a
@@ -56,6 +135,9 @@ final class MemoryPressureResponder {
     /// every few minutes, refreshing the window; when pressure ends, this clears and
     /// tabs are restored to `.warm` on the next lifecycle re-evaluation.
     func isUnderMemoryPressure(now: Date = Date()) -> Bool {
+        if let override = memoryPressureOverrideForTesting {
+            return override
+        }
         stateLock.lock()
         let lastPressureAt = lastPressureAt
         stateLock.unlock()

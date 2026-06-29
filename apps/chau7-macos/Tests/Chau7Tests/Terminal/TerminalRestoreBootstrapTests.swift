@@ -1,11 +1,22 @@
 import XCTest
 import AppKit
-
-#if !SWIFT_PACKAGE
 @testable import Chau7
 
 @MainActor
 final class TerminalRestoreBootstrapTests: XCTestCase {
+
+    /// Polls the main run loop until `condition` holds (or the timeout
+    /// elapses) so the test does not depend on a fixed asyncAfter delay.
+    private func waitUntil(
+        timeout: TimeInterval = 5,
+        _ condition: () -> Bool
+    ) {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if condition() { return }
+            RunLoop.main.run(until: Date().addingTimeInterval(0.01))
+        }
+    }
 
     func testRestoreBootstrapSettlesOnFirstRenderedBufferWhenNoResumePrefillIsExpected() {
         let session = TerminalSessionModel(appModel: AppModel())
@@ -37,17 +48,14 @@ final class TerminalRestoreBootstrapTests: XCTestCase {
 
         session.prefillInput("codex resume 019d25d0-d0bd-7501-99ba-1f937c17b29b")
 
-        let settledExpectation = expectation(description: "restore bootstrap settles after resume prefill")
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-            XCTAssertEqual(
-                capturedInputs,
-                ["codex resume 019d25d0-d0bd-7501-99ba-1f937c17b29b"]
-            )
-            XCTAssertEqual(session.restoreBootstrapPhase, .settled)
-            XCTAssertFalse(session.isRestoreBootstrapPending)
-            settledExpectation.fulfill()
+        waitUntil {
+            session.restoreBootstrapPhase == .settled && !capturedInputs.isEmpty
         }
-        wait(for: [settledExpectation], timeout: 1.0)
+        XCTAssertEqual(
+            capturedInputs,
+            ["codex resume 019d25d0-d0bd-7501-99ba-1f937c17b29b"]
+        )
+        XCTAssertEqual(session.restoreBootstrapPhase, .settled)
+        XCTAssertFalse(session.isRestoreBootstrapPending)
     }
 }
-#endif

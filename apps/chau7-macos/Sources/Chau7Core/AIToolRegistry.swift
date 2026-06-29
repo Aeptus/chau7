@@ -104,7 +104,7 @@ public enum AIToolRegistry {
             commandNames: ["claude", "claude-code", "claude-cli", "claude-pty", "claude-wrapper"],
             outputPatterns: [
                 "╭─ claude", "╰─ claude", "powered by anthropic",
-                "claude.ai/", "claude.ai", "claude code", "anthropic's claude"
+                "claude code", "anthropic's claude"
             ],
             resumeProviderKey: "claude",
             resumeFormat: .dashFlag(command: "claude", flag: "--resume"),
@@ -146,7 +146,10 @@ public enum AIToolRegistry {
         AIToolDefinition(
             displayName: "ChatGPT",
             commandNames: ["chatgpt", "chatgpt-cli", "gpt", "gpt-cli", "openai"],
-            outputPatterns: ["chatgpt cli", "chatgpt v", "openai.com/v1", "openai.com/v1/chat"],
+            // No API-endpoint substrings here: "openai.com/v1" is the OpenAI REST
+            // endpoint that appears in any project's code/logs/diffs, not a CLI
+            // banner, so it produced false ChatGPT detections on plain shells.
+            outputPatterns: ["chatgpt cli", "chatgpt v"],
             resumeProviderKey: nil,
             resumeFormat: nil,
             logoAssetName: "chatgpt-logo",

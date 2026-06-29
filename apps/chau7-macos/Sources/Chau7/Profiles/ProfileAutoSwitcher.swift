@@ -52,15 +52,15 @@ final class ProfileAutoSwitcher {
             rules = []
             return
         }
-        rules = (try? JSONDecoder().decode([ProfileSwitchRule].self, from: data)) ?? []
+        rules = Persist.decodeLogged([ProfileSwitchRule].self, from: data, context: "profiles.autoSwitchRules") ?? []
         Log.info("ProfileAutoSwitcher: loaded \(rules.count) rules")
     }
 
     func saveRules() {
-        if let data = try? JSONEncoder().encode(rules) {
+        if let data = Persist.encodeLogged(rules, context: "profiles.autoSwitchRules") {
             UserDefaults.standard.set(data, forKey: Keys.autoSwitchRules)
+            Log.info("ProfileAutoSwitcher: saved \(rules.count) rules")
         }
-        Log.info("ProfileAutoSwitcher: saved \(rules.count) rules")
     }
 
     func addRule(_ rule: ProfileSwitchRule) {

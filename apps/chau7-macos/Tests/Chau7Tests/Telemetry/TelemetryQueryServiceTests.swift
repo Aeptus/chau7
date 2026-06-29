@@ -1,5 +1,4 @@
 import XCTest
-#if !SWIFT_PACKAGE
 @testable import Chau7
 
 final class TelemetryQueryServiceTests: XCTestCase {
@@ -110,9 +109,12 @@ final class TelemetryQueryServiceTests: XCTestCase {
         let codexDir = homeRoot.appendingPathComponent(".codex", isDirectory: true)
         try FileManager.default.createDirectory(at: codexDir, withIntermediateDirectories: true)
         let historyPath = codexDir.appendingPathComponent("history.jsonl")
+        // Timestamps must be at/after the run's startedAt — the live-history
+        // parser drops entries older than the run start.
+        let ts = Date().timeIntervalSince1970
         try """
-        {"session_id":"\(sessionID)","ts":1775581702,"text":"first live prompt"}
-        {"session_id":"\(sessionID)","ts":1775581710,"text":"second live prompt"}
+        {"session_id":"\(sessionID)","ts":\(ts),"text":"first live prompt"}
+        {"session_id":"\(sessionID)","ts":\(ts + 1),"text":"second live prompt"}
         """.write(to: historyPath, atomically: true, encoding: .utf8)
 
         setenv("CHAU7_HOME_ROOT", homeRoot.path, 1)
@@ -204,4 +206,3 @@ final class TelemetryQueryServiceTests: XCTestCase {
         return json
     }
 }
-#endif

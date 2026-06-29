@@ -136,6 +136,7 @@ public struct AIDetectionState: Sendable {
     public mutating func handleOutputMatch(
         appName: String?,
         authoritativeAppName: String? = nil,
+        corroborated: Bool = false,
         now: Date = Date()
     ) -> Bool {
         guard let appName else { return false }
@@ -143,6 +144,21 @@ public struct AIDetectionState: Sendable {
             matchedAppName: appName,
             authoritativeAppName: authoritativeAppName
         ) else {
+            return false
+        }
+
+        // Originating a brand-new identity from output alone — nothing is
+        // established for this tool (no live authoritative hint, not the
+        // restored/current app, not a re-detection of the last-detected tool) —
+        // requires a corroborating live signal (a matching child process).
+        // Without it, incidental output such as an API URL or doc string printed
+        // by an ordinary shell command could flip a plain shell to an AI tool.
+        // Recognized launches originate via `handleCommand` instead, which is
+        // high-confidence and ungated.
+        let isOrigination = authoritativeAppName == nil
+            && lastDetectedApp != appName
+            && currentApp != appName
+        if isOrigination, !corroborated {
             return false
         }
 

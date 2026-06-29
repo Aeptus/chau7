@@ -36,24 +36,12 @@ final class RepositoryPaneModel: Identifiable {
 
     // MARK: - Session Mode
 
-    /// Whether the pane is in session-aware mode (agent active/recent).
-    var isSessionMode = false
-    /// Manual override to force full git mode.
-    var forceGitMode = false
-    /// Files the agent touched across all turns (accumulated from journal).
-    var sessionTouchedFiles: Set<String> = []
-    /// Files the agent touched in the current turn.
-    var turnTouchedFiles: Set<String> = []
-    /// Per-file action set derived from tool journaling and command fallbacks.
-    var sessionFileActions: [String: Set<FileTrackingAction>] = [:]
-    /// Per-file timeline of touches across turns.
-    var sessionFileTimeline: [String: [FileTouchRecord]] = [:]
-    /// Files touched partitioned by turn ID.
-    var sessionFilesByTurn: [String: Set<String>] = [:]
-    /// Per-file diff stats: additions and deletions.
-    var diffStats: [String: DiffStat] = [:]
-    /// Turn summary for display.
-    var turnSummary: TurnSummaryInfo?
+    ///
+    /// Session-awareness state moves to a dedicated `RepoSessionState`
+    /// @Observable accessed as `repo.session`. An EventJournal-driven
+    /// session refresh no longer fans invalidations out to status / history
+    /// / commit / branches through the outer model.
+    var session = RepoSessionState()
 
     /// Tracks files across turns by reading the EventJournal.
     @ObservationIgnored
@@ -63,38 +51,51 @@ final class RepositoryPaneModel: Identifiable {
 
     // MARK: - Session File Partitioning
 
+    //
+    // The six near-identical `.filter { session.sessionTouchedFiles.contains(...) }`
+    // expressions used to be hand-written six times. They now ride on a
+    // single `partition(by:)` helper so adding a new "touched-by" predicate
+    // is a one-liner instead of a six-place edit.
+
     var sessionStagedFiles: [FileStatus] {
-        stagedFiles.filter { sessionTouchedFiles.contains($0.path) }
+        status.stagedFiles.filter { session.sessionTouchedFiles.contains($0.path) }
     }
 
     var sessionUnstagedFiles: [FileStatus] {
-        unstagedFiles.filter { sessionTouchedFiles.contains($0.path) }
+        status.unstagedFiles.filter { session.sessionTouchedFiles.contains($0.path) }
     }
 
     var sessionUntrackedFiles: [String] {
-        untrackedFiles.filter { sessionTouchedFiles.contains($0) }
+        status.untrackedFiles.filter { session.sessionTouchedFiles.contains($0) }
     }
 
     var otherStagedFiles: [FileStatus] {
-        stagedFiles.filter { !sessionTouchedFiles.contains($0.path) }
+        status.stagedFiles.filter { !session.sessionTouchedFiles.contains($0.path) }
     }
 
     var otherUnstagedFiles: [FileStatus] {
-        unstagedFiles.filter { !sessionTouchedFiles.contains($0.path) }
+        status.unstagedFiles.filter { !session.sessionTouchedFiles.contains($0.path) }
     }
 
     var otherUntrackedFiles: [String] {
-        untrackedFiles.filter { !sessionTouchedFiles.contains($0) }
+        status.untrackedFiles.filter { !session.sessionTouchedFiles.contains($0) }
     }
 
     var sessionChangeCount: Int {
         sessionStagedFiles.count + sessionUnstagedFiles.count + sessionUntrackedFiles.count
     }
 
+    /// Total count of staged + unstaged + untracked files whose path appears
+    /// in `touched`. One helper, three call-site reductions for any
+    /// "touched-by-X" question — session, current turn, anything else.
+    func changeCount(touchedBy touched: Set<String>) -> Int {
+        status.stagedFiles.filter { touched.contains($0.path) }.count
+            + status.unstagedFiles.filter { touched.contains($0.path) }.count
+            + status.untrackedFiles.filter { touched.contains($0) }.count
+    }
+
     var turnChangeCount: Int {
-        stagedFiles.filter { turnTouchedFiles.contains($0.path) }.count
-            + unstagedFiles.filter { turnTouchedFiles.contains($0.path) }.count
-            + untrackedFiles.filter { turnTouchedFiles.contains($0) }.count
+        changeCount(touchedBy: session.turnTouchedFiles)
     }
 
     var otherChangeCount: Int {
@@ -103,62 +104,69 @@ final class RepositoryPaneModel: Identifiable {
 
     // MARK: - Branch State
 
-    var currentBranch: String?
-    var branches: [String] = []
-    var remoteBranches: [String] = []
-    var branchDetails: [String: BranchDetail] = [:]
-    var aheadBehind: (ahead: Int, behind: Int)?
+    ///
+    /// currentBranch / branches / remoteBranches / branchDetails / aheadBehind
+    /// moved to a dedicated `RepoBranchState` @Observable accessed as
+    /// `repo.branchState`. A branch-list refresh no longer fans invalidations
+    /// out to status / history / commit through the outer model. (Named
+    /// `branchState` rather than `branch` because `branch` could read like a
+    /// single-branch noun and the per-section pattern is to use the section
+    /// word as the property name.)
+    var branchState = RepoBranchState()
 
     // MARK: - File Status
 
-    var stagedFiles: [FileStatus] = []
-    var unstagedFiles: [FileStatus] = []
-    var untrackedFiles: [String] = []
-    var conflictedFiles: [String] = []
+    ///
+    /// Staged / unstaged / untracked / conflicted file lists + per-file
+    /// diff stats moved to a dedicated `RepoStatusState` @Observable
+    /// accessed as `repo.status`. A porcelain refresh that bumps the file
+    /// lists no longer invalidates history / commit / branches through
+    /// the outer model.
+    var status = RepoStatusState()
 
     // MARK: - Commit
 
-    var commitMessage = ""
-    var isAmend = false
+    ///
+    /// In-flight commit message + amend flag move to a dedicated
+    /// `RepoCommitDraft` @Observable accessed as `repo.commit`. SwiftUI
+    /// observation is per-object so typing in the composer no longer
+    /// invalidates status / history / branches through the outer model.
+    /// Declared `var` (not `let`) so SwiftUI's `Bindable` can synthesize
+    /// a writable ReferenceWritableKeyPath for the TextEditor's two-way
+    /// binding; the value is never reassigned in practice.
+    var commit = RepoCommitDraft()
 
     // MARK: - History
 
-    var commits: [CommitEntry] = []
-    @ObservationIgnored
-    var commitLogLimit = 50
-
-    // MARK: - Stash
-
-    var stashes: [StashEntry] = []
-
-    // MARK: - History Search
-
-    var historySearchText = ""
-
-    var filteredCommits: [CommitEntry] {
-        guard !historySearchText.isEmpty else { return commits }
-        let query = historySearchText.lowercased()
-        return commits.filter {
-            $0.message.lowercased().contains(query)
-                || $0.author.lowercased().contains(query)
-                || $0.shortHash.lowercased().contains(query)
-        }
-    }
+    ///
+    /// Commit log, stash list, and search text moved to a dedicated
+    /// `RepoHistoryState` @Observable so a search-text bump no longer
+    /// invalidates the status / commit-composer sections. Declared `var`
+    /// (not `let`) so SwiftUI's `Bindable` can synthesize a writable
+    /// ReferenceWritableKeyPath through `repo.history.historySearchText`
+    /// for the search field's two-way binding; the value is never
+    /// reassigned in practice.
+    var history = RepoHistoryState()
 
     // MARK: - Conventional Commit Prefixes
 
-    static let commitPrefixes = ["feat", "fix", "docs", "style", "refactor", "test", "chore"]
+    //
+    // The persistence, prefix application, and prefix detection rules live
+    // on RepoCommitDraftStore. The model keeps thin pass-through helpers so
+    // the view's `repo.applyPrefix(...)` / `repo.hasConventionalPrefix`
+    // bindings stay unchanged.
+
+    @ObservationIgnored
+    private let draftStore = RepoCommitDraftStore()
+
+    static let commitPrefixes = RepoCommitDraftStore.prefixes
 
     func applyPrefix(_ prefix: String) {
-        let trimmed = commitMessage.trimmingCharacters(in: .whitespaces)
-        // Don't add if already prefixed
-        if trimmed.hasPrefix(prefix + ":") || trimmed.hasPrefix(prefix + "(") { return }
-        commitMessage = prefix + ": " + trimmed
+        commit.message = draftStore.applyPrefix(prefix, to: commit.message)
     }
 
     var hasConventionalPrefix: Bool {
-        let trimmed = commitMessage.trimmingCharacters(in: .whitespaces).lowercased()
-        return Self.commitPrefixes.contains(where: { trimmed.hasPrefix($0 + ":") || trimmed.hasPrefix($0 + "(") })
+        draftStore.hasConventionalPrefix(commit.message)
     }
 
     // MARK: - General State
@@ -217,26 +225,21 @@ final class RepositoryPaneModel: Identifiable {
 
     func load(directory: String) {
         self.directory = directory
-        // Restore persisted commit message draft
-        commitMessage = UserDefaults.standard.string(forKey: "repoPaneDraft.\(directory)") ?? ""
+        // Restore persisted commit message draft via the store.
+        commit.message = draftStore.loadDraft(for: directory)
         refreshAll()
     }
 
     /// Save commit message draft (call from view onChange).
     func persistDraft() {
         guard let dir = directory else { return }
-        let trimmed = commitMessage.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmed.isEmpty {
-            UserDefaults.standard.removeObject(forKey: "repoPaneDraft.\(dir)")
-        } else {
-            UserDefaults.standard.set(commitMessage, forKey: "repoPaneDraft.\(dir)")
-        }
+        draftStore.saveDraft(commit.message, for: dir)
     }
 
     /// Clear persisted draft (call after successful commit).
     private func clearDraft() {
         guard let dir = directory else { return }
-        UserDefaults.standard.removeObject(forKey: "repoPaneDraft.\(dir)")
+        draftStore.clearDraft(for: dir)
     }
 
     /// Returns true if enough time has passed since the last refresh to avoid hammering git.
@@ -247,7 +250,7 @@ final class RepositoryPaneModel: Identifiable {
 
     func refreshAll() {
         guard let dir = prepareLiveGitAccess(actionDescription: "load live Git data") else { return }
-        let limit = commitLogLimit // capture before dispatch
+        let limit = history.commitLogLimit // capture before dispatch
         DispatchQueue.main.async { [weak self] in
             self?.isLoading = true
             self?.lastError = nil
@@ -315,25 +318,25 @@ final class RepositoryPaneModel: Identifiable {
             }
 
             DispatchQueue.main.async {
-                self.currentBranch = branch.isEmpty ? nil : branch
-                self.stagedFiles = parsed.staged
-                self.unstagedFiles = parsed.unstaged
-                self.untrackedFiles = parsed.untracked
-                self.conflictedFiles = parsed.conflicted
-                self.branches = parsedBranches
-                self.branchDetails = parsedDetails
-                self.remoteBranches = parsedRemoteBranches
-                self.aheadBehind = parsedAheadBehind
-                self.commits = parsedCommits
-                self.stashes = parsedStashes
-                self.diffStats = parsedDiffStats
-                self.sessionTouchedFiles = sessionFiles
-                self.turnTouchedFiles = turnFiles
-                self.sessionFileActions = fileActions
-                self.sessionFileTimeline = fileTimeline
-                self.sessionFilesByTurn = filesByTurn
-                self.turnSummary = summary
-                self.isSessionMode = hasSession && !self.forceGitMode
+                self.branchState.currentBranch = branch.isEmpty ? nil : branch
+                self.status.stagedFiles = parsed.staged
+                self.status.unstagedFiles = parsed.unstaged
+                self.status.untrackedFiles = parsed.untracked
+                self.status.conflictedFiles = parsed.conflicted
+                self.branchState.branches = parsedBranches
+                self.branchState.branchDetails = parsedDetails
+                self.branchState.remoteBranches = parsedRemoteBranches
+                self.branchState.aheadBehind = parsedAheadBehind
+                self.history.commits = parsedCommits
+                self.history.stashes = parsedStashes
+                self.status.diffStats = parsedDiffStats
+                self.session.sessionTouchedFiles = sessionFiles
+                self.session.turnTouchedFiles = turnFiles
+                self.session.sessionFileActions = fileActions
+                self.session.sessionFileTimeline = fileTimeline
+                self.session.sessionFilesByTurn = filesByTurn
+                self.session.turnSummary = summary
+                self.session.isSessionMode = hasSession && !self.session.forceGitMode
                 self.isLoading = false
                 self.lastRefreshDate = Date()
             }
@@ -349,10 +352,10 @@ final class RepositoryPaneModel: Identifiable {
             let output = gitRunner(["status", "--porcelain"], dir)
             let parsed = Self.parseStatus(output)
             DispatchQueue.main.async {
-                self.stagedFiles = parsed.staged
-                self.unstagedFiles = parsed.unstaged
-                self.untrackedFiles = parsed.untracked
-                self.conflictedFiles = parsed.conflicted
+                self.status.stagedFiles = parsed.staged
+                self.status.unstagedFiles = parsed.unstaged
+                self.status.untrackedFiles = parsed.untracked
+                self.status.conflictedFiles = parsed.conflicted
             }
         }
     }
@@ -367,18 +370,18 @@ final class RepositoryPaneModel: Identifiable {
             let ab = gitRunner(["rev-list", "--count", "--left-right", "@{upstream}...HEAD"], dir)
             let (parsedBranches, parsedDetails) = Self.parseBranchesVerbose(local)
             DispatchQueue.main.async {
-                self.currentBranch = branch.isEmpty ? nil : branch
-                self.branches = parsedBranches
-                self.branchDetails = parsedDetails
-                self.remoteBranches = Self.parseRemoteBranches(remote)
-                self.aheadBehind = Self.parseAheadBehind(ab)
+                self.branchState.currentBranch = branch.isEmpty ? nil : branch
+                self.branchState.branches = parsedBranches
+                self.branchState.branchDetails = parsedDetails
+                self.branchState.remoteBranches = Self.parseRemoteBranches(remote)
+                self.branchState.aheadBehind = Self.parseAheadBehind(ab)
             }
         }
     }
 
     func refreshCommitLog() {
         guard let dir = prepareLiveGitAccess(actionDescription: "load commit history") else { return }
-        let limit = commitLogLimit
+        let limit = history.commitLogLimit
         loadQueue.async { [weak self] in
             guard let self else { return }
             let output = gitRunner([
@@ -387,13 +390,13 @@ final class RepositoryPaneModel: Identifiable {
             ], dir)
             let commits = Self.parseCommitLog(output)
             DispatchQueue.main.async {
-                self.commits = commits
+                self.history.commits = commits
             }
         }
     }
 
     func loadMoreCommits() {
-        commitLogLimit += 50
+        history.commitLogLimit += 50
         refreshCommitLog()
     }
 
@@ -404,7 +407,7 @@ final class RepositoryPaneModel: Identifiable {
             let output = gitRunner(["stash", "list"], dir)
             let stashes = Self.parseStashList(output)
             DispatchQueue.main.async {
-                self.stashes = stashes
+                self.history.stashes = stashes
             }
         }
     }
@@ -435,8 +438,8 @@ final class RepositoryPaneModel: Identifiable {
     /// Reset session tracking — call after push ships the work.
     func resetSessionTracking() {
         sessionTracker.reset()
-        sessionTouchedFiles = []
-        turnSummary = nil
+        session.sessionTouchedFiles = []
+        session.turnSummary = nil
     }
 
     /// Build turn summary from a RuntimeSession.
@@ -529,18 +532,22 @@ final class RepositoryPaneModel: Identifiable {
 
     // MARK: - Write Operations: Commit
 
-    func commit() {
-        let message = commitMessage.trimmingCharacters(in: .whitespacesAndNewlines)
+    /// Run `git commit`. Renamed from `commit()` (verb) to `performCommit()`
+    /// when the per-section `RepoCommitDraft` observable claimed the
+    /// `commit` property name; the verb function and the noun property
+    /// can't coexist on the same type in Swift.
+    func performCommit() {
+        let message = commit.message.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !message.isEmpty else {
             lastError = "Commit message cannot be empty."
             return
         }
         var args = ["commit", "-m", message]
-        if isAmend { args.append("--amend") }
+        if commit.isAmend { args.append("--amend") }
 
         runWriteOp(args: args, label: "Committing...") { [weak self] in
-            self?.commitMessage = ""
-            self?.isAmend = false
+            self?.commit.message = ""
+            self?.commit.isAmend = false
             self?.clearDraft()
             self?.refreshStatus()
             self?.refreshCommitLog()
@@ -898,149 +905,6 @@ final class RepositoryPaneModel: Identifiable {
     }
 }
 
-// MARK: - Supporting Types
-
-struct FileStatus: Identifiable {
-    let id = UUID()
-    let path: String
-    let changeType: FileChangeType
-    let indexStatus: Character
-    let workTreeStatus: Character
-}
-
-enum FileChangeType: String {
-    case modified = "M"
-    case added = "A"
-    case deleted = "D"
-    case renamed = "R"
-    case copied = "C"
-    case unmerged = "U"
-
-    var icon: String {
-        switch self {
-        case .modified: return "pencil"
-        case .added: return "plus"
-        case .deleted: return "minus"
-        case .renamed: return "arrow.right"
-        case .copied: return "doc.on.doc"
-        case .unmerged: return "exclamationmark.triangle"
-        }
-    }
-
-    var color: String {
-        switch self {
-        case .modified: return "orange"
-        case .added: return "green"
-        case .deleted: return "red"
-        case .renamed: return "blue"
-        case .copied: return "purple"
-        case .unmerged: return "red"
-        }
-    }
-}
-
-struct CommitEntry: Identifiable {
-    var id: String {
-        hash
-    }
-
-    let hash: String
-    let shortHash: String
-    let message: String
-    let author: String
-    let date: Date
-    let dateString: String
-}
-
-struct StashEntry: Identifiable {
-    var id: Int {
-        index
-    }
-
-    let index: Int
-    let description: String
-    let branch: String?
-
-    /// Tooltip text for hover.
-    var hoverText: String {
-        var text = "stash@{\(index)}"
-        if let branch { text += " on \(branch)" }
-        text += "\n\(description)"
-        return text
-    }
-}
-
-struct BranchDetail {
-    let name: String
-    let lastCommitHash: String
-    let lastCommitMessage: String
-
-    /// Tooltip text for hover.
-    var hoverText: String {
-        "\(lastCommitHash) \(lastCommitMessage)"
-    }
-}
-
-struct DiffStat {
-    let additions: Int
-    let deletions: Int
-}
-
-struct TurnSummaryInfo {
-    let turnCount: Int
-    let toolsUsed: [String: Int]
-    let totalTokens: Int
-    let inputTokens: Int
-    let outputTokens: Int
-    let reasoningOutputTokens: Int
-    let costEstimateUSD: Double?
-    let averageTokensPerTurn: Double?
-    let activeDuration: TimeInterval?
-    let exitReason: TurnExitReason?
-    let backendName: String
-    let sessionState: RuntimeSessionStateMachine.State
-    let duration: TimeInterval?
-
-    var formattedTokens: String {
-        if totalTokens > 1000 {
-            return String(format: "%.1fk", Double(totalTokens) / 1000)
-        }
-        return "\(totalTokens)"
-    }
-
-    var formattedDuration: String? {
-        guard let d = duration, d > 0 else { return nil }
-        if d < 60 { return String(format: "%.0fs", d) }
-        let mins = Int(d) / 60
-        let secs = Int(d) % 60
-        if d < 3600 { return "\(mins)m \(secs)s" }
-        let hours = mins / 60
-        let remMins = mins % 60
-        return "\(hours)h \(remMins)m"
-    }
-
-    var formattedActiveDuration: String? {
-        guard let activeDuration, activeDuration > 0 else { return nil }
-        if activeDuration < 60 { return String(format: "%.0fs", activeDuration) }
-        let mins = Int(activeDuration) / 60
-        let secs = Int(activeDuration) % 60
-        if activeDuration < 3600 { return "\(mins)m \(secs)s" }
-        let hours = mins / 60
-        let remMins = mins % 60
-        return "\(hours)h \(remMins)m"
-    }
-
-    var formattedAverageTokensPerTurn: String? {
-        guard let averageTokensPerTurn, averageTokensPerTurn > 0 else { return nil }
-        let rounded = Int(averageTokensPerTurn.rounded())
-        if rounded > 1000 {
-            return String(format: "%.1fk", Double(rounded) / 1000)
-        }
-        return "\(rounded)"
-    }
-
-    var formattedCostEstimate: String? {
-        guard let costEstimateUSD, costEstimateUSD > 0 else { return nil }
-        return LocalizedFormatters.formatCostPrecise(costEstimateUSD)
-    }
-}
+// Supporting types live in RepositoryPaneTypes.swift — extracted as a first
+// step toward separating Status / Commit / History into their own @Observable
+// sub-states.

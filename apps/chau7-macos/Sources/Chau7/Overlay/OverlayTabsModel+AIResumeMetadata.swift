@@ -152,11 +152,26 @@ extension OverlayTabsModel {
 
         let filteredCandidates = observedCandidates.filter { !claimedSessionIds.contains($0.sessionId) }
 
-        guard let sessionId = CodexSessionResolver.bestMatchingSessionID(
+        // Primary: match against sessions observed in Codex history (seeded above).
+        // Fallback: scan ~/.codex/sessions directly by cwd — the same resolver the
+        // restore path uses (maxDays: 14). This recovers the session id when the
+        // notify hook never fired (e.g. a third-party tool hijacked Codex's single
+        // `notify` slot, so no authoritative turn-ended event reached Chau7), leaving
+        // history unseeded. A Codex tab whose rollout exists on disk is then still
+        // resumable from its working directory alone. Still gated behind the codex
+        // provider check above and de-duplicated against claimedSessionIds, so no new
+        // mis-attribution surface for non-AI tabs.
+        let resolvedCodexSessionId = CodexSessionResolver.bestMatchingSessionID(
             forDirectory: directory,
             referenceDate: referenceDate,
             candidates: filteredCandidates
-        ) else {
+        ) ?? CodexSessionResolver.sessionCandidates(
+            forDirectory: directory,
+            referenceDate: referenceDate,
+            maxDays: 14
+        ).first(where: { !claimedSessionIds.contains($0.sessionId) })?.sessionId
+
+        guard let sessionId = resolvedCodexSessionId else {
             let logMessage =
                 """
                 saveTabState: unresolved Codex resume metadata \
@@ -616,7 +631,11 @@ extension OverlayTabsModel {
                 agentStartedAt: state.agentStartedAt,
                 lastExitCode: state.lastExitCode,
                 lastExitAt: state.lastExitAt,
-                commandBlocks: state.commandBlocks
+                commandBlocks: state.commandBlocks,
+                // Legacy-only field, but it must survive sanitization:
+                // restore previews from older on-disk backups hydrate
+                // `OverlayTab.restorePreviewSnapshot` from this payload.
+                previewSnapshotPNGData: state.previewSnapshotPNGData
             )
         }
     }

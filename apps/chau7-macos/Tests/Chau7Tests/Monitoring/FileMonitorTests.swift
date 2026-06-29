@@ -1,5 +1,4 @@
 import XCTest
-#if !SWIFT_PACKAGE
 @testable import Chau7
 
 final class FileMonitorTests: XCTestCase {
@@ -62,17 +61,20 @@ final class FileMonitorTests: XCTestCase {
         FileManager.default.createFile(atPath: fileURL.path, contents: Data())
 
         let expectation = expectation(description: "file change detected")
+        // A single write can surface as multiple dispatch-source events.
+        expectation.assertForOverFulfill = false
         let monitor = FileMonitor(url: fileURL) {
             expectation.fulfill()
         }
         monitor.start()
 
-        // Write to file after a short delay
-        DispatchQueue.global().asyncAfter(deadline: .now() + 0.1) {
+        // start() arms asynchronously on the monitor's queue — give it a beat
+        // before mutating the file.
+        DispatchQueue.global().asyncAfter(deadline: .now() + 0.2) {
             try? "modified content".write(to: fileURL, atomically: true, encoding: .utf8)
         }
 
-        wait(for: [expectation], timeout: 2.0)
+        wait(for: [expectation], timeout: 5.0)
         monitor.stop()
     }
 
@@ -84,4 +86,3 @@ final class FileMonitorTests: XCTestCase {
         XCTAssertEqual(monitor.url, fileURL)
     }
 }
-#endif

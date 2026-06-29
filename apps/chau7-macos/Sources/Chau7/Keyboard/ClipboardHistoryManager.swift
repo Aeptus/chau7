@@ -130,7 +130,19 @@ final class ClipboardHistoryManager {
         addItem(text)
     }
 
+    /// Per-item storage cap. History persists into the UserDefaults plist —
+    /// a copied multi-MB log went straight into prefs (the exact bloat class
+    /// the scrollback-stripped restore index evicted). Oversized payloads are
+    /// truncated for history; the live pasteboard still holds the full text.
+    private static let maxStoredTextBytes = 100 * 1024
+
     private func addItem(_ text: String) {
+        var text = text
+        if text.utf8.count > Self.maxStoredTextBytes {
+            let prefixBytes = Array(text.utf8.prefix(Self.maxStoredTextBytes))
+            text = String(decoding: prefixBytes, as: UTF8.self) + "\u{2026}"
+        }
+
         // Don't add duplicates of the most recent item
         if let existing = items.first, existing.text == text {
             return
@@ -187,10 +199,12 @@ final class ClipboardHistoryManager {
         lastChangeCount = pasteboard.changeCount
         lock.unlock()
 
-        // Move to top if not pinned
+        // Move to top if not pinned — and persist, or the reorder silently
+        // reverts on relaunch (in-memory vs persisted divergence).
         if !item.isPinned, let index = items.firstIndex(where: { $0.id == item.id }) {
             items.remove(at: index)
             items.insert(item, at: 0)
+            persistToDisk()
         }
     }
 
@@ -209,6 +223,22 @@ final class ClipboardHistoryManager {
         items.removeAll { !$0.isPinned }
         persistToDisk()
     }
+
+    // MARK: - Test Support
+
+    #if DEBUG
+    /// Test seam: adds an item exactly as the clipboard poller would.
+    /// (`addItem` stays private; pasteboard polling is the only production entry point.)
+    func addItemForTesting(_ text: String) {
+        addItem(text)
+    }
+
+    /// Test seam: replaces the in-memory items without writing to UserDefaults,
+    /// so tests can snapshot and restore the singleton's state.
+    func replaceItemsForTesting(_ newItems: [ClipboardItem]) {
+        items = newItems
+    }
+    #endif
 
     // MARK: - Search
 

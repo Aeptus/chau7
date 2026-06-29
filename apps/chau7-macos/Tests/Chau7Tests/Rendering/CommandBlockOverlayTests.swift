@@ -1,5 +1,4 @@
 import XCTest
-#if !SWIFT_PACKAGE
 @testable import Chau7
 @testable import Chau7Core
 
@@ -200,4 +199,3 @@ final class CommandBlockOverlayTests: XCTestCase {
         XCTAssertTrue(tooltip.contains("Exit: 0"))
     }
 }
-#endif

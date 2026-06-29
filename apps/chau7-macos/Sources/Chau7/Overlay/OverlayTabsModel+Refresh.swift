@@ -376,9 +376,42 @@ extension OverlayTabsModel {
     }
 
     /// Manually force a tab into the idle dropdown by resetting its activity time.
+    ///
+    /// If the target is the currently selected tab, switch selection to a
+    /// neighbor first — by definition the selected tab can't be idle, and
+    /// the previous behavior of silently returning when `id == selectedTabID`
+    /// meant right-clicking "Move to Idle Tabs" on the focused tab did
+    /// nothing at all (no log, no UX feedback). Now the user's intent is
+    /// honored: deselect first, then idle. Refuses only when the target is
+    /// the only tab in the window — there's nothing to deselect to.
     func forceTabIdle(id: UUID) {
-        guard let index = tabs.firstIndex(where: { $0.id == id }), id != selectedTabID else { return }
-        // Reset the session's last activity to distant past so it appears idle
+        guard let index = tabs.firstIndex(where: { $0.id == id }) else {
+            Log.warn("forceTabIdle: tab \(id) not present in this model")
+            return
+        }
+
+        if id == selectedTabID {
+            guard tabs.count > 1 else {
+                Log.warn("forceTabIdle: refusing to idle the only tab in the window (tab=\(id))")
+                return
+            }
+            let nextIndex = index + 1 < tabs.count ? index + 1 : index - 1
+            let neighborID = tabs[nextIndex].id
+            Log.info(
+                "forceTabIdle: target tab=\(id) was selected; switching to neighbor=\(neighborID) before idle"
+            )
+            selectTab(id: neighborID)
+        }
+
+        // Reset the session's last activity to past the idle threshold so the
+        // dropdown's lastActivityDate check accepts it. The underlying
+        // lastInputAt/lastOutputAt are @ObservationIgnored on TerminalSessionModel
+        // (they update on every keystroke and observing them would thrash
+        // SwiftUI), so mutating them alone does NOT trigger a tab-bar
+        // re-evaluation — the `suspendedTabIDs.insert` below is the observed
+        // signal that drives the UI update. The view's `idleTabs` computation
+        // also reads `suspendedTabIDs` so this insert is the immediate trigger
+        // for the dropdown to pick the tab up.
         tabs[index].session?.resetActivityForIdleGrouping()
         suspendedTabIDs.insert(id)
         Log.info("Tab \(id) manually moved to idle")

@@ -40,9 +40,6 @@ const LANDING_HTML = `<!DOCTYPE html>
 interface Env {
   SESSION: DurableObjectNamespace;
   RELAY_SECRET?: string;
-  APNS_TEAM_ID?: string;
-  APNS_KEY_ID?: string;
-  APNS_PRIVATE_KEY?: string;
 }
 
 /**
@@ -69,15 +66,29 @@ async function verifyToken(
     encoder.encode(secret),
     { name: 'HMAC', hash: 'SHA-256' },
     false,
-    ['sign']
+    ['verify']
   );
   const message = `${deviceId}:${role}:${timestamp}`;
-  const mac = await crypto.subtle.sign('HMAC', key, encoder.encode(message));
-  const expected = btoa(String.fromCharCode(...new Uint8Array(mac)))
-    .replace(/\+/g, '-')
-    .replace(/\//g, '_')
-    .replace(/=+$/, '');
-  return expected === signature;
+  let signatureBytes: Uint8Array;
+  try {
+    signatureBytes = base64urlToBytes(signature);
+  } catch {
+    return false;
+  }
+  // crypto.subtle.verify is constant-time, avoiding the timing side-channel of
+  // comparing the base64url HMAC strings with `===`.
+  return crypto.subtle.verify('HMAC', key, signatureBytes, encoder.encode(message));
+}
+
+/** Decodes a base64url string (unpadded) to bytes. */
+function base64urlToBytes(value: string): Uint8Array {
+  const base64 = value.replace(/-/g, '+').replace(/_/g, '/') + '==='.slice((value.length + 3) % 4);
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return bytes;
 }
 
 function extractBearerToken(request: Request): string | null {
@@ -106,6 +117,12 @@ async function authenticateRequest(
     return new Response('Invalid token', { status: 403 });
   }
   return null;
+}
+
+/** Forward a request to the SessionDO addressed by deviceId. */
+function forwardToSession(env: Env, deviceId: string, request: Request): Promise<Response> {
+  const id = env.SESSION.idFromName(deviceId);
+  return env.SESSION.get(id).fetch(request);
 }
 
 export default {
@@ -142,9 +159,7 @@ export default {
       if (authFailure) {
         return authFailure;
       }
-      const id = env.SESSION.idFromName(deviceId);
-      const stub = env.SESSION.get(id);
-      return stub.fetch(request);
+      return forwardToSession(env, deviceId, request);
     }
 
     if (action === 'push' && parts.length === 3) {
@@ -153,9 +168,7 @@ export default {
       if (authFailure) {
         return authFailure;
       }
-      const id = env.SESSION.idFromName(targetDeviceID);
-      const stub = env.SESSION.get(id);
-      return stub.fetch(request);
+      return forwardToSession(env, targetDeviceID, request);
     }
 
     if (action === 'pending' && parts.length === 2) {
@@ -165,9 +178,7 @@ export default {
       if (authFailure) {
         return authFailure;
       }
-      const id = env.SESSION.idFromName(targetDeviceID);
-      const stub = env.SESSION.get(id);
-      return stub.fetch(request);
+      return forwardToSession(env, targetDeviceID, request);
     }
 
     return new Response('Not Found', { status: 404 });

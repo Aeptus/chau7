@@ -180,8 +180,8 @@ final class RepositoryPaneModelTests: XCTestCase {
             gitRunnerWithStatus: { _, _ in GitDiffTracker.GitResult(stdout: "", stderr: "", exitCode: 0) }
         )
         model.directory = "/tmp/test"
-        model.commitMessage = "   "
-        model.commit()
+        model.commit.message = "   "
+        model.performCommit()
         XCTAssertNotNil(model.lastError)
         XCTAssertEqual(model.lastError, "Commit message cannot be empty.")
     }
@@ -258,9 +258,9 @@ final class RepositoryPaneModelTests: XCTestCase {
             gitRunner: { _, _ in "" },
             gitRunnerWithStatus: { _, _ in GitDiffTracker.GitResult(stdout: "", stderr: "", exitCode: 0) }
         )
-        model.commitMessage = "add login"
+        model.commit.message = "add login"
         model.applyPrefix("feat")
-        XCTAssertEqual(model.commitMessage, "feat: add login")
+        XCTAssertEqual(model.commit.message, "feat: add login")
     }
 
     func testApplyPrefixDoesNotDouble() {
@@ -268,9 +268,9 @@ final class RepositoryPaneModelTests: XCTestCase {
             gitRunner: { _, _ in "" },
             gitRunnerWithStatus: { _, _ in GitDiffTracker.GitResult(stdout: "", stderr: "", exitCode: 0) }
         )
-        model.commitMessage = "feat: add login"
+        model.commit.message = "feat: add login"
         model.applyPrefix("feat")
-        XCTAssertEqual(model.commitMessage, "feat: add login")
+        XCTAssertEqual(model.commit.message, "feat: add login")
     }
 
     func testHasConventionalPrefix() {
@@ -278,9 +278,9 @@ final class RepositoryPaneModelTests: XCTestCase {
             gitRunner: { _, _ in "" },
             gitRunnerWithStatus: { _, _ in GitDiffTracker.GitResult(stdout: "", stderr: "", exitCode: 0) }
         )
-        model.commitMessage = "fix: crash on launch"
+        model.commit.message = "fix: crash on launch"
         XCTAssertTrue(model.hasConventionalPrefix)
-        model.commitMessage = "just a message"
+        model.commit.message = "just a message"
         XCTAssertFalse(model.hasConventionalPrefix)
     }
 
@@ -304,19 +304,19 @@ final class RepositoryPaneModelTests: XCTestCase {
         2026-03-31T10:00:00Z
         """
         // Manually set commits (bypassing async)
-        model.commits = RepositoryPaneModel.parseCommitLog(logOutput)
-        XCTAssertEqual(model.filteredCommits.count, 2)
+        model.history.commits = RepositoryPaneModel.parseCommitLog(logOutput)
+        XCTAssertEqual(model.history.filteredCommits.count, 2)
 
-        model.historySearchText = "login"
-        XCTAssertEqual(model.filteredCommits.count, 1)
-        XCTAssertEqual(model.filteredCommits[0].message, "Fix login bug")
+        model.history.historySearchText = "login"
+        XCTAssertEqual(model.history.filteredCommits.count, 1)
+        XCTAssertEqual(model.history.filteredCommits[0].message, "Fix login bug")
 
-        model.historySearchText = "jane"
-        XCTAssertEqual(model.filteredCommits.count, 1)
-        XCTAssertEqual(model.filteredCommits[0].author, "Jane Smith")
+        model.history.historySearchText = "jane"
+        XCTAssertEqual(model.history.filteredCommits.count, 1)
+        XCTAssertEqual(model.history.filteredCommits[0].author, "Jane Smith")
 
-        model.historySearchText = ""
-        XCTAssertEqual(model.filteredCommits.count, 2)
+        model.history.historySearchText = ""
+        XCTAssertEqual(model.history.filteredCommits.count, 2)
     }
 
     // MARK: - Diff Stats Parsing
@@ -344,15 +344,15 @@ final class RepositoryPaneModelTests: XCTestCase {
             gitRunnerWithStatus: { _, _ in GitDiffTracker.GitResult(stdout: "", stderr: "", exitCode: 0) }
         )
         // Simulate git status
-        model.stagedFiles = [
+        model.status.stagedFiles = [
             FileStatus(path: "src/main.swift", changeType: .modified, indexStatus: "M", workTreeStatus: " "),
             FileStatus(path: "package.json", changeType: .modified, indexStatus: "M", workTreeStatus: " ")
         ]
-        model.unstagedFiles = [
+        model.status.unstagedFiles = [
             FileStatus(path: "tests/test.swift", changeType: .modified, indexStatus: " ", workTreeStatus: "M")
         ]
         // Simulate agent touched files
-        model.sessionTouchedFiles = ["src/main.swift", "tests/test.swift"]
+        model.session.sessionTouchedFiles = ["src/main.swift", "tests/test.swift"]
 
         XCTAssertEqual(model.sessionStagedFiles.count, 1)
         XCTAssertEqual(model.sessionStagedFiles[0].path, "src/main.swift")
@@ -394,8 +394,8 @@ final class RepositoryPaneModelTests: XCTestCase {
             gitRunner: { _, _ in "" },
             gitRunnerWithStatus: { _, _ in GitDiffTracker.GitResult(stdout: "", stderr: "", exitCode: 0) }
         )
-        model.sessionTouchedFiles = ["a.swift", "b.swift"]
-        model.turnSummary = TurnSummaryInfo(
+        model.session.sessionTouchedFiles = ["a.swift", "b.swift"]
+        model.session.turnSummary = TurnSummaryInfo(
             turnCount: 1, toolsUsed: [:], totalTokens: 0,
             inputTokens: 0, outputTokens: 0, reasoningOutputTokens: 0,
             costEstimateUSD: nil, averageTokensPerTurn: nil, activeDuration: nil, exitReason: nil,
@@ -404,8 +404,8 @@ final class RepositoryPaneModelTests: XCTestCase {
 
         model.resetSessionTracking()
 
-        XCTAssertTrue(model.sessionTouchedFiles.isEmpty)
-        XCTAssertNil(model.turnSummary)
+        XCTAssertTrue(model.session.sessionTouchedFiles.isEmpty)
+        XCTAssertNil(model.session.turnSummary)
     }
 
     func testBuildTurnSummaryUsesCompletedTurnSnapshotWhenSessionIsIdle() throws {
@@ -479,10 +479,10 @@ final class RepositoryPaneModelTests: XCTestCase {
         model.refreshStatus()
 
         wait(for: [gitCalled], timeout: 1.0)
-        waitUntil(timeout: 1.0) { !model.unstagedFiles.isEmpty }
+        waitUntil(timeout: 1.0) { !model.status.unstagedFiles.isEmpty }
 
         XCTAssertEqual(requestedAction, "refresh repository status")
-        XCTAssertEqual(model.unstagedFiles.map(\.path), ["src/main.swift"])
+        XCTAssertEqual(model.status.unstagedFiles.map(\.path), ["src/main.swift"])
         XCTAssertTrue(model.protectedAccessSnapshot.canProbeLive)
         XCTAssertNil(model.lastError)
     }

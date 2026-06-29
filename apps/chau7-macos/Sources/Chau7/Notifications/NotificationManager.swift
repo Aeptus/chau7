@@ -5,8 +5,12 @@ import Chau7Core
 
 @MainActor
 final class NotificationManager {
-    static let shared = NotificationManager()
     private let isIsolatedTestMode = RuntimeIsolation.isIsolatedTestMode()
+
+    /// Action executor injected by `NotificationServices` at
+    /// construction. Used for the action-dispatch calls inside the
+    /// manager that used to reach into a separate singleton.
+    private let executor: NotificationActionExecutor
 
     /// Tracks whether UNUserNotificationCenter is available and authorized
     private var useNativeNotifications = true
@@ -19,25 +23,26 @@ final class NotificationManager {
     private let nativeNotificationBaseCooldown: TimeInterval = 15
     private let nativeNotificationMaxCooldown: TimeInterval = 300
 
-    var tabTitleProvider: ((TabTarget) -> String?)?
-    var repoNameProvider: ((TabTarget) -> String?)?
+    /// Source of truth for tab metadata, active-tab checks, and tab
+    /// routing. One injection point replaces the five separate closure
+    /// properties (tabTitleProvider, repoNameProvider, activeTabChecker,
+    /// tabResolver, strictTabResolver) the manager used to expose. The
+    /// app wires this once at startup via `setHost(_:)`; tests can pass
+    /// a stub conformer for routing decisions.
+    private weak var host: NotificationDeliveryHost?
 
     /// Rate limiter — prevents notification spam from burst events
     let rateLimiter = NotificationRateLimiter()
     /// Audit trail of fired (and rate-limited) notifications
     let history = NotificationHistory()
 
-    /// Injectable check: returns true if the given target's tab is currently selected.
-    var activeTabChecker: ((TabTarget) -> Bool)?
-
-    /// Injectable resolver: maps a TabTarget to the owning tab's UUID.
-    /// Used to fill in missing tabIDs on events from external sources (e.g. Claude Code hooks).
-    /// Wired through `TerminalControlService` so normal routing uses the
-    /// session index before falling back to recovery matching.
-    var tabResolver: ((TabTarget) -> UUID?)?
-    /// Strict resolver for authoritative events that must never fall back to
-    /// brand/title/directory heuristics.
-    var strictTabResolver: ((TabTarget) -> UUID?)?
+    /// Wire the host the manager will consult for tab title / repo name
+    /// / active-tab / routing answers. Calling with `nil` clears the
+    /// host (used by tests to isolate the manager from the live terminal
+    /// stack).
+    func setHost(_ host: NotificationDeliveryHost?) {
+        self.host = host
+    }
 
     // MARK: - Focus/DND State (push-based)
 
@@ -49,14 +54,15 @@ final class NotificationManager {
     private var pendingNotifications: [String: AIEvent] = [:]
     private var pendingNotificationOrder: [String] = []
     private var pendingNotificationFlushWorkItem: DispatchWorkItem?
-    private var routingRetryCounts: [UUID: Int] = [:]
-    private var recentAuthoritativeEvents: [String: Date] = [:]
-    private var recentRepeatedAttentionEvents: [String: Date] = [:]
-    private var recentClosedSessionEvents: [String: Date] = [:]
-    private let authoritativeRetryDelays: [TimeInterval] = [0.05, 0.15, 0.5]
+    /// Owns the four time-windowed delivery-policy maps
+    /// (authoritative-event tracking, repeat suppression, post-close
+    /// suppression, routing retry counters). The manager asks the policy
+    /// for a verdict at each step and handles the side effects.
+    private let deliveryPolicy = NotificationDeliveryPolicy()
     private let eventEngine = AIEventNotificationEngine()
 
-    private init() {
+    init(executor: NotificationActionExecutor) {
+        self.executor = executor
         guard !isIsolatedTestMode else {
             self.useNativeNotifications = false
             return
@@ -267,15 +273,22 @@ final class NotificationManager {
 
     /// All processing on main actor — delegates decision to pure pipeline, then executes.
     private func processEvent(_ event: AIEvent) {
-        pruneAuthoritativeEvents()
+        deliveryPolicy.pruneExpired()
 
         let ns = FeatureSettings.shared.notificationSettings
         var preparedEvent: AIEvent
         var resolutionMethod: String
+        // NotificationEventPreparation expects a closure surface; wrap
+        // the host's tab resolver so the Core helper stays oblivious to
+        // NotificationDeliveryHost (Core can't import from the app
+        // layer).
+        let preparationResolver: ((TabTarget) -> UUID?)? = host.map { h in
+            { [weak h] target in h?.notificationResolveTab(target) }
+        }
         switch NotificationEventPreparation.prepare(
             event,
             triggerState: ns.triggerState,
-            tabResolver: tabResolver
+            tabResolver: preparationResolver
         ) {
         case .drop(let reason):
             Log.info("Notification dropped: \(reason) (type=\(event.type) tool=\(event.tool))")
@@ -288,7 +301,7 @@ final class NotificationManager {
 
         if NotificationDeliverySemantics.requiresAuthoritativeRouting(preparedEvent),
            preparedEvent.tabID == nil,
-           let resolvedTabID = strictTabResolver?(preparedEvent.tabTarget) {
+           let resolvedTabID = host?.notificationResolveTabStrictly(preparedEvent.tabTarget) {
             preparedEvent = preparedEvent.resolvingTabID(resolvedTabID)
             resolutionMethod = "resolved_via_strict_session"
         }
@@ -301,67 +314,56 @@ final class NotificationManager {
         )
         history.markPrepared(event: preparedEvent, resolutionMethod: resolutionMethod)
 
-        registerClosedIdentityIfNeeded(preparedEvent)
+        deliveryPolicy.registerClosedIdentityIfNeeded(preparedEvent)
         clearResolvedInteractiveAttentionIfNeeded(for: preparedEvent)
 
-        if NotificationDeliverySemantics.requiresAuthoritativeRouting(preparedEvent),
-           preparedEvent.tabID == nil {
-            if scheduleRoutingRetryIfNeeded(for: preparedEvent) {
-                return
-            }
-            let attempts = routingRetryCounts[preparedEvent.id] ?? authoritativeRetryDelays.count
-            if NotificationDeliverySemantics.shouldDropAfterRoutingFailure(
-                preparedEvent,
-                retryAttempts: attempts,
-                maxRetryAttempts: authoritativeRetryDelays.count
-            ) {
-                let reason = NotificationDeliverySemantics.unresolvedRoutingDropReason(
-                    for: preparedEvent,
-                    retryAttempts: attempts,
-                    maxRetryAttempts: authoritativeRetryDelays.count
-                )
-                Log.warn("\(reason) (tool=\(preparedEvent.tool) session=\(preparedEvent.sessionID ?? "nil"))")
+        // Run the four delivery-policy verdicts in order. Each can either
+        // pass, drop the event with a reason, or (only authoritative
+        // routing) schedule a retry.
+        let policySteps: [(name: String, verdict: NotificationDeliveryPolicy.Verdict)] = [
+            ("routing", deliveryPolicy.attemptAuthoritativeRoutingRetry(preparedEvent)),
+            ("postClose", deliveryPolicy.attemptPostCloseSuppression(preparedEvent)),
+            ("fallbackShadow", deliveryPolicy.attemptFallbackShadowSuppression(preparedEvent))
+        ]
+        for step in policySteps {
+            switch step.verdict {
+            case .pass:
+                continue
+            case .drop(let reason):
+                if step.name == "routing" {
+                    Log.warn("\(reason) (tool=\(preparedEvent.tool) session=\(preparedEvent.sessionID ?? "nil"))")
+                } else {
+                    Log.info("Notification dropped: \(reason) (type=\(preparedEvent.type) tool=\(preparedEvent.tool))")
+                }
                 history.markDropped(eventID: preparedEvent.id, reason: reason)
-                routingRetryCounts.removeValue(forKey: preparedEvent.id)
+                return
+            case .scheduleRetry(let delay, let attempt):
+                history.markRetryScheduled(
+                    eventID: preparedEvent.id,
+                    attempt: attempt,
+                    reason: "authoritative event missing exact tab route"
+                )
+                DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+                    self?.enqueueEvent(preparedEvent)
+                }
                 return
             }
-        }
-
-        if NotificationDeliverySemantics.shouldSuppressAfterClose(
-            preparedEvent,
-            recentlyClosedEvents: recentClosedSessionEvents
-        ) {
-            let reason = "Suppressed stale post-close notification for an already-finished session"
-            Log.info("Notification dropped: \(reason) (type=\(preparedEvent.type) tool=\(preparedEvent.tool))")
-            history.markDropped(eventID: preparedEvent.id, reason: reason)
-            routingRetryCounts.removeValue(forKey: preparedEvent.id)
-            return
-        }
-
-        if NotificationDeliverySemantics.shouldSuppressAsFallback(
-            preparedEvent,
-            authoritativeEvents: recentAuthoritativeEvents
-        ) {
-            let reason = "Suppressed fallback event shadowed by authoritative delivery"
-            Log.info("Notification dropped: \(reason) (type=\(preparedEvent.type) tool=\(preparedEvent.tool))")
-            history.markDropped(eventID: preparedEvent.id, reason: reason)
-            return
         }
 
         assertInteractiveAttentionIfNeeded(for: preparedEvent)
 
-        if NotificationDeliverySemantics.shouldSuppressRepeat(
-            preparedEvent,
-            recentRepeatEvents: recentRepeatedAttentionEvents
-        ) {
-            let reason = "Suppressed repeated interactive-attention notification for unchanged session state"
+        switch deliveryPolicy.attemptRepeatSuppression(preparedEvent) {
+        case .pass:
+            break
+        case .drop(let reason):
             Log.info("Notification dropped: \(reason) (type=\(preparedEvent.type) tool=\(preparedEvent.tool))")
             history.markDropped(eventID: preparedEvent.id, reason: reason)
-            routingRetryCounts.removeValue(forKey: preparedEvent.id)
             return
+        case .scheduleRetry:
+            assertionFailure("repeat suppression must not schedule retries")
         }
 
-        registerAuthoritativeEventIfNeeded(preparedEvent)
+        deliveryPolicy.registerAuthoritativeEventIfNeeded(preparedEvent)
 
         let input = NotificationPipeline.Input(
             event: preparedEvent,
@@ -372,7 +374,7 @@ final class NotificationManager {
             groupActionBindings: ns.groupActionBindings,
             isFocusModeActive: isFocusModeActive,
             isAppActive: NSApp.isActive,
-            isToolTabActive: activeTabChecker?(preparedEvent.tabTarget) ?? false
+            isToolTabActive: host?.notificationIsActiveTab(preparedEvent.tabTarget) ?? false
         )
 
         let decision = NotificationPipeline.evaluate(input)
@@ -381,7 +383,7 @@ final class NotificationManager {
         case .drop(let reason):
             Log.info("Notification dropped: \(reason) (type=\(preparedEvent.type) tool=\(preparedEvent.tool))")
             history.markDropped(eventID: preparedEvent.id, reason: reason)
-            routingRetryCounts.removeValue(forKey: preparedEvent.id)
+            deliveryPolicy.forgetRetryCount(preparedEvent.id)
 
         case .fireDefault(let triggerId):
             guard let keys = consumeRateLimitOrDropEvent(triggerId: triggerId, event: preparedEvent) else {
@@ -407,8 +409,8 @@ final class NotificationManager {
                 didStyleTab: didStyleTab
             )
             history.markCompleted(eventID: preparedEvent.id)
-            registerRepeatSuppressionIfNeeded(preparedEvent)
-            routingRetryCounts.removeValue(forKey: preparedEvent.id)
+            deliveryPolicy.registerRepeatSuppressionIfNeeded(preparedEvent)
+            deliveryPolicy.forgetRetryCount(preparedEvent.id)
 
         case .fireStyleOnly(let triggerId, let actions):
             guard let keys = consumeRateLimitOrDropEvent(triggerId: triggerId, event: preparedEvent) else {
@@ -419,10 +421,10 @@ final class NotificationManager {
                 let reason = "Style-only notification delivery requires explicit tabID"
                 Log.warn("\(reason) id=\(preparedEvent.id.uuidString) type=\(preparedEvent.type) tool=\(preparedEvent.tool)")
                 history.markDropped(eventID: preparedEvent.id, triggerId: baseRateLimitKey, reason: reason)
-                routingRetryCounts.removeValue(forKey: preparedEvent.id)
+                deliveryPolicy.forgetRetryCount(preparedEvent.id)
                 return
             }
-            let report = NotificationActionExecutor.shared.execute(actions: actions, for: preparedEvent)
+            let report = executor.execute(actions: actions, for: preparedEvent)
             let actionNames = report.successfulActions
             Log.info(
                 "Notification delivery executed style-only actions: id=\(preparedEvent.id.uuidString) trigger=\(baseRateLimitKey) actions=\(actionNames.joined(separator: ", ")) notes=\(report.notes.joined(separator: " | "))"
@@ -438,22 +440,22 @@ final class NotificationManager {
                 didStyleTab: report.didStyleTab
             )
             history.markCompleted(eventID: preparedEvent.id)
-            registerRepeatSuppressionIfNeeded(preparedEvent)
-            routingRetryCounts.removeValue(forKey: preparedEvent.id)
+            deliveryPolicy.registerRepeatSuppressionIfNeeded(preparedEvent)
+            deliveryPolicy.forgetRetryCount(preparedEvent.id)
 
         case .fireActions(let triggerId, let actions):
             let rateLimitKey = MonitoringSchedule.notificationRateLimitKey(triggerID: triggerId, event: preparedEvent)
             guard rateLimiter.checkAndConsume(triggerId: rateLimitKey) else {
                 Log.info("Rate limited: \(triggerId) for tool=\(preparedEvent.tool)")
                 history.markRateLimited(eventID: preparedEvent.id, triggerId: triggerId)
-                routingRetryCounts.removeValue(forKey: preparedEvent.id)
+                deliveryPolicy.forgetRetryCount(preparedEvent.id)
                 return
             }
             let partition = NotificationActionRequirements.partitionByResolvedTabRequirement(actions)
             var aggregateReport = NotificationActionExecutor.ExecutionReport()
             if !partition.nonTabScoped.isEmpty {
                 aggregateReport.append(
-                    NotificationActionExecutor.shared.execute(actions: partition.nonTabScoped, for: preparedEvent)
+                    executor.execute(actions: partition.nonTabScoped, for: preparedEvent)
                 )
             }
 
@@ -473,11 +475,11 @@ final class NotificationManager {
                         didStyleTab: false
                     )
                     history.markCompleted(eventID: preparedEvent.id)
-                    routingRetryCounts.removeValue(forKey: preparedEvent.id)
+                    deliveryPolicy.forgetRetryCount(preparedEvent.id)
                     return
                 }
                 aggregateReport.append(
-                    NotificationActionExecutor.shared.execute(actions: partition.tabScoped, for: preparedEvent)
+                    executor.execute(actions: partition.tabScoped, for: preparedEvent)
                 )
             }
 
@@ -487,7 +489,7 @@ final class NotificationManager {
             ) {
                 if preparedEvent.tabID != nil {
                     aggregateReport.append(
-                        NotificationActionExecutor.shared.execute(actions: [supplementalStyleAction], for: preparedEvent)
+                        executor.execute(actions: [supplementalStyleAction], for: preparedEvent)
                     )
                 } else {
                     let reason = "Skipped supplemental style action without explicit tabID"
@@ -509,8 +511,8 @@ final class NotificationManager {
                 didStyleTab: aggregateReport.didStyleTab
             )
             history.markCompleted(eventID: preparedEvent.id)
-            registerRepeatSuppressionIfNeeded(preparedEvent)
-            routingRetryCounts.removeValue(forKey: preparedEvent.id)
+            deliveryPolicy.registerRepeatSuppressionIfNeeded(preparedEvent)
+            deliveryPolicy.forgetRetryCount(preparedEvent.id)
         }
     }
 
@@ -527,77 +529,10 @@ final class NotificationManager {
         guard rateLimiter.checkAndConsume(triggerId: rateLimitKey) else {
             Log.info("Rate limited: \(rateLimitKey) for tool=\(event.tool)")
             history.markRateLimited(eventID: event.id, triggerId: baseRateLimitKey)
-            routingRetryCounts.removeValue(forKey: event.id)
+            deliveryPolicy.forgetRetryCount(event.id)
             return nil
         }
         return (rateLimitKey, baseRateLimitKey)
-    }
-
-    private func scheduleRoutingRetryIfNeeded(for event: AIEvent) -> Bool {
-        let attempts = routingRetryCounts[event.id] ?? 0
-        guard attempts < authoritativeRetryDelays.count,
-              event.sessionID != nil || event.directory != nil else {
-            return false
-        }
-
-        let nextAttempt = attempts + 1
-        routingRetryCounts[event.id] = nextAttempt
-        history.markRetryScheduled(
-            eventID: event.id,
-            attempt: nextAttempt,
-            reason: "authoritative event missing exact tab route"
-        )
-
-        let delay = authoritativeRetryDelays[attempts]
-        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
-            self?.enqueueEvent(event)
-        }
-        return true
-    }
-
-    private func registerAuthoritativeEventIfNeeded(_ event: AIEvent) {
-        guard event.reliability == .authoritative else {
-            return
-        }
-        let now = Date()
-        for key in NotificationDeliverySemantics.authorityKeys(for: event) {
-            recentAuthoritativeEvents[key] = now
-        }
-        routingRetryCounts.removeValue(forKey: event.id)
-    }
-
-    private func pruneAuthoritativeEvents(now: Date = Date()) {
-        recentAuthoritativeEvents = recentAuthoritativeEvents.filter {
-            now.timeIntervalSince($0.value) <= NotificationDeliverySemantics.authorityRetentionSeconds
-        }
-        recentRepeatedAttentionEvents = recentRepeatedAttentionEvents.filter {
-            now.timeIntervalSince($0.value) <= NotificationDeliverySemantics.repeatedAttentionSuppressionSeconds
-        }
-        recentClosedSessionEvents = recentClosedSessionEvents.filter {
-            now.timeIntervalSince($0.value) <= NotificationDeliverySemantics.closedSessionSuppressionSeconds
-        }
-        // Cap routing retry entries: any event that exhausted its retries
-        // but was never cleaned up (e.g., dropped before reaching processEvent)
-        // will linger. Remove entries that exceeded the max retry count.
-        if routingRetryCounts.count > 100 {
-            routingRetryCounts = routingRetryCounts.filter { $0.value < authoritativeRetryDelays.count }
-        }
-    }
-
-    private func registerRepeatSuppressionIfNeeded(_ event: AIEvent, now: Date = Date()) {
-        guard let key = NotificationDeliverySemantics.repeatSuppressionKey(for: event) else {
-            return
-        }
-        recentRepeatedAttentionEvents[key] = now
-    }
-
-    private func registerClosedIdentityIfNeeded(_ event: AIEvent, now: Date = Date()) {
-        guard NotificationDeliverySemantics.shouldRegisterClosedIdentity(event) else {
-            return
-        }
-        for key in NotificationDeliverySemantics.closedIdentityKeys(for: event) {
-            recentClosedSessionEvents[key] = now
-        }
     }
 
     private func clearResolvedInteractiveAttentionIfNeeded(for event: AIEvent) {
@@ -652,7 +587,7 @@ final class NotificationManager {
             history.appendNote(eventID: event.id, note: reason)
             return false
         }
-        let report = NotificationActionExecutor.shared.execute(actions: [action], for: event)
+        let report = executor.execute(actions: [action], for: event)
         for note in report.notes {
             history.appendNote(eventID: event.id, note: note)
         }
@@ -674,7 +609,7 @@ final class NotificationManager {
             return
         }
 
-        NotificationActionExecutor.shared.cancelPendingStyleWork(
+        executor.cancelPendingStyleWork(
             tabID: tabID,
             sessionID: event.sessionID
         )
@@ -698,8 +633,8 @@ final class NotificationManager {
 
     @discardableResult
     private func showDefaultNotification(for event: AIEvent) -> Bool {
-        let tabTitle = tabTitleProvider?(event.tabTarget)
-        let repoName = repoNameProvider?(event.tabTarget)
+        let tabTitle = host?.notificationTabTitle(for: event.tabTarget)
+        let repoName = host?.notificationRepoName(for: event.tabTarget)
         let title = event.notificationTitle(toolOverride: nil)
         let subtitle = event.notificationSubtitle(tabTitle: tabTitle, repoName: repoName)
         return dispatchNotification(title: title, subtitle: subtitle, body: event.notificationBody, for: event)
@@ -836,8 +771,8 @@ final class NotificationManager {
 
     private func notificationSubtitle(for event: AIEvent) -> String {
         event.notificationSubtitle(
-            tabTitle: tabTitleProvider?(event.tabTarget),
-            repoName: repoNameProvider?(event.tabTarget)
+            tabTitle: host?.notificationTabTitle(for: event.tabTarget),
+            repoName: host?.notificationRepoName(for: event.tabTarget)
         )
     }
 

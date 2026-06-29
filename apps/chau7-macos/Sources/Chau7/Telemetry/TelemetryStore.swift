@@ -8,6 +8,23 @@ struct ProviderLatencyBackfillReport: Sendable {
     var skippedRuns = 0
 }
 
+/// Retention policy for the telemetry database (runs + full transcripts).
+/// Single source of truth shared by `FeatureSettings` (the Settings UI) and
+/// `TelemetryStore` (the background prune), which reads the value straight from
+/// `UserDefaults` so it never touches the main-actor settings object off-main.
+enum TelemetryRetention {
+    static let defaultsKey = "telemetry.retentionDays"
+    /// Default window. AI runs store full turn content and tool-call I/O, so the
+    /// DB grows unbounded without this — keep a month by default.
+    static let defaultDays = 30
+    /// 0 means "keep forever" (no pruning). Upper clamp guards typos.
+    static let maxDays = 3650
+
+    static var currentDays: Int {
+        UserDefaults.standard.object(forKey: defaultsKey) as? Int ?? defaultDays
+    }
+}
+
 /// SQLite-backed store for telemetry run records, turns, and tool calls.
 /// Thread-safe: all database access is serialized on a dedicated queue.
 final class TelemetryStore {
@@ -69,6 +86,7 @@ final class TelemetryStore {
                         "(inspected=\(latencyBackfill.inspectedRuns), skipped=\(latencyBackfill.skippedRuns))"
                 )
             }
+            self.pruneOldRuns(retentionDays: TelemetryRetention.currentDays)
             self.runIncrementalVacuumIfNeeded()
             self.didRunDeferredMaintenance = true
             self.didScheduleDeferredMaintenance = false
@@ -483,6 +501,76 @@ final class TelemetryStore {
         }
     }
 
+    /// Delete runs (and, via `ON DELETE CASCADE` + `foreign_keys=ON`, their
+    /// turns / tool_calls / latency samples) older than the retention window,
+    /// then reclaim the freed disk with a full `VACUUM`.
+    ///
+    /// A full VACUUM is used deliberately: this database was created without
+    /// `auto_vacuum`, so `PRAGMA incremental_vacuum` is a no-op on it — the only
+    /// way to shrink the file after deletes is a rewrite. It runs on the store's
+    /// serial queue during deferred (post-first-paint) maintenance, and only
+    /// when rows were actually removed, so the ~1 GB rewrite is never paid for a
+    /// no-op pass.
+    ///
+    /// `retentionDays <= 0` disables pruning entirely ("keep forever").
+    func pruneOldRuns(retentionDays: Int) {
+        guard let db else { return }
+        let startedAt = CFAbsoluteTimeGetCurrent()
+        switch Self.deleteRunsOlderThan(retentionDays: retentionDays, in: db) {
+        case .disabled:
+            Log.info("TelemetryStore: retention disabled (keep forever)")
+        case .nothingToPrune:
+            break
+        case let .failed(message):
+            Log.warn("TelemetryStore: retention prune failed: \(message)")
+        case let .pruned(deleted, clampedDays):
+            let elapsedMs = Int((CFAbsoluteTimeGetCurrent() - startedAt) * 1000.0)
+            Log.info(
+                "TelemetryStore: retention prune removed \(deleted) run(s) older than \(clampedDays)d, vacuumed in \(elapsedMs)ms"
+            )
+        }
+    }
+
+    enum PruneOutcome: Equatable {
+        case disabled
+        case nothingToPrune
+        case pruned(deleted: Int, clampedDays: Int)
+        case failed(String)
+    }
+
+    /// Pure deletion core, parameterized on the connection so it can be exercised
+    /// against a throwaway database in tests without touching the shared store's
+    /// real file. Relies on `foreign_keys=ON` + `ON DELETE CASCADE` to remove the
+    /// pruned runs' turns / tool_calls / latency samples, then a full `VACUUM`
+    /// (this DB has no `auto_vacuum`, so `incremental_vacuum` can't shrink it).
+    @discardableResult
+    static func deleteRunsOlderThan(retentionDays: Int, in db: OpaquePointer) -> PruneOutcome {
+        guard retentionDays > 0 else { return .disabled }
+        let clampedDays = max(1, min(retentionDays, TelemetryRetention.maxDays))
+        // started_at is ISO 8601 ('YYYY-MM-DDTHH:MM:...Z'); date('now','-Nd')
+        // yields 'YYYY-MM-DD'. The date prefix compares lexicographically, so a
+        // run is pruned only once its whole calendar day is past the window.
+        let whereClause = "started_at < date('now', '-\(clampedDays) days')"
+
+        var countStmt: OpaquePointer?
+        var toDelete = 0
+        if sqlite3_prepare_v2(db, "SELECT COUNT(*) FROM runs WHERE \(whereClause)", -1, &countStmt, nil) == SQLITE_OK,
+           sqlite3_step(countStmt) == SQLITE_ROW {
+            toDelete = Int(sqlite3_column_int(countStmt, 0))
+        }
+        sqlite3_finalize(countStmt)
+        guard toDelete > 0 else { return .nothingToPrune }
+
+        if sqlite3_exec(db, "DELETE FROM runs WHERE \(whereClause)", nil, nil, nil) != SQLITE_OK {
+            return .failed(String(cString: sqlite3_errmsg(db)))
+        }
+        let deleted = Int(sqlite3_changes(db))
+        if sqlite3_exec(db, "VACUUM", nil, nil, nil) != SQLITE_OK {
+            Log.warn("TelemetryStore: post-prune VACUUM failed: \(String(cString: sqlite3_errmsg(db)))")
+        }
+        return .pruned(deleted: deleted, clampedDays: clampedDays)
+    }
+
     /// Run PRAGMA incremental_vacuum if more than 7 days have passed since the
     /// last vacuum. WAL mode databases can accumulate free pages over time;
     /// incremental vacuum reclaims them without the full-lock cost of VACUUM.
@@ -756,7 +844,7 @@ final class TelemetryStore {
                 total_input_tokens = ?, total_cache_creation_input_tokens = ?, total_cache_read_input_tokens = ?,
                 total_cached_input_tokens = ?, total_output_tokens = ?, total_reasoning_output_tokens = ?,
                 cost_usd = ?, token_usage_source = ?, token_usage_state = ?, cost_source = ?, cost_state = ?,
-                turn_count = ?, raw_transcript_ref = ?, error_message = ?
+                turn_count = ?, raw_transcript_ref = ?, error_message = ?, metadata = ?
             WHERE run_id = ?
             """
             var stmt: OpaquePointer?
@@ -780,7 +868,10 @@ final class TelemetryStore {
                 bindInt(stmt, 17, run.turnCount)
                 bindText(stmt, 18, run.rawTranscriptRef)
                 bindText(stmt, 19, run.errorMessage)
-                bindText(stmt, 20, run.id)
+                // Persist metadata mutated after run start (e.g. deferred
+                // content-extraction markers set by runEnded).
+                bindText(stmt, 20, Self.encodeJSON(run.metadata))
+                bindText(stmt, 21, run.id)
                 sqlite3_step(stmt)
                 sqlite3_finalize(stmt)
             }
@@ -1908,7 +1999,7 @@ final class TelemetryStore {
                 sql += " AND observed_at >= ?"
             }
             if metricKind != nil {
-                sql += after != nil ? " AND metric_kind = ?" : " AND metric_kind = ?"
+                sql += " AND metric_kind = ?"
             }
             sql += " ORDER BY observed_at ASC"
 
@@ -2115,54 +2206,57 @@ final class TelemetryStore {
     }
 
     private func parseTurn(_ stmt: OpaquePointer?) -> TelemetryTurn? {
+        let map = columnIndexMap(stmt)
         guard let stmt,
-              let turnID = colByName(stmt, "turn_id"),
-              let runID = colByName(stmt, "run_id"),
-              let roleStr = colByName(stmt, "role"),
+              let turnID = colByName(stmt, "turn_id", map),
+              let runID = colByName(stmt, "run_id", map),
+              let roleStr = colByName(stmt, "role", map),
               let role = TurnRole(rawValue: roleStr)
         else { return nil }
 
-        let toolCalls: [TelemetryToolCall] = Self.decodeJSON(colByName(stmt, "tool_calls")) ?? []
+        let toolCalls: [TelemetryToolCall] = Self.decodeJSON(colByName(stmt, "tool_calls", map)) ?? []
         return TelemetryTurn(
             id: turnID, runID: runID,
-            turnIndex: intByName(stmt, "turn_index") ?? 0,
+            turnIndex: intByName(stmt, "turn_index", map) ?? 0,
             role: role,
-            content: colByName(stmt, "content"),
-            inputTokens: intByName(stmt, "input_tokens"),
-            cacheCreationInputTokens: intByName(stmt, "cache_creation_input_tokens"),
-            cacheReadInputTokens: intByName(stmt, "cache_read_input_tokens"),
-            cachedInputTokens: intByName(stmt, "cached_input_tokens"),
-            outputTokens: intByName(stmt, "output_tokens"),
-            reasoningOutputTokens: intByName(stmt, "reasoning_output_tokens"),
+            content: colByName(stmt, "content", map),
+            inputTokens: intByName(stmt, "input_tokens", map),
+            cacheCreationInputTokens: intByName(stmt, "cache_creation_input_tokens", map),
+            cacheReadInputTokens: intByName(stmt, "cache_read_input_tokens", map),
+            cachedInputTokens: intByName(stmt, "cached_input_tokens", map),
+            outputTokens: intByName(stmt, "output_tokens", map),
+            reasoningOutputTokens: intByName(stmt, "reasoning_output_tokens", map),
             toolCalls: toolCalls,
-            timestamp: colByName(stmt, "timestamp").flatMap { Self.isoDate(from: $0) },
-            durationMs: intByName(stmt, "duration_ms")
+            timestamp: colByName(stmt, "timestamp", map).flatMap { Self.isoDate(from: $0) },
+            durationMs: intByName(stmt, "duration_ms", map)
         )
     }
 
     private func parseToolCall(_ stmt: OpaquePointer?) -> TelemetryToolCall {
-        TelemetryToolCall(
-            id: colByName(stmt, "call_id") ?? UUID().uuidString,
-            runID: colByName(stmt, "run_id") ?? "",
-            turnID: colByName(stmt, "turn_id") ?? "",
-            toolName: colByName(stmt, "tool_name") ?? "",
-            arguments: colByName(stmt, "arguments"),
-            result: colByName(stmt, "result"),
-            status: ToolCallStatus(rawValue: colByName(stmt, "status") ?? "") ?? .success,
-            durationMs: intByName(stmt, "duration_ms"),
-            callIndex: intByName(stmt, "call_index") ?? 0
+        let map = columnIndexMap(stmt)
+        return TelemetryToolCall(
+            id: colByName(stmt, "call_id", map) ?? UUID().uuidString,
+            runID: colByName(stmt, "run_id", map) ?? "",
+            turnID: colByName(stmt, "turn_id", map) ?? "",
+            toolName: colByName(stmt, "tool_name", map) ?? "",
+            arguments: colByName(stmt, "arguments", map),
+            result: colByName(stmt, "result", map),
+            status: ToolCallStatus(rawValue: colByName(stmt, "status", map) ?? "") ?? .success,
+            durationMs: intByName(stmt, "duration_ms", map),
+            callIndex: intByName(stmt, "call_index", map) ?? 0
         )
     }
 
     private func parseUsageEvidence(_ stmt: OpaquePointer?) -> UsageEvidence? {
+        let map = columnIndexMap(stmt)
         guard let stmt,
-              let id = colByName(stmt, "evidence_id"),
-              let uniqueEventKey = colByName(stmt, "unique_event_key"),
-              let reconciliationKey = colByName(stmt, "reconciliation_key"),
-              let rawSourceKind = colByName(stmt, "source_kind"),
+              let id = colByName(stmt, "evidence_id", map),
+              let uniqueEventKey = colByName(stmt, "unique_event_key", map),
+              let reconciliationKey = colByName(stmt, "reconciliation_key", map),
+              let rawSourceKind = colByName(stmt, "source_kind", map),
               let sourceKind = UsageEvidenceSourceKind(rawValue: rawSourceKind),
-              let provider = colByName(stmt, "provider"),
-              let observedAtString = colByName(stmt, "observed_at"),
+              let provider = colByName(stmt, "provider", map),
+              let observedAtString = colByName(stmt, "observed_at", map),
               let observedAt = Self.isoDate(from: observedAtString)
         else { return nil }
 
@@ -2172,53 +2266,54 @@ final class TelemetryStore {
             reconciliationKey: reconciliationKey,
             sourceKind: sourceKind,
             provider: provider,
-            model: colByName(stmt, "model"),
-            sessionID: colByName(stmt, "session_id"),
-            runID: colByName(stmt, "run_id"),
-            endpoint: colByName(stmt, "endpoint"),
-            projectPath: colByName(stmt, "project_path"),
-            inputTokens: intByName(stmt, "input_tokens"),
-            cacheCreationInputTokens: intByName(stmt, "cache_creation_input_tokens"),
-            cacheReadInputTokens: intByName(stmt, "cache_read_input_tokens"),
-            outputTokens: intByName(stmt, "output_tokens"),
-            reasoningOutputTokens: intByName(stmt, "reasoning_output_tokens"),
-            costUSD: doubleByName(stmt, "cost_usd"),
-            tokenUsageSource: colByName(stmt, "token_usage_source").flatMap(TokenUsageSource.init(rawValue:)),
-            tokenUsageState: colByName(stmt, "token_usage_state").flatMap(TelemetryMetricState.init(rawValue:)) ?? .missing,
-            costSource: colByName(stmt, "cost_source").flatMap(CostSource.init(rawValue:)),
-            costState: colByName(stmt, "cost_state").flatMap(TelemetryMetricState.init(rawValue:)) ?? .missing,
-            pricingVersion: colByName(stmt, "pricing_version"),
-            sourceRef: colByName(stmt, "source_ref"),
+            model: colByName(stmt, "model", map),
+            sessionID: colByName(stmt, "session_id", map),
+            runID: colByName(stmt, "run_id", map),
+            endpoint: colByName(stmt, "endpoint", map),
+            projectPath: colByName(stmt, "project_path", map),
+            inputTokens: intByName(stmt, "input_tokens", map),
+            cacheCreationInputTokens: intByName(stmt, "cache_creation_input_tokens", map),
+            cacheReadInputTokens: intByName(stmt, "cache_read_input_tokens", map),
+            outputTokens: intByName(stmt, "output_tokens", map),
+            reasoningOutputTokens: intByName(stmt, "reasoning_output_tokens", map),
+            costUSD: doubleByName(stmt, "cost_usd", map),
+            tokenUsageSource: colByName(stmt, "token_usage_source", map).flatMap(TokenUsageSource.init(rawValue:)),
+            tokenUsageState: colByName(stmt, "token_usage_state", map).flatMap(TelemetryMetricState.init(rawValue:)) ?? .missing,
+            costSource: colByName(stmt, "cost_source", map).flatMap(CostSource.init(rawValue:)),
+            costState: colByName(stmt, "cost_state", map).flatMap(TelemetryMetricState.init(rawValue:)) ?? .missing,
+            pricingVersion: colByName(stmt, "pricing_version", map),
+            sourceRef: colByName(stmt, "source_ref", map),
             observedAt: observedAt,
-            metadata: Self.decodeJSON(colByName(stmt, "metadata")) ?? [:]
+            metadata: Self.decodeJSON(colByName(stmt, "metadata", map)) ?? [:]
         )
     }
 
     private func parseRemoteClientEvent(_ stmt: OpaquePointer?) -> RemoteClientTelemetryEvent? {
+        let map = columnIndexMap(stmt)
         guard let stmt,
-              let id = colByName(stmt, "event_id"),
-              let source = colByName(stmt, "source"),
-              let appVersion = colByName(stmt, "app_version"),
-              let rawEventType = colByName(stmt, "event_type"),
+              let id = colByName(stmt, "event_id", map),
+              let source = colByName(stmt, "source", map),
+              let appVersion = colByName(stmt, "app_version", map),
+              let rawEventType = colByName(stmt, "event_type", map),
               let eventType = RemoteClientTelemetryEventType(rawValue: rawEventType),
-              let timestampString = colByName(stmt, "timestamp"),
+              let timestampString = colByName(stmt, "timestamp", map),
               let timestamp = Self.isoDate(from: timestampString)
         else { return nil }
 
-        let tabID = intByName(stmt, "tab_id").map(UInt32.init)
+        let tabID = intByName(stmt, "tab_id", map).map(UInt32.init)
         return RemoteClientTelemetryEvent(
             id: id,
             source: source,
-            deviceID: colByName(stmt, "device_id"),
-            deviceName: colByName(stmt, "device_name"),
+            deviceID: colByName(stmt, "device_id", map),
+            deviceName: colByName(stmt, "device_name", map),
             appVersion: appVersion,
-            sessionID: colByName(stmt, "session_id"),
+            sessionID: colByName(stmt, "session_id", map),
             eventType: eventType,
-            status: colByName(stmt, "status"),
+            status: colByName(stmt, "status", map),
             tabID: tabID,
-            tabTitle: colByName(stmt, "tab_title"),
-            message: colByName(stmt, "message"),
-            metadata: Self.decodeJSON(colByName(stmt, "metadata")) ?? [:],
+            tabTitle: colByName(stmt, "tab_title", map),
+            message: colByName(stmt, "message", map),
+            metadata: Self.decodeJSON(colByName(stmt, "metadata", map)) ?? [:],
             timestamp: timestamp
         )
     }
@@ -2285,20 +2380,6 @@ final class TelemetryStore {
         guard let stmt, let i = map[name] else { return nil }
         if sqlite3_column_type(stmt, i) == SQLITE_NULL { return nil }
         return sqlite3_column_double(stmt, i)
-    }
-
-    /// Legacy name-scan variants for callers that don't have a column map.
-    /// These should be migrated over time.
-    private func colByName(_ stmt: OpaquePointer?, _ name: String) -> String? {
-        colByName(stmt, name, columnIndexMap(stmt))
-    }
-
-    private func intByName(_ stmt: OpaquePointer?, _ name: String) -> Int? {
-        intByName(stmt, name, columnIndexMap(stmt))
-    }
-
-    private func doubleByName(_ stmt: OpaquePointer?, _ name: String) -> Double? {
-        doubleByName(stmt, name, columnIndexMap(stmt))
     }
 
     static let isoFormatter: ISO8601DateFormatter = {

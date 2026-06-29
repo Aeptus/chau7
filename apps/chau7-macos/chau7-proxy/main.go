@@ -8,11 +8,35 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 )
 
+// watchParentProcess exits the proxy when the parent Chau7 app dies. An
+// orphaned proxy keeps holding the listen port, and the relaunched app's new
+// proxy then crash-loops on bind. Reparenting to PID 1 (launchd) is the
+// orphan signal; CHAU7_PARENT_PID guards against intermediate reparenting.
+func watchParentProcess() {
+	expected := os.Getppid()
+	if env := os.Getenv("CHAU7_PARENT_PID"); env != "" {
+		if pid, err := strconv.Atoi(env); err == nil && pid > 1 {
+			expected = pid
+		}
+	}
+	for {
+		time.Sleep(2 * time.Second)
+		ppid := os.Getppid()
+		if ppid == 1 || (expected > 1 && ppid != expected) {
+			log.Printf("[INFO] Parent process gone (ppid=%d, expected=%d) — exiting", ppid, expected)
+			os.Exit(0)
+		}
+	}
+}
+
 func main() {
+	go watchParentProcess()
+
 	// Load configuration from environment
 	config := LoadConfig()
 

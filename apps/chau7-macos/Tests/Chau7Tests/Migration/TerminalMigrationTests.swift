@@ -1,5 +1,4 @@
 import XCTest
-#if !SWIFT_PACKAGE
 @testable import Chau7
 
 final class TerminalMigrationTests: XCTestCase {
@@ -106,4 +105,3 @@ final class TerminalMigrationTests: XCTestCase {
         XCTAssertEqual(hex.count, 7)
     }
 }
-#endif

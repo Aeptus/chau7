@@ -18,10 +18,17 @@ final class SyntaxHighlighter {
 
     // MARK: - Highlighting Cache (Performance Optimization)
 
-    /// LRU cache for highlighted lines to avoid re-processing identical content
-    private var highlightCache: [String: NSAttributedString] = [:]
-    private let cacheQueue = DispatchQueue(label: "com.chau7.highlightCache")
-    private let maxCacheSize = 500
+    /// LRU cache for highlighted lines. `NSCache` gives us a bounded,
+    /// thread-safe store with cost-based eviction and the OS-pressure
+    /// callback we want — the previous `Dictionary.keys.prefix` eviction
+    /// was emphatically not LRU (dictionary key order is unspecified) and
+    /// could evict the hottest lines on the very next batch.
+    private let highlightCache: NSCache<NSString, NSAttributedString> = {
+        let cache = NSCache<NSString, NSAttributedString>()
+        cache.countLimit = 500
+        cache.name = "com.chau7.highlightCache"
+        return cache
+    }()
 
     /// Background queue for expensive highlighting operations
     private let highlightQueue = DispatchQueue(label: "com.chau7.highlight", qos: .userInitiated)
@@ -136,29 +143,13 @@ final class SyntaxHighlighter {
             return NSAttributedString(string: text)
         }
 
-        // Check cache first (thread-safe)
-        var cachedResult: NSAttributedString?
-        cacheQueue.sync {
-            cachedResult = highlightCache[text]
-        }
-        if let cached = cachedResult {
+        let key = text as NSString
+        if let cached = highlightCache.object(forKey: key) {
             return cached
         }
 
-        // Perform highlighting
         let result = performHighlight(text)
-
-        // Cache the result (thread-safe, with size limit)
-        cacheQueue.async { [weak self] in
-            guard let self else { return }
-            if highlightCache.count >= maxCacheSize {
-                // Simple eviction: remove ~25% of entries
-                let keysToRemove = Array(highlightCache.keys.prefix(maxCacheSize / 4))
-                keysToRemove.forEach { self.highlightCache.removeValue(forKey: $0) }
-            }
-            highlightCache[text] = result
-        }
-
+        highlightCache.setObject(result, forKey: key)
         return result
     }
 
@@ -218,9 +209,7 @@ final class SyntaxHighlighter {
 
     /// Clears the highlight cache (call when color settings change)
     func clearCache() {
-        cacheQueue.async { [weak self] in
-            self?.highlightCache.removeAll()
-        }
+        highlightCache.removeAllObjects()
     }
 
     // MARK: - Pattern Application

@@ -176,6 +176,7 @@ struct NotificationSettings: Equatable {
     static let defaultGroupActionBindings: [String: [NotificationActionConfig]] = [
         "ai_coding.finished": [
             NotificationActionConfig(actionType: .showNotification, enabled: true),
+            NotificationActionConfig(actionType: .dockBounce, enabled: true, config: ["critical": "false"]),
             NotificationActionConfig(actionType: .styleTab, enabled: true, config: [
                 "style": "custom",
                 "customColor": "green",
@@ -194,6 +195,7 @@ struct NotificationSettings: Equatable {
         ],
         "ai_coding.permission": [
             NotificationActionConfig(actionType: .showNotification, enabled: true),
+            NotificationActionConfig(actionType: .dockBounce, enabled: true, config: ["critical": "true"]),
             NotificationActionConfig(actionType: .styleTab, enabled: true, config: [
                 "style": "custom",
                 "customColor": "red",
@@ -204,6 +206,7 @@ struct NotificationSettings: Equatable {
         ],
         "ai_coding.waiting_input": [
             NotificationActionConfig(actionType: .showNotification, enabled: true),
+            NotificationActionConfig(actionType: .dockBounce, enabled: true, config: ["critical": "true"]),
             NotificationActionConfig(actionType: .styleTab, enabled: true, config: [
                 "style": "custom",
                 "customColor": "red",
@@ -214,12 +217,32 @@ struct NotificationSettings: Equatable {
         ],
         "ai_coding.attention_required": [
             NotificationActionConfig(actionType: .showNotification, enabled: true),
+            NotificationActionConfig(actionType: .dockBounce, enabled: true, config: ["critical": "true"]),
             NotificationActionConfig(actionType: .styleTab, enabled: true, config: [
                 "style": "custom",
                 "customColor": "red",
                 "borderWidth": "2",
                 "borderStyle": "solid",
                 "persistent": "true"
+            ])
+        ],
+        "ai_coding.elicitation": [
+            NotificationActionConfig(actionType: .showNotification, enabled: true),
+            NotificationActionConfig(actionType: .dockBounce, enabled: true, config: ["critical": "true"]),
+            NotificationActionConfig(actionType: .styleTab, enabled: true, config: [
+                "style": "custom",
+                "customColor": "red",
+                "borderWidth": "2",
+                "borderStyle": "solid",
+                "persistent": "true"
+            ])
+        ],
+        "ai_coding.response_failed": [
+            NotificationActionConfig(actionType: .showNotification, enabled: true),
+            NotificationActionConfig(actionType: .dockBounce, enabled: true, config: ["critical": "false"]),
+            NotificationActionConfig(actionType: .styleTab, enabled: true, config: [
+                "style": "error",
+                "autoClearSeconds": "60"
             ])
         ],
         "ai_coding.idle": []
@@ -410,6 +433,48 @@ enum RepoGroupingMode: String, CaseIterable, Identifiable, Codable {
         case .off: return L("tabs.repoGrouping.off", "Off")
         case .auto: return L("tabs.repoGrouping.auto", "Automatic")
         case .manual: return L("tabs.repoGrouping.manual", "Manual")
+        }
+    }
+}
+
+// MARK: - Tab Switch Shortcut Mode
+
+/// Which keys jump directly to a tab by position. `commandNumber` covers ⌘1–9;
+/// `functionKey` covers F1–F12 (up to 12 tabs, at the cost of overriding the
+/// function keys inside the terminal); `both` enables them simultaneously.
+enum TabSwitchShortcutMode: String, CaseIterable, Identifiable, Codable {
+    case commandNumber
+    case functionKey
+    case both
+
+    var id: String {
+        rawValue
+    }
+
+    var displayName: String {
+        switch self {
+        case .commandNumber: return L("tabs.switchShortcut.commandNumber", "⌘1–9")
+        case .functionKey: return L("tabs.switchShortcut.functionKey", "F1–F12")
+        case .both: return L("tabs.switchShortcut.both", "⌘1–9 + F1–F12")
+        }
+    }
+
+    /// Whether ⌘1–9 jumps to a tab in this mode.
+    var allowsCommandNumber: Bool {
+        self == .commandNumber || self == .both
+    }
+
+    /// Whether F1–F12 jumps to a tab in this mode.
+    var allowsFunctionKeys: Bool {
+        self == .functionKey || self == .both
+    }
+
+    /// Compact shortcut hint shown in the keyboard reference row.
+    var shortcutHint: String {
+        switch self {
+        case .commandNumber: return "⌘1-9"
+        case .functionKey: return "F1-F12"
+        case .both: return "⌘1-9 or F1-F12"
         }
     }
 }
@@ -1069,11 +1134,17 @@ final class FeatureSettings {
 
     var customShortcuts: [KeyboardShortcut] {
         didSet {
+            customShortcutsGeneration &+= 1
             if let data = JSONOperations.encode(customShortcuts, context: "customShortcuts") {
                 UserDefaults.standard.set(data, forKey: Keys.customShortcuts)
             }
         }
     }
+
+    /// Bumped whenever `customShortcuts` changes, so observers (KeybindingsManager)
+    /// can detect changes with a cheap Int compare per key event instead of
+    /// rebuilding and comparing a signature string.
+    private(set) var customShortcutsGeneration = 0
 
     var isShortcutHelperHintEnabled: Bool {
         didSet { UserDefaults.standard.set(isShortcutHelperHintEnabled, forKey: Keys.shortcutHelperHint) }
@@ -1152,9 +1223,16 @@ final class FeatureSettings {
             // Sync rate limiter if config changed
             if notificationSettings.rateLimitConfig != oldValue.rateLimitConfig {
                 let newConfig = notificationSettings.rateLimitConfig
-                DispatchQueue.main.async {
-                    NotificationManager.shared.rateLimiter.config = newConfig
-                    NotificationManager.shared.rateLimiter.reset()
+                DispatchQueue.main.async { @MainActor in
+                    // Route through the composition root rather than a
+                    // direct singleton dereference. The slot is
+                    // populated by AppModel.init at app startup; in
+                    // tests that don't construct AppModel the rate
+                    // limiter sync becomes a no-op.
+                    if let services = NotificationServices.current {
+                        services.manager.rateLimiter.config = newConfig
+                        services.manager.rateLimiter.reset()
+                    }
                 }
             }
         }
@@ -1183,6 +1261,41 @@ final class FeatureSettings {
         if let data = JSONOperations.encode(ns.groupConditions, context: "groupConditions") {
             UserDefaults.standard.set(data, forKey: Keys.groupConditions)
         }
+    }
+
+    /// Backfill the agent finished / approval / feedback group bindings — and the
+    /// dock bounce within them — for installs whose bindings were persisted before
+    /// these became defaults. A key that is entirely absent is seeded from the
+    /// catalog default; a binding that exists but carries no `dockBounce` action at
+    /// all gains one. A *disabled* dock bounce is left untouched: the settings UI
+    /// keeps the action present-but-off, so its absence (not its disabled state)
+    /// marks the older default.
+    static func normalizedAgentGroupActionBindings(
+        _ loaded: [String: [NotificationActionConfig]]
+    ) -> [String: [NotificationActionConfig]] {
+        let agentKeys = [
+            "ai_coding.finished", "ai_coding.failed", "ai_coding.permission",
+            "ai_coding.waiting_input", "ai_coding.attention_required",
+            "ai_coding.elicitation", "ai_coding.response_failed"
+        ]
+        var result = loaded
+        if result["ai_coding.idle"] == nil {
+            result["ai_coding.idle"] = []
+        }
+        for key in agentKeys {
+            guard let defaultBinding = NotificationSettings.defaultGroupActionBindings[key] else { continue }
+            guard var existing = result[key], !existing.isEmpty else {
+                result[key] = defaultBinding
+                continue
+            }
+            guard !existing.contains(where: { $0.actionType == .dockBounce }),
+                  let defaultBounce = defaultBinding.first(where: { $0.actionType == .dockBounce })
+            else { continue }
+            let insertAt = existing.firstIndex(where: { $0.actionType == .showNotification }).map { $0 + 1 } ?? 0
+            existing.insert(defaultBounce, at: insertAt)
+            result[key] = existing
+        }
+        return result
     }
 
     /// Backward-compatible computed forwarders — existing code continues to work unchanged
@@ -1400,6 +1513,21 @@ final class FeatureSettings {
         didSet { UserDefaults.standard.set(idleTabThresholdMinutes, forKey: "tabs.idleTabThresholdMinutes") }
     }
 
+    /// How many days of AI telemetry (runs plus their full turn transcripts and
+    /// tool-call I/O) to keep in `runs.db`. `0` keeps everything forever.
+    /// Pruning runs at launch during deferred maintenance; see `TelemetryStore`.
+    var telemetryRetentionDays: Int =
+        UserDefaults.standard.object(forKey: TelemetryRetention.defaultsKey) as? Int ?? TelemetryRetention.defaultDays {
+        didSet {
+            let clamped = telemetryRetentionDays < 0 ? 0 : min(telemetryRetentionDays, TelemetryRetention.maxDays)
+            if telemetryRetentionDays != clamped {
+                telemetryRetentionDays = clamped
+                return
+            }
+            UserDefaults.standard.set(telemetryRetentionDays, forKey: TelemetryRetention.defaultsKey)
+        }
+    }
+
     /// Idle tab threshold in seconds (derived from minutes setting)
     var idleTabThresholdSeconds: TimeInterval {
         TimeInterval(max(1, idleTabThresholdMinutes) * 60)
@@ -1413,6 +1541,18 @@ final class FeatureSettings {
         didSet {
             UserDefaults.standard.set(repoGroupingMode.rawValue, forKey: "tabs.repoGroupingMode")
             NotificationCenter.default.post(name: .repoGroupingModeChanged, object: self)
+        }
+    }
+
+    /// Which keys jump to a tab by position (⌘1–9 vs F1–F12). Read live by
+    /// AppDelegate's key monitor, so changes take effect on the next keystroke.
+    var tabSwitchShortcutMode: TabSwitchShortcutMode = {
+        guard let raw = UserDefaults.standard.string(forKey: "tabs.tabSwitchShortcutMode"),
+              let mode = TabSwitchShortcutMode(rawValue: raw) else { return .commandNumber }
+        return mode
+    }() {
+        didSet {
+            UserDefaults.standard.set(tabSwitchShortcutMode.rawValue, forKey: "tabs.tabSwitchShortcutMode")
         }
     }
 
@@ -1677,6 +1817,16 @@ final class FeatureSettings {
         }
     }
 
+    /// Max grid-sync/draw rate (fps) for visible-but-not-focused terminal views
+    /// (e.g. the selected tab of a non-key window on a second screen). The
+    /// focused view follows `activePollingRateCap`; non-focused visible views
+    /// stay event-driven (responsive) but only present at this rate, cutting
+    /// GPU + grid-sync cost for content the user isn't interacting with.
+    /// Read live on the render hot path. Default 42.
+    var inactiveViewMaxFPS: Int = UserDefaults.standard.object(forKey: "rendering.inactiveViewMaxFPS") as? Int ?? 42 {
+        didSet { UserDefaults.standard.set(inactiveViewMaxFPS, forKey: "rendering.inactiveViewMaxFPS") }
+    }
+
     // MARK: - Custom AI Detection (NEW)
 
     var customAIDetectionRules: [CustomAIDetectionRule] {
@@ -1874,6 +2024,23 @@ final class FeatureSettings {
                 return
             }
             UserDefaults.standard.set(scrollbackLines, forKey: Keys.scrollbackLines)
+        }
+    }
+
+    /// Total command-history lines retained across closed ("orphan") tabs. Per-tab
+    /// shell history accrues one file per tab ever opened; this caps the combined
+    /// closed-tab corpus. When over the cap, the oldest commands are dropped first,
+    /// but each tab keeps at least a few of its most recent ones (see
+    /// `TerminalSessionModel.pruneOrphanShellHistory`). 0 keeps only that per-tab
+    /// minimum. Active/restorable tabs are never pruned.
+    var shellHistoryMaxLines: Int {
+        didSet {
+            let clamped = max(0, min(shellHistoryMaxLines, 1_000_000))
+            if shellHistoryMaxLines != clamped {
+                shellHistoryMaxLines = clamped
+                return
+            }
+            UserDefaults.standard.set(shellHistoryMaxLines, forKey: Keys.shellHistoryMaxLines)
         }
     }
 
@@ -2160,7 +2327,7 @@ final class FeatureSettings {
 
     var mcpProfiles: [MCPProfile] {
         didSet {
-            if let data = try? JSONEncoder().encode(mcpProfiles) {
+            if let data = Persist.encodeLogged(mcpProfiles, context: "settings.mcpProfiles") {
                 UserDefaults.standard.set(data, forKey: Keys.mcpProfiles)
             }
         }
@@ -2423,6 +2590,7 @@ final class FeatureSettings {
         static let cursorStyle = "terminal.cursorStyle"
         static let cursorBlink = "terminal.cursorBlink"
         static let scrollbackLines = "terminal.scrollbackLines"
+        static let shellHistoryMaxLines = "terminal.shellHistoryMaxLines"
         static let restoredScrollbackLines = "terminal.restoredScrollbackLines"
         static let runtimeEventJournalCapacity = "runtime.eventJournalCapacity"
         static let runtimeOutputChunkLimit = "runtime.outputChunkLimit"
@@ -2702,13 +2870,7 @@ final class FeatureSettings {
         } else {
             loadedGroupActionBindings = NotificationSettings.defaultGroupActionBindings
         }
-        var normalizedGroupActionBindings = loadedGroupActionBindings
-        if normalizedGroupActionBindings["ai_coding.failed"] == nil {
-            normalizedGroupActionBindings["ai_coding.failed"] = NotificationSettings.defaultGroupActionBindings["ai_coding.failed"]
-        }
-        if normalizedGroupActionBindings["ai_coding.idle"] == nil {
-            normalizedGroupActionBindings["ai_coding.idle"] = []
-        }
+        let normalizedGroupActionBindings = Self.normalizedAgentGroupActionBindings(loadedGroupActionBindings)
 
         let loadedGroupConditions: [String: TriggerCondition]
         if let data = defaults.data(forKey: Keys.groupConditions),
@@ -2893,6 +3055,7 @@ final class FeatureSettings {
         self.cursorColor = defaults.string(forKey: "terminal.cursorColor") ?? ""
         self.unicodeAmbiguousWidth = defaults.object(forKey: "terminal.unicodeAmbiguousWidth") as? Int ?? 1
         self.scrollbackLines = defaults.object(forKey: Keys.scrollbackLines) as? Int ?? 10000
+        self.shellHistoryMaxLines = defaults.object(forKey: Keys.shellHistoryMaxLines) as? Int ?? 1000
         self.restoredScrollbackLines = defaults.object(forKey: Keys.restoredScrollbackLines) as? Int ?? 500
         self.bellEnabled = defaults.object(forKey: Keys.bellEnabled) as? Bool ?? true
         self.bellSound = defaults.string(forKey: Keys.bellSound) ?? "default"
@@ -3211,6 +3374,7 @@ final class FeatureSettings {
         var cursorStyle: String
         var cursorBlink: Bool
         var scrollbackLines: Int
+        var shellHistoryMaxLines: Int?
         var restoredScrollbackLines: Int
         var bellEnabled: Bool
         var bellSound: String
@@ -3290,10 +3454,19 @@ final class FeatureSettings {
         var ctoPrefix = ""
         var ctoTabOverrides = [String: Bool]()
         var exportVersion = 1
+        /// When this blob was exported. Drives the iCloud freshness guard so
+        /// an old device's blob can never clobber newer local settings.
+        /// Optional: pre-timestamp exports decode as nil.
+        var exportedAt: Date?
     }
 
+    /// Highest export format this build can apply. Imports with a newer
+    /// version are refused rather than partially decoded-and-resaved (which
+    /// would silently destroy fields this build doesn't know about).
+    static let maxSupportedSettingsExportVersion = 1
+
     func exportSettings() -> Data? {
-        let exportable = ExportableSettings(
+        var exportable = ExportableSettings(
             fontFamily: fontFamily,
             fontSize: fontSize,
             defaultZoomPercent: defaultZoomPercent,
@@ -3326,6 +3499,7 @@ final class FeatureSettings {
             cursorStyle: cursorStyle,
             cursorBlink: cursorBlink,
             scrollbackLines: scrollbackLines,
+            shellHistoryMaxLines: shellHistoryMaxLines,
             restoredScrollbackLines: restoredScrollbackLines,
             bellEnabled: bellEnabled,
             bellSound: bellSound,
@@ -3404,6 +3578,7 @@ final class FeatureSettings {
             ctoPrefix: ctoPrefix,
             ctoTabOverrides: ctoTabOverrides
         )
+        exportable.exportedAt = Date()
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         return JSONOperations.encode(exportable, context: "settings export")
@@ -3412,6 +3587,10 @@ final class FeatureSettings {
     func importSettings(from data: Data) -> Bool {
         guard let imported = JSONOperations.decode(ExportableSettings.self, from: data, context: "settings import") else {
             Log.error("Failed to import settings: invalid data format")
+            return false
+        }
+        guard imported.exportVersion <= Self.maxSupportedSettingsExportVersion else {
+            Log.error("Refusing settings import: export version \(imported.exportVersion) is newer than supported \(Self.maxSupportedSettingsExportVersion)")
             return false
         }
 
@@ -3440,18 +3619,19 @@ final class FeatureSettings {
             triggerState: importedTriggerState,
             filters: Self.legacyNotificationFilters(from: importedTriggerState),
             triggerActionBindings: imported.triggerActionBindings ?? notificationSettings.triggerActionBindings,
-            rateLimitConfig: imported.notificationRateLimitConfig ?? .default,
-            triggerConditions: imported.triggerConditions ?? [:],
+            rateLimitConfig: imported.notificationRateLimitConfig ?? notificationSettings.rateLimitConfig,
+            triggerConditions: imported.triggerConditions ?? notificationSettings.triggerConditions,
             groupActionBindings: imported.groupActionBindings ?? notificationSettings.groupActionBindings,
             groupConditions: imported.groupConditions ?? notificationSettings.groupConditions
         )
         findCaseSensitiveDefault = imported.findCaseSensitiveDefault ?? false
         findRegexDefault = imported.findRegexDefault ?? false
+        // Fields absent from the payload keep their current local value —
+        // resetting to hardcoded defaults let an older export wipe settings
+        // it never knew about.
         if let behaviorRaw = imported.lastTabCloseBehavior,
            let behavior = LastTabCloseBehavior(rawValue: behaviorRaw) {
             lastTabCloseBehavior = behavior
-        } else {
-            lastTabCloseBehavior = .keepWindow
         }
         newTabPosition = imported.newTabPosition ?? "end"
         newTabsUseCurrentDirectory = imported.newTabsUseCurrentDirectory ?? true
@@ -3460,20 +3640,19 @@ final class FeatureSettings {
         if let themeRaw = imported.appTheme,
            let theme = AppTheme(rawValue: themeRaw) {
             appTheme = theme
-        } else {
-            appTheme = .system
         }
         launchAtLogin = imported.launchAtLogin ?? launchAtLogin
         if let langRaw = imported.appLanguage,
            let lang = AppLanguage(rawValue: langRaw) {
             appLanguage = lang
-        } else {
-            appLanguage = .system
         }
         windowOpacity = imported.windowOpacity
         cursorStyle = imported.cursorStyle
         cursorBlink = imported.cursorBlink
         scrollbackLines = imported.scrollbackLines
+        if let shellHistoryMaxLines = imported.shellHistoryMaxLines {
+            self.shellHistoryMaxLines = shellHistoryMaxLines
+        }
         restoredScrollbackLines = imported.restoredScrollbackLines
         bellEnabled = imported.bellEnabled
         bellSound = imported.bellSound
@@ -3482,18 +3661,14 @@ final class FeatureSettings {
             dangerousCommandHighlightScope = scope
         } else if let enabled = imported.isDangerousCommandHighlightEnabled {
             dangerousCommandHighlightScope = enabled ? .allOutputs : .none
-        } else {
-            dangerousCommandHighlightScope = .allOutputs
         }
-        dangerousCommandPatterns = imported.dangerousCommandPatterns ?? Self.defaultDangerousCommandPatterns
-        dangerousCommandProtectChau7Enabled = imported.dangerousCommandProtectChau7Enabled ?? true
+        dangerousCommandPatterns = imported.dangerousCommandPatterns ?? dangerousCommandPatterns
+        dangerousCommandProtectChau7Enabled = imported.dangerousCommandProtectChau7Enabled ?? dangerousCommandProtectChau7Enabled
         if let raw = imported.dangerousCommandProtectChau7Level,
            let level = DangerousCommandProtectionLevel(rawValue: raw) {
             dangerousCommandProtectChau7Level = level
-        } else {
-            dangerousCommandProtectChau7Level = .blocking
         }
-        dangerousCommandProtectedProcessPatterns = imported.dangerousCommandProtectedProcessPatterns ?? Self.defaultDangerousProtectedProcessPatterns
+        dangerousCommandProtectedProcessPatterns = imported.dangerousCommandProtectedProcessPatterns ?? dangerousCommandProtectedProcessPatterns
         if let idleDelay = imported.dangerousOutputHighlightIdleDelayMs {
             dangerousOutputHighlightIdleDelayMs = idleDelay
         }
@@ -3536,16 +3711,12 @@ final class FeatureSettings {
         if let handlerRaw = imported.urlHandler,
            let handler = URLHandler(rawValue: handlerRaw) {
             urlHandler = handler
-        } else {
-            urlHandler = .system
         }
         if let rateCapRaw = imported.activePollingRateCap,
            let rateCap = ActivePollingRateCap(rawValue: rateCapRaw) {
             activePollingRateCap = rateCap
-        } else {
-            activePollingRateCap = .displayNative
         }
-        customAIDetectionRules = imported.customAIDetectionRules ?? []
+        customAIDetectionRules = imported.customAIDetectionRules ?? customAIDetectionRules
         isBroadcastEnabled = imported.isBroadcastEnabled
         isClipboardHistoryEnabled = imported.isClipboardHistoryEnabled
         clipboardHistoryMaxItems = imported.clipboardHistoryMaxItems
@@ -3788,6 +3959,7 @@ final class FeatureSettings {
         startupCommand = ""
         isLsColorsEnabled = true
         activePollingRateCap = .displayNative
+        inactiveViewMaxFPS = 42
     }
 
     func resetInputToDefaults() {
@@ -3815,6 +3987,7 @@ final class FeatureSettings {
         groupIdleTabs = true
         idleTabThresholdMinutes = 10
         repoGroupingMode = .off
+        tabSwitchShortcutMode = .commandNumber
         customTitleOnly = false
         showTabIcons = true
         showTabPath = true
@@ -3853,6 +4026,21 @@ final class FeatureSettings {
 
     @ObservationIgnored private var iCloudSyncWorkItem: DispatchWorkItem?
     @ObservationIgnored private let iCloudSyncDebounceInterval: TimeInterval = 2.0 // 2 seconds debounce
+    /// `exportedAt` of the last settings blob this Mac pushed to or applied
+    /// from iCloud (epoch seconds). The freshness guard refuses blobs that
+    /// aren't strictly newer, so an old device can't clobber newer settings.
+    private static let lastSyncedSettingsExportedAtKey = "icloud.settings.lastSyncedExportedAt"
+
+    private func recordSyncedSettingsTimestamp(_ date: Date) {
+        UserDefaults.standard.set(date.timeIntervalSince1970, forKey: Self.lastSyncedSettingsExportedAtKey)
+    }
+
+    private func pushSettingsToiCloud(_ data: Data, label: String) {
+        NSUbiquitousKeyValueStore.default.set(data, forKey: iCloudKey)
+        NSUbiquitousKeyValueStore.default.synchronize()
+        recordSyncedSettingsTimestamp(Date())
+        Log.info("Settings synced to iCloud (\(label))")
+    }
 
     func syncToiCloud() {
         guard !RuntimeIsolation.isIsolatedTestMode() else { return }
@@ -3865,9 +4053,7 @@ final class FeatureSettings {
         let workItem = DispatchWorkItem { [weak self] in
             guard let self = self, iCloudSyncEnabled else { return }
             guard let data = exportSettings() else { return }
-            NSUbiquitousKeyValueStore.default.set(data, forKey: iCloudKey)
-            NSUbiquitousKeyValueStore.default.synchronize()
-            Log.info("Settings synced to iCloud (debounced)")
+            pushSettingsToiCloud(data, label: "debounced")
         }
 
         iCloudSyncWorkItem = workItem
@@ -3880,9 +4066,7 @@ final class FeatureSettings {
         guard iCloudSyncEnabled else { return }
         iCloudSyncWorkItem?.cancel()
         guard let data = exportSettings() else { return }
-        NSUbiquitousKeyValueStore.default.set(data, forKey: iCloudKey)
-        NSUbiquitousKeyValueStore.default.synchronize()
-        Log.info("Settings force synced to iCloud")
+        pushSettingsToiCloud(data, label: "forced")
     }
 
     func syncFromiCloud() {
@@ -3892,8 +4076,27 @@ final class FeatureSettings {
             Log.info("No iCloud settings found")
             return
         }
+        // Freshness guard: whole-blob last-writer-wins with no comparison let
+        // an old device's blob silently clobber newer local settings. Apply
+        // only blobs strictly newer than what this Mac last pushed/applied.
+        if let incoming = JSONOperations.decode(ExportableSettings.self, from: data, context: "settings iCloud peek"),
+           let incomingExportedAt = incoming.exportedAt {
+            let lastSynced = UserDefaults.standard.double(forKey: Self.lastSyncedSettingsExportedAtKey)
+            if lastSynced > 0, incomingExportedAt.timeIntervalSince1970 <= lastSynced {
+                Log.info("Skipping iCloud settings import: incoming export is not newer than the last synced state")
+                return
+            }
+            if importSettings(from: data) {
+                recordSyncedSettingsTimestamp(incomingExportedAt)
+                Log.info("Settings restored from iCloud")
+            } else {
+                Log.warn("Failed to restore settings from iCloud")
+            }
+            return
+        }
+        // Pre-timestamp blob: keep legacy apply-always behavior.
         if importSettings(from: data) {
-            Log.info("Settings restored from iCloud")
+            Log.info("Settings restored from iCloud (legacy untimestamped blob)")
         } else {
             Log.warn("Failed to restore settings from iCloud")
         }

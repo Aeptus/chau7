@@ -119,6 +119,15 @@ final class ClaudeCodeMonitor {
             fm.createFile(atPath: eventsFilePath, contents: nil)
         }
 
+        // Bound the append-only events file before the tailer attaches. Safe
+        // here: no tailer is reading yet and Chau7-spawned Claude sessions
+        // (the only writers, per the hook's CHAU7_TAB_ID guard) haven't started.
+        LogFileCompactor.compactIfNeeded(
+            path: eventsFilePath,
+            maxBytes: LogFileCompactor.defaultMaxBytes,
+            keepBytes: LogFileCompactor.defaultKeepBytes
+        )
+
         // Start tailing events file
         let url = URL(fileURLWithPath: eventsFilePath)
         eventTailer = FileTailer<ClaudeCodeEvent>(
@@ -282,6 +291,13 @@ final class ClaudeCodeMonitor {
         DispatchQueue.main.async {
             self.activeSessions[sessionId]?.state = .closed
             self.scheduleNextIdleCheck()
+            // Closed sessions linger briefly for late event routing, then
+            // evict — entries otherwise accumulate per AI session for the
+            // app's lifetime. Skip eviction if the session re-opened.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 300) { [weak self] in
+                guard let self, activeSessions[sessionId]?.state == .closed else { return }
+                activeSessions.removeValue(forKey: sessionId)
+            }
         }
     }
 

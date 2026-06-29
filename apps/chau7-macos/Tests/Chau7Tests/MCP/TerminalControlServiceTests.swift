@@ -1,16 +1,22 @@
 import XCTest
-#if !SWIFT_PACKAGE
 @testable import Chau7
+import Chau7Core
 
 @MainActor
 final class TerminalControlServiceTests: XCTestCase {
     private var appModel: AppModel!
     private var overlayModel: OverlayTabsModel!
+    private var savedPermissionMode: MCPPermissionMode!
+    private var savedRequiresApproval = false
+    private var savedMCPEnabled = false
 
     override func setUp() {
         super.setUp()
         UserDefaults.standard.removeObject(forKey: SavedTabState.userDefaultsKey)
         UserDefaults.standard.removeObject(forKey: SavedMultiWindowState.userDefaultsKey)
+        savedPermissionMode = FeatureSettings.shared.mcpPermissionMode
+        savedRequiresApproval = FeatureSettings.shared.mcpRequiresApproval
+        savedMCPEnabled = FeatureSettings.shared.mcpEnabled
         FeatureSettings.shared.mcpPermissionMode = .allowAll
         FeatureSettings.shared.mcpRequiresApproval = false
         FeatureSettings.shared.mcpEnabled = true
@@ -24,6 +30,9 @@ final class TerminalControlServiceTests: XCTestCase {
             TerminalControlService.shared.unregister(overlayModel)
         }
         TerminalControlService.shared.activeOverlayModelProvider = nil
+        FeatureSettings.shared.mcpPermissionMode = savedPermissionMode
+        FeatureSettings.shared.mcpRequiresApproval = savedRequiresApproval
+        FeatureSettings.shared.mcpEnabled = savedMCPEnabled
         UserDefaults.standard.removeObject(forKey: SavedTabState.userDefaultsKey)
         UserDefaults.standard.removeObject(forKey: SavedMultiWindowState.userDefaultsKey)
         overlayModel = nil
@@ -72,7 +81,7 @@ final class TerminalControlServiceTests: XCTestCase {
         session.isAtPrompt = true
 
         let terminalView = RustTerminalView(frame: .zero)
-        session.attachTerminalView(terminalView)
+        session.attachRustTerminal(terminalView)
 
         let response = TerminalControlService.shared.tabStatus(tabID: overlayModel.selectedTabID.uuidString)
         let json = try XCTUnwrap(parseJSONObject(response))
@@ -158,6 +167,11 @@ final class TerminalControlServiceTests: XCTestCase {
     }
 
     func testControlPlaneIDsAreReusedAfterTabClose() throws {
+        // Aliases are assigned lazily — pin the initial tab to tab_1 first so
+        // slot numbering below is deterministic.
+        let firstTabID = try XCTUnwrap(overlayModel.tabs.first?.id)
+        XCTAssertEqual(TerminalControlService.shared.controlPlaneTabID(for: firstTabID), "tab_1")
+
         overlayModel.newTab(selectNewTab: false)
         let createdID = try XCTUnwrap(overlayModel.tabs.last?.id)
         XCTAssertEqual(TerminalControlService.shared.controlPlaneTabID(for: createdID), "tab_2")
@@ -183,7 +197,11 @@ final class TerminalControlServiceTests: XCTestCase {
         let response = TerminalControlService.shared.createTab(directory: nil, windowID: nil)
         let json = try XCTUnwrap(parseJSONObject(response))
 
-        XCTAssertEqual(json["window_id"] as? Int, 1)
+        // Window IDs increment monotonically per registration across the whole
+        // process, so resolve the expected ID instead of hardcoding it.
+        let expectedWindowID = TerminalControlService.shared.allModels
+            .first(where: { $0.model === secondOverlayModel })?.windowID
+        XCTAssertEqual(json["window_id"] as? Int, expectedWindowID)
         XCTAssertEqual(overlayModel.tabs.count, firstWindowCount)
         XCTAssertEqual(secondOverlayModel.tabs.count, secondWindowCount + 1)
         XCTAssertEqual(secondOverlayModel.selectedTabID, secondOverlayModel.tabs.first?.id)
@@ -207,10 +225,12 @@ final class TerminalControlServiceTests: XCTestCase {
     }
 
     func testUpdateSessionDirectorySkipsSessionAdoptionWhenAdoptionIsNotAllowed() throws {
+        let root = try makeTempDirectoryTree(name: "aethyme", subpaths: ["packages/aethyme"])
+        defer { removeTempDirectory(root) }
         let tab = try XCTUnwrap(overlayModel.tabs.first)
         let session = try XCTUnwrap(tab.session)
-        session.currentDirectory = "/tmp/aethyme"
-        session.gitRootPath = "/tmp/aethyme"
+        session.currentDirectory = root
+        session.gitRootPath = root
         session.restoreAIMetadata(
             provider: "claude",
             sessionId: "d3da599e-f985-4eaf-a834-f9eb069d6802"
@@ -219,12 +239,12 @@ final class TerminalControlServiceTests: XCTestCase {
         let updated = TerminalControlService.shared.updateSessionDirectoryAcrossWindows(
             tabID: tab.id,
             sessionID: "fc48a626-5528-403f-b7da-6e9386493643",
-            directory: "/tmp/aethyme/packages/aethyme",
+            directory: "\(root)/packages/aethyme",
             allowSessionIDAdoption: false
         )
 
         XCTAssertTrue(updated)
-        XCTAssertEqual(session.currentDirectory, "/tmp/aethyme/packages/aethyme")
+        XCTAssertEqual(session.currentDirectory, "\(root)/packages/aethyme")
         XCTAssertEqual(session.lastAISessionId, "d3da599e-f985-4eaf-a834-f9eb069d6802")
     }
 
@@ -241,7 +261,8 @@ final class TerminalControlServiceTests: XCTestCase {
         let json = try XCTUnwrap(parseJSONObject(response))
 
         XCTAssertEqual(json["ok"] as? Bool, true)
-        XCTAssertEqual(session.activeAppName, "Codex")
+        // execInTab pre-arms AI logging asynchronously on the main queue.
+        XCTAssertTrue(waitUntil(timeout: 5.0) { session.activeAppName == "Codex" })
         XCTAssertNotNil(session.currentPTYLogPath())
     }
 
@@ -406,6 +427,8 @@ final class TerminalControlServiceTests: XCTestCase {
     }
 
     func testUpdateSessionDirectoryAppliesWhenSessionMatchesLiveAISession() throws {
+        let root = try makeTempDirectoryTree(name: "repo", subpaths: ["subdir"])
+        defer { removeTempDirectory(root) }
         let tab = try XCTUnwrap(overlayModel.tabs.first)
         let session = try XCTUnwrap(tab.session)
         session.lastAISessionId = "session-live"
@@ -413,18 +436,18 @@ final class TerminalControlServiceTests: XCTestCase {
         // (introduced by 606a0dc, refined by feb677d) treats the writeback
         // as a normal within-repo cd rather than a foreign event. Without
         // this seed the test would fail under the two-axis policy because
-        // the default cwd is unrelated to /tmp/repo/subdir.
-        session.updateCurrentDirectory("/tmp/repo")
+        // the default cwd is unrelated to the repo subdir.
+        session.updateCurrentDirectory(root)
         let originalCwd = session.currentDirectory
 
         let applied = TerminalControlService.shared.updateSessionDirectoryAcrossWindows(
             tabID: tab.id,
             sessionID: "session-live",
-            directory: "/tmp/repo/subdir"
+            directory: "\(root)/subdir"
         )
 
         XCTAssertTrue(applied)
-        XCTAssertEqual(session.currentDirectory, "/tmp/repo/subdir")
+        XCTAssertEqual(session.currentDirectory, "\(root)/subdir")
         XCTAssertNotEqual(session.currentDirectory, originalCwd)
     }
 
@@ -432,10 +455,11 @@ final class TerminalControlServiceTests: XCTestCase {
         // The motivating bug: a tab hosting Claude session 'live' has its cwd
         // oscillated by stale events arriving from a previously-resumed Claude
         // session 'stale' that still emits to claude-events.jsonl.
+        let pinned = try makeTempDirectoryTree(name: "live-path")
+        defer { removeTempDirectory(pinned) }
         let tab = try XCTUnwrap(overlayModel.tabs.first)
         let session = try XCTUnwrap(tab.session)
         session.lastAISessionId = "session-live"
-        let pinned = "/tmp/live-path"
         session.updateCurrentDirectory(pinned)
 
         let applied = TerminalControlService.shared.updateSessionDirectoryAcrossWindows(
@@ -453,20 +477,22 @@ final class TerminalControlServiceTests: XCTestCase {
         // from a previous claude invocation was persisted. The user restarted
         // claude in the same tab — new sessionID, same repo. Without this
         // logic the legitimate event for the new session is refused forever.
+        let root = try makeTempDirectoryTree(name: "aethyme", subpaths: ["subdir"])
+        defer { removeTempDirectory(root) }
         let tab = try XCTUnwrap(overlayModel.tabs.first)
         let session = try XCTUnwrap(tab.session)
         session.lastAISessionId = "stale-from-disk"
-        session.updateCurrentDirectory("/tmp/aethyme")
-        session.gitRootPath = "/tmp/aethyme"
+        session.updateCurrentDirectory(root)
+        session.gitRootPath = root
 
         let applied = TerminalControlService.shared.updateSessionDirectoryAcrossWindows(
             tabID: tab.id,
             sessionID: "fresh-claude-session",
-            directory: "/tmp/aethyme/subdir"
+            directory: "\(root)/subdir"
         )
 
         XCTAssertTrue(applied)
-        XCTAssertEqual(session.currentDirectory, "/tmp/aethyme/subdir")
+        XCTAssertEqual(session.currentDirectory, "\(root)/subdir")
         XCTAssertEqual(
             session.lastAISessionId,
             "fresh-claude-session",
@@ -479,11 +505,13 @@ final class TerminalControlServiceTests: XCTestCase {
         // misattribution (now removed at source by other commits), so a new
         // event arrives whose sessionID matches the stale value. The session
         // check passes, but the directory is clearly foreign to this tab.
+        let root = try makeTempDirectoryTree(name: "aethyme")
+        defer { removeTempDirectory(root) }
         let tab = try XCTUnwrap(overlayModel.tabs.first)
         let session = try XCTUnwrap(tab.session)
         session.lastAISessionId = "session-bound-from-disk"
-        session.updateCurrentDirectory("/tmp/aethyme")
-        session.gitRootPath = "/tmp/aethyme"
+        session.updateCurrentDirectory(root)
+        session.gitRootPath = root
 
         let applied = TerminalControlService.shared.updateSessionDirectoryAcrossWindows(
             tabID: tab.id,
@@ -494,7 +522,7 @@ final class TerminalControlServiceTests: XCTestCase {
         XCTAssertFalse(applied)
         XCTAssertEqual(
             session.currentDirectory,
-            "/tmp/aethyme",
+            root,
             "Foreign directory write must be refused even when session ids agree"
         )
     }
@@ -503,20 +531,22 @@ final class TerminalControlServiceTests: XCTestCase {
         // Regression-guard the inverse: cd'ing within the same repo (parent →
         // subdir) must still be applied; this is the legitimate Claude-TUI
         // chpwd-replacement path that the foreign-cwd refusal must not block.
+        let root = try makeTempDirectoryTree(name: "repo", subpaths: ["subdir"])
+        defer { removeTempDirectory(root) }
         let tab = try XCTUnwrap(overlayModel.tabs.first)
         let session = try XCTUnwrap(tab.session)
         session.lastAISessionId = "session-live"
-        session.updateCurrentDirectory("/tmp/repo")
-        session.gitRootPath = "/tmp/repo"
+        session.updateCurrentDirectory(root)
+        session.gitRootPath = root
 
         let applied = TerminalControlService.shared.updateSessionDirectoryAcrossWindows(
             tabID: tab.id,
             sessionID: "session-live",
-            directory: "/tmp/repo/subdir"
+            directory: "\(root)/subdir"
         )
 
         XCTAssertTrue(applied)
-        XCTAssertEqual(session.currentDirectory, "/tmp/repo/subdir")
+        XCTAssertEqual(session.currentDirectory, "\(root)/subdir")
     }
 
     func testUpdateSessionDirectoryAppliesWhenTabHasNoLiveAISessionYet() throws {
@@ -524,6 +554,8 @@ final class TerminalControlServiceTests: XCTestCase {
         // identity yet AND no cwd/gitRoot anchor. With both signals empty
         // shouldRefuseCwdWriteAsForeign returns false (no anchor to reject
         // against), so the writeback seeds the very first cwd.
+        let root = try makeTempDirectoryTree(name: "first-bind")
+        defer { removeTempDirectory(root) }
         let tab = try XCTUnwrap(overlayModel.tabs.first)
         let session = try XCTUnwrap(tab.session)
         session.lastAISessionId = nil
@@ -533,11 +565,35 @@ final class TerminalControlServiceTests: XCTestCase {
         let applied = TerminalControlService.shared.updateSessionDirectoryAcrossWindows(
             tabID: tab.id,
             sessionID: "session-first",
-            directory: "/tmp/first-bind"
+            directory: root
         )
 
         XCTAssertTrue(applied)
-        XCTAssertEqual(session.currentDirectory, "/tmp/first-bind")
+        XCTAssertEqual(session.currentDirectory, root)
+    }
+
+    private func makeTempDirectoryTree(name: String, subpaths: [String] = []) throws -> String {
+        let root = "/tmp/chau7-tcs-\(name)-\(UUID().uuidString)"
+        try FileManager.default.createDirectory(atPath: root, withIntermediateDirectories: true)
+        for sub in subpaths {
+            try FileManager.default.createDirectory(atPath: "\(root)/\(sub)", withIntermediateDirectories: true)
+        }
+        return root
+    }
+
+    private func removeTempDirectory(_ path: String) {
+        try? FileManager.default.removeItem(atPath: path)
+    }
+
+    private func waitUntil(timeout: TimeInterval, condition: @escaping () -> Bool) -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if condition() {
+                return true
+            }
+            RunLoop.main.run(until: Date().addingTimeInterval(0.02))
+        }
+        return condition()
     }
 
     private func parseJSONObject(_ text: String) -> [String: Any]? {
@@ -555,5 +611,18 @@ final class TerminalControlServiceTests: XCTestCase {
         }
         return json
     }
+
+    func testAgentLaunchCommandWithoutPRIsAgentCommandVerbatim() {
+        XCTAssertEqual(
+            TerminalControlService.agentLaunchCommand(agentCommand: "claude", prNumber: nil),
+            "claude"
+        )
+    }
+
+    func testAgentLaunchCommandWithPRPrependsCheckout() {
+        XCTAssertEqual(
+            TerminalControlService.agentLaunchCommand(agentCommand: "codex", prNumber: 323),
+            "gh pr checkout 323 && codex"
+        )
+    }
 }
-#endif

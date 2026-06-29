@@ -29,9 +29,12 @@ final class PersistentHistoryStore {
     private var db: OpaquePointer?
     private let dbQueue = DispatchQueue(label: "com.chau7.historyDB", qos: .utility)
     /// In-memory count avoids SELECT COUNT(*) on every insert.
-    /// Seeded once on startup; incremented on insert, decremented on trim.
+    /// Seeded once on startup; incremented on insert, decremented on
+    /// trim/clear. Confined to dbQueue — every mutator routes through it
+    /// (the SQLite connection is FULLMUTEX-safe, the Swift ivars are not).
     private var cachedCount: Int?
-    /// When true, insertSync skips trimIfNeeded (used during bulk import).
+    /// When true, inserts skip trimIfNeeded (used during bulk import).
+    /// Confined to dbQueue.
     private var suppressTrim = false
 
     /// Session ID for this app launch
@@ -43,7 +46,7 @@ final class PersistentHistoryStore {
     private init() {
         openDatabase()
         createTables()
-        self.cachedCount = totalCount()
+        self.cachedCount = totalCountLocked()
         Log.info("PersistentHistoryStore initialized: \(dbPath)")
     }
 
@@ -58,7 +61,7 @@ final class PersistentHistoryStore {
         execute("PRAGMA journal_mode=WAL")
         execute("PRAGMA synchronous=NORMAL")
         createTables()
-        self.cachedCount = totalCount()
+        self.cachedCount = totalCountLocked()
     }
 
     deinit {
@@ -84,7 +87,10 @@ final class PersistentHistoryStore {
         // from both dbQueue (inserts) and caller threads (reads).
         let flags = SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_FULLMUTEX
         if sqlite3_open_v2(dbPath, &db, flags, nil) != SQLITE_OK {
-            Log.error("PersistentHistoryStore: failed to open database: \(String(cString: sqlite3_errmsg(db!)))")
+            // sqlite3_open_v2 can return a NULL handle on OOM — don't crash
+            // inside the error path itself.
+            let msg = db.map { String(cString: sqlite3_errmsg($0)) } ?? "no handle (out of memory?)"
+            Log.error("PersistentHistoryStore: failed to open database: \(msg)")
             db = nil
             // Attempt recovery: rename corrupt DB and retry with fresh file
             let corruptPath = dbPath + ".corrupt.\(Int(Date().timeIntervalSince1970))"
@@ -144,29 +150,17 @@ final class PersistentHistoryStore {
 
     func insert(_ record: HistoryRecord) {
         dbQueue.async { [weak self] in
-            guard let self = self, let db = db else { return }
-            var stmt: OpaquePointer?
-            guard sqlite3_prepare_v2(db, Self.insertSQL, -1, &stmt, nil) == SQLITE_OK else {
-                Log.error("PersistentHistoryStore: prepare insert failed")
-                return
-            }
-            defer { sqlite3_finalize(stmt) }
-
-            bindInsertParameters(record, into: stmt)
-
-            if sqlite3_step(stmt) != SQLITE_DONE {
-                Log.error("PersistentHistoryStore: insert failed: \(String(cString: sqlite3_errmsg(db)))")
-            } else {
-                cachedCount = (cachedCount ?? 0) + 1
-                Log.trace("PersistentHistoryStore: inserted '\(record.command)'")
-            }
-
-            trimIfNeeded()
+            self?.insertLocked(record)
         }
     }
 
     /// Synchronous insert used by tests and import operations.
     func insertSync(_ record: HistoryRecord) {
+        dbQueue.sync { insertLocked(record) }
+    }
+
+    /// Must run on dbQueue.
+    private func insertLocked(_ record: HistoryRecord) {
         guard let db = db else { return }
         var stmt: OpaquePointer?
         guard sqlite3_prepare_v2(db, Self.insertSQL, -1, &stmt, nil) == SQLITE_OK else {
@@ -181,6 +175,7 @@ final class PersistentHistoryStore {
             Log.error("PersistentHistoryStore: insert failed: \(String(cString: sqlite3_errmsg(db)))")
         } else {
             cachedCount = (cachedCount ?? 0) + 1
+            Log.trace("PersistentHistoryStore: inserted '\(record.command)'")
         }
 
         if !suppressTrim {
@@ -392,6 +387,11 @@ final class PersistentHistoryStore {
     }
 
     func totalCount() -> Int {
+        dbQueue.sync { totalCountLocked() }
+    }
+
+    /// Must run on dbQueue (or during init, before any concurrency exists).
+    private func totalCountLocked() -> Int {
         guard let db = db else { return 0 }
         let sql = "SELECT COUNT(*) FROM history"
         var stmt: OpaquePointer?
@@ -452,16 +452,19 @@ final class PersistentHistoryStore {
             Log.error("PersistentHistoryStore: failed to decode import JSON: \(error)")
             return 0
         }
-        execute("BEGIN")
-        suppressTrim = true
-        var count = 0
-        for record in records {
-            insertSync(record)
-            count += 1
+        let count = dbQueue.sync {
+            execute("BEGIN")
+            suppressTrim = true
+            var count = 0
+            for record in records {
+                insertLocked(record)
+                count += 1
+            }
+            suppressTrim = false
+            execute("COMMIT")
+            trimIfNeeded()
+            return count
         }
-        suppressTrim = false
-        execute("COMMIT")
-        trimIfNeeded()
         Log.info("PersistentHistoryStore: imported \(count) records")
         return count
     }
@@ -484,17 +487,27 @@ final class PersistentHistoryStore {
     }
 
     func clearOlderThan(days: Int) {
-        guard let db = db else { return }
-        let cutoff = Date().addingTimeInterval(-Double(days * 86400)).timeIntervalSince1970
-        let sql = "DELETE FROM history WHERE timestamp < ?"
-        var stmt: OpaquePointer?
-        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return }
-        defer { sqlite3_finalize(stmt) }
-        sqlite3_bind_double(stmt, 1, cutoff)
-        if sqlite3_step(stmt) != SQLITE_DONE {
-            Log.error("PersistentHistoryStore: clearOlderThan failed: \(String(cString: sqlite3_errmsg(db)))")
+        dbQueue.sync { [self] in
+            guard let db = db else { return }
+            let cutoff = Date().addingTimeInterval(-Double(days * 86400)).timeIntervalSince1970
+            let sql = "DELETE FROM history WHERE timestamp < ?"
+            var stmt: OpaquePointer?
+            guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return }
+            defer { sqlite3_finalize(stmt) }
+            sqlite3_bind_double(stmt, 1, cutoff)
+            if sqlite3_step(stmt) != SQLITE_DONE {
+                Log.error("PersistentHistoryStore: clearOlderThan failed: \(String(cString: sqlite3_errmsg(db)))")
+                return
+            }
+            // Keep the cached count honest — a stale (inflated) count makes
+            // the next trimIfNeeded delete valid oldest records to satisfy a
+            // phantom excess.
+            let removed = Int(sqlite3_changes(db))
+            if removed > 0, let count = cachedCount {
+                cachedCount = max(0, count - removed)
+            }
+            Log.info("PersistentHistoryStore: cleared \(removed) record(s) older than \(days) days")
         }
-        Log.info("PersistentHistoryStore: cleared history older than \(days) days")
     }
 
     private func trimIfNeeded() {

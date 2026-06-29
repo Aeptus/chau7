@@ -227,6 +227,39 @@ extension OverlayTabsModel {
         }
     }
 
+    /// Canonicalize a filesystem path for directory-ownership comparison.
+    ///
+    /// Pipeline: trim whitespace → tilde-expand → guard non-absolute →
+    /// resolve symlinks + standardize. Without this, macOS's `/var` →
+    /// `/private/var` aliasing, trailing slashes, stray `..` segments, and
+    /// historical saved states carrying `~/proj` would produce string-
+    /// inequality on paths that are the same directory on disk — silently
+    /// rejecting valid prefills.
+    ///
+    /// **Relative paths are returned as-is**, not expanded against the
+    /// process's current working directory. expected/current paths in this
+    /// codebase come from shell `pwd` and OSC-7, which are always
+    /// absolute; if a malformed relative value sneaks in, we'd rather get
+    /// a clean string-inequality reject than implicitly resolve to the
+    /// Chau7 app's cwd and silently match the wrong directory.
+    ///
+    /// Empty in → empty out (a directory-less saved state is still a
+    /// legitimate value; `URL(fileURLWithPath:).resolvingSymlinksInPath`
+    /// on `""` would return `/`, conflating "no directory" with "root").
+    static func canonicalizeRestoreDirectory(_ raw: String) -> String {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return "" }
+        let expanded: String
+        if trimmed.hasPrefix("~") {
+            expanded = (trimmed as NSString).expandingTildeInPath
+        } else {
+            expanded = trimmed
+        }
+        // Absolute path required — see doc comment above.
+        guard expanded.hasPrefix("/") else { return expanded }
+        return URL(fileURLWithPath: expanded).resolvingSymlinksInPath().path
+    }
+
     static func evaluateResumeRestoreIntent(
         expectedDirectory: String,
         currentDirectory: String,
@@ -235,8 +268,8 @@ extension OverlayTabsModel {
         expectedSessionID: String?,
         currentSessionID: String?
     ) -> ResumeRestoreIntentMatch {
-        let normalizedExpectedDirectory = expectedDirectory.trimmingCharacters(in: .whitespacesAndNewlines)
-        let normalizedCurrentDirectory = currentDirectory.trimmingCharacters(in: .whitespacesAndNewlines)
+        let normalizedExpectedDirectory = canonicalizeRestoreDirectory(expectedDirectory)
+        let normalizedCurrentDirectory = canonicalizeRestoreDirectory(currentDirectory)
         let normalizedExpectedProvider = AIResumeParser.normalizeProviderName(expectedProvider ?? "")
         let normalizedExpectedSessionID = OverlayTabsModel.normalizeAISessionId(expectedSessionID)
         let normalizedCurrentSessionID = OverlayTabsModel.normalizeAISessionId(currentSessionID)
@@ -244,14 +277,40 @@ extension OverlayTabsModel {
         // Directory ownership check. The previous `isEmpty ||` shortcut
         // treated "expected directory unknown" as "match anything" — which
         // silently delivered a resume command to whatever session happened
-        // to occupy the pane slot. Tighten: accept only if the normalized
+        // to occupy the pane slot. Tighten: accept only if the canonical
         // strings are equal (both empty is still fine — a genuinely
         // directory-less saved state matching a directory-less live session
         // is not a mismatch). Empty-expected + non-empty-current is now
-        // rejected.
+        // rejected. Canonicalization handles macOS /var ↔ /private/var,
+        // trailing slashes, and .. resolution.
         let directoryMatches = normalizedExpectedDirectory == normalizedCurrentDirectory
-        let providerMatches = normalizedExpectedProvider == nil || normalizedExpectedProvider == currentProvider
-        let sessionMatches = normalizedExpectedSessionID == nil || normalizedExpectedSessionID == normalizedCurrentSessionID
+
+        // Provider / session ownership check. Three-way:
+        //   - expected = nil  → wildcard, always matches (saved state lacked
+        //                       identity, trust the live session).
+        //   - current  = nil  → identity not yet corroborated. The launch
+        //                       arguments (`claude --resume <id>` /
+        //                       `codex resume <id>`) guarantee the session
+        //                       is the right one — identity detection just
+        //                       hasn't caught up to the prompt. Treat as
+        //                       match and let delivery proceed; rejecting
+        //                       here is the recurring class of regression
+        //                       that loses prefills every time identity
+        //                       detection is tightened. (See git history
+        //                       around b39a863a / d485275c.)
+        //   - both set        → must be equal.
+        let providerMatches: Bool
+        if let expected = normalizedExpectedProvider {
+            providerMatches = currentProvider == nil || currentProvider == expected
+        } else {
+            providerMatches = true
+        }
+        let sessionMatches: Bool
+        if let expected = normalizedExpectedSessionID {
+            sessionMatches = normalizedCurrentSessionID == nil || normalizedCurrentSessionID == expected
+        } else {
+            sessionMatches = true
+        }
 
         return ResumeRestoreIntentMatch(
             directoryMatches: directoryMatches,

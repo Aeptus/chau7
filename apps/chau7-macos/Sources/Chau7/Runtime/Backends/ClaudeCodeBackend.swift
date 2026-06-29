@@ -29,21 +29,7 @@ struct ClaudeCodeBackend: AgentBackend {
 
         parts.append(contentsOf: config.args)
         let command = ShellEscaping.escapeArguments(parts)
-
-        // Prepend environment variables
-        let envPrefix = ShellEscaping.escapeEnvironmentAssignments(config.environment)
-        if !envPrefix.isEmpty {
-            return envPrefix + " " + command
-        }
-        return command
-    }
-
-    func formatPromptInput(_ prompt: String, context: String?) -> String {
-        // Claude Code reads prompts from stdin, terminated by newline
-        if let context, !context.isEmpty {
-            return "\(context)\n\n\(prompt)\n"
-        }
-        return prompt + "\n"
+        return prependingEnvironment(command, config.environment)
     }
 
     var resumeProviderKey: String? {
@@ -54,21 +40,4 @@ struct ClaudeCodeBackend: AgentBackend {
         .interactiveAgent
     }
 
-    // MARK: - State Mapping
-
-    /// Maps Claude Code monitor session states to runtime triggers.
-    static func trigger(from sessionState: ClaudeCodeMonitor.ClaudeSessionInfo.SessionState) -> RuntimeSessionStateMachine.Trigger? {
-        switch sessionState {
-        case .active, .responding:
-            return nil // stay in .busy — no transition needed
-        case .waitingPermission:
-            return .approvalNeeded
-        case .waitingInput:
-            return .turnCompleted
-        case .idle:
-            return .turnCompleted
-        case .closed:
-            return .tabClosed
-        }
-    }
 }

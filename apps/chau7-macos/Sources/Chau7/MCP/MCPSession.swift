@@ -477,7 +477,11 @@ final class MCPSession {
             ],
             [
                 "name": "tab_create",
-                "description": "Open a new terminal tab in Chau7. Returns the tab ID for subsequent operations.",
+                "description": [
+                    "Open a new terminal tab in Chau7 — the first step to launch an AI coding agent (Claude Code, Codex, etc.).",
+                    "Returns the tab ID for subsequent operations; follow with tab_exec to start the agent and tab_submit_prompt to send it a task.",
+                    "To spawn one or more agents in a single call, prefer agent_launch."
+                ].joined(separator: " "),
                 "inputSchema": [
                     "type": "object",
                     "properties": [
@@ -489,7 +493,7 @@ final class MCPSession {
             [
                 "name": "tab_exec",
                 "description": [
-                    "Execute a shell command in a tab.",
+                    "Execute a shell command in a tab — use this to launch an AI agent (e.g. claude, codex) or run any command.",
                     "If the shell is still bootstrapping or the live view is not yet attached, Chau7 accepts the command and queues it automatically.",
                     "Use tab_status.can_accept_exec or tab_wait_ready to gate deterministic launch submission, and ready_for_exec when you need immediate prompt-ready execution without queueing."
                 ].joined(separator: " "),
@@ -563,7 +567,7 @@ final class MCPSession {
             ],
             [
                 "name": "tab_submit_prompt",
-                "description": "Submit the current interactive prompt in a tab by sending Enter as a key press.",
+                "description": "Submit the current interactive prompt in a tab — e.g. send a queued task to a running AI agent like Claude Code — by sending Enter as a key press.",
                 "inputSchema": [
                     "type": "object",
                     "properties": [
@@ -599,6 +603,29 @@ final class MCPSession {
                         ]
                     ],
                     "required": ["tab_id"]
+                ]
+            ],
+            [
+                "name": "agent_launch",
+                "description": [
+                    "Launch one or more AI coding agents (Claude Code, Codex, etc.) in fresh Chau7 tabs and optionally hand each a task prompt.",
+                    "High-level orchestration entrypoint: composes tab_create + tab_wait_ready + tab_exec (+ best-effort prompt injection) so you don't wire the primitives yourself.",
+                    "Use it to fan a review or task across N parallel agents — e.g. reviewing a pull request. Returns the created tab IDs; collect each agent's output later with tab_output (source='pty_log')."
+                ].joined(separator: " "),
+                "inputSchema": [
+                    "type": "object",
+                    "properties": [
+                        "directory": ["type": "string", "description": "Repo / working directory each agent tab opens in (inherited if omitted)"],
+                        "agent_command": ["type": "string", "description": "Command that starts the agent, e.g. 'claude' or 'codex'. Defaults to 'claude'."],
+                        "prompt": [
+                            "type": "string",
+                            "description": "Optional task prompt handed to each agent once it attaches (best-effort: typed in and submitted). For full reliability, embed the prompt in agent_command if the CLI supports it."
+                        ],
+                        "count": ["type": "integer", "description": "Number of agents to launch (default 1). Capped by the MCP tab limit."],
+                        "pr_number": ["type": "integer", "description": "Optional GitHub PR number; if set, each tab runs 'gh pr checkout <pr>' before starting the agent."],
+                        "window_id": ["type": "integer", "description": "Target window (from tab_list). Defaults to the preferred window."],
+                        "ready_timeout_ms": ["type": "integer", "description": "Per-agent max wait (ms) for tab readiness and agent attach. Default 30000."]
+                    ]
                 ]
             ],
             [
@@ -776,36 +803,22 @@ final class MCPSession {
         case "chau7_unsubscribe":
             return unsubscribeFromChau7State(arguments: arguments)
 
-        // Control plane
-        case "tab_list":
-            return classifyToolResponse(controlPlane.call(name: "tab_list", arguments: arguments))
+        // Control plane — the case label always equals the tool name and
+        // controlPlane.call forwards it, so dispatch all tab_* tools uniformly.
+        case "tab_list", "tab_create", "tab_exec", "tab_status", "tab_wait_ready",
+             "tab_send_input", "tab_press_key", "tab_submit_prompt", "tab_close", "tab_output":
+            return classifyToolResponse(controlPlane.call(name: name, arguments: arguments))
 
-        case "tab_create":
-            return classifyToolResponse(controlPlane.call(name: "tab_create", arguments: arguments))
-
-        case "tab_exec":
-            return classifyToolResponse(controlPlane.call(name: "tab_exec", arguments: arguments))
-
-        case "tab_status":
-            return classifyToolResponse(controlPlane.call(name: "tab_status", arguments: arguments))
-
-        case "tab_wait_ready":
-            return classifyToolResponse(controlPlane.call(name: "tab_wait_ready", arguments: arguments))
-
-        case "tab_send_input":
-            return classifyToolResponse(controlPlane.call(name: "tab_send_input", arguments: arguments))
-
-        case "tab_press_key":
-            return classifyToolResponse(controlPlane.call(name: "tab_press_key", arguments: arguments))
-
-        case "tab_submit_prompt":
-            return classifyToolResponse(controlPlane.call(name: "tab_submit_prompt", arguments: arguments))
-
-        case "tab_close":
-            return classifyToolResponse(controlPlane.call(name: "tab_close", arguments: arguments))
-
-        case "tab_output":
-            return classifyToolResponse(controlPlane.call(name: "tab_output", arguments: arguments))
+        case "agent_launch":
+            return classifyToolResponse(controlService.launchAgents(
+                directory: arguments["directory"] as? String,
+                windowID: arguments["window_id"] as? Int,
+                agentCommand: (arguments["agent_command"] as? String) ?? "claude",
+                prompt: arguments["prompt"] as? String,
+                count: arguments["count"] as? Int ?? 1,
+                prNumber: arguments["pr_number"] as? Int,
+                readyTimeoutMs: arguments["ready_timeout_ms"] as? Int ?? 30000
+            ))
 
         case "tab_set_cto":
             guard let tabID = arguments["tab_id"] as? String,

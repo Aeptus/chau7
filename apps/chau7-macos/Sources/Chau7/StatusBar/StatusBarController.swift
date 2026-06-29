@@ -894,7 +894,9 @@ struct StatusBarPanelView: View {
     // MARK: - Unified Feed
 
     private var unifiedFeedSection: some View {
-        let timeline = viewModel.unifiedTimeline(historyEntries: NotificationManager.shared.history.recent(limit: 8))
+        let timeline = viewModel.unifiedTimeline(
+            historyEntries: NotificationServices.current?.manager.history.recent(limit: 8) ?? []
+        )
         return VStack(alignment: .leading, spacing: 8) {
             Label(L("statusBar.activity", "Activity"), systemImage: "clock")
                 .font(.system(size: 12, weight: .semibold))

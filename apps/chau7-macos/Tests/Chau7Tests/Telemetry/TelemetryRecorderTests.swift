@@ -1,5 +1,4 @@
 import XCTest
-#if !SWIFT_PACKAGE
 @testable import Chau7
 
 final class TelemetryRecorderTests: XCTestCase {
@@ -36,4 +35,3 @@ final class TelemetryRecorderTests: XCTestCase {
         )
     }
 }
-#endif

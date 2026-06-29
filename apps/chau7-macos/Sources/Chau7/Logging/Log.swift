@@ -3,7 +3,24 @@ import Darwin
 import Chau7Core
 
 enum Log {
-    static var sink: ((String) -> Void)?
+    /// Optional runtime tap for log lines (debug console, tests). Lock-guarded:
+    /// the closure reference is read on every log call from every thread and
+    /// assigned at runtime — racing a reference write against reads is UB.
+    static var sink: ((String) -> Void)? {
+        get {
+            sinkLock.lock()
+            defer { sinkLock.unlock() }
+            return _sink
+        }
+        set {
+            sinkLock.lock()
+            defer { sinkLock.unlock() }
+            _sink = newValue
+        }
+    }
+
+    private static let sinkLock = NSLock()
+    private static var _sink: ((String) -> Void)?
 
     private static let formatter: ISO8601DateFormatter = {
         let formatter = ISO8601DateFormatter()

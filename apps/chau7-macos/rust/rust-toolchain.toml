@@ -1,0 +1,7 @@
+# Pin the Rust toolchain so the dylibs in every build (local dev, local
+# release, any other machine) come from the same compiler. Without this the
+# compiler floated per machine, letting dylib behavior/ABI skew between
+# release paths. Bump deliberately together with a full test pass.
+[toolchain]
+channel = "1.96.0"
+components = ["rustfmt", "clippy"]

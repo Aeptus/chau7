@@ -77,6 +77,7 @@ final class UsageMonitor {
     /// In-memory cache of the last snapshot per provider to avoid re-reading
     /// the entire JSONL file on every appendSnapshotIfNeeded call.
     @ObservationIgnored private var lastSnapshotByProvider: [String: ProviderQuotaSnapshot] = [:]
+    @ObservationIgnored private var didSeedSnapshotCache = false
     /// Avoids redundant file I/O from ensureClaudeStatusLineInstalled on every refresh cycle.
     @ObservationIgnored private var claudeStatusLineInstalled = false
 
@@ -149,6 +150,11 @@ final class UsageMonitor {
         let snapshotsPath = Self.snapshotsFilePath
         let claudeSettingsPath = RuntimeIsolation.pathInHome(".claude/settings.json")
         let claudeHelperPath = RuntimeIsolation.pathInHome(".chau7/bin/\(ClaudeCodeStatusLineConfiguration.helperName)")
+        // Snapshot main-mutated observables before hopping off-main (same
+        // pattern as refreshLatencySection) — reading them inside the global
+        // block raced UI writes.
+        let latencyTimeRange = selectedLatencyTimeRange
+        let currentLatencyProvider = selectedLatencyProvider
 
         DispatchQueue.global(qos: .utility).async {
             if claudeStatusLineEnabled {
@@ -165,13 +171,16 @@ final class UsageMonitor {
             let latestByProvider = Dictionary(grouping: snapshots, by: { $0.provider.lowercased() }).compactMapValues { group in
                 group.max(by: { $0.capturedAt < $1.capturedAt })
             }
+            // First-wins uniquing: lowercasing can collapse two provider rows
+            // ("OpenAI"/"openai") into one key; don't crash the usage refresh.
             let recentConsumption = Dictionary(
-                uniqueKeysWithValues: TelemetryStore.shared
+                TelemetryStore.shared
                     .consumptionPerProvider(after: cutoff)
-                    .map { ($0.provider.lowercased(), $0) }
+                    .map { ($0.provider.lowercased(), $0) },
+                uniquingKeysWith: { first, _ in first }
             )
-            let latencySamples = self.loadLatencySamples(for: self.selectedLatencyTimeRange)
-            let activitySamples = self.loadActivitySamples(for: self.selectedLatencyTimeRange)
+            let latencySamples = self.loadLatencySamples(for: latencyTimeRange)
+            let activitySamples = self.loadActivitySamples(for: latencyTimeRange)
             let interactionCounts = Dictionary(
                 grouping: activitySamples,
                 by: { $0.provider.lowercased() }
@@ -181,7 +190,7 @@ final class UsageMonitor {
                 activitySamples: activitySamples
             )
             let selectedLatencyProvider = self.resolveSelectedLatencyProvider(
-                current: self.selectedLatencyProvider,
+                current: currentLatencyProvider,
                 available: latencyProviders.map(\.provider)
             )
             let latencyDashboard = selectedLatencyProvider.flatMap { provider in
@@ -257,6 +266,9 @@ final class UsageMonitor {
 
         let url = URL(fileURLWithPath: settingsPath)
         guard let currentData = try? Data(contentsOf: url) else {
+            // The flag flips off but the helper hook stays wired into
+            // Claude's settings — say so instead of pretending success.
+            lastErrorMessage = "Failed to uninstall Claude statusLine: could not read \(settingsPath); the hook may still be installed"
             FeatureSettings.shared.isClaudeStatusLineQuotaCaptureEnabled = false
             refreshNow()
             return
@@ -272,6 +284,7 @@ final class UsageMonitor {
             in: currentData,
             backupStatusLineData: backupData
         ) else {
+            lastErrorMessage = "Failed to uninstall Claude statusLine: settings.json could not be rewritten; the hook may still be installed"
             FeatureSettings.shared.isClaudeStatusLineQuotaCaptureEnabled = false
             refreshNow()
             return
@@ -612,12 +625,13 @@ final class UsageMonitor {
     private func appendSnapshotIfNeeded(_ snapshot: ProviderQuotaSnapshot) {
         let providerKey = snapshot.provider.lowercased()
 
-        // Seed the in-memory cache on first call for this provider.
-        if lastSnapshotByProvider[providerKey] == nil {
-            let existing = loadSnapshots(from: Self.snapshotsFilePath)
-                .last { $0.provider.caseInsensitiveCompare(snapshot.provider) == .orderedSame }
-            if let existing {
-                lastSnapshotByProvider[providerKey] = existing
+        // Seed the in-memory cache from a single file read covering all providers,
+        // rather than re-parsing the whole snapshots file once per provider seen.
+        // loadSnapshots is sorted ascending by capturedAt, so the last write wins.
+        if !didSeedSnapshotCache {
+            didSeedSnapshotCache = true
+            for existing in loadSnapshots(from: Self.snapshotsFilePath) {
+                lastSnapshotByProvider[existing.provider.lowercased()] = existing
             }
         }
 

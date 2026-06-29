@@ -27,6 +27,8 @@ private final class OverlayBlurView: NSVisualEffectView {
     }
 
     private var overlayHosts: [OverlayHost] = []
+    /// Debounce for bursty `didChangeScreenParametersNotification` re-clamps.
+    private var screenParamsDebounce: DispatchWorkItem?
     private(set) weak var activeOverlayModel: OverlayTabsModel?
     private var lastOverlayDiagLogAt: CFAbsoluteTime = 0
     private var lastOverlayDiagReason = ""
@@ -67,6 +69,12 @@ private final class OverlayBlurView: NSVisualEffectView {
     private var multiWindowAutoSaveTimer: DispatchSourceTimer?
     private var lastSavedWindowStates: [[SavedTabState]] = []
     private var lastSavedWindowStatesAt: Date?
+    /// Cheap structural fingerprint of the live windows at the time
+    /// `lastSavedWindowStates` was captured. Termination may only reuse the
+    /// cached snapshot when the current fingerprint still matches — otherwise
+    /// a tab created/renamed/recolored/cd'd (or an AI session started) in the
+    /// final seconds before quit would be silently lost to timer phase.
+    private var lastSavedWindowStatesSignature: [[String]] = []
 
     // MARK: - App Nap Prevention
 
@@ -118,6 +126,10 @@ private final class OverlayBlurView: NSVisualEffectView {
         purgeLargePTYLogs()
         UsageMonitor.shared.start()
         MemoryPressureResponder.shared.start()
+        // Without this, the pressure coordinator's only registrant was the
+        // 10MB/tab transcript ring — the heavy per-tab caches (snapshots,
+        // buffer-line duplicates, search buffers) never shrank before jetsam.
+        TerminalMemoryReclaimer.shared.arm()
         // Under memory pressure, re-evaluate the render lifecycle so non-selected
         // tabs demote to `.hidden` and flush their scrollback to disk.
         NotificationCenter.default.addObserver(
@@ -258,6 +270,11 @@ private final class OverlayBlurView: NSVisualEffectView {
         // Restore additional windows from multi-window save state
         restoreAdditionalWindows()
         Self.logRSSSample("startup_restore_windows_prepared windows=\(overlayHosts.count)")
+
+        // All surviving tabs are known now — delete scrollback cache files for
+        // tabs that no longer exist (closed-while-hidden tabs leaked theirs).
+        let liveTabIDs = Set(overlayHosts.flatMap { $0.model.tabs.map(\.id) })
+        ScrollbackMemoryManager.shared.sweepOrphanedCaches(keeping: liveTabIDs)
 
         // Ensure theme is applied after windows exist
         applyAppTheme()
@@ -642,10 +659,11 @@ private final class OverlayBlurView: NSVisualEffectView {
         TerminalControlService.shared.register(tabsModel)
         let windowNumber = allocateOverlayWindowNumber()
         let window = createOverlayWindow(tabsModel: tabsModel, windowNumber: windowNumber)
-        overlayHosts.append(OverlayHost(window: window, model: tabsModel))
+        let host = OverlayHost(window: window, model: tabsModel)
+        overlayHosts.append(host)
         activeOverlayModel = tabsModel
         wireTabMoveCallbacks()
-        showOverlayWindow(overlayHosts.last!, reason: "newWindow")
+        showOverlayWindow(host, reason: "newWindow")
     }
 
     func newTab() {
@@ -667,6 +685,9 @@ private final class OverlayBlurView: NSVisualEffectView {
                 self?.telemetryRepairWorkItem?.cancel()
                 self?.telemetryRepairWorkItem = nil
                 self?.enableLowLatency()
+                // Returning to the app is the moment a repo may have been moved
+                // in Finder; heal any group tags now orphaned by the move.
+                self?.reconcileStaleRepoGroupsAcrossWindows()
             }
         }
         let resignObs = NotificationCenter.default.addObserver(
@@ -686,6 +707,15 @@ private final class OverlayBlurView: NSVisualEffectView {
 
     private func enableLowLatency() {
         refreshLowLatencyActivity()
+    }
+
+    /// Re-tags tabs whose repo group points at a directory that no longer
+    /// exists (e.g. after the repo was moved or renamed on disk) across every
+    /// open window. Cheap and idempotent — a no-op when nothing has moved.
+    private func reconcileStaleRepoGroupsAcrossWindows() {
+        for host in overlayHosts {
+            host.model.reconcileStaleRepoGroups()
+        }
     }
 
     private func refreshLowLatencyActivity() {
@@ -1299,18 +1329,33 @@ private final class OverlayBlurView: NSVisualEffectView {
 
     static let terminationStateReuseFreshness: TimeInterval = 35
 
+    /// The cached snapshot is reusable at quit only when it is recent AND the
+    /// live window structure still matches the fingerprint captured when the
+    /// snapshot was saved. The autosave interval (30s) exceeds nothing here:
+    /// any structural change since the last save forces a fresh collection,
+    /// so reuse can only ever skip re-capturing scrollback content.
     func shouldReuseCachedWindowStatesForTermination(now: Date = Date()) -> Bool {
         guard let lastSavedWindowStatesAt,
               !lastSavedWindowStates.isEmpty else {
             return false
         }
-        return now.timeIntervalSince(lastSavedWindowStatesAt) <= Self.terminationStateReuseFreshness
+        guard now.timeIntervalSince(lastSavedWindowStatesAt) <= Self.terminationStateReuseFreshness else {
+            return false
+        }
+        return currentWindowStateSignature() == lastSavedWindowStatesSignature
+    }
+
+    private func currentWindowStateSignature() -> [[String]] {
+        overlayHosts
+            .filter { !$0.model.tabs.isEmpty }
+            .map { $0.model.liveStateSignature() }
     }
 
     #if DEBUG
     func setCachedWindowStatesForTesting(_ states: [[SavedTabState]], at date: Date?) {
         lastSavedWindowStates = states
         lastSavedWindowStatesAt = date
+        lastSavedWindowStatesSignature = currentWindowStateSignature()
     }
     #endif
 
@@ -1326,6 +1371,7 @@ private final class OverlayBlurView: NSVisualEffectView {
     private func persistWindowStates(_ allWindows: [[SavedTabState]], reason: TabStateSaveReason) {
         lastSavedWindowStates = allWindows
         lastSavedWindowStatesAt = Date()
+        lastSavedWindowStatesSignature = currentWindowStateSignature()
 
         var legacyPayloadBytes = 0
         var multiWindowPayloadBytes = 0
@@ -1341,10 +1387,18 @@ private final class OverlayBlurView: NSVisualEffectView {
         // motivated moving the heavy payloads out.
         let indexWindows = allWindows.map { window in window.map(\.strippedForRestoreIndex) }
 
+        // One token per save cycle, stamped on the index AND the bundle
+        // manifest. At restore, token equality tells whether the bundle still
+        // reflects the latest save (see RestoreSourceArbiter) — a bundle that
+        // silently failed to write for hours must not beat a fresh index.
+        let saveToken = UUID().uuidString
+        var indexWriteSucceeded = false
+
         if let firstWindow = indexWindows.first,
            let data = Persist.encodeLogged(firstWindow, context: "window0.tabState") {
             legacyPayloadBytes = data.count
             UserDefaults.standard.set(data, forKey: SavedTabState.userDefaultsKey)
+            indexWriteSucceeded = true
         }
         if indexWindows.count > 1 {
             let multiState = SavedMultiWindowState(windows: indexWindows)
@@ -1355,13 +1409,17 @@ private final class OverlayBlurView: NSVisualEffectView {
         } else {
             UserDefaults.standard.removeObject(forKey: SavedMultiWindowState.userDefaultsKey)
         }
+        if indexWriteSucceeded {
+            UserDefaults.standard.set(saveToken, forKey: SavedTabState.restoreIndexSaveTokenKey)
+        }
         do {
             // sourceData nil → the bundle fingerprints from the full state (incl.
             // scrollback) so sidecars re-flush when only scrollback changes.
             _ = try TabRestoreBundleStore.persistCurrentBundle(
                 windowStates: allWindows,
                 reason: reason,
-                sourceData: nil
+                sourceData: nil,
+                saveToken: indexWriteSucceeded ? saveToken : nil
             )
         } catch {
             Log.warn("Failed to persist split tab restore bundle [\(reason.rawValue)]: \(error)")
@@ -1540,13 +1598,14 @@ private final class OverlayBlurView: NSVisualEffectView {
             TerminalControlService.shared.register(tabsModel)
             let windowNumber = allocateOverlayWindowNumber()
             let window = createOverlayWindow(tabsModel: tabsModel, windowNumber: windowNumber)
-            overlayHosts.append(OverlayHost(window: window, model: tabsModel))
+            let host = OverlayHost(window: window, model: tabsModel)
+            overlayHosts.append(host)
             Self.logRSSSample("moveTab[\(dragID)] after createOverlayWindow")
             wireTabMoveCallbacks()
             Self.logRSSSample("moveTab[\(dragID)] after wireTabMoveCallbacks")
             hideEmptiedWindowIfNeeded(at: fromWindowIndex, reason: "moveTab-hideEmptiedSource")
             Self.logRSSSample("moveTab[\(dragID)] after hideEmptiedWindowIfNeeded")
-            showOverlayWindow(overlayHosts.last!, reason: "moveToNewWindow")
+            showOverlayWindow(host, reason: "moveToNewWindow")
             Self.logRSSSample("moveTab[\(dragID)] after showOverlayWindow (newWindow)")
             Log.info("Moved tab \(tabID) to new window \(windowNumber)")
         } else {
@@ -1575,13 +1634,14 @@ private final class OverlayBlurView: NSVisualEffectView {
             Log.info("Moved tab \(tabID) from window \(fromWindowIndex) to \(toWindowIndex)")
         }
 
-        // Schedule delayed samples across the window during which the
-        // 50GB spike was observed (~52s after drag end in historical logs).
-        // This tells us whether the leak happens inside moveTab's call chain
-        // or later during async lifecycle / render fanout.
-        for delay in [0.1, 1.0, 5.0, 15.0, 30.0, 50.0] {
-            DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
-                Self.logRSSSample("moveTab[\(dragID)] +\(delay)s")
+        // Schedule delayed samples across the window during which the 50GB spike
+        // was observed (~52s after drag end in historical logs) — only when memory
+        // diagnostics are enabled, so normal drags don't keep work scheduled 50s out.
+        if EnvVars.isEnabled(EnvVars.memoryDiagnostics) {
+            for delay in [0.1, 1.0, 5.0, 15.0, 30.0, 50.0] {
+                DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+                    Self.logRSSSample("moveTab[\(dragID)] +\(delay)s")
+                }
             }
         }
     }
@@ -1623,10 +1683,11 @@ private final class OverlayBlurView: NSVisualEffectView {
             TerminalControlService.shared.register(tabsModel)
             let windowNumber = allocateOverlayWindowNumber()
             let window = createOverlayWindow(tabsModel: tabsModel, windowNumber: windowNumber)
-            overlayHosts.append(OverlayHost(window: window, model: tabsModel))
+            let host = OverlayHost(window: window, model: tabsModel)
+            overlayHosts.append(host)
             wireTabMoveCallbacks()
             hideEmptiedWindowIfNeeded(at: fromWindowIndex, reason: "moveGroup-hideEmptiedSource")
-            showOverlayWindow(overlayHosts.last!, reason: "moveGroupToNewWindow")
+            showOverlayWindow(host, reason: "moveGroupToNewWindow")
             Log.info("Moved group \(repoGroupID) (\(groupTabs.count) tabs) to new window \(windowNumber)")
         } else {
             guard toWindowIndex < overlayHosts.count else {
@@ -1744,8 +1805,11 @@ private final class OverlayBlurView: NSVisualEffectView {
             from: UserDefaults.standard.data(forKey: SavedMultiWindowState.userDefaultsKey),
             context: "multiWindow.restore"
         )
-        if let bundleWindows = TabRestoreBundleStore.loadCurrentWindowStates(), bundleWindows.count > 1 {
+        if OverlayTabsModel.bundleIsCurrentRestoreSource(),
+           let bundleWindows = TabRestoreBundleStore.loadCurrentWindowStates(), bundleWindows.count > 1 {
             // Primary: the file-based restore bundle (windows beyond the first).
+            // Same freshest-wins arbitration as the primary-window restore so
+            // window 0 and windows 1..N come from one consistent source.
             restoredWindows = Array(bundleWindows.dropFirst())
             restoreSource = "restore bundle"
         } else if let multiState, multiState.windows.count > 1 {
@@ -1774,22 +1838,37 @@ private final class OverlayBlurView: NSVisualEffectView {
             return
         }
 
-        // Deduplicate: skip any additional window whose tab IDs overlap heavily
-        // with window 0 (prevents duplicated windows from cascading across restarts).
+        // Hard per-tab dedup across all windows: a saved tab restores exactly
+        // once, no matter how many window snapshots claim its ID (first
+        // occurrence wins). This replaces the old >50%-overlap window skip,
+        // which let partially-duplicated windows restore both copies and
+        // re-persist the duplication forever.
         let window0TabIDs = Set(overlayHosts.first?.model.tabs.map(\.id) ?? [])
+        let claims = WindowStateRestorePlanner.claimTabs(
+            alreadyClaimed: window0TabIDs,
+            windows: restoredWindows.map { windowStates in
+                windowStates.map { UUID(uuidString: $0.tabID ?? "") }
+            }
+        )
 
         for (windowIndex, windowStates) in restoredWindows.enumerated() {
             guard !windowStates.isEmpty else { continue }
-            let additionalTabIDs = Set(windowStates.compactMap { UUID(uuidString: $0.tabID ?? "") })
-            let overlap = window0TabIDs.intersection(additionalTabIDs)
-            if !additionalTabIDs.isEmpty, overlap.count > additionalTabIDs.count / 2 {
-                Log.warn("Skipping duplicate window \(windowIndex + 1): \(overlap.count)/\(additionalTabIDs.count) tab IDs overlap with window 0")
+            let windowClaims = claims[windowIndex]
+            let uniqueStates = zip(windowStates, windowClaims)
+                .filter { $0.1 == .restore }
+                .map(\.0)
+            let droppedCount = windowStates.count - uniqueStates.count
+            if droppedCount > 0 {
+                Log.warn("restoreAdditionalWindows: window \(windowIndex + 1) dropped \(droppedCount)/\(windowStates.count) tab(s) whose IDs were already restored by an earlier window")
+            }
+            guard !uniqueStates.isEmpty else {
+                Log.warn("Skipping duplicate window \(windowIndex + 1): every tab ID was already restored by an earlier window")
                 continue
             }
 
             // Pass pre-decoded states directly — no UserDefaults round-trip
             let windowRestoreStartedAt = CFAbsoluteTimeGetCurrent()
-            let tabsModel = OverlayTabsModel(appModel: model, restoringStates: windowStates)
+            let tabsModel = OverlayTabsModel(appModel: model, restoringStates: uniqueStates)
             TerminalControlService.shared.register(tabsModel)
             let windowNumber = allocateOverlayWindowNumber()
             let window = createOverlayWindow(tabsModel: tabsModel, windowNumber: windowNumber)
@@ -1798,10 +1877,10 @@ private final class OverlayBlurView: NSVisualEffectView {
                 operation: "AppDelegate.restoreAdditionalWindow",
                 startedAt: windowRestoreStartedAt,
                 thresholdMs: 150,
-                metadata: "index=\(windowIndex + 1) tabs=\(windowStates.count)"
+                metadata: "index=\(windowIndex + 1) tabs=\(uniqueStates.count)"
             )
 
-            Log.info("Restored additional window \(windowIndex + 1) with \(windowStates.count) tab(s) from \(restoreSource)")
+            Log.info("Restored additional window \(windowIndex + 1) with \(uniqueStates.count) tab(s) from \(restoreSource)")
         }
 
         // Wire callbacks for ALL windows now that additional hosts are registered.
@@ -2244,10 +2323,19 @@ private final class OverlayBlurView: NSVisualEffectView {
     /// a window that was on-screen on a 4K display can end up with its
     /// bottom under the dock after switching to a 1080p screen.
     @objc private func didChangeScreenParameters(_: Notification) {
-        Log.info("didChangeScreenParameters: re-clamping \(overlayHosts.count) overlay window(s)")
-        for host in overlayHosts {
-            clampOverlayWindowToVisibleFrame(host.window)
+        // macOS fires this in bursts during a display reconfiguration (resolution
+        // change, monitor (un)plug, ProMotion switch). Re-clamping every overlay
+        // window per event is wasteful churn; coalesce into one pass.
+        screenParamsDebounce?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            Log.info("didChangeScreenParameters: re-clamping \(overlayHosts.count) overlay window(s)")
+            for host in overlayHosts {
+                clampOverlayWindowToVisibleFrame(host.window)
+            }
         }
+        screenParamsDebounce = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25, execute: work)
     }
 
     private func clampOverlayWindowToVisibleFrame(_ window: NSWindow) {
@@ -2788,11 +2876,22 @@ private final class OverlayBlurView: NSVisualEffectView {
             )
         }
 
-        if isOverlayWindow,
-           flags == [.command],
-           let tabNumber = tabNumberForKeyCode(event.keyCode) {
-            selectTab(number: tabNumber)
-            return nil
+        if isOverlayWindow {
+            let tabSwitchMode = FeatureSettings.shared.tabSwitchShortcutMode
+            if tabSwitchMode.allowsCommandNumber,
+               flags == [.command],
+               let tabNumber = tabNumberForKeyCode(event.keyCode) {
+                selectTab(number: tabNumber)
+                return nil
+            }
+            // F-keys carry no device-independent modifier once `.function` is
+            // normalized away, so require an otherwise-bare keystroke.
+            if tabSwitchMode.allowsFunctionKeys,
+               flags.isEmpty,
+               let tabNumber = functionKeyTabNumberForKeyCode(event.keyCode) {
+                selectTab(number: tabNumber)
+                return nil
+            }
         }
 
         // ⌘; (Snippets) is now handled by OverlayWindow.performKeyEquivalent
@@ -2881,6 +2980,24 @@ private final class OverlayBlurView: NSVisualEffectView {
         }
     }
 
+    private func functionKeyTabNumberForKeyCode(_ keyCode: UInt16) -> Int? {
+        switch keyCode {
+        case UInt16(kVK_F1): return 1
+        case UInt16(kVK_F2): return 2
+        case UInt16(kVK_F3): return 3
+        case UInt16(kVK_F4): return 4
+        case UInt16(kVK_F5): return 5
+        case UInt16(kVK_F6): return 6
+        case UInt16(kVK_F7): return 7
+        case UInt16(kVK_F8): return 8
+        case UInt16(kVK_F9): return 9
+        case UInt16(kVK_F10): return 10
+        case UInt16(kVK_F11): return 11
+        case UInt16(kVK_F12): return 12
+        default: return nil
+        }
+    }
+
     private func allocateOverlayWindowNumber() -> Int {
         defer { nextOverlayWindowNumber += 1 }
         return nextOverlayWindowNumber
@@ -2888,21 +3005,14 @@ private final class OverlayBlurView: NSVisualEffectView {
 
     /// Current resident memory in MB (mach task_info). Returns nil on failure.
     private static func currentResidentMB() -> Int? {
-        var info = mach_task_basic_info()
-        var count = mach_msg_type_number_t(MemoryLayout<mach_task_basic_info>.size) / 4
-        let result = withUnsafeMutablePointer(to: &info) {
-            $0.withMemoryRebound(to: integer_t.self, capacity: 1) {
-                task_info(mach_task_self_, task_flavor_t(MACH_TASK_BASIC_INFO), $0, &count)
-            }
-        }
-        guard result == KERN_SUCCESS else { return nil }
-        return Int(info.resident_size / 1024 / 1024)
+        ProcessMemory.residentBytes().map { Int($0 / 1024 / 1024) }
     }
 
-    /// Log RSS as an INFO line tagged `rssSample: …`. Always logged (not gated
-    /// by a diagnostic env var) because this is used for an active leak
-    /// investigation — remove once the cross-window-drag leak is root-caused.
+    /// Log RSS as an INFO line tagged `rssSample: …`. Gated behind the
+    /// `CHAU7_MEMORY_DIAGNOSTICS` env flag (off by default) so it costs nothing
+    /// on the hot path; enable it when investigating the cross-window-drag leak.
     fileprivate static func logRSSSample(_ label: String) {
+        guard EnvVars.isEnabled(EnvVars.memoryDiagnostics) else { return }
         if let mb = currentResidentMB() {
             Log.info("rssSample: \(mb)MB — \(label)")
         }

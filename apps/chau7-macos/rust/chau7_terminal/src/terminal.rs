@@ -4,7 +4,7 @@ use std::borrow::Cow;
 use std::collections::{HashMap, VecDeque};
 use std::io::Write;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicI32, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI32, AtomicU16, AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 use alacritty_terminal::event::Event;
@@ -250,9 +250,10 @@ pub struct Chau7Terminal {
     pub(crate) event_rx: Receiver<Event>,
     /// Flag indicating if grid has changed since last poll
     pub(crate) grid_dirty: AtomicBool,
-    /// Terminal dimensions
-    pub(crate) cols: u16,
-    pub(crate) rows: u16,
+    /// Terminal dimensions (atomic: written by `resize` on the UI thread while
+    /// drain threads concurrently read via `debug_state`)
+    pub(crate) cols: AtomicU16,
+    pub(crate) rows: AtomicU16,
     /// Creation timestamp for debugging
     pub(crate) created_at: Instant,
     /// Total bytes received from PTY
@@ -312,10 +313,6 @@ pub struct Chau7Terminal {
     pub(crate) adaptive_poller: AdaptivePoller,
     /// Dirty row tracker for partial updates
     pub(crate) dirty_rows: DirtyRowTracker,
-
-    /// Unicode ambiguous-width treatment: 1 = single-width (Western default),
-    /// 2 = double-width (East Asian). Stored for future grid layout integration.
-    pub(crate) ambiguous_width: AtomicU64,
 
     /// Counter incremented on every `processor.advance` call. Sampled every
     /// `INVARIANT_CHECK_PERIOD` calls to run a grid-state invariant check
@@ -386,8 +383,8 @@ impl Chau7Terminal {
             reader_pool_fd: None,
             event_rx,
             grid_dirty: AtomicBool::new(true),
-            cols,
-            rows,
+            cols: AtomicU16::new(cols),
+            rows: AtomicU16::new(rows),
             created_at,
             bytes_received: AtomicU64::new(0),
             bytes_sent: AtomicU64::new(0),
@@ -411,7 +408,6 @@ impl Chau7Terminal {
             has_pending_shell_events: AtomicBool::new(false),
             adaptive_poller: AdaptivePoller::new(),
             dirty_rows: DirtyRowTracker::new(rows as usize),
-            ambiguous_width: AtomicU64::new(1),
             advance_counter: AtomicU64::new(0),
             graphics_interceptor: Mutex::new(graphics::GraphicsInterceptor::new()),
             image_store: Mutex::new(graphics::ImageStore::new()),
@@ -425,6 +421,21 @@ impl Chau7Terminal {
         rows: u16,
         shell: &str,
         env_vars: &[(&str, &str)],
+    ) -> Result<Self, TerminalError> {
+        Self::new_with_launch(cols, rows, shell, env_vars, &[], None)
+    }
+
+    /// Create a new terminal with full launch control: shell argv (e.g. bash's
+    /// `--rcfile` for interactive shell integration) and an explicit working
+    /// directory (otherwise the child inherits the app's cwd — often `/` when
+    /// launched from Finder).
+    pub fn new_with_launch(
+        cols: u16,
+        rows: u16,
+        shell: &str,
+        env_vars: &[(&str, &str)],
+        args: &[String],
+        cwd: Option<&str>,
     ) -> Result<Self, TerminalError> {
         let id = TERMINAL_COUNTER.fetch_add(1, Ordering::Relaxed);
         let created_at = Instant::now();
@@ -489,6 +500,14 @@ impl Chau7Terminal {
 
         // Prepare shell command
         let mut cmd = CommandBuilder::new(&shell_path);
+        for arg in args {
+            debug!("[terminal-{}] Shell arg: {}", id, arg);
+            cmd.arg(arg);
+        }
+        if let Some(dir) = cwd.filter(|dir| !dir.is_empty()) {
+            debug!("[terminal-{}] Working directory: {}", id, dir);
+            cmd.cwd(dir);
+        }
         cmd.env("TERM", "xterm-256color");
         cmd.env("COLORTERM", "truecolor");
 
@@ -590,12 +609,21 @@ impl Chau7Terminal {
         // The pool's single thread uses poll() to monitor all PTY fds and dispatches
         // PtyMessage::Data to the appropriate channel.
         if reader_fd >= 0 {
-            crate::reader_pool::shared_reader_pool().register(
-                reader_fd,
-                id,
-                pty_tx,
-                running.clone(),
-            );
+            let pool = crate::reader_pool::shared_reader_pool();
+            if !pool.is_running() {
+                // No pool thread → registered fds would never be read and the
+                // terminal would look alive but stay blank forever. Fail the
+                // creation so the UI can show an explicit error instead.
+                error!(
+                    "[terminal-{}] Shared PTY reader pool is not running; aborting terminal creation",
+                    id
+                );
+                unsafe { libc::close(reader_fd) };
+                return Err(TerminalError::ReaderThread(std::io::Error::other(
+                    "shared PTY reader pool thread is not running",
+                )));
+            }
+            pool.register(reader_fd, id, pty_tx, running.clone());
             info!(
                 "[terminal-{}] Registered with shared PTY reader pool (fd={})",
                 id, reader_fd
@@ -636,8 +664,8 @@ impl Chau7Terminal {
             },
             event_rx,
             grid_dirty: AtomicBool::new(true),
-            cols,
-            rows,
+            cols: AtomicU16::new(cols),
+            rows: AtomicU16::new(rows),
             created_at,
             bytes_received: AtomicU64::new(0),
             bytes_sent: AtomicU64::new(0),
@@ -665,8 +693,6 @@ impl Chau7Terminal {
             // Performance optimizations
             adaptive_poller: AdaptivePoller::new(),
             dirty_rows: DirtyRowTracker::new(rows as usize),
-            // Unicode width config
-            ambiguous_width: AtomicU64::new(1),
             advance_counter: AtomicU64::new(0),
             // Graphics protocol support
             graphics_interceptor: Mutex::new(graphics::GraphicsInterceptor::new()),
@@ -836,11 +862,20 @@ impl Chau7Terminal {
         }
     }
 
-    /// Resize the terminal
-    pub fn resize(&mut self, cols: u16, rows: u16) {
+    /// Resize the terminal.
+    ///
+    /// Takes `&self`: the FFI layer calls this from the UI thread while drain
+    /// threads concurrently hold `&self` for `poll_events`/`debug_state`, so a
+    /// `&mut self` receiver would be aliasing UB. All touched state is behind
+    /// mutexes or atomics.
+    pub fn resize(&self, cols: u16, rows: u16) {
         info!(
             "[terminal-{}] Resizing terminal: {}x{} -> {}x{}",
-            self.id, self.cols, self.rows, cols, rows
+            self.id,
+            self.cols.load(Ordering::Relaxed),
+            self.rows.load(Ordering::Relaxed),
+            cols,
+            rows
         );
 
         if cols == 0 || rows == 0 {
@@ -851,21 +886,64 @@ impl Chau7Terminal {
             return;
         }
 
-        self.cols = cols;
-        self.rows = rows;
+        self.cols.store(cols, Ordering::Relaxed);
+        self.rows.store(rows, Ordering::Relaxed);
 
-        // Resize PTY
-        let pty_size = PtySize {
-            rows,
-            cols,
-            pixel_width: 0,
-            pixel_height: 0,
-        };
-        if let Some(handle) = self.pty_handle.lock().as_ref() {
-            if let Err(e) = handle.resize(pty_size) {
-                error!("[terminal-{}] Failed to resize PTY: {}", self.id, e);
+        // Keep the dirty-row tracker's height in sync with the resize, otherwise
+        // its row count stays frozen at the creation height and dirty_count()
+        // (DebugState.dirty_row_count) reports the wrong value.
+        self.dirty_rows.set_rows(rows as usize);
+
+        // Resize the PTY without taking the pty_handle mutex: send_bytes and
+        // the PtyWrite path hold that mutex during a *blocking* write_all
+        // when the child stops reading stdin — resize is called synchronously
+        // from the UI thread (window drag) and must never stall behind a
+        // backpressured write. The dup'd echo_fd ioctls TIOCSWINSZ directly,
+        // the same lock-free pattern echo detection uses for tcgetattr.
+        let mut pty_resized = false;
+        let echo_fd = self.echo_fd.load(Ordering::Acquire);
+        if echo_fd >= 0 {
+            let winsize = libc::winsize {
+                ws_row: rows,
+                ws_col: cols,
+                ws_xpixel: 0,
+                ws_ypixel: 0,
+            };
+            let rc = unsafe { libc::ioctl(echo_fd, libc::TIOCSWINSZ, &winsize) };
+            if rc == 0 {
+                pty_resized = true;
+                debug!("[terminal-{}] PTY resized via TIOCSWINSZ", self.id);
             } else {
-                debug!("[terminal-{}] PTY resized successfully", self.id);
+                error!(
+                    "[terminal-{}] TIOCSWINSZ failed: {}",
+                    self.id,
+                    std::io::Error::last_os_error()
+                );
+            }
+        }
+        if !pty_resized {
+            // Fallback (no dup'd fd): use the handle, but never block behind
+            // a backpressured write — a missed PTY resize self-corrects on
+            // the next layout pass.
+            let pty_size = PtySize {
+                rows,
+                cols,
+                pixel_width: 0,
+                pixel_height: 0,
+            };
+            if let Some(guard) = self.pty_handle.try_lock() {
+                if let Some(handle) = guard.as_ref() {
+                    if let Err(e) = handle.resize(pty_size) {
+                        error!("[terminal-{}] Failed to resize PTY: {}", self.id, e);
+                    } else {
+                        debug!("[terminal-{}] PTY resized successfully", self.id);
+                    }
+                }
+            } else {
+                warn!(
+                    "[terminal-{}] PTY writer busy; skipping PTY winsize update this pass",
+                    self.id
+                );
             }
         }
 
@@ -876,6 +954,52 @@ impl Chau7Terminal {
         debug!("[terminal-{}] Terminal state resized", self.id);
 
         self.grid_dirty.store(true, Ordering::Release);
+    }
+
+    /// Re-deliver a `SIGWINCH` to the PTY's current foreground process group
+    /// without changing the winsize.
+    ///
+    /// This defeats a TUI startup race: a full-screen relative-cursor renderer
+    /// (e.g. Claude Code's Ink) caches the terminal width when it boots and only
+    /// re-reads it on a `resize` event. If a layout pass resizes the view during
+    /// that ~1s boot — before the child installs its `SIGWINCH` handler — the
+    /// child misses the size change, keeps a stale width, and (because it only
+    /// diff-repaints) corrupts its output for the rest of the session.
+    ///
+    /// A plain re-apply of the *same* winsize is insufficient on Darwin: XNU's
+    /// `TIOCSWINSZ` only signals `t_pgrp` when the dimensions actually change
+    /// (`bcmp` guard in `ttioctl`). So we signal the foreground process group
+    /// directly: `tcgetpgrp` on the master returns the slave's foreground pgrp
+    /// (the live TUI's), and `killpg(pgrp, SIGWINCH)` makes it re-read the
+    /// authoritative size once its handler is finally attached.
+    pub fn nudge_winsize(&self) {
+        let echo_fd = self.echo_fd.load(Ordering::Acquire);
+        if echo_fd < 0 {
+            warn!("[terminal-{}] nudge_winsize: no master fd", self.id);
+            return;
+        }
+        let pgrp = unsafe { libc::tcgetpgrp(echo_fd) };
+        if pgrp <= 0 {
+            debug!(
+                "[terminal-{}] nudge_winsize: no foreground pgrp ({})",
+                self.id, pgrp
+            );
+            return;
+        }
+        let rc = unsafe { libc::killpg(pgrp, libc::SIGWINCH) };
+        if rc == 0 {
+            debug!(
+                "[terminal-{}] nudge_winsize: SIGWINCH delivered to pgrp {}",
+                self.id, pgrp
+            );
+        } else {
+            warn!(
+                "[terminal-{}] nudge_winsize: killpg({}) failed: {}",
+                self.id,
+                pgrp,
+                std::io::Error::last_os_error()
+            );
+        }
     }
 
     /// Poll for new data from PTY, process it, and return event flags.
@@ -1679,7 +1803,7 @@ impl Chau7Terminal {
             _ => SelectionType::Simple,
         };
 
-        let point = Point::new(Line(row), Column(col as usize));
+        let point = Self::clamped_selection_point(&term, col, row);
         let selection = Selection::new(ty, point, Side::Left);
         term.selection = Some(selection);
         self.grid_dirty.store(true, Ordering::Release);
@@ -1693,11 +1817,25 @@ impl Chau7Terminal {
         );
         let mut term = self.term.lock();
 
+        let point = Self::clamped_selection_point(&term, col, row);
         if let Some(ref mut selection) = term.selection {
-            let point = Point::new(Line(row), Column(col as usize));
             selection.update(point, Side::Right);
             self.grid_dirty.store(true, Ordering::Release);
         }
+    }
+
+    /// Clamp FFI-provided coordinates to the grid. A negative `col` cast to
+    /// usize would index alacritty's Selection with a ~1.8e19 column — treat
+    /// every FFI input as hostile and clamp to valid grid bounds.
+    fn clamped_selection_point(term: &Term<Chau7EventListener>, col: i32, row: i32) -> Point {
+        let grid = term.grid();
+        let max_col = (grid.columns() as i32 - 1).max(0);
+        let max_row = (grid.screen_lines() as i32 - 1).max(0);
+        let min_row = -(grid.history_size() as i32);
+        Point::new(
+            Line(row.clamp(min_row, max_row)),
+            Column(col.clamp(0, max_col) as usize),
+        )
     }
 
     /// Select all content (screen + scrollback)
@@ -1810,15 +1948,6 @@ impl Chau7Terminal {
         self.grid_dirty.store(true, Ordering::Release);
         self.dirty_rows.mark_all_dirty();
         debug!("[terminal-{}] replay_buffer: Replay complete", self.id);
-    }
-
-    /// Set Unicode ambiguous-width treatment.
-    /// - `width = 1`: single-width (Western default)
-    /// - `width = 2`: double-width (East Asian)
-    pub fn set_ambiguous_width(&self, width: u8) {
-        let w = if width == 2 { 2u64 } else { 1u64 };
-        self.ambiguous_width.store(w, Ordering::Release);
-        info!("[terminal-{}] set_ambiguous_width: {}", self.id, w);
     }
 
     /// Get the current display offset
@@ -2018,8 +2147,8 @@ impl Chau7Terminal {
 
         DebugState {
             id: self.id,
-            cols: self.cols,
-            rows: self.rows,
+            cols: self.cols.load(Ordering::Relaxed),
+            rows: self.rows.load(Ordering::Relaxed),
             history_size,
             display_offset,
             cursor_col,
@@ -2457,31 +2586,39 @@ impl Chau7Terminal {
     }
 
     fn ansi_sgr_sequence(style: AnsiCellStyle) -> String {
-        let mut codes = vec!["0".to_string()];
+        use std::fmt::Write;
+        // Format directly into one String rather than building a Vec<String> of
+        // short heap allocations and joining — this runs per style transition on
+        // the (full/tail) buffer export path.
+        let mut out = String::with_capacity(48);
+        out.push_str("\x1b[0");
         if style.flags & CELL_FLAG_BOLD != 0 {
-            codes.push("1".to_string());
+            out.push_str(";1");
         }
         if style.flags & CELL_FLAG_DIM != 0 {
-            codes.push("2".to_string());
+            out.push_str(";2");
         }
         if style.flags & CELL_FLAG_ITALIC != 0 {
-            codes.push("3".to_string());
+            out.push_str(";3");
         }
         if style.flags & CELL_FLAG_UNDERLINE != 0 {
-            codes.push("4".to_string());
+            out.push_str(";4");
         }
         if style.flags & CELL_FLAG_INVERSE != 0 {
-            codes.push("7".to_string());
+            out.push_str(";7");
         }
         if style.flags & CELL_FLAG_HIDDEN != 0 {
-            codes.push("8".to_string());
+            out.push_str(";8");
         }
         if style.flags & CELL_FLAG_STRIKETHROUGH != 0 {
-            codes.push("9".to_string());
+            out.push_str(";9");
         }
-        codes.push(format!("38;2;{};{};{}", style.fg.0, style.fg.1, style.fg.2));
-        codes.push(format!("48;2;{};{};{}", style.bg.0, style.bg.1, style.bg.2));
-        format!("\x1b[{}m", codes.join(";"))
+        let _ = write!(
+            out,
+            ";38;2;{};{};{};48;2;{};{};{}m",
+            style.fg.0, style.fg.1, style.fg.2, style.bg.0, style.bg.1, style.bg.2
+        );
+        out
     }
 
     fn grid_line_wraps(grid: &alacritty_terminal::grid::Grid<Cell>, line: Line) -> bool {
@@ -2527,7 +2664,6 @@ impl Chau7Terminal {
         self.metrics
             .grid_snapshot_time_us
             .store(0, Ordering::Relaxed);
-        self.metrics.vte_process_time_us.store(0, Ordering::Relaxed);
         self.metrics.max_poll_time_us.store(0, Ordering::Relaxed);
         self.metrics
             .max_grid_snapshot_time_us
@@ -2537,11 +2673,6 @@ impl Chau7Terminal {
         self.metrics.idle_polls.store(0, Ordering::Relaxed);
         self.dirty_rows.clear();
         info!("[terminal-{}] Performance metrics reset", self.id);
-    }
-
-    /// Get dirty rows for partial updates
-    pub fn get_dirty_rows(&self) -> Vec<usize> {
-        self.dirty_rows.get_dirty_rows()
     }
 
     /// Clear dirty row tracking after sync
@@ -2731,6 +2862,127 @@ mod tests {
                 .is_ok(),
             "echo detection must not wait behind the PTY writer lock"
         );
+    }
+
+    #[test]
+    fn selection_clamps_hostile_ffi_coordinates() {
+        // Negative col cast to usize used to become a ~1.8e19 Column index
+        // handed to alacritty's Selection. All coordinates must clamp.
+        let term = Chau7Terminal::new_headless(80, 24).expect("headless terminal");
+        term.inject_output(b"hello world\r\n");
+
+        term.selection_start(-5, -99_999, 0);
+        term.selection_update(i32::MAX, i32::MAX);
+        let _ = term.selection_text();
+
+        term.selection_start(i32::MAX, 0, 1);
+        term.selection_update(-1, -1);
+        let _ = term.selection_text();
+
+        // Sane coordinates still select.
+        term.selection_start(0, 0, 3);
+        term.selection_update(10, 0);
+        assert!(
+            term.selection_text().is_some(),
+            "line selection should produce text"
+        );
+    }
+
+    #[test]
+    fn launch_args_and_cwd_reach_the_child() {
+        let term = Chau7Terminal::new_with_launch(
+            80,
+            24,
+            "/bin/sh",
+            &[],
+            &["-c".to_string(), "pwd && echo CHAU7_ARGS_OK".to_string()],
+            Some("/private/tmp"),
+        )
+        .expect("terminal with launch args");
+
+        let mut combined = String::new();
+        for _ in 0..100 {
+            let _ = term.poll(50);
+            let chunk = std::mem::take(&mut *term.last_output.lock());
+            combined.push_str(&String::from_utf8_lossy(&chunk));
+            if combined.contains("CHAU7_ARGS_OK") {
+                break;
+            }
+        }
+
+        assert!(
+            combined.contains("CHAU7_ARGS_OK"),
+            "argv was not passed to the child: {combined:?}"
+        );
+        assert!(
+            combined.contains("/private/tmp") || combined.contains("/tmp"),
+            "cwd was not applied: {combined:?}"
+        );
+    }
+
+    #[test]
+    fn hup_drains_tail_output_burst_from_short_lived_command() {
+        // A child that writes a large final burst and exits immediately
+        // leaves data in the kernel PTY buffer when POLLHUP fires. The pool
+        // must drain it all before latching closed — pre-fix, only one read
+        // happened per cycle and the tail was silently lost.
+        let term = Chau7Terminal::new_with_launch(
+            80,
+            24,
+            "/bin/sh",
+            &[],
+            &[
+                "-c".to_string(),
+                "head -c 65536 /dev/zero | tr '\\0' X; echo; echo CHAU7_TAIL_END".to_string(),
+            ],
+            None,
+        )
+        .expect("short-lived burst terminal");
+
+        let mut combined = String::new();
+        for _ in 0..200 {
+            let _ = term.poll(50);
+            let chunk = std::mem::take(&mut *term.last_output.lock());
+            combined.push_str(&String::from_utf8_lossy(&chunk));
+            if combined.contains("CHAU7_TAIL_END") {
+                break;
+            }
+        }
+
+        assert!(
+            combined.contains("CHAU7_TAIL_END"),
+            "tail marker lost after HUP (received {} bytes)",
+            combined.len()
+        );
+        let x_count = combined.matches('X').count();
+        assert!(
+            x_count >= 65536,
+            "burst truncated: only {x_count}/65536 payload bytes arrived"
+        );
+    }
+
+    #[test]
+    fn resize_is_safe_against_concurrent_shared_access() {
+        // resize takes &self so the UI thread can call it while drain threads
+        // hold &self for poll/debug_state; exercise that interleaving.
+        let term = Arc::new(Chau7Terminal::new_headless(80, 24).expect("headless terminal"));
+
+        let reader_term = Arc::clone(&term);
+        let reader = std::thread::spawn(move || {
+            for _ in 0..200 {
+                let state = reader_term.debug_state();
+                assert!(state.cols >= 10 && state.rows >= 5);
+            }
+        });
+
+        for i in 0..200u16 {
+            term.resize(10 + (i % 100), 5 + (i % 50));
+        }
+        reader.join().expect("reader thread");
+
+        term.resize(132, 43);
+        let state = term.debug_state();
+        assert_eq!((state.cols, state.rows), (132, 43));
     }
 
     #[test]
@@ -3357,5 +3609,187 @@ mod tests {
         assert_eq!(s1, "", "continuation cell must have empty cluster");
         assert_eq!(w1, 0);
         assert_eq!(c1, 1);
+    }
+
+    // ───────────────────────────────────────────────────────────────────
+    // Claude Code / Ink incremental-redraw investigation (deferred autowrap)
+    //
+    // Hypothesis under test: writing exactly `cols` chars on a line leaves the
+    // cursor in the DECAWM "pending wrap" state at the last column; a following
+    // LF must advance EXACTLY ONE row (xterm/alacritty behaviour). If the
+    // emulator instead consumes the pending-wrap as a real extra row, a
+    // full-width-line + LF advances TWO rows, and Ink's relative `\e[nA` lands
+    // on the wrong row → doubled prompt / output-over-input / stale spinner.
+    // ───────────────────────────────────────────────────────────────────
+
+    /// Build a string of `n` U+2500 box-drawing chars (Claude's separator).
+    fn hline(n: usize) -> String {
+        "\u{2500}".repeat(n)
+    }
+
+    #[test]
+    fn fullwidth_line_then_lf_advances_exactly_one_row() {
+        // 135-col grid, like Claude Code's reported width.
+        let term = Chau7Terminal::new_headless(135, 79).expect("headless");
+        // Home, write 135 ─ (fills the row, leaving pending-wrap), then LF.
+        term.inject_output(b"\x1b[1;1H");
+        term.inject_output(hline(135).as_bytes());
+        // After exactly `cols` chars, cursor must still be on row 0 (pending wrap),
+        // NOT already wrapped to row 1.
+        let (_, row_after_fill) = cursor_pos(&term);
+        assert_eq!(
+            row_after_fill, 0,
+            "writing exactly cols chars must leave cursor on the same row in pending-wrap state"
+        );
+        // Now a single LF.
+        term.inject_output(b"\n");
+        let (_, row_after_lf) = cursor_pos(&term);
+        assert_eq!(
+            row_after_lf, 1,
+            "full-width line + LF must advance EXACTLY ONE row (got {row_after_lf}); \
+             two would mean deferred-autowrap is consumed as a real row"
+        );
+    }
+
+    #[test]
+    fn stacked_fullwidth_separators_with_real_crcrlf_advance_one_row_each() {
+        // Claude Code terminates every separator line with CR CR LF (`\r\r\n`),
+        // NOT a bare LF. The CR clears the column AND the DECAWM pending-wrap
+        // latch before the LF advances, so three stacked 135-wide separators
+        // advance exactly +1 row each. (A bare LF after a pending-wrap full
+        // line would instead drift +2 because the next printable char of the
+        // following line first consumes the pending wrap — but Claude never
+        // emits that; this documents why the emulator is innocent.)
+        let term = Chau7Terminal::new_headless(135, 79).expect("headless");
+        term.inject_output(b"\x1b[1;1H");
+        for expected_row in 1..=3usize {
+            term.inject_output(hline(135).as_bytes());
+            term.inject_output(b"\r\r\n");
+            let (col, row) = cursor_pos(&term);
+            assert_eq!(
+                (col, row),
+                (0, expected_row),
+                "separator #{expected_row} with CR CR LF must land at col 0, row {expected_row}"
+            );
+        }
+    }
+
+    #[test]
+    fn cuu_at_top_row_clamps() {
+        let term = Chau7Terminal::new_headless(135, 79).expect("headless");
+        term.inject_output(b"\x1b[1;1H");
+        term.inject_output(b"\x1b[7A"); // CUU 7 from row 0
+        let (_, row) = cursor_pos(&term);
+        assert_eq!(row, 0, "CUU from top row must clamp at row 0");
+    }
+
+    #[test]
+    fn cha_then_el_erases_to_line_end() {
+        let term = Chau7Terminal::new_headless(135, 79).expect("headless");
+        term.inject_output(b"\x1b[1;1H");
+        term.inject_output(b"hello world banner text here");
+        // CHA to column 7 (1-based) → col 6, then EL (erase to end of line).
+        term.inject_output(b"\x1b[7G\x1b[K");
+        let row = row_text(&term, 0);
+        assert_eq!(
+            row, "hello",
+            "CHA col 7 + EL must erase from col 6 onward, leaving 'hello'; got {row:?}"
+        );
+    }
+
+    #[test]
+    fn ambiguous_and_spinner_glyphs_have_width_one() {
+        // Ink (string-width) treats these as width 1. If alacritty assigns
+        // width 2, every line containing them drifts by a column and the
+        // CHA/relative-move accounting diverges from Ink's model.
+        let term = Chau7Terminal::new_headless(135, 79).expect("headless");
+        // Spinner / status glyphs seen in the live capture.
+        for (label, ch) in [
+            ("U+273B ✻", '\u{273B}'),
+            ("U+2733 ✳", '\u{2733}'),
+            ("U+23F5 ⏵", '\u{23F5}'),
+            ("U+2500 ─", '\u{2500}'),
+            ("U+276F ❯", '\u{276F}'),
+            ("U+2190 ←", '\u{2190}'),
+        ] {
+            term.inject_output(b"\x1b[1;1H\x1b[K");
+            let mut s = String::new();
+            s.push(ch);
+            s.push('X');
+            term.inject_output(s.as_bytes());
+            // Cursor column after writing 1 glyph + 'X' tells us the glyph width.
+            let (col, _) = cursor_pos(&term);
+            assert_eq!(
+                col, 2,
+                "{label} must occupy width 1 (cursor at col 2 after glyph+X); \
+                 got col {col} → alacritty treats it as wide, drifting Ink's layout"
+            );
+        }
+    }
+
+    #[test]
+    fn replay_real_claude_input_box_tail() {
+        // Replay the last ~8KB of a real Claude Code PTY capture into a 135×79
+        // headless grid and dump the resulting rows. Looks for the three
+        // reported bugs: duplicated ❯ prompt, stale Spinning…/Churned line
+        // coexisting with the prompt, or assistant text over the separators.
+        let bytes = include_bytes!("../tests/fixtures/claude_input_box_tail_8k.bin");
+        let term = Chau7Terminal::new_headless(135, 79).expect("headless");
+        // Start from a clean home so the slice's relative moves have a defined base.
+        term.inject_output(b"\x1b[2J\x1b[H");
+        term.inject_output(bytes);
+
+        let mut prompt_rows = Vec::new();
+        for r in 0..79usize {
+            if row_text(&term, r).contains('\u{276F}') {
+                prompt_rows.push(r);
+            }
+        }
+        // The replay at the NATIVE 135 width produces a clean grid: a single
+        // ❯ prompt, intact 135-wide separators, no output-over-input. The
+        // reported duplicate-prompt corruption never appears at matching width.
+        assert!(
+            prompt_rows.len() <= 1,
+            "duplicated prompt: ❯ found on rows {prompt_rows:?}"
+        );
+    }
+
+    #[test]
+    fn replay_at_wrong_width_changes_layout() {
+        // Root cause: Claude/Ink lays out for a fixed width (135 here) and only
+        // diff-repaints. Replaying the SAME bytes into a grid whose width does
+        // NOT match (134) produces a DIFFERENT prompt/separator layout — the
+        // off-by-N that surfaces as duplicated prompt / output-over-input. This
+        // proves the corruption is a width mismatch, not an emulator wrap bug,
+        // and is exactly what the post-resize SIGWINCH nudge prevents by keeping
+        // Ink's width in lockstep with the grid.
+        let bytes = include_bytes!("../tests/fixtures/claude_input_box_tail_8k.bin");
+        let fingerprint = |width: u16| {
+            let term = Chau7Terminal::new_headless(width, 79).expect("headless");
+            term.inject_output(b"\x1b[2J\x1b[H");
+            term.inject_output(bytes);
+            let mut prompt_rows = Vec::new();
+            let mut sep_rows = Vec::new();
+            for r in 0..79usize {
+                let line = row_text(&term, r);
+                if line.contains('\u{276F}') {
+                    prompt_rows.push(r);
+                }
+                if line.matches('\u{2500}').count() > 100 {
+                    sep_rows.push(r);
+                }
+            }
+            (prompt_rows, sep_rows)
+        };
+        let native = fingerprint(135);
+        let narrow = fingerprint(134);
+        assert!(
+            native.0.len() <= 1,
+            "native 135 width must stay clean (single prompt); got {native:?}"
+        );
+        assert_ne!(
+            native, narrow,
+            "a one-column width mismatch must change the layout — this is the bug"
+        );
     }
 }

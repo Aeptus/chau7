@@ -348,6 +348,19 @@ final class MCPServerManager {
     // MARK: - Lifecycle
 
     func start() {
+        // Disable the MCP server entirely in the isolated test app. Two reasons:
+        // (1) installBridgeIfNeeded() clones the chau7-mcp-bridge executable, and an
+        // ad-hoc-signed bundled app triggers a synchronous first-launch Gatekeeper
+        // assessment on that clone that deadlocks clonefileat on the main thread,
+        // freezing startup so the terminal never opens; (2) the MCP server only
+        // matters when external AI tools (Claude/Codex) connect through that bridge,
+        // which the test build deliberately doesn't wire up — so the listener would
+        // just flap on its health-check with no client. Same spirit as the other
+        // isIsolatedTestMode guards (notifications, login items, iCloud sync).
+        guard !RuntimeIsolation.isIsolatedTestMode() else {
+            Log.info("MCPServer: disabled in isolated test mode")
+            return
+        }
         installBridgeIfNeeded()
         queue.async { [weak self] in
             self?._start()

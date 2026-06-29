@@ -22,6 +22,11 @@ struct EnhancedEditorView: NSViewRepresentable {
     let language: EditorLanguage
     let config: EditorConfig
     let onSave: (() -> Void)?
+    /// Optional 1-based line to scroll into view. Callers should clear the
+    /// source value via `onScrollHandled` once consumed so the request fires
+    /// exactly once per change.
+    var scrollToLine: Int?
+    var onScrollHandled: (() -> Void)?
 
     func makeNSView(context: Context) -> EditorScrollView {
         let scrollView = EditorScrollView()
@@ -49,18 +54,39 @@ struct EnhancedEditorView: NSViewRepresentable {
             scrollView.setupLineNumberGutter()
         }
 
-        // Word wrap
-        if !config.wordWrap {
+        // Word wrap. When wrapping is on (the default), the text container
+        // tracks the view width so lines never extend past the right edge —
+        // there is nothing to scroll horizontally, so the horizontal scroller
+        // is disabled to avoid a spurious bar (made worse by the line-number
+        // gutter narrowing the content area). When wrapping is off, the
+        // container grows unbounded and the horizontal scroller is needed to
+        // reach long lines.
+        if config.wordWrap {
+            textView.textContainer?.widthTracksTextView = true
+            textView.isHorizontallyResizable = false
+            scrollView.hasHorizontalScroller = false
+        } else {
             textView.textContainer?.widthTracksTextView = false
             textView.textContainer?.containerSize = NSSize(
                 width: CGFloat.greatestFiniteMagnitude,
                 height: CGFloat.greatestFiniteMagnitude
             )
             textView.isHorizontallyResizable = true
+            scrollView.hasHorizontalScroller = true
         }
 
         textView.delegate = context.coordinator
         context.coordinator.textView = textView
+
+        // Click-to-toggle for markdown task checkboxes. The recognizer only engages
+        // when the click lands on a `[ ]`/`[x]` box (see gestureRecognizerShouldBegin);
+        // every other click falls through to normal text selection.
+        let checkboxClick = NSClickGestureRecognizer(
+            target: context.coordinator,
+            action: #selector(EditorCoordinator.handleCheckboxClick(_:))
+        )
+        checkboxClick.delegate = context.coordinator
+        textView.addGestureRecognizer(checkboxClick)
 
         // Set initial text
         textView.string = text
@@ -73,12 +99,19 @@ struct EnhancedEditorView: NSViewRepresentable {
         let textView = scrollView.editorTextView
         if textView.string != text {
             let savedRange = textView.selectedRange()
+            let savedVisibleRect = textView.visibleRect
             textView.string = text
             context.coordinator.applySyntaxHighlighting()
-            // Restore selection if valid
-            if savedRange.location + savedRange.length <= textView.string.count {
+            // Restore selection and scroll position when still valid
+            let utf16Length = (text as NSString).length
+            if savedRange.location + savedRange.length <= utf16Length {
                 textView.setSelectedRange(savedRange)
             }
+            textView.scrollToVisible(savedVisibleRect)
+        }
+        if let line = scrollToLine, line > 0 {
+            context.coordinator.scrollToLine(line)
+            onScrollHandled?()
         }
     }
 
@@ -98,13 +131,61 @@ struct EnhancedEditorView: NSViewRepresentable {
 
 // MARK: - Editor Coordinator
 
-class EditorCoordinator: NSObject, NSTextViewDelegate {
+class EditorCoordinator: NSObject, NSTextViewDelegate, NSGestureRecognizerDelegate {
     let parent: EnhancedEditorView
     weak var textView: NSTextView?
     var syntaxTimer: Timer?
 
     init(parent: EnhancedEditorView) {
         self.parent = parent
+    }
+
+    // MARK: - Markdown task-checkbox clicking
+
+    /// Only let the checkbox gesture begin when the click is actually on a `[ ]`/`[x]`
+    /// box in a markdown file; otherwise return false so the click is a normal one.
+    func gestureRecognizerShouldBegin(_ gestureRecognizer: NSGestureRecognizer) -> Bool {
+        guard parent.language.id == "markdown", let textView else { return false }
+        return checkboxBoxRange(at: gestureRecognizer.location(in: textView), in: textView) != nil
+    }
+
+    @objc func handleCheckboxClick(_ recognizer: NSClickGestureRecognizer) {
+        guard let textView,
+              let boxRange = checkboxBoxRange(at: recognizer.location(in: textView), in: textView) else { return }
+        let ns = NSMutableString(string: textView.string)
+        let current = ns.substring(with: boxRange)
+        ns.replaceCharacters(in: boxRange, with: current.lowercased().contains("x") ? "[ ]" : "[x]")
+        let updated = ns as String
+
+        let savedSelection = textView.selectedRange()
+        textView.string = updated
+        parent.text = updated // propagate to the editor model / Binding
+        applySyntaxHighlighting()
+        if savedSelection.location + savedSelection.length <= (updated as NSString).length {
+            textView.setSelectedRange(savedSelection)
+        }
+    }
+
+    /// If `point` (textView coordinates) lands inside a task-list `[ ]`/`[x]` box,
+    /// return that box's character range; otherwise nil.
+    private func checkboxBoxRange(at point: NSPoint, in textView: NSTextView) -> NSRange? {
+        guard let layoutManager = textView.layoutManager,
+              let container = textView.textContainer else { return nil }
+        let origin = textView.textContainerOrigin
+        let local = NSPoint(x: point.x - origin.x, y: point.y - origin.y)
+        let glyphIndex = layoutManager.glyphIndex(for: local, in: container)
+        let charIndex = layoutManager.characterIndexForGlyph(at: glyphIndex)
+
+        let ns = textView.string as NSString
+        guard charIndex < ns.length else { return nil }
+        let lineRange = ns.lineRange(for: NSRange(location: charIndex, length: 0))
+        let line = ns.substring(with: lineRange)
+        guard let regex = MarkdownLiveStyler.taskRegex,
+              let match = regex.firstMatch(in: line, range: NSRange(location: 0, length: (line as NSString).length)),
+              match.numberOfRanges >= 3 else { return nil }
+        let box = match.range(at: 2)
+        let absoluteBox = NSRange(location: lineRange.location + box.location, length: box.length)
+        return NSLocationInRange(charIndex, absoluteBox) ? absoluteBox : nil
     }
 
     func textDidChange(_ notification: Notification) {
@@ -165,26 +246,35 @@ class EditorCoordinator: NSObject, NSTextViewDelegate {
     func applySyntaxHighlighting() {
         guard let textView = textView else { return }
         let text = textView.string
-        let lang = parent.language
 
         guard !text.isEmpty else { return }
 
         let storage = textView.textStorage!
+        let fullRange = NSRange(location: 0, length: (text as NSString).length)
         storage.beginEditing()
+
+        // Markdown gets live "light" rendering (heading sizes, bold/italic/code,
+        // dimmed markers, …) instead of flat token coloring, so the edit pane reads
+        // like a document while staying fully editable.
+        if parent.language.id == "markdown" {
+            MarkdownLiveStyler.apply(
+                to: storage,
+                theme: MarkdownLiveStyler.defaultTheme(fontSize: CGFloat(parent.config.fontSize))
+            )
+            storage.endEditing()
+            return
+        }
 
         // Reset to default style
         let defaultAttrs: [NSAttributedString.Key: Any] = [
             .font: NSFont.monospacedSystemFont(ofSize: CGFloat(parent.config.fontSize), weight: .regular),
             .foregroundColor: NSColor.textColor
         ]
-        storage.setAttributes(defaultAttrs, range: NSRange(location: 0, length: text.count))
+        storage.setAttributes(defaultAttrs, range: fullRange)
 
         // Apply language-specific highlighting rules
-        for rule in lang.highlightingRules {
-            guard let regex = try? NSRegularExpression(pattern: rule.pattern, options: rule.options) else {
-                continue
-            }
-            let matches = regex.matches(in: text, range: NSRange(location: 0, length: text.count))
+        for rule in parent.language.compiledRules() {
+            let matches = rule.regex.matches(in: text, range: fullRange)
             for match in matches {
                 storage.addAttribute(.foregroundColor, value: rule.color, range: match.range)
                 if rule.isBold {
@@ -201,6 +291,32 @@ class EditorCoordinator: NSObject, NSTextViewDelegate {
         }
 
         storage.endEditing()
+    }
+
+    // MARK: - Scroll to Line
+
+    func scrollToLine(_ targetLine: Int) {
+        guard let textView else { return }
+        let nsText = textView.string as NSString
+        var currentLine = 1
+        var lineStart = 0
+        var index = 0
+        while index < nsText.length {
+            if currentLine == targetLine {
+                lineStart = index
+                break
+            }
+            if nsText.character(at: index) == 0x0A {
+                currentLine += 1
+            }
+            index += 1
+        }
+        if currentLine < targetLine {
+            lineStart = nsText.length
+        }
+        let range = NSRange(location: lineStart, length: 0)
+        textView.scrollRangeToVisible(range)
+        textView.setSelectedRange(range)
     }
 
     // MARK: - Auto-Indent
@@ -242,8 +358,30 @@ class EditorCoordinator: NSObject, NSTextViewDelegate {
 
     // MARK: - Bracket Matching
 
-    private static let openBracketPairs: [Character: Character] = ["(": ")", "[": "]", "{": "}", "<": ">"]
-    private static let closeBracketPairs: [Character: Character] = [")": "(", "]": "[", "}": "{", ">": "<"]
+    /// All callers pass single-scalar ASCII bracket literals so a scalar
+    /// always exists, but we still defensively default to NUL on the
+    /// impossible branch to keep the lint clean and avoid a force-unwrap.
+    private static func toUnichar(_ c: Character) -> unichar {
+        guard let scalar = c.unicodeScalars.first else { return 0 }
+        return unichar(scalar.value)
+    }
+
+    /// Pairs are keyed on UTF-16 code units so we can match directly against
+    /// `NSString.character(at:)` — the previous `[Character: Character]`
+    /// implementation forced a full `Array(text)` materialisation on every
+    /// keystroke just to do the lookup.
+    private static let openBracketPairs: [unichar: unichar] = [
+        toUnichar("("): toUnichar(")"),
+        toUnichar("["): toUnichar("]"),
+        toUnichar("{"): toUnichar("}"),
+        toUnichar("<"): toUnichar(">")
+    ]
+    private static let closeBracketPairs: [unichar: unichar] = [
+        toUnichar(")"): toUnichar("("),
+        toUnichar("]"): toUnichar("["),
+        toUnichar("}"): toUnichar("{"),
+        toUnichar(">"): toUnichar("<")
+    ]
 
     private func highlightMatchingBracket(_ textView: NSTextView) {
         if let matchPos = matchingBracketPosition(in: textView) {
@@ -254,40 +392,43 @@ class EditorCoordinator: NSObject, NSTextViewDelegate {
     /// Resolve the matching-bracket position for the character under the
     /// caret in `textView`, scanning forward for openers and backward for
     /// closers. Returns nil if the caret isn't on a bracket character or
-    /// no balanced match exists.
+    /// no balanced match exists. Indexes are UTF-16 code units throughout
+    /// to match `NSTextView.selectedRange()` semantics.
     private func matchingBracketPosition(in textView: NSTextView) -> Int? {
-        let text = textView.string
+        let nsText = textView.string as NSString
         let pos = textView.selectedRange().location
-        guard pos < text.count else { return nil }
-        let char = text[text.index(text.startIndex, offsetBy: pos)]
+        guard pos >= 0, pos < nsText.length else { return nil }
+        let char = nsText.character(at: pos)
         if let closing = Self.openBracketPairs[char] {
-            return findMatchingBracketForward(in: text, from: pos, open: char, close: closing)
+            return Self.findMatchingBracketForward(in: nsText, from: pos, open: char, close: closing)
         }
         if let opening = Self.closeBracketPairs[char] {
-            return findMatchingBracketBackward(in: text, from: pos, open: opening, close: char)
+            return Self.findMatchingBracketBackward(in: nsText, from: pos, open: opening, close: char)
         }
         return nil
     }
 
     /// Search forward from the given position to find the matching closing bracket.
-    private func findMatchingBracketForward(in text: String, from pos: Int, open: Character, close: Character) -> Int? {
-        let chars = Array(text)
+    /// Pure scan, exposed for direct unit testing.
+    static func findMatchingBracketForward(in text: NSString, from pos: Int, open: unichar, close: unichar) -> Int? {
         var depth = 0
-        for i in pos ..< chars.count {
-            if chars[i] == open { depth += 1 }
-            if chars[i] == close { depth -= 1 }
+        for i in pos ..< text.length {
+            let c = text.character(at: i)
+            if c == open { depth += 1 }
+            if c == close { depth -= 1 }
             if depth == 0, i != pos { return i }
         }
         return nil
     }
 
     /// Search backward from the given position to find the matching opening bracket.
-    private func findMatchingBracketBackward(in text: String, from pos: Int, open: Character, close: Character) -> Int? {
-        let chars = Array(text)
+    /// Pure scan, exposed for direct unit testing.
+    static func findMatchingBracketBackward(in text: NSString, from pos: Int, open: unichar, close: unichar) -> Int? {
         var depth = 0
         for i in stride(from: pos, through: 0, by: -1) {
-            if chars[i] == close { depth += 1 }
-            if chars[i] == open { depth -= 1 }
+            let c = text.character(at: i)
+            if c == close { depth += 1 }
+            if c == open { depth -= 1 }
             if depth == 0, i != pos { return i }
         }
         return nil

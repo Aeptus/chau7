@@ -1,7 +1,6 @@
 import XCTest
 import AppKit
 import Carbon.HIToolbox
-#if !SWIFT_PACKAGE
 @testable import Chau7
 
 @MainActor
@@ -49,26 +48,6 @@ final class RustTerminalViewTextInputTests: XCTestCase {
             view.generateSpecialKeySequence(keyCode: UInt16(kVK_ANSI_KeypadEnter), modifiers: []),
             [0x0D],
             "Numeric keypad Enter should send carriage return"
-        )
-    }
-
-    func testShouldReconcilePollingModeWhenLoopIsStillRunningWhileMarkedInactive() {
-        XCTAssertTrue(
-            RustTerminalView.shouldReconcilePollingMode(
-                desiredLive: false,
-                markedLive: false,
-                actuallyRunning: true
-            )
-        )
-    }
-
-    func testShouldNotReconcilePollingModeWhenMarkedStateMatchesReality() {
-        XCTAssertFalse(
-            RustTerminalView.shouldReconcilePollingMode(
-                desiredLive: true,
-                markedLive: true,
-                actuallyRunning: true
-            )
         )
     }
 
@@ -159,30 +138,24 @@ final class RustTerminalViewTextInputTests: XCTestCase {
 
         view.isTerminalStarted = true
         view.applyRenderPhase(.active, isInteractive: true, reason: "test")
-        XCTAssertTrue(view.livePollingActiveForProfiling)
+        // The polling policy is occlusion-aware: in a headless test host the
+        // window is typically reported occluded, so the promoted mode depends
+        // on the live window state. Assert the reconciliation matches the
+        // policy rather than hard-coding eventDrain. (Pure policy semantics —
+        // including occlusion and the visible-but-noninteractive case — are
+        // covered by VisibleTerminalPollingPolicyTests.)
+        XCTAssertEqual(
+            view.livePollingActiveForProfiling,
+            view.desiredPollingMode() == .eventDrain,
+            "applyRenderPhase must reconcile live polling with the policy's desired mode"
+        )
 
-        view.applyRenderPhase(.active, isInteractive: false, reason: "test")
+        view.applyRenderPhase(.warm, isInteractive: false, reason: "test")
 
         XCTAssertFalse(
             view.livePollingActiveForProfiling,
-            "Demoting a visible tab to noninteractive should drop it out of the active polling loop immediately"
+            "Demoting a tab out of the active phase should drop it out of the active polling loop immediately"
         )
         XCTAssertEqual(view.currentRenderLoopMode, "background_drain")
     }
-
-    private func makeCell(_ character: String) -> RustCellData {
-        RustCellData(
-            character: UInt32(character.unicodeScalars.first!.value),
-            fg_r: 255,
-            fg_g: 255,
-            fg_b: 255,
-            bg_r: 0,
-            bg_g: 0,
-            bg_b: 0,
-            flags: 0,
-            _pad: 0,
-            link_id: 0
-        )
-    }
 }
-#endif
