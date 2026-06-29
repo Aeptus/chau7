@@ -42,9 +42,29 @@ final class RemoteClient {
 
     var outputText = ""
     private(set) var strippedOutputText = ""
-    private(set) var tabs: [RemoteTab] = []
-    private(set) var isConnected = false
-    private(set) var status = "Disconnected"
+    private(set) var tabs: [RemoteTab] = [] {
+        didSet {
+            guard oldValue.map(\.tabID) != tabs.map(\.tabID) else { return }
+            DiagnosticsLog.shared.info(.tab, "Tab list updated", [
+                "count": String(tabs.count),
+                "active_tab": String(activeTabID)
+            ])
+        }
+    }
+    private(set) var isConnected = false {
+        didSet {
+            guard oldValue != isConnected else { return }
+            DiagnosticsLog.shared.info(.connection, "Connection state changed", [
+                "connected": isConnected ? "true" : "false"
+            ])
+        }
+    }
+    private(set) var status = "Disconnected" {
+        didSet {
+            guard oldValue != status else { return }
+            DiagnosticsLog.shared.info(.connection, "Status changed", ["status": status])
+        }
+    }
     var activeTabID: UInt32 = 0
     var lastError: String?
     var pendingApprovals: [ApprovalRequest] = []
@@ -176,8 +196,10 @@ final class RemoteClient {
     }
 
     func handleScenePhase(_ scenePhase: ScenePhase) {
+        DiagnosticsLog.shared.info(.lifecycle, "Scene phase changed", ["phase": String(describing: scenePhase)])
         switch scenePhase {
         case .active:
+            DiagnosticsLog.shared.capturePerformanceSnapshot(reason: "scene_active")
             endBackgroundKeepalive()
             currentAppState = .foreground
             desiredStreamMode = .full
@@ -197,6 +219,9 @@ final class RemoteClient {
             strippedOutputRefreshTask?.cancel()
             strippedOutputRefreshTask = nil
             sendClientStateIfPossible()
+            // Persist diagnostics immediately so nothing is lost if the app
+            // is suspended or terminated while backgrounded.
+            DiagnosticsLog.shared.flush()
         case .inactive:
             break
         @unknown default:
@@ -1082,19 +1107,39 @@ final class RemoteClient {
     private func sendInput(_ text: String, appendNewline: Bool, to tabID: UInt32, allowUnlistedTab: Bool = false) -> Bool {
         guard !text.isEmpty else { return false }
         guard crypto != nil, webSocket != nil else {
-            reportBlockedInput("Input not sent because the encrypted session is not ready yet.")
+            reportBlockedInput(
+                "Input not sent because the encrypted session is not ready yet.",
+                reason: "session_not_ready",
+                tabID: tabID
+            )
             return false
         }
         guard canSendInput(to: tabID, allowUnlistedTab: allowUnlistedTab) else {
-            reportBlockedInput("Input not sent because the target remote tab is no longer available.")
+            reportBlockedInput(
+                "Input not sent because the target remote tab is no longer available.",
+                reason: "tab_unavailable",
+                tabID: tabID
+            )
             return false
         }
         var data = Data(text.utf8)
         if appendNewline { data.append(0x0A) }
         guard sendEncrypted(type: .input, tabID: tabID, payload: data) else {
-            reportBlockedInput("Input could not be encrypted for the current remote session.")
+            reportBlockedInput(
+                "Input could not be encrypted for the current remote session.",
+                reason: "encrypt_failed",
+                tabID: tabID
+            )
             return false
         }
+        // A successful send clears any stale block message so the UI banner
+        // does not linger after recovery.
+        if lastError != nil { lastError = nil }
+        DiagnosticsLog.shared.debug(.input, "Input forwarded to relay", [
+            "tab_id": String(tabID),
+            "bytes": String(data.count),
+            "newline": appendNewline ? "true" : "false"
+        ])
         return true
     }
 
@@ -1204,8 +1249,14 @@ final class RemoteClient {
         }
     }
 
-    private func reportBlockedInput(_ message: String) {
+    private func reportBlockedInput(_ message: String, reason: String = "blocked", tabID: UInt32? = nil) {
         lastError = message
+        DiagnosticsLog.shared.error(.input, "Input blocked", [
+            "reason": reason,
+            "tab_id": String(tabID ?? activeTabID),
+            "is_connected": isConnected ? "true" : "false",
+            "status": status
+        ])
         emitTelemetry(
             type: .sendFailed,
             status: "send_blocked",

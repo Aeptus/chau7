@@ -161,13 +161,24 @@ JSON payloads are UTF-8.
 ```json
 {
   "tabs": [
-    { "tab_id": 1, "title": "Shell", "is_active": true },
-    { "tab_id": 2, "title": "Claude", "is_active": false }
+    { "tab_id": 1, "title": "Shell", "is_active": true, "is_mcp_controlled": false },
+    {
+      "tab_id": 2,
+      "title": "Claude",
+      "project_name": "chau7-macos",
+      "branch_name": "main",
+      "ai_provider": "Claude",
+      "is_active": false,
+      "is_mcp_controlled": false
+    }
   ]
 }
 ```
 
-Tab IDs are session-scoped `u32` values assigned by macOS.
+Tab IDs are session-scoped `u32` values assigned by macOS. `project_name`,
+`branch_name`, and `ai_provider` are optional and omitted when unknown. The
+tab list aggregates controllable tabs across **all** open macOS windows, so a
+client sees every session regardless of which window owns it.
 
 ### TAB_SWITCH
 

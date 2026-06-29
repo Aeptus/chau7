@@ -138,6 +138,7 @@ struct RemoteTab: Codable, Identifiable {
     let title: String
     let projectName: String?
     let branchName: String?
+    let aiProvider: String?
     let isActive: Bool
     let isMCPControlled: Bool
 
@@ -148,6 +149,7 @@ struct RemoteTab: Codable, Identifiable {
         case title
         case projectName = "project_name"
         case branchName = "branch_name"
+        case aiProvider = "ai_provider"
         case isActive = "is_active"
         case isMCPControlled = "is_mcp_controlled"
     }
@@ -158,6 +160,7 @@ struct RemoteTab: Codable, Identifiable {
         title = try container.decode(String.self, forKey: .title)
         projectName = try container.decodeIfPresent(String.self, forKey: .projectName)
         branchName = try container.decodeIfPresent(String.self, forKey: .branchName)
+        aiProvider = try container.decodeIfPresent(String.self, forKey: .aiProvider)
         isActive = try container.decode(Bool.self, forKey: .isActive)
         isMCPControlled = try container.decodeIfPresent(Bool.self, forKey: .isMCPControlled) ?? false
     }

@@ -76,6 +76,7 @@ struct RemoteTabDescriptor: Codable, Equatable {
     let title: String
     let projectName: String?
     let branchName: String?
+    let aiProvider: String?
     let isActive: Bool
     let isMCPControlled: Bool
 
@@ -84,6 +85,7 @@ struct RemoteTabDescriptor: Codable, Equatable {
         case title
         case projectName = "project_name"
         case branchName = "branch_name"
+        case aiProvider = "ai_provider"
         case isActive = "is_active"
         case isMCPControlled = "is_mcp_controlled"
     }
