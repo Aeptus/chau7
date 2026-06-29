@@ -723,14 +723,24 @@ export const gates = [
     applies: (context) => trackedPythonDependencyFiles(context).length > 0,
     rerun: "pnpm quality:prepush:full --include=full-python-dependency-audit",
     run: async (context) => {
-      const result = await context.exec("pip-audit", ["--strict", ...trackedPythonDependencyFiles(context)]);
-      if (result.status !== "passed") {
-        return {
-          ...result,
-          summary: `${result.summary}\nInstall pip-audit or fix the reported Python dependency vulnerabilities.`,
-        };
+      // pip-audit's positional target is a project *directory* (it reads the
+      // pyproject within), not the pyproject.toml file itself; requirements
+      // files go through -r. Passing the pyproject.toml path directly fails
+      // with "couldn't find a supported project file", so audit each tracked
+      // file with the right form.
+      for (const file of trackedPythonDependencyFiles(context)) {
+        const args = /(^|\/)pyproject\.toml$/.test(file)
+          ? ["--strict", path.dirname(file)]
+          : ["--strict", "-r", file];
+        const result = await context.exec("pip-audit", args);
+        if (result.status !== "passed") {
+          return {
+            ...result,
+            summary: `${result.summary}\nInstall pip-audit or fix the reported Python dependency vulnerabilities.`,
+          };
+        }
       }
-      return result;
+      return { status: "passed", summary: "pip-audit passed at strict threshold" };
     },
   },
   {
