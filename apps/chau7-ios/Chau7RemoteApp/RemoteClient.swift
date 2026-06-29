@@ -1337,14 +1337,14 @@ final class RemoteClient {
         guard var components = URLComponents(string: trimmed) else {
             return nil
         }
-        switch components.scheme {
-        case "wss":
-            components.scheme = "https"
-        case "ws":
-            components.scheme = "http"
-        default:
-            break
+        // Only wss is permitted (mirrors the connect-time guard); map it to https
+        // for the REST API. Reject ws/http/anything else so a legacy plaintext
+        // pairing can't fetch pending approvals (commands + directories) over
+        // cleartext http — the REST path was the one place wss wasn't enforced.
+        guard components.scheme?.lowercased() == "wss" else {
+            return nil
         }
+        components.scheme = "https"
         return components
     }
 
