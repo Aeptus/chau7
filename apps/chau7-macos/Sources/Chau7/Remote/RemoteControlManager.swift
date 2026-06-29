@@ -81,6 +81,10 @@ final class RemoteControlManager {
             self?.connectedClientAppState = .foreground
             self?.connectedClientStreamMode = .full
             self?.remoteActivity = nil
+            // Clear the remote viewer's selection so a reconnecting client
+            // starts from the primary window's selected tab rather than
+            // inheriting a stale (possibly background-window) selection.
+            self?.remoteSelectedTabUUID = nil
             self?.cancelBackgroundSnapshotPrefetch()
             self?.cancelPendingOutputFlush()
             self?.refreshPairedDevices()
