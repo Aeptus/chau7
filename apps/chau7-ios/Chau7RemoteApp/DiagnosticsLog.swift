@@ -332,6 +332,10 @@ final class DiagnosticsLog {
     // MARK: - Helpers
 
     private func mirrorToOSLog(_ entry: Entry) {
+        // Keystroke entries carry literal typed text (potentially secrets).
+        // They live only in the bounded, clearable, export-only in-app buffer
+        // and must never be copied into the system unified log.
+        if entry.category == Category.keystroke.rawValue { return }
         let text = "\(entry.category): \(entry.message)"
         switch entry.levelValue {
         case .trace, .debug:
