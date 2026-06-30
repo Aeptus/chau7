@@ -199,7 +199,7 @@ API Analytics,Repo-Level Aggregated Metrics,"Per-repository stats (commands, suc
 API Analytics,Timeline Visualization,Visual timeline scrubber showing command blocks and metrics over time,Shipped,No
 API Analytics,Provider Filtering,Include or exclude specific API providers from capture,Shipped,No
 Tab Management,Multi-Tab Interface,"Unlimited tabs per window — Cmd+T to create, Cmd+1–9 to jump",Shipped,No
-Tab Management,Tab Renaming,Custom tab names via Cmd+Shift+R,Shipped,No
+Tab Management,Tab Renaming,Custom tab names via Cmd+Option+R,Shipped,No
 Tab Management,Tab Colors,"12+ colors: blue, teal, green, red, orange, pink, purple, yellow, gray, and more",Shipped,No
 Tab Management,Tab Reordering,Drag tabs or Cmd+Opt+Shift+[/] to move left/right — center-crossing snap thresholds keep sibling motion aligned with the grabbed tab,Shipped,No
 Tab Management,Git Branch Indicator,"Current git branch displayed in the tab — no need to type git branch. In protected folders, the last known branch remains visible from cached repo identity until live access is granted again.",Shipped,No
@@ -209,9 +209,9 @@ Tab Management,Broadcast Input,Type once and send to all tabs — with per-tab e
 Tab Management,Close Other Tabs,Cmd+Opt+W to close all tabs except the current one,Shipped,No
 Tab Management,New Tab Position,Configure where new tabs appear (after current or at end),Shipped,No
 Tab Management,Background Tab Suspension,Inactive tabs suspend rendering after configurable delay to save resources,Shipped,No
-Split Panes,Horizontal Split,Cmd+Opt+H — split side-by-side with draggable dividers,Shipped,No
+Split Panes,Horizontal Split,Cmd+D — split side-by-side with draggable dividers,Shipped,No
 Split Panes,Word-Wrap-Aware Editor Scrolling,"The side-panel text editor hides the horizontal scroll bar when word wrap is on (default) and re-tiles the line-number gutter when its width changes, so wrapped text never shows a spurious lateral scroll; no-wrap mode keeps the horizontal scroller for long lines",Shipped,Yes
-Split Panes,Vertical Split,Cmd+Opt+V — stack panes vertically,Shipped,No
+Split Panes,Vertical Split,Cmd+Opt+D — stack panes vertically,Shipped,No
 Split Panes,Nested Splits,Arbitrary nesting depth via binary tree layout controller,Shipped,No
 Split Panes,Versioned Restore Snapshots,"Persisted split-pane trees carry a schema version so future binaries can add pane kinds without older code silently mis-decoding snapshots; pre-versioned snapshots read as version 1 with no migration",Shipped,No
 Split Panes,Injectable Side-Panel Infrastructure,"MainScheduler / Polling / Dialogs protocols injected into SplitPaneController and TextEditorModel; the close-time dialog branches and the markdown runbook sequential runner are unit-driveable headlessly via FakeDialogs and a virtual-time TestMainScheduler — no AppKit modal loops or real sleeps required",Shipped,No
@@ -249,7 +249,7 @@ Window Management,Restoration Backup Isolation,"Production tab-state backups sta
 Window Management,Menu Bar Only Mode,Run as a menu bar app — no Dock icon needed,Shipped,No
 SSH, Profiles & Remote,Remote Background Approval Mode,"When Chau7 Remote backgrounds, the session briefly stays alive in approvals-only mode instead of streaming full terminal output",Shipped,Yes
 SSH, Profiles & Remote,Remote Push Approval Delivery,"Relay-backed APNs push registration and wakeups for new approvals and interactive prompts on the Chau7 Remote iPhone app",Shipped,Yes
-SSH, Profiles & Remote,Remote iOS 20 Minimum Target,"The Chau7 Remote app widget and Rust terminal build all target iOS 20 as their shared minimum deployment floor",Shipped,No
+SSH, Profiles & Remote,Remote iOS 18 Minimum Target,"The Chau7 Remote app and widget extension target iOS 18.0 (IPHONEOS_DEPLOYMENT_TARGET = 18.0); the shared SwiftPM package declares an .iOS(.v17) floor for library targets",Shipped,No
 SSH, Profiles & Remote,Experimental Rust iPhone Renderer,"Optional Rust-backed terminal grid renderer for Chau7 Remote on iPhone, with text fallback retained",Shipped,Yes
 SSH, Profiles & Remote,Selected-Tab Remote Streaming,"macOS streams terminal output and snapshots only for the tab currently selected on iPhone; background tabs stay metadata/activity/approvals-only until switched to",Shipped,Yes
 SSH, Profiles & Remote,Remote iPhone Profiling Hooks,"The iPhone app emits os.signpost intervals for frame processing, output append, and ANSI stripping so receive/render lag can be measured in Instruments",Shipped,No
@@ -343,7 +343,7 @@ Debugging,Structured Logging,"Category-based logging with correlation IDs (App, 
 Debugging,Privacy-First Bug Report Dialog,"In-app issue reporter (⌥⌘I) with all sensitive data off by default, per-toggle tab pickers, live markdown preview, HTTPS-only private relay submission, success banner with created issue number when available, tab title redaction, background history capture, and hardened rate limiting",Shipped,Yes
 Debugging,Issue Reporting Privacy Page,"GDPR-compliant sub-processor disclosure (Cloudflare, GitHub) with data categories, retention, legal basis (Art. 6(1)(f)), DPA links, and data subject rights",Shipped,Yes
 Debugging,Verbose & Trace Modes,CHAU7_VERBOSE=1 and CHAU7_TRACE=1 for deep diagnostics,Shipped,No
-Command Palette,Command Palette,Cmd+Shift+P for fuzzy-searchable command palette (VS Code style),Shipped,No
+Command Palette,Command Palette,Cmd+Option+P for fuzzy-searchable command palette (VS Code style),Shipped,No
 Monitoring,Dev Server Detection,"Auto-detect running dev servers by command hints, output patterns, and port scanning with 30s liveness polling",Shipped,No
 Monitoring,Git Change Detection,Notifications on git branch changes,Shipped,No
 Monitoring,Shell Event Pattern Matching,Custom regex patterns to watch for in terminal output,Shipped,No
@@ -371,7 +371,7 @@ Terminal,Heuristic Command Boundaries,"Without OSC 133, Chau7 still creates comm
 Terminal,Command Block Restore Persistence,"Restored tabs retain per-command changed-file metadata and loading status so repository panes do not forget touched files after app restart",Shipped,Yes
 Terminal,Idle Tabs Dropdown,"Tabs idle beyond configurable threshold (default 10 min) grouped into a dropdown chip in the tab bar with hover card support",Shipped,Yes
 Terminal,Repository Tab Grouping,"Group tabs by git repo (Off/Auto/Manual). Inline repo-name tag chip with connecting line overlay. Suppresses redundant repo path in grouped tab titles, and inherited group membership auto-detaches when a tab moves to a different repo, including tabs opened directly at another directory.",Shipped,No
-Terminal,Split Pane File Preview,"Read-only file viewer with syntax highlighting and image support (Cmd+Opt+P). Lighter than full editor.",Shipped,No
+Terminal,Split Pane File Preview,"Read-only file viewer with syntax highlighting and image support (Cmd+Opt+O). Lighter than full editor.",Shipped,No
 Terminal,Split Pane Diff Viewer,"Unified git diff view with colored additions/deletions, dual line numbers, Working/Staged toggle (Cmd+Opt+Shift+D). Binary and rename-only changes show a dedicated empty-state ('Binary file' / 'File renamed: old → new') instead of a misleading 'no changes' panel. Requests protected-folder access on demand before loading live git diffs.",Shipped,No
 Terminal,Protected Repo Identity Fallback,"Tabs preserve known repo root and last-known branch when macOS protected-folder access blocks live git probing, so passive repo UI and grouping remain stable until live access is granted.",Shipped,Yes
 Terminal,Protected Folder Prompt Cooldown,"User-initiated live-git actions remember a recent cancel or failed grant per protected root, so Chau7 does not reopen the same Downloads/Desktop/Documents permission panel in a loop when nothing changed.",Shipped,Yes
@@ -504,7 +504,7 @@ local_release_hygiene,macos,build,versions derive from git tags with loud failur
 persist_convention_sweep,macos,persistence,remaining silent try? failures across settings ssh remote telemetry and injection paths now log via the Persist helpers,shipped
 small_race_tail_closed,macos,concurrency,log sink event-drain generations deallocation flag poll diagnostics usage snapshot and reset-persist races are lock-guarded or generation-tokened,shipped
 cache_caps_and_dead_render_api,macos,performance,clipboard and resolver caches are bounded graphics abort buffers shrink and the unused frame-pacing API is removed,shipped
-test_suite_ungated_full,macos,build,the 46 remaining dead #if !SWIFT_PACKAGE test files are ungated and repaired bringing the package suite to 3120 tests with a guard against new gates,shipped
+test_suite_ungated_full,macos,build,the 46 remaining dead #if !SWIFT_PACKAGE test files are ungated and repaired bringing the package suite to 3127 tests with a guard against new gates,shipped
 resume_prefill_identity_tolerance,macos,restore,resume prefill validation treats unresolved current AI identity as match instead of rejecting so corroboration-lag does not lose the prefill,shipped
 resume_prefill_directory_canonical,macos,restore,resume prefill directory ownership check canonicalizes both expected and live paths via symlink resolution tilde expansion and standardization before comparing,shipped
 scrollback_idle_flush,macos,performance,warm-idle tabs flush scrollback to disk losslessly via ANSI capture and shrink to viewport floor without changing render phase then restore with colors on reselection,shipped
@@ -513,6 +513,9 @@ ai_running_live_process_tree,macos,detection,isAIRunning treats non-nil liveAgen
 move_to_idle_handles_selected_tab,macos,overlay,Move to Idle Tabs right-click action switches selection to a neighbor when called on the currently selected tab instead of silently no-op-ing and the idle dropdown re-evaluates immediately via the observable suspendedTabIDs signal,shipped
 side_panel_default_source,macos,editor,text side panel defaults to source view instead of runbook preview when opening a markdown file,shipped
 runbook_inline_markdown_rendering,macos,editor,runbook view renders inline markdown bold italic code and links via AttributedString instead of showing literal characters,shipped
+markdown_preview_toggle_shortcut,macos,editor,the source/runbook toggle button is labeled Preview (Show Source when previewing) and an editor-pane-scoped Cmd+Shift+P shortcut flips between the two views without leaving the editor distinct from the global Cmd+Option+P command palette,shipped
+markdown_task_checkbox_toggle,macos,editor,the runbook styler recognizes - [ ] and - [x] task items styling the box green when checked and dimmed when not striking through completed task text and toggling the box state when clicked in the source edit pane,shipped
+markdown_hanging_indents,macos,editor,wrapped lines in markdown list items and blockquotes hang under their text content instead of the marker via a per-paragraph head indent measured in the body font,shipped
 restore_resume_command_dual_provider,macos,restore,restore-time re-resolution scans both Claude and Codex transcripts when autosave captured no provider so blank-state tabs are recovered from the on-disk session whose mtime is closest to the saved activity time or the newest available,shipped
 codex_resolver_restore_day_window,macos,restore,CodexSessionResolver.sessionCandidates accepts a saved activity timestamp as the day-directory search anchor and a wider maxDays so the restore pipeline finds transcripts from week-old day folders,shipped
 
