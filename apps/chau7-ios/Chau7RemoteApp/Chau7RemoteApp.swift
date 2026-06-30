@@ -168,6 +168,10 @@ struct RemoteRootView: View {
     @State private var isPairingPresented = false
     @State private var showsLaunchSplash = true
     @State private var launchTip = Chau7LaunchTips.randomTip()
+    @State private var showsKeystrokeConsent = false
+    @AppStorage(AppSettings.logKeystrokesKey) private var logKeystrokes = AppSettings.logKeystrokesDefault
+    @AppStorage(AppSettings.keystrokeConsentPromptedKey)
+    private var keystrokeConsentPrompted = AppSettings.keystrokeConsentPromptedDefault
 
     enum Tab { case terminal, approvals, settings }
 
@@ -203,6 +207,24 @@ struct RemoteRootView: View {
             withAnimation(.easeOut(duration: 0.25)) {
                 showsLaunchSplash = false
             }
+            // First-run consent: keystroke capture stays off until the user
+            // explicitly accepts, so a fresh install never records typed
+            // secrets before the user has seen the disclosure.
+            if !keystrokeConsentPrompted {
+                showsKeystrokeConsent = true
+            }
+        }
+        .alert("Capture Keystrokes for Diagnostics?", isPresented: $showsKeystrokeConsent) {
+            Button("Enable") {
+                logKeystrokes = true
+                keystrokeConsentPrompted = true
+            }
+            Button("Not Now", role: .cancel) {
+                logKeystrokes = false
+                keystrokeConsentPrompted = true
+            }
+        } message: {
+            Text("Chau7 can record the keys you type — including terminal input — into an on-device diagnostics log to help investigate issues. This may include sensitive text such as passwords or tokens. Nothing leaves your device unless you export it, and you can change this anytime in Settings.")
         }
         .onChange(of: approvalsBadgeCount) { oldCount, newCount in
             if newCount > oldCount { selectedTab = .approvals }

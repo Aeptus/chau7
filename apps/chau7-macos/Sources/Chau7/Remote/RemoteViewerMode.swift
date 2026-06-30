@@ -189,6 +189,10 @@ enum ViewerStatus: String {
 
 extension Notification.Name {
     static let viewerPendingApproval = Notification.Name("com.chau7.viewerPendingApproval")
+    /// Posted by any `OverlayTabsModel` when its tabs or selection change, so
+    /// the remote manager can refresh the cross-window tab list even for
+    /// windows it does not directly own.
+    static let overlayTabsDidChange = Notification.Name("com.chau7.overlayTabsDidChange")
 }
 
 private extension Comparable {

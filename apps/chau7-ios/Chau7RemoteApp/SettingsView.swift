@@ -10,6 +10,18 @@ enum AppSettings {
     static let renderANSIDefault = false
     static let experimentalTerminalRendererKey = "experimental_terminal_renderer"
     static let experimentalTerminalRendererDefault = false
+
+    // Diagnostics
+    static let verboseLoggingKey = "diagnostics_verbose"
+    static let verboseLoggingDefault = true
+    // Keystroke capture is privacy-sensitive (it can record secrets typed into
+    // the terminal), so it ships OFF and is only enabled after the user accepts
+    // the first-run consent prompt — never silently on a fresh install.
+    static let logKeystrokesKey = "diagnostics_log_keystrokes"
+    static let logKeystrokesDefault = false
+    static let keystrokeConsentPromptedKey = "diagnostics_keystroke_consent_prompted"
+    static let keystrokeConsentPromptedDefault = false
+
     static let hideSensitiveNotificationsKey = "hide_sensitive_notifications"
     static let hideSensitiveNotificationsDefault = true
 
@@ -30,6 +42,8 @@ struct SettingsView: View {
     @AppStorage(AppSettings.renderANSIKey) private var renderANSI = AppSettings.renderANSIDefault
     @AppStorage(AppSettings.experimentalTerminalRendererKey)
     private var experimentalTerminalRenderer = AppSettings.experimentalTerminalRendererDefault
+    @AppStorage(AppSettings.verboseLoggingKey) private var verboseLogging = AppSettings.verboseLoggingDefault
+    @AppStorage(AppSettings.logKeystrokesKey) private var logKeystrokes = AppSettings.logKeystrokesDefault
     @AppStorage(AppSettings.hideSensitiveNotificationsKey)
     private var hideSensitiveNotifications = AppSettings.hideSensitiveNotificationsDefault
 
@@ -111,6 +125,20 @@ struct SettingsView: View {
                             client.disconnect()
                         }
                     }
+                }
+
+                Section {
+                    Toggle("Verbose Logging", isOn: $verboseLogging)
+                    Toggle("Log Keystrokes", isOn: $logKeystrokes)
+                    NavigationLink {
+                        DiagnosticsLogView()
+                    } label: {
+                        Label("Diagnostics Log", systemImage: "doc.text.magnifyingglass")
+                    }
+                } header: {
+                    Text("Diagnostics")
+                } footer: {
+                    Text("Captures a verbose on-device log — including performance data and, when enabled, every keystroke typed in the app — for troubleshooting. Nothing leaves your device until you tap Export. Keystroke capture records the literal characters you type.")
                 }
 
                 Section("About") {
