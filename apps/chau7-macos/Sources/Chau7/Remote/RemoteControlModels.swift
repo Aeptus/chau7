@@ -8,6 +8,10 @@ struct RemotePairingInfo: Codable, Equatable {
     let pairingCode: String
     let expiresAt: String
     let relayURL: String
+    /// Shared HMAC secret the paired iOS device needs to authenticate to the
+    /// relay. Present only when relay auth is configured; carried through to the
+    /// QR/paste payload so iOS can mint tokens.
+    var relaySecret: String?
 
     enum CodingKeys: String, CodingKey {
         case deviceID = "device_id"
@@ -15,6 +19,7 @@ struct RemotePairingInfo: Codable, Equatable {
         case pairingCode = "pairing_code"
         case expiresAt = "expires_at"
         case relayURL = "relay_url"
+        case relaySecret = "relay_secret"
     }
 }
 
@@ -24,6 +29,7 @@ struct RemoteQRPayload: Codable, Equatable {
     let macPub: String
     let pairingCode: String
     let expiresAt: String
+    var relaySecret: String?
 
     enum CodingKeys: String, CodingKey {
         case relayURL = "relay_url"
@@ -31,6 +37,7 @@ struct RemoteQRPayload: Codable, Equatable {
         case macPub = "mac_pub"
         case pairingCode = "pairing_code"
         case expiresAt = "expires_at"
+        case relaySecret = "relay_secret"
     }
 }
 
@@ -53,7 +60,8 @@ extension RemotePairingInfo {
             deviceID: deviceID,
             macPub: macPub,
             pairingCode: pairingCode,
-            expiresAt: expiresAt
+            expiresAt: expiresAt,
+            relaySecret: relaySecret
         )
         let encoder = JSONEncoder()
         if prettyPrinted {
@@ -76,6 +84,7 @@ struct RemoteTabDescriptor: Codable, Equatable {
     let title: String
     let projectName: String?
     let branchName: String?
+    let aiProvider: String?
     let isActive: Bool
     let isMCPControlled: Bool
 
@@ -84,6 +93,7 @@ struct RemoteTabDescriptor: Codable, Equatable {
         case title
         case projectName = "project_name"
         case branchName = "branch_name"
+        case aiProvider = "ai_provider"
         case isActive = "is_active"
         case isMCPControlled = "is_mcp_controlled"
     }

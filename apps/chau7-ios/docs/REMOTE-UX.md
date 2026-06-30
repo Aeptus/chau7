@@ -39,5 +39,6 @@ The transport and payload contract live in
 
 - Pairing is accountless
 - The Mac produces a payload containing relay URL, device ID, public key, pairing code, and expiry
-- iOS pastes that payload to start pairing
-- QR can be added later, but it is not part of the current contract
+- iOS accepts that payload by scanning the Mac's QR code, a one-tap "Paste & Pair"
+  from the clipboard, or manual entry
+- Payload validation reports specific errors (missing field, expired code, unreadable text)

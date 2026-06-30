@@ -15,6 +15,7 @@ final class RemoteTabRegistryTests: XCTestCase {
                     title: "A",
                     projectName: nil,
                     branchName: nil,
+                    aiProvider: nil,
                     isActive: true,
                     isMCPControlled: false
                 ),
@@ -24,6 +25,7 @@ final class RemoteTabRegistryTests: XCTestCase {
                     title: "B",
                     projectName: nil,
                     branchName: nil,
+                    aiProvider: nil,
                     isActive: false,
                     isMCPControlled: true
                 )
@@ -41,6 +43,7 @@ final class RemoteTabRegistryTests: XCTestCase {
                     title: "B2",
                     projectName: nil,
                     branchName: nil,
+                    aiProvider: nil,
                     isActive: true,
                     isMCPControlled: true
                 ),
@@ -50,6 +53,7 @@ final class RemoteTabRegistryTests: XCTestCase {
                     title: "A2",
                     projectName: nil,
                     branchName: nil,
+                    aiProvider: nil,
                     isActive: false,
                     isMCPControlled: false
                 )
@@ -75,6 +79,7 @@ final class RemoteTabRegistryTests: XCTestCase {
                     title: "A",
                     projectName: nil,
                     branchName: nil,
+                    aiProvider: nil,
                     isActive: true,
                     isMCPControlled: false
                 ),
@@ -84,6 +89,7 @@ final class RemoteTabRegistryTests: XCTestCase {
                     title: "B",
                     projectName: nil,
                     branchName: nil,
+                    aiProvider: nil,
                     isActive: false,
                     isMCPControlled: false
                 )
@@ -93,5 +99,48 @@ final class RemoteTabRegistryTests: XCTestCase {
         let background = registry.backgroundTabIDs(for: [firstID, secondID], selectedTabID: firstID)
 
         XCTAssertEqual(background, try [XCTUnwrap(registry.tabID(for: secondID))])
+    }
+
+    func testRebuildCarriesAIProviderAndMetadataIntoDescriptors() throws {
+        var registry = RemoteTabRegistry()
+        let descriptors = registry.rebuild(
+            with: [
+                RemoteTabRegistryEntry(
+                    id: UUID(),
+                    sessionIdentifier: "session-a",
+                    title: "Build",
+                    projectName: "chau7",
+                    branchName: "main",
+                    aiProvider: "Claude",
+                    isActive: true,
+                    isMCPControlled: false
+                )
+            ]
+        )
+
+        let descriptor = try XCTUnwrap(descriptors.first)
+        XCTAssertEqual(descriptor.projectName, "chau7")
+        XCTAssertEqual(descriptor.branchName, "main")
+        XCTAssertEqual(descriptor.aiProvider, "Claude")
+        XCTAssertTrue(descriptor.isActive)
+    }
+
+    func testTabDescriptorAIProviderRoundTripsThroughJSON() throws {
+        let descriptor = RemoteTabDescriptor(
+            tabID: 7,
+            title: "Codex",
+            projectName: "chau7",
+            branchName: "feature",
+            aiProvider: "Codex",
+            isActive: false,
+            isMCPControlled: true
+        )
+
+        let data = try JSONEncoder().encode(descriptor)
+        let json = try XCTUnwrap(String(data: data, encoding: .utf8))
+        XCTAssertTrue(json.contains("\"ai_provider\":\"Codex\""))
+
+        let decoded = try JSONDecoder().decode(RemoteTabDescriptor.self, from: data)
+        XCTAssertEqual(decoded, descriptor)
     }
 }
