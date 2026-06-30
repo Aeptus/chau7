@@ -6,6 +6,7 @@ struct RemoteTabRegistryEntry {
     let title: String
     let projectName: String?
     let branchName: String?
+    let aiProvider: String?
     let isActive: Bool
     let isMCPControlled: Bool
 }
@@ -48,6 +49,7 @@ struct RemoteTabRegistry {
                     title: entry.title,
                     projectName: entry.projectName,
                     branchName: entry.branchName,
+                    aiProvider: entry.aiProvider,
                     isActive: entry.isActive,
                     isMCPControlled: entry.isMCPControlled
                 )

@@ -33,13 +33,17 @@ final class RemoteLiveActivityManager {
             endCurrentActivity(after: nil)
         }
 
-        if let activity {
+        if let activity, activity.activityState == .active {
             Task {
                 await activity.update(ActivityContent(state: contentState, staleDate: nil))
                 await scheduleEndIfNeeded(for: activity, status: state.status)
             }
             return
         }
+
+        // A previously-tracked activity that has already ended or been dismissed
+        // can no longer be updated; drop the stale handle and request a fresh one.
+        activity = nil
 
         do {
             let requested = try Activity.request(

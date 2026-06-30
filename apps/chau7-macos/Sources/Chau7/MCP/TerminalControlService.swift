@@ -51,6 +51,12 @@ final class TerminalControlService {
         nextWindowID += 1
         registeredModels.append(WeakModel(windowID: id, model: model))
         invalidateRoutingIndex(reason: "register_model")
+        // A new window's initial tabs are populated in the model's initializer,
+        // before this call — so the model's didSet never posted a change for
+        // them. Announce the registration so cross-window observers (e.g. the
+        // remote tab list) pick up the new window immediately rather than
+        // waiting for a later tab mutation.
+        NotificationCenter.default.post(name: .overlayTabsDidChange, object: model)
     }
 
     /// Unregister when a window closes. Optional — dead refs are pruned lazily.

@@ -52,7 +52,16 @@ final class FileTailer<T> {
     /// and stop must hop instead of mutating from the caller's thread while
     /// a tick is mid-flight.
     func start(prefillLines: Int = 0) {
-        queue.async { [self] in
+        // Synchronous so the baseline offset is captured and the watch is armed
+        // *before* start() returns. With the previous `queue.async`, a writer
+        // that appended immediately after start() (e.g. a monitor that starts
+        // then a line lands, or a test that appends right after) could race the
+        // offset capture: startOnQueue would then read `currentFileSize()`
+        // *after* the append, set offset past the new line, and skip it forever
+        // (kqueue had already fired; the poll sees no growth). Capturing offset
+        // on the caller's turn closes that window. Safe: start() is only ever
+        // called from outside the tailer's own queue, so no re-entrant deadlock.
+        queue.sync { [self] in
             startOnQueue(prefillLines: prefillLines)
         }
     }
