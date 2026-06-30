@@ -992,7 +992,11 @@ final class RemoteControlManager {
             }
         }
         if result.isEmpty {
-            logger.info("Remote: no controllable tabs across \(allOverlayModels.count, privacy: .public) window(s)")
+            // Hoisted out of the os.Logger interpolation: its autoclosure makes
+            // the compiler require self., which swiftformat's redundantSelf then
+            // strips — a local read satisfies both.
+            let windowCount = allOverlayModels.count
+            logger.info("Remote: no controllable tabs across \(windowCount, privacy: .public) window(s)")
         }
         return result
     }
