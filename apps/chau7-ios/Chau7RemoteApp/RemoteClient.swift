@@ -191,7 +191,14 @@ final class RemoteClient {
             return
         }
 
-        let task = URLSession.shared.webSocketTask(with: url)
+        // Carry the connect-scoped auth token in the Authorization header of the
+        // upgrade request (never the query string). When no relay secret is
+        // present, connect unauthenticated for backward compatibility.
+        var request = URLRequest(url: url)
+        if let token = RelayToken.make(pairing: pairing, role: "ios", scope: "connect") {
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
+        let task = URLSession.shared.webSocketTask(with: request)
         webSocket = task
         task.resume()
         status = .connecting
@@ -1326,6 +1333,9 @@ final class RemoteClient {
         request.httpMethod = "GET"
         request.timeoutInterval = 10
         request.cachePolicy = .reloadIgnoringLocalCacheData
+        if let token = RelayToken.make(pairing: pairing, role: "ios", scope: "pending") {
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
         return request
     }
 
@@ -1612,5 +1622,42 @@ final class RemoteClient {
 
     private func tabTitle(for tabID: UInt32) -> String? {
         tabs.first(where: { $0.tabID == tabID })?.title
+    }
+}
+
+/// Mints scoped, single-use relay auth tokens (v2). Mirrors the Go agent
+/// (`generateRelayToken`) and the relay verifier (`token.js`):
+///
+///   wire:    v2.{ts}.{nonce}.{scope}.{base64url_sig}
+///   message: v2:{deviceID}:{role}:{scope}:{ts}:{nonce}
+///
+/// Returns nil when the pairing payload carries no relay secret, so the client
+/// degrades to unauthenticated connects during rollout.
+enum RelayToken {
+    static func make(pairing: PairingInfo, role: String, scope: String) -> String? {
+        guard let secret = pairing.relaySecret, !secret.isEmpty else {
+            return nil
+        }
+        let ts = String(Int(Date().timeIntervalSince1970))
+        var nonceBytes = [UInt8](repeating: 0, count: 16)
+        for index in nonceBytes.indices {
+            nonceBytes[index] = UInt8.random(in: UInt8.min ... UInt8.max)
+        }
+        let nonce = Data(nonceBytes).relayBase64URLEncodedString()
+        let message = "v2:\(pairing.deviceID):\(role):\(scope):\(ts):\(nonce)"
+        let key = SymmetricKey(data: Data(secret.utf8))
+        let signature = HMAC<SHA256>.authenticationCode(for: Data(message.utf8), using: key)
+        let signatureString = Data(signature).relayBase64URLEncodedString()
+        return "v2.\(ts).\(nonce).\(scope).\(signatureString)"
+    }
+}
+
+private extension Data {
+    /// Unpadded base64url (RFC 4648 §5), matching the relay's expectations.
+    func relayBase64URLEncodedString() -> String {
+        base64EncodedString()
+            .replacingOccurrences(of: "+", with: "-")
+            .replacingOccurrences(of: "/", with: "_")
+            .replacingOccurrences(of: "=", with: "")
     }
 }
