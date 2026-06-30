@@ -405,23 +405,11 @@ final class TelemetryRecorder {
                 }
 
                 let finalContent = normalized.content
-                run.model = finalContent.model ?? run.model
-                run.totalInputTokens = finalContent.totalInputTokens
-                run.totalCacheCreationInputTokens = finalContent.totalCacheCreationInputTokens
-                run.totalCacheReadInputTokens = finalContent.totalCacheReadInputTokens
-                run.totalCachedInputTokens = finalContent.totalCachedInputTokens
-                run.totalOutputTokens = finalContent.totalOutputTokens
-                run.totalReasoningOutputTokens = finalContent.totalReasoningOutputTokens
-                run.costUSD = finalContent.costUSD
-                run.tokenUsageSource = finalContent.tokenUsageSource
-                run.tokenUsageState = finalContent.tokenUsageState
-                run.costSource = finalContent.costSource
-                run.costState = finalContent.costState
-                run.rawTranscriptRef = finalContent.rawTranscriptRef
-                run.turnCount = finalContent.turns.count
-                if finalContent.tokenUsageState == .invalid {
-                    run.errorMessage = "invalidated implausible token metrics during extraction"
-                }
+                run.applyContent(
+                    finalContent,
+                    invalidMessage: "invalidated implausible token metrics during extraction",
+                    clearOnValid: false
+                )
                 turns = finalContent.turns
                 toolCalls = finalContent.toolCalls
                 Log.info(
@@ -512,8 +500,7 @@ final class TelemetryRecorder {
         contentMode: RunEndContentMode
     ) -> Bool {
         guard contentMode == .immediate else { return false }
-        let lower = provider.lowercased()
-        return lower.contains("codex") || lower.contains("openai")
+        return ProviderFamily.classify(provider) == .codex
     }
 
     // MARK: - PTY Log Reading

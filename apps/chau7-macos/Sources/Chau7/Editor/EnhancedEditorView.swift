@@ -78,6 +78,16 @@ struct EnhancedEditorView: NSViewRepresentable {
         textView.delegate = context.coordinator
         context.coordinator.textView = textView
 
+        // Click-to-toggle for markdown task checkboxes. The recognizer only engages
+        // when the click lands on a `[ ]`/`[x]` box (see gestureRecognizerShouldBegin);
+        // every other click falls through to normal text selection.
+        let checkboxClick = NSClickGestureRecognizer(
+            target: context.coordinator,
+            action: #selector(EditorCoordinator.handleCheckboxClick(_:))
+        )
+        checkboxClick.delegate = context.coordinator
+        textView.addGestureRecognizer(checkboxClick)
+
         // Set initial text
         textView.string = text
         context.coordinator.applySyntaxHighlighting()
@@ -121,13 +131,61 @@ struct EnhancedEditorView: NSViewRepresentable {
 
 // MARK: - Editor Coordinator
 
-class EditorCoordinator: NSObject, NSTextViewDelegate {
+class EditorCoordinator: NSObject, NSTextViewDelegate, NSGestureRecognizerDelegate {
     let parent: EnhancedEditorView
     weak var textView: NSTextView?
     var syntaxTimer: Timer?
 
     init(parent: EnhancedEditorView) {
         self.parent = parent
+    }
+
+    // MARK: - Markdown task-checkbox clicking
+
+    /// Only let the checkbox gesture begin when the click is actually on a `[ ]`/`[x]`
+    /// box in a markdown file; otherwise return false so the click is a normal one.
+    func gestureRecognizerShouldBegin(_ gestureRecognizer: NSGestureRecognizer) -> Bool {
+        guard parent.language.id == "markdown", let textView else { return false }
+        return checkboxBoxRange(at: gestureRecognizer.location(in: textView), in: textView) != nil
+    }
+
+    @objc func handleCheckboxClick(_ recognizer: NSClickGestureRecognizer) {
+        guard let textView,
+              let boxRange = checkboxBoxRange(at: recognizer.location(in: textView), in: textView) else { return }
+        let ns = NSMutableString(string: textView.string)
+        let current = ns.substring(with: boxRange)
+        ns.replaceCharacters(in: boxRange, with: current.lowercased().contains("x") ? "[ ]" : "[x]")
+        let updated = ns as String
+
+        let savedSelection = textView.selectedRange()
+        textView.string = updated
+        parent.text = updated // propagate to the editor model / Binding
+        applySyntaxHighlighting()
+        if savedSelection.location + savedSelection.length <= (updated as NSString).length {
+            textView.setSelectedRange(savedSelection)
+        }
+    }
+
+    /// If `point` (textView coordinates) lands inside a task-list `[ ]`/`[x]` box,
+    /// return that box's character range; otherwise nil.
+    private func checkboxBoxRange(at point: NSPoint, in textView: NSTextView) -> NSRange? {
+        guard let layoutManager = textView.layoutManager,
+              let container = textView.textContainer else { return nil }
+        let origin = textView.textContainerOrigin
+        let local = NSPoint(x: point.x - origin.x, y: point.y - origin.y)
+        let glyphIndex = layoutManager.glyphIndex(for: local, in: container)
+        let charIndex = layoutManager.characterIndexForGlyph(at: glyphIndex)
+
+        let ns = textView.string as NSString
+        guard charIndex < ns.length else { return nil }
+        let lineRange = ns.lineRange(for: NSRange(location: charIndex, length: 0))
+        let line = ns.substring(with: lineRange)
+        guard let regex = MarkdownLiveStyler.taskRegex,
+              let match = regex.firstMatch(in: line, range: NSRange(location: 0, length: (line as NSString).length)),
+              match.numberOfRanges >= 3 else { return nil }
+        let box = match.range(at: 2)
+        let absoluteBox = NSRange(location: lineRange.location + box.location, length: box.length)
+        return NSLocationInRange(charIndex, absoluteBox) ? absoluteBox : nil
     }
 
     func textDidChange(_ notification: Notification) {
@@ -194,6 +252,18 @@ class EditorCoordinator: NSObject, NSTextViewDelegate {
         let storage = textView.textStorage!
         let fullRange = NSRange(location: 0, length: (text as NSString).length)
         storage.beginEditing()
+
+        // Markdown gets live "light" rendering (heading sizes, bold/italic/code,
+        // dimmed markers, …) instead of flat token coloring, so the edit pane reads
+        // like a document while staying fully editable.
+        if parent.language.id == "markdown" {
+            MarkdownLiveStyler.apply(
+                to: storage,
+                theme: MarkdownLiveStyler.defaultTheme(fontSize: CGFloat(parent.config.fontSize))
+            )
+            storage.endEditing()
+            return
+        }
 
         // Reset to default style
         let defaultAttrs: [NSAttributedString.Key: Any] = [

@@ -509,11 +509,7 @@ struct AgentDashboardView: View {
     }
 
     private func backendColor(_ name: String) -> Color {
-        switch name.lowercased() {
-        case "claude": return .orange
-        case "codex": return .green
-        default: return .secondary
-        }
+        ProviderColors.color(for: name)
     }
 
     private func eventIcon(_ type: String) -> String {
@@ -530,9 +526,7 @@ struct AgentDashboardView: View {
     }
 
     private func formatTokens(_ count: Int) -> String {
-        if count > 1_000_000 { return String(format: "%.1fM", Double(count) / 1_000_000) }
-        if count > 1000 { return String(format: "%.1fk", Double(count) / 1000) }
-        return "\(count)"
+        CountFormat.abbreviated(count)
     }
 
     private func formatCost(_ cost: Double) -> String {

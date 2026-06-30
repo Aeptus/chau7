@@ -970,7 +970,12 @@
 "settings.tabs.closeTab" = "إغلاق علامة التبويب";
 "settings.tabs.nextTab" = "علامة التبويب التالية";
 "settings.tabs.previousTab" = "علامة التبويب السابقة";
-"settings.tabs.switchToTab" = "التبديل إلى علامة التبويب 1-9";
+"settings.tabs.switchToTab" = "التبديل إلى علامة التبويب";
+"settings.tabs.switchShortcutMode" = "مفاتيح التبديل بين التبويبات";
+"settings.tabs.switchShortcutMode.help" = "مفاتيح للانتقال إلى تبويب حسب موضعه. تصل F1–F12 إلى 12 تبويبًا لكنها تتجاوز مفاتيح الوظائف داخل الطرفية (مثل vim وhtop).";
+"tabs.switchShortcut.commandNumber" = "⌘1–9";
+"tabs.switchShortcut.functionKey" = "F1–F12";
+"tabs.switchShortcut.both" = "⌘1–9 + F1–F12";
 "settings.tabs.renameTab" = "إعادة تسمية علامة التبويب";
 "settings.tabs.keyboardNavigation.cmdNumber" = "Cmd+رقم لتبديل التبويبات";
 "settings.tabs.keyboardNavigation.cmdNumber.help" = "استخدام Cmd+1-9 للتنقل بين التبويبات";
@@ -2835,7 +2840,9 @@
 "settings.terminal.metalRenderer" = "مُصيّر Metal";
 "settings.terminal.metalRenderer.info" = "ستستخدم البطاقات الجديدة عرض Metal المعجّل بواسطة GPU.";
 "settings.terminal.activePollingRateCap" = "حد تحديث التبويب النشط";
-"settings.terminal.activePollingRateCap.help" = "الحد الأقصى لمعدل تحديث التبويب المُركَّز. «أصلي الشاشة» يتبع شاشتك (حتى 120 هرتز على ProMotion). الحدود الأقل تضحّي قليلاً بسلاسة التمرير مقابل إطالة عمر البطارية. يتم تقليل التبويبات الخاملة تلقائيًا.";
+"settings.terminal.activePollingRateCap.help" = "الحد الأقصى لمعدل تحديث التبويب المُركَّز. «أصلي الشاشة» يتبع شاشتك (حتى 120 هرتز على ProMotion). الحدود الأقل تضحّي قليلاً بسلاسة التمرير مقابل إطالة عمر البطارية.";
+"settings.terminal.inactiveViewMaxFPS" = "حد تحديث تبويبات الخلفية";
+"settings.terminal.inactiveViewMaxFPS.help" = "الحد الأقصى لمعدل تحديث تبويب مرئي غير مُركَّز — مثل تبويب على شاشة ثانية يعرض مخرجات متدفقة. يبقى نشطًا ومتجاوبًا لكنه يُعاد رسمه بهذا المعدل الأبطأ لتقليل استهلاك المعالج الرسومي. يستخدم التبويب المُركَّز «حد تحديث التبويب النشط». الافتراضي 42 إطارًا/ثانية.";
 "settings.terminal.rendering" = "العرض";
 "settings.terminal.resetToDefaults" = "إعادة ضبط الطرفية إلى الافتراضي";
 "settings.terminal.restoredScrollback" = "سجل التمرير المستعاد";
@@ -3139,3 +3146,9 @@
 "settings.productivity.permissions.protected.detail.grantAccess" = "امنح الوصول إلى المجلد للسماح بالتحديث المباشر في هذا الموقع.";
 "settings.productivity.permissions.protected.detail.cooldown" = "ينتظر Chau7 قبل إعادة محاولة الوصول بعد رفض حديث.";
 "settings.productivity.permissions.protected.detail.regrant" = "الإذن المحفوظ قديم. امنح الوصول مرة أخرى لاستعادة التحديث المباشر.";
+
+"settings.terminal.shellHistory" = "سجل الصدفة";
+"settings.terminal.shellHistoryMaxLines" = "السجل المحفوظ (علامات التبويب المغلقة)";
+"settings.terminal.shellHistoryMaxLines.help" = "تحتفظ كل علامة تبويب بسجل الأوامر الخاص بها. يحد هذا من إجمالي ما يُحفظ عبر علامات التبويب المغلقة — تُحذف أقدم الأوامر أولاً عند تجاوز الحد، وتحتفظ كل علامة تبويب بآخر أوامرها على الأقل. لا تُقتطع علامات التبويب المفتوحة أبداً. (0–1,000,000)";
+
+"pane.showPreview" = "إظهار المعاينة (⌘⇧P)";

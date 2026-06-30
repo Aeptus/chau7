@@ -17,6 +17,10 @@ struct PairingInfo: Codable, Equatable {
     let macPub: String
     let pairingCode: String
     let expiresAt: String
+    // Shared HMAC secret delivered in the pairing payload. Used to mint relay
+    // auth tokens. Optional so older pairing payloads (no secret) still decode
+    // and the client falls back to unauthenticated connects.
+    let relaySecret: String?
 
     enum CodingKeys: String, CodingKey {
         case relayURL = "relay_url"
@@ -24,6 +28,7 @@ struct PairingInfo: Codable, Equatable {
         case macPub = "mac_pub"
         case pairingCode = "pairing_code"
         case expiresAt = "expires_at"
+        case relaySecret = "relay_secret"
     }
 }
 
@@ -37,38 +42,6 @@ struct TrustedPairingIdentity: Codable, Equatable {
         case macPub = "mac_pub"
         case iosPub = "ios_pub"
     }
-}
-
-struct StoredPairingDevice: Codable, Equatable, Identifiable {
-    let pairingInfo: PairingInfo
-    var nickname: String?
-    var lastKnownMacName: String?
-    var storedMacPublicKey: String?
-    var trustedIdentity: TrustedPairingIdentity?
-    var lastUsedAt: Date?
-
-    var id: String { pairingInfo.deviceID }
-
-    var displayName: String {
-        let trimmedNickname = nickname?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        if !trimmedNickname.isEmpty {
-            return trimmedNickname
-        }
-
-        let trimmedMacName = lastKnownMacName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        if !trimmedMacName.isEmpty {
-            return trimmedMacName
-        }
-
-        return "Mac \(pairingInfo.deviceID.prefix(6))"
-    }
-}
-
-struct StoredPairingsState: Codable, Equatable {
-    var selectedDeviceID: String?
-    var devices: [StoredPairingDevice]
-
-    static let empty = StoredPairingsState(selectedDeviceID: nil, devices: [])
 }
 
 // MARK: - Handshake
@@ -170,6 +143,7 @@ struct RemoteTab: Codable, Identifiable {
     let title: String
     let projectName: String?
     let branchName: String?
+    let aiProvider: String?
     let isActive: Bool
     let isMCPControlled: Bool
 
@@ -180,6 +154,7 @@ struct RemoteTab: Codable, Identifiable {
         case title
         case projectName = "project_name"
         case branchName = "branch_name"
+        case aiProvider = "ai_provider"
         case isActive = "is_active"
         case isMCPControlled = "is_mcp_controlled"
     }
@@ -190,6 +165,7 @@ struct RemoteTab: Codable, Identifiable {
         title = try container.decode(String.self, forKey: .title)
         projectName = try container.decodeIfPresent(String.self, forKey: .projectName)
         branchName = try container.decodeIfPresent(String.self, forKey: .branchName)
+        aiProvider = try container.decodeIfPresent(String.self, forKey: .aiProvider)
         isActive = try container.decode(Bool.self, forKey: .isActive)
         isMCPControlled = try container.decodeIfPresent(Bool.self, forKey: .isMCPControlled) ?? false
     }
@@ -326,7 +302,40 @@ struct RemoteErrorPayload: Codable {
     let message: String
 }
 
+// MARK: - Notifications
+
+/// Shared identifiers for local notifications, keeping category IDs, action IDs,
+/// and `userInfo` keys in sync between the scheduler (`RemoteClient`) and the
+/// handler (`AppDelegate`). Centralizing these avoids silent breakage from a
+/// typo in one site that the other side never matches.
+enum RemoteNotificationID {
+    static let approvalCategory = "MCP_APPROVAL"
+    static let interactivePromptCategory = "INTERACTIVE_PROMPT"
+
+    enum Action {
+        static let approve = "APPROVE"
+        static let deny = "DENY"
+    }
+
+    enum UserInfoKey {
+        static let requestID = "request_id"
+        static let promptID = "prompt_id"
+        static let tabID = "tab_id"
+        static let openApprovals = "open_approvals"
+        static let approved = "approved"
+    }
+}
+
 // MARK: - Utilities
+
+/// Shared JSON coders. `JSONEncoder`/`JSONDecoder` are expensive to allocate and
+/// safe to reuse across calls; in this app they are only touched from the main
+/// actor, so a single shared instance avoids per-frame/per-event allocation on
+/// the hot paths (frame decode, telemetry, outbound payloads).
+enum RemoteJSON {
+    static let encoder = JSONEncoder()
+    static let decoder = JSONDecoder()
+}
 
 enum CryptoUtils {
     static func randomBytes(count: Int) -> Data {

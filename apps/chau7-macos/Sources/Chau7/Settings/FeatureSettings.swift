@@ -437,6 +437,48 @@ enum RepoGroupingMode: String, CaseIterable, Identifiable, Codable {
     }
 }
 
+// MARK: - Tab Switch Shortcut Mode
+
+/// Which keys jump directly to a tab by position. `commandNumber` covers ⌘1–9;
+/// `functionKey` covers F1–F12 (up to 12 tabs, at the cost of overriding the
+/// function keys inside the terminal); `both` enables them simultaneously.
+enum TabSwitchShortcutMode: String, CaseIterable, Identifiable, Codable {
+    case commandNumber
+    case functionKey
+    case both
+
+    var id: String {
+        rawValue
+    }
+
+    var displayName: String {
+        switch self {
+        case .commandNumber: return L("tabs.switchShortcut.commandNumber", "⌘1–9")
+        case .functionKey: return L("tabs.switchShortcut.functionKey", "F1–F12")
+        case .both: return L("tabs.switchShortcut.both", "⌘1–9 + F1–F12")
+        }
+    }
+
+    /// Whether ⌘1–9 jumps to a tab in this mode.
+    var allowsCommandNumber: Bool {
+        self == .commandNumber || self == .both
+    }
+
+    /// Whether F1–F12 jumps to a tab in this mode.
+    var allowsFunctionKeys: Bool {
+        self == .functionKey || self == .both
+    }
+
+    /// Compact shortcut hint shown in the keyboard reference row.
+    var shortcutHint: String {
+        switch self {
+        case .commandNumber: return "⌘1-9"
+        case .functionKey: return "F1-F12"
+        case .both: return "⌘1-9 or F1-F12"
+        }
+    }
+}
+
 // MARK: - URL Handler
 
 enum URLHandler: String, CaseIterable, Identifiable, Codable {
@@ -1092,11 +1134,17 @@ final class FeatureSettings {
 
     var customShortcuts: [KeyboardShortcut] {
         didSet {
+            customShortcutsGeneration &+= 1
             if let data = JSONOperations.encode(customShortcuts, context: "customShortcuts") {
                 UserDefaults.standard.set(data, forKey: Keys.customShortcuts)
             }
         }
     }
+
+    /// Bumped whenever `customShortcuts` changes, so observers (KeybindingsManager)
+    /// can detect changes with a cheap Int compare per key event instead of
+    /// rebuilding and comparing a signature string.
+    private(set) var customShortcutsGeneration = 0
 
     var isShortcutHelperHintEnabled: Bool {
         didSet { UserDefaults.standard.set(isShortcutHelperHintEnabled, forKey: Keys.shortcutHelperHint) }
@@ -1496,6 +1544,18 @@ final class FeatureSettings {
         }
     }
 
+    /// Which keys jump to a tab by position (⌘1–9 vs F1–F12). Read live by
+    /// AppDelegate's key monitor, so changes take effect on the next keystroke.
+    var tabSwitchShortcutMode: TabSwitchShortcutMode = {
+        guard let raw = UserDefaults.standard.string(forKey: "tabs.tabSwitchShortcutMode"),
+              let mode = TabSwitchShortcutMode(rawValue: raw) else { return .commandNumber }
+        return mode
+    }() {
+        didSet {
+            UserDefaults.standard.set(tabSwitchShortcutMode.rawValue, forKey: "tabs.tabSwitchShortcutMode")
+        }
+    }
+
     // MARK: - Menu Bar Only Mode
 
     var menuBarOnlyMode: Bool {
@@ -1757,6 +1817,16 @@ final class FeatureSettings {
         }
     }
 
+    /// Max grid-sync/draw rate (fps) for visible-but-not-focused terminal views
+    /// (e.g. the selected tab of a non-key window on a second screen). The
+    /// focused view follows `activePollingRateCap`; non-focused visible views
+    /// stay event-driven (responsive) but only present at this rate, cutting
+    /// GPU + grid-sync cost for content the user isn't interacting with.
+    /// Read live on the render hot path. Default 42.
+    var inactiveViewMaxFPS: Int = UserDefaults.standard.object(forKey: "rendering.inactiveViewMaxFPS") as? Int ?? 42 {
+        didSet { UserDefaults.standard.set(inactiveViewMaxFPS, forKey: "rendering.inactiveViewMaxFPS") }
+    }
+
     // MARK: - Custom AI Detection (NEW)
 
     var customAIDetectionRules: [CustomAIDetectionRule] {
@@ -1954,6 +2024,23 @@ final class FeatureSettings {
                 return
             }
             UserDefaults.standard.set(scrollbackLines, forKey: Keys.scrollbackLines)
+        }
+    }
+
+    /// Total command-history lines retained across closed ("orphan") tabs. Per-tab
+    /// shell history accrues one file per tab ever opened; this caps the combined
+    /// closed-tab corpus. When over the cap, the oldest commands are dropped first,
+    /// but each tab keeps at least a few of its most recent ones (see
+    /// `TerminalSessionModel.pruneOrphanShellHistory`). 0 keeps only that per-tab
+    /// minimum. Active/restorable tabs are never pruned.
+    var shellHistoryMaxLines: Int {
+        didSet {
+            let clamped = max(0, min(shellHistoryMaxLines, 1_000_000))
+            if shellHistoryMaxLines != clamped {
+                shellHistoryMaxLines = clamped
+                return
+            }
+            UserDefaults.standard.set(shellHistoryMaxLines, forKey: Keys.shellHistoryMaxLines)
         }
     }
 
@@ -2503,6 +2590,7 @@ final class FeatureSettings {
         static let cursorStyle = "terminal.cursorStyle"
         static let cursorBlink = "terminal.cursorBlink"
         static let scrollbackLines = "terminal.scrollbackLines"
+        static let shellHistoryMaxLines = "terminal.shellHistoryMaxLines"
         static let restoredScrollbackLines = "terminal.restoredScrollbackLines"
         static let runtimeEventJournalCapacity = "runtime.eventJournalCapacity"
         static let runtimeOutputChunkLimit = "runtime.outputChunkLimit"
@@ -2967,6 +3055,7 @@ final class FeatureSettings {
         self.cursorColor = defaults.string(forKey: "terminal.cursorColor") ?? ""
         self.unicodeAmbiguousWidth = defaults.object(forKey: "terminal.unicodeAmbiguousWidth") as? Int ?? 1
         self.scrollbackLines = defaults.object(forKey: Keys.scrollbackLines) as? Int ?? 10000
+        self.shellHistoryMaxLines = defaults.object(forKey: Keys.shellHistoryMaxLines) as? Int ?? 1000
         self.restoredScrollbackLines = defaults.object(forKey: Keys.restoredScrollbackLines) as? Int ?? 500
         self.bellEnabled = defaults.object(forKey: Keys.bellEnabled) as? Bool ?? true
         self.bellSound = defaults.string(forKey: Keys.bellSound) ?? "default"
@@ -3285,6 +3374,7 @@ final class FeatureSettings {
         var cursorStyle: String
         var cursorBlink: Bool
         var scrollbackLines: Int
+        var shellHistoryMaxLines: Int?
         var restoredScrollbackLines: Int
         var bellEnabled: Bool
         var bellSound: String
@@ -3409,6 +3499,7 @@ final class FeatureSettings {
             cursorStyle: cursorStyle,
             cursorBlink: cursorBlink,
             scrollbackLines: scrollbackLines,
+            shellHistoryMaxLines: shellHistoryMaxLines,
             restoredScrollbackLines: restoredScrollbackLines,
             bellEnabled: bellEnabled,
             bellSound: bellSound,
@@ -3559,6 +3650,9 @@ final class FeatureSettings {
         cursorStyle = imported.cursorStyle
         cursorBlink = imported.cursorBlink
         scrollbackLines = imported.scrollbackLines
+        if let shellHistoryMaxLines = imported.shellHistoryMaxLines {
+            self.shellHistoryMaxLines = shellHistoryMaxLines
+        }
         restoredScrollbackLines = imported.restoredScrollbackLines
         bellEnabled = imported.bellEnabled
         bellSound = imported.bellSound
@@ -3865,6 +3959,7 @@ final class FeatureSettings {
         startupCommand = ""
         isLsColorsEnabled = true
         activePollingRateCap = .displayNative
+        inactiveViewMaxFPS = 42
     }
 
     func resetInputToDefaults() {
@@ -3892,6 +3987,7 @@ final class FeatureSettings {
         groupIdleTabs = true
         idleTabThresholdMinutes = 10
         repoGroupingMode = .off
+        tabSwitchShortcutMode = .commandNumber
         customTitleOnly = false
         showTabIcons = true
         showTabPath = true

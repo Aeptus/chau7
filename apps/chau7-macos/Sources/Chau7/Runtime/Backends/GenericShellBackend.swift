@@ -11,12 +11,8 @@ struct GenericShellBackend: AgentBackend {
 
     func launchCommand(config: SessionConfig) -> String {
         // For shell backend, the command is provided via args
-        let envPrefix = ShellEscaping.escapeEnvironmentAssignments(config.environment)
         let cmd = ShellEscaping.escapeArguments(config.args)
-        if !envPrefix.isEmpty, !cmd.isEmpty {
-            return envPrefix + " " + cmd
-        }
-        return cmd
+        return prependingEnvironment(cmd, config.environment)
     }
 
     func formatPromptInput(_ prompt: String, context: String?) -> String {

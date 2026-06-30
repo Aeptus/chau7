@@ -7,8 +7,7 @@ Command palette, dangerous command interception, and path click handling.
 | File | Purpose |
 |------|---------|
 | `CommandPalette.swift` | Fuzzy-search command palette UI (like VS Code's Cmd+Shift+P) |
-| `DangerousCommandConfirmationView.swift` | Confirmation dialog shown when a dangerous command is detected |
-| `DangerousCommandGuard.swift` | Intercepts Enter keystrokes that match risky command patterns |
+| `DangerousCommandGuard.swift` | Intercepts Enter keystrokes that match risky command patterns; shows the NSAlert confirmation |
 | `PathClickHandler.swift` | Handles Cmd+Click on file paths and URLs in terminal output |
 
 ## Key Types

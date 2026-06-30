@@ -77,6 +77,7 @@ final class UsageMonitor {
     /// In-memory cache of the last snapshot per provider to avoid re-reading
     /// the entire JSONL file on every appendSnapshotIfNeeded call.
     @ObservationIgnored private var lastSnapshotByProvider: [String: ProviderQuotaSnapshot] = [:]
+    @ObservationIgnored private var didSeedSnapshotCache = false
     /// Avoids redundant file I/O from ensureClaudeStatusLineInstalled on every refresh cycle.
     @ObservationIgnored private var claudeStatusLineInstalled = false
 
@@ -624,12 +625,13 @@ final class UsageMonitor {
     private func appendSnapshotIfNeeded(_ snapshot: ProviderQuotaSnapshot) {
         let providerKey = snapshot.provider.lowercased()
 
-        // Seed the in-memory cache on first call for this provider.
-        if lastSnapshotByProvider[providerKey] == nil {
-            let existing = loadSnapshots(from: Self.snapshotsFilePath)
-                .last { $0.provider.caseInsensitiveCompare(snapshot.provider) == .orderedSame }
-            if let existing {
-                lastSnapshotByProvider[providerKey] = existing
+        // Seed the in-memory cache from a single file read covering all providers,
+        // rather than re-parsing the whole snapshots file once per provider seen.
+        // loadSnapshots is sorted ascending by capturedAt, so the last write wins.
+        if !didSeedSnapshotCache {
+            didSeedSnapshotCache = true
+            for existing in loadSnapshots(from: Self.snapshotsFilePath) {
+                lastSnapshotByProvider[existing.provider.lowercased()] = existing
             }
         }
 

@@ -71,6 +71,7 @@ Detection methods:
 - **Resilient waiting-input attention** — waiting-input and attention-required events keep persistent tab highlights even when duplicate suppression, rate limits, or disabled idle actions suppress the follow-up notification path.
 - **State-driven tab attention** — terminal session state is reduced through a pure policy so `waitingForInput` / `approvalRequired` tabs have a single source of truth independent of banner delivery. The overlay reconciler repairs missing highlights from live state without replaying native notifications, and `attentionReport` diagnostics expose state/style mismatches in snapshots and tab summaries.
 - **Terminal wait-pattern backstop** — terminal-side AI prompt detection emits lower-confidence attention events as soon as a TUI appears blocked, closing provider-hook delays while preserving authoritative hook precedence.
+- **Attention events reopen terminal-marked sessions** — an authoritative interactive-attention observation reopens a session the reconciler had already marked terminal, so providers that emit no raw lifecycle events between turns (notably Codex) still surface permission prompts that arrive after the first turn instead of being swallowed.
 - **Multi-provider event normalization** — Claude, Codex, and terminal sources translate provider-specific events into one shared semantic layer. Authoritative events from runtime and hooks take priority over history-derived fallbacks.
 - **Centralized event source adaptation** — generic AI, terminal-session, fallback-history, shell, app, API proxy, and unknown-source events share one tested mapped-source adaptation path while keeping source-specific routing and reliability policy explicit.
 - **Event publisher abstraction** — app and shell event producers publish through a narrow `AIEventPublishing` boundary, keeping event detection decoupled from concrete `AppModel` storage and notification state.
@@ -99,6 +100,9 @@ Detection methods:
 - **Tab selection drains queued resume prefill** — `selectTab` now walks the newly selected tab's terminal sessions and calls `flushPendingPrefillInputIfReady` on each. The user looking at a tab is a natural kick for any queued resume command that was waiting on a cold-boot shell — pairs with the 5s heartbeat above so users who do switch around see the prefill instantly, and users who don't still get it within 5s of the shell settling.
 - **"Move to Idle Tabs" works on the selected tab** — the right-click action used to silently no-op when invoked on the currently selected tab (the previous guard rejected `id == selectedTabID` with no log line, no state change, no UX feedback). Selection now jumps to the immediate neighbor first, then the original tab moves into the idle dropdown. Refuses cleanly with a warning when this is the only tab in the window so the user is never left with an empty bar. The `idleTabs` view predicate also reads the observable `suspendedTabIDs` set directly so SwiftUI re-evaluates immediately on the manual move (the session's `lastInputAt` / `lastOutputAt` are `@ObservationIgnored` to avoid keystroke-frequency view thrashing).
 - **Side-panel markdown editor defaults to source** — opening a `.md` / `.markdown` file in the text side panel now shows the raw source editor by default; the runbook preview is one toolbar-button click away. The previous default landed users in the rendered runbook view, which had no editor affordances and made simple edits awkward.
+- **Source ⇄ Preview toggle with a keyboard shortcut** — the source/runbook toggle button is labeled **Preview** (and **Show Source** when previewing), and an editor-pane-scoped `⌘⇧P` shortcut flips between the two views without leaving the editor. (This is distinct from the global command palette on `Cmd+Option+P`; the Preview shortcut only fires while the markdown editor pane has focus.)
+- **Interactive task checkboxes** — the runbook styler recognizes `- [ ]` / `- [x]` task items: the box is styled (green when checked, dimmed when not), completed task text renders struck-through and dimmed, and clicking a checkbox in the source edit pane toggles its state in place.
+- **Hanging indents for wrapped list items and blockquotes** — wrapped lines in list items and blockquotes now hang under their text content instead of the marker, via a per-paragraph head indent measured in the body font, so multi-line bullets and quotes stay visually aligned.
 - **Runbook view actually renders inline markdown** — every paragraph, heading, list item, and checkbox label now renders `**bold**`, `*italic*`, `` `inline code` ``, and `[link](url)` as styled glyphs via `AttributedString(markdown:options:.inlineOnlyPreservingWhitespace)`. The previous build called `Text(verbatim:)` on every line, so users saw literal `**` and `_` characters in the preview. Block-level constructs (headings, fences, lists, checkboxes) are still parsed first by the structural layer, so the inline-only mode never reinterprets a leading `#` as a heading marker. Code-block content is pinned to `Text(verbatim:)` so it can never be reinterpreted as markdown. Malformed inline markup falls back to a partially-parsed rendering so content is never silently dropped.
 - **Autosaved side-panel notes** — default text side panels attach to the tab-scoped `.chau7/sessions/<tab-id>/note.md` as soon as they open, auto-save edits, and flush dirty content silently on close. Regular files (non-auto-save) prompt to save / discard / cancel via a single dialog hosted on the split-pane controller, so the X button and ⌃⌘W share one decision path and "Don't Save" actually discards.
 - **Single Live Selected-Tab Surface** — selected tabs now render through one live surface only; the old snapshot/cursor handoff no longer stacks on top of the live terminal during tab switches.
@@ -214,6 +218,31 @@ Every cross-window tab operation dispatches to the main thread before touching t
 | `tab_set_cto` | Set per-tab CTO override (default/forceOn/forceOff) — recalculates flag files |
 | `tab_rename` | Set a custom title for a tab — pass empty string to clear |
 
+### Agent Orchestration (1 tool)
+
+| Tool | Description |
+| --- | --- |
+| `agent_launch` | Launch one or more AI coding agents (Claude Code, Codex, …) in fresh tabs in a single call — composes `tab_create` + `tab_wait_ready` + `tab_exec` (+ best-effort prompt injection). Params: `directory`, `agent_command` (default `claude`), `prompt`, `count`, `pr_number`, `window_id`, `ready_timeout_ms`. Returns the created tab IDs; collect each agent's output with `tab_output(source='pty_log')` |
+
+Fan a review across N parallel agents — e.g. three agents reviewing PR #323:
+
+```json
+{
+  "name": "agent_launch",
+  "arguments": {
+    "directory": "/path/to/repo",
+    "count": 3,
+    "pr_number": 323,
+    "agent_command": "claude",
+    "prompt": "Review this PR for correctness, security, and test coverage."
+  }
+}
+```
+
+- When `pr_number` is set, each tab runs `gh pr checkout <pr> && <agent_command>` before the agent starts.
+- Prompt delivery is **best-effort**: the prompt is typed in once the agent attaches (reported per agent as `sent` / `agent_not_detected` / `skipped`). For full reliability, embed the task in `agent_command` if the CLI supports it.
+- `count` is capped by the MCP tab limit; a creation failure (e.g. limit reached) stops the batch early.
+
 ### Repository (4 tools)
 
 | Tool | Description |
@@ -236,7 +265,7 @@ Every cross-window tab operation dispatches to the main thread before touching t
 | `session_list` | List telemetry/history AI sessions with run counts — filter by repo_path, active_only. Responses include `active_run_count`, `completed_run_count`, `latest_run_id`, and `latest_run_state`. Use `tab_list` / `tab_status` for live discovery |
 | `session_current` | Get currently active telemetry-backed AI sessions. Use `tab_list` / `tab_status` for live discovery and control |
 
-### Observability (3 tools)
+### Observability (6 tools)
 
 | Tool | Description |
 | --- | --- |
@@ -286,6 +315,7 @@ The app still contains internal runtime orchestration used by dashboard and revi
 - **Crash-safe bundle swap** — the restore bundle directory is replaced with safe-save semantics (old bundle stays until the new one takes over), and manifest/sidecar corruption is logged instead of silently degrading restore to a weaker source.
 - Full ANSI/VT100 with 16-color, 256-color, and 24-bit true color support.
 - Emoji-aware glyph coloring renders real emoji, including achromatic FE0F symbols, with embedded color while keeping terminal UI symbols and box drawing tintable by ANSI foreground color in Metal.
+- ASCII glyph fast path: single-byte printable cells (the vast majority of a text screen) resolve their Metal glyph through a flat style-indexed array, avoiding the per-cell `Data` allocation and dictionary hash the per-frame instance-buffer build previously incurred; multi-byte clusters (emoji, box-drawing, wide CJK, ligatures) keep the full cache path.
 - International Option-key punctuation input preserved for programming characters like brackets and braces.
 - Kitty keyboard protocol (full progressive enhancement).
 - Inline images: iTerm2 (ESC ] 1337), Sixel, and Kitty image protocols.
@@ -302,10 +332,11 @@ The app still contains internal runtime orchestration used by dashboard and revi
 - Show Changed Files (Cmd+Option+G): git diff snapshot per command shows which files were modified.
 - Idle tabs dropdown: tabs idle beyond a configurable threshold (default 10 min) are grouped into a compact chip in the tab bar.
 - Repository tab grouping: group tabs by git repo (Off/Auto/Manual). Shows inline repo-name tag chip with connecting line. Suppresses redundant repo path in tab titles, and inherited group membership auto-detaches when a tab moves to a different repo, including tabs opened directly at another directory.
+- Repo-group tag healing: when a repository is moved or renamed on disk, a tab's stale repo-group tag reconciles to the live git root the next time the app regains focus, so grouped tabs don't keep pointing at a path that no longer exists.
 - Branch detection keeps one shared repository model per root and swaps models on shell-reported repo-root changes, preventing branch labels from one repo leaking into another after `cd`.
 - Branch, repo-root, exit, and foreign notification OSC 9 messages are buffered across PTY chunks before dispatch, so startup metadata survives split terminal reads.
 - Detached HEAD is treated as a no-branch state instead of a branch named `HEAD`, and cached branch identity is cleared when the shell reports the detached sentinel.
-- Split pane file preview: read-only viewer with syntax highlighting and image support (Cmd+Opt+P).
+- Split pane file preview: read-only viewer with syntax highlighting and image support (Cmd+Opt+O).
 - Split pane diff viewer: unified git diff with colored additions/deletions and Working/Staged toggle (Cmd+Opt+Shift+D). Binary changes and pure renames show a dedicated empty-state explaining *why* there are no hunks instead of a misleading "no changes" panel.
 - `chau7://` URL scheme: ssh, run, cd, and open actions from external apps (with confirmation).
 - Default start directory and optional startup commands.
@@ -361,8 +392,8 @@ Chau7's rendering pipeline is purpose-built for latency-sensitive terminal work:
 
 ### Tabs
 
-- Unlimited tabs per window — `Cmd+T` to create, `Cmd+1–9` to jump.
-- Tab renaming (`Cmd+Shift+R`), 12+ colors, reordering via drag or shortcuts with center-crossing snap thresholds.
+- Unlimited tabs per window — `Cmd+T` to create, and a configurable switch-to-tab shortcut mode (`Cmd+1–9`, `F1–F12`, or both) to jump (Settings → Tabs).
+- Tab renaming (`Cmd+Option+R`), 12+ colors, reordering via drag or shortcuts with center-crossing snap thresholds.
 - AI agent logos, git branch indicator, directory path, last command badge.
 - Broadcast input to all tabs with per-tab exclusion and visual indicator.
 - Background rendering suspension for inactive tabs (configurable delay).
@@ -374,7 +405,7 @@ Chau7's rendering pipeline is purpose-built for latency-sensitive terminal work:
 
 ### Split Panes
 
-- Horizontal (`Cmd+Opt+H`) and vertical (`Cmd+Opt+V`) splits with draggable dividers.
+- Horizontal (`Cmd+D`) and vertical (`Cmd+Opt+D`) splits with draggable dividers.
 - Arbitrary nesting via binary tree layout controller.
 - Persisted split-pane trees carry a schema version, so a future Chau7 build that adds a new pane kind can't silently mis-decode through an older binary — older code surfaces a clear error and falls back to a default layout instead.
 - Modal dialogs (close-confirm, Save As) and main-queue polling are injected through `Dialogs` and `MainScheduler` protocols, so the entire close-time decision path and the markdown runbook sequential runner are unit-driveable end-to-end without an AppKit modal loop or real sleeps.
@@ -452,7 +483,7 @@ Chau7's rendering pipeline is purpose-built for latency-sensitive terminal work:
 
 ### Command Palette
 
-- `Cmd+Shift+P` — fuzzy-searchable command palette (VS Code style).
+- `Cmd+Option+P` — fuzzy-searchable command palette (VS Code style).
 
 ### Notifications
 
@@ -533,7 +564,8 @@ Chau7's rendering pipeline is purpose-built for latency-sensitive terminal work:
 - Interactive remote prompts — detected Claude and Codex terminal prompts appear in the iPhone Approvals tab with option buttons that reply to the correct tab. Destructive options require a second confirmation before sending.
 - Background keepalive mode — when Chau7 Remote backgrounds, the session can briefly stay alive in approvals-only mode instead of streaming full terminal traffic.
 - Push-backed remote approvals — the relay and remote helper can register an iPhone push token and wake the Chau7 Remote app when new approvals or interactive prompts appear.
-- iOS 20 minimum target — the Chau7 Remote app, widget extension, and bundled Rust terminal build all share an iOS 20 deployment floor.
+- Hardened relay authentication — scoped, single-use HMAC tokens (per device/role/endpoint) carried in the `Authorization` header defeat replay and connection-takeover; the relay fails closed when no secret is configured, rate-limits per device, validates and size-caps every request, and applies WebSocket backpressure. The relay uses Cloudflare Hibernatable WebSockets so idle sessions no longer pin the Durable Object in memory.
+- iOS 18 minimum target — the Chau7 Remote app and widget extension deploy to iOS 18.0 (`IPHONEOS_DEPLOYMENT_TARGET = 18.0`); the shared SwiftPM package declares an `.iOS(.v17)` floor for library targets.
 - Experimental Rust iPhone renderer — Chau7 Remote can render a true terminal grid on iPhone using the shared Rust terminal core, with a text fallback kept available.
 - Selected-tab-only streaming — macOS streams terminal output and snapshots only for the tab currently selected on iPhone; background tabs stay metadata/activity/approvals-only until switched to.
 - Remote profiling hooks — the iPhone app emits `os_signpost` intervals for frame processing, output append, and ANSI stripping so receive/render lag can be measured in Instruments.
@@ -597,7 +629,8 @@ Chau7's rendering pipeline is purpose-built for latency-sensitive terminal work:
 | Ctrl+Shift+Tab | Previous tab |
 | Cmd+Option+Shift+] | Move tab right |
 | Cmd+Option+Shift+[ | Move tab left |
-| Cmd+Shift+R | Rename tab |
+| Cmd+Shift+T | Reopen closed tab |
+| Cmd+Option+R | Rename tab |
 | Cmd+/ | Keyboard Shortcuts |
 
 ### Editing and Search
@@ -614,17 +647,19 @@ Chau7's rendering pipeline is purpose-built for latency-sensitive terminal work:
 | Cmd+Shift+G | Find previous |
 | Cmd+E | Use selection for find |
 | Cmd+; | Snippets |
-| Cmd+Shift+P | Command palette |
+| Cmd+Option+P | Command palette |
 
 ### View and Terminal
 
 | Shortcut | Action |
 | --- | --- |
 | Cmd+K | Clear screen |
-| Cmd+Shift+K | Clear scrollback |
+| Cmd+Option+K | Clear scrollback |
 | Cmd+= | Zoom in |
 | Cmd+- | Zoom out |
 | Cmd+0 | Actual size |
+| Cmd+Up | Previous input line |
+| Cmd+Down | Next input line |
 | Cmd+Ctrl+F | Toggle full screen |
 
 ### App and Tools
@@ -632,12 +667,31 @@ Chau7's rendering pipeline is purpose-built for latency-sensitive terminal work:
 | Shortcut | Action |
 | --- | --- |
 | Cmd+, | Settings |
-| Cmd+Shift+D | Debug console |
+| Cmd+Option+L | Debug console |
+| Cmd+Shift+D | Data Explorer |
 | Cmd+Shift+O | SSH connections |
 | Cmd+Shift+S | Export text |
 | Cmd+P | Print |
+| Cmd+Option+I | Report issue |
 | Esc | Close overlays (search, rename, snippets, etc.) |
 | Ctrl+` | Toggle dropdown terminal (if enabled) |
+
+### Panes
+
+| Shortcut | Action |
+| --- | --- |
+| Cmd+D | Split horizontally |
+| Cmd+Option+D | Split vertically |
+| Cmd+Option+E | Open text editor |
+| Cmd+Option+O | Open file preview |
+| Cmd+Option+Shift+D | Open diff viewer |
+| Cmd+Option+B | Repository pane |
+| Cmd+Option+Shift+E | Append selection to editor |
+| Cmd+Control+G | Agent dashboard |
+| Cmd+Control+W | Close pane |
+| Cmd+Option+] | Focus next pane |
+| Cmd+Option+[ | Focus previous pane |
+| Cmd+Option+G | Show changed files |
 
 ## File Locations
 
@@ -701,7 +755,7 @@ Legacy `AI_*` and `SMART_OVERLAY_*` environment variables are still supported.
 
 ## Quality Gates
 
-- The full XCTest suite (3120 tests) compiles and runs under `swift test` — no test files are gated out of the package build, and a pre-commit guard rejects new `#if !SWIFT_PACKAGE` gates.
+- The full XCTest suite (3127 tests) compiles and runs under `swift test` — no test files are gated out of the package build, and a pre-commit guard rejects new `#if !SWIFT_PACKAGE` gates.
 - Distribution versions derive from git tags and fail loudly when underivable; the Rust toolchain is pinned; app signing is strictly inside-out (no `--deep`); and the pre-commit guard rejects new `#if !SWIFT_PACKAGE` test gates so dead tests cannot be reintroduced.
 - Persistence paths follow the `Persist` logged-failure convention end to end: settings, SSH profiles, remote approval frames, telemetry responses, repo injection rules, and scrollback reloads log corruption and write failures instead of silently degrading.
 
@@ -728,6 +782,7 @@ Chau7/
 │   └── chau7-ios/               # Native iOS companion
 ├── services/
 │   ├── chau7-relay/             # Cloudflare Workers relay
+│   ├── chau7-issues/            # Cloudflare Worker bug-report intake (issues.chau7.sh)
 │   └── chau7-remote/            # Go remote agent + protocol docs
 └── docs/                        # Shared top-level docs only
 ```

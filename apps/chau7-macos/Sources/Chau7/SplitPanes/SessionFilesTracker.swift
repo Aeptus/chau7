@@ -1,8 +1,13 @@
 import Chau7Core
 import Foundation
 
-/// Tracks files touched during the current turn while preserving per-turn history.
-final class TurnFilesTracker {
+/// Accumulates files touched by an AI agent session by reading the EventJournal,
+/// preserving per-turn history.
+///
+/// Survives journal ring-buffer eviction: once a file path is seen, it stays in
+/// `touchedFiles` even if the journal event is overwritten. Call `update(from:)`
+/// on each refresh cycle to incrementally read new events.
+final class SessionFilesTracker {
     private(set) var currentTurnID: String?
     private(set) var currentTurnFiles: Set<String> = []
     private(set) var filesByTurn: [String: Set<String>] = [:]
@@ -95,51 +100,5 @@ final class TurnFilesTracker {
             .max { lhs, rhs in lhs.value < rhs.value }?
             .key
         return matchedTurn ?? currentTurnID ?? lastSeenTurnID
-    }
-}
-
-/// Accumulates files touched by an AI agent session by reading the EventJournal.
-///
-/// Survives journal ring-buffer eviction: once a file path is seen, it stays
-/// in `touchedFiles` even if the journal event is overwritten. Call `update(from:)`
-/// on each refresh cycle to incrementally read new events.
-final class SessionFilesTracker {
-    private let turnTracker = TurnFilesTracker()
-
-    var gitRoot: String? {
-        get { turnTracker.gitRoot }
-        set { turnTracker.gitRoot = newValue }
-    }
-
-    var touchedFiles: Set<String> {
-        turnTracker.touchedFiles
-    }
-
-    var currentTurnID: String? {
-        turnTracker.currentTurnID
-    }
-
-    var currentTurnFiles: Set<String> {
-        turnTracker.currentTurnFiles
-    }
-
-    var filesByTurn: [String: Set<String>] {
-        turnTracker.filesByTurn
-    }
-
-    var fileTimeline: [String: [FileTouchRecord]] {
-        turnTracker.fileTimeline
-    }
-
-    var fileActions: [String: Set<FileTrackingAction>] {
-        turnTracker.fileActions
-    }
-
-    func update(from journal: EventJournal, commandBlocks: [CommandBlock] = []) {
-        turnTracker.update(from: journal, commandBlocks: commandBlocks)
-    }
-
-    func reset() {
-        turnTracker.reset()
     }
 }

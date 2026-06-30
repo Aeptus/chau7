@@ -6,7 +6,7 @@ This directory hosts the native iOS companion app for Chau7.
 - Live terminal output streaming (view-only by default).
 - Simple input with Send button (hold-to-send default).
 - Tab switcher for active macOS tabs.
-- Pairing via pasted JSON payload (no camera required).
+- Pairing via QR scan, one-tap "Paste & Pair", or manual JSON entry.
 - Live Activity / Dynamic Island status for the most relevant remote AI task.
 
 ## Docs

@@ -521,7 +521,10 @@ final class ScriptingAPI {
     }
 
     private func handleListSnippets() -> [String: Any] {
-        ["result": [] as [[String: Any]]]
+        let snippets = SnippetManager.shared.entries.map { entry -> [String: Any] in
+            ["title": entry.snippet.title, "body": entry.snippet.body]
+        }
+        return ["result": snippets]
     }
 
     private func handleRunSnippet(_ params: [String: Any]) async -> [String: Any] {

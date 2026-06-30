@@ -10,9 +10,7 @@ struct WebhookActionHandler: NotificationActionHandler {
     func execute(payload: ActionPayload, environment _: ActionEnvironment) -> NotificationActionExecutor.ExecutionReport {
         guard let urlString = payload.configValue("url"), let url = URL(string: urlString) else {
             Log.warn("Action webhook: Invalid URL")
-            var report = NotificationActionExecutor.ExecutionReport()
-            report.recordFailure("webhook invalid URL")
-            return report
+            return .failure("webhook invalid URL")
         }
 
         let method = payload.configValue("method") ?? "POST"
@@ -54,9 +52,7 @@ struct WebhookActionHandler: NotificationActionHandler {
                 }
             }
         }.resume()
-        var report = NotificationActionExecutor.ExecutionReport()
-        report.recordSuccess(.webhook)
-        return report
+        return .success(.webhook)
     }
 }
 
@@ -69,9 +65,7 @@ struct SendSlackActionHandler: NotificationActionHandler {
     func execute(payload: ActionPayload, environment _: ActionEnvironment) -> NotificationActionExecutor.ExecutionReport {
         guard let webhookUrl = payload.configValue("webhookUrl"), let url = URL(string: webhookUrl) else {
             Log.warn("Action sendSlack: Invalid webhook URL")
-            var report = NotificationActionExecutor.ExecutionReport()
-            report.recordFailure("sendSlack invalid webhook URL")
-            return report
+            return .failure("sendSlack invalid webhook URL")
         }
 
         let username = payload.configValue("username") ?? "Chau7"
@@ -100,9 +94,7 @@ struct SendSlackActionHandler: NotificationActionHandler {
                 Log.info("Action sendSlack: Message sent")
             }
         }.resume()
-        var report = NotificationActionExecutor.ExecutionReport()
-        report.recordSuccess(.sendSlack)
-        return report
+        return .success(.sendSlack)
     }
 }
 
@@ -115,9 +107,7 @@ struct SendDiscordActionHandler: NotificationActionHandler {
     func execute(payload: ActionPayload, environment _: ActionEnvironment) -> NotificationActionExecutor.ExecutionReport {
         guard let webhookUrl = payload.configValue("webhookUrl"), let url = URL(string: webhookUrl) else {
             Log.warn("Action sendDiscord: Invalid webhook URL")
-            var report = NotificationActionExecutor.ExecutionReport()
-            report.recordFailure("sendDiscord invalid webhook URL")
-            return report
+            return .failure("sendDiscord invalid webhook URL")
         }
 
         let username = payload.configValue("username") ?? "Chau7"
@@ -144,8 +134,6 @@ struct SendDiscordActionHandler: NotificationActionHandler {
                 Log.info("Action sendDiscord: Message sent")
             }
         }.resume()
-        var report = NotificationActionExecutor.ExecutionReport()
-        report.recordSuccess(.sendDiscord)
-        return report
+        return .success(.sendDiscord)
     }
 }

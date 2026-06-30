@@ -314,7 +314,8 @@ struct TextEditorPaneView: View {
                     .disabled(!editor.isDirty && editor.filePath != nil)
                     .help(L("Save", "Save"))
 
-                    // Markdown toggle (only for .md files)
+                    // Markdown Source ⇄ Preview toggle (only for .md files), with a
+                    // ⌘⇧P shortcut scoped to the editor pane while it's on screen.
                     if isMarkdownFile {
                         Button {
                             isMarkdownMode.toggle()
@@ -323,7 +324,10 @@ struct TextEditorPaneView: View {
                                 .font(.system(size: 11))
                         }
                         .buttonStyle(.plain)
-                        .help(isMarkdownMode ? L("pane.showSource", "Show Source") : L("pane.showRunbook", "Show Runbook"))
+                        .keyboardShortcut("p", modifiers: [.command, .shift])
+                        .help(isMarkdownMode
+                            ? L("pane.showSource", "Show Source (⌘⇧P)")
+                            : L("pane.showPreview", "Show Preview (⌘⇧P)"))
 
                         if isMarkdownMode, onRunCommand != nil {
                             Button {
@@ -440,6 +444,9 @@ struct SplitDivider: View {
 
     @State private var isDragging = false
     @State private var dragStartRatio: CGFloat = 0.5
+    /// Tracks whether we pushed a resize cursor, so push/pop stay balanced
+    /// even if the divider is torn down (closePane/promote) while hovered.
+    @State private var isHovered = false
 
     var body: some View {
         Rectangle()
@@ -448,13 +455,22 @@ struct SplitDivider: View {
             .contentShape(Rectangle())
             .onHover { hovering in
                 if hovering {
+                    guard !isHovered else { return }
                     if isVertical {
                         NSCursor.resizeLeftRight.push()
                     } else {
                         NSCursor.resizeUpDown.push()
                     }
-                } else {
+                    isHovered = true
+                } else if isHovered {
                     NSCursor.pop()
+                    isHovered = false
+                }
+            }
+            .onDisappear {
+                if isHovered {
+                    NSCursor.pop()
+                    isHovered = false
                 }
             }
             .gesture(

@@ -23,6 +23,23 @@ final class TerminalSessionModelTests: XCTestCase {
         }
     }
 
+    /// Async sibling of `waitUntil` for `async` tests. `RunLoop.main.run` does
+    /// not service `DispatchQueue.main.async` blocks when called from an
+    /// `async` context (the main actor stays pinned), so polling work that
+    /// hops through a background queue back to main must `await` instead —
+    /// each `Task.sleep` suspends the actor so the queued main-thread blocks
+    /// actually drain.
+    private func waitUntilAsync(
+        timeout: TimeInterval = 5,
+        _ condition: () -> Bool
+    ) async {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if condition() { return }
+            try? await Task.sleep(for: .milliseconds(10))
+        }
+    }
+
     // MARK: - CommandStatus Enum
 
     func testCommandStatusRawValues() {
@@ -1174,8 +1191,11 @@ final class TerminalSessionModelTests: XCTestCase {
         session.status = .running
 
         session.handleOutput(Data("Proceed?".utf8))
-        await flushMainQueue()
-        await flushMainQueue()
+        // handleOutput hops to the background output-processing queue and back
+        // to main (twice: once for the UI block, once for the status update),
+        // so the original fixed pair of main-queue flushes raced the
+        // detection. Poll asynchronously until the status settles instead.
+        await waitUntilAsync { session.status == .waitingForInput }
 
         let event = model.recentEvents.last
         XCTAssertEqual(session.status, .waitingForInput)

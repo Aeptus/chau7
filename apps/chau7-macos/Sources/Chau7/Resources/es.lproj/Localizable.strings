@@ -991,7 +991,12 @@
 "settings.tabs.closeTab" = "Cerrar pestaña";
 "settings.tabs.nextTab" = "Siguiente pestaña";
 "settings.tabs.previousTab" = "Pestaña anterior";
-"settings.tabs.switchToTab" = "Ir a la pestaña 1-9";
+"settings.tabs.switchToTab" = "Ir a la pestaña";
+"settings.tabs.switchShortcutMode" = "Teclas para cambiar de pestaña";
+"settings.tabs.switchShortcutMode.help" = "Teclas para ir a una pestaña por posición. F1–F12 alcanza hasta 12 pestañas pero anula las teclas de función en el terminal (p. ej. vim, htop).";
+"tabs.switchShortcut.commandNumber" = "⌘1–9";
+"tabs.switchShortcut.functionKey" = "F1–F12";
+"tabs.switchShortcut.both" = "⌘1–9 + F1–F12";
 "settings.tabs.renameTab" = "Renombrar pestaña";
 "settings.tabs.keyboardNavigation.cmdNumber" = "Cmd+Número para cambiar de pestaña";
 "settings.tabs.keyboardNavigation.cmdNumber.help" = "Usar Cmd+1-9 para navegar entre pestañas";
@@ -2915,7 +2920,9 @@
 "settings.terminal.metalRenderer" = "Renderizador Metal";
 "settings.terminal.metalRenderer.info" = "Las nuevas pestañas usarán renderizado GPU con Metal para la visualización.";
 "settings.terminal.activePollingRateCap" = "Límite de actualización de pestaña activa";
-"settings.terminal.activePollingRateCap.help" = "Frecuencia de actualización máxima para la pestaña enfocada. «Nativa de pantalla» sigue tu monitor (hasta 120 Hz en ProMotion). Los límites más bajos reducen levemente la fluidez del desplazamiento a cambio de autonomía. Las pestañas inactivas se ralentizan automáticamente.";
+"settings.terminal.activePollingRateCap.help" = "Frecuencia de actualización máxima para la pestaña enfocada. «Nativa de pantalla» sigue tu monitor (hasta 120 Hz en ProMotion). Los límites más bajos reducen levemente la fluidez del desplazamiento a cambio de autonomía.";
+"settings.terminal.inactiveViewMaxFPS" = "Límite de actualización de pestañas en segundo plano";
+"settings.terminal.inactiveViewMaxFPS.help" = "Frecuencia de actualización máxima de una pestaña visible pero no enfocada — p. ej. una pestaña en una segunda pantalla mostrando salida en streaming. Permanece activa y receptiva pero se redibuja a este ritmo más lento para reducir el coste de GPU. La pestaña enfocada usa «Límite de actualización de pestaña activa». Predeterminado 42 fps.";
 "settings.terminal.rendering" = "Renderizado";
 "settings.terminal.resetToDefaults" = "Restablecer terminal a valores predeterminados";
 "settings.terminal.restoredScrollback" = "Historial restaurado";
@@ -3221,3 +3228,9 @@
 "settings.productivity.permissions.protected.detail.grantAccess" = "Concede acceso a la carpeta para permitir la actualización en vivo en esta ubicación.";
 "settings.productivity.permissions.protected.detail.cooldown" = "Chau7 está esperando antes de reintentar el acceso tras una denegación reciente.";
 "settings.productivity.permissions.protected.detail.regrant" = "El permiso guardado está obsoleto. Concede acceso otra vez para restaurar la actualización en vivo.";
+
+"settings.terminal.shellHistory" = "Historial del shell";
+"settings.terminal.shellHistoryMaxLines" = "Historial guardado (pestañas cerradas)";
+"settings.terminal.shellHistoryMaxLines.help" = "Cada pestaña mantiene su propio historial de comandos. Esto limita el total guardado de las pestañas cerradas: los comandos más antiguos se eliminan primero al superar el límite, y cada pestaña conserva al menos los últimos. Las pestañas abiertas nunca se recortan. (0–1 000 000)";
+
+"pane.showPreview" = "Mostrar vista previa (⌘⇧P)";

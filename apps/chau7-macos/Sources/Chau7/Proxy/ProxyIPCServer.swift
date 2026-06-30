@@ -16,13 +16,6 @@ final class ProxyIPCServer {
     // MARK: - Observable State
 
     private(set) var isListening = false
-    // Append-only buffer; recentEvents reverses it so newest comes first.
-    // Writes are O(1) amortized (append); reads are O(n) but rare (poll interval).
-    private var eventsBuffer: [APICallEvent] = []
-    private(set) var recentEvents: [APICallEvent] {
-        get { eventsBuffer.reversed() }
-        set { eventsBuffer = newValue.reversed() }
-    }
 
     /// Task lifecycle state
     private(set) var pendingCandidates: [String: TaskCandidate] = [:] { // tabId -> candidate
@@ -47,7 +40,6 @@ final class ProxyIPCServer {
     @ObservationIgnored private let logger = Logger(subsystem: "com.chau7.proxy", category: "IPCServer")
 
     @ObservationIgnored private var buffer = Data()
-    @ObservationIgnored private let maxRecentEvents = 100
 
     /// Socket path
     private var socketPath: URL {
@@ -55,6 +47,10 @@ final class ProxyIPCServer {
             .appendingPathComponent("Proxy", isDirectory: true)
             .appendingPathComponent("proxy.sock")
     }
+
+    /// Reused across api_call events — ISO8601DateFormatter init is expensive
+    /// and this runs on the IPC read path for every proxied LLM request.
+    private static let apiCallTimestampFormatter = ISO8601DateFormatter()
 
     // MARK: - Initialization
 
@@ -186,11 +182,6 @@ final class ProxyIPCServer {
         isListening = false
     }
 
-    /// Clear all recent events
-    func clearEvents() {
-        eventsBuffer.removeAll()
-    }
-
     // MARK: - Private Methods
 
     private func acceptConnection() {
@@ -315,7 +306,7 @@ final class ProxyIPCServer {
             statusCode: data.statusCode,
             costUSD: data.costUSD,
             pricingVersion: data.pricingVersion,
-            timestamp: ISO8601DateFormatter().date(from: data.timestamp) ?? Date(),
+            timestamp: Self.apiCallTimestampFormatter.date(from: data.timestamp) ?? Date(),
             errorMessage: data.errorMessage.isEmpty ? nil : data.errorMessage,
             projectPath: data.projectPath
         )
@@ -492,12 +483,6 @@ final class ProxyIPCServer {
     }
 
     private func addEvent(_ event: APICallEvent) {
-        // Append to buffer (O(1) amortized), trim oldest if over limit
-        eventsBuffer.append(event)
-        if eventsBuffer.count > maxRecentEvents {
-            eventsBuffer.removeFirst(eventsBuffer.count - maxRecentEvents)
-        }
-
         // Post notification for other components
         NotificationCenter.default.post(
             name: .apiCallRecorded,

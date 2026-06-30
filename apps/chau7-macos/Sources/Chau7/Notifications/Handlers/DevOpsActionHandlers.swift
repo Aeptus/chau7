@@ -10,9 +10,7 @@ struct DockerBumpActionHandler: NotificationActionHandler {
     func execute(payload: ActionPayload, environment _: ActionEnvironment) -> NotificationActionExecutor.ExecutionReport {
         guard let container = payload.configValue("container"), !container.isEmpty else {
             Log.warn("Action dockerBump: No container specified")
-            var report = NotificationActionExecutor.ExecutionReport()
-            report.recordFailure("dockerBump missing container")
-            return report
+            return .failure("dockerBump missing container")
         }
 
         let operation = payload.configValue("operation") ?? "restart"
@@ -44,13 +42,9 @@ struct DockerBumpActionHandler: NotificationActionHandler {
             }
         default:
             Log.warn("Action dockerBump: Unknown operation: \(operation)")
-            var report = NotificationActionExecutor.ExecutionReport()
-            report.recordFailure("dockerBump unknown operation: \(operation)")
-            return report
+            return .failure("dockerBump unknown operation: \(operation)")
         }
-        var report = NotificationActionExecutor.ExecutionReport()
-        report.recordSuccess(.dockerBump)
-        return report
+        return .success(.dockerBump)
     }
 }
 
@@ -63,9 +57,7 @@ struct DockerComposeActionHandler: NotificationActionHandler {
     func execute(payload: ActionPayload, environment _: ActionEnvironment) -> NotificationActionExecutor.ExecutionReport {
         guard let composePath = payload.configValue("composePath"), !composePath.isEmpty else {
             Log.warn("Action dockerCompose: No compose file path specified")
-            var report = NotificationActionExecutor.ExecutionReport()
-            report.recordFailure("dockerCompose missing composePath")
-            return report
+            return .failure("dockerCompose missing composePath")
         }
 
         let operation = payload.configValue("operation") ?? "restart"
@@ -90,15 +82,11 @@ struct DockerComposeActionHandler: NotificationActionHandler {
             args += ["pull"] + serviceArgs
         default:
             Log.warn("Action dockerCompose: Unknown operation: \(operation)")
-            var report = NotificationActionExecutor.ExecutionReport()
-            report.recordFailure("dockerCompose unknown operation: \(operation)")
-            return report
+            return .failure("dockerCompose unknown operation: \(operation)")
         }
 
         runProcessAsync(executable: dockerComposePath, arguments: args, label: "dockerCompose")
-        var report = NotificationActionExecutor.ExecutionReport()
-        report.recordSuccess(.dockerCompose)
-        return report
+        return .success(.dockerCompose)
     }
 }
 
@@ -111,9 +99,7 @@ struct KubernetesRolloutActionHandler: NotificationActionHandler {
     func execute(payload: ActionPayload, environment _: ActionEnvironment) -> NotificationActionExecutor.ExecutionReport {
         guard let deployment = payload.configValue("deployment"), !deployment.isEmpty else {
             Log.warn("Action kubernetesRollout: No deployment specified")
-            var report = NotificationActionExecutor.ExecutionReport()
-            report.recordFailure("kubernetesRollout missing deployment")
-            return report
+            return .failure("kubernetesRollout missing deployment")
         }
 
         let namespace = payload.configValue("namespace") ?? "default"
@@ -138,14 +124,10 @@ struct KubernetesRolloutActionHandler: NotificationActionHandler {
             args += ["rollout", "status", "deployment/\(deployment)"]
         default:
             Log.warn("Action kubernetesRollout: Unknown operation: \(operation)")
-            var report = NotificationActionExecutor.ExecutionReport()
-            report.recordFailure("kubernetesRollout unknown operation: \(operation)")
-            return report
+            return .failure("kubernetesRollout unknown operation: \(operation)")
         }
 
         runProcessAsync(executable: kubectlPath, arguments: args, label: "kubernetesRollout")
-        var report = NotificationActionExecutor.ExecutionReport()
-        report.recordSuccess(.kubernetesRollout)
-        return report
+        return .success(.kubernetesRollout)
     }
 }

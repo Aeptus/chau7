@@ -39,9 +39,14 @@ export class IssueRateLimitDO {
 
   async fetch(request) {
     const url = new URL(request.url);
-    const parts = url.pathname.split('/').filter(Boolean);
-    if (request.method !== 'POST' || parts[0] !== 'ratelimit' || parts[1] !== 'check') {
-      return new Response('Not Found', { status: 404 });
+    const parts = url.pathname.split("/").filter(Boolean);
+    const action = parts[1];
+    if (
+      request.method !== "POST" ||
+      parts[0] !== "ratelimit" ||
+      (action !== "reserve" && action !== "release")
+    ) {
+      return new Response("Not Found", { status: 404 });
     }
 
     const { ip, max, windowMs } = await request.json();
@@ -50,102 +55,97 @@ export class IssueRateLimitDO {
     const stored = (await this.state.storage.get(key)) ?? [];
     const recent = stored.filter((timestamp) => now - timestamp < windowMs);
 
-    if (recent.length >= max) {
-      return new Response('Rate limited', { status: 429 });
+    if (action === "release") {
+      // Hand a previously reserved slot back (e.g. the GitHub call failed).
+      // Slots are interchangeable timestamps, so dropping the most recent keeps
+      // the count accurate.
+      recent.pop();
+      await this.state.storage.put(key, recent);
+      return new Response("OK", { status: 200 });
     }
 
+    // action === "reserve": atomically check-and-take a slot in a single DO
+    // request so concurrent callers can't both pass the gate (TOCTOU-safe).
+    // Failed creations release their slot afterward, so the window effectively
+    // counts only successful creations while erring toward throttling.
+    if (recent.length >= max) {
+      return new Response("Rate limited", { status: 429 });
+    }
     recent.push(now);
     await this.state.storage.put(key, recent);
-    return new Response('OK', { status: 200 });
+    return new Response("OK", { status: 200 });
   }
 }
 
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
-    const parts = url.pathname.split('/').filter(Boolean);
+    const parts = url.pathname.split("/").filter(Boolean);
 
-    if (parts.length === 0 || (parts.length === 1 && parts[0] === 'issue')) {
-      if (request.method === 'GET') {
+    if (parts.length === 0 || (parts.length === 1 && parts[0] === "issue")) {
+      if (request.method === "GET") {
         return new Response(LANDING_HTML, {
           status: 200,
-          headers: { 'Content-Type': 'text/html; charset=utf-8' }
+          headers: { "Content-Type": "text/html; charset=utf-8" },
         });
       }
-      if (request.method === 'OPTIONS') {
+      if (request.method === "OPTIONS") {
         return corsResponse(null, 204);
       }
-      if (request.method === 'POST') {
+      if (request.method === "POST") {
         return handleIssueCreate(request, env);
       }
-      return new Response('Method Not Allowed', { status: 405 });
+      return new Response("Method Not Allowed", { status: 405 });
     }
 
-    return new Response('Not Found', { status: 404 });
-  }
+    return new Response("Not Found", { status: 404 });
+  },
 };
 
 async function handleIssueCreate(request, env) {
   if (!env.GITHUB_ISSUE_PAT || !env.GITHUB_ISSUE_REPO) {
-    return corsResponse({ error: 'Issue reporting not configured.' }, 503);
+    return corsResponse({ error: "Issue reporting not configured." }, 503);
   }
 
   if (!/^[a-zA-Z0-9._-]+\/[a-zA-Z0-9._-]+$/.test(env.GITHUB_ISSUE_REPO)) {
     console.error(`Invalid GITHUB_ISSUE_REPO format: ${env.GITHUB_ISSUE_REPO}`);
-    return corsResponse({ error: 'Issue reporting misconfigured.' }, 503);
+    return corsResponse({ error: "Issue reporting misconfigured." }, 503);
   }
 
-  const ip = request.headers.get('CF-Connecting-IP') ?? 'unknown';
-  const rateLimitId = env.ISSUE_RATE_LIMIT.idFromName('issue-ratelimit');
-  const rateLimitDO = env.ISSUE_RATE_LIMIT.get(rateLimitId);
-  let rateLimitResponse;
-  try {
-    rateLimitResponse = await rateLimitDO.fetch(
-      new Request('https://internal/ratelimit/check', {
-        method: 'POST',
-        body: JSON.stringify({ ip, max: ISSUE_RATE_MAX, windowMs: ISSUE_RATE_WINDOW_MS })
-      })
-    );
-  } catch (error) {
-    console.error('Issue rate limit error:', error);
-    return corsResponse({ error: 'Rate limit check failed. Try again.' }, 503);
-  }
+  const ip = request.headers.get("CF-Connecting-IP") ?? "unknown";
 
-  if (rateLimitResponse.status !== 200) {
-    const code = rateLimitResponse.status === 429 ? 429 : 503;
-    return corsResponse(
-      {
-        error:
-          code === 429 ? 'Rate limited. Maximum 5 reports per hour.' : 'Rate limit check failed.'
-      },
-      code
-    );
-  }
-
+  // Validate before touching the rate limiter so malformed requests never
+  // consume a slot — the limit should count only successful creations.
   let payload;
   try {
     payload = await request.json();
   } catch {
-    return corsResponse({ error: 'Invalid JSON body.' }, 400);
+    return corsResponse({ error: "Invalid JSON body." }, 400);
   }
 
-  const title = typeof payload.title === 'string' ? payload.title.trim() : '';
-  const body = typeof payload.body === 'string' ? payload.body.trim() : '';
+  const title = typeof payload.title === "string" ? payload.title.trim() : "";
+  const body = typeof payload.body === "string" ? payload.body.trim() : "";
   if (!title || !body) {
     return corsResponse(
       { error: "Both 'title' and 'body' are required and must be non-empty." },
-      400
+      400,
     );
   }
   if (title.length > 256) {
-    return corsResponse({ error: `Title too long (${title.length} chars, max 256).` }, 400);
+    return corsResponse(
+      { error: `Title too long (${title.length} chars, max 256).` },
+      400,
+    );
   }
   if (body.length > 65535) {
-    return corsResponse({ error: `Body too long (${body.length} chars, max 65535).` }, 400);
+    return corsResponse(
+      { error: `Body too long (${body.length} chars, max 65535).` },
+      400,
+    );
   }
 
   const labels = Array.isArray(payload.labels)
-    ? payload.labels.filter((label) => typeof label === 'string').slice(0, 5)
+    ? payload.labels.filter((label) => typeof label === "string").slice(0, 5)
     : [];
 
   const githubPayload = { title, body };
@@ -153,21 +153,78 @@ async function handleIssueCreate(request, env) {
     githubPayload.labels = labels;
   }
 
-  const githubResponse = await fetch(`https://api.github.com/repos/${env.GITHUB_ISSUE_REPO}/issues`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${env.GITHUB_ISSUE_PAT}`,
-      Accept: 'application/vnd.github+json',
-      'User-Agent': 'chau7-issues',
-      'X-GitHub-Api-Version': '2022-11-28'
-    },
-    body: JSON.stringify(githubPayload)
+  // Atomically reserve a rate-limit slot in a single DO request (TOCTOU-safe),
+  // then release it on failure so only successful creations are counted.
+  const rateLimitId = env.ISSUE_RATE_LIMIT.idFromName("issue-ratelimit");
+  const rateLimitDO = env.ISSUE_RATE_LIMIT.get(rateLimitId);
+  const rateLimitBody = JSON.stringify({
+    ip,
+    max: ISSUE_RATE_MAX,
+    windowMs: ISSUE_RATE_WINDOW_MS,
   });
+  const releaseSlot = async () => {
+    try {
+      await rateLimitDO.fetch(
+        new Request("https://internal/ratelimit/release", {
+          method: "POST",
+          body: rateLimitBody,
+        }),
+      );
+    } catch (error) {
+      console.error("Issue rate limit release error:", error);
+    }
+  };
+
+  let reserveResponse;
+  try {
+    reserveResponse = await rateLimitDO.fetch(
+      new Request("https://internal/ratelimit/reserve", {
+        method: "POST",
+        body: rateLimitBody,
+      }),
+    );
+  } catch (error) {
+    console.error("Issue rate limit error:", error);
+    return corsResponse({ error: "Rate limit check failed. Try again." }, 503);
+  }
+
+  if (reserveResponse.status !== 200) {
+    const code = reserveResponse.status === 429 ? 429 : 503;
+    return corsResponse(
+      {
+        error:
+          code === 429
+            ? "Rate limited. Maximum 5 reports per hour."
+            : "Rate limit check failed.",
+      },
+      code,
+    );
+  }
+
+  const githubResponse = await fetch(
+    `https://api.github.com/repos/${env.GITHUB_ISSUE_REPO}/issues`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${env.GITHUB_ISSUE_PAT}`,
+        Accept: "application/vnd.github+json",
+        "User-Agent": "chau7-issues",
+        "X-GitHub-Api-Version": "2022-11-28",
+      },
+      body: JSON.stringify(githubPayload),
+    },
+  );
 
   if (!githubResponse.ok) {
+    await releaseSlot();
     const errorText = await githubResponse.text();
-    console.error(`GitHub API error: ${githubResponse.status} ${errorText.slice(0, 500)}`);
-    return corsResponse({ error: `GitHub API error (${githubResponse.status}).` }, 502);
+    console.error(
+      `GitHub API error: ${githubResponse.status} ${errorText.slice(0, 500)}`,
+    );
+    return corsResponse(
+      { error: `GitHub API error (${githubResponse.status}).` },
+      502,
+    );
   }
 
   const githubData = await githubResponse.json();
@@ -178,11 +235,11 @@ function corsResponse(data, status = 200) {
   return new Response(data == null ? null : JSON.stringify(data), {
     status,
     headers: {
-      'Content-Type': 'application/json',
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'POST, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type',
-      'Access-Control-Max-Age': '86400'
-    }
+      "Content-Type": "application/json",
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Methods": "POST, OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type",
+      "Access-Control-Max-Age": "86400",
+    },
   });
 }

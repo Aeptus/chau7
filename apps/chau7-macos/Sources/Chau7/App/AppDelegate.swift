@@ -27,6 +27,8 @@ private final class OverlayBlurView: NSVisualEffectView {
     }
 
     private var overlayHosts: [OverlayHost] = []
+    /// Debounce for bursty `didChangeScreenParametersNotification` re-clamps.
+    private var screenParamsDebounce: DispatchWorkItem?
     private(set) weak var activeOverlayModel: OverlayTabsModel?
     private var lastOverlayDiagLogAt: CFAbsoluteTime = 0
     private var lastOverlayDiagReason = ""
@@ -683,6 +685,9 @@ private final class OverlayBlurView: NSVisualEffectView {
                 self?.telemetryRepairWorkItem?.cancel()
                 self?.telemetryRepairWorkItem = nil
                 self?.enableLowLatency()
+                // Returning to the app is the moment a repo may have been moved
+                // in Finder; heal any group tags now orphaned by the move.
+                self?.reconcileStaleRepoGroupsAcrossWindows()
             }
         }
         let resignObs = NotificationCenter.default.addObserver(
@@ -702,6 +707,15 @@ private final class OverlayBlurView: NSVisualEffectView {
 
     private func enableLowLatency() {
         refreshLowLatencyActivity()
+    }
+
+    /// Re-tags tabs whose repo group points at a directory that no longer
+    /// exists (e.g. after the repo was moved or renamed on disk) across every
+    /// open window. Cheap and idempotent — a no-op when nothing has moved.
+    private func reconcileStaleRepoGroupsAcrossWindows() {
+        for host in overlayHosts {
+            host.model.reconcileStaleRepoGroups()
+        }
     }
 
     private func refreshLowLatencyActivity() {
@@ -1620,13 +1634,14 @@ private final class OverlayBlurView: NSVisualEffectView {
             Log.info("Moved tab \(tabID) from window \(fromWindowIndex) to \(toWindowIndex)")
         }
 
-        // Schedule delayed samples across the window during which the
-        // 50GB spike was observed (~52s after drag end in historical logs).
-        // This tells us whether the leak happens inside moveTab's call chain
-        // or later during async lifecycle / render fanout.
-        for delay in [0.1, 1.0, 5.0, 15.0, 30.0, 50.0] {
-            DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
-                Self.logRSSSample("moveTab[\(dragID)] +\(delay)s")
+        // Schedule delayed samples across the window during which the 50GB spike
+        // was observed (~52s after drag end in historical logs) — only when memory
+        // diagnostics are enabled, so normal drags don't keep work scheduled 50s out.
+        if EnvVars.isEnabled(EnvVars.memoryDiagnostics) {
+            for delay in [0.1, 1.0, 5.0, 15.0, 30.0, 50.0] {
+                DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+                    Self.logRSSSample("moveTab[\(dragID)] +\(delay)s")
+                }
             }
         }
     }
@@ -2308,10 +2323,19 @@ private final class OverlayBlurView: NSVisualEffectView {
     /// a window that was on-screen on a 4K display can end up with its
     /// bottom under the dock after switching to a 1080p screen.
     @objc private func didChangeScreenParameters(_: Notification) {
-        Log.info("didChangeScreenParameters: re-clamping \(overlayHosts.count) overlay window(s)")
-        for host in overlayHosts {
-            clampOverlayWindowToVisibleFrame(host.window)
+        // macOS fires this in bursts during a display reconfiguration (resolution
+        // change, monitor (un)plug, ProMotion switch). Re-clamping every overlay
+        // window per event is wasteful churn; coalesce into one pass.
+        screenParamsDebounce?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            Log.info("didChangeScreenParameters: re-clamping \(overlayHosts.count) overlay window(s)")
+            for host in overlayHosts {
+                clampOverlayWindowToVisibleFrame(host.window)
+            }
         }
+        screenParamsDebounce = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25, execute: work)
     }
 
     private func clampOverlayWindowToVisibleFrame(_ window: NSWindow) {
@@ -2852,11 +2876,22 @@ private final class OverlayBlurView: NSVisualEffectView {
             )
         }
 
-        if isOverlayWindow,
-           flags == [.command],
-           let tabNumber = tabNumberForKeyCode(event.keyCode) {
-            selectTab(number: tabNumber)
-            return nil
+        if isOverlayWindow {
+            let tabSwitchMode = FeatureSettings.shared.tabSwitchShortcutMode
+            if tabSwitchMode.allowsCommandNumber,
+               flags == [.command],
+               let tabNumber = tabNumberForKeyCode(event.keyCode) {
+                selectTab(number: tabNumber)
+                return nil
+            }
+            // F-keys carry no device-independent modifier once `.function` is
+            // normalized away, so require an otherwise-bare keystroke.
+            if tabSwitchMode.allowsFunctionKeys,
+               flags.isEmpty,
+               let tabNumber = functionKeyTabNumberForKeyCode(event.keyCode) {
+                selectTab(number: tabNumber)
+                return nil
+            }
         }
 
         // ⌘; (Snippets) is now handled by OverlayWindow.performKeyEquivalent
@@ -2945,6 +2980,24 @@ private final class OverlayBlurView: NSVisualEffectView {
         }
     }
 
+    private func functionKeyTabNumberForKeyCode(_ keyCode: UInt16) -> Int? {
+        switch keyCode {
+        case UInt16(kVK_F1): return 1
+        case UInt16(kVK_F2): return 2
+        case UInt16(kVK_F3): return 3
+        case UInt16(kVK_F4): return 4
+        case UInt16(kVK_F5): return 5
+        case UInt16(kVK_F6): return 6
+        case UInt16(kVK_F7): return 7
+        case UInt16(kVK_F8): return 8
+        case UInt16(kVK_F9): return 9
+        case UInt16(kVK_F10): return 10
+        case UInt16(kVK_F11): return 11
+        case UInt16(kVK_F12): return 12
+        default: return nil
+        }
+    }
+
     private func allocateOverlayWindowNumber() -> Int {
         defer { nextOverlayWindowNumber += 1 }
         return nextOverlayWindowNumber
@@ -2952,21 +3005,14 @@ private final class OverlayBlurView: NSVisualEffectView {
 
     /// Current resident memory in MB (mach task_info). Returns nil on failure.
     private static func currentResidentMB() -> Int? {
-        var info = mach_task_basic_info()
-        var count = mach_msg_type_number_t(MemoryLayout<mach_task_basic_info>.size) / 4
-        let result = withUnsafeMutablePointer(to: &info) {
-            $0.withMemoryRebound(to: integer_t.self, capacity: 1) {
-                task_info(mach_task_self_, task_flavor_t(MACH_TASK_BASIC_INFO), $0, &count)
-            }
-        }
-        guard result == KERN_SUCCESS else { return nil }
-        return Int(info.resident_size / 1024 / 1024)
+        ProcessMemory.residentBytes().map { Int($0 / 1024 / 1024) }
     }
 
-    /// Log RSS as an INFO line tagged `rssSample: …`. Always logged (not gated
-    /// by a diagnostic env var) because this is used for an active leak
-    /// investigation — remove once the cross-window-drag leak is root-caused.
+    /// Log RSS as an INFO line tagged `rssSample: …`. Gated behind the
+    /// `CHAU7_MEMORY_DIAGNOSTICS` env flag (off by default) so it costs nothing
+    /// on the hot path; enable it when investigating the cross-window-drag leak.
     fileprivate static func logRSSSample(_ label: String) {
+        guard EnvVars.isEnabled(EnvVars.memoryDiagnostics) else { return }
         if let mb = currentResidentMB() {
             Log.info("rssSample: \(mb)MB — \(label)")
         }

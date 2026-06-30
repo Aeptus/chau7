@@ -56,6 +56,19 @@ final class NotificationActionExecutor {
             notes.append(note)
         }
 
+        /// Convenience for the common single-record return.
+        static func success(_ actionType: NotificationActionType) -> Self {
+            var report = Self()
+            report.recordSuccess(actionType)
+            return report
+        }
+
+        static func failure(_ note: String) -> Self {
+            var report = Self()
+            report.recordFailure(note)
+            return report
+        }
+
         mutating func append(_ other: ExecutionReport) {
             successfulActions.append(contentsOf: other.successfulActions)
             notes.append(contentsOf: other.notes)
@@ -158,9 +171,7 @@ final class NotificationActionExecutor {
 
     private func executeAction(_ config: NotificationActionConfig, for event: AIEvent) -> ExecutionReport {
         guard let handler = actionRegistry.handler(for: config.actionType) else {
-            var report = ExecutionReport()
-            report.recordFailure("\(config.actionType.rawValue) has no registered handler")
-            return report
+            return .failure("\(config.actionType.rawValue) has no registered handler")
         }
         let payload = ActionPayload(event: event, config: config)
         return handler.execute(payload: payload, environment: environment)

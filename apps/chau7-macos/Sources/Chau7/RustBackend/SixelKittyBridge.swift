@@ -22,14 +22,6 @@ final class SixelKittyBridge {
         Log.info("SixelKittyBridge initialized: sixel=\(isSixelEnabled) kitty=\(isKittyGraphicsEnabled) cache=\(kittyCacheLimitMB)MB")
     }
 
-    /// Call during terminal view setup to configure terminal options
-    func configureTerminal(_ terminalView: Any) {
-        // Access terminalView's terminal.options to set:
-        // - terminal.options.enableSixelReported = isSixelEnabled
-        // - terminal.options.kittyImageCacheLimitBytes = kittyCacheLimitMB * 1024 * 1024
-        Log.info("Configured terminal graphics: sixel=\(isSixelEnabled) kitty=\(isKittyGraphicsEnabled)")
-    }
-
     func loadSettings() {
         let defaults = UserDefaults.standard
         isSixelEnabled = defaults.bool(forKey: "feature.sixelEnabled")

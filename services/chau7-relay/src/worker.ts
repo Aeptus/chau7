@@ -2,16 +2,21 @@
  * Chau7 Relay — Cloudflare Worker entry point.
  *
  * Routes:
- *   GET  /              Landing page (HTML)
- *   WS   /connect/:id   WebSocket relay between macOS and iOS clients
- *   POST /push/:topic/:deviceId  Forward push notification to a paired device
- *   GET  /pending/:deviceId      Return relay-backed pending approvals/prompts snapshot
- *   POST /pending/:deviceId      Replace relay-backed pending approvals/prompts snapshot
+ *   GET  /                          Landing page (HTML)
+ *   WS   /connect/:id?role=mac|ios  WebSocket relay between macOS and iOS clients
+ *   POST /push/register/:deviceId   Register an iOS device for APNs push (role=mac)
+ *   POST /push/notify/:deviceId     Forward a push notification (role=mac)
+ *   GET  /pending/:deviceId         Read the pending approvals/prompts snapshot (role=ios)
+ *   POST /pending/:deviceId         Replace the pending approvals/prompts snapshot (role=mac)
  *
- * Authentication: HMAC-SHA256 bearer tokens with 5-minute window.
+ * Authentication: scoped, single-use HMAC-SHA256 bearer tokens (see token.js).
+ * Tokens are accepted ONLY from the `Authorization: Bearer` header. The Worker
+ * fails CLOSED — if RELAY_SECRET is unset and open mode was not explicitly
+ * requested, authenticated routes return 503.
  */
 import { SessionDO } from './session';
-import { isRelaySecretConfigured } from './auth.js';
+import { resolveAuthMode } from './auth.js';
+import { verifyToken } from './token.js';
 
 export { SessionDO };
 
@@ -37,48 +42,17 @@ const LANDING_HTML = `<!DOCTYPE html>
 </body>
 </html>`;
 
+type Scope = 'connect' | 'push' | 'pending';
+type Role = 'mac' | 'ios';
+
 interface Env {
   SESSION: DurableObjectNamespace;
   RELAY_SECRET?: string;
-  APNS_TEAM_ID?: string;
-  APNS_KEY_ID?: string;
-  APNS_PRIVATE_KEY?: string;
+  RELAY_ALLOW_UNAUTHENTICATED?: string;
 }
 
-/**
- * Verify an HMAC-SHA256 token. Format: "{unix_timestamp}.{base64url_signature}".
- * Payload signed: "{deviceId}:{role}:{timestamp}". Tokens expire after 300 seconds.
- */
-async function verifyToken(
-  token: string,
-  deviceId: string,
-  role: string,
-  secret: string
-): Promise<boolean> {
-  const parts = token.split('.');
-  if (parts.length !== 2) return false;
-  const [timestamp, signature] = parts;
-  const ts = parseInt(timestamp, 10);
-  if (isNaN(ts)) return false;
-  const age = Math.abs(Date.now() / 1000 - ts);
-  if (age > 300) return false;
-
-  const encoder = new TextEncoder();
-  const key = await crypto.subtle.importKey(
-    'raw',
-    encoder.encode(secret),
-    { name: 'HMAC', hash: 'SHA-256' },
-    false,
-    ['sign']
-  );
-  const message = `${deviceId}:${role}:${timestamp}`;
-  const mac = await crypto.subtle.sign('HMAC', key, encoder.encode(message));
-  const expected = btoa(String.fromCharCode(...new Uint8Array(mac)))
-    .replace(/\+/g, '-')
-    .replace(/\//g, '_')
-    .replace(/=+$/, '');
-  return expected === signature;
-}
+/** Logged at most once per isolate so an open-mode deployment is visible without spamming logs. */
+let openModeWarned = false;
 
 function extractBearerToken(request: Request): string | null {
   const header = request.headers.get('Authorization') ?? '';
@@ -88,24 +62,54 @@ function extractBearerToken(request: Request): string | null {
   return header.slice('Bearer '.length).trim() || null;
 }
 
+function methodNotAllowed(allow: string): Response {
+  return new Response('Method Not Allowed', { status: 405, headers: { Allow: allow } });
+}
+
+/**
+ * Authenticate a request for the given (deviceId, role, scope). Returns null on
+ * success, or a Response describing the failure.
+ */
 async function authenticateRequest(
   request: Request,
   env: Env,
   deviceId: string,
-  role: string
+  role: Role,
+  scope: Scope
 ): Promise<Response | null> {
-  if (!isRelaySecretConfigured(env.RELAY_SECRET)) {
+  const auth = resolveAuthMode(env);
+
+  if (auth.mode === 'misconfigured') {
+    console.error('Relay rejecting request: RELAY_SECRET is not configured (failing closed).');
+    return new Response('Relay not configured', { status: 503 });
+  }
+
+  if (auth.mode === 'open') {
+    if (!openModeWarned) {
+      openModeWarned = true;
+      console.warn(
+        'Relay running UNAUTHENTICATED (RELAY_ALLOW_UNAUTHENTICATED=true). Set RELAY_SECRET to require auth.'
+      );
+    }
     return null;
   }
-  const token = extractBearerToken(request) ?? new URL(request.url).searchParams.get('token');
+
+  const token = extractBearerToken(request);
   if (!token) {
     return new Response('Missing token', { status: 401 });
   }
-  const valid = await verifyToken(token, deviceId, role, env.RELAY_SECRET!);
-  if (!valid) {
-    return new Response('Invalid token', { status: 403 });
+  const result = await verifyToken(token, { deviceId, role, scope, secret: auth.secret! });
+  if (!result.ok) {
+    const status = result.reason === 'malformed' ? 401 : 403;
+    return new Response('Invalid token', { status });
   }
   return null;
+}
+
+/** Forward a request to the SessionDO addressed by deviceId. */
+function forwardToSession(env: Env, deviceId: string, request: Request): Promise<Response> {
+  const id = env.SESSION.idFromName(deviceId);
+  return env.SESSION.get(id).fetch(request);
 }
 
 export default {
@@ -117,19 +121,18 @@ export default {
       if (request.method === 'GET') {
         return new Response(LANDING_HTML, {
           status: 200,
-          headers: { 'Content-Type': 'text/html; charset=utf-8' }
+          headers: {
+            'Content-Type': 'text/html; charset=utf-8',
+            'Cache-Control': 'public, max-age=3600'
+          }
         });
       }
-      return new Response('Method Not Allowed', { status: 405 });
-    }
-
-    if (parts.length < 2) {
-      return new Response('Not Found', { status: 404 });
+      return methodNotAllowed('GET');
     }
 
     const action = parts[0];
 
-    if (action === 'connect') {
+    if (action === 'connect' && parts.length === 2) {
       const deviceId = parts[1];
       if (!deviceId) {
         return new Response('Missing device id', { status: 400 });
@@ -138,36 +141,40 @@ export default {
       if (role !== 'mac' && role !== 'ios') {
         return new Response('Missing role', { status: 400 });
       }
-      const authFailure = await authenticateRequest(request, env, deviceId, role);
+      const authFailure = await authenticateRequest(request, env, deviceId, role, 'connect');
       if (authFailure) {
         return authFailure;
       }
-      const id = env.SESSION.idFromName(deviceId);
-      const stub = env.SESSION.get(id);
-      return stub.fetch(request);
+      return forwardToSession(env, deviceId, request);
     }
 
     if (action === 'push' && parts.length === 3) {
+      const operation = parts[1];
+      if (operation !== 'register' && operation !== 'notify') {
+        return new Response('Not Found', { status: 404 });
+      }
+      if (request.method !== 'POST') {
+        return methodNotAllowed('POST');
+      }
       const targetDeviceID = parts[2];
-      const authFailure = await authenticateRequest(request, env, targetDeviceID, 'mac');
+      const authFailure = await authenticateRequest(request, env, targetDeviceID, 'mac', 'push');
       if (authFailure) {
         return authFailure;
       }
-      const id = env.SESSION.idFromName(targetDeviceID);
-      const stub = env.SESSION.get(id);
-      return stub.fetch(request);
+      return forwardToSession(env, targetDeviceID, request);
     }
 
     if (action === 'pending' && parts.length === 2) {
       const targetDeviceID = parts[1];
-      const role = request.method === 'GET' ? 'ios' : 'mac';
-      const authFailure = await authenticateRequest(request, env, targetDeviceID, role);
+      if (request.method !== 'GET' && request.method !== 'POST') {
+        return methodNotAllowed('GET, POST');
+      }
+      const role: Role = request.method === 'GET' ? 'ios' : 'mac';
+      const authFailure = await authenticateRequest(request, env, targetDeviceID, role, 'pending');
       if (authFailure) {
         return authFailure;
       }
-      const id = env.SESSION.idFromName(targetDeviceID);
-      const stub = env.SESSION.get(id);
-      return stub.fetch(request);
+      return forwardToSession(env, targetDeviceID, request);
     }
 
     return new Response('Not Found', { status: 404 });

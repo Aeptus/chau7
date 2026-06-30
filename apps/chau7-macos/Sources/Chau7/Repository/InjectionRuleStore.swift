@@ -125,9 +125,10 @@ final class InjectionRuleStore {
     // MARK: - Init
 
     init(fileURL: URL? = nil) {
-        let home = FileManager.default.homeDirectoryForCurrentUser
-        self.fileURL = fileURL ?? home
-            .appendingPathComponent(".chau7", isDirectory: true)
+        // Resolve through RuntimeIsolation (honors CHAU7_HOME_ROOT / HOME) rather
+        // than homeDirectoryForCurrentUser, which reads the real user record and
+        // would leak into the real ~/.chau7 even under the isolated test app.
+        self.fileURL = fileURL ?? RuntimeIsolation.chau7Directory()
             .appendingPathComponent("prompt-rules.json")
         load()
     }

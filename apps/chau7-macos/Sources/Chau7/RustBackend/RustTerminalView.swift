@@ -2500,7 +2500,7 @@ final class RustTerminalView: NSView {
         isLivePollingActive
     }
 
-    private var isInteractive = false
+    private(set) var isInteractive = false
     private(set) var currentRenderPhase: TabRenderPhase = .hidden
     private var authoritativeRevealPending = false
     var retainedFrameContentVersion: UInt64 = 0
@@ -2599,9 +2599,21 @@ final class RustTerminalView: NSView {
     var previousCursorCol: UInt16 = 0
     var previousCursorRow: UInt16 = 0
 
-    /// Rate limiting for grid sync (target ~60fps max)
+    /// Rate limiting for grid sync.
     var lastSyncTime: CFAbsoluteTime = 0
-    static let minSyncInterval: CFAbsoluteTime = 1.0 / 120.0 // Allow up to 120fps for responsiveness
+
+    /// Minimum interval between grid syncs (and therefore draws, since a sync
+    /// schedules the next display). The focused view follows the user's
+    /// `activePollingRateCap` (`displayNative` → up to 120fps); visible but
+    /// non-focused views are throttled to `inactiveMaxFPS` — they stay
+    /// event-driven for PTY responsiveness but only present at this slower
+    /// rate, cutting GPU + grid-sync cost for content the user isn't watching
+    /// closely. Pure + clamped for testability.
+    static func minSyncInterval(isInteractive: Bool, activeCapHz: Int?, inactiveMaxFPS: Int) -> CFAbsoluteTime {
+        let fps = isInteractive ? (activeCapHz ?? 120) : inactiveMaxFPS
+        let clamped = max(1, min(fps, 120))
+        return 1.0 / CFAbsoluteTime(clamped)
+    }
 
     /// Statistics for debugging
     var fullSyncCount: UInt64 = 0
@@ -3491,6 +3503,7 @@ final class RustTerminalView: NSView {
 
     func applyRenderPhase(_ phase: TabRenderPhase, isInteractive: Bool, reason: String) {
         let previousPhase = currentRenderPhase
+        let becameInteractive = isInteractive && !self.isInteractive
         currentRenderPhase = phase
         self.isInteractive = isInteractive
         let shouldHide = !phase.keepsVisibleSurface
@@ -3512,6 +3525,12 @@ final class RustTerminalView: NSView {
         updatePollingMode(reason: "applyRenderPhase:\(phase.rawValue)")
         refreshRenderPipelineProfilingState(mode: "\(currentRenderLoopMode):\(phase.rawValue)")
         Log.trace("RustTerminalView[\(viewId)]: applyRenderPhase -> \(phase.rawValue) (\(reason))")
+
+        // Focusing a previously-throttled view: force one immediate sync so the
+        // user sees current content without waiting out the inactive-fps gap.
+        if becameInteractive {
+            syncGridToRenderer(force: true)
+        }
 
         if previousPhase != phase {
             let resolvedTabID = UUID(uuidString: tabIdentifier)

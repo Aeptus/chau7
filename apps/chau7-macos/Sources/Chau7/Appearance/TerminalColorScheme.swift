@@ -149,13 +149,6 @@ struct TerminalColorScheme: Codable, Identifiable, Equatable {
         return color
     }
 
-    /// Clears the color cache (call when color scheme changes significantly)
-    static func clearColorCache() {
-        colorCacheLock.lock()
-        colorCache.removeAll()
-        colorCacheLock.unlock()
-    }
-
     /// A unique signature for this color scheme based on all colors
     var signature: String {
         [
