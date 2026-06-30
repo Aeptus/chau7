@@ -88,7 +88,10 @@ final class RemoteClient {
     private var macPublicKey: Curve25519.KeyAgreement.PublicKey?
     private let iosKey: Curve25519.KeyAgreement.PrivateKey
     private let deviceName = UIDevice.current.name
-    private var notificationTask: Task<Void, Never>?
+    // nonisolated(unsafe) so the nonisolated deinit can cancel the notification
+    // loop. Task.cancel() is thread-safe and every mutation of this property
+    // happens on the main actor, so the unchecked access is safe in practice.
+    nonisolated(unsafe) private var notificationTask: Task<Void, Never>?
     private var reconnectBackoff = RemoteReconnectBackoff()
     private var reconnectTask: Task<Void, Never>?
     private var handshakeRetryTask: Task<Void, Never>?
@@ -166,6 +169,10 @@ final class RemoteClient {
                 self.respondToApproval(requestID: id, approved: approved)
             }
         }
+    }
+
+    deinit {
+        notificationTask?.cancel()
     }
 
     // MARK: - Connection
@@ -583,7 +590,6 @@ final class RemoteClient {
                   self.webSocket != nil,
                   !self.isConnected else { return }
 
-            self.shouldReconnect = false
             self.cancelHandshakeTasks()
             let socket = self.webSocket
             self.webSocket = nil
@@ -591,13 +597,17 @@ final class RemoteClient {
             self.isConnected = false
             self.crypto = nil
             socket?.cancel(with: .goingAway, reason: nil)
-            self.status = .connectionTimedOut
             self.lastError = "No response from your Mac. Make sure Chau7 is open, Remote is enabled, and the pairing payload is still current."
             self.emitTelemetry(
                 type: .errorReceived,
                 status: "timeout",
                 message: self.lastError
             )
+            // A handshake timeout is usually a transient relay/Mac delay rather
+            // than a permanent failure. Route through the normal disconnect path
+            // so the reconnect backoff retries instead of stranding the
+            // connection until the user manually reconnects.
+            self.handleDisconnect(reason: "handshake_timeout")
         }
     }
 
@@ -1354,6 +1364,10 @@ final class RemoteClient {
             }
         }
 
+        // Cancel any in-flight fetch before starting a new one so forced
+        // refreshes (push wake, scene-active, pair-accept) don't stack
+        // concurrent network requests.
+        pendingStateFetchTask?.cancel()
         pendingStateFetchTask = Task { @MainActor [weak self] in
             defer {
                 self?.pendingStateFetchTask = nil
