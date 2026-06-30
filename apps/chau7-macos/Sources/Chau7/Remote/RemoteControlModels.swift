@@ -8,9 +8,9 @@ struct RemotePairingInfo: Codable, Equatable {
     let pairingCode: String
     let expiresAt: String
     let relayURL: String
-    // Shared HMAC secret the paired iOS device needs to authenticate to the
-    // relay. Present only when relay auth is configured; carried through to the
-    // QR/paste payload so iOS can mint tokens.
+    /// Shared HMAC secret the paired iOS device needs to authenticate to the
+    /// relay. Present only when relay auth is configured; carried through to the
+    /// QR/paste payload so iOS can mint tokens.
     var relaySecret: String? = nil
 
     enum CodingKeys: String, CodingKey {
