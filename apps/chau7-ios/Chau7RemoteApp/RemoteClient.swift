@@ -105,7 +105,7 @@ final class RemoteClient {
     private var currentAppState: RemoteClientAppState = .foreground
     private var desiredStreamMode: RemoteClientStreamMode = .full
     private var pushToken: String?
-    private var notificationsAuthorized = false
+    private(set) var notificationsAuthorized = false
     private let backgroundKeepalive = BackgroundKeepalive(name: "ch7.remote.approvals")
     private var suppressLocalNotificationsUntil: Date?
     private var pendingApprovalResponses: [String: Bool] = [:]
@@ -269,6 +269,20 @@ final class RemoteClient {
     func updateNotificationAuthorization(isGranted: Bool) {
         notificationsAuthorized = isGranted
         sendClientStateIfPossible()
+    }
+
+    /// Re-reads the system notification authorization so Settings reflects changes
+    /// the user made in iOS Settings while the app was backgrounded.
+    func refreshNotificationAuthorization() {
+        UNUserNotificationCenter.current().getNotificationSettings { settings in
+            let granted = settings.authorizationStatus == .authorized
+                || settings.authorizationStatus == .provisional
+                || settings.authorizationStatus == .ephemeral
+            Task { @MainActor [weak self] in
+                guard let self, self.notificationsAuthorized != granted else { return }
+                self.updateNotificationAuthorization(isGranted: granted)
+            }
+        }
     }
 
     func updatePushToken(_ token: String) {

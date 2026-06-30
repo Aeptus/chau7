@@ -32,6 +32,9 @@
 		84B303512F3107BB00A7D19E /* RemoteClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 84B3034B2F3107BB00A7D19E /* RemoteClient.swift */; };
 		D1A6D1A6D1A6D1A6D1A60002 /* DiagnosticsLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A6D1A6D1A6D1A6D1A60001 /* DiagnosticsLog.swift */; };
 		D1A6D1A6D1A6D1A6D1A60004 /* DiagnosticsLogView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A6D1A6D1A6D1A6D1A60003 /* DiagnosticsLogView.swift */; };
+		D1A6D1A6D1A6D1A6D1A61002 /* QRScannerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A6D1A6D1A6D1A6D1A61001 /* QRScannerView.swift */; };
+		D1A6D1A6D1A6D1A6D1A61004 /* RemoteClientDisplay.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A6D1A6D1A6D1A6D1A61003 /* RemoteClientDisplay.swift */; };
+		D1A6D1A6D1A6D1A6D1A61006 /* OnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A6D1A6D1A6D1A6D1A61005 /* OnboardingView.swift */; };
 		AB4EBE57EAE8A9F53826866D /* RemotePairingStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8BD2F8E828F4FF717280653F /* RemotePairingStore.swift */; };
 		B1B47589AB8242957AE7E9DD /* RemoteFrameRateLimiter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1E94696D824BF1381A825D4D /* RemoteFrameRateLimiter.swift */; };
 		D82AA425310A4B9696EE10FB /* Chau7Core in Frameworks */ = {isa = PBXBuildFile; productRef = A34D4B59796146F1BDF72F8E /* Chau7Core */; };
@@ -87,6 +90,9 @@
 		84B3034B2F3107BB00A7D19E /* RemoteClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteClient.swift; sourceTree = "<group>"; };
 		D1A6D1A6D1A6D1A6D1A60001 /* DiagnosticsLog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiagnosticsLog.swift; sourceTree = "<group>"; };
 		D1A6D1A6D1A6D1A6D1A60003 /* DiagnosticsLogView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiagnosticsLogView.swift; sourceTree = "<group>"; };
+		D1A6D1A6D1A6D1A6D1A61001 /* QRScannerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QRScannerView.swift; sourceTree = "<group>"; };
+		D1A6D1A6D1A6D1A6D1A61003 /* RemoteClientDisplay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteClientDisplay.swift; sourceTree = "<group>"; };
+		D1A6D1A6D1A6D1A6D1A61005 /* OnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingView.swift; sourceTree = "<group>"; };
 		84B3034C2F3107BB00A7D19E /* RemoteCrypto.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteCrypto.swift; sourceTree = "<group>"; };
 		8A9706F9C9DDFBCED9156114 /* RemoteTelemetryBuffer.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = RemoteTelemetryBuffer.swift; sourceTree = "<group>"; };
 		8BD2F8E828F4FF717280653F /* RemotePairingStore.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = RemotePairingStore.swift; sourceTree = "<group>"; };
@@ -134,6 +140,9 @@
 				84B3034B2F3107BB00A7D19E /* RemoteClient.swift */,
 				D1A6D1A6D1A6D1A6D1A60001 /* DiagnosticsLog.swift */,
 				D1A6D1A6D1A6D1A6D1A60003 /* DiagnosticsLogView.swift */,
+				D1A6D1A6D1A6D1A6D1A61001 /* QRScannerView.swift */,
+				D1A6D1A6D1A6D1A6D1A61003 /* RemoteClientDisplay.swift */,
+				D1A6D1A6D1A6D1A6D1A61005 /* OnboardingView.swift */,
 				84B3034C2F3107BB00A7D19E /* RemoteCrypto.swift */,
 				4A94D77131F2A00100A1B001 /* RemoteModels.swift */,
 				4A94D79231F2A00100A1B001 /* RemoteRustTerminalPlayback.swift */,
@@ -332,6 +341,9 @@
 				84B303512F3107BB00A7D19E /* RemoteClient.swift in Sources */,
 				D1A6D1A6D1A6D1A6D1A60002 /* DiagnosticsLog.swift in Sources */,
 				D1A6D1A6D1A6D1A6D1A60004 /* DiagnosticsLogView.swift in Sources */,
+				D1A6D1A6D1A6D1A6D1A61002 /* QRScannerView.swift in Sources */,
+				D1A6D1A6D1A6D1A6D1A61004 /* RemoteClientDisplay.swift in Sources */,
+				D1A6D1A6D1A6D1A6D1A61006 /* OnboardingView.swift in Sources */,
 				72AC6A6715100B2F9E7E96D0 /* BackgroundKeepalive.swift in Sources */,
 				58B00A5CA2C678BDB76285BD /* RemoteConnectionStatus.swift in Sources */,
 				B1B47589AB8242957AE7E9DD /* RemoteFrameRateLimiter.swift in Sources */,
