@@ -55,6 +55,7 @@ struct TerminalView: View {
                     flaggedAction: pendingProtectedSend.flaggedAction
                 )
                 if client.sendInput(pendingProtectedSend.text, appendNewline: appendNewline) {
+                    inputText = ""
                     markSent()
                     self.pendingProtectedSend = nil
                 } else {
@@ -169,6 +170,10 @@ struct TerminalView: View {
                 } else {
                     ForEach(client.tabs) { tab in
                         Button {
+                            DiagnosticsLog.shared.info(.tab, "Selected remote tab", [
+                                "tab_id": String(tab.tabID),
+                                "title": tab.title
+                            ])
                             client.switchTab(tab.tabID)
                         } label: {
                             Label {
@@ -346,7 +351,10 @@ struct TerminalView: View {
                 .lineLimit(1...4)
                 .textFieldStyle(.roundedBorder)
                 .submitLabel(.send)
-                .onSubmit { if !holdToSend { submitInput() } }
+                .onSubmit { if !holdToSend { submitInput(trigger: "submit_label") } }
+                .onChange(of: inputText) { oldValue, newValue in
+                    handleInputChange(from: oldValue, to: newValue)
+                }
 
             sendButton
         }
@@ -363,7 +371,7 @@ struct TerminalView: View {
             }
             .sensoryFeedback(.impact(flexibility: .solid, intensity: 0.5), trigger: sendCount)
         } else {
-            Button(action: submitInput) {
+            Button(action: { submitInput() }) {
                 Image(systemName: "arrow.up.circle.fill")
                     .font(.title2)
                     .frame(width: 44, height: 44)
@@ -374,12 +382,53 @@ struct TerminalView: View {
         }
     }
 
-    private func submitInput() {
+    /// Logs each keystroke delta and — for a multiline (`axis: .vertical`)
+    /// field where the Return key inserts a newline instead of firing
+    /// `onSubmit` — treats a trailing newline as a send when hold-to-send is
+    /// off. This is the core fix for "input text isn't actually sent".
+    private func handleInputChange(from oldValue: String, to newValue: String) {
+        logKeystrokeDelta(from: oldValue, to: newValue)
+
+        guard !holdToSend, newValue.hasSuffix("\n") else { return }
+        // Strip every trailing newline the Return key inserted, then submit.
+        var trimmed = newValue
+        while trimmed.hasSuffix("\n") { trimmed.removeLast() }
+        inputText = trimmed
+        guard !trimmed.isEmpty else { return }
+        submitInput(trigger: "return_key")
+    }
+
+    private func logKeystrokeDelta(from oldValue: String, to newValue: String) {
+        guard oldValue != newValue else { return }
+        let commonPrefix = oldValue.commonPrefix(with: newValue)
+        let prefixCount = commonPrefix.count
+        if newValue.count > oldValue.count {
+            let inserted = String(newValue.dropFirst(prefixCount))
+            DiagnosticsLog.shared.keystroke(inserted, field: "terminal_input", extra: ["op": "insert"])
+        } else {
+            let removedCount = oldValue.count - newValue.count
+            DiagnosticsLog.shared.keystroke(
+                "<delete \(removedCount)>",
+                field: "terminal_input",
+                extra: ["op": "delete"]
+            )
+        }
+    }
+
+    private func submitInput(trigger: String = "send_button") {
         let text = inputText
         guard !text.isEmpty else { return }
 
+        DiagnosticsLog.shared.info(.input, "Submit requested", [
+            "trigger": trigger,
+            "bytes": String(text.utf8.count),
+            "tab_id": String(client.activeTabID),
+            "can_send": client.canSendInput ? "true" : "false"
+        ])
+
         if let flaggedAction = client.flaggedProtectedAction(for: text) {
             client.recordProtectedActionPrompt(text: text, flaggedAction: flaggedAction)
+            DiagnosticsLog.shared.warn(.input, "Submit held for protected action", ["action": flaggedAction])
             pendingProtectedSend = ProtectedRemoteSend(
                 text: text,
                 flaggedAction: flaggedAction,
@@ -388,7 +437,14 @@ struct TerminalView: View {
             return
         }
 
-        guard client.sendInput(text, appendNewline: appendNewline) else { return }
+        guard client.sendInput(text, appendNewline: appendNewline) else {
+            DiagnosticsLog.shared.error(.input, "Submit blocked", [
+                "trigger": trigger,
+                "reason": client.lastError ?? "unknown"
+            ])
+            return
+        }
+        DiagnosticsLog.shared.info(.input, "Input sent", ["bytes": String(text.utf8.count)])
         inputText = ""
         markSent()
     }
@@ -610,7 +666,14 @@ struct TermKey: View {
     var body: some View {
         Button {
             tapCount += 1
-            client.sendInput(sequence, appendNewline: false)
+            DiagnosticsLog.shared.keystroke(label, field: "key_bar", extra: ["op": "control_key"])
+            let sent = client.sendInput(sequence, appendNewline: false)
+            if !sent {
+                DiagnosticsLog.shared.error(.input, "Control key blocked", [
+                    "key": label,
+                    "reason": client.lastError ?? "unknown"
+                ])
+            }
         } label: {
             Text(label)
                 .font(.system(size: 13, design: .monospaced))

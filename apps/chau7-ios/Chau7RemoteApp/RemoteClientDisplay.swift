@@ -1,8 +1,8 @@
 import SwiftUI
 
-/// Maps the RemoteClient's internal status strings to user-facing labels and a
+/// Maps the RemoteClient's typed connection status to user-facing labels and a
 /// coarse connection phase used for status colors. Keeping the mapping here means
-/// the raw protocol/implementation states ("Encrypted", "Session ready") never
+/// the raw protocol/implementation states (`.encrypted`, `.sessionReady`) never
 /// leak into the UI.
 extension RemoteClient {
     enum ConnectionPhase {
@@ -24,19 +24,19 @@ extension RemoteClient {
     var connectionPhase: ConnectionPhase {
         if isConnected {
             switch status {
-            case "Encrypted", "Session ready", "Approval queued":
+            case .encrypted, .sessionReady, .approvalQueued:
                 return .connected
             default:
                 return .connecting
             }
         }
         switch status {
-        case "Connection failed", "Connection timed out", "Pairing rejected", "Error":
+        case .connectionFailed, .connectionTimedOut, .pairingRejected, .error:
             return .warning
-        case "Disconnected", "Background suspended":
+        case .disconnected, .backgroundSuspended:
             return .disconnected
         default:
-            // "Connecting", "Waiting for your Mac...", "Reconnecting...", etc.
+            // .connecting, .waitingForMac, .reconnecting, etc.
             return .connecting
         }
     }
@@ -44,38 +44,35 @@ extension RemoteClient {
     var connectionDisplayLabel: String {
         if isConnected {
             switch status {
-            case "Encrypted", "Session ready":
+            case .encrypted, .sessionReady:
                 return "Connected"
-            case "Approval queued":
+            case .approvalQueued:
                 return "Connected · approval queued"
             default:
-                return status
+                return status.displayText
             }
         }
         switch status {
-        case "Connecting":
+        case .connecting:
             return "Connecting…"
-        case "Waiting for your Mac...":
+        case .waitingForMac:
             return "Waiting for your Mac…"
-        case "Reconnecting to send approval...":
+        case .reconnecting, .reconnectingToSendApproval:
             return "Reconnecting…"
-        case "Connection failed":
+        case .connectionFailed:
             return "Connection failed"
-        case "Connection timed out":
+        case .connectionTimedOut:
             return "Connection timed out"
-        case "Pairing rejected":
+        case .pairingRejected:
             return "Pairing rejected"
-        case "Background suspended":
+        case .backgroundSuspended:
             return "Paused in background"
-        case "Disconnected":
+        case .disconnected:
             return "Disconnected"
-        case "Error":
+        case .error:
             return "Connection error"
         default:
-            if status.hasPrefix("Reconnecting") {
-                return "Reconnecting…"
-            }
-            return status
+            return status.displayText
         }
     }
 }

@@ -41,8 +41,8 @@ struct Chau7RemoteApp: App {
 // MARK: - App Delegate (Notification Handling)
 
 class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDelegate {
-    private static let approvalCategoryID = "MCP_APPROVAL"
-    private static let interactivePromptCategoryID = "INTERACTIVE_PROMPT"
+    private static let approvalCategoryID = RemoteNotificationID.approvalCategory
+    private static let interactivePromptCategoryID = RemoteNotificationID.interactivePromptCategory
 
     func application(
         _ application: UIApplication,
@@ -72,11 +72,11 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
                 identifier: Self.approvalCategoryID,
                 actions: [
                     UNNotificationAction(
-                        identifier: "APPROVE", title: "Allow",
+                        identifier: RemoteNotificationID.Action.approve, title: "Allow",
                         options: [.authenticationRequired]
                     ),
                     UNNotificationAction(
-                        identifier: "DENY", title: "Deny",
+                        identifier: RemoteNotificationID.Action.deny, title: "Deny",
                         options: [.destructive]
                     )
                 ],
@@ -137,15 +137,15 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
         let userInfo = response.notification.request.content.userInfo
         await MainActor.run {
             switch response.actionIdentifier {
-            case "APPROVE", "DENY":
-                guard let requestID = userInfo["request_id"] as? String,
+            case RemoteNotificationID.Action.approve, RemoteNotificationID.Action.deny:
+                guard let requestID = userInfo[RemoteNotificationID.UserInfoKey.requestID] as? String,
                       !requestID.isEmpty else { return }
                 NotificationCenter.default.post(
                     name: .approvalNotificationResponse,
                     object: nil,
                     userInfo: [
-                        "request_id": requestID,
-                        "approved": response.actionIdentifier == "APPROVE"
+                        RemoteNotificationID.UserInfoKey.requestID: requestID,
+                        RemoteNotificationID.UserInfoKey.approved: response.actionIdentifier == RemoteNotificationID.Action.approve
                     ]
                 )
             default:
@@ -171,8 +171,12 @@ struct RemoteRootView: View {
     @State private var showOnboarding = false
     @State private var bannerVisible = false
     @State private var bannerDismissTask: Task<Void, Never>?
+    @State private var showsKeystrokeConsent = false
 
     @AppStorage(AppSettings.hasCompletedOnboardingKey) private var hasCompletedOnboarding = false
+    @AppStorage(AppSettings.logKeystrokesKey) private var logKeystrokes = AppSettings.logKeystrokesDefault
+    @AppStorage(AppSettings.keystrokeConsentPromptedKey)
+    private var keystrokeConsentPrompted = AppSettings.keystrokeConsentPromptedDefault
 
     enum Tab { case terminal, approvals, settings }
 
@@ -223,6 +227,24 @@ struct RemoteRootView: View {
             if !hasCompletedOnboarding {
                 showOnboarding = true
             }
+            // First-run consent: keystroke capture stays off until the user
+            // explicitly accepts, so a fresh install never records typed
+            // secrets before the user has seen the disclosure.
+            if !keystrokeConsentPrompted {
+                showsKeystrokeConsent = true
+            }
+        }
+        .alert("Capture Keystrokes for Diagnostics?", isPresented: $showsKeystrokeConsent) {
+            Button("Enable") {
+                logKeystrokes = true
+                keystrokeConsentPrompted = true
+            }
+            Button("Not Now", role: .cancel) {
+                logKeystrokes = false
+                keystrokeConsentPrompted = true
+            }
+        } message: {
+            Text("Chau7 can record the keys you type — including terminal input — into an on-device diagnostics log to help investigate issues. This may include sensitive text such as passwords or tokens. Nothing leaves your device unless you export it, and you can change this anytime in Settings.")
         }
         .onChange(of: approvalsBadgeCount) { oldCount, newCount in
             // Surface new approvals with a non-intrusive banner instead of yanking

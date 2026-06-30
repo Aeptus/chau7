@@ -100,7 +100,7 @@ struct PairingSheetView: View {
             }
             .onAppear {
                 if let info = client.pairingInfo,
-                   let data = try? JSONEncoder().encode(info),
+                   let data = try? RemoteJSON.encoder.encode(info),
                    let str = String(data: data, encoding: .utf8) {
                     draftPayload = str
                 }
@@ -156,9 +156,17 @@ struct PairingSheetView: View {
     }
 }
 
+/// Outcome of validating a pairing payload: a decoded `PairingInfo` or a
+/// specific, human-readable problem. A dedicated enum (rather than `Result`)
+/// avoids conforming `String` to `Error` just to carry the message.
+enum PairingValidationResult {
+    case success(PairingInfo)
+    case failure(String)
+}
+
 /// Validates a pasted/scanned pairing payload and reports specific problems.
 enum PairingPayloadValidator {
-    static func validate(_ raw: String) -> Result<PairingInfo, String> {
+    static func validate(_ raw: String) -> PairingValidationResult {
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
             return .failure("Nothing to pair with. Paste or scan the pairing code from your Mac.")
@@ -185,6 +193,10 @@ enum PairingPayloadValidator {
 
         if let expiry = parseDate(info.expiresAt), expiry < Date() {
             return .failure("This pairing code has expired. Generate a new one on your Mac.")
+        }
+
+        guard URLComponents(string: info.relayURL)?.scheme?.lowercased() == "wss" else {
+            return .failure("Relay URL must use wss:// (encrypted transport). Generate a fresh code on your Mac.")
         }
 
         return .success(info)

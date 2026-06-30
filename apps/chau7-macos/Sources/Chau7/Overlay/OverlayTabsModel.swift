@@ -960,6 +960,7 @@ final class OverlayTabsModel {
         didSet {
             TerminalControlService.shared.invalidateRoutingIndex(reason: "tabs_changed")
             onTabsChanged?()
+            NotificationCenter.default.post(name: .overlayTabsDidChange, object: self)
         }
     }
 
@@ -967,6 +968,7 @@ final class OverlayTabsModel {
         didSet {
             if activeDashboardGroupID != nil { activeDashboardGroupID = nil }
             onSelectedTabIDChanged?()
+            NotificationCenter.default.post(name: .overlayTabsDidChange, object: self)
         }
     }
 
