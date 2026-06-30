@@ -70,7 +70,7 @@ struct TerminalView: View {
             Circle()
                 .fill(statusColor)
                 .frame(width: 8, height: 8)
-            Text(client.status)
+            Text(client.status.displayText)
                 .font(.caption)
                 .foregroundStyle(.secondary)
             Spacer()
@@ -88,10 +88,7 @@ struct TerminalView: View {
 
     private var statusColor: Color {
         guard client.isConnected else { return .red }
-        switch client.status {
-        case "Encrypted", "Session ready": return .green
-        default: return .yellow
-        }
+        return client.status.isEncryptedSession ? .green : .yellow
     }
 
     private var connectButton: some View {
