@@ -11,7 +11,7 @@ struct RemotePairingInfo: Codable, Equatable {
     /// Shared HMAC secret the paired iOS device needs to authenticate to the
     /// relay. Present only when relay auth is configured; carried through to the
     /// QR/paste payload so iOS can mint tokens.
-    var relaySecret: String? = nil
+    var relaySecret: String?
 
     enum CodingKeys: String, CodingKey {
         case deviceID = "device_id"
@@ -29,7 +29,7 @@ struct RemoteQRPayload: Codable, Equatable {
     let macPub: String
     let pairingCode: String
     let expiresAt: String
-    var relaySecret: String? = nil
+    var relaySecret: String?
 
     enum CodingKeys: String, CodingKey {
         case relayURL = "relay_url"
