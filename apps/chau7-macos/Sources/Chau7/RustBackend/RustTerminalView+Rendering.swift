@@ -349,9 +349,17 @@ extension RustTerminalView {
             return
         }
 
-        // Rate limiting: Skip if we synced very recently (allows up to 120fps for responsiveness)
+        // Rate limiting: skip if we synced very recently. The focused view runs
+        // at its configured cap; visible non-focused views throttle to the
+        // user's inactive-view fps so a second-screen tab doesn't sync the full
+        // grid 120×/s for content nobody is interacting with.
         let now = CFAbsoluteTimeGetCurrent()
-        if !force, now - lastSyncTime < Self.minSyncInterval {
+        let minInterval = Self.minSyncInterval(
+            isInteractive: isInteractive,
+            activeCapHz: FeatureSettings.shared.activePollingRateCap.capHz,
+            inactiveMaxFPS: FeatureSettings.shared.inactiveViewMaxFPS
+        )
+        if !force, now - lastSyncTime < minInterval {
             skippedSyncCount += 1
             return
         }
@@ -854,57 +862,6 @@ extension RustTerminalView {
         guard !inlineImages.isEmpty else { return }
         inlineImages.forEach { $0.view.removeFromSuperview() }
         inlineImages.removeAll(keepingCapacity: false)
-    }
-
-    // MARK: - OSC 7 Directory Parsing
-
-    /// Parse OSC 7 (current working directory) from raw PTY output.
-    /// OSC 7 format: ESC ] 7 ; file://hostname/path BEL (0x07) or ESC \ (ST)
-    func parseOSC7(from data: Data) {
-        // Look for OSC 7 sequence: ESC (0x1b) ] (0x5d) 7 ; ...
-        // Terminated by BEL (0x07) or ESC \
-        let bytes = Array(data)
-        var i = 0
-
-        while i < bytes.count - 5 { // Need at least ESC ] 7 ; x BEL
-            // Look for ESC ]
-            if bytes[i] == 0x1B, i + 1 < bytes.count, bytes[i + 1] == 0x5D {
-                // Found ESC ], check for '7;'
-                if i + 3 < bytes.count, bytes[i + 2] == 0x37, bytes[i + 3] == 0x3B {
-                    // Found OSC 7 ; - extract the URL
-                    let start = i + 4 // After "ESC ] 7 ;"
-
-                    // Find terminator: BEL (0x07) or ESC \ (0x1b 0x5c)
-                    var end = start
-                    while end < bytes.count {
-                        if bytes[end] == 0x07 {
-                            break // BEL terminator
-                        }
-                        if bytes[end] == 0x1B, end + 1 < bytes.count, bytes[end + 1] == 0x5C {
-                            break // ST (ESC \) terminator
-                        }
-                        end += 1
-                    }
-
-                    if end < bytes.count, end > start {
-                        // Extract the URL string
-                        let urlBytes = Array(bytes[start ..< end])
-                        if let urlString = String(bytes: urlBytes, encoding: .utf8) {
-                            // Diagnostic: log every detected OSC 7 sequence at INFO,
-                            // independent of whether `processOSC7URL` updates the cwd.
-                            // This lets us see hooks firing with the same path (e.g.
-                            // initial precmd matching restored cwd) and rule out the
-                            // "did the bytes arrive at all?" question.
-                            Log.info("RustTerminalView[\(viewId)]: OSC 7 sequence: \(urlString)")
-                            processOSC7URL(urlString)
-                        } else {
-                            Log.warn("RustTerminalView[\(viewId)]: OSC 7 sequence with non-UTF8 payload (\(urlBytes.count) bytes)")
-                        }
-                    }
-                }
-            }
-            i += 1
-        }
     }
 
     // MARK: - OSC 9 parsing

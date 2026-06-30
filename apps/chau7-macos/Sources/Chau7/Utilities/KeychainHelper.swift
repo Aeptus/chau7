@@ -73,9 +73,4 @@ enum KeychainHelper {
         Log.info("KeychainHelper: delete \(service)/\(account) status=\(status)")
         return status == errSecSuccess || status == errSecItemNotFound
     }
-
-    /// Checks if a value exists in the Keychain
-    static func exists(service: String, account: String) -> Bool {
-        load(service: service, account: account) != nil
-    }
 }

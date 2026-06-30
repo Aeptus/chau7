@@ -44,17 +44,6 @@ public final class AISessionEventReconciler {
         self.retentionSeconds = retentionSeconds
     }
 
-    public convenience init(
-        strongerReplacementWindow: TimeInterval = MonitoringSchedule.defaultCoalescingWindow,
-        retentionSeconds: TimeInterval
-    ) {
-        self.init(
-            strongerReplacementWindow: strongerReplacementWindow,
-            terminalRepeatWindow: 10,
-            retentionSeconds: retentionSeconds
-        )
-    }
-
     public func reset() {
         recordsByKey.removeAll()
         primaryKeyByAlias.removeAll()
@@ -136,6 +125,21 @@ public final class AISessionEventReconciler {
         }
 
         if previous.state.isTerminal {
+            // An authoritative interactive-attention signal means the session is
+            // active again: a session cannot be finished AND blocking on the user.
+            // Treat it as a reopen so the next turn's prompt is never suppressed,
+            // without depending on the provider emitting raw lifecycle
+            // (tool_start/session_start) reopen events. Fallback/heuristic
+            // attention is intentionally excluded so lagging terminal-text
+            // signals stay suppressed after completion.
+            if state.isInteractiveAttention, observation.reliability == .authoritative {
+                return .init(
+                    emit: true,
+                    updatesState: true,
+                    reason: "Reopened terminal session for authoritative \(state.rawValue)"
+                )
+            }
+
             if state.isTerminal {
                 if state == previous.state {
                     return sameStateDecision(

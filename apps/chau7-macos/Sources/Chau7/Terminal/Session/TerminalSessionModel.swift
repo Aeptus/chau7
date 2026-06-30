@@ -73,6 +73,7 @@ enum RestoreBootstrapPhase: String {
 /// - Note: Thread Safety - Properties must be modified on main thread.
 ///   Callbacks may arrive on background threads and dispatch to main via DispatchQueue.main.async.
 @Observable
+// swiftlint:disable:next type_body_length
 final class TerminalSessionModel {
     private enum PendingTerminalAction {
         case text(String)
@@ -1689,6 +1690,22 @@ final class TerminalSessionModel {
           [ -f "$CHAU7_USER_ZDOTDIR/.zprofile" ] && source "$CHAU7_USER_ZDOTDIR/.zprofile"
           [ -f "$CHAU7_USER_ZDOTDIR/.zlogin" ] && source "$CHAU7_USER_ZDOTDIR/.zlogin"
         fi
+        # Per-tab isolated command history. macOS /etc/zshrc derives HISTFILE from
+        # ZDOTDIR (HISTFILE=${ZDOTDIR:-$HOME}/.zsh_history); because Chau7 points
+        # ZDOTDIR at a shared temp integration dir, every tab inadvertently collapsed
+        # onto one throwaway history file (and SHELL_SESSIONS_DISABLE=1 turns off the
+        # per-session isolation Terminal.app would otherwise provide). Re-anchor
+        # HISTFILE on the stable per-tab CHAU7_TAB_ID — which survives tab restore —
+        # so each tab keeps its own history and a reloaded tab reloads exactly its
+        # own, not the merged history of every tab. Set after the user's config so it
+        # wins. zsh reads HISTFILE once after the rc files, so this value is the one
+        # loaded.
+        if [ -n "$CHAU7_TAB_ID" ]; then
+          mkdir -p "$CHAU7_USER_HOME/.chau7/history" 2>/dev/null
+          export HISTFILE="$CHAU7_USER_HOME/.chau7/history/${CHAU7_TAB_ID}.zsh_history"
+          HISTSIZE=100000
+          SAVEHIST=100000
+        fi
         # Ensure Codex's npm-managed Volta image bin stays ahead of the legacy ~/.volta/bin shim.
         path=("${(s/:/)PATH}")
         for _codex_image_bin in "$CHAU7_USER_HOME/.volta/tools/image/node/"*"/bin"(N); do
@@ -1767,6 +1784,14 @@ final class TerminalSessionModel {
         export CHAU7_USER_HOME="${CHAU7_USER_HOME:-${HOME:-\(fallbackHome)}}"
         [ -f "$CHAU7_USER_HOME/.bashrc" ] && source "$CHAU7_USER_HOME/.bashrc"
         [ -f "$CHAU7_USER_HOME/.bash_profile" ] && source "$CHAU7_USER_HOME/.bash_profile"
+        # Per-tab isolated command history (mirrors the zsh integration). Keyed off
+        # the stable CHAU7_TAB_ID so each tab keeps its own history across restore.
+        if [ -n "$CHAU7_TAB_ID" ]; then
+          mkdir -p "$CHAU7_USER_HOME/.chau7/history" 2>/dev/null
+          export HISTFILE="$CHAU7_USER_HOME/.chau7/history/${CHAU7_TAB_ID}.bash_history"
+          HISTSIZE=100000
+          HISTFILESIZE=100000
+        fi
         # Chau7 default start directory
         if [ -n "$CHAU7_START_DIR" ] && [ -d "$CHAU7_START_DIR" ]; then
           cd "$CHAU7_START_DIR"
@@ -1828,6 +1853,12 @@ final class TerminalSessionModel {
         end
         if test -f "$CHAU7_USER_XDG_CONFIG_HOME/fish/config.fish"
           source "$CHAU7_USER_XDG_CONFIG_HOME/fish/config.fish"
+        end
+        # Per-tab isolated command history (mirrors zsh/bash). fish keys history by
+        # session name; derive a stable per-tab name from CHAU7_TAB_ID (hyphens are
+        # not valid in a fish history session name, so swap them for underscores).
+        if test -n "$CHAU7_TAB_ID"
+          set -gx fish_history (string replace -a -- - _ "chau7_$CHAU7_TAB_ID")
         end
         # Chau7 default start directory
         if test -n "$CHAU7_START_DIR"; and test -d "$CHAU7_START_DIR"
@@ -1896,6 +1927,162 @@ final class TerminalSessionModel {
         } catch {
             Log.error("Failed to create shell integration files: \(error)")
         }
+
+        // Bound the accumulation of per-tab shell history files (one accrues per
+        // tab ever opened; closed tabs leave orphans). Off the main thread so it
+        // never delays launch; reads only static files (restore state + history).
+        DispatchQueue.global(qos: .utility).async {
+            pruneOrphanShellHistory()
+        }
+    }
+
+    /// Minimum command-history lines each closed tab retains while still on disk,
+    /// so a tab's most recent commands are never fully discarded by trimming.
+    static let minShellHistoryLinesPerTab = 5
+
+    /// Default total budget when the `shellHistoryMaxLines` setting is unset.
+    static let defaultShellHistoryMaxLines = 1000
+
+    /// Prune accumulated per-tab shell history. Per-tab history lives in
+    /// `~/.chau7/history/<tab-id>.<shell>_history`; one file accrues for every tab
+    /// ever opened, so closed tabs leave orphans. The budget (total input lines kept
+    /// across closed tabs) comes from the `shellHistoryMaxLines` setting.
+    ///
+    /// This is shell command history ONLY (what you type at the zsh/bash prompt).
+    /// AI agent transcripts live in `~/.claude` and `~/.codex` and are never touched.
+    static func pruneOrphanShellHistory() {
+        let maxLines = UserDefaults.standard
+            .object(forKey: "terminal.shellHistoryMaxLines") as? Int ?? defaultShellHistoryMaxLines
+        pruneOrphanShellHistory(
+            in: RuntimeIsolation.urlInHome(".chau7/history"),
+            protectedTabIDs: restorableTabIDs(),
+            maxLines: maxLines
+        )
+    }
+
+    /// Testable core. Keep every tab still in `protectedTabIDs` untouched; bound the
+    /// remaining (closed-tab) history to `maxLines` total input lines by dropping the
+    /// OLDEST commands first. Closed tabs are trimmed oldest-first to their most
+    /// recent `minLinesPerTab` commands before any whole file is removed, so a closed
+    /// tab keeps a little history until the budget genuinely can't fit it.
+    static func pruneOrphanShellHistory(
+        in dir: URL,
+        protectedTabIDs: Set<String>,
+        maxLines: Int,
+        minLinesPerTab: Int = minShellHistoryLinesPerTab
+    ) {
+        let fm = FileManager.default
+        guard let entries = try? fm.contentsOfDirectory(
+            at: dir,
+            includingPropertiesForKeys: [.contentModificationDateKey],
+            options: [.skipsHiddenFiles]
+        ) else { return }
+
+        let historyFiles = entries.filter {
+            let name = $0.lastPathComponent
+            return name.hasSuffix(".zsh_history") || name.hasSuffix(".bash_history")
+        }
+        guard !historyFiles.isEmpty else { return }
+
+        func tabID(of url: URL) -> String {
+            let name = url.lastPathComponent
+            return name.firstIndex(of: ".").map { String(name[..<$0]) } ?? name
+        }
+
+        // Orphans (closed tabs) oldest (least-recently-used) first.
+        var orphans = historyFiles
+            .filter { !protectedTabIDs.contains(tabID(of: $0)) }
+            .map { url -> (url: URL, lines: Int, mtime: Date) in
+                let mtime = (try? url.resourceValues(forKeys: [.contentModificationDateKey])
+                    .contentModificationDate) ?? .distantPast
+                return (url, inputLineCount(of: url), mtime)
+            }
+            .sorted { $0.mtime < $1.mtime }
+
+        var total = orphans.reduce(0) { $0 + $1.lines }
+        guard total > maxLines else { return }
+
+        let floor = max(0, minLinesPerTab)
+        var trimmed = 0
+        var removed = 0
+
+        // Pass 1: trim the oldest tabs down to the per-tab floor (drop their oldest
+        // commands, keep the most recent `floor`).
+        for index in orphans.indices {
+            if total <= maxLines { break }
+            let orphan = orphans[index]
+            guard orphan.lines > floor else { continue }
+            if keepLastLines(of: orphan.url, count: floor) {
+                total -= (orphan.lines - floor)
+                orphans[index].lines = floor
+                trimmed += 1
+            }
+        }
+
+        // Pass 2: if still over budget (too many closed tabs even at the floor),
+        // remove whole oldest tabs until under.
+        if total > maxLines {
+            for orphan in orphans {
+                if total <= maxLines { break }
+                try? fm.removeItem(at: orphan.url)
+                total -= orphan.lines
+                removed += 1
+            }
+        }
+
+        if trimmed > 0 || removed > 0 {
+            Log.info(
+                "ShellHistory: pruned closed-tab history (trimmed \(trimmed), removed \(removed)); "
+                    + "corpus now ~\(total) lines (cap \(maxLines), floor \(floor)/tab)"
+            )
+        }
+    }
+
+    private static func inputLineCount(of url: URL) -> Int {
+        guard let data = try? Data(contentsOf: url) else { return 0 }
+        return data.reduce(into: 0) { count, byte in if byte == 0x0A { count += 1 } }
+    }
+
+    /// Rewrite `url` keeping only its last `count` newline-delimited lines (the most
+    /// recent commands), dropping the oldest. Returns false on read/write failure.
+    @discardableResult
+    private static func keepLastLines(of url: URL, count: Int) -> Bool {
+        guard count >= 0, let content = try? String(contentsOf: url, encoding: .utf8) else { return false }
+        var lines = content.components(separatedBy: "\n")
+        if lines.last?.isEmpty == true { lines.removeLast() } // ignore the trailing newline
+        guard lines.count > count else { return true } // already within the floor
+        let kept = lines.suffix(count)
+        let text = count == 0 ? "" : kept.joined(separator: "\n") + "\n"
+        do {
+            try text.write(to: url, atomically: true, encoding: .utf8)
+            return true
+        } catch {
+            return false
+        }
+    }
+
+    /// Tab IDs that may still be restored, gathered from every restore source, so
+    /// pruning never deletes the history of a tab the user is about to get back.
+    private static func restorableTabIDs() -> Set<String> {
+        var ids = Set<String>()
+        func add(_ windows: [[SavedTabState]]?) {
+            windows?.forEach { window in
+                window.forEach { if let id = $0.tabID { ids.insert(id) } }
+            }
+        }
+        // Primary: the file-based restore bundle (authoritative — UserDefaults is
+        // often nearly empty when the bundle holds the real window state).
+        add(TabRestoreBundleStore.loadCurrentWindowStates())
+        // UserDefaults multi-window + legacy single-window keys.
+        if let data = UserDefaults.standard.data(forKey: SavedMultiWindowState.userDefaultsKey),
+           let multi = try? JSONDecoder().decode(SavedMultiWindowState.self, from: data) {
+            add(multi.windows)
+        }
+        if let data = UserDefaults.standard.data(forKey: SavedTabState.userDefaultsKey),
+           let single = try? JSONDecoder().decode([SavedTabState].self, from: data) {
+            add([single])
+        }
+        return ids
     }
 
     private func syncRustTerminalObservabilityScope() {

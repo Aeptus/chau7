@@ -314,10 +314,6 @@ pub struct Chau7Terminal {
     /// Dirty row tracker for partial updates
     pub(crate) dirty_rows: DirtyRowTracker,
 
-    /// Unicode ambiguous-width treatment: 1 = single-width (Western default),
-    /// 2 = double-width (East Asian). Stored for future grid layout integration.
-    pub(crate) ambiguous_width: AtomicU64,
-
     /// Counter incremented on every `processor.advance` call. Sampled every
     /// `INVARIANT_CHECK_PERIOD` calls to run a grid-state invariant check
     /// (cursor in bounds, no orphan wide-char spacers). Rate-limited to
@@ -412,7 +408,6 @@ impl Chau7Terminal {
             has_pending_shell_events: AtomicBool::new(false),
             adaptive_poller: AdaptivePoller::new(),
             dirty_rows: DirtyRowTracker::new(rows as usize),
-            ambiguous_width: AtomicU64::new(1),
             advance_counter: AtomicU64::new(0),
             graphics_interceptor: Mutex::new(graphics::GraphicsInterceptor::new()),
             image_store: Mutex::new(graphics::ImageStore::new()),
@@ -698,8 +693,6 @@ impl Chau7Terminal {
             // Performance optimizations
             adaptive_poller: AdaptivePoller::new(),
             dirty_rows: DirtyRowTracker::new(rows as usize),
-            // Unicode width config
-            ambiguous_width: AtomicU64::new(1),
             advance_counter: AtomicU64::new(0),
             // Graphics protocol support
             graphics_interceptor: Mutex::new(graphics::GraphicsInterceptor::new()),
@@ -895,6 +888,11 @@ impl Chau7Terminal {
 
         self.cols.store(cols, Ordering::Relaxed);
         self.rows.store(rows, Ordering::Relaxed);
+
+        // Keep the dirty-row tracker's height in sync with the resize, otherwise
+        // its row count stays frozen at the creation height and dirty_count()
+        // (DebugState.dirty_row_count) reports the wrong value.
+        self.dirty_rows.set_rows(rows as usize);
 
         // Resize the PTY without taking the pty_handle mutex: send_bytes and
         // the PtyWrite path hold that mutex during a *blocking* write_all
@@ -1952,15 +1950,6 @@ impl Chau7Terminal {
         debug!("[terminal-{}] replay_buffer: Replay complete", self.id);
     }
 
-    /// Set Unicode ambiguous-width treatment.
-    /// - `width = 1`: single-width (Western default)
-    /// - `width = 2`: double-width (East Asian)
-    pub fn set_ambiguous_width(&self, width: u8) {
-        let w = if width == 2 { 2u64 } else { 1u64 };
-        self.ambiguous_width.store(w, Ordering::Release);
-        info!("[terminal-{}] set_ambiguous_width: {}", self.id, w);
-    }
-
     /// Get the current display offset
     pub fn display_offset(&self) -> usize {
         let term = self.term.lock();
@@ -2597,31 +2586,39 @@ impl Chau7Terminal {
     }
 
     fn ansi_sgr_sequence(style: AnsiCellStyle) -> String {
-        let mut codes = vec!["0".to_string()];
+        use std::fmt::Write;
+        // Format directly into one String rather than building a Vec<String> of
+        // short heap allocations and joining — this runs per style transition on
+        // the (full/tail) buffer export path.
+        let mut out = String::with_capacity(48);
+        out.push_str("\x1b[0");
         if style.flags & CELL_FLAG_BOLD != 0 {
-            codes.push("1".to_string());
+            out.push_str(";1");
         }
         if style.flags & CELL_FLAG_DIM != 0 {
-            codes.push("2".to_string());
+            out.push_str(";2");
         }
         if style.flags & CELL_FLAG_ITALIC != 0 {
-            codes.push("3".to_string());
+            out.push_str(";3");
         }
         if style.flags & CELL_FLAG_UNDERLINE != 0 {
-            codes.push("4".to_string());
+            out.push_str(";4");
         }
         if style.flags & CELL_FLAG_INVERSE != 0 {
-            codes.push("7".to_string());
+            out.push_str(";7");
         }
         if style.flags & CELL_FLAG_HIDDEN != 0 {
-            codes.push("8".to_string());
+            out.push_str(";8");
         }
         if style.flags & CELL_FLAG_STRIKETHROUGH != 0 {
-            codes.push("9".to_string());
+            out.push_str(";9");
         }
-        codes.push(format!("38;2;{};{};{}", style.fg.0, style.fg.1, style.fg.2));
-        codes.push(format!("48;2;{};{};{}", style.bg.0, style.bg.1, style.bg.2));
-        format!("\x1b[{}m", codes.join(";"))
+        let _ = write!(
+            out,
+            ";38;2;{};{};{};48;2;{};{};{}m",
+            style.fg.0, style.fg.1, style.fg.2, style.bg.0, style.bg.1, style.bg.2
+        );
+        out
     }
 
     fn grid_line_wraps(grid: &alacritty_terminal::grid::Grid<Cell>, line: Line) -> bool {
@@ -2667,7 +2664,6 @@ impl Chau7Terminal {
         self.metrics
             .grid_snapshot_time_us
             .store(0, Ordering::Relaxed);
-        self.metrics.vte_process_time_us.store(0, Ordering::Relaxed);
         self.metrics.max_poll_time_us.store(0, Ordering::Relaxed);
         self.metrics
             .max_grid_snapshot_time_us
@@ -2677,11 +2673,6 @@ impl Chau7Terminal {
         self.metrics.idle_polls.store(0, Ordering::Relaxed);
         self.dirty_rows.clear();
         info!("[terminal-{}] Performance metrics reset", self.id);
-    }
-
-    /// Get dirty rows for partial updates
-    pub fn get_dirty_rows(&self) -> Vec<usize> {
-        self.dirty_rows.get_dirty_rows()
     }
 
     /// Clear dirty row tracking after sync

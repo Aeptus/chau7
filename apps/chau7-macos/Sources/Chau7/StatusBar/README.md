@@ -13,7 +13,6 @@ Menu bar status item with popover panel and standalone settings window.
 
 - `StatusBarController` — singleton managing the menu bar status item and popover lifecycle
 - `SettingsWindowView` — wrapper view for the standalone settings window (Cmd+,)
-- `StreamSelection` — enum for selecting which log/terminal stream to display in the panel
 
 ## Dependencies
 

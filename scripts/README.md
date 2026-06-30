@@ -8,9 +8,8 @@ Build orchestration and CI scripts that operate across the entire monorepo. The 
 |--------|---------|
 | `order66` | Top-level build orchestrator. Delegates to `apps/chau7-macos/Scripts/order66` for macOS and runs `xcodebuild` for iOS. Run `./scripts/order66 --help` for targets. |
 | `ci-local` | Legacy full local CI implementation invoked by the registered `full-local-ci` quality gate. Runs format + lint + build + test + dead-code + duplication + Rust dep audit across Swift, Rust, Go, and the relay; live JS/Python dependency audits are separate registry gates. |
-| `ci-local-fast` | Legacy fast local CI helper. The canonical pre-commit entry point is now `pnpm quality:staged`. |
 | `ci-local-relay-ts` | Scoped TS check for `services/chau7-relay`. Runs `tsc --noEmit` + `prettier --check`. |
-| `ci-lib.sh` | Shared CI helper functions sourced by `ci-local` and `ci-local-fast`. Provides `ci_section`, `ci_fail`, `ci_require_cmd`, `ci_require_cmd_strict`, `ci_run_in`, `ci_gofmt_check_dir`, `ci_go_vet_dir`, `ci_golangci_lint_dir`, `ci_shellcheck_tracked`, `ci_ruff_check_dir`. |
+| `ci-lib.sh` | Shared CI helper functions sourced by `ci-local`, `ci-local-relay-ts`, and `check-release-tag-push`. Provides `ci_section`, `ci_fail`, `ci_require_cmd`, `ci_require_cmd_strict`, `ci_run_in`, `ci_gofmt_check_dir`, `ci_go_vet_dir`, `ci_golangci_lint_dir`, `ci_shellcheck_tracked`, `ci_ruff_check_dir`. |
 | `check-docs-staged` | Pre-commit hook. Warns when behavioral source changes are staged without corresponding CHANGELOG/FEATURES updates. Skip with `CHAU7_SKIP_DOC_CHECK=1`. |
 | `check-forbidden-files` | Blocks committing secrets/credential files (`.env*`, `*.pem`, `id_rsa*`, etc.) and files > 5 MB. Skip with `CHAU7_SKIP_FORBIDDEN_CHECK=1`. |
 | `check-anti-slop` | Regex slop check on added diff lines only. Catches new force-unwraps/`print`/`AnyView` in Swift, `console.log`/`as any`/`@ts-ignore` in TS, `fmt.Println`/`panic` in Go, bare `except:` in Python, and AI ghost comments across all. Skip with `CHAU7_SKIP_ANTISLOP=1`. |
@@ -25,17 +24,17 @@ Build orchestration and CI scripts that operate across the entire monorepo. The 
 
 | Tool | Version | Used By |
 |------|---------|---------|
-| Swift | 6+ (Xcode 26+) | `ci-local`, `ci-local-fast` |
-| SwiftFormat | latest | `ci-local`, `ci-local-fast` |
-| SwiftLint | latest | `ci-local`, `ci-local-fast` |
-| Rust (cargo) | stable | `ci-local`, `ci-local-fast` |
-| Go | 1.25+ | `ci-local`, `ci-local-fast` |
-| Node.js + npm | 22+ | `ci-local`, `ci-local-fast`, `ci-local-relay-ts` |
+| Swift | 6+ (Xcode 26+) | `ci-local` |
+| SwiftFormat | latest | `ci-local` |
+| SwiftLint | latest | `ci-local` |
+| Rust (cargo) | stable | `ci-local` |
+| Go | 1.25+ | `ci-local` |
+| Node.js + npm | 22+ | `ci-local`, `ci-local-relay-ts` |
 | pnpm | 10.11+ | `hooks:install`, `quality:*` |
 | gitleaks | any | pre-commit (secret scan) |
 | shellcheck | any | pre-commit (staged `.sh`), `ci-local` (full) |
 | ruff | any | pre-commit (staged `.py`), `ci-local` (full) |
-| golangci-lint | any | `ci-local-fast`, `ci-local` |
+| golangci-lint | any | `ci-local` |
 | periphery | any | `ci-local` (Swift dead-code) |
 | cargo-deny | any | `ci-local` (Rust dep audit) |
 | jscpd | any | `ci-local` (duplication) |

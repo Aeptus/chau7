@@ -175,6 +175,25 @@ pub fn package_manager_exec(tool: &str) -> Command {
     }
 }
 
+/// Shortens an absolute path to a compact form anchored at the last matching
+/// directory (e.g. `.../proj/src/a/b.py` with anchor `"src"` -> `src/a/b.py`),
+/// falling back to the basename. Used by the lint/format wrappers for tidy
+/// diagnostics. `anchors` are tried in order; first match wins.
+pub fn compact_path(path: &str, anchors: &[&str]) -> String {
+    let path = path.replace('\\', "/");
+    for anchor in anchors {
+        let needle = format!("/{anchor}/");
+        if let Some(pos) = path.rfind(&needle) {
+            return format!("{anchor}/{}", &path[pos + needle.len()..]);
+        }
+    }
+    if let Some(pos) = path.rfind('/') {
+        path[pos + 1..].to_string()
+    } else {
+        path
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

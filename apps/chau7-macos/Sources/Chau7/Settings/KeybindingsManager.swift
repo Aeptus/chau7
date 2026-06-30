@@ -9,33 +9,6 @@ struct KeyBinding: Equatable {
     let modifiers: NSEvent.ModifierFlags
     let action: KeyAction
 
-    /// Creates a KeyBinding from a string like "cmd+c", "ctrl+shift+t", etc.
-    static func parse(_ str: String, action: KeyAction) -> KeyBinding? {
-        let parts = str.lowercased().split(separator: "+").map { $0.trimmingCharacters(in: .whitespaces) }
-        guard !parts.isEmpty else { return nil }
-
-        var modifiers: NSEvent.ModifierFlags = []
-        var keyString: String?
-
-        for part in parts {
-            switch part {
-            case "ctrl", "control":
-                modifiers.insert(.control)
-            case "cmd", "command":
-                modifiers.insert(.command)
-            case "opt", "option", "alt":
-                modifiers.insert(.option)
-            case "shift":
-                modifiers.insert(.shift)
-            default:
-                keyString = part
-            }
-        }
-
-        guard let key = keyString else { return nil }
-        return KeyBinding(key: key, modifiers: modifiers, action: action)
-    }
-
     static func modifiers(from parts: [String]) -> NSEvent.ModifierFlags {
         var modifiers: NSEvent.ModifierFlags = []
         for part in parts.map({ $0.lowercased() }) {
@@ -234,7 +207,7 @@ final class KeybindingsManager {
     static let shared = KeybindingsManager()
 
     private(set) var activeBindings: [KeyBinding] = []
-    private var shortcutsSignature = ""
+    private var lastShortcutsGeneration = -1
 
     // MARK: - Initialization
 
@@ -243,19 +216,14 @@ final class KeybindingsManager {
     }
 
     private func refreshBindings(force: Bool = false) {
-        let shortcuts = FeatureSettings.shared.customShortcuts
-        let signature = shortcutsSignature(for: shortcuts)
-        guard force || signature != shortcutsSignature else { return }
+        // Per-key-event hot path: a cheap Int generation compare avoids
+        // rebuilding/joining a signature string on every keystroke.
+        let generation = FeatureSettings.shared.customShortcutsGeneration
+        guard force || generation != lastShortcutsGeneration else { return }
+        lastShortcutsGeneration = generation
 
-        shortcutsSignature = signature
-        activeBindings = shortcuts.compactMap { binding(from: $0) }
+        activeBindings = FeatureSettings.shared.customShortcuts.compactMap { binding(from: $0) }
         Log.info("F11: Loaded \(activeBindings.count) keybindings from settings.")
-    }
-
-    private func shortcutsSignature(for shortcuts: [KeyboardShortcut]) -> String {
-        shortcuts.map {
-            "\($0.action)|\($0.key.lowercased())|\($0.modifiers.sorted().joined(separator: ","))"
-        }.joined(separator: ";")
     }
 
     private func binding(from shortcut: KeyboardShortcut) -> KeyBinding? {

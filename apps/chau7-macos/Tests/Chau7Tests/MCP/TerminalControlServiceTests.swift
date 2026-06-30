@@ -611,4 +611,18 @@ final class TerminalControlServiceTests: XCTestCase {
         }
         return json
     }
+
+    func testAgentLaunchCommandWithoutPRIsAgentCommandVerbatim() {
+        XCTAssertEqual(
+            TerminalControlService.agentLaunchCommand(agentCommand: "claude", prNumber: nil),
+            "claude"
+        )
+    }
+
+    func testAgentLaunchCommandWithPRPrependsCheckout() {
+        XCTAssertEqual(
+            TerminalControlService.agentLaunchCommand(agentCommand: "codex", prNumber: 323),
+            "gh pr checkout 323 && codex"
+        )
+    }
 }

@@ -94,11 +94,6 @@ final class MetalTerminalRenderer: NSObject {
         let color: SIMD4<Float>
     }
 
-    private enum LigatureCacheEntry {
-        case miss
-        case hit(LigatureInfo)
-    }
-
     // MARK: - Shared Caches (compiled once, reused across all renderer instances)
 
     private static var cachedLibrary: MTLLibrary?
@@ -140,10 +135,24 @@ final class MetalTerminalRenderer: NSObject {
     private var atlasWidth = 2048
     private var atlasHeight = 2048
     private var glyphCache: [GlyphKey: GlyphInfo] = [:]
-    /// Cache for multi-character ligature glyphs. nil value = font doesn't form a ligature.
-    private var ligatureCache: [LigatureKey: LigatureCacheEntry] = [:]
-    private var ligatureCacheInsertionOrder: [LigatureKey] = []
-    private static let maxLigatureCacheEntries = 4096
+    /// Flat cache for single-byte printable ASCII glyphs — the vast majority of
+    /// cells. The instance-buffer build hits this once per cell per frame;
+    /// going through `glyphCache` there allocated a `Data` and hashed it every
+    /// time. Indexed by `(byte << 2) | styleBits`; resolved lazily via the slow
+    /// path and cleared on atlas reset (GlyphInfo holds atlas UV coords).
+    private var asciiGlyphCache = [GlyphInfo?](repeating: nil, count: 128 << 2)
+    private var asciiGlyphResolved = [Bool](repeating: false, count: 128 << 2)
+    /// Real ligatures the font forms — a small, stable set (the font's GSUB
+    /// table × 4 styles), each referencing a persistent atlas slot. Kept in its
+    /// own map so the unbounded miss keyspace below can never evict it.
+    private var ligatureHitCache: [LigatureKey: LigatureInfo] = [:]
+    /// Sequences known NOT to form a ligature. Effectively unbounded (any 2–3
+    /// char run of ordinary text), so this is the cache that churns — bounded
+    /// and FIFO-evicted here. Evicting a miss is harmless (it just re-shapes
+    /// once); the split keeps that churn off the real-ligature hits.
+    private var ligatureMissCache: Set<LigatureKey> = []
+    private var ligatureMissOrder: [LigatureKey] = []
+    private static let maxLigatureMissCacheEntries = 4096
     /// Whether ligature rendering is enabled (set from FeatureSettings)
     var ligaturesEnabled = false
 
@@ -412,8 +421,12 @@ final class MetalTerminalRenderer: NSObject {
     private func resetAtlas() {
         atlasGeneration &+= 1
         glyphCache.removeAll()
-        ligatureCache.removeAll()
-        ligatureCacheInsertionOrder.removeAll(keepingCapacity: false)
+        for i in asciiGlyphResolved.indices {
+            asciiGlyphResolved[i] = false
+        }
+        ligatureHitCache.removeAll()
+        ligatureMissCache.removeAll()
+        ligatureMissOrder.removeAll(keepingCapacity: false)
         packX = 0
         packY = 0
         packRowHeight = 0
@@ -668,6 +681,23 @@ final class MetalTerminalRenderer: NSObject {
         return glyphCache[GlyphKey(cluster: Data([0x20]), bold: false, italic: false)]
     }
 
+    /// Fast path for single-byte printable ASCII (`byte < 0x80`): a flat-array
+    /// lookup that avoids the per-cell `Data` allocation and dictionary hash of
+    /// `lookupGlyph`. Resolves once via the slow path, then serves from the
+    /// flat cache. Caller guarantees `byte < 0x80`.
+    private func lookupASCIIGlyph(byte: UInt8, bold: Bool, italic: Bool) -> GlyphInfo? {
+        let idx = (Int(byte) << 2) | (bold ? 1 : 0) | (italic ? 2 : 0)
+        if asciiGlyphResolved[idx] {
+            glyphLookupCount += 1
+            return asciiGlyphCache[idx]
+        }
+        // Miss: resolve via the slow path (which counts the lookup itself).
+        let info = lookupGlyph(cluster: Data([byte]), isWideHint: false, bold: bold, italic: italic)
+        asciiGlyphCache[idx] = info
+        asciiGlyphResolved[idx] = true
+        return info
+    }
+
     // MARK: - Ligature Rendering
 
     // MARK: - Color Glyph Detection
@@ -843,13 +873,11 @@ final class MetalTerminalRenderer: NSObject {
     /// produce a ligature for this sequence (glyph count == char count = no substitution).
     func lookupLigature(sequence: String, bold: Bool, italic: Bool) -> LigatureInfo? {
         let key = LigatureKey(sequence: sequence, bold: bold, italic: italic)
-        if let cached = ligatureCache[key] {
-            switch cached {
-            case .miss:
-                return nil
-            case let .hit(info):
-                return info
-            }
+        if let info = ligatureHitCache[key] {
+            return info
+        }
+        if ligatureMissCache.contains(key) {
+            return nil
         }
 
         // Ask CoreText to shape the sequence. If the resulting glyph count is less
@@ -868,7 +896,7 @@ final class MetalTerminalRenderer: NSObject {
         )
         let line = CTLineCreateWithAttributedString(attrString)
         guard let run = Self.runs(from: line).first else {
-            cacheLigature(.miss, for: key)
+            cacheLigatureMiss(key)
             return nil
         }
 
@@ -877,7 +905,7 @@ final class MetalTerminalRenderer: NSObject {
 
         // If glyph count equals char count, no ligature was formed
         if glyphCount >= charCount {
-            cacheLigature(.miss, for: key)
+            cacheLigatureMiss(key)
             return nil
         }
 
@@ -895,14 +923,14 @@ final class MetalTerminalRenderer: NSObject {
         }
         if packY + slotHeight > CGFloat(atlasHeight) {
             // Atlas full — skip ligature
-            cacheLigature(.miss, for: key)
+            cacheLigatureMiss(key)
             return nil
         }
         packRowHeight = max(packRowHeight, slotHeight)
 
         // Draw the ligature sequence into the atlas bitmap
         guard let context = atlasContext else {
-            cacheLigature(.miss, for: key)
+            cacheLigatureMiss(key)
             return nil
         }
         let baselineY = CGFloat(atlasHeight) - packY - slotHeight + fontDescent
@@ -932,35 +960,29 @@ final class MetalTerminalRenderer: NSObject {
         )
 
         let info = LigatureInfo(textureRect: texRect, cellSpan: cellSpan)
-        cacheLigature(.hit(info), for: key)
+        ligatureHitCache[key] = info
         packX += slotWidth + padding
         atlasDirty = true
         return info
     }
 
-    private func cacheLigature(_ entry: LigatureCacheEntry, for key: LigatureKey) {
-        if ligatureCache[key] == nil {
-            ligatureCacheInsertionOrder.append(key)
-        }
-        ligatureCache[key] = entry
-        trimLigatureCacheIfNeeded()
-    }
+    private func cacheLigatureMiss(_ key: LigatureKey) {
+        guard ligatureMissCache.insert(key).inserted else { return }
+        ligatureMissOrder.append(key)
 
-    private func trimLigatureCacheIfNeeded() {
         let evictionCount = RenderMemoryPressurePolicy.ligatureEvictionCount(
-            currentCount: ligatureCache.count,
-            limit: Self.maxLigatureCacheEntries
+            currentCount: ligatureMissCache.count,
+            limit: Self.maxLigatureMissCacheEntries
         )
         guard evictionCount > 0 else { return }
 
-        let keysToRemove = Array(ligatureCacheInsertionOrder.prefix(evictionCount))
-        for key in keysToRemove {
-            ligatureCache.removeValue(forKey: key)
+        // Batched (the policy evicts limit/16 at a time), so trims are rare and
+        // — unlike the old shared cache — touch only misses, never real
+        // ligatures. No warn log: evicting a miss is routine and harmless.
+        for key in ligatureMissOrder.prefix(evictionCount) {
+            ligatureMissCache.remove(key)
         }
-        ligatureCacheInsertionOrder.removeFirst(keysToRemove.count)
-        Log.warn(
-            "MetalRenderer: trimmed ligature cache by \(keysToRemove.count) entries; remaining=\(ligatureCache.count)"
-        )
+        ligatureMissOrder.removeFirst(evictionCount)
     }
 
     /// Maximum lookahead for ligature detection (3-char sequences like ===, !==)
@@ -1267,25 +1289,34 @@ final class MetalTerminalRenderer: NSObject {
                         ligatureSlice += 1
                         ligatureSkip -= 1
                     } else if texCoord == SIMD4(0, 0, 0, 0) {
-                        let cluster = Data(clusters[Int(cell.clusterStart) ..< Int(cell.clusterStart) + Int(cell.clusterLen)])
+                        let clusterStart = Int(cell.clusterStart)
+                        let info: GlyphInfo?
+                        if cell.clusterLen == 1, clusters[clusterStart] < 0x80 {
+                            // ASCII fast path: no per-cell Data allocation / dict hash.
+                            info = lookupASCIIGlyph(byte: clusters[clusterStart], bold: isBold, italic: isItalic)
+                        } else {
+                            let cluster = Data(clusters[clusterStart ..< clusterStart + Int(cell.clusterLen)])
 
-                        // Diagnostic: log box-drawing glyph resolution
-                        if cell.clusterLen == 3 {
-                            let b0 = cluster[0], b1 = cluster[1]
-                            if b0 == 0xE2, b1 == 0x94 || b1 == 0x95 { // U+2500..U+257F is encoded 0xE2 94/95 ..
-                                boxDrawCount += 1
-                                if traceBoxDraw, boxDrawCount <= 3 {
-                                    let fg = cell.foregroundColor
-                                    let bg = cell.backgroundColor
-                                    let s = String(decoding: cluster, as: UTF8.self)
-                                    Log.trace(
-                                        "[DIAG-SWIFT] box-draw: '\(s)' at (\(row),\(col)) fg=(\(String(format: "%.2f", fg.x)),\(String(format: "%.2f", fg.y)),\(String(format: "%.2f", fg.z))) bg=(\(String(format: "%.2f", bg.x)),\(String(format: "%.2f", bg.y)),\(String(format: "%.2f", bg.z)))"
-                                    )
+                            // Diagnostic: log box-drawing glyph resolution
+                            if cell.clusterLen == 3 {
+                                let b0 = cluster[0], b1 = cluster[1]
+                                if b0 == 0xE2, b1 == 0x94 || b1 == 0x95 { // U+2500..U+257F is encoded 0xE2 94/95 ..
+                                    boxDrawCount += 1
+                                    if traceBoxDraw, boxDrawCount <= 3 {
+                                        let fg = cell.foregroundColor
+                                        let bg = cell.backgroundColor
+                                        let s = String(decoding: cluster, as: UTF8.self)
+                                        Log.trace(
+                                            "[DIAG-SWIFT] box-draw: '\(s)' at (\(row),\(col)) fg=(\(String(format: "%.2f", fg.x)),\(String(format: "%.2f", fg.y)),\(String(format: "%.2f", fg.z))) bg=(\(String(format: "%.2f", bg.x)),\(String(format: "%.2f", bg.y)),\(String(format: "%.2f", bg.z)))"
+                                        )
+                                    }
                                 }
                             }
+
+                            info = lookupGlyph(cluster: cluster, isWideHint: cell.width == 2, bold: isBold, italic: isItalic)
                         }
 
-                        if let info = lookupGlyph(cluster: cluster, isWideHint: cell.width == 2, bold: isBold, italic: isItalic) {
+                        if let info {
                             // Wide glyphs are tiled as left+right halves across
                             // this cell + the continuation cell to its right.
                             // Emit only the LEFT half here.
@@ -1362,7 +1393,7 @@ final class MetalTerminalRenderer: NSObject {
             glyphLookups: frameGlyphLookups,
             glyphMisses: frameGlyphMisses,
             glyphCacheSize: glyphCache.count,
-            ligatureCacheSize: ligatureCache.count
+            ligatureCacheSize: ligatureHitCache.count + ligatureMissCache.count
         )
     }
 

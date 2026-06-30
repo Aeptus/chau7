@@ -238,4 +238,42 @@ extension OverlayTabsModel {
         guard order != Array(tabs.indices) else { return }
         tabs = order.map { tabs[$0] }
     }
+
+    /// Heals repo-group tags orphaned by a moved or renamed repo directory.
+    ///
+    /// `repoGroupID` is an absolute path that doubles as a group's identity key
+    /// and — via its last path component — its label. Moving a repo on disk
+    /// therefore strands every tab tagged before the move on the now-vanished
+    /// old path, while tabs tagged afterwards carry the new one: two pills with
+    /// the same name (e.g. two "Mockup" groups). This re-tags any tab whose
+    /// group path no longer exists to its session's live git root (when that
+    /// root does exist), collapsing the duplicates.
+    ///
+    /// Safe in every grouping mode: a path that still exists is never touched,
+    /// so intentional manual groups — and two genuinely distinct repos that
+    /// merely share a basename — are preserved. Only orphaned (vanished-path)
+    /// tags are migrated, and only onto a live root that exists on disk.
+    ///
+    /// `directoryExists` is injectable for testing; it defaults to a real
+    /// filesystem probe.
+    func reconcileStaleRepoGroups(
+        directoryExists: (String) -> Bool = { FileManager.default.fileExists(atPath: $0) }
+    ) {
+        var coalescedRoots = Set<String>()
+        for i in tabs.indices {
+            guard let staleRoot = tabs[i].repoGroupID else { continue }
+            let normalizedStale = URL(fileURLWithPath: staleRoot).standardized.path
+            guard !directoryExists(normalizedStale) else { continue }
+            guard let liveRoot = tabs[i].session?.gitRootPath else { continue }
+            let normalizedLive = URL(fileURLWithPath: liveRoot).standardized.path
+            guard normalizedLive != normalizedStale, directoryExists(normalizedLive) else { continue }
+            tabs[i].repoGroupID = normalizedLive
+            tabs[i].hasInheritedRepoGroup = false
+            coalescedRoots.insert(normalizedLive)
+        }
+        for root in coalescedRoots {
+            KnownRepoIdentityStore.shared.record(rootPath: root)
+            coalesceGroup(repoGroupID: root)
+        }
+    }
 }

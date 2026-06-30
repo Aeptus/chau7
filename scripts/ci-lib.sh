@@ -48,31 +48,6 @@ ci_run_in() {
   )
 }
 
-ci_collect_staged_files() {
-  if git -C "$CI_REPO_ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-    git -C "$CI_REPO_ROOT" diff --cached --name-only --diff-filter=ACMR
-  fi
-}
-
-ci_should_run_for_paths() {
-  if [[ "${CI_FAST_ALL:-0}" == "1" ]]; then
-    return 0
-  fi
-
-  if [[ -z "${CI_STAGED_FILES:-}" ]]; then
-    return 0
-  fi
-
-  local path
-  for path in "$@"; do
-    if grep -Eq "^${path}" <<<"$CI_STAGED_FILES"; then
-      return 0
-    fi
-  done
-
-  return 1
-}
-
 ci_gofmt_check_dir() {
   local dir="$1"
   local label="$2"
@@ -147,23 +122,6 @@ ci_shellcheck_tracked() {
   shellcheck -x "${list[@]}"
 }
 
-ci_shellcheck_staged() {
-  local label="${1:-Shellcheck (staged)}"
-  if ! command -v shellcheck >/dev/null 2>&1; then
-    ci_fail "shellcheck is required. Install with 'brew install shellcheck'."
-  fi
-  local files
-  files="$(git -C "$CI_REPO_ROOT" diff --cached --name-only --diff-filter=ACMR -- '*.sh' '**/*.sh' 2>/dev/null || true)"
-  [[ -z "$files" ]] && return 0
-  ci_section "$label"
-  local list=()
-  while IFS= read -r f; do
-    [[ -f "$CI_REPO_ROOT/$f" ]] && list+=("$CI_REPO_ROOT/$f")
-  done <<<"$files"
-  [[ ${#list[@]} -gt 0 ]] || return 0
-  shellcheck -x "${list[@]}"
-}
-
 ci_ruff_check_dir() {
   local dir="$1"
   local label="${2:-Ruff check}"
@@ -173,25 +131,6 @@ ci_ruff_check_dir() {
   local config="$CI_REPO_ROOT/scripts/ruff.toml"
   ci_run_in "$label" "$dir" ruff check --config "$config" .
   ci_run_in "$label format" "$dir" ruff format --config "$config" --check .
-}
-
-ci_ruff_staged() {
-  local label="${1:-Ruff (staged)}"
-  if ! command -v ruff >/dev/null 2>&1; then
-    ci_fail "ruff is required. Install with 'brew install ruff'."
-  fi
-  local files
-  files="$(git -C "$CI_REPO_ROOT" diff --cached --name-only --diff-filter=ACMR -- 'scripts/*.py' 2>/dev/null || true)"
-  [[ -z "$files" ]] && return 0
-  ci_section "$label"
-  local config="$CI_REPO_ROOT/scripts/ruff.toml"
-  local list=()
-  while IFS= read -r f; do
-    [[ -f "$CI_REPO_ROOT/$f" ]] && list+=("$CI_REPO_ROOT/$f")
-  done <<<"$files"
-  [[ ${#list[@]} -gt 0 ]] || return 0
-  ruff check --config "$config" "${list[@]}"
-  ruff format --config "$config" --check "${list[@]}"
 }
 
 ci_require_cmd_strict() {

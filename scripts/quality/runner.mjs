@@ -21,7 +21,6 @@ import {
   sha256,
   spawnCapture,
   stableJson,
-  toolVersion,
 } from "./helpers.mjs";
 import {
   acceptedAttestation,
@@ -241,13 +240,18 @@ async function executeGate(gate, baseContext, printer, options, timestamp) {
     ...baseContext,
     exec: async (command, args = [], execOptions = {}) => {
       const cwd = execOptions.cwd ? path.join(baseContext.root, execOptions.cwd) : baseContext.root;
+      const quiet = execOptions.quiet === true;
       const rendered = `$ ${quoteCommand(command, args, execOptions.cwd)}`;
-      gateOutput += `${rendered}\n`;
+      if (!quiet) {
+        gateOutput += `${rendered}\n`;
+      }
       const result = await spawnCapture(command, args, {
         cwd,
         env: execOptions.env,
         onOutput: (chunk) => {
-          gateOutput += chunk;
+          if (!quiet) {
+            gateOutput += chunk;
+          }
         },
       });
       if (!result.ok) {

@@ -154,16 +154,6 @@ struct OverlayTab: Identifiable, Equatable {
         splitController.presentationSession
     }
 
-    var agentCount: Int {
-        splitController.root.allSessions.reduce(into: 0) { count, session in
-            if session.aiDisplayAppName != nil
-                || session.effectiveAIProvider != nil
-                || session.effectiveAISessionId != nil {
-                count += 1
-            }
-        }
-    }
-
     init(appModel: AppModel) {
         self.id = UUID()
         self.splitController = SplitPaneController(appModel: appModel)
@@ -970,6 +960,7 @@ final class OverlayTabsModel {
         didSet {
             TerminalControlService.shared.invalidateRoutingIndex(reason: "tabs_changed")
             onTabsChanged?()
+            NotificationCenter.default.post(name: .overlayTabsDidChange, object: self)
         }
     }
 
@@ -977,6 +968,7 @@ final class OverlayTabsModel {
         didSet {
             if activeDashboardGroupID != nil { activeDashboardGroupID = nil }
             onSelectedTabIDChanged?()
+            NotificationCenter.default.post(name: .overlayTabsDidChange, object: self)
         }
     }
 

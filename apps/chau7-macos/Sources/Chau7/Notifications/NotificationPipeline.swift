@@ -107,10 +107,8 @@ enum NotificationPipeline {
             return .fireActions(triggerId: trigger.id, actions: actions)
         }
 
-        // 4b. No matching trigger → apply full default conditions, then use default notification
-        guard trigger == nil else {
-            return .drop(reason: "Unexpected matched trigger state")
-        }
+        // 4b. No matching trigger → apply full default conditions (trigger is nil here:
+        // the `if let trigger` block above returns on every path), then default notification
         let defaults = TriggerCondition.default
         if defaults.respectDND, input.isFocusModeActive {
             return .drop(reason: "DND/Focus active (unmatched trigger, default condition)")

@@ -536,16 +536,37 @@ enum TabRestoreBundleStore {
         fileManager: FileManager
     ) -> T? {
         let url = bundleRootURL.appendingPathComponent(ref.path)
+        // TEMP instrumentation (RestoreDecodeProfiler) — measure read/sha/decode
+        // cost to size the scrollback-out-of-JSON win before building it.
+        let readStart = CFAbsoluteTimeGetCurrent()
         guard fileManager.fileExists(atPath: url.path),
               let data = try? Data(contentsOf: url) else {
             Log.error("restoreBundle.context missing/unreadable path=\(ref.path)")
             return nil
         }
-        guard data.count == ref.byteCount, sha256Hex(data) == ref.sha256 else {
+        let readMs = (CFAbsoluteTimeGetCurrent() - readStart) * 1000
+
+        let shaStart = CFAbsoluteTimeGetCurrent()
+        let digest = sha256Hex(data)
+        let shaMs = (CFAbsoluteTimeGetCurrent() - shaStart) * 1000
+        guard data.count == ref.byteCount, digest == ref.sha256 else {
             Log.error("restoreBundle.context integrity mismatch path=\(ref.path) bytes=\(data.count)/\(ref.byteCount)")
             return nil
         }
-        return Persist.decodeLogged(type, from: data, context: "restoreBundle.context(\(ref.path))", decoder: decoder)
+
+        let decodeStart = CFAbsoluteTimeGetCurrent()
+        let decoded = Persist.decodeLogged(type, from: data, context: "restoreBundle.context(\(ref.path))", decoder: decoder)
+        let decodeMs = (CFAbsoluteTimeGetCurrent() - decodeStart) * 1000
+
+        RestoreDecodeProfiler.record(
+            path: ref.path,
+            bytes: data.count,
+            readMs: readMs,
+            shaMs: shaMs,
+            decodeMs: decodeMs,
+            onMainThread: Thread.isMainThread
+        )
+        return decoded
     }
 
     private static func writeJSON(_ value: some Encodable, to url: URL) throws {
@@ -595,4 +616,57 @@ enum TabRestoreBundleStore {
         decoder.dateDecodingStrategy = .iso8601
         return decoder
     }()
+}
+
+/// TEMP startup instrumentation. Sums the per-sidecar read + SHA-256 integrity +
+/// JSON-decode cost across a restore so we can size the payoff of moving
+/// scrollback out of inline JSON before building it. Each call logs its own
+/// timing plus a running cumulative; read the LAST `restoreBundle.decodeProfile`
+/// line after launching the full session for the totals. Remove once measured.
+enum RestoreDecodeProfiler {
+    private static let lock = NSLock()
+    private static var count = 0
+    private static var mainThreadCount = 0
+    private static var totalBytes = 0
+    private static var totalReadMs = 0.0
+    private static var totalShaMs = 0.0
+    private static var totalDecodeMs = 0.0
+
+    static func record(
+        path: String,
+        bytes: Int,
+        readMs: Double,
+        shaMs: Double,
+        decodeMs: Double,
+        onMainThread: Bool
+    ) {
+        lock.lock()
+        count += 1
+        if onMainThread { mainThreadCount += 1 }
+        totalBytes += bytes
+        totalReadMs += readMs
+        totalShaMs += shaMs
+        totalDecodeMs += decodeMs
+        let snapshot = (
+            count: count,
+            mainThreadCount: mainThreadCount,
+            bytes: totalBytes,
+            read: totalReadMs,
+            sha: totalShaMs,
+            decode: totalDecodeMs
+        )
+        lock.unlock()
+
+        Log.info(String(
+            format: "restoreBundle.decodeProfile path=%@ main=%@ bytes=%d read=%.1fms sha=%.1fms decode=%.1fms"
+                + " | cumulative ctx=%d (mainThread=%d) bytes=%.1fMB read=%.0fms sha=%.0fms decode=%.0fms total=%.0fms",
+            (path as NSString).lastPathComponent,
+            onMainThread ? "Y" : "N",
+            bytes, readMs, shaMs, decodeMs,
+            snapshot.count, snapshot.mainThreadCount,
+            Double(snapshot.bytes) / 1_048_576.0,
+            snapshot.read, snapshot.sha, snapshot.decode,
+            snapshot.read + snapshot.sha + snapshot.decode
+        ))
+    }
 }

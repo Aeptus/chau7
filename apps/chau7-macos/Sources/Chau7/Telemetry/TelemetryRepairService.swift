@@ -40,12 +40,7 @@ final class TelemetryRepairService {
             return false
         }
 
-        let provider = run.provider.lowercased()
-        let supportsTranscriptRepair = provider.contains("claude")
-            || provider.contains("anthropic")
-            || provider.contains("codex")
-            || provider.contains("openai")
-        guard supportsTranscriptRepair else { return false }
+        guard ProviderFamily.classify(run.provider) != .other else { return false }
 
         let needsTranscriptSource = run.rawTranscriptRef == nil
             || run.rawTranscriptRef == "pty_log"
@@ -133,25 +128,11 @@ final class TelemetryRepairService {
         }
 
         let repaired = normalized.content
-        run.model = repaired.model ?? run.model
-        run.totalInputTokens = repaired.totalInputTokens
-        run.totalCacheCreationInputTokens = repaired.totalCacheCreationInputTokens
-        run.totalCacheReadInputTokens = repaired.totalCacheReadInputTokens
-        run.totalCachedInputTokens = repaired.totalCachedInputTokens
-        run.totalOutputTokens = repaired.totalOutputTokens
-        run.totalReasoningOutputTokens = repaired.totalReasoningOutputTokens
-        run.costUSD = repaired.costUSD
-        run.tokenUsageSource = repaired.tokenUsageSource
-        run.tokenUsageState = repaired.tokenUsageState
-        run.costSource = repaired.costSource
-        run.costState = repaired.costState
-        run.rawTranscriptRef = repaired.rawTranscriptRef
-        run.turnCount = repaired.turns.count
-        if repaired.tokenUsageState == .invalid {
-            run.errorMessage = "historical transcript repair invalidated implausible token metrics"
-        } else if run.errorMessage == "historical transcript repair invalidated implausible token metrics" {
-            run.errorMessage = nil
-        }
+        run.applyContent(
+            repaired,
+            invalidMessage: "historical transcript repair invalidated implausible token metrics",
+            clearOnValid: true
+        )
 
         store.rewriteCompletedRun(run, turns: repaired.turns, toolCalls: repaired.toolCalls)
         return repaired.tokenUsageState == .invalid ? .invalidated : .rebuilt
@@ -172,12 +153,12 @@ final class TelemetryRepairService {
             || run.rawTranscriptRef == "pty_log"
             || run.rawTranscriptRef == "terminal_buffer")
 
-        switch provider {
-        case let value where value.contains("claude") || value.contains("anthropic"):
+        switch ProviderFamily.classify(provider) {
+        case .claude:
             return hasAuthoritativeSource ? 1 : 0
-        case let value where value.contains("codex") || value.contains("openai"):
+        case .codex:
             return hasAuthoritativeSource ? 3 : 2
-        default:
+        case .other:
             return 4
         }
     }

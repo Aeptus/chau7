@@ -634,16 +634,22 @@ final class RuntimeSessionManager {
 
     /// Clear the failed adoption cache so new tabs can be discovered.
     func resetAdoptionCache() {
+        lock.lock()
+        defer { lock.unlock() }
         recentlyFailedAdoptions.removeAll()
         chronicOrphanTracking.removeAll()
     }
 
     func shouldSkipAdoptionByCooldown(_ cacheKey: String, now: Date = Date()) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
         guard let last = recentlyFailedAdoptions[cacheKey] else { return false }
         return now.timeIntervalSince(last) < Self.adoptionRetryCooldown
     }
 
     func recordAdoptionFailure(_ cacheKey: String, now: Date = Date()) {
+        lock.lock()
+        defer { lock.unlock() }
         recentlyFailedAdoptions[cacheKey] = now
     }
 
@@ -681,6 +687,8 @@ final class RuntimeSessionManager {
     }
 
     func decideChronicOrphanLog(sessionID: String, now: Date = Date()) -> ChronicOrphanLogDecision {
+        lock.lock()
+        defer { lock.unlock() }
         let tracking: ChronicOrphanTracking
         if let existing = chronicOrphanTracking[sessionID] {
             tracking = ChronicOrphanTracking(

@@ -32,6 +32,24 @@ public extension AgentBackend {
     var launchReadinessStrategy: AgentLaunchReadinessStrategy {
         .immediate
     }
+
+    /// Default stdin prompt formatting: `context\n\nprompt\n`, or `prompt\n` when
+    /// there's no context. Claude and Codex share this; GenericShellBackend overrides
+    /// with a raw passthrough.
+    func formatPromptInput(_ prompt: String, context: String?) -> String {
+        if let context, !context.isEmpty {
+            return "\(context)\n\n\(prompt)\n"
+        }
+        return prompt + "\n"
+    }
+
+    /// Prepends shell environment assignments to a launch command. No-op when
+    /// either the env prefix or the command is empty.
+    func prependingEnvironment(_ command: String, _ environment: [String: String]) -> String {
+        let envPrefix = ShellEscaping.escapeEnvironmentAssignments(environment)
+        guard !envPrefix.isEmpty, !command.isEmpty else { return command }
+        return envPrefix + " " + command
+    }
 }
 
 /// Configuration for creating a runtime session.

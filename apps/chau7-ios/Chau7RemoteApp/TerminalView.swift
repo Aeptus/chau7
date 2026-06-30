@@ -3,7 +3,7 @@ import SwiftUI
 
 /// Main terminal tab: connection status bar, tab selector, output display,
 /// keyboard shortcut bar (esc, tab, ^C, ^D, arrows), and text input field.
-/// Supports two rendering modes: plain text (default) and experimental grid renderer.
+/// Supports two rendering modes: rich grid renderer (default) and plain text.
 struct TerminalView: View {
     var client: RemoteClient
     @Binding var isPairingPresented: Bool
@@ -13,25 +13,29 @@ struct TerminalView: View {
     @AppStorage(AppSettings.renderANSIKey) private var renderANSI = AppSettings.renderANSIDefault
     @AppStorage(AppSettings.experimentalTerminalRendererKey)
     private var experimentalTerminalRenderer = AppSettings.experimentalTerminalRendererDefault
+    @AppStorage(AppSettings.showKeyboardBarKey) private var showKeyboardBar = AppSettings.showKeyboardBarDefault
+    @AppStorage(AppSettings.terminalFontSizeKey) private var terminalFontSize = AppSettings.terminalFontSizeDefault
+
     @State private var inputText = ""
     @State private var sendCount = 0
+    @State private var justSent = false
     @State private var pendingProtectedSend: ProtectedRemoteSend?
+    @State private var textAwayFromBottom = false
+    @State private var scrollToBottomToken = 0
+    @State private var isErrorExpanded = false
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: 0) {
-                statusBar
-                tabsBar
-                outputView
-                keyboardBar
-                inputBar
+            Group {
+                if client.pairingInfo == nil {
+                    UnpairedTerminalView(isPairingPresented: $isPairingPresented)
+                } else {
+                    pairedContent
+                }
             }
             .navigationTitle("Chau7 Remote")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button("Pair") { isPairingPresented = true }
-                }
                 ToolbarItem(placement: .topBarTrailing) {
                     connectButton
                 }
@@ -51,7 +55,8 @@ struct TerminalView: View {
                     flaggedAction: pendingProtectedSend.flaggedAction
                 )
                 if client.sendInput(pendingProtectedSend.text, appendNewline: appendNewline) {
-                    sendCount += 1
+                    inputText = ""
+                    markSent()
                     self.pendingProtectedSend = nil
                 } else {
                     inputText = pendingProtectedSend.text
@@ -63,35 +68,85 @@ struct TerminalView: View {
         }
     }
 
+    private var pairedContent: some View {
+        VStack(spacing: 0) {
+            statusBar
+            tabsBar
+            outputView
+            if showsKeyboardBar {
+                keyboardBar
+            }
+            inputBar
+        }
+    }
+
     // MARK: - Status
 
     private var statusBar: some View {
-        HStack(spacing: 8) {
-            Circle()
-                .fill(statusColor)
-                .frame(width: 8, height: 8)
-            Text(client.status)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            Spacer()
-            if let error = client.lastError {
-                Text(error)
+        VStack(spacing: 0) {
+            HStack(spacing: 8) {
+                Circle()
+                    .fill(client.connectionPhase.color)
+                    .frame(width: 8, height: 8)
+                    .accessibilityHidden(true)
+                Text(client.connectionDisplayLabel)
                     .font(.caption)
-                    .foregroundStyle(.red)
-                    .lineLimit(1)
+                    .foregroundStyle(.secondary)
+                Spacer()
+                if let error = client.lastError, !error.isEmpty {
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.2)) { isErrorExpanded.toggle() }
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                            Text("Issue")
+                            Image(systemName: isErrorExpanded ? "chevron.up" : "chevron.down")
+                                .font(.caption2)
+                        }
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                    }
+                    .accessibilityLabel("Connection issue. Tap for details.")
+                }
+            }
+            .padding(.horizontal)
+            .padding(.vertical, 6)
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("Status: \(client.connectionDisplayLabel)")
+
+            if isErrorExpanded, let error = client.lastError, !error.isEmpty {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(error)
+                        .font(.caption)
+                        .foregroundStyle(.primary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    HStack(spacing: 10) {
+                        if !client.isConnected {
+                            Button {
+                                client.lastError = nil
+                                isErrorExpanded = false
+                                client.connect()
+                            } label: {
+                                Label("Retry", systemImage: "arrow.clockwise")
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+                        }
+                        Button("Dismiss") {
+                            client.lastError = nil
+                            isErrorExpanded = false
+                        }
+                        .buttonStyle(.borderless)
+                        .controlSize(.small)
+                        Spacer()
+                    }
+                }
+                .padding(.horizontal)
+                .padding(.bottom, 8)
             }
         }
-        .padding(.horizontal)
-        .padding(.vertical, 6)
         .background(Color(UIColor.secondarySystemBackground))
-    }
-
-    private var statusColor: Color {
-        guard client.isConnected else { return .red }
-        switch client.status {
-        case "Encrypted", "Session ready": return .green
-        default: return .yellow
-        }
     }
 
     private var connectButton: some View {
@@ -115,23 +170,29 @@ struct TerminalView: View {
                 } else {
                     ForEach(client.tabs) { tab in
                         Button {
+                            DiagnosticsLog.shared.info(.tab, "Selected remote tab", [
+                                "tab_id": String(tab.tabID),
+                                "title": tab.title
+                            ])
                             client.switchTab(tab.tabID)
                         } label: {
                             Label {
-                                Text(tab.title)
+                                Text(tabMenuTitle(for: tab))
                                     .lineLimit(1)
                             } icon: {
-                                if tab.tabID == client.activeTabID {
-                                    Image(systemName: "checkmark")
-                                } else if tab.isMCPControlled {
-                                    Image(systemName: "face.dashed.fill")
-                                }
+                                tabMenuIcon(for: tab)
                             }
                         }
                     }
                 }
             } label: {
                 HStack(spacing: 8) {
+                    if let color = activeTabStatusColor {
+                        Circle()
+                            .fill(color)
+                            .frame(width: 7, height: 7)
+                            .accessibilityHidden(true)
+                    }
                     Text(activeTabMenuLabel)
                         .font(.system(.footnote, design: .rounded).weight(.semibold))
                         .lineLimit(1)
@@ -145,6 +206,7 @@ struct TerminalView: View {
                 .background(Color(UIColor.secondarySystemBackground))
                 .clipShape(Capsule(style: .continuous))
             }
+            .accessibilityLabel("Active session: \(activeTabMenuLabel)\(activeTabStatusDescription.map { ", \($0)" } ?? "")")
 
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
@@ -168,6 +230,25 @@ struct TerminalView: View {
         .background(Color(UIColor.systemBackground))
     }
 
+    @ViewBuilder
+    private func tabMenuIcon(for tab: RemoteTab) -> some View {
+        if tab.tabID == client.activeTabID {
+            Image(systemName: "checkmark")
+        } else if let symbol = statusSymbol(for: tab) {
+            Image(systemName: symbol)
+        } else if tab.isMCPControlled {
+            Image(systemName: "face.dashed.fill")
+        }
+    }
+
+    private func tabMenuTitle(for tab: RemoteTab) -> String {
+        guard let activity = client.liveActivityState, activity.tabID == tab.tabID,
+              let label = statusWord(for: activity.status) else {
+            return tab.title
+        }
+        return "\(tab.title) · \(label)"
+    }
+
     // MARK: - Output
 
     private var outputView: some View {
@@ -176,28 +257,74 @@ struct TerminalView: View {
                 RemoteTerminalRendererView(client: client)
             } else {
                 RemoteTerminalTextView(
-                    text: renderANSI ? client.outputText : client.strippedOutputText
+                    text: renderANSI ? client.outputText : client.strippedOutputText,
+                    fontSize: CGFloat(terminalFontSize),
+                    isAwayFromBottom: $textAwayFromBottom,
+                    scrollToBottomToken: scrollToBottomToken
                 )
             }
         }
+        .overlay(alignment: .bottom) {
+            if justSent {
+                sentConfirmationToast
+                    .padding(.bottom, 12)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
+        .overlay(alignment: .bottomTrailing) {
+            if isAwayFromBottom {
+                jumpToLatestButton
+                    .padding(.trailing, 14)
+                    .padding(.bottom, 14)
+                    .transition(.scale.combined(with: .opacity))
+            }
+        }
+        .animation(.easeInOut(duration: 0.2), value: isAwayFromBottom)
+        .animation(.easeInOut(duration: 0.2), value: justSent)
+    }
+
+    private var jumpToLatestButton: some View {
+        Button(action: jumpToLatest) {
+            Image(systemName: "arrow.down")
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(.white)
+                .frame(width: 44, height: 44)
+                .background(Color.accentColor, in: Circle())
+                .shadow(radius: 4, y: 2)
+        }
+        .accessibilityLabel("Jump to latest output")
+    }
+
+    private var sentConfirmationToast: some View {
+        Label("Sent", systemImage: "checkmark.circle.fill")
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(.white)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 7)
+            .background(.green.opacity(0.92), in: Capsule())
+            .accessibilityHidden(true)
     }
 
     // MARK: - Keyboard Bar
 
+    private var showsKeyboardBar: Bool {
+        showKeyboardBar && client.canSendInput
+    }
+
     private var keyboardBar: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 0) {
-                TermKey("esc", send: "\u{1B}", client: client)
-                TermKey("tab", send: "\t", client: client)
-                TermKey("^C", send: "\u{03}", client: client)
-                TermKey("^D", send: "\u{04}", client: client)
-                TermKey("^Z", send: "\u{1A}", client: client)
-                TermKey("^L", send: "\u{0C}", client: client)
+                TermKey("esc", labelText: "Escape", send: "\u{1B}", client: client)
+                TermKey("tab", labelText: "Tab", send: "\t", client: client)
+                TermKey("^C", labelText: "Control C", send: "\u{03}", client: client)
+                TermKey("^D", labelText: "Control D", send: "\u{04}", client: client)
+                TermKey("^Z", labelText: "Control Z", send: "\u{1A}", client: client)
+                TermKey("^L", labelText: "Control L", send: "\u{0C}", client: client)
                 Divider().frame(height: 24).padding(.horizontal, 4)
-                TermKey("\u{2191}", send: "\u{1B}[A", client: client)
-                TermKey("\u{2193}", send: "\u{1B}[B", client: client)
-                TermKey("\u{2190}", send: "\u{1B}[D", client: client)
-                TermKey("\u{2192}", send: "\u{1B}[C", client: client)
+                TermKey("\u{2191}", labelText: "Up arrow", send: "\u{1B}[A", client: client)
+                TermKey("\u{2193}", labelText: "Down arrow", send: "\u{1B}[B", client: client)
+                TermKey("\u{2190}", labelText: "Left arrow", send: "\u{1B}[D", client: client)
+                TermKey("\u{2192}", labelText: "Right arrow", send: "\u{1B}[C", client: client)
             }
             .padding(.horizontal, 8)
             .padding(.vertical, 4)
@@ -209,12 +336,25 @@ struct TerminalView: View {
 
     private var inputBar: some View {
         HStack(spacing: 8) {
+            Button {
+                withAnimation(.easeInOut(duration: 0.15)) { showKeyboardBar.toggle() }
+            } label: {
+                Image(systemName: showKeyboardBar ? "keyboard.chevron.compact.down" : "keyboard")
+                    .font(.title3)
+                    .frame(width: 32, height: 32)
+            }
+            .disabled(!client.canSendInput)
+            .accessibilityLabel(showKeyboardBar ? "Hide control keys" : "Show control keys")
+
             TextField("Input", text: $inputText, axis: .vertical)
                 .font(.system(.body, design: .monospaced))
                 .lineLimit(1...4)
                 .textFieldStyle(.roundedBorder)
                 .submitLabel(.send)
-                .onSubmit { if !holdToSend { submitInput() } }
+                .onSubmit { if !holdToSend { submitInput(trigger: "submit_label") } }
+                .onChange(of: inputText) { oldValue, newValue in
+                    handleInputChange(from: oldValue, to: newValue)
+                }
 
             sendButton
         }
@@ -226,34 +366,69 @@ struct TerminalView: View {
     @ViewBuilder
     private var sendButton: some View {
         if holdToSend {
-            Button {} label: {
-                VStack(spacing: 2) {
-                    Image(systemName: "hand.tap.fill").font(.title3)
-                    Text("Hold")
-                        .font(.caption2)
-                }
+            HoldToSendButton(isEnabled: !inputText.isEmpty && client.canSendInput) {
+                submitInput()
             }
             .sensoryFeedback(.impact(flexibility: .solid, intensity: 0.5), trigger: sendCount)
-            .simultaneousGesture(
-                LongPressGesture(minimumDuration: 0.4).onEnded { _ in
-                    submitInput()
-                }
-            )
-            .disabled(inputText.isEmpty || !client.canSendInput)
         } else {
-            Button(action: submitInput) {
-                Image(systemName: "arrow.up.circle.fill").font(.title2)
+            Button(action: { submitInput() }) {
+                Image(systemName: "arrow.up.circle.fill")
+                    .font(.title2)
+                    .frame(width: 44, height: 44)
             }
+            .sensoryFeedback(.impact(flexibility: .solid, intensity: 0.5), trigger: sendCount)
             .disabled(inputText.isEmpty || !client.canSendInput)
+            .accessibilityLabel("Send")
         }
     }
 
-    private func submitInput() {
+    /// Logs each keystroke delta and — for a multiline (`axis: .vertical`)
+    /// field where the Return key inserts a newline instead of firing
+    /// `onSubmit` — treats a trailing newline as a send when hold-to-send is
+    /// off. This is the core fix for "input text isn't actually sent".
+    private func handleInputChange(from oldValue: String, to newValue: String) {
+        logKeystrokeDelta(from: oldValue, to: newValue)
+
+        guard !holdToSend, newValue.hasSuffix("\n") else { return }
+        // Strip every trailing newline the Return key inserted, then submit.
+        var trimmed = newValue
+        while trimmed.hasSuffix("\n") { trimmed.removeLast() }
+        inputText = trimmed
+        guard !trimmed.isEmpty else { return }
+        submitInput(trigger: "return_key")
+    }
+
+    private func logKeystrokeDelta(from oldValue: String, to newValue: String) {
+        guard oldValue != newValue else { return }
+        let commonPrefix = oldValue.commonPrefix(with: newValue)
+        let prefixCount = commonPrefix.count
+        if newValue.count > oldValue.count {
+            let inserted = String(newValue.dropFirst(prefixCount))
+            DiagnosticsLog.shared.keystroke(inserted, field: "terminal_input", extra: ["op": "insert"])
+        } else {
+            let removedCount = oldValue.count - newValue.count
+            DiagnosticsLog.shared.keystroke(
+                "<delete \(removedCount)>",
+                field: "terminal_input",
+                extra: ["op": "delete"]
+            )
+        }
+    }
+
+    private func submitInput(trigger: String = "send_button") {
         let text = inputText
         guard !text.isEmpty else { return }
 
+        DiagnosticsLog.shared.info(.input, "Submit requested", [
+            "trigger": trigger,
+            "bytes": String(text.utf8.count),
+            "tab_id": String(client.activeTabID),
+            "can_send": client.canSendInput ? "true" : "false"
+        ])
+
         if let flaggedAction = client.flaggedProtectedAction(for: text) {
             client.recordProtectedActionPrompt(text: text, flaggedAction: flaggedAction)
+            DiagnosticsLog.shared.warn(.input, "Submit held for protected action", ["action": flaggedAction])
             pendingProtectedSend = ProtectedRemoteSend(
                 text: text,
                 flaggedAction: flaggedAction,
@@ -262,9 +437,47 @@ struct TerminalView: View {
             return
         }
 
-        guard client.sendInput(text, appendNewline: appendNewline) else { return }
+        guard client.sendInput(text, appendNewline: appendNewline) else {
+            DiagnosticsLog.shared.error(.input, "Submit blocked", [
+                "trigger": trigger,
+                "reason": client.lastError ?? "unknown"
+            ])
+            return
+        }
+        DiagnosticsLog.shared.info(.input, "Input sent", ["bytes": String(text.utf8.count)])
         inputText = ""
+        markSent()
+    }
+
+    private func markSent() {
         sendCount += 1
+        scrollToBottomToken += 1
+        withAnimation { justSent = true }
+        Task {
+            try? await Task.sleep(for: .milliseconds(900))
+            withAnimation { justSent = false }
+        }
+    }
+
+    private func jumpToLatest() {
+        if showsGridRenderer {
+            client.terminalRenderer.scrollActive(to: 0)
+        } else {
+            scrollToBottomToken += 1
+        }
+    }
+
+    private var showsGridRenderer: Bool {
+        experimentalTerminalRenderer
+            && client.terminalRenderer.isAvailable
+            && client.terminalRenderer.renderState != nil
+    }
+
+    private var isAwayFromBottom: Bool {
+        if showsGridRenderer {
+            return (client.terminalRenderer.renderState?.displayOffset ?? 0) > 0
+        }
+        return textAwayFromBottom
     }
 
     private var activeTabMenuLabel: String {
@@ -294,6 +507,49 @@ struct TerminalView: View {
         activeTab?.branchName
     }
 
+    private var activeTabStatusColor: Color? {
+        guard let activity = client.liveActivityState, activity.tabID == client.activeTabID else { return nil }
+        return statusColor(for: activity.status)
+    }
+
+    private var activeTabStatusDescription: String? {
+        guard let activity = client.liveActivityState, activity.tabID == client.activeTabID else { return nil }
+        return statusWord(for: activity.status)
+    }
+
+    private func statusColor(for status: RemoteActivityStatus) -> Color {
+        switch status {
+        case .approvalRequired, .waitingInput: return .orange
+        case .failed: return .red
+        case .completed: return .green
+        case .running: return .blue
+        case .idle: return .secondary
+        }
+    }
+
+    private func statusSymbol(for tab: RemoteTab) -> String? {
+        guard let activity = client.liveActivityState, activity.tabID == tab.tabID else { return nil }
+        switch activity.status {
+        case .approvalRequired: return "lock.shield.fill"
+        case .waitingInput: return "exclamationmark.bubble.fill"
+        case .failed: return "xmark.octagon.fill"
+        case .completed: return "checkmark.circle.fill"
+        case .running: return "circle.fill"
+        case .idle: return nil
+        }
+    }
+
+    private func statusWord(for status: RemoteActivityStatus) -> String? {
+        switch status {
+        case .approvalRequired: return "needs approval"
+        case .waitingInput: return "waiting"
+        case .failed: return "failed"
+        case .completed: return "done"
+        case .running: return "running"
+        case .idle: return nil
+        }
+    }
+
     @ViewBuilder
     private func metadataChip(_ text: String, systemImage: String) -> some View {
         Label(text, systemImage: systemImage)
@@ -321,16 +577,88 @@ struct TerminalView: View {
     }
 }
 
+// MARK: - Unpaired empty state
+
+private struct UnpairedTerminalView: View {
+    @Binding var isPairingPresented: Bool
+
+    var body: some View {
+        ContentUnavailableView {
+            Label("Not Connected", systemImage: "macbook.and.iphone")
+        } description: {
+            Text("Pair this iPhone with Chau7 running on your Mac to view sessions, respond to approvals, and steer your agents.")
+        } actions: {
+            Button {
+                isPairingPresented = true
+            } label: {
+                Label("Pair with your Mac", systemImage: "qrcode.viewfinder")
+            }
+            .buttonStyle(.borderedProminent)
+        }
+    }
+}
+
+// MARK: - Hold to Send
+
+/// A hold-to-send button that fills a progress ring over the hold duration so
+/// users understand they must keep holding, and fires once the threshold is met.
+struct HoldToSendButton: View {
+    let isEnabled: Bool
+    let onFire: () -> Void
+
+    @State private var progress: CGFloat = 0
+    private let duration = 0.4
+
+    var body: some View {
+        ZStack {
+            Circle()
+                .stroke(Color.secondary.opacity(0.25), lineWidth: 3)
+            Circle()
+                .trim(from: 0, to: progress)
+                .stroke(Color.accentColor, style: StrokeStyle(lineWidth: 3, lineCap: .round))
+                .rotationEffect(.degrees(-90))
+            Image(systemName: "hand.tap.fill")
+                .font(.title3)
+                .foregroundStyle(isEnabled ? Color.accentColor : Color.secondary)
+        }
+        .frame(width: 44, height: 44)
+        .contentShape(Circle())
+        .opacity(isEnabled ? 1 : 0.5)
+        .onLongPressGesture(minimumDuration: duration) {
+            guard isEnabled else { return }
+            onFire()
+        } onPressingChanged: { pressing in
+            guard isEnabled else {
+                progress = 0
+                return
+            }
+            if pressing {
+                withAnimation(.linear(duration: duration)) { progress = 1 }
+            } else {
+                withAnimation(.easeOut(duration: 0.15)) { progress = 0 }
+            }
+        }
+        .onChange(of: isEnabled) { _, newValue in
+            if !newValue { progress = 0 }
+        }
+        .accessibilityLabel("Hold to send")
+        .accessibilityHint("Press and hold to send your input")
+        .accessibilityAddTraits(.isButton)
+    }
+}
+
 // MARK: - Subviews
 
 struct TermKey: View {
     let label: String
+    let accessibilityName: String
     let sequence: String
     let client: RemoteClient
     @State private var tapCount = 0
 
-    init(_ label: String, send sequence: String, client: RemoteClient) {
+    init(_ label: String, labelText: String, send sequence: String, client: RemoteClient) {
         self.label = label
+        self.accessibilityName = labelText
         self.sequence = sequence
         self.client = client
     }
@@ -338,18 +666,27 @@ struct TermKey: View {
     var body: some View {
         Button {
             tapCount += 1
-            client.sendInput(sequence, appendNewline: false)
+            DiagnosticsLog.shared.keystroke(label, field: "key_bar", extra: ["op": "control_key"])
+            let sent = client.sendInput(sequence, appendNewline: false)
+            if !sent {
+                DiagnosticsLog.shared.error(.input, "Control key blocked", [
+                    "key": label,
+                    "reason": client.lastError ?? "unknown"
+                ])
+            }
         } label: {
             Text(label)
                 .font(.system(size: 13, design: .monospaced))
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .frame(minWidth: 44, minHeight: 36)
                 .background(Color(UIColor.quaternarySystemFill))
                 .cornerRadius(6)
         }
         .sensoryFeedback(.impact(flexibility: .solid, intensity: 0.3), trigger: tapCount)
         .buttonStyle(.plain)
         .disabled(!client.canSendInput)
+        .accessibilityLabel(accessibilityName)
     }
 }
 

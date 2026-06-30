@@ -28,9 +28,7 @@ final class TimeTrackingActionHandler: NotificationActionHandler {
         let project = payload.configValue("project") ?? ""
         activeTimers[timerName] = Date()
         Log.info("Action startTimer: Started '\(timerName)' for project '\(project)'")
-        var report = NotificationActionExecutor.ExecutionReport()
-        report.recordSuccess(.startTimer)
-        return report
+        return .success(.startTimer)
     }
 
     // MARK: - stopTimer
@@ -96,20 +94,14 @@ final class TimeTrackingActionHandler: NotificationActionHandler {
                 Log.info("Action logTime: Logged to \(filePath)")
             } catch {
                 Log.error("Action logTime: Failed to write file: \(error.localizedDescription)")
-                var report = NotificationActionExecutor.ExecutionReport()
-                report.recordFailure("logTime failed: \(error.localizedDescription)")
-                return report
+                return .failure("logTime failed: \(error.localizedDescription)")
             }
 
         default:
             Log.warn("Action logTime: Unknown service: \(service)")
-            var report = NotificationActionExecutor.ExecutionReport()
-            report.recordFailure("logTime unknown service: \(service)")
-            return report
+            return .failure("logTime unknown service: \(service)")
         }
-        var report = NotificationActionExecutor.ExecutionReport()
-        report.recordSuccess(.logTime)
-        return report
+        return .success(.logTime)
     }
 
     /// Exposed for `NotificationActionExecutor.resetForTesting()`.

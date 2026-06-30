@@ -172,6 +172,10 @@ final class ConfigFileWatcher {
         let content = ConfigFileParser.serialize(defaultConfig)
         if FileOperations.writeString(content, to: globalConfigPath) {
             Log.info("ConfigFileWatcher: created default config at \(globalConfigPath)")
+            // startWatching() early-returns when the file is absent at launch, so a
+            // file created mid-session would go unwatched until restart. Re-arm now.
+            stopWatching()
+            startWatching()
         }
     }
 
@@ -192,13 +196,20 @@ final class ConfigFileWatcher {
             queue: .global(qos: .utility)
         )
 
-        source.setEventHandler { [weak self] in
+        source.setEventHandler { [weak self, weak source] in
+            let flags = source?.data ?? []
             // Debounce rapid FS events (editors often write + rename in quick succession).
             self?.reloadWorkItem?.cancel()
             let work = DispatchWorkItem { [weak self] in
                 DispatchQueue.main.async {
                     self?.loadGlobalConfig()
                     self?.applyConfig()
+                    // After an atomic-save rename the fd points at the now-replaced
+                    // inode; reopen it so subsequent edits keep flowing.
+                    if flags.contains(.rename) {
+                        self?.stopWatching()
+                        self?.startWatching()
+                    }
                 }
             }
             self?.reloadWorkItem = work

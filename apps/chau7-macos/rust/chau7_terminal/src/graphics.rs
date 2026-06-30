@@ -127,8 +127,8 @@ enum State {
 /// Usage:
 /// ```ignore
 /// let mut interceptor = GraphicsInterceptor::new();
-/// let (passthrough, events, shell) = interceptor.feed(pty_bytes);
-/// processor.advance(&mut term, passthrough); // non-graphics to VTE
+/// let (passthrough, events, shell) = interceptor.feed_owned(pty_bytes);
+/// processor.advance(&mut term, &passthrough); // non-graphics to VTE
 /// for event in events { handle_image(event); }
 /// ```
 pub struct GraphicsInterceptor {
@@ -194,7 +194,11 @@ impl GraphicsInterceptor {
     ///
     /// Returns a slice of passthrough bytes (forward to VTE), a vec of
     /// extracted graphics events, and a vec of shell integration events (OSC 133).
-    pub fn feed<'a>(
+    ///
+    /// Private: production code must use `feed_owned`, which exists to avoid the
+    /// lock-lifetime problem of holding the returned borrow. Tests in this module
+    /// still call this directly.
+    fn feed<'a>(
         &'a mut self,
         input: &[u8],
     ) -> (&'a [u8], Vec<GraphicsEvent>, Vec<ShellIntegrationEvent>) {

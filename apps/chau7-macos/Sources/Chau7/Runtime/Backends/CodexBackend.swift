@@ -25,20 +25,7 @@ struct CodexBackend: AgentBackend {
 
         parts.append(contentsOf: config.args)
         let command = ShellEscaping.escapeArguments(parts)
-
-        let envPrefix = ShellEscaping.escapeEnvironmentAssignments(config.environment)
-        if !envPrefix.isEmpty {
-            return envPrefix + " " + command
-        }
-        return command
-    }
-
-    func formatPromptInput(_ prompt: String, context: String?) -> String {
-        // Codex reads from stdin similarly
-        if let context, !context.isEmpty {
-            return "\(context)\n\n\(prompt)\n"
-        }
-        return prompt + "\n"
+        return prependingEnvironment(command, config.environment)
     }
 
     var resumeProviderKey: String? {

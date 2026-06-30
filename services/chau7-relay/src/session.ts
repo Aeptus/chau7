@@ -2,12 +2,26 @@
  * SessionDO — Durable Object managing a single paired device session.
  *
  * Responsibilities:
- *   - WebSocket relay: bridges macOS ↔ iOS connections (one socket per role)
- *   - Push registration: stores APNs tokens per paired iOS device
- *   - Push notifications: sends APNs alerts when iOS is offline and macOS triggers a notify
+ *   - WebSocket relay: bridges macOS <-> iOS connections (one socket per role),
+ *     using the Hibernatable WebSockets API so an idle session does not pin the
+ *     DO in memory or accrue duration billing, and survives DO eviction.
+ *   - Push registration: stores APNs tokens per paired iOS device.
+ *   - Push notifications: sends APNs alerts when iOS is offline.
+ *   - Pending state: stores the approvals/prompts snapshot for offline iOS.
  *
- * State is persisted in Durable Object storage (survives Worker restarts).
+ * The Worker performs token authentication before any request reaches this DO;
+ * the DO additionally enforces single-use nonces (replay defense), per-route
+ * rate limits, and strict payload validation.
  */
+import {
+  readJsonBody,
+  sanitizePendingState,
+  validatePushNotify,
+  validatePushRegister
+} from './validation.js';
+import { buildApnsPayload, parseApnsReason, shouldRemoveRegistration } from './apns.js';
+import { RateLimiter } from './ratelimit.js';
+import { parseToken, TOKEN_TTL_SECONDS } from './token.js';
 
 interface PushRegistration {
   pairedDeviceId: string;
@@ -19,15 +33,6 @@ interface PushRegistration {
   updatedAt: string;
 }
 
-interface PushRegistrationPayload {
-  paired_device_id: string;
-  device_name?: string;
-  push_token?: string;
-  push_topic?: string;
-  push_environment?: 'development' | 'production';
-  notifications_authorized: boolean;
-}
-
 interface PushNotifyPayload {
   kind: string;
   title: string;
@@ -37,45 +42,9 @@ interface PushNotifyPayload {
   open_approvals?: boolean;
 }
 
-interface PendingApproval {
-  request_id: string;
-  command: string;
-  flagged_command: string;
-  timestamp: string;
-  tab_title?: string;
-  tool_name?: string;
-  project_name?: string;
-  branch_name?: string;
-  current_directory?: string;
-  recent_command?: string;
-  context_note?: string;
-  session_id?: string;
-}
-
-interface PendingInteractivePromptOption {
-  id: string;
-  label: string;
-  response: string;
-  is_destructive?: boolean;
-}
-
-interface PendingInteractivePrompt {
-  id: string;
-  tab_id: number;
-  tab_title: string;
-  tool_name: string;
-  project_name?: string;
-  branch_name?: string;
-  current_directory?: string;
-  prompt: string;
-  detail?: string;
-  options: PendingInteractivePromptOption[];
-  detected_at: string;
-}
-
 interface PendingStatePayload {
-  approvals: PendingApproval[];
-  interactive_prompts: PendingInteractivePrompt[];
+  approvals: unknown[];
+  interactive_prompts: unknown[];
   updated_at?: string;
 }
 
@@ -87,12 +56,28 @@ interface Env {
 
 const REGISTRATIONS_KEY = 'push_registrations';
 const PENDING_STATE_KEY = 'pending_state';
+const SEEN_NONCES_KEY = 'seen_nonces';
+
+/** Reject relayed frames larger than this (matches the platform WS message limit). */
+const MAX_FRAME_BYTES = 1024 * 1024;
+/** Drop frames to a peer whose send buffer already exceeds this (slow receiver). */
+const BACKPRESSURE_SOFT_BYTES = 4 * 1024 * 1024;
+/** Close a peer whose send buffer is hopelessly backed up. */
+const BACKPRESSURE_HARD_BYTES = 16 * 1024 * 1024;
+/** Upper bound on retained nonces; bounded anyway by TTL + rate limits. */
+const MAX_SEEN_NONCES = 2000;
+
+type Role = 'mac' | 'ios';
 
 export class SessionDO {
   private readonly state: DurableObjectState;
   private readonly env: Env;
-  private macSocket?: WebSocket;
-  private iosSocket?: WebSocket;
+  private readonly rateLimiter = new RateLimiter();
+  /// Cached APNs provider JWT — identical across all registrations in this DO,
+  /// valid up to 1h; refreshed at 50min to avoid TooManyProviderTokenUpdates.
+  private cachedAPNSToken?: { token: string; expiresAt: number };
+  /// Cached signing key so the P-256 import happens once per JWT refresh, not per notify.
+  private cachedSigningKey?: CryptoKey;
 
   constructor(state: DurableObjectState, env: Env) {
     this.state = state;
@@ -102,14 +87,20 @@ export class SessionDO {
   async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url);
     const parts = url.pathname.split('/').filter(Boolean);
-    if (parts[0] === 'connect') {
+
+    const route = parts[0];
+    if (!this.rateLimiter.allow(route === 'push' ? 'push' : route, Date.now())) {
+      return new Response('Too Many Requests', { status: 429, headers: { 'Retry-After': '1' } });
+    }
+
+    if (route === 'connect') {
       return this.handleConnect(request, url);
     }
-    if (parts[0] === 'push' && parts.length === 3) {
-      const operation = parts[1];
+    if (route === 'push' && parts.length === 3) {
       if (request.method !== 'POST') {
-        return new Response('Method Not Allowed', { status: 405 });
+        return new Response('Method Not Allowed', { status: 405, headers: { Allow: 'POST' } });
       }
+      const operation = parts[1];
       if (operation === 'register') {
         return this.handlePushRegister(request);
       }
@@ -117,44 +108,34 @@ export class SessionDO {
         return this.handlePushNotify(request);
       }
     }
-    if (parts[0] === 'pending' && parts.length === 2) {
+    if (route === 'pending' && parts.length === 2) {
       if (request.method === 'GET') {
         return this.handlePendingState();
       }
       if (request.method === 'POST') {
         return this.handlePendingSync(request);
       }
-      return new Response('Method Not Allowed', { status: 405 });
+      return new Response('Method Not Allowed', { status: 405, headers: { Allow: 'GET, POST' } });
     }
     return new Response('Not Found', { status: 404 });
   }
+
+  // --- WebSocket relay (Hibernatable WebSockets API) ------------------------
 
   private async handleConnect(request: Request, url: URL): Promise<Response> {
     if (request.headers.get('Upgrade')?.toLowerCase() !== 'websocket') {
       return new Response('Expected WebSocket', { status: 426 });
     }
-
     const role = url.searchParams.get('role');
     if (role !== 'mac' && role !== 'ios') {
       return new Response('Missing role', { status: 400 });
     }
+    if (!(await this.consumeNonce(request))) {
+      return new Response('Token already used', { status: 409 });
+    }
 
-    const pair = new WebSocketPair();
-    const client = pair[0];
-    const server = pair[1];
-    server.accept();
-
-    this.attachSocket(role, server);
-
-    return new Response(null, {
-      status: 101,
-      webSocket: client
-    });
-  }
-
-  private attachSocket(role: 'mac' | 'ios', socket: WebSocket) {
-    const existing = role === 'mac' ? this.macSocket : this.iosSocket;
-    if (existing) {
+    // Replace any existing socket for this role.
+    for (const existing of this.state.getWebSockets(role)) {
       try {
         existing.close(1000, 'Replaced by new connection');
       } catch {
@@ -162,47 +143,142 @@ export class SessionDO {
       }
     }
 
-    if (role === 'mac') {
-      this.macSocket = socket;
-    } else {
-      this.iosSocket = socket;
+    const pair = new WebSocketPair();
+    const client = pair[0];
+    const server = pair[1];
+    // Tag with the role so the message handler can locate the peer after the DO
+    // hibernates and is re-instantiated with no in-memory socket references.
+    this.state.acceptWebSocket(server, [role]);
+
+    return new Response(null, { status: 101, webSocket: client });
+  }
+
+  async webSocketMessage(ws: WebSocket, message: ArrayBuffer | string): Promise<void> {
+    const tags = this.state.getTags(ws);
+    const role: Role | undefined = tags.includes('mac')
+      ? 'mac'
+      : tags.includes('ios')
+        ? 'ios'
+        : undefined;
+    if (!role) {
+      return;
     }
 
-    socket.addEventListener('message', (event) => {
-      const target = role === 'mac' ? this.iosSocket : this.macSocket;
-      if (!target) {
-        return;
-      }
+    const size = typeof message === 'string' ? message.length : message.byteLength;
+    if (size > MAX_FRAME_BYTES) {
       try {
-        target.send(event.data);
-      } catch {
-        // Ignore send errors.
-      }
-    });
-
-    socket.addEventListener('close', () => {
-      if (role === 'mac' && this.macSocket === socket) {
-        this.macSocket = undefined;
-      }
-      if (role === 'ios' && this.iosSocket === socket) {
-        this.iosSocket = undefined;
-      }
-    });
-
-    socket.addEventListener('error', () => {
-      try {
-        socket.close(1011, 'WebSocket error');
+        ws.close(1009, 'Frame too large');
       } catch {
         // Ignore close errors.
       }
-    });
+      return;
+    }
+
+    const peerRole: Role = role === 'mac' ? 'ios' : 'mac';
+    for (const peer of this.state.getWebSockets(peerRole)) {
+      const buffered = (peer as { bufferedAmount?: number }).bufferedAmount ?? 0;
+      if (buffered > BACKPRESSURE_HARD_BYTES) {
+        // Receiver is hopelessly behind; shed it rather than grow memory.
+        try {
+          peer.close(1013, 'Receiver overloaded');
+        } catch {
+          // Ignore close errors.
+        }
+        continue;
+      }
+      if (buffered > BACKPRESSURE_SOFT_BYTES) {
+        // Drop this frame; the encrypted transport above the relay recovers.
+        continue;
+      }
+      try {
+        peer.send(message);
+      } catch {
+        // Ignore send errors; the close/error handler will clean up.
+      }
+    }
   }
 
-  private async handlePushRegister(request: Request): Promise<Response> {
-    const payload = (await request.json()) as PushRegistrationPayload;
-    if (!payload.paired_device_id) {
-      return new Response('Missing paired_device_id', { status: 400 });
+  async webSocketClose(
+    ws: WebSocket,
+    code: number,
+    _reason: string,
+    _wasClean: boolean
+  ): Promise<void> {
+    // Hibernatable sockets are removed from getWebSockets() automatically once
+    // closed; explicitly closing the server side completes the handshake.
+    try {
+      ws.close(code <= 1000 || code >= 4000 ? code : 1000, 'closing');
+    } catch {
+      // Already closed.
     }
+  }
+
+  async webSocketError(ws: WebSocket): Promise<void> {
+    try {
+      ws.close(1011, 'WebSocket error');
+    } catch {
+      // Ignore close errors.
+    }
+  }
+
+  // --- Replay defense -------------------------------------------------------
+
+  /**
+   * Enforce single-use of a token's nonce. The Worker has already verified the
+   * token's signature/scope/expiry; here we only guarantee it is not reused.
+   * Returns false if the nonce was already seen (replay). When no token is
+   * present (open/unauthenticated mode), there is nothing to enforce.
+   */
+  private async consumeNonce(request: Request): Promise<boolean> {
+    const header = request.headers.get('Authorization') ?? '';
+    if (!header.startsWith('Bearer ')) {
+      return true;
+    }
+    const parsed = parseToken(header.slice('Bearer '.length).trim());
+    if (!parsed) {
+      return true;
+    }
+    const now = Date.now();
+    const expiresAt = (parsed.ts + TOKEN_TTL_SECONDS) * 1000;
+    const seen = (await this.state.storage.get<Record<string, number>>(SEEN_NONCES_KEY)) ?? {};
+
+    if (seen[parsed.nonce] && seen[parsed.nonce] > now) {
+      return false;
+    }
+
+    // Prune expired entries, then bound the map size defensively.
+    for (const [nonce, exp] of Object.entries(seen)) {
+      if (exp <= now) {
+        delete seen[nonce];
+      }
+    }
+    seen[parsed.nonce] = expiresAt;
+    const keys = Object.keys(seen);
+    if (keys.length > MAX_SEEN_NONCES) {
+      keys
+        .sort((a, b) => seen[a] - seen[b])
+        .slice(0, keys.length - MAX_SEEN_NONCES)
+        .forEach((nonce) => delete seen[nonce]);
+    }
+    await this.state.storage.put(SEEN_NONCES_KEY, seen);
+    return true;
+  }
+
+  // --- Push registration ----------------------------------------------------
+
+  private async handlePushRegister(request: Request): Promise<Response> {
+    if (!(await this.consumeNonce(request))) {
+      return new Response('Token already used', { status: 409 });
+    }
+    const parsed = await readJsonBody(request);
+    if (!parsed.ok) {
+      return new Response(parsed.message, { status: parsed.status });
+    }
+    const validation = validatePushRegister(parsed.value);
+    if (!validation.ok) {
+      return new Response(validation.message, { status: 400 });
+    }
+    const payload = validation.value;
 
     const registrations = await this.loadRegistrations();
     if (
@@ -230,7 +306,19 @@ export class SessionDO {
   }
 
   private async handlePushNotify(request: Request): Promise<Response> {
-    const payload = (await request.json()) as PushNotifyPayload;
+    if (!(await this.consumeNonce(request))) {
+      return new Response('Token already used', { status: 409 });
+    }
+    const parsed = await readJsonBody(request);
+    if (!parsed.ok) {
+      return new Response(parsed.message, { status: parsed.status });
+    }
+    const validation = validatePushNotify(parsed.value);
+    if (!validation.ok) {
+      return new Response(validation.message, { status: 400 });
+    }
+    const payload = validation.value as PushNotifyPayload;
+
     const registrations = Object.values(await this.loadRegistrations()).filter(
       (registration) =>
         registration.notificationsAuthorized && registration.pushToken && registration.pushTopic
@@ -239,16 +327,22 @@ export class SessionDO {
       return new Response(null, { status: 204 });
     }
 
-    await Promise.all(
+    // Send concurrently, but collect dead registrations and remove them in a
+    // single read-modify-write afterwards to avoid lost-update races.
+    const outcomes = await Promise.all(
       registrations.map(async (registration) => {
-        const status = await this.sendAPNSNotification(registration, payload);
-        if (status === 400 || status === 410) {
-          const next = await this.loadRegistrations();
-          delete next[registration.pairedDeviceId];
-          await this.saveRegistrations(next);
-        }
+        const { status, reason } = await this.sendAPNSNotification(registration, payload);
+        return shouldRemoveRegistration(status, reason) ? registration.pairedDeviceId : null;
       })
     );
+    const dead = outcomes.filter((id): id is string => id !== null);
+    if (dead.length > 0) {
+      const next = await this.loadRegistrations();
+      for (const id of dead) {
+        delete next[id];
+      }
+      await this.saveRegistrations(next);
+    }
 
     return new Response(null, { status: 204 });
   }
@@ -258,6 +352,12 @@ export class SessionDO {
       (await this.state.storage.get<Record<string, PushRegistration>>(REGISTRATIONS_KEY)) ?? {}
     );
   }
+
+  private async saveRegistrations(registrations: Record<string, PushRegistration>): Promise<void> {
+    await this.state.storage.put(REGISTRATIONS_KEY, registrations);
+  }
+
+  // --- Pending state --------------------------------------------------------
 
   private async loadPendingState(): Promise<PendingStatePayload> {
     return (
@@ -269,62 +369,45 @@ export class SessionDO {
     );
   }
 
-  private async savePendingState(state: PendingStatePayload): Promise<void> {
-    await this.state.storage.put(PENDING_STATE_KEY, state);
-  }
-
-  private async saveRegistrations(registrations: Record<string, PushRegistration>): Promise<void> {
-    await this.state.storage.put(REGISTRATIONS_KEY, registrations);
-  }
-
   private async handlePendingState(): Promise<Response> {
     const state = await this.loadPendingState();
     return Response.json(state);
   }
 
   private async handlePendingSync(request: Request): Promise<Response> {
-    const payload = (await request.json()) as PendingStatePayload;
+    if (!(await this.consumeNonce(request))) {
+      return new Response('Token already used', { status: 409 });
+    }
+    const parsed = await readJsonBody(request);
+    if (!parsed.ok) {
+      return new Response(parsed.message, { status: parsed.status });
+    }
+    const sanitized = sanitizePendingState(parsed.value);
     const nextState: PendingStatePayload = {
-      approvals: Array.isArray(payload.approvals) ? payload.approvals : [],
-      interactive_prompts: Array.isArray(payload.interactive_prompts)
-        ? payload.interactive_prompts
-        : [],
+      ...sanitized,
       updated_at: new Date().toISOString()
     };
-    await this.savePendingState(nextState);
+    await this.state.storage.put(PENDING_STATE_KEY, nextState);
     return Response.json(nextState);
   }
+
+  // --- APNs -----------------------------------------------------------------
 
   private async sendAPNSNotification(
     registration: PushRegistration,
     payload: PushNotifyPayload
-  ): Promise<number> {
+  ): Promise<{ status: number; reason?: string }> {
     const { APNS_TEAM_ID, APNS_KEY_ID, APNS_PRIVATE_KEY } = this.env;
     if (!APNS_TEAM_ID || !APNS_KEY_ID || !APNS_PRIVATE_KEY) {
-      return 204;
+      return { status: 204 };
     }
 
     const host =
       registration.pushEnvironment === 'production'
         ? 'https://api.push.apple.com'
         : 'https://api.sandbox.push.apple.com';
-    const authToken = await this.createAPNSToken(APNS_TEAM_ID, APNS_KEY_ID, APNS_PRIVATE_KEY);
-    const body = {
-      aps: {
-        alert: {
-          title: payload.title,
-          body: payload.body
-        },
-        sound: 'default',
-        'content-available': 1,
-        'interruption-level': 'time-sensitive',
-        'relevance-score': 1
-      },
-      kind: payload.kind,
-      request_id: payload.request_id,
-      prompt_id: payload.prompt_id,
-      open_approvals: payload.open_approvals ?? true
-    };
+    const authToken = await this.getAPNSToken(APNS_TEAM_ID, APNS_KEY_ID, APNS_PRIVATE_KEY);
+    const body = buildApnsPayload(payload);
 
     const response = await fetch(`${host}/3/device/${registration.pushToken}`, {
       method: 'POST',
@@ -337,7 +420,35 @@ export class SessionDO {
       },
       body: JSON.stringify(body)
     });
-    return response.status;
+
+    let reason: string | undefined;
+    if (response.status >= 400) {
+      let text = '';
+      try {
+        text = await response.text();
+      } catch {
+        // APNs body unavailable; status alone is still logged below.
+      }
+      reason = parseApnsReason(text);
+      console.warn(
+        `APNs push failed: status=${response.status} device=${registration.pairedDeviceId} reason=${reason ?? text}`
+      );
+    }
+    return { status: response.status, reason };
+  }
+
+  /// Returns a cached APNs provider JWT, minting a fresh one only when the
+  /// cache is empty or near expiry. The signing inputs (team/key) are identical
+  /// for every registration in this DO, so this collapses the per-registration,
+  /// per-notify ECDSA signing into one signature per ~50 minutes.
+  private async getAPNSToken(teamID: string, keyID: string, privateKey: string): Promise<string> {
+    const now = Date.now();
+    if (this.cachedAPNSToken && this.cachedAPNSToken.expiresAt > now) {
+      return this.cachedAPNSToken.token;
+    }
+    const token = await this.createAPNSToken(teamID, keyID, privateKey);
+    this.cachedAPNSToken = { token, expiresAt: now + 50 * 60 * 1000 };
+    return token;
   }
 
   private async createAPNSToken(
@@ -350,16 +461,18 @@ export class SessionDO {
       JSON.stringify({ iss: teamID, iat: Math.floor(Date.now() / 1000) })
     );
     const signingInput = `${header}.${claims}`;
-    const key = await crypto.subtle.importKey(
-      'pkcs8',
-      this.pemToArrayBuffer(privateKey),
-      { name: 'ECDSA', namedCurve: 'P-256' },
-      false,
-      ['sign']
-    );
+    if (!this.cachedSigningKey) {
+      this.cachedSigningKey = await crypto.subtle.importKey(
+        'pkcs8',
+        this.pemToArrayBuffer(privateKey),
+        { name: 'ECDSA', namedCurve: 'P-256' },
+        false,
+        ['sign']
+      );
+    }
     const signature = await crypto.subtle.sign(
       { name: 'ECDSA', hash: 'SHA-256' },
-      key,
+      this.cachedSigningKey,
       new TextEncoder().encode(signingInput)
     );
     return `${signingInput}.${this.base64url(signature)}`;

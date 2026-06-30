@@ -26,6 +26,12 @@ final class RemoteControlManager {
     /// the noisy "sent tab list with N tabs" log so it only fires on change.
     @ObservationIgnored private var lastSentTabListCount: Int?
     @ObservationIgnored private weak var overlayModel: OverlayTabsModel?
+    /// The tab the remote (iOS) client is currently viewing. Unlike each
+    /// window's `selectedTabID`, this is owned by the remote session and may
+    /// point at a tab living in any window. `nil` falls back to the primary
+    /// window's selection.
+    @ObservationIgnored private var remoteSelectedTabUUID: UUID?
+    @ObservationIgnored private var overlayTabsObserver: NSObjectProtocol?
 
     @ObservationIgnored private var tabRegistry = RemoteTabRegistry()
     @ObservationIgnored private var seqCounter: UInt64 = 1
@@ -54,6 +60,9 @@ final class RemoteControlManager {
         if let observer = remoteRelayURLObserver {
             NotificationCenter.default.removeObserver(observer)
         }
+        if let observer = overlayTabsObserver {
+            NotificationCenter.default.removeObserver(observer)
+        }
     }
 
     func configure(overlayModel: OverlayTabsModel) {
@@ -72,6 +81,10 @@ final class RemoteControlManager {
             self?.connectedClientAppState = .foreground
             self?.connectedClientStreamMode = .full
             self?.remoteActivity = nil
+            // Clear the remote viewer's selection so a reconnecting client
+            // starts from the primary window's selected tab rather than
+            // inheriting a stale (possibly background-window) selection.
+            self?.remoteSelectedTabUUID = nil
             self?.cancelBackgroundSnapshotPrefetch()
             self?.cancelPendingOutputFlush()
             self?.refreshPairedDevices()
@@ -101,6 +114,29 @@ final class RemoteControlManager {
         ) { [weak self] _ in
             Task { @MainActor [weak self] in
                 self?.applyRelayConfigurationChange()
+            }
+        }
+
+        // Additional windows are not owned via the closures below (those are
+        // exclusive to the primary model). Observe a broadcast so the remote
+        // tab list reflects tab/selection changes in *any* window.
+        overlayTabsObserver = NotificationCenter.default.addObserver(
+            forName: .overlayTabsDidChange,
+            object: nil,
+            queue: .main
+        ) { [weak self] note in
+            let senderID = (note.object as AnyObject?).map(ObjectIdentifier.init)
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                // The primary model already drives refreshes through its
+                // dedicated closures; skip to avoid duplicate sends.
+                if let senderID, let primary = self.overlayModel,
+                   ObjectIdentifier(primary) == senderID {
+                    return
+                }
+                sendTabList()
+                rebuildSessionStateSubscriptions()
+                scheduleRemoteActivityRefresh()
             }
         }
 
@@ -141,33 +177,26 @@ final class RemoteControlManager {
         sendGridSnapshot(for: tabID)
     }
 
+    /// Resolve the tab a snapshot/request frame targets, searching every
+    /// window. The unscoped sentinel resolves to the remote-selected tab.
+    private func snapshotTargetTab(for tabID: UInt32) -> OverlayTab? {
+        if tabID == RemoteTabRegistry.unscopedTabID {
+            guard let uuid = effectiveRemoteSelectedUUID else { return nil }
+            return locateTab(uuid: uuid)?.tab
+        }
+        guard let uuid = tabRegistry.uuid(for: tabID) else { return nil }
+        return locateTab(uuid: uuid)?.tab
+    }
+
     func sendTextSnapshot(for tabID: UInt32) {
         guard connectedClientStreamMode == .full else { return }
-        guard let overlayModel else { return }
-        let targetTab: OverlayTab?
-        if tabID == RemoteTabRegistry.unscopedTabID {
-            targetTab = overlayModel.selectedTab
-        } else if let uuid = tabRegistry.uuid(for: tabID) {
-            targetTab = overlayModel.tabs.first { $0.id == uuid }
-        } else {
-            targetTab = nil
-        }
-        guard let session = targetTab?.session,
+        guard let session = snapshotTargetTab(for: tabID)?.session,
               let snapshot = session.captureRemoteSnapshot() else { return }
         sendFrame(type: .snapshot, tabID: tabID, payload: RemoteOutputTuning.capSnapshot(snapshot))
     }
 
     func sendGridSnapshot(for tabID: UInt32) {
-        guard let overlayModel else { return }
-        let targetTab: OverlayTab?
-        if tabID == RemoteTabRegistry.unscopedTabID {
-            targetTab = overlayModel.selectedTab
-        } else if let uuid = tabRegistry.uuid(for: tabID) {
-            targetTab = overlayModel.tabs.first { $0.id == uuid }
-        } else {
-            targetTab = nil
-        }
-        guard let session = targetTab?.session,
+        guard let session = snapshotTargetTab(for: tabID)?.session,
               let snapshot = session.captureRemoteGridSnapshot() else { return }
         sendFrame(type: .terminalGridSnapshot, tabID: tabID, payload: snapshot)
     }
@@ -358,14 +387,18 @@ final class RemoteControlManager {
     }
 
     private func handleTabSwitch(_ frame: RemoteFrame) {
-        guard let overlayModel else { return }
         guard let payload: RemoteTabSwitchPayload = decodePayload(frame, as: RemoteTabSwitchPayload.self, context: "tab switch") else { return }
-        if let uuid = tabRegistry.uuid(for: payload.tabID) {
-            overlayModel.selectTab(id: uuid)
-            sendSnapshot(for: payload.tabID)
-        } else {
+        guard let uuid = tabRegistry.uuid(for: payload.tabID),
+              let located = locateTab(uuid: uuid) else {
             sendError(code: "tab_unavailable", message: "That tab is no longer available for remote control.", tabID: payload.tabID)
+            return
         }
+        // Track the remote viewer's selection independently of any window's
+        // own focus, then mirror it in the owning window so the Mac UI follows.
+        remoteSelectedTabUUID = uuid
+        located.model.selectTab(id: uuid)
+        sendSnapshot(for: payload.tabID)
+        sendTabList()
     }
 
     private func handleInput(_ frame: RemoteFrame) {
@@ -468,20 +501,24 @@ final class RemoteControlManager {
 
     private func sendSelectedTabSnapshot() {
         guard connectedClientStreamMode == .full else { return }
-        guard let overlayModel,
-              let tabID = tabRegistry.tabID(for: overlayModel.selectedTabID) else {
+        // Follow the remote viewer's selection, which may live in any window —
+        // not just the primary window's currently-selected tab.
+        guard let uuid = effectiveRemoteSelectedUUID,
+              let tabID = tabRegistry.tabID(for: uuid) else {
             return
         }
         sendSnapshot(for: tabID)
     }
 
     private func rebuildSessionStateSubscriptions() {
-        guard let overlayModel else {
+        // Subscribe across every window so AI state changes in additional
+        // windows also refresh the remote activity feed.
+        let sessions = allOverlayModels.flatMap { $0.tabs }.compactMap(\.session)
+        guard !sessions.isEmpty else {
             subscribedSessionIDs.removeAll()
             return
         }
 
-        let sessions = overlayModel.tabs.compactMap(\.session)
         let validIDs = Set(sessions.map(\.tabIdentifier))
 
         // Remove stale subscriptions
@@ -565,10 +602,9 @@ final class RemoteControlManager {
     }
 
     private func currentRemoteActivity(now: Date = Date()) -> RemoteActivityState? {
-        guard let overlayModel else { return nil }
-
+        let selectedUUID = effectiveRemoteSelectedUUID
         let approvalsByTabID = Dictionary(grouping: approvalContexts.values, by: \.tabID)
-        let candidates = overlayModel.tabs.flatMap { tab -> [RemoteActivityCandidate] in
+        let candidates = remoteControllableTabsAcrossWindows().flatMap { tab -> [RemoteActivityCandidate] in
             guard let tabID = tabRegistry.tabID(for: tab.id) else {
                 return []
             }
@@ -589,7 +625,7 @@ final class RemoteControlManager {
                     detail: approval.approval.displayCommand,
                     logoAssetName: displayMetadata.logoAssetName,
                     tabColorName: displayMetadata.tabColorName,
-                    isSelected: tab.id == overlayModel.selectedTabID,
+                    isSelected: tab.id == selectedUUID,
                     updatedAt: approval.requestedAt,
                     startedAt: approval.requestedAt,
                     approval: approval.approval
@@ -651,7 +687,7 @@ final class RemoteControlManager {
                     detail: detail,
                     logoAssetName: displayMetadata.logoAssetName,
                     tabColorName: displayMetadata.tabColorName,
-                    isSelected: tab.id == overlayModel.selectedTabID,
+                    isSelected: tab.id == selectedUUID,
                     updatedAt: updatedAt,
                     startedAt: startedAt
                 ))
@@ -664,9 +700,7 @@ final class RemoteControlManager {
     }
 
     private func currentInteractivePrompts() -> [RemoteInteractivePrompt] {
-        guard let overlayModel else { return [] }
-
-        return remoteControllableTabs(from: overlayModel).flatMap { tab -> [RemoteInteractivePrompt] in
+        remoteControllableTabsAcrossWindows().flatMap { tab -> [RemoteInteractivePrompt] in
             guard let tabID = tabRegistry.tabID(for: tab.id) else {
                 return []
             }
@@ -736,6 +770,20 @@ final class RemoteControlManager {
     private func activityBranchName(for session: TerminalSessionModel) -> String? {
         let trimmed = session.gitBranch?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         return trimmed.isEmpty ? nil : trimmed
+    }
+
+    /// The AI provider/tool detected for a tab's display session, for the
+    /// remote tab dropdown. Returns `nil` (rather than the tab title) when no
+    /// AI activity is detected, so the iOS UI can omit the chip entirely.
+    private func activityAIProvider(for tab: OverlayTab) -> String? {
+        let session = tab.displaySession ?? tab.session
+        guard let session else { return nil }
+        let appName = session.aiDisplayAppName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if !appName.isEmpty {
+            return appName
+        }
+        let provider = session.effectiveAIProvider?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return provider.isEmpty ? nil : provider.capitalized
     }
 
     private func activityCurrentDirectory(for session: TerminalSessionModel) -> String? {
@@ -837,8 +885,11 @@ final class RemoteControlManager {
 
     private func sendTabList() {
         guard connectedClientStreamMode == .full else { return }
-        guard let overlayModel else { return }
-        let controllableTabs = remoteControllableTabs(from: overlayModel)
+        // Enumerate every window's controllable tabs, not just the primary
+        // window's — otherwise tabs in additional Mac windows never appear in
+        // the iOS tab list.
+        let controllableTabs = remoteControllableTabsAcrossWindows()
+        let activeUUID = effectiveRemoteSelectedUUID
         let tabPayloads = tabRegistry.rebuild(
             with: controllableTabs.map { tab in
                 RemoteTabRegistryEntry(
@@ -847,7 +898,8 @@ final class RemoteControlManager {
                     title: tab.displayTitle,
                     projectName: tab.displaySession.flatMap(activityProjectName(for:)) ?? tab.session.flatMap(activityProjectName(for:)),
                     branchName: tab.displaySession.flatMap(activityBranchName(for:)) ?? tab.session.flatMap(activityBranchName(for:)),
-                    isActive: tab.id == overlayModel.selectedTabID,
+                    aiProvider: activityAIProvider(for: tab),
+                    isActive: tab.id == activeUUID,
                     isMCPControlled: tab.isMCPControlled
                 )
             }
@@ -912,21 +964,60 @@ final class RemoteControlManager {
     }
 
     private func selectedRemoteTabID() -> UInt32? {
-        guard let overlayModel else { return nil }
-        return tabRegistry.tabID(for: overlayModel.selectedTabID)
+        guard let uuid = effectiveRemoteSelectedUUID else { return nil }
+        return tabRegistry.tabID(for: uuid)
     }
 
-    private func remoteControllableTabs(from overlayModel: OverlayTabsModel) -> [OverlayTab] {
-        let tabs = overlayModel.tabs.filter { $0.session != nil }
-        if tabs.isEmpty {
-            logger.info(
-                """
-                Remote: no controllable tabs. overlay tabs=\(overlayModel.tabs.count) \
-                selected=\(overlayModel.selectedTabID.uuidString)
-                """
-            )
+    /// Every overlay window's model. Falls back to the configured primary
+    /// model if the shared registry is somehow empty (e.g. very early in
+    /// launch before windows register).
+    private var allOverlayModels: [OverlayTabsModel] {
+        let models = TerminalControlService.shared.allModels.map(\.model)
+        if models.isEmpty, let overlayModel {
+            return [overlayModel]
         }
-        return tabs
+        return models
+    }
+
+    /// Controllable tabs across *all* windows, de-duplicated by id. A tab is
+    /// controllable when it owns a live terminal session.
+    private func remoteControllableTabsAcrossWindows() -> [OverlayTab] {
+        var seen = Set<UUID>()
+        var result: [OverlayTab] = []
+        for model in allOverlayModels {
+            for tab in model.tabs where tab.session != nil {
+                if seen.insert(tab.id).inserted {
+                    result.append(tab)
+                }
+            }
+        }
+        if result.isEmpty {
+            // Hoisted out of the os.Logger interpolation: its autoclosure makes
+            // the compiler require self., which swiftformat's redundantSelf then
+            // strips — a local read satisfies both.
+            let windowCount = allOverlayModels.count
+            logger.info("Remote: no controllable tabs across \(windowCount, privacy: .public) window(s)")
+        }
+        return result
+    }
+
+    /// Find a tab (and its owning window model) by UUID across every window.
+    private func locateTab(uuid: UUID) -> (model: OverlayTabsModel, tab: OverlayTab)? {
+        for model in allOverlayModels {
+            if let tab = model.tabs.first(where: { $0.id == uuid }) {
+                return (model, tab)
+            }
+        }
+        return nil
+    }
+
+    /// The UUID of the tab the remote client is viewing, validated to still
+    /// exist somewhere. Falls back to the primary window's selected tab.
+    private var effectiveRemoteSelectedUUID: UUID? {
+        if let remoteSelectedTabUUID, locateTab(uuid: remoteSelectedTabUUID) != nil {
+            return remoteSelectedTabUUID
+        }
+        return overlayModel?.selectedTabID
     }
 
     private func sendFrame(type: RemoteFrameType, tabID: UInt32, payload: Data) {
@@ -965,17 +1056,17 @@ final class RemoteControlManager {
     }
 
     private func resolveInputTarget(for tabID: UInt32) -> (TerminalSessionModel, UInt32)? {
-        guard let overlayModel else { return nil }
         if tabID == RemoteTabRegistry.unscopedTabID {
-            guard let selectedTab = overlayModel.selectedTab?.session,
-                  let resolvedTabID = tabRegistry.tabID(for: overlayModel.selectedTabID) else {
+            guard let uuid = effectiveRemoteSelectedUUID,
+                  let session = locateTab(uuid: uuid)?.tab.session,
+                  let resolvedTabID = tabRegistry.tabID(for: uuid) else {
                 return nil
             }
-            return (selectedTab, resolvedTabID)
+            return (session, resolvedTabID)
         }
 
         guard let uuid = tabRegistry.uuid(for: tabID),
-              let session = overlayModel.tabs.first(where: { $0.id == uuid })?.session else {
+              let session = locateTab(uuid: uuid)?.tab.session else {
             return nil
         }
         return (session, tabID)
@@ -983,14 +1074,12 @@ final class RemoteControlManager {
 
     private func session(for tabID: UInt32) -> TerminalSessionModel? {
         if tabID == RemoteTabRegistry.unscopedTabID {
-            return overlayModel?.selectedTab?.session
+            guard let uuid = effectiveRemoteSelectedUUID else { return nil }
+            return locateTab(uuid: uuid)?.tab.session
         }
 
-        guard let overlayModel,
-              let uuid = tabRegistry.uuid(for: tabID) else {
-            return nil
-        }
-        return overlayModel.tabs.first(where: { $0.id == uuid })?.session
+        guard let uuid = tabRegistry.uuid(for: tabID) else { return nil }
+        return locateTab(uuid: uuid)?.tab.session
     }
 
     private static let maxPendingProtectedInputs = 20
@@ -1014,7 +1103,7 @@ final class RemoteControlManager {
         if let protectedInput = pendingProtectedInputs[requestID],
            let session = session(for: protectedInput.tabID),
            let uuid = tabRegistry.uuid(for: protectedInput.tabID),
-           let tab = overlayModel?.tabs.first(where: { $0.id == uuid }) {
+           let tab = locateTab(uuid: uuid)?.tab {
             approvalContexts[requestID] = PendingRemoteApprovalContext(
                 requestID: approval.requestID,
                 tabID: protectedInput.tabID,
@@ -1033,8 +1122,8 @@ final class RemoteControlManager {
             return
         }
 
-        guard let overlayModel,
-              let tab = overlayModel.selectedTab,
+        guard let uuid = effectiveRemoteSelectedUUID,
+              let tab = locateTab(uuid: uuid)?.tab,
               let session = tab.session,
               let tabID = tabRegistry.tabID(for: tab.id) else {
             return
@@ -1080,7 +1169,7 @@ final class RemoteControlManager {
         let approvalContext: PendingRemoteApprovalContext?
         if let session = session(for: tabID),
            let uuid = tabRegistry.uuid(for: tabID),
-           let tab = overlayModel?.tabs.first(where: { $0.id == uuid }) {
+           let tab = locateTab(uuid: uuid)?.tab {
             let context = PendingRemoteApprovalContext(
                 requestID: requestID,
                 tabID: tabID,

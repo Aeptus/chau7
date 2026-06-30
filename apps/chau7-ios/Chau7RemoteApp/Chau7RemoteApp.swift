@@ -41,8 +41,8 @@ struct Chau7RemoteApp: App {
 // MARK: - App Delegate (Notification Handling)
 
 class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDelegate {
-    private static let approvalCategoryID = "MCP_APPROVAL"
-    private static let interactivePromptCategoryID = "INTERACTIVE_PROMPT"
+    private static let approvalCategoryID = RemoteNotificationID.approvalCategory
+    private static let interactivePromptCategoryID = RemoteNotificationID.interactivePromptCategory
 
     func application(
         _ application: UIApplication,
@@ -72,11 +72,11 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
                 identifier: Self.approvalCategoryID,
                 actions: [
                     UNNotificationAction(
-                        identifier: "APPROVE", title: "Allow",
+                        identifier: RemoteNotificationID.Action.approve, title: "Allow",
                         options: [.authenticationRequired]
                     ),
                     UNNotificationAction(
-                        identifier: "DENY", title: "Deny",
+                        identifier: RemoteNotificationID.Action.deny, title: "Deny",
                         options: [.destructive]
                     )
                 ],
@@ -137,15 +137,15 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
         let userInfo = response.notification.request.content.userInfo
         await MainActor.run {
             switch response.actionIdentifier {
-            case "APPROVE", "DENY":
-                guard let requestID = userInfo["request_id"] as? String,
+            case RemoteNotificationID.Action.approve, RemoteNotificationID.Action.deny:
+                guard let requestID = userInfo[RemoteNotificationID.UserInfoKey.requestID] as? String,
                       !requestID.isEmpty else { return }
                 NotificationCenter.default.post(
                     name: .approvalNotificationResponse,
                     object: nil,
                     userInfo: [
-                        "request_id": requestID,
-                        "approved": response.actionIdentifier == "APPROVE"
+                        RemoteNotificationID.UserInfoKey.requestID: requestID,
+                        RemoteNotificationID.UserInfoKey.approved: response.actionIdentifier == RemoteNotificationID.Action.approve
                     ]
                 )
             default:
@@ -168,6 +168,15 @@ struct RemoteRootView: View {
     @State private var isPairingPresented = false
     @State private var showsLaunchSplash = true
     @State private var launchTip = Chau7LaunchTips.randomTip()
+    @State private var showOnboarding = false
+    @State private var bannerVisible = false
+    @State private var bannerDismissTask: Task<Void, Never>?
+    @State private var showsKeystrokeConsent = false
+
+    @AppStorage(AppSettings.hasCompletedOnboardingKey) private var hasCompletedOnboarding = false
+    @AppStorage(AppSettings.logKeystrokesKey) private var logKeystrokes = AppSettings.logKeystrokesDefault
+    @AppStorage(AppSettings.keystrokeConsentPromptedKey)
+    private var keystrokeConsentPrompted = AppSettings.keystrokeConsentPromptedDefault
 
     enum Tab { case terminal, approvals, settings }
 
@@ -190,11 +199,23 @@ struct RemoteRootView: View {
                 .tabItem { Label("Settings", systemImage: "gearshape") }
                 .tag(Tab.settings)
         }
+        .overlay(alignment: .top) {
+            if bannerVisible && selectedTab != .approvals {
+                ApprovalBanner(count: approvalsBadgeCount) {
+                    goToApprovals()
+                } onDismiss: {
+                    dismissBanner()
+                }
+                .padding(.horizontal)
+                .transition(.move(edge: .top).combined(with: .opacity))
+                .zIndex(2)
+            }
+        }
         .overlay {
             if showsLaunchSplash {
                 LaunchSplashView(tip: launchTip)
                     .transition(.opacity)
-                    .zIndex(1)
+                    .zIndex(3)
             }
         }
         .task {
@@ -203,16 +224,118 @@ struct RemoteRootView: View {
             withAnimation(.easeOut(duration: 0.25)) {
                 showsLaunchSplash = false
             }
+            if !hasCompletedOnboarding {
+                showOnboarding = true
+            }
+            // First-run consent: keystroke capture stays off until the user
+            // explicitly accepts, so a fresh install never records typed
+            // secrets before the user has seen the disclosure.
+            if !keystrokeConsentPrompted {
+                showsKeystrokeConsent = true
+            }
+        }
+        .alert("Capture Keystrokes for Diagnostics?", isPresented: $showsKeystrokeConsent) {
+            Button("Enable") {
+                logKeystrokes = true
+                keystrokeConsentPrompted = true
+            }
+            Button("Not Now", role: .cancel) {
+                logKeystrokes = false
+                keystrokeConsentPrompted = true
+            }
+        } message: {
+            Text("Chau7 can record the keys you type — including terminal input — into an on-device diagnostics log to help investigate issues. This may include sensitive text such as passwords or tokens. Nothing leaves your device unless you export it, and you can change this anytime in Settings.")
         }
         .onChange(of: approvalsBadgeCount) { oldCount, newCount in
-            if newCount > oldCount { selectedTab = .approvals }
+            // Surface new approvals with a non-intrusive banner instead of yanking
+            // the user away from whatever they were doing.
+            if newCount > oldCount, selectedTab != .approvals {
+                showBanner()
+            } else if newCount == 0 {
+                dismissBanner()
+            }
+        }
+        .onChange(of: selectedTab) { _, newTab in
+            if newTab == .approvals { dismissBanner() }
         }
         .onReceive(NotificationCenter.default.publisher(for: .openApprovals)) { _ in
-            selectedTab = .approvals
+            goToApprovals()
         }
         .sheet(isPresented: $isPairingPresented) {
             PairingSheetView(client: client)
         }
+        .fullScreenCover(isPresented: $showOnboarding) {
+            OnboardingView { startPairing in
+                hasCompletedOnboarding = true
+                showOnboarding = false
+                if startPairing {
+                    isPairingPresented = true
+                }
+            }
+        }
+    }
+
+    private func goToApprovals() {
+        dismissBanner()
+        selectedTab = .approvals
+    }
+
+    private func showBanner() {
+        bannerDismissTask?.cancel()
+        withAnimation(.spring(duration: 0.3)) { bannerVisible = true }
+        bannerDismissTask = Task {
+            try? await Task.sleep(for: .seconds(5))
+            guard !Task.isCancelled else { return }
+            dismissBanner()
+        }
+    }
+
+    private func dismissBanner() {
+        bannerDismissTask?.cancel()
+        bannerDismissTask = nil
+        withAnimation(.easeInOut(duration: 0.2)) { bannerVisible = false }
+    }
+}
+
+/// Tappable banner announcing pending approvals without forcing a tab change.
+private struct ApprovalBanner: View {
+    let count: Int
+    let onTap: () -> Void
+    let onDismiss: () -> Void
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "lock.shield.fill")
+                .font(.title3)
+                .foregroundStyle(.white)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(count == 1 ? "Approval waiting" : "\(count) approvals waiting")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.white)
+                Text("Tap to review")
+                    .font(.caption)
+                    .foregroundStyle(.white.opacity(0.85))
+            }
+            Spacer()
+            Button {
+                onDismiss()
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(.white.opacity(0.9))
+                    .frame(width: 28, height: 28)
+            }
+            .accessibilityLabel("Dismiss")
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+        .background(Color.orange.gradient, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .shadow(radius: 8, y: 3)
+        .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .onTapGesture { onTap() }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(count == 1 ? "1 approval waiting. Tap to review." : "\(count) approvals waiting. Tap to review.")
+        .accessibilityAddTraits(.isButton)
     }
 }
 

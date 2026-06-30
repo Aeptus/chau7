@@ -209,8 +209,6 @@ pub struct PerformanceMetrics {
     pub grid_snapshot_count: AtomicU64,
     /// Total grid snapshot time in microseconds
     pub grid_snapshot_time_us: AtomicU64,
-    /// Total VTE processing time in microseconds
-    pub vte_process_time_us: AtomicU64,
     /// Maximum single poll time in microseconds
     pub max_poll_time_us: AtomicU64,
     /// Maximum single grid snapshot time in microseconds

@@ -2,136 +2,6 @@ import Foundation
 import AppKit
 import Chau7Core
 
-// MARK: - Debug Context
-
-/// Provides structured debugging context for tracing operations across the app.
-/// Each operation gets a unique correlation ID that flows through all related log entries.
-///
-/// Usage:
-/// ```
-/// let ctx = DebugContext(operation: "command-detection", metadata: ["input": commandLine])
-/// ctx.log("Starting detection")
-/// ctx.log("Found token", metadata: ["token": token])
-/// ctx.complete(success: true, metadata: ["result": appName])
-/// ```
-final class DebugContext: @unchecked Sendable {
-    let id: String
-    let operation: String
-    let startTime: Date
-    private(set) var metadata: [String: Any]
-    private var events: [(timestamp: Date, message: String, metadata: [String: Any])]
-    private let lock = NSLock()
-
-    /// All active contexts for inspection
-    private static var activeContexts: [String: DebugContext] = [:]
-    private static let contextLock = NSLock()
-
-    /// History of completed contexts (limited to last 100)
-    private static var completedContexts: [DebugContext] = []
-    private static let maxHistory = 100
-
-    init(operation: String, metadata: [String: Any] = [:]) {
-        self.id = Self.generateId()
-        self.operation = operation
-        self.startTime = Date()
-        self.metadata = metadata
-        self.events = []
-
-        Self.contextLock.lock()
-        Self.activeContexts[id] = self
-        Self.contextLock.unlock()
-
-        Log.trace("[\(id)] START \(operation) \(Self.formatMetadata(metadata))")
-    }
-
-    /// Logs an event within this context
-    func log(_ message: String, metadata: [String: Any] = [:], level: LogLevel = .trace) {
-        lock.lock()
-        events.append((Date(), message, metadata))
-        lock.unlock()
-
-        let metaStr = metadata.isEmpty ? "" : " \(Self.formatMetadata(metadata))"
-        let logMessage = "[\(id)] \(message)\(metaStr)"
-
-        switch level {
-        case .trace:
-            Log.trace(logMessage)
-        case .info:
-            Log.info(logMessage)
-        case .warn:
-            Log.warn(logMessage)
-        case .error:
-            Log.error(logMessage)
-        }
-    }
-
-    /// Marks this context as complete
-    func complete(success: Bool, metadata: [String: Any] = [:]) {
-        let duration = Date().timeIntervalSince(startTime)
-        let status = success ? "SUCCESS" : "FAILURE"
-
-        lock.lock()
-        self.metadata.merge(metadata) { _, new in new }
-        self.metadata["_duration_ms"] = Int(duration * 1000)
-        self.metadata["_success"] = success
-        lock.unlock()
-
-        Log.trace("[\(id)] END \(operation) \(status) (\(Int(duration * 1000))ms) \(Self.formatMetadata(metadata))")
-
-        Self.contextLock.lock()
-        Self.activeContexts.removeValue(forKey: id)
-        Self.completedContexts.append(self)
-        if Self.completedContexts.count > Self.maxHistory {
-            Self.completedContexts.removeFirst()
-        }
-        Self.contextLock.unlock()
-    }
-
-    /// Creates a child context for nested operations
-    func child(operation: String, metadata: [String: Any] = [:]) -> DebugContext {
-        var childMeta = metadata
-        childMeta["_parent"] = id
-        return DebugContext(operation: "\(self.operation)/\(operation)", metadata: childMeta)
-    }
-
-    // MARK: - Static Accessors
-
-    static var active: [DebugContext] {
-        contextLock.lock()
-        defer { contextLock.unlock() }
-        return Array(activeContexts.values)
-    }
-
-    static var history: [DebugContext] {
-        contextLock.lock()
-        defer { contextLock.unlock() }
-        return completedContexts
-    }
-
-    static func find(id: String) -> DebugContext? {
-        contextLock.lock()
-        defer { contextLock.unlock() }
-        return activeContexts[id] ?? completedContexts.first { $0.id == id }
-    }
-
-    // MARK: - Helpers
-
-    private static func generateId() -> String {
-        let chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
-        return String((0 ..< 6).map { _ in chars.randomElement()! })
-    }
-
-    private static func formatMetadata(_ meta: [String: Any]) -> String {
-        guard !meta.isEmpty else { return "" }
-        let pairs = meta.map { "\($0.key)=\(String(describing: $0.value))" }
-        return "{\(pairs.joined(separator: ", "))}"
-    }
-
-    enum LogLevel {
-        case trace, info, warn, error
-    }
-}
-
 // MARK: - State Snapshot
 
 /// Captures a snapshot of the entire app state for debugging.
@@ -155,9 +25,6 @@ struct StateSnapshot: Codable {
 
     /// Recent log entries
     let recentLogs: [String]
-
-    /// Active debug contexts
-    let activeContexts: [ContextState]
 
     struct TabState: Codable {
         let id: String
@@ -189,13 +56,6 @@ struct StateSnapshot: Codable {
         let hook: String
         let toolName: String
         let message: String
-    }
-
-    struct ContextState: Codable {
-        let id: String
-        let operation: String
-        let startTime: Date
-        let durationMs: Int
     }
 
     /// Creates a snapshot of the current app state
@@ -271,17 +131,6 @@ struct StateSnapshot: Codable {
             "bookmarks": features.isBookmarksEnabled
         ]
 
-        // Capture active contexts
-        var contextStates: [ContextState] = []
-        for ctx in DebugContext.active {
-            contextStates.append(ContextState(
-                id: ctx.id,
-                operation: ctx.operation,
-                startTime: ctx.startTime,
-                durationMs: Int(Date().timeIntervalSince(ctx.startTime) * 1000)
-            ))
-        }
-
         // Read recent log lines
         var recentLogs: [String] = []
         if let logData = FileOperations.readString(from: Log.filePath) {
@@ -299,8 +148,7 @@ struct StateSnapshot: Codable {
             claudeSessions: claudeSessions,
             recentEvents: recentEvents,
             featureFlags: featureFlags,
-            recentLogs: recentLogs,
-            activeContexts: contextStates
+            recentLogs: recentLogs
         )
     }
 
@@ -451,16 +299,6 @@ final class BugReporter {
         report += """
 
 
-        ## Active Debug Contexts
-        """
-
-        for ctx in snapshot.activeContexts {
-            report += "\n- [\(ctx.id)] \(ctx.operation) (running \(ctx.durationMs)ms)"
-        }
-
-        report += """
-
-
         ## Feature Flags
         """
 
@@ -486,26 +324,4 @@ final class BugReporter {
             .appendingPathComponent("reports", isDirectory: true)
         NSWorkspace.shared.open(dir)
     }
-}
-
-// MARK: - Debug Assertions
-
-/// Debug-only assertions that help catch issues during development
-enum DebugAssert {
-    /// Asserts a condition in debug builds, logs in release
-    static func check(_ condition: @autoclosure () -> Bool, _ message: String, file: String = #file, line: Int = #line) {
-        #if DEBUG
-        if !condition() {
-            let location = "\(URL(fileURLWithPath: file).lastPathComponent):\(line)"
-            Log.error("ASSERTION FAILED at \(location): \(message)")
-            assertionFailure(message)
-        }
-        #else
-        if !condition() {
-            let location = "\(URL(fileURLWithPath: file).lastPathComponent):\(line)"
-            Log.error("Check failed at \(location): \(message)")
-        }
-        #endif
-    }
-
 }

@@ -6,7 +6,7 @@ Structured logging with file output, categories, correlation IDs, and os.log int
 
 | File | Purpose |
 |------|---------|
-| `DebugContext.swift` | Provides correlated debug context with unique IDs for tracing operations across the app |
+| `DebugContext.swift` | `StateSnapshot` (captures app/tab/session state) and `BugReporter` (generates prefilled GitHub issue reports) |
 | `Log.swift` | Core logging enum with file-based output, rotation, and configurable max size |
 | `LogEnhanced.swift` | Category-based logging with os.log integration and per-category filtering |
 
@@ -14,7 +14,7 @@ Structured logging with file output, categories, correlation IDs, and os.log int
 
 - `Log` — static logging API with info/warn/error levels and file output
 - `LogCategory` — enum of subsystem categories (App, Tabs, Terminal, Render, etc.) for filtering
-- `DebugContext` — correlates related log entries with a unique ID for operation tracing
+- `StateSnapshot` / `BugReporter` — capture app state and generate bug reports (in `DebugContext.swift`)
 
 ## Dependencies
 

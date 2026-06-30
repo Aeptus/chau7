@@ -196,20 +196,6 @@ func (s *State) MacPrivateKeyBytes() ([]byte, error) {
 	return base64.StdEncoding.DecodeString(s.MacPrivateKey)
 }
 
-func (s *State) MacPublicKeyBytes() ([]byte, error) {
-	if s.MacPublicKey == "" {
-		return nil, errors.New("missing mac public key")
-	}
-	return base64.StdEncoding.DecodeString(s.MacPublicKey)
-}
-
-func (s *State) IOSPublicKeyBytes() ([]byte, error) {
-	if s.IOSPublicKey == "" {
-		return nil, errors.New("missing ios public key")
-	}
-	return base64.StdEncoding.DecodeString(s.IOSPublicKey)
-}
-
 func (s *State) HasPairedDevices() bool {
 	return len(s.PairedDevices) > 0 || s.IOSPublicKey != ""
 }
@@ -293,17 +279,6 @@ func (s *State) UpdatePushRegistration(deviceID, token, topic, environment strin
 	return nil
 }
 
-func (s *State) RemovePairedDevice(id string) bool {
-	for i := range s.PairedDevices {
-		if s.PairedDevices[i].ID == id {
-			s.PairedDevices = append(s.PairedDevices[:i], s.PairedDevices[i+1:]...)
-			s.syncLegacyFromFirstPairedDevice()
-			return true
-		}
-	}
-	return false
-}
-
 func (s *State) EnsureDeviceID() error {
 	if s.DeviceID != "" {
 		return nil
@@ -352,15 +327,6 @@ func (s *State) migrateLegacyPairedDevice() {
 func (s *State) syncLegacyDevice(device PairedDevice) {
 	s.IOSPublicKey = device.IOSPublicKey
 	s.IOSName = device.Name
-}
-
-func (s *State) syncLegacyFromFirstPairedDevice() {
-	if len(s.PairedDevices) == 0 {
-		s.IOSPublicKey = ""
-		s.IOSName = ""
-		return
-	}
-	s.syncLegacyDevice(s.PairedDevices[0])
 }
 
 func fingerprintBytes(rawKey []byte) string {

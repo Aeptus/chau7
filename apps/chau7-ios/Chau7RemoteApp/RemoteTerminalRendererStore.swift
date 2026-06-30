@@ -20,7 +20,6 @@ final class RemoteTerminalRendererStore {
     private var playbacks: [UInt32: RemoteRustTerminalPlayback] = [:]
     private var gridSnapshotByTabID: [UInt32: RemoteTerminalRenderState] = [:]
     private var replayByTabID: [UInt32: Data] = [:]
-    private var pendingReplayByTabID: [UInt32: [Data]] = [:]
     private var viewportCols = 0
     private var viewportRows = 0
     private var refreshTask: Task<Void, Never>?
@@ -31,7 +30,6 @@ final class RemoteTerminalRendererStore {
         playbacks.removeAll()
         gridSnapshotByTabID.removeAll()
         replayByTabID.removeAll()
-        pendingReplayByTabID.removeAll()
         renderState = nil
         activeTabID = 0
         isAvailable = true
@@ -41,7 +39,6 @@ final class RemoteTerminalRendererStore {
         playbacks = playbacks.filter { visibleTabIDs.contains($0.key) }
         gridSnapshotByTabID = gridSnapshotByTabID.filter { visibleTabIDs.contains($0.key) }
         replayByTabID = replayByTabID.filter { visibleTabIDs.contains($0.key) }
-        pendingReplayByTabID = pendingReplayByTabID.filter { visibleTabIDs.contains($0.key) }
         if !visibleTabIDs.contains(activeTabID) {
             refreshTask?.cancel()
             refreshTask = nil
@@ -64,13 +61,13 @@ final class RemoteTerminalRendererStore {
         refreshActiveState()
     }
 
-    func setActiveTab(_ tabID: UInt32, fallbackText: String) {
+    func setActiveTab(_ tabID: UInt32) {
         activeTabID = tabID
         ensurePlayback(for: tabID, forceRebuild: false)
         refreshActiveState()
     }
 
-    func replaceSnapshot(_ data: Data, for tabID: UInt32) {
+    func replaceSnapshot(for tabID: UInt32) {
         guard tabID == activeTabID else { return }
         refreshActiveState()
     }
@@ -95,7 +92,8 @@ final class RemoteTerminalRendererStore {
             return
         }
 
-        pendingReplayByTabID[tabID, default: []].append(chunk)
+        // Pre-playback bytes live solely in replayByTabID (appended above);
+        // ensurePlayback rebuilds from that single source of truth.
         guard tabID == activeTabID else { return }
         ensurePlayback(for: tabID, forceRebuild: false)
         refreshActiveState()
@@ -122,8 +120,7 @@ final class RemoteTerminalRendererStore {
         }
 
         let initialReplay = replayByTabID[tabID] ?? Data()
-        let pendingChunks = pendingReplayByTabID[tabID] ?? []
-        guard !initialReplay.isEmpty || !pendingChunks.isEmpty else { return }
+        guard !initialReplay.isEmpty else { return }
 
         guard let playback = RemoteRustTerminalPlayback(cols: viewportCols, rows: viewportRows) else {
             isAvailable = false
@@ -132,13 +129,7 @@ final class RemoteTerminalRendererStore {
         }
 
         isAvailable = true
-        if !initialReplay.isEmpty {
-            playback.inject(initialReplay)
-        }
-        for chunk in pendingChunks {
-            playback.inject(chunk)
-        }
-        pendingReplayByTabID.removeValue(forKey: tabID)
+        playback.inject(initialReplay)
         playbacks[tabID] = playback
     }
 

@@ -8,8 +8,7 @@ struct ApprovalsView: View {
     var client: RemoteClient
     @State private var hapticTrigger = false
     @State private var pendingPromptConfirmation: PendingInteractivePromptConfirmation?
-    @State private var customPromptDraft = ""
-    @State private var activeCustomPromptID: String?
+    @State private var customPromptDrafts: [String: String] = [:]
 
     var body: some View {
         NavigationStack {
@@ -117,22 +116,17 @@ struct ApprovalsView: View {
 
     private func binding(for promptID: String) -> Binding<String> {
         Binding(
-            get: { customText(for: promptID) },
-            set: { newValue in
-                activeCustomPromptID = promptID
-                customPromptDraft = newValue
-            }
+            get: { customPromptDrafts[promptID] ?? "" },
+            set: { customPromptDrafts[promptID] = $0 }
         )
     }
 
     private func customText(for promptID: String) -> String {
-        activeCustomPromptID == promptID ? customPromptDraft : ""
+        customPromptDrafts[promptID] ?? ""
     }
 
     private func resetCustomPromptState(for promptID: String) {
-        guard activeCustomPromptID == promptID else { return }
-        customPromptDraft = ""
-        activeCustomPromptID = nil
+        customPromptDrafts[promptID] = nil
     }
 }
 

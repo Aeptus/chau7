@@ -1,9 +1,21 @@
 name = "chau7-ios-relay"
 main = "src/worker.ts"
-compatibility_date = "2024-10-01"
+compatibility_date = "2025-11-01"
 
-[vars]
-RELAY_SECRET = "CHANGE_ME_IN_PRODUCTION"
+# Authentication fails CLOSED. Provide the shared secret as a Worker secret
+# (never a plaintext var):
+#
+#   wrangler secret put RELAY_SECRET
+#
+# If RELAY_SECRET is absent, authenticated routes return 503 unless you
+# explicitly opt into unauthenticated rollout mode by setting the var below to
+# the string "true" (logged as a warning on use):
+#
+# [vars]
+# RELAY_ALLOW_UNAUTHENTICATED = "true"
+
+[observability]
+enabled = true
 
 # Custom domain: relay.chau7.sh
 # Set up via Cloudflare dashboard: Workers > chau7-ios-relay > Settings > Domains & Routes > Add > Custom Domain
