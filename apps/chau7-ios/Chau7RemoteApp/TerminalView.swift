@@ -79,12 +79,12 @@ struct TerminalView: View {
             Circle()
                 .fill(statusColor)
                 .frame(width: 8, height: 8)
-            Text(client.status)
+            Text(client.status.displayText)
                 .font(.headline)
                 .lineLimit(1)
         }
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("Connection status: \(client.status)")
+        .accessibilityLabel("Connection status: \(client.status.displayText)")
     }
 
     /// Only surfaces when there is an error to report; the status itself now
@@ -109,10 +109,7 @@ struct TerminalView: View {
 
     private var statusColor: Color {
         guard client.isConnected else { return .red }
-        switch client.status {
-        case "Encrypted", "Session ready": return .green
-        default: return .yellow
-        }
+        return client.status.isEncryptedSession ? .green : .yellow
     }
 
     private var connectButton: some View {

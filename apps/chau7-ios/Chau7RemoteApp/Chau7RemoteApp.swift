@@ -41,8 +41,8 @@ struct Chau7RemoteApp: App {
 // MARK: - App Delegate (Notification Handling)
 
 class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDelegate {
-    private static let approvalCategoryID = "MCP_APPROVAL"
-    private static let interactivePromptCategoryID = "INTERACTIVE_PROMPT"
+    private static let approvalCategoryID = RemoteNotificationID.approvalCategory
+    private static let interactivePromptCategoryID = RemoteNotificationID.interactivePromptCategory
 
     func application(
         _ application: UIApplication,
@@ -72,11 +72,11 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
                 identifier: Self.approvalCategoryID,
                 actions: [
                     UNNotificationAction(
-                        identifier: "APPROVE", title: "Allow",
+                        identifier: RemoteNotificationID.Action.approve, title: "Allow",
                         options: [.authenticationRequired]
                     ),
                     UNNotificationAction(
-                        identifier: "DENY", title: "Deny",
+                        identifier: RemoteNotificationID.Action.deny, title: "Deny",
                         options: [.destructive]
                     )
                 ],
@@ -137,15 +137,15 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
         let userInfo = response.notification.request.content.userInfo
         await MainActor.run {
             switch response.actionIdentifier {
-            case "APPROVE", "DENY":
-                guard let requestID = userInfo["request_id"] as? String,
+            case RemoteNotificationID.Action.approve, RemoteNotificationID.Action.deny:
+                guard let requestID = userInfo[RemoteNotificationID.UserInfoKey.requestID] as? String,
                       !requestID.isEmpty else { return }
                 NotificationCenter.default.post(
                     name: .approvalNotificationResponse,
                     object: nil,
                     userInfo: [
-                        "request_id": requestID,
-                        "approved": response.actionIdentifier == "APPROVE"
+                        RemoteNotificationID.UserInfoKey.requestID: requestID,
+                        RemoteNotificationID.UserInfoKey.approved: response.actionIdentifier == RemoteNotificationID.Action.approve
                     ]
                 )
             default:

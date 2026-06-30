@@ -17,6 +17,10 @@ struct PairingInfo: Codable, Equatable {
     let macPub: String
     let pairingCode: String
     let expiresAt: String
+    // Shared HMAC secret delivered in the pairing payload. Used to mint relay
+    // auth tokens. Optional so older pairing payloads (no secret) still decode
+    // and the client falls back to unauthenticated connects.
+    let relaySecret: String?
 
     enum CodingKeys: String, CodingKey {
         case relayURL = "relay_url"
@@ -24,6 +28,7 @@ struct PairingInfo: Codable, Equatable {
         case macPub = "mac_pub"
         case pairingCode = "pairing_code"
         case expiresAt = "expires_at"
+        case relaySecret = "relay_secret"
     }
 }
 
@@ -297,7 +302,40 @@ struct RemoteErrorPayload: Codable {
     let message: String
 }
 
+// MARK: - Notifications
+
+/// Shared identifiers for local notifications, keeping category IDs, action IDs,
+/// and `userInfo` keys in sync between the scheduler (`RemoteClient`) and the
+/// handler (`AppDelegate`). Centralizing these avoids silent breakage from a
+/// typo in one site that the other side never matches.
+enum RemoteNotificationID {
+    static let approvalCategory = "MCP_APPROVAL"
+    static let interactivePromptCategory = "INTERACTIVE_PROMPT"
+
+    enum Action {
+        static let approve = "APPROVE"
+        static let deny = "DENY"
+    }
+
+    enum UserInfoKey {
+        static let requestID = "request_id"
+        static let promptID = "prompt_id"
+        static let tabID = "tab_id"
+        static let openApprovals = "open_approvals"
+        static let approved = "approved"
+    }
+}
+
 // MARK: - Utilities
+
+/// Shared JSON coders. `JSONEncoder`/`JSONDecoder` are expensive to allocate and
+/// safe to reuse across calls; in this app they are only touched from the main
+/// actor, so a single shared instance avoids per-frame/per-event allocation on
+/// the hot paths (frame decode, telemetry, outbound payloads).
+enum RemoteJSON {
+    static let encoder = JSONEncoder()
+    static let decoder = JSONDecoder()
+}
 
 enum CryptoUtils {
     static func randomBytes(count: Int) -> Data {

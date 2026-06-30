@@ -67,7 +67,7 @@ final class RemoteTerminalRendererStore {
         refreshActiveState()
     }
 
-    func replaceSnapshot(_ data: Data, for tabID: UInt32) {
+    func replaceSnapshot(for tabID: UInt32) {
         guard tabID == activeTabID else { return }
         refreshActiveState()
     }

@@ -134,9 +134,9 @@ final class RemoteControlManager {
                    ObjectIdentifier(primary) == senderID {
                     return
                 }
-                self.sendTabList()
-                self.rebuildSessionStateSubscriptions()
-                self.scheduleRemoteActivityRefresh()
+                sendTabList()
+                rebuildSessionStateSubscriptions()
+                scheduleRemoteActivityRefresh()
             }
         }
 
@@ -992,7 +992,7 @@ final class RemoteControlManager {
             }
         }
         if result.isEmpty {
-            logger.info("Remote: no controllable tabs across \(self.allOverlayModels.count, privacy: .public) window(s)")
+            logger.info("Remote: no controllable tabs across \(allOverlayModels.count, privacy: .public) window(s)")
         }
         return result
     }
