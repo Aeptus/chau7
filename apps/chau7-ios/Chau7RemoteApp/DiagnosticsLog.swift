@@ -48,7 +48,7 @@ final class DiagnosticsLog {
         case network
     }
 
-    struct Entry: Identifiable, Codable {
+    struct Entry: Identifiable, Codable, Sendable {
         let id: UInt64
         let timestamp: Date
         let level: Int
@@ -282,11 +282,12 @@ final class DiagnosticsLog {
         saveTask = Task { @MainActor [weak self] in
             try? await Task.sleep(for: .seconds(2))
             guard !Task.isCancelled, let self, let fileURL = self.fileURL else { return }
-            // Debounced autosave: hand the snapshot to the serial queue so the
-            // 2-second tick never hitches the UI. The snapshot is a value type.
-            let snapshot = self.entries
+            // Debounced autosave: encode on the main actor (Entry's Codable
+            // conformance is main-isolated), then hand the finished bytes to the
+            // serial queue so the 2-second tick never hitches the UI.
+            let data = Self.encodeEntries(self.entries)
             self.saveQueue.async {
-                Self.writeEntries(snapshot, to: fileURL)
+                Self.writeData(data, to: fileURL)
             }
         }
     }
@@ -299,16 +300,16 @@ final class DiagnosticsLog {
         saveTask?.cancel()
         saveTask = nil
         guard let fileURL else { return }
-        let snapshot = entries
+        let data = Self.encodeEntries(entries)
         saveQueue.sync {
-            Self.writeEntries(snapshot, to: fileURL)
+            Self.writeData(data, to: fileURL)
         }
     }
 
-    /// Serialize entries to newline-delimited JSON and write atomically. Pure
-    /// and non-isolated so both the debounced (off-main) and synchronous flush
-    /// paths can share it.
-    private static func writeEntries(_ entries: [Entry], to fileURL: URL) {
+    /// Serialize entries to newline-delimited JSON. Runs on the main actor
+    /// because `Entry`'s `Codable` conformance is main-actor-isolated; both
+    /// callers already hold the actor.
+    private static func encodeEntries(_ entries: [Entry]) -> Data {
         let encoder = JSONEncoder()
         var data = Data()
         for entry in entries {
@@ -316,6 +317,13 @@ final class DiagnosticsLog {
             data.append(line)
             data.append(0x0A)
         }
+        return data
+    }
+
+    /// Write pre-encoded bytes atomically. Pure and non-isolated so both the
+    /// debounced (off-main) and synchronous flush paths can share it off the
+    /// main actor; `Data` is `Sendable`, so nothing actor-isolated crosses.
+    private nonisolated static func writeData(_ data: Data, to fileURL: URL) {
         try? data.write(to: fileURL, options: .atomic)
     }
 

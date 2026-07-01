@@ -88,10 +88,12 @@ final class RemoteClient {
     private var macPublicKey: Curve25519.KeyAgreement.PublicKey?
     private let iosKey: Curve25519.KeyAgreement.PrivateKey
     private let deviceName = UIDevice.current.name
-    // nonisolated(unsafe) so the nonisolated deinit can cancel the notification
-    // loop. Task.cancel() is thread-safe and every mutation of this property
-    // happens on the main actor, so the unchecked access is safe in practice.
-    nonisolated(unsafe) private var notificationTask: Task<Void, Never>?
+    // @ObservationIgnored + nonisolated(unsafe) so the nonisolated deinit can
+    // cancel the notification loop. It's background plumbing (never observed by
+    // the UI); Task is Sendable and only mutated on the main actor, so the
+    // unchecked access is safe. Plain `nonisolated` is rejected on an
+    // @Observable-tracked mutable stored property, hence the explicit opt-out.
+    @ObservationIgnored nonisolated(unsafe) private var notificationTask: Task<Void, Never>?
     private var reconnectBackoff = RemoteReconnectBackoff()
     private var reconnectTask: Task<Void, Never>?
     private var handshakeRetryTask: Task<Void, Never>?
