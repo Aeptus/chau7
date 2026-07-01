@@ -323,6 +323,26 @@ final class TerminalControlServiceTests: XCTestCase {
         XCTAssertTrue((json["output"] as? String)?.contains("__CHAU7_REVIEW_JSON_END__") == true)
     }
 
+    func testTabOutputPTYLogPrefersTabLocalTranscriptOverProviderLog() throws {
+        let tab = try XCTUnwrap(overlayModel.tabs.first)
+        let session = try XCTUnwrap(tab.session)
+        session.startAILoggingIfNeeded(toolName: "Codex", commandLine: "codex")
+        session.aiLogSession?.recordOutputSync(Data("provider-global-log-should-not-win\n".utf8))
+        session.terminalTranscriptCapture.append(Data("tab-local-transcript-wins\n".utf8))
+
+        let response = TerminalControlService.shared.tabOutput(
+            tabID: TerminalControlService.shared.controlPlaneTabID(for: tab.id),
+            lines: 50,
+            source: "pty_log"
+        )
+        let json = try XCTUnwrap(parseJSONObject(response))
+        let output = try XCTUnwrap(json["output"] as? String)
+
+        XCTAssertEqual(json["source"] as? String, "pty_log")
+        XCTAssertTrue(output.contains("tab-local-transcript-wins"))
+        XCTAssertFalse(output.contains("provider-global-log-should-not-win"))
+    }
+
     func testRepoGetEventsSupportsFilteringAndFullMessages() throws {
         let repoPath = "/tmp/chau7-review-repo"
         let selectedTabID = try XCTUnwrap(overlayModel.tabs.first?.id)
@@ -682,6 +702,24 @@ final class TerminalControlServiceTests: XCTestCase {
 
     func testAgentOutputLooksResponsiveDoesNotMatchProviderEchoOnly() {
         XCTAssertFalse(TerminalControlService.agentOutputLooksResponsive("""
+        MAGI independent analysis
+        Member: Casper
+        Provider: codex
+        Question: What is the best Final Fantasy
+        """, provider: "codex"))
+    }
+
+    func testAgentOutputLooksInputReadyForCodexSurface() {
+        XCTAssertTrue(TerminalControlService.agentOutputLooksInputReady("""
+        ╭──────────────────────────────────────────────────╮
+        │ >_ OpenAI Codex (v0.142.5)                       │
+        ╰──────────────────────────────────────────────────╯
+        gpt-5-codex
+        """, provider: "codex"))
+    }
+
+    func testAgentOutputLooksInputReadyDoesNotTreatPromptEchoAsReady() {
+        XCTAssertFalse(TerminalControlService.agentOutputLooksInputReady("""
         MAGI independent analysis
         Member: Casper
         Provider: codex

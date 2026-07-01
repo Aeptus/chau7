@@ -848,11 +848,28 @@ final class TerminalControlService {
         let deadline = Date().addingTimeInterval(Double(timeoutMs) / 1000.0)
         while Date() < deadline {
             Thread.sleep(forTimeInterval: 0.25)
-            let attached = onMain { () -> Bool in
-                guard let (_, session) = self.resolveTab(tabID) else { return false }
-                return session.lastAIProvider != nil
+            let attachedProvider = onMain { () -> String? in
+                guard let (_, session) = self.resolveTab(tabID) else { return nil }
+                return session.effectiveAIProvider
+                    ?? session.lastAIProvider
+                    ?? session.activeAppName
             }
-            guard attached else { continue }
+            guard let attachedProvider else { continue }
+
+            let ready = waitForAgentInputSurfaceReady(
+                tabID: tabID,
+                provider: attachedProvider,
+                timeoutMs: min(8_000, max(2_000, timeoutMs / 3))
+            )
+            guard ready else {
+                return AgentPromptInjectionResult(
+                    status: "agent_input_not_ready",
+                    inputVisible: false,
+                    submitted: false,
+                    running: false,
+                    error: "attached agent did not render a recognizable input surface before prompt injection"
+                )
+            }
 
             throttleAgentLaunchAction()
 
@@ -930,6 +947,27 @@ final class TerminalControlService {
         )
     }
 
+    private func waitForAgentInputSurfaceReady(tabID: String, provider: String?, timeoutMs: Int) -> Bool {
+        let deadline = Date().addingTimeInterval(Double(max(0, timeoutMs)) / 1000.0)
+        while Date() < deadline {
+            guard let output = decodeJSONObject(
+                tabOutput(tabID: tabID, lines: 160, waitForStableMs: nil, source: "buffer")
+            )?["output"] as? String else {
+                Thread.sleep(forTimeInterval: 0.2)
+                continue
+            }
+
+            if Self.agentOutputLooksInputReady(output, provider: provider) {
+                // Let full-screen TUIs finish one more render tick before typing.
+                throttleAgentLaunchAction()
+                return true
+            }
+
+            Thread.sleep(forTimeInterval: 0.2)
+        }
+        return false
+    }
+
     private func waitForPromptInputVisible(tabID: String, prompt: String, timeoutMs: Int) -> Bool {
         let needles = Self.promptVisibilityNeedles(from: prompt)
         guard !needles.isEmpty else { return true }
@@ -994,6 +1032,30 @@ final class TerminalControlService {
             guard let value = status[key] as? String else { return false }
             return runningStates.contains(value)
         }
+    }
+
+    static func agentOutputLooksInputReady(_ output: String, provider: String? = nil) -> Bool {
+        let lowercased = output.lowercased()
+        var needles = [
+            "openai codex",
+            "queued follow-up inputs",
+            "usage limit resets",
+            "claude code",
+            "google gemini"
+        ]
+
+        switch provider?.lowercased() {
+        case let value? where value.contains("codex"):
+            needles.append("gpt-")
+        case let value? where value.contains("claude"):
+            needles.append(contentsOf: ["sonnet", "opus", "haiku"])
+        case let value? where value.contains("gemini"):
+            needles.append(contentsOf: ["google gemini", "gemini cli"])
+        default:
+            break
+        }
+
+        return needles.contains { lowercased.contains($0) }
     }
 
     static func agentOutputLooksResponsive(_ output: String, provider: String? = nil) -> Bool {
@@ -1339,8 +1401,8 @@ final class TerminalControlService {
         if let error = result.error { return error }
         let outputTabID = canonicalControlPlaneTabID(tabID)
 
-        let text = result.path.flatMap { TelemetryRecorder.readPTYLogTail(path: $0) }
-            ?? result.transcriptData.flatMap(Self.normalizedTranscriptText)
+        let text = result.transcriptData.flatMap(Self.normalizedTranscriptText)
+            ?? result.path.flatMap { TelemetryRecorder.readPTYLogTail(path: $0) }
 
         guard let text else {
             return encodeAny(["tab_id": outputTabID, "output": "", "lines": 0, "source": "pty_log"])

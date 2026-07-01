@@ -707,8 +707,7 @@ struct MagiMCPOrchestrator {
         let deadline = Date().addingTimeInterval(timeoutSeconds)
         while Date() < deadline {
             let bufferOutput = (try? tabOutput(tabID: tabID, source: "buffer")) ?? ""
-            let ptyOutput = (try? tabOutput(tabID: tabID, source: "pty_log")) ?? ""
-            if needles.contains(where: { bufferOutput.contains($0) || ptyOutput.contains($0) }) {
+            if needles.contains(where: { bufferOutput.contains($0) }) {
                 return true
             }
             Thread.sleep(forTimeInterval: 0.25)
@@ -727,9 +726,7 @@ struct MagiMCPOrchestrator {
                 return true
             }
             let bufferOutput = (try? tabOutput(tabID: tabID, source: "buffer")) ?? ""
-            let ptyOutput = (try? tabOutput(tabID: tabID, source: "pty_log")) ?? ""
-            if agentOutputLooksResponsive(bufferOutput, provider: provider)
-                || agentOutputLooksResponsive(ptyOutput, provider: provider) {
+            if agentOutputLooksResponsive(bufferOutput, provider: provider) {
                 return true
             }
             Thread.sleep(forTimeInterval: 0.25)
