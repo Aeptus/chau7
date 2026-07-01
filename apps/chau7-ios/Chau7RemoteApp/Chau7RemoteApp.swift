@@ -190,7 +190,10 @@ struct RemoteRootView: View {
                 .tabItem { Label("Terminal", systemImage: "terminal") }
                 .tag(Tab.terminal)
 
-            ApprovalsView(client: client)
+            ApprovalsView(client: client) { tabID in
+                client.switchTab(tabID)
+                selectedTab = .terminal
+            }
                 .tabItem { Label("Approvals", systemImage: "lock.shield") }
                 .tag(Tab.approvals)
                 .badge(approvalsBadgeCount)
@@ -229,8 +232,12 @@ struct RemoteRootView: View {
             }
             // First-run consent: keystroke capture stays off until the user
             // explicitly accepts, so a fresh install never records typed
-            // secrets before the user has seen the disclosure.
-            if !keystrokeConsentPrompted {
+            // secrets before the user has seen the disclosure. Defer it while
+            // onboarding is showing — an alert and a fullScreenCover raised in
+            // the same tick fight over presentation, which made the consent
+            // alert flash and vanish at launch. When onboarding runs, the
+            // prompt is raised from its completion handler instead.
+            if !keystrokeConsentPrompted, hasCompletedOnboarding {
                 showsKeystrokeConsent = true
             }
         }
@@ -269,9 +276,26 @@ struct RemoteRootView: View {
                 hasCompletedOnboarding = true
                 showOnboarding = false
                 if startPairing {
+                    // Pairing takes over now; the consent prompt waits for the
+                    // next calm launch so it never overlaps the pairing sheet.
                     isPairingPresented = true
+                } else {
+                    promptForKeystrokeConsentIfNeeded()
                 }
             }
+        }
+    }
+
+    /// Raises the first-run keystroke-consent alert once no other modal is on
+    /// screen. Called after onboarding dismisses; the short delay lets the
+    /// onboarding cover finish animating away so the alert doesn't get eaten by
+    /// the in-flight dismissal.
+    private func promptForKeystrokeConsentIfNeeded() {
+        guard !keystrokeConsentPrompted else { return }
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(600))
+            guard !keystrokeConsentPrompted else { return }
+            showsKeystrokeConsent = true
         }
     }
 

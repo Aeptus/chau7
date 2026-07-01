@@ -113,6 +113,12 @@ final class RemoteClient {
     private(set) var notificationsAuthorized = false
     private let backgroundKeepalive = BackgroundKeepalive(name: "ch7.remote.approvals")
     private var suppressLocalNotificationsUntil: Date?
+    /// Interactive prompts the user just answered or dismissed, keyed by prompt
+    /// id → when it was suppressed. The Mac keeps re-pushing a prompt until its
+    /// terminal actually advances, so without this the just-handled prompt
+    /// reappears on the next authoritative list. Suppression is dropped once the
+    /// Mac stops listing the prompt (the tab cleared) or after a safety timeout.
+    private var suppressedPromptIDs: [String: Date] = [:]
     private var pendingApprovalResponses: [String: Bool] = [:]
     private var approvalResponsesInFlight: Set<String> = []
     private var pendingStateFetchTask: Task<Void, Never>?
@@ -129,6 +135,10 @@ final class RemoteClient {
     private static let repairFallbackAttempt = 3
     private static let pushNotificationSuppressionWindow: TimeInterval = 15
     private static let pendingStateFetchMinimumInterval: TimeInterval = 1
+    /// How long a just-answered/dismissed prompt stays hidden if the Mac keeps
+    /// listing it (i.e. the terminal never advanced). After this the prompt is
+    /// shown again so a still-pending action isn't lost forever.
+    private static let promptSuppressionMaxAge: TimeInterval = 20
     /// Frames larger than this get decode/decrypt offloaded to a detached task;
     /// smaller control frames are processed inline (detach overhead > work).
     private static let frameOffloadThreshold = 8192
@@ -415,8 +425,7 @@ final class RemoteClient {
             return false
         }
 
-        pendingInteractivePrompts.remove(at: promptIndex)
-        RemoteNotificationScheduler.removeInteractivePromptNotifications(promptIDs: [prompt.id])
+        completeInteractivePrompt(at: promptIndex, id: prompt.id)
         return true
     }
 
@@ -437,8 +446,7 @@ final class RemoteClient {
             return false
         }
 
-        pendingInteractivePrompts.remove(at: promptIndex)
-        RemoteNotificationScheduler.removeInteractivePromptNotifications(promptIDs: [prompt.id])
+        completeInteractivePrompt(at: promptIndex, id: prompt.id)
         return true
     }
 
@@ -1500,15 +1508,29 @@ final class RemoteClient {
     }
 
     private func applyPendingInteractivePrompts(_ nextPrompts: [RemoteInteractivePrompt]) {
-        let previousPromptIDs = Set(pendingInteractivePrompts.map(\.id))
+        let now = Date()
         let nextPromptIDs = Set(nextPrompts.map(\.id))
 
-        pendingInteractivePrompts = nextPrompts
+        // Drop suppression once the Mac stops listing the prompt (the terminal
+        // advanced, so the tab cleared) or after the safety timeout, so a
+        // genuinely-still-pending prompt resurfaces instead of vanishing.
+        suppressedPromptIDs = suppressedPromptIDs.filter { id, suppressedAt in
+            nextPromptIDs.contains(id) && now.timeIntervalSince(suppressedAt) < Self.promptSuppressionMaxAge
+        }
 
-        let removedPromptIDs = previousPromptIDs.subtracting(nextPromptIDs)
+        // Hide prompts the user just answered/dismissed; the Mac re-pushes them
+        // until its terminal catches up, which is what made them "come back".
+        let visiblePrompts = nextPrompts.filter { suppressedPromptIDs[$0.id] == nil }
+
+        let previousPromptIDs = Set(pendingInteractivePrompts.map(\.id))
+        let visiblePromptIDs = Set(visiblePrompts.map(\.id))
+
+        pendingInteractivePrompts = visiblePrompts
+
+        let removedPromptIDs = previousPromptIDs.subtracting(visiblePromptIDs)
         RemoteNotificationScheduler.removeInteractivePromptNotifications(promptIDs: Array(removedPromptIDs))
 
-        for prompt in nextPrompts where !previousPromptIDs.contains(prompt.id) {
+        for prompt in visiblePrompts where !previousPromptIDs.contains(prompt.id) {
             if shouldScheduleLocalApprovalNotification {
                 RemoteNotificationScheduler.scheduleInteractivePrompt(
                     for: prompt,
@@ -1516,6 +1538,24 @@ final class RemoteClient {
                 )
             }
         }
+    }
+
+    /// Finish a prompt locally: remove it from the pending list, suppress its
+    /// re-add until the Mac's list catches up, and tear down any scheduled
+    /// notification. The single place that defines what "done with a prompt"
+    /// means on the client, shared by the answer and dismiss paths.
+    private func completeInteractivePrompt(at index: Int, id: String) {
+        pendingInteractivePrompts.remove(at: index)
+        suppressedPromptIDs[id] = Date()
+        RemoteNotificationScheduler.removeInteractivePromptNotifications(promptIDs: [id])
+    }
+
+    /// Dismiss a detected prompt from the phone without sending anything to the
+    /// terminal. It resurfaces if the Mac still lists it after the safety
+    /// timeout, or sooner if the tab briefly clears and the prompt recurs.
+    func dismissInteractivePrompt(promptID: String) {
+        guard let index = pendingInteractivePrompts.firstIndex(where: { $0.id == promptID }) else { return }
+        completeInteractivePrompt(at: index, id: promptID)
     }
 
     private func currentPushEnvironment() -> RemotePushEnvironment? {
