@@ -4,6 +4,7 @@ public enum MagiCLICommand: Equatable, Sendable {
     case ask(question: String)
     case doctor
     case config
+    case home
     case replay(runID: String)
     case share(runID: String)
     case help
@@ -34,12 +35,14 @@ public enum MagiCLICommandParser {
             .filter { !$0.isEmpty }
 
         guard let first = trimmed.first else {
-            return .success(.help)
+            return .success(.home)
         }
 
         switch first {
         case "-h", "--help", "help":
             return .success(.help)
+        case "--config":
+            return .success(.config)
         case "-v", "--version", "version":
             return .success(.version)
         case "ask":

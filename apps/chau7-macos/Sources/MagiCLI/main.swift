@@ -47,6 +47,8 @@ struct MagiCLIRunner {
             return runDoctor()
         case .config:
             return runConfig()
+        case .home:
+            return runHome()
         case let .replay(runID):
             return runReplay(runID: runID)
         case let .share(runID):
@@ -96,6 +98,85 @@ struct MagiCLIRunner {
             FileHandle.standardError.writeLine("MAGI: \(error.localizedDescription)")
             return .unavailable
         }
+    }
+
+    private func runHome() -> MagiCLIExitCode {
+        guard isInteractiveTerminal else {
+            writeStdout(Self.usage)
+            return .success
+        }
+
+        printHomeScreen()
+
+        while true {
+            let input = prompt("MAGI>")
+            let value = input.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !value.isEmpty else { continue }
+
+            switch value.lowercased() {
+            case "q", "quit", "exit":
+                writeMuted("MAGI system standing by.")
+                return .success
+            case "help", "?":
+                printHomeHelp()
+            case "--config", "config":
+                let code = runConfigPanel()
+                if code != .success { return code }
+                writeStdout()
+                writeMuted("Ask a question, type --config, doctor, help, or quit.")
+            case "doctor":
+                writeStdout()
+                _ = runDoctor()
+                writeStdout()
+                writeMuted("Ask a question, type --config, doctor, help, or quit.")
+            default:
+                if let exitCode = ensureConfiguredForRun() {
+                    return exitCode
+                }
+                return runAsk(question: value)
+            }
+        }
+    }
+
+    private func printHomeScreen() {
+        let art = """
+        __  __    _    ____ ___
+        |  \\/  |  / \\  / ___|_ _|
+        | |\\/| | / _ \\| |  _ | |
+        | |  | |/ ___ \\ |_| || |
+        |_|  |_/_/   \\_\\____|___|
+        """
+        writeStdout(styled(art, .bold, .cyan))
+        writeStdout(styled("WELCOME TO MAGI SYSTEM", .bold))
+        writeStdout()
+        printBootLine("core protocol", "Multi Agent Gathering Intelligence online")
+        printBootLine("council", "Melchior / Balthasar / Casper registered")
+        let socketPath = "\(paths.homeDirectory)/.chau7/mcp.sock"
+        let socketPresent = fileManager.fileExists(atPath: socketPath)
+        let socketDetail = socketPresent ? "Chau7 MCP socket present" : "Chau7 MCP socket missing"
+        printBootLine("mcp", socketDetail, ok: socketPresent)
+        let configPresent = MagiFirstRunInstaller.isConfigured(paths: paths, fileManager: fileManager)
+        let configDetail = configPresent
+            ? "config loaded"
+            : "config missing; type --config"
+        printBootLine("config", configDetail, ok: configPresent)
+        printBootLine("mood", "serious council, questionable coffee")
+        writeStdout()
+        writeMuted("Ask a question, type --config, doctor, help, or quit.")
+    }
+
+    private func printBootLine(_ label: String, _ detail: String, ok: Bool = true) {
+        let status = ok ? styled("[ OK ]", .green) : styled("[ .. ]", .yellow)
+        writeStdout("\(status) \(label.padding(toLength: 14, withPad: " ", startingAt: 0)) \(detail)")
+    }
+
+    private func printHomeHelp() {
+        writeStdout()
+        writeWizardSection("Home commands")
+        writeStdout("Type any question to ask the council.")
+        writeStdout("--config  Open the configuration panel.")
+        writeStdout("doctor    Check config, personas, MCP socket, and providers.")
+        writeStdout("quit      Exit MAGI.")
     }
 
     private func runReplay(runID: String) -> MagiCLIExitCode {
@@ -185,7 +266,10 @@ struct MagiCLIRunner {
         printHeader()
 
         if MagiFirstRunInstaller.isConfigured(paths: paths, fileManager: fileManager) {
-            return printConfigSummary()
+            guard isInteractiveTerminal else {
+                return printConfigSummary()
+            }
+            return runConfigPanel()
         }
 
         guard isInteractiveTerminal else {
@@ -199,6 +283,150 @@ struct MagiCLIRunner {
         } catch {
             FileHandle.standardError.writeLine("MAGI configuration failed: \(error.localizedDescription)")
             return .unavailable
+        }
+    }
+
+    private func runConfigPanel() -> MagiCLIExitCode {
+        guard isInteractiveTerminal else {
+            return printConfigSummary()
+        }
+
+        guard MagiFirstRunInstaller.isConfigured(paths: paths, fileManager: fileManager) else {
+            do {
+                _ = try runFirstRunWizard()
+                return .success
+            } catch {
+                FileHandle.standardError.writeLine("MAGI configuration failed: \(error.localizedDescription)")
+                return .unavailable
+            }
+        }
+
+        do {
+            var config = try loadConfig()
+            _ = try MagiFirstRunInstaller.install(
+                config: config,
+                paths: paths,
+                fileManager: fileManager,
+                overwrite: false
+            )
+
+            while true {
+                printConfigPanel(config)
+                let choice = prompt("Config>").lowercased()
+
+                switch choice {
+                case "", "q", "quit", "exit", "back":
+                    writeMuted("Configuration panel closed.")
+                    return .success
+                case "1", "all":
+                    writeWizardSection("Apply to all members")
+                    let provider = promptProvider(defaultValue: .codex)
+                    let modelClass = promptModelClass(defaultValue: .balanced)
+                    for memberID in MagiMemberID.allCases {
+                        config.members[memberID] = MagiMemberConfiguration(
+                            provider: provider.rawValue,
+                            modelClass: modelClass,
+                            reasoning: .max
+                        )
+                    }
+                    try saveConfig(config)
+                    writeSaved()
+                case "2", "member":
+                    guard let memberID = promptMemberID() else { continue }
+                    let current = config.members[memberID] ?? MagiMemberConfiguration(provider: "codex")
+                    writeWizardSection(memberID.displayName)
+                    let defaultProvider = MagiProviderID(rawValue: current.provider) ?? .codex
+                    let provider = promptProvider(defaultValue: defaultProvider)
+                    let modelClass = promptModelClass(defaultValue: current.modelClass)
+                    config.members[memberID] = MagiMemberConfiguration(
+                        provider: provider.rawValue,
+                        modelClass: modelClass,
+                        reasoning: current.reasoning,
+                        modelName: current.modelName
+                    )
+                    try saveConfig(config)
+                    writeSaved()
+                case "3", "web":
+                    config.webAccessAllowed.toggle()
+                    try saveConfig(config)
+                    writeSaved()
+                case "4", "evidence":
+                    config.evidenceRequiresApproval.toggle()
+                    try saveConfig(config)
+                    writeSaved()
+                case "5", "deadlock":
+                    config.deadlockExtraRoundEnabled.toggle()
+                    try saveConfig(config)
+                    writeSaved()
+                case "6", "veto":
+                    config.vetoBlocksVerdict.toggle()
+                    try saveConfig(config)
+                    writeSaved()
+                case "7", "doctor":
+                    writeStdout()
+                    _ = runDoctor()
+                case "8", "personas":
+                    _ = try MagiFirstRunInstaller.install(
+                        config: config,
+                        paths: paths,
+                        fileManager: fileManager,
+                        overwrite: false
+                    )
+                    writeSaved("Persona files checked.")
+                case "help", "?":
+                    continue
+                default:
+                    writeStdout("Choose 1-8, all, member, web, evidence, deadlock, veto, doctor, personas, or quit.")
+                }
+            }
+        } catch {
+            FileHandle.standardError.writeLine("MAGI configuration failed: \(error.localizedDescription)")
+            return .unavailable
+        }
+    }
+
+    private func printConfigPanel(_ config: MagiConfig) {
+        writeStdout()
+        writeWizardTitle("Configuration panel")
+        writeMuted(paths.globalConfigPath)
+        writeStdout()
+        printMembers(config)
+        writeStdout()
+        writeStdout("Settings")
+        writeStdout("- web_access_allowed: \(boolLabel(config.webAccessAllowed))")
+        writeStdout("- evidence_requires_approval: \(boolLabel(config.evidenceRequiresApproval))")
+        writeStdout("- deadlock_extra_round_enabled: \(boolLabel(config.deadlockExtraRoundEnabled))")
+        writeStdout("- veto_blocks_verdict: \(boolLabel(config.vetoBlocksVerdict))")
+        writeStdout()
+        writeStdout("Actions")
+        writeStdout("  1. Use one provider/class for all members")
+        writeStdout("  2. Edit one member")
+        writeStdout("  3. Toggle web access")
+        writeStdout("  4. Toggle evidence approval")
+        writeStdout("  5. Toggle deadlock extra round")
+        writeStdout("  6. Toggle veto blocks verdict")
+        writeStdout("  7. Run doctor")
+        writeStdout("  8. Check/create persona files")
+        writeMuted("Press return, q, or back to close.")
+    }
+
+    private func promptMemberID() -> MagiMemberID? {
+        writeChoiceLines(["Member choices"] + MagiMemberID.allCases.enumerated().map { index, memberID in
+            "  \(index + 1). \(memberID.displayName)"
+        })
+        let value = prompt("Choose member:").lowercased()
+        if value.isEmpty { return nil }
+
+        switch value {
+        case "1", "melchior":
+            return .melchior
+        case "2", "balthasar":
+            return .balthasar
+        case "3", "casper":
+            return .casper
+        default:
+            writeStdout("Choose Melchior, Balthasar, or Casper.")
+            return nil
         }
     }
 
@@ -509,6 +737,24 @@ struct MagiCLIRunner {
         return try MagiConfigTOMLCodec.decode(content)
     }
 
+    private func saveConfig(_ config: MagiConfig) throws {
+        try fileManager.createDirectory(
+            at: URL(fileURLWithPath: paths.globalRoot),
+            withIntermediateDirectories: true
+        )
+        try MagiConfigTOMLCodec.encode(config).write(
+            to: URL(fileURLWithPath: paths.globalConfigPath),
+            atomically: true,
+            encoding: .utf8
+        )
+        _ = try MagiFirstRunInstaller.install(
+            config: config,
+            paths: paths,
+            fileManager: fileManager,
+            overwrite: false
+        )
+    }
+
     private func loadRunIfPresent(from path: String) throws -> MagiRun? {
         guard fileManager.fileExists(atPath: path) else { return nil }
         return try loadRun(from: path)
@@ -577,6 +823,14 @@ struct MagiCLIRunner {
 
     private func writeMuted(_ line: String) {
         writeStdout(styled(line, .dim))
+    }
+
+    private func writeSaved(_ message: String = "Saved.") {
+        writeStdout(styled(message, .green))
+    }
+
+    private func boolLabel(_ value: Bool) -> String {
+        value ? styled("enabled", .green) : styled("disabled", .yellow)
     }
 
     private func styled(_ text: String, _ styles: ANSIStyle...) -> String {
@@ -649,15 +903,18 @@ struct MagiCLIRunner {
     MAGI - Multi Agent Gathering Intelligence
 
     Usage:
+      magi
       magi "question"
       magi ask "question"
       magi doctor
       magi config
+      magi --config
       magi replay <run-id>
       magi share <run-id>
 
     First run:
-      magi config
+      magi
+      magi --config
 
     MAGI is also supported as a command name on supported installations.
     """
@@ -667,6 +924,8 @@ private enum ANSIStyle: String {
     case bold = "1"
     case dim = "2"
     case cyan = "36"
+    case green = "32"
+    case yellow = "33"
 }
 
 struct MagiProviderCommandDryRunner {

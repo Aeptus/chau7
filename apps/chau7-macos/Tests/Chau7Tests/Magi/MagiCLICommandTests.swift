@@ -29,6 +29,7 @@ final class MagiCLICommandTests: XCTestCase {
 
     func testConfigParses() {
         XCTAssertEqual(MagiCLICommandParser.parse(["config"]), .success(.config))
+        XCTAssertEqual(MagiCLICommandParser.parse(["--config"]), .success(.config))
     }
 
     func testReplayRequiresRunID() {
@@ -42,7 +43,7 @@ final class MagiCLICommandTests: XCTestCase {
     }
 
     func testHelpAndVersionParse() {
-        XCTAssertEqual(MagiCLICommandParser.parse([]), .success(.help))
+        XCTAssertEqual(MagiCLICommandParser.parse([]), .success(.home))
         XCTAssertEqual(MagiCLICommandParser.parse(["--help"]), .success(.help))
         XCTAssertEqual(MagiCLICommandParser.parse(["version"]), .success(.version))
         XCTAssertEqual(MagiCLICommandParser.parse(["--version"]), .success(.version))
