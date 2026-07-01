@@ -82,6 +82,40 @@ final class MagiProtocolTests: XCTestCase {
         XCTAssertEqual(position.evidenceRequests[0].proposedCollectors, ["local.git_status"])
     }
 
+    func testParsePositionFromAgentCompletionEventMessage() throws {
+        let markers = MagiProtocolMarkers(
+            runID: "run-1",
+            roundID: "round-1",
+            memberID: .melchior,
+            stage: .position
+        )
+        let output = """
+        Event received: type=agent-turn-complete tool=Codex message="done"
+
+        \(markers.begin)
+        {
+          "member": "melchior",
+          "round": 1,
+          "position": "Final Fantasy VI",
+          "summary": "Best ensemble and system balance.",
+          "confidence": 0.86,
+          "evidence_requests": [],
+          "veto": null
+        }
+        \(markers.end)
+        """
+
+        let position = try MagiTranscriptParser.parsePosition(
+            memberID: .melchior,
+            roundID: "round-1",
+            output: output,
+            markers: markers
+        )
+
+        XCTAssertEqual(position.recommendation, "Final Fantasy VI")
+        XCTAssertEqual(position.confidence, 0.86, accuracy: 0.001)
+    }
+
     func testParseCritiquesAndEvidenceRequests() throws {
         let markers = MagiProtocolMarkers(
             runID: "run-1",

@@ -696,12 +696,22 @@ final class MCPSession {
 
             [
                 "name": "repo_get_events",
-                "description": "Get recent events for a repository. Returns AI tool events (finished, permission, tool_called, etc.) scoped to the given repo.",
+                "description": "Get recent events for a repository. Returns AI tool events (finished, permission, tool_called, etc.) scoped to the given repo, with optional filters for tab, type, tool, producer, and session.",
                 "inputSchema": [
                     "type": "object",
                     "properties": [
                         "repo_path": ["type": "string", "description": "Absolute path to the repository root"],
-                        "limit": ["type": "integer", "description": "Max events to return (default 20, max 50)"]
+                        "limit": ["type": "integer", "description": "Max events to return (default 20, max 50)"],
+                        "tab_id": ["type": "string", "description": "Optional deterministic tab ID, such as 'tab_1'"],
+                        "event_types": [
+                            "type": "array",
+                            "items": ["type": "string"],
+                            "description": "Optional event type filter, such as ['agent-turn-complete', 'finished']"
+                        ],
+                        "tool": ["type": "string", "description": "Optional tool/provider filter, such as Codex or Claude"],
+                        "producer": ["type": "string", "description": "Optional event producer filter"],
+                        "session_id": ["type": "string", "description": "Optional AI session ID filter"],
+                        "truncate_messages": ["type": "boolean", "description": "Whether to truncate event messages to 200 characters (default true)"]
                     ],
                     "required": ["repo_path"]
                 ]
@@ -864,7 +874,16 @@ final class MCPSession {
                 return .protocolError(code: -32602, message: "Invalid params: repo_path is required")
             }
             let limit = min(arguments["limit"] as? Int ?? 20, 50)
-            return classifyToolResponse(controlService.repoGetEvents(repoPath: repoPath, limit: limit))
+            return classifyToolResponse(controlService.repoGetEvents(
+                repoPath: repoPath,
+                limit: limit,
+                tabID: arguments["tab_id"] as? String,
+                eventTypes: arguments["event_types"] as? [String],
+                tool: arguments["tool"] as? String,
+                producer: arguments["producer"] as? String,
+                sessionID: arguments["session_id"] as? String,
+                truncateMessages: arguments["truncate_messages"] as? Bool ?? true
+            ))
 
         default:
             return .protocolError(code: -32602, message: "Unknown tool: \(name)")

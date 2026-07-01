@@ -166,6 +166,7 @@ struct MagiMCPOrchestrator {
                     stage: "independent analysis",
                     member: session.member,
                     tabID: session.tabID,
+                    repositoryRoot: repositoryRoot,
                     technicalLog: technicalLog,
                     recordCapture: { run.rawTranscripts.append($0) }
                 ) { output in
@@ -234,6 +235,7 @@ struct MagiMCPOrchestrator {
                     stage: "cross-examination",
                     member: session.member,
                     tabID: session.tabID,
+                    repositoryRoot: repositoryRoot,
                     technicalLog: technicalLog,
                     recordCapture: { run.rawTranscripts.append($0) }
                 ) { output in
@@ -316,6 +318,7 @@ struct MagiMCPOrchestrator {
                 roundID: round4.id,
                 sessions: sessions,
                 stageName: "final vote",
+                repositoryRoot: repositoryRoot,
                 technicalLog: technicalLog,
                 recordCapture: { run.rawTranscripts.append($0) }
             )
@@ -370,6 +373,7 @@ struct MagiMCPOrchestrator {
                     roundID: extraRound.id,
                     sessions: sessions,
                     stageName: "extra deliberation",
+                    repositoryRoot: repositoryRoot,
                     technicalLog: technicalLog,
                     recordCapture: { run.rawTranscripts.append($0) }
                 )
@@ -842,6 +846,74 @@ struct MagiMCPOrchestrator {
         return output
     }
 
+    private struct MagiPolledOutput {
+        var terminalOutput: String
+        var eventMessages: [String]
+        var eventError: String?
+
+        var eventCharacters: Int {
+            eventMessages.reduce(0) { $0 + $1.count }
+        }
+
+        var combinedOutput: String {
+            let eventOutput = eventMessages
+                .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+                .joined(separator: "\n\n")
+            if terminalOutput.isEmpty { return eventOutput }
+            if eventOutput.isEmpty { return terminalOutput }
+            return "\(terminalOutput)\n\n\(eventOutput)"
+        }
+    }
+
+    private func pollStructuredOutput(tabID: String, repositoryRoot: String?) throws -> MagiPolledOutput {
+        let terminalOutput = try tabOutput(tabID: tabID)
+        let eventCapture = try tabEventMessages(tabID: tabID, repositoryRoot: repositoryRoot)
+        return MagiPolledOutput(
+            terminalOutput: terminalOutput,
+            eventMessages: eventCapture.messages,
+            eventError: eventCapture.error
+        )
+    }
+
+    private func tabEventMessages(
+        tabID: String,
+        repositoryRoot: String?
+    ) throws -> (messages: [String], error: String?) {
+        guard let repositoryRoot,
+              !repositoryRoot.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return ([], nil)
+        }
+
+        let eventTypes = [
+            "agent-turn-complete",
+            "finished",
+            "response_complete",
+            "task_finished"
+        ]
+        do {
+            let result = try client.callTool(name: "repo_get_events", arguments: [
+                "repo_path": repositoryRoot,
+                "limit": 50,
+                "tab_id": tabID,
+                "event_types": eventTypes,
+                "truncate_messages": false
+            ])
+            guard let events = result["events"] as? [[String: Any]] else {
+                throw MagiMCPOrchestratorError.missingToolField(tool: "repo_get_events", field: "events")
+            }
+            return (events.compactMap { $0["message"] as? String }, nil)
+        } catch let error as MagiMCPClientError {
+            if case let .protocolError(message) = error,
+               message.contains("unknown argument") || message.contains("Invalid params") {
+                return ([], message)
+            }
+            if case let .toolError(_, message) = error {
+                return ([], message)
+            }
+            throw error
+        }
+    }
+
     private func waitForParsed<T>(
         runID: String,
         roundID: String,
@@ -849,6 +921,7 @@ struct MagiMCPOrchestrator {
         stage: String,
         member: MagiMember,
         tabID: String,
+        repositoryRoot: String?,
         technicalLog: MagiTechnicalLog,
         recordCapture: (MagiRawTranscript) -> Void,
         parser: (String) throws -> T
@@ -857,19 +930,47 @@ struct MagiMCPOrchestrator {
         var lastError: Error?
         var lastOutput = ""
         var lastLoggedOutputCount: Int?
+        var lastLoggedEventSignature: String?
+        var lastLoggedEventError: String?
 
         while Date() < deadline {
             try throwIfInterrupted(stage: stage)
-            let output = try tabOutput(tabID: tabID)
+            let capture = try pollStructuredOutput(tabID: tabID, repositoryRoot: repositoryRoot)
+            let output = capture.combinedOutput
             lastOutput = output
-            if lastLoggedOutputCount != output.count {
-                lastLoggedOutputCount = output.count
+            if lastLoggedOutputCount != capture.terminalOutput.count {
+                lastLoggedOutputCount = capture.terminalOutput.count
                 technicalLog.record(
                     "tab_output_polled",
                     stage: stage,
                     memberID: member.id,
                     tabID: tabID,
-                    fields: ["characters": String(output.count)]
+                    fields: ["characters": String(capture.terminalOutput.count)]
+                )
+            }
+            let eventSignature = "\(capture.eventMessages.count):\(capture.eventCharacters)"
+            if capture.eventMessages.isEmpty == false, lastLoggedEventSignature != eventSignature {
+                lastLoggedEventSignature = eventSignature
+                technicalLog.record(
+                    "repo_events_polled",
+                    stage: stage,
+                    memberID: member.id,
+                    tabID: tabID,
+                    fields: [
+                        "events": String(capture.eventMessages.count),
+                        "characters": String(capture.eventCharacters)
+                    ]
+                )
+            }
+            if let eventError = capture.eventError, lastLoggedEventError != eventError {
+                lastLoggedEventError = eventError
+                technicalLog.record(
+                    "repo_events_unavailable",
+                    stage: stage,
+                    level: "warning",
+                    memberID: member.id,
+                    tabID: tabID,
+                    message: eventError
                 )
             }
             do {
@@ -949,7 +1050,7 @@ struct MagiMCPOrchestrator {
 
         while Date() < repairDeadline {
             try throwIfInterrupted(stage: "\(stage) repair")
-            repairOutput = try tabOutput(tabID: tabID)
+            repairOutput = try pollStructuredOutput(tabID: tabID, repositoryRoot: repositoryRoot).combinedOutput
             do {
                 let parsed = try parser(repairOutput)
                 technicalLog.record(
@@ -1065,6 +1166,7 @@ struct MagiMCPOrchestrator {
         roundID: String,
         sessions: [MagiMemberTab],
         stageName: String,
+        repositoryRoot: String?,
         technicalLog: MagiTechnicalLog,
         recordCapture: (MagiRawTranscript) -> Void
     ) throws -> (votes: [MagiVote], vetoes: [MagiVeto]) {
@@ -1086,6 +1188,7 @@ struct MagiMCPOrchestrator {
                 stage: stageName,
                 member: session.member,
                 tabID: session.tabID,
+                repositoryRoot: repositoryRoot,
                 technicalLog: technicalLog,
                 recordCapture: recordCapture
             ) { output in

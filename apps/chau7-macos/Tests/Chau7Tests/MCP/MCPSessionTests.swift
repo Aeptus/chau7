@@ -95,6 +95,14 @@ final class MCPSessionTests: XCTestCase {
 
         let tabWaitReady = try XCTUnwrap(tools.first(where: { ($0["name"] as? String) == "tab_wait_ready" }))
         XCTAssertTrue((tabWaitReady["description"] as? String)?.contains("can_accept_exec=true") == true)
+
+        let repoEvents = try XCTUnwrap(tools.first(where: { ($0["name"] as? String) == "repo_get_events" }))
+        let repoEventsSchema = try XCTUnwrap(repoEvents["inputSchema"] as? [String: Any])
+        let repoEventsProperties = try XCTUnwrap(repoEventsSchema["properties"] as? [String: Any])
+        XCTAssertNotNil(repoEventsProperties["tab_id"])
+        XCTAssertNotNil(repoEventsProperties["event_types"])
+        XCTAssertNotNil(repoEventsProperties["truncate_messages"])
+
         XCTAssertFalse(tools.contains(where: { (($0["name"] as? String) ?? "").hasPrefix("runtime_") }))
     }
 
