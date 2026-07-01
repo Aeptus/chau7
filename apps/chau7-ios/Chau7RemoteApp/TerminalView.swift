@@ -33,9 +33,11 @@ struct TerminalView: View {
                     pairedContent
                 }
             }
-            .navigationTitle("Chau7 Remote")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
+                ToolbarItem(placement: .principal) {
+                    connectionStatusHeader
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     connectButton
                 }
@@ -82,71 +84,81 @@ struct TerminalView: View {
 
     // MARK: - Status
 
-    private var statusBar: some View {
-        VStack(spacing: 0) {
-            HStack(spacing: 8) {
-                Circle()
-                    .fill(client.connectionPhase.color)
-                    .frame(width: 8, height: 8)
-                    .accessibilityHidden(true)
-                Text(client.connectionDisplayLabel)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Spacer()
-                if let error = client.lastError, !error.isEmpty {
-                    Button {
-                        withAnimation(.easeInOut(duration: 0.2)) { isErrorExpanded.toggle() }
-                    } label: {
-                        HStack(spacing: 4) {
-                            Image(systemName: "exclamationmark.triangle.fill")
-                            Text("Issue")
-                            Image(systemName: isErrorExpanded ? "chevron.up" : "chevron.down")
-                                .font(.caption2)
-                        }
-                        .font(.caption)
-                        .foregroundStyle(.red)
-                    }
-                    .accessibilityLabel("Connection issue. Tap for details.")
-                }
-            }
-            .padding(.horizontal)
-            .padding(.vertical, 6)
-            .accessibilityElement(children: .combine)
-            .accessibilityLabel("Status: \(client.connectionDisplayLabel)")
+    /// Live connection status shown in the navigation bar in place of the app
+    /// name (a coloured dot + a human-readable phase label).
+    private var connectionStatusHeader: some View {
+        HStack(spacing: 6) {
+            Circle()
+                .fill(client.connectionPhase.color)
+                .frame(width: 8, height: 8)
+                .accessibilityHidden(true)
+            Text(client.connectionDisplayLabel)
+                .font(.subheadline.weight(.semibold))
+                .lineLimit(1)
+                .truncationMode(.tail)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Connection status: \(client.connectionDisplayLabel)")
+    }
 
-            if isErrorExpanded, let error = client.lastError, !error.isEmpty {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text(error)
-                        .font(.caption)
-                        .foregroundStyle(.primary)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    HStack(spacing: 10) {
-                        if !client.isConnected {
-                            Button {
-                                client.lastError = nil
-                                isErrorExpanded = false
-                                client.connect()
-                            } label: {
-                                Label("Retry", systemImage: "arrow.clockwise")
-                            }
-                            .buttonStyle(.bordered)
-                            .controlSize(.small)
-                        }
-                        Button("Dismiss") {
-                            client.lastError = nil
-                            isErrorExpanded = false
-                        }
-                        .buttonStyle(.borderless)
-                        .controlSize(.small)
+    /// Only surfaces when there's a connection error to report — the live status
+    /// itself now lives in the navigation bar, so this stays out of the way
+    /// until something is actually wrong.
+    @ViewBuilder
+    private var statusBar: some View {
+        if let error = client.lastError, !error.isEmpty {
+            VStack(spacing: 0) {
+                Button {
+                    withAnimation(.easeInOut(duration: 0.2)) { isErrorExpanded.toggle() }
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                        Text("Connection issue")
+                        Image(systemName: isErrorExpanded ? "chevron.up" : "chevron.down")
+                            .font(.caption2)
                         Spacer()
                     }
+                    .font(.caption)
+                    .foregroundStyle(.red)
                 }
+                .accessibilityLabel("Connection issue. Tap for details.")
                 .padding(.horizontal)
-                .padding(.bottom, 8)
+                .padding(.vertical, 6)
+
+                if isErrorExpanded {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text(error)
+                            .font(.caption)
+                            .foregroundStyle(.primary)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        HStack(spacing: 10) {
+                            if !client.isConnected {
+                                Button {
+                                    client.lastError = nil
+                                    isErrorExpanded = false
+                                    client.connect()
+                                } label: {
+                                    Label("Retry", systemImage: "arrow.clockwise")
+                                }
+                                .buttonStyle(.bordered)
+                                .controlSize(.small)
+                            }
+                            Button("Dismiss") {
+                                client.lastError = nil
+                                isErrorExpanded = false
+                            }
+                            .buttonStyle(.borderless)
+                            .controlSize(.small)
+                            Spacer()
+                        }
+                    }
+                    .padding(.horizontal)
+                    .padding(.bottom, 8)
+                }
             }
+            .background(Color(UIColor.secondarySystemBackground))
         }
-        .background(Color(UIColor.secondarySystemBackground))
     }
 
     private var connectButton: some View {
