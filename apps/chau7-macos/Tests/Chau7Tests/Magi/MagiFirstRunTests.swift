@@ -12,6 +12,30 @@ final class MagiFirstRunTests: XCTestCase {
         XCTAssertTrue(selections.values.allSatisfy { $0.reasoning == .max })
     }
 
+    func testFirstRunPromptTextRendersNumberedChoices() {
+        XCTAssertEqual(
+            MagiFirstRunPromptText.providerChoiceLines(defaultValue: .claude),
+            [
+                "Provider choices",
+                "  1. codex",
+                "  2. claude",
+                "  3. gemini",
+                "Default: claude"
+            ]
+        )
+
+        XCTAssertEqual(
+            MagiFirstRunPromptText.modelClassChoiceLines(defaultValue: .strongest),
+            [
+                "Class choices",
+                "  1. fast",
+                "  2. balanced",
+                "  3. strongest",
+                "Default: strongest"
+            ]
+        )
+    }
+
     func testFirstRunConfigUsesSelections() {
         let selections: [MagiMemberID: MagiFirstRunMemberSelection] = [
             .melchior: MagiFirstRunMemberSelection(memberID: .melchior, provider: .codex, modelClass: .fast),

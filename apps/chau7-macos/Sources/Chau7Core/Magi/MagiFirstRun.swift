@@ -49,6 +49,28 @@ public struct MagiFallbackDuplicationPlan: Codable, Equatable, Sendable {
     }
 }
 
+public enum MagiFirstRunPromptText {
+    public static func providerChoiceLines(defaultValue: MagiProviderID) -> [String] {
+        [
+            "Provider choices",
+            "  1. codex",
+            "  2. claude",
+            "  3. gemini",
+            "Default: \(defaultValue.rawValue)"
+        ]
+    }
+
+    public static func modelClassChoiceLines(defaultValue: MagiModelClass) -> [String] {
+        [
+            "Class choices",
+            "  1. fast",
+            "  2. balanced",
+            "  3. strongest",
+            "Default: \(defaultValue.rawValue)"
+        ]
+    }
+}
+
 public enum MagiFirstRunPlanner {
     public static func defaultSelections() -> [MagiMemberID: MagiFirstRunMemberSelection] {
         [

@@ -196,7 +196,7 @@ struct MagiCLIRunner {
         }
 
         guard isInteractiveTerminal else {
-            FileHandle.standardError.writeLine("MAGI is not configured. Run `magi config` from an interactive terminal.")
+            FileHandle.standardError.writeLine(nonInteractiveConfigMessage)
             return .usage
         }
 
@@ -289,7 +289,7 @@ struct MagiCLIRunner {
         }
 
         guard isInteractiveTerminal else {
-            FileHandle.standardError.writeLine("MAGI is not configured. Run `magi config` from an interactive terminal.")
+            FileHandle.standardError.writeLine(nonInteractiveConfigMessage)
             return .usage
         }
 
@@ -382,7 +382,8 @@ struct MagiCLIRunner {
 
     private func promptProvider(defaultValue: MagiProviderID) -> MagiProviderID {
         while true {
-            let value = prompt("Provider [1 codex, 2 claude, 3 gemini] (default \(defaultValue.rawValue)):")
+            writeChoiceLines(MagiFirstRunPromptText.providerChoiceLines(defaultValue: defaultValue))
+            let value = prompt("Choose provider:")
             if value.isEmpty { return defaultValue }
 
             switch value.lowercased() {
@@ -400,7 +401,8 @@ struct MagiCLIRunner {
 
     private func promptModelClass(defaultValue: MagiModelClass) -> MagiModelClass {
         while true {
-            let value = prompt("Class [1 fast, 2 balanced, 3 strongest] (default \(defaultValue.rawValue)):")
+            writeChoiceLines(MagiFirstRunPromptText.modelClassChoiceLines(defaultValue: defaultValue))
+            let value = prompt("Choose class:")
             if value.isEmpty { return defaultValue }
 
             switch value.lowercased() {
@@ -431,6 +433,12 @@ struct MagiCLIRunner {
         writeStdout(message, terminator: " ")
         fflush(stdout)
         return readLine()?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    }
+
+    private func writeChoiceLines(_ lines: [String]) {
+        for line in lines {
+            writeStdout(line)
+        }
     }
 
     private func dryRunProviders(for selections: [MagiMemberID: MagiFirstRunMemberSelection]) -> [MagiProviderDryRunResult] {
@@ -520,6 +528,16 @@ struct MagiCLIRunner {
 
     private var isInteractiveTerminal: Bool {
         isatty(STDIN_FILENO) != 0 && isatty(STDOUT_FILENO) != 0
+    }
+
+    private var nonInteractiveConfigMessage: String {
+        let stdinTTY = isatty(STDIN_FILENO) != 0
+        let stdoutTTY = isatty(STDOUT_FILENO) != 0
+        return """
+        MAGI is not configured and cannot open the first-run wizard because stdin/stdout are not both interactive terminals.
+        Detected stdin_tty=\(stdinTTY) stdout_tty=\(stdoutTTY).
+        Run `magi config` directly from a terminal, or run `.build/debug/magi config` from apps/chau7-macos until MAGI is installed on PATH.
+        """
     }
 
     private func writeStdout(_ line: String = "", terminator: String = "\n") {
