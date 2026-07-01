@@ -104,7 +104,7 @@ final class MagiMCPClient: MagiMCPToolCalling {
             "capabilities": [:],
             "clientInfo": [
                 "name": "magi",
-                "version": "phase9"
+                "version": "phase10"
             ]
         ])
         try sendNotification(method: "notifications/initialized", params: [:])

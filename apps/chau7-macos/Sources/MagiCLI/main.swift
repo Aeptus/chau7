@@ -62,7 +62,7 @@ struct MagiCLIRunner {
             writeStdout(Self.usage)
             return .success
         case .version:
-            writeStdout("MAGI CLI phase 9")
+            writeStdout("MAGI CLI phase 10")
             return .success
         }
     }
@@ -71,14 +71,31 @@ struct MagiCLIRunner {
         do {
             let config = try loadConfig()
             let client = MagiMCPClient(socketPath: "\(paths.homeDirectory)/.chau7/mcp.sock")
-            try client.connectAndInitialize()
+            do {
+                try client.connectAndInitialize()
+            } catch {
+                let bundle = writePreflightFailureArtifact(
+                    question: question,
+                    config: config,
+                    error: error,
+                    category: preflightFailureCategory(for: error)
+                )
+                FileHandle.standardError.writeLine("MAGI: \(error.localizedDescription)")
+                if let bundle {
+                    FileHandle.standardError.writeLine("MAGI failed run artifacts: \(bundle.rootDirectory)")
+                }
+                return .unavailable
+            }
 
+            let interruptFlag = MagiInterruptFlag.shared
+            interruptFlag.install()
             printHeader()
             let orchestrator = MagiMCPOrchestrator(
                 client: client,
                 paths: paths,
                 fileManager: fileManager,
-                isInteractive: isInteractiveTerminal
+                isInteractive: isInteractiveTerminal,
+                isInterrupted: { interruptFlag.isInterrupted }
             )
             _ = try orchestrator.run(question: question, config: config)
             return .success
@@ -104,7 +121,13 @@ struct MagiCLIRunner {
         }
 
         do {
-            let run = try loadRunIfPresent(from: bundle.decisionJSONPath)
+            var run: MagiRun?
+            do {
+                run = try loadRunIfPresent(from: bundle.decisionJSONPath)
+            } catch {
+                FileHandle.standardError.writeLine("MAGI warning: decision.json is unreadable; falling back to replay.jsonl if present. \(error.localizedDescription)")
+                run = nil
+            }
             let replayJSONL = try loadStringIfPresent(from: bundle.replayJSONLPath)
             if run == nil, replayJSONL == nil {
                 FileHandle.standardError.writeLine("MAGI replay artifact not found for run \(runID).")
@@ -143,18 +166,17 @@ struct MagiCLIRunner {
                 writeStdout("Hosted upload: disabled in v1")
                 return .success
             } catch {
+                if fileManager.fileExists(atPath: bundle.shareHTMLPath) {
+                    FileHandle.standardError.writeLine("MAGI warning: decision.json is unreadable; using existing share.html. \(error.localizedDescription)")
+                    return printExistingShare(runID: runID, bundle: bundle)
+                }
                 FileHandle.standardError.writeLine("MAGI could not generate share artifact: \(error.localizedDescription)")
                 return .unavailable
             }
         }
 
         if let bundle = candidates.first(where: { fileManager.fileExists(atPath: $0.shareHTMLPath) }) {
-            printHeader()
-            writeStdout("Share")
-            writeStdout("Run id: \(runID)")
-            writeStdout("Existing local share HTML: \(bundle.shareHTMLPath)")
-            writeStdout("Hosted upload: disabled in v1")
-            return .success
+            return printExistingShare(runID: runID, bundle: bundle)
         }
 
         FileHandle.standardError.writeLine("MAGI share artifact not found for run \(runID).")
@@ -192,7 +214,9 @@ struct MagiCLIRunner {
         writeStdout("Doctor")
         writeStdout("Global config: \(paths.globalConfigPath)")
         writeStdout("Personas: \(paths.globalPersonaDirectory)")
-        writeStdout("Chau7 MCP socket: \(paths.homeDirectory)/.chau7/mcp.sock")
+        let socketPath = "\(paths.homeDirectory)/.chau7/mcp.sock"
+        let socketStatus = fileManager.fileExists(atPath: socketPath) ? "present" : "missing"
+        writeStdout("Chau7 MCP socket: \(socketPath) (\(socketStatus))")
         writeStdout()
 
         guard MagiFirstRunInstaller.isConfigured(paths: paths, fileManager: fileManager) else {
@@ -508,6 +532,60 @@ struct MagiCLIRunner {
         writeStdout()
     }
 
+    private func printExistingShare(runID: String, bundle: MagiArtifactBundle) -> MagiCLIExitCode {
+        printHeader()
+        writeStdout("Share")
+        writeStdout("Run id: \(runID)")
+        writeStdout("Existing local share HTML: \(bundle.shareHTMLPath)")
+        writeStdout("Hosted upload: disabled in v1")
+        return .success
+    }
+
+    private func writePreflightFailureArtifact(
+        question: String,
+        config: MagiConfig,
+        error: Error,
+        category: MagiRunFailureCategory
+    ) -> MagiArtifactBundle? {
+        let runID = MagiRunID.make()
+        let repositoryRoot = paths.repositoryRoot(fileManager: fileManager)
+        let artifactRoot = paths.runRoot(runID: runID, repositoryRoot: repositoryRoot)
+        var run = MagiRun(
+            id: runID,
+            question: question,
+            council: MagiCouncil.defaultMagi(members: config.members),
+            status: .running,
+            artifactBundle: MagiArtifactBundle(runID: runID, rootDirectory: artifactRoot),
+            metadata: [
+                "mcp_socket": "\(paths.homeDirectory)/.chau7/mcp.sock",
+                "artifact_root": artifactRoot,
+                "artifact_scope": repositoryRoot == nil ? "global" : "repository",
+                "repository_root": repositoryRoot ?? "",
+                "preflight": "true"
+            ]
+        )
+        MagiRunStateMachine.markFailed(
+            &run,
+            category: category,
+            stage: "mcp-preflight",
+            message: error.localizedDescription
+        )
+        return try? MagiRunArtifactStore.write(run: run, fileManager: fileManager)
+    }
+
+    private func preflightFailureCategory(for error: Error) -> MagiRunFailureCategory {
+        switch error {
+        case MagiMCPClientError.socketMissing(_):
+            return .mcpSocketMissing
+        case MagiMCPClientError.connectFailed(_, _),
+             MagiMCPClientError.readTimedOut,
+             MagiMCPClientError.disconnected:
+            return .chau7Unavailable
+        default:
+            return .unknown
+        }
+    }
+
     static let usage = """
     MAGI - Multi Agent Gathering Intelligence
 
@@ -582,5 +660,45 @@ extension FileHandle {
 
     func writeLine(_ line: String) {
         writeText("\(line)\n")
+    }
+}
+
+final class MagiInterruptFlag {
+    static let shared = MagiInterruptFlag()
+
+    private let lock = NSLock()
+    private var didInterrupt = false
+    private var signalSource: DispatchSourceSignal?
+
+    var isInterrupted: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return didInterrupt
+    }
+
+    func install() {
+        lock.lock()
+        didInterrupt = false
+        let alreadyInstalled = signalSource != nil
+        lock.unlock()
+
+        guard !alreadyInstalled else { return }
+
+        signal(SIGINT, SIG_IGN)
+        let source = DispatchSource.makeSignalSource(signal: SIGINT, queue: .global(qos: .userInitiated))
+        source.setEventHandler {
+            MagiInterruptFlag.shared.markInterrupted()
+        }
+        source.resume()
+
+        lock.lock()
+        signalSource = source
+        lock.unlock()
+    }
+
+    private func markInterrupted() {
+        lock.lock()
+        didInterrupt = true
+        lock.unlock()
     }
 }
