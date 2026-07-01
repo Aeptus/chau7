@@ -34,6 +34,20 @@ final class TerminalControlService {
     /// Maximum output size returned by tab_output (512 KB).
     private static let maxOutputBytes = 512 * 1024
 
+    private static let agentLaunchActionThrottleSeconds: TimeInterval = 0.35
+
+    private struct AgentPromptInjectionResult {
+        var status: String
+        var inputVisible: Bool
+        var submitted: Bool
+        var running: Bool
+        var error: String?
+
+        var accepted: Bool {
+            status == "sent" || status == "skipped"
+        }
+    }
+
     // MARK: - Pending Approvals
 
     /// Tracks in-flight approval requests so iOS responses can resolve them.
@@ -747,6 +761,7 @@ final class TerminalControlService {
                 // A creation failure recurs (e.g. tab limit), so stop early.
                 break
             }
+            throttleAgentLaunchAction()
 
             // 2. Wait for the shell to accept a launch command.
             guard decodeJSONObject(
@@ -758,6 +773,7 @@ final class TerminalControlService {
                 ])
                 continue
             }
+            throttleAgentLaunchAction()
 
             // 3. Start the agent (optionally after checking out the PR).
             if let execError = decodeJSONObject(execInTab(tabID: tabID, command: launchCommand))?["error"] as? String {
@@ -767,19 +783,39 @@ final class TerminalControlService {
                 ])
                 continue
             }
+            throttleAgentLaunchAction()
 
             // 4. Best-effort: once the agent attaches, hand it the prompt.
-            var promptStatus = "skipped"
+            var promptResult = AgentPromptInjectionResult(
+                status: "skipped",
+                inputVisible: false,
+                submitted: false,
+                running: false,
+                error: nil
+            )
             if let prompt, !prompt.isEmpty {
-                promptStatus = injectPromptWhenAgentAttaches(
+                promptResult = injectPromptWhenAgentAttaches(
                     tabID: tabID, prompt: prompt, timeoutMs: boundedTimeout
-                ) ? "sent" : "agent_not_detected"
+                )
             }
 
-            agents.append([
+            var agent: [String: Any] = [
                 "index": index, "tab_id": tabID, "status": "launched",
-                "launch_command": launchCommand, "prompt": promptStatus
-            ])
+                "launch_command": launchCommand,
+                "prompt": promptResult.status,
+                "prompt_input_visible": promptResult.inputVisible,
+                "prompt_submitted": promptResult.submitted,
+                "agent_running": promptResult.running
+            ]
+            if let error = promptResult.error {
+                agent["error"] = error
+            }
+            if prompt != nil, prompt?.isEmpty == false, !promptResult.accepted {
+                agent["status"] = "failed"
+                agent["stage"] = "prompt"
+            }
+            agents.append(agent)
+            throttleAgentLaunchAction()
         }
 
         var result: [String: Any] = [
@@ -800,11 +836,15 @@ final class TerminalControlService {
         return "gh pr checkout \(prNumber) && \(agentCommand)"
     }
 
-    /// Polls until the tab reports an attached AI provider, then types the
-    /// prompt and submits it. Best-effort: returns false if no agent attaches
-    /// before the timeout (the tab is still launched; the caller can drive it
-    /// via tab_send_input / tab_submit_prompt).
-    private func injectPromptWhenAgentAttaches(tabID: String, prompt: String, timeoutMs: Int) -> Bool {
+    /// Polls until the tab reports an attached AI provider, then types,
+    /// verifies, and submits the prompt. The tab is still launched if
+    /// verification fails, but `agent_launch` reports the prompt failure
+    /// explicitly so callers do not assume a silent handoff worked.
+    private func injectPromptWhenAgentAttaches(
+        tabID: String,
+        prompt: String,
+        timeoutMs: Int
+    ) -> AgentPromptInjectionResult {
         let deadline = Date().addingTimeInterval(Double(timeoutMs) / 1000.0)
         while Date() < deadline {
             Thread.sleep(forTimeInterval: 0.25)
@@ -813,13 +853,150 @@ final class TerminalControlService {
                 return session.lastAIProvider != nil
             }
             guard attached else { continue }
-            // Give the agent's input box a beat to accept typed text, then submit.
-            _ = sendInput(tabID: tabID, input: prompt)
-            Thread.sleep(forTimeInterval: 0.3)
-            _ = submitPrompt(tabID: tabID)
-            return true
+
+            throttleAgentLaunchAction()
+
+            let sendResult = decodeJSONObject(sendInput(tabID: tabID, input: prompt))
+            guard sendResult?["ok"] as? Bool == true else {
+                return AgentPromptInjectionResult(
+                    status: "input_rejected",
+                    inputVisible: false,
+                    submitted: false,
+                    running: false,
+                    error: sendResult?["error"] as? String ?? "tab_send_input did not return ok=true"
+                )
+            }
+
+            throttleAgentLaunchAction()
+            let inputVisible = waitForPromptInputVisible(
+                tabID: tabID,
+                prompt: prompt,
+                timeoutMs: min(4_000, max(1_000, timeoutMs / 4))
+            )
+
+            throttleAgentLaunchAction()
+            let submitResult = decodeJSONObject(submitPrompt(tabID: tabID))
+            let submitted = submitResult?["ok"] as? Bool == true
+            guard submitted else {
+                return AgentPromptInjectionResult(
+                    status: "submit_failed",
+                    inputVisible: inputVisible,
+                    submitted: false,
+                    running: false,
+                    error: submitResult?["error"] as? String ?? "tab_submit_prompt did not return ok=true"
+                )
+            }
+
+            throttleAgentLaunchAction()
+            let running = waitForAgentRunningAfterSubmit(
+                tabID: tabID,
+                timeoutMs: min(5_000, max(1_500, timeoutMs / 4))
+            )
+
+            if !inputVisible {
+                return AgentPromptInjectionResult(
+                    status: "input_not_visible",
+                    inputVisible: false,
+                    submitted: true,
+                    running: running,
+                    error: "prompt text was not observed in the tab before submit"
+                )
+            }
+
+            if !running {
+                return AgentPromptInjectionResult(
+                    status: "submitted_not_running",
+                    inputVisible: true,
+                    submitted: true,
+                    running: false,
+                    error: "prompt was submitted, but the tab did not report a running agent"
+                )
+            }
+
+            return AgentPromptInjectionResult(
+                status: "sent",
+                inputVisible: true,
+                submitted: true,
+                running: true,
+                error: nil
+            )
         }
+        return AgentPromptInjectionResult(
+            status: "agent_not_detected",
+            inputVisible: false,
+            submitted: false,
+            running: false,
+            error: "no attached AI provider was detected before timeout"
+        )
+    }
+
+    private func waitForPromptInputVisible(tabID: String, prompt: String, timeoutMs: Int) -> Bool {
+        let needles = Self.promptVisibilityNeedles(from: prompt)
+        guard !needles.isEmpty else { return true }
+
+        let deadline = Date().addingTimeInterval(Double(max(0, timeoutMs)) / 1000.0)
+        while Date() < deadline {
+            guard let output = decodeJSONObject(
+                tabOutput(tabID: tabID, lines: 160, waitForStableMs: nil, source: "buffer")
+            )?["output"] as? String else {
+                Thread.sleep(forTimeInterval: 0.2)
+                continue
+            }
+            if needles.contains(where: { output.contains($0) }) {
+                return true
+            }
+            Thread.sleep(forTimeInterval: 0.2)
+        }
+
         return false
+    }
+
+    private func waitForAgentRunningAfterSubmit(tabID: String, timeoutMs: Int) -> Bool {
+        let deadline = Date().addingTimeInterval(Double(max(0, timeoutMs)) / 1000.0)
+        while Date() < deadline {
+            guard let status = decodeJSONObject(tabStatus(tabID: tabID)) else {
+                Thread.sleep(forTimeInterval: 0.25)
+                continue
+            }
+
+            if status["active_run"] is [String: Any] {
+                return true
+            }
+
+            let hasAgentIdentity =
+                (status["active_app"] as? String)?.isEmpty == false
+                || (status["ai_provider"] as? String)?.isEmpty == false
+            let statusValue = status["status"] as? String
+            let runningStates = [
+                CommandStatus.running.rawValue,
+                CommandStatus.waitingForInput.rawValue,
+                CommandStatus.approvalRequired.rawValue,
+                CommandStatus.stuck.rawValue
+            ]
+            if hasAgentIdentity, let statusValue, runningStates.contains(statusValue) {
+                return true
+            }
+
+            Thread.sleep(forTimeInterval: 0.25)
+        }
+
+        return false
+    }
+
+    static func promptVisibilityNeedles(from prompt: String) -> [String] {
+        prompt
+            .components(separatedBy: .newlines)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { $0.count >= 8 }
+            .prefix(3)
+            .map { line in
+                let maxLength = min(80, line.count)
+                return String(line.prefix(maxLength))
+            }
+    }
+
+    private func throttleAgentLaunchAction() {
+        Thread.sleep(forTimeInterval: Self.agentLaunchActionThrottleSeconds)
     }
 
     private func decodeJSONObject(_ json: String) -> [String: Any]? {

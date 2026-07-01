@@ -146,10 +146,9 @@ struct MagiCLIRunner {
         | |  | |/ ___ \\ |_| || |
         |_|  |_/_/   \\_\\____|___|
         """
-        writeStdout(styled(art, .bold, .cyan))
+        writeProgressive(art, styles: [.bold, .cyan], lineDelay: 0.045)
         writeStdout(styled("WELCOME TO MAGI SYSTEM", .bold))
-        writeStdout()
-        printCouncilArt()
+        pauseBoot(0.22)
         writeStdout()
         printBootLine("core protocol", "Multi Agent Gathering Intelligence online")
         let socketPath = "\(paths.homeDirectory)/.chau7/mcp.sock"
@@ -163,6 +162,8 @@ struct MagiCLIRunner {
         printBootLine("config", configDetail, ok: configPresent)
         printBootLine("mood", "serious council, questionable coffee")
         printBootLine("council", "selected: Melchior / Balthasar / Casper")
+        writeStdout()
+        printCouncilArt()
         writeStdout()
         writeMuted("Ask a question, type --config, doctor, help, or quit.")
     }
@@ -192,14 +193,17 @@ struct MagiCLIRunner {
         |    HUMAN     |
         +--------------+
         """
-        writeStdout(styled(melchior, .cyan))
-        writeStdout(styled(balthasar, .yellow))
-        writeStdout(styled(casper, .magenta))
+        writeProgressive(melchior, styles: [.cyan], lineDelay: 0.035)
+        pauseBoot(0.10)
+        writeProgressive(balthasar, styles: [.yellow], lineDelay: 0.035)
+        pauseBoot(0.10)
+        writeProgressive(casper, styles: [.magenta], lineDelay: 0.035)
     }
 
     private func printBootLine(_ label: String, _ detail: String, ok: Bool = true) {
         let status = ok ? styled("[ OK ]", .green) : styled("[ .. ]", .yellow)
         writeStdout("\(status) \(label.padding(toLength: 14, withPad: " ", startingAt: 0)) \(detail)")
+        pauseBoot()
     }
 
     private func printHomeHelp() {
@@ -857,6 +861,22 @@ struct MagiCLIRunner {
         writeStdout(styled(line, .dim))
     }
 
+    private func writeProgressive(
+        _ text: String,
+        styles: [ANSIStyle] = [],
+        lineDelay: TimeInterval = 0.06
+    ) {
+        for line in text.components(separatedBy: .newlines) {
+            guard !line.isEmpty else { continue }
+            writeStdout(styled(line, styles: styles))
+            pauseBoot(lineDelay)
+        }
+    }
+
+    private func pauseBoot(_ seconds: TimeInterval = 0.14) {
+        Thread.sleep(forTimeInterval: seconds)
+    }
+
     private func writeSaved(_ message: String = "Saved.") {
         writeStdout(styled(message, .green))
     }
@@ -866,6 +886,10 @@ struct MagiCLIRunner {
     }
 
     private func styled(_ text: String, _ styles: ANSIStyle...) -> String {
+        styled(text, styles: styles)
+    }
+
+    private func styled(_ text: String, styles: [ANSIStyle]) -> String {
         guard supportsANSIOutput(), !styles.isEmpty else { return text }
         let prefix = styles.map(\.rawValue).joined(separator: ";")
         return "\u{001B}[\(prefix)m\(text)\u{001B}[0m"

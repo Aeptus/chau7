@@ -625,4 +625,24 @@ final class TerminalControlServiceTests: XCTestCase {
             "gh pr checkout 323 && codex"
         )
     }
+
+    func testPromptVisibilityNeedlesUseMeaningfulPromptLines() {
+        let needles = TerminalControlService.promptVisibilityNeedles(from: """
+
+        MAGI independent analysis
+        Run: magi-123
+        Round: round-1
+        Short
+        This line should not be reached
+        """)
+
+        XCTAssertEqual(
+            needles,
+            [
+                "MAGI independent analysis",
+                "Run: magi-123",
+                "Round: round-1"
+            ]
+        )
+    }
 }

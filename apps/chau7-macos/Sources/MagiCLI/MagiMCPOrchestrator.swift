@@ -45,6 +45,7 @@ struct MagiMCPOrchestrator {
     var repairTimeoutSeconds: TimeInterval = 120
     var collectorTimeoutSeconds: TimeInterval = 120
     var launchTimeoutMs: Int = 60_000
+    var launchMemberThrottleSeconds: TimeInterval = 0.6
 
     func run(question: String, config: MagiConfig) throws -> MagiRun {
         let runID = MagiRunID.make()
@@ -128,6 +129,7 @@ struct MagiMCPOrchestrator {
                 let tabID = try launchMember(member, prompt: prompt, technicalLog: technicalLog)
                 printLine("- \(member.persona.displayName): \(tabID)")
                 sessions.append(MagiMemberTab(member: member, tabID: tabID))
+                Thread.sleep(forTimeInterval: launchMemberThrottleSeconds)
             }
             run.metadata["member_tab_count"] = String(sessions.count)
             for session in sessions {
@@ -588,6 +590,30 @@ struct MagiMCPOrchestrator {
         }
         let launchStatus = agent["status"] as? String ?? "missing"
         let promptStatus = agent["prompt"] as? String ?? "missing"
+        var promptInputVisible = boolField(agent["prompt_input_visible"])
+        var promptSubmitted = boolField(agent["prompt_submitted"])
+        var agentRunning = boolField(agent["agent_running"])
+        if agent["prompt_input_visible"] == nil,
+           agent["prompt_submitted"] == nil,
+           agent["agent_running"] == nil,
+           promptStatus == "sent" {
+            technicalLog.record(
+                "member_launch_verification_fallback_started",
+                stage: "launch",
+                memberID: member.id,
+                tabID: tabID,
+                message: "agent_launch did not return prompt verification fields; querying tab output/status"
+            )
+            let fallback = verifyLaunchedMemberPrompt(
+                tabID: tabID,
+                prompt: prompt,
+                member: member,
+                technicalLog: technicalLog
+            )
+            promptInputVisible = fallback.promptInputVisible
+            promptSubmitted = fallback.promptSubmitted
+            agentRunning = fallback.agentRunning
+        }
         technicalLog.record(
             "member_launch_result",
             stage: "launch",
@@ -597,7 +623,10 @@ struct MagiMCPOrchestrator {
                 "provider": member.provider,
                 "agent_command": command,
                 "status": launchStatus,
-                "prompt_status": promptStatus
+                "prompt_status": promptStatus,
+                "prompt_input_visible": String(promptInputVisible),
+                "prompt_submitted": String(promptSubmitted),
+                "agent_running": String(agentRunning)
             ]
         )
         guard (agent["status"] as? String) == "launched" else {
@@ -612,7 +641,113 @@ struct MagiMCPOrchestrator {
                 reason: "provider launched in \(tabID), but Chau7 did not detect an attached agent for prompt injection"
             )
         }
+        guard promptInputVisible else {
+            throw MagiMCPOrchestratorError.launchFailed(
+                member: member.persona.displayName,
+                reason: "provider launched in \(tabID), but MAGI did not observe the prompt text in the tab before submission"
+            )
+        }
+        guard promptSubmitted else {
+            throw MagiMCPOrchestratorError.launchFailed(
+                member: member.persona.displayName,
+                reason: "provider launched in \(tabID), but Chau7 did not confirm prompt submission"
+            )
+        }
+        guard agentRunning else {
+            throw MagiMCPOrchestratorError.launchFailed(
+                member: member.persona.displayName,
+                reason: "provider launched in \(tabID), but the tab did not report a running agent after submission"
+            )
+        }
         return tabID
+    }
+
+    private func verifyLaunchedMemberPrompt(
+        tabID: String,
+        prompt: String,
+        member: MagiMember,
+        technicalLog: MagiTechnicalLog
+    ) -> MagiLaunchVerification {
+        let promptInputVisible = waitForPromptNeedle(
+            tabID: tabID,
+            prompt: prompt,
+            timeoutSeconds: 4
+        )
+        let agentRunning = waitForAgentRunning(
+            tabID: tabID,
+            timeoutSeconds: 5
+        )
+        technicalLog.record(
+            "member_launch_verification_fallback_completed",
+            stage: "launch",
+            memberID: member.id,
+            tabID: tabID,
+            fields: [
+                "prompt_input_visible": String(promptInputVisible),
+                "prompt_submitted": "true",
+                "agent_running": String(agentRunning)
+            ]
+        )
+        return MagiLaunchVerification(
+            promptInputVisible: promptInputVisible,
+            promptSubmitted: true,
+            agentRunning: agentRunning
+        )
+    }
+
+    private func waitForPromptNeedle(
+        tabID: String,
+        prompt: String,
+        timeoutSeconds: TimeInterval
+    ) -> Bool {
+        let needles = promptVisibilityNeedles(from: prompt)
+        guard !needles.isEmpty else { return true }
+
+        let deadline = Date().addingTimeInterval(timeoutSeconds)
+        while Date() < deadline {
+            let bufferOutput = (try? tabOutput(tabID: tabID, source: "buffer")) ?? ""
+            let ptyOutput = (try? tabOutput(tabID: tabID, source: "pty_log")) ?? ""
+            if needles.contains(where: { bufferOutput.contains($0) || ptyOutput.contains($0) }) {
+                return true
+            }
+            Thread.sleep(forTimeInterval: 0.25)
+        }
+        return false
+    }
+
+    private func waitForAgentRunning(tabID: String, timeoutSeconds: TimeInterval) -> Bool {
+        let deadline = Date().addingTimeInterval(timeoutSeconds)
+        while Date() < deadline {
+            if (try? tabStatusReportsRunningAgent(tabID: tabID)) == true {
+                return true
+            }
+            Thread.sleep(forTimeInterval: 0.25)
+        }
+        return false
+    }
+
+    private func tabStatusReportsRunningAgent(tabID: String) throws -> Bool {
+        let result = try client.callTool(name: "tab_status", arguments: ["tab_id": tabID])
+        if result["active_run"] is [String: Any] {
+            return true
+        }
+
+        let hasAgentIdentity =
+            stringField(result["active_app"]).isEmpty == false
+            || stringField(result["ai_provider"]).isEmpty == false
+        guard hasAgentIdentity else { return false }
+
+        let status = stringField(result["status"])
+        return ["running", "waitingForInput", "approvalRequired", "stuck"].contains(status)
+    }
+
+    private func promptVisibilityNeedles(from prompt: String) -> [String] {
+        prompt
+            .components(separatedBy: .newlines)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { $0.count >= 8 }
+            .prefix(3)
+            .map { String($0.prefix(min(80, $0.count))) }
     }
 
     private func providerCommand(for member: MagiMember) -> String {
@@ -660,12 +795,12 @@ struct MagiMCPOrchestrator {
         )
     }
 
-    private func tabOutput(tabID: String) throws -> String {
+    private func tabOutput(tabID: String, source: String = "pty_log") throws -> String {
         let result = try client.callTool(name: "tab_output", arguments: [
             "tab_id": tabID,
             "lines": 10_000,
             "wait_for_stable_ms": 1_000,
-            "source": "pty_log"
+            "source": source
         ])
         guard let output = result["output"] as? String else {
             throw MagiMCPOrchestratorError.missingToolField(tool: "tab_output", field: "output")
@@ -946,6 +1081,15 @@ struct MagiMCPOrchestrator {
         return "\(value)"
     }
 
+    private func boolField(_ value: Any?) -> Bool {
+        if let bool = value as? Bool { return bool }
+        if let string = value as? String {
+            return ["true", "yes", "1"].contains(string.lowercased())
+        }
+        if let int = value as? Int { return int != 0 }
+        return false
+    }
+
     private func reviewEvidenceRequests(
         _ requests: [MagiEvidenceRequest],
         config: MagiConfig
@@ -1174,4 +1318,10 @@ struct MagiMCPOrchestrator {
 private struct MagiMemberTab {
     var member: MagiMember
     var tabID: String
+}
+
+private struct MagiLaunchVerification {
+    var promptInputVisible: Bool
+    var promptSubmitted: Bool
+    var agentRunning: Bool
 }

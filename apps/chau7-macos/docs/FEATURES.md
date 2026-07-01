@@ -68,8 +68,8 @@ Detection methods:
 - **MAGI local installer** — `Scripts/install-magi-cli.sh` builds the SwiftPM CLI and installs `magi` into `~/.local/bin` by default, with uppercase `MAGI` invocation supported through case-insensitive resolution or a case-sensitive alias.
 - **MAGI production artifacts** — failed, interrupted, vetoed, deadlocked, and partial runs carry checkpoint/failure metadata across decision markdown, decision JSON, transcript/replay JSONL, graph JSON, terminal replay, and local share HTML.
 - **MAGI hardened CLI runtime** — missing Chau7/MCP, provider launch failures, agent timeouts, malformed structured output, denied evidence, veto/deadlock outcomes, interrupts, and partial artifact replay paths are surfaced as clean statuses with useful local logs.
-- **MAGI per-run technical log** — each run writes `technical.jsonl` next to the required artifacts with correlated run/member/tab events for launches, prompt submission, polling, parsing, repairs, checkpoints, and failures.
-- **MAGI home TUI** — running `magi`/`MAGI` without arguments opens an interactive terminal home screen with ASCII art, colored member panels, boot-status lines ending on the selected council, an ask prompt, help, doctor access, and `--config` navigation.
+- **MAGI per-run technical log** — each run writes `technical.jsonl` next to the required artifacts with correlated run/member/tab events for launches, prompt visibility, prompt submission, agent-running checks, polling, parsing, repairs, checkpoints, and failures.
+- **MAGI home TUI** — running `magi`/`MAGI` without arguments opens an interactive terminal home screen with progressive boot output, ASCII art, colored member panels after boot, boot-status lines ending on the selected council, an ask prompt, help, doctor access, and `--config` navigation.
 - **MAGI config panel** — `--config` opens an editable terminal panel for member provider/class settings, global evidence/web/deadlock/veto switches, provider checks, and persona file checks.
 - **MAGI visible first-run wizard** — `magi config` renders provider and model-class choices as numbered lists in interactive terminals and explains stdin/stdout TTY state when the wizard cannot open.
 - **MAGI shared first-run setup** — `magi config` can apply one provider/class choice to Melchior, Balthasar, and Casper, with a per-member path still available for mixed-provider councils.
@@ -232,7 +232,7 @@ Every cross-window tab operation dispatches to the main thread before touching t
 
 | Tool | Description |
 | --- | --- |
-| `agent_launch` | Launch one or more AI coding agents (Claude Code, Codex, …) in fresh tabs in a single call — composes `tab_create` + `tab_wait_ready` + `tab_exec` (+ best-effort prompt injection). Params: `directory`, `agent_command` (default `claude`), `prompt`, `count`, `pr_number`, `window_id`, `ready_timeout_ms`. Returns the created tab IDs; collect each agent's output with `tab_output(source='pty_log')` |
+| `agent_launch` | Launch one or more AI coding agents (Claude Code, Codex, …) in fresh tabs in a single call — composes `tab_create` + `tab_wait_ready` + `tab_exec` + verified prompt injection with throttles between launch actions. Params: `directory`, `agent_command` (default `claude`), `prompt`, `count`, `pr_number`, `window_id`, `ready_timeout_ms`. Returns per-agent prompt visibility/submission/running checks; collect each agent's output with `tab_output(source='pty_log')` |
 
 Fan a review across N parallel agents — e.g. three agents reviewing PR #323:
 
