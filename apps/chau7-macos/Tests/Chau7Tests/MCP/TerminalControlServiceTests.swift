@@ -682,6 +682,52 @@ final class TerminalControlServiceTests: XCTestCase {
         ]))
     }
 
+    func testAgentPromptInjectionTimeoutCapsBelowMCPReadBudget() {
+        XCTAssertEqual(TerminalControlService.agentPromptInjectionTimeoutMs(readyTimeoutMs: 60_000), 25_000)
+        XCTAssertEqual(TerminalControlService.agentPromptInjectionTimeoutMs(readyTimeoutMs: 10_000), 10_000)
+        XCTAssertEqual(TerminalControlService.agentPromptInjectionTimeoutMs(readyTimeoutMs: -1), 0)
+    }
+
+    func testAgentLaunchExitedBeforePromptDetectsReturnedShellWithStaleProvider() {
+        XCTAssertTrue(TerminalControlService.agentLaunchExitedBeforePrompt([
+            "active_app": "Codex",
+            "ai_provider": "codex",
+            "status": CommandStatus.done.rawValue,
+            "raw_status": CommandStatus.done.rawValue,
+            "is_at_prompt": true,
+            "raw_is_at_prompt": true,
+            "can_accept_exec": true,
+            "ready_for_exec": true
+        ]))
+    }
+
+    func testAgentLaunchExitedBeforePromptIgnoresInitialIdlePrompt() {
+        XCTAssertFalse(TerminalControlService.agentLaunchExitedBeforePrompt([
+            "active_app": "Codex",
+            "ai_provider": "codex",
+            "status": CommandStatus.idle.rawValue,
+            "raw_status": CommandStatus.idle.rawValue,
+            "is_at_prompt": true,
+            "raw_is_at_prompt": true,
+            "can_accept_exec": true,
+            "ready_for_exec": true
+        ]))
+    }
+
+    func testAgentLaunchExitedBeforePromptIgnoresLiveRawAgent() {
+        XCTAssertFalse(TerminalControlService.agentLaunchExitedBeforePrompt([
+            "active_app": "Codex",
+            "raw_active_app": "Codex",
+            "ai_provider": "codex",
+            "status": CommandStatus.done.rawValue,
+            "raw_status": CommandStatus.done.rawValue,
+            "is_at_prompt": true,
+            "raw_is_at_prompt": true,
+            "can_accept_exec": true,
+            "ready_for_exec": true
+        ]))
+    }
+
     func testAgentOutputLooksResponsiveForCodexSurface() {
         XCTAssertTrue(TerminalControlService.agentOutputLooksResponsive("""
         ╭──────────────────────────────────────────────────╮

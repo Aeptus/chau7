@@ -35,6 +35,7 @@ final class TerminalControlService {
     private static let maxOutputBytes = 512 * 1024
 
     private static let agentLaunchActionThrottleSeconds: TimeInterval = 0.35
+    private static let maxAgentPromptInjectionTimeoutMs = 25_000
 
     private struct AgentPromptInjectionResult {
         var status: String
@@ -46,6 +47,12 @@ final class TerminalControlService {
         var accepted: Bool {
             status == "sent" || status == "skipped"
         }
+    }
+
+    private enum AgentInputSurfaceReadiness {
+        case ready
+        case exited
+        case timedOut
     }
 
     // MARK: - Pending Approvals
@@ -795,7 +802,9 @@ final class TerminalControlService {
             )
             if let prompt, !prompt.isEmpty {
                 promptResult = injectPromptWhenAgentAttaches(
-                    tabID: tabID, prompt: prompt, timeoutMs: boundedTimeout
+                    tabID: tabID,
+                    prompt: prompt,
+                    timeoutMs: Self.agentPromptInjectionTimeoutMs(readyTimeoutMs: boundedTimeout)
                 )
             }
 
@@ -836,6 +845,11 @@ final class TerminalControlService {
         return "gh pr checkout \(prNumber) && \(agentCommand)"
     }
 
+    static func agentPromptInjectionTimeoutMs(readyTimeoutMs: Int) -> Int {
+        let boundedTimeout = max(0, min(readyTimeoutMs, 120_000))
+        return min(boundedTimeout, maxAgentPromptInjectionTimeoutMs)
+    }
+
     /// Polls until the tab reports an attached AI provider, then types,
     /// verifies, and submits the prompt. The tab is still launched if
     /// verification fails, but `agent_launch` reports the prompt failure
@@ -848,20 +862,40 @@ final class TerminalControlService {
         let deadline = Date().addingTimeInterval(Double(timeoutMs) / 1000.0)
         while Date() < deadline {
             Thread.sleep(forTimeInterval: 0.25)
-            let attachedProvider = onMain { () -> String? in
-                guard let (_, session) = self.resolveTab(tabID) else { return nil }
-                return session.effectiveAIProvider
-                    ?? session.lastAIProvider
-                    ?? session.activeAppName
+
+            if let status = decodeJSONObject(tabStatus(tabID: tabID)),
+               Self.agentLaunchExitedBeforePrompt(status),
+               currentLaunchProvider(tabID: tabID) == nil {
+                Log.warn("MCP: agent_launch \(tabID) exited before prompt injection")
+                return AgentPromptInjectionResult(
+                    status: "agent_exited_before_prompt",
+                    inputVisible: false,
+                    submitted: false,
+                    running: false,
+                    error: "attached agent exited or returned to the shell before prompt injection"
+                )
             }
-            guard let attachedProvider else { continue }
+
+            guard let attachedProvider = currentLaunchProvider(tabID: tabID) else { continue }
 
             let ready = waitForAgentInputSurfaceReady(
                 tabID: tabID,
                 provider: attachedProvider,
                 timeoutMs: min(8_000, max(2_000, timeoutMs / 3))
             )
-            guard ready else {
+            switch ready {
+            case .ready:
+                break
+            case .exited:
+                Log.warn("MCP: agent_launch \(tabID) exited before input surface was ready")
+                return AgentPromptInjectionResult(
+                    status: "agent_exited_before_prompt",
+                    inputVisible: false,
+                    submitted: false,
+                    running: false,
+                    error: "attached agent exited or returned to the shell before prompt injection"
+                )
+            case .timedOut:
                 return AgentPromptInjectionResult(
                     status: "agent_input_not_ready",
                     inputVisible: false,
@@ -947,9 +981,31 @@ final class TerminalControlService {
         )
     }
 
-    private func waitForAgentInputSurfaceReady(tabID: String, provider: String?, timeoutMs: Int) -> Bool {
+    private func currentLaunchProvider(tabID: String) -> String? {
+        onMain {
+            guard let (_, session) = self.resolveTab(tabID) else { return nil }
+            if let activeApp = Self.nonEmptyString(session.activeAppName) {
+                return activeApp
+            }
+            guard session.isAIRunning else { return nil }
+            return Self.nonEmptyString(session.effectiveAIProvider)
+                ?? Self.nonEmptyString(session.aiDisplayAppName)
+        }
+    }
+
+    private func waitForAgentInputSurfaceReady(
+        tabID: String,
+        provider: String?,
+        timeoutMs: Int
+    ) -> AgentInputSurfaceReadiness {
         let deadline = Date().addingTimeInterval(Double(max(0, timeoutMs)) / 1000.0)
         while Date() < deadline {
+            if let status = decodeJSONObject(tabStatus(tabID: tabID)),
+               Self.agentLaunchExitedBeforePrompt(status),
+               currentLaunchProvider(tabID: tabID) == nil {
+                return .exited
+            }
+
             guard let output = decodeJSONObject(
                 tabOutput(tabID: tabID, lines: 160, waitForStableMs: nil, source: "buffer")
             )?["output"] as? String else {
@@ -960,12 +1016,12 @@ final class TerminalControlService {
             if Self.agentOutputLooksInputReady(output, provider: provider) {
                 // Let full-screen TUIs finish one more render tick before typing.
                 throttleAgentLaunchAction()
-                return true
+                return .ready
             }
 
             Thread.sleep(forTimeInterval: 0.2)
         }
-        return false
+        return .timedOut
     }
 
     private func waitForPromptInputVisible(tabID: String, prompt: String, timeoutMs: Int) -> Bool {
@@ -1032,6 +1088,40 @@ final class TerminalControlService {
             guard let value = status[key] as? String else { return false }
             return runningStates.contains(value)
         }
+    }
+
+    static func agentLaunchExitedBeforePrompt(_ status: [String: Any]) -> Bool {
+        if nonEmptyString(status["raw_active_app"]) != nil {
+            return false
+        }
+        if status["active_run"] is [String: Any] {
+            return false
+        }
+
+        let terminalStates = [
+            CommandStatus.done.rawValue,
+            CommandStatus.exited.rawValue
+        ]
+        let hasTerminalState = [
+            nonEmptyString(status["raw_status"]),
+            nonEmptyString(status["status"])
+        ].contains { value in
+            guard let value else { return false }
+            return terminalStates.contains(value)
+        }
+        guard hasTerminalState else { return false }
+
+        let promptReturned = status["raw_is_at_prompt"] as? Bool == true
+            || status["is_at_prompt"] as? Bool == true
+        let acceptsExec = status["can_accept_exec"] as? Bool == true
+            || status["ready_for_exec"] as? Bool == true
+        return promptReturned || acceptsExec
+    }
+
+    private static func nonEmptyString(_ value: Any?) -> String? {
+        guard let string = value as? String else { return nil }
+        let trimmed = string.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
     }
 
     static func agentOutputLooksInputReady(_ output: String, provider: String? = nil) -> Bool {
