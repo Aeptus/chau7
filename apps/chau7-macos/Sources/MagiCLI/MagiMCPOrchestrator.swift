@@ -52,12 +52,18 @@ struct MagiMCPOrchestrator {
         let questionKind = MagiQuestionKind.infer(from: question)
         let repositoryRoot = paths.repositoryRoot(fileManager: fileManager)
         let artifactRoot = paths.runRoot(runID: runID, repositoryRoot: repositoryRoot)
+        let artifactBundle = MagiArtifactBundle(runID: runID, rootDirectory: artifactRoot)
+        let technicalLog = MagiTechnicalLog(
+            path: artifactBundle.technicalLogPath,
+            runID: runID,
+            fileManager: fileManager
+        )
         var run = MagiRun(
             id: runID,
             question: question,
             council: council,
             status: .running,
-            artifactBundle: MagiArtifactBundle(runID: runID, rootDirectory: artifactRoot),
+            artifactBundle: artifactBundle,
             metadata: [
                 "mcp_socket": mcpSocketPath,
                 "evidence_requires_approval": "true",
@@ -65,14 +71,24 @@ struct MagiMCPOrchestrator {
                 "question_kind": questionKind.rawValue,
                 "verdict_defaults": "majority,equal_weights,one_extra_round_on_deadlock,veto_blocks",
                 "artifact_root": artifactRoot,
+                "technical_log": artifactBundle.technicalLogPath,
                 "artifact_scope": repositoryRoot == nil ? "global" : "repository",
                 "repository_root": repositoryRoot ?? ""
             ]
         )
         MagiRunStateMachine.checkpoint(&run, stage: "initialized")
+        technicalLog.record(
+            "run_initialized",
+            stage: "initialized",
+            fields: [
+                "artifact_root": artifactRoot,
+                "question_kind": questionKind.rawValue,
+                "member_count": String(council.members.count)
+            ]
+        )
 
         do {
-            try writeCheckpoint(&run, stage: "initialized")
+            try writeCheckpoint(&run, stage: "initialized", technicalLog: technicalLog)
             try throwIfInterrupted(stage: "startup")
 
             printLine("Run")
@@ -86,9 +102,10 @@ struct MagiMCPOrchestrator {
                 index: 1,
                 kind: .independentAnalysis
             )
-            try writeCheckpoint(&run, stage: "round-1-started")
+            try writeCheckpoint(&run, stage: "round-1-started", technicalLog: technicalLog)
 
             printLine("Launching council")
+            technicalLog.record("council_launch_started", stage: "launch")
             var sessions: [MagiMemberTab] = []
             for member in council.members {
                 try throwIfInterrupted(stage: "launching council")
@@ -98,12 +115,36 @@ struct MagiMCPOrchestrator {
                     question: question,
                     member: member
                 )
-                let tabID = try launchMember(member, prompt: prompt)
+                technicalLog.record(
+                    "member_launch_started",
+                    stage: "launch",
+                    memberID: member.id,
+                    fields: [
+                        "provider": member.provider,
+                        "model_class": member.modelClass.rawValue,
+                        "reasoning": member.reasoning.rawValue
+                    ]
+                )
+                let tabID = try launchMember(member, prompt: prompt, technicalLog: technicalLog)
                 printLine("- \(member.persona.displayName): \(tabID)")
                 sessions.append(MagiMemberTab(member: member, tabID: tabID))
             }
             run.metadata["member_tab_count"] = String(sessions.count)
-            try writeCheckpoint(&run, stage: "council-launched")
+            for session in sessions {
+                run.metadata["member_tab_\(session.member.id.rawValue)"] = session.tabID
+            }
+            run.metadata["member_tabs"] = sessions
+                .map { "\($0.member.id.rawValue)=\($0.tabID)" }
+                .joined(separator: ",")
+            technicalLog.record(
+                "council_launch_completed",
+                stage: "launch",
+                fields: [
+                    "member_tab_count": String(sessions.count),
+                    "member_tabs": run.metadata["member_tabs"] ?? ""
+                ]
+            )
+            try writeCheckpoint(&run, stage: "council-launched", technicalLog: technicalLog)
 
             printLine("")
             printLine("Round 1")
@@ -123,6 +164,7 @@ struct MagiMCPOrchestrator {
                     stage: "independent analysis",
                     member: session.member,
                     tabID: session.tabID,
+                    technicalLog: technicalLog,
                     recordCapture: { run.rawTranscripts.append($0) }
                 ) { output in
                     try MagiTranscriptParser.parsePosition(
@@ -135,10 +177,10 @@ struct MagiMCPOrchestrator {
                 printLine("- \(session.member.persona.displayName): \(position.recommendation)")
                 positions.append(position)
                 run.positions.append(position)
-                try writeCheckpoint(&run, stage: "round-1-\(session.member.id.rawValue)-position")
+                try writeCheckpoint(&run, stage: "round-1-\(session.member.id.rawValue)-position", technicalLog: technicalLog)
             }
             MagiRunStateMachine.completeRound(&run, id: round1.id)
-            try writeCheckpoint(&run, stage: "round-1-completed")
+            try writeCheckpoint(&run, stage: "round-1-completed", technicalLog: technicalLog)
 
             let councilPacket = MagiPromptBuilder.councilPacket(
                 runID: runID,
@@ -152,7 +194,7 @@ struct MagiMCPOrchestrator {
                 index: 2,
                 kind: .crossExamination
             )
-            try writeCheckpoint(&run, stage: "round-2-started")
+            try writeCheckpoint(&run, stage: "round-2-started", technicalLog: technicalLog)
 
             printLine("")
             printLine("Cross-examination")
@@ -164,7 +206,13 @@ struct MagiMCPOrchestrator {
                     member: session.member,
                     councilPacket: councilPacket
                 )
-                try sendPrompt(prompt, to: session.tabID)
+                try sendPrompt(
+                    prompt,
+                    to: session.tabID,
+                    stage: "cross-examination",
+                    memberID: session.member.id,
+                    technicalLog: technicalLog
+                )
             }
 
             var evidenceRequests = positions.flatMap(\.evidenceRequests)
@@ -184,6 +232,7 @@ struct MagiMCPOrchestrator {
                     stage: "cross-examination",
                     member: session.member,
                     tabID: session.tabID,
+                    technicalLog: technicalLog,
                     recordCapture: { run.rawTranscripts.append($0) }
                 ) { output in
                     try MagiTranscriptParser.parseCritiques(
@@ -196,12 +245,12 @@ struct MagiMCPOrchestrator {
                 printLine("- \(session.member.persona.displayName): \(result.critiques.count) critique(s)")
                 critiqueResults.append(result)
                 run.critiques.append(contentsOf: result.critiques)
-                try writeCheckpoint(&run, stage: "round-2-\(session.member.id.rawValue)-critique")
+                try writeCheckpoint(&run, stage: "round-2-\(session.member.id.rawValue)-critique", technicalLog: technicalLog)
             }
             let critiques = critiqueResults.flatMap(\.critiques)
             evidenceRequests.append(contentsOf: critiqueResults.flatMap(\.evidenceRequests))
             MagiRunStateMachine.completeRound(&run, id: round2.id)
-            try writeCheckpoint(&run, stage: "round-2-completed")
+            try writeCheckpoint(&run, stage: "round-2-completed", technicalLog: technicalLog)
 
             let reviewedRequests = try reviewEvidenceRequests(evidenceRequests, config: config)
             run.evidenceRequests.append(contentsOf: reviewedRequests)
@@ -211,7 +260,7 @@ struct MagiMCPOrchestrator {
             if !approvedRequests.isEmpty {
                 run.status = .waitingForEvidenceApproval
             }
-            try writeCheckpoint(&run, stage: "evidence-reviewed")
+            try writeCheckpoint(&run, stage: "evidence-reviewed", technicalLog: technicalLog)
 
             let round3 = MagiRunStateMachine.startRound(
                 &run,
@@ -219,7 +268,7 @@ struct MagiMCPOrchestrator {
                 index: 3,
                 kind: .evidenceCollection
             )
-            try writeCheckpoint(&run, stage: "round-3-started")
+            try writeCheckpoint(&run, stage: "round-3-started", technicalLog: technicalLog)
             let evidencePackets = try collectEvidence(for: approvedRequests, config: config)
             run.evidencePackets.append(contentsOf: evidencePackets)
             markEvidenceRequestsFulfilled(
@@ -228,7 +277,7 @@ struct MagiMCPOrchestrator {
             )
             run.status = .running
             MagiRunStateMachine.completeRound(&run, id: round3.id)
-            try writeCheckpoint(&run, stage: "round-3-completed")
+            try writeCheckpoint(&run, stage: "round-3-completed", technicalLog: technicalLog)
 
             let round4 = MagiRunStateMachine.startRound(
                 &run,
@@ -236,7 +285,7 @@ struct MagiMCPOrchestrator {
                 index: 4,
                 kind: .vote
             )
-            try writeCheckpoint(&run, stage: "round-4-started")
+            try writeCheckpoint(&run, stage: "round-4-started", technicalLog: technicalLog)
 
             printLine("")
             printLine("Final vote")
@@ -251,7 +300,13 @@ struct MagiMCPOrchestrator {
                     evidencePackets: evidencePackets,
                     questionKind: questionKind
                 )
-                try sendPrompt(prompt, to: session.tabID)
+                try sendPrompt(
+                    prompt,
+                    to: session.tabID,
+                    stage: "final vote",
+                    memberID: session.member.id,
+                    technicalLog: technicalLog
+                )
             }
 
             var voteResults = try collectVotes(
@@ -259,10 +314,11 @@ struct MagiMCPOrchestrator {
                 roundID: round4.id,
                 sessions: sessions,
                 stageName: "final vote",
+                technicalLog: technicalLog,
                 recordCapture: { run.rawTranscripts.append($0) }
             )
             MagiRunStateMachine.completeRound(&run, id: round4.id)
-            try writeCheckpoint(&run, stage: "round-4-votes-collected")
+            try writeCheckpoint(&run, stage: "round-4-votes-collected", technicalLog: technicalLog)
 
             var policy = MagiResolutionPolicy(
                 majorityThreshold: council.majorityThreshold,
@@ -284,7 +340,7 @@ struct MagiMCPOrchestrator {
                     index: 5,
                     kind: .extraDeliberation
                 )
-                try writeCheckpoint(&run, stage: "round-5-started")
+                try writeCheckpoint(&run, stage: "round-5-started", technicalLog: technicalLog)
                 printLine("")
                 printLine("Extra deliberation")
                 for session in sessions {
@@ -298,7 +354,13 @@ struct MagiMCPOrchestrator {
                         vetoes: voteResults.vetoes,
                         questionKind: questionKind
                     )
-                    try sendPrompt(prompt, to: session.tabID)
+                    try sendPrompt(
+                        prompt,
+                        to: session.tabID,
+                        stage: "extra deliberation",
+                        memberID: session.member.id,
+                        technicalLog: technicalLog
+                    )
                 }
 
                 voteResults = try collectVotes(
@@ -306,6 +368,7 @@ struct MagiMCPOrchestrator {
                     roundID: extraRound.id,
                     sessions: sessions,
                     stageName: "extra deliberation",
+                    technicalLog: technicalLog,
                     recordCapture: { run.rawTranscripts.append($0) }
                 )
                 policy.deadlockExtraRoundEnabled = false
@@ -316,7 +379,7 @@ struct MagiMCPOrchestrator {
                     questionKind: questionKind
                 )
                 MagiRunStateMachine.completeRound(&run, id: extraRound.id)
-                try writeCheckpoint(&run, stage: "round-5-votes-collected")
+                try writeCheckpoint(&run, stage: "round-5-votes-collected", technicalLog: technicalLog)
             }
 
             run.finalVerdict = verdict
@@ -330,7 +393,7 @@ struct MagiMCPOrchestrator {
             run.status = .completed
             run.completedAt = Date()
 
-            let bundle = try writeCheckpoint(&run, stage: "completed")
+            let bundle = try writeCheckpoint(&run, stage: "completed", technicalLog: technicalLog)
 
             printLine("")
             printLine("Verdict")
@@ -340,9 +403,17 @@ struct MagiMCPOrchestrator {
             }
             printLine("Confidence: \(String(format: "%.2f", verdict.confidence))")
             printLine("Artifacts: \(bundle.rootDirectory)")
+            printLine("Technical log: \(technicalLog.path)")
 
             return run
         } catch {
+            technicalLog.record(
+                "run_failed",
+                stage: failureStage(for: error),
+                level: "error",
+                message: error.localizedDescription,
+                fields: ["category": failureCategory(for: error).rawValue]
+            )
             let category = failureCategory(for: error)
             if category == .interrupted {
                 MagiRunStateMachine.markInterrupted(
@@ -358,27 +429,44 @@ struct MagiMCPOrchestrator {
                     message: error.localizedDescription
                 )
             }
-            if let bundle = try? writeCheckpoint(&run, stage: run.status.rawValue) {
+            if let bundle = try? writeCheckpoint(&run, stage: run.status.rawValue, technicalLog: technicalLog) {
                 printLine("")
                 printLine(run.status == .interrupted ? "Interrupted" : "Failed")
                 printLine(error.localizedDescription)
                 printLine("Artifacts: \(bundle.rootDirectory)")
+                printLine("Technical log: \(technicalLog.path)")
             } else {
                 printLine("")
                 printLine(run.status == .interrupted ? "Interrupted" : "Failed")
                 printLine(error.localizedDescription)
                 printLine("Artifacts: unavailable")
+                printLine("Technical log: \(technicalLog.path)")
             }
             throw error
         }
     }
 
     @discardableResult
-    private func writeCheckpoint(_ run: inout MagiRun, stage: String) throws -> MagiArtifactBundle {
+    private func writeCheckpoint(
+        _ run: inout MagiRun,
+        stage: String,
+        technicalLog: MagiTechnicalLog? = nil
+    ) throws -> MagiArtifactBundle {
         MagiRunStateMachine.checkpoint(&run, stage: stage)
         if let bundle = run.artifactBundle {
             MagiRunStateMachine.recordArtifactBundle(bundle, in: &run)
         }
+        technicalLog?.record(
+            "checkpoint",
+            stage: stage,
+            fields: [
+                "status": run.status.rawValue,
+                "positions": String(run.positions.count),
+                "critiques": String(run.critiques.count),
+                "evidence_requests": String(run.evidenceRequests.count),
+                "evidence_packets": String(run.evidencePackets.count)
+            ]
+        )
 
         let bundle = try MagiRunArtifactStore.write(run: run, fileManager: fileManager)
         if run.artifactBundle != bundle {
@@ -477,10 +565,15 @@ struct MagiMCPOrchestrator {
         return MagiCouncil(id: config.defaultCouncilID, name: "MAGI", members: members)
     }
 
-    private func launchMember(_ member: MagiMember, prompt: String) throws -> String {
+    private func launchMember(
+        _ member: MagiMember,
+        prompt: String,
+        technicalLog: MagiTechnicalLog
+    ) throws -> String {
+        let command = providerCommand(for: member)
         let result = try client.callTool(name: "agent_launch", arguments: [
             "directory": paths.currentDirectory,
-            "agent_command": providerCommand(for: member),
+            "agent_command": command,
             "prompt": prompt,
             "count": 1,
             "ready_timeout_ms": launchTimeoutMs
@@ -493,6 +586,20 @@ struct MagiMCPOrchestrator {
         guard let tabID = agent["tab_id"] as? String else {
             throw MagiMCPOrchestratorError.missingToolField(tool: "agent_launch", field: "agents[0].tab_id")
         }
+        let launchStatus = agent["status"] as? String ?? "missing"
+        let promptStatus = agent["prompt"] as? String ?? "missing"
+        technicalLog.record(
+            "member_launch_result",
+            stage: "launch",
+            memberID: member.id,
+            tabID: tabID,
+            fields: [
+                "provider": member.provider,
+                "agent_command": command,
+                "status": launchStatus,
+                "prompt_status": promptStatus
+            ]
+        )
         guard (agent["status"] as? String) == "launched" else {
             throw MagiMCPOrchestratorError.launchFailed(
                 member: member.persona.displayName,
@@ -512,15 +619,45 @@ struct MagiMCPOrchestrator {
         member.provider.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    private func sendPrompt(_ prompt: String, to tabID: String) throws {
-        _ = try client.callTool(name: "tab_send_input", arguments: [
+    private func sendPrompt(
+        _ prompt: String,
+        to tabID: String,
+        stage: String,
+        memberID: MagiMemberID,
+        technicalLog: MagiTechnicalLog
+    ) throws {
+        technicalLog.record(
+            "prompt_send_started",
+            stage: stage,
+            memberID: memberID,
+            tabID: tabID,
+            fields: ["characters": String(prompt.count)]
+        )
+        let sendResult = try client.callTool(name: "tab_send_input", arguments: [
             "tab_id": tabID,
             "input": prompt
         ])
+        technicalLog.record(
+            "prompt_input_sent",
+            stage: stage,
+            memberID: memberID,
+            tabID: tabID,
+            fields: ["ok": stringField(sendResult["ok"])]
+        )
         Thread.sleep(forTimeInterval: 0.3)
-        _ = try client.callTool(name: "tab_submit_prompt", arguments: [
+        let submitResult = try client.callTool(name: "tab_submit_prompt", arguments: [
             "tab_id": tabID
         ])
+        technicalLog.record(
+            "prompt_submitted",
+            stage: stage,
+            memberID: memberID,
+            tabID: tabID,
+            fields: [
+                "ok": stringField(submitResult["ok"]),
+                "enter_count": stringField(submitResult["enter_count"])
+            ]
+        )
     }
 
     private func tabOutput(tabID: String) throws -> String {
@@ -543,19 +680,38 @@ struct MagiMCPOrchestrator {
         stage: String,
         member: MagiMember,
         tabID: String,
+        technicalLog: MagiTechnicalLog,
         recordCapture: (MagiRawTranscript) -> Void,
         parser: (String) throws -> T
     ) throws -> T {
         let deadline = Date().addingTimeInterval(roundTimeoutSeconds)
         var lastError: Error?
         var lastOutput = ""
+        var lastLoggedOutputCount: Int?
 
         while Date() < deadline {
             try throwIfInterrupted(stage: stage)
             let output = try tabOutput(tabID: tabID)
             lastOutput = output
+            if lastLoggedOutputCount != output.count {
+                lastLoggedOutputCount = output.count
+                technicalLog.record(
+                    "tab_output_polled",
+                    stage: stage,
+                    memberID: member.id,
+                    tabID: tabID,
+                    fields: ["characters": String(output.count)]
+                )
+            }
             do {
                 let parsed = try parser(output)
+                technicalLog.record(
+                    "structured_parse_succeeded",
+                    stage: stage,
+                    memberID: member.id,
+                    tabID: tabID,
+                    fields: ["stage_kind": stageKind.rawValue]
+                )
                 recordCapture(rawTranscript(
                     memberID: member.id,
                     roundID: roundID,
@@ -566,6 +722,14 @@ struct MagiMCPOrchestrator {
                 return parsed
             } catch {
                 lastError = error
+                technicalLog.record(
+                    "structured_parse_pending",
+                    stage: stage,
+                    memberID: member.id,
+                    tabID: tabID,
+                    message: error.localizedDescription,
+                    fields: ["stage_kind": stageKind.rawValue]
+                )
                 if shouldRepairImmediately(error) {
                     break
                 }
@@ -586,6 +750,14 @@ struct MagiMCPOrchestrator {
         ))
 
         printLine("- \(member.persona.displayName): requesting structured output repair")
+        technicalLog.record(
+            "structured_repair_requested",
+            stage: stage,
+            memberID: member.id,
+            tabID: tabID,
+            message: parseError,
+            fields: ["stage_kind": stageKind.rawValue]
+        )
         let repairPrompt = MagiPromptBuilder.repairPrompt(
             runID: runID,
             roundID: roundID,
@@ -594,7 +766,13 @@ struct MagiMCPOrchestrator {
             parseError: parseError,
             rawTranscript: lastOutput
         )
-        try sendPrompt(repairPrompt, to: tabID)
+        try sendPrompt(
+            repairPrompt,
+            to: tabID,
+            stage: "\(stage) repair",
+            memberID: member.id,
+            technicalLog: technicalLog
+        )
 
         let repairDeadline = Date().addingTimeInterval(repairTimeoutSeconds)
         var repairOutput = ""
@@ -605,6 +783,13 @@ struct MagiMCPOrchestrator {
             repairOutput = try tabOutput(tabID: tabID)
             do {
                 let parsed = try parser(repairOutput)
+                technicalLog.record(
+                    "structured_repair_succeeded",
+                    stage: stage,
+                    memberID: member.id,
+                    tabID: tabID,
+                    fields: ["stage_kind": stageKind.rawValue]
+                )
                 recordCapture(rawTranscript(
                     memberID: member.id,
                     roundID: roundID,
@@ -617,6 +802,14 @@ struct MagiMCPOrchestrator {
                 return parsed
             } catch {
                 repairError = error
+                technicalLog.record(
+                    "structured_repair_pending",
+                    stage: stage,
+                    memberID: member.id,
+                    tabID: tabID,
+                    message: error.localizedDescription,
+                    fields: ["stage_kind": stageKind.rawValue]
+                )
                 Thread.sleep(forTimeInterval: 3)
             }
         }
@@ -633,6 +826,15 @@ struct MagiMCPOrchestrator {
         ))
 
         if lastError == nil {
+            technicalLog.record(
+                "structured_parse_timed_out",
+                stage: stage,
+                level: "error",
+                memberID: member.id,
+                tabID: tabID,
+                message: repairError?.localizedDescription,
+                fields: ["stage_kind": stageKind.rawValue]
+            )
             throw MagiMCPOrchestratorError.timedOut(
                 stage: stage,
                 member: member.persona.displayName,
@@ -640,6 +842,15 @@ struct MagiMCPOrchestrator {
             )
         }
 
+        technicalLog.record(
+            "structured_parse_failed",
+            stage: stage,
+            level: "error",
+            memberID: member.id,
+            tabID: tabID,
+            message: repairError?.localizedDescription ?? lastError?.localizedDescription,
+            fields: ["stage_kind": stageKind.rawValue]
+        )
         throw MagiMCPOrchestratorError.parseFailedAfterRepair(
             stage: stage,
             member: member.persona.displayName,
@@ -685,6 +896,7 @@ struct MagiMCPOrchestrator {
         roundID: String,
         sessions: [MagiMemberTab],
         stageName: String,
+        technicalLog: MagiTechnicalLog,
         recordCapture: (MagiRawTranscript) -> Void
     ) throws -> (votes: [MagiVote], vetoes: [MagiVeto]) {
         var votes: [MagiVote] = []
@@ -705,6 +917,7 @@ struct MagiMCPOrchestrator {
                 stage: stageName,
                 member: session.member,
                 tabID: session.tabID,
+                technicalLog: technicalLog,
                 recordCapture: recordCapture
             ) { output in
                 try MagiTranscriptParser.parseVote(
@@ -723,6 +936,14 @@ struct MagiMCPOrchestrator {
         }
 
         return (votes, vetoes)
+    }
+
+    private func stringField(_ value: Any?) -> String {
+        guard let value else { return "" }
+        if let string = value as? String { return string }
+        if let bool = value as? Bool { return String(bool) }
+        if let int = value as? Int { return String(int) }
+        return "\(value)"
     }
 
     private func reviewEvidenceRequests(

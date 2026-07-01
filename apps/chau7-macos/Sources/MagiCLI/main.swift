@@ -149,8 +149,9 @@ struct MagiCLIRunner {
         writeStdout(styled(art, .bold, .cyan))
         writeStdout(styled("WELCOME TO MAGI SYSTEM", .bold))
         writeStdout()
+        printCouncilArt()
+        writeStdout()
         printBootLine("core protocol", "Multi Agent Gathering Intelligence online")
-        printBootLine("council", "Melchior / Balthasar / Casper registered")
         let socketPath = "\(paths.homeDirectory)/.chau7/mcp.sock"
         let socketPresent = fileManager.fileExists(atPath: socketPath)
         let socketDetail = socketPresent ? "Chau7 MCP socket present" : "Chau7 MCP socket missing"
@@ -161,8 +162,39 @@ struct MagiCLIRunner {
             : "config missing; type --config"
         printBootLine("config", configDetail, ok: configPresent)
         printBootLine("mood", "serious council, questionable coffee")
+        printBootLine("council", "selected: Melchior / Balthasar / Casper")
         writeStdout()
         writeMuted("Ask a question, type --config, doctor, help, or quit.")
+    }
+
+    private func printCouncilArt() {
+        let melchior = """
+        +-- MELCHIOR --+
+        |     /\\      |
+        |    /__\\     |
+        |   /_||_\\    |
+        |   LOGIC     |
+        +-------------+
+        """
+        let balthasar = """
+        +-- BALTHASAR --+
+        |   [======]   |
+        |   | RISK |   |
+        |   [______]   |
+        |  CONTINUITY  |
+        +---------------+
+        """
+        let casper = """
+        +--- CASPER ---+
+        |     .--.     |
+        |    (    )    |
+        |     `--'     |
+        |    HUMAN     |
+        +--------------+
+        """
+        writeStdout(styled(melchior, .cyan))
+        writeStdout(styled(balthasar, .yellow))
+        writeStdout(styled(casper, .magenta))
     }
 
     private func printBootLine(_ label: String, _ detail: String, ok: Bool = true) {
@@ -863,19 +895,33 @@ struct MagiCLIRunner {
         let runID = MagiRunID.make()
         let repositoryRoot = paths.repositoryRoot(fileManager: fileManager)
         let artifactRoot = paths.runRoot(runID: runID, repositoryRoot: repositoryRoot)
+        let artifactBundle = MagiArtifactBundle(runID: runID, rootDirectory: artifactRoot)
+        let technicalLog = MagiTechnicalLog(
+            path: artifactBundle.technicalLogPath,
+            runID: runID,
+            fileManager: fileManager
+        )
         var run = MagiRun(
             id: runID,
             question: question,
             council: MagiCouncil.defaultMagi(members: config.members),
             status: .running,
-            artifactBundle: MagiArtifactBundle(runID: runID, rootDirectory: artifactRoot),
+            artifactBundle: artifactBundle,
             metadata: [
                 "mcp_socket": "\(paths.homeDirectory)/.chau7/mcp.sock",
                 "artifact_root": artifactRoot,
+                "technical_log": artifactBundle.technicalLogPath,
                 "artifact_scope": repositoryRoot == nil ? "global" : "repository",
                 "repository_root": repositoryRoot ?? "",
                 "preflight": "true"
             ]
+        )
+        technicalLog.record(
+            "preflight_failed",
+            stage: "mcp-preflight",
+            level: "error",
+            message: error.localizedDescription,
+            fields: ["category": category.rawValue]
         )
         MagiRunStateMachine.markFailed(
             &run,
@@ -926,6 +972,7 @@ private enum ANSIStyle: String {
     case cyan = "36"
     case green = "32"
     case yellow = "33"
+    case magenta = "35"
 }
 
 struct MagiProviderCommandDryRunner {

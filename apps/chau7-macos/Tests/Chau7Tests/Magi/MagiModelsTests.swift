@@ -294,6 +294,7 @@ final class MagiModelsTests: XCTestCase {
         XCTAssertEqual(bundle.graphJSONPath, "/repo/.chau7/magi/runs/run-1/graph.json")
         XCTAssertEqual(bundle.replayJSONLPath, "/repo/.chau7/magi/runs/run-1/replay.jsonl")
         XCTAssertEqual(bundle.shareHTMLPath, "/repo/.chau7/magi/runs/run-1/share.html")
+        XCTAssertEqual(bundle.technicalLogPath, "/repo/.chau7/magi/runs/run-1/technical.jsonl")
     }
 
     func testArtifactBundleRequiredFilesMatchPhaseEightContract() {

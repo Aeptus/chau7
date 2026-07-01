@@ -905,6 +905,7 @@ public struct MagiArtifactBundle: Codable, Equatable, Sendable {
     public var graphJSONPath: String
     public var replayJSONLPath: String
     public var shareHTMLPath: String
+    public var technicalLogPath: String { "\(rootDirectory)/technical.jsonl" }
 
     public init(runID: String, rootDirectory: String) {
         let normalizedRoot = Self.normalizedDirectory(rootDirectory)
