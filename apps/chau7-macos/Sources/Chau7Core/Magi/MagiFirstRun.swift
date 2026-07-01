@@ -80,6 +80,21 @@ public enum MagiFirstRunPlanner {
         ]
     }
 
+    public static func sharedSelections(
+        provider: MagiProviderID,
+        modelClass: MagiModelClass,
+        reasoning: MagiReasoningLevel = .max
+    ) -> [MagiMemberID: MagiFirstRunMemberSelection] {
+        MagiMemberID.allCases.reduce(into: [MagiMemberID: MagiFirstRunMemberSelection]()) { result, memberID in
+            result[memberID] = MagiFirstRunMemberSelection(
+                memberID: memberID,
+                provider: provider,
+                modelClass: modelClass,
+                reasoning: reasoning
+            )
+        }
+    }
+
     public static func config(from selections: [MagiMemberID: MagiFirstRunMemberSelection]) -> MagiConfig {
         let defaults = defaultSelections()
         let members = MagiMemberID.allCases.reduce(into: [MagiMemberID: MagiMemberConfiguration]()) { result, memberID in

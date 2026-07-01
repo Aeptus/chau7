@@ -9,13 +9,6 @@ enum MagiCLIExitCode: Int32 {
 }
 
 let environment = ProcessInfo.processInfo.environment
-let paths = MagiCLIPaths(
-    homeDirectory: environment["HOME"] ?? FileManager.default.homeDirectoryForCurrentUser.path,
-    currentDirectory: FileManager.default.currentDirectoryPath
-)
-let runner = MagiCLIRunner(paths: paths)
-let exitCode = runner.run(arguments: Array(CommandLine.arguments.dropFirst()))
-Foundation.exit(exitCode.rawValue)
 
 struct MagiCLIRunner {
     let paths: MagiCLIPaths
@@ -304,8 +297,8 @@ struct MagiCLIRunner {
 
     @discardableResult
     private func runFirstRunWizard() throws -> MagiConfig {
-        writeStdout("First-run configuration")
-        writeStdout("Reasoning defaults to max. You can edit files after setup.")
+        writeWizardTitle("First-run configuration")
+        writeMuted("Reasoning defaults to max. You can edit files after setup.")
         writeStdout()
 
         var selections = promptSelections()
@@ -363,9 +356,28 @@ struct MagiCLIRunner {
     private func promptSelections() -> [MagiMemberID: MagiFirstRunMemberSelection] {
         var selections = MagiFirstRunPlanner.defaultSelections()
 
-        for memberID in MagiMemberID.allCases {
+        writeWizardSection("Setup mode")
+        writeStdout("Members: \(MagiMemberID.allCases.map(\.displayName).joined(separator: ", "))")
+        if promptYesNo("Use the same provider and class for all members?", defaultValue: true) {
+            writeStdout()
+            writeWizardSection("Shared member config")
+            let provider = promptProvider(defaultValue: .codex)
+            let modelClass = promptModelClass(defaultValue: .balanced)
+            selections = MagiFirstRunPlanner.sharedSelections(
+                provider: provider,
+                modelClass: modelClass,
+                reasoning: .max
+            )
+            writeStdout()
+            writeMuted("Applied to \(MagiMemberID.allCases.map(\.displayName).joined(separator: ", ")).")
+            writeStdout()
+            return selections
+        }
+
+        writeStdout()
+        for (index, memberID) in MagiMemberID.allCases.enumerated() {
             let current = selections[memberID] ?? MagiFirstRunMemberSelection(memberID: memberID, provider: .codex)
-            writeStdout("\(memberID.displayName)")
+            writeWizardSection("Member \(index + 1) of \(MagiMemberID.allCases.count): \(memberID.displayName)")
             let provider = promptProvider(defaultValue: current.provider)
             let modelClass = promptModelClass(defaultValue: current.modelClass)
             selections[memberID] = MagiFirstRunMemberSelection(
@@ -430,14 +442,18 @@ struct MagiCLIRunner {
     }
 
     private func prompt(_ message: String) -> String {
-        writeStdout(message, terminator: " ")
+        writeStdout(styled(message, .bold), terminator: " ")
         fflush(stdout)
         return readLine()?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
     }
 
     private func writeChoiceLines(_ lines: [String]) {
-        for line in lines {
-            writeStdout(line)
+        for (index, line) in lines.enumerated() {
+            if index == 0 {
+                writeMuted(line)
+            } else {
+                writeStdout(line)
+            }
         }
     }
 
@@ -530,6 +546,12 @@ struct MagiCLIRunner {
         isatty(STDIN_FILENO) != 0 && isatty(STDOUT_FILENO) != 0
     }
 
+    private func supportsANSIOutput() -> Bool {
+        guard isInteractiveTerminal else { return false }
+        if environment["NO_COLOR"] != nil { return false }
+        return environment["TERM"] != "dumb"
+    }
+
     private var nonInteractiveConfigMessage: String {
         let stdinTTY = isatty(STDIN_FILENO) != 0
         let stdoutTTY = isatty(STDOUT_FILENO) != 0
@@ -542,6 +564,25 @@ struct MagiCLIRunner {
 
     private func writeStdout(_ line: String = "", terminator: String = "\n") {
         FileHandle.standardOutput.writeText("\(line)\(terminator)")
+    }
+
+    private func writeWizardTitle(_ title: String) {
+        writeStdout(styled(title, .bold, .cyan))
+        writeStdout(styled(String(repeating: "=", count: title.count), .cyan))
+    }
+
+    private func writeWizardSection(_ title: String) {
+        writeStdout(styled("-- \(title)", .bold, .cyan))
+    }
+
+    private func writeMuted(_ line: String) {
+        writeStdout(styled(line, .dim))
+    }
+
+    private func styled(_ text: String, _ styles: ANSIStyle...) -> String {
+        guard supportsANSIOutput(), !styles.isEmpty else { return text }
+        let prefix = styles.map(\.rawValue).joined(separator: ";")
+        return "\u{001B}[\(prefix)m\(text)\u{001B}[0m"
     }
 
     private func printHeader() {
@@ -620,6 +661,12 @@ struct MagiCLIRunner {
 
     MAGI is also supported as a command name on supported installations.
     """
+}
+
+private enum ANSIStyle: String {
+    case bold = "1"
+    case dim = "2"
+    case cyan = "36"
 }
 
 struct MagiProviderCommandDryRunner {
@@ -720,3 +767,11 @@ final class MagiInterruptFlag {
         lock.unlock()
     }
 }
+
+let paths = MagiCLIPaths(
+    homeDirectory: environment["HOME"] ?? FileManager.default.homeDirectoryForCurrentUser.path,
+    currentDirectory: FileManager.default.currentDirectoryPath
+)
+let runner = MagiCLIRunner(paths: paths)
+let exitCode = runner.run(arguments: Array(CommandLine.arguments.dropFirst()))
+Foundation.exit(exitCode.rawValue)
