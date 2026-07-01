@@ -675,6 +675,7 @@ struct MagiMCPOrchestrator {
         )
         let agentRunning = waitForAgentRunning(
             tabID: tabID,
+            provider: member.provider,
             timeoutSeconds: 5
         )
         technicalLog.record(
@@ -715,10 +716,20 @@ struct MagiMCPOrchestrator {
         return false
     }
 
-    private func waitForAgentRunning(tabID: String, timeoutSeconds: TimeInterval) -> Bool {
+    private func waitForAgentRunning(
+        tabID: String,
+        provider: String,
+        timeoutSeconds: TimeInterval
+    ) -> Bool {
         let deadline = Date().addingTimeInterval(timeoutSeconds)
         while Date() < deadline {
             if (try? tabStatusReportsRunningAgent(tabID: tabID)) == true {
+                return true
+            }
+            let bufferOutput = (try? tabOutput(tabID: tabID, source: "buffer")) ?? ""
+            let ptyOutput = (try? tabOutput(tabID: tabID, source: "pty_log")) ?? ""
+            if agentOutputLooksResponsive(bufferOutput, provider: provider)
+                || agentOutputLooksResponsive(ptyOutput, provider: provider) {
                 return true
             }
             Thread.sleep(forTimeInterval: 0.25)
@@ -737,8 +748,34 @@ struct MagiMCPOrchestrator {
             || stringField(result["ai_provider"]).isEmpty == false
         guard hasAgentIdentity else { return false }
 
-        let status = stringField(result["status"])
-        return ["running", "waitingForInput", "approvalRequired", "stuck"].contains(status)
+        let runningStates = ["running", "waitingForInput", "approvalRequired", "stuck"]
+        return ["status", "raw_status"].contains { key in
+            runningStates.contains(stringField(result[key]))
+        }
+    }
+
+    private func agentOutputLooksResponsive(_ output: String, provider: String) -> Bool {
+        let lowercased = output.lowercased()
+        var needles = [
+            "openai codex",
+            "queued follow-up inputs",
+            "usage limit resets",
+            "claude code",
+            "google gemini",
+            "thinking",
+            "working..."
+        ]
+
+        let normalizedProvider = provider.lowercased()
+        if normalizedProvider.contains("codex") {
+            needles.append("gpt-")
+        } else if normalizedProvider.contains("claude") {
+            needles.append(contentsOf: ["sonnet", "opus", "haiku"])
+        } else if normalizedProvider.contains("gemini") {
+            needles.append(contentsOf: ["google gemini", "gemini cli"])
+        }
+
+        return needles.contains { lowercased.contains($0) }
     }
 
     private func promptVisibilityNeedles(from prompt: String) -> [String] {

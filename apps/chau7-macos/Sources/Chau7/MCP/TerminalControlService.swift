@@ -954,32 +954,85 @@ final class TerminalControlService {
     private func waitForAgentRunningAfterSubmit(tabID: String, timeoutMs: Int) -> Bool {
         let deadline = Date().addingTimeInterval(Double(max(0, timeoutMs)) / 1000.0)
         while Date() < deadline {
-            guard let status = decodeJSONObject(tabStatus(tabID: tabID)) else {
-                Thread.sleep(forTimeInterval: 0.25)
-                continue
-            }
-
-            if status["active_run"] is [String: Any] {
+            if let status = decodeJSONObject(tabStatus(tabID: tabID)),
+               Self.agentStatusReportsRunning(status) {
                 return true
             }
 
-            let hasAgentIdentity =
-                (status["active_app"] as? String)?.isEmpty == false
-                || (status["ai_provider"] as? String)?.isEmpty == false
-            let statusValue = status["status"] as? String
-            let runningStates = [
-                CommandStatus.running.rawValue,
-                CommandStatus.waitingForInput.rawValue,
-                CommandStatus.approvalRequired.rawValue,
-                CommandStatus.stuck.rawValue
-            ]
-            if hasAgentIdentity, let statusValue, runningStates.contains(statusValue) {
+            if agentOutputLooksResponsive(tabID: tabID) {
                 return true
             }
 
             Thread.sleep(forTimeInterval: 0.25)
         }
 
+        return false
+    }
+
+    static func agentStatusReportsRunning(_ status: [String: Any]) -> Bool {
+        if status["active_run"] is [String: Any] {
+            return true
+        }
+
+        let hasAgentIdentity = [
+            status["active_app"],
+            status["raw_active_app"],
+            status["ai_provider"]
+        ].contains { value in
+            guard let string = value as? String else { return false }
+            return !string.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }
+        guard hasAgentIdentity else { return false }
+
+        let runningStates = [
+            CommandStatus.running.rawValue,
+            CommandStatus.waitingForInput.rawValue,
+            CommandStatus.approvalRequired.rawValue,
+            CommandStatus.stuck.rawValue
+        ]
+        return ["status", "raw_status"].contains { key in
+            guard let value = status[key] as? String else { return false }
+            return runningStates.contains(value)
+        }
+    }
+
+    static func agentOutputLooksResponsive(_ output: String, provider: String? = nil) -> Bool {
+        let lowercased = output.lowercased()
+        var needles = [
+            "openai codex",
+            "queued follow-up inputs",
+            "usage limit resets",
+            "claude code",
+            "google gemini",
+            "thinking",
+            "working..."
+        ]
+
+        switch provider?.lowercased() {
+        case let value? where value.contains("codex"):
+            needles.append("gpt-")
+        case let value? where value.contains("claude"):
+            needles.append(contentsOf: ["sonnet", "opus", "haiku"])
+        case let value? where value.contains("gemini"):
+            needles.append(contentsOf: ["google gemini", "gemini cli"])
+        default:
+            break
+        }
+
+        return needles.contains { lowercased.contains($0) }
+    }
+
+    private func agentOutputLooksResponsive(tabID: String) -> Bool {
+        for source in ["buffer", "pty_log"] {
+            guard let output = decodeJSONObject(
+                tabOutput(tabID: tabID, lines: 160, waitForStableMs: nil, source: source)
+            )?["output"] as? String else {
+                continue
+            }
+            if Self.agentOutputLooksResponsive(output) {
+                return true
+            }
+        }
         return false
     }
 

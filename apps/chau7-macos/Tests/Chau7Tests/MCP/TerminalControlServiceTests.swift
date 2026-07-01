@@ -645,4 +645,47 @@ final class TerminalControlServiceTests: XCTestCase {
             ]
         )
     }
+
+    func testAgentStatusReportsRunningUsesRawStatusWhenEffectiveStateLags() {
+        XCTAssertTrue(TerminalControlService.agentStatusReportsRunning([
+            "active_app": "Codex",
+            "ai_provider": "codex",
+            "status": CommandStatus.idle.rawValue,
+            "raw_status": CommandStatus.running.rawValue
+        ]))
+    }
+
+    func testAgentStatusReportsRunningRequiresAgentIdentity() {
+        XCTAssertFalse(TerminalControlService.agentStatusReportsRunning([
+            "status": CommandStatus.running.rawValue,
+            "raw_status": CommandStatus.running.rawValue
+        ]))
+    }
+
+    func testAgentOutputLooksResponsiveForCodexSurface() {
+        XCTAssertTrue(TerminalControlService.agentOutputLooksResponsive("""
+        ╭──────────────────────────────────────────────────╮
+        │ >_ OpenAI Codex (v0.142.5)                       │
+        ╰──────────────────────────────────────────────────╯
+        • Queued follow-up inputs
+        """))
+    }
+
+    func testAgentOutputLooksResponsiveDoesNotTreatPromptTextAsAgentResponse() {
+        XCTAssertFalse(TerminalControlService.agentOutputLooksResponsive("""
+        MAGI independent analysis
+        Run: magi-123
+        Round: round-1
+        Work independently in this round.
+        """))
+    }
+
+    func testAgentOutputLooksResponsiveDoesNotMatchProviderEchoOnly() {
+        XCTAssertFalse(TerminalControlService.agentOutputLooksResponsive("""
+        MAGI independent analysis
+        Member: Casper
+        Provider: codex
+        Question: What is the best Final Fantasy
+        """, provider: "codex"))
+    }
 }
