@@ -53,13 +53,22 @@ export function parseApnsReason(bodyText) {
  * alert is contradictory and can be dropped.
  */
 export function buildApnsPayload(notify) {
+  const alert = { title: notify.title, body: notify.body };
+  if (notify.subtitle) {
+    alert.subtitle = notify.subtitle;
+  }
+  const aps = {
+    alert,
+    sound: 'default',
+    'interruption-level': 'time-sensitive',
+    'relevance-score': 1
+  };
+  // Group a tab's alerts into one lock-screen stack instead of separate banners.
+  if (notify.thread_id) {
+    aps['thread-id'] = notify.thread_id;
+  }
   return {
-    aps: {
-      alert: { title: notify.title, body: notify.body },
-      sound: 'default',
-      'interruption-level': 'time-sensitive',
-      'relevance-score': 1
-    },
+    aps,
     kind: notify.kind,
     request_id: notify.request_id,
     prompt_id: notify.prompt_id,

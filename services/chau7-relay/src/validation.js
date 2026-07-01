@@ -31,6 +31,7 @@ const FIELD_CAPS = {
 /** Push-notification field caps. APNs rejects payloads over ~4 KB total. */
 export const PUSH_CAPS = {
   title: 256,
+  subtitle: 256,
   body: 1024,
   kind: 64,
   id: 128
@@ -252,6 +253,10 @@ export function validatePushNotify(payload) {
     body,
     open_approvals: payload.open_approvals !== false
   };
+  const subtitle = clampString(payload.subtitle, PUSH_CAPS.subtitle);
+  if (subtitle) {
+    value.subtitle = subtitle;
+  }
   const requestId = clampString(payload.request_id, PUSH_CAPS.id);
   if (requestId) {
     value.request_id = requestId;
@@ -259,6 +264,10 @@ export function validatePushNotify(payload) {
   const promptId = clampString(payload.prompt_id, PUSH_CAPS.id);
   if (promptId) {
     value.prompt_id = promptId;
+  }
+  const threadId = clampString(payload.thread_id, PUSH_CAPS.id);
+  if (threadId) {
+    value.thread_id = threadId;
   }
   return { ok: true, value };
 }

@@ -188,9 +188,11 @@ type PushRegistrationPayload struct {
 type PushNotifyPayload struct {
 	Kind          string `json:"kind"`
 	Title         string `json:"title"`
+	Subtitle      string `json:"subtitle,omitempty"`
 	Body          string `json:"body"`
 	RequestID     string `json:"request_id,omitempty"`
 	PromptID      string `json:"prompt_id,omitempty"`
+	ThreadID      string `json:"thread_id,omitempty"`
 	OpenApprovals bool   `json:"open_approvals"`
 }
 
@@ -571,9 +573,18 @@ func (a *Agent) handleClientStateFrame(payload []byte) {
 	}
 
 	a.clientStateMu.Lock()
+	wasEligible := a.currentClientAppState != "foreground" || a.currentClientStreamMode == "approvals_only"
 	a.currentClientAppState = statePayload.AppState
 	a.currentClientStreamMode = statePayload.StreamMode
+	nowEligible := a.currentClientAppState != "foreground" || a.currentClientStreamMode == "approvals_only"
 	a.clientStateMu.Unlock()
+
+	// The client just moved to background / approvals-only: alert about anything
+	// already pending, since no fresh approval or prompt-list frame will arrive
+	// to trigger a push while it sits idle in the background.
+	if nowEligible && !wasEligible {
+		a.flushPendingPushNotifications()
+	}
 
 	a.sessionMu.Lock()
 	pairedDeviceID := a.currentPeerID
@@ -1059,15 +1070,40 @@ func (a *Agent) sendPairingInfo() {
 	})
 }
 
-func (a *Agent) approvalContextSummary(toolName, tabTitle, projectName, branchName string) string {
-	parts := make([]string, 0, 4)
-	for _, part := range []string{toolName, tabTitle, projectName, branchName} {
-		part = strings.TrimSpace(part)
-		if part != "" {
-			parts = append(parts, part)
-		}
+// locationSummary is the one-line "where" context shown as the push subtitle:
+// `tab · project (branch) · dir`. The tool name leads the title instead, so it
+// is deliberately omitted here (mirrors the iOS local-notification layout).
+func locationSummary(tabTitle, projectName, branchName, currentDirectory string) string {
+	parts := make([]string, 0, 3)
+	if t := strings.TrimSpace(tabTitle); t != "" {
+		parts = append(parts, t)
+	}
+	project := strings.TrimSpace(projectName)
+	branch := strings.TrimSpace(branchName)
+	switch {
+	case project != "" && branch != "":
+		parts = append(parts, project+" ("+branch+")")
+	case project != "":
+		parts = append(parts, project)
+	case branch != "":
+		parts = append(parts, branch)
+	}
+	if d := strings.TrimSpace(currentDirectory); d != "" {
+		parts = append(parts, d)
 	}
 	return strings.Join(parts, " · ")
+}
+
+// pushApprovalTitle leads with the tool name so the lock-screen banner reads
+// "Codex needs approval" rather than a generic label.
+func pushApprovalTitle(approval ApprovalNotificationPayload) string {
+	if strings.TrimSpace(approval.FlaggedCommand) != "" && approval.FlaggedCommand != approval.Command {
+		return "Protected action needs approval"
+	}
+	if tool := strings.TrimSpace(approval.ToolName); tool != "" {
+		return tool + " needs approval"
+	}
+	return "Command approval"
 }
 
 func (a *Agent) relayAPIBaseURL() string {
@@ -1204,51 +1240,53 @@ func (a *Agent) notifyPush(payload PushNotifyPayload) {
 }
 
 func (a *Agent) handleApprovalRequestForPush(payload []byte) {
-	if !a.shouldNotifyClientViaPush() {
-		return
-	}
 	var approval ApprovalNotificationPayload
 	if err := json.Unmarshal(payload, &approval); err != nil {
 		log.Printf("approval push: unmarshal: %v", err)
 		return
 	}
-	if approval.RequestID == "" {
-		return
-	}
-	a.clientStateMu.Lock()
-	if _, ok := a.notifiedApprovalIDs[approval.RequestID]; ok {
-		a.clientStateMu.Unlock()
-		return
-	}
-	a.notifiedApprovalIDs[approval.RequestID] = time.Now()
-	a.clientStateMu.Unlock()
+	a.emitApprovalPush(approval)
+}
 
+// markPushedOnce records that id has been pushed and reports whether this was
+// the first time. This locked check-and-set is the single source of push
+// dedup, shared by the approval and prompt emitters.
+func (a *Agent) markPushedOnce(seen map[string]time.Time, id string) bool {
+	a.clientStateMu.Lock()
+	defer a.clientStateMu.Unlock()
+	if _, ok := seen[id]; ok {
+		return false
+	}
+	seen[id] = time.Now()
+	return true
+}
+
+// emitApprovalPush sends a single approval push if the client is push-eligible
+// and it hasn't already been pushed. Safe to call from the live frame handler
+// or from a bulk flush (see flushPendingPushNotifications).
+func (a *Agent) emitApprovalPush(approval ApprovalNotificationPayload) {
+	if approval.RequestID == "" || !a.shouldNotifyClientViaPush() {
+		return
+	}
+	if !a.markPushedOnce(a.notifiedApprovalIDs, approval.RequestID) {
+		return
+	}
 	headline := approval.FlaggedCommand
 	if strings.TrimSpace(headline) == "" {
 		headline = approval.Command
 	}
-	context := a.approvalContextSummary(approval.ToolName, approval.TabTitle, approval.ProjectName, approval.BranchName)
-	body := headline
-	if context != "" {
-		body = context + "\n" + headline
-	}
-	title := "Command Approval"
-	if approval.FlaggedCommand != "" && approval.FlaggedCommand != approval.Command {
-		title = "Protected Remote Action"
-	}
 	a.notifyPush(PushNotifyPayload{
 		Kind:          "approval",
-		Title:         title,
-		Body:          body,
+		Title:         pushApprovalTitle(approval),
+		Subtitle:      locationSummary(approval.TabTitle, approval.ProjectName, approval.BranchName, ""),
+		Body:          headline,
 		RequestID:     approval.RequestID,
+		ThreadID:      strings.TrimSpace(approval.TabTitle),
 		OpenApprovals: true,
 	})
 }
 
 func (a *Agent) handleInteractivePromptListForPush(payload []byte) {
-	if !a.shouldNotifyClientViaPush() {
-		return
-	}
 	var promptList InteractivePromptListPayload
 	if err := json.Unmarshal(payload, &promptList); err != nil {
 		log.Printf("interactive prompt push: unmarshal: %v", err)
@@ -1260,29 +1298,11 @@ func (a *Agent) handleInteractivePromptListForPush(payload []byte) {
 			continue
 		}
 		current[prompt.ID] = struct{}{}
-		a.clientStateMu.Lock()
-		_, seen := a.notifiedPromptIDs[prompt.ID]
-		if !seen {
-			a.notifiedPromptIDs[prompt.ID] = time.Now()
-		}
-		a.clientStateMu.Unlock()
-		if seen {
-			continue
-		}
-		context := a.approvalContextSummary(prompt.ToolName, prompt.TabTitle, prompt.ProjectName, prompt.BranchName)
-		body := strings.TrimSpace(prompt.Prompt)
-		if context != "" {
-			body = context + "\n" + body
-		}
-		a.notifyPush(PushNotifyPayload{
-			Kind:          "interactive_prompt",
-			Title:         "Interactive Prompt",
-			Body:          body,
-			PromptID:      prompt.ID,
-			OpenApprovals: true,
-		})
+		a.emitInteractivePromptPush(prompt)
 	}
 
+	// Forget prompts the Mac no longer lists so they can push again if they
+	// legitimately recur later.
 	a.clientStateMu.Lock()
 	for promptID := range a.notifiedPromptIDs {
 		if _, ok := current[promptID]; !ok {
@@ -1290,6 +1310,59 @@ func (a *Agent) handleInteractivePromptListForPush(payload []byte) {
 		}
 	}
 	a.clientStateMu.Unlock()
+}
+
+// emitInteractivePromptPush sends a single prompt push if the client is
+// push-eligible and it hasn't already been pushed. Safe to call from the live
+// frame handler or from a bulk flush (see flushPendingPushNotifications).
+func (a *Agent) emitInteractivePromptPush(prompt RemoteInteractivePrompt) {
+	if prompt.ID == "" || !a.shouldNotifyClientViaPush() {
+		return
+	}
+	if !a.markPushedOnce(a.notifiedPromptIDs, prompt.ID) {
+		return
+	}
+	title := "Interactive prompt"
+	if tool := strings.TrimSpace(prompt.ToolName); tool != "" {
+		title = tool + " is waiting"
+	}
+	a.notifyPush(PushNotifyPayload{
+		Kind:          "interactive_prompt",
+		Title:         title,
+		Subtitle:      locationSummary(prompt.TabTitle, prompt.ProjectName, prompt.BranchName, prompt.CurrentDirectory),
+		Body:          strings.TrimSpace(prompt.Prompt),
+		PromptID:      prompt.ID,
+		ThreadID:      strings.TrimSpace(prompt.TabTitle),
+		OpenApprovals: true,
+	})
+}
+
+// flushPendingPushNotifications pushes any currently-pending approvals and
+// prompts that haven't been pushed yet. A prompt that was already pending when
+// the phone locked never produces a new list frame, so without this the
+// lock-screen alert never fires — this is the "no notifications while locked"
+// gap. Dedup via the notified* maps keeps it from re-alerting.
+func (a *Agent) flushPendingPushNotifications() {
+	if !a.shouldNotifyClientViaPush() {
+		return
+	}
+	a.pendingStateMu.Lock()
+	prompts := make([]RemoteInteractivePrompt, 0, len(a.pendingPrompts))
+	for _, prompt := range a.pendingPrompts {
+		prompts = append(prompts, prompt)
+	}
+	approvals := make([]ApprovalNotificationPayload, 0, len(a.pendingApprovals))
+	for _, approval := range a.pendingApprovals {
+		approvals = append(approvals, approval)
+	}
+	a.pendingStateMu.Unlock()
+
+	for _, approval := range approvals {
+		a.emitApprovalPush(approval)
+	}
+	for _, prompt := range prompts {
+		a.emitInteractivePromptPush(prompt)
+	}
 }
 
 func (a *Agent) sendToRelay(frame *protocol.Frame) {
