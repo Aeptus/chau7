@@ -54,6 +54,70 @@ final class MagiArtifactsTests: XCTestCase {
         XCTAssertTrue(html.contains("Final Fantasy VI"))
     }
 
+    func testGraphJSONIncludesRunAndVerdictNodes() throws {
+        let data = try XCTUnwrap(MagiRunArtifactRenderer.graphJSON(for: sampleRun()).data(using: .utf8))
+        let graph = try JSONDecoder().decode(MagiDecisionGraph.self, from: data)
+
+        XCTAssertTrue(graph.nodes.contains { $0.id == "run-1" && $0.kind == "run" })
+        XCTAssertTrue(graph.nodes.contains { $0.id == "run-1-verdict" && $0.kind == "verdict" })
+        XCTAssertTrue(graph.edges.contains { $0.sourceID == "run-1" && $0.targetID == "round-1" })
+        XCTAssertTrue(graph.edges.contains { $0.sourceID == "run-1" && $0.targetID == "run-1-verdict" })
+    }
+
+    func testArtifactStoreWritesCompleteBundle() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("magi-artifacts-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        var run = sampleRun()
+        run.artifactBundle = MagiArtifactBundle(runID: run.id, rootDirectory: root.path)
+
+        let bundle = try MagiRunArtifactStore.write(run: run)
+
+        XCTAssertTrue(MagiRunArtifactStore.isComplete(bundle))
+        XCTAssertEqual(MagiRunArtifactStore.missingRequiredPaths(in: bundle), [])
+        for path in bundle.requiredPaths {
+            XCTAssertTrue(FileManager.default.fileExists(atPath: path), path)
+        }
+    }
+
+    func testFailedRunArtifactsIncludeFailureMetadata() throws {
+        var run = sampleRun()
+        MagiRunStateMachine.markFailed(
+            &run,
+            category: .mcpSocketMissing,
+            stage: "mcp-preflight",
+            message: "Chau7 MCP socket was not found.",
+            at: Date(timeIntervalSince1970: 300)
+        )
+
+        let markdown = MagiRunArtifactRenderer.decisionMarkdown(for: run)
+        let replay = MagiRunArtifactRenderer.replayJSONL(for: run)
+        let terminal = MagiTerminalReplayRenderer.render(run: run, replayJSONL: nil)
+        let html = MagiRunArtifactRenderer.shareHTML(for: run)
+
+        XCTAssertTrue(markdown.contains("## Failure"))
+        XCTAssertTrue(markdown.contains("Category: mcp_socket_missing"))
+        XCTAssertTrue(replay.contains(#""type":"failure""#))
+        XCTAssertTrue(terminal.contains("Failure"))
+        XCTAssertTrue(terminal.contains("Category: mcp_socket_missing"))
+        XCTAssertTrue(html.contains("<h2>Failure</h2>"))
+    }
+
+    func testTerminalReplayRendersFailureFromReplayJSONLWithoutDecisionJSON() {
+        let replayJSONL = """
+        {"type":"run","run_id":"run-9","status":"failed","detail":"What is the best Final Fantasy?"}
+        {"type":"failure","status":"failed","category":"malformed_json","stage":"final vote","error":"Invalid MAGI JSON block"}
+
+        """
+
+        let output = MagiTerminalReplayRenderer.render(run: nil, replayJSONL: replayJSONL)
+
+        XCTAssertTrue(output.contains("Run: run-9"))
+        XCTAssertTrue(output.contains("Failure"))
+        XCTAssertTrue(output.contains("Category: malformed_json"))
+        XCTAssertTrue(output.contains("Error: Invalid MAGI JSON block"))
+    }
+
     private func sampleRun(question: String = "What is the best Final Fantasy?") -> MagiRun {
         let council = MagiCouncil.defaultMagi(members: [
             .melchior: MagiMemberConfiguration(provider: "claude", modelClass: .strongest),

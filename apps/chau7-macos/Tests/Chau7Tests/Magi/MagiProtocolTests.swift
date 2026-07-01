@@ -254,6 +254,31 @@ final class MagiProtocolTests: XCTestCase {
         }
     }
 
+    func testParserReportsMalformedJSONBlock() {
+        let markers = MagiProtocolMarkers(
+            runID: "run-1",
+            roundID: "round-1",
+            memberID: .melchior,
+            stage: .position
+        )
+        let output = """
+        \(markers.begin)
+        {"member": "melchior", "round": 1,
+        \(markers.end)
+        """
+
+        XCTAssertThrowsError(
+            try MagiTranscriptParser.parsePosition(
+                memberID: .melchior,
+                roundID: "round-1",
+                output: output,
+                markers: markers
+            )
+        ) { error in
+            XCTAssertTrue(error.localizedDescription.contains("Invalid MAGI JSON block"))
+        }
+    }
+
     func testRepairPromptIncludesRawTranscriptAndRequiredContract() {
         let member = MagiMember(
             id: .melchior,

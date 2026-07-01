@@ -983,6 +983,121 @@ public enum MagiRunStatus: String, Codable, CaseIterable, Sendable {
     case interrupted
 }
 
+public enum MagiRunFailureCategory: String, Codable, CaseIterable, Sendable {
+    case chau7Unavailable = "chau7_unavailable"
+    case mcpSocketMissing = "mcp_socket_missing"
+    case providerUnavailable = "provider_unavailable"
+    case tabCreationFailed = "tab_creation_failed"
+    case agentTimeout = "agent_timeout"
+    case malformedJSON = "malformed_json"
+    case evidenceDenied = "evidence_denied"
+    case veto = "veto"
+    case deadlock = "deadlock"
+    case interrupted = "interrupted"
+    case partialArtifacts = "partial_artifacts"
+    case artifactWriteFailed = "artifact_write_failed"
+    case unknown
+}
+
+public enum MagiRunID {
+    public static func make(date: Date = Date(), uuid: UUID = UUID()) -> String {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let timestamp = formatter.string(from: date)
+            .replacingOccurrences(of: ":", with: "")
+            .replacingOccurrences(of: ".", with: "")
+            .replacingOccurrences(of: "Z", with: "z")
+        return "magi-\(timestamp)-\(uuid.uuidString.prefix(8).lowercased())"
+    }
+}
+
+public enum MagiRunStateMachine {
+    @discardableResult
+    public static func startRound(
+        _ run: inout MagiRun,
+        id: String,
+        index: Int,
+        kind: MagiRoundKind,
+        at date: Date = Date()
+    ) -> MagiRound {
+        let round = MagiRound(id: id, index: index, kind: kind, startedAt: date)
+        run.rounds.append(round)
+        checkpoint(&run, stage: "round:\(id):started", at: date)
+        return round
+    }
+
+    public static func completeRound(
+        _ run: inout MagiRun,
+        id: String,
+        at date: Date = Date()
+    ) {
+        guard let index = run.rounds.firstIndex(where: { $0.id == id }) else { return }
+        run.rounds[index].completedAt = date
+        checkpoint(&run, stage: "round:\(id):completed", at: date)
+    }
+
+    public static func checkpoint(
+        _ run: inout MagiRun,
+        stage: String,
+        at date: Date = Date()
+    ) {
+        run.metadata["last_checkpoint"] = stage
+        run.metadata["last_checkpoint_at"] = isoDate(date)
+    }
+
+    public static func recordArtifactBundle(
+        _ bundle: MagiArtifactBundle,
+        in run: inout MagiRun,
+        at date: Date = Date()
+    ) {
+        run.artifactBundle = bundle
+        run.metadata["artifact_root"] = bundle.rootDirectory
+        run.metadata["artifact_updated_at"] = isoDate(date)
+    }
+
+    public static func markFailed(
+        _ run: inout MagiRun,
+        category: MagiRunFailureCategory,
+        stage: String,
+        message: String,
+        at date: Date = Date()
+    ) {
+        run.status = .failed
+        run.completedAt = date
+        run.metadata["failure_category"] = category.rawValue
+        run.metadata["failure_stage"] = stage
+        run.metadata["error"] = message
+        checkpoint(&run, stage: "failed:\(stage)", at: date)
+    }
+
+    public static func markInterrupted(
+        _ run: inout MagiRun,
+        stage: String,
+        message: String = "Run interrupted by user.",
+        at date: Date = Date()
+    ) {
+        run.status = .interrupted
+        run.completedAt = date
+        run.metadata["failure_category"] = MagiRunFailureCategory.interrupted.rawValue
+        run.metadata["failure_stage"] = stage
+        run.metadata["error"] = message
+        checkpoint(&run, stage: "interrupted:\(stage)", at: date)
+    }
+
+    public static func recordDeniedEvidenceCount(_ count: Int, in run: inout MagiRun) {
+        run.metadata["evidence_denied_count"] = String(max(0, count))
+        if count > 0 {
+            run.metadata["evidence_denied"] = "true"
+        }
+    }
+
+    private static func isoDate(_ date: Date) -> String {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+        return formatter.string(from: date)
+    }
+}
+
 public struct MagiRawTranscript: Codable, Equatable, Sendable, Identifiable {
     public var id: String
     public var memberID: MagiMemberID

@@ -42,6 +42,19 @@ public enum MagiRunArtifactRenderer {
                 }
             }
         }
+        if run.status == .failed || run.status == .interrupted {
+            lines.append("")
+            lines.append("## Failure")
+            lines.append("")
+            lines.append("Category: \(run.metadata["failure_category"] ?? "unknown")")
+            lines.append("Stage: \(run.metadata["failure_stage"] ?? run.metadata["last_checkpoint"] ?? "unknown")")
+            if let error = run.metadata["error"], !error.isEmpty {
+                lines.append("Error: \(error)")
+            }
+            if let checkpoint = run.metadata["last_checkpoint"], !checkpoint.isEmpty {
+                lines.append("Last checkpoint: \(checkpoint)")
+            }
+        }
         return lines.joined(separator: "\n") + "\n"
     }
 
@@ -143,6 +156,16 @@ public enum MagiRunArtifactRenderer {
                 "consensus": formatScore(verdict.consensusScore),
                 "confidence": formatScore(verdict.confidence),
                 "rationale": verdict.rationale
+            ]))
+        }
+        if run.status == .failed || run.status == .interrupted {
+            lines.append(jsonLine([
+                "type": "failure",
+                "status": run.status.rawValue,
+                "category": run.metadata["failure_category"] ?? "unknown",
+                "stage": run.metadata["failure_stage"] ?? run.metadata["last_checkpoint"] ?? "unknown",
+                "error": run.metadata["error"] ?? "",
+                "last_checkpoint": run.metadata["last_checkpoint"] ?? ""
             ]))
         }
         return lines.joined(separator: "\n") + "\n"
@@ -306,19 +329,31 @@ public enum MagiRunArtifactRenderer {
             ])
         }
 
+        if run.status == .failed || run.status == .interrupted {
+            append([
+                "type": "failure",
+                "title": run.status == .interrupted ? "Run interrupted" : "Run failed",
+                "detail": run.metadata["error"] ?? "",
+                "status": run.status.rawValue,
+                "category": run.metadata["failure_category"] ?? "unknown",
+                "stage": run.metadata["failure_stage"] ?? run.metadata["last_checkpoint"] ?? "unknown",
+                "last_checkpoint": run.metadata["last_checkpoint"] ?? ""
+            ])
+        }
+
         return lines.joined(separator: "\n") + "\n"
     }
 
     public static func graphJSON(for run: MagiRun) -> String {
         var graph = MagiDecisionGraph()
+        var runMetadata = run.metadata
+        runMetadata["status"] = run.status.rawValue
+        runMetadata["created_at"] = isoDate(run.createdAt)
         graph.nodes.append(.init(
             id: run.id,
             kind: "run",
             label: run.question,
-            metadata: [
-                "status": run.status.rawValue,
-                "created_at": isoDate(run.createdAt)
-            ]
+            metadata: runMetadata
         ))
         for round in run.rounds {
             graph.nodes.append(.init(
@@ -425,6 +460,23 @@ public enum MagiRunArtifactRenderer {
             <li><strong>\(htmlEscape(member.persona.displayName))</strong><span>\(htmlEscape(member.provider)) / \(htmlEscape(member.modelClass.rawValue))</span><small>\(htmlEscape(member.persona.lens))</small></li>
             """
         }.joined(separator: "\n")
+        let failureHTML: String
+        if run.status == .failed || run.status == .interrupted {
+            let category = run.metadata["failure_category"] ?? "unknown"
+            let stage = run.metadata["failure_stage"] ?? run.metadata["last_checkpoint"] ?? "unknown"
+            let error = run.metadata["error"] ?? ""
+            failureHTML = """
+            <section>
+              <article>
+                <h2>Failure</h2>
+                <p><strong>\(htmlEscape(category))</strong> at \(htmlEscape(stage))</p>
+                <p>\(htmlEscape(error))</p>
+              </article>
+            </section>
+            """
+        } else {
+            failureHTML = ""
+        }
 
         return """
         <!doctype html>
@@ -512,6 +564,8 @@ public enum MagiRunArtifactRenderer {
               </article>
             </section>
 
+            \(failureHTML)
+
             <footer>Generated locally by MAGI. No hosted upload in v1.</footer>
           </main>
         </body>
@@ -573,6 +627,70 @@ public enum MagiRunArtifactRenderer {
             .replacingOccurrences(of: "<", with: "&lt;")
             .replacingOccurrences(of: ">", with: "&gt;")
             .replacingOccurrences(of: "\"", with: "&quot;")
+    }
+}
+
+public enum MagiRunArtifactStore {
+    public static func write(run: MagiRun, fileManager: FileManager = .default) throws -> MagiArtifactBundle {
+        let bundle = run.artifactBundle ?? MagiArtifactBundle(
+            runID: run.id,
+            rootDirectory: MagiArtifactBundle.rootDirectory(
+                runID: run.id,
+                repositoryRoot: nil,
+                homeDirectory: FileManager.default.homeDirectoryForCurrentUser.path
+            )
+        )
+        try fileManager.createDirectory(
+            at: URL(fileURLWithPath: bundle.rootDirectory),
+            withIntermediateDirectories: true
+        )
+
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        encoder.dateEncodingStrategy = .iso8601
+        try encoder.encode(run).write(to: URL(fileURLWithPath: bundle.decisionJSONPath))
+
+        try MagiRunArtifactRenderer.decisionMarkdown(for: run).write(
+            to: URL(fileURLWithPath: bundle.decisionMarkdownPath),
+            atomically: true,
+            encoding: .utf8
+        )
+        try MagiRunArtifactRenderer.transcriptJSONL(for: run).write(
+            to: URL(fileURLWithPath: bundle.transcriptJSONLPath),
+            atomically: true,
+            encoding: .utf8
+        )
+        try MagiRunArtifactRenderer.graphJSON(for: run).write(
+            to: URL(fileURLWithPath: bundle.graphJSONPath),
+            atomically: true,
+            encoding: .utf8
+        )
+        try MagiRunArtifactRenderer.replayJSONL(for: run).write(
+            to: URL(fileURLWithPath: bundle.replayJSONLPath),
+            atomically: true,
+            encoding: .utf8
+        )
+        try MagiRunArtifactRenderer.shareHTML(for: run).write(
+            to: URL(fileURLWithPath: bundle.shareHTMLPath),
+            atomically: true,
+            encoding: .utf8
+        )
+
+        return bundle
+    }
+
+    public static func missingRequiredPaths(
+        in bundle: MagiArtifactBundle,
+        fileManager: FileManager = .default
+    ) -> [String] {
+        bundle.requiredPaths.filter { !fileManager.fileExists(atPath: $0) }
+    }
+
+    public static func isComplete(
+        _ bundle: MagiArtifactBundle,
+        fileManager: FileManager = .default
+    ) -> Bool {
+        missingRequiredPaths(in: bundle, fileManager: fileManager).isEmpty
     }
 }
 
@@ -674,6 +792,17 @@ public enum MagiTerminalReplayRenderer {
             lines.append("")
         }
 
+        if run.status == .failed || run.status == .interrupted {
+            lines.append("Failure")
+            lines.append("Status: \(run.status.rawValue)")
+            lines.append("Category: \(run.metadata["failure_category"] ?? "unknown")")
+            lines.append("Stage: \(run.metadata["failure_stage"] ?? run.metadata["last_checkpoint"] ?? "unknown")")
+            if let error = run.metadata["error"], !error.isEmpty {
+                lines.append("Error: \(error)")
+            }
+            lines.append("")
+        }
+
         if let verdict = run.finalVerdict {
             lines.append("Verdict")
             lines.append("Kind: \(verdict.kind.rawValue)")
@@ -759,6 +888,21 @@ public enum MagiTerminalReplayRenderer {
                 }
                 if let confidence = object["confidence"], !confidence.isEmpty {
                     lines.append("Confidence: \(confidence)")
+                }
+            case "failure":
+                lines.append("")
+                lines.append("Failure")
+                if let status = object["status"], !status.isEmpty {
+                    lines.append("Status: \(status)")
+                }
+                if let category = object["category"], !category.isEmpty {
+                    lines.append("Category: \(category)")
+                }
+                if let stage = object["stage"], !stage.isEmpty {
+                    lines.append("Stage: \(stage)")
+                }
+                if let error = object["error"], !error.isEmpty {
+                    lines.append("Error: \(error)")
                 }
             default:
                 if let title = object["title"], let detail = object["detail"] {

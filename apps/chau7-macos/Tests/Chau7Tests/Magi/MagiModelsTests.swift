@@ -14,6 +14,16 @@ final class MagiModelsTests: XCTestCase {
         XCTAssertTrue(config.vetoBlocksVerdict)
     }
 
+    func testRunIDIsStableForInjectedInputs() throws {
+        let uuid = try XCTUnwrap(UUID(uuidString: "12345678-1234-1234-1234-123456789abc"))
+        let id = MagiRunID.make(
+            date: Date(timeIntervalSince1970: 100),
+            uuid: uuid
+        )
+
+        XCTAssertEqual(id, "magi-1970-01-01T000140000z-12345678")
+    }
+
     func testDefaultCouncilUsesOriginalMemberNamesAndEqualWeights() {
         let council = MagiCouncil.defaultMagi(members: [
             .melchior: MagiMemberConfiguration(provider: "claude", modelClass: .strongest),
@@ -200,6 +210,73 @@ final class MagiModelsTests: XCTestCase {
 
         XCTAssertEqual(verdict.kind, .noConsensus)
         XCTAssertFalse(verdict.requiresAdditionalRound)
+    }
+
+    func testRunStateMachineStartsCompletesAndFailsWithUsefulMetadata() throws {
+        var run = MagiRun(
+            id: "run-1",
+            question: "What is the best Final Fantasy?",
+            council: MagiCouncil.defaultMagi(members: [:]),
+            status: .running
+        )
+
+        let startedAt = Date(timeIntervalSince1970: 100)
+        let completedAt = Date(timeIntervalSince1970: 120)
+        let failedAt = Date(timeIntervalSince1970: 140)
+
+        let round = MagiRunStateMachine.startRound(
+            &run,
+            id: "round-1",
+            index: 1,
+            kind: .independentAnalysis,
+            at: startedAt
+        )
+        MagiRunStateMachine.completeRound(&run, id: round.id, at: completedAt)
+        MagiRunStateMachine.markFailed(
+            &run,
+            category: .malformedJSON,
+            stage: "round-1-position",
+            message: "Invalid JSON",
+            at: failedAt
+        )
+
+        XCTAssertEqual(run.rounds.count, 1)
+        XCTAssertEqual(run.rounds[0].completedAt, completedAt)
+        XCTAssertEqual(run.status, .failed)
+        XCTAssertEqual(run.completedAt, failedAt)
+        XCTAssertEqual(run.metadata["failure_category"], "malformed_json")
+        XCTAssertEqual(run.metadata["failure_stage"], "round-1-position")
+        XCTAssertEqual(run.metadata["error"], "Invalid JSON")
+        XCTAssertEqual(run.metadata["last_checkpoint"], "failed:round-1-position")
+    }
+
+    func testRunStateMachineMarksInterruptedSeparatelyFromFailed() {
+        var run = MagiRun(
+            id: "run-2",
+            question: "What is the best Final Fantasy?",
+            council: MagiCouncil.defaultMagi(members: [:]),
+            status: .running
+        )
+
+        MagiRunStateMachine.markInterrupted(&run, stage: "final vote", at: Date(timeIntervalSince1970: 200))
+
+        XCTAssertEqual(run.status, .interrupted)
+        XCTAssertEqual(run.metadata["failure_category"], "interrupted")
+        XCTAssertEqual(run.metadata["failure_stage"], "final vote")
+        XCTAssertEqual(run.metadata["last_checkpoint"], "interrupted:final vote")
+    }
+
+    func testRunStateMachineRecordsDeniedEvidenceCount() {
+        var run = MagiRun(
+            id: "run-3",
+            question: "What is the best Final Fantasy?",
+            council: MagiCouncil.defaultMagi(members: [:])
+        )
+
+        MagiRunStateMachine.recordDeniedEvidenceCount(2, in: &run)
+
+        XCTAssertEqual(run.metadata["evidence_denied_count"], "2")
+        XCTAssertEqual(run.metadata["evidence_denied"], "true")
     }
 
     func testArtifactBundleUsesRepoRootWhenAvailable() {
