@@ -65,6 +65,7 @@ Detection methods:
 
 - **MAGI multi-agent decision protocol** — CLI-first council mode that launches three isolated agents through Chau7 MCP, applies editable member personas, shares only controlled council packets between rounds, collects user-approved evidence, resolves majority/veto verdicts, and writes replay/share artifacts.
 - **MAGI command surface** — `magi`/`MAGI` supports direct questions, `ask`, `doctor`, `config`, `replay <run-id>`, and `share <run-id>` with local artifacts only in v1.
+- **MAGI local installer** — `Scripts/install-magi-cli.sh` builds the SwiftPM CLI and installs `magi` into `~/.local/bin` by default, with uppercase `MAGI` invocation supported through case-insensitive resolution or a case-sensitive alias.
 - **MAGI production artifacts** — failed, interrupted, vetoed, deadlocked, and partial runs carry checkpoint/failure metadata across decision markdown, decision JSON, transcript/replay JSONL, graph JSON, terminal replay, and local share HTML.
 - **MAGI hardened CLI runtime** — missing Chau7/MCP, provider launch failures, agent timeouts, malformed structured output, denied evidence, veto/deadlock outcomes, interrupts, and partial artifact replay paths are surfaced as clean statuses with useful local logs.
 - **MAGI visible first-run wizard** — `magi config` renders provider and model-class choices as numbered lists in interactive terminals and explains stdin/stdout TTY state when the wizard cannot open.
