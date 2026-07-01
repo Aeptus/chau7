@@ -10,6 +10,7 @@ let package = Package(
     ],
     products: [
         .executable(name: "Chau7", targets: ["Chau7"]),
+        .executable(name: "magi", targets: ["MagiCLI"]),
         .library(name: "Chau7Core", targets: ["Chau7Core"])
     ],
     dependencies: [
@@ -96,6 +97,14 @@ let package = Package(
                 .linkedFramework("IOSurface"),
                 .linkedFramework("CoreVideo")
             ]
+        ),
+        // MAGI command-line interface
+        .executableTarget(
+            name: "MagiCLI",
+            dependencies: [
+                "Chau7Core"
+            ],
+            path: "Sources/MagiCLI"
         ),
         // Test target
         .testTarget(
