@@ -96,6 +96,45 @@ final class InteractivePromptDetectorTests: XCTestCase {
         let prompt = try XCTUnwrap(InteractivePromptDetector.fallbackInputRequest(in: transcript))
         XCTAssertEqual(prompt.prompt, "Provide additional context:")
         XCTAssertEqual(prompt.detail, "Reviewing changeset...")
+        XCTAssertTrue(prompt.options.isEmpty)
+    }
+
+    // MARK: - Yes/No synthesis for un-numbered confirmations
+
+    func testFallbackSynthesizesYesNoForBracketHint() throws {
+        let transcript = """
+        Applying migration to production database
+        Continue? [y/N]
+        """
+
+        let prompt = try XCTUnwrap(InteractivePromptDetector.fallbackInputRequest(in: transcript))
+        XCTAssertEqual(prompt.options.map(\.label), ["Yes", "No"])
+        XCTAssertEqual(prompt.options.map(\.response), ["y\r", "n\r"])
+        // y/n alone doesn't tell us which side is dangerous, so neither is flagged.
+        XCTAssertFalse(prompt.options[0].isDestructive)
+        XCTAssertFalse(prompt.options[1].isDestructive)
+    }
+
+    func testFallbackSynthesizesVerboseYesNoTokens() throws {
+        let transcript = "Overwrite existing file? (yes/no)"
+
+        let prompt = try XCTUnwrap(InteractivePromptDetector.fallbackInputRequest(in: transcript))
+        XCTAssertEqual(prompt.options.map(\.response), ["yes\r", "no\r"])
+    }
+
+    func testFallbackWithoutYesNoHintHasNoOptions() throws {
+        let transcript = "Ready to proceed?"
+
+        let prompt = try XCTUnwrap(InteractivePromptDetector.fallbackInputRequest(in: transcript))
+        XCTAssertTrue(prompt.options.isEmpty, "a bare question must not guess a keystroke")
+    }
+
+    func testSynthesizedYesNoOptionsDirectly() {
+        XCTAssertEqual(
+            InteractivePromptDetector.synthesizedYesNoOptions(prompt: "Delete branch [Y/n]?").map(\.response),
+            ["y\r", "n\r"]
+        )
+        XCTAssertTrue(InteractivePromptDetector.synthesizedYesNoOptions(prompt: "no hint here").isEmpty)
     }
 
     // MARK: - Gating edge cases

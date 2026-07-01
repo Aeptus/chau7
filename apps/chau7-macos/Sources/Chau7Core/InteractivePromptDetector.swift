@@ -43,12 +43,43 @@ public enum InteractivePromptDetector {
         let lines = Array(allLines.suffix(80))
         guard let match = findFallbackPrompt(in: lines) else { return nil }
 
+        let options = synthesizedYesNoOptions(prompt: match.prompt)
         return DetectedInteractivePrompt(
-            signature: signature(prompt: match.prompt, options: []),
+            signature: signature(prompt: match.prompt, options: options),
             prompt: match.prompt,
             detail: match.detail,
-            options: []
+            options: options
         )
+    }
+
+    /// When a fallback prompt advertises an explicit yes/no affordance
+    /// (`[y/n]`, `(Y/n)`, `[yes/no]`, …), offer Yes/No buttons that send exactly
+    /// the tokens the tool showed. This is intentionally conservative: a bare
+    /// "Proceed?" with no y/n hint yields no options, because guessing the key
+    /// for a live terminal is worse than leaving the custom-reply field.
+    static func synthesizedYesNoOptions(prompt: String) -> [RemoteInteractivePromptOption] {
+        let pattern = #"[\[\(]\s*(y(?:es)?)\s*/\s*(n(?:o)?)\s*[\]\)]"#
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else {
+            return []
+        }
+        let range = NSRange(prompt.startIndex ..< prompt.endIndex, in: prompt)
+        guard let match = regex.firstMatch(in: prompt, options: [], range: range),
+              match.numberOfRanges == 3,
+              let yesRange = Range(match.range(at: 1), in: prompt),
+              let noRange = Range(match.range(at: 2), in: prompt) else {
+            return []
+        }
+
+        let yesToken = String(prompt[yesRange]).lowercased()
+        let noToken = String(prompt[noRange]).lowercased()
+        // Neither side is flagged destructive: for a "[y/N]" affordance the
+        // dangerous choice is often "Yes" (delete/overwrite/apply), the opposite
+        // of the numbered-option case where the tool spells out a "No"/"Cancel"
+        // label. We can't infer intent from y/n alone, so we don't mis-warn.
+        return [
+            RemoteInteractivePromptOption(id: "yes", label: "Yes", response: yesToken + "\r", isDestructive: false),
+            RemoteInteractivePromptOption(id: "no", label: "No", response: noToken + "\r", isDestructive: false)
+        ]
     }
 
     private static func supports(toolName: String) -> Bool {
