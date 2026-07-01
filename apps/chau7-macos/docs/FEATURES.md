@@ -63,6 +63,7 @@ Detection methods:
 
 ### AI Features
 
+- **MAGI multi-agent decision protocol** — CLI-first council mode that launches three isolated agents through Chau7 MCP, applies editable member personas, shares only controlled council packets between rounds, collects user-approved evidence, resolves majority/veto verdicts, and writes replay/share artifacts.
 - **Branded tab logos** — each detected agent gets its logo in the tab.
 - **Auto tab theming** — tabs adopt the brand color of the active AI agent.
 - **LLM error explanation** — one-click error analysis via OpenAI, Anthropic, Ollama, or custom endpoint.
