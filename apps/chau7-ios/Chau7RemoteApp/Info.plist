@@ -29,6 +29,8 @@
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>Chau7RemotePushNotificationsEnabled</key>
 	<true/>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 	<key>NSCameraUsageDescription</key>
 	<string>Chau7 Remote uses the camera to scan the pairing QR code shown by Chau7 on your Mac.</string>
 	<key>NSSupportsLiveActivities</key>
