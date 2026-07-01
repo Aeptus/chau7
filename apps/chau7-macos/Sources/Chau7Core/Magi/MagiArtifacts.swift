@@ -637,7 +637,7 @@ public enum MagiRunArtifactStore {
             rootDirectory: MagiArtifactBundle.rootDirectory(
                 runID: run.id,
                 repositoryRoot: nil,
-                homeDirectory: FileManager.default.homeDirectoryForCurrentUser.path
+                homeDirectory: NSHomeDirectory()
             )
         )
         try fileManager.createDirectory(
