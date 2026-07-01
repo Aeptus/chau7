@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import CoreImage.CIFilterBuiltins
 
 struct RemoteSettingsView: View {
     @Bindable private var settings = FeatureSettings.shared
@@ -171,12 +172,50 @@ struct RemoteSettingsView: View {
                 }
 
                 Spacer()
+
+                if let payload, let qr = Self.makeQRCode(from: payload) {
+                    VStack(spacing: 6) {
+                        Image(nsImage: qr)
+                            .interpolation(.none)
+                            .resizable()
+                            .frame(width: 180, height: 180)
+                            .padding(10)
+                            .background(Color.white)
+                            .clipShape(RoundedRectangle(cornerRadius: 10))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 10)
+                                    .stroke(Color.secondary.opacity(0.25))
+                            )
+                        Text(L("remote.pairing.scanHint", "Scan with Chau7 on iPhone"))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel(L("remote.pairing.qrLabel", "Pairing QR code — scan it with Chau7 on your iPhone to pair."))
+                }
             }
         } else {
             Text(L("Pairing info will appear once the remote agent connects.", "Pairing info will appear once the remote agent connects."))
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
+    }
+
+    /// Renders the pairing payload as a scannable QR code. The iPhone app's
+    /// scanner reads exactly this JSON, so the Mac now offers scan-to-pair
+    /// alongside copy/paste. `.interpolation(.none)` keeps the modules crisp.
+    private static func makeQRCode(from payload: String) -> NSImage? {
+        let filter = CIFilter.qrCodeGenerator()
+        filter.message = Data(payload.utf8)
+        filter.correctionLevel = "M"
+        guard let output = filter.outputImage else { return nil }
+        // The generator emits ~1 point per module; scale up before rasterizing
+        // so the image stays sharp at display size.
+        let scaled = output.transformed(by: CGAffineTransform(scaleX: 12, y: 12))
+        let rep = NSCIImageRep(ciImage: scaled)
+        let image = NSImage(size: rep.size)
+        image.addRepresentation(rep)
+        return image
     }
 
     @ViewBuilder
