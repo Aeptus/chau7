@@ -96,10 +96,9 @@ struct MagiMCPOrchestrator {
             try writeCheckpoint(&run, stage: "initialized", technicalLog: technicalLog)
             try throwIfInterrupted(stage: "startup")
 
-            printLine("Run")
-            printLine(runID)
-            printLine("Verdict mode: \(questionKind.rawValue)")
-            printLine("")
+            printLine("RUN \(runID)")
+            printLine("MODE \(questionKind.rawValue)")
+            printLine("COUNCIL boot sequence accepted.")
 
             let round1 = MagiRunStateMachine.startRound(
                 &run,
@@ -109,7 +108,7 @@ struct MagiMCPOrchestrator {
             )
             try writeCheckpoint(&run, stage: "round-1-started", technicalLog: technicalLog)
 
-            printLine("Launching council")
+            announceStage("PHASE 0 // COUNCIL ONLINE", "Three isolated agents enter the chamber.")
             technicalLog.record("council_launch_started", stage: "launch")
             var sessions: [MagiMemberTab] = []
             for member in council.members {
@@ -131,7 +130,7 @@ struct MagiMCPOrchestrator {
                     ]
                 )
                 let tabID = try launchMember(member, prompt: prompt, technicalLog: technicalLog)
-                printLine("- \(member.persona.displayName): \(tabID)")
+                printLine(memberLine(member, "linked to \(tabID)"))
                 sessions.append(MagiMemberTab(member: member, tabID: tabID))
                 Thread.sleep(forTimeInterval: launchMemberThrottleSeconds)
             }
@@ -152,8 +151,7 @@ struct MagiMCPOrchestrator {
             )
             try writeCheckpoint(&run, stage: "council-launched", technicalLog: technicalLog)
 
-            printLine("")
-            printLine("Round 1")
+            announceStage("PHASE 1 // PRIVATE POSITIONS", "Each member answers alone. No sibling tabs. No cross-talk.")
             var positions: [MagiPosition] = []
             for session in sessions {
                 try throwIfInterrupted(stage: "independent analysis")
@@ -181,7 +179,7 @@ struct MagiMCPOrchestrator {
                         markers: markers
                     )
                 }
-                printLine("- \(session.member.persona.displayName): \(position.recommendation)")
+                printLine(memberLine(session.member, compact(position.recommendation)))
                 positions.append(position)
                 run.positions.append(position)
                 try writeCheckpoint(&run, stage: "round-1-\(session.member.id.rawValue)-position", technicalLog: technicalLog)
@@ -203,8 +201,7 @@ struct MagiMCPOrchestrator {
             )
             try writeCheckpoint(&run, stage: "round-2-started", technicalLog: technicalLog)
 
-            printLine("")
-            printLine("Cross-examination")
+            announceStage("PHASE 2 // CROSS-EXAMINATION", "Positions are revealed. The council challenges itself.")
             for session in sessions {
                 try throwIfInterrupted(stage: "cross-examination")
                 let prompt = MagiPromptBuilder.critiquePrompt(
@@ -250,7 +247,7 @@ struct MagiMCPOrchestrator {
                         markers: markers
                     )
                 }
-                printLine("- \(session.member.persona.displayName): \(result.critiques.count) critique(s)")
+                printLine(memberLine(session.member, "\(result.critiques.count) challenge(s) entered"))
                 critiqueResults.append(result)
                 run.critiques.append(contentsOf: result.critiques)
                 try writeCheckpoint(&run, stage: "round-2-\(session.member.id.rawValue)-critique", technicalLog: technicalLog)
@@ -287,6 +284,10 @@ struct MagiMCPOrchestrator {
                 ids: Set(evidencePackets.filter { $0.metadata["collection_status"] == "fulfilled" }.compactMap(\.requestID)),
                 in: &run
             )
+            if !approvedRequests.isEmpty {
+                let admittedCount = evidencePackets.filter { $0.metadata["collection_status"] == "fulfilled" }.count
+                announceStep("\(admittedCount) fact packet(s) admitted into deliberation.")
+            }
             run.status = .running
             MagiRunStateMachine.completeRound(&run, id: round3.id)
             try writeCheckpoint(&run, stage: "round-3-completed", technicalLog: technicalLog)
@@ -299,8 +300,7 @@ struct MagiMCPOrchestrator {
             )
             try writeCheckpoint(&run, stage: "round-4-started", technicalLog: technicalLog)
 
-            printLine("")
-            printLine("Final vote")
+            announceStage("PHASE 4 // FINAL VOTE", "Arguments and approved facts are sealed into each ballot.")
             for session in sessions {
                 try throwIfInterrupted(stage: "final vote")
                 let prompt = MagiPromptBuilder.finalVotePrompt(
@@ -354,8 +354,7 @@ struct MagiMCPOrchestrator {
                     kind: .extraDeliberation
                 )
                 try writeCheckpoint(&run, stage: "round-5-started", technicalLog: technicalLog)
-                printLine("")
-                printLine("Extra deliberation")
+                announceStage("PHASE 5 // DEADLOCK DELIBERATION", "The first ballot did not settle. One more round opens.")
                 for session in sessions {
                     try throwIfInterrupted(stage: "extra deliberation")
                     let prompt = MagiPromptBuilder.extraRoundPrompt(
@@ -409,8 +408,7 @@ struct MagiMCPOrchestrator {
 
             let bundle = try writeCheckpoint(&run, stage: "completed", technicalLog: technicalLog)
 
-            printLine("")
-            printLine("Verdict")
+            announceStage("VERDICT", "The council has resolved.")
             printLine(verdict.kind.rawValue)
             if let decision = verdict.decision {
                 printLine("Decision: \(decision)")
@@ -565,6 +563,35 @@ struct MagiMCPOrchestrator {
 
     private var mcpSocketPath: String {
         "\(paths.homeDirectory)/.chau7/mcp.sock"
+    }
+
+    private func announceStage(_ title: String, _ detail: String? = nil) {
+        printLine("")
+        printLine(">> \(title)")
+        if let detail {
+            printLine("   \(detail)")
+        }
+    }
+
+    private func announceStep(_ detail: String) {
+        printLine("   \(detail)")
+    }
+
+    private func memberLine(_ member: MagiMember, _ detail: String) -> String {
+        "\(member.persona.displayName)> \(detail)"
+    }
+
+    private func memberLine(_ memberID: MagiMemberID, _ detail: String) -> String {
+        "\(memberID.displayName)> \(detail)"
+    }
+
+    private func compact(_ value: String, limit: Int = 110) -> String {
+        let trimmed = value
+            .replacingOccurrences(of: "\n", with: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.count > limit else { return trimmed }
+        let index = trimmed.index(trimmed.startIndex, offsetBy: max(0, limit - 3))
+        return "\(trimmed[..<index])..."
     }
 
     private func loadCouncil(config: MagiConfig) throws -> MagiCouncil {
@@ -1247,8 +1274,10 @@ struct MagiMCPOrchestrator {
             .sorted { $0.id < $1.id }
         guard !uniqueRequests.isEmpty else { return [] }
 
-        printLine("")
-        printLine("Evidence requests")
+        announceStage(
+            "PHASE 3 // FACT GATHERING",
+            "The council may request external facts before the final vote. Nothing runs without approval."
+        )
 
         guard isInteractive else {
             throw MagiMCPOrchestratorError.evidenceApprovalRequiredNonInteractive
@@ -1261,26 +1290,30 @@ struct MagiMCPOrchestrator {
         var reviewed: [MagiEvidenceRequest] = []
         for request in uniqueRequests {
             printLine("")
-            printLine("\(request.id)")
-            printLine("Member: \(request.memberID.displayName)")
-            printLine("Priority: \(request.priority.rawValue)")
-            printLine("Reason: \(request.reason)")
+            printLine(memberLine(request.memberID, "requests a fact check"))
+            printLine("   Priority: \(request.priority.rawValue)")
+            printLine("   Reason: \(compact(request.reason))")
             if !request.requiredEvidence.isEmpty {
-                printLine("Required: \(request.requiredEvidence.joined(separator: "; "))")
+                printLine("   Wants: \(compact(request.requiredEvidence.joined(separator: "; ")))")
             }
             let commands = MagiEvidenceCollectorPlanner.commands(for: request)
-            if !commands.isEmpty {
-                printLine("Collectors:")
-                for command in commands {
-                    let payload = command.payload.map { " \($0)" } ?? ""
-                    let webNote = command.usesWeb
-                        ? (config.webAccessAllowed ? " web" : " web disabled")
-                        : " local"
-                    printLine("- \(command.collectorKind.rawValue):\(payload) [\(webNote)]")
-                }
-            }
             var reviewedRequest = request
-            if promptYesNo("Approve this evidence collection?", defaultValue: false) {
+            guard !commands.isEmpty else {
+                printLine("   No collector proposed; recorded as a deliberation note.")
+                reviewedRequest.status = .notActionable
+                reviewed.append(reviewedRequest)
+                continue
+            }
+
+            printLine("   Proposed collectors:")
+            for command in commands {
+                let payload = command.payload.map { " \($0)" } ?? ""
+                let webNote = command.usesWeb
+                    ? (config.webAccessAllowed ? " web" : " web disabled")
+                    : " local"
+                printLine("   - \(command.collectorKind.rawValue):\(payload) [\(webNote)]")
+            }
+            if promptYesNo("Authorize this fact gathering?", defaultValue: false) {
                 reviewedRequest.status = .approved
             } else {
                 reviewedRequest.status = .denied
@@ -1297,8 +1330,7 @@ struct MagiMCPOrchestrator {
         technicalLog: MagiTechnicalLog
     ) throws -> [MagiEvidencePacket] {
         guard !requests.isEmpty else { return [] }
-        printLine("")
-        printLine("Collecting evidence")
+        announceStage("PHASE 3B // FACTS IN MOTION", "Approved collectors run, report, and disappear.")
 
         var packets: [MagiEvidencePacket] = []
         for request in requests {
@@ -1308,12 +1340,12 @@ struct MagiMCPOrchestrator {
                 try throwIfInterrupted(stage: "evidence collection")
                 if command.usesWeb, !config.webAccessAllowed {
                     let packet = skippedWebPacket(command: command, request: request)
-                    printLine("- \(command.id): \(packet.summary)")
+                    printLine("   \(command.collectorKind.rawValue)> \(compact(packet.summary))")
                     packets.append(packet)
                     continue
                 }
                 let packet = try runCollector(command: command, request: request, technicalLog: technicalLog)
-                printLine("- \(command.id): \(packet.summary)")
+                printLine("   \(command.collectorKind.rawValue)> \(compact(packet.summary))")
                 packets.append(packet)
             }
         }

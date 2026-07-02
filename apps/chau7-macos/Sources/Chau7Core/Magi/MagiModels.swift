@@ -309,6 +309,7 @@ public enum MagiEvidenceRequestStatus: String, Codable, CaseIterable, Sendable {
     case approved
     case denied
     case fulfilled
+    case notActionable = "not_actionable"
 }
 
 public struct MagiEvidenceRequest: Codable, Equatable, Sendable, Identifiable {

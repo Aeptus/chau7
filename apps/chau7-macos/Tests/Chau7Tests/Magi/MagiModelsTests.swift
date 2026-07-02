@@ -60,6 +60,7 @@ final class MagiModelsTests: XCTestCase {
         XCTAssertEqual(request.status, .pendingApproval)
         XCTAssertEqual(request.memberID, .balthasar)
         XCTAssertEqual(request.requiredEvidence, ["test_status"])
+        XCTAssertEqual(MagiEvidenceRequestStatus.notActionable.rawValue, "not_actionable")
     }
 
     func testEvidenceCollectorV1SetMatchesPhaseSixContract() {

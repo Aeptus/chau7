@@ -25,6 +25,9 @@ final class MagiProtocolTests: XCTestCase {
         XCTAssertTrue(prompt.contains(#""round": 1"#))
         XCTAssertTrue(prompt.contains(#""position": "your answer""#))
         XCTAssertTrue(prompt.contains("web.query:<query>"))
+        XCTAssertTrue(prompt.contains("Request evidence only when a concrete external fact could change your position."))
+        XCTAssertTrue(prompt.contains("For subjective preference questions, usually leave evidence_requests empty"))
+        XCTAssertTrue(prompt.contains("Every evidence request must include at least one concrete proposed_collector."))
         XCTAssertFalse(prompt.contains("local.git_diff_stat"))
         XCTAssertFalse(prompt.contains("local.shell"))
 
@@ -253,6 +256,8 @@ final class MagiProtocolTests: XCTestCase {
         XCTAssertTrue(prompt.contains("verdict must be one of: APPROVE, REJECT, CONDITIONAL, NEED_EVIDENCE, ESCALATE"))
         XCTAssertTrue(prompt.contains(#""verdict": "APPROVE""#))
         XCTAssertTrue(prompt.contains("JSON keys: member, round, verdict, vote, confidence, rationale, veto."))
+        XCTAssertTrue(prompt.contains("Approved fact-gathering packets entered into deliberation:"))
+        XCTAssertTrue(prompt.contains("Treat approved facts as shared deliberation material."))
     }
 
     func testParserRejectsWrongMemberInStructuredBlock() {

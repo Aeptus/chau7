@@ -112,6 +112,13 @@
     "differentiator": "Yes"
   },
   {
+    "category": "AI Integration",
+    "feature": "MAGI Deliberation Transcript",
+    "description": "Live magi ask output renders the council as staged debate, frames fact gathering as approved deliberation material, and records vague uncollectible requests as not_actionable",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
     "category": "API Analytics",
     "feature": "Echo-Only Input Latency",
     "description": "Per-session input latency measures keystroke-to-echo responsiveness only; command submission (Enter) is excluded for every session so a slow command's runtime is never miscounted as UI lag",

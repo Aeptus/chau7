@@ -70,7 +70,9 @@ public enum MagiPromptBuilder {
         - Work independently in this round.
         - Do not inspect other MAGI tabs or sibling agents.
         - Use only the question, your persona, and packets explicitly supplied by MAGI.
-        - Request evidence instead of collecting it yourself unless MAGI resumes you with approved evidence.
+        - Request evidence only when a concrete external fact could change your position.
+        - For subjective preference questions, usually leave evidence_requests empty unless the question asks for current facts, rankings, or external consensus.
+        - Every evidence request must include at least one concrete proposed_collector. If the missing input is a taste/preference question rather than collectible fact, mention it in your summary instead.
         - Prefer correctness; concise theatrical phrasing is acceptable, but the JSON must be valid.
 
         Output requirements:
@@ -150,6 +152,8 @@ public enum MagiPromptBuilder {
         \(councilPacket)
 
         Critique each other member from your persona. Identify agreements, disagreements, and missing evidence.
+        Evidence requests are deliberation challenges, not background work. Only request facts that MAGI can collect through explicit proposed_collectors.
+        If the missing input is taste, preference, or judgment, keep it in missing_evidence and leave evidence_requests empty.
 
         Output requirements:
         - End with one JSON object wrapped by these exact marker names.
@@ -192,9 +196,10 @@ public enum MagiPromptBuilder {
         Critiques:
         \(formatCritiques(critiques))
 
-        Approved evidence:
+        Approved fact-gathering packets entered into deliberation:
         \(formatEvidence(evidencePackets))
 
+        Treat approved facts as shared deliberation material. Mention them in your rationale when they changed or strengthened your vote.
         Cast your final vote. Majority is enough. A veto blocks the verdict only when your persona veto policy requires it.
         Verdict mode: \(questionKind.rawValue).
         \(questionKind.promptInstruction)
