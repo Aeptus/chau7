@@ -504,6 +504,9 @@ final class AppModel {
         // other producer — the previous direct notify(for:) path made them
         // invisible to recentEvents/observability/MCP.
         RuntimeSessionManager.shared.eventPublisher = self
+        // Observability becomes a spine projection: structural producers and
+        // timer changes share the global sequence with AI events.
+        Chau7ObservabilityService.shared.attachSpine(eventSpine)
         startAppEventEmitter()
         UsageMonitor.shared.configureWarningHandler { [weak self] event in
             self?.publishUnifiedEvent(event, notify: true)
@@ -1614,16 +1617,14 @@ final class AppModel {
     private func applySpineEnvelope(_ envelope: EventEnvelope) {
         switch envelope.payload {
         case let .ai(event):
-            publishUnifiedEventOnMain(event, notify: envelope.deliveryRequested)
+            publishUnifiedEventOnMain(event, notify: envelope.deliveryRequested, envelope: envelope)
         case .structural:
-            // Structural producers route through the spine starting with the
-            // observability-projection stage; nothing emits them yet.
-            break
+            Chau7ObservabilityService.shared.apply(structural: envelope)
         }
     }
 
     @MainActor
-    private func publishUnifiedEventOnMain(_ event: AIEvent, notify: Bool) {
+    private func publishUnifiedEventOnMain(_ event: AIEvent, notify: Bool, envelope: EventEnvelope) {
         guard let acceptedEvent = notifications?.manager.processUnifiedEvent(
             event,
             deliveryRequested: notify
@@ -1631,14 +1632,14 @@ final class AppModel {
             return
         }
 
-        publishAcceptedUnifiedEventOnMain(acceptedEvent)
+        publishAcceptedUnifiedEventOnMain(acceptedEvent, envelope: envelope)
     }
 
     @MainActor
-    private func publishAcceptedUnifiedEventOnMain(_ acceptedEvent: EnrichedEvent) {
+    private func publishAcceptedUnifiedEventOnMain(_ acceptedEvent: EnrichedEvent, envelope: EventEnvelope) {
         let event = acceptedEvent.event
         adoptUnifiedEventSessionIdentityIfNeeded(event)
-        Chau7ObservabilityService.shared.recordAIEvent(event)
+        Chau7ObservabilityService.shared.applyAccepted(envelope: envelope, adapted: event)
         recentEvents.append(event)
         recentEvents.trimToLast(25)
 

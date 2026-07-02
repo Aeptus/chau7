@@ -18,6 +18,13 @@ final class EventSpineHost {
     /// only touched on the main actor via `start`/`stop`.
     nonisolated init() {}
 
+    /// The pump's `for await` holds the spine strongly; cancel on dealloc so
+    /// a discarded AppModel (tests) releases its spine instead of leaking a
+    /// live pump with a dead delivery target.
+    deinit {
+        pumpTask?.cancel()
+    }
+
     /// Starts the pump. Idempotent: subsequent calls are no-ops (the spine's
     /// stream supports exactly one consumer).
     func start(

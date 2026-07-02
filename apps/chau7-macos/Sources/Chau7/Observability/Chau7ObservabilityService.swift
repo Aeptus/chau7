@@ -51,6 +51,14 @@ final class Chau7ObservabilityService {
     private let queue = DispatchQueue(label: "com.chau7.observability")
     private let launchedAt = Date()
     private var nextSeq: Int64 = 1
+    /// The event spine, attached at bootstrap. When present, recordEvent and
+    /// the timer APIs ingest structural events into it and this service
+    /// becomes a projection: sequence numbers come from the spine (offset by
+    /// `spineSeqFloor` so pre-attach records stay monotonic) and topics come
+    /// from the envelope's declarative catalog assignment. Weak so a
+    /// discarded AppModel (tests) reverts the service to the direct path.
+    private weak var spine: EventSpine?
+    private var spineSeqFloor: Int64 = 0
     private var events: [EventRecord] = []
     private var changes: [ChangeRecord] = []
     private var timers: [String: TimerRecord] = [:]
@@ -139,6 +147,66 @@ final class Chau7ObservabilityService {
         }
     }
 
+    /// Attach the spine funnel (bootstrap). Pre-attach records keep their
+    /// internal sequence numbers; the floor makes post-attach spine-derived
+    /// sequences continue monotonically past them.
+    func attachSpine(_ spine: EventSpine) {
+        queue.sync {
+            self.spine = spine
+            self.spineSeqFloor = self.nextSeq - 1
+        }
+    }
+
+    /// Projection entry point: apply a structural envelope delivered by the
+    /// spine pump. Timer events update the inventory; everything else lands
+    /// in the event ring. Sequence and topics come from the envelope.
+    func apply(structural envelope: EventEnvelope) {
+        guard let structural = envelope.structuralEvent else { return }
+        let seq = queue.sync { spineSeqFloor + Int64(clamping: envelope.seq) }
+        let timestampMillis = Int64(envelope.occurredAt.timeIntervalSince1970 * 1000)
+        let detail = structural.detail.mapValues(\.foundationValue)
+
+        switch structural.type {
+        case "timer_registered", "timer_updated":
+            applyTimerEnvelope(structural, detail: detail, seq: seq, timestampMillis: timestampMillis)
+        default:
+            recordDirect(
+                type: structural.type,
+                subsystem: structural.subsystem,
+                tabID: structural.tabID,
+                sessionID: structural.sessionID,
+                runID: structural.runID,
+                repoPath: structural.repoPath,
+                detail: detail,
+                explicitSeq: seq,
+                explicitTimestampMillis: timestampMillis,
+                explicitTopics: envelope.topics
+            )
+        }
+    }
+
+    /// Projection entry point for an accepted AI event: the envelope carries
+    /// the spine seq/topics, `adapted` is the pipeline-normalized event.
+    /// `.app`-source events stay excluded from the MCP surface (declared
+    /// policy pending the per-surface routing stage).
+    func applyAccepted(envelope: EventEnvelope, adapted: AIEvent) {
+        guard adapted.source != .app else { return }
+        let seq = queue.sync { spineSeqFloor + Int64(clamping: envelope.seq) }
+        let controlPlaneTabID = adapted.tabID.map { TerminalControlService.shared.controlPlaneTabID(for: $0) }
+        recordDirect(
+            type: "ai_event",
+            subsystem: adapted.source.rawValue,
+            tabID: controlPlaneTabID,
+            sessionID: adapted.sessionID,
+            runID: nil,
+            repoPath: adapted.repoPath,
+            detail: aiEventDetail(adapted),
+            explicitSeq: seq,
+            explicitTimestampMillis: Int64(envelope.occurredAt.timeIntervalSince1970 * 1000),
+            explicitTopics: envelope.topics
+        )
+    }
+
     func recordEvent(
         type: String,
         subsystem: String,
@@ -148,9 +216,50 @@ final class Chau7ObservabilityService {
         repoPath: String? = nil,
         detail: [String: Any] = [:]
     ) {
-        let timestampMillis = Int64(Date().timeIntervalSince1970 * 1000)
+        // Spine-attached: producers ingest structural events; this service
+        // sees them again via apply(structural:) with the global seq.
+        if let spine = queue.sync(execute: { self.spine }),
+           let jsonDetail = Self.jsonDetail(from: detail) {
+            spine.ingest(structural: StructuralEvent(
+                type: type,
+                subsystem: subsystem,
+                tabID: tabID,
+                sessionID: sessionID,
+                runID: runID,
+                repoPath: repoPath,
+                detail: jsonDetail
+            ))
+            return
+        }
+        recordDirect(
+            type: type,
+            subsystem: subsystem,
+            tabID: tabID,
+            sessionID: sessionID,
+            runID: runID,
+            repoPath: repoPath,
+            detail: detail,
+            explicitSeq: nil,
+            explicitTimestampMillis: nil,
+            explicitTopics: nil
+        )
+    }
+
+    private func recordDirect(
+        type: String,
+        subsystem: String,
+        tabID: String?,
+        sessionID: String?,
+        runID: String?,
+        repoPath: String?,
+        detail: [String: Any],
+        explicitSeq: Int64?,
+        explicitTimestampMillis: Int64?,
+        explicitTopics: [String]?
+    ) {
+        let timestampMillis = explicitTimestampMillis ?? Int64(Date().timeIntervalSince1970 * 1000)
         let event = queue.sync { () -> EventRecord in
-            let seq = allocateSequenceLocked()
+            let seq = explicitSeq ?? allocateSequenceLocked()
             let event = EventRecord(
                 seq: seq,
                 id: "evt_\(seq)",
@@ -170,7 +279,14 @@ final class Chau7ObservabilityService {
             appendChangeLocked(
                 seq: seq,
                 timestampMillis: timestampMillis,
-                topics: topicsForEvent(type: type, subsystem: subsystem, tabID: tabID, sessionID: sessionID, runID: runID, repoPath: repoPath),
+                topics: explicitTopics ?? EventTopicCatalog.topics(for: EventTopicContext(
+                    type: type,
+                    subsystem: subsystem,
+                    hasTab: tabID != nil,
+                    hasSession: sessionID != nil,
+                    hasRun: runID != nil,
+                    hasRepo: repoPath != nil
+                )),
                 type: type,
                 subsystem: subsystem,
                 payload: eventDictionary(event)
@@ -178,6 +294,32 @@ final class Chau7ObservabilityService {
             return event
         }
         dispatchChangeIfNeeded(seq: event.seq)
+    }
+
+    private static func jsonDetail(from detail: [String: Any]) -> [String: JSONValue]? {
+        var converted: [String: JSONValue] = [:]
+        for (key, value) in detail {
+            guard let jsonValue = JSONValue.from(any: value) else {
+                // Unconvertible payloads (rare) fall back to the direct path.
+                return nil
+            }
+            converted[key] = jsonValue
+        }
+        return converted
+    }
+
+    private func aiEventDetail(_ event: AIEvent) -> [String: Any] {
+        ([
+            "event_type": event.type,
+            "tool": event.tool,
+            "message": event.message,
+            "source": event.source.rawValue,
+            "reliability": event.reliability.rawValue,
+            "producer": event.producer as Any,
+            "notification_type": event.notificationType as Any,
+            "title": event.title as Any,
+            "timestamp": event.ts
+        ] as [String: Any]).compactMapValues { $0 }
     }
 
     func recordEvent(
@@ -235,19 +377,26 @@ final class Chau7ObservabilityService {
         tabID: String? = nil,
         sessionID: String? = nil
     ) {
+        let record = TimerRecord(
+            id: id,
+            kind: kind,
+            label: label,
+            subsystem: subsystem,
+            queueLabel: queueLabel,
+            intervalMs: intervalMs,
+            leewayMs: leewayMs,
+            active: active,
+            tabID: tabID,
+            sessionID: sessionID
+        )
+        // Spine-attached: the change rides the global sequence so the MCP
+        // change feed keeps one monotonic space (previously timer changes
+        // consumed the same internal counter as events).
+        if let spine = queue.sync(execute: { self.spine }) {
+            spine.ingest(structural: timerStructuralEvent(type: "timer_registered", record: record))
+            return
+        }
         let changeSeq = queue.sync { () -> Int64 in
-            let record = TimerRecord(
-                id: id,
-                kind: kind,
-                label: label,
-                subsystem: subsystem,
-                queueLabel: queueLabel,
-                intervalMs: intervalMs,
-                leewayMs: leewayMs,
-                active: active,
-                tabID: tabID,
-                sessionID: sessionID
-            )
             self.timers[id] = record
             let seq = allocateSequenceLocked()
             appendChangeLocked(
@@ -278,6 +427,15 @@ final class Chau7ObservabilityService {
     /// `timer_updated` change record, and dispatch outside the queue.
     /// No-op when the timer id is unknown.
     private func mutateTimer(_ id: String, applying mutation: (inout TimerRecord) -> Void) {
+        let spineAndRecord = queue.sync { () -> (EventSpine, TimerRecord)? in
+            guard let spine = self.spine, var record = self.timers[id] else { return nil }
+            mutation(&record)
+            return (spine, record)
+        }
+        if let (spine, record) = spineAndRecord {
+            spine.ingest(structural: timerStructuralEvent(type: "timer_updated", record: record))
+            return
+        }
         let changeSeq = queue.sync { () -> Int64? in
             guard var record = self.timers[id] else { return nil }
             mutation(&record)
@@ -298,9 +456,70 @@ final class Chau7ObservabilityService {
         }
     }
 
+    /// Encode a timer record as a structural spine event.
+    private func timerStructuralEvent(type: String, record: TimerRecord) -> StructuralEvent {
+        var detail: [String: JSONValue] = [
+            "id": .string(record.id),
+            "kind": .string(record.kind),
+            "label": .string(record.label),
+            "queue_label": .string(record.queueLabel),
+            "active": .bool(record.active)
+        ]
+        if let intervalMs = record.intervalMs { detail["interval_ms"] = .number(intervalMs) }
+        if let leewayMs = record.leewayMs { detail["leeway_ms"] = .number(leewayMs) }
+        if let tabID = record.tabID { detail["tab_id"] = .string(tabID) }
+        if let sessionID = record.sessionID { detail["session_id"] = .string(sessionID) }
+        return StructuralEvent(
+            type: type,
+            subsystem: record.subsystem,
+            tabID: record.tabID,
+            sessionID: record.sessionID,
+            detail: detail
+        )
+    }
+
+    /// Apply-side of the timer path: rebuild the record from the envelope,
+    /// update the inventory, and append the change with the spine-derived
+    /// seq. Topics stay ["timer-inventory"] for parity with the legacy feed.
+    private func applyTimerEnvelope(
+        _ structural: StructuralEvent,
+        detail: [String: Any],
+        seq: Int64,
+        timestampMillis: Int64
+    ) {
+        guard let id = detail["id"] as? String else { return }
+        let record = TimerRecord(
+            id: id,
+            kind: detail["kind"] as? String ?? "",
+            label: detail["label"] as? String ?? "",
+            subsystem: structural.subsystem,
+            queueLabel: detail["queue_label"] as? String ?? "",
+            intervalMs: detail["interval_ms"] as? Double,
+            leewayMs: detail["leeway_ms"] as? Double,
+            active: detail["active"] as? Bool ?? false,
+            tabID: detail["tab_id"] as? String,
+            sessionID: detail["session_id"] as? String
+        )
+        let changeSeq = queue.sync { () -> Int64 in
+            self.timers[id] = record
+            appendChangeLocked(
+                seq: seq,
+                timestampMillis: timestampMillis,
+                topics: ["timer-inventory"],
+                type: structural.type,
+                subsystem: structural.subsystem,
+                payload: timerDictionary(record)
+            )
+            return seq
+        }
+        dispatchChangeIfNeeded(seq: changeSeq)
+    }
+
     func resetForTests() {
         queue.sync {
             nextSeq = 1
+            spine = nil
+            spineSeqFloor = 0
             events.removeAll()
             changes.removeAll()
             timers.removeAll()
@@ -377,33 +596,6 @@ final class Chau7ObservabilityService {
         let seq = nextSeq
         nextSeq += 1
         return seq
-    }
-
-    private func topicsForEvent(
-        type: String,
-        subsystem: String,
-        tabID: String?,
-        sessionID: String?,
-        runID: String?,
-        repoPath: String?
-    ) -> [String] {
-        var topics = Set<String>(["runtime-events"])
-        if tabID != nil || type.hasPrefix("tab_") || subsystem == "tabs" {
-            topics.insert("tab-state")
-        }
-        if subsystem == "mcp_approvals" || type.hasPrefix("approval_") {
-            topics.insert("approval-state")
-        }
-        if runID != nil || type.hasPrefix("telemetry_run_") {
-            topics.insert("telemetry-runs")
-        }
-        if repoPath != nil || type == "ai_event" {
-            topics.insert("repo-events")
-        }
-        if sessionID != nil {
-            topics.insert("session-state")
-        }
-        return Array(topics).sorted()
     }
 
     private func appendChangeLocked(
