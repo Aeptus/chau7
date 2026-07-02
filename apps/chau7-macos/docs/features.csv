@@ -87,7 +87,7 @@ AI Detection,Corroborated Output Origination,"An output-pattern match only origi
 AI Detection,Branded Tab Logos,Each detected AI agent gets its branded logo displayed in the tab,Shipped,Yes
 AI Detection,Auto Tab Theming,Tabs automatically adopt the brand color of the active AI agent,Shipped,Yes
 AI Detection,Custom Detection Rules,Define custom patterns to detect and theme any CLI tool with display name and tab color,Shipped,Yes
-AI Detection,Command Line Tokenization,"Smart detection with wrapper skipping (env, sudo, npx, bunx, pnpm)",Shipped,Yes
+AI Detection,Command Line Tokenization,"Smart detection with wrapper skipping (env, sudo, command, builtin, exec, noglob, time)",Shipped,Yes
 AI Detection,Output Banner Detection,"Detect AI tools from output banners — command-based detection gates output scanning to prevent false positives",Shipped,Yes
 AI Integration,LLM Error Explanation,"One-click error analysis via OpenAI, Anthropic, Ollama, or custom endpoint — plain-language root cause and fix suggestions",Shipped,Yes
 AI Integration,Claude Code Deep Integration,"Monitor Claude Code hook events: prompts, tools, permissions, responses — first-class agentic workflow support",Shipped,Yes
@@ -111,7 +111,7 @@ AI Integration,Retry-Before-Fallback Delivery,"Authoritative AI events retry exa
 AI Integration,Claude Strict Live-Tab Fallback,"Authoritative Claude events can recover exact routing from live split-session metadata when runtime ownership is missing, instead of dropping permission and waiting-input delivery immediately",Shipped,Yes
 AI Integration,Stale Style Delivery Suppression,"Notification style delivery verifies that the explicit target tab still exists and suppresses vanished-tab noise once exact-session recovery is exhausted; the live-tab lookup, deferred retry, auto-clear timer, and redundant-re-apply suppression live on a dedicated StyleTabCoordinator instead of being interleaved with 23 other action implementations",Shipped,Yes
 AI Integration,Notification Action Runtime Robustness,"Shell-out actions enforce their configured timeout with SIGTERM then SIGKILL via a shared ProcessRunner so trap-immune or I/O-blocked scripts can't hang; webhook / Slack / Discord outbound HTTP routes through a dedicated ephemeral URLSession with 15s request and 30s resource timeouts and no shared cookie storage",Shipped,No
-AI Integration,Notification Action Handler Registry,"Every notification action is implemented as a NotificationActionHandler registered in a per-type registry; 24 actions are grouped into 7 category files (Basic / Automation / Integration / DevOps / Productivity / Accessibility / TimeTracking) and the executor is a thin dispatcher. Adding a new action is one handler type plus one registry entry with no executor edits.",Shipped,No
+AI Integration,Notification Action Handler Registry,"Every notification action is implemented as a NotificationActionHandler registered in a per-type registry; 25 actions are grouped into 7 category files (Basic / Automation / Integration / DevOps / Productivity / Accessibility / TimeTracking) and the executor is a thin dispatcher. Adding a new action is one handler type plus one registry entry with no executor edits.",Shipped,No
 AI Integration,Notification Delivery Host Protocol,"NotificationManager consults a single NotificationDeliveryHost protocol for tab title repo name active-tab check and tab routing; TerminalControlService conforms and the app wires it via setHost at startup; replaces five separate closure properties.",Shipped,No
 AI Integration,Notification Services Composition Root,"NotificationManager and NotificationActionExecutor are constructed via a single NotificationServices composition root with no .shared singletons; AppModel holds the bundle as an injected services reference and view-layer callsites use NotificationServices.current.",Shipped,No
 AI Integration,Claude Nested-CWD Session Binding,"Exact Claude session routing tolerates repo-root vs nested-subdirectory cwd differences and providerless live tab metadata, keeping authoritative permission and waiting-input events bound to the right tab",Shipped,Yes
@@ -143,7 +143,7 @@ AI Integration,Session-Aware Tab Resolution,"Notification routing prefers exact 
 AI Integration,File Conflict Events,Newly detected cross-tab file conflicts emit app events for each affected tab,Shipped,Yes
 AI Integration,AI Event Log Tailing,Real-time tailing of ~/.ai-events.log for AI tool events,Shipped,No
 AI Integration,PTY Output Logging,Capture raw terminal output for AI tool sessions (codex-pty and claude-pty logs),Shipped,No
-AI Integration,Codex Session Resolver,Maps Codex OpenAI capture sessions to working directories with LRU caching,Shipped,Yes
+AI Integration,Codex Session Resolver,Maps Codex OpenAI capture sessions to working directories with a bounded metadata cache,Shipped,Yes
 AI Integration,Context Token Optimization (CTO),Monitor and optimize LLM API token usage in real time — per tab or globally,Shipped,Yes
 AI Integration,CTO Shared Read Pipeline,"File-backed reads and stdin-backed reads share one tested filtering, truncation, non-empty-output preservation, and line-number formatting path to prevent parser drift",Shipped,Yes
 AI Integration,CTO Non-Empty Read Guard,"chau7-optim read preserves original output when filtering would collapse a non-empty file, stdin payload, or selected range to empty output, preventing optimized read commands from looking broken",Shipped,Yes
@@ -262,12 +262,12 @@ Window Management,Window Position Memory,Windows reopen exactly where you left t
 Window Management,Session Restoration,All windows and tabs restored on relaunch,Shipped,No
 Window Management,Restoration Backup Isolation,"Production tab-state backups stay in the stable backup directory while dev and unidentified bundles write to bundle-scoped backup directories; launch retains multi-window recovery state until the next save so additional windows survive early exits",Shipped,Yes
 Window Management,Menu Bar Only Mode,Run as a menu bar app — no Dock icon needed,Shipped,No
-SSH, Profiles & Remote,Remote Background Approval Mode,"When Chau7 Remote backgrounds, the session briefly stays alive in approvals-only mode instead of streaming full terminal output",Shipped,Yes
-SSH, Profiles & Remote,Remote Push Approval Delivery,"Relay-backed APNs push registration and wakeups for new approvals and interactive prompts on the Chau7 Remote iPhone app",Shipped,Yes
-SSH, Profiles & Remote,Remote iOS 18 Minimum Target,"The Chau7 Remote app and widget extension target iOS 18.0 (IPHONEOS_DEPLOYMENT_TARGET = 18.0); the shared SwiftPM package declares an .iOS(.v17) floor for library targets",Shipped,No
-SSH, Profiles & Remote,Experimental Rust iPhone Renderer,"Optional Rust-backed terminal grid renderer for Chau7 Remote on iPhone, with text fallback retained",Shipped,Yes
-SSH, Profiles & Remote,Selected-Tab Remote Streaming,"macOS streams terminal output and snapshots only for the tab currently selected on iPhone; background tabs stay metadata/activity/approvals-only until switched to",Shipped,Yes
-SSH, Profiles & Remote,Remote iPhone Profiling Hooks,"The iPhone app emits os.signpost intervals for frame processing, output append, and ANSI stripping so receive/render lag can be measured in Instruments",Shipped,No
+"SSH, Profiles & Remote",Remote Background Approval Mode,"When Chau7 Remote backgrounds, the session briefly stays alive in approvals-only mode instead of streaming full terminal output",Experimental,Yes
+"SSH, Profiles & Remote",Remote Push Approval Delivery,"Relay-backed APNs push registration and wakeups for new approvals and interactive prompts on the Chau7 Remote iPhone app",Experimental,Yes
+"SSH, Profiles & Remote",Remote iOS 18 Minimum Target,"The Chau7 Remote app and widget extension target iOS 18.0 (IPHONEOS_DEPLOYMENT_TARGET = 18.0); the shared SwiftPM package declares an .iOS(.v17) floor for library targets",Experimental,No
+"SSH, Profiles & Remote",Experimental Rust iPhone Renderer,"Optional Rust-backed terminal grid renderer for Chau7 Remote on iPhone, with text fallback retained",Experimental,Yes
+"SSH, Profiles & Remote",Selected-Tab Remote Streaming,"macOS streams terminal output and snapshots only for the tab currently selected on iPhone; background tabs stay metadata/activity/approvals-only until switched to",Experimental,Yes
+"SSH, Profiles & Remote",Remote iPhone Profiling Hooks,"The iPhone app emits os.signpost intervals for frame processing, output append, and ANSI stripping so receive/render lag can be measured in Instruments",Experimental,No
 Search & Find,Find Overlay,Cmd+F — search terminal output with match highlighting,Shipped,No
 Search & Find,Regex Search,Toggle regex mode for advanced pattern matching,Shipped,No
 Search & Find,Case Sensitivity Toggle,Persistent case-sensitive search preference,Shipped,No
@@ -280,11 +280,11 @@ Command Safety,Visual Danger Highlighting,Dangerous commands visually highlighte
 Command Safety,Path Click Handler,"Cmd+click file paths and URLs — configurable action (browser, editor, Finder) with line:column support",Shipped,No
 Keyboard & Clipboard,Fully Customizable Keybindings,Remap any shortcut with interactive editor and conflict detection,Shipped,No
 Keyboard & Clipboard,Vim & Emacs Presets,One-click keybinding presets,Shipped,No
-Keyboard & Clipboard,Clipboard History,"Cmd+Shift+V — last 100 clipboard entries with LRU eviction, pinning, and quick paste",Shipped,No
+Keyboard & Clipboard,Clipboard History,"Cmd+Shift+V — configurable clipboard history, default 50 entries (up to 1000), with LRU eviction, pinning, and quick paste",Shipped,No
 Keyboard & Clipboard,Paste Escaping,"Auto-escape shell-sensitive characters ($, backticks, quotes, backslash) on paste",Shipped,No
 Snippets,Snippet Manager,"Cmd+; to open — create, edit, delete, import, export snippets",Shipped,No
 Snippets,Three Scopes,"Global (user), per-SSH-profile, and per-repo snippets",Shipped,No
-Snippets,Placeholder Support,"${cursor} and ${selection} placeholders for smart insertion",Shipped,No
+Snippets,Placeholder Support,"Numbered tab stops ${1:default} (${0} = final cursor) plus ${cwd}/${home}/${date}/${time}/${clip} tokens",Shipped,No
 Snippets,Repo-Level Snippets,.chau7/config.toml in your repo — share snippets with your team,Shipped,No
 History & Bookmarks,Per-Tab & Global History,"Arrow keys for local history, Cmd+Up/Down for cross-tab",Shipped,No
 History & Bookmarks,SQLite-Backed Persistence,History survives restarts — searchable and fast,Shipped,No
@@ -294,7 +294,7 @@ Notifications,Desktop Notifications,"Native macOS notifications for task complet
 Notifications,Dock Badge & Bounce,Animated dock badge and critical/non-critical bounce for key events,Shipped,No
 Notifications,Configurable Sounds,"Alert sounds (Glass, Purr, etc.) with volume control",Shipped,No
 Notifications,Command Idle Detection,"Notify when a command has been idle beyond configurable threshold. Fires once per session, resets only on real user activity.",Shipped,No
-Notifications,Auto Tab Styling,Tabs change color on events — auto-clear after configurable timeout, clear persistent approval styling immediately on approval resolution, and style all tabs affected by a file conflict,Shipped,No
+Notifications,Auto Tab Styling,"Tabs change color on events — auto-clear after configurable timeout, clear persistent approval styling immediately on approval resolution, and style all tabs affected by a file conflict",Shipped,No
 Notifications,Rate Limiting,Prevent notification spam with configurable thresholds scoped per trigger and tab/session/directory identity,Shipped,No
 Notifications,Per-Trigger Control,Enable/disable and customize actions for each event type individually,Shipped,No
 Notifications,Isolated Notification Suppression,Isolated test mode disables notification-center integration to avoid side effects and startup crashes,Shipped,Yes
@@ -305,11 +305,11 @@ SSH & Profiles,Per-Profile Customization,"Each profile gets its own color scheme
 Remote & Collaboration,Remote Terminal Viewing,Share a read-only view of your terminal — others see what you see,Experimental,Yes
 Remote & Collaboration,Viewer Approval Flow,Approve or deny viewer connections — you control access,Experimental,No
 Remote & Collaboration,Cloudflare Relay,Cloudflare Workers relay — no port forwarding required,Experimental,Yes
-Remote & Collaboration,Remote Activity Projection,macOS reduces AI event streams into one remote activity state for clients,Shipped,Yes
-Remote & Collaboration,iPhone Live Activity Support,Chau7 Remote renders the current AI task in a native Live Activity and Dynamic Island,Shipped,Yes
-Remote & Collaboration,Interactive Remote Prompts,"Detected Claude and Codex terminal prompts appear in the iPhone Approvals tab with option buttons that reply to the correct tab. Destructive options require a second confirmation before sending.",Shipped,Yes
-Remote & Collaboration,Session Recording,Record terminal sessions with timestamps for replay,Shipped,No
-Remote & Collaboration,Timeline Scrubber,Scrub through recorded sessions like a video,Shipped,No
+Remote & Collaboration,Remote Activity Projection,macOS reduces AI event streams into one remote activity state for clients,Experimental,Yes
+Remote & Collaboration,iPhone Live Activity Support,Chau7 Remote renders the current AI task in a native Live Activity and Dynamic Island,Experimental,Yes
+Remote & Collaboration,Interactive Remote Prompts,"Detected Claude and Codex terminal prompts appear in the iPhone Approvals tab with option buttons that reply to the correct tab. Destructive options require a second confirmation before sending.",Experimental,Yes
+Remote & Collaboration,Session Recording,Record terminal sessions with timestamps for replay,Experimental,No
+Remote & Collaboration,Timeline Scrubber,Scrub through recorded sessions like a video,Experimental,No
 Appearance,Full Color Schemes,"16 ANSI colors + background, foreground, cursor, selection — fully customizable",Shipped,No
 Appearance,Light / Dark / System,Respects macOS appearance or override manually,Shipped,No
 Appearance,100+ Monospace Fonts,System fonts plus popular coding fonts — or use any installed font,Shipped,No
@@ -351,7 +351,7 @@ Scripting,Settings API,Query and modify settings programmatically from any langu
 Overlay,Repo Dashboard Dismissal Consistency,"Repo badges highlight while their dashboard overlay is open, and clicking any tab closes the dashboard again, including the already-selected tab",Shipped,No
 Debugging,Data Explorer Refresh,Reopening the singleton Data Explorer window rebuilds its SwiftUI content so history and telemetry reload,Shipped,No
 Debugging,Session Explorer Metadata,Sessions Explorer rows derive provider and repo labels from the latest run for each session,Shipped,No
-Debugging,Debug Console,"Cmd+Shift+D — live log viewer with State, Contexts, Events, Logs, and Report tabs",Shipped,No
+Debugging,Debug Console,"Cmd+Option+L — live log viewer with 10 tabs: State, Token Optimizer, Events, Lag, Perf, Logs, Report, Analytics, Health, Repos",Shipped,No
 Debugging,State Inspector,View live app state: tabs and sessions and models,Shipped,No
 Debugging,Feature Profiler,Per-feature timing metrics with os.signpost integration,Shipped,No
 Debugging,Structured Logging,"Category-based logging with correlation IDs (App, Tabs, Terminal, Render, etc.)",Shipped,No
@@ -430,7 +430,7 @@ Localization,About Acknowledgments Copy,"Arabic, French, and Hebrew localization
 Remote,Encrypted Relay Control Frames,Remote relay control frames now require encryption after handshake and push POSTs normalize websocket relay URLs to HTTP(S),Shipped,Yes
 Persistence,Stale Window State Cleanup,Termination clears persisted tab/window state and backup files when every overlay window has been hidden or closed,Shipped,Yes
 Notifications,Disabled Single-Action Rules,Notification pipeline now checks action enabled state before using the native showNotification fast path,Shipped,Yes
-Overlay,Reopen Closed Tab Identity,Closed tabs reopen with their original tab ID, creation timestamp, and repo grouping membership intact,Shipped,Yes
+Overlay,Reopen Closed Tab Identity,"Closed tabs reopen with their original tab ID, creation timestamp, and repo grouping membership intact",Shipped,Yes
 Telemetry,Canonical Run Token Metrics,"Transcript-derived AI runs now persist separate input, cached-input, output, and reasoning-output token fields with validity/source metadata",Shipped,Yes
 Telemetry,Transcript Metric Sanitization,"Claude/Codex transcript extraction now slices per run, deduplicates repeated usage blocks, and invalidates implausible historical totals",Shipped,Yes
 Debug,Split Analytics Views,"Debug console now separates proxy API-call analytics from transcript-derived AI run telemetry, with explicit cost coverage labeling for missing run pricing",Shipped,Yes
@@ -448,7 +448,7 @@ Documentation,Remote Docs Colocation,"Moved the remote protocol spec next to ser
 Documentation,Canonical Public Doc Ownership,"Root docs now define canonical public entry points, collapse stale duplicate onboarding guidance, and remove planning/assessment artifacts from the public repository",Shipped,No
 Documentation,Staged Doc Hygiene Checks,"Staged doc validation now rejects absolute filesystem links, stale repository URLs, stale moved-doc link targets, and TODO markers in the public root README",Shipped,No
 Telemetry,Full Cache Token Tracking,"Proxy extracts cache creation, cache read, and reasoning tokens from Anthropic/OpenAI/Gemini responses (streaming + non-streaming). Dashboard shows full breakdown with hover tooltip and per-agent cost.",Shipped,Yes
-Telemetry,Cache-Aware Cost Calculation,"Cost calculation accounts for provider-specific cache pricing — Anthropic cache reads 0.1x, writes 1.25x; OpenAI cached 0.5x. Token estimation fallback when extraction fails.",Shipped,Yes
+Telemetry,Cache-Aware Cost Calculation,"Cost calculation accounts for provider-specific cache pricing — Anthropic cache reads 0.1x, writes 1.25x; OpenAI per-model cache-read rates (0.1x–0.5x). Token estimation fallback when extraction fails.",Shipped,Yes
 Localization,Missing Shipped UI Keys,"English, Arabic, French, and Hebrew localization bundles now include the missing shipped UI string keys that were still being requested from Swift source",Shipped,No
 Restore,Codex Resume Metadata Preservation,"Ambiguous same-repo Codex save-time resolution now preserves a tab's explicit session metadata so restored tabs keep their last-known resume command",Shipped,Yes
 Lifecycle,Fast Quit State Save,"Termination now reuses a recent cached multi-window snapshot instead of re-exporting every visible tab during quit",Shipped,Yes
@@ -467,16 +467,16 @@ Repository,Turn Cost Summaries,"Repository pane turn summaries now show estimate
 Developer Experience,Local Quality Pipeline,"Registry-driven pre-commit/pre-push/local validation: staged secret and dependency policy, ruff autofix, JS/TS guardrails, legacy source/docs/design checks, affected-surface pre-push, conservative full-suite triggers, live dependency audits, registry-backed quality tests, content-hash caching, per-gate logs, and full local CI parity",Shipped,Yes
 Overlay,Shortcut Helper Hint,"Floating hint box showing keyboard shortcuts (⌘/) and report issue (⌥⌘I), positioned 4pt from tab bar and window edge",Shipped,No
 Performance,Power Efficiency,"Adaptive clipboard polling, shared background drain, event-driven focus detection, timer leeway coalescing, wakeup stats logging",Shipped,Yes
-pty_log_output_flush,macos,mcp,active AI PTY log is flushed before tab_output reads it,shipped
-pty_log_tail_normalization,macos,telemetry,PTY log tails are terminal-normalized before transcript parsing,shipped
-swiftpm_simd_parser_exclusion,macos,build,SwiftPM excludes Performance/SIMDTerminalParser.swift from doc and resource scanning so local builds keep it as source,shipped
-pre_commit_review_verbose_flow,macos,automation,pre-commit review now traces tab lifecycle steps retries transient scripting calls and confirms prompt submission before parsing output,shipped
-pre_commit_review_stored_event_completion,macos,automation,pre-commit review now prefers stored repo AI events with full messages to detect the final structured review result before falling back to transcript scraping,shipped
-background_transcript_and_interactive_notifications,macos,restore,background snapshots can reuse cached remote transcript text and notification logic now treats elicitation plus tool or response failures as first-class interactive events,shipped
-restore_resume_per_pane,macos,restore,split-tab AI resume restore now binds each saved resume command to its owning terminal pane instead of routing through the rebuilt focused pane,shipped
-restore_resume_ownership_validation,macos,restore,restore-time resume prefills now validate pane directory and restored AI identity before insertion and skip mismatched stale targets,shipped
-restore_resume_delivery_ledger,macos,restore,pane-owned resume restore now records scheduled queued delivered rejected and superseded outcomes per pane so stale retries stay diagnosable,shipped
-restore_resume_supersession_guard,macos,restore,late stale retry callbacks no longer overwrite a newer pane's delivered restore outcome so the ledger preserves the winning pane state,shipped
+MCP Server,PTY Log Output Flush,"Active AI PTY log is flushed before tab_output reads it",Shipped,Yes
+Telemetry,PTY Log Tail Normalization,"PTY log tails are terminal-normalized before transcript parsing",Shipped,No
+Developer Experience,SwiftPM README Resource Exclusion,"SwiftPM package metadata excludes each directory's README.md from resource scanning so per-directory docs aren't bundled as app resources",Shipped,No
+Scripting,Pre-Commit Review Verbose Flow,"Pre-commit review traces tab lifecycle steps, retries transient scripting calls, and confirms prompt submission before parsing output",Shipped,No
+Scripting,Pre-Commit Review Stored-Event Completion,"Pre-commit review prefers stored repo AI events with full messages to detect the final structured review result before falling back to transcript scraping",Shipped,No
+Notifications,Background Transcript & Interactive Notifications,"Background snapshots can reuse cached remote transcript text, and notification logic treats elicitation plus tool/response failures as first-class interactive events",Shipped,Yes
+Restore,Per-Pane AI Resume Restore,"Split-tab AI resume restore binds each saved resume command to its owning terminal pane instead of routing through the rebuilt focused pane",Shipped,Yes
+Restore,Resume Restore Ownership Validation,"Restore-time resume prefills validate pane directory and restored AI identity before insertion and skip mismatched stale targets",Shipped,Yes
+Restore,Resume Restore Delivery Ledger,"Pane-owned resume restore records scheduled, queued, delivered, rejected, and superseded outcomes per pane so stale retries stay diagnosable",Shipped,Yes
+Restore,Resume Restore Supersession Guard,"Late stale retry callbacks no longer overwrite a newer pane's delivered restore outcome, so the ledger preserves the winning pane state",Shipped,Yes
 Performance,Shared Metal Handoff Reset,"Cross-view Metal coordinator handoffs clear pending sync/present requests plus retry and deferred-sync state so a newly selected tab cannot briefly present stale work from the previous view",Shipped,Yes
 Performance,Scroll-Storm Full Metal Refresh Fallback,"Scroll storms visible noninteractive windows and near-full-row redraw bursts force full Metal instance refreshes so stale incremental cell data cannot mix old glyphs into new shell text",Shipped,Yes
 Terminal Core,Speculative Local Echo Cleanup,"Predicted local-echo cells are cleared on shell redraw-style output and when a terminal stops live presentation or interactivity, preventing duplicate typed characters from lingering on-screen",Shipped,Yes
@@ -486,66 +486,65 @@ Terminal Core,Grapheme-Cluster Cell Model,"FFI snapshot ships UTF-8 grapheme clu
 Terminal Core,Dangerous Output Command Context,"Rendered-output risk highlighting strips prompt and markdown decorations, requires token boundaries and executable-style prefixes, and avoids flagging prose mentions of dangerous commands as runnable shell lines",Shipped,Yes
 Terminal Core,Post-Resize SIGWINCH Nudge,"After each resize Chau7 re-delivers SIGWINCH to the PTY foreground process group a short coalesced moment later, so a full-screen TUI that booted during the resize and missed the kernel signal (e.g. Claude Code's Ink caching a stale width) re-reads the authoritative size instead of corrupting its diff-repainted output for the rest of the session",Shipped,Yes
 Remote,iPhone Approval Polling and Push Setup,"Remote iPhone app derives approval polling from relay base URLs, cleans up approval background tasks safely, requests standard notification permissions, and tracks explicit push entitlements plus iOS 18 deployment settings in the project",Shipped,Yes
-ffi_resize_shared_reference,macos,terminal,FFI resize binds a shared reference with atomic dimensions so main-thread resize cannot alias concurrent drain-thread polls,shipped
-ffi_env_marshalling_owned_cstrings,macos,terminal,terminal creation duplicates env keys/values into C-owned buffers freed after the FFI call instead of escaping closure-scoped pointers,shipped
-agent_dashboard_queue_confined_state,macos,dashboard,agent dashboard tracker and cursor state is confined to a serial refresh queue so poll cycles and commit actions cannot race main-thread mutations,shipped
-proxy_session_event_fire_and_forget,macos,proxy,prompt-injection session events post to the proxy asynchronously instead of blocking the main thread on a semaphore,shipped
-persisted_dictionary_first_wins_uniquing,macos,persistence,dictionary builds over persisted or transformable keys use first-wins uniquing so duplicate keys in stored data degrade gracefully instead of crashing,shipped
-restore_tab_identity_dedup,macos,restore,saved tabs restore exactly once across all windows via first-occurrence-wins tab ID claims preventing duplicated-window cascades,shipped
-change_aware_quit_snapshot,macos,restore,quit reuses the cached autosave snapshot only when a structural fingerprint of live windows matches so recent changes always persist,shipped
-freshest_wins_restore_arbitration,macos,restore,restore prefers whichever of the file bundle and UserDefaults index carries the latest save token so stale bundles cannot resurrect old sessions,shipped
-restore_bundle_atomic_swap,macos,restore,restore bundle directory swap uses safe-save replaceItemAt and logs manifest or sidecar corruption instead of silently degrading,shipped
-terminal_create_failure_error_card,macos,terminal,terminal creation failure shows a localized error card with retry instead of a blank tab and verifies the passwd shell exists before spawning,shipped
-history_store_queue_confined_counts,macos,history,history store mutators are queue-confined and clearOlderThan decrements the cached count so trim can never over-delete valid records,shipped
-icloud_settings_freshness_guard,macos,settings,iCloud settings sync applies only strictly-newer timestamped blobs refuses newer format versions and preserves local values for absent fields,shipped
-bash_rcfile_and_spawn_cwd,macos,terminal,interactive bash gets --rcfile shell integration and all shells spawn in their intended working directory via FFI launch arguments,shipped
-ffi_input_clamping_and_pool_resilience,macos,terminal,FFI selection coordinates clamp to grid bounds and PTY reader-pool spawn failure fails terminal creation cleanly instead of aborting,shipped
-metal_inflight_gate_and_gpu_error_recovery,macos,performance,Metal frames are gated one-in-flight so CPU buffer writes never race the GPU and command-buffer errors force a full-refresh redraw,shipped
-glyph_atlas_slot_clipping,macos,performance,glyph and ligature rasterization clip to their atlas slot so overhanging glyphs cannot corrupt neighboring cached glyphs,shipped
-display_scale_change_handling,macos,performance,backing-property changes reconfigure the glyph atlas scale and force a redraw so cross-display drags render crisply without a tab switch,shipped
-occlusion_aware_rendering,macos,performance,fully covered windows demote to the 1Hz background drain and re-expose forces an immediate grid sync,shipped
-pty_hup_tail_drain,macos,terminal,the reader pool drains all kernel-buffered PTY output after HUP before signalling closed so fast-exiting commands never lose tail output,shipped
-pty_resize_lock_free,macos,terminal,PTY resize ioctls TIOCSWINSZ on a dup-d fd instead of taking the writer mutex so window drags never stall behind a backpressured write,shipped
-terminal_control_any_thread_contract,macos,mcp,every AcrossWindows method dispatches to main before touching tab models honoring the documented any-thread contract,shipped
-monitor_subsystem_queue_confinement,macos,monitoring,dev-server file-tailer shell-event process-tree and remote-IPC monitors confine their state to owning queues closing five cross-thread races,shipped
-watchdog_retry_discipline,macos,monitoring,file monitors re-arm after delete-replace with backoff the tailer re-arms on rename with bounded reads and the dylib loader retries after cooldown,shipped
-memory_reclamation_wiring,macos,performance,pinned per-tab snapshots buffer duplicates and search caches now clear on demotion close and OS pressure with a startup sweep of orphaned scrollback caches,shipped
-window_level_gpu_volatility,macos,performance,GPU atlas and buffers of fully invisible windows go volatile under critical pressure with reclaim-safe rebuild on the next draw,shipped
-self_imposed_footprint_ceiling,macos,performance,the app polls its own footprint against a 4-12GB ceiling and synthesizes memory pressure before the OS signal arrives,shipped
-helper_parent_death_detection,macos,proxy,chau7-proxy and chau7-remote exit when the parent app dies and proxy auto-restart uses capped exponential backoff,shipped
-chau7_parse_acceleration_restored,macos,terminal,the accidentally-deleted Rust acceleration crate (ANSI parse pattern match escape sanitize command risk) is restored and exporting symbols again,shipped
-ffi_abi_handshake_and_layout_probes,macos,terminal,the dylib exports an ABI version and struct sizeof probes verified before symbol binding plus an end-to-end integration test against the built dylib,shipped
-local_release_hygiene,macos,build,versions derive from git tags with loud failure pinned rust toolchain inside-out signing without --deep and a guard against new dead test gates,shipped
-persist_convention_sweep,macos,persistence,remaining silent try? failures across settings ssh remote telemetry and injection paths now log via the Persist helpers,shipped
-small_race_tail_closed,macos,concurrency,log sink event-drain generations deallocation flag poll diagnostics usage snapshot and reset-persist races are lock-guarded or generation-tokened,shipped
-cache_caps_and_dead_render_api,macos,performance,clipboard and resolver caches are bounded graphics abort buffers shrink and the unused frame-pacing API is removed,shipped
-test_suite_ungated_full,macos,build,the 46 remaining dead #if !SWIFT_PACKAGE test files are ungated and repaired bringing the package suite to 3127 tests with a guard against new gates,shipped
-resume_prefill_identity_tolerance,macos,restore,resume prefill validation treats unresolved current AI identity as match instead of rejecting so corroboration-lag does not lose the prefill,shipped
-resume_prefill_directory_canonical,macos,restore,resume prefill directory ownership check canonicalizes both expected and live paths via symlink resolution tilde expansion and standardization before comparing,shipped
-scrollback_idle_flush,macos,performance,warm-idle tabs flush scrollback to disk losslessly via ANSI capture and shrink to viewport floor without changing render phase then restore with colors on reselection,shipped
-restore_resume_command_reresolution,macos,restore,restore pipeline re-resolves Claude/Codex session IDs from on-disk transcripts when autosave captured a synthetic identity so tabs no longer come back without the resume prefill,shipped
-ai_running_live_process_tree,macos,detection,isAIRunning treats non-nil liveAgentName as authoritative so logos stay solid when an AI process is in the tab tree even after activeAppName has been cleared on prompt-return,shipped
-move_to_idle_handles_selected_tab,macos,overlay,Move to Idle Tabs right-click action switches selection to a neighbor when called on the currently selected tab instead of silently no-op-ing and the idle dropdown re-evaluates immediately via the observable suspendedTabIDs signal,shipped
-side_panel_default_source,macos,editor,text side panel defaults to source view instead of runbook preview when opening a markdown file,shipped
-runbook_inline_markdown_rendering,macos,editor,runbook view renders inline markdown bold italic code and links via AttributedString instead of showing literal characters,shipped
-markdown_preview_toggle_shortcut,macos,editor,the source/runbook toggle button is labeled Preview (Show Source when previewing) and an editor-pane-scoped Cmd+Shift+P shortcut flips between the two views without leaving the editor distinct from the global Cmd+Option+P command palette,shipped
-markdown_task_checkbox_toggle,macos,editor,the runbook styler recognizes - [ ] and - [x] task items styling the box green when checked and dimmed when not striking through completed task text and toggling the box state when clicked in the source edit pane,shipped
-markdown_hanging_indents,macos,editor,wrapped lines in markdown list items and blockquotes hang under their text content instead of the marker via a per-paragraph head indent measured in the body font,shipped
-restore_resume_command_dual_provider,macos,restore,restore-time re-resolution scans both Claude and Codex transcripts when autosave captured no provider so blank-state tabs are recovered from the on-disk session whose mtime is closest to the saved activity time or the newest available,shipped
-codex_resolver_restore_day_window,macos,restore,CodexSessionResolver.sessionCandidates accepts a saved activity timestamp as the day-directory search anchor and a wider maxDays so the restore pipeline finds transcripts from week-old day folders,shipped
-
-tab_logo_visible_when_dimmed,macos,ui,restored AI tab logo stays legible against dark backgrounds when the AI process has exited instead of fading to a near-invisible 0.35 opacity,shipped
-ai_display_appname_single_field,macos,ui,aiDisplayAppName now reads only lastAIProvider and the process-tree subscription writes through to it via updateLastDetectedApp so a single persisted field drives the AI tab logo across detection live exit and restore,shipped
-restore_reresolve_dedup_and_all_nil_guard,macos,restore,restore-time reResolveResumeCommand refuses to guess when the saved pane has nil provider AND nil session AND nil cmd and dedups its on-disk candidate against session ids already claimed by sibling tabs in the same restore set so two tabs sharing a directory never get the same claude --resume <id>,shipped
-prefill_retry_heartbeat,macos,restore,resume prefill queued by restore now falls back from the eager 0.3-3s backoff to a 5s heartbeat after retry 20 instead of silently abandoning pendingPrefillInput so cold-boot tabs whose OSC 133 prompt takes longer than ~30s to arrive still get their claude --resume or codex resume inserted once the shell is ready,shipped
-tab_select_flushes_pending_prefill,macos,restore,selectTab now walks the newly selected tab's terminal sessions and calls flushPendingPrefillInputIfReady on each so a queued resume prefill is delivered the instant the user looks at the tab instead of waiting for the next OSC 133 prompt or view reattach,shipped
-ai_session_reopen_on_attention,macos,notifications,An authoritative interactive-attention observation reopens a session the reconciler had marked terminal so long-lived agents like Codex that emit no raw lifecycle events still surface permission prompts after the first turn,shipped
-mcp_agent_launch,macos,mcp,One-call agent_launch MCP tool spawns N AI agents in fresh tabs composing tab_create plus tab_wait_ready plus tab_exec plus verified prompt injection with launch throttles, optional gh pr checkout, per-agent prompt visibility/submission/running fields, and agent-aware tab tool descriptions for discoverability,shipped
-tab_switch_shortcut_modes,macos,tabs,Switch-to-tab shortcuts are user-selectable between Cmd+1-9 or F1-F12 (up to 12 tabs) or both in Settings Tabs with the default staying Cmd+1-9 and F-keys remaining event-driven,shipped
-inactive_view_render_throttle,macos,rendering,Visible-but-unfocused terminal views throttle their grid-sync and draw rate to a configurable Background View Refresh Cap (default 42 fps) while staying event-driven and the previously dead Active Tab Refresh Cap now actually caps the focused view,shipped
-repo_group_stale_path_heal,macos,tabs,Tabs whose repo group points at a moved or renamed now-missing directory are re-tagged to their session live git root on app activation so a relocated repo no longer shows two identically named tab groups,shipped
-ligature_cache_hit_miss_split,macos,rendering,The Metal ligature cache separates real-ligature hits from the unbounded miss keyspace so transient miss churn can no longer evict and force re-rasterization of genuine ligatures,shipped
-screen_params_reclamp_debounce,macos,ui,didChangeScreenParameters overlay-window re-clamping is debounced 250ms to coalesce the bursts macOS fires during a display reconfiguration,shipped
-ascii_glyph_fast_path,macos,rendering,Single-byte printable ASCII cells resolve their Metal glyph through a flat style-indexed array instead of a per-cell Data allocation and dictionary hash on the per-frame instance-buffer path while multi-byte clusters keep the existing cache,shipped
-relay_scoped_failclosed_auth,relay,security,Scoped single-use HMAC v2 tokens (per device/role/endpoint) in the Authorization header with constant-time verify and Durable-Object nonce replay defense; the Worker fails closed without a configured secret and the secret reaches iOS via the pairing payload,shipped
-relay_hibernation_backpressure_ratelimit,relay,reliability,Relay rebuilt on Hibernatable WebSockets with per-device rate limiting body/frame size caps sanitized pending-state WebSocket backpressure and reason-based APNs registration removal,shipped
+Terminal Core,FFI Resize Shared Reference,"FFI resize binds a shared reference with atomic dimensions so a main-thread resize cannot alias concurrent drain-thread polls",Shipped,Yes
+Terminal Core,FFI Env Marshalling (Owned C-Strings),"Terminal creation duplicates env keys/values into C-owned buffers freed after the FFI call instead of escaping closure-scoped pointers",Shipped,Yes
+API Analytics,Agent Dashboard Queue-Confined State,"Agent dashboard tracker and cursor state is confined to a serial refresh queue so poll cycles and commit actions cannot race main-thread mutations",Shipped,Yes
+Networking,Proxy Session-Event Fire-and-Forget,"Prompt-injection session events post to the proxy asynchronously instead of blocking the main thread on a semaphore",Shipped,Yes
+Persistence,First-Wins Persisted Dictionary Uniquing,"Dictionary builds over persisted or transformable keys use first-wins uniquing so duplicate keys in stored data degrade gracefully instead of crashing",Shipped,No
+Restore,Restore-Time Tab Identity Dedup,"Saved tabs restore exactly once across all windows via first-occurrence-wins tab ID claims, preventing duplicated-window cascades",Shipped,Yes
+Restore,Change-Aware Quit Snapshot,"Quit reuses the cached autosave snapshot only when a structural fingerprint of live windows matches, so recent changes always persist",Shipped,Yes
+Restore,Freshest-Wins Restore Arbitration,"Restore prefers whichever of the file bundle and UserDefaults index carries the latest save token so stale bundles cannot resurrect old sessions",Shipped,Yes
+Restore,Crash-Safe Restore Bundle Swap,"Restore bundle directory swap uses safe-save replaceItemAt and logs manifest or sidecar corruption instead of silently degrading",Shipped,Yes
+Terminal Core,Terminal Create-Failure Error Card,"Terminal creation failure shows a localized error card with retry instead of a blank tab, and verifies the passwd shell exists before spawning",Shipped,Yes
+History,Queue-Confined History Store Counts,"History store mutators are queue-confined and clearOlderThan decrements the cached count so trim can never over-delete valid records",Shipped,No
+Settings,iCloud Settings Freshness Guard,"iCloud settings sync applies only strictly-newer timestamped blobs, refuses newer format versions, and preserves local values for absent fields",Shipped,Yes
+Terminal Core,Bash rcfile & Spawn CWD,"Interactive bash gets --rcfile shell integration and all shells spawn in their intended working directory via FFI launch arguments",Shipped,No
+Terminal Core,FFI Input Clamping & Pool Resilience,"FFI selection coordinates clamp to grid bounds and PTY reader-pool spawn failure fails terminal creation cleanly instead of aborting",Shipped,Yes
+Performance,Metal In-Flight Gate & GPU Error Recovery,"Metal frames are gated one-in-flight so CPU buffer writes never race the GPU, and command-buffer errors force a full-refresh redraw",Shipped,Yes
+Performance,Glyph Atlas Slot Clipping,"Glyph and ligature rasterization clip to their atlas slot so overhanging glyphs cannot corrupt neighboring cached glyphs",Shipped,Yes
+Performance,Display-Scale Change Handling,"Backing-property changes reconfigure the glyph atlas scale and force a redraw so cross-display drags render crisply without a tab switch",Shipped,Yes
+Performance,Occlusion-Aware Rendering,"Fully covered windows demote to the 1Hz background drain and re-expose forces an immediate grid sync",Shipped,Yes
+Terminal Core,Lossless PTY HUP Tail Drain,"The reader pool drains all kernel-buffered PTY output after HUP before signalling closed so fast-exiting commands never lose tail output",Shipped,Yes
+Terminal Core,Lock-Free PTY Resize,"PTY resize ioctls TIOCSWINSZ on a dup'd fd instead of taking the writer mutex so window drags never stall behind a backpressured write",Shipped,Yes
+MCP Server,Any-Thread Terminal Control Contract,"Every AcrossWindows method dispatches to main before touching tab models, honoring the documented any-thread contract",Shipped,Yes
+Monitoring,Monitor Subsystem Queue Confinement,"Dev-server, file-tailer, shell-event, process-tree, and remote-IPC monitors confine their state to owning queues, closing five cross-thread races",Shipped,Yes
+Monitoring,Watchdog Retry Discipline,"File monitors re-arm after delete-replace with backoff, the tailer re-arms on rename with bounded reads, and the dylib loader retries after cooldown",Shipped,Yes
+Performance,Memory Reclamation Wiring,"Pinned per-tab snapshots, buffer duplicates, and search caches clear on demotion, close, and OS pressure, with a startup sweep of orphaned scrollback caches",Shipped,Yes
+Performance,Window-Level GPU Volatility,"GPU atlas and buffers of fully invisible windows go volatile under critical pressure with reclaim-safe rebuild on the next draw",Shipped,Yes
+Performance,Self-Imposed Footprint Ceiling,"The app polls its own footprint against a 4-12GB ceiling and synthesizes memory pressure before the OS signal arrives",Shipped,Yes
+Networking,Helper Parent-Death Detection,"chau7-proxy and chau7-remote exit when the parent app dies, and proxy auto-restart uses capped exponential backoff",Shipped,Yes
+Terminal Core,chau7_parse Acceleration Layer,"The Rust acceleration crate (ANSI parse, pattern match, escape sanitize, command-risk detection) exports its symbols and is verified at build time",Shipped,Yes
+Terminal Core,FFI ABI Handshake & Layout Probes,"The dylib exports an ABI version and struct sizeof probes verified before symbol binding, plus an end-to-end integration test against the built dylib",Shipped,Yes
+Developer Experience,Local Release Hygiene,"Versions derive from git tags with loud failure, pinned Rust toolchain, inside-out signing without --deep, and a guard against new dead test gates",Shipped,No
+Persistence,Persist Convention Sweep,"Remaining silent try? failures across settings, SSH, remote, telemetry, and injection paths now log via the Persist helpers",Shipped,No
+Runtime,Concurrency Race Tail Closed,"Log sink, event-drain generations, deallocation flag, poll diagnostics, usage snapshot, and reset-persist races are lock-guarded or generation-tokened",Shipped,No
+Performance,Cache Caps & Dead Render API Removal,"Clipboard and resolver caches are bounded, graphics abort buffers shrink, and the unused frame-pacing API is removed",Shipped,Yes
+Developer Experience,Ungated Full Test Suite,"The remaining dead #if !SWIFT_PACKAGE test files are ungated and repaired, bringing the package suite to 3,000+ tests with a guard against new gates",Shipped,No
+Restore,Resume Prefill Identity Tolerance,"Resume prefill validation treats unresolved current AI identity as a match instead of rejecting, so corroboration lag does not lose the prefill",Shipped,Yes
+Restore,Resume Prefill Directory Canonicalization,"Resume prefill directory-ownership check canonicalizes both expected and live paths via symlink resolution, tilde expansion, and standardization before comparing",Shipped,Yes
+Performance,Idle Scrollback Flush,"Warm-idle tabs flush scrollback to disk losslessly via ANSI capture and shrink to the viewport floor without changing render phase, then restore with colors on reselection",Shipped,Yes
+Restore,Restore-Time Resume Command Re-Resolution,"The restore pipeline re-resolves Claude/Codex session IDs from on-disk transcripts when autosave captured a synthetic identity, so tabs no longer come back without the resume prefill",Shipped,Yes
+AI Detection,Live Process Tree Authoritative for AI-Running,"isAIRunning treats a non-nil liveAgentName as authoritative so logos stay solid when an AI process is in the tab tree even after activeAppName is cleared on prompt-return",Shipped,Yes
+Overlay,Move-to-Idle Handles Selected Tab,"The Move to Idle Tabs action switches selection to a neighbor when invoked on the selected tab instead of silently no-op-ing, and the idle dropdown re-evaluates immediately via the observable suspendedTabIDs signal",Shipped,Yes
+Editor,Side-Panel Markdown Defaults to Source,"The text side panel defaults to source view instead of runbook preview when opening a markdown file",Shipped,No
+Editor,Runbook Inline Markdown Rendering,"The runbook view renders inline markdown bold, italic, code, and links via AttributedString instead of showing literal characters",Shipped,Yes
+Editor,Markdown Preview Toggle Shortcut,"The source/runbook toggle button is labeled Preview (Show Source when previewing) and an editor-pane-scoped Cmd+Shift+P shortcut flips between the two views, distinct from the global Cmd+Option+P command palette",Shipped,Yes
+Editor,Interactive Runbook Task Checkboxes,"The runbook styler recognizes - [ ] and - [x] task items, styling the box green when checked and dimmed when not, striking through completed task text, and toggling the box state when clicked in the source edit pane",Shipped,Yes
+Editor,Runbook Hanging Indents,"Wrapped lines in markdown list items and blockquotes hang under their text content instead of the marker, via a per-paragraph head indent measured in the body font",Shipped,No
+Restore,Dual-Provider Resume Re-Resolution,"Restore-time re-resolution scans both Claude and Codex transcripts when autosave captured no provider, so blank-state tabs are recovered from the on-disk session whose mtime is closest to the saved activity time or the newest available",Shipped,Yes
+Restore,Codex Resolver Restore Day-Window,"CodexSessionResolver.sessionCandidates accepts a saved activity timestamp as the day-directory search anchor and a wider maxDays so the restore pipeline finds transcripts from week-old day folders",Shipped,Yes
+Overlay,Dimmed AI Tab Logo Legibility,"The restored AI tab logo stays legible against dark backgrounds when the AI process has exited, instead of fading to a near-invisible 0.35 opacity",Shipped,Yes
+Overlay,Single-Field AI Display Name,"aiDisplayAppName reads only lastAIProvider, and the process-tree subscription writes through to it via updateLastDetectedApp, so a single persisted field drives the AI tab logo across detection, live exit, and restore",Shipped,Yes
+Restore,Restore Re-Resolve Dedup & All-Nil Guard,"Restore-time reResolveResumeCommand refuses to guess when the saved pane has nil provider, session, and command, and dedups its on-disk candidate against session ids already claimed by sibling tabs so two tabs sharing a directory never get the same claude --resume id",Shipped,Yes
+Restore,Resume Prefill Retry Heartbeat,"Resume prefill queued by restore falls back from the eager 0.3-3s backoff to a 5s heartbeat after retry 20 instead of silently abandoning pendingPrefillInput, so cold-boot tabs whose OSC 133 prompt takes longer than ~30s still get their resume command inserted once the shell is ready",Shipped,Yes
+Restore,Tab Selection Flushes Pending Prefill,"selectTab walks the newly selected tab's terminal sessions and calls flushPendingPrefillInputIfReady on each, so a queued resume prefill is delivered the instant the user looks at the tab instead of waiting for the next OSC 133 prompt or view reattach",Shipped,Yes
+Notifications,Attention Reopens Terminal-Marked Session,"An authoritative interactive-attention observation reopens a session the reconciler had marked terminal, so long-lived agents like Codex that emit no raw lifecycle events still surface permission prompts after the first turn",Shipped,Yes
+MCP Server,MCP agent_launch Tool,"One-call agent_launch MCP tool spawns N AI agents in fresh tabs, composing tab_create + tab_wait_ready + tab_exec + verified prompt injection with launch throttles, optional gh pr checkout, and per-agent prompt visibility/submission/running fields",Shipped,Yes
+Tabs,Configurable Tab-Switch Shortcut Modes,"Switch-to-tab shortcuts are user-selectable between Cmd+1-9, F1-F12 (up to 12 tabs), or both in Settings > Tabs, with the default staying Cmd+1-9",Shipped,Yes
+Performance,Inactive-View Render Throttle,"Visible-but-unfocused terminal views throttle grid-sync and draw rate to a configurable Background View Refresh Cap (default 42 fps) while staying event-driven, and the Active Tab Refresh Cap now actually caps the focused view",Shipped,Yes
+Tabs,Repo-Group Stale Path Healing,"Tabs whose repo group points at a moved or renamed missing directory are re-tagged to their live git root on app activation, so a relocated repo no longer shows two identically named tab groups",Shipped,Yes
+Performance,Ligature Cache Hit/Miss Split,"The Metal ligature cache separates real-ligature hits from the unbounded miss keyspace so transient miss churn cannot evict and force re-rasterization of genuine ligatures",Shipped,Yes
+Overlay,Screen-Params Re-Clamp Debounce,"didChangeScreenParameters overlay-window re-clamping is debounced 250ms to coalesce the bursts macOS fires during a display reconfiguration",Shipped,No
+Performance,ASCII Glyph Fast Path,"Single-byte printable ASCII cells resolve their Metal glyph through a flat style-indexed array instead of a per-cell Data allocation and dictionary hash, while multi-byte clusters keep the existing cache",Shipped,Yes
+Remote & Collaboration,Scoped Fail-Closed Relay Auth,"Scoped single-use HMAC v2 tokens (per device/role/endpoint) in the Authorization header with constant-time verify and Durable-Object nonce replay defense; the Worker fails closed without a configured secret and the secret reaches iOS via the pairing payload",Shipped,Yes
+Remote & Collaboration,Relay Hibernation Backpressure & Rate-Limit,"Relay rebuilt on Hibernatable WebSockets with per-device rate limiting, body/frame size caps, sanitized pending-state WebSocket backpressure, and reason-based APNs registration removal",Shipped,Yes

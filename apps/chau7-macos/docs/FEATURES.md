@@ -25,8 +25,9 @@ See your coding agents, know what they cost, steer them from the outside. A macO
 - [File Locations](#file-locations)
 - [Environment Variables](#environment-variables)
 - [Migration](#migration)
-- [Architecture](#architecture)
 - [Quality Gates](#quality-gates)
+- [Architecture](#architecture)
+- [Additional Notes](#additional-notes)
 
 ---
 
@@ -40,33 +41,33 @@ Chau7 recognizes AI CLIs the moment they launch — no configuration required. T
 - **Codex** (codex, codex-cli, codex-pty)
 - **Gemini** (gemini, gemini-cli)
 - **ChatGPT** (chatgpt, gpt, openai)
-- **GitHub Copilot** (copilot, gh copilot)
+- **GitHub Copilot** (copilot, copilot-cli, github-copilot)
 - **Aider** (aider)
 - **Cursor** (cursor)
 - **Windsurf** (windsurf)
 - **Cline** (cline)
-- **Cody** (cody, sourcegraph)
-- **Amazon Q** (amazon-q, q)
+- **Cody** (cody)
+- **Amazon Q** (amazon-q)
 - **Devin** (devin)
 - **Continue** (continue)
 - **Goose** (goose)
 - **Mentat** (mentat)
 - **Amp** (amp)
-- Custom-defined tools with display name, tab color, and logo.
+- Custom-defined tools with display name and tab color.
 
 Detection methods:
 - Live process-tree resolution. Each session polls `ps` descendants of its shell PID and matches executable basenames against the registry — the OS is the ground truth for identity. A tab labeled Codex that starts running Claude updates to Claude within ~1.5s without requiring user action.
-- Command line tokenization with wrapper skipping (env, sudo, npx, bunx, pnpm). Command detection gates output scanning to prevent false positives.
+- Command line tokenization with wrapper skipping (env, sudo, command, builtin, exec, noglob, time). Command detection gates output scanning to prevent false positives.
 - Output banner matching for all supported CLIs. Patterns require tool-specific context to avoid substring collisions, and exclude API-endpoint/website substrings (e.g. `openai.com/v1`) that appear in ordinary project code rather than CLI banners.
 - Corroborated output origination. An output-pattern match can only *originate* a new tool identity on a tab that has none when a live process-tree signal corroborates it; otherwise output matching only *confirms* an already-established identity. This prevents incidental output — an API URL printed by a `git push` in a repo that uses that API — from flipping a plain shell to an AI tool.
-- Custom detection rules with display name, tab color, and logo.
+- Custom detection rules with display name and tab color.
 
 ### AI Features
 
 - **MAGI multi-agent decision protocol** — CLI-first council mode that launches three isolated agents through Chau7 MCP, applies editable member personas, shares only controlled council packets between rounds, collects user-approved evidence, resolves majority/veto verdicts, and writes replay/share artifacts.
 - **MAGI command surface** — `magi`/`MAGI` supports direct questions, `ask`, `doctor`, `config`, `replay <run-id>`, and `share <run-id>` with local artifacts only in v1.
 - **MAGI local installer** — `Scripts/install-magi-cli.sh` builds the SwiftPM CLI and installs `magi` into `~/.local/bin` by default, with uppercase `MAGI` invocation supported through case-insensitive resolution or a case-sensitive alias.
-- **MAGI production artifacts** — failed, interrupted, vetoed, deadlocked, and partial runs carry checkpoint/failure metadata across decision markdown, decision JSON, transcript/replay JSONL, graph JSON, terminal replay, and local share HTML.
+- **MAGI production artifacts** — failed, interrupted, vetoed, deadlocked, and partial runs carry checkpoint/failure metadata across decision markdown, decision JSON, transcript/replay JSONL, graph JSON, and local share HTML (a terminal replay is rendered on demand by the `replay` command).
 - **MAGI hardened CLI runtime** — missing Chau7/MCP, provider launch failures, agent timeouts, malformed structured output, denied evidence, veto/deadlock outcomes, interrupts, and partial artifact replay paths are surfaced as clean statuses with useful local logs.
 - **MAGI per-run technical log** — each run writes `technical.jsonl` next to the required artifacts with correlated run/member/tab events for launches, prompt visibility, prompt submission, agent-running checks, polling, parsing, repairs, checkpoints, and failures.
 - **MAGI resilient launch verification** — launch checks accept raw running status and provider output when the effective tab status lags, so a member is not failed after its prompt was submitted and the agent is visibly active.
@@ -78,7 +79,7 @@ Detection methods:
 - **MAGI config panel** — `--config` opens an editable terminal panel for member provider/class settings, global evidence/web/deadlock/veto switches, provider checks, and persona file checks.
 - **MAGI visible first-run wizard** — `magi config` renders provider and model-class choices as numbered lists in interactive terminals and explains stdin/stdout TTY state when the wizard cannot open.
 - **MAGI shared first-run setup** — `magi config` can apply one provider/class choice to Melchior, Balthasar, and Casper, with a per-member path still available for mixed-provider councils.
-- **Branded tab logos** — each detected agent gets its logo in the tab.
+- **Branded tab logos** — detected agents show their brand logo in the tab when one is bundled; the rest fall back to their brand tab color.
 - **Auto tab theming** — tabs adopt the brand color of the active AI agent.
 - **LLM error explanation** — one-click error analysis via OpenAI, Anthropic, Ollama, or custom endpoint.
 - **Claude Code deep integration** — monitor hook events: prompts, tools, permissions, responses.
@@ -95,7 +96,7 @@ Detection methods:
 - **AI-first notification settings** — simplified overview for Finished, Failed, and Permission Request with direct controls for banner, tab highlight, sound, and dock bounce. Waiting-input and attention-required states surface as “needs me” attention. Per-tool overrides and advanced trigger plumbing available separately.
 - **Notification delivery ledger** — lifecycle tracking for debugging: coalescing, retry scheduling, drop reasons, and real UI outcomes.
 - **PTY output logging** — capture raw terminal output for AI tool sessions.
-- **Codex session resolver** — maps Codex sessions to working directories with LRU caching.
+- **Codex session resolver** — maps Codex sessions to working directories with a bounded metadata cache.
 - **Generation-tokened event drain** — drain runloops capture a generation at start; any start/stop invalidates older loops, and the log sink, deallocation flags, and poll diagnostics are lock-guarded.
 - **Queue-confined monitors** — dev-server detection, file tailers, shell-event detection, the shared process-tree snapshotter, and the remote IPC server each confine mutable state to one owning queue, so UI calls can never race their timers.
 - **Retry-not-give-up watchdogs** — file monitors re-arm with backoff after delete/replace, tailers re-arm on rename with bounded per-tick reads, and the terminal dylib loader retries after a cooldown instead of disabling terminals until relaunch.
@@ -158,14 +159,14 @@ Supported commands (46 parsers):
 
 - **TLS/WSS proxy** — Go-based `chau7-proxy` intercepts API calls to Claude, OpenAI (Codex), Gemini, Anthropic with TLS and WebSocket support.
 - **Orphan-proof helpers** — chau7-proxy and chau7-remote exit when the parent app dies (no port-holding orphans after a crash), and the proxy's auto-restart backs off exponentially instead of crash-looping every 2 seconds.
-- **Token counting & cost calculation** — full token breakdown per call: input, output, cache creation, cache read, and reasoning tokens. Accurate cost calculation using provider-specific cache pricing (Anthropic 0.1x/1.25x, OpenAI 0.5x). Fallback estimation when extraction fails.
+- **Token counting & cost calculation** — full token breakdown per call: input, output, cache creation, cache read, and reasoning tokens. Accurate cost calculation using provider-specific cache pricing (Anthropic 0.1x cache-read / 1.25x cache-write; OpenAI per-model cache-read rates, 0.1x–0.5x). Fallback estimation when extraction fails.
 - **Latency tracking** — total request duration and time-to-first-token (TTFT) per API call.
 - **Echo-only input latency** — per-session input latency measures keystroke→echo responsiveness only; command submission (Enter) is excluded for every session, so a slow command's runtime is never miscounted as UI lag.
 - **Configurable telemetry retention** — AI run history and full transcripts in `runs.db` are pruned at launch to a user-set window (default 30 days; `0` = keep forever, set in Settings → Logs & History), cascading to child rows and reclaiming disk with a full `VACUUM`, so the database can't grow without bound.
 - **Bounded AI event queues** — the append-only hook event logs (`claude-events.jsonl`, `.ai-events.log`) are compacted to their most recent slice at monitor start (before tailing, while quiescent), so the transient event queues can't grow without bound; the durable record stays in the telemetry database.
 - **Task detection & assessment** — auto-detect AI task candidates with confidence scoring; approve or fail with notes.
 - **Baseline estimator** — calculate token savings from context caching.
-- **Analytics dashboard** — command stats, error rates, API usage, and timing. Adaptive polling (2s active, 5s idle, 10s no agents), proxy health monitoring, timeline pagination, and per-agent cost display with cache/reasoning token breakdown. Poll-cycle tracker state is confined to a serial refresh queue so commit actions and live polling can never race each other's bookkeeping.
+- **Analytics dashboard** — command stats, error rates, API usage, and timing. Proxy health monitoring, timeline pagination, and per-agent cost display with cache/reasoning token breakdown (the analytics view refreshes on a fixed timer plus event-driven updates; the per-repo agent dashboard is the one with adaptive 2s active / 5s idle / 10s no-agents polling). Poll-cycle tracker state is confined to a serial refresh queue so commit actions and live polling can never race each other's bookkeeping.
 - **Non-blocking session-event reporting** — prompt-injection session events post to the proxy asynchronously; a slow or wedged proxy can never freeze typing while the app waits for the local HTTP round-trip.
 - **Background completion extraction for Codex/OpenAI runs** — run-end finalization no longer waits on heavy transcript extraction for OpenAI-family sessions. Completed rows are persisted immediately, then richer turns and tool calls are backfilled asynchronously when extraction finishes.
 - **Recent proxy call context** — recent API calls in the Debug Console include local hour, repo name, and endpoint context for faster investigation.
@@ -173,7 +174,7 @@ Supported commands (46 parsers):
 - **Repo-aware debug labels** — per-tab token and CTO rows use `provider/custom title + repo`, with split-session disambiguation when needed.
 - **Timeline visualization** — scrubber timeline showing command blocks and metrics.
 - **Provider filtering** — include or exclude specific API providers.
-- **Correlation headers** — `X-Chau7-Context-Pack`, `X-Chau7-Tab-ID`, `X-Chau7-Project` for tracing.
+- **Correlation headers** — `X-Chau7-Session`, `X-Chau7-Tab`, `X-Chau7-Project` for tracing (plus `X-Chau7-Context-Pack` for baseline estimation).
 - **Per-repository prompt injection** — inject content into API requests per repository via `~/.chau7/prompt-rules.json`. Rules match by repository name (portable) or absolute path, choose prepend to user message (default), append, or system prompt, and now control when injection fires: every prompt, the first matching prompt in a shell session, or the first matching prompt after `/compact` or `/clear`. Supports Anthropic Messages, OpenAI Chat Completions, OpenAI Responses (Codex), and Gemini, plus optional repo-local `.chau7/injection.json` overrides.
 
 ## MCP Server
@@ -306,6 +307,8 @@ The app still contains internal runtime orchestration used by dashboard and revi
 | `chau7://telemetry/sessions/current` | Currently active AI sessions |
 | `chau7://telemetry/runs/<run_id>` | Specific run details by ID |
 
+`resources/list` advertises the first three static endpoints; `chau7://telemetry/runs/<run_id>` is a templated URI readable via `resources/read`.
+
 ## Terminal Core
 
 - **Rust terminal backend** — custom emulator via FFI: fast, memory-safe, correct.
@@ -353,11 +356,11 @@ The app still contains internal runtime orchestration used by dashboard and revi
 - Detached HEAD is treated as a no-branch state instead of a branch named `HEAD`, and cached branch identity is cleared when the shell reports the detached sentinel.
 - Split pane file preview: read-only viewer with syntax highlighting and image support (Cmd+Opt+O).
 - Split pane diff viewer: unified git diff with colored additions/deletions and Working/Staged toggle (Cmd+Opt+Shift+D). Binary changes and pure renames show a dedicated empty-state explaining *why* there are no hunks instead of a misleading "no changes" panel.
-- `chau7://` URL scheme: ssh, run, cd, and open actions from external apps (with confirmation).
+- `chau7://` URL scheme: ssh, run, cd, and open actions from external apps (the `run` action requires confirmation).
 - Default start directory and optional startup commands.
 - Copy on select, Option+click cursor positioning, paste escaping.
 - Speculative local echo now self-cleans when shell redraws or render-phase/interactivity changes make the optimistic overlay stale, preventing duplicated typed characters across live and passive shell surfaces.
-- Full grapheme-cluster rendering — ZWJ emoji (👨🏽‍💻), regional-indicator flags (🇫🇷), VS16 emoji presentation (❤️), and combining marks (NFD `é`) all survive the Rust → Swift FFI snapshot intact. Cell width and continuation are now explicit, so the renderer no longer guesses from glyph advance. The Metal atlas + fragment shader are wired for color-emoji RGBA rendering; full color rasterization lights up once `MetalTerminalRenderer.isColorGlyph` is implemented.
+- Full grapheme-cluster rendering — ZWJ emoji (👨🏽‍💻), regional-indicator flags (🇫🇷), VS16 emoji presentation (❤️), and combining marks (NFD `é`) all survive the Rust → Swift FFI snapshot intact. Cell width and continuation are now explicit, so the renderer no longer guesses from glyph advance. The Metal atlas + fragment shader render color-emoji RGBA directly via a dedicated color-glyph flag and shader branch.
 - Dangerous-output highlighting now distinguishes executable command spans from prose mentions, so warnings still catch `$ rm -rf /tmp` but skip explanatory text like “do not run rm -rf”.
 - iPhone remote approvals now keep polling alive across websocket relay URLs and background-task expiration edges, with explicit push-entitlement and iOS 18 deployment settings tracked in the app project.
 
@@ -480,14 +483,14 @@ Chau7's rendering pipeline is purpose-built for latency-sensitive terminal work:
 
 - Fully customizable keybindings with interactive editor and conflict detection.
 - Vim and Emacs presets.
-- Clipboard history (`Cmd+Shift+V`) — 100 entries, LRU eviction, pinning.
+- Clipboard history (`Cmd+Shift+V`) — configurable, default 50 entries (up to 1000), LRU eviction, pinning.
 - Paste escaping for shell-sensitive characters ($, backticks, quotes).
 
 ### Snippets
 
 - Snippet manager (`Cmd+;`) — create, edit, delete, import, export.
 - Three scopes: global (user), per-SSH-profile, per-repo (`.chau7/config.toml`).
-- Placeholder support: `${cursor}` and `${selection}`.
+- Placeholder support: numbered tab stops `${1:default}` (`${0}` = final cursor position) plus dynamic tokens `${cwd}`, `${home}`, `${date}`, `${time}`, and `${clip}`.
 
 ### History & Bookmarks
 
@@ -515,7 +518,7 @@ Chau7's rendering pipeline is purpose-built for latency-sensitive terminal work:
 - Per-repo event filtering and notification routing key off the `AIEvent.repoPath` field; explicit-tab rebinds round-trip every field via `AIEvent.replacingTabID(_:)` so `repoPath` survives even when the session-resolver corrects an explicit tab ID to a different one.
 - Action `runScript` enforces its configured timeout with SIGTERM → SIGKILL escalation via a shared `ProcessRunner` so trap-immune or I/O-blocked scripts can't hang past the timeout.
 - Webhook / Slack / Discord notification actions use a dedicated ephemeral `URLSession` (15s request timeout, 30s resource timeout, no cookie storage) instead of `URLSession.shared`, so bad endpoints fail fast and can't pollute the shared cookie jar.
-- Every notification action is implemented as a `NotificationActionHandler` registered in a per-type registry (24 actions grouped into 7 category files: Basic / Automation / Integration / DevOps / Productivity / Accessibility / TimeTracking). The executor is a thin dispatcher; adding a new action requires one handler type + one registry entry, no edits to the executor.
+- Every notification action is implemented as a `NotificationActionHandler` registered in a per-type registry (25 actions grouped into 7 category files: Basic / Automation / Integration / DevOps / Productivity / Accessibility / TimeTracking). The executor is a thin dispatcher; adding a new action requires one handler type + one registry entry, no edits to the executor.
 - The notification system consults a single `NotificationDeliveryHost` protocol for tab title, repo name, active-tab check, and tab routing — `TerminalControlService` conforms, and the app wires it via `NotificationManager.setHost(_:)` at startup. Replaces five separate closure properties that all routed to the same service.
 - Notification manager + action executor are constructed via a single `NotificationServices` composition root (no `.shared` singletons): `init()` wires the executor as the manager's action dispatcher and the manager as the executor's publisher, then AppModel holds the bundle as `notifications: NotificationServices?` injected at app startup. View-layer callsites that can't easily thread an explicit reference find the same instance via `NotificationServices.current`.
 - Tab highlights for all user-facing event types: permission, waiting_input, finished, failed, idle, tool_failed, response_failed, elicitation, attention_required, error, context_limit.
@@ -604,7 +607,7 @@ Chau7's rendering pipeline is purpose-built for latency-sensitive terminal work:
 
 ### Debugging
 
-- Debug console (`Cmd+Shift+D`) — 10 tabs: State, Token Optimizer, Events, Lag, Perf, Logs, Report, Analytics, Health, Repos.
+- Debug console (`Cmd+Option+L`) — 10 tabs: State, Token Optimizer, Events, Lag, Perf, Logs, Report, Analytics, Health, Repos.
 - Notification reliability dashboard — Debug Console health view summarizes recent completed, dropped, retried, rate-limited, and authoritative notification deliveries.
 - Data Explorer (`Cmd+Shift+D`) reloads its history and telemetry content whenever the singleton window is reopened.
 - Sessions Explorer rows use the latest run metadata for provider and repo labels.
@@ -770,7 +773,7 @@ Legacy `AI_*` and `SMART_OVERLAY_*` environment variables are still supported.
 
 ## Quality Gates
 
-- The full XCTest suite (3127 tests) compiles and runs under `swift test` — no test files are gated out of the package build, and a pre-commit guard rejects new `#if !SWIFT_PACKAGE` gates.
+- The full XCTest suite (3,000+ tests) compiles and runs under `swift test` — no test files are gated out of the package build, and a pre-commit guard rejects new `#if !SWIFT_PACKAGE` gates.
 - Distribution versions derive from git tags and fail loudly when underivable; the Rust toolchain is pinned; app signing is strictly inside-out (no `--deep`); and the pre-commit guard rejects new `#if !SWIFT_PACKAGE` test gates so dead tests cannot be reintroduced.
 - Persistence paths follow the `Persist` logged-failure convention end to end: settings, SSH profiles, remote approval frames, telemetry responses, repo injection rules, and scrollback reloads log corruption and write failures instead of silently degrading.
 
@@ -809,9 +812,9 @@ Key patterns:
 - Correlation IDs for trace logging.
 - Binary tree layout for split pane nesting.
 - MCP server with thread-safe main-thread dispatch.
-# Features
+## Additional Notes
 
-- SwiftPM package metadata excludes `Performance/SIMDTerminalParser.swift` from doc/resource scanning so builds keep the SIMD parser as source instead of trying to bundle it as documentation.
+- SwiftPM package metadata excludes each directory's `README.md` from resource scanning so per-directory docs aren't bundled as app resources.
 - Background terminal snapshots can fall back to cached remote transcript text when the live terminal view is detached, and notification trigger/style logic now treats elicitation plus tool/response failures as first-class interactive events.
 - `tab_output` can read a fresher active AI PTY log tail for MCP-driven tabs, improving retrieval of live Codex and Claude responses.
 - PTY log tail parsing normalizes terminal control sequences and backspaces before downstream consumers read the transcript.
