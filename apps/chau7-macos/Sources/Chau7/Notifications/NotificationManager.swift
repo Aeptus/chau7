@@ -778,21 +778,9 @@ final class NotificationManager {
 
     /// Send notification via AppleScript (works without code signing)
     private func sendAppleScriptNotification(title: String, subtitle: String = "", body: String) {
-        let escapedTitle = title
-            .replacingOccurrences(of: "\\", with: "\\\\")
-            .replacingOccurrences(of: "\"", with: "\\\"")
-            .replacingOccurrences(of: "\n", with: " ")
-            .replacingOccurrences(of: "\r", with: "")
-        let escapedBody = body
-            .replacingOccurrences(of: "\\", with: "\\\\")
-            .replacingOccurrences(of: "\"", with: "\\\"")
-            .replacingOccurrences(of: "\n", with: " ")
-            .replacingOccurrences(of: "\r", with: "")
-        let escapedSubtitle = subtitle
-            .replacingOccurrences(of: "\\", with: "\\\\")
-            .replacingOccurrences(of: "\"", with: "\\\"")
-            .replacingOccurrences(of: "\n", with: " ")
-            .replacingOccurrences(of: "\r", with: "")
+        let escapedTitle = title.appleScriptQuoted
+        let escapedBody = body.appleScriptQuoted
+        let escapedSubtitle = subtitle.appleScriptQuoted
 
         let script: String
         if escapedSubtitle.isEmpty {

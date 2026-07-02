@@ -208,20 +208,7 @@ public enum RemoteActivityProjection {
     }
 
     private static func headline(for candidate: RemoteActivityCandidate) -> String {
-        switch candidate.status {
-        case .approvalRequired:
-            return "Approval required"
-        case .waitingInput:
-            return "\(candidate.toolName) needs input"
-        case .failed:
-            return "\(candidate.toolName) failed"
-        case .running:
-            return "\(candidate.toolName) is active"
-        case .completed:
-            return "\(candidate.toolName) finished"
-        case .idle:
-            return candidate.toolName
-        }
+        NotificationContentFormatter.activityHeadline(status: candidate.status, toolName: candidate.toolName)
     }
 
     private static func normalizedDetail(for candidate: RemoteActivityCandidate) -> String? {

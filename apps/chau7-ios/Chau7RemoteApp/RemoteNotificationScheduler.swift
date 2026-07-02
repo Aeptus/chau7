@@ -17,12 +17,11 @@ enum RemoteNotificationScheduler {
 
     static func scheduleApproval(for payload: ApprovalRequestPayload, redactDetails: Bool) {
         let isProtectedRemoteAction = payload.flaggedCommand != payload.command
-        let tool = trimmed(payload.toolName)
-        let title = isProtectedRemoteAction
-            ? "Protected action needs approval"
-            : (tool.map { "\($0) needs approval" } ?? "Command approval")
         let content = makeContent(
-            title: title,
+            title: NotificationContentFormatter.approvalTitle(
+                toolName: payload.toolName,
+                isProtectedAction: isProtectedRemoteAction
+            ),
             subtitle: redactDetails ? nil : locationSubtitle(
                 tabTitle: payload.tabTitle,
                 projectName: payload.projectName,
@@ -43,9 +42,8 @@ enum RemoteNotificationScheduler {
     }
 
     static func scheduleInteractivePrompt(for prompt: RemoteInteractivePrompt, redactDetails: Bool) {
-        let tool = trimmed(prompt.toolName)
         let content = makeContent(
-            title: tool.map { "\($0) is waiting" } ?? "Interactive prompt",
+            title: NotificationContentFormatter.interactivePromptTitle(toolName: prompt.toolName),
             subtitle: redactDetails ? nil : locationSubtitle(
                 tabTitle: prompt.tabTitle,
                 projectName: prompt.projectName,
@@ -139,22 +137,20 @@ enum RemoteNotificationScheduler {
 
     /// One-line "where" summary shown as the notification subtitle:
     /// `tab · project (branch) · ~/dir`. The tool name already leads the title.
+    /// Delegates to the shared formatter so push and local text stay identical.
     private static func locationSubtitle(
         tabTitle: String?,
         projectName: String?,
         branchName: String?,
         currentDirectory: String?
     ) -> String? {
-        var parts: [String] = []
-        if let tab = trimmed(tabTitle) { parts.append(tab) }
-        switch (trimmed(projectName), trimmed(branchName)) {
-        case let (project?, branch?): parts.append("\(project) (\(branch))")
-        case let (project?, nil): parts.append(project)
-        case let (nil, branch?): parts.append(branch)
-        case (nil, nil): break
-        }
-        if let directory = abbreviatedPath(currentDirectory) { parts.append(directory) }
-        return parts.isEmpty ? nil : parts.joined(separator: " · ")
+        NotificationContentFormatter.locationSummary(
+            tabTitle: tabTitle,
+            projectName: projectName,
+            branchName: branchName,
+            currentDirectory: currentDirectory,
+            homeDirectory: NSHomeDirectory()
+        )
     }
 
     private static func bodyLines(_ values: [String?]) -> String {
@@ -168,16 +164,4 @@ enum RemoteNotificationScheduler {
         return trimmed.isEmpty ? nil : trimmed
     }
 
-    private static func abbreviatedPath(_ value: String?) -> String? {
-        let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        guard !trimmed.isEmpty else { return nil }
-        let home = NSHomeDirectory()
-        if trimmed == home {
-            return "~"
-        }
-        if trimmed.hasPrefix(home + "/") {
-            return "~" + String(trimmed.dropFirst(home.count))
-        }
-        return trimmed
-    }
 }

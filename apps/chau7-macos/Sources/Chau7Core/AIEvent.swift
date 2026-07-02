@@ -279,49 +279,11 @@ public struct AIEvent: Identifiable, Equatable, Sendable {
         notificationTitle(toolOverride: nil)
     }
 
-    /// Returns the notification title for this event with optional tool and repo overrides.
+    /// Returns the notification title for this event with optional tool and
+    /// repo overrides. Delegates to `NotificationContentFormatter`, the single
+    /// source of notification text across all surfaces.
     public func notificationTitle(toolOverride: String?, repoName: String? = nil) -> String {
-        let toolName = (toolOverride ?? tool).trimmingCharacters(in: .whitespacesAndNewlines)
-        let name = toolName.isEmpty ? tool : toolName
-        // Prefix with repo name when available (e.g. "Mockup — Claude: Task finished")
-        let prefix: String
-        if let repo = repoName, !repo.isEmpty, repo != name {
-            prefix = "\(repo) — \(name)"
-        } else {
-            prefix = name
-        }
-        let suffix: String
-        switch type.lowercased() {
-        case "needs_validation":
-            suffix = LCore("aiEvent.title.needsValidation", "Needs review")
-        case "idle", "waiting_input":
-            suffix = LCore("aiEvent.title.waitingInput", "Waiting for input")
-        case "attention_required":
-            suffix = LCore("aiEvent.title.attention", "Needs attention")
-        case "finished":
-            suffix = LCore("aiEvent.title.finished", "Finished")
-        case "failed":
-            suffix = LCore("aiEvent.title.failed", "Failed")
-        case "permission":
-            suffix = LCore("aiEvent.title.permission", "Permission needed")
-        case "error":
-            suffix = LCore("aiEvent.title.error", "Error")
-        case "context_limit":
-            suffix = LCore("aiEvent.title.contextLimit", "Context limit reached")
-        case "file_conflict":
-            suffix = LCore("aiEvent.title.fileConflict", "File conflict")
-        case "tool_called":
-            suffix = LCore("aiEvent.title.toolCalled", "Tool called")
-        case "file_edited":
-            suffix = LCore("aiEvent.title.fileEdited", "File edited")
-        case "token_threshold":
-            suffix = LCore("aiEvent.title.tokenThreshold", "Token threshold")
-        case "cost_threshold":
-            suffix = LCore("aiEvent.title.costThreshold", "Cost threshold")
-        default:
-            suffix = LCore("aiEvent.title.update", "Update")
-        }
-        return "\(prefix): \(suffix)"
+        NotificationContentFormatter.title(for: self, toolOverride: toolOverride, repoName: repoName)
     }
 
     /// Returns a short routing context suitable for a native notification
@@ -329,26 +291,7 @@ public struct AIEvent: Identifiable, Equatable, Sendable {
     /// project/tab identity visually separate and avoids duplicating obvious
     /// values like `Tab: Claude` on a `Claude: Finished` notification.
     public func notificationSubtitle(tabTitle: String? = nil, repoName: String? = nil) -> String {
-        let repo = firstNonEmpty(
-            repoName,
-            repoPath.map { URL(fileURLWithPath: $0).lastPathComponent }
-        )
-        let directoryName = repo == nil
-            ? cleanNotificationPart(directory.map { URL(fileURLWithPath: $0).lastPathComponent })
-            : nil
-        let tab = cleanNotificationPart(tabTitle)
-        let toolName = cleanNotificationPart(tool)
-
-        var parts: [String] = []
-        if let repo {
-            parts.append("\(LCore("aiEvent.subtitle.repo", "Repo")): \(repo)")
-        } else if let directoryName {
-            parts.append("\(LCore("aiEvent.subtitle.directory", "Dir")): \(directoryName)")
-        }
-        if let tab, !matchesNotificationPart(tab, repo), !matchesNotificationPart(tab, toolName) {
-            parts.append("\(LCore("aiEvent.subtitle.tab", "Tab")): \(tab)")
-        }
-        return parts.joined(separator: " · ")
+        NotificationContentFormatter.subtitle(for: self, tabTitle: tabTitle, repoName: repoName)
     }
 
     /// Returns the notification body for this event.
@@ -356,52 +299,7 @@ public struct AIEvent: Identifiable, Equatable, Sendable {
     /// takes precedence over the localized default. For unknown types, the
     /// fallback is `"<type>: <message>"` or just `<type>` when message is empty.
     public var notificationBody: String {
-        switch type.lowercased() {
-        case "needs_validation":
-            return message.isEmpty ? LCore("aiEvent.body.needsValidation", "Your input is required.") : message
-        case "idle":
-            return message.isEmpty ? LCore("aiEvent.body.idle", "No new history entries for a while.") : message
-        case "waiting_input":
-            return message.isEmpty ? LCore("aiEvent.body.waitingInput", "Ready for your input.") : message
-        case "attention_required":
-            return message.isEmpty ? LCore("aiEvent.body.attention", "Needs your attention.") : message
-        case "finished":
-            return message.isEmpty ? LCore("aiEvent.body.finished", "Done.") : message
-        case "failed":
-            return message.isEmpty ? LCore("aiEvent.body.failed", "Check the logs.") : message
-        case "permission":
-            return message.isEmpty ? LCore("aiEvent.body.permission", "Needs your permission to continue.") : message
-        case "error":
-            return message.isEmpty ? LCore("aiEvent.body.error", "An error occurred.") : message
-        case "context_limit":
-            return message.isEmpty ? LCore("aiEvent.body.contextLimit", "Approaching context window limit.") : message
-        case "token_threshold", "cost_threshold":
-            return message.isEmpty ? LCore("aiEvent.body.usageThreshold", "Usage threshold exceeded.") : message
-        default:
-            return message.isEmpty ? type : "\(type): \(message)"
-        }
-    }
-
-    private func firstNonEmpty(_ candidates: String?...) -> String? {
-        for candidate in candidates {
-            if let cleaned = cleanNotificationPart(candidate) {
-                return cleaned
-            }
-        }
-        return nil
-    }
-
-    private func cleanNotificationPart(_ value: String?) -> String? {
-        let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        return trimmed.isEmpty ? nil : trimmed
-    }
-
-    private func matchesNotificationPart(_ lhs: String?, _ rhs: String?) -> Bool {
-        guard let lhs = cleanNotificationPart(lhs),
-              let rhs = cleanNotificationPart(rhs) else {
-            return false
-        }
-        return lhs.caseInsensitiveCompare(rhs) == .orderedSame
+        NotificationContentFormatter.body(for: self)
     }
 }
 
