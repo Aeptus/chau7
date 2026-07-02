@@ -562,200 +562,40 @@ final class FeatureSettings {
         var ctoTabOverrides: [String: Bool]
     }
 
-    // MARK: - Font Settings (NEW)
+    // MARK: - Font Settings (forwarded to TerminalAppearanceStore)
+
+    /// The terminal appearance domain lives in its own store; these facade
+    /// properties keep existing consumers source-compatible.
+    @ObservationIgnored private let appearanceStore = TerminalAppearanceStore()
 
     var fontFamily: String {
-        didSet {
-            UserDefaults.standard.set(fontFamily, forKey: Keys.fontFamily)
-            // Don't post .terminalFontChanged here — that notification triggers
-            // applyDefaultFontSize() which resets per-tab zoom. Font family changes
-            // are picked up by SwiftUI's @Observable property tracking directly.
-        }
+        get { appearanceStore.fontFamily }
+        set { appearanceStore.fontFamily = newValue }
     }
 
-    /// NSFont weight value (0=ultralight, 5=regular, 9=bold, 14=ultra-heavy).
-    /// Maps to NSFontManager weight parameter.
     var fontWeight: Int {
-        didSet {
-            let clamped = max(0, min(fontWeight, 14))
-            if fontWeight != clamped { fontWeight = clamped
-                return
-            }
-            UserDefaults.standard.set(fontWeight, forKey: "terminal.fontWeight")
-        }
+        get { appearanceStore.fontWeight }
+        set { appearanceStore.fontWeight = newValue }
     }
 
     var fontSize: Int {
-        didSet {
-            let clamped = max(8, min(fontSize, 72))
-            if fontSize != clamped {
-                fontSize = clamped
-                return
-            }
-            UserDefaults.standard.set(fontSize, forKey: Keys.fontSize)
-            NotificationCenter.default.post(name: .terminalFontChanged, object: nil)
-        }
+        get { appearanceStore.fontSize }
+        set { appearanceStore.fontSize = newValue }
     }
 
     var customFontFamily: String {
-        didSet {
-            UserDefaults.standard.set(customFontFamily, forKey: Keys.customFontFamily)
-        }
+        get { appearanceStore.customFontFamily }
+        set { appearanceStore.customFontFamily = newValue }
     }
 
     var defaultZoomPercent: Int {
-        didSet {
-            let clamped = max(50, min(defaultZoomPercent, 200))
-            if defaultZoomPercent != clamped {
-                defaultZoomPercent = clamped
-                return
-            }
-            UserDefaults.standard.set(defaultZoomPercent, forKey: Keys.defaultZoomPercent)
-            NotificationCenter.default.post(name: .terminalZoomChanged, object: nil)
-        }
+        get { appearanceStore.defaultZoomPercent }
+        set { appearanceStore.defaultZoomPercent = newValue }
     }
 
-    /// Available monospace fonts for the terminal, filtered by system availability.
-    /// Computed property so the custom font (if valid) appears at the top.
     static var availableFonts: [String] {
-        var fonts = builtinAvailableFonts
-        let custom = shared.customFontFamily.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !custom.isEmpty, !fonts.contains(custom),
-           NSFontManager.shared.font(withFamily: custom, traits: [], weight: 5, size: 12) != nil {
-            fonts.insert(custom, at: 0)
-        }
-        return fonts
+        shared.appearanceStore.availableFonts
     }
-
-    /// Built-in monospace font list, filtered by system availability (computed once).
-    private static let builtinAvailableFonts: [String] = {
-        let monospacedFonts = [
-            // macOS System Fonts
-            "Menlo",
-            "Monaco",
-            "SF Mono",
-            "Courier New",
-
-            // Microsoft Fonts
-            "Cascadia Code", // Modern Windows Terminal font with ligatures
-            "Cascadia Mono", // Cascadia without ligatures
-            "Consolas",
-
-            // JetBrains
-            "JetBrains Mono", // Popular IDE font with ligatures
-
-            // Adobe/Google Fonts
-            "Source Code Pro",
-            "Roboto Mono",
-
-            // Mozilla
-            "Fira Code", // Popular font with ligatures
-            "Fira Mono", // Fira without ligatures
-
-            // IBM
-            "IBM Plex Mono",
-
-            // GitHub
-            "Monaspace Neon", // GitHub's new font family
-            "Monaspace Argon",
-            "Monaspace Xenon",
-            "Monaspace Radon",
-            "Monaspace Krypton",
-
-            // Vercel
-            "Geist Mono", // Modern, clean terminal font
-
-            // Other Popular Open Source
-            "Hack", // Designed for source code
-            "Inconsolata", // Humanist monospace
-            "Anonymous Pro",
-            "Ubuntu Mono",
-            "Droid Sans Mono",
-            "DejaVu Sans Mono",
-            "Liberation Mono",
-            "PT Mono",
-            "Oxygen Mono",
-            "Space Mono", // Google Fonts - quirky
-            "Overpass Mono",
-            "Share Tech Mono",
-            "Cousine",
-            "Cutive Mono",
-
-            // Iosevka Family (highly customizable)
-            "Iosevka",
-            "Iosevka Term",
-            "Iosevka Fixed",
-
-            // Victor Mono (cursive italics)
-            "Victor Mono",
-
-            // Fantasque Sans Mono (playful)
-            "Fantasque Sans Mono",
-
-            // Input (customizable)
-            "Input Mono",
-            "Input Mono Narrow",
-            "Input Mono Condensed",
-
-            // Recursive (variable font)
-            "Recursive Mono Linear",
-            "Rec Mono Linear",
-
-            // Comic/Fun
-            "Comic Mono", // Comic Sans but monospace
-
-            // Maple Mono
-            "Maple Mono",
-            "Maple Mono NF", // Nerd Font version
-
-            // Commit Mono
-            "Commit Mono",
-
-            // Nerd Font variants (include powerline symbols)
-            "MesloLGS NF", // Popular for Oh My Zsh
-            "MesloLGM NF",
-            "MesloLGL NF",
-            "Hack Nerd Font",
-            "FiraCode Nerd Font",
-            "JetBrainsMono Nerd Font",
-            "CaskaydiaCove Nerd Font",
-            "Iosevka Nerd Font",
-            "UbuntuMono Nerd Font",
-            "RobotoMono Nerd Font",
-            "SourceCodePro Nerd Font",
-            "Symbols Nerd Font",
-
-            // Premium/Commercial fonts (user must install)
-            "Operator Mono", // Hoefler&Co - cursive italics
-            "Dank Mono", // Stylish with ligatures
-            "MonoLisa", // Designed for long coding sessions
-            "Berkeley Mono", // Retro feel
-            "Gintronic", // Modern geometric
-            "Pragmata Pro", // Compact and dense
-            "Cartograph CF", // Warm, readable
-            "Codelia", // Playful
-            "Comic Code", // Professional Comic Sans
-            "Ellograph CF", // Elegant
-            "Lilex", // Modern and clean
-
-            // Coding-specific fonts
-            "Sudo",
-            "Agave",
-            "Cozette", // Bitmap-style
-            "Terminus", // Classic bitmap
-            "Tamzen",
-            "Tamsyn",
-            "GoMono", // Go language official font
-            "Noto Sans Mono", // Google's universal font
-            "Intel One Mono" // Intel's open source font
-        ]
-        let fontManager = NSFontManager.shared
-        // SF Mono is system-restricted: NSFontManager returns nil for it, but
-        // it's always available via NSFont.monospacedSystemFont(). Keep it unconditionally.
-        return monospacedFonts.filter {
-            $0 == "SF Mono" || fontManager.font(withFamily: $0, traits: [], weight: 5, size: 12) != nil
-        }
-    }()
 
     private static let defaultDangerousCommandPatterns: [String] = [
         // Filesystem destruction
@@ -960,32 +800,20 @@ final class FeatureSettings {
         "chau7-mcp-bridge"
     ]
 
-    // MARK: - Color Scheme Settings (NEW)
+    // MARK: - Color Scheme Settings (forwarded to TerminalAppearanceStore)
 
     var colorSchemeName: String {
-        didSet {
-            UserDefaults.standard.set(colorSchemeName, forKey: Keys.colorSchemeName)
-            NotificationCenter.default.post(name: .terminalColorsChanged, object: nil)
-        }
+        get { appearanceStore.colorSchemeName }
+        set { appearanceStore.colorSchemeName = newValue }
     }
 
     var customColorScheme: TerminalColorScheme? {
-        didSet {
-            if let scheme = customColorScheme,
-               let data = JSONOperations.encode(scheme, context: "customColorScheme") {
-                UserDefaults.standard.set(data, forKey: Keys.customColorScheme)
-            } else {
-                UserDefaults.standard.removeObject(forKey: Keys.customColorScheme)
-            }
-            NotificationCenter.default.post(name: .terminalColorsChanged, object: nil)
-        }
+        get { appearanceStore.customColorScheme }
+        set { appearanceStore.customColorScheme = newValue }
     }
 
     var currentColorScheme: TerminalColorScheme {
-        if colorSchemeName == "Custom", let custom = customColorScheme {
-            return custom
-        }
-        return TerminalColorScheme.allPresets.first { $0.name == colorSchemeName } ?? .default
+        appearanceStore.currentColorScheme
     }
 
     // MARK: - Shell Settings (NEW)
@@ -2264,13 +2092,7 @@ final class FeatureSettings {
 
     private enum Keys {
         // Font (NEW)
-        static let fontFamily = "terminal.fontFamily"
-        static let fontSize = "terminal.fontSize"
-        static let customFontFamily = "terminal.customFontFamily"
-        static let defaultZoomPercent = "terminal.defaultZoomPercent"
         // Color Scheme (NEW)
-        static let colorSchemeName = "terminal.colorSchemeName"
-        static let customColorScheme = "terminal.customColorScheme"
         // Shell (NEW)
         static let shellType = "terminal.shellType"
         static let customShellPath = "terminal.customShellPath"
@@ -2458,22 +2280,6 @@ final class FeatureSettings {
                 defaults.removeObject(forKey: old)
             }
             defaults.set(true, forKey: "cto.migrated.v1")
-        }
-
-        // Font Settings (NEW)
-        self.fontFamily = defaults.string(forKey: Keys.fontFamily) ?? "SF Mono"
-        self.fontWeight = defaults.object(forKey: "terminal.fontWeight") as? Int ?? 5
-        self.fontSize = defaults.object(forKey: Keys.fontSize) as? Int ?? 11
-        self.customFontFamily = defaults.string(forKey: Keys.customFontFamily) ?? ""
-        self.defaultZoomPercent = defaults.object(forKey: Keys.defaultZoomPercent) as? Int ?? 100
-
-        // Color Scheme (NEW)
-        self.colorSchemeName = defaults.string(forKey: Keys.colorSchemeName) ?? "Default"
-        if let data = defaults.data(forKey: Keys.customColorScheme),
-           let scheme = JSONOperations.decode(TerminalColorScheme.self, from: data, context: "customColorScheme") {
-            self.customColorScheme = scheme
-        } else {
-            self.customColorScheme = nil
         }
 
         // Shell Settings (NEW)

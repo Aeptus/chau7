@@ -1,4 +1,5 @@
 import Chau7Core
+import Darwin
 import Foundation
 
 enum MagiMCPOrchestratorError: Error, LocalizedError {
@@ -49,6 +50,8 @@ struct MagiMCPOrchestrator {
     var collectorTimeoutSeconds: TimeInterval = 120
     var launchTimeoutMs = 60000
     var launchMemberThrottleSeconds: TimeInterval = 0.6
+    var progressPulseSeconds: TimeInterval = 10
+    var terminalStyle = MagiRunTerminalStyle()
 
     // swiftlint:disable:next function_body_length
     func run(question: String, config: MagiConfig) throws -> MagiRun {
@@ -99,8 +102,8 @@ struct MagiMCPOrchestrator {
             try throwIfInterrupted(stage: "startup")
 
             printLine("RUN \(runID)")
-            printLine("MODE \(questionKind.rawValue)")
-            printLine("COUNCIL boot sequence accepted.")
+            printLine(statusLine("MODE", questionKind.rawValue))
+            printLine(statusLine("COUNCIL", "boot sequence accepted"))
 
             let round1 = MagiRunStateMachine.startRound(
                 &run,
@@ -131,7 +134,7 @@ struct MagiMCPOrchestrator {
                     ]
                 )
                 let tabID = try launchMember(member, prompt: prompt, technicalLog: technicalLog)
-                printLine(memberLine(member, "linked to \(tabID)"))
+                printLine(memberLine(member, "linked to \(tabID)", state: .ready))
                 sessions.append(MagiMemberTab(member: member, tabID: tabID))
                 Thread.sleep(forTimeInterval: launchMemberThrottleSeconds)
             }
@@ -193,7 +196,7 @@ struct MagiMCPOrchestrator {
                         markers: markers
                     )
                 }
-                printLine(memberLine(session.member, compact(position.recommendation)))
+                printLine(memberLine(session.member, compact(position.recommendation), state: .done))
                 positions.append(position)
                 run.positions.append(position)
                 try writeCheckpoint(&run, stage: "round-1-\(session.member.id.rawValue)-position", technicalLog: technicalLog)
@@ -261,7 +264,7 @@ struct MagiMCPOrchestrator {
                         markers: markers
                     )
                 }
-                printLine(memberLine(session.member, "\(result.critiques.count) challenge(s) entered"))
+                printLine(memberLine(session.member, "\(result.critiques.count) challenge(s) entered", state: .done))
                 critiqueResults.append(result)
                 run.critiques.append(contentsOf: result.critiques)
                 try writeCheckpoint(&run, stage: "round-2-\(session.member.id.rawValue)-critique", technicalLog: technicalLog)
@@ -423,13 +426,13 @@ struct MagiMCPOrchestrator {
             let bundle = try writeCheckpoint(&run, stage: "completed", technicalLog: technicalLog)
 
             announceStage("VERDICT", "The council has resolved.")
-            printLine(verdict.kind.rawValue)
+            printLine(terminalStyle.styled(verdict.kind.rawValue, .bold, verdictStyle(for: verdict.kind)))
             if let decision = verdict.decision {
-                printLine("Decision: \(decision)")
+                printLine(statusLine("Decision", decision))
             }
-            printLine("Confidence: \(String(format: "%.2f", verdict.confidence))")
-            printLine("Artifacts: \(bundle.rootDirectory)")
-            printLine("Technical log: \(technicalLog.path)")
+            printLine(statusLine("Confidence", String(format: "%.2f", verdict.confidence)))
+            printLine(statusLine("Artifacts", bundle.rootDirectory))
+            printLine(statusLine("Technical log", technicalLog.path))
 
             closeMemberTabs(
                 sessions,
@@ -594,22 +597,120 @@ struct MagiMCPOrchestrator {
 
     private func announceStage(_ title: String, _ detail: String? = nil) {
         printLine("")
-        printLine(">> \(title)")
+        printLine(terminalStyle.styled(">> \(title)", .bold, .cyan))
         if let detail {
-            printLine("   \(detail)")
+            printLine("   \(terminalStyle.styled(detail, .dim))")
         }
     }
 
     private func announceStep(_ detail: String) {
-        printLine("   \(detail)")
+        printLine("   \(terminalStyle.styled(detail, .dim))")
     }
 
-    private func memberLine(_ member: MagiMember, _ detail: String) -> String {
-        "\(member.persona.displayName)> \(detail)"
+    private func memberLine(
+        _ member: MagiMember,
+        _ detail: String,
+        state: MagiMemberLineState = .info
+    ) -> String {
+        memberLine(member.id, displayName: member.persona.displayName, detail, state: state)
     }
 
-    private func memberLine(_ memberID: MagiMemberID, _ detail: String) -> String {
-        "\(memberID.displayName)> \(detail)"
+    private func memberLine(
+        _ memberID: MagiMemberID,
+        _ detail: String,
+        state: MagiMemberLineState = .info
+    ) -> String {
+        memberLine(memberID, displayName: memberID.displayName, detail, state: state)
+    }
+
+    private func memberLine(
+        _ memberID: MagiMemberID,
+        displayName: String,
+        _ detail: String,
+        state: MagiMemberLineState
+    ) -> String {
+        let label = terminalStyle.styled(displayName, .bold, accentStyle(for: memberID))
+        return "\(state.symbol) \(label)> \(detail)"
+    }
+
+    private func collectorLine(
+        _ command: MagiCollectorCommand,
+        _ detail: String,
+        state: MagiMemberLineState
+    ) -> String {
+        let label = terminalStyle.styled(command.collectorKind.rawValue, .bold, .yellow)
+        return "   \(state.symbol) \(label)> \(detail)"
+    }
+
+    private func statusLine(_ label: String, _ value: String) -> String {
+        "\(terminalStyle.styled(label, .bold, .cyan)): \(value)"
+    }
+
+    private func progressLine(
+        member: MagiMember,
+        stage: String,
+        stageKind: MagiProtocolStage,
+        pulse: Int,
+        terminalCharacters: Int,
+        eventCount: Int,
+        mode: MagiProgressMode = .waiting
+    ) -> String {
+        let phrases = mode == .repair ? repairProgressPhrases : waitProgressPhrases
+        let phrase = phrases[pulse % phrases.count]
+        let telemetry = "buffer \(formatCharacterCount(terminalCharacters)) / events \(eventCount)"
+        let detail = "\(stageKind.outputName.lowercased()) \(phrase) [\(telemetry)]"
+        return memberLine(member, "\(stage): \(detail)", state: mode == .repair ? .repair : .working)
+    }
+
+    private func formatCharacterCount(_ count: Int) -> String {
+        if count >= 1_000_000 {
+            return String(format: "%.1fm", Double(count) / 1_000_000)
+        }
+        if count >= 1000 {
+            return String(format: "%.1fk", Double(count) / 1000)
+        }
+        return String(count)
+    }
+
+    private var waitProgressPhrases: [String] {
+        [
+            "watching signal",
+            "listening for marked output",
+            "holding isolation",
+            "checking transcript",
+            "awaiting final block"
+        ]
+    }
+
+    private var repairProgressPhrases: [String] {
+        [
+            "repair requested",
+            "extracting structure",
+            "waiting for clean block",
+            "validating contract"
+        ]
+    }
+
+    private func accentStyle(for memberID: MagiMemberID) -> MagiANSIStyle {
+        switch memberID {
+        case .melchior:
+            return .cyan
+        case .balthasar:
+            return .magenta
+        case .casper:
+            return .yellow
+        }
+    }
+
+    private func verdictStyle(for kind: MagiVerdictKind) -> MagiANSIStyle {
+        switch kind {
+        case .approve, .select, .rank:
+            return .green
+        case .conditional, .needEvidence, .escalate:
+            return .yellow
+        case .reject, .deadlock, .blockedByVeto, .noConsensus:
+            return .red
+        }
     }
 
     private func compact(_ value: String, limit: Int = 110) -> String {
@@ -1040,12 +1141,27 @@ struct MagiMCPOrchestrator {
         var lastLoggedOutputCount: Int?
         var lastLoggedEventSignature: String?
         var lastLoggedEventError: String?
+        var nextProgressPulseAt = Date()
+        var progressPulse = 0
 
         while Date() < deadline {
             try throwIfInterrupted(stage: stage)
             let capture = try pollStructuredOutput(tabID: tabID, repositoryRoot: repositoryRoot)
             let output = capture.combinedOutput
             lastOutput = output
+            let now = Date()
+            if progressPulseSeconds > 0, now >= nextProgressPulseAt {
+                printLine(progressLine(
+                    member: member,
+                    stage: stage,
+                    stageKind: stageKind,
+                    pulse: progressPulse,
+                    terminalCharacters: capture.terminalOutput.count,
+                    eventCount: capture.eventMessages.count
+                ))
+                progressPulse += 1
+                nextProgressPulseAt = now.addingTimeInterval(progressPulseSeconds)
+            }
             if lastLoggedOutputCount != capture.terminalOutput.count {
                 lastLoggedOutputCount = capture.terminalOutput.count
                 technicalLog.record(
@@ -1127,7 +1243,7 @@ struct MagiMCPOrchestrator {
             repairSucceeded: false
         ))
 
-        printLine("- \(member.persona.displayName): requesting structured output repair")
+        printLine(memberLine(member, "requesting structured output repair", state: .repair))
         technicalLog.record(
             "structured_repair_requested",
             stage: stage,
@@ -1155,10 +1271,27 @@ struct MagiMCPOrchestrator {
         let repairDeadline = Date().addingTimeInterval(repairTimeoutSeconds)
         var repairOutput = ""
         var repairError: Error?
+        var nextRepairProgressPulseAt = Date()
+        var repairPulse = 0
 
         while Date() < repairDeadline {
             try throwIfInterrupted(stage: "\(stage) repair")
-            repairOutput = try pollStructuredOutput(tabID: tabID, repositoryRoot: repositoryRoot).combinedOutput
+            let repairCapture = try pollStructuredOutput(tabID: tabID, repositoryRoot: repositoryRoot)
+            repairOutput = repairCapture.combinedOutput
+            let now = Date()
+            if progressPulseSeconds > 0, now >= nextRepairProgressPulseAt {
+                printLine(progressLine(
+                    member: member,
+                    stage: "\(stage) repair",
+                    stageKind: stageKind,
+                    pulse: repairPulse,
+                    terminalCharacters: repairCapture.terminalOutput.count,
+                    eventCount: repairCapture.eventMessages.count,
+                    mode: .repair
+                ))
+                repairPulse += 1
+                nextRepairProgressPulseAt = now.addingTimeInterval(progressPulseSeconds)
+            }
             do {
                 let parsed = try parser(repairOutput)
                 technicalLog.record(
@@ -1359,33 +1492,36 @@ struct MagiMCPOrchestrator {
         var reviewed: [MagiEvidenceRequest] = []
         for request in uniqueRequests {
             printLine("")
-            printLine(memberLine(request.memberID, "requests a fact check"))
-            printLine("   Priority: \(request.priority.rawValue)")
-            printLine("   Reason: \(compact(request.reason))")
+            printLine(memberLine(request.memberID, "requests a fact check", state: .working))
+            printLine("   \(statusLine("Priority", request.priority.rawValue))")
+            printLine("   \(statusLine("Reason", compact(request.reason)))")
             if !request.requiredEvidence.isEmpty {
-                printLine("   Wants: \(compact(request.requiredEvidence.joined(separator: "; ")))")
+                printLine("   \(statusLine("Wants", compact(request.requiredEvidence.joined(separator: "; "))))")
             }
             let commands = MagiEvidenceCollectorPlanner.commands(for: request)
             var reviewedRequest = request
             guard !commands.isEmpty else {
-                printLine("   No collector proposed; recorded as a deliberation note.")
+                announceStep("No collector proposed; recorded as a deliberation note.")
                 reviewedRequest.status = .notActionable
                 reviewed.append(reviewedRequest)
                 continue
             }
 
-            printLine("   Proposed collectors:")
+            printLine("   \(terminalStyle.styled("Proposed collectors", .bold, .cyan))")
             for command in commands {
                 let payload = command.payload.map { " \($0)" } ?? ""
                 let webNote = command.usesWeb
                     ? (config.webAccessAllowed ? " web" : " web disabled")
                     : " local"
-                printLine("   - \(command.collectorKind.rawValue):\(payload) [\(webNote)]")
+                let collector = terminalStyle.styled(command.collectorKind.rawValue, .yellow)
+                printLine("   - \(collector):\(payload) [\(webNote)]")
             }
             if promptYesNo("Authorize this fact gathering?", defaultValue: false) {
                 reviewedRequest.status = .approved
+                announceStep("Authorized; the fact packet enters the queue.")
             } else {
                 reviewedRequest.status = .denied
+                announceStep("Denied; the council proceeds without this packet.")
             }
             reviewed.append(reviewedRequest)
         }
@@ -1409,12 +1545,13 @@ struct MagiMCPOrchestrator {
                 try throwIfInterrupted(stage: "evidence collection")
                 if command.usesWeb, !config.webAccessAllowed {
                     let packet = skippedWebPacket(command: command, request: request)
-                    printLine("   \(command.collectorKind.rawValue)> \(compact(packet.summary))")
+                    printLine(collectorLine(command, compact(packet.summary), state: .repair))
                     packets.append(packet)
                     continue
                 }
+                printLine(collectorLine(command, "running", state: .working))
                 let packet = try runCollector(command: command, request: request, technicalLog: technicalLog)
-                printLine("   \(command.collectorKind.rawValue)> \(compact(packet.summary))")
+                printLine(collectorLine(command, compact(packet.summary), state: .done))
                 packets.append(packet)
             }
         }
@@ -1709,4 +1846,59 @@ private struct MagiLaunchVerification {
     var promptInputVisible: Bool
     var promptSubmitted: Bool
     var agentRunning: Bool
+}
+
+enum MagiANSIStyle: String {
+    case bold = "1"
+    case dim = "2"
+    case red = "31"
+    case green = "32"
+    case yellow = "33"
+    case cyan = "36"
+    case magenta = "35"
+}
+
+struct MagiRunTerminalStyle {
+    var isEnabled: Bool
+
+    init(
+        environment: [String: String] = ProcessInfo.processInfo.environment,
+        stdoutIsTTY: Bool = isatty(STDOUT_FILENO) != 0
+    ) {
+        self.isEnabled = stdoutIsTTY && environment["NO_COLOR"] == nil && environment["TERM"] != "dumb"
+    }
+
+    func styled(_ text: String, _ styles: MagiANSIStyle...) -> String {
+        guard isEnabled, !styles.isEmpty else { return text }
+        let prefix = styles.map(\.rawValue).joined(separator: ";")
+        return "\u{001B}[\(prefix)m\(text)\u{001B}[0m"
+    }
+}
+
+private enum MagiMemberLineState {
+    case info
+    case working
+    case ready
+    case done
+    case repair
+
+    var symbol: String {
+        switch self {
+        case .info:
+            return "-"
+        case .working:
+            return "~"
+        case .ready:
+            return "+"
+        case .done:
+            return "*"
+        case .repair:
+            return "!"
+        }
+    }
+}
+
+private enum MagiProgressMode {
+    case waiting
+    case repair
 }

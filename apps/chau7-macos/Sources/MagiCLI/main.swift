@@ -956,8 +956,8 @@ struct MagiCLIRunner {
     }
 
     private func printHeader() {
-        writeStdout("MAGI")
-        writeStdout("Multi Agent Gathering Intelligence")
+        writeStdout(styled("MAGI", .bold, .cyan))
+        writeStdout(styled("Multi Agent Gathering Intelligence", .dim))
         writeStdout()
     }
 

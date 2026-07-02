@@ -120,6 +120,13 @@
   },
   {
     "category": "AI Integration",
+    "feature": "MAGI Run Presentation",
+    "description": "magi ask uses ANSI color when available, member accents, compact collector status markers, and periodic progress pulses while waiting for agent output or structured repair",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "AI Integration",
     "feature": "MAGI Council Tab Lifecycle",
     "description": "MAGI names each council agent tab for its member during launch and auto-closes council tabs after checkpointing, with auto_close_agent_tabs available to keep tabs open for debugging",
     "status": "Shipped",
