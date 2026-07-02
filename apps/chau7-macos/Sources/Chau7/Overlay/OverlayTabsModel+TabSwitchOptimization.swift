@@ -204,6 +204,12 @@ extension OverlayTabsModel {
     /// Ask the user whether to also close the window when closing the last tab.
     /// Returns true if the user wants to close the window.
     func confirmCloseLastTab() -> Bool {
+        // Modal dialogs must never block a headless test process. Whether
+        // runModal returns immediately without a window server is
+        // machine-state dependent (it started blocking once another app
+        // session held activation), so the guard makes it deterministic:
+        // tests get the safe default (keep the window open).
+        guard !RuntimeIsolation.isIsolatedTestMode() else { return false }
         let alert = NSAlert()
         alert.messageText = L("alert.closeLastTab.title", "This is the last tab")
         alert.informativeText = L("alert.closeLastTab.message", "Do you want to close the window, or keep it open with a new tab?")
@@ -219,6 +225,10 @@ extension OverlayTabsModel {
         willCloseWindow: Bool,
         isAlwaysWarnMode: Bool
     ) -> Bool {
+        // Same headless-test guard as confirmCloseLastTab: default to
+        // proceeding with the close, which is what every existing test
+        // (running with warnings disabled) already expects.
+        guard !RuntimeIsolation.isIsolatedTestMode() else { return true }
         let alert = NSAlert()
         let hasRunningProcess = runningProcessCount > 0
 

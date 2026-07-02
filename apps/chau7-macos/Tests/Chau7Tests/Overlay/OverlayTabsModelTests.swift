@@ -185,6 +185,10 @@ final class OverlayTabsModelTests: XCTestCase {
 
     override func setUp() {
         super.setUp()
+        // Modal-confirm guards key off isolated test mode; set it here so a
+        // filtered run of this suite alone is as headless-safe as the full
+        // suite (where an earlier suite's setenv used to mask this).
+        setenv("CHAU7_ISOLATED_TEST_MODE", "1", 1)
         // Clear any saved tab state so restoreSavedTabs returns nil
         // and the model starts with a single fresh tab.
         removePersistedWindowStateArtifacts()
