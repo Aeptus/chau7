@@ -41,10 +41,11 @@ final class CrossStoreConsistencyTests: XCTestCase {
             timestamp: Date()
         )
 
+        let base = model.eventSpine.journal.latestCursor
         model.handleClaudeCodeMonitorEvent(hookEvent)
 
         XCTAssertTrue(
-            waitUntil { model.eventSpine.journal.latestCursor >= 1 },
+            waitUntil { model.eventSpine.journal.latestCursor >= base + 1 },
             "hook event must reach the spine"
         )
 
@@ -52,7 +53,7 @@ final class CrossStoreConsistencyTests: XCTestCase {
         XCTAssertTrue(model.claudeCodeEvents.contains(where: { $0.id == hookEvent.id }))
 
         // …and the spine envelope carries the hook UUID as correlation.
-        let (envelopes, _, _) = model.eventSpine.journal.envelopes(after: 0, limit: 10)
+        let (envelopes, _, _) = model.eventSpine.journal.envelopes(after: base, limit: 10)
         let linked = envelopes.first(where: { $0.correlationID == hookEvent.id.uuidString })
         XCTAssertNotNil(linked, "spine envelope must be correlated to the hook event UUID")
         XCTAssertEqual(linked?.aiEvent?.producer, "claude_code_monitor")

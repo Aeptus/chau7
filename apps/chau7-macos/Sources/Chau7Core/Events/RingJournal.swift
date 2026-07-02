@@ -25,10 +25,14 @@ public final class RingJournal<Element: Sendable>: @unchecked Sendable {
     private var wrapped = false
     private let lock = NSLock()
 
-    public init(capacity: Int) {
+    /// `startSeq` seeds the monotonic counter so a new journal continues an
+    /// earlier generation's sequence space (durable-spine restart): the first
+    /// appended element gets `startSeq + 1`.
+    public init(capacity: Int, startSeq: UInt64 = 0) {
         precondition(capacity > 0)
         self.capacity = capacity
         self.buffer = []
+        self.totalAppended = startSeq
         buffer.reserveCapacity(capacity)
     }
 

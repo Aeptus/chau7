@@ -6,7 +6,7 @@ import Foundation
 ///
 /// Field names mirror the observability surface so envelopes can be
 /// projected into MCP change payloads without re-mapping.
-public struct StructuralEvent: Equatable, Sendable {
+public struct StructuralEvent: Equatable, Sendable, Codable {
     public let type: String
     public let subsystem: String
     public let tabID: String?
@@ -35,7 +35,7 @@ public struct StructuralEvent: Equatable, Sendable {
 }
 
 /// The payload carried by an `EventEnvelope`.
-public enum EventPayload: Equatable, Sendable {
+public enum EventPayload: Equatable, Sendable, Codable {
     /// A tool-agnostic AI event (the existing canonical event shape).
     case ai(AIEvent)
     /// A structural app event (tabs, telemetry runs, approvals, timers…).
@@ -55,7 +55,7 @@ public enum EventPayload: Equatable, Sendable {
 ///   must never overwrite `occurredAt` with insertion time.
 /// - `topics` are assigned once at ingest via `EventTopicCatalog`, so every
 ///   downstream surface agrees on topic membership.
-public struct EventEnvelope: Equatable, Sendable {
+public struct EventEnvelope: Equatable, Sendable, Codable {
     public let seq: UInt64
     public let eventID: UUID
     public let correlationID: String?

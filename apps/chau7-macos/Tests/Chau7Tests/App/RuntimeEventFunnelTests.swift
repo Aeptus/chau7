@@ -39,11 +39,12 @@ final class RuntimeEventFunnelTests: XCTestCase {
             producer: "runtime_session_manager",
             reliability: .authoritative
         )
+        let base = model.eventSpine.journal.latestCursor
         (model as AIEventPublishing).publishPreparedEvent(event, notify: true)
 
         // The raw envelope is always journaled (pre-acceptance audit record)…
-        XCTAssertTrue(waitUntil { model.eventSpine.journal.latestCursor == 1 })
-        let (envelopes, _, _) = model.eventSpine.journal.envelopes(after: 0, limit: 1)
+        XCTAssertTrue(waitUntil { model.eventSpine.journal.latestCursor == base + 1 })
+        let (envelopes, _, _) = model.eventSpine.journal.envelopes(after: base, limit: 1)
         XCTAssertEqual(envelopes.first?.eventID, event.id)
         XCTAssertEqual(envelopes.first?.aiEvent?.producer, "runtime_session_manager")
 

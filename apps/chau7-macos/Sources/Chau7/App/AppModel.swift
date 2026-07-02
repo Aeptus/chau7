@@ -377,7 +377,12 @@ final class AppModel {
     /// `publishUnifiedEvent`, which ingests here; the spine allocates the
     /// global monotonic seq and the `spineHost` pump delivers envelopes to
     /// the unified pipeline in seq order.
-    @ObservationIgnored let eventSpine = EventSpine()
+    /// Durable spine backing: every envelope is persisted, and the spine's
+    /// sequence space continues from the persisted high-water across app
+    /// restarts (state_version arbitration and MCP cursors must never see
+    /// seqs go backwards).
+    @ObservationIgnored let spineJournalStore = SpineJournalStore.shared
+    @ObservationIgnored let eventSpine = EventSpine(startSeq: SpineJournalStore.shared.highWaterSeq())
     @ObservationIgnored private let spineHost = EventSpineHost()
 
     init(notifications: NotificationServices? = nil) {
@@ -1612,6 +1617,7 @@ final class AppModel {
     @MainActor
     private func startSpinePumpOnMain() {
         spineHost.start(spine: eventSpine) { [weak self] envelope in
+            self?.spineJournalStore.persist(envelope)
             self?.applySpineEnvelope(envelope)
         }
     }

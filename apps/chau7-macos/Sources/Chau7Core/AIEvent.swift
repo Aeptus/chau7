@@ -156,7 +156,7 @@ public enum AIEventReliability: String, Codable, Sendable {
 /// - `ts`: ISO8601 timestamp string
 /// - `directory`: Optional working directory for tab disambiguation
 /// - `tabID`: Optional tab UUID for deterministic routing (set by in-app event sources)
-public struct AIEvent: Identifiable, Equatable, Sendable {
+public struct AIEvent: Identifiable, Equatable, Sendable, Codable {
     public let id: UUID
     public let source: AIEventSource
     public let type: String

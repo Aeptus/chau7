@@ -6,8 +6,8 @@ import Foundation
 public final class GlobalEventJournal: @unchecked Sendable {
     private let ring: RingJournal<EventEnvelope>
 
-    public init(capacity: Int = 2000) {
-        self.ring = RingJournal(capacity: capacity)
+    public init(capacity: Int = 2000, startSeq: UInt64 = 0) {
+        self.ring = RingJournal(capacity: capacity, startSeq: startSeq)
     }
 
     @discardableResult
@@ -67,8 +67,12 @@ public final class EventSpine: @unchecked Sendable {
     /// equals seq order, even under concurrent producers.
     private let lock = NSLock()
 
-    public init(capacity: Int = 2000) {
-        self.journal = GlobalEventJournal(capacity: capacity)
+    /// `startSeq` continues an earlier process generation's sequence space:
+    /// pass the persisted high-water seq so seqs stay globally monotonic
+    /// across app restarts (downstream `state_version` arbitration and MCP
+    /// cursors rely on this never going backwards).
+    public init(capacity: Int = 2000, startSeq: UInt64 = 0) {
+        self.journal = GlobalEventJournal(capacity: capacity, startSeq: startSeq)
         (self.envelopes, self.continuation) = AsyncStream.makeStream(
             of: EventEnvelope.self,
             bufferingPolicy: .unbounded
