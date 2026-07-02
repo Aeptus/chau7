@@ -110,8 +110,16 @@ public enum NotificationProviderAdapterRegistry {
         case "permission_request", "permissionrequest":
             return emitEnriched(event, kind: .permissionRequired, rawType: originalRawType, reliability: .authoritative)
 
-        case "tool_failed", "toolfailed", "response_failed", "responsefailed":
+        case "response_failed", "responsefailed":
             return emitEnriched(event, kind: .taskFailed, rawType: originalRawType, reliability: .authoritative)
+
+        case "tool_failed", "toolfailed":
+            // Mid-run tool failure: the session keeps working afterwards, so
+            // this is NOT a task failure. Emitting it as its own kind lets the
+            // catalog's dedicated default-off "tool_failed" trigger govern —
+            // escalating to task_failed used to bypass that toggle and fire
+            // the loud failed actions for every non-zero tool exit.
+            return emitEnriched(event, kind: .toolFailed, rawType: originalRawType, reliability: .authoritative)
 
         case "elicitation":
             return emitEnriched(event, kind: .attentionRequired, rawType: originalRawType, reliability: .authoritative)

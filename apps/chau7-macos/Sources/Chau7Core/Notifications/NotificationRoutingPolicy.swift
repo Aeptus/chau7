@@ -46,7 +46,7 @@ public enum NotificationRoutingPolicy {
             }
             return surfaces
 
-        case .idle, .authenticationSucceeded:
+        case .idle, .authenticationSucceeded, .toolFailed:
             return [.macLocal, .tabStyle, .mcpSubscribers]
 
         case .informational:

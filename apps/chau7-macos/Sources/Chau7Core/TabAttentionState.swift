@@ -39,7 +39,7 @@ public enum TabAttentionKind: String, Codable, CaseIterable, Equatable {
             return .waitingForInput
         case .permissionRequired, .attentionRequired:
             return .approvalRequired
-        case .taskFinished, .taskFailed, .authenticationSucceeded, .idle, .informational, .unknown:
+        case .taskFinished, .taskFailed, .toolFailed, .authenticationSucceeded, .idle, .informational, .unknown:
             return .none
         }
     }

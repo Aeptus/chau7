@@ -45,6 +45,8 @@ public enum NotificationContentFormatter {
             return LCore("aiEvent.title.finished", "Finished")
         case "failed":
             return LCore("aiEvent.title.failed", "Failed")
+        case "tool_failed":
+            return LCore("aiEvent.title.toolFailed", "Tool failed")
         case "permission":
             return LCore("aiEvent.title.permission", "Permission needed")
         case "error":

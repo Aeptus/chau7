@@ -206,6 +206,61 @@ final class NotificationProviderAdapterRegistryTests: XCTestCase {
         XCTAssertEqual(enriched.event.tool, "Claude")
     }
 
+    func testClaudeToolFailedStaysMidRunAndKeepsItsOwnTrigger() {
+        // Regression: tool_failed used to escalate to task_failed, bypassing
+        // the catalog's dedicated default-off "tool_failed" trigger and firing
+        // the loud claude_code.failed actions for every non-zero tool exit.
+        let event = AIEvent(
+            source: .claudeCode,
+            type: "tool_failed",
+            rawType: "tool_failed",
+            tool: "Claude Code",
+            message: "Bash exited 1",
+            ts: "2026-07-02T00:00:00Z",
+            sessionID: "claude-session-tf",
+            producer: "claude_hook",
+            reliability: .authoritative
+        )
+
+        let decision = NotificationProviderAdapterRegistry.adapt(event)
+        guard case let .emit(enriched) = decision else {
+            return XCTFail("Expected tool_failed to canonicalize")
+        }
+
+        XCTAssertEqual(enriched.kind, .toolFailed)
+        XCTAssertEqual(enriched.event.type, "tool_failed", "must hit the dedicated catalog trigger, not claude_code.failed")
+        let trigger = NotificationTriggerCatalog.trigger(source: .claudeCode, type: enriched.event.type)
+        XCTAssertEqual(trigger?.type, "tool_failed")
+        XCTAssertEqual(
+            trigger?.defaultEnabled, false,
+            "mid-run tool failures are default-off by catalog decision"
+        )
+    }
+
+    func testClaudeResponseFailedStillEscalatesToTaskFailed() {
+        // response_failed is a genuine end-of-turn failure and keeps the
+        // task_failed semantics (default-on failed trigger).
+        let event = AIEvent(
+            source: .claudeCode,
+            type: "response_failed",
+            rawType: "response_failed",
+            tool: "Claude Code",
+            message: "Turn errored",
+            ts: "2026-07-02T00:00:00Z",
+            sessionID: "claude-session-rf",
+            producer: "claude_hook",
+            reliability: .authoritative
+        )
+
+        let decision = NotificationProviderAdapterRegistry.adapt(event)
+        guard case let .emit(enriched) = decision else {
+            return XCTFail("Expected response_failed to canonicalize")
+        }
+
+        XCTAssertEqual(enriched.kind, .taskFailed)
+        XCTAssertEqual(enriched.event.type, "failed")
+    }
+
     func testClaudeResponseCompleteIsDroppedAsStateOnly() {
         let event = AIEvent(
             source: .claudeCode,

@@ -8,6 +8,7 @@ import Foundation
 public enum NotificationSemanticKind: String, Codable, Sendable, CaseIterable, Identifiable {
     case taskFinished = "task_finished"
     case taskFailed = "task_failed"
+    case toolFailed = "tool_failed"
     case permissionRequired = "permission_required"
     case waitingForInput = "waiting_for_input"
     case attentionRequired = "attention_required"
@@ -26,7 +27,7 @@ public enum NotificationSemanticKind: String, Codable, Sendable, CaseIterable, I
         switch self {
         case .taskFinished, .taskFailed, .permissionRequired, .waitingForInput, .attentionRequired:
             return true
-        case .authenticationSucceeded, .idle, .informational, .unknown:
+        case .toolFailed, .authenticationSucceeded, .idle, .informational, .unknown:
             return false
         }
     }
@@ -43,6 +44,7 @@ public enum NotificationSemanticKind: String, Codable, Sendable, CaseIterable, I
 public enum SemanticTriggerType: String, CaseIterable, Sendable {
     case finished
     case failed
+    case toolFailed = "tool_failed"
     case permission
     case waitingInput = "waiting_input"
     case attentionRequired = "attention_required"
@@ -57,6 +59,8 @@ public enum SemanticTriggerType: String, CaseIterable, Sendable {
             self = .finished
         case .taskFailed:
             self = .failed
+        case .toolFailed:
+            self = .toolFailed
         case .permissionRequired:
             self = .permission
         case .waitingForInput:

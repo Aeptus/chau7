@@ -609,7 +609,7 @@ final class NotificationManager {
             return .idle
         case .taskFinished, .taskFailed, .authenticationSucceeded:
             return .done
-        case .permissionRequired, .waitingForInput, .attentionRequired, .informational, .unknown:
+        case .permissionRequired, .waitingForInput, .attentionRequired, .toolFailed, .informational, .unknown:
             return nil
         }
     }

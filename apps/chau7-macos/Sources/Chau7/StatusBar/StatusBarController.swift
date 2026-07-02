@@ -537,6 +537,7 @@ final class CommandCenterViewModel {
         switch eventSemanticKind(for: event) {
         case .taskFinished: return "text.bubble"
         case .taskFailed: return "exclamationmark.circle"
+        case .toolFailed: return "wrench.and.screwdriver"
         case .permissionRequired: return "exclamationmark.triangle"
         case .waitingForInput: return "keyboard"
         case .attentionRequired: return "bell"
@@ -572,6 +573,7 @@ final class CommandCenterViewModel {
         switch eventSemanticKind(for: event) {
         case .taskFinished: return .blue
         case .taskFailed: return .red
+        case .toolFailed: return .orange
         case .permissionRequired: return .yellow
         case .waitingForInput, .attentionRequired: return .orange
         case .authenticationSucceeded: return .green
@@ -596,6 +598,8 @@ final class CommandCenterViewModel {
             return L("statusBar.timeline.responseComplete", "Finished responding")
         case .taskFailed:
             return L("statusBar.timeline.error", "Error occurred")
+        case .toolFailed:
+            return L("statusBar.timeline.toolFailed", "Tool failed")
         case .permissionRequired:
             return L("statusBar.timeline.permissionRequest", "Needs permission")
         case .waitingForInput:
@@ -687,6 +691,8 @@ final class CommandCenterViewModel {
                 return L("statusBar.timeline.responseComplete", "Finished responding")
             case .taskFailed:
                 return L("statusBar.timeline.error", "Error occurred")
+            case .toolFailed:
+                return L("statusBar.timeline.toolFailed", "Tool failed")
             case .permissionRequired:
                 return L("statusBar.timeline.permissionRequest", "Needs permission")
             case .waitingForInput:

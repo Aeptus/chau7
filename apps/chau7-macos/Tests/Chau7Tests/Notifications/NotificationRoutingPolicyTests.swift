@@ -39,6 +39,13 @@ final class NotificationRoutingPolicyTests: XCTestCase {
         XCTAssertFalse(surfaces.contains(.liveActivity))
     }
 
+    func testToolFailedIsLocalDiagnosticOnly() {
+        // Mid-run tool failures never push or drive the Live Activity; local
+        // surfaces remain gated by the default-off catalog trigger downstream.
+        let surfaces = NotificationRoutingPolicy.surfaces(kind: .toolFailed)
+        XCTAssertEqual(surfaces, [.macLocal, .tabStyle, .mcpSubscribers])
+    }
+
     func testUnknownKindTargetsNothing() {
         XCTAssertTrue(NotificationRoutingPolicy.surfaces(kind: .unknown).isEmpty)
     }

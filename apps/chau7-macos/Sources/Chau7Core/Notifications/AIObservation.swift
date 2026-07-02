@@ -307,7 +307,9 @@ public struct AIObservation: Identifiable, Equatable, Codable, Sendable {
             return .attentionRequired
         case .idle:
             return .idle
-        case .authenticationSucceeded, .informational, .unknown:
+        case .toolFailed, .authenticationSucceeded, .informational, .unknown:
+            // toolFailed deliberately carries no session state: the monitor
+            // keeps the session `responding` through mid-run tool failures.
             return nil
         }
     }

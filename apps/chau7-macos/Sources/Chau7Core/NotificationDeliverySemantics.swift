@@ -136,7 +136,10 @@ public enum NotificationDeliverySemantics {
                 message: event.message,
                 notificationType: event.notificationType
             )
-        case .taskFinished, .taskFailed, .authenticationSucceeded, .informational, .unknown:
+        case .taskFinished, .taskFailed, .toolFailed, .authenticationSucceeded, .informational, .unknown:
+            // toolFailed clears too: an authoritative mid-run tool event means
+            // the session is actively working, so any lingering attention
+            // style (permission/waiting) is stale.
             return true
         }
     }
