@@ -1,16 +1,16 @@
 import Foundation
 
-/// Shared wire payloads for the remote-control protocol.
-///
-/// These types are the single Swift source of truth for the JSON payloads
-/// exchanged between the macOS app, the Go agent (`services/chau7-remote`),
-/// and the iOS companion app. The Go side keeps mirrored structs (different
-/// language); `services/chau7-remote/docs/PROTOCOL.md` is the normative spec
-/// and golden fixtures under `services/chau7-remote/docs/fixtures/` are
-/// round-trip-tested from both Swift and Go to prevent drift.
-///
-/// Everything here is pure `Codable` data — no transport, crypto, or UI
-/// concerns.
+// Shared wire payloads for the remote-control protocol.
+//
+// These types are the single Swift source of truth for the JSON payloads
+// exchanged between the macOS app, the Go agent (`services/chau7-remote`),
+// and the iOS companion app. The Go side keeps mirrored structs (different
+// language); `services/chau7-remote/docs/PROTOCOL.md` is the normative spec
+// and golden fixtures under `services/chau7-remote/docs/fixtures/` are
+// round-trip-tested from both Swift and Go to prevent drift.
+//
+// Everything here is pure `Codable` data — no transport, crypto, or UI
+// concerns.
 
 // MARK: - Pairing
 
@@ -198,7 +198,9 @@ public struct RemoteTabDescriptor: Codable, Equatable, Identifiable, Sendable {
     public let isActive: Bool
     public let isMCPControlled: Bool
 
-    public var id: UInt32 { tabID }
+    public var id: UInt32 {
+        tabID
+    }
 
     public init(
         tabID: UInt32,
@@ -230,14 +232,14 @@ public struct RemoteTabDescriptor: Codable, Equatable, Identifiable, Sendable {
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        tabID = try container.decode(UInt32.self, forKey: .tabID)
-        title = try container.decode(String.self, forKey: .title)
-        projectName = try container.decodeIfPresent(String.self, forKey: .projectName)
-        branchName = try container.decodeIfPresent(String.self, forKey: .branchName)
-        aiProvider = try container.decodeIfPresent(String.self, forKey: .aiProvider)
-        isActive = try container.decode(Bool.self, forKey: .isActive)
+        self.tabID = try container.decode(UInt32.self, forKey: .tabID)
+        self.title = try container.decode(String.self, forKey: .title)
+        self.projectName = try container.decodeIfPresent(String.self, forKey: .projectName)
+        self.branchName = try container.decodeIfPresent(String.self, forKey: .branchName)
+        self.aiProvider = try container.decodeIfPresent(String.self, forKey: .aiProvider)
+        self.isActive = try container.decode(Bool.self, forKey: .isActive)
         // Lenient: older senders omit is_mcp_controlled.
-        isMCPControlled = try container.decodeIfPresent(Bool.self, forKey: .isMCPControlled) ?? false
+        self.isMCPControlled = try container.decodeIfPresent(Bool.self, forKey: .isMCPControlled) ?? false
     }
 }
 
@@ -338,23 +340,23 @@ public struct ApprovalRequestPayload: Codable, Equatable, Sendable {
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        requestID = try container.decode(String.self, forKey: .requestID)
-        command = try container.decode(String.self, forKey: .command)
-        flaggedCommand = try container.decode(String.self, forKey: .flaggedCommand)
+        self.requestID = try container.decode(String.self, forKey: .requestID)
+        self.command = try container.decode(String.self, forKey: .command)
+        self.flaggedCommand = try container.decode(String.self, forKey: .flaggedCommand)
         // Lenient: the Go agent's /pending re-encode historically omitted the
         // timestamp; consumers fall back to receipt time for an empty value.
-        timestamp = try container.decodeIfPresent(String.self, forKey: .timestamp) ?? ""
-        tabTitle = try container.decodeIfPresent(String.self, forKey: .tabTitle)
-        toolName = try container.decodeIfPresent(String.self, forKey: .toolName)
-        projectName = try container.decodeIfPresent(String.self, forKey: .projectName)
-        branchName = try container.decodeIfPresent(String.self, forKey: .branchName)
-        currentDirectory = try container.decodeIfPresent(String.self, forKey: .currentDirectory)
-        recentCommand = try container.decodeIfPresent(String.self, forKey: .recentCommand)
-        contextNote = try container.decodeIfPresent(String.self, forKey: .contextNote)
-        sessionID = try container.decodeIfPresent(String.self, forKey: .sessionID)
-        pushTitle = try container.decodeIfPresent(String.self, forKey: .pushTitle)
-        pushSubtitle = try container.decodeIfPresent(String.self, forKey: .pushSubtitle)
-        pushBody = try container.decodeIfPresent(String.self, forKey: .pushBody)
+        self.timestamp = try container.decodeIfPresent(String.self, forKey: .timestamp) ?? ""
+        self.tabTitle = try container.decodeIfPresent(String.self, forKey: .tabTitle)
+        self.toolName = try container.decodeIfPresent(String.self, forKey: .toolName)
+        self.projectName = try container.decodeIfPresent(String.self, forKey: .projectName)
+        self.branchName = try container.decodeIfPresent(String.self, forKey: .branchName)
+        self.currentDirectory = try container.decodeIfPresent(String.self, forKey: .currentDirectory)
+        self.recentCommand = try container.decodeIfPresent(String.self, forKey: .recentCommand)
+        self.contextNote = try container.decodeIfPresent(String.self, forKey: .contextNote)
+        self.sessionID = try container.decodeIfPresent(String.self, forKey: .sessionID)
+        self.pushTitle = try container.decodeIfPresent(String.self, forKey: .pushTitle)
+        self.pushSubtitle = try container.decodeIfPresent(String.self, forKey: .pushSubtitle)
+        self.pushBody = try container.decodeIfPresent(String.self, forKey: .pushBody)
     }
 }
 

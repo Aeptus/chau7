@@ -47,7 +47,7 @@ struct MagiMCPOrchestrator {
     var roundTimeoutSeconds: TimeInterval = 900
     var repairTimeoutSeconds: TimeInterval = 120
     var collectorTimeoutSeconds: TimeInterval = 120
-    var launchTimeoutMs: Int = 60_000
+    var launchTimeoutMs = 60000
     var launchMemberThrottleSeconds: TimeInterval = 0.6
 
     func run(question: String, config: MagiConfig) throws -> MagiRun {
@@ -501,9 +501,9 @@ struct MagiMCPOrchestrator {
             return stage
         case MagiMCPOrchestratorError.evidenceApprovalRequiredNonInteractive:
             return "evidence approval"
-        case MagiMCPOrchestratorError.mcpContractUnsupported(_):
+        case MagiMCPOrchestratorError.mcpContractUnsupported:
             return "mcp-preflight"
-        case MagiMCPOrchestratorError.launchFailed(_, _):
+        case MagiMCPOrchestratorError.launchFailed:
             return "launch"
         case let MagiMCPOrchestratorError.missingToolField(tool, _):
             return tool
@@ -514,15 +514,15 @@ struct MagiMCPOrchestrator {
 
     private func failureCategory(for error: Error) -> MagiRunFailureCategory {
         switch error {
-        case MagiMCPOrchestratorError.interrupted(_):
+        case MagiMCPOrchestratorError.interrupted:
             return .interrupted
-        case MagiMCPOrchestratorError.timedOut(_, _, _):
+        case MagiMCPOrchestratorError.timedOut:
             return .agentTimeout
-        case MagiMCPOrchestratorError.parseFailedAfterRepair(_, _, _):
+        case MagiMCPOrchestratorError.parseFailedAfterRepair:
             return .malformedJSON
         case MagiMCPOrchestratorError.evidenceApprovalRequiredNonInteractive:
             return .evidenceDenied
-        case MagiMCPOrchestratorError.mcpContractUnsupported(_):
+        case MagiMCPOrchestratorError.mcpContractUnsupported:
             return .chau7Unavailable
         case let MagiMCPOrchestratorError.launchFailed(_, reason):
             return looksLikeProviderAuthFailure(reason) ? .providerUnavailable : .tabCreationFailed
@@ -531,13 +531,13 @@ struct MagiMCPOrchestrator {
                 return looksLikeProviderAuthFailure(message) ? .providerUnavailable : .tabCreationFailed
             }
             return .unknown
-        case MagiMCPClientError.socketMissing(_):
+        case MagiMCPClientError.socketMissing:
             return .mcpSocketMissing
         case MagiMCPClientError.connectFailed(_, _),
              MagiMCPClientError.readTimedOut,
              MagiMCPClientError.disconnected:
             return .chau7Unavailable
-        case MagiTranscriptParseError.invalidJSON(_, _):
+        case MagiTranscriptParseError.invalidJSON:
             return .malformedJSON
         default:
             return .unknown
@@ -753,7 +753,7 @@ struct MagiMCPOrchestrator {
 
         let hasAgentIdentity =
             stringField(result["active_app"]).isEmpty == false
-            || stringField(result["ai_provider"]).isEmpty == false
+                || stringField(result["ai_provider"]).isEmpty == false
         guard hasAgentIdentity else { return false }
 
         let runningStates = ["running", "waitingForInput", "approvalRequired", "stuck"]
@@ -843,8 +843,8 @@ struct MagiMCPOrchestrator {
     private func tabOutput(tabID: String, source: String = "pty_log") throws -> String {
         let result = try client.callTool(name: "tab_output", arguments: [
             "tab_id": tabID,
-            "lines": 10_000,
-            "wait_for_stable_ms": 1_000,
+            "lines": 10000,
+            "wait_for_stable_ms": 1000,
             "source": source
         ])
         guard let output = result["output"] as? String else {
@@ -1297,7 +1297,7 @@ struct MagiMCPOrchestrator {
             let commands = MagiEvidenceCollectorPlanner.commands(for: request)
             for command in commands {
                 try throwIfInterrupted(stage: "evidence collection")
-                if command.usesWeb && !config.webAccessAllowed {
+                if command.usesWeb, !config.webAccessAllowed {
                     let packet = skippedWebPacket(command: command, request: request)
                     printLine("- \(command.id): \(packet.summary)")
                     packets.append(packet)
@@ -1345,7 +1345,7 @@ struct MagiMCPOrchestrator {
 
         let ready = try client.callTool(name: "tab_wait_ready", arguments: [
             "tab_id": tabID,
-            "timeout_ms": 30_000
+            "timeout_ms": 30000
         ])
         guard ready["can_accept_exec"] as? Bool == true else {
             throw MagiMCPOrchestratorError.launchFailed(member: command.id, reason: "collector tab did not become ready")

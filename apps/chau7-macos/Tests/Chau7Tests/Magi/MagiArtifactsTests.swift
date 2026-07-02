@@ -80,7 +80,7 @@ final class MagiArtifactsTests: XCTestCase {
         }
     }
 
-    func testFailedRunArtifactsIncludeFailureMetadata() throws {
+    func testFailedRunArtifactsIncludeFailureMetadata() {
         var run = sampleRun()
         MagiRunStateMachine.markFailed(
             &run,

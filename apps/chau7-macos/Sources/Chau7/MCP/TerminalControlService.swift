@@ -35,7 +35,7 @@ final class TerminalControlService {
     private static let maxOutputBytes = 512 * 1024
 
     private static let agentLaunchActionThrottleSeconds: TimeInterval = 0.35
-    private static let maxAgentPromptInjectionTimeoutMs = 25_000
+    private static let maxAgentPromptInjectionTimeoutMs = 25000
 
     private struct AgentPromptInjectionResult {
         var status: String
@@ -881,7 +881,7 @@ final class TerminalControlService {
             let ready = waitForAgentInputSurfaceReady(
                 tabID: tabID,
                 provider: attachedProvider,
-                timeoutMs: min(8_000, max(2_000, timeoutMs / 3))
+                timeoutMs: min(8000, max(2000, timeoutMs / 3))
             )
             switch ready {
             case .ready:
@@ -922,7 +922,7 @@ final class TerminalControlService {
             let inputVisible = waitForPromptInputVisible(
                 tabID: tabID,
                 prompt: prompt,
-                timeoutMs: min(4_000, max(1_000, timeoutMs / 4))
+                timeoutMs: min(4000, max(1000, timeoutMs / 4))
             )
 
             throttleAgentLaunchAction()
@@ -941,7 +941,7 @@ final class TerminalControlService {
             throttleAgentLaunchAction()
             let running = waitForAgentRunningAfterSubmit(
                 tabID: tabID,
-                timeoutMs: min(5_000, max(1_500, timeoutMs / 4))
+                timeoutMs: min(5000, max(1500, timeoutMs / 4))
             )
 
             if !inputVisible {

@@ -42,8 +42,8 @@ final class NotificationAuthorizationStore {
         UNUserNotificationCenter.current().getNotificationSettings { settings in
             Task { @MainActor [weak self] in
                 guard let self else { return }
-                self.apply(status: settings.authorizationStatus)
-                self.lastSettings = settings
+                apply(status: settings.authorizationStatus)
+                lastSettings = settings
                 completion?(settings)
             }
         }

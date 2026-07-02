@@ -70,7 +70,7 @@ public enum MagiCLICommandParser {
         }
     }
 
-    private static func joinedRemainder<S: Sequence>(_ values: S) -> String where S.Element == String {
+    private static func joinedRemainder(_ values: some Sequence<String>) -> String {
         values.joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }

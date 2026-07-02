@@ -154,6 +154,7 @@ final class NotificationSuppressionCenterTests: XCTestCase {
         }
         XCTAssertEqual(attempt, 1)
     }
+
     // MARK: - Injected clock: window expiry
 
     func testPostCloseSuppressionExpiresAfterWindowViaInjectedClock() {
@@ -214,8 +215,10 @@ final class NotificationSuppressionCenterTests: XCTestCase {
             (2, makeEvent(type: "finished", tabID: sharedTab, sessionID: "s1")),
             (3, makeEvent(type: "waiting_input", tabID: sharedTab, sessionID: "s1", reliability: .fallback)),
             (200, makeEvent(type: "permission", tabID: sharedTab, sessionID: "s1")),
-            (200 + NotificationTimings.closedSessionSuppression + 1,
-             makeEvent(type: "permission", tabID: sharedTab, sessionID: "s1"))
+            (
+                200 + NotificationTimings.closedSessionSuppression + 1,
+                makeEvent(type: "permission", tabID: sharedTab, sessionID: "s1")
+            )
         ]
 
         func replay() -> [NotificationSuppressionCenter.Verdict] {

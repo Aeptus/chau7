@@ -22,12 +22,12 @@ public struct RemoteInteractivePromptOption: Codable, Equatable, Sendable, Hasha
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        id = try container.decode(String.self, forKey: .id)
-        label = try container.decode(String.self, forKey: .label)
-        response = try container.decode(String.self, forKey: .response)
+        self.id = try container.decode(String.self, forKey: .id)
+        self.label = try container.decode(String.self, forKey: .label)
+        self.response = try container.decode(String.self, forKey: .response)
         // Lenient: the Go agent re-encodes options with `omitempty`, dropping
         // the key when false.
-        isDestructive = try container.decodeIfPresent(Bool.self, forKey: .isDestructive) ?? false
+        self.isDestructive = try container.decodeIfPresent(Bool.self, forKey: .isDestructive) ?? false
     }
 
     public func encode(to encoder: Encoder) throws {

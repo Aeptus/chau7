@@ -69,6 +69,7 @@ extension Notification.Name {
         Notification.Name("com.chau7.terminalSessionVisibleFrameReady")
 
     // MARK: - Remote viewer (posted by OverlayTabsModel and
+
     // TerminalControlService, observed by RemoteControlManager)
 
     static let viewerPendingApproval = Notification.Name("com.chau7.viewerPendingApproval")

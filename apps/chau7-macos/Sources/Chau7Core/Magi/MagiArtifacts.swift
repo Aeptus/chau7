@@ -438,14 +438,16 @@ public enum MagiRunArtifactRenderer {
         let votesHTML = verdict?.votes.map { vote in
             let verdictKind = vote.verdictKind.map { "\($0.rawValue) " } ?? ""
             return """
-            <li><strong>\(htmlEscape(vote.memberID.displayName))</strong><span>\(htmlEscape(verdictKind + vote.choice))</span><small>confidence \(formatScore(vote.confidence))</small><p>\(htmlEscape(vote.rationale))</p></li>
+            <li><strong>\(htmlEscape(vote.memberID.displayName))</strong><span>\(htmlEscape(verdictKind + vote.choice))</span><small>confidence \(formatScore(vote
+                    .confidence))</small><p>\(htmlEscape(vote.rationale))</p></li>
             """
         }.joined(separator: "\n") ?? "<li>No votes recorded.</li>"
         let positionsHTML = run.positions.isEmpty
             ? "<li>No positions recorded.</li>"
             : run.positions.map { position in
                 """
-                <li><strong>\(htmlEscape(position.memberID.displayName))</strong><span>\(htmlEscape(position.recommendation))</span><small>confidence \(formatScore(position.confidence))</small><p>\(htmlEscape(position.summary))</p></li>
+                <li><strong>\(htmlEscape(position.memberID.displayName))</strong><span>\(htmlEscape(position.recommendation))</span><small>confidence \(formatScore(position
+                        .confidence))</small><p>\(htmlEscape(position.summary))</p></li>
                 """
             }.joined(separator: "\n")
         let evidenceHTML = run.evidencePackets.isEmpty
@@ -457,7 +459,8 @@ public enum MagiRunArtifactRenderer {
             }.joined(separator: "\n")
         let councilHTML = run.council.members.map { member in
             """
-            <li><strong>\(htmlEscape(member.persona.displayName))</strong><span>\(htmlEscape(member.provider)) / \(htmlEscape(member.modelClass.rawValue))</span><small>\(htmlEscape(member.persona.lens))</small></li>
+            <li><strong>\(htmlEscape(member.persona.displayName))</strong><span>\(htmlEscape(member.provider)) / \(htmlEscape(member.modelClass.rawValue))</span><small>\(htmlEscape(member.persona
+                    .lens))</small></li>
             """
         }.joined(separator: "\n")
         let failureHTML: String
@@ -822,7 +825,7 @@ public enum MagiTerminalReplayRenderer {
 
     private static func render(events jsonl: String) -> String {
         let objects = jsonObjects(from: jsonl)
-        var lines: [String] = ["MAGI Replay"]
+        var lines = ["MAGI Replay"]
         guard !objects.isEmpty else {
             lines.append("No replay events recorded.")
             return lines.joined(separator: "\n") + "\n"

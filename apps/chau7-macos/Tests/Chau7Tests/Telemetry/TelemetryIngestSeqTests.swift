@@ -17,7 +17,7 @@ final class TelemetryIngestSeqTests: XCTestCase {
         )
     }
 
-    func testSameTimestampRunsOrderByInsertionOrder() throws {
+    func testSameTimestampRunsOrderByInsertionOrder() {
         let repoPath = "/tmp/ingest-seq-\(UUID().uuidString)"
         // Identical started_at down to the encoded string.
         let sharedInstant = Date(timeIntervalSince1970: 1_751_000_000)
@@ -37,7 +37,7 @@ final class TelemetryIngestSeqTests: XCTestCase {
         )
     }
 
-    func testRepeatedListingsAreStable() throws {
+    func testRepeatedListingsAreStable() {
         let repoPath = "/tmp/ingest-seq-stable-\(UUID().uuidString)"
         let sharedInstant = Date(timeIntervalSince1970: 1_751_100_000)
         for index in 0 ..< 5 {

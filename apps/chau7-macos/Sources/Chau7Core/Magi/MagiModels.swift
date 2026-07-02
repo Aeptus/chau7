@@ -7,7 +7,9 @@ public enum MagiMemberID: String, Codable, CaseIterable, Identifiable, Sendable 
     case balthasar
     case casper
 
-    public var id: String { rawValue }
+    public var id: String {
+        rawValue
+    }
 
     public var displayName: String {
         switch self {
@@ -23,7 +25,9 @@ public enum MagiModelClass: String, Codable, CaseIterable, Identifiable, Sendabl
     case balanced
     case strongest
 
-    public var id: String { rawValue }
+    public var id: String {
+        rawValue
+    }
 }
 
 public enum MagiReasoningLevel: String, Codable, CaseIterable, Identifiable, Sendable {
@@ -32,7 +36,9 @@ public enum MagiReasoningLevel: String, Codable, CaseIterable, Identifiable, Sen
     case high
     case max
 
-    public var id: String { rawValue }
+    public var id: String {
+        rawValue
+    }
 }
 
 public enum MagiProviderID: String, Codable, CaseIterable, Identifiable, Sendable {
@@ -40,7 +46,9 @@ public enum MagiProviderID: String, Codable, CaseIterable, Identifiable, Sendabl
     case claude
     case gemini
 
-    public var id: String { rawValue }
+    public var id: String {
+        rawValue
+    }
 
     public var displayName: String {
         switch self {
@@ -55,7 +63,9 @@ public enum MagiFallbackStrategy: String, Codable, CaseIterable, Identifiable, S
     case duplicate
     case fail
 
-    public var id: String { rawValue }
+    public var id: String {
+        rawValue
+    }
 }
 
 // MARK: - Configuration
@@ -247,7 +257,9 @@ public enum MagiRoundKind: String, Codable, CaseIterable, Identifiable, Sendable
     case vote
     case extraDeliberation
 
-    public var id: String { rawValue }
+    public var id: String {
+        rawValue
+    }
 
     public var sharePolicy: MagiRoundSharePolicy {
         switch self {
@@ -513,7 +525,9 @@ public enum MagiVerdictKind: String, Codable, CaseIterable, Identifiable, Sendab
     case rank = "RANK"
     case noConsensus = "NO_CONSENSUS"
 
-    public var id: String { rawValue }
+    public var id: String {
+        rawValue
+    }
 
     public var isApprovalStyle: Bool {
         switch self {
@@ -607,7 +621,9 @@ public enum MagiQuestionKind: String, Codable, CaseIterable, Identifiable, Senda
     case engineering
     case generic
 
-    public var id: String { rawValue }
+    public var id: String {
+        rawValue
+    }
 
     public var voteVerdictKinds: [MagiVerdictKind] {
         switch self {
@@ -679,8 +695,8 @@ public enum MagiQuestionKind: String, Codable, CaseIterable, Identifiable, Senda
             "ready"
         ]
 
-        if engineeringSignals.contains(where: { normalized.contains($0) })
-            && approvalSignals.contains(where: { normalized.contains($0) }) {
+        if engineeringSignals.contains(where: { normalized.contains($0) }),
+           approvalSignals.contains(where: { normalized.contains($0) }) {
             return .engineering
         }
 
@@ -905,7 +921,9 @@ public struct MagiArtifactBundle: Codable, Equatable, Sendable {
     public var graphJSONPath: String
     public var replayJSONLPath: String
     public var shareHTMLPath: String
-    public var technicalLogPath: String { "\(rootDirectory)/technical.jsonl" }
+    public var technicalLogPath: String {
+        "\(rootDirectory)/technical.jsonl"
+    }
 
     public init(runID: String, rootDirectory: String) {
         let normalizedRoot = Self.normalizedDirectory(rootDirectory)
@@ -992,9 +1010,9 @@ public enum MagiRunFailureCategory: String, Codable, CaseIterable, Sendable {
     case agentTimeout = "agent_timeout"
     case malformedJSON = "malformed_json"
     case evidenceDenied = "evidence_denied"
-    case veto = "veto"
-    case deadlock = "deadlock"
-    case interrupted = "interrupted"
+    case veto
+    case deadlock
+    case interrupted
     case partialArtifacts = "partial_artifacts"
     case artifactWriteFailed = "artifact_write_failed"
     case unknown

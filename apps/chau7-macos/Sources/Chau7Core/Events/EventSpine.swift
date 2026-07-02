@@ -22,13 +22,19 @@ public final class GlobalEventJournal: @unchecked Sendable {
     }
 
     /// The seq of the most recent envelope (0 if empty).
-    public var latestCursor: UInt64 { ring.latestCursor }
+    public var latestCursor: UInt64 {
+        ring.latestCursor
+    }
 
     /// The oldest available seq (0 if empty, 1 if not yet wrapped).
-    public var oldestAvailableCursor: UInt64 { ring.oldestAvailableCursor }
+    public var oldestAvailableCursor: UInt64 {
+        ring.oldestAvailableCursor
+    }
 
     /// Current number of retained envelopes.
-    public var count: Int { ring.count }
+    public var count: Int {
+        ring.count
+    }
 }
 
 /// The single ingest funnel for all Chau7 events.

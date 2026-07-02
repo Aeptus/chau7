@@ -13,7 +13,7 @@ public enum ANSIStripper {
                 if let next = scalar, next == "[" {
                     // Consume until final byte (0x40–0x7E)
                     while let ch = iter.next() {
-                        if ch.value >= 0x40 && ch.value <= 0x7E {
+                        if ch.value >= 0x40, ch.value <= 0x7E {
                             scalar = iter.next()
                             break
                         }

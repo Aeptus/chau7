@@ -10,17 +10,15 @@ import XCTest
 /// fails one of the two suites instead of shipping silent drift.
 final class RemoteWirePayloadFixtureTests: XCTestCase {
 
-    private static let fixturesURL: URL = {
-        // <repo>/apps/chau7-macos/Tests/Chau7Tests/Remote/ThisFile.swift → <repo>
+    private static let fixturesURL = // <repo>/apps/chau7-macos/Tests/Chau7Tests/Remote/ThisFile.swift → <repo>
         URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent() // ThisFile.swift
-            .deletingLastPathComponent() // Remote
-            .deletingLastPathComponent() // Chau7Tests
-            .deletingLastPathComponent() // Tests
-            .deletingLastPathComponent() // chau7-macos
-            .deletingLastPathComponent() // apps
-            .appendingPathComponent("services/chau7-remote/docs/fixtures")
-    }()
+        .deletingLastPathComponent() // ThisFile.swift
+        .deletingLastPathComponent() // Remote
+        .deletingLastPathComponent() // Chau7Tests
+        .deletingLastPathComponent() // Tests
+        .deletingLastPathComponent() // chau7-macos
+        .deletingLastPathComponent() // apps
+        .appendingPathComponent("services/chau7-remote/docs/fixtures")
 
     private func fixtureData(_ name: String) throws -> Data {
         try Data(contentsOf: Self.fixturesURL.appendingPathComponent(name))

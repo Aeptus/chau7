@@ -1012,7 +1012,7 @@ struct MagiCLIRunner {
 
     private func preflightFailureCategory(for error: Error) -> MagiRunFailureCategory {
         switch error {
-        case MagiMCPClientError.socketMissing(_):
+        case MagiMCPClientError.socketMissing:
             return .mcpSocketMissing
         case MagiMCPClientError.connectFailed(_, _),
              MagiMCPClientError.readTimedOut,

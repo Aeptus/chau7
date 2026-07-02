@@ -382,7 +382,7 @@ public enum MagiPersonaFileParser {
             line.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("## ")
         } ?? lines.endIndex
 
-        return lines[bodyStart..<bodyEnd]
+        return lines[bodyStart ..< bodyEnd]
             .joined(separator: "\n")
             .trimmingCharacters(in: .whitespacesAndNewlines)
     }
@@ -623,14 +623,14 @@ private struct PositionPayload: Decodable {
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        member = try container.decode(String.self, forKey: .member)
-        round = try container.decode(Int.self, forKey: .round)
-        position = try container.decodeIfPresent(String.self, forKey: .position)
+        self.member = try container.decode(String.self, forKey: .member)
+        self.round = try container.decode(Int.self, forKey: .round)
+        self.position = try container.decodeIfPresent(String.self, forKey: .position)
             ?? container.decode(String.self, forKey: .recommendation)
-        summary = try container.decode(String.self, forKey: .summary)
-        confidence = try container.decodeIfPresent(Double.self, forKey: .confidence) ?? 0
-        evidenceRequests = try container.decodeIfPresent([EvidenceRequestPayload].self, forKey: .evidenceRequests) ?? []
-        veto = try container.decodeIfPresent(VetoPayload.self, forKey: .veto)
+        self.summary = try container.decode(String.self, forKey: .summary)
+        self.confidence = try container.decodeIfPresent(Double.self, forKey: .confidence) ?? 0
+        self.evidenceRequests = try container.decodeIfPresent([EvidenceRequestPayload].self, forKey: .evidenceRequests) ?? []
+        self.veto = try container.decodeIfPresent(VetoPayload.self, forKey: .veto)
     }
 }
 
@@ -649,10 +649,10 @@ private struct CritiqueBlockPayload: Decodable {
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        member = try container.decode(String.self, forKey: .member)
-        round = try container.decode(Int.self, forKey: .round)
-        critiques = try container.decodeIfPresent([CritiquePayload].self, forKey: .critiques) ?? []
-        evidenceRequests = try container.decodeIfPresent([EvidenceRequestPayload].self, forKey: .evidenceRequests) ?? []
+        self.member = try container.decode(String.self, forKey: .member)
+        self.round = try container.decode(Int.self, forKey: .round)
+        self.critiques = try container.decodeIfPresent([CritiquePayload].self, forKey: .critiques) ?? []
+        self.evidenceRequests = try container.decodeIfPresent([EvidenceRequestPayload].self, forKey: .evidenceRequests) ?? []
     }
 }
 
@@ -673,11 +673,11 @@ private struct CritiquePayload: Decodable {
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        targetMemberID = try container.decode(String.self, forKey: .targetMemberID)
-        agreements = try container.decodeIfPresent([String].self, forKey: .agreements) ?? []
-        disagreements = try container.decodeIfPresent([String].self, forKey: .disagreements) ?? []
-        missingEvidence = try container.decodeIfPresent([String].self, forKey: .missingEvidence) ?? []
-        evidenceRequests = try container.decodeIfPresent([EvidenceRequestPayload].self, forKey: .evidenceRequests) ?? []
+        self.targetMemberID = try container.decode(String.self, forKey: .targetMemberID)
+        self.agreements = try container.decodeIfPresent([String].self, forKey: .agreements) ?? []
+        self.disagreements = try container.decodeIfPresent([String].self, forKey: .disagreements) ?? []
+        self.missingEvidence = try container.decodeIfPresent([String].self, forKey: .missingEvidence) ?? []
+        self.evidenceRequests = try container.decodeIfPresent([EvidenceRequestPayload].self, forKey: .evidenceRequests) ?? []
     }
 }
 
@@ -705,8 +705,8 @@ private struct VotePayload: Decodable {
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        member = try container.decode(String.self, forKey: .member)
-        round = try container.decode(Int.self, forKey: .round)
+        self.member = try container.decode(String.self, forKey: .member)
+        self.round = try container.decode(Int.self, forKey: .round)
         let verdictLabel = try container.decodeIfPresent(String.self, forKey: .verdict)
             ?? container.decodeIfPresent(String.self, forKey: .verdictKind)
             ?? container.decodeIfPresent(String.self, forKey: .kind)
@@ -718,15 +718,15 @@ private struct VotePayload: Decodable {
                     debugDescription: "Unsupported MAGI verdict kind: \(verdictLabel)"
                 )
             }
-            verdictKind = parsed
+            self.verdictKind = parsed
         } else {
-            verdictKind = nil
+            self.verdictKind = nil
         }
-        vote = try container.decodeIfPresent(String.self, forKey: .vote)
+        self.vote = try container.decodeIfPresent(String.self, forKey: .vote)
             ?? container.decode(String.self, forKey: .choice)
-        confidence = try container.decodeIfPresent(Double.self, forKey: .confidence) ?? 0
-        rationale = try container.decodeIfPresent(String.self, forKey: .rationale) ?? ""
-        veto = try container.decodeIfPresent(VetoPayload.self, forKey: .veto)
+        self.confidence = try container.decodeIfPresent(Double.self, forKey: .confidence) ?? 0
+        self.rationale = try container.decodeIfPresent(String.self, forKey: .rationale) ?? ""
+        self.veto = try container.decodeIfPresent(VetoPayload.self, forKey: .veto)
     }
 }
 
@@ -749,10 +749,10 @@ private struct EvidenceRequestPayload: Decodable {
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        priority = try container.decodeIfPresent(String.self, forKey: .priority) ?? MagiEvidencePriority.medium.rawValue
-        reason = try container.decodeIfPresent(String.self, forKey: .reason) ?? ""
-        requiredEvidence = try container.decodeIfPresent([String].self, forKey: .requiredEvidence) ?? []
-        proposedCollectors = try container.decodeIfPresent([String].self, forKey: .proposedCollectors) ?? []
+        self.priority = try container.decodeIfPresent(String.self, forKey: .priority) ?? MagiEvidencePriority.medium.rawValue
+        self.reason = try container.decodeIfPresent(String.self, forKey: .reason) ?? ""
+        self.requiredEvidence = try container.decodeIfPresent([String].self, forKey: .requiredEvidence) ?? []
+        self.proposedCollectors = try container.decodeIfPresent([String].self, forKey: .proposedCollectors) ?? []
     }
 }
 
@@ -779,9 +779,9 @@ private struct VetoPayload: Decodable {
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        reason = try container.decodeIfPresent(String.self, forKey: .reason) ?? ""
-        scope = try container.decodeIfPresent(String.self, forKey: .scope) ?? "run"
-        blocksVerdict = try container.decodeIfPresent(Bool.self, forKey: .blocksVerdict) ?? true
+        self.reason = try container.decodeIfPresent(String.self, forKey: .reason) ?? ""
+        self.scope = try container.decodeIfPresent(String.self, forKey: .scope) ?? "run"
+        self.blocksVerdict = try container.decodeIfPresent(Bool.self, forKey: .blocksVerdict) ?? true
     }
 }
 

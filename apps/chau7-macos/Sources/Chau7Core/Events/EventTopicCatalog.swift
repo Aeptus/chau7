@@ -78,19 +78,43 @@ public enum EventTopicCatalog {
         }
 
         // App/window lifecycle — base topic only.
-        for type in ["app_launched", "build_activated", "window_focused", "window_unfocused",
-                     "file_conflict", "finished", "waiting_input"] {
+        for type in [
+            "app_launched",
+            "build_activated",
+            "window_focused",
+            "window_unfocused",
+            "file_conflict",
+            "finished",
+            "waiting_input"
+        ] {
             table[type] = []
         }
 
         // Runtime session events (RuntimeEventType constants) — base topic
         // only; session/tab context adds the rest.
-        for type in ["session_starting", "session_ready", "session_stopped", "session_error",
-                     "state_changed", "turn_started", "turn_completed", "turn_failed",
-                     "turn_reconciled", "turn_result", "user_input", "agent_responding",
-                     "notification", "tool_use", "tool_result", "output_chunk",
-                     "stall_detected", "token_threshold", "cost_threshold",
-                     "exit_classified", "policy_blocked"] {
+        for type in [
+            "session_starting",
+            "session_ready",
+            "session_stopped",
+            "session_error",
+            "state_changed",
+            "turn_started",
+            "turn_completed",
+            "turn_failed",
+            "turn_reconciled",
+            "turn_result",
+            "user_input",
+            "agent_responding",
+            "notification",
+            "tool_use",
+            "tool_result",
+            "output_chunk",
+            "stall_detected",
+            "token_threshold",
+            "cost_threshold",
+            "exit_classified",
+            "policy_blocked"
+        ] {
             table[type] = []
         }
         table["approval_needed"] = [EventTopic.approvalState]

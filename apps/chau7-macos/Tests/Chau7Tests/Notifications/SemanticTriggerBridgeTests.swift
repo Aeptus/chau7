@@ -20,7 +20,7 @@ final class SemanticTriggerBridgeTests: XCTestCase {
     /// decision. `info` is the audit-flagged case: informational AI events
     /// have no dedicated toggle and ride the "Other events" wildcard until
     /// the routing-policy stage gives them per-surface treatment.
-    private let intentionalWildcard: Set<String> = [
+    private let intentionalWildcard: Set = [
         "claude_code|info",
         "codex|info"
     ]
@@ -36,9 +36,9 @@ final class SemanticTriggerBridgeTests: XCTestCase {
                     continue
                 }
                 let isWildcard = trigger.type == NotificationTriggerCatalog.wildcardType
-                if isWildcard && !intentionalWildcard.contains(key) {
+                if isWildcard, !intentionalWildcard.contains(key) {
                     unexplained.append("\(key) → falls to wildcard but is not allowlisted")
-                } else if !isWildcard && intentionalWildcard.contains(key) {
+                } else if !isWildcard, intentionalWildcard.contains(key) {
                     unexplained.append("\(key) → has a dedicated trigger; remove stale allowlist entry")
                 }
             }

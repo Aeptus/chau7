@@ -212,7 +212,7 @@ final class MagiModelsTests: XCTestCase {
         XCTAssertFalse(verdict.requiresAdditionalRound)
     }
 
-    func testRunStateMachineStartsCompletesAndFailsWithUsefulMetadata() throws {
+    func testRunStateMachineStartsCompletesAndFailsWithUsefulMetadata() {
         var run = MagiRun(
             id: "run-1",
             question: "What is the best Final Fantasy?",

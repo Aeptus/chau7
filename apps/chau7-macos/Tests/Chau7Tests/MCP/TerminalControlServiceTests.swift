@@ -683,8 +683,8 @@ final class TerminalControlServiceTests: XCTestCase {
     }
 
     func testAgentPromptInjectionTimeoutCapsBelowMCPReadBudget() {
-        XCTAssertEqual(TerminalControlService.agentPromptInjectionTimeoutMs(readyTimeoutMs: 60_000), 25_000)
-        XCTAssertEqual(TerminalControlService.agentPromptInjectionTimeoutMs(readyTimeoutMs: 10_000), 10_000)
+        XCTAssertEqual(TerminalControlService.agentPromptInjectionTimeoutMs(readyTimeoutMs: 60000), 25000)
+        XCTAssertEqual(TerminalControlService.agentPromptInjectionTimeoutMs(readyTimeoutMs: 10000), 10000)
         XCTAssertEqual(TerminalControlService.agentPromptInjectionTimeoutMs(readyTimeoutMs: -1), 0)
     }
 
