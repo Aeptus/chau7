@@ -1160,14 +1160,18 @@ final class TerminalSessionModelTests: XCTestCase {
         session.handleOutput(Data("assistant output".utf8))
 
         session.handlePromptDetected()
-        let expectation = expectation(description: "waiting input event recorded")
-        DispatchQueue.main.async { expectation.fulfill() }
-        await fulfillment(of: [expectation], timeout: 1.0)
-
+        // Delivery now flows through the event-spine pump (an async main-actor
+        // task), so a single main-queue hop is not enough — poll.
         // handlePromptDetected also finishes the pending heuristic command,
         // which records a shell `process_ended` event after the fallback —
         // look the waiting_input event up instead of relying on order.
-        let event = model.recentEvents.last(where: { $0.type == "waiting_input" })
+        var polledEvent: AIEvent?
+        for _ in 0 ..< 200 {
+            polledEvent = model.recentEvents.last(where: { $0.type == "waiting_input" })
+            if polledEvent != nil { break }
+            try? await Task.sleep(nanoseconds: 10_000_000)
+        }
+        let event = polledEvent
         XCTAssertEqual(event?.source, .codex)
         XCTAssertEqual(event?.type, "waiting_input")
         XCTAssertEqual(event?.tabID, tabID)
@@ -1407,14 +1411,18 @@ final class TerminalSessionModelTests: XCTestCase {
         session.handleOutput(Data("assistant output".utf8))
         session.handlePromptDetected()
 
-        let expectation = expectation(description: "prompt handling settled")
-        DispatchQueue.main.async { expectation.fulfill() }
-        await fulfillment(of: [expectation], timeout: 1.0)
-
+        // Delivery now flows through the event-spine pump (an async main-actor
+        // task), so a single main-queue hop is not enough — poll.
         // A shell `process_ended` event from the finished heuristic command
         // may follow the fallback — look the waiting_input event up instead
         // of relying on order.
-        let event = model.recentEvents.last(where: { $0.type == "waiting_input" })
+        var polledEvent: AIEvent?
+        for _ in 0 ..< 200 {
+            polledEvent = model.recentEvents.last(where: { $0.type == "waiting_input" })
+            if polledEvent != nil { break }
+            try? await Task.sleep(nanoseconds: 10_000_000)
+        }
+        let event = polledEvent
         XCTAssertEqual(event?.type, "waiting_input")
         XCTAssertEqual(event?.tabID, tabID)
         RuntimeSessionManager.shared.resetForTesting()

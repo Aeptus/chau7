@@ -62,6 +62,11 @@ public struct EventEnvelope: Equatable, Sendable {
     public let occurredAt: Date
     public let ingestedAt: Date
     public let topics: [String]
+    /// Producer intent: whether user-facing notification delivery was
+    /// requested for this event. The notification pipeline still applies its
+    /// own gating; `false` means the producer explicitly asked for a silent
+    /// record (e.g. API proxy calls).
+    public let deliveryRequested: Bool
     public let payload: EventPayload
 
     public init(
@@ -71,6 +76,7 @@ public struct EventEnvelope: Equatable, Sendable {
         occurredAt: Date,
         ingestedAt: Date,
         topics: [String],
+        deliveryRequested: Bool = true,
         payload: EventPayload
     ) {
         self.seq = seq
@@ -79,6 +85,7 @@ public struct EventEnvelope: Equatable, Sendable {
         self.occurredAt = occurredAt
         self.ingestedAt = ingestedAt
         self.topics = topics
+        self.deliveryRequested = deliveryRequested
         self.payload = payload
     }
 

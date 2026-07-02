@@ -373,6 +373,13 @@ final class AppModel {
     /// (recordEvent, etc.) publish through it.
     let notifications: NotificationServices?
 
+    /// The single event ingest funnel. All producers publish through
+    /// `publishUnifiedEvent`, which ingests here; the spine allocates the
+    /// global monotonic seq and the `spineHost` pump delivers envelopes to
+    /// the unified pipeline in seq order.
+    @ObservationIgnored let eventSpine = EventSpine()
+    @ObservationIgnored private let spineHost = EventSpineHost()
+
     init(notifications: NotificationServices? = nil) {
         self.notifications = notifications
         Log.configure()
@@ -1568,17 +1575,44 @@ final class AppModel {
         }
     }
 
+    /// Single ingest funnel: every unified event enters the spine here, which
+    /// allocates the global seq (total order across all producers). The
+    /// spine-host pump then delivers envelopes to
+    /// `publishUnifiedEventOnMain` on the main actor in seq order.
     private func publishUnifiedEvent(_ event: AIEvent, notify: Bool) {
+        startSpinePumpIfNeeded()
+        eventSpine.ingest(event, deliveryRequested: notify)
+    }
+
+    /// Lazily starts the single spine consumer. Envelopes ingested before the
+    /// pump starts are buffered by the spine stream, so nothing is lost when
+    /// the first ingest happens off the main thread.
+    private func startSpinePumpIfNeeded() {
         if Thread.isMainThread {
-            MainActor.assumeIsolated {
-                publishUnifiedEventOnMain(event, notify: notify)
-            }
+            MainActor.assumeIsolated { startSpinePumpOnMain() }
         } else {
             DispatchQueue.main.async { [weak self] in
-                MainActor.assumeIsolated {
-                    self?.publishUnifiedEventOnMain(event, notify: notify)
-                }
+                MainActor.assumeIsolated { self?.startSpinePumpOnMain() }
             }
+        }
+    }
+
+    @MainActor
+    private func startSpinePumpOnMain() {
+        spineHost.start(spine: eventSpine) { [weak self] envelope in
+            self?.applySpineEnvelope(envelope)
+        }
+    }
+
+    @MainActor
+    private func applySpineEnvelope(_ envelope: EventEnvelope) {
+        switch envelope.payload {
+        case let .ai(event):
+            publishUnifiedEventOnMain(event, notify: envelope.deliveryRequested)
+        case .structural:
+            // Structural producers route through the spine starting with the
+            // observability-projection stage; nothing emits them yet.
+            break
         }
     }
 

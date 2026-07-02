@@ -72,8 +72,13 @@ public final class EventSpine: @unchecked Sendable {
     /// Ingest an AI event. `occurredAt` is parsed from the event's `ts`
     /// (falling back to ingest time if unparseable); identity is the event's
     /// own `id`, so the same logical event keeps one identity everywhere.
+    /// `deliveryRequested` carries the producer's notify intent to the pump.
     @discardableResult
-    public func ingest(_ event: AIEvent, correlationID: String? = nil) -> EventEnvelope {
+    public func ingest(
+        _ event: AIEvent,
+        correlationID: String? = nil,
+        deliveryRequested: Bool = true
+    ) -> EventEnvelope {
         let ingestedAt = Date()
         let occurredAt = DateFormatters.parseISO8601(event.ts) ?? ingestedAt
         return ingestEnvelope(
@@ -81,6 +86,7 @@ public final class EventSpine: @unchecked Sendable {
             correlationID: correlationID,
             occurredAt: occurredAt,
             ingestedAt: ingestedAt,
+            deliveryRequested: deliveryRequested,
             payload: .ai(event)
         )
     }
@@ -100,6 +106,7 @@ public final class EventSpine: @unchecked Sendable {
             correlationID: correlationID,
             occurredAt: occurredAt ?? ingestedAt,
             ingestedAt: ingestedAt,
+            deliveryRequested: false,
             payload: .structural(event)
         )
     }
@@ -117,6 +124,7 @@ public final class EventSpine: @unchecked Sendable {
         correlationID: String?,
         occurredAt: Date,
         ingestedAt: Date,
+        deliveryRequested: Bool,
         payload: EventPayload
     ) -> EventEnvelope {
         let topics = EventTopicCatalog.topics(for: payload)
@@ -130,6 +138,7 @@ public final class EventSpine: @unchecked Sendable {
                 occurredAt: occurredAt,
                 ingestedAt: ingestedAt,
                 topics: topics,
+                deliveryRequested: deliveryRequested,
                 payload: payload
             )
         }
