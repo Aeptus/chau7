@@ -7,6 +7,7 @@ enum MagiMCPOrchestratorError: Error, LocalizedError {
     case timedOut(stage: String, member: String, lastError: String?)
     case parseFailedAfterRepair(stage: String, member: String, lastError: String?)
     case evidenceApprovalRequiredNonInteractive
+    case mcpContractUnsupported(message: String)
     case interrupted(stage: String)
 
     var errorDescription: String? {
@@ -27,6 +28,8 @@ enum MagiMCPOrchestratorError: Error, LocalizedError {
             return "Could not parse \(member)'s structured output during \(stage) after one repair attempt."
         case .evidenceApprovalRequiredNonInteractive:
             return "Evidence collection requires approval, but this terminal is not interactive."
+        case let .mcpContractUnsupported(message):
+            return message
         case let .interrupted(stage):
             return "MAGI run interrupted during \(stage)."
         }
@@ -498,6 +501,8 @@ struct MagiMCPOrchestrator {
             return stage
         case MagiMCPOrchestratorError.evidenceApprovalRequiredNonInteractive:
             return "evidence approval"
+        case MagiMCPOrchestratorError.mcpContractUnsupported(_):
+            return "mcp-preflight"
         case MagiMCPOrchestratorError.launchFailed(_, _):
             return "launch"
         case let MagiMCPOrchestratorError.missingToolField(tool, _):
@@ -517,6 +522,8 @@ struct MagiMCPOrchestrator {
             return .malformedJSON
         case MagiMCPOrchestratorError.evidenceApprovalRequiredNonInteractive:
             return .evidenceDenied
+        case MagiMCPOrchestratorError.mcpContractUnsupported(_):
+            return .chau7Unavailable
         case let MagiMCPOrchestratorError.launchFailed(_, reason):
             return looksLikeProviderAuthFailure(reason) ? .providerUnavailable : .tabCreationFailed
         case let MagiMCPClientError.toolError(name, message):

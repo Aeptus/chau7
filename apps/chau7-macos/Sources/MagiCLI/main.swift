@@ -68,6 +68,7 @@ struct MagiCLIRunner {
             let client = MagiMCPClient(socketPath: "\(paths.homeDirectory)/.chau7/mcp.sock")
             do {
                 try client.connectAndInitialize()
+                try verifyMCPCompatibility(client: client)
             } catch {
                 let bundle = writePreflightFailureArtifact(
                     question: question,
@@ -474,6 +475,7 @@ struct MagiCLIRunner {
         let socketPath = "\(paths.homeDirectory)/.chau7/mcp.sock"
         let socketStatus = fileManager.fileExists(atPath: socketPath) ? "present" : "missing"
         writeStdout("Chau7 MCP socket: \(socketPath) (\(socketStatus))")
+        printMCPCompatibility(socketPath: socketPath)
         writeStdout()
 
         guard MagiFirstRunInstaller.isConfigured(paths: paths, fileManager: fileManager) else {
@@ -499,6 +501,58 @@ struct MagiCLIRunner {
             writeStdout("invalid: \(error.localizedDescription)")
             return .usage
         }
+    }
+
+    private func printMCPCompatibility(socketPath: String) {
+        writeStdout("MCP contract")
+        guard fileManager.fileExists(atPath: socketPath) else {
+            writeStdout("unavailable: Chau7 MCP socket is missing")
+            return
+        }
+
+        let client = MagiMCPClient(socketPath: socketPath)
+        do {
+            try client.connectAndInitialize()
+            try verifyMCPCompatibility(client: client)
+            writeStdout("compatible")
+        } catch {
+            writeStdout("incompatible: \(error.localizedDescription)")
+        }
+    }
+
+    private func verifyMCPCompatibility(client: MagiMCPToolCalling) throws {
+        guard let repositoryRoot = paths.repositoryRoot(fileManager: fileManager),
+              !repositoryRoot.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return
+        }
+
+        do {
+            let result = try client.callTool(name: "repo_get_events", arguments: [
+                "repo_path": repositoryRoot,
+                "limit": 1,
+                "tab_id": "tab_0",
+                "event_types": ["agent-turn-complete"],
+                "truncate_messages": false
+            ])
+            guard result["events"] is [[String: Any]] else {
+                throw MagiMCPOrchestratorError.missingToolField(tool: "repo_get_events", field: "events")
+            }
+        } catch let error as MagiMCPClientError {
+            if case let .protocolError(message) = error,
+               message.contains("unknown argument") || message.contains("Invalid params") {
+                throw unsupportedMCPContractError(message)
+            }
+            if case let .toolError(_, message) = error {
+                throw unsupportedMCPContractError(message)
+            }
+            throw error
+        }
+    }
+
+    private func unsupportedMCPContractError(_ detail: String) -> MagiMCPOrchestratorError {
+        MagiMCPOrchestratorError.mcpContractUnsupported(
+            message: "Chau7 MCP is too old for MAGI event-backed result capture: \(detail). Restart Chau7 from the latest build, then rerun MAGI."
+        )
     }
 
     private func printConfigSummary() -> MagiCLIExitCode {
