@@ -280,6 +280,17 @@ struct RemoteRootView: View {
         .onReceive(NotificationCenter.default.publisher(for: .openApprovals)) { _ in
             goToApprovals()
         }
+        .task {
+            // Bridge Allow/Deny notification actions to the client. Lives on
+            // the root view (structured, cancelled with the scene) instead of
+            // an unstructured Task in RemoteClient that a static singleton's
+            // never-running deinit pretended to cancel.
+            for await note in NotificationCenter.default.notifications(named: .approvalNotificationResponse) {
+                guard let id = note.userInfo?[RemoteNotificationID.UserInfoKey.requestID] as? String,
+                      let approved = note.userInfo?[RemoteNotificationID.UserInfoKey.approved] as? Bool else { continue }
+                client.respondToApproval(requestID: id, approved: approved)
+            }
+        }
         .sheet(isPresented: $isPairingPresented) {
             PairingSheetView(client: client)
         }

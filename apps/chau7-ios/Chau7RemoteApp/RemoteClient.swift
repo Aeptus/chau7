@@ -79,33 +79,25 @@ final class RemoteClient {
 
     // MARK: - Private
 
-    private var webSocket: URLSessionWebSocketTask?
-    private var seqCounter: UInt64 = 1
-    /// Replay/epoch protection for the encrypted frame stream (NF-2 fix:
-    /// detects agent re-handshakes instead of deadlocking on a reset seq).
-    @ObservationIgnored private var replayGuard = RemoteReplayGuard()
+    /// Socket + generation counter + strictly-ordered receive pump + inbound
+    /// rate limiting (C6 extraction from this class).
+    @ObservationIgnored private let transport = RemoteTransport()
+    /// Crypto-session state machine: key material, handshake nonces, seq
+    /// counter, replay guard (C6 extraction from this class).
+    @ObservationIgnored private let session: RemoteSessionController
+    /// Approval-response ledger: queued answers, in-flight sends, and send
+    /// outcomes (C7 extraction from this class).
+    @ObservationIgnored private let approvalCoordinator = ApprovalCoordinator()
     /// Single merge authority for approvals/prompts across the WS and REST
     /// channels (NF-1 fix: stale snapshots can no longer clobber live state).
     @ObservationIgnored private var pendingReconciler = PendingStateReconciler()
-    private var crypto: RemoteCryptoSession?
-    private var nonceIOS: Data?
-    private var nonceMac: Data?
-    private var macPublicKey: Curve25519.KeyAgreement.PublicKey?
-    private let iosKey: Curve25519.KeyAgreement.PrivateKey
+    private var crypto: RemoteCryptoSession? { session.crypto }
     private let deviceName = UIDevice.current.name
-    // @ObservationIgnored + nonisolated(unsafe) so the nonisolated deinit can
-    // cancel the notification loop. It's background plumbing (never observed by
-    // the UI); Task is Sendable and only mutated on the main actor, so the
-    // unchecked access is safe. Plain `nonisolated` is rejected on an
-    // @Observable-tracked mutable stored property, hence the explicit opt-out.
-    @ObservationIgnored nonisolated(unsafe) private var notificationTask: Task<Void, Never>?
     private var reconnectBackoff = RemoteReconnectBackoff()
     private var reconnectTask: Task<Void, Never>?
     private var handshakeRetryTask: Task<Void, Never>?
     private var handshakeTimeoutTask: Task<Void, Never>?
     private var shouldReconnect = false
-    private var hasReceivedPairAccept = false
-    private var connectionGeneration: UInt64 = 0
     private var outputStore = RemoteTerminalOutputStore()
     private var outputFlushTask: Task<Void, Never>?
     private var strippedOutputRefreshTask: Task<Void, Never>?
@@ -131,12 +123,8 @@ final class RemoteClient {
     /// reappears on the next authoritative list. Suppression is dropped once the
     /// Mac stops listing the prompt (the tab cleared) or after a safety timeout.
     private var suppressedPromptIDs: [String: Date] = [:]
-    private var pendingApprovalResponses: [String: Bool] = [:]
-    private var approvalResponsesInFlight: Set<String> = []
     private var pendingStateFetchTask: Task<Void, Never>?
     private var lastPendingStateFetchAt: Date?
-    private var frameRateLimiter = RemoteFrameRateLimiter()
-    private var lastFrameThrottleLogAt: Date?
     let terminalRenderer = RemoteTerminalRendererStore()
 
     private static let maxHistory = 50
@@ -163,7 +151,7 @@ final class RemoteClient {
     /// SHA-256 fingerprint of this device's public key, for out-of-band
     /// verification against the value shown by the Mac.
     var iosKeyFingerprint: String {
-        CryptoUtils.fingerprint(data: iosKey.publicKey.rawRepresentation)
+        session.iosKeyFingerprint
     }
 
     /// SHA-256 fingerprint of the paired Mac's public key (from the pairing
@@ -177,25 +165,23 @@ final class RemoteClient {
     // MARK: - Init
 
     init() {
-        iosKey = RemotePairingStore.loadOrCreateIOSKey()
+        session = RemoteSessionController(iosKey: RemotePairingStore.loadOrCreateIOSKey())
         pairingInfo = RemotePairingStore.loadPairing()
 
         backgroundKeepalive.onExpire = { [weak self] in
             self?.handleBackgroundTaskExpiration()
         }
 
-        notificationTask = Task { [weak self] in
-            for await note in NotificationCenter.default.notifications(named: .approvalNotificationResponse) {
-                guard let self,
-                      let id = note.userInfo?[RemoteNotificationID.UserInfoKey.requestID] as? String,
-                      let approved = note.userInfo?[RemoteNotificationID.UserInfoKey.approved] as? Bool else { continue }
-                self.respondToApproval(requestID: id, approved: approved)
-            }
+        // The approval-notification-response bridge lives on the root view's
+        // `.task` (structured, cancelled with the scene) instead of an
+        // unstructured Task cancelled from a deinit that a static singleton
+        // never runs.
+        transport.onMessage = { [weak self] data, generation in
+            await self?.processIncomingMessage(data, generation: generation)
         }
-    }
-
-    deinit {
-        notificationTask?.cancel()
+        transport.onFailure = { [weak self] error in
+            self?.handleDisconnect(reason: error.localizedDescription)
+        }
     }
 
     // MARK: - Connection
@@ -222,10 +208,9 @@ final class RemoteClient {
             reconnectBackoff.reset()
         }
         remoteSessionID = nil
-        hasReceivedPairAccept = false
 
         if let keyData = Data(base64Encoded: pairing.macPub) {
-            macPublicKey = try? Curve25519.KeyAgreement.PublicKey(rawRepresentation: keyData)
+            _ = session.adoptMacPublicKey(keyData)
         }
 
         var components = URLComponents(string: pairing.relayURL.strippingTrailingSlash)
@@ -248,18 +233,14 @@ final class RemoteClient {
         if let token = RelayToken.make(pairing: pairing, role: "ios", scope: "connect") {
             request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         }
-        let task = URLSession.shared.webSocketTask(with: request)
-        webSocket = task
-        task.resume()
+        transport.open(request: request)
         status = .connecting
         emitTelemetry(
             type: .connectRequested,
             status: "connecting",
             metadata: ["relay_host": pairing.relayURL]
         )
-
-        listen()
-        scheduleHandshake(for: connectionGeneration)
+        scheduleHandshake(for: transport.generation)
     }
 
     func handleScenePhase(_ scenePhase: ScenePhase) {
@@ -270,7 +251,7 @@ final class RemoteClient {
             backgroundKeepalive.end()
             currentAppState = .foreground
             desiredStreamMode = .full
-            if webSocket == nil, pairingInfo != nil {
+            if !transport.isOpen, pairingInfo != nil {
                 connect()
             } else {
                 sendClientStateIfPossible()
@@ -336,7 +317,7 @@ final class RemoteClient {
         backgroundKeepalive.begin()
         currentAppState = .background
         desiredStreamMode = .approvalsOnly
-        if webSocket == nil, pairingInfo != nil {
+        if !transport.isOpen, pairingInfo != nil {
             connect()
         } else {
             sendClientStateIfPossible()
@@ -360,21 +341,14 @@ final class RemoteClient {
         reconnectTask?.cancel()
         reconnectTask = nil
         cancelHandshakeTasks()
-        webSocket?.cancel(with: .goingAway, reason: nil)
-        webSocket = nil
+        transport.close()
         isConnected = false
         status = .disconnected
-        crypto = nil
+        session.invalidateSession(clearHandshakeMaterial: true)
         remoteSessionID = nil
-        hasReceivedPairAccept = false
-        nonceIOS = nil
-        nonceMac = nil
-        seqCounter = 1
-        replayGuard.reset()
         if !preserveReconnectAttempt {
             reconnectBackoff.reset()
         }
-        connectionGeneration &+= 1
         tabs = []
         outputStore.reset()
         terminalRenderer.reset()
@@ -390,8 +364,7 @@ final class RemoteClient {
         strippedOutputText = ""
         if !preserveApprovalsAndPrompts {
             pendingInteractivePrompts = []
-            pendingApprovalResponses.removeAll(keepingCapacity: true)
-            approvalResponsesInFlight.removeAll(keepingCapacity: true)
+            approvalCoordinator.reset()
             pendingReconciler.reset()
         }
         backgroundKeepalive.end()
@@ -430,7 +403,7 @@ final class RemoteClient {
         guard !pendingApprovals[idx].responseState.isBusy else { return }
 
         pendingApprovals[idx].responseState = .queued(approved)
-        pendingApprovalResponses[requestID] = approved
+        approvalCoordinator.queue(requestID: requestID, approved: approved)
         backgroundKeepalive.begin()
         flushPendingApprovalResponses()
     }
@@ -478,7 +451,7 @@ final class RemoteClient {
         guard let action = RemoteActivityURLAction(url: url) else { return }
         if !performURLAction(action) {
             pendingURLActions.append(action)
-            if webSocket == nil, pairingInfo != nil {
+            if !transport.isOpen, pairingInfo != nil {
                 connect()
             }
         }
@@ -486,68 +459,30 @@ final class RemoteClient {
 
     // MARK: - Receive Loop
 
-    private func listen() {
-        let generation = connectionGeneration
-        webSocket?.receive { [weak self] result in
-            switch result {
-            case .failure(let error):
-                Task { @MainActor [weak self] in
-                    guard let self, self.connectionGeneration == generation else { return }
-                    log.error("WebSocket receive failed: \(error.localizedDescription)")
-                    self.handleDisconnect(reason: error.localizedDescription)
-                }
-            case .success(let msg):
-                let data: Data
-                switch msg {
-                case .data(let frameData):
-                    data = frameData
-                case .string(let text):
-                    data = Data(text.utf8)
-                @unknown default:
-                    Task { @MainActor [weak self] in
-                        guard let self, self.connectionGeneration == generation else { return }
-                        self.listen()
-                    }
-                    return
-                }
-
-                Task { @MainActor [weak self] in
-                    guard let self, self.connectionGeneration == generation else { return }
-                    let crypto = self.crypto
-                    let signpostID = OSSignpostID(log: perfLog)
-                    os_signpost(
-                        .begin,
-                        log: perfLog,
-                        name: "RemoteFrameProcess",
-                        signpostID: signpostID,
-                        "bytes=%{public}d",
-                        data.count
-                    )
-                    let processed: RemoteProcessedFrameResult
-                    if data.count > Self.frameOffloadThreshold {
-                        processed = await Task.detached(priority: .userInitiated) {
-                            RemoteFrameProcessor.process(data, crypto: crypto)
-                        }.value
-                        guard self.connectionGeneration == generation else { return }
-                    } else {
-                        processed = RemoteFrameProcessor.process(data, crypto: crypto)
-                    }
-                    self.applyProcessedFrame(processed, signpostID: signpostID)
-                    if self.frameRateLimiter.allow() {
-                        self.listen()
-                    } else {
-                        // Suspected flood: read more slowly instead of dropping
-                        // data, applying backpressure to a hostile relay.
-                        self.noteFrameRateThrottle()
-                        Task { @MainActor [weak self] in
-                            try? await Task.sleep(for: .milliseconds(50))
-                            guard let self, self.connectionGeneration == generation else { return }
-                            self.listen()
-                        }
-                    }
-                }
-            }
+    /// Per-message handler for the transport's receive pump: decode/decrypt
+    /// (offloading large frames to a detached task) and apply. The transport
+    /// awaits this before issuing the next receive, preserving strict FIFO.
+    private func processIncomingMessage(_ data: Data, generation: UInt64) async {
+        let crypto = self.crypto
+        let signpostID = OSSignpostID(log: perfLog)
+        os_signpost(
+            .begin,
+            log: perfLog,
+            name: "RemoteFrameProcess",
+            signpostID: signpostID,
+            "bytes=%{public}d",
+            data.count
+        )
+        let processed: RemoteProcessedFrameResult
+        if data.count > Self.frameOffloadThreshold {
+            processed = await Task.detached(priority: .userInitiated) {
+                RemoteFrameProcessor.process(data, crypto: crypto)
+            }.value
+            guard transport.generation == generation else { return }
+        } else {
+            processed = RemoteFrameProcessor.process(data, crypto: crypto)
         }
+        applyProcessedFrame(processed, signpostID: signpostID)
     }
 
     private func handleDisconnect(reason: String? = nil) {
@@ -555,7 +490,7 @@ final class RemoteClient {
         cancelHandshakeTasks()
         isConnected = false
         status = .disconnected
-        crypto = nil
+        session.invalidateSession(clearHandshakeMaterial: false)
 
         if wasConnected || reason != nil {
             emitTelemetry(type: .disconnected, status: "disconnected", message: reason)
@@ -598,8 +533,8 @@ final class RemoteClient {
             var attempt = 0
             while !Task.isCancelled {
                 guard let self,
-                      self.connectionGeneration == generation,
-                      self.webSocket != nil,
+                      self.transport.generation == generation,
+                      self.transport.isOpen,
                       !self.isConnected else { return }
 
                 if attempt > 0, self.status == .connecting {
@@ -620,17 +555,17 @@ final class RemoteClient {
         handshakeTimeoutTask = Task { @MainActor [weak self] in
             try? await Task.sleep(for: .seconds(Self.handshakeTimeoutSeconds))
             guard let self,
-                  self.connectionGeneration == generation,
-                  self.webSocket != nil,
+                  self.transport.generation == generation,
+                  self.transport.isOpen,
                   !self.isConnected else { return }
 
+            // Deduped teardown: the transport owns socket + generation, the
+            // session controller owns crypto state — no second hand-rolled
+            // copy of disconnect's steps.
             self.cancelHandshakeTasks()
-            let socket = self.webSocket
-            self.webSocket = nil
-            self.connectionGeneration &+= 1
+            self.transport.close()
             self.isConnected = false
-            self.crypto = nil
-            socket?.cancel(with: .goingAway, reason: nil)
+            self.session.invalidateSession(clearHandshakeMaterial: false)
             self.lastError = "No response from your Mac. Make sure Chau7 is open, Remote is enabled, and the pairing payload is still current."
             self.emitTelemetry(
                 type: .errorReceived,
@@ -643,13 +578,6 @@ final class RemoteClient {
             // connection until the user manually reconnects.
             self.handleDisconnect(reason: "handshake_timeout")
         }
-    }
-
-    private func noteFrameRateThrottle() {
-        let now = Date()
-        if let last = lastFrameThrottleLogAt, now.timeIntervalSince(last) < 5 { return }
-        lastFrameThrottleLogAt = now
-        log.warning("Inbound frame rate throttled (possible relay flood)")
     }
 
     private func cancelHandshakeTasks() {
@@ -694,13 +622,11 @@ final class RemoteClient {
                 status: "decrypt_failed",
                 metadata: ["frame_type": String(frameType)]
             )
-            if case let .resetSession(reason) = replayGuard.noteDecryptFailure() {
+            if case let .resetSession(reason) = session.noteDecryptFailure() {
                 log.warning("Replay guard ordered session reset: \(reason)")
-                crypto = nil
+                session.resetForRehandshake()
                 isConnected = false
                 remoteSessionID = nil
-                seqCounter = 1
-                nonceIOS = CryptoUtils.randomBytes(count: 16)
                 sendHello()
             }
             return
@@ -741,11 +667,11 @@ final class RemoteClient {
         // relay. Unencrypted handshake frames (hello/pair*) are exempt, matching
         // the macOS relay client (see agent.go maxReceivedSeq).
         if isEncrypted {
-            if case let .drop(reason) = replayGuard.evaluateEncryptedFrame(seq: frame.seq) {
+            if case let .drop(reason) = session.evaluateEncryptedFrame(seq: frame.seq) {
                 log.warning("Dropping frame type=\(frame.type): \(reason)")
                 return
             }
-            replayGuard.noteDecryptSuccess()
+            session.noteDecryptSuccess()
         }
 
         switch frameType {
@@ -790,19 +716,14 @@ final class RemoteClient {
         // re-handshook (restart): the old session key and seq space are dead.
         // Reset deliberately and re-handshake instead of silently dropping
         // every future frame as replayed.
-        if case let .resetSession(reason) = replayGuard.evaluateHello(
-            macNonce: nonce,
-            hasCryptoSession: crypto != nil
-        ) {
+        if case let .resetSession(reason) = session.evaluateHello(macNonce: nonce) {
             log.warning("Replay guard ordered session reset: \(reason)")
-            crypto = nil
+            session.resetForRehandshake()
             isConnected = false
             remoteSessionID = nil
-            seqCounter = 1
-            nonceIOS = CryptoUtils.randomBytes(count: 16)
             sendHello()
         }
-        nonceMac = nonce
+        session.setMacNonce(nonce)
         establishSessionIfPossible()
     }
 
@@ -812,24 +733,20 @@ final class RemoteClient {
             log.error("handlePairAccept: invalid macPub base64")
             return
         }
-        do {
-            macPublicKey = try Curve25519.KeyAgreement.PublicKey(rawRepresentation: keyData)
-        } catch {
-            log.error("handlePairAccept: invalid public key: \(error.localizedDescription)")
+        guard session.adoptMacPublicKey(keyData) else {
+            log.error("handlePairAccept: invalid public key")
             return
         }
-        hasReceivedPairAccept = true
+        session.markPairAcceptReceived()
         RemotePairingStore.saveMacPublicKey(keyData)
         persistTrustedIdentity(for: msg)
         // If we fell back from trust-based reconnect to explicit pairing, any
         // provisional session state must be discarded before re-deriving keys.
-        crypto = nil
+        session.invalidateSession(clearHandshakeMaterial: false)
+        session.clearMacNonce()
+        session.mintIOSNonce()
         isConnected = false
         remoteSessionID = nil
-        nonceMac = nil
-        nonceIOS = CryptoUtils.randomBytes(count: 16)
-        seqCounter = 1
-        replayGuard.reset()
         sendHello()
         establishSessionIfPossible()
     }
@@ -981,28 +898,16 @@ final class RemoteClient {
     // MARK: - Session Establishment
 
     private func establishSessionIfPossible() {
-        guard crypto == nil, let nonceIOS, let nonceMac else { return }
-        guard let macPub = macPublicKey ?? RemotePairingStore.loadMacPublicKey() else {
-            log.error("Session establishment failed: no Mac public key available")
+        switch session.establishIfPossible() {
+        case .notReady:
             return
+        case .failed(let message):
+            lastError = message
+            return
+        case .established:
+            break
         }
 
-        let shared: SharedSecret
-        do {
-            shared = try iosKey.sharedSecretFromKeyAgreement(with: macPub)
-        } catch {
-            log.error("Session establishment failed: key agreement: \(error.localizedDescription)")
-            lastError = "Key agreement failed"
-            return
-        }
-
-        guard let session = RemoteCryptoSession.create(sharedSecret: shared, nonceMac: nonceMac, nonceIOS: nonceIOS) else {
-            log.error("Session establishment failed: could not derive crypto session")
-            lastError = "Session derivation failed"
-            return
-        }
-
-        crypto = session
         reconnectBackoff.reset()
         isConnected = true
         cancelHandshakeTasks()
@@ -1021,11 +926,11 @@ final class RemoteClient {
 
     private func sendHello() {
         guard let pairing = pairingInfo else { return }
-        if nonceIOS == nil { nonceIOS = CryptoUtils.randomBytes(count: 16) }
+        let nonce = session.nonceIOS ?? session.mintIOSNonce()
         sendJSON(HelloPayload(
             deviceID: pairing.deviceID, role: "ios",
-            nonce: nonceIOS?.base64EncodedString() ?? "",
-            pubKeyFP: CryptoUtils.fingerprint(data: iosKey.publicKey.rawRepresentation),
+            nonce: nonce.base64EncodedString(),
+            pubKeyFP: session.iosKeyFingerprint,
             appVersion: Self.appVersion
         ), type: .hello, encrypt: false)
     }
@@ -1034,7 +939,7 @@ final class RemoteClient {
         guard let pairing = pairingInfo else { return }
         sendJSON(PairRequestPayload(
             deviceID: pairing.deviceID, pairingCode: pairing.pairingCode,
-            iosPub: iosKey.publicKey.rawRepresentation.base64EncodedString(),
+            iosPub: session.iosKey.publicKey.rawRepresentation.base64EncodedString(),
             iosName: deviceName
         ), type: .pairRequest, encrypt: false)
         if recordTelemetry {
@@ -1050,7 +955,7 @@ final class RemoteClient {
         if encrypt {
             _ = sendEncrypted(type: type, tabID: 0, payload: data)
         } else {
-            _ = send(RemoteFrame(type: type.rawValue, tabID: 0, seq: nextSeq(), payload: data))
+            _ = send(RemoteFrame(type: type.rawValue, tabID: 0, seq: session.nextSeq(), payload: data))
         }
     }
 
@@ -1079,7 +984,7 @@ final class RemoteClient {
         completion: (@MainActor (Bool) -> Void)? = nil
     ) -> Bool {
         guard let crypto else { return false }
-        let frame = RemoteFrame(type: type.rawValue, tabID: tabID, seq: nextSeq(), payload: payload)
+        let frame = RemoteFrame(type: type.rawValue, tabID: tabID, seq: session.nextSeq(), payload: payload)
         guard let encrypted = try? crypto.encrypt(frame: frame) else {
             log.error("Encryption failed for frame type \(type.rawValue)")
             return false
@@ -1092,26 +997,12 @@ final class RemoteClient {
         _ frame: RemoteFrame,
         completion: (@MainActor (Bool) -> Void)? = nil
     ) -> Bool {
-        guard webSocket != nil else { return false }
-        webSocket?.send(.data(frame.encode())) { error in
-            if let error {
-                log.error("WebSocket send failed: \(error.localizedDescription)")
-                Task { @MainActor [weak self] in
-                    self?.emitTelemetry(type: .sendFailed, status: "send_failed", message: error.localizedDescription)
-                    completion?(false)
-                }
-            } else if let completion {
-                Task { @MainActor in
-                    completion(true)
-                }
+        transport.send(frame.encode()) { [weak self] success, errorDescription in
+            if !success {
+                self?.emitTelemetry(type: .sendFailed, status: "send_failed", message: errorDescription)
             }
+            completion?(success)
         }
-        return true
-    }
-
-    private func nextSeq() -> UInt64 {
-        defer { seqCounter &+= 1 }
-        return seqCounter
     }
 
     private func performURLAction(_ action: RemoteActivityURLAction) -> Bool {
@@ -1164,11 +1055,11 @@ final class RemoteClient {
     }
 
     private func flushPendingApprovalResponses() {
-        guard !pendingApprovalResponses.isEmpty else { return }
+        guard approvalCoordinator.hasQueuedResponses else { return }
 
-        guard crypto != nil, webSocket != nil else {
+        guard crypto != nil, transport.isOpen else {
             status = .reconnectingToSendApproval
-            if let pairing = pairingInfo, webSocket == nil {
+            if let pairing = pairingInfo, !transport.isOpen {
                 connect(
                     pairing: pairing,
                     preserveApprovalsAndPrompts: true,
@@ -1178,39 +1069,35 @@ final class RemoteClient {
             return
         }
 
-        let queued = pendingApprovalResponses
-        for (requestID, approved) in queued {
-            guard approvalResponsesInFlight.contains(requestID) == false else { continue }
-            guard approvalRequest(for: requestID) != nil else {
-                pendingApprovalResponses.removeValue(forKey: requestID)
-                continue
-            }
-
-            approvalResponsesInFlight.insert(requestID)
+        // The coordinator owns the double-send/requeue/supersede bookkeeping;
+        // this method owns the side effects (UI states, reconnects, keepalive).
+        let sendable = approvalCoordinator.takeSendable { requestID in
+            approvalRequest(for: requestID) != nil
+        }
+        for (requestID, approved) in sendable {
             updateApprovalResponseState(requestID: requestID) { _ in .sending(approved) }
 
             sendApprovalResponse(requestID: requestID, approved: approved) { [weak self] success in
                 guard let self else { return }
-                self.approvalResponsesInFlight.remove(requestID)
-                guard self.pendingApprovalResponses[requestID] == approved else { return }
-
-                if success {
-                    self.pendingApprovalResponses.removeValue(forKey: requestID)
+                switch self.approvalCoordinator.resolveSend(requestID: requestID, approved: approved, success: success) {
+                case .completed(let approved):
                     self.completeApprovalResponse(requestID: requestID, approved: approved)
-                    if self.pendingApprovalResponses.isEmpty {
+                    if !self.approvalCoordinator.hasQueuedResponses {
                         self.backgroundKeepalive.end()
                     }
-                } else {
+                case .requeue(let approved):
                     self.updateApprovalResponseState(requestID: requestID) { _ in .queued(approved) }
                     self.lastError = "Approval response was not delivered. Chau7 will retry when the connection is ready."
                     self.status = .approvalQueued
-                    if let pairing = self.pairingInfo, self.webSocket == nil {
+                    if let pairing = self.pairingInfo, !self.transport.isOpen {
                         self.connect(
                             pairing: pairing,
                             preserveApprovalsAndPrompts: true,
                             preserveReconnectAttempt: true
                         )
                     }
+                case .superseded:
+                    break
                 }
             }
         }
@@ -1249,7 +1136,7 @@ final class RemoteClient {
     }
 
     private func canSendInput(to tabID: UInt32, allowUnlistedTab: Bool) -> Bool {
-        guard crypto != nil, webSocket != nil, tabID != 0 else { return false }
+        guard crypto != nil, transport.isOpen, tabID != 0 else { return false }
         return allowUnlistedTab || tabs.contains(where: { $0.tabID == tabID })
     }
 
@@ -1274,7 +1161,7 @@ final class RemoteClient {
     @discardableResult
     private func sendInput(_ text: String, appendNewline: Bool, to tabID: UInt32, allowUnlistedTab: Bool = false) -> Bool {
         guard !text.isEmpty else { return false }
-        guard crypto != nil, webSocket != nil else {
+        guard crypto != nil, transport.isOpen else {
             reportBlockedInput(
                 "Input not sent because the encrypted session is not ready yet.",
                 reason: "session_not_ready",
@@ -1312,7 +1199,7 @@ final class RemoteClient {
     }
 
     private func shouldSendPairRequest(for pairing: PairingInfo, attempt: Int) -> Bool {
-        guard !hasReceivedPairAccept else { return false }
+        guard !session.hasReceivedPairAccept else { return false }
         if !hasStoredTrust(for: pairing) {
             return true
         }
@@ -1324,7 +1211,7 @@ final class RemoteClient {
               let trustedIdentity = RemotePairingStore.loadTrustedIdentity() else {
             return false
         }
-        let currentIOSPub = iosKey.publicKey.rawRepresentation.base64EncodedString()
+        let currentIOSPub = session.iosKey.publicKey.rawRepresentation.base64EncodedString()
         return storedKey.rawRepresentation.base64EncodedString() == pairing.macPub &&
             trustedIdentity.deviceID == pairing.deviceID &&
             trustedIdentity.macPub == pairing.macPub &&
@@ -1339,7 +1226,7 @@ final class RemoteClient {
             TrustedPairingIdentity(
                 deviceID: pairing.deviceID,
                 macPub: accept.macPub,
-                iosPub: iosKey.publicKey.rawRepresentation.base64EncodedString()
+                iosPub: session.iosKey.publicKey.rawRepresentation.base64EncodedString()
             )
         )
     }

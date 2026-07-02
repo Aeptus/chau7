@@ -7,6 +7,11 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		001E223890DB19BD80601C0F /* RemoteTransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF25AD1B07A6E0D52C51D94E /* RemoteTransport.swift */; };
+		07C488E2F7DE512EF0FF2E13 /* ApprovalCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 03E6A0C2ED2794AA74FE8FE3 /* ApprovalCoordinator.swift */; };
+		1F7EE7F1364B8A481F1996E6 /* RemoteSessionController.swift in Sources */ = {isa = PBXBuildFile; fileRef = D864F8C560873AF51AA1BACA /* RemoteSessionController.swift */; };
+		2545ABCB46112B59A3E4184C /* RemoteModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A94D77131F2A00100A1B001 /* RemoteModels.swift */; };
+		3444751E8047E3029A044EF4 /* RemotePairingStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8BD2F8E828F4FF717280653F /* RemotePairingStore.swift */; };
 		4A94D77231F2A00100A1B001 /* RemoteModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A94D77131F2A00100A1B001 /* RemoteModels.swift */; };
 		4A94D77431F2A00100A1B001 /* TerminalView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A94D77331F2A00100A1B001 /* TerminalView.swift */; };
 		4A94D77631F2A00100A1B001 /* ApprovalsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A94D77531F2A00100A1B001 /* ApprovalsView.swift */; };
@@ -21,12 +26,16 @@
 		4A94D79331F2A00100A1B001 /* RemoteTerminalRendererStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A94D79431F2A00100A1B001 /* RemoteTerminalRendererStore.swift */; };
 		4A94D79531F2A00100A1B001 /* RemoteTerminalRendererView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A94D79631F2A00100A1B001 /* RemoteTerminalRendererView.swift */; };
 		58B00A5CA2C678BDB76285BD /* RemoteConnectionStatus.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE2493E228956C501D26B32E /* RemoteConnectionStatus.swift */; };
+		64F5859B561CE7AF7EDB6603 /* RemoteClientCollaboratorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 840F72AE8D478EBA71D05E4D /* RemoteClientCollaboratorTests.swift */; };
+		65E060C5E28959F2B6FA70E9 /* ApprovalCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 03E6A0C2ED2794AA74FE8FE3 /* ApprovalCoordinator.swift */; };
 		72AC6A6715100B2F9E7E96D0 /* BackgroundKeepalive.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0CB472EB9A0B02432B4270F /* BackgroundKeepalive.swift */; };
 		84B3034D2F3107BB00A7D19E /* KeychainStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 84B303492F3107BB00A7D19E /* KeychainStore.swift */; };
 		84B3034E2F3107BB00A7D19E /* RemoteCrypto.swift in Sources */ = {isa = PBXBuildFile; fileRef = 84B3034C2F3107BB00A7D19E /* RemoteCrypto.swift */; };
 		84B3034F2F3107BB00A7D19E /* PairingSheetView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 84B3034A2F3107BB00A7D19E /* PairingSheetView.swift */; };
 		84B303502F3107BB00A7D19E /* Chau7RemoteApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 84B303482F3107BB00A7D19E /* Chau7RemoteApp.swift */; };
 		84B303512F3107BB00A7D19E /* RemoteClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 84B3034B2F3107BB00A7D19E /* RemoteClient.swift */; };
+		AB4EBE57EAE8A9F53826866D /* RemotePairingStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8BD2F8E828F4FF717280653F /* RemotePairingStore.swift */; };
+		AFB28EFD06FD3AC670A01E92 /* RemoteTransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF25AD1B07A6E0D52C51D94E /* RemoteTransport.swift */; };
 		D1A6D1A6D1A6D1A6D1A60002 /* DiagnosticsLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A6D1A6D1A6D1A6D1A60001 /* DiagnosticsLog.swift */; };
 		D1A6D1A6D1A6D1A6D1A60004 /* DiagnosticsLogView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A6D1A6D1A6D1A6D1A60003 /* DiagnosticsLogView.swift */; };
 		D1A6D1A6D1A6D1A6D1A61002 /* QRScannerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A6D1A6D1A6D1A6D1A61001 /* QRScannerView.swift */; };
@@ -35,13 +44,22 @@
 		D1A6D1A6D1A6D1A6D1A62002 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = D1A6D1A6D1A6D1A6D1A62001 /* Assets.xcassets */; };
 		D1A6D1A6D1A6D1A6D1A62004 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = D1A6D1A6D1A6D1A6D1A62003 /* PrivacyInfo.xcprivacy */; };
 		D1A6D1A6D1A6D1A6D1A62006 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = D1A6D1A6D1A6D1A6D1A62005 /* PrivacyInfo.xcprivacy */; };
-		AB4EBE57EAE8A9F53826866D /* RemotePairingStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8BD2F8E828F4FF717280653F /* RemotePairingStore.swift */; };
+		D7392D0C27ECC48E5D97EF8C /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 999434D3389839BE95680D82 /* Foundation.framework */; };
 		D82AA425310A4B9696EE10FB /* Chau7Core in Frameworks */ = {isa = PBXBuildFile; productRef = A34D4B59796146F1BDF72F8E /* Chau7Core */; };
 		D86299BBE48E13196F964AD2 /* RemoteNotificationScheduler.swift in Sources */ = {isa = PBXBuildFile; fileRef = A39EFFF0102C0B5A1397EA93 /* RemoteNotificationScheduler.swift */; };
+		E570863FEAD1BF0245EC079F /* RemoteSessionController.swift in Sources */ = {isa = PBXBuildFile; fileRef = D864F8C560873AF51AA1BACA /* RemoteSessionController.swift */; };
 		F1A4000131F2A00100A1B001 /* Chau7Core in Frameworks */ = {isa = PBXBuildFile; productRef = F1A4000031F2A00100A1B001 /* Chau7Core */; };
+		FC59CDC1416B270F8A34386F /* KeychainStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 84B303492F3107BB00A7D19E /* KeychainStore.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
+		94122C39AE2AA940B85115AE /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 84B303322F31076300A7D19E /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 84B303392F31076300A7D19E;
+			remoteInfo = Chau7RemoteApp;
+		};
 		F1A4000631F2A00100A1B001 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = 84B303322F31076300A7D19E /* Project object */;
@@ -66,6 +84,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		03E6A0C2ED2794AA74FE8FE3 /* ApprovalCoordinator.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ApprovalCoordinator.swift; sourceTree = "<group>"; };
 		4A94D77131F2A00100A1B001 /* RemoteModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteModels.swift; sourceTree = "<group>"; };
 		4A94D77331F2A00100A1B001 /* TerminalView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalView.swift; sourceTree = "<group>"; };
 		4A94D77531F2A00100A1B001 /* ApprovalsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ApprovalsView.swift; sourceTree = "<group>"; };
@@ -79,11 +98,19 @@
 		4A94D79231F2A00100A1B001 /* RemoteRustTerminalPlayback.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteRustTerminalPlayback.swift; sourceTree = "<group>"; };
 		4A94D79431F2A00100A1B001 /* RemoteTerminalRendererStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteTerminalRendererStore.swift; sourceTree = "<group>"; };
 		4A94D79631F2A00100A1B001 /* RemoteTerminalRendererView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteTerminalRendererView.swift; sourceTree = "<group>"; };
+		7B157D1D2094861EF7B957EF /* Chau7RemoteAppTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = Chau7RemoteAppTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		840F72AE8D478EBA71D05E4D /* RemoteClientCollaboratorTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = RemoteClientCollaboratorTests.swift; sourceTree = "<group>"; };
 		84B3033A2F31076300A7D19E /* Chau7RemoteApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Chau7RemoteApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		84B303482F3107BB00A7D19E /* Chau7RemoteApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Chau7RemoteApp.swift; sourceTree = "<group>"; };
 		84B303492F3107BB00A7D19E /* KeychainStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainStore.swift; sourceTree = "<group>"; };
 		84B3034A2F3107BB00A7D19E /* PairingSheetView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PairingSheetView.swift; sourceTree = "<group>"; };
 		84B3034B2F3107BB00A7D19E /* RemoteClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteClient.swift; sourceTree = "<group>"; };
+		84B3034C2F3107BB00A7D19E /* RemoteCrypto.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteCrypto.swift; sourceTree = "<group>"; };
+		8BD2F8E828F4FF717280653F /* RemotePairingStore.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = RemotePairingStore.swift; sourceTree = "<group>"; };
+		999434D3389839BE95680D82 /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS18.0.sdk/System/Library/Frameworks/Foundation.framework; sourceTree = DEVELOPER_DIR; };
+		A39EFFF0102C0B5A1397EA93 /* RemoteNotificationScheduler.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = RemoteNotificationScheduler.swift; sourceTree = "<group>"; };
+		BF25AD1B07A6E0D52C51D94E /* RemoteTransport.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = RemoteTransport.swift; sourceTree = "<group>"; };
+		D0CB472EB9A0B02432B4270F /* BackgroundKeepalive.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = BackgroundKeepalive.swift; sourceTree = "<group>"; };
 		D1A6D1A6D1A6D1A6D1A60001 /* DiagnosticsLog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiagnosticsLog.swift; sourceTree = "<group>"; };
 		D1A6D1A6D1A6D1A6D1A60003 /* DiagnosticsLogView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiagnosticsLogView.swift; sourceTree = "<group>"; };
 		D1A6D1A6D1A6D1A6D1A61001 /* QRScannerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QRScannerView.swift; sourceTree = "<group>"; };
@@ -92,10 +119,7 @@
 		D1A6D1A6D1A6D1A6D1A62001 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		D1A6D1A6D1A6D1A6D1A62003 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		D1A6D1A6D1A6D1A6D1A62005 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
-		84B3034C2F3107BB00A7D19E /* RemoteCrypto.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteCrypto.swift; sourceTree = "<group>"; };
-		8BD2F8E828F4FF717280653F /* RemotePairingStore.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = RemotePairingStore.swift; sourceTree = "<group>"; };
-		A39EFFF0102C0B5A1397EA93 /* RemoteNotificationScheduler.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = RemoteNotificationScheduler.swift; sourceTree = "<group>"; };
-		D0CB472EB9A0B02432B4270F /* BackgroundKeepalive.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = BackgroundKeepalive.swift; sourceTree = "<group>"; };
+		D864F8C560873AF51AA1BACA /* RemoteSessionController.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = RemoteSessionController.swift; sourceTree = "<group>"; };
 		EE2493E228956C501D26B32E /* RemoteConnectionStatus.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = RemoteConnectionStatus.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -110,6 +134,14 @@
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
+		5C6EE6B1D4FE402B6EB838AD /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				D7392D0C27ECC48E5D97EF8C /* Foundation.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		84B303372F31076300A7D19E /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
@@ -129,6 +161,14 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		7D6B7F30B72EF77ED1654668 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				862EF429504048F489655666 /* iOS */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
 		84B303312F31076300A7D19E = {
 			isa = PBXGroup;
 			children = (
@@ -161,6 +201,11 @@
 				EE2493E228956C501D26B32E /* RemoteConnectionStatus.swift */,
 				A39EFFF0102C0B5A1397EA93 /* RemoteNotificationScheduler.swift */,
 				8BD2F8E828F4FF717280653F /* RemotePairingStore.swift */,
+				BF25AD1B07A6E0D52C51D94E /* RemoteTransport.swift */,
+				D864F8C560873AF51AA1BACA /* RemoteSessionController.swift */,
+				03E6A0C2ED2794AA74FE8FE3 /* ApprovalCoordinator.swift */,
+				7D6B7F30B72EF77ED1654668 /* Frameworks */,
+				8E5F79E5016F2F5A3706DCED /* Chau7RemoteAppTests */,
 			);
 			sourceTree = "<group>";
 		};
@@ -169,8 +214,26 @@
 			children = (
 				84B3033A2F31076300A7D19E /* Chau7RemoteApp.app */,
 				4A94D78931F2A00100A1B001 /* Chau7RemoteWidget.appex */,
+				7B157D1D2094861EF7B957EF /* Chau7RemoteAppTests.xctest */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		862EF429504048F489655666 /* iOS */ = {
+			isa = PBXGroup;
+			children = (
+				999434D3389839BE95680D82 /* Foundation.framework */,
+			);
+			name = iOS;
+			sourceTree = "<group>";
+		};
+		8E5F79E5016F2F5A3706DCED /* Chau7RemoteAppTests */ = {
+			isa = PBXGroup;
+			children = (
+				840F72AE8D478EBA71D05E4D /* RemoteClientCollaboratorTests.swift */,
+			);
+			name = Chau7RemoteAppTests;
+			path = ../Chau7RemoteAppTests;
 			sourceTree = "<group>";
 		};
 		F1A4000831F2A00100A1B001 /* Chau7RemoteWidget */ = {
@@ -211,6 +274,26 @@
 			productName = Chau7RemoteApp;
 			productReference = 84B3033A2F31076300A7D19E /* Chau7RemoteApp.app */;
 			productType = "com.apple.product-type.application";
+		};
+		BCC3D6AF846C994D3AE77D91 /* Chau7RemoteAppTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 895430F9DF893B92D1BCFBAE /* Build configuration list for PBXNativeTarget "Chau7RemoteAppTests" */;
+			buildPhases = (
+				50DBE53819A4B5A761D50FF7 /* Sources */,
+				5C6EE6B1D4FE402B6EB838AD /* Frameworks */,
+				4F58F942814CBEABC72792EA /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = Chau7RemoteAppTests;
+			packageProductDependencies = (
+				547262E303BCF82220E49C0A /* Chau7Core */,
+			);
+			productName = Chau7RemoteAppTests;
+			productReference = 7B157D1D2094861EF7B957EF /* Chau7RemoteAppTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
 		};
 		F1A4000531F2A00100A1B001 /* Chau7RemoteWidget */ = {
 			isa = PBXNativeTarget;
@@ -269,11 +352,19 @@
 			targets = (
 				84B303392F31076300A7D19E /* Chau7RemoteApp */,
 				F1A4000531F2A00100A1B001 /* Chau7RemoteWidget */,
+				BCC3D6AF846C994D3AE77D91 /* Chau7RemoteAppTests */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
+		4F58F942814CBEABC72792EA /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		84B303382F31076300A7D19E /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -318,6 +409,20 @@
 /* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+		50DBE53819A4B5A761D50FF7 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				64F5859B561CE7AF7EDB6603 /* RemoteClientCollaboratorTests.swift in Sources */,
+				AFB28EFD06FD3AC670A01E92 /* RemoteTransport.swift in Sources */,
+				E570863FEAD1BF0245EC079F /* RemoteSessionController.swift in Sources */,
+				65E060C5E28959F2B6FA70E9 /* ApprovalCoordinator.swift in Sources */,
+				3444751E8047E3029A044EF4 /* RemotePairingStore.swift in Sources */,
+				FC59CDC1416B270F8A34386F /* KeychainStore.swift in Sources */,
+				2545ABCB46112B59A3E4184C /* RemoteModels.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		84B303362F31076300A7D19E /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -346,6 +451,9 @@
 				58B00A5CA2C678BDB76285BD /* RemoteConnectionStatus.swift in Sources */,
 				D86299BBE48E13196F964AD2 /* RemoteNotificationScheduler.swift in Sources */,
 				AB4EBE57EAE8A9F53826866D /* RemotePairingStore.swift in Sources */,
+				001E223890DB19BD80601C0F /* RemoteTransport.swift in Sources */,
+				1F7EE7F1364B8A481F1996E6 /* RemoteSessionController.swift in Sources */,
+				07C488E2F7DE512EF0FF2E13 /* ApprovalCoordinator.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -580,6 +688,35 @@
 			};
 			name = Release;
 		};
+		98E974943214E677F2830D89 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				CODE_SIGNING_ALLOWED = NO;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.chau7.remote.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 5.0;
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		D7D2D028EE855653AC8A6EC1 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				CODE_SIGNING_ALLOWED = NO;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.chau7.remote.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
 		F1A4000D31F2A00100A1B001 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -657,6 +794,15 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
+		895430F9DF893B92D1BCFBAE /* Build configuration list for PBXNativeTarget "Chau7RemoteAppTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				98E974943214E677F2830D89 /* Release */,
+				D7D2D028EE855653AC8A6EC1 /* Debug */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 		F1A4001131F2A00100A1B001 /* Build configuration list for PBXNativeTarget "Chau7RemoteWidget" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
@@ -676,6 +822,11 @@
 /* End XCLocalSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
+		547262E303BCF82220E49C0A /* Chau7Core */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 5C2E7B15EB3E402A85885103 /* XCLocalSwiftPackageReference "chau7-macos" */;
+			productName = Chau7Core;
+		};
 		A34D4B59796146F1BDF72F8E /* Chau7Core */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = 5C2E7B15EB3E402A85885103 /* XCLocalSwiftPackageReference "chau7-macos" */;
