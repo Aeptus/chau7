@@ -12,6 +12,7 @@ final class MagiModelsTests: XCTestCase {
         XCTAssertTrue(config.evidenceRequiresApproval)
         XCTAssertTrue(config.deadlockExtraRoundEnabled)
         XCTAssertTrue(config.vetoBlocksVerdict)
+        XCTAssertTrue(config.autoCloseAgentTabs)
     }
 
     func testRunIDIsStableForInjectedInputs() throws {

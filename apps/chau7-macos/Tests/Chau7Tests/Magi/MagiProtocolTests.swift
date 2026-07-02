@@ -2,6 +2,24 @@ import XCTest
 @testable import Chau7Core
 
 final class MagiProtocolTests: XCTestCase {
+    func testTabTitleFormatterUsesCouncilNameAndSafeFallback() {
+        XCTAssertEqual(
+            MagiTabTitleFormatter.title(memberID: .melchior, displayName: " Melchior "),
+            "MAGI - Melchior"
+        )
+        XCTAssertEqual(
+            MagiTabTitleFormatter.title(memberID: .balthasar, displayName: "   "),
+            "MAGI - Balthasar"
+        )
+
+        let longName = String(repeating: "x", count: 80)
+        let title = MagiTabTitleFormatter.title(memberID: .casper, displayName: longName)
+
+        XCTAssertTrue(title.hasPrefix("MAGI - "))
+        XCTAssertEqual(title.count, 55)
+        XCTAssertTrue(title.hasSuffix("..."))
+    }
+
     func testIndependentPromptForbidsSiblingTabAccess() {
         let member = MagiMember(
             id: .melchior,

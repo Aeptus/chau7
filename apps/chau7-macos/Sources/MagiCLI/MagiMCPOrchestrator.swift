@@ -74,6 +74,7 @@ struct MagiMCPOrchestrator {
                 "evidence_requires_approval": "true",
                 "web_access_allowed": String(config.webAccessAllowed),
                 "question_kind": questionKind.rawValue,
+                "auto_close_agent_tabs": String(config.autoCloseAgentTabs),
                 "verdict_defaults": "majority,equal_weights,one_extra_round_on_deadlock,veto_blocks",
                 "artifact_root": artifactRoot,
                 "technical_log": artifactBundle.technicalLogPath,
@@ -92,6 +93,7 @@ struct MagiMCPOrchestrator {
             ]
         )
 
+        var sessions: [MagiMemberTab] = []
         do {
             try writeCheckpoint(&run, stage: "initialized", technicalLog: technicalLog)
             try throwIfInterrupted(stage: "startup")
@@ -110,7 +112,6 @@ struct MagiMCPOrchestrator {
 
             announceStage("PHASE 0 // COUNCIL ONLINE", "Three isolated agents enter the chamber.")
             technicalLog.record("council_launch_started", stage: "launch")
-            var sessions: [MagiMemberTab] = []
             for member in council.members {
                 try throwIfInterrupted(stage: "launching council")
                 let prompt = MagiPromptBuilder.independentAnalysisPrompt(
@@ -137,9 +138,22 @@ struct MagiMCPOrchestrator {
             run.metadata["member_tab_count"] = String(sessions.count)
             for session in sessions {
                 run.metadata["member_tab_\(session.member.id.rawValue)"] = session.tabID
+                run.metadata["member_tab_title_\(session.member.id.rawValue)"] = MagiTabTitleFormatter.title(
+                    memberID: session.member.id,
+                    displayName: session.member.persona.displayName
+                )
             }
             run.metadata["member_tabs"] = sessions
                 .map { "\($0.member.id.rawValue)=\($0.tabID)" }
+                .joined(separator: ",")
+            run.metadata["member_tab_titles"] = sessions
+                .map {
+                    let title = MagiTabTitleFormatter.title(
+                        memberID: $0.member.id,
+                        displayName: $0.member.persona.displayName
+                    )
+                    return "\($0.member.id.rawValue)=\(title)"
+                }
                 .joined(separator: ",")
             technicalLog.record(
                 "council_launch_completed",
@@ -417,16 +431,22 @@ struct MagiMCPOrchestrator {
             printLine("Artifacts: \(bundle.rootDirectory)")
             printLine("Technical log: \(technicalLog.path)")
 
+            closeMemberTabs(
+                sessions,
+                config: config,
+                technicalLog: technicalLog,
+                outcome: "completed"
+            )
             return run
         } catch {
+            let category = failureCategory(for: error)
             technicalLog.record(
                 "run_failed",
                 stage: failureStage(for: error),
                 level: "error",
                 message: error.localizedDescription,
-                fields: ["category": failureCategory(for: error).rawValue]
+                fields: ["category": category.rawValue]
             )
-            let category = failureCategory(for: error)
             if category == .interrupted {
                 MagiRunStateMachine.markInterrupted(
                     &run,
@@ -454,6 +474,13 @@ struct MagiMCPOrchestrator {
                 printLine("Artifacts: unavailable")
                 printLine("Technical log: \(technicalLog.path)")
             }
+            closeMemberTabs(
+                sessions,
+                config: config,
+                technicalLog: technicalLog,
+                outcome: run.status.rawValue,
+                allowMCPCalls: shouldAttemptMemberTabCleanup(after: category)
+            )
             throw error
         }
     }
@@ -631,6 +658,11 @@ struct MagiMCPOrchestrator {
         guard let tabID = agent["tab_id"] as? String else {
             throw MagiMCPOrchestratorError.missingToolField(tool: "agent_launch", field: "agents[0].tab_id")
         }
+        let tabTitle = renameMemberTab(
+            tabID: tabID,
+            member: member,
+            technicalLog: technicalLog
+        )
         let launchStatus = agent["status"] as? String ?? "missing"
         let promptStatus = agent["prompt"] as? String ?? "missing"
         var promptInputVisible = boolField(agent["prompt_input_visible"])
@@ -665,6 +697,7 @@ struct MagiMCPOrchestrator {
             fields: [
                 "provider": member.provider,
                 "agent_command": command,
+                "tab_title": tabTitle,
                 "status": launchStatus,
                 "prompt_status": promptStatus,
                 "prompt_input_visible": String(promptInputVisible),
@@ -703,6 +736,42 @@ struct MagiMCPOrchestrator {
             )
         }
         return tabID
+    }
+
+    @discardableResult
+    private func renameMemberTab(
+        tabID: String,
+        member: MagiMember,
+        technicalLog: MagiTechnicalLog
+    ) -> String {
+        let title = MagiTabTitleFormatter.title(
+            memberID: member.id,
+            displayName: member.persona.displayName
+        )
+        do {
+            _ = try client.callTool(name: "tab_rename", arguments: [
+                "tab_id": tabID,
+                "title": title
+            ])
+            technicalLog.record(
+                "member_tab_renamed",
+                stage: "launch",
+                memberID: member.id,
+                tabID: tabID,
+                fields: ["title": title]
+            )
+        } catch {
+            technicalLog.record(
+                "member_tab_rename_failed",
+                stage: "launch",
+                level: "warning",
+                memberID: member.id,
+                tabID: tabID,
+                message: error.localizedDescription,
+                fields: ["title": title]
+            )
+        }
+        return title
     }
 
     private func verifyLaunchedMemberPrompt(
@@ -1450,6 +1519,104 @@ struct MagiMCPOrchestrator {
                 message: error.localizedDescription,
                 fields: ["collector_id": collectorID]
             )
+        }
+    }
+
+    private func closeMemberTabs(
+        _ sessions: [MagiMemberTab],
+        config: MagiConfig,
+        technicalLog: MagiTechnicalLog,
+        outcome: String,
+        allowMCPCalls: Bool = true
+    ) {
+        guard !sessions.isEmpty else { return }
+        guard config.autoCloseAgentTabs else {
+            technicalLog.record(
+                "member_tab_cleanup_skipped",
+                stage: "cleanup",
+                fields: [
+                    "reason": "disabled",
+                    "outcome": outcome,
+                    "member_tab_count": String(sessions.count)
+                ]
+            )
+            return
+        }
+        guard allowMCPCalls else {
+            technicalLog.record(
+                "member_tab_cleanup_skipped",
+                stage: "cleanup",
+                level: "warning",
+                fields: [
+                    "reason": "control_plane_unavailable",
+                    "outcome": outcome,
+                    "member_tab_count": String(sessions.count)
+                ]
+            )
+            return
+        }
+
+        for session in sessions {
+            closeMemberTab(
+                session,
+                technicalLog: technicalLog,
+                outcome: outcome
+            )
+        }
+    }
+
+    private func closeMemberTab(
+        _ session: MagiMemberTab,
+        technicalLog: MagiTechnicalLog,
+        outcome: String
+    ) {
+        do {
+            _ = try client.callTool(name: "tab_close", arguments: [
+                "tab_id": session.tabID,
+                "force": true
+            ])
+            technicalLog.record(
+                "member_tab_closed",
+                stage: "cleanup",
+                memberID: session.member.id,
+                tabID: session.tabID,
+                fields: [
+                    "outcome": outcome,
+                    "title": MagiTabTitleFormatter.title(
+                        memberID: session.member.id,
+                        displayName: session.member.persona.displayName
+                    )
+                ]
+            )
+        } catch {
+            technicalLog.record(
+                "member_tab_close_failed",
+                stage: "cleanup",
+                level: "warning",
+                memberID: session.member.id,
+                tabID: session.tabID,
+                message: error.localizedDescription,
+                fields: ["outcome": outcome]
+            )
+        }
+    }
+
+    private func shouldAttemptMemberTabCleanup(after category: MagiRunFailureCategory) -> Bool {
+        switch category {
+        case .chau7Unavailable, .mcpSocketMissing:
+            return false
+        case .providerUnavailable,
+             .tabCreationFailed,
+             .agentTimeout,
+             .malformedJSON,
+             .evidenceDenied,
+             .veto,
+             .deadlock,
+             .interrupted,
+             .partialArtifacts,
+             .artifactWriteFailed,
+             .unknown:
+            return true
         }
     }
 

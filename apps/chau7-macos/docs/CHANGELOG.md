@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - **MAGI Deliberation Transcript**: Live `magi ask` output now renders the run as council phases — council online, private positions, cross-examination, fact gathering, facts in motion, final vote, and verdict — with compact member lines instead of raw internal request noise. Fact gathering is framed as approved deliberation material, vague evidence requests without runnable collectors are recorded as `not_actionable`, and the agent prompts now discourage evidence requests for subjective questions unless concrete external facts could change the vote.
+- **MAGI Council Tab Lifecycle**: Council agent tabs are renamed to `MAGI - Melchior`, `MAGI - Balthasar`, and `MAGI - Casper` as they launch, then auto-close after the run is checkpointed. A new `auto_close_agent_tabs` config setting, exposed in the MAGI config panel, keeps tabs open for debugging when disabled.
 - **Completion tab highlight persists until you open the tab**: The green "finished" tab highlight no longer auto-clears after ~30s. When an agent finishes, its tab stays highlighted until you actually open that tab (opening a tab clears its non-persistent highlight), matching how permission highlights already stay until the prompt is resolved. The per-trigger default for the `finished` trigger now uses `autoClearSeconds: 0`, and a one-time migration (`notification.finished.persistUntilOpen.v1`) flips the old 30s default for existing users while leaving custom style configurations untouched.
 
 ### Added

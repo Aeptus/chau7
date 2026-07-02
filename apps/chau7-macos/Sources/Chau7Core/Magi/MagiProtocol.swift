@@ -35,6 +35,24 @@ public struct MagiProtocolMarkers: Codable, Equatable, Sendable {
     }
 }
 
+// MARK: - Tab Titles
+
+public enum MagiTabTitleFormatter {
+    private static let prefix = "MAGI - "
+    private static let maxNameLength = 48
+
+    public static func title(memberID: MagiMemberID, displayName: String) -> String {
+        let trimmed = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let name = clipped(trimmed.isEmpty ? memberID.displayName : trimmed)
+        return "\(prefix)\(name)"
+    }
+
+    private static func clipped(_ value: String) -> String {
+        guard value.count > maxNameLength else { return value }
+        return "\(value.prefix(maxNameLength - 3))..."
+    }
+}
+
 // MARK: - Prompt Builder
 
 public enum MagiPromptBuilder {

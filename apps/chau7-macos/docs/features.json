@@ -119,6 +119,13 @@
     "differentiator": "Yes"
   },
   {
+    "category": "AI Integration",
+    "feature": "MAGI Council Tab Lifecycle",
+    "description": "MAGI names each council agent tab for its member during launch and auto-closes council tabs after checkpointing, with auto_close_agent_tabs available to keep tabs open for debugging",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
     "category": "API Analytics",
     "feature": "Echo-Only Input Latency",
     "description": "Per-session input latency measures keystroke-to-echo responsiveness only; command submission (Enter) is excluded for every session so a slow command's runtime is never miscounted as UI lag",

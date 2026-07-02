@@ -64,6 +64,7 @@ final class MagiFirstRunTests: XCTestCase {
         XCTAssertEqual(config.members[.casper]?.provider, "gemini")
         XCTAssertEqual(config.members[.casper]?.reasoning, .max)
         XCTAssertEqual(config.fallbackStrategy, .duplicate)
+        XCTAssertTrue(config.autoCloseAgentTabs)
     }
 
     func testFallbackDuplicationUsesFirstPassingSelectedProvider() {
@@ -120,7 +121,41 @@ final class MagiFirstRunTests: XCTestCase {
         XCTAssertTrue(content.contains("[members.melchior]"))
         XCTAssertTrue(content.contains("provider = \"codex\""))
         XCTAssertTrue(content.contains("class = \"strongest\""))
+        XCTAssertTrue(content.contains("auto_close_agent_tabs = true"))
         XCTAssertEqual(decoded, config)
+    }
+
+    func testConfigTOMLCodecDefaultsAutoCloseForOlderConfigs() throws {
+        let content = """
+        schema_version = 1
+        default_reasoning = "max"
+        fallback_strategy = "duplicate"
+
+        [members.melchior]
+        provider = "codex"
+        class = "balanced"
+        reasoning = "max"
+        """
+
+        let decoded = try MagiConfigTOMLCodec.decode(content)
+
+        XCTAssertTrue(decoded.autoCloseAgentTabs)
+    }
+
+    func testConfigTOMLCodecReadsAutoCloseAgentTabs() throws {
+        let content = """
+        schema_version = 1
+        auto_close_agent_tabs = false
+
+        [members.melchior]
+        provider = "codex"
+        class = "balanced"
+        reasoning = "max"
+        """
+
+        let decoded = try MagiConfigTOMLCodec.decode(content)
+
+        XCTAssertFalse(decoded.autoCloseAgentTabs)
     }
 
     func testConfigTOMLCodecRejectsInvalidClass() {

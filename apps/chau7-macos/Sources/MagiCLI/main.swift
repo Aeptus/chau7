@@ -399,10 +399,14 @@ struct MagiCLIRunner {
                     config.vetoBlocksVerdict.toggle()
                     try saveConfig(config)
                     writeSaved()
-                case "7", "doctor":
+                case "7", "tabs", "auto-close", "autoclose":
+                    config.autoCloseAgentTabs.toggle()
+                    try saveConfig(config)
+                    writeSaved()
+                case "8", "doctor":
                     writeStdout()
                     _ = runDoctor()
-                case "8", "personas":
+                case "9", "personas":
                     _ = try MagiFirstRunInstaller.install(
                         config: config,
                         paths: paths,
@@ -413,7 +417,7 @@ struct MagiCLIRunner {
                 case "help", "?":
                     continue
                 default:
-                    writeStdout("Choose 1-8, all, member, web, evidence, deadlock, veto, doctor, personas, or quit.")
+                    writeStdout("Choose 1-9, all, member, web, evidence, deadlock, veto, tabs, doctor, personas, or quit.")
                 }
             }
         } catch {
@@ -434,6 +438,7 @@ struct MagiCLIRunner {
         writeStdout("- evidence_requires_approval: \(boolLabel(config.evidenceRequiresApproval))")
         writeStdout("- deadlock_extra_round_enabled: \(boolLabel(config.deadlockExtraRoundEnabled))")
         writeStdout("- veto_blocks_verdict: \(boolLabel(config.vetoBlocksVerdict))")
+        writeStdout("- auto_close_agent_tabs: \(boolLabel(config.autoCloseAgentTabs))")
         writeStdout()
         writeStdout("Actions")
         writeStdout("  1. Use one provider/class for all members")
@@ -442,8 +447,9 @@ struct MagiCLIRunner {
         writeStdout("  4. Toggle evidence approval")
         writeStdout("  5. Toggle deadlock extra round")
         writeStdout("  6. Toggle veto blocks verdict")
-        writeStdout("  7. Run doctor")
-        writeStdout("  8. Check/create persona files")
+        writeStdout("  7. Toggle agent tab auto-close")
+        writeStdout("  8. Run doctor")
+        writeStdout("  9. Check/create persona files")
         writeMuted("Press return, q, or back to close.")
     }
 

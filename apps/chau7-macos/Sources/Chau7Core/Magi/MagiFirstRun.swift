@@ -115,6 +115,7 @@ public enum MagiFirstRunPlanner {
             evidenceRequiresApproval: true,
             deadlockExtraRoundEnabled: true,
             vetoBlocksVerdict: true,
+            autoCloseAgentTabs: true,
             members: members
         )
     }
@@ -196,6 +197,7 @@ public enum MagiConfigTOMLCodec {
             "evidence_requires_approval = \(config.evidenceRequiresApproval)",
             "deadlock_extra_round_enabled = \(config.deadlockExtraRoundEnabled)",
             "veto_blocks_verdict = \(config.vetoBlocksVerdict)",
+            "auto_close_agent_tabs = \(config.autoCloseAgentTabs)",
             ""
         ]
 
@@ -266,6 +268,7 @@ public enum MagiConfigTOMLCodec {
             evidenceRequiresApproval: bool(global["evidence_requires_approval"]) ?? true,
             deadlockExtraRoundEnabled: bool(global["deadlock_extra_round_enabled"]) ?? bool(global["deadlock_extra_round"]) ?? true,
             vetoBlocksVerdict: bool(global["veto_blocks_verdict"]) ?? bool(global["veto_blocks"]) ?? true,
+            autoCloseAgentTabs: bool(global["auto_close_agent_tabs"]) ?? bool(global["close_agent_tabs"]) ?? true,
             members: members
         )
     }

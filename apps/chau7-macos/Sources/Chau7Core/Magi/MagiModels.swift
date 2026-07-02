@@ -100,6 +100,7 @@ public struct MagiConfig: Codable, Equatable, Sendable {
     public var evidenceRequiresApproval: Bool
     public var deadlockExtraRoundEnabled: Bool
     public var vetoBlocksVerdict: Bool
+    public var autoCloseAgentTabs: Bool
     public var members: [MagiMemberID: MagiMemberConfiguration]
 
     public init(
@@ -111,6 +112,7 @@ public struct MagiConfig: Codable, Equatable, Sendable {
         evidenceRequiresApproval: Bool = true,
         deadlockExtraRoundEnabled: Bool = true,
         vetoBlocksVerdict: Bool = true,
+        autoCloseAgentTabs: Bool = true,
         members: [MagiMemberID: MagiMemberConfiguration] = [:]
     ) {
         self.schemaVersion = schemaVersion
@@ -121,6 +123,7 @@ public struct MagiConfig: Codable, Equatable, Sendable {
         self.evidenceRequiresApproval = evidenceRequiresApproval
         self.deadlockExtraRoundEnabled = deadlockExtraRoundEnabled
         self.vetoBlocksVerdict = vetoBlocksVerdict
+        self.autoCloseAgentTabs = autoCloseAgentTabs
         self.members = members
     }
 }
