@@ -333,7 +333,7 @@ private extension FeatureSettings {
                 "style": "custom",
                 "customColor": "green",
                 "borderWidth": "2",
-                "autoClearSeconds": "30"
+                "autoClearSeconds": "0"
             ])
         ]
 
@@ -2844,6 +2844,44 @@ final class FeatureSettings {
                 defaults.set(data, forKey: Keys.triggerActionBindings)
             }
             defaults.set(true, forKey: permissionPersistenceMigrationKey)
+        }
+
+        // One-time migration: the "finished" (task complete) tab highlight
+        // originally auto-cleared after 30s, so the green completion border
+        // vanished before the user returned to the tab. The intended behavior
+        // is to keep the highlight until the user actually opens the tab — a
+        // non-persistent style is already cleared on select, so dropping the
+        // auto-clear timer (autoClearSeconds -> 0) is all that's needed.
+        // Migrate only the literal old default shape so intentional custom
+        // configurations remain untouched.
+        let finishedPersistMigrationKey = "notification.finished.persistUntilOpen.v1"
+        if !defaults.bool(forKey: finishedPersistMigrationKey) {
+            var migrated = false
+            for triggerKey in ["claude_code.finished", "codex.finished"] {
+                guard var actions = normalizedBindings[triggerKey] else { continue }
+                for index in actions.indices where actions[index].actionType == .styleTab {
+                    let cfg = actions[index].config
+                    guard cfg["style"] == "custom",
+                          cfg["customColor"] == "green",
+                          cfg["borderWidth"] == "2",
+                          cfg["autoClearSeconds"] == "30" else { continue }
+                    var migratedCfg = cfg
+                    migratedCfg["autoClearSeconds"] = "0"
+                    actions[index] = NotificationActionConfig(
+                        actionType: .styleTab,
+                        enabled: actions[index].enabled,
+                        config: migratedCfg
+                    )
+                    migrated = true
+                    Log.info("FeatureSettings migration: \(triggerKey) styleTab now persists until the tab is opened")
+                }
+                normalizedBindings[triggerKey] = actions
+            }
+            if migrated,
+               let data = JSONOperations.encode(normalizedBindings, context: "triggerActionBindings.finishedPersist.v1") {
+                defaults.set(data, forKey: Keys.triggerActionBindings)
+            }
+            defaults.set(true, forKey: finishedPersistMigrationKey)
         }
 
         let loadedRateLimitConfig: NotificationRateLimiter.Config

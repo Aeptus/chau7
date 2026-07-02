@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Completion tab highlight persists until you open the tab**: The green "finished" tab highlight no longer auto-clears after ~30s. When an agent finishes, its tab stays highlighted until you actually open that tab (opening a tab clears its non-persistent highlight), matching how permission highlights already stay until the prompt is resolved. The per-trigger default for the `finished` trigger now uses `autoClearSeconds: 0`, and a one-time migration (`notification.finished.persistUntilOpen.v1`) flips the old 30s default for existing users while leaving custom style configurations untouched.
+
 ### Added
 - **MAGI CLI Local Installer**: Added `Scripts/install-magi-cli.sh`, which builds the SwiftPM `magi` product and installs `magi` into `~/.local/bin` by default. It preserves uppercase `MAGI` invocation by relying on case-insensitive filesystems or by creating a separate alias when the install directory is case-sensitive.
 - **MAGI: Multi-Agent Decision Protocol And CLI Foundation**: Added the core MAGI protocol models, first-run persona/config planning, structured council rounds, approved-evidence collection contracts, majority/veto verdict logic, and replay/share artifact rendering for a three-member decision council launched through Chau7 MCP. The new CLI surface is designed to run as `magi`/`MAGI`, ask questions, doctor/configure the setup, replay saved runs, and generate local share artifacts without hosted upload.
