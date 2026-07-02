@@ -219,7 +219,6 @@ final class NotificationManager {
         guard enriched.kind == .taskFinished || enriched.kind == .taskFailed else { return }
         let surfaces = NotificationRoutingPolicy.surfaces(
             kind: enriched.kind,
-            source: enriched.event.source,
             settings: NotificationSurfaceSettings(
                 pushTaskCompletions: FeatureSettings.shared.notificationSettings.pushTaskCompletionsToiOS
             )

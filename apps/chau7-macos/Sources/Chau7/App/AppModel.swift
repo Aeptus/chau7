@@ -1644,7 +1644,6 @@ final class AppModel {
         adoptUnifiedEventSessionIdentityIfNeeded(event)
         let surfaces = NotificationRoutingPolicy.surfaces(
             kind: acceptedEvent.kind,
-            source: event.source,
             settings: NotificationSurfaceSettings(
                 pushTaskCompletions: FeatureSettings.shared.notificationSettings.pushTaskCompletionsToiOS
             )

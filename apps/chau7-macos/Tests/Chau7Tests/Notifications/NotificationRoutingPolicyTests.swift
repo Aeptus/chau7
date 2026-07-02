@@ -10,7 +10,7 @@ final class NotificationRoutingPolicyTests: XCTestCase {
     func testAttentionKindsTargetEverySurface() {
         for kind: NotificationSemanticKind in [.permissionRequired, .waitingForInput, .attentionRequired] {
             XCTAssertEqual(
-                NotificationRoutingPolicy.surfaces(kind: kind, source: .claudeCode),
+                NotificationRoutingPolicy.surfaces(kind: kind),
                 Set(NotificationSurface.allCases),
                 "\(kind.rawValue) must reach every surface"
             )
@@ -18,12 +18,12 @@ final class NotificationRoutingPolicyTests: XCTestCase {
     }
 
     func testTaskCompletionPushIsSettingsGated() {
-        let off = NotificationRoutingPolicy.surfaces(kind: .taskFinished, source: .claudeCode)
+        let off = NotificationRoutingPolicy.surfaces(kind: .taskFinished)
         XCTAssertFalse(off.contains(.iosPush), "default off")
         XCTAssertTrue(off.isSuperset(of: [.macLocal, .tabStyle, .liveActivity, .mcpSubscribers]))
 
         let on = NotificationRoutingPolicy.surfaces(
-            kind: .taskFailed, source: .codex,
+            kind: .taskFailed,
             settings: NotificationSurfaceSettings(pushTaskCompletions: true)
         )
         XCTAssertTrue(on.contains(.iosPush))
@@ -33,14 +33,14 @@ final class NotificationRoutingPolicyTests: XCTestCase {
         // The audit-flagged asymmetry: .app informational events reached local
         // notifications but were silently dropped from MCP observability.
         // Routing now declares them MCP-visible.
-        let surfaces = NotificationRoutingPolicy.surfaces(kind: .informational, source: .app)
+        let surfaces = NotificationRoutingPolicy.surfaces(kind: .informational)
         XCTAssertTrue(surfaces.contains(.mcpSubscribers))
         XCTAssertFalse(surfaces.contains(.iosPush))
         XCTAssertFalse(surfaces.contains(.liveActivity))
     }
 
     func testUnknownKindTargetsNothing() {
-        XCTAssertTrue(NotificationRoutingPolicy.surfaces(kind: .unknown, source: .claudeCode).isEmpty)
+        XCTAssertTrue(NotificationRoutingPolicy.surfaces(kind: .unknown).isEmpty)
     }
 
     // MARK: - The .app → MCP fix end to end

@@ -33,7 +33,6 @@ public enum NotificationRoutingPolicy {
 
     public static func surfaces(
         kind: NotificationSemanticKind,
-        source: AIEventSource,
         settings: NotificationSurfaceSettings = NotificationSurfaceSettings()
     ) -> Set<NotificationSurface> {
         switch kind {
