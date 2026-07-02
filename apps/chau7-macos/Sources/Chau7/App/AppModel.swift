@@ -1642,7 +1642,16 @@ final class AppModel {
     private func publishAcceptedUnifiedEventOnMain(_ acceptedEvent: EnrichedEvent, envelope: EventEnvelope) {
         let event = acceptedEvent.event
         adoptUnifiedEventSessionIdentityIfNeeded(event)
-        Chau7ObservabilityService.shared.applyAccepted(envelope: envelope, adapted: event)
+        let surfaces = NotificationRoutingPolicy.surfaces(
+            kind: acceptedEvent.kind,
+            source: event.source,
+            settings: NotificationSurfaceSettings(
+                pushTaskCompletions: FeatureSettings.shared.notificationSettings.pushTaskCompletionsToiOS
+            )
+        )
+        if surfaces.contains(.mcpSubscribers) {
+            Chau7ObservabilityService.shared.applyAccepted(envelope: envelope, adapted: event)
+        }
         recentEvents.append(event)
         recentEvents.trimToLast(25)
 

@@ -194,7 +194,8 @@ final class Chau7ObservabilityService {
     /// `.app`-source events stay excluded from the MCP surface (declared
     /// policy pending the per-surface routing stage).
     func applyAccepted(envelope: EventEnvelope, adapted: AIEvent) {
-        guard adapted.source != .app else { return }
+        // Surface eligibility (including the former `.app` exclusion) is
+        // decided by NotificationRoutingPolicy at the caller.
         let seq = queue.sync { spineSeqFloor + Int64(clamping: envelope.seq) }
         let controlPlaneTabID = adapted.tabID.map { TerminalControlService.shared.controlPlaneTabID(for: $0) }
         recordDirect(

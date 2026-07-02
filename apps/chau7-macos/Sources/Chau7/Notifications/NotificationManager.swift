@@ -216,8 +216,15 @@ final class NotificationManager {
     /// shared formatter; identity from NotificationIdentity — the agent only
     /// dedups and gates on deliverability.
     private func forwardTaskCompletionPushIfEnabled(_ enriched: EnrichedEvent) {
-        guard FeatureSettings.shared.notificationSettings.pushTaskCompletionsToiOS else { return }
         guard enriched.kind == .taskFinished || enriched.kind == .taskFailed else { return }
+        let surfaces = NotificationRoutingPolicy.surfaces(
+            kind: enriched.kind,
+            source: enriched.event.source,
+            settings: NotificationSurfaceSettings(
+                pushTaskCompletions: FeatureSettings.shared.notificationSettings.pushTaskCompletionsToiOS
+            )
+        )
+        guard surfaces.contains(.iosPush) else { return }
         let event = enriched.event
         let identity = NotificationIdentity(for: event)
         let payload = RemoteNotificationEventPayload(
