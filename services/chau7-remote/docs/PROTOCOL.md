@@ -354,7 +354,11 @@ All fields after `timestamp` are optional. Decoders must tolerate a missing
 `timestamp` (older agent re-encodes omitted it) and fall back to receipt time.
 `push_title` / `push_subtitle` / `push_body` carry pre-formatted push text
 composed on the Mac by the shared notification formatter; the agent and iOS
-prefer them and fall back to local formatting when absent.
+prefer them and fall back to local formatting when absent. `spine_seq`
+(optional uint64) is the Mac's event-spine high-water at emit time; the agent
+adopts it as the pending-state `state_version` when it is ahead of its local
+counter. The prompt-list payload carries the same optional field at the list
+level.
 
 ### APPROVAL_RESPONSE
 
@@ -494,3 +498,9 @@ regenerated on `resetSession`) and `state_version` (monotonic within an
 epoch): within one epoch a client applies only strictly newer versions, and
 a changed epoch resets its arbitration state. Snapshots from older agents
 lack the fields and rely on the client's delta-journal merge alone.
+
+`state_version` is sourced from the Mac's `spine_seq` when the inbound
+approval/prompt payloads carry it (the Mac's durable event spine keeps that
+sequence monotonic even across Mac app restarts); syncs without a Mac seq —
+iOS-triggered clears, older Macs — fall back to a strictly-increasing local
+increment, so the stream never regresses either way.

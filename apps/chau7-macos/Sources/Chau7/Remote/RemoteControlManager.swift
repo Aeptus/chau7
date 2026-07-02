@@ -35,6 +35,12 @@ final class RemoteControlManager {
 
     @ObservationIgnored private var tabRegistry = RemoteTabRegistry()
     @ObservationIgnored private var seqCounter: UInt64 = 1
+    /// Supplies the event spine's high-water seq (set by AppModel at
+    /// bootstrap). Stamped into approval/prompt payloads as `spine_seq` so
+    /// the agent's state_version inherits the durable, restart-monotonic
+    /// spine sequence instead of its own epoch-scoped counter. Nil (tests,
+    /// pre-bootstrap) omits the field and the agent falls back.
+    @ObservationIgnored var spineSeqProvider: (() -> UInt64)?
     @ObservationIgnored private var pendingProtectedInputs: [String: ProtectedRemoteInput] = [:]
     @ObservationIgnored private var approvalContexts: [String: PendingRemoteApprovalContext] = [:]
     @ObservationIgnored private var connectedPairedDeviceID: String?
@@ -442,10 +448,12 @@ final class RemoteControlManager {
         logger.info("Remote: sent notification event kind=\(payload.kind, privacy: .public)")
     }
 
-    func sendApprovalRequest(requestID: String, payload: Data) {
+    func sendApprovalRequest(requestID: String, payload: ApprovalRequestPayload) {
         guard isIPCConnected else { return }
-        registerApprovalContext(requestID: requestID, payload: payload)
-        sendFrame(type: .approvalRequest, tabID: RemoteTabRegistry.unscopedTabID, payload: payload)
+        let stamped = payload.withSpineSeq(spineSeqProvider?())
+        guard let data = Persist.encodeLogged(stamped, context: "remote.approvalRequest(\(requestID))") else { return }
+        registerApprovalContext(requestID: requestID, payload: data)
+        sendFrame(type: .approvalRequest, tabID: RemoteTabRegistry.unscopedTabID, payload: data)
         sendRemoteActivity()
         logger.info("Remote: sent approval request \(requestID, privacy: .public)")
     }
@@ -596,7 +604,7 @@ final class RemoteControlManager {
                 recentCommand: context.recentCommand,
                 contextNote: context.contextNote,
                 sessionID: context.sessionID
-            ).withComposedPushText()
+            ).withComposedPushText().withSpineSeq(spineSeqProvider?())
             // Security-adjacent flow: a dropped approval frame must be visible.
             guard let data = Persist.encodeLogged(payload, context: "remote.approvalRequest") else { continue }
             sendFrame(type: .approvalRequest, tabID: RemoteTabRegistry.unscopedTabID, payload: data)
@@ -609,7 +617,9 @@ final class RemoteControlManager {
 
         interactivePrompts = nextPrompts
         guard isIPCConnected,
-              let payload = try? JSONEncoder().encode(RemoteInteractivePromptListPayload(prompts: nextPrompts)) else {
+              let payload = try? JSONEncoder().encode(
+                  RemoteInteractivePromptListPayload(prompts: nextPrompts, spineSeq: spineSeqProvider?())
+              ) else {
             return
         }
         sendFrame(type: .interactivePromptList, tabID: RemoteTabRegistry.unscopedTabID, payload: payload)
@@ -1220,13 +1230,7 @@ final class RemoteControlManager {
             sessionID: approvalContext?.sessionID
         ).withComposedPushText()
 
-        guard let data = try? JSONEncoder().encode(payload) else {
-            pendingProtectedInputs.removeValue(forKey: requestID)
-            logger.error("Remote: failed to encode protected action approval payload")
-            return
-        }
-
-        sendApprovalRequest(requestID: requestID, payload: data)
+        sendApprovalRequest(requestID: requestID, payload: payload)
         logger.warning("Remote: queued protected action approval for tab \(tabID, privacy: .public) (\(sessionTitle, privacy: .public))")
     }
 

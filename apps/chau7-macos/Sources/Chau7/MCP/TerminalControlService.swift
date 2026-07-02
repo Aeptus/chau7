@@ -2474,10 +2474,8 @@ final class TerminalControlService {
             contextNote: contextNote,
             sessionID: nil
         ).withComposedPushText()
-        if let data = try? JSONEncoder().encode(payload) {
-            onMainActor {
-                RemoteControlManager.shared.sendApprovalRequest(requestID: requestID, payload: data)
-            }
+        onMainActor {
+            RemoteControlManager.shared.sendApprovalRequest(requestID: requestID, payload: payload)
         }
 
         // Show local alert with three options

@@ -235,6 +235,67 @@ func TestUpdatePendingApprovalSyncsRelayState(t *testing.T) {
 	}
 }
 
+func TestStateVersionAdoptsMacSpineSeq(t *testing.T) {
+	var got PendingStatePayload
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatalf("read body: %v", err)
+		}
+		if err := json.Unmarshal(body, &got); err != nil {
+			t.Fatalf("unmarshal body: %v", err)
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer server.Close()
+
+	a := &Agent{
+		relayBaseURL:     server.URL + "/connect",
+		state:            &State{DeviceID: "device-1"},
+		pendingApprovals: map[string]ApprovalNotificationPayload{},
+		pendingPrompts:   map[string]RemoteInteractivePrompt{},
+	}
+
+	// A Mac payload carrying spine_seq: state_version adopts it.
+	seq := uint64(4200)
+	payload, err := json.Marshal(ApprovalNotificationPayload{
+		RequestID:      "req-1",
+		Command:        "git push",
+		FlaggedCommand: "git push",
+		SpineSeq:       &seq,
+	})
+	if err != nil {
+		t.Fatalf("marshal approval payload: %v", err)
+	}
+	a.updatePendingApproval(payload)
+	if got.StateVersion != 4200 {
+		t.Fatalf("state_version should adopt the Mac spine seq, got %d", got.StateVersion)
+	}
+
+	// A seq-less sync (e.g. an iOS-triggered clear) must still move the
+	// version strictly forward.
+	a.clearPendingApproval("req-1")
+	if got.StateVersion != 4201 {
+		t.Fatalf("seq-less sync must fall back to increment, got %d", got.StateVersion)
+	}
+
+	// A stale/lower spine seq never moves the version backwards.
+	stale := uint64(1000)
+	payload, err = json.Marshal(ApprovalNotificationPayload{
+		RequestID:      "req-2",
+		Command:        "ls",
+		FlaggedCommand: "ls",
+		SpineSeq:       &stale,
+	})
+	if err != nil {
+		t.Fatalf("marshal stale payload: %v", err)
+	}
+	a.updatePendingApproval(payload)
+	if got.StateVersion != 4202 {
+		t.Fatalf("stale spine seq must not regress the version, got %d", got.StateVersion)
+	}
+}
+
 func TestClearPendingApprovalRemovesItFromRelayState(t *testing.T) {
 	var got PendingStatePayload
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

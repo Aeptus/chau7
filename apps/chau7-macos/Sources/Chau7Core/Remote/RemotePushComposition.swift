@@ -31,7 +31,32 @@ public extension ApprovalRequestPayload {
                 branchName: branchName,
                 currentDirectory: currentDirectory
             ),
-            pushBody: headline
+            pushBody: headline,
+            spineSeq: spineSeq
+        )
+    }
+
+    /// Copy with the Mac's event-spine high-water seq attached (the agent
+    /// stamps `state_version` from it). Applied at the final send site so
+    /// every emission carries the freshest seq.
+    func withSpineSeq(_ seq: UInt64?) -> ApprovalRequestPayload {
+        ApprovalRequestPayload(
+            requestID: requestID,
+            command: command,
+            flaggedCommand: flaggedCommand,
+            timestamp: timestamp,
+            tabTitle: tabTitle,
+            toolName: toolName,
+            projectName: projectName,
+            branchName: branchName,
+            currentDirectory: currentDirectory,
+            recentCommand: recentCommand,
+            contextNote: contextNote,
+            sessionID: sessionID,
+            pushTitle: pushTitle,
+            pushSubtitle: pushSubtitle,
+            pushBody: pushBody,
+            spineSeq: seq
         )
     }
 }

@@ -512,6 +512,18 @@ final class AppModel {
         // Observability becomes a spine projection: structural producers and
         // timer changes share the global sequence with AI events.
         Chau7ObservabilityService.shared.attachSpine(eventSpine)
+        // Remote pending-state payloads carry the spine high-water so the
+        // agent's state_version is monotonic across Mac app restarts.
+        // Bundle/test guard: touching RemoteControlManager.shared constructs
+        // the whole remote stack (observers, IPC server), which unit tests
+        // must never do.
+        if Bundle.main.bundleIdentifier != nil, !RuntimeIsolation.isIsolatedTestMode() {
+            Task { @MainActor [weak self] in
+                RemoteControlManager.shared.spineSeqProvider = { [weak self] in
+                    self?.eventSpine.journal.latestCursor ?? 0
+                }
+            }
+        }
         startAppEventEmitter()
         UsageMonitor.shared.configureWarningHandler { [weak self] event in
             self?.publishUnifiedEvent(event, notify: true)

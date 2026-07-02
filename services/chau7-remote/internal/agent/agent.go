@@ -88,8 +88,13 @@ type Agent struct {
 	// monotonic counter over pending-state snapshots within an epoch — a
 	// client must ignore a snapshot whose (epoch, version) is not newer than
 	// the last one it applied.
-	sessionEpoch     string
-	stateVersion     uint64
+	sessionEpoch string
+	stateVersion uint64
+	// macSpineSeq is the highest spine_seq any Mac payload has carried.
+	// Deliberately NOT reset in resetSession: it is Mac-app-scoped, not
+	// crypto-epoch-scoped, and the durable spine keeps it monotonic across
+	// Mac restarts too.
+	macSpineSeq      uint64
 	pendingApprovals map[string]ApprovalNotificationPayload
 	pendingPrompts   map[string]RemoteInteractivePrompt
 }
@@ -160,6 +165,11 @@ type ApprovalNotificationPayload struct {
 	PushTitle    string `json:"push_title,omitempty"`
 	PushSubtitle string `json:"push_subtitle,omitempty"`
 	PushBody     string `json:"push_body,omitempty"`
+	// SpineSeq is the Mac's event-spine high-water at emit time. When
+	// present, syncPendingState stamps state_version from it (monotonic
+	// across Mac app restarts). Pointer so absence (old Macs) is
+	// distinguishable from zero.
+	SpineSeq *uint64 `json:"spine_seq,omitempty"`
 }
 
 type ApprovalResponsePayload struct {
@@ -202,6 +212,8 @@ type RemoteInteractivePrompt struct {
 
 type InteractivePromptListPayload struct {
 	Prompts []RemoteInteractivePrompt `json:"prompts"`
+	// SpineSeq mirrors ApprovalNotificationPayload.SpineSeq (list-level).
+	SpineSeq *uint64 `json:"spine_seq,omitempty"`
 }
 
 type PushRegistrationPayload struct {
@@ -1232,7 +1244,15 @@ func (a *Agent) syncPendingState() {
 	if a.sessionEpoch == "" {
 		a.sessionEpoch = newSessionEpoch()
 	}
-	a.stateVersion++
+	// state_version inherits the Mac's spine seq when it is ahead (durable,
+	// restart-monotonic), and falls back to a local increment otherwise —
+	// e.g. iOS-triggered clears and Macs that predate spine_seq. max()
+	// keeps the sequence strictly increasing within the epoch either way.
+	next := a.stateVersion + 1
+	if a.macSpineSeq > next {
+		next = a.macSpineSeq
+	}
+	a.stateVersion = next
 	epoch := a.sessionEpoch
 	version := a.stateVersion
 	a.pendingStateMu.Unlock()
@@ -1260,6 +1280,9 @@ func (a *Agent) updatePendingApproval(payload []byte) {
 
 	a.pendingStateMu.Lock()
 	a.pendingApprovals[approval.RequestID] = approval
+	if approval.SpineSeq != nil && *approval.SpineSeq > a.macSpineSeq {
+		a.macSpineSeq = *approval.SpineSeq
+	}
 	a.pendingStateMu.Unlock()
 	a.syncPendingState()
 }
@@ -1291,6 +1314,9 @@ func (a *Agent) replacePendingPrompts(payload []byte) {
 
 	a.pendingStateMu.Lock()
 	a.pendingPrompts = next
+	if promptList.SpineSeq != nil && *promptList.SpineSeq > a.macSpineSeq {
+		a.macSpineSeq = *promptList.SpineSeq
+	}
 	a.pendingStateMu.Unlock()
 	a.syncPendingState()
 }

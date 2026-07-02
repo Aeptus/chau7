@@ -285,6 +285,12 @@ public struct ApprovalRequestPayload: Codable, Equatable, Sendable {
     public let pushTitle: String?
     public let pushSubtitle: String?
     public let pushBody: String?
+    /// Event-spine high-water seq on the Mac at emit time. Optional/additive:
+    /// when present, the agent stamps `state_version` from it (monotonic
+    /// across Mac app restarts thanks to the durable spine journal) instead
+    /// of its own epoch-scoped counter. Old Macs omit it; the agent falls
+    /// back to the internal counter.
+    public let spineSeq: UInt64?
 
     public init(
         requestID: String,
@@ -301,7 +307,8 @@ public struct ApprovalRequestPayload: Codable, Equatable, Sendable {
         sessionID: String? = nil,
         pushTitle: String? = nil,
         pushSubtitle: String? = nil,
-        pushBody: String? = nil
+        pushBody: String? = nil,
+        spineSeq: UInt64? = nil
     ) {
         self.requestID = requestID
         self.command = command
@@ -318,6 +325,7 @@ public struct ApprovalRequestPayload: Codable, Equatable, Sendable {
         self.pushTitle = pushTitle
         self.pushSubtitle = pushSubtitle
         self.pushBody = pushBody
+        self.spineSeq = spineSeq
     }
 
     enum CodingKeys: String, CodingKey {
@@ -336,6 +344,7 @@ public struct ApprovalRequestPayload: Codable, Equatable, Sendable {
         case pushTitle = "push_title"
         case pushSubtitle = "push_subtitle"
         case pushBody = "push_body"
+        case spineSeq = "spine_seq"
     }
 
     public init(from decoder: Decoder) throws {
@@ -357,6 +366,7 @@ public struct ApprovalRequestPayload: Codable, Equatable, Sendable {
         self.pushTitle = try container.decodeIfPresent(String.self, forKey: .pushTitle)
         self.pushSubtitle = try container.decodeIfPresent(String.self, forKey: .pushSubtitle)
         self.pushBody = try container.decodeIfPresent(String.self, forKey: .pushBody)
+        self.spineSeq = try container.decodeIfPresent(UInt64.self, forKey: .spineSeq)
     }
 }
 

@@ -109,8 +109,17 @@ public struct RemoteInteractivePrompt: Codable, Equatable, Sendable, Hashable, I
 
 public struct RemoteInteractivePromptListPayload: Codable, Equatable, Sendable, Hashable {
     public let prompts: [RemoteInteractivePrompt]
+    /// Event-spine high-water seq on the Mac at emit time (see
+    /// `ApprovalRequestPayload.spineSeq`). Optional/additive.
+    public let spineSeq: UInt64?
 
-    public init(prompts: [RemoteInteractivePrompt]) {
+    public init(prompts: [RemoteInteractivePrompt], spineSeq: UInt64? = nil) {
         self.prompts = prompts
+        self.spineSeq = spineSeq
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case prompts
+        case spineSeq = "spine_seq"
     }
 }
