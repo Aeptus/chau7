@@ -81,6 +81,11 @@ final class DiagnosticsLog {
     /// Hard cap on retained entries. Performance + keystroke logging is high
     /// volume, so the cap is generous but bounded to protect memory/disk.
     private static let maxEntries = 8000
+    /// How many leading entries are already on disk (incremental-append cursor).
+    private var persistedEntryCount = 0
+    /// Set when the ring trimmed (or state was reloaded/cleared) — the next
+    /// save must rewrite the whole file instead of appending.
+    private var needsFullRewrite = false
     private static let fileName = "diagnostics.jsonl"
 
     private var fileURL: URL? {
@@ -147,6 +152,8 @@ final class DiagnosticsLog {
         entries.append(entry)
         if entries.count > Self.maxEntries {
             entries.removeFirst(entries.count - Self.maxEntries)
+            needsFullRewrite = true
+            persistedEntryCount = 0
         }
 
         mirrorToOSLog(entry)
@@ -269,6 +276,8 @@ final class DiagnosticsLog {
     /// Drop all retained entries (and the on-disk copy).
     func clear() {
         entries.removeAll()
+        persistedEntryCount = 0
+        needsFullRewrite = false
         if let fileURL {
             try? FileManager.default.removeItem(at: fileURL)
         }
@@ -285,10 +294,34 @@ final class DiagnosticsLog {
             // Debounced autosave: encode on the main actor (Entry's Codable
             // conformance is main-isolated), then hand the finished bytes to the
             // serial queue so the 2-second tick never hitches the UI.
-            let data = Self.encodeEntries(self.entries)
-            self.saveQueue.async {
-                Self.writeData(data, to: fileURL)
-            }
+            // Incremental: only new entries are encoded and appended; a full
+            // rewrite happens only after the ring trims (the old code
+            // re-encoded all ≤8000 entries every tick).
+            self.persist(synchronously: false)
+        }
+    }
+
+    /// Encode the un-persisted tail (or the whole buffer after a trim) and
+    /// hand it to the serial write queue. Cursor updates happen here on the
+    /// main actor; the queue is FIFO so writes land in order.
+    private func persist(synchronously: Bool) {
+        guard let fileURL else { return }
+        let work: @Sendable () -> Void
+        if needsFullRewrite || persistedEntryCount > entries.count {
+            let data = Self.encodeEntries(entries)
+            work = { Self.writeData(data, to: fileURL) }
+            needsFullRewrite = false
+        } else {
+            let newEntries = Array(entries.dropFirst(persistedEntryCount))
+            guard !newEntries.isEmpty else { return }
+            let data = Self.encodeEntries(newEntries)
+            work = { Self.appendData(data, to: fileURL) }
+        }
+        persistedEntryCount = entries.count
+        if synchronously {
+            saveQueue.sync(execute: work)
+        } else {
+            saveQueue.async(execute: work)
         }
     }
 
@@ -299,11 +332,7 @@ final class DiagnosticsLog {
     func flush() {
         saveTask?.cancel()
         saveTask = nil
-        guard let fileURL else { return }
-        let data = Self.encodeEntries(entries)
-        saveQueue.sync {
-            Self.writeData(data, to: fileURL)
-        }
+        persist(synchronously: true)
     }
 
     /// Serialize entries to newline-delimited JSON. Runs on the main actor
@@ -327,6 +356,22 @@ final class DiagnosticsLog {
         try? data.write(to: fileURL, options: .atomic)
     }
 
+    /// Append pre-encoded JSONL bytes; falls back to a plain write when the
+    /// file doesn't exist yet.
+    private nonisolated static func appendData(_ data: Data, to fileURL: URL) {
+        guard let handle = try? FileHandle(forWritingTo: fileURL) else {
+            try? data.write(to: fileURL, options: .atomic)
+            return
+        }
+        defer { try? handle.close() }
+        do {
+            try handle.seekToEnd()
+            try handle.write(contentsOf: data)
+        } catch {
+            // Fall back to a full rewrite attempt on the next save cycle.
+        }
+    }
+
     private func load() {
         guard let fileURL,
               let data = try? Data(contentsOf: fileURL),
@@ -335,17 +380,23 @@ final class DiagnosticsLog {
         }
         let decoder = JSONDecoder()
         var loaded: [Entry] = []
+        var decodedLineCount = 0
         for line in text.split(separator: "\n") {
             guard let lineData = line.data(using: .utf8),
                   let entry = try? decoder.decode(Entry.self, from: lineData) else {
                 continue
             }
+            decodedLineCount += 1
             loaded.append(entry)
         }
         if loaded.count > Self.maxEntries {
             loaded.removeFirst(loaded.count - Self.maxEntries)
         }
         entries = loaded
+        persistedEntryCount = loaded.count
+        // When the file held more lines than the buffer keeps (trimmed on
+        // load), the file and cursor disagree — rewrite once on the next save.
+        needsFullRewrite = decodedLineCount != loaded.count
         nextID = (loaded.last?.id ?? 0) + 1
         totalRecorded = UInt64(loaded.count)
     }

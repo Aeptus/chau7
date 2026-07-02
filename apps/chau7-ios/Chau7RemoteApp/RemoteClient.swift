@@ -111,6 +111,8 @@ final class RemoteClient {
     private var strippedOutputRefreshTask: Task<Void, Never>?
     private var remoteSessionID: String?
     private var telemetryBuffer = RemoteTelemetryBuffer(maxEvents: RemoteClient.maxBufferedTelemetryEvents)
+    /// Per-event failed-send attempts (bounded retry for the drain-on-success path).
+    private var telemetrySendAttempts: [String: Int] = [:]
     private var pendingURLActions: [RemoteActivityURLAction] = []
     private var currentAppState: RemoteClientAppState = .foreground
     private var desiredStreamMode: RemoteClientStreamMode = .full
@@ -380,7 +382,9 @@ final class RemoteClient {
         outputFlushTask = nil
         strippedOutputRefreshTask?.cancel()
         strippedOutputRefreshTask = nil
-        telemetryBuffer.removeAll()
+        // Telemetry buffered before/through the disconnect survives to the
+        // next session — connect() calls disconnect() first, so wiping here
+        // routinely lost pre-session events on flaky connects (NF-9).
         liveActivityState = nil
         outputText = ""
         strippedOutputText = ""
@@ -1771,6 +1775,8 @@ final class RemoteClient {
         enqueueOrSendTelemetryEvent(&event)
     }
 
+    private static let maxTelemetrySendAttempts = 3
+
     private func enqueueOrSendTelemetryEvent(_ event: inout RemoteClientTelemetryEvent) {
         guard crypto != nil else {
             telemetryBuffer.append(event)
@@ -1782,7 +1788,32 @@ final class RemoteClient {
         }
 
         guard let data = try? RemoteJSON.encoder.encode(event) else { return }
-        sendEncrypted(type: .remoteTelemetry, tabID: event.tabID ?? 0, payload: data)
+        // Drain-on-send-success: a failed WS send re-buffers the event for
+        // the next flush (bounded per-event attempts), instead of the old
+        // fire-and-forget that silently dropped it.
+        let rebufferCandidate = event
+        let sent = sendEncrypted(type: .remoteTelemetry, tabID: event.tabID ?? 0, payload: data) { [weak self] success in
+            guard let self else { return }
+            if success {
+                self.telemetrySendAttempts.removeValue(forKey: rebufferCandidate.id)
+            } else {
+                self.rebufferTelemetryEvent(rebufferCandidate)
+            }
+        }
+        if !sent {
+            rebufferTelemetryEvent(rebufferCandidate)
+        }
+    }
+
+    private func rebufferTelemetryEvent(_ event: RemoteClientTelemetryEvent) {
+        let attempts = (telemetrySendAttempts[event.id] ?? 0) + 1
+        guard attempts < Self.maxTelemetrySendAttempts else {
+            telemetrySendAttempts.removeValue(forKey: event.id)
+            log.warning("Dropping telemetry event after \(attempts) failed sends: \(event.eventType.rawValue)")
+            return
+        }
+        telemetrySendAttempts[event.id] = attempts
+        telemetryBuffer.append(event)
     }
 
     private func flushBufferedTelemetryEvents() {
