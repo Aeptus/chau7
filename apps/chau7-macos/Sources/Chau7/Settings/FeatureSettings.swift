@@ -1238,6 +1238,14 @@ final class FeatureSettings {
         }
     }
 
+    private static func loadMutedRepos(from defaults: UserDefaults) -> [String: RepoMute] {
+        guard let data = defaults.data(forKey: Keys.notificationMutedRepos),
+              let muted = JSONOperations.decode([String: RepoMute].self, from: data, context: "notificationMutedRepos") else {
+            return [:]
+        }
+        return RepoNotificationMuting.pruned(muted)
+    }
+
     private func persistNotificationSettings() {
         let ns = notificationSettings
         if let data = JSONOperations.encode(ns.triggerState, context: "notificationTriggerState") {
@@ -2730,13 +2738,7 @@ final class FeatureSettings {
             loadedFilters = .defaults
         }
 
-        let loadedMutedRepos: [String: RepoMute]
-        if let data = defaults.data(forKey: Keys.notificationMutedRepos),
-           let muted = JSONOperations.decode([String: RepoMute].self, from: data, context: "notificationMutedRepos") {
-            loadedMutedRepos = RepoNotificationMuting.pruned(muted)
-        } else {
-            loadedMutedRepos = [:]
-        }
+        let loadedMutedRepos = Self.loadMutedRepos(from: defaults)
         let loadedPushTaskCompletions = defaults.bool(forKey: Keys.notificationPushTaskCompletions)
 
         let resolvedTriggerState: NotificationTriggerState

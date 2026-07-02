@@ -50,6 +50,7 @@ struct MagiMCPOrchestrator {
     var launchTimeoutMs = 60000
     var launchMemberThrottleSeconds: TimeInterval = 0.6
 
+    // swiftlint:disable:next function_body_length
     func run(question: String, config: MagiConfig) throws -> MagiRun {
         let runID = MagiRunID.make()
         let council = try loadCouncil(config: config)
