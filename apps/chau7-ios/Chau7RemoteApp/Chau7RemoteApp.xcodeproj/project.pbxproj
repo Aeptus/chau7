@@ -11,7 +11,6 @@
 		4A94D77431F2A00100A1B001 /* TerminalView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A94D77331F2A00100A1B001 /* TerminalView.swift */; };
 		4A94D77631F2A00100A1B001 /* ApprovalsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A94D77531F2A00100A1B001 /* ApprovalsView.swift */; };
 		4A94D77831F2A00100A1B001 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A94D77731F2A00100A1B001 /* SettingsView.swift */; };
-		4A94D78031F2A00100A1B001 /* RemoteActivityURLAction.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A94D77931F2A00100A1B001 /* RemoteActivityURLAction.swift */; };
 		4A94D78231F2A00100A1B001 /* RemoteActivityAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A94D78131F2A00100A1B001 /* RemoteActivityAttributes.swift */; };
 		4A94D78431F2A00100A1B001 /* RemoteLiveActivityManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A94D78331F2A00100A1B001 /* RemoteLiveActivityManager.swift */; };
 		4A94D78631F2A00100A1B001 /* Chau7RemoteWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A94D78531F2A00100A1B001 /* Chau7RemoteWidget.swift */; };
@@ -21,8 +20,6 @@
 		4A94D79131F2A00100A1B001 /* RemoteRustTerminalPlayback.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A94D79231F2A00100A1B001 /* RemoteRustTerminalPlayback.swift */; };
 		4A94D79331F2A00100A1B001 /* RemoteTerminalRendererStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A94D79431F2A00100A1B001 /* RemoteTerminalRendererStore.swift */; };
 		4A94D79531F2A00100A1B001 /* RemoteTerminalRendererView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A94D79631F2A00100A1B001 /* RemoteTerminalRendererView.swift */; };
-		4A94D79831F2A00100A1B001 /* RemoteReconnectBackoff.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A94D79931F2A00100A1B001 /* RemoteReconnectBackoff.swift */; };
-		55DBD32D021D9C34D86A4003 /* RemoteTelemetryBuffer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A9706F9C9DDFBCED9156114 /* RemoteTelemetryBuffer.swift */; };
 		58B00A5CA2C678BDB76285BD /* RemoteConnectionStatus.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE2493E228956C501D26B32E /* RemoteConnectionStatus.swift */; };
 		72AC6A6715100B2F9E7E96D0 /* BackgroundKeepalive.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0CB472EB9A0B02432B4270F /* BackgroundKeepalive.swift */; };
 		84B3034D2F3107BB00A7D19E /* KeychainStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 84B303492F3107BB00A7D19E /* KeychainStore.swift */; };
@@ -39,7 +36,6 @@
 		D1A6D1A6D1A6D1A6D1A62004 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = D1A6D1A6D1A6D1A6D1A62003 /* PrivacyInfo.xcprivacy */; };
 		D1A6D1A6D1A6D1A6D1A62006 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = D1A6D1A6D1A6D1A6D1A62005 /* PrivacyInfo.xcprivacy */; };
 		AB4EBE57EAE8A9F53826866D /* RemotePairingStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8BD2F8E828F4FF717280653F /* RemotePairingStore.swift */; };
-		B1B47589AB8242957AE7E9DD /* RemoteFrameRateLimiter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1E94696D824BF1381A825D4D /* RemoteFrameRateLimiter.swift */; };
 		D82AA425310A4B9696EE10FB /* Chau7Core in Frameworks */ = {isa = PBXBuildFile; productRef = A34D4B59796146F1BDF72F8E /* Chau7Core */; };
 		D86299BBE48E13196F964AD2 /* RemoteNotificationScheduler.swift in Sources */ = {isa = PBXBuildFile; fileRef = A39EFFF0102C0B5A1397EA93 /* RemoteNotificationScheduler.swift */; };
 		F1A4000131F2A00100A1B001 /* Chau7Core in Frameworks */ = {isa = PBXBuildFile; productRef = F1A4000031F2A00100A1B001 /* Chau7Core */; };
@@ -70,12 +66,10 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
-		1E94696D824BF1381A825D4D /* RemoteFrameRateLimiter.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = RemoteFrameRateLimiter.swift; sourceTree = "<group>"; };
 		4A94D77131F2A00100A1B001 /* RemoteModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteModels.swift; sourceTree = "<group>"; };
 		4A94D77331F2A00100A1B001 /* TerminalView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalView.swift; sourceTree = "<group>"; };
 		4A94D77531F2A00100A1B001 /* ApprovalsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ApprovalsView.swift; sourceTree = "<group>"; };
 		4A94D77731F2A00100A1B001 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
-		4A94D77931F2A00100A1B001 /* RemoteActivityURLAction.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteActivityURLAction.swift; sourceTree = "<group>"; };
 		4A94D78131F2A00100A1B001 /* RemoteActivityAttributes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteActivityAttributes.swift; sourceTree = "<group>"; };
 		4A94D78331F2A00100A1B001 /* RemoteLiveActivityManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteLiveActivityManager.swift; sourceTree = "<group>"; };
 		4A94D78531F2A00100A1B001 /* Chau7RemoteWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Chau7RemoteWidget.swift; sourceTree = "<group>"; };
@@ -85,7 +79,6 @@
 		4A94D79231F2A00100A1B001 /* RemoteRustTerminalPlayback.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteRustTerminalPlayback.swift; sourceTree = "<group>"; };
 		4A94D79431F2A00100A1B001 /* RemoteTerminalRendererStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteTerminalRendererStore.swift; sourceTree = "<group>"; };
 		4A94D79631F2A00100A1B001 /* RemoteTerminalRendererView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteTerminalRendererView.swift; sourceTree = "<group>"; };
-		4A94D79931F2A00100A1B001 /* RemoteReconnectBackoff.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteReconnectBackoff.swift; sourceTree = "<group>"; };
 		84B3033A2F31076300A7D19E /* Chau7RemoteApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Chau7RemoteApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		84B303482F3107BB00A7D19E /* Chau7RemoteApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Chau7RemoteApp.swift; sourceTree = "<group>"; };
 		84B303492F3107BB00A7D19E /* KeychainStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainStore.swift; sourceTree = "<group>"; };
@@ -100,7 +93,6 @@
 		D1A6D1A6D1A6D1A6D1A62003 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		D1A6D1A6D1A6D1A6D1A62005 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		84B3034C2F3107BB00A7D19E /* RemoteCrypto.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteCrypto.swift; sourceTree = "<group>"; };
-		8A9706F9C9DDFBCED9156114 /* RemoteTelemetryBuffer.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = RemoteTelemetryBuffer.swift; sourceTree = "<group>"; };
 		8BD2F8E828F4FF717280653F /* RemotePairingStore.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = RemotePairingStore.swift; sourceTree = "<group>"; };
 		A39EFFF0102C0B5A1397EA93 /* RemoteNotificationScheduler.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = RemoteNotificationScheduler.swift; sourceTree = "<group>"; };
 		D0CB472EB9A0B02432B4270F /* BackgroundKeepalive.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = BackgroundKeepalive.swift; sourceTree = "<group>"; };
@@ -156,12 +148,10 @@
 				4A94D79231F2A00100A1B001 /* RemoteRustTerminalPlayback.swift */,
 				4A94D79431F2A00100A1B001 /* RemoteTerminalRendererStore.swift */,
 				4A94D79631F2A00100A1B001 /* RemoteTerminalRendererView.swift */,
-				4A94D79931F2A00100A1B001 /* RemoteReconnectBackoff.swift */,
 				4A94D78F31F2A00100A1B001 /* RemoteTerminalOutputStore.swift */,
 				4A94D77331F2A00100A1B001 /* TerminalView.swift */,
 				4A94D77531F2A00100A1B001 /* ApprovalsView.swift */,
 				4A94D77731F2A00100A1B001 /* SettingsView.swift */,
-				4A94D77931F2A00100A1B001 /* RemoteActivityURLAction.swift */,
 				4A94D78131F2A00100A1B001 /* RemoteActivityAttributes.swift */,
 				4A94D78331F2A00100A1B001 /* RemoteLiveActivityManager.swift */,
 				84B3033C2F31076300A7D19E /* Chau7RemoteApp */,
@@ -169,10 +159,8 @@
 				84B3033B2F31076300A7D19E /* Products */,
 				D0CB472EB9A0B02432B4270F /* BackgroundKeepalive.swift */,
 				EE2493E228956C501D26B32E /* RemoteConnectionStatus.swift */,
-				1E94696D824BF1381A825D4D /* RemoteFrameRateLimiter.swift */,
 				A39EFFF0102C0B5A1397EA93 /* RemoteNotificationScheduler.swift */,
 				8BD2F8E828F4FF717280653F /* RemotePairingStore.swift */,
-				8A9706F9C9DDFBCED9156114 /* RemoteTelemetryBuffer.swift */,
 			);
 			sourceTree = "<group>";
 		};
@@ -337,12 +325,10 @@
 				4A94D77631F2A00100A1B001 /* ApprovalsView.swift in Sources */,
 				4A94D78231F2A00100A1B001 /* RemoteActivityAttributes.swift in Sources */,
 				4A94D78431F2A00100A1B001 /* RemoteLiveActivityManager.swift in Sources */,
-				4A94D78031F2A00100A1B001 /* RemoteActivityURLAction.swift in Sources */,
 				4A94D77231F2A00100A1B001 /* RemoteModels.swift in Sources */,
 				4A94D79131F2A00100A1B001 /* RemoteRustTerminalPlayback.swift in Sources */,
 				4A94D79331F2A00100A1B001 /* RemoteTerminalRendererStore.swift in Sources */,
 				4A94D79531F2A00100A1B001 /* RemoteTerminalRendererView.swift in Sources */,
-				4A94D79831F2A00100A1B001 /* RemoteReconnectBackoff.swift in Sources */,
 				4A94D79031F2A00100A1B001 /* RemoteTerminalOutputStore.swift in Sources */,
 				4A94D77831F2A00100A1B001 /* SettingsView.swift in Sources */,
 				4A94D77431F2A00100A1B001 /* TerminalView.swift in Sources */,
@@ -358,10 +344,8 @@
 				D1A6D1A6D1A6D1A6D1A61006 /* OnboardingView.swift in Sources */,
 				72AC6A6715100B2F9E7E96D0 /* BackgroundKeepalive.swift in Sources */,
 				58B00A5CA2C678BDB76285BD /* RemoteConnectionStatus.swift in Sources */,
-				B1B47589AB8242957AE7E9DD /* RemoteFrameRateLimiter.swift in Sources */,
 				D86299BBE48E13196F964AD2 /* RemoteNotificationScheduler.swift in Sources */,
 				AB4EBE57EAE8A9F53826866D /* RemotePairingStore.swift in Sources */,
-				55DBD32D021D9C34D86A4003 /* RemoteTelemetryBuffer.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

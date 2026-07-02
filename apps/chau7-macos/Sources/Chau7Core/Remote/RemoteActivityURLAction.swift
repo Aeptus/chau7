@@ -7,13 +7,13 @@ import Foundation
 /// - `switch?tab_id=N` — switch to a specific tab
 /// - `approve?request_id=X&tab_id=N` — approve a pending request
 /// - `deny?request_id=X&tab_id=N` — deny a pending request
-enum RemoteActivityURLAction: Equatable {
+public enum RemoteActivityURLAction: Equatable, Sendable {
     case open(tabID: UInt32?)
     case switchTab(tabID: UInt32)
     case approve(requestID: String, tabID: UInt32?)
     case deny(requestID: String, tabID: UInt32?)
 
-    init?(url: URL) {
+    public init?(url: URL) {
         guard url.scheme == "chau7remote" else { return nil }
 
         let host = url.host?.lowercased() ?? ""
