@@ -78,21 +78,23 @@ Each new type mirrors the existing `RemoteReconnectBackoff` /
   `data:` parameters from `setActiveTab(_:)` and `replaceSnapshot(for:)`
   (ISP: callers no longer pass values the methods ignored). Updated call sites.
 
-## Remaining (next, needs the compiler in the loop)
+## Remaining — RESOLVED (2026-07-02, events/notifications unification C6/C7)
 
-1. **Transport / session / approval split.** `RemoteClient` still owns the
-   WebSocket receive loop, `connectionGeneration` invalidation, handshake/
-   reconnect tasks, crypto session establishment, and the approval response
-   state machine. These share mutable control flow (generation counters,
-   recursive `listen()`, in-flight response bookkeeping) that is risky to split
-   without iterative compilation. Suggested targets: `RemoteTransport`,
-   `RemoteSession`, `ApprovalCoordinator`. Doing this also requires deciding how
-   the observed UI state (`pendingApprovals`, `outputText`, `tabs`, `status`)
-   is exposed to views (facade forwarding vs. nested `@Observable`).
-2. **DIP / testability.** `RemoteClient.shared` is referenced directly from
-   `AppDelegate`, `Chau7RemoteApp`, and `TermKey`. Once #1 lands, inject the
-   coordinator through the SwiftUI environment instead of reaching for `.shared`
-   so previews/tests have a seam.
+1. **Transport / session / approval split — done.** `RemoteTransport` owns the
+   socket, generation invalidation, the strictly-FIFO receive pump, and inbound
+   rate limiting; `RemoteSessionController` owns key material, nonces, the seq
+   counter, the replay guard, and side-effect-free establishment;
+   `ApprovalCoordinator` owns the queued/in-flight/supersede response ledger.
+   `RemoteClient` remains the `@Observable` facade exposing UI state to views
+   (facade forwarding — no view churn).
+2. **Testability — done.** The `nonisolated(unsafe)` notification task and its
+   dead singleton deinit are gone (the Allow/Deny bridge is a structured
+   `.task` on the root view). A host-less `Chau7RemoteAppTests` logic bundle
+   compiles the collaborators directly (the full app makes a poor test host —
+   it boots the Rust terminal FFI) and runs on the simulator via the
+   `ios-app-tests` quality gate; `ios-app-build` gates every push that touches
+   the iOS app or Chau7Core. Environment injection of the facade remains a
+   nice-to-have.
 
 ## What's already good (keep doing this)
 

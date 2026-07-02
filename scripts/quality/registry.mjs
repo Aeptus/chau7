@@ -663,6 +663,49 @@ export const gates = [
     },
   },
   {
+    id: "ios-app-build",
+    modes: PREPUSH,
+    scope: "changed",
+    wave: "tests",
+    tags: ["swift", "ios"],
+    cacheable: true,
+    inputs: ["apps/chau7-ios", "apps/chau7-macos/Sources/Chau7Core"],
+    applies: (context) =>
+      hasPathPrefix(context.changedFiles, "apps/chau7-ios/") ||
+      hasPathPrefix(context.changedFiles, "apps/chau7-macos/Sources/Chau7Core/"),
+    rerun: "pnpm quality:prepush --include=ios-app-build",
+    run: async (context) =>
+      context.exec("xcodebuild", [
+        "-project", "apps/chau7-ios/Chau7RemoteApp/Chau7RemoteApp.xcodeproj",
+        "-scheme", "Chau7RemoteApp",
+        "-destination", "generic/platform=iOS Simulator",
+        "-configuration", "Debug",
+        "build",
+        "CODE_SIGNING_ALLOWED=NO",
+      ]),
+  },
+  {
+    id: "ios-app-tests",
+    modes: FULL,
+    scope: "changed",
+    wave: "tests",
+    tags: ["swift", "ios", "tests"],
+    cacheable: true,
+    inputs: ["apps/chau7-ios", "apps/chau7-macos/Sources/Chau7Core"],
+    applies: (context) =>
+      hasPathPrefix(context.changedFiles, "apps/chau7-ios/") ||
+      hasPathPrefix(context.changedFiles, "apps/chau7-macos/Sources/Chau7Core/"),
+    rerun: "pnpm quality:prepush-full --include=ios-app-tests",
+    run: async (context) =>
+      context.exec("xcodebuild", [
+        "-project", "apps/chau7-ios/Chau7RemoteApp/Chau7RemoteApp.xcodeproj",
+        "-scheme", "Chau7RemoteApp",
+        "-destination", "platform=iOS Simulator,name=iPhone 17 Pro",
+        "test",
+        "CODE_SIGNING_ALLOWED=NO",
+      ]),
+  },
+  {
     id: "relay-typecheck-test-build",
     modes: PREPUSH,
     scope: "changed",
