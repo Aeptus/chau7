@@ -129,14 +129,22 @@ type RemoteClientStatePayload struct {
 	NotificationsAuthorized bool   `json:"notifications_authorized"`
 }
 
+// ApprovalNotificationPayload mirrors the Swift ApprovalRequestPayload
+// (Chau7Core/Remote/RemoteWirePayloads.swift). Carry every field so the
+// REST /pending re-encode is lossless relative to the WS frame.
 type ApprovalNotificationPayload struct {
-	RequestID      string `json:"request_id"`
-	Command        string `json:"command"`
-	FlaggedCommand string `json:"flagged_command"`
-	TabTitle       string `json:"tab_title,omitempty"`
-	ToolName       string `json:"tool_name,omitempty"`
-	ProjectName    string `json:"project_name,omitempty"`
-	BranchName     string `json:"branch_name,omitempty"`
+	RequestID        string `json:"request_id"`
+	Command          string `json:"command"`
+	FlaggedCommand   string `json:"flagged_command"`
+	Timestamp        string `json:"timestamp,omitempty"`
+	TabTitle         string `json:"tab_title,omitempty"`
+	ToolName         string `json:"tool_name,omitempty"`
+	ProjectName      string `json:"project_name,omitempty"`
+	BranchName       string `json:"branch_name,omitempty"`
+	CurrentDirectory string `json:"current_directory,omitempty"`
+	RecentCommand    string `json:"recent_command,omitempty"`
+	ContextNote      string `json:"context_note,omitempty"`
+	SessionID        string `json:"session_id,omitempty"`
 }
 
 type ApprovalResponsePayload struct {
@@ -169,7 +177,9 @@ type RemoteInteractivePrompt struct {
 	Prompt           string                          `json:"prompt"`
 	Detail           string                          `json:"detail,omitempty"`
 	Options          []RemoteInteractivePromptOption `json:"options"`
-	DetectedAt       string                          `json:"detected_at"`
+	// DetectedAt is Swift's Date wire encoding: seconds since 2001-01-01
+	// (timeIntervalSinceReferenceDate), a JSON number — not a string.
+	DetectedAt       float64                         `json:"detected_at"`
 }
 
 type InteractivePromptListPayload struct {

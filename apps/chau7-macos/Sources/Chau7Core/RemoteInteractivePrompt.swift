@@ -19,6 +19,28 @@ public struct RemoteInteractivePromptOption: Codable, Equatable, Sendable, Hasha
         case response
         case isDestructive = "is_destructive"
     }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        label = try container.decode(String.self, forKey: .label)
+        response = try container.decode(String.self, forKey: .response)
+        // Lenient: the Go agent re-encodes options with `omitempty`, dropping
+        // the key when false.
+        isDestructive = try container.decodeIfPresent(Bool.self, forKey: .isDestructive) ?? false
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(label, forKey: .label)
+        try container.encode(response, forKey: .response)
+        // Mirror Go's `omitempty`: the key is present iff true, so both
+        // implementations produce identical JSON for the same value.
+        if isDestructive {
+            try container.encode(isDestructive, forKey: .isDestructive)
+        }
+    }
 }
 
 public struct RemoteInteractivePrompt: Codable, Equatable, Sendable, Hashable, Identifiable {

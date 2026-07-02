@@ -1,36 +1,31 @@
 /// Data models for the remote control protocol.
 ///
-/// Covers pairing (PairingInfo, TrustedPairingIdentity), handshake payloads
-/// (Hello, PairRequest/Accept/Reject, SessionReady), tab state, approval
-/// requests/responses, interactive prompts, and Live Activity state.
-/// All types are Codable for JSON serialization over the encrypted relay.
+/// The wire payload schemas (handshake, tabs, approvals, client state,
+/// pending state, errors) live in `Chau7Core/Remote/RemoteWirePayloads.swift`
+/// — the single Swift source of truth shared with the macOS app. This file
+/// keeps iOS-local aliases, UI-facing models, and utilities.
 import CryptoKit
 import Chau7Core
 import Foundation
 import Security
 
-// MARK: - Pairing
+// MARK: - Shared wire payload aliases
+//
+// Local names predate the Chau7Core consolidation; new code should use the
+// Chau7Core names directly. These aliases disappear with the RemoteClient
+// decomposition.
 
-struct PairingInfo: Codable, Equatable {
-    let relayURL: String
-    let deviceID: String
-    let macPub: String
-    let pairingCode: String
-    let expiresAt: String
-    // Shared HMAC secret delivered in the pairing payload. Used to mint relay
-    // auth tokens. Optional so older pairing payloads (no secret) still decode
-    // and the client falls back to unauthenticated connects.
-    let relaySecret: String?
+typealias PairingInfo = RemotePairingPayload
+typealias HelloPayload = RemoteHelloPayload
+typealias PairRequestPayload = RemotePairRequestPayload
+typealias PairAcceptPayload = RemotePairAcceptPayload
+typealias PairRejectPayload = RemotePairRejectPayload
+typealias SessionReadyPayload = RemoteSessionReadyPayload
+typealias TabListPayload = RemoteTabListPayload
+typealias RemoteTab = RemoteTabDescriptor
+typealias TabSwitchPayload = RemoteTabSwitchPayload
 
-    enum CodingKeys: String, CodingKey {
-        case relayURL = "relay_url"
-        case deviceID = "device_id"
-        case macPub = "mac_pub"
-        case pairingCode = "pairing_code"
-        case expiresAt = "expires_at"
-        case relaySecret = "relay_secret"
-    }
-}
+// MARK: - Pairing (iOS-local)
 
 struct TrustedPairingIdentity: Codable, Equatable {
     let deviceID: String
@@ -44,142 +39,7 @@ struct TrustedPairingIdentity: Codable, Equatable {
     }
 }
 
-// MARK: - Handshake
-
-struct HelloPayload: Codable {
-    let deviceID: String
-    let role: String
-    let nonce: String
-    let pubKeyFP: String
-    let appVersion: String
-
-    enum CodingKeys: String, CodingKey {
-        case deviceID = "device_id"
-        case role, nonce
-        case pubKeyFP = "pub_key_fp"
-        case appVersion = "app_version"
-    }
-}
-
-struct PairRequestPayload: Codable {
-    let deviceID: String
-    let pairingCode: String
-    let iosPub: String
-    let iosName: String
-
-    enum CodingKeys: String, CodingKey {
-        case deviceID = "device_id"
-        case pairingCode = "pairing_code"
-        case iosPub = "ios_pub"
-        case iosName = "ios_name"
-    }
-}
-
-struct PairAcceptPayload: Codable {
-    let deviceID: String
-    let macPub: String
-    let macName: String
-
-    enum CodingKeys: String, CodingKey {
-        case deviceID = "device_id"
-        case macPub = "mac_pub"
-        case macName = "mac_name"
-    }
-}
-
-struct PairRejectPayload: Codable {
-    let reason: String
-}
-
-struct SessionReadyPayload: Codable {
-    let sessionID: String
-
-    enum CodingKeys: String, CodingKey {
-        case sessionID = "session_id"
-    }
-}
-
-enum RemoteClientAppState: String, Codable {
-    case foreground
-    case background
-}
-
-enum RemoteClientStreamMode: String, Codable {
-    case full
-    case approvalsOnly = "approvals_only"
-}
-
-enum RemotePushEnvironment: String, Codable {
-    case development
-    case production
-}
-
-struct RemoteClientStatePayload: Codable {
-    let appState: RemoteClientAppState
-    let streamMode: RemoteClientStreamMode
-    let pushToken: String?
-    let pushTopic: String?
-    let pushEnvironment: RemotePushEnvironment?
-    let notificationsAuthorized: Bool
-
-    enum CodingKeys: String, CodingKey {
-        case appState = "app_state"
-        case streamMode = "stream_mode"
-        case pushToken = "push_token"
-        case pushTopic = "push_topic"
-        case pushEnvironment = "push_environment"
-        case notificationsAuthorized = "notifications_authorized"
-    }
-}
-
-// MARK: - Tabs
-
-struct TabListPayload: Codable {
-    let tabs: [RemoteTab]
-}
-
-struct RemoteTab: Codable, Identifiable {
-    let tabID: UInt32
-    let title: String
-    let projectName: String?
-    let branchName: String?
-    let aiProvider: String?
-    let isActive: Bool
-    let isMCPControlled: Bool
-
-    var id: UInt32 { tabID }
-
-    enum CodingKeys: String, CodingKey {
-        case tabID = "tab_id"
-        case title
-        case projectName = "project_name"
-        case branchName = "branch_name"
-        case aiProvider = "ai_provider"
-        case isActive = "is_active"
-        case isMCPControlled = "is_mcp_controlled"
-    }
-
-    init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        tabID = try container.decode(UInt32.self, forKey: .tabID)
-        title = try container.decode(String.self, forKey: .title)
-        projectName = try container.decodeIfPresent(String.self, forKey: .projectName)
-        branchName = try container.decodeIfPresent(String.self, forKey: .branchName)
-        aiProvider = try container.decodeIfPresent(String.self, forKey: .aiProvider)
-        isActive = try container.decode(Bool.self, forKey: .isActive)
-        isMCPControlled = try container.decodeIfPresent(Bool.self, forKey: .isMCPControlled) ?? false
-    }
-}
-
-struct TabSwitchPayload: Codable {
-    let tabID: UInt32
-
-    enum CodingKeys: String, CodingKey {
-        case tabID = "tab_id"
-    }
-}
-
-// MARK: - Approvals
+// MARK: - Approvals (UI-facing models)
 
 enum ApprovalResponseState: Equatable {
     case idle
@@ -243,65 +103,6 @@ struct ApprovalHistoryEntry: Identifiable {
     var title: String { isProtectedRemoteAction ? flaggedCommand : command }
 }
 
-struct ApprovalRequestPayload: Codable {
-    let requestID: String
-    let command: String
-    let flaggedCommand: String
-    let timestamp: String
-    let tabTitle: String?
-    let toolName: String?
-    let projectName: String?
-    let branchName: String?
-    let currentDirectory: String?
-    let recentCommand: String?
-    let contextNote: String?
-    let sessionID: String?
-
-    enum CodingKeys: String, CodingKey {
-        case requestID = "request_id"
-        case command
-        case flaggedCommand = "flagged_command"
-        case timestamp
-        case tabTitle = "tab_title"
-        case toolName = "tool_name"
-        case projectName = "project_name"
-        case branchName = "branch_name"
-        case currentDirectory = "current_directory"
-        case recentCommand = "recent_command"
-        case contextNote = "context_note"
-        case sessionID = "session_id"
-    }
-}
-
-struct ApprovalResponsePayload: Codable {
-    let requestID: String
-    let approved: Bool
-
-    enum CodingKeys: String, CodingKey {
-        case requestID = "request_id"
-        case approved
-    }
-}
-
-struct RemotePendingStatePayload: Codable {
-    let approvals: [ApprovalRequestPayload]
-    let interactivePrompts: [RemoteInteractivePrompt]
-    let updatedAt: String?
-
-    enum CodingKeys: String, CodingKey {
-        case approvals
-        case interactivePrompts = "interactive_prompts"
-        case updatedAt = "updated_at"
-    }
-}
-
-// MARK: - Errors
-
-struct RemoteErrorPayload: Codable {
-    let code: String
-    let message: String
-}
-
 // MARK: - Notifications
 
 /// Shared identifiers for local notifications, keeping category IDs, action IDs,
@@ -358,35 +159,5 @@ enum CryptoUtils {
 extension String {
     var strippingTrailingSlash: String {
         hasSuffix("/") ? String(dropLast()) : self
-    }
-}
-
-/// Strips ANSI escape sequences from terminal output.
-enum ANSIStripper {
-    static func strip(_ input: String) -> String {
-        var output = ""
-        output.reserveCapacity(input.count)
-        var iter = input.unicodeScalars.makeIterator()
-        var scalar = iter.next()
-        while let current = scalar {
-            if current == "\u{1B}" {
-                scalar = iter.next()
-                if let next = scalar, next == "[" {
-                    // Consume until final byte (0x40–0x7E)
-                    while let ch = iter.next() {
-                        if ch.value >= 0x40 && ch.value <= 0x7E {
-                            scalar = iter.next()
-                            break
-                        }
-                    }
-                    continue
-                }
-                // Not a CSI sequence — skip the ESC but keep next char
-                continue
-            }
-            output.unicodeScalars.append(current)
-            scalar = iter.next()
-        }
-        return output
     }
 }

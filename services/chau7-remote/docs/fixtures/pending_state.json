@@ -1,0 +1,28 @@
+{
+  "approvals": [
+    {
+      "request_id": "req-0002",
+      "command": "git push --force",
+      "flagged_command": "git push --force",
+      "timestamp": "2026-07-01T12:05:00Z",
+      "tab_title": "deploy",
+      "tool_name": "Codex",
+      "session_id": "sess-def"
+    }
+  ],
+  "interactive_prompts": [
+    {
+      "id": "prompt-1",
+      "tab_id": 3,
+      "tab_title": "migrate",
+      "tool_name": "Claude Code",
+      "project_name": "Mockup",
+      "prompt": "Overwrite existing file?",
+      "options": [
+        { "id": "yes", "label": "Yes", "response": "y" },
+        { "id": "no", "label": "No", "response": "n", "is_destructive": true }
+      ],
+      "detected_at": 804600000
+    }
+  ]
+}

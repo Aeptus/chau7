@@ -1,5 +1,6 @@
 import XCTest
 @testable import Chau7
+import Chau7Core
 
 final class RemoteTabRegistryTests: XCTestCase {
     func testRebuildPreservesExistingTabIDsAndBuildsSessionLookup() throws {

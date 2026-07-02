@@ -2,6 +2,11 @@ import Foundation
 import CryptoKit
 import Chau7Core
 
+// Wire payload types (tabs, approvals, client state, errors, handshake) live
+// in Chau7Core/Remote/RemoteWirePayloads.swift — the single Swift source of
+// truth shared with the iOS companion app. This file keeps only macOS-side
+// pairing/agent state models.
+
 struct RemotePairingInfo: Codable, Equatable {
     let deviceID: String
     let macPub: String
@@ -23,23 +28,8 @@ struct RemotePairingInfo: Codable, Equatable {
     }
 }
 
-struct RemoteQRPayload: Codable, Equatable {
-    let relayURL: String
-    let deviceID: String
-    let macPub: String
-    let pairingCode: String
-    let expiresAt: String
-    var relaySecret: String?
-
-    enum CodingKeys: String, CodingKey {
-        case relayURL = "relay_url"
-        case deviceID = "device_id"
-        case macPub = "mac_pub"
-        case pairingCode = "pairing_code"
-        case expiresAt = "expires_at"
-        case relaySecret = "relay_secret"
-    }
-}
+/// The QR/paste payload is the shared pairing schema.
+typealias RemoteQRPayload = RemotePairingPayload
 
 struct RemotePairingRegenerationPlan: Equatable {
     let shouldStopAgent: Bool
@@ -79,43 +69,6 @@ extension RemotePairingInfo {
     }
 }
 
-struct RemoteTabDescriptor: Codable, Equatable {
-    let tabID: UInt32
-    let title: String
-    let projectName: String?
-    let branchName: String?
-    let aiProvider: String?
-    let isActive: Bool
-    let isMCPControlled: Bool
-
-    enum CodingKeys: String, CodingKey {
-        case tabID = "tab_id"
-        case title
-        case projectName = "project_name"
-        case branchName = "branch_name"
-        case aiProvider = "ai_provider"
-        case isActive = "is_active"
-        case isMCPControlled = "is_mcp_controlled"
-    }
-}
-
-struct RemoteTabListPayload: Codable, Equatable {
-    let tabs: [RemoteTabDescriptor]
-}
-
-struct RemoteTabSwitchPayload: Codable, Equatable {
-    let tabID: UInt32
-
-    enum CodingKeys: String, CodingKey {
-        case tabID = "tab_id"
-    }
-}
-
-struct RemoteErrorPayload: Codable, Equatable {
-    let code: String
-    let message: String
-}
-
 struct RemoteSessionStatus: Codable, Equatable {
     let status: String
     let pairedDeviceID: String?
@@ -125,39 +78,6 @@ struct RemoteSessionStatus: Codable, Equatable {
         case status
         case pairedDeviceID = "paired_device_id"
         case pairedDeviceName = "paired_device_name"
-    }
-}
-
-enum RemoteClientAppState: String, Codable, Equatable {
-    case foreground
-    case background
-}
-
-enum RemoteClientStreamMode: String, Codable, Equatable {
-    case full
-    case approvalsOnly = "approvals_only"
-}
-
-enum RemotePushEnvironment: String, Codable, Equatable {
-    case development
-    case production
-}
-
-struct RemoteClientStatePayload: Codable, Equatable {
-    let appState: RemoteClientAppState
-    let streamMode: RemoteClientStreamMode
-    let pushToken: String?
-    let pushTopic: String?
-    let pushEnvironment: RemotePushEnvironment?
-    let notificationsAuthorized: Bool
-
-    enum CodingKeys: String, CodingKey {
-        case appState = "app_state"
-        case streamMode = "stream_mode"
-        case pushToken = "push_token"
-        case pushTopic = "push_topic"
-        case pushEnvironment = "push_environment"
-        case notificationsAuthorized = "notifications_authorized"
     }
 }
 
@@ -253,46 +173,6 @@ struct RemoteAgentPairedDeviceSnapshot: Codable, Equatable {
         case publicKeyFingerprint = "public_key_fingerprint"
         case pairedAt = "paired_at"
         case lastConnectedAt = "last_connected_at"
-    }
-}
-
-struct ApprovalRequestPayload: Codable {
-    let requestID: String
-    let command: String
-    let flaggedCommand: String
-    let timestamp: String
-    let tabTitle: String?
-    let toolName: String?
-    let projectName: String?
-    let branchName: String?
-    let currentDirectory: String?
-    let recentCommand: String?
-    let contextNote: String?
-    let sessionID: String?
-
-    enum CodingKeys: String, CodingKey {
-        case requestID = "request_id"
-        case command
-        case flaggedCommand = "flagged_command"
-        case timestamp
-        case tabTitle = "tab_title"
-        case toolName = "tool_name"
-        case projectName = "project_name"
-        case branchName = "branch_name"
-        case currentDirectory = "current_directory"
-        case recentCommand = "recent_command"
-        case contextNote = "context_note"
-        case sessionID = "session_id"
-    }
-}
-
-struct ApprovalResponsePayload: Codable {
-    let requestID: String
-    let approved: Bool
-
-    enum CodingKeys: String, CodingKey {
-        case requestID = "request_id"
-        case approved
     }
 }
 

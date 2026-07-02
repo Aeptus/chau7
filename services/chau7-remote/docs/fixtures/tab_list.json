@@ -1,0 +1,19 @@
+{
+  "tabs": [
+    {
+      "tab_id": 1,
+      "title": "build",
+      "project_name": "Mockup",
+      "branch_name": "main",
+      "ai_provider": "claude-code",
+      "is_active": true,
+      "is_mcp_controlled": false
+    },
+    {
+      "tab_id": 2,
+      "title": "logs",
+      "is_active": false,
+      "is_mcp_controlled": true
+    }
+  ]
+}

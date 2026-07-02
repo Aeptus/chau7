@@ -1,0 +1,8 @@
+{
+  "app_state": "background",
+  "stream_mode": "approvals_only",
+  "push_token": "abcdef0123456789",
+  "push_topic": "com.chau7.remote",
+  "push_environment": "production",
+  "notifications_authorized": true
+}

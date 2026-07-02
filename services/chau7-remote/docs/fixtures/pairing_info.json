@@ -1,0 +1,8 @@
+{
+  "relay_url": "wss://relay.example.com",
+  "device_id": "device-123",
+  "mac_pub": "bWFjLXB1Yg==",
+  "pairing_code": "123456",
+  "expires_at": "2026-07-01T12:30:00Z",
+  "relay_secret": "c2VjcmV0"
+}

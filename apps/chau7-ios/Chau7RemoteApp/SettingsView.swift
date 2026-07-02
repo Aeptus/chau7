@@ -1,3 +1,4 @@
+import Chau7Core
 import SwiftUI
 import UIKit
 

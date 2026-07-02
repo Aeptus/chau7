@@ -1,3 +1,4 @@
+import Chau7Core
 import SwiftUI
 
 /// Modal sheet for pairing with the macOS app. Supports scanning the pairing QR
