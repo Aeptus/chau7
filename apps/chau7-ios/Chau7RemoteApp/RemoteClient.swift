@@ -1460,6 +1460,17 @@ final class RemoteClient {
                 return
             }
             let payload = try RemoteJSON.decoder.decode(RemotePendingStatePayload.self, from: data)
+            // Phase-B arbitration: versioned snapshots (newer agents) are
+            // ordered by (session_epoch, state_version); a stale one is
+            // discarded outright. Unversioned snapshots rely on the
+            // reconciler's delta-journal invariants as before.
+            guard pendingReconciler.admitSnapshot(
+                epoch: payload.sessionEpoch,
+                version: payload.stateVersion
+            ) else {
+                log.info("Pending state snapshot discarded as stale (epoch/version arbitration)")
+                return
+            }
             let busyIDs = Set(pendingApprovals.filter(\.responseState.isBusy).map(\.requestID))
             syncApprovals(with: pendingReconciler.applySnapshotApprovals(
                 payload.approvals,

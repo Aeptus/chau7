@@ -168,6 +168,34 @@ final class PendingStateReconcilerTests: XCTestCase {
     }
 }
 
+/// Phase-B snapshot arbitration: versioned snapshots are ordered by
+/// (session_epoch, state_version); unversioned ones stay journal-protected.
+final class PendingStateArbitrationTests: XCTestCase {
+
+    func testStaleVersionWithinEpochIsRejected() {
+        var reconciler = PendingStateReconciler()
+        XCTAssertTrue(reconciler.admitSnapshot(epoch: "e1", version: 5))
+        XCTAssertFalse(reconciler.admitSnapshot(epoch: "e1", version: 5), "same version is stale")
+        XCTAssertFalse(reconciler.admitSnapshot(epoch: "e1", version: 3), "lower version is stale")
+        XCTAssertTrue(reconciler.admitSnapshot(epoch: "e1", version: 6))
+    }
+
+    func testNewEpochResetsArbitration() {
+        var reconciler = PendingStateReconciler()
+        XCTAssertTrue(reconciler.admitSnapshot(epoch: "e1", version: 100))
+        // Agent restarted: fresh epoch, counter restarts low — still admitted.
+        XCTAssertTrue(reconciler.admitSnapshot(epoch: "e2", version: 1))
+        XCTAssertFalse(reconciler.admitSnapshot(epoch: "e2", version: 1))
+    }
+
+    func testUnversionedSnapshotsAlwaysAdmitted() {
+        var reconciler = PendingStateReconciler()
+        XCTAssertTrue(reconciler.admitSnapshot(epoch: nil, version: nil))
+        _ = reconciler.admitSnapshot(epoch: "e1", version: 9)
+        XCTAssertTrue(reconciler.admitSnapshot(epoch: nil, version: nil), "older agents stay journal-protected, never blocked")
+    }
+}
+
 /// Pins the NF-2 fix: agent restarts no longer deadlock the replay guard.
 final class RemoteReplayGuardTests: XCTestCase {
 

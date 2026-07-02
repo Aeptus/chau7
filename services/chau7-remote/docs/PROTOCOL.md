@@ -485,9 +485,12 @@ with `RELAY_ALLOW_UNAUTHENTICATED`.
 - `GET /pending/:deviceId` (role=ios, scope=pending) — read the snapshot.
   The relay adds an `updated_at` ISO 8601 string stamped at write time.
 
-**Consistency caveat:** the REST snapshot and the WS delta stream are two
-independent channels with no shared versioning yet. Clients must merge
-(never wholesale-replace) so that a stale snapshot cannot clobber approvals
-that arrived over the WS after the snapshot was written. A `session_epoch` +
-`state_version` arbitration scheme is planned (see the events/notifications
-unification program).
+**Consistency:** the REST snapshot and the WS delta stream are two
+independent channels. Clients must merge (never wholesale-replace) so that a
+stale snapshot cannot clobber approvals that arrived over the WS after the
+snapshot was written. Additionally, the agent stamps each snapshot with
+`session_epoch` (a random identifier minted per agent session generation,
+regenerated on `resetSession`) and `state_version` (monotonic within an
+epoch): within one epoch a client applies only strictly newer versions, and
+a changed epoch resets its arbitration state. Snapshots from older agents
+lack the fields and rely on the client's delta-journal merge alone.

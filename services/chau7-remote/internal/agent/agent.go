@@ -10,6 +10,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/binary"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -81,7 +82,14 @@ type Agent struct {
 	notifiedPromptIDs       map[string]time.Time
 	notifiedEventKeys       map[string]time.Time
 
-	pendingStateMu   sync.Mutex
+	pendingStateMu sync.Mutex
+	// sessionEpoch identifies one agent crypto-session generation; it changes
+	// on resetSession so clients can detect restarts. stateVersion is a
+	// monotonic counter over pending-state snapshots within an epoch — a
+	// client must ignore a snapshot whose (epoch, version) is not newer than
+	// the last one it applied.
+	sessionEpoch     string
+	stateVersion     uint64
 	pendingApprovals map[string]ApprovalNotificationPayload
 	pendingPrompts   map[string]RemoteInteractivePrompt
 }
@@ -219,6 +227,10 @@ type PushNotifyPayload struct {
 type PendingStatePayload struct {
 	Approvals          []ApprovalNotificationPayload `json:"approvals"`
 	InteractivePrompts []RemoteInteractivePrompt     `json:"interactive_prompts"`
+	// SessionEpoch + StateVersion order snapshots: within one epoch, higher
+	// version wins; a new epoch resets the client's arbitration state.
+	SessionEpoch string `json:"session_epoch,omitempty"`
+	StateVersion uint64 `json:"state_version,omitempty"`
 }
 
 type TabSwitchPayload struct {
@@ -956,6 +968,22 @@ func (a *Agent) resetSession() {
 	a.currentPeerName = ""
 	a.sessionReady = false
 	a.maxReceivedSeq = 0
+
+	a.pendingStateMu.Lock()
+	a.sessionEpoch = newSessionEpoch()
+	a.stateVersion = 0
+	a.pendingStateMu.Unlock()
+}
+
+// newSessionEpoch returns a random identifier for one agent session
+// generation (8 random bytes, hex). Uniqueness across restarts is what
+// matters, not cryptographic strength.
+func newSessionEpoch() string {
+	var b [8]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return fmt.Sprintf("epoch-%d", time.Now().UnixNano())
+	}
+	return hex.EncodeToString(b[:])
 }
 
 func newCryptoSession(shared, nonceMac, nonceIOS []byte) (*cryptoSession, error) {
@@ -1200,9 +1228,20 @@ func (a *Agent) syncPendingState() {
 	}
 	a.pendingStateMu.Unlock()
 
+	a.pendingStateMu.Lock()
+	if a.sessionEpoch == "" {
+		a.sessionEpoch = newSessionEpoch()
+	}
+	a.stateVersion++
+	epoch := a.sessionEpoch
+	version := a.stateVersion
+	a.pendingStateMu.Unlock()
+
 	payload := PendingStatePayload{
 		Approvals:          approvals,
 		InteractivePrompts: prompts,
+		SessionEpoch:       epoch,
+		StateVersion:       version,
 	}
 	if err := a.relayHTTPPost("/pending/"+a.state.DeviceID, "pending", payload); err != nil {
 		log.Printf("pending state sync: %v", err)

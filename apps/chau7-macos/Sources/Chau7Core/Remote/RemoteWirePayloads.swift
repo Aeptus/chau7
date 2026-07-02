@@ -424,21 +424,34 @@ public struct RemotePendingStatePayload: Codable, Equatable, Sendable {
     public let approvals: [ApprovalRequestPayload]
     public let interactivePrompts: [RemoteInteractivePrompt]
     public let updatedAt: String?
+    /// Snapshot arbitration (phase B): the agent's session generation and a
+    /// monotonic version within it. Within one epoch, only a strictly newer
+    /// version may be applied; a changed epoch resets arbitration state.
+    /// Absent from older agents — the reconciler's delta-journal invariants
+    /// remain the fallback.
+    public let sessionEpoch: String?
+    public let stateVersion: UInt64?
 
     public init(
         approvals: [ApprovalRequestPayload],
         interactivePrompts: [RemoteInteractivePrompt],
-        updatedAt: String? = nil
+        updatedAt: String? = nil,
+        sessionEpoch: String? = nil,
+        stateVersion: UInt64? = nil
     ) {
         self.approvals = approvals
         self.interactivePrompts = interactivePrompts
         self.updatedAt = updatedAt
+        self.sessionEpoch = sessionEpoch
+        self.stateVersion = stateVersion
     }
 
     enum CodingKeys: String, CodingKey {
         case approvals
         case interactivePrompts = "interactive_prompts"
         case updatedAt = "updated_at"
+        case sessionEpoch = "session_epoch"
+        case stateVersion = "state_version"
     }
 }
 

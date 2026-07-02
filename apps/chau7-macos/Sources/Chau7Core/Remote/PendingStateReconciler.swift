@@ -63,6 +63,10 @@ public struct PendingStateReconciler: Sendable {
     private var wsUpsertTimes: [String: Date] = [:]
     /// When the most recent snapshot fetch began (nil = none in flight).
     private var snapshotFetchStartedAt: Date?
+    /// Last applied snapshot arbitration coordinates (phase B). Nil until a
+    /// versioned snapshot has been seen.
+    private var lastSnapshotEpoch: String?
+    private var lastSnapshotVersion: UInt64?
     /// When the last WS prompt list arrived (invariant 3).
     private var lastWSPromptListAt: Date?
 
@@ -118,6 +122,25 @@ public struct PendingStateReconciler: Sendable {
     public mutating func beginSnapshotFetch(now: Date) {
         snapshotFetchStartedAt = now
         pruneResolutionJournal(now: now)
+    }
+
+    /// Phase-B arbitration: should a snapshot with these coordinates be
+    /// applied at all? Unversioned snapshots (older agents) are always
+    /// eligible — the delta-journal invariants remain their protection.
+    /// Applying updates the arbitration state.
+    public mutating func admitSnapshot(epoch: String?, version: UInt64?) -> Bool {
+        guard let epoch, let version else { return true }
+        if epoch != lastSnapshotEpoch {
+            // New agent session generation: previous ordering is void.
+            lastSnapshotEpoch = epoch
+            lastSnapshotVersion = version
+            return true
+        }
+        if let lastVersion = lastSnapshotVersion, version <= lastVersion {
+            return false
+        }
+        lastSnapshotVersion = version
+        return true
     }
 
     /// Merge a `/pending` snapshot's approvals (invariants 1 + 2).
@@ -177,6 +200,8 @@ public struct PendingStateReconciler: Sendable {
         wsUpsertTimes = [:]
         snapshotFetchStartedAt = nil
         lastWSPromptListAt = nil
+        lastSnapshotEpoch = nil
+        lastSnapshotVersion = nil
     }
 
     // MARK: - Private
