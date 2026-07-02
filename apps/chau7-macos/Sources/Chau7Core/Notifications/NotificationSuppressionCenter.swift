@@ -1,32 +1,33 @@
 import Foundation
-import Chau7Core
 
-/// Owns the four time-windowed delivery-policy maps that used to live as
-/// loose `private var` dictionaries on `NotificationManager`:
+/// The single time-windowed suppression component for notification delivery.
 ///
-/// * `recentAuthoritativeEvents` — drives "fallback shadow" suppression
-///   when a heuristic/fallback event arrives shortly after an
-///   authoritative one for the same session/tab/directory.
-/// * `recentRepeatedAttentionEvents` — drives repeat suppression for
-///   permission / waiting-input / attention-required attention events
-///   the user has already been shown.
-/// * `recentClosedSessionEvents` — drives "post-close" suppression for
-///   events that arrive after the session has already announced finish
-///   or fail.
-/// * `routingRetryCounts` — keyed by event id, holds the retry attempt
-///   for authoritative events that arrived before their target tab was
-///   ready to be routed to.
+/// Owns the four state maps that decide whether an accepted event still gets
+/// delivered (they previously lived app-side as `NotificationDeliveryPolicy`,
+/// with the pure predicates split across `NotificationDeliverySemantics`):
 ///
-/// The policy returns `Verdict` values so the manager can pattern-match
-/// on intent (pass / drop / scheduleRetry) without having to know which
-/// of the four maps got read. The manager still owns the actual side
-/// effects (history accounting, DispatchQueue dispatches, enqueueEvent
-/// re-entry) because those depend on manager-only state.
-@MainActor
-final class NotificationDeliveryPolicy {
+/// * `recentAuthoritativeEvents` — "fallback shadow": a heuristic/fallback
+///   event arriving shortly after an authoritative one for the same
+///   session/tab/directory is suppressed.
+/// * `recentRepeatedAttentionEvents` — repeat suppression for interactive
+///   attention (permission / waiting-input / attention-required) the user
+///   has already been shown.
+/// * `recentClosedSessionEvents` — "post-close": events arriving after the
+///   session announced finish/fail stay muted.
+/// * `routingRetryCounts` — retry bookkeeping for authoritative events that
+///   arrived before their target tab could be resolved.
+///
+/// All windows are the named `NotificationTimings` constants and every
+/// time read goes through the injected clock, so identical event sequences
+/// with an identical clock produce identical verdict sequences — the
+/// determinism contract `NotificationSuppressionCenterTests` replays.
+///
+/// Not thread-safe: confine to one actor/queue (the notification manager
+/// runs it on the main actor).
+public final class NotificationSuppressionCenter {
 
-    /// What the manager should do for a given step.
-    enum Verdict: Equatable {
+    /// What the caller should do for a given step.
+    public enum Verdict: Equatable, Sendable {
         case pass
         case drop(reason: String)
         case scheduleRetry(delaySeconds: TimeInterval, attempt: Int)
@@ -41,16 +42,19 @@ final class NotificationDeliveryPolicy {
 
     private let authoritativeRetryDelays: [TimeInterval]
     private let routingRetryCountsCap: Int
+    private let now: () -> Date
 
-    init(
+    public init(
         authoritativeRetryDelays: [TimeInterval] = [0.05, 0.15, 0.5],
-        routingRetryCountsCap: Int = 100
+        routingRetryCountsCap: Int = 100,
+        now: @escaping () -> Date = Date.init
     ) {
         self.authoritativeRetryDelays = authoritativeRetryDelays
         self.routingRetryCountsCap = routingRetryCountsCap
+        self.now = now
     }
 
-    var maxRoutingRetryAttempts: Int {
+    public var maxRoutingRetryAttempts: Int {
         authoritativeRetryDelays.count
     }
 
@@ -58,18 +62,18 @@ final class NotificationDeliveryPolicy {
 
     /// Drop entries from the three time-windowed maps that are older than
     /// their suppression window, and cap `routingRetryCounts` once it
-    /// crosses the cap. Called by the manager at the start of every
-    /// processEvent so the dicts can't grow unboundedly across a busy
-    /// burst of events.
-    func pruneExpired(now: Date = Date()) {
+    /// crosses the cap. Call at the start of every delivery evaluation so
+    /// the dicts can't grow unboundedly across a busy burst of events.
+    public func pruneExpired() {
+        let current = now()
         recentAuthoritativeEvents = recentAuthoritativeEvents.filter {
-            now.timeIntervalSince($0.value) <= NotificationDeliverySemantics.authorityRetentionSeconds
+            current.timeIntervalSince($0.value) <= NotificationTimings.authorityRetention
         }
         recentRepeatedAttentionEvents = recentRepeatedAttentionEvents.filter {
-            now.timeIntervalSince($0.value) <= NotificationDeliverySemantics.repeatedAttentionSuppressionSeconds
+            current.timeIntervalSince($0.value) <= NotificationTimings.repeatedAttentionSuppression
         }
         recentClosedSessionEvents = recentClosedSessionEvents.filter {
-            now.timeIntervalSince($0.value) <= NotificationDeliverySemantics.closedSessionSuppressionSeconds
+            current.timeIntervalSince($0.value) <= NotificationTimings.closedSessionSuppression
         }
         if routingRetryCounts.count > routingRetryCountsCap {
             routingRetryCounts = routingRetryCounts.filter { $0.value < authoritativeRetryDelays.count }
@@ -83,7 +87,7 @@ final class NotificationDeliveryPolicy {
     /// the event carries enough identity to retry; `drop` when retries
     /// are exhausted or identity is missing; `pass` when the event
     /// doesn't require authoritative routing at all.
-    func attemptAuthoritativeRoutingRetry(_ event: AIEvent) -> Verdict {
+    public func attemptAuthoritativeRoutingRetry(_ event: AIEvent) -> Verdict {
         guard NotificationDeliverySemantics.requiresAuthoritativeRouting(event),
               event.tabID == nil else {
             return .pass
@@ -120,10 +124,11 @@ final class NotificationDeliveryPolicy {
     /// Verdict for the post-close suppression step. Drops events that
     /// arrive for a session that has already announced finish/fail
     /// within the suppression window.
-    func attemptPostCloseSuppression(_ event: AIEvent) -> Verdict {
+    public func attemptPostCloseSuppression(_ event: AIEvent) -> Verdict {
         if NotificationDeliverySemantics.shouldSuppressAfterClose(
             event,
-            recentlyClosedEvents: recentClosedSessionEvents
+            recentlyClosedEvents: recentClosedSessionEvents,
+            now: now()
         ) {
             routingRetryCounts.removeValue(forKey: event.id)
             return .drop(reason: "Suppressed stale post-close notification for an already-finished session")
@@ -134,10 +139,11 @@ final class NotificationDeliveryPolicy {
     /// Verdict for the fallback-shadow suppression step. Drops fallback /
     /// heuristic events when an authoritative event for the same
     /// session/tab/directory was delivered recently.
-    func attemptFallbackShadowSuppression(_ event: AIEvent) -> Verdict {
+    public func attemptFallbackShadowSuppression(_ event: AIEvent) -> Verdict {
         if NotificationDeliverySemantics.shouldSuppressAsFallback(
             event,
-            authoritativeEvents: recentAuthoritativeEvents
+            authoritativeEvents: recentAuthoritativeEvents,
+            now: now()
         ) {
             return .drop(reason: "Suppressed fallback event shadowed by authoritative delivery")
         }
@@ -146,10 +152,11 @@ final class NotificationDeliveryPolicy {
 
     /// Verdict for the repeat-suppression step. Drops attention events
     /// for an unchanged session state the user already saw.
-    func attemptRepeatSuppression(_ event: AIEvent) -> Verdict {
+    public func attemptRepeatSuppression(_ event: AIEvent) -> Verdict {
         if NotificationDeliverySemantics.shouldSuppressRepeat(
             event,
-            recentRepeatEvents: recentRepeatedAttentionEvents
+            recentRepeatEvents: recentRepeatedAttentionEvents,
+            now: now()
         ) {
             routingRetryCounts.removeValue(forKey: event.id)
             return .drop(reason: "Suppressed repeated interactive-attention notification for unchanged session state")
@@ -159,33 +166,35 @@ final class NotificationDeliveryPolicy {
 
     // MARK: - Registrations (write-side)
 
-    func registerClosedIdentityIfNeeded(_ event: AIEvent, now: Date = Date()) {
+    public func registerClosedIdentityIfNeeded(_ event: AIEvent) {
         guard NotificationDeliverySemantics.shouldRegisterClosedIdentity(event) else { return }
+        let current = now()
         for key in NotificationDeliverySemantics.closedIdentityKeys(for: event) {
-            recentClosedSessionEvents[key] = now
+            recentClosedSessionEvents[key] = current
         }
     }
 
-    func registerAuthoritativeEventIfNeeded(_ event: AIEvent, now: Date = Date()) {
+    public func registerAuthoritativeEventIfNeeded(_ event: AIEvent) {
         guard event.reliability == .authoritative else { return }
+        let current = now()
         for key in NotificationDeliverySemantics.authorityKeys(for: event) {
-            recentAuthoritativeEvents[key] = now
+            recentAuthoritativeEvents[key] = current
         }
         routingRetryCounts.removeValue(forKey: event.id)
     }
 
-    func registerRepeatSuppressionIfNeeded(_ event: AIEvent, now: Date = Date()) {
+    public func registerRepeatSuppressionIfNeeded(_ event: AIEvent) {
         guard let key = NotificationDeliverySemantics.repeatSuppressionKey(for: event) else { return }
-        recentRepeatedAttentionEvents[key] = now
+        recentRepeatedAttentionEvents[key] = now()
     }
 
     /// Drop the retry counter for an event that has completed its journey
     /// (delivered, dropped by a non-routing reason, or rate-limited).
-    func forgetRetryCount(_ eventID: UUID) {
+    public func forgetRetryCount(_ eventID: UUID) {
         routingRetryCounts.removeValue(forKey: eventID)
     }
 
-    func reset() {
+    public func reset() {
         recentAuthoritativeEvents.removeAll()
         recentRepeatedAttentionEvents.removeAll()
         recentClosedSessionEvents.removeAll()

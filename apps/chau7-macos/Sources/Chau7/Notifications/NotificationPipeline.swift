@@ -59,73 +59,82 @@ enum NotificationPipeline {
 
     static func evaluate(_ input: Input) -> Decision {
         // 1. Find matching trigger (O(1) via catalog index)
-        let trigger = NotificationTriggerCatalog.trigger(for: input.event)
+        guard let trigger = NotificationTriggerCatalog.trigger(for: input.event) else {
+            // No matching trigger → default conditions, then default notification.
+            return applyConditions(
+                .default,
+                triggerId: nil,
+                dropSuffix: " (unmatched trigger, default condition)",
+                input: input
+            )
+        }
 
         // 2. Check if trigger is enabled (3-tier via NotificationTriggerState)
-        if let trigger {
-            guard input.triggerState.isEnabled(for: trigger) else {
-                return .drop(reason: "Trigger \(trigger.id) disabled")
-            }
+        guard input.triggerState.isEnabled(for: trigger) else {
+            return .drop(reason: "Trigger \(trigger.id) disabled")
         }
 
         // 3. Evaluate trigger conditions (3-tier: per-trigger → group → default)
-        if let trigger {
-            let condition = resolvedCondition(for: trigger, input: input)
-            if condition.respectDND, input.isFocusModeActive {
-                return .drop(reason: "DND/Focus active")
-            }
-            if condition.onlyWhenUnfocused, input.isAppActive {
-                return .drop(reason: "App is active (onlyWhenUnfocused)")
-            }
-            let actions = resolvedActions(for: trigger, input: input)
+        return applyConditions(
+            resolvedCondition(for: trigger, input: input),
+            triggerId: trigger.id,
+            dropSuffix: "",
+            input: input
+        ) {
+            resolvedActions(for: trigger, input: input)
+        }
+    }
 
-            // 4a. If every resolved action is disabled, nothing should execute.
+    /// The single condition-application path, shared by matched triggers and
+    /// the unmatched-trigger default (this logic was previously duplicated
+    /// inline for both cases and had started to drift). `makeActions` is
+    /// lazy and nil for the unmatched-trigger path, preserving the original
+    /// check ordering: DND → unfocused → resolve actions/all-disabled →
+    /// tab-inactive → dispatch.
+    private static func applyConditions(
+        _ condition: TriggerCondition,
+        triggerId: String?,
+        dropSuffix: String,
+        input: Input,
+        makeActions: (() -> [NotificationActionConfig])? = nil
+    ) -> Decision {
+        if condition.respectDND, input.isFocusModeActive {
+            return .drop(reason: "DND/Focus active" + dropSuffix)
+        }
+        if condition.onlyWhenUnfocused, input.isAppActive {
+            return .drop(reason: "App is active (onlyWhenUnfocused)" + dropSuffix)
+        }
+
+        let actions = makeActions?()
+        if let actions, let triggerId {
+            // If every resolved action is disabled, nothing should execute.
             guard actions.contains(where: \.enabled) else {
-                return .drop(reason: "All actions disabled for trigger \(trigger.id)")
+                return .drop(reason: "All actions disabled for trigger \(triggerId)")
             }
-
-            if condition.onlyWhenTabInactive, input.isToolTabActive {
-                let styleActions = NotificationStylePlanner.styleOnlyActions(
-                    for: input.event,
-                    from: actions
-                )
-                if !styleActions.isEmpty {
-                    return .fireStyleOnly(triggerId: trigger.id, actions: styleActions)
-                }
-                return .drop(reason: "Tool tab is active (onlyWhenTabInactive)")
-            }
-
-            // 5. Optimize: single default showNotification → use native path
-            if actions.count == 1,
-               let first = actions.first,
-               first.enabled,
-               first.actionType == .showNotification,
-               first.config.isEmpty {
-                return .fireDefault(triggerId: trigger.id)
-            }
-
-            return .fireActions(triggerId: trigger.id, actions: actions)
         }
 
-        // 4b. No matching trigger → apply full default conditions (trigger is nil here:
-        // the `if let trigger` block above returns on every path), then default notification
-        let defaults = TriggerCondition.default
-        if defaults.respectDND, input.isFocusModeActive {
-            return .drop(reason: "DND/Focus active (unmatched trigger, default condition)")
-        }
-        if defaults.onlyWhenUnfocused, input.isAppActive {
-            return .drop(reason: "App is active (unmatched trigger, default condition)")
-        }
-        if defaults.onlyWhenTabInactive, input.isToolTabActive {
+        if condition.onlyWhenTabInactive, input.isToolTabActive {
             let styleActions = NotificationStylePlanner.styleOnlyActions(
                 for: input.event,
-                from: []
+                from: actions ?? []
             )
             if !styleActions.isEmpty {
-                return .fireStyleOnly(triggerId: nil, actions: styleActions)
+                return .fireStyleOnly(triggerId: triggerId, actions: styleActions)
             }
-            return .drop(reason: "Tool tab is active (unmatched trigger, default condition)")
+            return .drop(reason: "Tool tab is active (onlyWhenTabInactive)" + dropSuffix)
         }
-        return .fireDefault(triggerId: nil)
+
+        // Optimize: single default showNotification → use native path.
+        guard let triggerId, let actions else {
+            return .fireDefault(triggerId: nil)
+        }
+        if actions.count == 1,
+           let first = actions.first,
+           first.enabled,
+           first.actionType == .showNotification,
+           first.config.isEmpty {
+            return .fireDefault(triggerId: triggerId)
+        }
+        return .fireActions(triggerId: triggerId, actions: actions)
     }
 }

@@ -58,7 +58,7 @@ final class NotificationManager {
     /// (authoritative-event tracking, repeat suppression, post-close
     /// suppression, routing retry counters). The manager asks the policy
     /// for a verdict at each step and handles the side effects.
-    private let deliveryPolicy = NotificationDeliveryPolicy()
+    private let deliveryPolicy = NotificationSuppressionCenter()
     private let eventEngine = AIEventNotificationEngine()
 
     init(executor: NotificationActionExecutor) {
@@ -320,7 +320,7 @@ final class NotificationManager {
         // Run the four delivery-policy verdicts in order. Each can either
         // pass, drop the event with a reason, or (only authoritative
         // routing) schedule a retry.
-        let policySteps: [(name: String, verdict: NotificationDeliveryPolicy.Verdict)] = [
+        let policySteps: [(name: String, verdict: NotificationSuppressionCenter.Verdict)] = [
             ("routing", deliveryPolicy.attemptAuthoritativeRoutingRetry(preparedEvent)),
             ("postClose", deliveryPolicy.attemptPostCloseSuppression(preparedEvent)),
             ("fallbackShadow", deliveryPolicy.attemptFallbackShadowSuppression(preparedEvent))

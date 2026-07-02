@@ -40,8 +40,7 @@ final class NotificationRateLimiter {
 
     /// Atomically check whether a notification is allowed and consume a token if so.
     /// Returns `true` if the notification should proceed.
-    func checkAndConsume(triggerId: String) -> Bool {
-        let now = Date()
+    func checkAndConsume(triggerId: String, now: Date = Date()) -> Bool {
         pruneStaleBuckets(now: now)
         var bucket = buckets[triggerId] ?? Bucket(
             tokens: Double(config.maxPerMinute + config.burstAllowance),
