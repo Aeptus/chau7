@@ -79,6 +79,7 @@ Detection methods:
 - **MAGI config panel** — `--config` opens an editable terminal panel for member provider/class settings, global evidence/web/deadlock/veto switches, provider checks, and persona file checks.
 - **MAGI visible first-run wizard** — `magi config` renders provider and model-class choices as numbered lists in interactive terminals and explains stdin/stdout TTY state when the wizard cannot open.
 - **MAGI shared first-run setup** — `magi config` can apply one provider/class choice to Melchior, Balthasar, and Casper, with a per-member path still available for mixed-provider councils.
+- **MAGI evidence collector cleanup** — approved collectors run in temporary Chau7 tabs that close after output capture, and evidence requests without explicit collectors do not silently fall back to repo status.
 - **Branded tab logos** — detected agents show their brand logo in the tab when one is bundled; the rest fall back to their brand tab color.
 - **Auto tab theming** — tabs adopt the brand color of the active AI agent.
 - **LLM error explanation** — one-click error analysis via OpenAI, Anthropic, Ollama, or custom endpoint.

@@ -818,11 +818,12 @@ public struct MagiCollectorCommand: Codable, Equatable, Sendable, Identifiable {
 
 public enum MagiEvidenceCollectorPlanner {
     public static func commands(for request: MagiEvidenceRequest) -> [MagiCollectorCommand] {
-        let collectors = request.proposedCollectors.isEmpty ? ["local.git_status"] : request.proposedCollectors
+        let collectors = request.proposedCollectors
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
         return collectors.enumerated().map { index, collector in
-            let trimmed = collector.trimmingCharacters(in: .whitespacesAndNewlines)
             let id = "\(request.id)-collector-\(index + 1)"
-            switch trimmed {
+            switch collector {
             case "local.git_status":
                 return MagiCollectorCommand(
                     id: id,
@@ -838,7 +839,7 @@ public enum MagiEvidenceCollectorPlanner {
                     sourceDescription: "git diff"
                 )
             default:
-                if let query = commandPayload(prefix: "local.repo_search:", collector: trimmed) {
+                if let query = commandPayload(prefix: "local.repo_search:", collector: collector) {
                     return MagiCollectorCommand(
                         id: id,
                         collectorKind: .localRepoSearch,
@@ -847,7 +848,7 @@ public enum MagiEvidenceCollectorPlanner {
                         sourceDescription: "repository search"
                     )
                 }
-                if let path = commandPayload(prefix: "local.file_read:", collector: trimmed) {
+                if let path = commandPayload(prefix: "local.file_read:", collector: collector) {
                     return MagiCollectorCommand(
                         id: id,
                         collectorKind: .localFileRead,
@@ -856,7 +857,7 @@ public enum MagiEvidenceCollectorPlanner {
                         sourceDescription: "file read"
                     )
                 }
-                if let command = commandPayload(prefix: "local.command:", collector: trimmed) {
+                if let command = commandPayload(prefix: "local.command:", collector: collector) {
                     return MagiCollectorCommand(
                         id: id,
                         collectorKind: .localCommand,
@@ -865,7 +866,7 @@ public enum MagiEvidenceCollectorPlanner {
                         sourceDescription: "approved local command"
                     )
                 }
-                if let query = commandPayload(prefix: "web.query:", collector: trimmed) {
+                if let query = commandPayload(prefix: "web.query:", collector: collector) {
                     return MagiCollectorCommand(
                         id: id,
                         collectorKind: .webQuery,
@@ -877,8 +878,8 @@ public enum MagiEvidenceCollectorPlanner {
                 return MagiCollectorCommand(
                     id: id,
                     collectorKind: .unsupported,
-                    payload: trimmed,
-                    command: "printf '%s\\n' 'Unsupported MAGI collector: \(shellEscaped(trimmed))'",
+                    payload: collector,
+                    command: "printf '%s\\n' 'Unsupported MAGI collector: \(shellEscaped(collector))'",
                     sourceDescription: "unsupported collector",
                     requiresMCPCommandPermission: false
                 )

@@ -105,6 +105,13 @@
     "differentiator": "Yes"
   },
   {
+    "category": "AI Integration",
+    "feature": "MAGI Evidence Collector Cleanup",
+    "description": "Approved collectors run in temporary Chau7 tabs that close after output capture, and evidence requests without explicit collectors do not silently fall back to repo status",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
     "category": "API Analytics",
     "feature": "Echo-Only Input Latency",
     "description": "Per-session input latency measures keystroke-to-echo responsiveness only; command submission (Enter) is excluded for every session so a slow command's runtime is never miscounted as UI lag",

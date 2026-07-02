@@ -415,6 +415,20 @@ final class MagiProtocolTests: XCTestCase {
         XCTAssertTrue(commands[5].command.contains("MAGI_WEB_QUERY='Swift structured output parsing'"))
     }
 
+    func testCollectorPlannerDoesNotCreateDefaultCollectors() {
+        let request = MagiEvidenceRequest(
+            id: "request-empty",
+            memberID: .melchior,
+            roundID: "round-2",
+            priority: .medium,
+            reason: "Need user preference.",
+            requiredEvidence: ["user preference"],
+            proposedCollectors: []
+        )
+
+        XCTAssertTrue(MagiEvidenceCollectorPlanner.commands(for: request).isEmpty)
+    }
+
     func testCollectorPlannerDoesNotTreatLocalShellAliasAsV1Collector() {
         let request = MagiEvidenceRequest(
             id: "request-2",

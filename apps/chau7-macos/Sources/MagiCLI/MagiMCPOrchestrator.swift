@@ -277,7 +277,11 @@ struct MagiMCPOrchestrator {
                 kind: .evidenceCollection
             )
             try writeCheckpoint(&run, stage: "round-3-started", technicalLog: technicalLog)
-            let evidencePackets = try collectEvidence(for: approvedRequests, config: config)
+            let evidencePackets = try collectEvidence(
+                for: approvedRequests,
+                config: config,
+                technicalLog: technicalLog
+            )
             run.evidencePackets.append(contentsOf: evidencePackets)
             markEvidenceRequestsFulfilled(
                 ids: Set(evidencePackets.filter { $0.metadata["collection_status"] == "fulfilled" }.compactMap(\.requestID)),
@@ -1287,7 +1291,11 @@ struct MagiMCPOrchestrator {
         return reviewed
     }
 
-    private func collectEvidence(for requests: [MagiEvidenceRequest], config: MagiConfig) throws -> [MagiEvidencePacket] {
+    private func collectEvidence(
+        for requests: [MagiEvidenceRequest],
+        config: MagiConfig,
+        technicalLog: MagiTechnicalLog
+    ) throws -> [MagiEvidencePacket] {
         guard !requests.isEmpty else { return [] }
         printLine("")
         printLine("Collecting evidence")
@@ -1304,7 +1312,7 @@ struct MagiMCPOrchestrator {
                     packets.append(packet)
                     continue
                 }
-                let packet = try runCollector(command: command, request: request)
+                let packet = try runCollector(command: command, request: request, technicalLog: technicalLog)
                 printLine("- \(command.id): \(packet.summary)")
                 packets.append(packet)
             }
@@ -1336,7 +1344,11 @@ struct MagiMCPOrchestrator {
         )
     }
 
-    private func runCollector(command: MagiCollectorCommand, request: MagiEvidenceRequest) throws -> MagiEvidencePacket {
+    private func runCollector(
+        command: MagiCollectorCommand,
+        request: MagiEvidenceRequest,
+        technicalLog: MagiTechnicalLog
+    ) throws -> MagiEvidencePacket {
         let create = try client.callTool(name: "tab_create", arguments: [
             "directory": paths.currentDirectory
         ])
@@ -1364,6 +1376,7 @@ struct MagiMCPOrchestrator {
         ])
 
         let output = try waitForCollector(tabID: tabID, sentinel: sentinel, collectorID: command.id)
+        closeCollectorTab(tabID: tabID, collectorID: command.id, technicalLog: technicalLog)
         return MagiEvidencePacket(
             id: "\(command.id)-packet",
             requestID: request.id,
@@ -1378,6 +1391,34 @@ struct MagiMCPOrchestrator {
                 collectionStatus: "fulfilled"
             )
         )
+    }
+
+    private func closeCollectorTab(
+        tabID: String,
+        collectorID: String,
+        technicalLog: MagiTechnicalLog
+    ) {
+        do {
+            _ = try client.callTool(name: "tab_close", arguments: [
+                "tab_id": tabID,
+                "force": true
+            ])
+            technicalLog.record(
+                "collector_tab_closed",
+                stage: "evidence collection",
+                tabID: tabID,
+                fields: ["collector_id": collectorID]
+            )
+        } catch {
+            technicalLog.record(
+                "collector_tab_close_failed",
+                stage: "evidence collection",
+                level: "warning",
+                tabID: tabID,
+                message: error.localizedDescription,
+                fields: ["collector_id": collectorID]
+            )
+        }
     }
 
     private func collectorMetadata(
