@@ -834,78 +834,60 @@ final class FeatureSettings {
         didSet { UserDefaults.standard.set(isLsColorsEnabled, forKey: Keys.lsColorsEnabled) }
     }
 
-    // MARK: - Keyboard Shortcuts (NEW)
+    // MARK: - Keyboard Shortcuts (forwarded to ShortcutSettingsStore)
+
+    @ObservationIgnored private let shortcutStore = ShortcutSettingsStore()
 
     var customShortcuts: [KeyboardShortcut] {
-        didSet {
-            customShortcutsGeneration &+= 1
-            if let data = JSONOperations.encode(customShortcuts, context: "customShortcuts") {
-                UserDefaults.standard.set(data, forKey: Keys.customShortcuts)
-            }
-        }
+        get { shortcutStore.customShortcuts }
+        set { shortcutStore.customShortcuts = newValue }
     }
 
     /// Bumped whenever `customShortcuts` changes, so observers (KeybindingsManager)
     /// can detect changes with a cheap Int compare per key event instead of
     /// rebuilding and comparing a signature string.
-    private(set) var customShortcutsGeneration = 0
-
-    var isShortcutHelperHintEnabled: Bool {
-        didSet { UserDefaults.standard.set(isShortcutHelperHintEnabled, forKey: Keys.shortcutHelperHint) }
+    var customShortcutsGeneration: Int {
+        shortcutStore.customShortcutsGeneration
     }
 
-    /// When true, restore prefills (e.g. `claude --resume <id>`) are auto-submitted
-    /// after insertion when it is safe to do so: the shell is at a prompt, no user
-    /// input arrived after the prefill, and the process tree confirms no AI tool is
-    /// already running. Defaults to false — auto-submitting at startup for every
-    /// restored AI tab triggered N simultaneous Claude/Codex CLI cold-starts (each
-    /// loading its full Node/Python/Rust runtime), which on memory-pressured
-    /// systems felt like a system-wide freeze. Off-by-default leaves the resume
-    /// command in the input field for the user to press Enter when they actually
-    /// want that tab's AI tool running.
+    var isShortcutHelperHintEnabled: Bool {
+        get { shortcutStore.isShortcutHelperHintEnabled }
+        set { shortcutStore.isShortcutHelperHintEnabled = newValue }
+    }
+
     var autoSubmitRestorePrefill: Bool {
         didSet { UserDefaults.standard.set(autoSubmitRestorePrefill, forKey: Keys.autoSubmitRestorePrefill) }
     }
 
     func shortcut(for action: String) -> KeyboardShortcut? {
-        customShortcuts.first { $0.action == action }
+        shortcutStore.shortcut(for: action)
     }
 
     func updateShortcut(_ shortcut: KeyboardShortcut) {
-        if let index = customShortcuts.firstIndex(where: { $0.action == shortcut.action }) {
-            customShortcuts[index] = shortcut
-        }
+        shortcutStore.updateShortcut(shortcut)
     }
 
     func shortcutConflicts(for shortcut: KeyboardShortcut) -> [KeyboardShortcut] {
-        customShortcuts.filter {
-            $0.action != shortcut.action &&
-                $0.key == shortcut.key &&
-                Set($0.modifiers) == Set(shortcut.modifiers)
-        }
+        shortcutStore.shortcutConflicts(for: shortcut)
     }
 
     /// Export keybindings to JSON data (for save-to-file workflows).
     func exportKeybindings() -> Data? {
-        JSONOperations.encode(customShortcuts, context: "keybindings export")
+        shortcutStore.exportKeybindings()
     }
 
     /// Import keybindings from JSON data. Returns true on success.
     @discardableResult
     func importKeybindings(from data: Data) -> Bool {
-        guard let shortcuts = JSONOperations.decode([KeyboardShortcut].self, from: data, context: "keybindings import") else {
-            return false
-        }
-        customShortcuts = shortcuts
-        return true
+        shortcutStore.importKeybindings(from: data)
     }
 
     func resetShortcutsToDefaults() {
-        customShortcuts = KeyboardShortcut.shortcuts(for: keybindingPreset)
+        shortcutStore.applyPreset(keybindingPreset)
     }
 
     func applyKeybindingPreset(_ preset: String) {
-        customShortcuts = KeyboardShortcut.shortcuts(for: preset)
+        shortcutStore.applyPreset(preset)
     }
 
     // MARK: - Notification Settings
@@ -2098,9 +2080,7 @@ final class FeatureSettings {
         static let customShellPath = "terminal.customShellPath"
         static let startupCommand = "terminal.startupCommand"
         static let lsColorsEnabled = "terminal.lsColorsEnabled"
-        // Keyboard Shortcuts (NEW)
-        static let customShortcuts = "keyboard.customShortcuts"
-        static let shortcutHelperHint = "keyboard.shortcutHelperHint"
+        /// Keyboard Shortcuts (NEW)
         static let autoSubmitRestorePrefill = "restore.autoSubmitPrefill"
         // Hover Card Sections
         static let hoverCardShowDirectory = "hoverCard.showDirectory"
@@ -2293,17 +2273,7 @@ final class FeatureSettings {
         self.startupCommand = defaults.string(forKey: Keys.startupCommand) ?? ""
         self.isLsColorsEnabled = defaults.object(forKey: Keys.lsColorsEnabled) as? Bool ?? true
 
-        // Keyboard Shortcuts (NEW)
-        let loadedShortcuts: [KeyboardShortcut]
-        if let data = defaults.data(forKey: Keys.customShortcuts),
-           let shortcuts = JSONOperations.decode([KeyboardShortcut].self, from: data, context: "customShortcuts") {
-            loadedShortcuts = shortcuts
-        } else {
-            let preset = defaults.string(forKey: Keys.keybindingPreset) ?? "default"
-            loadedShortcuts = KeyboardShortcut.shortcuts(for: preset)
-        }
-        self.customShortcuts = Self.migratedShortcutsIfNeeded(loadedShortcuts)
-        self.isShortcutHelperHintEnabled = defaults.object(forKey: Keys.shortcutHelperHint) as? Bool ?? true
+        // Keyboard shortcuts live in ShortcutSettingsStore.
         self.autoSubmitRestorePrefill = defaults.object(forKey: Keys.autoSubmitRestorePrefill) as? Bool ?? false
 
         // Find Defaults (NEW)
@@ -2624,56 +2594,6 @@ final class FeatureSettings {
             ctoPrefix: defaults.string(forKey: Keys.ctoPrefix) ?? "",
             ctoTabOverrides: ctoTabOverrides
         )
-    }
-
-    private static func migratedShortcutsIfNeeded(_ shortcuts: [KeyboardShortcut]) -> [KeyboardShortcut] {
-        var updated = shortcuts
-        var didUpdate = false
-        let hasOpenTextEditor = updated.contains { $0.action == "openTextEditor" }
-        if !hasOpenTextEditor {
-            updated.append(KeyboardShortcut(action: "openTextEditor", key: "e", modifiers: ["cmd", "opt"]))
-            didUpdate = true
-        }
-
-        if let debugIndex = updated.firstIndex(where: { $0.action == "debugConsole" }),
-           let splitIndex = updated.firstIndex(where: { $0.action == "splitVertical" }) {
-            let debugShortcut = updated[debugIndex]
-            let splitShortcut = updated[splitIndex]
-            let debugKey = debugShortcut.key.lowercased()
-            let splitKey = splitShortcut.key.lowercased()
-            let debugModifiers = Set(debugShortcut.modifiers.map { $0.lowercased() })
-            let splitModifiers = Set(splitShortcut.modifiers.map { $0.lowercased() })
-
-            let isLegacyConflict = debugKey == "d"
-                && splitKey == "d"
-                && debugModifiers == ["cmd", "shift"]
-                && splitModifiers == ["cmd", "shift"]
-
-            if isLegacyConflict {
-                updated[debugIndex] = KeyboardShortcut(action: "debugConsole", key: "l", modifiers: ["cmd", "opt"])
-                didUpdate = true
-            }
-        }
-
-        if let nextIndex = updated.firstIndex(where: { $0.action == "nextTab" }) {
-            let nextShortcut = updated[nextIndex]
-            let nextModifiers = Set(nextShortcut.modifiers.map { $0.lowercased() })
-            if nextShortcut.key.lowercased() == "]", nextModifiers == ["cmd", "opt"] {
-                updated[nextIndex] = KeyboardShortcut(action: "nextTab", key: "]", modifiers: ["cmd", "shift"])
-                didUpdate = true
-            }
-        }
-
-        if let previousIndex = updated.firstIndex(where: { $0.action == "previousTab" }) {
-            let previousShortcut = updated[previousIndex]
-            let previousModifiers = Set(previousShortcut.modifiers.map { $0.lowercased() })
-            if previousShortcut.key.lowercased() == "[", previousModifiers == ["cmd", "opt"] {
-                updated[previousIndex] = KeyboardShortcut(action: "previousTab", key: "[", modifiers: ["cmd", "shift"])
-                didUpdate = true
-            }
-        }
-
-        return didUpdate ? updated : shortcuts
     }
 
     // MARK: - Overlay Positions Cache (Performance Optimization)
