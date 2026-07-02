@@ -1665,7 +1665,6 @@ final class TelemetryStore {
             var totalCost = 0.0
             var totalTurns = 0
             var lastRunAt: Date?
-            let formatter = ISO8601DateFormatter()
 
             while sqlite3_step(stmt) == SQLITE_ROW {
                 let rawProvider = colText(stmt, 0)
@@ -1677,7 +1676,7 @@ final class TelemetryStore {
                 totalTurns += Int(sqlite3_column_int(stmt, 4))
                 if sqlite3_column_type(stmt, 5) != SQLITE_NULL,
                    let text = sqlite3_column_text(stmt, 5),
-                   let date = formatter.date(from: String(cString: text)),
+                   let date = DateFormatters.parseISO8601(String(cString: text)),
                    lastRunAt == nil || date > lastRunAt! {
                     lastRunAt = date
                 }
@@ -2382,11 +2381,7 @@ final class TelemetryStore {
         return sqlite3_column_double(stmt, i)
     }
 
-    static let isoFormatter: ISO8601DateFormatter = {
-        let f = ISO8601DateFormatter()
-        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return f
-    }()
+    static let isoFormatter = DateFormatters.iso8601
 
     static func isoString(from date: Date) -> String {
         isoFormatter.string(from: date)

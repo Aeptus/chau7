@@ -2037,14 +2037,14 @@ final class TerminalControlService {
         if !metadata.labels.isEmpty { result["labels"] = metadata.labels }
         if !metadata.favoriteFiles.isEmpty { result["favorite_files"] = metadata.favoriteFiles }
         if let updated = metadata.updatedAt {
-            result["updated_at"] = ISO8601DateFormatter().string(from: updated)
+            result["updated_at"] = DateFormatters.iso8601NoFractional.string(from: updated)
         }
         if !frequentCmds.isEmpty {
             result["frequent_commands"] = frequentCmds.map { cmd in
                 [
                     "command": cmd.command,
                     "count": cmd.count,
-                    "last_used": ISO8601DateFormatter().string(from: cmd.lastUsed),
+                    "last_used": DateFormatters.iso8601NoFractional.string(from: cmd.lastUsed),
                     "frecency_score": cmd.frecencyScore
                 ] as [String: Any]
             }
@@ -2052,7 +2052,7 @@ final class TerminalControlService {
 
         // Aggregated stats from history.db + runs.db
         let stats = RepoStatsProvider.stats(for: repoPath)
-        let iso = ISO8601DateFormatter()
+        let iso = DateFormatters.iso8601NoFractional
         var statsDict: [String: Any] = [
             "total_commands": stats.totalCommands,
             "successful_commands": stats.successfulCommands,
@@ -2110,7 +2110,7 @@ final class TerminalControlService {
             [
                 "command": cmd.command,
                 "count": cmd.count,
-                "last_used": ISO8601DateFormatter().string(from: cmd.lastUsed),
+                "last_used": DateFormatters.iso8601NoFractional.string(from: cmd.lastUsed),
                 "frecency_score": cmd.frecencyScore
             ] as [String: Any]
         }
@@ -2464,7 +2464,7 @@ final class TerminalControlService {
             requestID: requestID,
             command: command,
             flaggedCommand: flaggedCommand,
-            timestamp: ISO8601DateFormatter().string(from: Date()),
+            timestamp: DateFormatters.iso8601NoFractional.string(from: Date()),
             tabTitle: nil,
             toolName: nil,
             projectName: nil,
@@ -2500,7 +2500,7 @@ final class TerminalControlService {
             "flagged_command": flaggedCommand,
             "reason": reason,
             "permissions_source": permissions.sourceName,
-            "requested_at": ISO8601DateFormatter().string(from: Date())
+            "requested_at": DateFormatters.iso8601NoFractional.string(from: Date())
         ]
         pendingApprovals[requestID] = { result in
             iosResult = result

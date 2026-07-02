@@ -79,4 +79,47 @@ final class DateFormattersTests: XCTestCase {
         let b = DateFormatters.iso8601
         XCTAssertTrue(a === b, "iso8601 formatter should be a shared instance")
     }
+
+    // MARK: - iso8601NoFractional
+
+    func testNoFractionalFormatterOmitsFractionalSeconds() {
+        let date = Date(timeIntervalSince1970: 1_736_856_000.456)
+        let formatted = DateFormatters.iso8601NoFractional.string(from: date)
+        XCTAssertFalse(formatted.contains("."), "No-fractional formatter must not emit fractional seconds")
+        XCTAssertTrue(formatted.hasSuffix("Z"))
+    }
+
+    func testNoFractionalFormatterMatchesDefaultISO8601DateFormatterOutput() {
+        // The sweep replaced ad-hoc `ISO8601DateFormatter()` (default options)
+        // with the shared no-fractional instance — outputs must be identical.
+        let date = Date(timeIntervalSince1970: 1_736_856_000)
+        XCTAssertEqual(
+            DateFormatters.iso8601NoFractional.string(from: date),
+            ISO8601DateFormatter().string(from: date)
+        )
+    }
+
+    // MARK: - parseISO8601
+
+    func testParseISO8601AcceptsFractionalSeconds() {
+        let date = DateFormatters.parseISO8601("2025-01-14T12:30:45.123Z")
+        XCTAssertNotNil(date)
+    }
+
+    func testParseISO8601AcceptsNonFractionalSeconds() {
+        let date = DateFormatters.parseISO8601("2025-01-14T12:30:45Z")
+        XCTAssertNotNil(date)
+    }
+
+    func testParseISO8601RoundTripsBothSharedFormatters() {
+        let original = Date(timeIntervalSince1970: 1_736_856_000)
+        let fractional = DateFormatters.iso8601.string(from: original)
+        let plain = DateFormatters.iso8601NoFractional.string(from: original)
+        XCTAssertEqual(DateFormatters.parseISO8601(fractional), original)
+        XCTAssertEqual(DateFormatters.parseISO8601(plain), original)
+    }
+
+    func testParseISO8601RejectsInvalidString() {
+        XCTAssertNil(DateFormatters.parseISO8601("not a date"))
+    }
 }

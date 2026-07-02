@@ -22,11 +22,7 @@ enum Log {
     private static let sinkLock = NSLock()
     private static var _sink: ((String) -> Void)?
 
-    private static let formatter: ISO8601DateFormatter = {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return formatter
-    }()
+    private static let formatter = DateFormatters.iso8601
 
     private static let fileQueue = DispatchQueue(label: "com.chau7.logfile")
     private static var fileHandle: FileHandle?

@@ -24,7 +24,7 @@ final class TerminalOutputCapture {
     private let logPath: String
     private let queue = DispatchQueue(label: "com.chau7.ptycapture")
     private var handle: FileHandle?
-    private let formatter = ISO8601DateFormatter()
+    private let formatter = DateFormatters.iso8601NoFractional
     private var writeCount = 0
     /// Set to `true` after a write error fails non-recoverably (typically
     /// ENOSPC). All further writes for this session short-circuit. Reset only

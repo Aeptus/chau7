@@ -7,11 +7,7 @@ final class TelemetryQueryService {
     private let store = TelemetryStore.shared
     private let recorder = TelemetryRecorder.shared
     private let terminalControl = TerminalControlService.shared
-    private let isoFormatter: ISO8601DateFormatter = {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return formatter
-    }()
+    private let isoFormatter = DateFormatters.iso8601
 
     private let encoder: JSONEncoder = {
         let e = JSONEncoder()

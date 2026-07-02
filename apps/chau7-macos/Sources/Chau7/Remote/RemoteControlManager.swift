@@ -573,7 +573,7 @@ final class RemoteControlManager {
                 requestID: context.requestID,
                 command: context.command,
                 flaggedCommand: context.flaggedCommand,
-                timestamp: ISO8601DateFormatter().string(from: context.requestedAt),
+                timestamp: DateFormatters.iso8601NoFractional.string(from: context.requestedAt),
                 tabTitle: context.tabTitle,
                 toolName: context.toolName,
                 projectName: context.projectName,
@@ -1195,7 +1195,7 @@ final class RemoteControlManager {
             requestID: requestID,
             command: text.trimmingCharacters(in: .whitespacesAndNewlines),
             flaggedCommand: flaggedCommand,
-            timestamp: ISO8601DateFormatter().string(from: Date()),
+            timestamp: DateFormatters.iso8601NoFractional.string(from: Date()),
             tabTitle: approvalContext?.tabTitle,
             toolName: approvalContext?.toolName,
             projectName: approvalContext?.projectName,
@@ -1221,7 +1221,7 @@ final class RemoteControlManager {
     }
 
     private static func parseApprovalDate(_ timestamp: String) -> Date {
-        ISO8601DateFormatter().date(from: timestamp) ?? Date()
+        DateFormatters.parseISO8601(timestamp) ?? Date()
     }
 
     private func dataDirectory() -> URL? {

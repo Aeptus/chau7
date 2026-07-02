@@ -853,7 +853,7 @@ final class RepositoryPaneModel: Identifiable {
 
             guard !hash.isEmpty else { continue }
 
-            let date = ISO8601DateFormatter().date(from: dateStr) ?? Date.distantPast
+            let date = DateFormatters.parseISO8601(dateStr) ?? Date.distantPast
             commits.append(CommitEntry(
                 hash: hash,
                 shortHash: shortHash,

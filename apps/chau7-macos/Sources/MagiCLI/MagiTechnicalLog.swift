@@ -50,8 +50,6 @@ struct MagiTechnicalLog {
     }
 
     private static func isoDate(_ date: Date) -> String {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return formatter.string(from: date)
+        return DateFormatters.iso8601.string(from: date)
     }
 }

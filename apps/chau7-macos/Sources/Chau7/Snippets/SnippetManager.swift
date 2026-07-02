@@ -1095,13 +1095,9 @@ final class SnippetManager {
         decoder.dateDecodingStrategy = .custom { decoder in
             let container = try decoder.singleValueContainer()
             // Try ISO 8601 string first (new format)
-            if let str = try? container.decode(String.self) {
-                let fmt = ISO8601DateFormatter()
-                fmt.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-                if let date = fmt.date(from: str) { return date }
-                // Try without fractional seconds
-                fmt.formatOptions = [.withInternetDateTime]
-                if let date = fmt.date(from: str) { return date }
+            if let str = try? container.decode(String.self),
+               let date = DateFormatters.parseISO8601(str) {
+                return date
             }
             // Fall back to Double (legacy Apple epoch)
             if let ts = try? container.decode(Double.self) {

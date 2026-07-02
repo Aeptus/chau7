@@ -838,7 +838,7 @@ struct TokenOptimizationSettingsView: View {
         let logsDir = RuntimeIsolation.logsDirectory()
             .appendingPathComponent("Chau7", isDirectory: true)
         FileOperations.createDirectory(at: logsDir)
-        let stamp = ISO8601DateFormatter().string(from: Date())
+        let stamp = DateFormatters.iso8601NoFractional.string(from: Date())
             .replacingOccurrences(of: ":", with: "-")
         let url = logsDir.appendingPathComponent("cto-snapshot-\(stamp).json")
         do {

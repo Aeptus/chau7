@@ -1,3 +1,4 @@
+import Chau7Core
 import Foundation
 import os.log
 
@@ -60,9 +61,7 @@ struct LogEntry: Codable {
         var parts: [String] = []
 
         // Timestamp
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        parts.append(formatter.string(from: timestamp))
+        parts.append(DateFormatters.iso8601.string(from: timestamp))
 
         // Level + Category
         parts.append("[\(level)][\(category)]")

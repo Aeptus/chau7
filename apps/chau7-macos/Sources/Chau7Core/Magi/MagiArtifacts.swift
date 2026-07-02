@@ -585,9 +585,7 @@ public enum MagiRunArtifactRenderer {
     }
 
     static func isoDate(_ date: Date) -> String {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime]
-        return formatter.string(from: date)
+        return DateFormatters.iso8601NoFractional.string(from: date)
     }
 
     static func roundTitle(_ kind: MagiRoundKind) -> String {

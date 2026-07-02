@@ -94,17 +94,9 @@ struct ProxyRepoAnalyticsSummary: Sendable {
 final class ProxyAnalyticsStore {
     static let shared = ProxyAnalyticsStore()
 
-    private static let isoWithFractional: ISO8601DateFormatter = {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return formatter
-    }()
+    private static let isoWithFractional = DateFormatters.iso8601
 
-    private static let isoBasic: ISO8601DateFormatter = {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime]
-        return formatter
-    }()
+    private static let isoBasic = DateFormatters.iso8601NoFractional
 
     private var databasePath: String {
         RuntimeIsolation.appSupportDirectory(named: "Chau7")

@@ -1002,9 +1002,7 @@ public enum MagiRunFailureCategory: String, Codable, CaseIterable, Sendable {
 
 public enum MagiRunID {
     public static func make(date: Date = Date(), uuid: UUID = UUID()) -> String {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        let timestamp = formatter.string(from: date)
+        let timestamp = DateFormatters.iso8601.string(from: date)
             .replacingOccurrences(of: ":", with: "")
             .replacingOccurrences(of: ".", with: "")
             .replacingOccurrences(of: "Z", with: "z")
@@ -1093,9 +1091,7 @@ public enum MagiRunStateMachine {
     }
 
     private static func isoDate(_ date: Date) -> String {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime]
-        return formatter.string(from: date)
+        return DateFormatters.iso8601NoFractional.string(from: date)
     }
 }
 

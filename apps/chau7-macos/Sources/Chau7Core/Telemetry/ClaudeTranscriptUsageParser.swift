@@ -1,17 +1,9 @@
 import Foundation
 
 public enum ClaudeTranscriptUsageParser {
-    private static let iso8601: ISO8601DateFormatter = {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return formatter
-    }()
+    private static let iso8601 = DateFormatters.iso8601
 
-    private static let iso8601Basic: ISO8601DateFormatter = {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime]
-        return formatter
-    }()
+    private static let iso8601Basic = DateFormatters.iso8601NoFractional
 
     public struct State: Sendable {
         public var model: String?

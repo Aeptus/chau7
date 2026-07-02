@@ -107,7 +107,7 @@ public struct UsageEvidence: Codable, Equatable, Identifiable, Sendable {
         let normalizedModel = normalizedNonEmpty(model)
         let normalizedEndpoint = normalizedNonEmpty(endpoint)
         let normalizedProjectPath = normalizedNonEmpty(projectPath)
-        let timestamp = ISO8601DateFormatter().string(from: observedAt)
+        let timestamp = DateFormatters.iso8601NoFractional.string(from: observedAt)
         let inputKey = inputTokens.map(String.init) ?? "nil"
         let outputKey = outputTokens.map(String.init) ?? "nil"
         let cacheCreationKey = cacheCreationInputTokens.map(String.init) ?? "nil"
@@ -280,10 +280,10 @@ public struct UsageEvidence: Codable, Equatable, Identifiable, Sendable {
             return "run|\(provider)|\(runID)"
         }
         if let projectPath {
-            let day = ISO8601DateFormatter().string(from: observedAt).prefix(10)
+            let day = DateFormatters.iso8601NoFractional.string(from: observedAt).prefix(10)
             return "project|\(provider)|\(projectPath)|\(day)"
         }
-        return "day|\(provider)|\(ISO8601DateFormatter().string(from: observedAt).prefix(10))"
+        return "day|\(provider)|\(DateFormatters.iso8601NoFractional.string(from: observedAt).prefix(10))"
     }
 
     private static func normalizedNonEmpty(_ value: String?) -> String? {

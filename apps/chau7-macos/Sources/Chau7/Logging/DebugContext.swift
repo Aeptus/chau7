@@ -247,7 +247,7 @@ final class BugReporter {
 
         var report = """
         # Chau7 Bug Report
-        Generated: \(ISO8601DateFormatter().string(from: Date()))
+        Generated: \(DateFormatters.iso8601NoFractional.string(from: Date()))
 
         ## User Description
         \(bodyDescription)
@@ -281,7 +281,7 @@ final class BugReporter {
             report += """
 
             - \(session.projectName): \(session.state)
-              Last activity: \(ISO8601DateFormatter().string(from: session.lastActivity))
+              Last activity: \(DateFormatters.iso8601NoFractional.string(from: session.lastActivity))
               Last tool: \(session.lastToolName ?? "none")
             """
         }

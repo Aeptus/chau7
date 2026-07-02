@@ -538,15 +538,7 @@ final class AppModel {
         apiCallEvents.trimToLast(100)
 
         // Also create an AIEvent for the unified event stream
-        let message = "\(event.provider.displayName) \(event.model): in:\(event.inputTokens) out:\(event.outputTokens) \(event.formattedCost)"
-        let aiEvent = AIEvent(
-            id: event.id,
-            source: .apiProxy,
-            type: event.hasError ? "error" : "api_call",
-            tool: event.provider.displayName,
-            message: message,
-            ts: DateFormatters.iso8601.string(from: event.timestamp)
-        )
+        let aiEvent = event.toAIEvent()
         DispatchQueue.main.async { [weak self] in
             self?.publishUnifiedEvent(aiEvent, notify: false)
         }

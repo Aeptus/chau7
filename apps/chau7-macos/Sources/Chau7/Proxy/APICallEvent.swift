@@ -155,16 +155,18 @@ public struct APICallEvent: Identifiable, Codable, Equatable, Sendable {
 
     // MARK: - AIEvent Conversion
 
-    /// Convert to AIEvent for unified event handling in Chau7
+    /// Convert to AIEvent for unified event handling in Chau7.
+    /// This is the single source of the APICallEvent→AIEvent mapping;
+    /// keep message/type/timestamp formats stable for downstream consumers.
     public func toAIEvent() -> AIEvent {
-        let message = "\(model): \(formattedTokens) tokens (\(formattedCost))"
+        let message = "\(provider.displayName) \(model): in:\(inputTokens) out:\(outputTokens) \(formattedCost)"
         return AIEvent(
             id: id,
             source: .apiProxy,
-            type: isSuccess ? "api_call" : "api_error",
+            type: hasError ? "error" : "api_call",
             tool: provider.displayName,
             message: message,
-            ts: ISO8601DateFormatter().string(from: timestamp)
+            ts: DateFormatters.iso8601.string(from: timestamp)
         )
     }
 }

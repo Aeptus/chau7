@@ -288,11 +288,7 @@ final class CodexContentProvider: RunContentProvider {
         return String(cString: ptr)
     }
 
-    private static let isoFormatter: ISO8601DateFormatter = {
-        let f = ISO8601DateFormatter()
-        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return f
-    }()
+    private static let isoFormatter = DateFormatters.iso8601
 
     private static func parseISO8601(_ string: String) -> Date? {
         isoFormatter.date(from: string)

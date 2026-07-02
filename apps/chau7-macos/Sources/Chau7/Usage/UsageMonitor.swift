@@ -870,7 +870,7 @@ final class UsageMonitor {
         case let value as NSNumber:
             return Date(timeIntervalSince1970: value.doubleValue)
         case let value as String:
-            return isoFormatter.date(from: value) ?? ISO8601DateFormatter().date(from: value)
+            return DateFormatters.parseISO8601(value)
         default:
             return nil
         }
@@ -898,11 +898,7 @@ final class UsageMonitor {
         }
     }
 
-    private static let isoFormatter: ISO8601DateFormatter = {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return formatter
-    }()
+    private static let isoFormatter = DateFormatters.iso8601
 
     private static let snapshotsFilePath = RuntimeIsolation.pathInHome(".chau7/usage/provider-quotas.jsonl")
     private static let claudeStatusLineLatestPayloadPath = RuntimeIsolation.pathInHome(".chau7/usage/claude-statusline-latest.json")

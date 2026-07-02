@@ -125,9 +125,7 @@ public enum CodexLiveHistoryParser {
             if let seconds = Double(value) {
                 return Date(timeIntervalSince1970: seconds)
             }
-            let iso = ISO8601DateFormatter()
-            iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-            return iso.date(from: value) ?? ISO8601DateFormatter().date(from: value)
+            return DateFormatters.parseISO8601(value)
         default:
             return nil
         }
