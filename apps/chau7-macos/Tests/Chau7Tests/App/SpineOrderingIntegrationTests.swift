@@ -35,12 +35,16 @@ final class SpineOrderingIntegrationTests: XCTestCase {
         // Unique session per event so the session reconciler accepts every
         // one (repeated terminal states for the same identity are deduped by
         // design — that suppression is not what this test measures).
+        // `recordEvent` is the synchronous any-thread spine funnel, so
+        // handing the model to producer threads is the contract under test;
+        // the box makes that crossing explicit to the compiler.
+        let handle = ModelHandle(model: model)
         let group = DispatchGroup()
         for producer in 0 ..< producers {
             group.enter()
             DispatchQueue.global().async {
                 for i in 0 ..< perProducer {
-                    model.recordEvent(
+                    handle.model.recordEvent(
                         source: .claudeCode,
                         type: "finished",
                         tool: "Claude Code",
@@ -89,4 +93,11 @@ final class SpineOrderingIntegrationTests: XCTestCase {
         let (envelopes, _, _) = model.eventSpine.journal.envelopes(after: 0, limit: 2)
         XCTAssertEqual(envelopes.map(\.deliveryRequested), [false, true])
     }
+}
+
+/// Carries the non-Sendable AppModel into @Sendable producer closures.
+/// Safe here because the closures only call `recordEvent`, whose whole
+/// contract is synchronous lock-guarded ingest from any thread.
+private struct ModelHandle: @unchecked Sendable {
+    let model: AppModel
 }
