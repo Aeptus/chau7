@@ -165,6 +165,13 @@ struct NotificationSettings: Equatable {
     var triggerConditions: [String: TriggerCondition]
     var groupActionBindings: [String: [NotificationActionConfig]]
     var groupConditions: [String: TriggerCondition]
+    /// Per-repo muting/snoozing: repo root path → mute record. One check in
+    /// the notification manager silences every surface (local, tab style,
+    /// MCP, push) for events under a muted root.
+    var mutedRepos: [String: RepoMute] = [:]
+    /// Route accepted task-finished/failed notifications to iOS as pushes
+    /// (frame 0x52). Off by default — approvals/prompts push regardless.
+    var pushTaskCompletionsToiOS = false
 
     static let defaultGroupActionBindings: [String: [NotificationActionConfig]] = [
         "ai_coding.finished": [
@@ -1236,6 +1243,10 @@ final class FeatureSettings {
         if let data = JSONOperations.encode(ns.triggerState, context: "notificationTriggerState") {
             UserDefaults.standard.set(data, forKey: Keys.notificationTriggerState)
         }
+        if let data = JSONOperations.encode(ns.mutedRepos, context: "notificationMutedRepos") {
+            UserDefaults.standard.set(data, forKey: Keys.notificationMutedRepos)
+        }
+        UserDefaults.standard.set(ns.pushTaskCompletionsToiOS, forKey: Keys.notificationPushTaskCompletions)
         if let data = JSONOperations.encode(ns.filters, context: "notificationFilters") {
             UserDefaults.standard.set(data, forKey: Keys.notificationFilters)
         }
@@ -2495,6 +2506,8 @@ final class FeatureSettings {
 
         // Notification Filters (NEW)
         static let notificationTriggerState = "notifications.triggerState"
+        static let notificationMutedRepos = "notifications.mutedRepos"
+        static let notificationPushTaskCompletions = "notifications.pushTaskCompletionsToiOS"
         static let notificationFilters = "notifications.filters"
         static let triggerActionBindings = "notifications.triggerActionBindings"
         static let notificationRateLimitConfig = "notifications.rateLimitConfig"
@@ -2717,6 +2730,15 @@ final class FeatureSettings {
             loadedFilters = .defaults
         }
 
+        let loadedMutedRepos: [String: RepoMute]
+        if let data = defaults.data(forKey: Keys.notificationMutedRepos),
+           let muted = JSONOperations.decode([String: RepoMute].self, from: data, context: "notificationMutedRepos") {
+            loadedMutedRepos = RepoNotificationMuting.pruned(muted)
+        } else {
+            loadedMutedRepos = [:]
+        }
+        let loadedPushTaskCompletions = defaults.bool(forKey: Keys.notificationPushTaskCompletions)
+
         let resolvedTriggerState: NotificationTriggerState
         if let data = defaults.data(forKey: Keys.notificationTriggerState),
            let state = JSONOperations.decode(NotificationTriggerState.self, from: data, context: "notificationTriggerState") {
@@ -2918,7 +2940,9 @@ final class FeatureSettings {
             rateLimitConfig: loadedRateLimitConfig,
             triggerConditions: loadedConditions,
             groupActionBindings: normalizedGroupActionBindings,
-            groupConditions: loadedGroupConditions
+            groupConditions: loadedGroupConditions,
+            mutedRepos: loadedMutedRepos,
+            pushTaskCompletionsToiOS: loadedPushTaskCompletions
         )
 
         // Find Defaults (NEW)

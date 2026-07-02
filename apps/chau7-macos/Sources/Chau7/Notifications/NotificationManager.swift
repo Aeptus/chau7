@@ -129,6 +129,18 @@ final class NotificationManager {
         _ event: AIEvent,
         deliveryRequested: Bool
     ) -> EnrichedEvent? {
+        // Per-repo muting: one check silences every surface (local, tab
+        // style, MCP visibility, and the push paths downstream of
+        // acceptance) for events under a muted repo root.
+        if RepoNotificationMuting.isMuted(
+            repoPath: event.repoPath,
+            directory: event.directory,
+            mutedRepos: FeatureSettings.shared.notificationSettings.mutedRepos
+        ) {
+            Log.trace("Notification muted for repo: type=\(event.type) dir=\(event.directory ?? "nil")")
+            return nil
+        }
+
         switch eventEngine.process(event, deliveryRequested: deliveryRequested) {
         case .dropped(let drop):
             logEngineDrop(drop, deliveryRequested: deliveryRequested)
@@ -183,6 +195,8 @@ final class NotificationManager {
         )
         clearStalePermissionStyleIfNeeded(event: adapted, semanticKind: kind)
 
+        forwardTaskCompletionPushIfEnabled(enriched)
+
         switch output.delivery {
         case .disabled:
             return
@@ -194,6 +208,34 @@ final class NotificationManager {
             return
         case .deliver(let intent):
             enqueueEvent(intent.event)
+        }
+    }
+
+    /// Route accepted task-finished/failed notifications to iOS as a push
+    /// (frame 0x52) when the settings toggle is on. Text comes from the
+    /// shared formatter; identity from NotificationIdentity — the agent only
+    /// dedups and gates on deliverability.
+    private func forwardTaskCompletionPushIfEnabled(_ enriched: EnrichedEvent) {
+        guard FeatureSettings.shared.notificationSettings.pushTaskCompletionsToiOS else { return }
+        guard enriched.kind == .taskFinished || enriched.kind == .taskFailed else { return }
+        let event = enriched.event
+        let identity = NotificationIdentity(for: event)
+        let payload = RemoteNotificationEventPayload(
+            kind: enriched.kind.rawValue,
+            identityKey: "\(enriched.kind.rawValue)|\(identity.scopedKey)",
+            title: NotificationContentFormatter.title(
+                for: event,
+                repoName: host?.notificationRepoName(for: event.tabTarget)
+            ),
+            subtitle: NotificationContentFormatter.subtitle(
+                for: event,
+                tabTitle: host?.notificationTabTitle(for: event.tabTarget)
+            ),
+            body: NotificationContentFormatter.body(for: event),
+            threadID: host?.notificationTabTitle(for: event.tabTarget)
+        )
+        Task { @MainActor in
+            RemoteControlManager.shared.sendNotificationEvent(payload)
         }
     }
 
