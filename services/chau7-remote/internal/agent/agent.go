@@ -79,6 +79,7 @@ type Agent struct {
 	currentClientStreamMode string
 	notifiedApprovalIDs     map[string]time.Time
 	notifiedPromptIDs       map[string]time.Time
+	notifiedEventKeys       map[string]time.Time
 
 	pendingStateMu   sync.Mutex
 	pendingApprovals map[string]ApprovalNotificationPayload
@@ -145,6 +146,12 @@ type ApprovalNotificationPayload struct {
 	RecentCommand    string `json:"recent_command,omitempty"`
 	ContextNote      string `json:"context_note,omitempty"`
 	SessionID        string `json:"session_id,omitempty"`
+	// Pre-formatted push text composed on the Mac by the shared
+	// NotificationContentFormatter. When present the agent relays it
+	// verbatim instead of formatting locally.
+	PushTitle    string `json:"push_title,omitempty"`
+	PushSubtitle string `json:"push_subtitle,omitempty"`
+	PushBody     string `json:"push_body,omitempty"`
 }
 
 type ApprovalResponsePayload struct {
@@ -179,7 +186,10 @@ type RemoteInteractivePrompt struct {
 	Options          []RemoteInteractivePromptOption `json:"options"`
 	// DetectedAt is Swift's Date wire encoding: seconds since 2001-01-01
 	// (timeIntervalSinceReferenceDate), a JSON number — not a string.
-	DetectedAt       float64                         `json:"detected_at"`
+	DetectedAt float64 `json:"detected_at"`
+	// Pre-formatted push text from the Mac (relayed verbatim when present).
+	PushTitle    string `json:"push_title,omitempty"`
+	PushSubtitle string `json:"push_subtitle,omitempty"`
 }
 
 type InteractivePromptListPayload struct {
@@ -213,6 +223,19 @@ type PendingStatePayload struct {
 
 type TabSwitchPayload struct {
 	TabID uint32 `json:"tab_id"`
+}
+
+// NotificationEventPayload mirrors Swift's RemoteNotificationEventPayload
+// (frame 0x52): a user-facing notification composed on the Mac, relayed as a
+// push when the client is push-eligible. The agent dedups on IdentityKey and
+// never formats.
+type NotificationEventPayload struct {
+	Kind        string `json:"kind"`
+	IdentityKey string `json:"identity_key"`
+	Title       string `json:"title"`
+	Subtitle    string `json:"subtitle,omitempty"`
+	Body        string `json:"body"`
+	ThreadID    string `json:"thread_id,omitempty"`
 }
 
 type PairingInfoPayload struct {
@@ -265,6 +288,7 @@ func NewAgent(socketPath, relayBaseURL, macName, statePath string) (*Agent, erro
 		currentClientStreamMode: "full",
 		notifiedApprovalIDs:     map[string]time.Time{},
 		notifiedPromptIDs:       map[string]time.Time{},
+		notifiedEventKeys:       map[string]time.Time{},
 		pendingApprovals:        map[string]ApprovalNotificationPayload{},
 		pendingPrompts:          map[string]RemoteInteractivePrompt{},
 	}
@@ -475,6 +499,9 @@ func (a *Agent) handleIPCFrame(frame *protocol.Frame) {
 		a.replacePendingPrompts(frame.Payload)
 		a.sendEncryptedToRelay(frame)
 		a.handleInteractivePromptListForPush(frame.Payload)
+	case protocol.TypeNotificationEvent:
+		a.sendEncryptedToRelay(frame)
+		a.handleNotificationEventForPush(frame.Payload)
 	case protocol.TypeTabList, protocol.TypeOutput, protocol.TypeSnapshot,
 		protocol.TypeTerminalGridSnapshot,
 		protocol.TypeActivityState,
@@ -1285,11 +1312,25 @@ func (a *Agent) emitApprovalPush(approval ApprovalNotificationPayload) {
 	if strings.TrimSpace(headline) == "" {
 		headline = approval.Command
 	}
+	// Prefer the Mac-composed push text (single formatter across surfaces);
+	// the local formatters remain only as a fallback for older Macs.
+	title := strings.TrimSpace(approval.PushTitle)
+	if title == "" {
+		title = pushApprovalTitle(approval)
+	}
+	subtitle := strings.TrimSpace(approval.PushSubtitle)
+	if subtitle == "" {
+		subtitle = locationSummary(approval.TabTitle, approval.ProjectName, approval.BranchName, "")
+	}
+	body := strings.TrimSpace(approval.PushBody)
+	if body == "" {
+		body = headline
+	}
 	a.notifyPush(PushNotifyPayload{
 		Kind:          "approval",
-		Title:         pushApprovalTitle(approval),
-		Subtitle:      locationSummary(approval.TabTitle, approval.ProjectName, approval.BranchName, ""),
-		Body:          headline,
+		Title:         title,
+		Subtitle:      subtitle,
+		Body:          body,
 		RequestID:     approval.RequestID,
 		ThreadID:      strings.TrimSpace(approval.TabTitle),
 		OpenApprovals: true,
@@ -1332,14 +1373,21 @@ func (a *Agent) emitInteractivePromptPush(prompt RemoteInteractivePrompt) {
 	if !a.markPushedOnce(a.notifiedPromptIDs, prompt.ID) {
 		return
 	}
-	title := "Interactive prompt"
-	if tool := strings.TrimSpace(prompt.ToolName); tool != "" {
-		title = tool + " is waiting"
+	title := strings.TrimSpace(prompt.PushTitle)
+	if title == "" {
+		title = "Interactive prompt"
+		if tool := strings.TrimSpace(prompt.ToolName); tool != "" {
+			title = tool + " is waiting"
+		}
+	}
+	subtitle := strings.TrimSpace(prompt.PushSubtitle)
+	if subtitle == "" {
+		subtitle = locationSummary(prompt.TabTitle, prompt.ProjectName, prompt.BranchName, prompt.CurrentDirectory)
 	}
 	a.notifyPush(PushNotifyPayload{
 		Kind:          "interactive_prompt",
 		Title:         title,
-		Subtitle:      locationSummary(prompt.TabTitle, prompt.ProjectName, prompt.BranchName, prompt.CurrentDirectory),
+		Subtitle:      subtitle,
 		Body:          strings.TrimSpace(prompt.Prompt),
 		PromptID:      prompt.ID,
 		ThreadID:      strings.TrimSpace(prompt.TabTitle),
@@ -1352,6 +1400,32 @@ func (a *Agent) emitInteractivePromptPush(prompt RemoteInteractivePrompt) {
 // the phone locked never produces a new list frame, so without this the
 // lock-screen alert never fires — this is the "no notifications while locked"
 // gap. Dedup via the notified* maps keeps it from re-alerting.
+// handleNotificationEventForPush relays a Mac-composed notification event
+// (frame 0x52) as a push. The Mac decides *whether* and formats the text;
+// the agent applies only its deliverability gate and at-most-once dedup per
+// identity key.
+func (a *Agent) handleNotificationEventForPush(payload []byte) {
+	var event NotificationEventPayload
+	if err := json.Unmarshal(payload, &event); err != nil {
+		log.Printf("notification event push: unmarshal: %v", err)
+		return
+	}
+	if event.IdentityKey == "" || event.Title == "" || !a.shouldNotifyClientViaPush() {
+		return
+	}
+	if !a.markPushedOnce(a.notifiedEventKeys, event.IdentityKey) {
+		return
+	}
+	a.notifyPush(PushNotifyPayload{
+		Kind:          event.Kind,
+		Title:         event.Title,
+		Subtitle:      event.Subtitle,
+		Body:          event.Body,
+		ThreadID:      event.ThreadID,
+		OpenApprovals: false,
+	})
+}
+
 func (a *Agent) flushPendingPushNotifications() {
 	if !a.shouldNotifyClientViaPush() {
 		return

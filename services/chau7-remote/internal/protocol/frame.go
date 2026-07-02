@@ -34,6 +34,7 @@ const (
 	TypeClientState           = 0x43
 	TypeApprovalRequest       = 0x50
 	TypeApprovalResponse      = 0x51
+	TypeNotificationEvent     = 0x52
 	TypeError                 = 0x7F
 )
 

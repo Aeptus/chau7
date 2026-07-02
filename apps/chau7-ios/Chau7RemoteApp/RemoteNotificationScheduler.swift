@@ -18,16 +18,18 @@ enum RemoteNotificationScheduler {
     static func scheduleApproval(for payload: ApprovalRequestPayload, redactDetails: Bool) {
         let isProtectedRemoteAction = payload.flaggedCommand != payload.command
         let content = makeContent(
-            title: NotificationContentFormatter.approvalTitle(
+            // Wire-provided text wins: the Mac composes it with the same
+            // shared formatter, so push and local render identical words.
+            title: payload.pushTitle ?? NotificationContentFormatter.approvalTitle(
                 toolName: payload.toolName,
                 isProtectedAction: isProtectedRemoteAction
             ),
-            subtitle: redactDetails ? nil : locationSubtitle(
+            subtitle: redactDetails ? nil : (payload.pushSubtitle ?? locationSubtitle(
                 tabTitle: payload.tabTitle,
                 projectName: payload.projectName,
                 branchName: payload.branchName,
                 currentDirectory: payload.currentDirectory
-            ),
+            )),
             body: redactDetails
                 ? "Open Chau7 to review."
                 : approvalBody(for: payload),
@@ -43,13 +45,13 @@ enum RemoteNotificationScheduler {
 
     static func scheduleInteractivePrompt(for prompt: RemoteInteractivePrompt, redactDetails: Bool) {
         let content = makeContent(
-            title: NotificationContentFormatter.interactivePromptTitle(toolName: prompt.toolName),
-            subtitle: redactDetails ? nil : locationSubtitle(
+            title: prompt.pushTitle ?? NotificationContentFormatter.interactivePromptTitle(toolName: prompt.toolName),
+            subtitle: redactDetails ? nil : (prompt.pushSubtitle ?? locationSubtitle(
                 tabTitle: prompt.tabTitle,
                 projectName: prompt.projectName,
                 branchName: prompt.branchName,
                 currentDirectory: prompt.currentDirectory
-            ),
+            )),
             body: redactDetails
                 ? "Open Chau7 to reply."
                 : interactivePromptBody(for: prompt),

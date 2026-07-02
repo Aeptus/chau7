@@ -55,6 +55,10 @@ public struct RemoteInteractivePrompt: Codable, Equatable, Sendable, Hashable, I
     public let detail: String?
     public let options: [RemoteInteractivePromptOption]
     public let detectedAt: Date
+    /// Pre-formatted push text from the shared NotificationContentFormatter
+    /// (optional/additive; consumers fall back to local formatting).
+    public let pushTitle: String?
+    public let pushSubtitle: String?
 
     public init(
         id: String,
@@ -67,7 +71,9 @@ public struct RemoteInteractivePrompt: Codable, Equatable, Sendable, Hashable, I
         prompt: String,
         detail: String? = nil,
         options: [RemoteInteractivePromptOption],
-        detectedAt: Date
+        detectedAt: Date,
+        pushTitle: String? = nil,
+        pushSubtitle: String? = nil
     ) {
         self.id = id
         self.tabID = tabID
@@ -80,6 +86,8 @@ public struct RemoteInteractivePrompt: Codable, Equatable, Sendable, Hashable, I
         self.detail = detail
         self.options = options
         self.detectedAt = detectedAt
+        self.pushTitle = pushTitle
+        self.pushSubtitle = pushSubtitle
     }
 
     enum CodingKeys: String, CodingKey {
@@ -94,6 +102,8 @@ public struct RemoteInteractivePrompt: Codable, Equatable, Sendable, Hashable, I
         case detail
         case options
         case detectedAt = "detected_at"
+        case pushTitle = "push_title"
+        case pushSubtitle = "push_subtitle"
     }
 }
 

@@ -30,6 +30,7 @@ func TestWireFixtureRoundTrips(t *testing.T) {
 		{"pair_accept.json", &PairAcceptPayload{}},
 		{"session_ready.json", &SessionReadyPayload{}},
 		{"pairing_info.json", &PairingInfoPayload{}},
+		{"notification_event.json", &NotificationEventPayload{}},
 	}
 
 	for _, tc := range cases {

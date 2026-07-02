@@ -10,5 +10,8 @@
   "current_directory": "/Users/dev/Mockup",
   "recent_command": "swift build",
   "context_note": "requested by agent",
-  "session_id": "sess-abc"
+  "session_id": "sess-abc",
+  "push_title": "Claude Code needs approval",
+  "push_subtitle": "build \u00b7 Mockup (main) \u00b7 /Users/dev/Mockup",
+  "push_body": "rm -rf build"
 }

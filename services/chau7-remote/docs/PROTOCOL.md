@@ -134,6 +134,7 @@ Type codes (`u8`). The Swift enum `RemoteFrameType`
 - `0x43 CLIENT_STATE` (encrypted, JSON)
 - `0x50 APPROVAL_REQUEST` (encrypted, JSON)
 - `0x51 APPROVAL_RESPONSE` (encrypted, JSON)
+- `0x52 NOTIFICATION_EVENT` (encrypted, JSON)
 - `0x7F ERROR` (encrypted, JSON)
 
 JSON payloads are UTF-8.
@@ -351,12 +352,37 @@ Canonical Swift shape: `ApprovalRequestPayload` (Chau7Core).
 
 All fields after `timestamp` are optional. Decoders must tolerate a missing
 `timestamp` (older agent re-encodes omitted it) and fall back to receipt time.
+`push_title` / `push_subtitle` / `push_body` carry pre-formatted push text
+composed on the Mac by the shared notification formatter; the agent and iOS
+prefer them and fall back to local formatting when absent.
 
 ### APPROVAL_RESPONSE
 
 ```json
 { "request_id": "uuid", "approved": true }
 ```
+
+### NOTIFICATION_EVENT
+
+A user-facing notification composed entirely on the Mac (semantic kind +
+pre-formatted text). The agent relays it as a push when the client is
+push-eligible; it dedups on `identity_key` (at most one push per key) and
+never formats or decides. This is how non-approval kinds (task finished /
+failed) reach the phone. Canonical Swift shape:
+`RemoteNotificationEventPayload` (Chau7Core).
+
+```json
+{
+  "kind": "task_finished",
+  "identity_key": "session:sess-abc",
+  "title": "Mockup — Claude Code: Finished",
+  "subtitle": "build · Mockup (main)",
+  "body": "All tests pass",
+  "thread_id": "build"
+}
+```
+
+`subtitle` and `thread_id` are optional.
 
 ### OUTPUT
 

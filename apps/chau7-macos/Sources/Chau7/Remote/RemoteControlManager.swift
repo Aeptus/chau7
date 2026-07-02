@@ -428,6 +428,20 @@ final class RemoteControlManager {
     // MARK: - Approval Frames
 
     /// Send a command approval request to the iOS app.
+    /// Relay a Mac-composed notification event (frame 0x52) to the agent,
+    /// which pushes it when the phone is push-eligible. The decision to send
+    /// and the text both come from the notification layer; the agent only
+    /// dedups (identity key) and gates on deliverability.
+    func sendNotificationEvent(_ payload: RemoteNotificationEventPayload) {
+        guard isIPCConnected else { return }
+        guard let data = try? JSONEncoder().encode(payload) else {
+            logger.error("Remote: failed to encode notification event")
+            return
+        }
+        sendFrame(type: .notificationEvent, tabID: RemoteTabRegistry.unscopedTabID, payload: data)
+        logger.info("Remote: sent notification event kind=\(payload.kind, privacy: .public)")
+    }
+
     func sendApprovalRequest(requestID: String, payload: Data) {
         guard isIPCConnected else { return }
         registerApprovalContext(requestID: requestID, payload: payload)
@@ -582,7 +596,7 @@ final class RemoteControlManager {
                 recentCommand: context.recentCommand,
                 contextNote: context.contextNote,
                 sessionID: context.sessionID
-            )
+            ).withComposedPushText()
             // Security-adjacent flow: a dropped approval frame must be visible.
             guard let data = Persist.encodeLogged(payload, context: "remote.approvalRequest") else { continue }
             sendFrame(type: .approvalRequest, tabID: RemoteTabRegistry.unscopedTabID, payload: data)
@@ -731,7 +745,7 @@ final class RemoteControlManager {
                     detail: detected.detail,
                     options: detected.options,
                     detectedAt: activityUpdatedAt(for: session, tab: tab, approval: nil)
-                )
+                ).withComposedPushText()
             }
         }
     }
@@ -1204,7 +1218,7 @@ final class RemoteControlManager {
             recentCommand: approvalContext?.recentCommand,
             contextNote: approvalContext?.contextNote,
             sessionID: approvalContext?.sessionID
-        )
+        ).withComposedPushText()
 
         guard let data = try? JSONEncoder().encode(payload) else {
             pendingProtectedInputs.removeValue(forKey: requestID)

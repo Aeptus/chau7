@@ -276,6 +276,13 @@ public struct ApprovalRequestPayload: Codable, Equatable, Sendable {
     public let recentCommand: String?
     public let contextNote: String?
     public let sessionID: String?
+    /// Pre-formatted push text, composed on the Mac by the shared
+    /// NotificationContentFormatter so every surface renders identical
+    /// words. Optional/additive: relays and old peers ignore it; consumers
+    /// fall back to local formatting when absent.
+    public let pushTitle: String?
+    public let pushSubtitle: String?
+    public let pushBody: String?
 
     public init(
         requestID: String,
@@ -289,7 +296,10 @@ public struct ApprovalRequestPayload: Codable, Equatable, Sendable {
         currentDirectory: String? = nil,
         recentCommand: String? = nil,
         contextNote: String? = nil,
-        sessionID: String? = nil
+        sessionID: String? = nil,
+        pushTitle: String? = nil,
+        pushSubtitle: String? = nil,
+        pushBody: String? = nil
     ) {
         self.requestID = requestID
         self.command = command
@@ -303,6 +313,9 @@ public struct ApprovalRequestPayload: Codable, Equatable, Sendable {
         self.recentCommand = recentCommand
         self.contextNote = contextNote
         self.sessionID = sessionID
+        self.pushTitle = pushTitle
+        self.pushSubtitle = pushSubtitle
+        self.pushBody = pushBody
     }
 
     enum CodingKeys: String, CodingKey {
@@ -318,6 +331,9 @@ public struct ApprovalRequestPayload: Codable, Equatable, Sendable {
         case recentCommand = "recent_command"
         case contextNote = "context_note"
         case sessionID = "session_id"
+        case pushTitle = "push_title"
+        case pushSubtitle = "push_subtitle"
+        case pushBody = "push_body"
     }
 
     public init(from decoder: Decoder) throws {
@@ -336,6 +352,54 @@ public struct ApprovalRequestPayload: Codable, Equatable, Sendable {
         recentCommand = try container.decodeIfPresent(String.self, forKey: .recentCommand)
         contextNote = try container.decodeIfPresent(String.self, forKey: .contextNote)
         sessionID = try container.decodeIfPresent(String.self, forKey: .sessionID)
+        pushTitle = try container.decodeIfPresent(String.self, forKey: .pushTitle)
+        pushSubtitle = try container.decodeIfPresent(String.self, forKey: .pushSubtitle)
+        pushBody = try container.decodeIfPresent(String.self, forKey: .pushBody)
+    }
+}
+
+// MARK: - Notification events (frame 0x52)
+
+/// A user-facing notification composed on the Mac (kind + pre-formatted
+/// text), relayed by the agent as a push when the client can't be reached
+/// over the live socket. This is what lets non-approval kinds (task
+/// finished/failed) reach the phone: the agent relays, it does not decide
+/// or format.
+public struct RemoteNotificationEventPayload: Codable, Equatable, Sendable {
+    /// NotificationSemanticKind raw value.
+    public let kind: String
+    /// Stable dedup key (NotificationIdentity scoped key) — the agent must
+    /// deliver at most one push per identity key.
+    public let identityKey: String
+    public let title: String
+    public let subtitle: String?
+    public let body: String
+    /// Lock-screen thread grouping (tab title).
+    public let threadID: String?
+
+    public init(
+        kind: String,
+        identityKey: String,
+        title: String,
+        subtitle: String? = nil,
+        body: String,
+        threadID: String? = nil
+    ) {
+        self.kind = kind
+        self.identityKey = identityKey
+        self.title = title
+        self.subtitle = subtitle
+        self.body = body
+        self.threadID = threadID
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case kind
+        case identityKey = "identity_key"
+        case title
+        case subtitle
+        case body
+        case threadID = "thread_id"
     }
 }
 

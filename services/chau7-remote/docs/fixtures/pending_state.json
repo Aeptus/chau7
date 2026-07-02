@@ -19,10 +19,21 @@
       "project_name": "Mockup",
       "prompt": "Overwrite existing file?",
       "options": [
-        { "id": "yes", "label": "Yes", "response": "y" },
-        { "id": "no", "label": "No", "response": "n", "is_destructive": true }
+        {
+          "id": "yes",
+          "label": "Yes",
+          "response": "y"
+        },
+        {
+          "id": "no",
+          "label": "No",
+          "response": "n",
+          "is_destructive": true
+        }
       ],
-      "detected_at": 804600000
+      "detected_at": 804600000,
+      "push_title": "Claude Code is waiting",
+      "push_subtitle": "migrate \u00b7 Mockup"
     }
   ]
 }

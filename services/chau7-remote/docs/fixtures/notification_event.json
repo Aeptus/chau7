@@ -1,0 +1,8 @@
+{
+  "kind": "task_finished",
+  "identity_key": "session:sess-abc",
+  "title": "Mockup \u2014 Claude Code: Finished",
+  "subtitle": "build \u00b7 Mockup (main)",
+  "body": "All tests pass",
+  "thread_id": "build"
+}

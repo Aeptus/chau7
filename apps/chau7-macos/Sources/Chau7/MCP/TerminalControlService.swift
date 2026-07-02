@@ -2473,7 +2473,7 @@ final class TerminalControlService {
             recentCommand: nil,
             contextNote: contextNote,
             sessionID: nil
-        )
+        ).withComposedPushText()
         if let data = try? JSONEncoder().encode(payload) {
             onMainActor {
                 RemoteControlManager.shared.sendApprovalRequest(requestID: requestID, payload: data)

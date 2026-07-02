@@ -100,6 +100,10 @@ final class RemoteWirePayloadFixtureTests: XCTestCase {
         try assertRoundTrip(RemotePairingPayload.self, fixture: "pairing_info.json")
     }
 
+    func testNotificationEventFixture() throws {
+        try assertRoundTrip(RemoteNotificationEventPayload.self, fixture: "notification_event.json")
+    }
+
     // MARK: - Interop leniency
 
     func testApprovalRequestDecodesWithoutTimestamp() throws {
