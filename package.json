@@ -13,6 +13,8 @@
     "quality:cache:status": "node scripts/quality/cache-cli.mjs status",
     "quality:cache:clear": "node scripts/quality/cache-cli.mjs clear",
     "quality:postcommit": "node scripts/quality/cache-cli.mjs prune",
+    "features:generate": "node scripts/generate-features-csv.mjs",
+    "features:check": "node scripts/generate-features-csv.mjs --check",
     "test": "node --test scripts/quality/tests/*.test.mjs"
   }
 }

@@ -785,6 +785,7 @@ Legacy `AI_*` and `SMART_OVERLAY_*` environment variables are still supported.
 - **Live dependency audits** — full-suite quality mode runs non-cacheable npm audits for tracked Node lockfiles at the repository's high-severity threshold, with a Python dependency audit gate registered for future `pyproject.toml` or `requirements*.txt` inputs.
 - **Registry-tested quality logic** — runner, registry, cache, impact, dirty-worktree, filtering, JSON output, and attestation behavior are covered by a `quality-runner-tests` gate.
 - **Feature-inventory schema gate** — a `staged-features-csv` gate runs `scripts/check-features-csv.mjs`, deterministically rejecting any `features.csv` row that isn't exactly five well-formed columns with a valid `Status`/`Differentiator`, so the machine-readable inventory can't silently rot (the failure mode that once let dozens of malformed rows land unnoticed).
+- **Generated feature inventory** — `docs/features.json` is the single source of truth; `features.csv` is generated from it (`pnpm features:generate`) and a `staged-features-csv-generated` gate `--check`s that the committed CSV matches the manifest, so the two can't drift and the CSV can't be hand-corrupted.
 
 ## Architecture
 
