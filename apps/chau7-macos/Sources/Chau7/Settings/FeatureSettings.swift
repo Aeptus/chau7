@@ -1238,6 +1238,30 @@ final class FeatureSettings {
         }
     }
 
+    private static func loadTriggerActionBindings(from defaults: UserDefaults) -> [String: [NotificationActionConfig]] {
+        let loaded: [String: [NotificationActionConfig]]
+        if let data = defaults.data(forKey: Keys.triggerActionBindings),
+           let bindings = JSONOperations.decode([String: [NotificationActionConfig]].self, from: data, context: "triggerActionBindings") {
+            loaded = bindings
+        } else {
+            loaded = defaultTriggerActionBindings()
+        }
+        var normalized = loaded
+        if normalized["claude_code.failed"] == nil {
+            normalized["claude_code.failed"] = defaultTriggerActionBindings()["claude_code.failed"]
+        }
+        if normalized["codex.failed"] == nil {
+            normalized["codex.failed"] = defaultTriggerActionBindings()["codex.failed"]
+        }
+        if normalized["claude_code.idle"] == nil {
+            normalized["claude_code.idle"] = []
+        }
+        if normalized["codex.idle"] == nil {
+            normalized["codex.idle"] = []
+        }
+        return normalized
+    }
+
     private static func loadMutedRepos(from defaults: UserDefaults) -> [String: RepoMute] {
         guard let data = defaults.data(forKey: Keys.notificationMutedRepos),
               let muted = JSONOperations.decode([String: RepoMute].self, from: data, context: "notificationMutedRepos") else {
@@ -2751,26 +2775,7 @@ final class FeatureSettings {
             resolvedTriggerState = Self.triggerState(from: loadedFilters)
         }
 
-        let loadedBindings: [String: [NotificationActionConfig]]
-        if let data = defaults.data(forKey: Keys.triggerActionBindings),
-           let bindings = JSONOperations.decode([String: [NotificationActionConfig]].self, from: data, context: "triggerActionBindings") {
-            loadedBindings = bindings
-        } else {
-            loadedBindings = Self.defaultTriggerActionBindings()
-        }
-        var normalizedBindings = loadedBindings
-        if normalizedBindings["claude_code.failed"] == nil {
-            normalizedBindings["claude_code.failed"] = Self.defaultTriggerActionBindings()["claude_code.failed"]
-        }
-        if normalizedBindings["codex.failed"] == nil {
-            normalizedBindings["codex.failed"] = Self.defaultTriggerActionBindings()["codex.failed"]
-        }
-        if normalizedBindings["claude_code.idle"] == nil {
-            normalizedBindings["claude_code.idle"] = []
-        }
-        if normalizedBindings["codex.idle"] == nil {
-            normalizedBindings["codex.idle"] = []
-        }
+        var normalizedBindings = Self.loadTriggerActionBindings(from: defaults)
 
         // One-time migration: the previous default for *.finished triggers
         // painted a *red* border on completion, which conflicted with
