@@ -16,6 +16,15 @@ protocol AIEventPublishing: AnyObject {
         producer: String?,
         reliability: AIEventReliability?
     )
+
+    /// Publish an event the producer has already fully constructed (identity
+    /// resolved, timestamp set). Enters the same spine funnel as
+    /// `recordEvent`; there is no delivery path that bypasses it.
+    func publishPreparedEvent(_ event: AIEvent, notify: Bool)
 }
 
-extension AppModel: AIEventPublishing {}
+extension AppModel: AIEventPublishing {
+    func publishPreparedEvent(_ event: AIEvent, notify: Bool) {
+        publishUnifiedEvent(event, notify: notify)
+    }
+}

@@ -500,6 +500,10 @@ final class AppModel {
         startAPICallObserver()
         startCleanupTimer()
         RuntimeSessionManager.shared.startCleanupTimer()
+        // Runtime session events flow through the same spine funnel as every
+        // other producer — the previous direct notify(for:) path made them
+        // invisible to recentEvents/observability/MCP.
+        RuntimeSessionManager.shared.eventPublisher = self
         startAppEventEmitter()
         UsageMonitor.shared.configureWarningHandler { [weak self] event in
             self?.publishUnifiedEvent(event, notify: true)
@@ -858,7 +862,7 @@ final class AppModel {
             producer: "app_model_test",
             reliability: .authoritative
         )
-        Task { @MainActor in self.notifications?.manager.notify(for: event) }
+        publishUnifiedEvent(event, notify: true)
     }
 
     func recordEvent(
@@ -1579,7 +1583,9 @@ final class AppModel {
     /// allocates the global seq (total order across all producers). The
     /// spine-host pump then delivers envelopes to
     /// `publishUnifiedEventOnMain` on the main actor in seq order.
-    private func publishUnifiedEvent(_ event: AIEvent, notify: Bool) {
+    /// Internal so the `AIEventPublishing` conformance can route
+    /// producer-prepared events through the same funnel.
+    func publishUnifiedEvent(_ event: AIEvent, notify: Bool) {
         startSpinePumpIfNeeded()
         eventSpine.ingest(event, deliveryRequested: notify)
     }

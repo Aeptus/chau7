@@ -8,6 +8,12 @@ import Chau7Core
 final class RuntimeSessionManager {
     static let shared = RuntimeSessionManager()
 
+    /// Spine funnel for runtime session events, injected at bootstrap.
+    /// Publishing through it (instead of calling the notification manager
+    /// directly) makes runtime events visible to recentEvents, per-repo
+    /// buffers, observability, and MCP subscribers — not just notifications.
+    weak var eventPublisher: AIEventPublishing?
+
     private struct PendingToolInvocation {
         let turnID: String
         let correlationID: String
@@ -994,8 +1000,14 @@ final class RuntimeSessionManager {
             producer: "runtime_session_manager",
             reliability: .authoritative
         )
-        Task { @MainActor in
-            NotificationServices.current?.manager.notify(for: event)
+        if let eventPublisher {
+            eventPublisher.publishPreparedEvent(event, notify: true)
+        } else {
+            // Pre-bootstrap fallback (or isolated tests without an AppModel):
+            // deliver the notification directly so nothing is silently lost.
+            Task { @MainActor in
+                NotificationServices.current?.manager.notify(for: event)
+            }
         }
     }
 
