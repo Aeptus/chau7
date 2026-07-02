@@ -1358,6 +1358,13 @@
     "differentiator": "Yes"
   },
   {
+    "category": "MCP Tools — Agent Orchestration",
+    "feature": "agent_launch",
+    "description": "Launch one or more AI coding agents in fresh tabs in a single call — composes tab_create + tab_wait_ready + tab_exec + verified prompt injection with throttles, optional gh pr checkout, and per-agent prompt visibility/submission/running fields",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
     "category": "Telemetry",
     "feature": "Codex Rollout Multiline Parsing",
     "description": "Quota snapshots and rate-limit windows are extracted from both one-line JSONL and pretty-printed multiline Codex rollout JSON objects",
@@ -3860,6 +3867,13 @@
     "category": "Developer Experience",
     "feature": "Generated Feature Inventory",
     "description": "features.csv is generated from docs/features.json (the single source of truth) by scripts/generate-features-csv.mjs; a staged-features-csv-generated gate runs --check to fail the commit when the committed CSV drifts from the manifest",
+    "status": "Shipped",
+    "differentiator": "No"
+  },
+  {
+    "category": "Developer Experience",
+    "feature": "MCP Tool Documentation Coverage Gate",
+    "description": "A staged-feature-coverage gate runs scripts/check-feature-coverage.mjs to hard-fail when an MCP tool is registered in MCPSession.swift without a canonical inventory row in features.json; warns on documented-but-removed tools; deliberate bypass via CHAU7_SKIP_FEATURE_COVERAGE=1",
     "status": "Shipped",
     "differentiator": "No"
   }

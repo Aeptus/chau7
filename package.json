@@ -15,6 +15,7 @@
     "quality:postcommit": "node scripts/quality/cache-cli.mjs prune",
     "features:generate": "node scripts/generate-features-csv.mjs",
     "features:check": "node scripts/generate-features-csv.mjs --check",
+    "features:coverage": "node scripts/check-feature-coverage.mjs",
     "test": "node --test scripts/quality/tests/*.test.mjs"
   }
 }

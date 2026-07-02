@@ -442,6 +442,23 @@ export const gates = [
     run: async (context) => context.exec("node", ["scripts/generate-features-csv.mjs", "--check"]),
   },
   {
+    id: "staged-feature-coverage",
+    modes: STAGED_ONLY,
+    scope: "staged",
+    wave: "static",
+    tags: ["docs", "features-inventory", "mcp"],
+    cacheable: false,
+    inputs: [
+      "scripts/check-feature-coverage.mjs",
+      "apps/chau7-macos/Sources/Chau7/MCP/MCPSession.swift",
+      "apps/chau7-macos/docs/features.json",
+    ],
+    applies: (context) =>
+      context.stagedFiles.includes("apps/chau7-macos/Sources/Chau7/MCP/MCPSession.swift"),
+    rerun: "pnpm quality:staged --include=staged-feature-coverage",
+    run: async (context) => context.exec("node", ["scripts/check-feature-coverage.mjs"]),
+  },
+  {
     id: "staged-shellcheck",
     modes: STAGED_ONLY,
     scope: "staged",

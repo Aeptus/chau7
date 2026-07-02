@@ -786,6 +786,7 @@ Legacy `AI_*` and `SMART_OVERLAY_*` environment variables are still supported.
 - **Registry-tested quality logic** — runner, registry, cache, impact, dirty-worktree, filtering, JSON output, and attestation behavior are covered by a `quality-runner-tests` gate.
 - **Feature-inventory schema gate** — a `staged-features-csv` gate runs `scripts/check-features-csv.mjs`, deterministically rejecting any `features.csv` row that isn't exactly five well-formed columns with a valid `Status`/`Differentiator`, so the machine-readable inventory can't silently rot (the failure mode that once let dozens of malformed rows land unnoticed).
 - **Generated feature inventory** — `docs/features.json` is the single source of truth; `features.csv` is generated from it (`pnpm features:generate`) and a `staged-features-csv-generated` gate `--check`s that the committed CSV matches the manifest, so the two can't drift and the CSV can't be hand-corrupted.
+- **MCP tool coverage gate** — a `staged-feature-coverage` gate (`scripts/check-feature-coverage.mjs`) hard-fails when a tool registered in `MCPSession.swift` has no canonical `MCP Tools —` inventory row, forcing new tools to be documented; it warns (not fails) on removed tools and has a deliberate `CHAU7_SKIP_FEATURE_COVERAGE=1` escape hatch.
 
 ## Architecture
 
