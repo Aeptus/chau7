@@ -50,22 +50,11 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
     ) -> Bool {
         let center = UNUserNotificationCenter.current()
         center.delegate = self
-        center.requestAuthorization(options: [.alert, .sound, .badge]) { granted, error in
-            if let error {
-                log.error("Notification auth failed: \(error.localizedDescription)")
-            } else if !granted {
-                log.info("Notification permission denied by user")
-            }
-            Task { @MainActor in
-                RemoteClient.shared.updateNotificationAuthorization(isGranted: granted)
-            }
-            guard pushNotificationsEnabled else {
-                log.info("Remote push notifications disabled for this build")
-                return
-            }
-            DispatchQueue.main.async {
-                application.registerForRemoteNotifications()
-            }
+        // Permission prompt-before-context fix: fresh installs see onboarding
+        // first and are asked from its completion handler; returning users
+        // (onboarding done) are asked immediately as before.
+        if UserDefaults.standard.bool(forKey: AppSettings.hasCompletedOnboardingKey) {
+            Self.requestNotificationAuthorization()
         }
         center.setNotificationCategories([
             UNNotificationCategory(
@@ -91,6 +80,29 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
             )
         ])
         return true
+    }
+
+    /// Ask for notification permission and (when the build enables it)
+    /// register for remote pushes. Deferred until after onboarding on first
+    /// launch so the system prompt appears with context, not cold at launch.
+    static func requestNotificationAuthorization() {
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { granted, error in
+            if let error {
+                log.error("Notification auth failed: \(error.localizedDescription)")
+            } else if !granted {
+                log.info("Notification permission denied by user")
+            }
+            Task { @MainActor in
+                RemoteClient.shared.updateNotificationAuthorization(isGranted: granted)
+            }
+            guard pushNotificationsEnabled else {
+                log.info("Remote push notifications disabled for this build")
+                return
+            }
+            DispatchQueue.main.async {
+                UIApplication.shared.registerForRemoteNotifications()
+            }
+        }
     }
 
     func application(
@@ -275,6 +287,9 @@ struct RemoteRootView: View {
             OnboardingView { startPairing in
                 hasCompletedOnboarding = true
                 showOnboarding = false
+                // Now that the user has seen what notifications are for,
+                // ask for permission (NF-11: no cold prompt at first launch).
+                AppDelegate.requestNotificationAuthorization()
                 if startPairing {
                     // Pairing takes over now; the consent prompt waits for the
                     // next calm launch so it never overlaps the pairing sheet.

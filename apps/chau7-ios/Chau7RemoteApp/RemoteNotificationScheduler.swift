@@ -68,13 +68,19 @@ enum RemoteNotificationScheduler {
 
     static func removeApprovalNotifications(requestIDs: [String]) {
         guard !requestIDs.isEmpty else { return }
-        UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: requestIDs)
+        let center = UNUserNotificationCenter.current()
+        // Remove pending too: a not-yet-presented request must never fire
+        // after its approval was resolved.
+        center.removePendingNotificationRequests(withIdentifiers: requestIDs)
+        center.removeDeliveredNotifications(withIdentifiers: requestIDs)
     }
 
     static func removeInteractivePromptNotifications(promptIDs: [String]) {
         guard !promptIDs.isEmpty else { return }
         let identifiers = promptIDs.map(interactivePromptIdentifier)
-        UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: identifiers)
+        let center = UNUserNotificationCenter.current()
+        center.removePendingNotificationRequests(withIdentifiers: identifiers)
+        center.removeDeliveredNotifications(withIdentifiers: identifiers)
     }
 
     static func interactivePromptIdentifier(_ promptID: String) -> String {
@@ -111,10 +117,13 @@ enum RemoteNotificationScheduler {
     }
 
     private static func add(_ content: UNMutableNotificationContent, identifier: String) {
+        // trigger nil = deliver immediately. The old 0.1s timer trigger left
+        // a ~100ms window where a just-resolved approval could still fire,
+        // because resolution only removed *delivered* notifications.
         let request = UNNotificationRequest(
             identifier: identifier,
             content: content,
-            trigger: UNTimeIntervalNotificationTrigger(timeInterval: 0.1, repeats: false)
+            trigger: nil
         )
         UNUserNotificationCenter.current().add(request)
     }

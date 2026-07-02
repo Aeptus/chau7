@@ -117,7 +117,12 @@ final class RemoteClient {
     private var pushToken: String?
     private(set) var notificationsAuthorized = false
     private let backgroundKeepalive = BackgroundKeepalive(name: "ch7.remote.approvals")
-    private var suppressLocalNotificationsUntil: Date?
+    /// IDs (approval request IDs / prompt IDs) already delivered to the user
+    /// as a remote push — local notifications for exactly these are skipped.
+    /// Replaces the old 15s wall-clock suppression window, which was
+    /// timing-dependent and could mute unrelated notifications.
+    private var pushDeliveredIDs: [String] = []
+    private static let pushDeliveredIDCap = 128
     /// Interactive prompts the user just answered or dismissed, keyed by prompt
     /// id → when it was suppressed. The Mac keeps re-pushing a prompt until its
     /// terminal actually advances, so without this the just-handled prompt
@@ -138,7 +143,6 @@ final class RemoteClient {
     private static let handshakeRetryIntervalSeconds = 1.0
     private static let handshakeTimeoutSeconds = 12.0
     private static let repairFallbackAttempt = 3
-    private static let pushNotificationSuppressionWindow: TimeInterval = 15
     private static let pendingStateFetchMinimumInterval: TimeInterval = 1
     /// How long a just-answered/dismissed prompt stays hidden if the Mac keeps
     /// listing it (i.e. the terminal never advanced). After this the prompt is
@@ -284,7 +288,10 @@ final class RemoteClient {
             // is suspended or terminated while backgrounded.
             DiagnosticsLog.shared.flush()
         case .inactive:
-            break
+            // Transitional (app switcher, incoming call, lock animation):
+            // keep the connection and stream mode, but persist diagnostics in
+            // case the transition ends in suspension rather than .active.
+            DiagnosticsLog.shared.flush()
         @unknown default:
             break
         }
@@ -316,7 +323,14 @@ final class RemoteClient {
     }
 
     func handlePushWake(userInfo: [AnyHashable: Any]) {
-        suppressLocalNotificationsUntil = Date().addingTimeInterval(Self.pushNotificationSuppressionWindow)
+        // The push payload names exactly what it delivered — skip local
+        // notifications for those IDs only (deterministic, not time-based).
+        if let requestID = userInfo[RemoteNotificationID.UserInfoKey.requestID] as? String {
+            recordPushDeliveredID(requestID)
+        }
+        if let promptID = userInfo[RemoteNotificationID.UserInfoKey.promptID] as? String {
+            recordPushDeliveredID(promptID)
+        }
         backgroundKeepalive.begin()
         currentAppState = .background
         desiredStreamMode = .approvalsOnly
@@ -1203,6 +1217,7 @@ final class RemoteClient {
         let request = pendingApprovals.remove(at: idx)
         // Journal the resolution so a stale /pending snapshot can't resurrect it.
         _ = pendingReconciler.applyLocalApprovalResolution(requestID: requestID, now: Date())
+        clearPushDeliveredID(requestID)
 
         approvalHistory.append(ApprovalHistoryEntry(
             command: request.command,
@@ -1382,15 +1397,6 @@ final class RemoteClient {
         )
     }
 
-    private var shouldSuppressLocalNotifications: Bool {
-        guard let until = suppressLocalNotificationsUntil else { return false }
-        if until <= Date() {
-            suppressLocalNotificationsUntil = nil
-            return false
-        }
-        return true
-    }
-
     private var canReceiveRemotePushNotifications: Bool {
         notificationsAuthorized && pushToken != nil && currentPushEnvironment() != nil
     }
@@ -1421,9 +1427,20 @@ final class RemoteClient {
     }
 
     private var shouldScheduleLocalApprovalNotification: Bool {
-        guard !shouldSuppressLocalNotifications else { return false }
         guard currentAppState != .foreground else { return false }
         return !canReceiveRemotePushNotifications
+    }
+
+    private func recordPushDeliveredID(_ id: String) {
+        guard !pushDeliveredIDs.contains(id) else { return }
+        pushDeliveredIDs.append(id)
+        if pushDeliveredIDs.count > Self.pushDeliveredIDCap {
+            pushDeliveredIDs.removeFirst(pushDeliveredIDs.count - Self.pushDeliveredIDCap)
+        }
+    }
+
+    private func clearPushDeliveredID(_ id: String) {
+        pushDeliveredIDs.removeAll { $0 == id }
     }
 
     private func fetchPendingState(reason: String) async {
@@ -1508,6 +1525,8 @@ final class RemoteClient {
 
     private func scheduleApprovalNotificationIfAllowed(for payload: ApprovalRequestPayload) {
         guard shouldScheduleLocalApprovalNotification else { return }
+        // Already on the lock screen via push — don't double-notify.
+        guard !pushDeliveredIDs.contains(payload.requestID) else { return }
         RemoteNotificationScheduler.scheduleApproval(
             for: payload,
             redactDetails: AppSettings.hideSensitiveNotifications
@@ -1558,7 +1577,7 @@ final class RemoteClient {
         RemoteNotificationScheduler.removeInteractivePromptNotifications(promptIDs: Array(removedPromptIDs))
 
         for prompt in visiblePrompts where !previousPromptIDs.contains(prompt.id) {
-            if shouldScheduleLocalApprovalNotification {
+            if shouldScheduleLocalApprovalNotification, !pushDeliveredIDs.contains(prompt.id) {
                 RemoteNotificationScheduler.scheduleInteractivePrompt(
                     for: prompt,
                     redactDetails: AppSettings.hideSensitiveNotifications
@@ -1574,6 +1593,7 @@ final class RemoteClient {
     private func completeInteractivePrompt(at index: Int, id: String) {
         pendingInteractivePrompts.remove(at: index)
         _ = pendingReconciler.applyLocalPromptCompletion(promptID: id)
+        clearPushDeliveredID(id)
         suppressedPromptIDs[id] = Date()
         RemoteNotificationScheduler.removeInteractivePromptNotifications(promptIDs: [id])
     }
@@ -1601,7 +1621,11 @@ final class RemoteClient {
     }
 
     private func handleBackgroundTaskExpiration() {
-        suppressLocalNotificationsUntil = Date().addingTimeInterval(Self.pushNotificationSuppressionWindow)
+        // No blanket notification suppression here: the pending-state
+        // reconciler already dedupes re-delivered approvals/prompts on
+        // reconnect (only genuinely new entries notify), and the old
+        // wall-clock window could mute a legitimately new approval that
+        // arrived while suspended.
         disconnect(autoReconnect: false, preserveApprovalsAndPrompts: true)
         status = .backgroundSuspended
     }
