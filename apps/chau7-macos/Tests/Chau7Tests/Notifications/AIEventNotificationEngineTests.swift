@@ -90,7 +90,7 @@ final class AIEventNotificationEngineTests: XCTestCase {
 
         switch engine.process(duplicate, deliveryRequested: true, now: now.addingTimeInterval(1)) {
         case .accepted(let accepted):
-            XCTAssertEqual(accepted.acceptedEvent.sharedEvent.type, "waiting_input")
+            XCTAssertEqual(accepted.enrichedEvent.event.type, "waiting_input")
             switch accepted.delivery {
             case .dropped(let drop):
                 XCTAssertEqual(drop.stage, .reconciliation)

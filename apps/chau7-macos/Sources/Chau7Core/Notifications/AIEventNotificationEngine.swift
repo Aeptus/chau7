@@ -17,33 +17,33 @@ public final class AIEventNotificationEngine {
         public let stage: DropStage
         public let reason: String
         public let eventID: UUID
-        public let acceptedEvent: NotificationIngress.AcceptedEvent?
+        public let enrichedEvent: EnrichedEvent?
         public let rawObservationNote: String?
 
         public init(
             stage: DropStage,
             reason: String,
             eventID: UUID,
-            acceptedEvent: NotificationIngress.AcceptedEvent? = nil,
+            enrichedEvent: EnrichedEvent? = nil,
             rawObservationNote: String? = nil
         ) {
             self.stage = stage
             self.reason = reason
             self.eventID = eventID
-            self.acceptedEvent = acceptedEvent
+            self.enrichedEvent = enrichedEvent
             self.rawObservationNote = rawObservationNote
         }
     }
 
     public struct DeliveryIntent: Equatable, Sendable {
-        public let acceptedEvent: NotificationIngress.AcceptedEvent
+        public let enrichedEvent: EnrichedEvent
 
-        public init(acceptedEvent: NotificationIngress.AcceptedEvent) {
-            self.acceptedEvent = acceptedEvent
+        public init(enrichedEvent: EnrichedEvent) {
+            self.enrichedEvent = enrichedEvent
         }
 
         public var event: AIEvent {
-            acceptedEvent.sharedEvent
+            enrichedEvent.event
         }
     }
 
@@ -54,16 +54,16 @@ public final class AIEventNotificationEngine {
     }
 
     public struct Accepted: Equatable, Sendable {
-        public let acceptedEvent: NotificationIngress.AcceptedEvent
+        public let enrichedEvent: EnrichedEvent
         public let delivery: DeliveryDecision
         public let rawObservationNote: String?
 
         public init(
-            acceptedEvent: NotificationIngress.AcceptedEvent,
+            enrichedEvent: EnrichedEvent,
             delivery: DeliveryDecision,
             rawObservationNote: String?
         ) {
-            self.acceptedEvent = acceptedEvent
+            self.enrichedEvent = enrichedEvent
             self.delivery = delivery
             self.rawObservationNote = rawObservationNote
         }
@@ -102,21 +102,21 @@ public final class AIEventNotificationEngine {
                 )
             )
 
-        case .accept(let accepted):
-            let reconciliation = sessionReconciler.reconcile(accepted, now: now)
+        case .accept(let enriched):
+            let reconciliation = sessionReconciler.reconcile(enriched, now: now)
             let delivery: DeliveryDecision
 
             if deliveryRequested {
                 switch reconciliation {
                 case .emit(let reconciled):
-                    delivery = .deliver(DeliveryIntent(acceptedEvent: reconciled))
+                    delivery = .deliver(DeliveryIntent(enrichedEvent: reconciled))
                 case .drop(let reason):
                     delivery = .dropped(
                         Drop(
                             stage: .reconciliation,
                             reason: reason,
-                            eventID: accepted.sharedEvent.id,
-                            acceptedEvent: accepted,
+                            eventID: enriched.event.id,
+                            enrichedEvent: enriched,
                             rawObservationNote: rawObservationNote
                         )
                     )
@@ -127,7 +127,7 @@ public final class AIEventNotificationEngine {
 
             return .accepted(
                 Accepted(
-                    acceptedEvent: accepted,
+                    enrichedEvent: enriched,
                     delivery: delivery,
                     rawObservationNote: rawObservationNote
                 )

@@ -10,7 +10,7 @@ import Foundation
 /// long-lived provider sessions.
 public final class AISessionEventReconciler {
     public enum Decision: Equatable, Sendable {
-        case emit(NotificationIngress.AcceptedEvent)
+        case emit(EnrichedEvent)
         case drop(reason: String)
     }
 
@@ -77,12 +77,12 @@ public final class AISessionEventReconciler {
     }
 
     public func reconcile(
-        _ accepted: NotificationIngress.AcceptedEvent,
+        _ enriched: EnrichedEvent,
         now: Date = Date()
     ) -> Decision {
-        guard let observation = AIObservation.notificationObservation(from: accepted, now: now),
+        guard let observation = AIObservation.notificationObservation(from: enriched, now: now),
               observation.state != nil else {
-            return .emit(accepted)
+            return .emit(enriched)
         }
         prune(now: now)
         let key = mergeAndPrimaryKey(for: observation)
@@ -107,7 +107,7 @@ public final class AISessionEventReconciler {
         store(record, primaryKey: key)
 
         if transition.emit {
-            return .emit(accepted)
+            return .emit(enriched)
         }
         return .drop(reason: transition.reason)
     }

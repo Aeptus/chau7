@@ -2,9 +2,9 @@ import Foundation
 
 /// Canonical semantic categories for user-facing AI notification events.
 ///
-/// Provider-specific adapters should translate raw tool events and hook payloads
-/// into one of these kinds before the shared notification layer makes delivery
-/// decisions.
+/// Provider-specific adapters translate raw tool events and hook payloads
+/// into one of these kinds before the shared notification layer makes
+/// delivery decisions.
 public enum NotificationSemanticKind: String, Codable, Sendable, CaseIterable, Identifiable {
     case taskFinished = "task_finished"
     case taskFailed = "task_failed"
@@ -32,161 +32,67 @@ public enum NotificationSemanticKind: String, Codable, Sendable, CaseIterable, I
     }
 }
 
-/// Provider-side event payload normalized into a transport-friendly shape.
+/// The shared trigger type an emitted semantic kind maps to, used to match
+/// events against `NotificationTriggerCatalog` entries.
 ///
-/// Adapters should construct this from raw provider events and then map it into
-/// `CanonicalNotificationEvent` or a drop/defer decision.
-public struct NotificationProviderEvent: Identifiable, Equatable, Codable, Sendable {
-    public let id: UUID
-    public let providerID: String
-    public let providerName: String
-    public let rawType: String?
-    public let title: String?
-    public let message: String
-    public let notificationType: String?
-    public let sessionID: String?
-    public let tabID: UUID?
-    public let directory: String?
-    public let timestamp: Date
-    public let reliability: AIEventReliability
-    public let metadata: [String: String]
+/// This enum is the compile-time bridge between the adapter layer and the
+/// trigger catalog: adding a `NotificationSemanticKind` case fails to compile
+/// here until the mapping is decided, and `NotificationTriggerCatalogTests`
+/// asserts every reachable (source, trigger-type) pair has a deliberate
+/// catalog entry (or an explicit wildcard allowlisting).
+public enum SemanticTriggerType: String, CaseIterable, Sendable {
+    case finished
+    case failed
+    case permission
+    case waitingInput = "waiting_input"
+    case attentionRequired = "attention_required"
+    case authenticationSucceeded = "authentication_succeeded"
+    case info
+    case idle
 
-    public init(
-        id: UUID = UUID(),
-        providerID: String,
-        providerName: String,
-        rawType: String? = nil,
-        title: String? = nil,
-        message: String,
-        notificationType: String? = nil,
-        sessionID: String? = nil,
-        tabID: UUID? = nil,
-        directory: String? = nil,
-        timestamp: Date = Date(),
-        reliability: AIEventReliability = .heuristic,
-        metadata: [String: String] = [:]
-    ) {
-        self.id = id
-        self.providerID = providerID
-        self.providerName = providerName
-        self.rawType = rawType
-        self.title = title
-        self.message = message
-        self.notificationType = notificationType
-        self.sessionID = sessionID
-        self.tabID = tabID
-        self.directory = directory
-        self.timestamp = timestamp
-        self.reliability = reliability
-        self.metadata = metadata
-    }
-
-    public func canonicalEvent(
-        kind: NotificationSemanticKind,
-        reliability: AIEventReliability? = nil
-    ) -> CanonicalNotificationEvent {
-        CanonicalNotificationEvent(
-            id: id,
-            kind: kind,
-            providerID: providerID,
-            providerName: providerName,
-            rawType: rawType,
-            title: title,
-            message: message,
-            notificationType: notificationType,
-            sessionID: sessionID,
-            tabID: tabID,
-            directory: directory,
-            timestamp: timestamp,
-            reliability: reliability ?? self.reliability,
-            metadata: metadata
-        )
+    /// Nil for `.unknown` — adapters never emit unknown kinds (they drop).
+    public init?(kind: NotificationSemanticKind) {
+        switch kind {
+        case .taskFinished:
+            self = .finished
+        case .taskFailed:
+            self = .failed
+        case .permissionRequired:
+            self = .permission
+        case .waitingForInput:
+            self = .waitingInput
+        case .attentionRequired:
+            self = .attentionRequired
+        case .authenticationSucceeded:
+            self = .authenticationSucceeded
+        case .informational:
+            self = .info
+        case .idle:
+            self = .idle
+        case .unknown:
+            return nil
+        }
     }
 }
 
-/// Canonical semantic notification event emitted by a provider adapter.
+/// An `AIEvent` annotated with its semantic kind by the adapter layer.
 ///
-/// The shared notification pipeline should consume this model rather than raw
-/// provider event types.
-public struct CanonicalNotificationEvent: Identifiable, Equatable, Codable, Sendable {
-    public let id: UUID
+/// This replaces the previous three-shape chain
+/// (AIEvent → NotificationProviderEvent → CanonicalNotificationEvent → AIEvent)
+/// with zero conversions: adapters normalize the event in place (type/raw-type
+/// rewrite, reliability adjustment) and attach the derived kind alongside.
+/// The kind travels separately from the event because it is derived, not
+/// producer-supplied — producers cannot lie about semantics.
+public struct EnrichedEvent: Equatable, Sendable {
+    public let event: AIEvent
     public let kind: NotificationSemanticKind
-    public let providerID: String
-    public let providerName: String
-    public let rawType: String?
-    public let title: String?
-    public let message: String
-    public let notificationType: String?
-    public let sessionID: String?
-    public let tabID: UUID?
-    public let directory: String?
-    public let timestamp: Date
-    public let reliability: AIEventReliability
-    public let metadata: [String: String]
 
-    public init(
-        id: UUID = UUID(),
-        kind: NotificationSemanticKind,
-        providerID: String,
-        providerName: String,
-        rawType: String? = nil,
-        title: String? = nil,
-        message: String,
-        notificationType: String? = nil,
-        sessionID: String? = nil,
-        tabID: UUID? = nil,
-        directory: String? = nil,
-        timestamp: Date = Date(),
-        reliability: AIEventReliability = .heuristic,
-        metadata: [String: String] = [:]
-    ) {
-        self.id = id
+    public init(event: AIEvent, kind: NotificationSemanticKind) {
+        self.event = event
         self.kind = kind
-        self.providerID = providerID
-        self.providerName = providerName
-        self.rawType = rawType
-        self.title = title
-        self.message = message
-        self.notificationType = notificationType
-        self.sessionID = sessionID
-        self.tabID = tabID
-        self.directory = directory
-        self.timestamp = timestamp
-        self.reliability = reliability
-        self.metadata = metadata
     }
 
     public var isAttentionSeeking: Bool {
         kind.isAttentionSeeking
     }
-}
-
-/// Result of translating a provider event into the canonical semantic layer.
-public enum NotificationProviderAdapterResult: Equatable, Sendable {
-    case emit(CanonicalNotificationEvent)
-    case drop(reason: String)
-    case deferToFallback(reason: String)
-
-    public var canonicalEvent: CanonicalNotificationEvent? {
-        if case let .emit(event) = self {
-            return event
-        }
-        return nil
-    }
-
-    public var reason: String? {
-        switch self {
-        case .emit:
-            return nil
-        case let .drop(reason), let .deferToFallback(reason):
-            return reason
-        }
-    }
-}
-
-/// Adapter contract for provider-specific notification parsing.
-public protocol NotificationProviderAdapter {
-    var providerID: String { get }
-
-    func adapt(_ event: NotificationProviderEvent) -> NotificationProviderAdapterResult
 }

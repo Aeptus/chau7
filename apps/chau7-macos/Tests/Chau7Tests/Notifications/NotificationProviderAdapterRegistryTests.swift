@@ -16,12 +16,12 @@ final class NotificationProviderAdapterRegistryTests: XCTestCase {
         )
 
         let decision = NotificationProviderAdapterRegistry.adapt(event)
-        guard case let .emit(adapted, canonical) = decision else {
+        guard case let .emit(enriched) = decision else {
             return XCTFail("Expected Gemini event to canonicalize")
         }
 
-        XCTAssertEqual(adapted.type, "finished")
-        XCTAssertEqual(canonical.kind, .taskFinished)
+        XCTAssertEqual(enriched.event.type, "finished")
+        XCTAssertEqual(enriched.kind, .taskFinished)
     }
 
     func testChatGPTProviderCanonicalizesThroughGenericAdapter() {
@@ -38,12 +38,12 @@ final class NotificationProviderAdapterRegistryTests: XCTestCase {
         )
 
         let decision = NotificationProviderAdapterRegistry.adapt(event)
-        guard case let .emit(adapted, canonical) = decision else {
+        guard case let .emit(enriched) = decision else {
             return XCTFail("Expected ChatGPT event to canonicalize")
         }
 
-        XCTAssertEqual(adapted.type, "finished")
-        XCTAssertEqual(canonical.kind, .taskFinished)
+        XCTAssertEqual(enriched.event.type, "finished")
+        XCTAssertEqual(enriched.kind, .taskFinished)
     }
 
     func testCodyProviderCanonicalizesThroughGenericAdapter() {
@@ -60,12 +60,12 @@ final class NotificationProviderAdapterRegistryTests: XCTestCase {
         )
 
         let decision = NotificationProviderAdapterRegistry.adapt(event)
-        guard case let .emit(adapted, canonical) = decision else {
+        guard case let .emit(enriched) = decision else {
             return XCTFail("Expected Cody event to canonicalize")
         }
 
-        XCTAssertEqual(adapted.type, "finished")
-        XCTAssertEqual(canonical.kind, .taskFinished)
+        XCTAssertEqual(enriched.event.type, "finished")
+        XCTAssertEqual(enriched.kind, .taskFinished)
     }
 
     func testAmazonQProviderCanonicalizesThroughGenericAdapter() {
@@ -82,12 +82,12 @@ final class NotificationProviderAdapterRegistryTests: XCTestCase {
         )
 
         let decision = NotificationProviderAdapterRegistry.adapt(event)
-        guard case let .emit(adapted, canonical) = decision else {
+        guard case let .emit(enriched) = decision else {
             return XCTFail("Expected Amazon Q event to canonicalize")
         }
 
-        XCTAssertEqual(adapted.type, "finished")
-        XCTAssertEqual(canonical.kind, .taskFinished)
+        XCTAssertEqual(enriched.event.type, "finished")
+        XCTAssertEqual(enriched.kind, .taskFinished)
     }
 
     func testDevinProviderCanonicalizesThroughGenericAdapter() {
@@ -104,12 +104,12 @@ final class NotificationProviderAdapterRegistryTests: XCTestCase {
         )
 
         let decision = NotificationProviderAdapterRegistry.adapt(event)
-        guard case let .emit(adapted, canonical) = decision else {
+        guard case let .emit(enriched) = decision else {
             return XCTFail("Expected Devin event to canonicalize")
         }
 
-        XCTAssertEqual(adapted.type, "finished")
-        XCTAssertEqual(canonical.kind, .taskFinished)
+        XCTAssertEqual(enriched.event.type, "finished")
+        XCTAssertEqual(enriched.kind, .taskFinished)
     }
 
     func testGooseProviderCanonicalizesThroughGenericAdapter() {
@@ -126,12 +126,12 @@ final class NotificationProviderAdapterRegistryTests: XCTestCase {
         )
 
         let decision = NotificationProviderAdapterRegistry.adapt(event)
-        guard case let .emit(adapted, canonical) = decision else {
+        guard case let .emit(enriched) = decision else {
             return XCTFail("Expected Goose event to canonicalize")
         }
 
-        XCTAssertEqual(adapted.type, "finished")
-        XCTAssertEqual(canonical.kind, .taskFinished)
+        XCTAssertEqual(enriched.event.type, "finished")
+        XCTAssertEqual(enriched.kind, .taskFinished)
     }
 
     func testMentatProviderCanonicalizesThroughGenericAdapter() {
@@ -148,12 +148,12 @@ final class NotificationProviderAdapterRegistryTests: XCTestCase {
         )
 
         let decision = NotificationProviderAdapterRegistry.adapt(event)
-        guard case let .emit(adapted, canonical) = decision else {
+        guard case let .emit(enriched) = decision else {
             return XCTFail("Expected Mentat event to canonicalize")
         }
 
-        XCTAssertEqual(adapted.type, "finished")
-        XCTAssertEqual(canonical.kind, .taskFinished)
+        XCTAssertEqual(enriched.event.type, "finished")
+        XCTAssertEqual(enriched.kind, .taskFinished)
     }
 
     func testAmpProviderCanonicalizesThroughGenericAdapter() {
@@ -170,12 +170,12 @@ final class NotificationProviderAdapterRegistryTests: XCTestCase {
         )
 
         let decision = NotificationProviderAdapterRegistry.adapt(event)
-        guard case let .emit(adapted, canonical) = decision else {
+        guard case let .emit(enriched) = decision else {
             return XCTFail("Expected Amp event to canonicalize")
         }
 
-        XCTAssertEqual(adapted.type, "finished")
-        XCTAssertEqual(canonical.kind, .taskFinished)
+        XCTAssertEqual(enriched.event.type, "finished")
+        XCTAssertEqual(enriched.kind, .taskFinished)
     }
 
     func testClaudeNotificationEventMapsToWaitingInput() {
@@ -195,15 +195,15 @@ final class NotificationProviderAdapterRegistryTests: XCTestCase {
         )
 
         let decision = NotificationProviderAdapterRegistry.adapt(event)
-        guard case let .emit(adapted, canonical) = decision else {
+        guard case let .emit(enriched) = decision else {
             return XCTFail("Expected canonical Claude notification")
         }
 
-        XCTAssertEqual(canonical.kind, .waitingForInput)
-        XCTAssertEqual(adapted.type, "waiting_input")
-        XCTAssertEqual(adapted.rawType, "notification")
-        XCTAssertEqual(adapted.notificationType, "idle_prompt")
-        XCTAssertEqual(adapted.tool, "Claude")
+        XCTAssertEqual(enriched.kind, .waitingForInput)
+        XCTAssertEqual(enriched.event.type, "waiting_input")
+        XCTAssertEqual(enriched.event.rawType, "notification")
+        XCTAssertEqual(enriched.event.notificationType, "idle_prompt")
+        XCTAssertEqual(enriched.event.tool, "Claude")
     }
 
     func testClaudeResponseCompleteIsDroppedAsStateOnly() {
@@ -240,13 +240,13 @@ final class NotificationProviderAdapterRegistryTests: XCTestCase {
         )
 
         let decision = NotificationProviderAdapterRegistry.adapt(event)
-        guard case let .emit(adapted, canonical) = decision else {
+        guard case let .emit(enriched) = decision else {
             return XCTFail("Expected Claude idle prompt to canonicalize")
         }
 
-        XCTAssertEqual(canonical.kind, .waitingForInput)
-        XCTAssertEqual(adapted.type, "waiting_input")
-        XCTAssertEqual(adapted.reliability, .authoritative)
+        XCTAssertEqual(enriched.kind, .waitingForInput)
+        XCTAssertEqual(enriched.event.type, "waiting_input")
+        XCTAssertEqual(enriched.event.reliability, .authoritative)
     }
 
     func testClaudeRawWaitingInputPreservesHeuristicReliability() {
@@ -262,13 +262,13 @@ final class NotificationProviderAdapterRegistryTests: XCTestCase {
         )
 
         let decision = NotificationProviderAdapterRegistry.adapt(event)
-        guard case let .emit(adapted, canonical) = decision else {
+        guard case let .emit(enriched) = decision else {
             return XCTFail("Expected Claude waiting_input to canonicalize")
         }
 
-        XCTAssertEqual(canonical.kind, .waitingForInput)
-        XCTAssertEqual(adapted.type, "waiting_input")
-        XCTAssertEqual(adapted.reliability, .heuristic)
+        XCTAssertEqual(enriched.kind, .waitingForInput)
+        XCTAssertEqual(enriched.event.type, "waiting_input")
+        XCTAssertEqual(enriched.event.reliability, .heuristic)
     }
 
     func testClaudeNotificationEventMapsToAttentionRequired() {
@@ -287,13 +287,13 @@ final class NotificationProviderAdapterRegistryTests: XCTestCase {
         )
 
         let decision = NotificationProviderAdapterRegistry.adapt(event)
-        guard case let .emit(adapted, canonical) = decision else {
+        guard case let .emit(enriched) = decision else {
             return XCTFail("Expected canonical Claude attention event")
         }
 
-        XCTAssertEqual(canonical.kind, .attentionRequired)
-        XCTAssertEqual(adapted.type, "attention_required")
-        XCTAssertEqual(adapted.notificationType, "elicitation_dialog")
+        XCTAssertEqual(enriched.kind, .attentionRequired)
+        XCTAssertEqual(enriched.event.type, "attention_required")
+        XCTAssertEqual(enriched.event.notificationType, "elicitation_dialog")
     }
 
     func testRuntimeWaitingInputCanonicalizesWithoutChangingBehavior() {
@@ -309,13 +309,13 @@ final class NotificationProviderAdapterRegistryTests: XCTestCase {
         )
 
         let decision = NotificationProviderAdapterRegistry.adapt(event)
-        guard case let .emit(adapted, canonical) = decision else {
+        guard case let .emit(enriched) = decision else {
             return XCTFail("Expected runtime canonical event to emit canonical form")
         }
 
-        XCTAssertEqual(adapted.type, "waiting_input")
-        XCTAssertEqual(adapted.tool, "Codex")
-        XCTAssertEqual(canonical.kind, .waitingForInput)
+        XCTAssertEqual(enriched.event.type, "waiting_input")
+        XCTAssertEqual(enriched.event.tool, "Codex")
+        XCTAssertEqual(enriched.kind, .waitingForInput)
     }
 
     func testGenericAdapterPreservesProviderRawTypeSpellingWhenRawTypeIsMissing() {
@@ -331,12 +331,12 @@ final class NotificationProviderAdapterRegistryTests: XCTestCase {
         )
 
         let decision = NotificationProviderAdapterRegistry.adapt(event)
-        guard case let .emit(adapted, canonical) = decision else {
+        guard case let .emit(enriched) = decision else {
             return XCTFail("Expected runtime event to canonicalize")
         }
 
-        XCTAssertEqual(adapted.rawType, "agent-turn-complete")
-        XCTAssertEqual(canonical.kind, .taskFinished)
+        XCTAssertEqual(enriched.event.rawType, "agent-turn-complete")
+        XCTAssertEqual(enriched.kind, .taskFinished)
     }
 
     func testCodexAgentTurnCompleteCanonicalizesToFinished() {
@@ -354,14 +354,14 @@ final class NotificationProviderAdapterRegistryTests: XCTestCase {
         )
 
         let decision = NotificationProviderAdapterRegistry.adapt(event)
-        guard case let .emit(adapted, canonical) = decision else {
+        guard case let .emit(enriched) = decision else {
             return XCTFail("Expected Codex turn complete to emit canonical finished")
         }
 
-        XCTAssertEqual(adapted.type, "finished")
-        XCTAssertEqual(adapted.rawType, "agent-turn-complete")
-        XCTAssertEqual(canonical.kind, .taskFinished)
-        XCTAssertEqual(adapted.reliability, .authoritative)
+        XCTAssertEqual(enriched.event.type, "finished")
+        XCTAssertEqual(enriched.event.rawType, "agent-turn-complete")
+        XCTAssertEqual(enriched.kind, .taskFinished)
+        XCTAssertEqual(enriched.event.reliability, .authoritative)
     }
 
     func testCodexApprovalRequestedCanonicalizesToPermission() {
@@ -378,12 +378,12 @@ final class NotificationProviderAdapterRegistryTests: XCTestCase {
         )
 
         let decision = NotificationProviderAdapterRegistry.adapt(event)
-        guard case let .emit(adapted, canonical) = decision else {
+        guard case let .emit(enriched) = decision else {
             return XCTFail("Expected Codex approval event to emit canonical permission")
         }
 
-        XCTAssertEqual(adapted.type, "permission")
-        XCTAssertEqual(canonical.kind, .permissionRequired)
+        XCTAssertEqual(enriched.event.type, "permission")
+        XCTAssertEqual(enriched.kind, .permissionRequired)
     }
 
     func testCodexFallbackIdlePreservesFallbackReliability() {
@@ -399,14 +399,14 @@ final class NotificationProviderAdapterRegistryTests: XCTestCase {
         )
 
         let decision = NotificationProviderAdapterRegistry.adapt(event)
-        guard case let .emit(adapted, canonical) = decision else {
+        guard case let .emit(enriched) = decision else {
             return XCTFail("Expected Codex idle event to canonicalize")
         }
 
-        XCTAssertEqual(adapted.type, "idle")
-        XCTAssertEqual(adapted.reliability, .fallback)
-        XCTAssertEqual(canonical.kind, .idle)
-        XCTAssertEqual(canonical.reliability, .fallback)
+        XCTAssertEqual(enriched.event.type, "idle")
+        XCTAssertEqual(enriched.event.reliability, .fallback)
+        XCTAssertEqual(enriched.kind, .idle)
+        XCTAssertEqual(enriched.event.reliability, .fallback)
     }
 
     func testUnsupportedGenericAIEventIsDropped() {
@@ -443,13 +443,13 @@ final class NotificationProviderAdapterRegistryTests: XCTestCase {
         )
 
         let decision = NotificationProviderAdapterRegistry.adapt(event)
-        guard case let .emit(adapted, canonical) = decision else {
+        guard case let .emit(enriched) = decision else {
             return XCTFail("Expected canonical history monitor event")
         }
 
-        XCTAssertEqual(canonical.kind, .taskFinished)
-        XCTAssertEqual(adapted.type, "finished")
-        XCTAssertEqual(adapted.reliability, .fallback)
+        XCTAssertEqual(enriched.kind, .taskFinished)
+        XCTAssertEqual(enriched.event.type, "finished")
+        XCTAssertEqual(enriched.event.reliability, .fallback)
     }
 
     func testEventsLogWaitingInputDropsWithoutIdentity() {
@@ -484,14 +484,14 @@ final class NotificationProviderAdapterRegistryTests: XCTestCase {
         )
 
         let decision = NotificationProviderAdapterRegistry.adapt(event)
-        guard case let .emit(adapted, canonical) = decision else {
+        guard case let .emit(enriched) = decision else {
             return XCTFail("Expected events log event with directory identity to emit")
         }
 
-        XCTAssertEqual(adapted.type, "waiting_input")
-        XCTAssertEqual(adapted.directory, "/tmp/chau7")
-        XCTAssertEqual(adapted.reliability, .fallback)
-        XCTAssertEqual(canonical.kind, .waitingForInput)
+        XCTAssertEqual(enriched.event.type, "waiting_input")
+        XCTAssertEqual(enriched.event.directory, "/tmp/chau7")
+        XCTAssertEqual(enriched.event.reliability, .fallback)
+        XCTAssertEqual(enriched.kind, .waitingForInput)
     }
 
     func testTerminalSessionWaitingInputDropsWithoutExactIdentity() {
@@ -525,13 +525,13 @@ final class NotificationProviderAdapterRegistryTests: XCTestCase {
         )
 
         let decision = NotificationProviderAdapterRegistry.adapt(event)
-        guard case let .emit(adapted, canonical) = decision else {
+        guard case let .emit(enriched) = decision else {
             return XCTFail("Expected canonical shell event")
         }
 
-        XCTAssertEqual(adapted.type, "command_failed")
-        XCTAssertEqual(adapted.rawType, "command_failed")
-        XCTAssertEqual(canonical.kind, .taskFailed)
+        XCTAssertEqual(enriched.event.type, "command_failed")
+        XCTAssertEqual(enriched.event.rawType, "command_failed")
+        XCTAssertEqual(enriched.kind, .taskFailed)
     }
 
     func testAppUpdateAvailablePreservesTriggerTypeAndCanonicalizes() {
@@ -545,12 +545,12 @@ final class NotificationProviderAdapterRegistryTests: XCTestCase {
         )
 
         let decision = NotificationProviderAdapterRegistry.adapt(event)
-        guard case let .emit(adapted, canonical) = decision else {
+        guard case let .emit(enriched) = decision else {
             return XCTFail("Expected canonical app event")
         }
 
-        XCTAssertEqual(adapted.type, "update_available")
-        XCTAssertEqual(canonical.kind, .informational)
+        XCTAssertEqual(enriched.event.type, "update_available")
+        XCTAssertEqual(enriched.kind, .informational)
     }
 
     func testAPIProxyErrorCanonicalizesAsFailure() {
@@ -564,12 +564,12 @@ final class NotificationProviderAdapterRegistryTests: XCTestCase {
         )
 
         let decision = NotificationProviderAdapterRegistry.adapt(event)
-        guard case let .emit(adapted, canonical) = decision else {
+        guard case let .emit(enriched) = decision else {
             return XCTFail("Expected canonical API proxy event")
         }
 
-        XCTAssertEqual(adapted.type, "api_error")
-        XCTAssertEqual(canonical.kind, .taskFailed)
+        XCTAssertEqual(enriched.event.type, "api_error")
+        XCTAssertEqual(enriched.kind, .taskFailed)
     }
 
     // MARK: - Routing regression

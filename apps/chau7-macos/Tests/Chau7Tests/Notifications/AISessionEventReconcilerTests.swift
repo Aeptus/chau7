@@ -4,14 +4,14 @@ import XCTest
 final class AISessionEventReconcilerTests: XCTestCase {
     func testDropsDuplicateWaitingInputForSameSessionAcrossProducers() {
         let reconciler = AISessionEventReconciler()
-        let first = acceptedEvent(
+        let first = enrichedEvent(
             type: "waiting_input",
             kind: .waitingForInput,
             sessionID: "SESSION-1",
             producer: "terminal_wait_pattern_attention",
             reliability: .heuristic
         )
-        let second = acceptedEvent(
+        let second = enrichedEvent(
             type: "waiting_input",
             kind: .waitingForInput,
             sessionID: "session-1",
@@ -31,14 +31,14 @@ final class AISessionEventReconcilerTests: XCTestCase {
     func testAllowsStrongerSameStateReplacementInsideCoalescingWindow() {
         let reconciler = AISessionEventReconciler()
         let now = Date()
-        let fallback = acceptedEvent(
+        let fallback = enrichedEvent(
             type: "finished",
             kind: .taskFinished,
             sessionID: "SESSION-1",
             producer: "history_idle_monitor",
             reliability: .fallback
         )
-        let authoritative = acceptedEvent(
+        let authoritative = enrichedEvent(
             type: "finished",
             kind: .taskFinished,
             sessionID: "session-1",
@@ -56,14 +56,14 @@ final class AISessionEventReconcilerTests: XCTestCase {
     func testSuppressesImmediateDuplicateAuthoritativeTerminalState() {
         let reconciler = AISessionEventReconciler(terminalRepeatWindow: 10)
         let now = Date()
-        let first = acceptedEvent(
+        let first = enrichedEvent(
             type: "finished",
             kind: .taskFinished,
             sessionID: "SESSION-1",
             producer: "codex_notify_hook",
             reliability: .authoritative
         )
-        let duplicate = acceptedEvent(
+        let duplicate = enrichedEvent(
             type: "finished",
             kind: .taskFinished,
             sessionID: "session-1",
@@ -83,14 +83,14 @@ final class AISessionEventReconcilerTests: XCTestCase {
     func testAllowsLaterAuthoritativeTerminalStateForSameLongLivedSession() {
         let reconciler = AISessionEventReconciler(terminalRepeatWindow: 10)
         let now = Date()
-        let first = acceptedEvent(
+        let first = enrichedEvent(
             type: "finished",
             kind: .taskFinished,
             sessionID: "SESSION-1",
             producer: "codex_notify_hook",
             reliability: .authoritative
         )
-        let nextTurn = acceptedEvent(
+        let nextTurn = enrichedEvent(
             type: "finished",
             kind: .taskFinished,
             sessionID: "session-1",
@@ -108,14 +108,14 @@ final class AISessionEventReconcilerTests: XCTestCase {
     func testSuppressesDelayedStrongerTerminalReplacementAsSameCompletion() {
         let reconciler = AISessionEventReconciler(terminalRepeatWindow: 10)
         let now = Date()
-        let fallback = acceptedEvent(
+        let fallback = enrichedEvent(
             type: "finished",
             kind: .taskFinished,
             sessionID: "SESSION-1",
             producer: "history_idle_monitor",
             reliability: .fallback
         )
-        let authoritative = acceptedEvent(
+        let authoritative = enrichedEvent(
             type: "finished",
             kind: .taskFinished,
             sessionID: "session-1",
@@ -134,14 +134,14 @@ final class AISessionEventReconcilerTests: XCTestCase {
 
     func testSuppressesFallbackAttentionAfterTerminalState() {
         let reconciler = AISessionEventReconciler()
-        let finished = acceptedEvent(
+        let finished = enrichedEvent(
             type: "finished",
             kind: .taskFinished,
             sessionID: "SESSION-1",
             producer: "codex_notify_hook",
             reliability: .authoritative
         )
-        let staleWaiting = acceptedEvent(
+        let staleWaiting = enrichedEvent(
             type: "waiting_input",
             kind: .waitingForInput,
             sessionID: "session-1",
@@ -164,14 +164,14 @@ final class AISessionEventReconcilerTests: XCTestCase {
         // was dropped as "Stale post-terminal". An authoritative attention
         // signal must reopen the session on its own.
         let reconciler = AISessionEventReconciler()
-        let finished = acceptedEvent(
+        let finished = enrichedEvent(
             type: "finished",
             kind: .taskFinished,
             sessionID: "SESSION-1",
             producer: "codex_notify_hook",
             reliability: .authoritative
         )
-        let nextTurnPermission = acceptedEvent(
+        let nextTurnPermission = enrichedEvent(
             type: "permission",
             kind: .permissionRequired,
             sessionID: "session-1",
@@ -192,21 +192,21 @@ final class AISessionEventReconcilerTests: XCTestCase {
         // Reopening must not re-arm duplicate suppression: a second identical
         // pending permission for the same unanswered prompt stays deduped.
         let reconciler = AISessionEventReconciler()
-        let finished = acceptedEvent(
+        let finished = enrichedEvent(
             type: "finished",
             kind: .taskFinished,
             sessionID: "SESSION-1",
             producer: "codex_notify_hook",
             reliability: .authoritative
         )
-        let permission = acceptedEvent(
+        let permission = enrichedEvent(
             type: "permission",
             kind: .permissionRequired,
             sessionID: "session-1",
             producer: "codex_notify_hook",
             reliability: .authoritative
         )
-        let duplicate = acceptedEvent(
+        let duplicate = enrichedEvent(
             type: "permission",
             kind: .permissionRequired,
             sessionID: "session-1",
@@ -228,7 +228,7 @@ final class AISessionEventReconcilerTests: XCTestCase {
 
     func testRawRunningObservationReopensFinishedSession() {
         let reconciler = AISessionEventReconciler()
-        let finished = acceptedEvent(
+        let finished = enrichedEvent(
             type: "finished",
             kind: .taskFinished,
             sessionID: "SESSION-1",
@@ -246,7 +246,7 @@ final class AISessionEventReconcilerTests: XCTestCase {
             producer: "codex_notify_hook",
             reliability: .authoritative
         )
-        let nextWaiting = acceptedEvent(
+        let nextWaiting = enrichedEvent(
             type: "waiting_input",
             kind: .waitingForInput,
             sessionID: "session-1",
@@ -262,7 +262,7 @@ final class AISessionEventReconcilerTests: XCTestCase {
     func testSessionAliasBeatsTabAliasForSameEventIdentity() {
         let reconciler = AISessionEventReconciler()
         let tabID = UUID()
-        let first = acceptedEvent(
+        let first = enrichedEvent(
             type: "permission",
             kind: .permissionRequired,
             sessionID: "SESSION-1",
@@ -270,7 +270,7 @@ final class AISessionEventReconcilerTests: XCTestCase {
             producer: "claude_code_monitor",
             reliability: .authoritative
         )
-        let second = acceptedEvent(
+        let second = enrichedEvent(
             type: "permission",
             kind: .permissionRequired,
             sessionID: "session-1",
@@ -290,7 +290,7 @@ final class AISessionEventReconcilerTests: XCTestCase {
     func testBridgeEventMergesPreviouslySeparateTabAndSessionRecords() {
         let reconciler = AISessionEventReconciler()
         let tabID = UUID()
-        let tabOnly = acceptedEvent(
+        let tabOnly = enrichedEvent(
             type: "permission",
             kind: .permissionRequired,
             sessionID: nil,
@@ -298,7 +298,7 @@ final class AISessionEventReconcilerTests: XCTestCase {
             producer: "terminal_osc9",
             reliability: .authoritative
         )
-        let sessionOnly = acceptedEvent(
+        let sessionOnly = enrichedEvent(
             type: "permission",
             kind: .permissionRequired,
             sessionID: "session-1",
@@ -306,7 +306,7 @@ final class AISessionEventReconcilerTests: XCTestCase {
             producer: "claude_code_monitor",
             reliability: .authoritative
         )
-        let bridge = acceptedEvent(
+        let bridge = enrichedEvent(
             type: "permission",
             kind: .permissionRequired,
             sessionID: "session-1",
@@ -314,7 +314,7 @@ final class AISessionEventReconcilerTests: XCTestCase {
             producer: "claude_code_monitor",
             reliability: .authoritative
         )
-        let laterTabOnly = acceptedEvent(
+        let laterTabOnly = enrichedEvent(
             type: "permission",
             kind: .permissionRequired,
             sessionID: nil,
@@ -344,21 +344,21 @@ final class AISessionEventReconcilerTests: XCTestCase {
     func testStrongerDuplicateOutsideCoalescingWindowUpdatesWithoutRenotifying() {
         let reconciler = AISessionEventReconciler()
         let now = Date()
-        let heuristic = acceptedEvent(
+        let heuristic = enrichedEvent(
             type: "waiting_input",
             kind: .waitingForInput,
             sessionID: "session-1",
             producer: "terminal_wait_pattern_attention",
             reliability: .heuristic
         )
-        let authoritative = acceptedEvent(
+        let authoritative = enrichedEvent(
             type: "waiting_input",
             kind: .waitingForInput,
             sessionID: "session-1",
             producer: "claude_code_monitor",
             reliability: .authoritative
         )
-        let weakerDuplicate = acceptedEvent(
+        let weakerDuplicate = enrichedEvent(
             type: "waiting_input",
             kind: .waitingForInput,
             sessionID: "session-1",
@@ -381,14 +381,14 @@ final class AISessionEventReconcilerTests: XCTestCase {
         }
     }
 
-    private func acceptedEvent(
+    private func enrichedEvent(
         type: String,
         kind: NotificationSemanticKind,
         sessionID: String?,
         tabID: UUID? = nil,
         producer: String,
         reliability: AIEventReliability
-    ) -> NotificationIngress.AcceptedEvent {
+    ) -> EnrichedEvent {
         let event = AIEvent(
             source: .codex,
             type: type,
@@ -400,19 +400,6 @@ final class AISessionEventReconcilerTests: XCTestCase {
             producer: producer,
             reliability: reliability
         )
-        let canonical = CanonicalNotificationEvent(
-            id: event.id,
-            kind: kind,
-            providerID: event.source.rawValue,
-            providerName: event.tool,
-            rawType: event.rawType ?? event.type,
-            message: event.message,
-            sessionID: event.sessionID,
-            tabID: event.tabID,
-            timestamp: DateFormatters.iso8601.date(from: event.ts) ?? Date(),
-            reliability: event.reliability,
-            metadata: ["producer": producer]
-        )
-        return NotificationIngress.AcceptedEvent(sharedEvent: event, canonicalEvent: canonical)
+        return EnrichedEvent(event: event, kind: kind)
     }
 }

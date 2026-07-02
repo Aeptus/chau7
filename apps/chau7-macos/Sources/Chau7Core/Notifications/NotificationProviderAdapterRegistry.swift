@@ -2,22 +2,22 @@ import Foundation
 
 public enum NotificationProviderAdapterRegistry {
     public enum Decision: Equatable, Sendable {
-        case emit(AIEvent, canonical: CanonicalNotificationEvent)
+        case emit(EnrichedEvent)
         case drop(reason: String)
 
         public var event: AIEvent? {
             switch self {
-            case .emit(let event, _):
-                return event
+            case .emit(let enriched):
+                return enriched.event
             case .drop:
                 return nil
             }
         }
 
-        public var canonicalEvent: CanonicalNotificationEvent? {
+        public var enrichedEvent: EnrichedEvent? {
             switch self {
-            case .emit(_, let canonical):
-                return canonical
+            case .emit(let enriched):
+                return enriched
             case .drop:
                 return nil
             }
@@ -34,15 +34,15 @@ public enum NotificationProviderAdapterRegistry {
         case .codex:
             return adaptCodexEvent(event)
         case .historyMonitor, .eventsLog:
-            return adaptFallbackAIEvent(event)
+            return adaptMappedSourceEvent(event, policy: .fallbackAI)
         case .terminalSession:
-            return adaptTerminalSessionEvent(event)
+            return adaptMappedSourceEvent(event, policy: .terminalSession)
         case .shell:
-            return adaptShellEvent(event)
+            return adaptMappedSourceEvent(event, policy: .shell)
         case .app:
-            return adaptAppEvent(event)
+            return adaptMappedSourceEvent(event, policy: .app)
         case .apiProxy:
-            return adaptAPIProxyEvent(event)
+            return adaptMappedSourceEvent(event, policy: .apiProxy)
         default:
             // Generic AI sources (15 tool-level sources that share the
             // semantic-mapping path) route via the set declared on
@@ -50,66 +50,143 @@ public enum NotificationProviderAdapterRegistry {
             // Any source that's neither dedicated nor in the generic set
             // falls through to the unknown-source adapter.
             if AIEventSource.genericAIAdapterSources.contains(event.source) {
-                return adaptGenericAIEvent(event)
+                return adaptMappedSourceEvent(event, policy: .genericAI)
             }
-            return adaptUnknownEvent(event)
+            return adaptMappedSourceEvent(event, policy: .unknown)
         }
     }
+
+    // MARK: - Emission
+
+    /// Build the enriched event: the original AIEvent normalized in place
+    /// (semantic `type` rewrite for dedicated adapters, raw-type and
+    /// reliability adjustments) with the derived kind attached. Identity,
+    /// timestamp, routing fields, and `repoPath` are all preserved — the
+    /// previous three-shape round-trip minted nothing but also dropped
+    /// `repoPath` and re-formatted `ts`.
+    private static func emitEnriched(
+        _ event: AIEvent,
+        kind: NotificationSemanticKind,
+        type: String? = nil,
+        rawType: String?,
+        reliability: AIEventReliability
+    ) -> Decision {
+        let triggerType = SemanticTriggerType(kind: kind)?.rawValue ?? event.type
+        let normalized = AIEvent(
+            id: event.id,
+            source: event.source,
+            type: type ?? triggerType,
+            rawType: rawType,
+            tool: event.tool,
+            title: event.title,
+            message: event.message,
+            notificationType: event.notificationType,
+            ts: event.ts,
+            directory: event.directory,
+            repoPath: event.repoPath,
+            tabID: event.tabID,
+            sessionID: event.sessionID,
+            producer: event.producer,
+            reliability: reliability
+        )
+        return .emit(EnrichedEvent(event: normalized, kind: kind))
+    }
+
+    // MARK: - Claude Code
 
     private static func adaptClaudeCodeEvent(_ event: AIEvent) -> Decision {
-        runProviderAdapter(ClaudeCodeNotificationAdapter(), on: event)
-    }
+        let rawType = NotificationSemanticMapping.normalize(event.rawType ?? event.type)
+        let originalRawType = event.rawType ?? event.type
 
-    /// Wrap a `NotificationProviderAdapter` invocation: build a
-    /// `NotificationProviderEvent` from the AIEvent, dispatch through the
-    /// adapter, and translate the adapter's three-way result back into a
-    /// registry `Decision`. Used by all dedicated adapter dispatchers in
-    /// this file.
-    private static func runProviderAdapter(
-        _ adapter: some NotificationProviderAdapter, on event: AIEvent
-    ) -> Decision {
-        let providerEvent = NotificationProviderEvent(event: event)
-        switch adapter.adapt(providerEvent) {
-        case .emit(let canonical):
-            return .emit(canonical.asAIEvent(source: event.source, producer: event.producer), canonical: canonical)
-        case .drop(let reason):
-            return .drop(reason: reason)
-        case .deferToFallback(let reason):
-            return .drop(reason: reason)
+        switch rawType {
+        case "notification":
+            let inferredType = event.notificationType ?? inferClaudeNotificationType(from: event)
+            let kind = NotificationSemanticMapping.kind(rawType: nil, notificationType: inferredType)
+            guard kind != .unknown else {
+                return .drop(reason: "Unsupported Claude notification payload")
+            }
+            return emitEnriched(event, kind: kind, rawType: originalRawType, reliability: .authoritative)
+
+        case "permission_request", "permissionrequest":
+            return emitEnriched(event, kind: .permissionRequired, rawType: originalRawType, reliability: .authoritative)
+
+        case "tool_failed", "toolfailed", "response_failed", "responsefailed":
+            return emitEnriched(event, kind: .taskFailed, rawType: originalRawType, reliability: .authoritative)
+
+        case "elicitation":
+            return emitEnriched(event, kind: .attentionRequired, rawType: originalRawType, reliability: .authoritative)
+
+        case "idle":
+            let kind: NotificationSemanticKind = NotificationSemanticMapping.isInputPromptLike(
+                title: event.title,
+                message: event.message,
+                notificationType: event.notificationType
+            ) ? .waitingForInput : .idle
+            return emitEnriched(event, kind: kind, rawType: originalRawType, reliability: event.reliability)
+
+        case "response_complete", "responsecomplete":
+            return .drop(reason: "Claude response_complete is state-only; Notification hook owns user-facing delivery")
+
+        case "user_prompt", "userprompt", "session_start", "sessionstart",
+             "tool_start", "toolstart", "tool_complete", "toolcomplete",
+             "session_end", "sessionend":
+            return .drop(reason: "Claude raw event \(rawType) is not user-facing")
+
+        default:
+            let kind = NotificationSemanticMapping.kind(rawType: rawType)
+            guard kind != .unknown else {
+                return .drop(reason: "Unsupported Claude raw event \(rawType)")
+            }
+            return emitEnriched(event, kind: kind, rawType: originalRawType, reliability: event.reliability)
         }
     }
 
-    private static func adaptGenericAIEvent(_ event: AIEvent) -> Decision {
-        adaptMappedSourceEvent(event, policy: .genericAI)
+    private static func inferClaudeNotificationType(from event: AIEvent) -> String? {
+        let haystack = [event.title, event.message]
+            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
+            .joined(separator: " ")
+
+        if haystack.contains("waiting for your input") || haystack.contains("needs your input") {
+            return "idle_prompt"
+        }
+        if haystack.contains("needs your approval") || haystack.contains("needs your permission") {
+            return "permission_prompt"
+        }
+        if haystack.contains("needs your attention") {
+            return "elicitation_dialog"
+        }
+        if haystack.contains("authenticated") || haystack.contains("signed in") || haystack.contains("login successful") {
+            return "auth_success"
+        }
+        return nil
     }
+
+    // MARK: - Codex
 
     private static func adaptCodexEvent(_ event: AIEvent) -> Decision {
-        runProviderAdapter(CodexNotificationAdapter(), on: event)
+        let rawType = NotificationSemanticMapping.normalize(event.rawType ?? event.type)
+        let originalRawType = event.rawType ?? event.type
+
+        switch rawType {
+        case "agent_turn_complete", "agentturncomplete":
+            return emitEnriched(event, kind: .taskFinished, rawType: originalRawType, reliability: .authoritative)
+        case "approval_requested", "approvalrequested":
+            return emitEnriched(event, kind: .permissionRequired, rawType: originalRawType, reliability: .authoritative)
+        case "user_input_requested", "userinputrequested":
+            return emitEnriched(event, kind: .waitingForInput, rawType: originalRawType, reliability: .authoritative)
+        default:
+            let kind = NotificationSemanticMapping.kind(
+                rawType: rawType,
+                notificationType: event.notificationType
+            )
+            guard kind != .unknown else {
+                return .drop(reason: "Unsupported Codex raw event \(rawType)")
+            }
+            return emitEnriched(event, kind: kind, rawType: originalRawType, reliability: event.reliability)
+        }
     }
 
-    private static func adaptTerminalSessionEvent(_ event: AIEvent) -> Decision {
-        adaptMappedSourceEvent(event, policy: .terminalSession)
-    }
-
-    private static func adaptFallbackAIEvent(_ event: AIEvent) -> Decision {
-        adaptMappedSourceEvent(event, policy: .fallbackAI)
-    }
-
-    private static func adaptShellEvent(_ event: AIEvent) -> Decision {
-        adaptMappedSourceEvent(event, policy: .shell)
-    }
-
-    private static func adaptAppEvent(_ event: AIEvent) -> Decision {
-        adaptMappedSourceEvent(event, policy: .app)
-    }
-
-    private static func adaptAPIProxyEvent(_ event: AIEvent) -> Decision {
-        adaptMappedSourceEvent(event, policy: .apiProxy)
-    }
-
-    private static func adaptUnknownEvent(_ event: AIEvent) -> Decision {
-        adaptMappedSourceEvent(event, policy: .unknown)
-    }
+    // MARK: - Mapped sources
 
     private static func adaptMappedSourceEvent(
         _ event: AIEvent,
@@ -126,32 +203,12 @@ public enum NotificationProviderAdapterRegistry {
             return .drop(reason: reason)
         }
 
-        return emitCanonicalizedEvent(
+        return emitEnriched(
             event,
             kind: kind,
-            preservedType: event.type,
+            type: event.type,
             rawType: policy.emittedRawType(for: event, normalizedType: normalizedType),
             reliability: policy.reliability(for: event)
-        )
-    }
-
-    private static func emitCanonicalizedEvent(
-        _ event: AIEvent,
-        kind: NotificationSemanticKind,
-        preservedType: String,
-        rawType: String?,
-        reliability: AIEventReliability
-    ) -> Decision {
-        let providerEvent = NotificationProviderEvent(event: event)
-        let canonical = providerEvent.canonicalEvent(kind: kind, reliability: reliability)
-        return .emit(
-            canonical.asAIEvent(
-                source: event.source,
-                producer: event.producer,
-                sharedTypeOverride: preservedType,
-                rawTypeOverride: rawType
-            ),
-            canonical: canonical
         )
     }
 }
@@ -265,175 +322,5 @@ private enum MappedSourceAdapterPolicy {
         case .unknown:
             return "unknown-source"
         }
-    }
-}
-
-private struct ClaudeCodeNotificationAdapter: NotificationProviderAdapter {
-    let providerID = AIEventSource.claudeCode.rawValue
-
-    func adapt(_ event: NotificationProviderEvent) -> NotificationProviderAdapterResult {
-        let rawType = NotificationSemanticMapping.normalize(event.rawType ?? "")
-
-        switch rawType {
-        case "notification":
-            let inferredType = event.notificationType ?? inferNotificationType(from: event)
-            let kind = NotificationSemanticMapping.kind(rawType: nil, notificationType: inferredType)
-            guard kind != .unknown else {
-                return .drop(reason: "Unsupported Claude notification payload")
-            }
-            return .emit(event.canonicalEvent(kind: kind, reliability: .authoritative))
-
-        case "permission_request", "permissionrequest":
-            return .emit(event.canonicalEvent(kind: .permissionRequired, reliability: .authoritative))
-
-        case "tool_failed", "toolfailed", "response_failed", "responsefailed":
-            return .emit(event.canonicalEvent(kind: .taskFailed, reliability: .authoritative))
-
-        case "elicitation":
-            return .emit(event.canonicalEvent(kind: .attentionRequired, reliability: .authoritative))
-
-        case "idle":
-            let kind: NotificationSemanticKind = NotificationSemanticMapping.isInputPromptLike(
-                title: event.title,
-                message: event.message,
-                notificationType: event.notificationType
-            ) ? .waitingForInput : .idle
-            return .emit(event.canonicalEvent(kind: kind))
-
-        case "response_complete", "responsecomplete":
-            return .drop(reason: "Claude response_complete is state-only; Notification hook owns user-facing delivery")
-
-        case "user_prompt", "userprompt", "session_start", "sessionstart",
-             "tool_start", "toolstart", "tool_complete", "toolcomplete",
-             "session_end", "sessionend":
-            return .drop(reason: "Claude raw event \(rawType) is not user-facing")
-
-        default:
-            let kind = NotificationSemanticMapping.kind(rawType: rawType)
-            guard kind != .unknown else {
-                return .drop(reason: "Unsupported Claude raw event \(rawType)")
-            }
-            return .emit(event.canonicalEvent(kind: kind))
-        }
-    }
-
-    private func inferNotificationType(from event: NotificationProviderEvent) -> String? {
-        let haystack = [event.title, event.message]
-            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
-            .joined(separator: " ")
-
-        if haystack.contains("waiting for your input") || haystack.contains("needs your input") {
-            return "idle_prompt"
-        }
-        if haystack.contains("needs your approval") || haystack.contains("needs your permission") {
-            return "permission_prompt"
-        }
-        if haystack.contains("needs your attention") {
-            return "elicitation_dialog"
-        }
-        if haystack.contains("authenticated") || haystack.contains("signed in") || haystack.contains("login successful") {
-            return "auth_success"
-        }
-        return nil
-    }
-}
-
-private struct CodexNotificationAdapter: NotificationProviderAdapter {
-    let providerID = AIEventSource.codex.rawValue
-
-    func adapt(_ event: NotificationProviderEvent) -> NotificationProviderAdapterResult {
-        let rawType = NotificationSemanticMapping.normalize(event.rawType ?? "")
-
-        switch rawType {
-        case "agent_turn_complete", "agentturncomplete":
-            return .emit(event.canonicalEvent(kind: .taskFinished, reliability: .authoritative))
-        case "approval_requested", "approvalrequested":
-            return .emit(event.canonicalEvent(kind: .permissionRequired, reliability: .authoritative))
-        case "user_input_requested", "userinputrequested":
-            return .emit(event.canonicalEvent(kind: .waitingForInput, reliability: .authoritative))
-        default:
-            let kind = NotificationSemanticMapping.kind(
-                rawType: rawType,
-                notificationType: event.notificationType
-            )
-            guard kind != .unknown else {
-                return .drop(reason: "Unsupported Codex raw event \(rawType)")
-            }
-            return .emit(event.canonicalEvent(kind: kind))
-        }
-    }
-}
-
-private extension NotificationProviderEvent {
-    init(event: AIEvent) {
-        let timestamp = DateFormatters.iso8601.date(from: event.ts) ?? Date()
-        var metadata: [String: String] = [:]
-        if let producer = event.producer, !producer.isEmpty {
-            metadata["producer"] = producer
-        }
-        self.init(
-            id: event.id,
-            providerID: event.source.rawValue,
-            providerName: event.tool,
-            rawType: event.rawType ?? event.type,
-            title: event.title,
-            message: event.message,
-            notificationType: event.notificationType,
-            sessionID: event.sessionID,
-            tabID: event.tabID,
-            directory: event.directory,
-            timestamp: timestamp,
-            reliability: event.reliability,
-            metadata: metadata
-        )
-    }
-}
-
-private extension CanonicalNotificationEvent {
-    var sharedTriggerType: String {
-        switch kind {
-        case .taskFinished:
-            return "finished"
-        case .taskFailed:
-            return "failed"
-        case .permissionRequired:
-            return "permission"
-        case .waitingForInput:
-            return "waiting_input"
-        case .attentionRequired:
-            return "attention_required"
-        case .authenticationSucceeded:
-            return "authentication_succeeded"
-        case .informational:
-            return "info"
-        case .idle:
-            return "idle"
-        case .unknown:
-            return rawType ?? "unknown"
-        }
-    }
-
-    func asAIEvent(
-        source: AIEventSource,
-        producer: String?,
-        sharedTypeOverride: String? = nil,
-        rawTypeOverride: String? = nil
-    ) -> AIEvent {
-        AIEvent(
-            id: id,
-            source: source,
-            type: sharedTypeOverride ?? sharedTriggerType,
-            rawType: rawTypeOverride ?? rawType,
-            tool: providerName,
-            title: title,
-            message: message,
-            notificationType: notificationType,
-            ts: DateFormatters.iso8601.string(from: timestamp),
-            directory: directory,
-            tabID: tabID,
-            sessionID: sessionID,
-            producer: producer,
-            reliability: reliability
-        )
     }
 }

@@ -164,13 +164,13 @@ public struct AIObservation: Identifiable, Equatable, Codable, Sendable {
     }
 
     public static func notificationObservation(
-        from accepted: NotificationIngress.AcceptedEvent,
+        from enriched: EnrichedEvent,
         now: Date = Date()
     ) -> AIObservation? {
-        guard let state = state(for: accepted.canonicalEvent.kind) else {
+        guard let state = state(for: enriched.kind) else {
             return nil
         }
-        return AIObservation(event: accepted.sharedEvent, state: state, now: now)
+        return AIObservation(event: enriched.event, state: state, now: now)
     }
 
     public static func rawLifecycleObservation(from event: AIEvent, now: Date = Date()) -> AIObservation? {

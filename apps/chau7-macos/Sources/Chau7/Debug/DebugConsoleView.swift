@@ -1085,8 +1085,8 @@ struct DebugConsoleView: View {
             )
 
             switch NotificationProviderAdapterRegistry.adapt(rawEvent) {
-            case .emit(let adapted, _):
-                return adapted
+            case .emit(let enriched):
+                return enriched.event
             case .drop:
                 return nil
             }

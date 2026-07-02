@@ -131,18 +131,18 @@ final class NotificationManager {
     func processUnifiedEvent(
         _ event: AIEvent,
         deliveryRequested: Bool
-    ) -> NotificationIngress.AcceptedEvent? {
+    ) -> EnrichedEvent? {
         switch eventEngine.process(event, deliveryRequested: deliveryRequested) {
         case .dropped(let drop):
             logEngineDrop(drop, deliveryRequested: deliveryRequested)
             return nil
 
         case .accepted(let accepted):
-            logRawObservationIfNeeded(accepted.rawObservationNote, eventID: accepted.acceptedEvent.sharedEvent.id)
+            logRawObservationIfNeeded(accepted.rawObservationNote, eventID: accepted.enrichedEvent.event.id)
             if deliveryRequested {
                 processAcceptedEngineOutput(accepted)
             }
-            return accepted.acceptedEvent
+            return accepted.enrichedEvent
         }
     }
 
@@ -169,22 +169,22 @@ final class NotificationManager {
     }
 
     private func processAcceptedEngineOutput(_ output: AIEventNotificationEngine.Accepted) {
-        let acceptedEvent = output.acceptedEvent
-        let adapted = acceptedEvent.sharedEvent
-        let canonical = acceptedEvent.canonicalEvent
+        let enriched = output.enrichedEvent
+        let adapted = enriched.event
+        let kind = enriched.kind
         Log.info(
             """
-            Notification ingress accepted: id=\(adapted.id.uuidString) source=\(adapted.source.rawValue) type=\(adapted.type) semantic=\(canonical.kind.rawValue) reliability=\(adapted.reliability
+            Notification ingress accepted: id=\(adapted.id.uuidString) source=\(adapted.source.rawValue) type=\(adapted.type) semantic=\(kind.rawValue) reliability=\(adapted.reliability
                 .rawValue) tabID=\(adapted.tabID?.uuidString ?? "nil") sessionID=\(adapted.sessionID ?? "nil")
             """
         )
         history.begin(
             event: adapted,
-            semanticKind: canonical.kind.rawValue,
-            rawType: canonical.rawType,
-            notificationType: canonical.notificationType
+            semanticKind: kind.rawValue,
+            rawType: adapted.rawType,
+            notificationType: adapted.notificationType
         )
-        clearStalePermissionStyleIfNeeded(event: adapted, semanticKind: canonical.kind)
+        clearStalePermissionStyleIfNeeded(event: adapted, semanticKind: kind)
 
         switch output.delivery {
         case .disabled:

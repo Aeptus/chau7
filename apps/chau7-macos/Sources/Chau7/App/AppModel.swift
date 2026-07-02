@@ -1635,8 +1635,8 @@ final class AppModel {
     }
 
     @MainActor
-    private func publishAcceptedUnifiedEventOnMain(_ acceptedEvent: NotificationIngress.AcceptedEvent) {
-        let event = acceptedEvent.sharedEvent
+    private func publishAcceptedUnifiedEventOnMain(_ acceptedEvent: EnrichedEvent) {
+        let event = acceptedEvent.event
         adoptUnifiedEventSessionIdentityIfNeeded(event)
         Chau7ObservabilityService.shared.recordAIEvent(event)
         recentEvents.append(event)

@@ -21,8 +21,8 @@ final class NotificationIngressTests: XCTestCase {
             return XCTFail("Expected ingress acceptance")
         }
 
-        XCTAssertEqual(accepted.sharedEvent.type, "waiting_input")
-        XCTAssertEqual(accepted.canonicalEvent.kind, .waitingForInput)
+        XCTAssertEqual(accepted.event.type, "waiting_input")
+        XCTAssertEqual(accepted.kind, .waitingForInput)
     }
 
     func testIngressDropsUnsupportedGenericAIEvent() {
@@ -79,9 +79,9 @@ final class NotificationIngressTests: XCTestCase {
             return XCTFail("Expected ingress acceptance")
         }
 
-        XCTAssertEqual(accepted.sharedEvent.tabID, tabID)
-        XCTAssertEqual(accepted.sharedEvent.type, "finished")
-        XCTAssertEqual(accepted.canonicalEvent.kind, .taskFinished)
+        XCTAssertEqual(accepted.event.tabID, tabID)
+        XCTAssertEqual(accepted.event.type, "finished")
+        XCTAssertEqual(accepted.kind, .taskFinished)
     }
 
     func testIngressAcceptsShellCommandFailureAsCanonicalSharedEvent() {
@@ -100,8 +100,8 @@ final class NotificationIngressTests: XCTestCase {
             return XCTFail("Expected shell ingress acceptance")
         }
 
-        XCTAssertEqual(accepted.sharedEvent.type, "command_failed")
-        XCTAssertEqual(accepted.canonicalEvent.kind, .taskFailed)
+        XCTAssertEqual(accepted.event.type, "command_failed")
+        XCTAssertEqual(accepted.kind, .taskFailed)
     }
 
     func testIngressAcceptsAppInformationalEventAsCanonicalSharedEvent() {
@@ -119,7 +119,7 @@ final class NotificationIngressTests: XCTestCase {
             return XCTFail("Expected app ingress acceptance")
         }
 
-        XCTAssertEqual(accepted.sharedEvent.type, "update_available")
-        XCTAssertEqual(accepted.canonicalEvent.kind, .informational)
+        XCTAssertEqual(accepted.event.type, "update_available")
+        XCTAssertEqual(accepted.kind, .informational)
     }
 }

@@ -40,21 +40,9 @@ final class AIObservationTests: XCTestCase {
             producer: "terminal_osc9",
             reliability: .authoritative
         )
-        let accepted = NotificationIngress.AcceptedEvent(
-            sharedEvent: event,
-            canonicalEvent: CanonicalNotificationEvent(
-                id: event.id,
-                kind: .taskFinished,
-                providerID: event.source.rawValue,
-                providerName: event.tool,
-                rawType: event.type,
-                message: event.message,
-                sessionID: event.sessionID,
-                reliability: event.reliability
-            )
-        )
+        let enriched = EnrichedEvent(event: event, kind: .taskFinished)
 
-        let observation = AIObservation.notificationObservation(from: accepted)
+        let observation = AIObservation.notificationObservation(from: enriched)
 
         XCTAssertEqual(observation?.state, .finished)
         XCTAssertEqual(observation?.sourceClass, .terminalStructured)

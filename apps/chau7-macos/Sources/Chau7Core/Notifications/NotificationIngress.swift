@@ -1,18 +1,8 @@
 import Foundation
 
 public enum NotificationIngress {
-    public struct AcceptedEvent: Equatable, Sendable {
-        public let sharedEvent: AIEvent
-        public let canonicalEvent: CanonicalNotificationEvent
-
-        public init(sharedEvent: AIEvent, canonicalEvent: CanonicalNotificationEvent) {
-            self.sharedEvent = sharedEvent
-            self.canonicalEvent = canonicalEvent
-        }
-    }
-
     public enum Decision: Equatable, Sendable {
-        case accept(AcceptedEvent)
+        case accept(EnrichedEvent)
         case drop(reason: String)
     }
 
@@ -20,8 +10,8 @@ public enum NotificationIngress {
         switch NotificationProviderAdapterRegistry.adapt(event) {
         case .drop(let reason):
             return .drop(reason: reason)
-        case .emit(let adapted, let canonical):
-            return .accept(AcceptedEvent(sharedEvent: adapted, canonicalEvent: canonical))
+        case .emit(let enriched):
+            return .accept(enriched)
         }
     }
 }
