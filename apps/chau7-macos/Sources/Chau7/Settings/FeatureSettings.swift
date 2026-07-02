@@ -275,130 +275,6 @@ struct NotificationFilters: Codable, Equatable {
 
 // MARK: - Last Tab Close Behavior
 
-private extension FeatureSettings {
-    static func triggerState(from filters: NotificationFilters) -> NotificationTriggerState {
-        var state = NotificationTriggerState()
-        for trigger in NotificationTriggerCatalog.all {
-            switch trigger.type {
-            case "finished":
-                state.setEnabled(filters.taskFinished, for: trigger)
-            case "waiting_input", "attention_required":
-                state.setEnabled(filters.permissionRequest, for: trigger)
-            case "failed":
-                state.setEnabled(filters.taskFailed, for: trigger)
-            case "needs_validation":
-                state.setEnabled(filters.needsValidation, for: trigger)
-            case "permission":
-                state.setEnabled(filters.permissionRequest, for: trigger)
-            case "tool_complete":
-                state.setEnabled(filters.toolComplete, for: trigger)
-            case "session_end":
-                state.setEnabled(filters.sessionEnd, for: trigger)
-            case "idle":
-                state.setEnabled(filters.commandIdle, for: trigger)
-            default:
-                continue
-            }
-        }
-        return state
-    }
-
-    static func legacyNotificationFilters(from state: NotificationTriggerState) -> NotificationFilters {
-        func anyEnabled(_ type: String) -> Bool {
-            let triggers = NotificationTriggerCatalog.all.filter { $0.type == type && !$0.isWildcard }
-            guard !triggers.isEmpty else { return true }
-            return triggers.contains { state.isEnabled(for: $0) }
-        }
-
-        return NotificationFilters(
-            taskFinished: anyEnabled("finished"),
-            taskFailed: anyEnabled("failed"),
-            needsValidation: anyEnabled("needs_validation"),
-            permissionRequest: anyEnabled("permission") || anyEnabled("waiting_input") || anyEnabled("attention_required"),
-            toolComplete: anyEnabled("tool_complete"),
-            sessionEnd: anyEnabled("session_end"),
-            commandIdle: anyEnabled("idle")
-        )
-    }
-
-    /// Default trigger-action bindings for AI agent notifications.
-    /// Sets up: desk notification, chime, dock bounce, and red tab border for finished/permission triggers.
-    static func defaultTriggerActionBindings() -> [String: [NotificationActionConfig]] {
-        // Actions for "finished" triggers (task complete)
-        let finishedActions: [NotificationActionConfig] = [
-            NotificationActionConfig(actionType: .showNotification, enabled: true, config: [:]),
-            NotificationActionConfig(actionType: .playSound, enabled: true, config: ["sound": "Glass", "volume": "80"]),
-            NotificationActionConfig(actionType: .dockBounce, enabled: true, config: ["critical": "false"]),
-            NotificationActionConfig(actionType: .styleTab, enabled: true, config: [
-                "style": "custom",
-                "customColor": "green",
-                "borderWidth": "2",
-                "autoClearSeconds": "0"
-            ])
-        ]
-
-        // Actions for "failed" triggers (task failed / errored)
-        let failedActions: [NotificationActionConfig] = [
-            NotificationActionConfig(actionType: .showNotification, enabled: true, config: [:]),
-            NotificationActionConfig(actionType: .playSound, enabled: true, config: ["sound": "Basso", "volume": "80"]),
-            NotificationActionConfig(actionType: .dockBounce, enabled: true, config: ["critical": "false"]),
-            NotificationActionConfig(actionType: .styleTab, enabled: true, config: [
-                "style": "error",
-                "autoClearSeconds": "60"
-            ])
-        ]
-
-        // Actions for "permission" triggers (needs user input)
-        let permissionActions: [NotificationActionConfig] = [
-            NotificationActionConfig(actionType: .showNotification, enabled: true, config: [:]),
-            NotificationActionConfig(actionType: .playSound, enabled: true, config: ["sound": "Purr", "volume": "80"]),
-            NotificationActionConfig(actionType: .dockBounce, enabled: true, config: ["critical": "true"]),
-            NotificationActionConfig(actionType: .styleTab, enabled: true, config: [
-                "style": "attention",
-                "customColor": "orange",
-                "borderWidth": "2",
-                "pulse": "true",
-                "autoClearSeconds": "0",
-                "persistent": "true"
-            ])
-        ]
-
-        // Actions for "idle" triggers (session may be waiting, but no permission-specific styling)
-        let idleActions: [NotificationActionConfig] = []
-
-        // Actions for file conflict alerts
-        let conflictActions: [NotificationActionConfig] = [
-            NotificationActionConfig(actionType: .showNotification, enabled: true, config: [:]),
-            NotificationActionConfig(actionType: .playSound, enabled: true, config: ["sound": "Basso", "volume": "60"]),
-            NotificationActionConfig(actionType: .styleTab, enabled: true, config: [
-                "style": "custom",
-                "customColor": "orange",
-                "borderWidth": "2",
-                "autoClearSeconds": "60"
-            ])
-        ]
-
-        return [
-            // Claude Code triggers
-            "claude_code.finished": finishedActions,
-            "claude_code.failed": failedActions,
-            "claude_code.permission": permissionActions,
-            "claude_code.waiting_input": permissionActions,
-            "claude_code.attention_required": permissionActions,
-            "claude_code.idle": idleActions,
-            // Codex triggers
-            "codex.finished": finishedActions,
-            "codex.failed": failedActions,
-            "codex.permission": permissionActions,
-            "codex.waiting_input": permissionActions,
-            "codex.attention_required": permissionActions,
-            "codex.idle": idleActions,
-            // App triggers
-            "app.file_conflict": conflictActions
-        ]
-    }
-}
-
 enum LastTabCloseBehavior: String, CaseIterable, Identifiable, Codable {
     case keepWindow
     case closeWindow
@@ -1206,132 +1082,15 @@ final class FeatureSettings {
 
     // MARK: - Notification Settings
 
-    @ObservationIgnored private var _isUpdatingNotificationSettings = false
+    /// The notification domain lives in its own store; this facade property
+    /// keeps the 90+ existing consumers source-compatible. Observation
+    /// composes across the forwarding: reads register on the store's
+    /// `settings`, so SwiftUI updates flow unchanged.
+    @ObservationIgnored private let notificationStore = NotificationSettingsStore()
 
     var notificationSettings: NotificationSettings {
-        didSet {
-            guard !_isUpdatingNotificationSettings else { return }
-            _isUpdatingNotificationSettings = true
-            defer { _isUpdatingNotificationSettings = false }
-
-            // Normalize trigger state
-            notificationSettings.triggerState.normalize()
-            // Sync legacy filters
-            notificationSettings.filters = Self.legacyNotificationFilters(from: notificationSettings.triggerState)
-            // Persist
-            persistNotificationSettings()
-            // Sync rate limiter if config changed
-            if notificationSettings.rateLimitConfig != oldValue.rateLimitConfig {
-                let newConfig = notificationSettings.rateLimitConfig
-                DispatchQueue.main.async { @MainActor in
-                    // Route through the composition root rather than a
-                    // direct singleton dereference. The slot is
-                    // populated by AppModel.init at app startup; in
-                    // tests that don't construct AppModel the rate
-                    // limiter sync becomes a no-op.
-                    if let services = NotificationServices.current {
-                        services.manager.rateLimiter.config = newConfig
-                        services.manager.rateLimiter.reset()
-                    }
-                }
-            }
-        }
-    }
-
-    private static func loadTriggerActionBindings(from defaults: UserDefaults) -> [String: [NotificationActionConfig]] {
-        let loaded: [String: [NotificationActionConfig]]
-        if let data = defaults.data(forKey: Keys.triggerActionBindings),
-           let bindings = JSONOperations.decode([String: [NotificationActionConfig]].self, from: data, context: "triggerActionBindings") {
-            loaded = bindings
-        } else {
-            loaded = defaultTriggerActionBindings()
-        }
-        var normalized = loaded
-        if normalized["claude_code.failed"] == nil {
-            normalized["claude_code.failed"] = defaultTriggerActionBindings()["claude_code.failed"]
-        }
-        if normalized["codex.failed"] == nil {
-            normalized["codex.failed"] = defaultTriggerActionBindings()["codex.failed"]
-        }
-        if normalized["claude_code.idle"] == nil {
-            normalized["claude_code.idle"] = []
-        }
-        if normalized["codex.idle"] == nil {
-            normalized["codex.idle"] = []
-        }
-        return normalized
-    }
-
-    private static func loadMutedRepos(from defaults: UserDefaults) -> [String: RepoMute] {
-        guard let data = defaults.data(forKey: Keys.notificationMutedRepos),
-              let muted = JSONOperations.decode([String: RepoMute].self, from: data, context: "notificationMutedRepos") else {
-            return [:]
-        }
-        return RepoNotificationMuting.pruned(muted)
-    }
-
-    private func persistNotificationSettings() {
-        let ns = notificationSettings
-        if let data = JSONOperations.encode(ns.triggerState, context: "notificationTriggerState") {
-            UserDefaults.standard.set(data, forKey: Keys.notificationTriggerState)
-        }
-        if let data = JSONOperations.encode(ns.mutedRepos, context: "notificationMutedRepos") {
-            UserDefaults.standard.set(data, forKey: Keys.notificationMutedRepos)
-        }
-        UserDefaults.standard.set(ns.pushTaskCompletionsToiOS, forKey: Keys.notificationPushTaskCompletions)
-        if let data = JSONOperations.encode(ns.filters, context: "notificationFilters") {
-            UserDefaults.standard.set(data, forKey: Keys.notificationFilters)
-        }
-        if let data = JSONOperations.encode(ns.triggerActionBindings, context: "triggerActionBindings") {
-            UserDefaults.standard.set(data, forKey: Keys.triggerActionBindings)
-        }
-        if let data = JSONOperations.encode(ns.rateLimitConfig, context: "notificationRateLimitConfig") {
-            UserDefaults.standard.set(data, forKey: Keys.notificationRateLimitConfig)
-        }
-        if let data = JSONOperations.encode(ns.triggerConditions, context: "triggerConditions") {
-            UserDefaults.standard.set(data, forKey: Keys.triggerConditions)
-        }
-        if let data = JSONOperations.encode(ns.groupActionBindings, context: "groupActionBindings") {
-            UserDefaults.standard.set(data, forKey: Keys.groupActionBindings)
-        }
-        if let data = JSONOperations.encode(ns.groupConditions, context: "groupConditions") {
-            UserDefaults.standard.set(data, forKey: Keys.groupConditions)
-        }
-    }
-
-    /// Backfill the agent finished / approval / feedback group bindings — and the
-    /// dock bounce within them — for installs whose bindings were persisted before
-    /// these became defaults. A key that is entirely absent is seeded from the
-    /// catalog default; a binding that exists but carries no `dockBounce` action at
-    /// all gains one. A *disabled* dock bounce is left untouched: the settings UI
-    /// keeps the action present-but-off, so its absence (not its disabled state)
-    /// marks the older default.
-    static func normalizedAgentGroupActionBindings(
-        _ loaded: [String: [NotificationActionConfig]]
-    ) -> [String: [NotificationActionConfig]] {
-        let agentKeys = [
-            "ai_coding.finished", "ai_coding.failed", "ai_coding.permission",
-            "ai_coding.waiting_input", "ai_coding.attention_required",
-            "ai_coding.elicitation", "ai_coding.response_failed"
-        ]
-        var result = loaded
-        if result["ai_coding.idle"] == nil {
-            result["ai_coding.idle"] = []
-        }
-        for key in agentKeys {
-            guard let defaultBinding = NotificationSettings.defaultGroupActionBindings[key] else { continue }
-            guard var existing = result[key], !existing.isEmpty else {
-                result[key] = defaultBinding
-                continue
-            }
-            guard !existing.contains(where: { $0.actionType == .dockBounce }),
-                  let defaultBounce = defaultBinding.first(where: { $0.actionType == .dockBounce })
-            else { continue }
-            let insertAt = existing.firstIndex(where: { $0.actionType == .showNotification }).map { $0 + 1 } ?? 0
-            existing.insert(defaultBounce, at: insertAt)
-            result[key] = existing
-        }
-        return result
+        get { notificationStore.settings }
+        set { notificationStore.settings = newValue }
     }
 
     /// Backward-compatible computed forwarders — existing code continues to work unchanged
@@ -2537,15 +2296,6 @@ final class FeatureSettings {
         static let hoverCardShowFooter = "hoverCard.showFooter"
 
         // Notification Filters (NEW)
-        static let notificationTriggerState = "notifications.triggerState"
-        static let notificationMutedRepos = "notifications.mutedRepos"
-        static let notificationPushTaskCompletions = "notifications.pushTaskCompletionsToiOS"
-        static let notificationFilters = "notifications.filters"
-        static let triggerActionBindings = "notifications.triggerActionBindings"
-        static let notificationRateLimitConfig = "notifications.rateLimitConfig"
-        static let triggerConditions = "notifications.triggerConditions"
-        static let groupActionBindings = "notifications.groupActionBindings"
-        static let groupConditions = "notifications.groupConditions"
         // Find Defaults (NEW)
         static let findCaseSensitiveDefault = "search.defaultCaseSensitive"
         static let findRegexDefault = "search.defaultRegex"
@@ -2688,7 +2438,6 @@ final class FeatureSettings {
 
     // MARK: - Init
 
-    // swiftlint:disable:next function_body_length
     private init() {
         let defaults = UserDefaults.standard
         let home = RuntimeIsolation.homePath()
@@ -2750,207 +2499,6 @@ final class FeatureSettings {
         self.customShortcuts = Self.migratedShortcutsIfNeeded(loadedShortcuts)
         self.isShortcutHelperHintEnabled = defaults.object(forKey: Keys.shortcutHelperHint) as? Bool ?? true
         self.autoSubmitRestorePrefill = defaults.object(forKey: Keys.autoSubmitRestorePrefill) as? Bool ?? false
-
-        // Local Echo / Immediate Display Flush (default: disabled)
-        // Initialize early to ensure all properties are set before any are accessed
-        // Notification Settings — load individual fields, assemble into struct
-        let loadedFilters: NotificationFilters
-        if let data = defaults.data(forKey: Keys.notificationFilters),
-           let filters = JSONOperations.decode(NotificationFilters.self, from: data, context: "notificationFilters") {
-            loadedFilters = filters
-        } else {
-            loadedFilters = .defaults
-        }
-
-        let loadedMutedRepos = Self.loadMutedRepos(from: defaults)
-        let loadedPushTaskCompletions = defaults.bool(forKey: Keys.notificationPushTaskCompletions)
-
-        let resolvedTriggerState: NotificationTriggerState
-        if let data = defaults.data(forKey: Keys.notificationTriggerState),
-           let state = JSONOperations.decode(NotificationTriggerState.self, from: data, context: "notificationTriggerState") {
-            var normalized = state
-            normalized.normalize()
-            resolvedTriggerState = normalized
-        } else {
-            resolvedTriggerState = Self.triggerState(from: loadedFilters)
-        }
-
-        var normalizedBindings = Self.loadTriggerActionBindings(from: defaults)
-
-        // One-time migration: the previous default for *.finished triggers
-        // painted a *red* border on completion, which conflicted with
-        // convention (red == error) and confused users who never set it.
-        // The new default is green. We migrate ONLY users who are still on
-        // the literal old default — anyone who customized to a different
-        // color (including red on purpose) keeps their setting.
-        //
-        // Gated by a one-shot UserDefaults flag (same pattern as
-        // `cto.migrated.v1` above) so the detection loop runs at most
-        // once per install AND the migrated bindings are written back to
-        // UserDefaults eagerly (assigning `notificationSettings` inside
-        // `init` does not fire `didSet`, so the natural persistence path
-        // would never run for the migration alone).
-        let finishedColorMigrationKey = "notification.finished.greenDefault.v1"
-        if !defaults.bool(forKey: finishedColorMigrationKey) {
-            var migrated = false
-            for triggerKey in ["claude_code.finished", "codex.finished"] {
-                guard var actions = normalizedBindings[triggerKey] else { continue }
-                for index in actions.indices where actions[index].actionType == .styleTab {
-                    let cfg = actions[index].config
-                    guard cfg["style"] == "custom",
-                          cfg["customColor"] == "red",
-                          cfg["borderWidth"] == "2",
-                          cfg["autoClearSeconds"] == "30" else { continue }
-                    var migratedCfg = cfg
-                    migratedCfg["customColor"] = "green"
-                    actions[index] = NotificationActionConfig(
-                        actionType: .styleTab,
-                        enabled: actions[index].enabled,
-                        config: migratedCfg
-                    )
-                    migrated = true
-                    Log.info("FeatureSettings migration: \(triggerKey) styleTab color red → green (default flip)")
-                }
-                normalizedBindings[triggerKey] = actions
-            }
-            if migrated,
-               let data = JSONOperations.encode(normalizedBindings, context: "triggerActionBindings.greenDefault.v1") {
-                defaults.set(data, forKey: Keys.triggerActionBindings)
-            }
-            defaults.set(true, forKey: finishedColorMigrationKey)
-        }
-
-        // One-time migration: permission / waiting-input / attention trigger
-        // defaults were originally non-persistent at the per-trigger layer,
-        // even though the newer group defaults intentionally keep them visible
-        // until the prompt is resolved. Because NotificationPipeline prefers
-        // per-trigger bindings over group bindings, users who never customized
-        // these triggers could still get "disappears on select" behavior.
-        // Migrate only the literal old default shape so intentional custom
-        // configurations remain untouched.
-        let permissionPersistenceMigrationKey = "notification.permission.persistentDefault.v1"
-        if !defaults.bool(forKey: permissionPersistenceMigrationKey) {
-            var migrated = false
-            let permissionTriggerKeys = [
-                "claude_code.permission",
-                "claude_code.waiting_input",
-                "claude_code.attention_required",
-                "codex.permission",
-                "codex.waiting_input",
-                "codex.attention_required"
-            ]
-            for triggerKey in permissionTriggerKeys {
-                guard var actions = normalizedBindings[triggerKey] else { continue }
-                for index in actions.indices where actions[index].actionType == .styleTab {
-                    let cfg = actions[index].config
-                    guard cfg["style"] == "attention",
-                          cfg["customColor"] == "orange",
-                          cfg["borderWidth"] == "2",
-                          cfg["pulse"] == "true",
-                          cfg["autoClearSeconds"] == "0",
-                          cfg["persistent"] == nil else { continue }
-                    var migratedCfg = cfg
-                    migratedCfg["persistent"] = "true"
-                    actions[index] = NotificationActionConfig(
-                        actionType: .styleTab,
-                        enabled: actions[index].enabled,
-                        config: migratedCfg
-                    )
-                    migrated = true
-                    Log.info("FeatureSettings migration: \(triggerKey) styleTab now persistent by default")
-                }
-                normalizedBindings[triggerKey] = actions
-            }
-            if migrated,
-               let data = JSONOperations.encode(normalizedBindings, context: "triggerActionBindings.permissionPersistent.v1") {
-                defaults.set(data, forKey: Keys.triggerActionBindings)
-            }
-            defaults.set(true, forKey: permissionPersistenceMigrationKey)
-        }
-
-        // One-time migration: the "finished" (task complete) tab highlight
-        // originally auto-cleared after 30s, so the green completion border
-        // vanished before the user returned to the tab. The intended behavior
-        // is to keep the highlight until the user actually opens the tab — a
-        // non-persistent style is already cleared on select, so dropping the
-        // auto-clear timer (autoClearSeconds -> 0) is all that's needed.
-        // Migrate only the literal old default shape so intentional custom
-        // configurations remain untouched.
-        let finishedPersistMigrationKey = "notification.finished.persistUntilOpen.v1"
-        if !defaults.bool(forKey: finishedPersistMigrationKey) {
-            var migrated = false
-            for triggerKey in ["claude_code.finished", "codex.finished"] {
-                guard var actions = normalizedBindings[triggerKey] else { continue }
-                for index in actions.indices where actions[index].actionType == .styleTab {
-                    let cfg = actions[index].config
-                    guard cfg["style"] == "custom",
-                          cfg["customColor"] == "green",
-                          cfg["borderWidth"] == "2",
-                          cfg["autoClearSeconds"] == "30" else { continue }
-                    var migratedCfg = cfg
-                    migratedCfg["autoClearSeconds"] = "0"
-                    actions[index] = NotificationActionConfig(
-                        actionType: .styleTab,
-                        enabled: actions[index].enabled,
-                        config: migratedCfg
-                    )
-                    migrated = true
-                    Log.info("FeatureSettings migration: \(triggerKey) styleTab now persists until the tab is opened")
-                }
-                normalizedBindings[triggerKey] = actions
-            }
-            if migrated,
-               let data = JSONOperations.encode(normalizedBindings, context: "triggerActionBindings.finishedPersist.v1") {
-                defaults.set(data, forKey: Keys.triggerActionBindings)
-            }
-            defaults.set(true, forKey: finishedPersistMigrationKey)
-        }
-
-        let loadedRateLimitConfig: NotificationRateLimiter.Config
-        if let data = defaults.data(forKey: Keys.notificationRateLimitConfig),
-           let config = JSONOperations.decode(NotificationRateLimiter.Config.self, from: data, context: "notificationRateLimitConfig") {
-            loadedRateLimitConfig = config
-        } else {
-            loadedRateLimitConfig = .default
-        }
-
-        let loadedConditions: [String: TriggerCondition]
-        if let data = defaults.data(forKey: Keys.triggerConditions),
-           let conditions = JSONOperations.decode([String: TriggerCondition].self, from: data, context: "triggerConditions") {
-            loadedConditions = conditions
-        } else {
-            loadedConditions = [:]
-        }
-
-        let loadedGroupActionBindings: [String: [NotificationActionConfig]]
-        if let data = defaults.data(forKey: Keys.groupActionBindings),
-           let bindings = JSONOperations.decode([String: [NotificationActionConfig]].self, from: data, context: "groupActionBindings"),
-           !bindings.isEmpty {
-            loadedGroupActionBindings = bindings
-        } else {
-            loadedGroupActionBindings = NotificationSettings.defaultGroupActionBindings
-        }
-        let normalizedGroupActionBindings = Self.normalizedAgentGroupActionBindings(loadedGroupActionBindings)
-
-        let loadedGroupConditions: [String: TriggerCondition]
-        if let data = defaults.data(forKey: Keys.groupConditions),
-           let conditions = JSONOperations.decode([String: TriggerCondition].self, from: data, context: "groupConditions") {
-            loadedGroupConditions = conditions
-        } else {
-            loadedGroupConditions = [:]
-        }
-
-        self.notificationSettings = NotificationSettings(
-            triggerState: resolvedTriggerState,
-            filters: Self.legacyNotificationFilters(from: resolvedTriggerState),
-            triggerActionBindings: normalizedBindings,
-            rateLimitConfig: loadedRateLimitConfig,
-            triggerConditions: loadedConditions,
-            groupActionBindings: normalizedGroupActionBindings,
-            groupConditions: loadedGroupConditions,
-            mutedRepos: loadedMutedRepos,
-            pushTaskCompletionsToiOS: loadedPushTaskCompletions
-        )
 
         // Find Defaults (NEW)
         self.findCaseSensitiveDefault = defaults.object(forKey: Keys.findCaseSensitiveDefault) as? Bool ?? false
@@ -3675,11 +3223,11 @@ final class FeatureSettings {
             importedTriggerState = state
             importedTriggerState.normalize()
         } else {
-            importedTriggerState = Self.triggerState(from: imported.notificationFilters)
+            importedTriggerState = NotificationSettingsStore.triggerState(from: imported.notificationFilters)
         }
         notificationSettings = NotificationSettings(
             triggerState: importedTriggerState,
-            filters: Self.legacyNotificationFilters(from: importedTriggerState),
+            filters: NotificationSettingsStore.legacyNotificationFilters(from: importedTriggerState),
             triggerActionBindings: imported.triggerActionBindings ?? notificationSettings.triggerActionBindings,
             rateLimitConfig: imported.notificationRateLimitConfig ?? notificationSettings.rateLimitConfig,
             triggerConditions: imported.triggerConditions ?? notificationSettings.triggerConditions,

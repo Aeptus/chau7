@@ -46,7 +46,7 @@ final class FeatureSettingsTests: XCTestCase {
         XCTAssertFalse(filters.commandIdle)
     }
 
-    // NOTE: `FeatureSettings.triggerState(from:)`, `legacyNotificationFilters(from:)`
+    // NOTE: `NotificationSettingsStore.triggerState(from:)`, `legacyNotificationFilters(from:)`
     // and `defaultTriggerActionBindings()` are fileprivate (private extension), so the
     // original tests against them are no longer reachable from the test target. The
     // group-level default bindings remain accessible and cover the same intent.
@@ -84,7 +84,7 @@ final class FeatureSettingsTests: XCTestCase {
     }
 
     func testAgentGroupBindingBackfillSeedsMissingKeysWithDockBounce() {
-        let result = FeatureSettings.normalizedAgentGroupActionBindings([:])
+        let result = NotificationSettingsStore.normalizedAgentGroupActionBindings([:])
         for key in ["ai_coding.finished", "ai_coding.permission", "ai_coding.waiting_input", "ai_coding.attention_required"] {
             let actions = result[key] ?? []
             XCTAssertTrue(
@@ -101,7 +101,7 @@ final class FeatureSettingsTests: XCTestCase {
                 NotificationActionConfig(actionType: .styleTab, enabled: true)
             ]
         ]
-        let actions = FeatureSettings.normalizedAgentGroupActionBindings(input)["ai_coding.finished"] ?? []
+        let actions = NotificationSettingsStore.normalizedAgentGroupActionBindings(input)["ai_coding.finished"] ?? []
         XCTAssertEqual(actions.map(\.actionType), [.showNotification, .dockBounce, .styleTab])
         XCTAssertTrue(actions.first { $0.actionType == .dockBounce }?.enabled ?? false)
     }
@@ -114,7 +114,7 @@ final class FeatureSettingsTests: XCTestCase {
                 NotificationActionConfig(actionType: .styleTab, enabled: true)
             ]
         ]
-        let bounces = (FeatureSettings.normalizedAgentGroupActionBindings(input)["ai_coding.permission"] ?? [])
+        let bounces = (NotificationSettingsStore.normalizedAgentGroupActionBindings(input)["ai_coding.permission"] ?? [])
             .filter { $0.actionType == .dockBounce }
         XCTAssertEqual(bounces.count, 1, "Must not duplicate an existing dock bounce")
         XCTAssertFalse(bounces.first?.enabled ?? true, "A user-disabled dock bounce must stay disabled")
