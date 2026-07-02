@@ -701,29 +701,28 @@ final class AppModel {
             Log.info("Isolated test mode - skipping notification status refresh.")
             return
         }
-        let center = UNUserNotificationCenter.current()
-        center.getNotificationSettings { [weak self] settings in
-            let permissionState = NotificationPermissionState.from(settings.authorizationStatus)
-            let snapshot = NotificationSettingsSnapshot(
-                authorizationStatus: settings.authorizationStatus,
-                alertSetting: settings.alertSetting,
-                soundSetting: settings.soundSetting,
-                badgeSetting: settings.badgeSetting,
-                alertStyle: settings.alertStyle
-            )
-            DispatchQueue.main.async {
+        Task { @MainActor [weak self] in
+            NotificationAuthorizationStore.shared.refresh { settings in
                 guard let self else { return }
+                let permissionState = NotificationPermissionState.from(settings.authorizationStatus)
+                let snapshot = NotificationSettingsSnapshot(
+                    authorizationStatus: settings.authorizationStatus,
+                    alertSetting: settings.alertSetting,
+                    soundSetting: settings.soundSetting,
+                    badgeSetting: settings.badgeSetting,
+                    alertStyle: settings.alertStyle
+                )
                 self.notifications?.manager.updateAuthorizationStatus(settings.authorizationStatus)
                 self.notificationPermissionState = permissionState
                 self.notificationStatus = permissionState.localizedLabel
                 self.notificationSettingsSnapshot = snapshot
                 self.notificationWarning = self.notificationWarning(for: permissionState, snapshot: snapshot)
+                Log.info("Notification status: \(permissionState.localizedLabel)")
+                Log
+                    .trace(
+                        "Notification settings: alert=\(settings.alertSetting.rawValue) sound=\(settings.soundSetting.rawValue) badge=\(settings.badgeSetting.rawValue) lock=\(settings.lockScreenSetting.rawValue) center=\(settings.notificationCenterSetting.rawValue) style=\(settings.alertStyle.rawValue)"
+                    )
             }
-            Log.info("Notification status: \(permissionState.localizedLabel)")
-            Log
-                .trace(
-                    "Notification settings: alert=\(settings.alertSetting.rawValue) sound=\(settings.soundSetting.rawValue) badge=\(settings.badgeSetting.rawValue) lock=\(settings.lockScreenSetting.rawValue) center=\(settings.notificationCenterSetting.rawValue) style=\(settings.alertStyle.rawValue)"
-                )
         }
     }
 

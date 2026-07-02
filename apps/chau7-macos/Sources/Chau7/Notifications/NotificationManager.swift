@@ -14,8 +14,6 @@ final class NotificationManager {
 
     /// Tracks whether UNUserNotificationCenter is available and authorized
     private var useNativeNotifications = true
-    private var cachedAuthorizationStatus: UNAuthorizationStatus = .notDetermined
-    private var hasCachedAuthorization = false
     private var loggedAuthorizationStatuses: Set<UNAuthorizationStatus> = []
     private var didLogNativeError = false
     private var nativeNotificationFailureCount = 0
@@ -71,8 +69,7 @@ final class NotificationManager {
     }
 
     func updateAuthorizationStatus(_ status: UNAuthorizationStatus) {
-        cachedAuthorizationStatus = status
-        hasCachedAuthorization = true
+        NotificationAuthorizationStore.shared.apply(status: status)
         switch status {
         case .authorized, .provisional, .ephemeral:
             resetNativeNotificationState()
@@ -661,20 +658,15 @@ final class NotificationManager {
             return
         }
 
-        guard hasCachedAuthorization else {
-            let center = UNUserNotificationCenter.current()
-            center.getNotificationSettings { [weak self] settings in
-                DispatchQueue.main.async {
-                    guard let self else { return }
-                    self.cachedAuthorizationStatus = settings.authorizationStatus
-                    self.hasCachedAuthorization = true
-                    self.handleAuthorizationResult(settings.authorizationStatus, title: title, subtitle: subtitle, body: body, for: event)
-                }
+        let store = NotificationAuthorizationStore.shared
+        guard store.hasResolvedAuthorization else {
+            store.refresh { [weak self] settings in
+                self?.handleAuthorizationResult(settings.authorizationStatus, title: title, subtitle: subtitle, body: body, for: event)
             }
             return
         }
 
-        handleAuthorizationResult(cachedAuthorizationStatus, title: title, subtitle: subtitle, body: body, for: event)
+        handleAuthorizationResult(store.authorizationStatus, title: title, subtitle: subtitle, body: body, for: event)
     }
 
     private func handleAuthorizationResult(_ status: UNAuthorizationStatus, title: String, subtitle: String, body: String, for event: AIEvent) {

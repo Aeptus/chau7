@@ -19,8 +19,8 @@ final class PermissionCenterModel {
         fullDiskAccessStatus = FullDiskAccessProbe.probe()
         lastRefreshedAt = Date()
 
-        UNUserNotificationCenter.current().getNotificationSettings { [weak self] settings in
-            DispatchQueue.main.async {
+        Task { @MainActor [weak self] in
+            NotificationAuthorizationStore.shared.refresh { settings in
                 guard let self else { return }
                 self.notificationPermissionState = AppModel.NotificationPermissionState.from(settings.authorizationStatus)
             }
