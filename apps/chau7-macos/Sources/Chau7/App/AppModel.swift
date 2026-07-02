@@ -1152,8 +1152,12 @@ final class AppModel {
             reliability: .authoritative
         )
 
+        // Correlate the spine envelope with the hook event's own UUID so the
+        // three records of one hook delivery (claudeCodeEvents entry, runtime
+        // journal entries, spine envelope) share a join key.
+        let hookCorrelationID = event.id.uuidString
         Task { @MainActor [weak self] in
-            self?.publishUnifiedEvent(aiEvent, notify: true)
+            self?.publishUnifiedEvent(aiEvent, notify: true, correlationID: hookCorrelationID)
         }
 
         if !event.sessionId.isEmpty, !event.cwd.isEmpty {
@@ -1588,9 +1592,9 @@ final class AppModel {
     /// `publishUnifiedEventOnMain` on the main actor in seq order.
     /// Internal so the `AIEventPublishing` conformance can route
     /// producer-prepared events through the same funnel.
-    func publishUnifiedEvent(_ event: AIEvent, notify: Bool) {
+    func publishUnifiedEvent(_ event: AIEvent, notify: Bool, correlationID: String? = nil) {
         startSpinePumpIfNeeded()
-        eventSpine.ingest(event, deliveryRequested: notify)
+        eventSpine.ingest(event, correlationID: correlationID, deliveryRequested: notify)
     }
 
     /// Lazily starts the single spine consumer. Envelopes ingested before the

@@ -357,7 +357,7 @@ final class TelemetryStore {
     }
 
     /// Current migration target. Bump this when adding new migrations.
-    private static let currentSchemaVersion = 3
+    private static let currentSchemaVersion = 4
 
     private func schemaVersion() -> Int {
         guard let db else { return 0 }
@@ -480,6 +480,53 @@ final class TelemetryStore {
         if version < 3 {
             ensureColumn(table: "runs", name: "transcript_repair_attempted_at", definition: "TEXT")
             setSchemaVersion(3)
+        }
+
+        // Version 3 → 4: monotonic ingest sequence for deterministic ordering.
+        // ISO-text timestamps collide at the same millisecond; ingest_seq is a
+        // store-assigned insert counter used as an ORDER BY tiebreaker. Old
+        // rows keep NULL (no backfill) — the tiebreaker only has to
+        // disambiguate rows written after the migration.
+        if version < 4 {
+            ensureColumn(table: "runs", name: "ingest_seq", definition: "INTEGER")
+            ensureColumn(table: "usage_evidence", name: "ingest_seq", definition: "INTEGER")
+            ensureColumn(table: "remote_client_events", name: "ingest_seq", definition: "INTEGER")
+            setSchemaVersion(4)
+        }
+        ensureIngestSequenceInfrastructure()
+    }
+
+    /// Triggers assign ingest_seq at insert time from one shared counter
+    /// (MAX across the three tables), so no insert statement needs to know
+    /// about the column. Idempotent (IF NOT EXISTS) and shared by fresh
+    /// databases and migrated ones.
+    private func ensureIngestSequenceInfrastructure() {
+        guard let db else { return }
+        for table in ["runs", "usage_evidence", "remote_client_events"] {
+            sqlite3_exec(
+                db,
+                "CREATE INDEX IF NOT EXISTS idx_\(table)_ingest_seq ON \(table)(ingest_seq)",
+                nil, nil, nil
+            )
+            let trigger = """
+            CREATE TRIGGER IF NOT EXISTS trg_\(table)_ingest_seq
+            AFTER INSERT ON \(table)
+            WHEN NEW.ingest_seq IS NULL
+            BEGIN
+                UPDATE \(table)
+                SET ingest_seq = (
+                    SELECT COALESCE(MAX(seq), 0) + 1 FROM (
+                        SELECT MAX(ingest_seq) AS seq FROM runs
+                        UNION ALL SELECT MAX(ingest_seq) FROM usage_evidence
+                        UNION ALL SELECT MAX(ingest_seq) FROM remote_client_events
+                    )
+                )
+                WHERE rowid = NEW.rowid;
+            END
+            """
+            if sqlite3_exec(db, trigger, nil, nil, nil) != SQLITE_OK {
+                Log.warn("TelemetryStore: failed to create ingest_seq trigger for \(table)")
+            }
         }
     }
 
@@ -1397,7 +1444,7 @@ final class TelemetryStore {
         guard let db else { return [] }
         let sql = """
         SELECT * FROM remote_client_events
-        ORDER BY timestamp DESC
+        ORDER BY timestamp DESC, ingest_seq DESC
         LIMIT ?
         """
 
@@ -1458,7 +1505,7 @@ final class TelemetryStore {
         let sql = """
         SELECT * FROM usage_evidence
         \(whereClause)
-        ORDER BY observed_at DESC
+        ORDER BY observed_at DESC, ingest_seq DESC
         LIMIT ?
         """
 
@@ -1557,7 +1604,7 @@ final class TelemetryStore {
         if !clauses.isEmpty {
             sql += " WHERE " + clauses.joined(separator: " AND ")
         }
-        sql += " ORDER BY started_at DESC"
+        sql += " ORDER BY started_at DESC, ingest_seq DESC"
         if let limit = filter.limit {
             sql += " LIMIT \(limit)"
             if let offset = filter.offset { sql += " OFFSET \(offset)" }
@@ -1741,7 +1788,7 @@ final class TelemetryStore {
                 sql += " AND provider = ?"
                 vals.append(p)
             }
-            sql += " ORDER BY started_at DESC LIMIT 1"
+            sql += " ORDER BY started_at DESC, ingest_seq DESC LIMIT 1"
 
             var stmt: OpaquePointer?
             guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return nil }
@@ -1763,7 +1810,7 @@ final class TelemetryStore {
                 sql += " AND provider = ?"
                 vals.append(provider)
             }
-            sql += " ORDER BY started_at DESC LIMIT 1"
+            sql += " ORDER BY started_at DESC, ingest_seq DESC LIMIT 1"
 
             var stmt: OpaquePointer?
             guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return nil }
@@ -1784,7 +1831,7 @@ final class TelemetryStore {
             var sql = """
             WITH filtered_runs AS (
                 SELECT *,
-                       ROW_NUMBER() OVER (PARTITION BY session_id ORDER BY started_at DESC, created_at DESC) AS rn
+                       ROW_NUMBER() OVER (PARTITION BY session_id ORDER BY started_at DESC, created_at DESC, ingest_seq DESC) AS rn
                 FROM runs
                 WHERE session_id IS NOT NULL
             """
@@ -2000,7 +2047,7 @@ final class TelemetryStore {
             if metricKind != nil {
                 sql += " AND metric_kind = ?"
             }
-            sql += " ORDER BY observed_at ASC"
+            sql += " ORDER BY observed_at ASC, ingest_seq ASC"
 
             var stmt: OpaquePointer?
             guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return [] }

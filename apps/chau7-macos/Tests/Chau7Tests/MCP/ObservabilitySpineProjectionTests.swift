@@ -70,6 +70,9 @@ final class ObservabilitySpineProjectionTests: XCTestCase {
         let records = eventSeqsAndTypes()
         XCTAssertEqual(records.map(\.seq), [1, 2, 3])
         XCTAssertEqual(records.last?.type, "tab_created")
+        // latest_seq must follow spine-derived records too (regression guard:
+        // it previously read the internal counter, which spine mode bypasses).
+        XCTAssertEqual(latestSeq(), 3)
 
         host.stop()
     }

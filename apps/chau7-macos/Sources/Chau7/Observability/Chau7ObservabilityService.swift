@@ -59,6 +59,10 @@ final class Chau7ObservabilityService {
     /// discarded AppModel (tests) reverts the service to the direct path.
     private weak var spine: EventSpine?
     private var spineSeqFloor: Int64 = 0
+    /// Highest sequence ever recorded (events or changes, either path).
+    /// `latest_seq` must read this — in spine mode records carry
+    /// spine-derived seqs that never touch the internal counter.
+    private var lastSeq: Int64 = 0
     private var events: [EventRecord] = []
     private var changes: [ChangeRecord] = []
     private var timers: [String: TimerRecord] = [:]
@@ -80,7 +84,7 @@ final class Chau7ObservabilityService {
             let sliced = Array(filtered.suffix(clampedLimit))
             return [
                 "events": sliced.map(eventDictionary),
-                "latest_seq": max(nextSeq - 1, 0)
+                "latest_seq": lastSeq
             ]
         }
         return encode(payload: payload)
@@ -105,7 +109,7 @@ final class Chau7ObservabilityService {
 
     func latestSequence() -> Int64 {
         queue.sync {
-            max(nextSeq - 1, 0)
+            lastSeq
         }
     }
 
@@ -153,7 +157,7 @@ final class Chau7ObservabilityService {
     func attachSpine(_ spine: EventSpine) {
         queue.sync {
             self.spine = spine
-            self.spineSeqFloor = self.nextSeq - 1
+            self.spineSeqFloor = max(self.nextSeq - 1, self.lastSeq)
         }
     }
 
@@ -520,6 +524,7 @@ final class Chau7ObservabilityService {
             nextSeq = 1
             spine = nil
             spineSeqFloor = 0
+            lastSeq = 0
             events.removeAll()
             changes.removeAll()
             timers.removeAll()
@@ -606,6 +611,7 @@ final class Chau7ObservabilityService {
         subsystem: String,
         payload: [String: Any]
     ) {
+        lastSeq = max(lastSeq, seq)
         guard !topics.isEmpty else { return }
         changes.append(
             ChangeRecord(
