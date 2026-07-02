@@ -784,6 +784,7 @@ Legacy `AI_*` and `SMART_OVERLAY_*` environment variables are still supported.
 - **Security-first staged checks** — staged commits block high-signal secrets, unsafe dependency changes, Python exception/debug placeholders, JS/TS debug and unsafe DOM patterns, and legacy design/docs/source-policy violations before commit.
 - **Live dependency audits** — full-suite quality mode runs non-cacheable npm audits for tracked Node lockfiles at the repository's high-severity threshold, with a Python dependency audit gate registered for future `pyproject.toml` or `requirements*.txt` inputs.
 - **Registry-tested quality logic** — runner, registry, cache, impact, dirty-worktree, filtering, JSON output, and attestation behavior are covered by a `quality-runner-tests` gate.
+- **Feature-inventory schema gate** — a `staged-features-csv` gate runs `scripts/check-features-csv.mjs`, deterministically rejecting any `features.csv` row that isn't exactly five well-formed columns with a valid `Status`/`Differentiator`, so the machine-readable inventory can't silently rot (the failure mode that once let dozens of malformed rows land unnoticed).
 
 ## Architecture
 

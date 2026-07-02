@@ -412,6 +412,18 @@ export const gates = [
     },
   },
   {
+    id: "staged-features-csv",
+    modes: STAGED_ONLY,
+    scope: "staged",
+    wave: "static",
+    tags: ["docs", "features-inventory"],
+    cacheable: false,
+    inputs: ["scripts/check-features-csv.mjs", "apps/chau7-macos/docs/features.csv"],
+    applies: (context) => context.stagedFiles.includes("apps/chau7-macos/docs/features.csv"),
+    rerun: "pnpm quality:staged --include=staged-features-csv",
+    run: async (context) => context.exec("node", ["scripts/check-features-csv.mjs"]),
+  },
+  {
     id: "staged-shellcheck",
     modes: STAGED_ONLY,
     scope: "staged",
