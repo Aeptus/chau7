@@ -1,3 +1,4 @@
+import Chau7Core
 import Foundation
 
 /// Token-bucket rate limiter for notification triggers.
@@ -14,7 +15,7 @@ final class NotificationRateLimiter {
         /// Extra burst allowance above the per-minute rate
         var burstAllowance = 3
         /// Minimum seconds between consecutive firings of the same trigger
-        var cooldownSeconds: TimeInterval = 10
+        var cooldownSeconds: TimeInterval = NotificationTimings.rateLimitCooldown
 
         static let `default` = Config()
     }

@@ -118,7 +118,7 @@ public enum MonitoringSchedule {
 
     // MARK: - Notification coalescing
 
-    public static let defaultCoalescingWindow: TimeInterval = 0.25
+    public static let defaultCoalescingWindow: TimeInterval = NotificationTimings.coalescingWindow
 
     /// Derives the best-available identity scope for a notification event.
     /// This keeps unrelated tabs/sessions from sharing the same coalescing
@@ -138,18 +138,13 @@ public enum MonitoringSchedule {
     /// The key is scoped by the best available event identity so different tabs,
     /// sessions, or directories do not overwrite each other.
     public static func notificationCoalescingKey(for event: AIEvent) -> String {
-        let provider = AIObservation.providerKey(for: event)
-        let normalizedType = event.type
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .lowercased()
-        let identity = notificationIdentityKey(for: event)
-        return "\(provider)|\(normalizedType)|\(identity)"
+        NotificationIdentity(for: event).coalescingKey
     }
 
     /// Scopes notification rate limiting by both trigger and event identity.
     /// Without this, one noisy tab can suppress the same trigger on a different tab.
     public static func notificationRateLimitKey(triggerID: String, event: AIEvent) -> String {
-        "\(triggerID)|\(notificationIdentityKey(for: event))"
+        NotificationIdentity(for: event).rateLimitKey(triggerID: triggerID)
     }
 
 }

@@ -36,7 +36,7 @@ public final class AISessionEventReconciler {
 
     public init(
         strongerReplacementWindow: TimeInterval = MonitoringSchedule.defaultCoalescingWindow,
-        terminalRepeatWindow: TimeInterval = 10,
+        terminalRepeatWindow: TimeInterval = NotificationTimings.terminalRepeatWindow,
         retentionSeconds: TimeInterval = 30 * 60
     ) {
         self.strongerReplacementWindow = strongerReplacementWindow

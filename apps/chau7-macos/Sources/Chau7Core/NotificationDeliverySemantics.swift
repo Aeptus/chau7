@@ -4,9 +4,9 @@ public enum NotificationDeliverySemantics {
     public static let authoritativeRoutingTypes: Set = [
         "finished", "failed", "permission", "waiting_input", "attention_required"
     ]
-    public static let authorityRetentionSeconds: TimeInterval = 180
-    public static let repeatedAttentionSuppressionSeconds: TimeInterval = 90
-    public static let closedSessionSuppressionSeconds: TimeInterval = 180
+    public static let authorityRetentionSeconds: TimeInterval = NotificationTimings.authorityRetention
+    public static let repeatedAttentionSuppressionSeconds: TimeInterval = NotificationTimings.repeatedAttentionSuppression
+    public static let closedSessionSuppressionSeconds: TimeInterval = NotificationTimings.closedSessionSuppression
 
     public static func requiresAuthoritativeRouting(_ event: AIEvent) -> Bool {
         event.reliability == .authoritative
@@ -41,26 +41,7 @@ public enum NotificationDeliverySemantics {
         guard authoritativeRoutingTypes.contains(event.normalizedType) else {
             return []
         }
-
-        let normalizedTool = event.tool
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .lowercased()
-        var identities: [String] = []
-        if let sessionID = event.sessionID?.trimmingCharacters(in: .whitespacesAndNewlines),
-           !sessionID.isEmpty {
-            identities.append("session:\(sessionID.lowercased())")
-        }
-        if let tabID = event.tabID {
-            identities.append("tab:\(tabID.uuidString.lowercased())")
-        }
-        if let directory = event.directory?.trimmingCharacters(in: .whitespacesAndNewlines),
-           !directory.isEmpty {
-            identities.append("dir:\(URL(fileURLWithPath: directory).standardized.path.lowercased())")
-        }
-        if identities.isEmpty {
-            identities.append(MonitoringSchedule.notificationIdentityKey(for: event))
-        }
-        return identities.map { "\(event.normalizedType)|\(normalizedTool)|\($0)" }
+        return NotificationIdentity(for: event).authorityKeys
     }
 
     public static func authorityKey(for event: AIEvent) -> String? {
@@ -85,9 +66,7 @@ public enum NotificationDeliverySemantics {
 
     public static func repeatSuppressionKey(for event: AIEvent) -> String? {
         guard let family = repeatSuppressionFamily(for: event) else { return nil }
-        let tool = event.tool.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        let identity = MonitoringSchedule.notificationIdentityKey(for: event)
-        return "\(family)|\(tool)|\(identity)"
+        return NotificationIdentity(for: event).repeatSuppressionKey(family: family)
     }
 
     public static func shouldSuppressRepeat(
@@ -104,17 +83,12 @@ public enum NotificationDeliverySemantics {
     }
 
     public static func closedIdentityKey(for event: AIEvent) -> String {
-        let tool = event.tool.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        let identity = MonitoringSchedule.notificationIdentityKey(for: event)
-        return "\(tool)|\(identity)"
+        let identity = NotificationIdentity(for: event)
+        return "\(identity.normalizedTool)|\(identity.scopedKey)"
     }
 
     public static func closedIdentityKeys(for event: AIEvent) -> [String] {
-        if let sessionID = event.sessionID?.trimmingCharacters(in: .whitespacesAndNewlines),
-           !sessionID.isEmpty {
-            return ["session:\(sessionID.lowercased())", closedIdentityKey(for: event)]
-        }
-        return [closedIdentityKey(for: event)]
+        NotificationIdentity(for: event).closedIdentityKeys
     }
 
     public static func shouldRegisterClosedIdentity(_ event: AIEvent) -> Bool {
