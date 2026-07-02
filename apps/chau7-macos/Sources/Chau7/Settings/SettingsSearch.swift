@@ -908,26 +908,5 @@ extension FeatureSettings {
 
 // MARK: - Notification Names
 
-extension Notification.Name {
-    static let terminalFontChanged = Notification.Name("terminalFontChanged")
-    static let terminalColorsChanged = Notification.Name("terminalColorsChanged")
-    static let terminalOpacityChanged = Notification.Name("terminalOpacityChanged")
-    static let terminalZoomChanged = Notification.Name("terminalZoomChanged")
-    static let terminalDangerousCommandHighlightChanged = Notification.Name("terminalDangerousCommandHighlightChanged")
-    static let activePollingRateCapChanged = Notification.Name("activePollingRateCapChanged")
-    static let terminalDidStart = Notification.Name("terminalDidStart")
-    static let settingsProfileChanged = Notification.Name("settingsProfileChanged")
-    static let appThemeChanged = Notification.Name("appThemeChanged")
-    static let fullscreenToolbarSettingChanged = Notification.Name("fullscreenToolbarSettingChanged")
-    // API Analytics
-    static let apiAnalyticsSettingsChanged = Notification.Name("apiAnalyticsSettingsChanged")
-    static let apiCallRecorded = Notification.Name("apiCallRecorded")
-    static let proxyStatusChanged = Notification.Name("proxyStatusChanged")
-    static let usageMonitoringSettingsChanged = Notification.Name("usageMonitoringSettingsChanged")
-    /// Posted when the status-bar monitoring toggle flips. Raw string preserved
-    /// for compatibility with any legacy observer that used
-    /// `NSNotification.Name("MonitoringStateChanged")`.
-    static let monitoringStateChanged = Notification.Name("MonitoringStateChanged")
-    /// Posted when the "window floats above other apps" setting toggles.
-    static let windowFloatingChanged = Notification.Name("windowFloatingChanged")
-}
+// Notification.Name constants live in App/AppSignals.swift (central registry).
+

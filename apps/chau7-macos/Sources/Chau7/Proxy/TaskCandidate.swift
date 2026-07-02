@@ -245,9 +245,5 @@ public struct TaskAssessmentEventData: Decodable {
 
 // MARK: - Notification Names
 
-public extension Notification.Name {
-    static let taskCandidateReceived = Notification.Name("taskCandidateReceived")
-    static let taskStarted = Notification.Name("taskStarted")
-    static let taskCandidateDismissed = Notification.Name("taskCandidateDismissed")
-    static let taskAssessmentReceived = Notification.Name("taskAssessmentReceived")
-}
+// Notification.Name constants live in App/AppSignals.swift (central registry).
+

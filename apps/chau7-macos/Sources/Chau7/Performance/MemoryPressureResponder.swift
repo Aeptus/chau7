@@ -206,8 +206,5 @@ final class MemoryPressureResponder {
     }
 }
 
-extension Notification.Name {
-    /// Posted when the app enters (or re-confirms) OS memory pressure. Observers
-    /// re-evaluate the render lifecycle so non-selected tabs flush their scrollback.
-    static let chau7MemoryPressureChanged = Notification.Name("com.chau7.memoryPressureChanged")
-}
+// Notification.Name constants live in App/AppSignals.swift (central registry).
+

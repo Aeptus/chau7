@@ -51,6 +51,5 @@ final class MinimalMode {
     }
 }
 
-extension Notification.Name {
-    static let minimalModeChanged = Notification.Name("com.chau7.minimalModeChanged")
-}
+// Notification.Name constants live in App/AppSignals.swift (central registry).
+

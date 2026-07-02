@@ -3,14 +3,7 @@ import AppKit
 import Darwin
 import Chau7Core
 
-extension Notification.Name {
-    static let terminalSessionRenderSuspensionStateChanged =
-        Notification.Name("com.chau7.terminalSessionRenderSuspensionStateChanged")
-    static let terminalSessionRuntimeReadinessChanged =
-        Notification.Name("com.chau7.terminalSessionRuntimeReadinessChanged")
-    static let terminalSessionVisibleFrameReady =
-        Notification.Name("com.chau7.terminalSessionVisibleFrameReady")
-}
+// Notification.Name constants live in App/AppSignals.swift (central registry).
 
 enum CommandStatus: String, Codable {
     case idle

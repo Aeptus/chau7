@@ -49,11 +49,13 @@ final class StatusBarControllerTests: XCTestCase {
 
     func testMonitoringStateChangedNotificationName() {
         // The controller observes `.monitoringStateChanged`; the panel posts the same
-        // production constant. Verify the underlying string stays stable.
+        // production constant. The raw value moved to the com.chau7. namespace when
+        // the AppSignals registry centralized every internal Notification.Name
+        // (process-internal only, so the rename is safe).
         XCTAssertEqual(
             Notification.Name.monitoringStateChanged.rawValue,
-            "MonitoringStateChanged",
-            "Notification name should match the expected string"
+            "com.chau7.monitoringStateChanged",
+            "Notification name should match the registry constant"
         )
     }
 

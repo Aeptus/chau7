@@ -7,14 +7,7 @@ import Chau7Core
 // Note: AppLanguage is defined in Localization.swift
 // Note: TerminalColorScheme is defined in TerminalColorScheme.swift
 
-extension Notification.Name {
-    /// Posted by FeatureSettings when `repoGroupingMode` is written.
-    static let repoGroupingModeChanged = Notification.Name("com.chau7.feature.repoGroupingModeChanged")
-    /// Posted by FeatureSettings when `isRemoteEnabled` is written.
-    static let remoteEnabledChanged = Notification.Name("com.chau7.feature.remoteEnabledChanged")
-    /// Posted by FeatureSettings when `remoteRelayURL` is written (post-trim).
-    static let remoteRelayURLChanged = Notification.Name("com.chau7.feature.remoteRelayURLChanged")
-}
+// Notification.Name constants live in App/AppSignals.swift (central registry).
 
 // MARK: - Keyboard Shortcut
 

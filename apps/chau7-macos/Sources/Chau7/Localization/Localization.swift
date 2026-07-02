@@ -143,9 +143,7 @@ final class LocalizationManager {
 
 // MARK: - Notification
 
-extension Notification.Name {
-    static let languageDidChange = Notification.Name("languageDidChange")
-}
+// Notification.Name constants live in App/AppSignals.swift (central registry).
 
 // MARK: - Localized String Helper
 
