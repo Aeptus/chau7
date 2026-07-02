@@ -81,7 +81,12 @@ final class RemoteClient {
 
     private var webSocket: URLSessionWebSocketTask?
     private var seqCounter: UInt64 = 1
-    private var maxReceivedSeq: UInt64 = 0
+    /// Replay/epoch protection for the encrypted frame stream (NF-2 fix:
+    /// detects agent re-handshakes instead of deadlocking on a reset seq).
+    @ObservationIgnored private var replayGuard = RemoteReplayGuard()
+    /// Single merge authority for approvals/prompts across the WS and REST
+    /// channels (NF-1 fix: stale snapshots can no longer clobber live state).
+    @ObservationIgnored private var pendingReconciler = PendingStateReconciler()
     private var crypto: RemoteCryptoSession?
     private var nonceIOS: Data?
     private var nonceMac: Data?
@@ -349,7 +354,7 @@ final class RemoteClient {
         nonceIOS = nil
         nonceMac = nil
         seqCounter = 1
-        maxReceivedSeq = 0
+        replayGuard.reset()
         if !preserveReconnectAttempt {
             reconnectBackoff.reset()
         }
@@ -369,6 +374,7 @@ final class RemoteClient {
             pendingInteractivePrompts = []
             pendingApprovalResponses.removeAll(keepingCapacity: true)
             approvalResponsesInFlight.removeAll(keepingCapacity: true)
+            pendingReconciler.reset()
         }
         backgroundKeepalive.end()
         if #available(iOS 16.1, *) {
@@ -670,6 +676,15 @@ final class RemoteClient {
                 status: "decrypt_failed",
                 metadata: ["frame_type": String(frameType)]
             )
+            if case let .resetSession(reason) = replayGuard.noteDecryptFailure() {
+                log.warning("Replay guard ordered session reset: \(reason)")
+                crypto = nil
+                isConnected = false
+                remoteSessionID = nil
+                seqCounter = 1
+                nonceIOS = CryptoUtils.randomBytes(count: 16)
+                sendHello()
+            }
             return
         case .success(let frame, let payload):
             os_signpost(
@@ -708,11 +723,11 @@ final class RemoteClient {
         // relay. Unencrypted handshake frames (hello/pair*) are exempt, matching
         // the macOS relay client (see agent.go maxReceivedSeq).
         if isEncrypted {
-            guard frame.seq > maxReceivedSeq else {
-                log.warning("Dropping replayed/stale frame type=\(frame.type) seq=\(frame.seq) max=\(self.maxReceivedSeq)")
+            if case let .drop(reason) = replayGuard.evaluateEncryptedFrame(seq: frame.seq) {
+                log.warning("Dropping frame type=\(frame.type): \(reason)")
                 return
             }
-            maxReceivedSeq = frame.seq
+            replayGuard.noteDecryptSuccess()
         }
 
         switch frameType {
@@ -753,6 +768,22 @@ final class RemoteClient {
             log.error("handleHello: invalid nonce base64")
             return
         }
+        // A changed mac nonce while a crypto session exists means the agent
+        // re-handshook (restart): the old session key and seq space are dead.
+        // Reset deliberately and re-handshake instead of silently dropping
+        // every future frame as replayed.
+        if case let .resetSession(reason) = replayGuard.evaluateHello(
+            macNonce: nonce,
+            hasCryptoSession: crypto != nil
+        ) {
+            log.warning("Replay guard ordered session reset: \(reason)")
+            crypto = nil
+            isConnected = false
+            remoteSessionID = nil
+            seqCounter = 1
+            nonceIOS = CryptoUtils.randomBytes(count: 16)
+            sendHello()
+        }
         nonceMac = nonce
         establishSessionIfPossible()
     }
@@ -780,7 +811,7 @@ final class RemoteClient {
         nonceMac = nil
         nonceIOS = CryptoUtils.randomBytes(count: 16)
         seqCounter = 1
-        maxReceivedSeq = 0
+        replayGuard.reset()
         sendHello()
         establishSessionIfPossible()
     }
@@ -859,7 +890,7 @@ final class RemoteClient {
         ) else {
             return
         }
-        applyPendingInteractivePrompts(payload.prompts)
+        syncPrompts(with: pendingReconciler.applyWSPromptList(payload.prompts, now: Date()))
     }
 
     /// Only ingest terminal frames when foregrounded and full-streaming is
@@ -920,7 +951,7 @@ final class RemoteClient {
 
     private func handleApprovalRequest(_ data: Data) {
         guard let msg: ApprovalRequestPayload = decodePayload(data, as: ApprovalRequestPayload.self, context: "handleApprovalRequest") else { return }
-        upsertPendingApproval(msg)
+        syncApprovals(with: pendingReconciler.applyWSApprovalUpsert(msg, now: Date()))
         emitTelemetry(
             type: .approvalReceived,
             status: "pending",
@@ -1170,6 +1201,8 @@ final class RemoteClient {
     private func completeApprovalResponse(requestID: String, approved: Bool) {
         guard let idx = pendingApprovals.firstIndex(where: { $0.requestID == requestID }) else { return }
         let request = pendingApprovals.remove(at: idx)
+        // Journal the resolution so a stale /pending snapshot can't resurrect it.
+        _ = pendingReconciler.applyLocalApprovalResolution(requestID: requestID, now: Date())
 
         approvalHistory.append(ApprovalHistoryEntry(
             command: request.command,
@@ -1395,6 +1428,9 @@ final class RemoteClient {
 
     private func fetchPendingState(reason: String) async {
         guard let request = pendingStateRequest() else { return }
+        // Mark the fetch instant: WS deltas arriving at/after this moment
+        // outrank whatever the snapshot says (see PendingStateReconciler).
+        pendingReconciler.beginSnapshotFetch(now: Date())
         do {
             let (data, response) = try await URLSession.shared.data(for: request)
             guard let httpResponse = response as? HTTPURLResponse else { return }
@@ -1403,8 +1439,15 @@ final class RemoteClient {
                 return
             }
             let payload = try RemoteJSON.decoder.decode(RemotePendingStatePayload.self, from: data)
-            applyPendingApprovals(payload.approvals)
-            applyPendingInteractivePrompts(payload.interactivePrompts)
+            let busyIDs = Set(pendingApprovals.filter(\.responseState.isBusy).map(\.requestID))
+            syncApprovals(with: pendingReconciler.applySnapshotApprovals(
+                payload.approvals,
+                busyRequestIDs: busyIDs,
+                now: Date()
+            ))
+            if let promptChanges = pendingReconciler.applySnapshotPrompts(payload.interactivePrompts, now: Date()) {
+                syncPrompts(with: promptChanges)
+            }
             emitTelemetry(type: .remoteStateFetched, status: reason)
         } catch {
             log.error("Pending state fetch failed (\(reason)): \(error.localizedDescription)")
@@ -1447,38 +1490,20 @@ final class RemoteClient {
         return components
     }
 
-    private func applyPendingApprovals(_ payloads: [ApprovalRequestPayload]) {
+    /// Project the reconciler's authoritative approval list into the UI
+    /// models (preserving in-flight response states) and apply the delta's
+    /// notification side effects.
+    private func syncApprovals(with changes: PendingStateReconciler.ApprovalChanges) {
         let existingStates = Dictionary(uniqueKeysWithValues: pendingApprovals.map { ($0.requestID, $0.responseState) })
-        let nextApprovals = payloads.map { payload in
+        pendingApprovals = changes.approvals.map { payload in
             approvalRequest(from: payload, responseState: existingStates[payload.requestID] ?? .idle)
         }
-
-        let previousApprovalIDs = Set(pendingApprovals.map(\.requestID))
-        let nextApprovalIDs = Set(nextApprovals.map(\.requestID))
-        pendingApprovals = nextApprovals
-
-        let removedNotificationIDs = previousApprovalIDs.subtracting(nextApprovalIDs)
-        RemoteNotificationScheduler.removeApprovalNotifications(requestIDs: Array(removedNotificationIDs))
-
-        for payload in payloads where !previousApprovalIDs.contains(payload.requestID) {
+        if !changes.removedIDs.isEmpty {
+            RemoteNotificationScheduler.removeApprovalNotifications(requestIDs: changes.removedIDs)
+        }
+        for payload in changes.added {
             scheduleApprovalNotificationIfAllowed(for: payload)
         }
-    }
-
-    private func upsertPendingApproval(_ payload: ApprovalRequestPayload) {
-        let approval = approvalRequest(
-            from: payload,
-            responseState: pendingApprovals.first(where: { $0.requestID == payload.requestID })?.responseState ?? .idle
-        )
-        let isNewApproval = !pendingApprovals.contains(where: { $0.requestID == payload.requestID })
-        if let existingIndex = pendingApprovals.firstIndex(where: { $0.requestID == payload.requestID }) {
-            pendingApprovals[existingIndex] = approval
-        } else {
-            pendingApprovals.append(approval)
-        }
-
-        guard isNewApproval else { return }
-        scheduleApprovalNotificationIfAllowed(for: payload)
     }
 
     private func scheduleApprovalNotificationIfAllowed(for payload: ApprovalRequestPayload) {
@@ -1507,9 +1532,11 @@ final class RemoteClient {
         )
     }
 
-    private func applyPendingInteractivePrompts(_ nextPrompts: [RemoteInteractivePrompt]) {
+    /// Project the reconciler's authoritative prompt list into the UI,
+    /// applying the answered-prompt suppression overlay on top.
+    private func syncPrompts(with changes: PendingStateReconciler.PromptChanges) {
         let now = Date()
-        let nextPromptIDs = Set(nextPrompts.map(\.id))
+        let nextPromptIDs = Set(changes.prompts.map(\.id))
 
         // Drop suppression once the Mac stops listing the prompt (the terminal
         // advanced, so the tab cleared) or after the safety timeout, so a
@@ -1520,7 +1547,7 @@ final class RemoteClient {
 
         // Hide prompts the user just answered/dismissed; the Mac re-pushes them
         // until its terminal catches up, which is what made them "come back".
-        let visiblePrompts = nextPrompts.filter { suppressedPromptIDs[$0.id] == nil }
+        let visiblePrompts = changes.prompts.filter { suppressedPromptIDs[$0.id] == nil }
 
         let previousPromptIDs = Set(pendingInteractivePrompts.map(\.id))
         let visiblePromptIDs = Set(visiblePrompts.map(\.id))
@@ -1546,6 +1573,7 @@ final class RemoteClient {
     /// means on the client, shared by the answer and dismiss paths.
     private func completeInteractivePrompt(at index: Int, id: String) {
         pendingInteractivePrompts.remove(at: index)
+        _ = pendingReconciler.applyLocalPromptCompletion(promptID: id)
         suppressedPromptIDs[id] = Date()
         RemoteNotificationScheduler.removeInteractivePromptNotifications(promptIDs: [id])
     }
