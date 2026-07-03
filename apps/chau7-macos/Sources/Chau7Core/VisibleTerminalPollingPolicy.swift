@@ -55,10 +55,19 @@ public enum VisibleTerminalPollingPolicy {
         guard context.allowsLivePresentation,
               !context.isHidden,
               context.hasVisibleWindow,
-              !context.isWindowMiniaturized,
-              !context.isWindowOccluded else {
+              !context.isWindowMiniaturized else {
             return .backgroundDrain
         }
+        // Occlusion deliberately does NOT demote a live tab. macOS flaps
+        // didChangeOcclusionState spuriously on multi-display fullscreen
+        // setups (observed: a focused, fully visible window receiving
+        // "occluded" every few seconds), and every false demotion threw the
+        // selected tab onto the shared background drain, whose adaptive
+        // stride batches output into 1–8 s walls of text. EventDrain is
+        // already zero-CPU when idle and macOS skips presenting occluded
+        // pixels, so the residual cost for a genuinely covered window is
+        // grid-sync work bounded by actual output — a fair trade for never
+        // freezing the tab the user is looking at.
         // Any visible window's selected tab (allowsLivePresentation == true)
         // gets event-driven polling. Pre-fix, this was gated on
         // `isInteractive`, which is only true for the key/main window — so

@@ -20,9 +20,14 @@ final class VisibleTerminalPollingPolicyTests: XCTestCase {
         )
     }
 
-    func testOccludedWindowDropsToBackgroundDrain() {
-        // isVisible stays true for fully covered windows; rendering up to
-        // ~15fps for pixels nobody sees burns CPU/battery for nothing.
+    func testOccludedLiveTabStaysOnEventDrain() {
+        // Regression guard: macOS flaps occlusion spuriously on
+        // multi-display fullscreen setups, and demoting the SELECTED tab on
+        // that signal batched its output into 1-8s walls (adaptive
+        // background-drain stride) while the user was actively watching it.
+        // A live tab stays event-driven regardless of occlusion; the drain
+        // is idle-free, so a genuinely covered window costs only
+        // output-bounded grid syncs.
         XCTAssertEqual(
             VisibleTerminalPollingPolicy.mode(
                 for: VisibleTerminalPollingContext(
@@ -37,7 +42,7 @@ final class VisibleTerminalPollingPolicyTests: XCTestCase {
                     isInteractive: true
                 )
             ),
-            .backgroundDrain
+            .eventDrain
         )
     }
 
