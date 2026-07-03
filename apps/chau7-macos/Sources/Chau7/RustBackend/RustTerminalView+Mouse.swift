@@ -110,16 +110,6 @@ extension RustTerminalView {
 
     // MARK: - Mouse Reporting
 
-    /// Mouse mode bit flags (matching Rust implementation)
-    enum MouseMode {
-        static let click: UInt32 = 0x01 // Mode 1000: report button press/release
-        static let drag: UInt32 = 0x02 // Mode 1002: also report motion while button down
-        static let motion: UInt32 = 0x04 // Mode 1003: report all motion
-        static let focusInOut: UInt32 = 0x08 // Mode 1004: focus in/out reporting
-        static let sgrMode: UInt32 = 0x10 // Mode 1006: use SGR encoding (was incorrectly 0x08)
-        static let anyTracking: UInt32 = 0x07 // Mask for click/drag/motion modes
-    }
-
     /// Mouse button encoding for X10/Normal protocols
     enum MouseButton: UInt8 {
         case left = 0
@@ -132,48 +122,62 @@ extension RustTerminalView {
         case scrollRight = 67
     }
 
+    /// Current mouse mode bitmask from the Rust backend, as typed flags.
+    func currentMouseModeFlags() -> MouseModeFlags {
+        MouseModeFlags(rawValue: rustTerminal?.mouseMode() ?? 0)
+    }
+
     /// Check if mouse reporting is active
     func isMouseReportingEnabled() -> Bool {
         guard allowMouseReporting else { return false }
-        let mode = rustTerminal?.mouseMode() ?? 0
-        return (mode & MouseMode.anyTracking) != 0
+        return !currentMouseModeFlags().isDisjoint(with: .anyTracking)
     }
 
     /// Check if SGR extended mouse mode is enabled
     func isSgrMouseMode() -> Bool {
-        let mode = rustTerminal?.mouseMode() ?? 0
-        return (mode & MouseMode.sgrMode) != 0
+        currentMouseModeFlags().contains(.sgrMode)
     }
 
     /// Check if motion events should be reported while button is down
     func shouldReportDragMotion() -> Bool {
-        let mode = rustTerminal?.mouseMode() ?? 0
-        return (mode & MouseMode.drag) != 0 || (mode & MouseMode.motion) != 0
+        let mode = currentMouseModeFlags()
+        return mode.contains(.drag) || mode.contains(.motion)
+    }
+
+    /// Translate AppKit modifier flags into the pure encoder's modifiers.
+    private func mouseReportModifiers(_ modifiers: NSEvent.ModifierFlags) -> MouseReportEncoder.Modifiers {
+        var result: MouseReportEncoder.Modifiers = []
+        if modifiers.contains(.shift) { result.insert(.shift) }
+        if modifiers.contains(.option) { result.insert(.option) }
+        if modifiers.contains(.control) { result.insert(.control) }
+        return result
+    }
+
+    /// Deliver an encoded mouse report to the PTY on the path its
+    /// encoding requires (SGR reports are text, X10 reports are bytes).
+    private func send(mouseReport: MouseReportEncoder.Report) {
+        switch mouseReport {
+        case .text(let sequence):
+            send(txt: sequence)
+        case .bytes(let bytes):
+            send(data: bytes)
+        }
     }
 
     /// Encode and send a mouse event to the PTY
     func sendMouseEvent(button: MouseButton, col: Int, row: Int, isRelease: Bool, modifiers: NSEvent.ModifierFlags = []) {
-        var buttonCode = button.rawValue
-        if modifiers.contains(.shift) { buttonCode += 4 }
-        if modifiers.contains(.option) { buttonCode += 8 }
-        if modifiers.contains(.control) { buttonCode += 16 }
-
-        if isSgrMouseMode() {
-            let col1 = col + 1
-            let row1 = row + 1
-            let terminator = isRelease ? "m" : "M"
-            let sequence = "\u{1b}[<\(buttonCode);\(col1);\(row1)\(terminator)"
-            Log.trace("RustTerminalView[\(viewId)]: sendMouseEvent SGR - button=\(buttonCode), col=\(col1), row=\(row1)")
-            send(txt: sequence)
-        } else {
-            let effectiveCol = min(col, 222)
-            let effectiveRow = min(row, 222)
-            let releaseButton: UInt8 = isRelease ? 3 : buttonCode
-            let buttonByte = releaseButton + 32
-            let colByte = UInt8(effectiveCol + 33)
-            let rowByte = UInt8(effectiveRow + 33)
-            send(data: [0x1B, 0x5B, 0x4D, buttonByte, colByte, rowByte])
+        let report = MouseReportEncoder.encodeButtonEvent(
+            buttonCode: button.rawValue,
+            modifiers: mouseReportModifiers(modifiers),
+            column: col,
+            row: row,
+            isRelease: isRelease,
+            useSGR: isSgrMouseMode()
+        )
+        if case .text(let sequence) = report {
+            Log.trace("RustTerminalView[\(viewId)]: sendMouseEvent SGR - \(sequence.dropFirst())")
         }
+        send(mouseReport: report)
     }
 
     /// Send a mouse press event
@@ -191,22 +195,14 @@ extension RustTerminalView {
     /// Send a mouse motion event
     func sendMouseMotion(at location: NSPoint, buttonDown: MouseButton?, modifiers: NSEvent.ModifierFlags = []) {
         let cell = pointToCell(location)
-        let cellCol = Int(cell.col)
-        let cellRow = Int(cell.row)
-        var buttonCode: UInt8 = 32
-        if let button = buttonDown { buttonCode += button.rawValue } else { buttonCode += 3 }
-        if modifiers.contains(.shift) { buttonCode += 4 }
-        if modifiers.contains(.option) { buttonCode += 8 }
-        if modifiers.contains(.control) { buttonCode += 16 }
-
-        if isSgrMouseMode() {
-            let sequence = "\u{1b}[<\(buttonCode);\(cellCol + 1);\(cellRow + 1)M"
-            send(txt: sequence)
-        } else {
-            let colByte = UInt8(min(cellCol, 222) + 33)
-            let rowByte = UInt8(min(cellRow, 222) + 33)
-            send(data: [0x1B, 0x5B, 0x4D, buttonCode + 32, colByte, rowByte])
-        }
+        let report = MouseReportEncoder.encodeMotionEvent(
+            buttonCode: buttonDown?.rawValue,
+            modifiers: mouseReportModifiers(modifiers),
+            column: Int(cell.col),
+            row: Int(cell.row),
+            useSGR: isSgrMouseMode()
+        )
+        send(mouseReport: report)
     }
 
     /// Send a scroll wheel event
@@ -217,23 +213,16 @@ extension RustTerminalView {
         let cellCol = Int(cell.col)
         let cellRow = Int(cell.row)
 
-        // Button codes: 64 = scroll up, 65 = scroll down
-        // (In X10 protocol these are buttons 4 and 5 with bit 6 set)
-        var buttonCode: UInt8 = deltaY > 0 ? 64 : 65
-        if modifiers.contains(.shift) { buttonCode += 4 }
-        if modifiers.contains(.option) { buttonCode += 8 }
-        if modifiers.contains(.control) { buttonCode += 16 }
+        Log.trace("RustTerminalView[\(viewId)]: sendScrollEvent - deltaY=\(deltaY), cell=(\(cellCol), \(cellRow))")
 
-        Log.trace("RustTerminalView[\(viewId)]: sendScrollEvent - deltaY=\(deltaY), button=\(buttonCode), cell=(\(cellCol), \(cellRow))")
-
-        if isSgrMouseMode() {
-            let sequence = "\u{1b}[<\(buttonCode);\(cellCol + 1);\(cellRow + 1)M"
-            send(txt: sequence)
-        } else {
-            let colByte = UInt8(min(cellCol, 222) + 33)
-            let rowByte = UInt8(min(cellRow, 222) + 33)
-            send(data: [0x1B, 0x5B, 0x4D, buttonCode + 32, colByte, rowByte])
-        }
+        let report = MouseReportEncoder.encodeScrollEvent(
+            isUp: deltaY > 0,
+            modifiers: mouseReportModifiers(modifiers),
+            column: cellCol,
+            row: cellRow,
+            useSGR: isSgrMouseMode()
+        )
+        send(mouseReport: report)
     }
 
     // MARK: - Event Monitoring
@@ -359,11 +348,7 @@ extension RustTerminalView {
 
             // Mouse reporting: Forward drag events to TUI apps (mode 1002/1003)
             if mouseReportingButtonDown != nil {
-                let mouseModeValue = rustTerminal?.mouseMode() ?? 0
-                let isDragMode = (mouseModeValue & MouseMode.drag) != 0
-                let isMotionMode = (mouseModeValue & MouseMode.motion) != 0
-
-                if isDragMode || isMotionMode {
+                if shouldReportDragMotion() {
                     sendMouseMotion(at: location, buttonDown: mouseReportingButtonDown, modifiers: event.modifierFlags)
                 }
                 didDragSinceMouseDown = true
