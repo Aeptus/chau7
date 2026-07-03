@@ -22,6 +22,14 @@ function hasPathPrefix(files, prefix) {
   return files.some((file) => file.startsWith(prefix));
 }
 
+// Parallel swift-frontend jobs for gate builds. Uncapped builds (one job per
+// core) can saturate memory while the Chau7 app and other agents are running,
+// at which point jetsam SIGKILLs large processes — including Chau7 and any
+// Claude Code session it hosts. Override with CHAU7_SWIFT_JOBS if needed.
+function swiftBuildJobs() {
+  return process.env.CHAU7_SWIFT_JOBS || "3";
+}
+
 function stagedFileList(context, predicate) {
   return context.stagedFiles.filter(predicate);
 }
@@ -545,7 +553,10 @@ export const gates = [
       for (const command of [
         ["swiftformat", ["Sources", "Tests", "--lint"]],
         ["swiftlint", ["lint", "--strict"]],
-        ["/usr/bin/swift", ["build", "-Xswiftc", "-warnings-as-errors"]],
+        // --jobs is capped: full-parallelism swift-frontend jobs saturate
+        // memory alongside the running Chau7 app and other agents, and
+        // jetsam then SIGKILLs Chau7 itself (JetsamEvent 2026-07-03).
+        ["/usr/bin/swift", ["build", "--jobs", swiftBuildJobs(), "-Xswiftc", "-warnings-as-errors"]],
       ]) {
         const result = await context.exec(command[0], command[1], { cwd: "apps/chau7-macos" });
         if (result.status !== "passed") return result;
@@ -563,7 +574,7 @@ export const gates = [
     inputs: ["apps/chau7-macos/Sources", "apps/chau7-macos/Tests", "apps/chau7-macos/Package.swift"],
     applies: (context) => hasPathPrefix(context.changedFiles, "apps/chau7-macos/Sources/") || hasPathPrefix(context.changedFiles, "apps/chau7-macos/Tests/"),
     rerun: "pnpm quality:prepush --include=swift-macos-tests",
-    run: async (context) => context.exec("/usr/bin/swift", ["test", "-Xswiftc", "-warnings-as-errors"], { cwd: "apps/chau7-macos" }),
+    run: async (context) => context.exec("/usr/bin/swift", ["test", "--jobs", swiftBuildJobs(), "-Xswiftc", "-warnings-as-errors"], { cwd: "apps/chau7-macos" }),
   },
   {
     id: "rust-terminal-static",
