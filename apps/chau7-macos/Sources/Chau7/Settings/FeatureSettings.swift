@@ -875,51 +875,63 @@ final class FeatureSettings {
         didSet { UserDefaults.standard.set(findRegexDefault, forKey: Keys.findRegexDefault) }
     }
 
-    // MARK: - Tab Behavior
+    // MARK: - Tab Behavior (forwarded to TabDisplaySettingsStore)
+
+    /// The tab behavior/display/hover-card domain lives in its own store;
+    /// these facade properties keep existing consumers source-compatible.
+    /// Assigned in `init` (not inline) so the RTK → CTO key migration runs
+    /// before the store loads `showTabCTOIndicator`.
+    @ObservationIgnored private let tabDisplayStore: TabDisplaySettingsStore
 
     var lastTabCloseBehavior: LastTabCloseBehavior {
-        didSet { UserDefaults.standard.set(lastTabCloseBehavior.rawValue, forKey: Keys.lastTabCloseBehavior) }
+        get { tabDisplayStore.lastTabCloseBehavior }
+        set { tabDisplayStore.lastTabCloseBehavior = newValue }
     }
 
     /// Where to insert new tabs: "end" or "after" (after current tab)
     var newTabPosition: String {
-        didSet { UserDefaults.standard.set(newTabPosition, forKey: Keys.newTabPosition) }
+        get { tabDisplayStore.newTabPosition }
+        set { tabDisplayStore.newTabPosition = newValue }
     }
 
     /// When enabled, new tabs inherit the current tab's directory.
     var newTabsUseCurrentDirectory: Bool {
-        didSet { UserDefaults.standard.set(newTabsUseCurrentDirectory, forKey: Keys.newTabsUseCurrentDirectory) }
+        get { tabDisplayStore.newTabsUseCurrentDirectory }
+        set { tabDisplayStore.newTabsUseCurrentDirectory = newValue }
     }
 
     var alwaysShowTabBar: Bool {
-        didSet { UserDefaults.standard.set(alwaysShowTabBar, forKey: Keys.alwaysShowTabBar) }
+        get { tabDisplayStore.alwaysShowTabBar }
+        set { tabDisplayStore.alwaysShowTabBar = newValue }
     }
 
     /// When true, the toolbar stays visible in fullscreen (like Chrome's "Always Show Toolbar in Full Screen")
     var alwaysShowToolbarInFullscreen: Bool {
-        didSet {
-            UserDefaults.standard.set(alwaysShowToolbarInFullscreen, forKey: Keys.alwaysShowToolbarInFullscreen)
-            NotificationCenter.default.post(name: .fullscreenToolbarSettingChanged, object: nil)
-        }
+        get { tabDisplayStore.alwaysShowToolbarInFullscreen }
+        set { tabDisplayStore.alwaysShowToolbarInFullscreen = newValue }
     }
 
     /// When true, shows a warning dialog before closing a tab with a running process
     var warnOnCloseWithRunningProcess: Bool {
-        didSet { UserDefaults.standard.set(warnOnCloseWithRunningProcess, forKey: Keys.warnOnCloseWithProcess) }
+        get { tabDisplayStore.warnOnCloseWithRunningProcess }
+        set { tabDisplayStore.warnOnCloseWithRunningProcess = newValue }
     }
 
     /// When true, always shows a warning dialog before closing any tab
     var alwaysWarnOnTabClose: Bool {
-        didSet { UserDefaults.standard.set(alwaysWarnOnTabClose, forKey: Keys.alwaysWarnOnTabClose) }
+        get { tabDisplayStore.alwaysWarnOnTabClose }
+        set { tabDisplayStore.alwaysWarnOnTabClose = newValue }
     }
 
     /// Collect tabs idle for 10+ minutes into a dropdown at the start of the tab bar
-    var groupIdleTabs: Bool = UserDefaults.standard.object(forKey: "tabs.groupIdleTabs") as? Bool ?? true {
-        didSet { UserDefaults.standard.set(groupIdleTabs, forKey: "tabs.groupIdleTabs") }
+    var groupIdleTabs: Bool {
+        get { tabDisplayStore.groupIdleTabs }
+        set { tabDisplayStore.groupIdleTabs = newValue }
     }
 
-    var idleTabThresholdMinutes: Int = UserDefaults.standard.object(forKey: "tabs.idleTabThresholdMinutes") as? Int ?? 10 {
-        didSet { UserDefaults.standard.set(idleTabThresholdMinutes, forKey: "tabs.idleTabThresholdMinutes") }
+    var idleTabThresholdMinutes: Int {
+        get { tabDisplayStore.idleTabThresholdMinutes }
+        set { tabDisplayStore.idleTabThresholdMinutes = newValue }
     }
 
     /// How many days of AI telemetry (runs plus their full turn transcripts and
@@ -955,14 +967,9 @@ final class FeatureSettings {
 
     /// Which keys jump to a tab by position (⌘1–9 vs F1–F12). Read live by
     /// AppDelegate's key monitor, so changes take effect on the next keystroke.
-    var tabSwitchShortcutMode: TabSwitchShortcutMode = {
-        guard let raw = UserDefaults.standard.string(forKey: "tabs.tabSwitchShortcutMode"),
-              let mode = TabSwitchShortcutMode(rawValue: raw) else { return .commandNumber }
-        return mode
-    }() {
-        didSet {
-            UserDefaults.standard.set(tabSwitchShortcutMode.rawValue, forKey: "tabs.tabSwitchShortcutMode")
-        }
+    var tabSwitchShortcutMode: TabSwitchShortcutMode {
+        get { tabDisplayStore.tabSwitchShortcutMode }
+        set { tabDisplayStore.tabSwitchShortcutMode = newValue }
     }
 
     // MARK: - Menu Bar Only Mode
@@ -1066,97 +1073,117 @@ final class FeatureSettings {
         didSet { UserDefaults.standard.set(timestampFormat, forKey: Keys.timestampFormat) }
     }
 
-    // MARK: - Tab Display Customization
+    // MARK: - Tab Display Customization (forwarded to TabDisplaySettingsStore)
 
     /// Show AI product logos and dev server icons in tabs
     var showTabIcons: Bool {
-        didSet { UserDefaults.standard.set(showTabIcons, forKey: Keys.showTabIcons) }
+        get { tabDisplayStore.showTabIcons }
+        set { tabDisplayStore.showTabIcons = newValue }
     }
 
     /// Show the working directory path next to the tab title
     var showTabPath: Bool {
-        didSet { UserDefaults.standard.set(showTabPath, forKey: Keys.showTabPath) }
+        get { tabDisplayStore.showTabPath }
+        set { tabDisplayStore.showTabPath = newValue }
     }
 
     /// Show the git branch indicator in tabs
     var showTabGitIndicator: Bool {
-        didSet { UserDefaults.standard.set(showTabGitIndicator, forKey: Keys.showTabGitIndicator) }
+        get { tabDisplayStore.showTabGitIndicator }
+        set { tabDisplayStore.showTabGitIndicator = newValue }
     }
 
     /// Show the CTO bolt icon in tabs (independent of CTO being enabled)
     var showTabCTOIndicator: Bool {
-        didSet { UserDefaults.standard.set(showTabCTOIndicator, forKey: Keys.showTabCTOIndicator) }
+        get { tabDisplayStore.showTabCTOIndicator }
+        set { tabDisplayStore.showTabCTOIndicator = newValue }
     }
 
     /// Allow toggling per-tab CTO override directly from tab indicator clicks.
     /// Disable this to prevent accidental misclicks while still showing override state.
     var allowTabCTOToggle: Bool {
-        didSet { UserDefaults.standard.set(allowTabCTOToggle, forKey: Keys.allowTabCTOToggle) }
+        get { tabDisplayStore.allowTabCTOToggle }
+        set { tabDisplayStore.allowTabCTOToggle = newValue }
     }
 
     /// Show the broadcast indicator in tabs
     var showTabBroadcastIndicator: Bool {
-        didSet { UserDefaults.standard.set(showTabBroadcastIndicator, forKey: Keys.showTabBroadcastIndicator) }
+        get { tabDisplayStore.showTabBroadcastIndicator }
+        set { tabDisplayStore.showTabBroadcastIndicator = newValue }
     }
 
-    // MARK: - Hover Card Sections
+    // MARK: - Hover Card Sections (forwarded to TabDisplaySettingsStore)
 
     var hoverCardShowDirectory: Bool {
-        didSet { UserDefaults.standard.set(hoverCardShowDirectory, forKey: Keys.hoverCardShowDirectory) }
+        get { tabDisplayStore.hoverCardShowDirectory }
+        set { tabDisplayStore.hoverCardShowDirectory = newValue }
     }
 
     var hoverCardShowGitBranch: Bool {
-        didSet { UserDefaults.standard.set(hoverCardShowGitBranch, forKey: Keys.hoverCardShowGitBranch) }
+        get { tabDisplayStore.hoverCardShowGitBranch }
+        set { tabDisplayStore.hoverCardShowGitBranch = newValue }
     }
 
     var hoverCardShowShellIntegration: Bool {
-        didSet { UserDefaults.standard.set(hoverCardShowShellIntegration, forKey: Keys.hoverCardShowShellIntegration) }
+        get { tabDisplayStore.hoverCardShowShellIntegration }
+        set { tabDisplayStore.hoverCardShowShellIntegration = newValue }
     }
 
     var hoverCardShowDevServer: Bool {
-        didSet { UserDefaults.standard.set(hoverCardShowDevServer, forKey: Keys.hoverCardShowDevServer) }
+        get { tabDisplayStore.hoverCardShowDevServer }
+        set { tabDisplayStore.hoverCardShowDevServer = newValue }
     }
 
     var hoverCardShowLastCommand: Bool {
-        didSet { UserDefaults.standard.set(hoverCardShowLastCommand, forKey: Keys.hoverCardShowLastCommand) }
+        get { tabDisplayStore.hoverCardShowLastCommand }
+        set { tabDisplayStore.hoverCardShowLastCommand = newValue }
     }
 
     var hoverCardShowAISession: Bool {
-        didSet { UserDefaults.standard.set(hoverCardShowAISession, forKey: Keys.hoverCardShowAISession) }
+        get { tabDisplayStore.hoverCardShowAISession }
+        set { tabDisplayStore.hoverCardShowAISession = newValue }
     }
 
     var hoverCardShowRepoStats: Bool {
-        didSet { UserDefaults.standard.set(hoverCardShowRepoStats, forKey: Keys.hoverCardShowRepoStats) }
+        get { tabDisplayStore.hoverCardShowRepoStats }
+        set { tabDisplayStore.hoverCardShowRepoStats = newValue }
     }
 
     var hoverCardShowProcesses: Bool {
-        didSet { UserDefaults.standard.set(hoverCardShowProcesses, forKey: Keys.hoverCardShowProcesses) }
+        get { tabDisplayStore.hoverCardShowProcesses }
+        set { tabDisplayStore.hoverCardShowProcesses = newValue }
     }
 
     var hoverCardShowTokenOptimization: Bool {
-        didSet { UserDefaults.standard.set(hoverCardShowTokenOptimization, forKey: Keys.hoverCardShowTokenOptimization) }
+        get { tabDisplayStore.hoverCardShowTokenOptimization }
+        set { tabDisplayStore.hoverCardShowTokenOptimization = newValue }
     }
 
     var hoverCardShowBroadcast: Bool {
-        didSet { UserDefaults.standard.set(hoverCardShowBroadcast, forKey: Keys.hoverCardShowBroadcast) }
+        get { tabDisplayStore.hoverCardShowBroadcast }
+        set { tabDisplayStore.hoverCardShowBroadcast = newValue }
     }
 
     var hoverCardShowConflicts: Bool {
-        didSet { UserDefaults.standard.set(hoverCardShowConflicts, forKey: Keys.hoverCardShowConflicts) }
+        get { tabDisplayStore.hoverCardShowConflicts }
+        set { tabDisplayStore.hoverCardShowConflicts = newValue }
     }
 
     var hoverCardShowNotificationState: Bool {
-        didSet { UserDefaults.standard.set(hoverCardShowNotificationState, forKey: Keys.hoverCardShowNotificationState) }
+        get { tabDisplayStore.hoverCardShowNotificationState }
+        set { tabDisplayStore.hoverCardShowNotificationState = newValue }
     }
 
     var hoverCardShowFooter: Bool {
-        didSet { UserDefaults.standard.set(hoverCardShowFooter, forKey: Keys.hoverCardShowFooter) }
+        get { tabDisplayStore.hoverCardShowFooter }
+        set { tabDisplayStore.hoverCardShowFooter = newValue }
     }
 
     /// When enabled, only the custom title is shown (hides all other tab elements
     /// except the close button). Has no effect on tabs without a custom title.
     var customTitleOnly: Bool {
-        didSet { UserDefaults.standard.set(customTitleOnly, forKey: Keys.customTitleOnly) }
+        get { tabDisplayStore.customTitleOnly }
+        set { tabDisplayStore.customTitleOnly = newValue }
     }
 
     // MARK: - F20: Last Command Badge
@@ -1779,33 +1806,12 @@ final class FeatureSettings {
         /// Shell (NEW)
         /// Keyboard Shortcuts (NEW)
         static let autoSubmitRestorePrefill = "restore.autoSubmitPrefill"
-        // Hover Card Sections
-        static let hoverCardShowDirectory = "hoverCard.showDirectory"
-        static let hoverCardShowGitBranch = "hoverCard.showGitBranch"
-        static let hoverCardShowShellIntegration = "hoverCard.showShellIntegration"
-        static let hoverCardShowDevServer = "hoverCard.showDevServer"
-        static let hoverCardShowLastCommand = "hoverCard.showLastCommand"
-        static let hoverCardShowAISession = "hoverCard.showAISession"
-        static let hoverCardShowRepoStats = "hoverCard.showRepoStats"
-        static let hoverCardShowProcesses = "hoverCard.showProcesses"
-        static let hoverCardShowTokenOptimization = "hoverCard.showTokenOptimization"
-        static let hoverCardShowBroadcast = "hoverCard.showBroadcast"
-        static let hoverCardShowConflicts = "hoverCard.showConflicts"
-        static let hoverCardShowNotificationState = "hoverCard.showNotificationState"
-        static let hoverCardShowFooter = "hoverCard.showFooter"
-
+        // Hover Card Sections live in TabDisplaySettingsStore.Keys
         // Notification Filters (NEW)
         // Find Defaults (NEW)
         static let findCaseSensitiveDefault = "search.defaultCaseSensitive"
         static let findRegexDefault = "search.defaultRegex"
-        // Tab Behavior
-        static let lastTabCloseBehavior = "tabs.lastTabCloseBehavior"
-        static let newTabPosition = "tabs.newTabPosition"
-        static let newTabsUseCurrentDirectory = "tabs.newTabsUseCurrentDirectory"
-        static let alwaysShowTabBar = "tabs.alwaysShowTabBar"
-        static let alwaysShowToolbarInFullscreen = "tabs.alwaysShowToolbarInFullscreen"
-        static let warnOnCloseWithProcess = "tabs.warnOnCloseWithProcess"
-        static let alwaysWarnOnTabClose = "tabs.alwaysWarnOnTabClose"
+        /// Tab Behavior lives in TabDisplaySettingsStore.Keys
         /// Window Opacity
         static let windowOpacity = "window.opacity"
         /// App Theme
@@ -1823,14 +1829,7 @@ final class FeatureSettings {
         // F19
         static let lineTimestamps = "feature.lineTimestamps"
         static let timestampFormat = "feature.timestampFormat"
-        // Tab Display
-        static let showTabIcons = "tabs.display.showIcons"
-        static let showTabPath = "tabs.display.showPath"
-        static let showTabGitIndicator = "tabs.display.showGitIndicator"
-        static let showTabCTOIndicator = "tabs.display.showCTOIndicator"
-        static let allowTabCTOToggle = "tabs.display.allowCTOToggle"
-        static let showTabBroadcastIndicator = "tabs.display.showBroadcastIndicator"
-        static let customTitleOnly = "tabs.display.customTitleOnly"
+        /// Tab Display lives in TabDisplaySettingsStore.Keys
         /// F20
         static let lastCommandBadge = "feature.lastCommandBadge"
         // F03
@@ -1920,7 +1919,7 @@ final class FeatureSettings {
         // One-time migration: RTK → CTO UserDefaults keys
         if !defaults.bool(forKey: "cto.migrated.v1") {
             let migrations: [(old: String, new: String)] = [
-                ("tabs.display.showRTKIndicator", Keys.showTabCTOIndicator),
+                ("tabs.display.showRTKIndicator", TabDisplaySettingsStore.Keys.showTabCTOIndicator),
                 ("rtk.mode", Keys.tokenOptimizationMode),
                 ("feature.rtkEnabled", Keys.ctoEnabled),
                 ("feature.rtkPrefix", Keys.ctoPrefix),
@@ -1935,26 +1934,17 @@ final class FeatureSettings {
             defaults.set(true, forKey: "cto.migrated.v1")
         }
 
+        // Tab behavior/display/hover-card settings live in
+        // TabDisplaySettingsStore; created after the migration above so the
+        // store loads the migrated CTO indicator value.
+        self.tabDisplayStore = TabDisplaySettingsStore()
+
         // Keyboard shortcuts live in ShortcutSettingsStore.
         self.autoSubmitRestorePrefill = defaults.object(forKey: Keys.autoSubmitRestorePrefill) as? Bool ?? false
 
         // Find Defaults (NEW)
         self.findCaseSensitiveDefault = defaults.object(forKey: Keys.findCaseSensitiveDefault) as? Bool ?? false
         self.findRegexDefault = defaults.object(forKey: Keys.findRegexDefault) as? Bool ?? false
-
-        // Tab Close Behavior (NEW)
-        if let behaviorRaw = defaults.string(forKey: Keys.lastTabCloseBehavior),
-           let behavior = LastTabCloseBehavior(rawValue: behaviorRaw) {
-            self.lastTabCloseBehavior = behavior
-        } else {
-            self.lastTabCloseBehavior = .keepWindow
-        }
-        self.newTabPosition = defaults.string(forKey: Keys.newTabPosition) ?? "end"
-        self.newTabsUseCurrentDirectory = defaults.object(forKey: Keys.newTabsUseCurrentDirectory) as? Bool ?? true
-        self.alwaysShowTabBar = defaults.object(forKey: Keys.alwaysShowTabBar) as? Bool ?? true
-        self.alwaysShowToolbarInFullscreen = defaults.object(forKey: Keys.alwaysShowToolbarInFullscreen) as? Bool ?? false
-        self.warnOnCloseWithRunningProcess = defaults.object(forKey: Keys.warnOnCloseWithProcess) as? Bool ?? true
-        self.alwaysWarnOnTabClose = defaults.object(forKey: Keys.alwaysWarnOnTabClose) as? Bool ?? false
 
         // Menu Bar Only Mode
         self.menuBarOnlyMode = defaults.bool(forKey: "window.menuBarOnlyMode")
@@ -1998,29 +1988,6 @@ final class FeatureSettings {
         // F19: Line Timestamps (default: disabled)
         self.isLineTimestampsEnabled = defaults.object(forKey: Keys.lineTimestamps) as? Bool ?? false
         self.timestampFormat = defaults.string(forKey: Keys.timestampFormat) ?? "HH:mm:ss"
-
-        // Tab Display (defaults: all visible)
-        self.showTabIcons = defaults.object(forKey: Keys.showTabIcons) as? Bool ?? true
-        self.showTabPath = defaults.object(forKey: Keys.showTabPath) as? Bool ?? true
-        self.showTabGitIndicator = defaults.object(forKey: Keys.showTabGitIndicator) as? Bool ?? true
-        self.showTabCTOIndicator = defaults.object(forKey: Keys.showTabCTOIndicator) as? Bool ?? true
-        self.allowTabCTOToggle = defaults.object(forKey: Keys.allowTabCTOToggle) as? Bool ?? true
-        self.showTabBroadcastIndicator = defaults.object(forKey: Keys.showTabBroadcastIndicator) as? Bool ?? true
-        // Hover Card Sections (defaults: all visible)
-        self.hoverCardShowDirectory = defaults.object(forKey: Keys.hoverCardShowDirectory) as? Bool ?? true
-        self.hoverCardShowGitBranch = defaults.object(forKey: Keys.hoverCardShowGitBranch) as? Bool ?? true
-        self.hoverCardShowShellIntegration = defaults.object(forKey: Keys.hoverCardShowShellIntegration) as? Bool ?? false
-        self.hoverCardShowDevServer = defaults.object(forKey: Keys.hoverCardShowDevServer) as? Bool ?? true
-        self.hoverCardShowLastCommand = defaults.object(forKey: Keys.hoverCardShowLastCommand) as? Bool ?? true
-        self.hoverCardShowAISession = defaults.object(forKey: Keys.hoverCardShowAISession) as? Bool ?? true
-        self.hoverCardShowRepoStats = defaults.object(forKey: Keys.hoverCardShowRepoStats) as? Bool ?? true
-        self.hoverCardShowProcesses = defaults.object(forKey: Keys.hoverCardShowProcesses) as? Bool ?? true
-        self.hoverCardShowTokenOptimization = defaults.object(forKey: Keys.hoverCardShowTokenOptimization) as? Bool ?? false
-        self.hoverCardShowBroadcast = defaults.object(forKey: Keys.hoverCardShowBroadcast) as? Bool ?? false
-        self.hoverCardShowConflicts = defaults.object(forKey: Keys.hoverCardShowConflicts) as? Bool ?? true
-        self.hoverCardShowNotificationState = defaults.object(forKey: Keys.hoverCardShowNotificationState) as? Bool ?? true
-        self.hoverCardShowFooter = defaults.object(forKey: Keys.hoverCardShowFooter) as? Bool ?? true
-        self.customTitleOnly = defaults.object(forKey: Keys.customTitleOnly) as? Bool ?? false
 
         // F20: Last Command Badge (default: enabled)
         self.isLastCommandBadgeEnabled = defaults.object(forKey: Keys.lastCommandBadge) as? Bool ?? true
@@ -2727,11 +2694,7 @@ final class FeatureSettings {
         notificationStore.resetToDefaults()
         findCaseSensitiveDefault = false
         findRegexDefault = false
-        lastTabCloseBehavior = .keepWindow
-        newTabPosition = "end"
-        newTabsUseCurrentDirectory = true
-        alwaysShowTabBar = true
-        alwaysShowToolbarInFullscreen = false
+        tabDisplayStore.resetToDefaults()
 
         // Language
         appLanguage = .system
@@ -2747,28 +2710,6 @@ final class FeatureSettings {
 
         // Terminal
         terminalBehaviorStore.resetToDefaults()
-
-        // Tab Display
-        showTabIcons = true
-        showTabPath = true
-        showTabGitIndicator = true
-        showTabCTOIndicator = true
-        allowTabCTOToggle = true
-        showTabBroadcastIndicator = true
-        hoverCardShowDirectory = true
-        hoverCardShowGitBranch = true
-        hoverCardShowShellIntegration = false
-        hoverCardShowDevServer = true
-        hoverCardShowLastCommand = true
-        hoverCardShowAISession = true
-        hoverCardShowRepoStats = true
-        hoverCardShowProcesses = true
-        hoverCardShowTokenOptimization = false
-        hoverCardShowBroadcast = false
-        hoverCardShowConflicts = true
-        hoverCardShowNotificationState = true
-        hoverCardShowFooter = true
-        customTitleOnly = false
 
         // Features
         isAutoTabThemeEnabled = true
@@ -2865,23 +2806,8 @@ final class FeatureSettings {
     }
 
     func resetTabsToDefaults() {
-        newTabPosition = "end"
-        newTabsUseCurrentDirectory = true
-        lastTabCloseBehavior = .keepWindow
-        warnOnCloseWithRunningProcess = true
-        alwaysWarnOnTabClose = false
-        alwaysShowTabBar = true
-        groupIdleTabs = true
-        idleTabThresholdMinutes = 10
+        tabDisplayStore.resetToDefaults()
         repoGroupingMode = .off
-        tabSwitchShortcutMode = .commandNumber
-        customTitleOnly = false
-        showTabIcons = true
-        showTabPath = true
-        showTabGitIndicator = true
-        showTabCTOIndicator = true
-        allowTabCTOToggle = true
-        showTabBroadcastIndicator = true
         isLastCommandBadgeEnabled = true
         isAutoTabThemeEnabled = true
     }
