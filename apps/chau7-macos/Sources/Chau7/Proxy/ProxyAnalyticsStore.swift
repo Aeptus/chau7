@@ -156,35 +156,36 @@ final class ProxyAnalyticsStore {
             appendCommonFilters(to: &sql, after: after, projectPath: projectPath)
             sql += " GROUP BY provider ORDER BY COUNT(*) DESC, provider ASC"
 
-            guard let stmt = prepareStatement(db: db, sql: sql, after: after, projectPath: projectPath) else { return [] }
-            defer { sqlite3_finalize(stmt) }
+            let rows = withFilteredStatement(db: db, sql: sql, after: after, projectPath: projectPath) { stmt -> [String: ProxyProviderAnalytics] in
+                var aggregated: [String: ProxyProviderAnalytics] = [:]
+                while stmt.step() == .row {
+                    guard let rawProvider = stmt.columnText(0),
+                          AnalyticsProvider.matches(rawProvider, filterKey: providerFilterKey),
+                          let provider = AnalyticsProvider.key(for: rawProvider) else {
+                        continue
+                    }
 
-            var aggregated: [String: ProxyProviderAnalytics] = [:]
-            while sqlite3_step(stmt) == SQLITE_ROW {
-                guard let rawProvider = colText(stmt, 0),
-                      AnalyticsProvider.matches(rawProvider, filterKey: providerFilterKey),
-                      let provider = AnalyticsProvider.key(for: rawProvider) else {
-                    continue
+                    let callCount = Int(stmt.columnInt64(1))
+                    let current = aggregated[provider]
+                    let mergedCallCount = (current?.callCount ?? 0) + callCount
+                    let weightedLatency = (current?.averageLatencyMs ?? 0) * Double(current?.callCount ?? 0)
+                        + stmt.columnDouble(8) * Double(callCount)
+
+                    aggregated[provider] = ProxyProviderAnalytics(
+                        provider: provider,
+                        callCount: mergedCallCount,
+                        totalInputTokens: (current?.totalInputTokens ?? 0) + Int(stmt.columnInt64(2)),
+                        totalOutputTokens: (current?.totalOutputTokens ?? 0) + Int(stmt.columnInt64(3)),
+                        totalCacheCreationTokens: (current?.totalCacheCreationTokens ?? 0) + Int(stmt.columnInt64(4)),
+                        totalCacheReadTokens: (current?.totalCacheReadTokens ?? 0) + Int(stmt.columnInt64(5)),
+                        totalReasoningTokens: (current?.totalReasoningTokens ?? 0) + Int(stmt.columnInt64(6)),
+                        totalCostUSD: (current?.totalCostUSD ?? 0) + stmt.columnDouble(7),
+                        averageLatencyMs: mergedCallCount > 0 ? weightedLatency / Double(mergedCallCount) : 0
+                    )
                 }
-
-                let callCount = Int(sqlite3_column_int64(stmt, 1))
-                let current = aggregated[provider]
-                let mergedCallCount = (current?.callCount ?? 0) + callCount
-                let weightedLatency = (current?.averageLatencyMs ?? 0) * Double(current?.callCount ?? 0)
-                    + sqlite3_column_double(stmt, 8) * Double(callCount)
-
-                aggregated[provider] = ProxyProviderAnalytics(
-                    provider: provider,
-                    callCount: mergedCallCount,
-                    totalInputTokens: (current?.totalInputTokens ?? 0) + Int(sqlite3_column_int64(stmt, 2)),
-                    totalOutputTokens: (current?.totalOutputTokens ?? 0) + Int(sqlite3_column_int64(stmt, 3)),
-                    totalCacheCreationTokens: (current?.totalCacheCreationTokens ?? 0) + Int(sqlite3_column_int64(stmt, 4)),
-                    totalCacheReadTokens: (current?.totalCacheReadTokens ?? 0) + Int(sqlite3_column_int64(stmt, 5)),
-                    totalReasoningTokens: (current?.totalReasoningTokens ?? 0) + Int(sqlite3_column_int64(stmt, 6)),
-                    totalCostUSD: (current?.totalCostUSD ?? 0) + sqlite3_column_double(stmt, 7),
-                    averageLatencyMs: mergedCallCount > 0 ? weightedLatency / Double(mergedCallCount) : 0
-                )
+                return aggregated
             }
+            guard let aggregated = rows else { return [] }
             return aggregated.values.sorted { lhs, rhs in
                 if lhs.totalCostUSD != rhs.totalCostUSD {
                     return lhs.totalCostUSD > rhs.totalCostUSD
@@ -229,40 +230,39 @@ final class ProxyAnalyticsStore {
             sql += " WHERE " + clauses.joined(separator: " AND ")
             sql += " ORDER BY timestamp ASC"
 
-            guard let stmt = prepareStatement(db: db, sql: sql, after: after, projectPath: projectPath) else { return [] }
-            defer { sqlite3_finalize(stmt) }
+            return withFilteredStatement(db: db, sql: sql, after: after, projectPath: projectPath) { stmt -> [ProviderLatencySample] in
+                var samples: [ProviderLatencySample] = []
+                while stmt.step() == .row {
+                    guard let rawProvider = stmt.columnText(0),
+                          AnalyticsProvider.matches(rawProvider, filterKey: providerFilterKey),
+                          let provider = AnalyticsProvider.key(for: rawProvider),
+                          ProviderLatencyAnalytics.isLatencyRelevantAPIEndpoint(
+                              provider: provider,
+                              endpoint: stmt.columnText(2)
+                          ),
+                          let timestamp = stmt.columnText(5).flatMap(isoDate),
+                          let latencyMs = ProviderLatencyAnalytics.preferredAPILatencyMs(
+                              roundTripMs: Int(stmt.columnInt64(3)),
+                              timeToFirstTokenMs: Int(stmt.columnInt64(4))
+                          ) else {
+                        continue
+                    }
 
-            var samples: [ProviderLatencySample] = []
-            while sqlite3_step(stmt) == SQLITE_ROW {
-                guard let rawProvider = colText(stmt, 0),
-                      AnalyticsProvider.matches(rawProvider, filterKey: providerFilterKey),
-                      let provider = AnalyticsProvider.key(for: rawProvider),
-                      ProviderLatencyAnalytics.isLatencyRelevantAPIEndpoint(
-                          provider: provider,
-                          endpoint: colText(stmt, 2)
-                      ),
-                      let timestamp = colText(stmt, 5).flatMap(isoDate),
-                      let latencyMs = ProviderLatencyAnalytics.preferredAPILatencyMs(
-                          roundTripMs: Int(sqlite3_column_int64(stmt, 3)),
-                          timeToFirstTokenMs: Int(sqlite3_column_int64(stmt, 4))
-                      ) else {
-                    continue
-                }
-
-                samples.append(
-                    ProviderLatencySample(
-                        provider: provider,
-                        metricKind: .apiRequest,
-                        latencyMs: latencyMs,
-                        timestamp: timestamp,
-                        model: colText(stmt, 1),
-                        sessionID: colText(stmt, 7),
-                        projectPath: colText(stmt, 6),
-                        sourceKind: Int(sqlite3_column_int64(stmt, 4)) > 0 ? "proxy_api_ttft" : "proxy_api_round_trip"
+                    samples.append(
+                        ProviderLatencySample(
+                            provider: provider,
+                            metricKind: .apiRequest,
+                            latencyMs: latencyMs,
+                            timestamp: timestamp,
+                            model: stmt.columnText(1),
+                            sessionID: stmt.columnText(7),
+                            projectPath: stmt.columnText(6),
+                            sourceKind: Int(stmt.columnInt64(4)) > 0 ? "proxy_api_ttft" : "proxy_api_round_trip"
+                        )
                     )
-                )
-            }
-            return samples
+                }
+                return samples
+            } ?? []
         } ?? []
     }
 
@@ -291,32 +291,31 @@ final class ProxyAnalyticsStore {
             sql += " WHERE " + clauses.joined(separator: " AND ")
             sql += " ORDER BY timestamp ASC"
 
-            guard let stmt = prepareStatement(db: db, sql: sql, after: after, projectPath: projectPath) else { return [] }
-            defer { sqlite3_finalize(stmt) }
+            return withFilteredStatement(db: db, sql: sql, after: after, projectPath: projectPath) { stmt -> [ProviderActivitySample] in
+                var samples: [ProviderActivitySample] = []
+                while stmt.step() == .row {
+                    guard let rawProvider = stmt.columnText(0),
+                          AnalyticsProvider.matches(rawProvider, filterKey: providerFilterKey),
+                          let provider = AnalyticsProvider.key(for: rawProvider),
+                          ProviderLatencyAnalytics.isLatencyRelevantAPIEndpoint(
+                              provider: provider,
+                              endpoint: stmt.columnText(1)
+                          ),
+                          let timestamp = stmt.columnText(2).flatMap(isoDate) else {
+                        continue
+                    }
 
-            var samples: [ProviderActivitySample] = []
-            while sqlite3_step(stmt) == SQLITE_ROW {
-                guard let rawProvider = colText(stmt, 0),
-                      AnalyticsProvider.matches(rawProvider, filterKey: providerFilterKey),
-                      let provider = AnalyticsProvider.key(for: rawProvider),
-                      ProviderLatencyAnalytics.isLatencyRelevantAPIEndpoint(
-                          provider: provider,
-                          endpoint: colText(stmt, 1)
-                      ),
-                      let timestamp = colText(stmt, 2).flatMap(isoDate) else {
-                    continue
+                    samples.append(
+                        ProviderActivitySample(
+                            provider: provider,
+                            timestamp: timestamp,
+                            sourceKind: "proxy_api_call"
+                        )
+                    )
                 }
 
-                samples.append(
-                    ProviderActivitySample(
-                        provider: provider,
-                        timestamp: timestamp,
-                        sourceKind: "proxy_api_call"
-                    )
-                )
-            }
-
-            return samples
+                return samples
+            } ?? []
         } ?? []
     }
 
@@ -342,27 +341,26 @@ final class ProxyAnalyticsStore {
             GROUP BY day, provider
             ORDER BY day
             """
-            var stmt: OpaquePointer?
-            guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return [] }
-            defer { sqlite3_finalize(stmt) }
-            if let projectPath, !projectPath.isEmpty {
-                bindText(stmt, 1, projectPath)
-            }
+            return SQLiteStatement.withStatement(db, sql) { stmt -> [ProxyDailyAnalyticsPoint] in
+                if let projectPath, !projectPath.isEmpty {
+                    stmt.bindText(1, projectPath)
+                }
 
-            var aggregated: [String: ProxyDailyAnalyticsPoint] = [:]
-            while sqlite3_step(stmt) == SQLITE_ROW {
-                guard let date = colText(stmt, 0) else { continue }
-                let rawProvider = colText(stmt, 1)
-                guard AnalyticsProvider.matches(rawProvider, filterKey: providerFilterKey) else { continue }
-                let current = aggregated[date]
-                aggregated[date] = ProxyDailyAnalyticsPoint(
-                    date: date,
-                    callCount: (current?.callCount ?? 0) + Int(sqlite3_column_int64(stmt, 2)),
-                    totalTokens: (current?.totalTokens ?? 0) + Int(sqlite3_column_int64(stmt, 3)),
-                    totalCostUSD: (current?.totalCostUSD ?? 0) + sqlite3_column_double(stmt, 4)
-                )
-            }
-            return aggregated.keys.sorted().compactMap { aggregated[$0] }
+                var aggregated: [String: ProxyDailyAnalyticsPoint] = [:]
+                while stmt.step() == .row {
+                    guard let date = stmt.columnText(0) else { continue }
+                    let rawProvider = stmt.columnText(1)
+                    guard AnalyticsProvider.matches(rawProvider, filterKey: providerFilterKey) else { continue }
+                    let current = aggregated[date]
+                    aggregated[date] = ProxyDailyAnalyticsPoint(
+                        date: date,
+                        callCount: (current?.callCount ?? 0) + Int(stmt.columnInt64(2)),
+                        totalTokens: (current?.totalTokens ?? 0) + Int(stmt.columnInt64(3)),
+                        totalCostUSD: (current?.totalCostUSD ?? 0) + stmt.columnDouble(4)
+                    )
+                }
+                return aggregated.keys.sorted().compactMap { aggregated[$0] }
+            } ?? []
         } ?? []
     }
 
@@ -388,27 +386,26 @@ final class ProxyAnalyticsStore {
             GROUP BY hour, provider
             ORDER BY hour
             """
-            var stmt: OpaquePointer?
-            guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return [] }
-            defer { sqlite3_finalize(stmt) }
-            if let projectPath, !projectPath.isEmpty {
-                bindText(stmt, 1, projectPath)
-            }
+            return SQLiteStatement.withStatement(db, sql) { stmt -> [ProxyHourlyAnalyticsPoint] in
+                if let projectPath, !projectPath.isEmpty {
+                    stmt.bindText(1, projectPath)
+                }
 
-            var aggregated: [String: ProxyHourlyAnalyticsPoint] = [:]
-            while sqlite3_step(stmt) == SQLITE_ROW {
-                guard let hour = colText(stmt, 0) else { continue }
-                let rawProvider = colText(stmt, 1)
-                guard AnalyticsProvider.matches(rawProvider, filterKey: providerFilterKey) else { continue }
-                let current = aggregated[hour]
-                aggregated[hour] = ProxyHourlyAnalyticsPoint(
-                    hour: hour,
-                    callCount: (current?.callCount ?? 0) + Int(sqlite3_column_int64(stmt, 2)),
-                    totalTokens: (current?.totalTokens ?? 0) + Int(sqlite3_column_int64(stmt, 3)),
-                    totalCostUSD: (current?.totalCostUSD ?? 0) + sqlite3_column_double(stmt, 4)
-                )
-            }
-            return aggregated.keys.sorted().compactMap { aggregated[$0] }
+                var aggregated: [String: ProxyHourlyAnalyticsPoint] = [:]
+                while stmt.step() == .row {
+                    guard let hour = stmt.columnText(0) else { continue }
+                    let rawProvider = stmt.columnText(1)
+                    guard AnalyticsProvider.matches(rawProvider, filterKey: providerFilterKey) else { continue }
+                    let current = aggregated[hour]
+                    aggregated[hour] = ProxyHourlyAnalyticsPoint(
+                        hour: hour,
+                        callCount: (current?.callCount ?? 0) + Int(stmt.columnInt64(2)),
+                        totalTokens: (current?.totalTokens ?? 0) + Int(stmt.columnInt64(3)),
+                        totalCostUSD: (current?.totalCostUSD ?? 0) + stmt.columnDouble(4)
+                    )
+                }
+                return aggregated.keys.sorted().compactMap { aggregated[$0] }
+            } ?? []
         } ?? []
     }
 
@@ -425,43 +422,41 @@ final class ProxyAnalyticsStore {
             ORDER BY timestamp DESC
             LIMIT ?
             """
-            var stmt: OpaquePointer?
-            guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return [] }
-            defer { sqlite3_finalize(stmt) }
+            return SQLiteStatement.withStatement(db, sql) { stmt -> [APICallEvent] in
+                var bindIndex: Int32 = 1
+                if let projectPath, !projectPath.isEmpty {
+                    stmt.bindText(bindIndex, projectPath)
+                    bindIndex += 1
+                }
+                stmt.bindInt64(bindIndex, Int64(limit))
 
-            var bindIndex: Int32 = 1
-            if let projectPath, !projectPath.isEmpty {
-                bindText(stmt, bindIndex, projectPath)
-                bindIndex += 1
-            }
-            sqlite3_bind_int64(stmt, bindIndex, Int64(limit))
-
-            var events: [APICallEvent] = []
-            while sqlite3_step(stmt) == SQLITE_ROW {
-                let rawProvider = colText(stmt, 1)
-                guard AnalyticsProvider.matches(rawProvider, filterKey: providerFilterKey) else { continue }
-                let timestamp = colText(stmt, 12).flatMap(isoDate) ?? Date.distantPast
-                events.append(
-                    APICallEvent(
-                        sessionId: colText(stmt, 0) ?? "",
-                        provider: APICallEvent.Provider(rawValue: rawProvider ?? "") ?? .unknown,
-                        model: colText(stmt, 2) ?? "",
-                        endpoint: colText(stmt, 3) ?? "",
-                        inputTokens: Int(sqlite3_column_int64(stmt, 4)),
-                        outputTokens: Int(sqlite3_column_int64(stmt, 5)),
-                        cacheCreationInputTokens: Int(sqlite3_column_int64(stmt, 6)),
-                        cacheReadInputTokens: Int(sqlite3_column_int64(stmt, 7)),
-                        reasoningOutputTokens: Int(sqlite3_column_int64(stmt, 8)),
-                        latencyMs: Int(sqlite3_column_int64(stmt, 9)),
-                        statusCode: Int(sqlite3_column_int64(stmt, 10)),
-                        costUSD: sqlite3_column_double(stmt, 11),
-                        timestamp: timestamp,
-                        errorMessage: colText(stmt, 13),
-                        projectPath: colText(stmt, 14)
+                var events: [APICallEvent] = []
+                while stmt.step() == .row {
+                    let rawProvider = stmt.columnText(1)
+                    guard AnalyticsProvider.matches(rawProvider, filterKey: providerFilterKey) else { continue }
+                    let timestamp = stmt.columnText(12).flatMap(isoDate) ?? Date.distantPast
+                    events.append(
+                        APICallEvent(
+                            sessionId: stmt.columnText(0) ?? "",
+                            provider: APICallEvent.Provider(rawValue: rawProvider ?? "") ?? .unknown,
+                            model: stmt.columnText(2) ?? "",
+                            endpoint: stmt.columnText(3) ?? "",
+                            inputTokens: Int(stmt.columnInt64(4)),
+                            outputTokens: Int(stmt.columnInt64(5)),
+                            cacheCreationInputTokens: Int(stmt.columnInt64(6)),
+                            cacheReadInputTokens: Int(stmt.columnInt64(7)),
+                            reasoningOutputTokens: Int(stmt.columnInt64(8)),
+                            latencyMs: Int(stmt.columnInt64(9)),
+                            statusCode: Int(stmt.columnInt64(10)),
+                            costUSD: stmt.columnDouble(11),
+                            timestamp: timestamp,
+                            errorMessage: stmt.columnText(13),
+                            projectPath: stmt.columnText(14)
+                        )
                     )
-                )
-            }
-            return events
+                }
+                return events
+            } ?? []
         } ?? []
     }
 
@@ -481,38 +476,39 @@ final class ProxyAnalyticsStore {
             appendCommonFilters(to: &sql, after: after, projectPath: projectPath)
             sql += " GROUP BY provider, model ORDER BY SUM(cost_usd) DESC"
 
-            guard let stmt = prepareStatement(db: db, sql: sql, after: after, projectPath: projectPath) else { return [] }
-            defer { sqlite3_finalize(stmt) }
+            let rows = withFilteredStatement(db: db, sql: sql, after: after, projectPath: projectPath) { stmt -> [String: ProxyModelAnalytics] in
+                var aggregated: [String: ProxyModelAnalytics] = [:]
+                while stmt.step() == .row {
+                    guard let rawProvider = stmt.columnText(0),
+                          AnalyticsProvider.matches(rawProvider, filterKey: providerFilterKey),
+                          let provider = AnalyticsProvider.key(for: rawProvider) else {
+                        continue
+                    }
 
-            var aggregated: [String: ProxyModelAnalytics] = [:]
-            while sqlite3_step(stmt) == SQLITE_ROW {
-                guard let rawProvider = colText(stmt, 0),
-                      AnalyticsProvider.matches(rawProvider, filterKey: providerFilterKey),
-                      let provider = AnalyticsProvider.key(for: rawProvider) else {
-                    continue
+                    let model = stmt.columnText(1) ?? ""
+                    let key = "\(provider)|\(model)"
+                    let callCount = Int(stmt.columnInt64(2))
+                    let current = aggregated[key]
+                    let mergedCallCount = (current?.callCount ?? 0) + callCount
+                    let weightedLatency = (current?.averageLatencyMs ?? 0) * Double(current?.callCount ?? 0)
+                        + stmt.columnDouble(9) * Double(callCount)
+
+                    aggregated[key] = ProxyModelAnalytics(
+                        provider: provider,
+                        model: model,
+                        callCount: mergedCallCount,
+                        totalInputTokens: (current?.totalInputTokens ?? 0) + Int(stmt.columnInt64(3)),
+                        totalOutputTokens: (current?.totalOutputTokens ?? 0) + Int(stmt.columnInt64(4)),
+                        totalCacheCreationTokens: (current?.totalCacheCreationTokens ?? 0) + Int(stmt.columnInt64(5)),
+                        totalCacheReadTokens: (current?.totalCacheReadTokens ?? 0) + Int(stmt.columnInt64(6)),
+                        totalReasoningTokens: (current?.totalReasoningTokens ?? 0) + Int(stmt.columnInt64(7)),
+                        totalCostUSD: (current?.totalCostUSD ?? 0) + stmt.columnDouble(8),
+                        averageLatencyMs: mergedCallCount > 0 ? weightedLatency / Double(mergedCallCount) : 0
+                    )
                 }
-
-                let model = colText(stmt, 1) ?? ""
-                let key = "\(provider)|\(model)"
-                let callCount = Int(sqlite3_column_int64(stmt, 2))
-                let current = aggregated[key]
-                let mergedCallCount = (current?.callCount ?? 0) + callCount
-                let weightedLatency = (current?.averageLatencyMs ?? 0) * Double(current?.callCount ?? 0)
-                    + sqlite3_column_double(stmt, 9) * Double(callCount)
-
-                aggregated[key] = ProxyModelAnalytics(
-                    provider: provider,
-                    model: model,
-                    callCount: mergedCallCount,
-                    totalInputTokens: (current?.totalInputTokens ?? 0) + Int(sqlite3_column_int64(stmt, 3)),
-                    totalOutputTokens: (current?.totalOutputTokens ?? 0) + Int(sqlite3_column_int64(stmt, 4)),
-                    totalCacheCreationTokens: (current?.totalCacheCreationTokens ?? 0) + Int(sqlite3_column_int64(stmt, 5)),
-                    totalCacheReadTokens: (current?.totalCacheReadTokens ?? 0) + Int(sqlite3_column_int64(stmt, 6)),
-                    totalReasoningTokens: (current?.totalReasoningTokens ?? 0) + Int(sqlite3_column_int64(stmt, 7)),
-                    totalCostUSD: (current?.totalCostUSD ?? 0) + sqlite3_column_double(stmt, 8),
-                    averageLatencyMs: mergedCallCount > 0 ? weightedLatency / Double(mergedCallCount) : 0
-                )
+                return aggregated
             }
+            guard let aggregated = rows else { return [] }
             return aggregated.values.sorted { lhs, rhs in
                 if lhs.totalCostUSD != rhs.totalCostUSD {
                     return lhs.totalCostUSD > rhs.totalCostUSD
@@ -536,18 +532,18 @@ final class ProxyAnalyticsStore {
             appendCommonFilters(to: &sql, after: after, projectPath: projectPath)
             sql += " GROUP BY provider"
 
-            guard let stmt = prepareStatement(db: db, sql: sql, after: after, projectPath: projectPath) else { return 0 }
-            defer { sqlite3_finalize(stmt) }
-            var totalErrors = 0
-            var totalCalls = 0
-            while sqlite3_step(stmt) == SQLITE_ROW {
-                let rawProvider = colText(stmt, 0)
-                guard AnalyticsProvider.matches(rawProvider, filterKey: providerFilterKey) else { continue }
-                totalErrors += Int(sqlite3_column_int64(stmt, 1))
-                totalCalls += Int(sqlite3_column_int64(stmt, 2))
-            }
-            guard totalCalls > 0 else { return 0 }
-            return Double(totalErrors) / Double(totalCalls)
+            return withFilteredStatement(db: db, sql: sql, after: after, projectPath: projectPath) { stmt -> Double in
+                var totalErrors = 0
+                var totalCalls = 0
+                while stmt.step() == .row {
+                    let rawProvider = stmt.columnText(0)
+                    guard AnalyticsProvider.matches(rawProvider, filterKey: providerFilterKey) else { continue }
+                    totalErrors += Int(stmt.columnInt64(1))
+                    totalCalls += Int(stmt.columnInt64(2))
+                }
+                guard totalCalls > 0 else { return 0 }
+                return Double(totalErrors) / Double(totalCalls)
+            } ?? 0
         } ?? 0
     }
 
@@ -598,23 +594,27 @@ final class ProxyAnalyticsStore {
         }
     }
 
-    private func prepareStatement(
+    /// Prepares `sql`, binds the shared `after`/`projectPath` filter
+    /// parameters (in that order, matching `appendCommonFilters`), and runs
+    /// `body`. Returns nil when the prepare fails.
+    private func withFilteredStatement<T>(
         db: OpaquePointer,
         sql: String,
         after: Date?,
-        projectPath: String?
-    ) -> OpaquePointer? {
-        var stmt: OpaquePointer?
-        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return nil }
-        var bindIndex: Int32 = 1
-        if let after {
-            bindText(stmt, bindIndex, isoString(after))
-            bindIndex += 1
+        projectPath: String?,
+        _ body: (SQLiteStatement) -> T
+    ) -> T? {
+        SQLiteStatement.withStatement(db, sql) { stmt in
+            var bindIndex: Int32 = 1
+            if let after {
+                stmt.bindText(bindIndex, isoString(after))
+                bindIndex += 1
+            }
+            if let projectPath, !projectPath.isEmpty {
+                stmt.bindText(bindIndex, projectPath)
+            }
+            return body(stmt)
         }
-        if let projectPath, !projectPath.isEmpty {
-            bindText(stmt, bindIndex, projectPath)
-        }
-        return stmt
     }
 
     private func mostRecentCallTimestamp(after: Date?, providerFilterKey: String?, projectPath: String?) -> Date? {
@@ -626,32 +626,20 @@ final class ProxyAnalyticsStore {
             appendCommonFilters(to: &sql, after: after, projectPath: projectPath)
             sql += " GROUP BY provider"
 
-            guard let stmt = prepareStatement(db: db, sql: sql, after: after, projectPath: projectPath) else { return nil }
-            defer { sqlite3_finalize(stmt) }
-
-            var latest: Date?
-            while sqlite3_step(stmt) == SQLITE_ROW {
-                let rawProvider = colText(stmt, 0)
-                guard AnalyticsProvider.matches(rawProvider, filterKey: providerFilterKey),
-                      let value = colText(stmt, 1),
-                      let date = isoDate(value) else {
-                    continue
+            return withFilteredStatement(db: db, sql: sql, after: after, projectPath: projectPath) { stmt -> Date? in
+                var latest: Date?
+                while stmt.step() == .row {
+                    let rawProvider = stmt.columnText(0)
+                    guard AnalyticsProvider.matches(rawProvider, filterKey: providerFilterKey),
+                          let value = stmt.columnText(1),
+                          let date = isoDate(value) else {
+                        continue
+                    }
+                    latest = max(latest ?? date, date)
                 }
-                if latest == nil || date > latest! {
-                    latest = date
-                }
-            }
-            return latest
+                return latest
+            }.flatMap { $0 }
         }
-    }
-
-    private func bindText(_ stmt: OpaquePointer?, _ index: Int32, _ value: String) {
-        sqlite3_bind_text(stmt, index, (value as NSString).utf8String, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
-    }
-
-    private func colText(_ stmt: OpaquePointer?, _ index: Int32) -> String? {
-        guard let text = sqlite3_column_text(stmt, index) else { return nil }
-        return String(cString: text)
     }
 
     private func isoString(_ date: Date) -> String {

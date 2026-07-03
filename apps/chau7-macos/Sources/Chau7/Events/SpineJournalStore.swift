@@ -81,22 +81,15 @@ final class SpineJournalStore {
             INSERT OR IGNORE INTO envelopes (seq, event_id, correlation_id, ingested_at, envelope_json)
             VALUES (?, ?, ?, ?, ?)
             """
-            var stmt: OpaquePointer?
-            guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return }
-            defer { sqlite3_finalize(stmt) }
-            sqlite3_bind_int64(stmt, 1, Int64(bitPattern: envelope.seq))
-            bindText(stmt, 2, envelope.eventID.uuidString)
-            if let correlationID = envelope.correlationID {
-                bindText(stmt, 3, correlationID)
-            } else {
-                sqlite3_bind_null(stmt, 3)
-            }
-            sqlite3_bind_double(stmt, 4, envelope.ingestedAt.timeIntervalSince1970)
-            payload.withUnsafeBytes { bytes in
-                _ = sqlite3_bind_blob(stmt, 5, bytes.baseAddress, Int32(bytes.count), unsafeBitCast(-1, to: sqlite3_destructor_type.self))
-            }
-            if sqlite3_step(stmt) != SQLITE_DONE {
-                Log.error("SpineJournalStore: insert failed for seq=\(envelope.seq)")
+            SQLiteStatement.withStatement(db, sql) { stmt in
+                stmt.bindInt64(1, Int64(bitPattern: envelope.seq))
+                stmt.bindText(2, envelope.eventID.uuidString)
+                stmt.bindNullableText(3, envelope.correlationID)
+                stmt.bindDouble(4, envelope.ingestedAt.timeIntervalSince1970)
+                stmt.bindBlob(5, payload)
+                if stmt.step() != .done {
+                    Log.error("SpineJournalStore: insert failed for seq=\(envelope.seq)")
+                }
             }
             insertsSincePruneCheck += 1
             if insertsSincePruneCheck >= pruneBatchThreshold {
@@ -130,21 +123,18 @@ final class SpineJournalStore {
         queue.sync {
             guard db != nil else { return [] }
             let sql = "SELECT envelope_json FROM envelopes WHERE seq > ? ORDER BY seq ASC LIMIT ?"
-            var stmt: OpaquePointer?
-            guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return [] }
-            defer { sqlite3_finalize(stmt) }
-            sqlite3_bind_int64(stmt, 1, Int64(bitPattern: cursor))
-            sqlite3_bind_int64(stmt, 2, Int64(limit))
-            var result: [EventEnvelope] = []
-            while sqlite3_step(stmt) == SQLITE_ROW {
-                guard let blob = sqlite3_column_blob(stmt, 0) else { continue }
-                let length = Int(sqlite3_column_bytes(stmt, 0))
-                let data = Data(bytes: blob, count: length)
-                if let envelope = try? decoder.decode(EventEnvelope.self, from: data) {
-                    result.append(envelope)
+            return SQLiteStatement.withStatement(db, sql) { stmt -> [EventEnvelope] in
+                stmt.bindInt64(1, Int64(bitPattern: cursor))
+                stmt.bindInt64(2, Int64(limit))
+                var result: [EventEnvelope] = []
+                while stmt.step() == .row {
+                    guard let data = stmt.columnBlob(0) else { continue }
+                    if let envelope = try? decoder.decode(EventEnvelope.self, from: data) {
+                        result.append(envelope)
+                    }
                 }
-            }
-            return result
+                return result
+            } ?? []
         }
     }
 
@@ -184,24 +174,17 @@ final class SpineJournalStore {
             SELECT COALESCE(MAX(seq), 0) - ? FROM envelopes
         )
         """
-        var stmt: OpaquePointer?
-        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return }
-        defer { sqlite3_finalize(stmt) }
-        sqlite3_bind_int64(stmt, 1, Int64(retentionLimit))
-        _ = sqlite3_step(stmt)
+        SQLiteStatement.withStatement(db, sql) { stmt in
+            stmt.bindInt64(1, Int64(retentionLimit))
+            _ = stmt.step()
+        }
     }
 
     /// Caller must be on `queue`.
     private func scalar(_ sql: String) -> Int64? {
         guard db != nil else { return nil }
-        var stmt: OpaquePointer?
-        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return nil }
-        defer { sqlite3_finalize(stmt) }
-        guard sqlite3_step(stmt) == SQLITE_ROW else { return nil }
-        return sqlite3_column_int64(stmt, 0)
-    }
-
-    private func bindText(_ stmt: OpaquePointer?, _ index: Int32, _ value: String) {
-        sqlite3_bind_text(stmt, index, value, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+        return SQLiteStatement.withStatement(db, sql) { stmt -> Int64? in
+            stmt.step() == .row ? stmt.columnInt64(0) : nil
+        }.flatMap { $0 }
     }
 }

@@ -133,19 +133,15 @@ final class PersistentHistoryStore {
         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     """
 
-    private func bindInsertParameters(_ record: HistoryRecord, into stmt: OpaquePointer?) {
-        sqlite3_bind_text(stmt, 1, (record.command as NSString).utf8String, -1, nil)
-        bindOptionalText(stmt, 2, record.directory)
-        bindOptionalInt(stmt, 3, record.exitCode)
-        bindOptionalText(stmt, 4, record.shell)
-        bindOptionalText(stmt, 5, record.tabID)
-        bindOptionalText(stmt, 6, record.sessionID ?? sessionID)
-        sqlite3_bind_double(stmt, 7, record.timestamp.timeIntervalSince1970)
-        if let duration = record.duration {
-            sqlite3_bind_double(stmt, 8, duration)
-        } else {
-            sqlite3_bind_null(stmt, 8)
-        }
+    private func bindInsertParameters(_ record: HistoryRecord, into stmt: SQLiteStatement) {
+        stmt.bindText(1, record.command)
+        stmt.bindNullableText(2, record.directory)
+        stmt.bindNullableInt64(3, record.exitCode.map(Int64.init))
+        stmt.bindNullableText(4, record.shell)
+        stmt.bindNullableText(5, record.tabID)
+        stmt.bindNullableText(6, record.sessionID ?? sessionID)
+        stmt.bindDouble(7, record.timestamp.timeIntervalSince1970)
+        stmt.bindNullableDouble(8, record.duration)
     }
 
     func insert(_ record: HistoryRecord) {
@@ -162,20 +158,19 @@ final class PersistentHistoryStore {
     /// Must run on dbQueue.
     private func insertLocked(_ record: HistoryRecord) {
         guard let db = db else { return }
-        var stmt: OpaquePointer?
-        guard sqlite3_prepare_v2(db, Self.insertSQL, -1, &stmt, nil) == SQLITE_OK else {
+        let prepared: Void? = SQLiteStatement.withStatement(db, Self.insertSQL) { stmt in
+            bindInsertParameters(record, into: stmt)
+
+            if stmt.step() != .done {
+                Log.error("PersistentHistoryStore: insert failed: \(String(cString: sqlite3_errmsg(db)))")
+            } else {
+                cachedCount = (cachedCount ?? 0) + 1
+                Log.trace("PersistentHistoryStore: inserted '\(record.command)'")
+            }
+        }
+        guard prepared != nil else {
             Log.error("PersistentHistoryStore: prepare insert failed")
             return
-        }
-        defer { sqlite3_finalize(stmt) }
-
-        bindInsertParameters(record, into: stmt)
-
-        if sqlite3_step(stmt) != SQLITE_DONE {
-            Log.error("PersistentHistoryStore: insert failed: \(String(cString: sqlite3_errmsg(db)))")
-        } else {
-            cachedCount = (cachedCount ?? 0) + 1
-            Log.trace("PersistentHistoryStore: inserted '\(record.command)'")
         }
 
         if !suppressTrim {
@@ -187,49 +182,42 @@ final class PersistentHistoryStore {
 
     func search(query: String, limit: Int = 50) -> [HistoryRecord] {
         dbQueue.sync { [self] in
-            var results: [HistoryRecord] = []
-            guard let db = db else { return results }
+            guard let db = db else { return [] }
 
             let sql = """
                 SELECT id, command, directory, exit_code, shell, tab_id, session_id, timestamp, duration
                 FROM history WHERE command LIKE ? ORDER BY timestamp DESC LIMIT ?
             """
-            var stmt: OpaquePointer?
-            guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return results }
-            defer { sqlite3_finalize(stmt) }
+            return SQLiteStatement.withStatement(db, sql) { stmt -> [HistoryRecord] in
+                stmt.bindText(1, "%\(query)%")
+                stmt.bindInt64(2, Int64(limit))
 
-            let pattern = "%\(query)%"
-            sqlite3_bind_text(stmt, 1, (pattern as NSString).utf8String, -1, nil)
-            sqlite3_bind_int(stmt, 2, Int32(limit))
-
-            while sqlite3_step(stmt) == SQLITE_ROW {
-                results.append(readRecord(stmt))
-            }
-
-            return results
+                var results: [HistoryRecord] = []
+                while stmt.step() == .row {
+                    results.append(readRecord(stmt))
+                }
+                return results
+            } ?? []
         }
     }
 
     func recent(limit: Int = 100) -> [HistoryRecord] {
         dbQueue.sync { [self] in
-            var results: [HistoryRecord] = []
-            guard let db = db else { return results }
+            guard let db = db else { return [] }
 
             let sql = """
                 SELECT id, command, directory, exit_code, shell, tab_id, session_id, timestamp, duration
                 FROM history ORDER BY timestamp DESC LIMIT ?
             """
-            var stmt: OpaquePointer?
-            guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return results }
-            defer { sqlite3_finalize(stmt) }
+            return SQLiteStatement.withStatement(db, sql) { stmt -> [HistoryRecord] in
+                stmt.bindInt64(1, Int64(limit))
 
-            sqlite3_bind_int(stmt, 1, Int32(limit))
-
-            while sqlite3_step(stmt) == SQLITE_ROW {
-                results.append(readRecord(stmt))
-            }
-
-            return results
+                var results: [HistoryRecord] = []
+                while stmt.step() == .row {
+                    results.append(readRecord(stmt))
+                }
+                return results
+            } ?? []
         }
     }
 
@@ -238,108 +226,92 @@ final class PersistentHistoryStore {
     /// (so per-tab Up arrow returns commands recorded in previous sessions).
     func recentForTab(_ tabID: String, limit: Int = 500) -> [HistoryRecord] {
         dbQueue.sync { [self] in
-            var results: [HistoryRecord] = []
-            guard let db = db else { return results }
+            guard let db = db else { return [] }
 
             let sql = """
                 SELECT id, command, directory, exit_code, shell, tab_id, session_id, timestamp, duration
                 FROM history WHERE tab_id = ? ORDER BY timestamp DESC LIMIT ?
             """
-            var stmt: OpaquePointer?
-            guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return results }
-            defer { sqlite3_finalize(stmt) }
+            return SQLiteStatement.withStatement(db, sql) { stmt -> [HistoryRecord] in
+                stmt.bindText(1, tabID)
+                stmt.bindInt64(2, Int64(limit))
 
-            sqlite3_bind_text(stmt, 1, (tabID as NSString).utf8String, -1, nil)
-            sqlite3_bind_int(stmt, 2, Int32(limit))
-
-            while sqlite3_step(stmt) == SQLITE_ROW {
-                results.append(readRecord(stmt))
-            }
-
-            return results
+                var results: [HistoryRecord] = []
+                while stmt.step() == .row {
+                    results.append(readRecord(stmt))
+                }
+                return results
+            } ?? []
         }
     }
 
     func recentForDirectory(_ directory: String, limit: Int = 50) -> [HistoryRecord] {
         dbQueue.sync { [self] in
-            var results: [HistoryRecord] = []
-            guard let db = db else { return results }
+            guard let db = db else { return [] }
 
             let sql = """
                 SELECT id, command, directory, exit_code, shell, tab_id, session_id, timestamp, duration
                 FROM history WHERE directory = ? ORDER BY timestamp DESC LIMIT ?
             """
-            var stmt: OpaquePointer?
-            guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return results }
-            defer { sqlite3_finalize(stmt) }
+            return SQLiteStatement.withStatement(db, sql) { stmt -> [HistoryRecord] in
+                stmt.bindText(1, directory)
+                stmt.bindInt64(2, Int64(limit))
 
-            sqlite3_bind_text(stmt, 1, (directory as NSString).utf8String, -1, nil)
-            sqlite3_bind_int(stmt, 2, Int32(limit))
-
-            while sqlite3_step(stmt) == SQLITE_ROW {
-                results.append(readRecord(stmt))
-            }
-
-            return results
+                var results: [HistoryRecord] = []
+                while stmt.step() == .row {
+                    results.append(readRecord(stmt))
+                }
+                return results
+            } ?? []
         }
     }
 
     func frequentCommands(limit: Int = 20) -> [FrequentCommand] {
         dbQueue.sync { [self] in
-            var results: [FrequentCommand] = []
-            guard let db = db else { return results }
+            guard let db = db else { return [] }
 
             let sql = """
                 SELECT command, COUNT(*) as cnt, MAX(timestamp) as last_ts
                 FROM history GROUP BY command ORDER BY cnt DESC LIMIT ?
             """
-            var stmt: OpaquePointer?
-            guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return results }
-            defer { sqlite3_finalize(stmt) }
-
-            sqlite3_bind_int(stmt, 1, Int32(limit))
-
-            appendFrequentCommandRows(from: stmt, into: &results)
-
-            return results
+            return SQLiteStatement.withStatement(db, sql) { stmt -> [FrequentCommand] in
+                stmt.bindInt64(1, Int64(limit))
+                return frequentCommandRows(from: stmt)
+            } ?? []
         }
     }
 
     /// Read `(command, COUNT(*), MAX(timestamp))` rows from a prepared
-    /// statement and append a `FrequentCommand` for each. Caller binds
-    /// query parameters and provides the result accumulator.
-    private func appendFrequentCommandRows(from stmt: OpaquePointer?, into results: inout [FrequentCommand]) {
-        while sqlite3_step(stmt) == SQLITE_ROW {
-            let command = String(cString: sqlite3_column_text(stmt, 0))
-            let count = Int(sqlite3_column_int(stmt, 1))
-            let ts = sqlite3_column_double(stmt, 2)
+    /// statement and build a `FrequentCommand` for each. Caller binds
+    /// query parameters before calling.
+    private func frequentCommandRows(from stmt: SQLiteStatement) -> [FrequentCommand] {
+        var results: [FrequentCommand] = []
+        while stmt.step() == .row {
+            let command = stmt.columnText(0) ?? ""
+            let count = Int(stmt.columnInt64(1))
+            let ts = stmt.columnDouble(2)
             results.append(FrequentCommand(command: command, count: count, lastUsed: Date(timeIntervalSince1970: ts)))
         }
+        return results
     }
 
     /// Frequently used commands within a repo (root + subdirectories), sorted by frecency.
     func frequentCommandsForRepo(repoRoot: String, limit: Int = 20) -> [FrequentCommand] {
         dbQueue.sync { [self] in
-            var results: [FrequentCommand] = []
-            guard let db = db else { return results }
+            guard let db = db else { return [] }
 
             let sql = """
                 SELECT command, COUNT(*) as cnt, MAX(timestamp) as last_ts
                 FROM history WHERE directory LIKE ? OR directory = ?
                 GROUP BY command ORDER BY cnt DESC LIMIT ?
             """
-            var stmt: OpaquePointer?
-            guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return results }
-            defer { sqlite3_finalize(stmt) }
+            return SQLiteStatement.withStatement(db, sql) { stmt -> [FrequentCommand] in
+                stmt.bindText(1, repoRoot + "/%")
+                stmt.bindText(2, repoRoot)
+                stmt.bindInt64(3, Int64(limit))
 
-            let pattern = repoRoot + "/%"
-            sqlite3_bind_text(stmt, 1, (pattern as NSString).utf8String, -1, nil)
-            sqlite3_bind_text(stmt, 2, (repoRoot as NSString).utf8String, -1, nil)
-            sqlite3_bind_int(stmt, 3, Int32(limit))
-
-            appendFrequentCommandRows(from: stmt, into: &results)
-
-            return results.sorted { $0.frecencyScore > $1.frecencyScore }
+                return frequentCommandRows(from: stmt).sorted { $0.frecencyScore > $1.frecencyScore }
+            } ?? []
         }
     }
 
@@ -354,18 +326,16 @@ final class PersistentHistoryStore {
                        AVG(CASE WHEN duration > 0 THEN duration ELSE NULL END) as avg_dur
                 FROM history WHERE directory LIKE ? OR directory = ?
             """
-            var stmt: OpaquePointer?
-            guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return (0, 0, 0, 0) }
-            defer { sqlite3_finalize(stmt) }
-            let pattern = repoRoot + "/%"
-            sqlite3_bind_text(stmt, 1, (pattern as NSString).utf8String, -1, nil)
-            sqlite3_bind_text(stmt, 2, (repoRoot as NSString).utf8String, -1, nil)
-            guard sqlite3_step(stmt) == SQLITE_ROW else { return (0, 0, 0, 0) }
-            let total = Int(sqlite3_column_int(stmt, 0))
-            let ok = Int(sqlite3_column_int(stmt, 1))
-            let fail = Int(sqlite3_column_int(stmt, 2))
-            let avgDur = sqlite3_column_double(stmt, 3)
-            return (total, ok, fail, avgDur)
+            return SQLiteStatement.withStatement(db, sql) { stmt -> (Int, Int, Int, Double) in
+                stmt.bindText(1, repoRoot + "/%")
+                stmt.bindText(2, repoRoot)
+                guard stmt.step() == .row else { return (0, 0, 0, 0) }
+                let total = Int(stmt.columnInt64(0))
+                let ok = Int(stmt.columnInt64(1))
+                let fail = Int(stmt.columnInt64(2))
+                let avgDur = stmt.columnDouble(3)
+                return (total, ok, fail, avgDur)
+            } ?? (0, 0, 0, 0)
         }
     }
 
@@ -374,15 +344,13 @@ final class PersistentHistoryStore {
         dbQueue.sync { [self] in
             guard let db = db else { return nil }
             let sql = "SELECT MAX(timestamp) FROM history WHERE directory LIKE ? OR directory = ?"
-            var stmt: OpaquePointer?
-            guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return nil }
-            defer { sqlite3_finalize(stmt) }
-            let pattern = repoRoot + "/%"
-            sqlite3_bind_text(stmt, 1, (pattern as NSString).utf8String, -1, nil)
-            sqlite3_bind_text(stmt, 2, (repoRoot as NSString).utf8String, -1, nil)
-            guard sqlite3_step(stmt) == SQLITE_ROW else { return nil }
-            let ts = sqlite3_column_double(stmt, 0)
-            return ts > 0 ? Date(timeIntervalSince1970: ts) : nil
+            return SQLiteStatement.withStatement(db, sql) { stmt -> Date? in
+                stmt.bindText(1, repoRoot + "/%")
+                stmt.bindText(2, repoRoot)
+                guard stmt.step() == .row else { return nil }
+                let ts = stmt.columnDouble(0)
+                return ts > 0 ? Date(timeIntervalSince1970: ts) : nil
+            }.flatMap { $0 }
         }
     }
 
@@ -393,15 +361,9 @@ final class PersistentHistoryStore {
     /// Must run on dbQueue (or during init, before any concurrency exists).
     private func totalCountLocked() -> Int {
         guard let db = db else { return 0 }
-        let sql = "SELECT COUNT(*) FROM history"
-        var stmt: OpaquePointer?
-        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return 0 }
-        defer { sqlite3_finalize(stmt) }
-
-        if sqlite3_step(stmt) == SQLITE_ROW {
-            return Int(sqlite3_column_int(stmt, 0))
-        }
-        return 0
+        return SQLiteStatement.withStatement(db, "SELECT COUNT(*) FROM history") { stmt -> Int in
+            stmt.step() == .row ? Int(stmt.columnInt64(0)) : 0
+        } ?? 0
     }
 
     /// Returns the database file size in bytes, or 0 if unavailable.
@@ -490,23 +452,21 @@ final class PersistentHistoryStore {
         dbQueue.sync { [self] in
             guard let db = db else { return }
             let cutoff = Date().addingTimeInterval(-Double(days * 86400)).timeIntervalSince1970
-            let sql = "DELETE FROM history WHERE timestamp < ?"
-            var stmt: OpaquePointer?
-            guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return }
-            defer { sqlite3_finalize(stmt) }
-            sqlite3_bind_double(stmt, 1, cutoff)
-            if sqlite3_step(stmt) != SQLITE_DONE {
-                Log.error("PersistentHistoryStore: clearOlderThan failed: \(String(cString: sqlite3_errmsg(db)))")
-                return
+            SQLiteStatement.withStatement(db, "DELETE FROM history WHERE timestamp < ?") { stmt in
+                stmt.bindDouble(1, cutoff)
+                if stmt.step() != .done {
+                    Log.error("PersistentHistoryStore: clearOlderThan failed: \(String(cString: sqlite3_errmsg(db)))")
+                    return
+                }
+                // Keep the cached count honest — a stale (inflated) count makes
+                // the next trimIfNeeded delete valid oldest records to satisfy a
+                // phantom excess.
+                let removed = Int(sqlite3_changes(db))
+                if removed > 0, let count = cachedCount {
+                    cachedCount = max(0, count - removed)
+                }
+                Log.info("PersistentHistoryStore: cleared \(removed) record(s) older than \(days) days")
             }
-            // Keep the cached count honest — a stale (inflated) count makes
-            // the next trimIfNeeded delete valid oldest records to satisfy a
-            // phantom excess.
-            let removed = Int(sqlite3_changes(db))
-            if removed > 0, let count = cachedCount {
-                cachedCount = max(0, count - removed)
-            }
-            Log.info("PersistentHistoryStore: cleared \(removed) record(s) older than \(days) days")
         }
     }
 
@@ -516,15 +476,15 @@ final class PersistentHistoryStore {
         if count > maxRecords {
             let excess = count - maxRecords
             let sql = "DELETE FROM history WHERE id IN (SELECT id FROM history ORDER BY timestamp ASC LIMIT ?)"
-            var stmt: OpaquePointer?
-            guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return }
-            defer { sqlite3_finalize(stmt) }
-            sqlite3_bind_int(stmt, 1, Int32(excess))
-            if sqlite3_step(stmt) != SQLITE_DONE {
-                Log.error("PersistentHistoryStore: trim failed: \(String(cString: sqlite3_errmsg(db)))")
-            } else {
-                cachedCount = (cachedCount ?? count) - excess
+            let prepared: Void? = SQLiteStatement.withStatement(db, sql) { stmt in
+                stmt.bindInt64(1, Int64(excess))
+                if stmt.step() != .done {
+                    Log.error("PersistentHistoryStore: trim failed: \(String(cString: sqlite3_errmsg(db)))")
+                } else {
+                    cachedCount = (cachedCount ?? count) - excess
+                }
             }
+            guard prepared != nil else { return }
             Log.info("PersistentHistoryStore: trimmed \(excess) oldest records")
         }
     }
@@ -541,37 +501,21 @@ final class PersistentHistoryStore {
         }
     }
 
-    private func readRecord(_ stmt: OpaquePointer?) -> HistoryRecord {
-        let id = sqlite3_column_int64(stmt, 0)
-        let command = String(cString: sqlite3_column_text(stmt, 1))
-        let directory = sqlite3_column_type(stmt, 2) != SQLITE_NULL ? String(cString: sqlite3_column_text(stmt, 2)) : nil
-        let exitCode = sqlite3_column_type(stmt, 3) != SQLITE_NULL ? Int(sqlite3_column_int(stmt, 3)) : nil
-        let shell = sqlite3_column_type(stmt, 4) != SQLITE_NULL ? String(cString: sqlite3_column_text(stmt, 4)) : nil
-        let tabID = sqlite3_column_type(stmt, 5) != SQLITE_NULL ? String(cString: sqlite3_column_text(stmt, 5)) : nil
-        let sessionID = sqlite3_column_type(stmt, 6) != SQLITE_NULL ? String(cString: sqlite3_column_text(stmt, 6)) : nil
-        let timestamp = Date(timeIntervalSince1970: sqlite3_column_double(stmt, 7))
-        let duration = sqlite3_column_type(stmt, 8) != SQLITE_NULL ? sqlite3_column_double(stmt, 8) : nil
+    private func readRecord(_ stmt: SQLiteStatement) -> HistoryRecord {
+        let id = stmt.columnInt64(0)
+        let command = stmt.columnText(1) ?? ""
+        let directory = stmt.columnText(2)
+        let exitCode = stmt.columnIsNull(3) ? nil : Int(stmt.columnInt64(3))
+        let shell = stmt.columnText(4)
+        let tabID = stmt.columnText(5)
+        let sessionID = stmt.columnText(6)
+        let timestamp = Date(timeIntervalSince1970: stmt.columnDouble(7))
+        let duration = stmt.columnIsNull(8) ? nil : stmt.columnDouble(8)
 
         return HistoryRecord(
             id: id, command: command, directory: directory, exitCode: exitCode,
             shell: shell, tabID: tabID, sessionID: sessionID,
             timestamp: timestamp, duration: duration
         )
-    }
-
-    private func bindOptionalText(_ stmt: OpaquePointer?, _ index: Int32, _ value: String?) {
-        if let v = value {
-            sqlite3_bind_text(stmt, index, (v as NSString).utf8String, -1, nil)
-        } else {
-            sqlite3_bind_null(stmt, index)
-        }
-    }
-
-    private func bindOptionalInt(_ stmt: OpaquePointer?, _ index: Int32, _ value: Int?) {
-        if let v = value {
-            sqlite3_bind_int(stmt, index, Int32(v))
-        } else {
-            sqlite3_bind_null(stmt, index)
-        }
     }
 }
