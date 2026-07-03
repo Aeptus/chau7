@@ -53,32 +53,22 @@ extension OverlayTabsModel {
         return finder?(directory, referenceDate, claimedSessionIds)
     }
 
+    /// Provider/session-id normalization moved to `AIResumeIdentityResolver`;
+    /// these forwarders keep the `OverlayTabsModel.<fn>` entry points stable
+    /// for the save/restore paths and the test suite.
     static func normalizedAIProvider(from value: String?) -> String? {
-        guard let value else { return nil }
-        return AIResumeParser.normalizeProviderName(value)
+        AIResumeIdentityResolver.normalizedAIProvider(from: value)
     }
 
     static func normalizeAISessionId(_ sessionId: String?) -> String? {
-        guard let sessionId else { return nil }
-        let trimmed = sessionId.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard AIResumeParser.isValidSessionId(trimmed) else { return nil }
-        return trimmed
+        AIResumeIdentityResolver.normalizeAISessionId(sessionId)
     }
 
     static func normalizePersistedAISessionId(
         _ sessionId: String?,
         source: AISessionIdentitySource?
     ) -> String? {
-        guard let sessionId else { return nil }
-        let trimmed = sessionId.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return nil }
-        if AIResumeParser.isValidSessionId(trimmed) {
-            return trimmed
-        }
-        if source == .synthetic, trimmed.hasPrefix("synth:") {
-            return trimmed
-        }
-        return nil
+        AIResumeIdentityResolver.normalizePersistedAISessionId(sessionId, source: source)
     }
 
     static func findClaudeSessionId(

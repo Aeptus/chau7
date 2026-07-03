@@ -953,9 +953,6 @@ struct ClosedTabEntry {
 ///   All methods assume main thread execution.
 @Observable
 final class OverlayTabsModel {
-    static var lastArchivedMultiWindowTabStateFingerprint: Int?
-    static var lastArchivedMultiWindowTabStateAt: Date = .distantPast
-
     var tabs: [OverlayTab] {
         didSet {
             TerminalControlService.shared.invalidateRoutingIndex(reason: "tabs_changed")
@@ -1467,9 +1464,11 @@ final class OverlayTabsModel {
     //
     // The single-model save path (`saveTabState`/instance `persistTabStateBackups`)
     // is gone: it had zero production callers and maintained instance-level
-    // archive fingerprints parallel to the static multi-window pair used by
-    // `persistWindowStateBackups` — two accounting systems for the same
-    // archive directory, waiting to desync the 300s/dedup throttles.
+    // archive fingerprints parallel to the static multi-window pair now owned
+    // by `TabStateBackupStore` — two accounting systems for the same archive
+    // directory, waiting to desync the 300s/dedup throttles. The window-state
+    // backup machinery lives in `TabStateBackupStore`; the instance save path
+    // below writes the restore index/bundle and stays deliberately separate.
 
     /// Builds `[SavedTerminalPaneState]` from a tab's live sessions.
     ///
