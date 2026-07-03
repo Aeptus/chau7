@@ -1059,6 +1059,8 @@ struct MagiMCPOrchestrator {
         var terminalOutput: String
         var eventMessages: [String]
         var eventError: String?
+        var tabStatus: [String: Any]?
+        var tabStatusError: String?
 
         var eventCharacters: Int {
             eventMessages.reduce(0) { $0 + $1.count }
@@ -1077,10 +1079,13 @@ struct MagiMCPOrchestrator {
     private func pollStructuredOutput(tabID: String, repositoryRoot: String?) throws -> MagiPolledOutput {
         let terminalOutput = try tabOutput(tabID: tabID)
         let eventCapture = try tabEventMessages(tabID: tabID, repositoryRoot: repositoryRoot)
+        let statusCapture = tabStatusSnapshot(tabID: tabID)
         return MagiPolledOutput(
             terminalOutput: terminalOutput,
             eventMessages: eventCapture.messages,
-            eventError: eventCapture.error
+            eventError: eventCapture.error,
+            tabStatus: statusCapture.status,
+            tabStatusError: statusCapture.error
         )
     }
 
@@ -1088,20 +1093,88 @@ struct MagiMCPOrchestrator {
         tabID: String,
         repositoryRoot: String?
     ) throws -> (messages: [String], error: String?) {
-        guard let repositoryRoot,
-              !repositoryRoot.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            return ([], nil)
-        }
-
         let eventTypes = [
             "agent-turn-complete",
             "finished",
             "response_complete",
             "task_finished"
         ]
+
+        var messages: [String] = []
+        var errors: [String] = []
+
+        let runtimeCapture = try runtimeEventMessages(tabID: tabID, eventTypes: eventTypes)
+        messages.append(contentsOf: runtimeCapture.messages)
+        if let error = runtimeCapture.error {
+            errors.append(error)
+        }
+
+        if messages.isEmpty {
+            let repoPaths = [
+                repositoryRoot,
+                paths.currentDirectory
+            ]
+            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+            let uniqueRepoPaths = uniqueStrings(repoPaths)
+
+            for repoPath in uniqueRepoPaths {
+                let repoCapture = try repoEventMessages(
+                    repoPath: repoPath,
+                    tabID: tabID,
+                    eventTypes: eventTypes
+                )
+                messages.append(contentsOf: repoCapture.messages)
+                if let error = repoCapture.error {
+                    errors.append(error)
+                }
+                if !messages.isEmpty {
+                    break
+                }
+            }
+        }
+
+        return (uniqueStrings(messages), errors.isEmpty ? nil : errors.joined(separator: "; "))
+    }
+
+    private func runtimeEventMessages(
+        tabID: String,
+        eventTypes: [String]
+    ) throws -> (messages: [String], error: String?) {
+        let requestedTypes = Set(eventTypes.map { $0.lowercased() })
+        do {
+            let result = try client.callTool(name: "chau7_runtime_events", arguments: [
+                "limit": 500
+            ])
+            guard let events = result["events"] as? [[String: Any]] else {
+                throw MagiMCPOrchestratorError.missingToolField(tool: "chau7_runtime_events", field: "events")
+            }
+            let messages = MagiMCPEventParsing.runtimeEventMessages(
+                from: events,
+                tabID: tabID,
+                eventTypes: Array(requestedTypes)
+            )
+            return (messages, nil)
+        } catch let error as MagiMCPClientError {
+            if case let .protocolError(message) = error,
+               message.contains("unknown tool") || message.contains("Unknown tool") {
+                return ([], message)
+            }
+            if case let .toolError(_, message) = error {
+                return ([], message)
+            }
+            throw error
+        }
+    }
+
+    private func repoEventMessages(
+        repoPath: String,
+        tabID: String,
+        eventTypes: [String]
+    ) throws -> (messages: [String], error: String?) {
         do {
             let result = try client.callTool(name: "repo_get_events", arguments: [
-                "repo_path": repositoryRoot,
+                "repo_path": repoPath,
                 "limit": 50,
                 "tab_id": tabID,
                 "event_types": eventTypes,
@@ -1123,6 +1196,20 @@ struct MagiMCPOrchestrator {
         }
     }
 
+    private func tabStatusSnapshot(tabID: String) -> (status: [String: Any]?, error: String?) {
+        do {
+            let result = try client.callTool(name: "tab_status", arguments: ["tab_id": tabID])
+            return (result, nil)
+        } catch {
+            return (nil, error.localizedDescription)
+        }
+    }
+
+    private func uniqueStrings(_ values: [String]) -> [String] {
+        var seen = Set<String>()
+        return values.filter { seen.insert($0).inserted }
+    }
+
     private func waitForParsed<T>(
         runID: String,
         roundID: String,
@@ -1141,6 +1228,7 @@ struct MagiMCPOrchestrator {
         var lastLoggedOutputCount: Int?
         var lastLoggedEventSignature: String?
         var lastLoggedEventError: String?
+        var lastLoggedStatusError: String?
         var nextProgressPulseAt = Date()
         var progressPulse = 0
 
@@ -1197,6 +1285,17 @@ struct MagiMCPOrchestrator {
                     message: eventError
                 )
             }
+            if let statusError = capture.tabStatusError, lastLoggedStatusError != statusError {
+                lastLoggedStatusError = statusError
+                technicalLog.record(
+                    "tab_status_unavailable",
+                    stage: stage,
+                    level: "warning",
+                    memberID: member.id,
+                    tabID: tabID,
+                    message: statusError
+                )
+            }
             do {
                 let parsed = try parser(output)
                 technicalLog.record(
@@ -1225,6 +1324,17 @@ struct MagiMCPOrchestrator {
                     fields: ["stage_kind": stageKind.rawValue]
                 )
                 if shouldRepairImmediately(error) {
+                    break
+                }
+                if shouldRepairAfterIdleMissingBlock(error, capture: capture) {
+                    technicalLog.record(
+                        "structured_parse_idle_without_block",
+                        stage: stage,
+                        memberID: member.id,
+                        tabID: tabID,
+                        message: error.localizedDescription,
+                        fields: ["stage_kind": stageKind.rawValue]
+                    )
                     break
                 }
                 Thread.sleep(forTimeInterval: 3)
@@ -1377,6 +1487,16 @@ struct MagiMCPOrchestrator {
         case .invalidJSON, .invalidContract:
             return true
         }
+    }
+
+    private func shouldRepairAfterIdleMissingBlock(_ error: Error, capture: MagiPolledOutput) -> Bool {
+        guard case .missingBlock = error as? MagiTranscriptParseError else {
+            return false
+        }
+        if !capture.eventMessages.isEmpty {
+            return true
+        }
+        return capture.tabStatus.map(MagiMCPEventParsing.tabStatusIsIdleForRepair) ?? false
     }
 
     private func rawTranscript(

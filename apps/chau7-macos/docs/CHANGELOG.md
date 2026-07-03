@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- **MAGI Structured Output Collection**: `magi ask` now reads completed agent blocks from Chau7's app-wide runtime event stream before falling back to repo-scoped events, and it starts the repair flow when an agent tab has returned idle without a marked block instead of waiting until timeout.
 - **MAGI Deliberation Transcript**: Live `magi ask` output now renders the run as council phases — council online, private positions, cross-examination, fact gathering, facts in motion, final vote, and verdict — with compact member lines instead of raw internal request noise. Fact gathering is framed as approved deliberation material, vague evidence requests without runnable collectors are recorded as `not_actionable`, and the agent prompts now discourage evidence requests for subjective questions unless concrete external facts could change the vote.
 - **MAGI Run Presentation**: `magi ask` now adds restrained ANSI color, clearer status labels, member-specific accents, collector state markers, and periodic progress pulses while it waits for agent output or structured repair. Styling automatically disables for non-interactive output, `NO_COLOR`, or `TERM=dumb`.
 - **MAGI Council ASCII Art**: The MAGI ASCII logo is restored for interactive home and ask flows, and each council can now provide editable launch art in `~/.chau7/magi/councils/<council-id>.md` with a color hint and `## ASCII Art` block.

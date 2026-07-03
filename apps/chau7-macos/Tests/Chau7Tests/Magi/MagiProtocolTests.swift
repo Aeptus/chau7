@@ -39,6 +39,8 @@ final class MagiProtocolTests: XCTestCase {
         XCTAssertTrue(prompt.contains("Do not inspect other MAGI tabs or sibling agents."))
         XCTAssertTrue(prompt.contains("Begin marker name: MAGI_RUN_1_ROUND_1_MELCHIOR_POSITION_BEGIN"))
         XCTAssertTrue(prompt.contains("End marker name: MAGI_RUN_1_ROUND_1_MELCHIOR_POSITION_END"))
+        XCTAssertTrue(prompt.contains("must be printed as standalone lines"))
+        XCTAssertTrue(prompt.contains("Do not use Markdown fences around the final JSON block."))
         XCTAssertTrue(prompt.contains(#""member": "melchior""#))
         XCTAssertTrue(prompt.contains(#""round": 1"#))
         XCTAssertTrue(prompt.contains(#""position": "your answer""#))
@@ -135,6 +137,82 @@ final class MagiProtocolTests: XCTestCase {
 
         XCTAssertEqual(position.recommendation, "Final Fantasy VI")
         XCTAssertEqual(position.confidence, 0.86, accuracy: 0.001)
+    }
+
+    func testRuntimeEventExtractorReadsChau7AIEventPayloads() {
+        let events: [[String: Any]] = [
+            [
+                "type": "ai_event",
+                "tab_id": "tab_1",
+                "detail": [
+                    "event_type": "agent-turn-complete",
+                    "message": "wrong tab"
+                ]
+            ],
+            [
+                "type": "ai_event",
+                "tab_id": "tab_2",
+                "detail": [
+                    "event_type": "tool_called",
+                    "message": "wrong event type"
+                ]
+            ],
+            [
+                "type": "ai_event",
+                "tab_id": "tab_2",
+                "detail": [
+                    "event_type": "agent-turn-complete",
+                    "message": "MAGI_RUN_1_ROUND_1_MELCHIOR_POSITION_BEGIN"
+                ]
+            ]
+        ]
+
+        let messages = MagiMCPEventParsing.runtimeEventMessages(
+            from: events,
+            tabID: "tab_2",
+            eventTypes: ["agent-turn-complete", "finished"]
+        )
+
+        XCTAssertEqual(messages, ["MAGI_RUN_1_ROUND_1_MELCHIOR_POSITION_BEGIN"])
+    }
+
+    func testRuntimeEventExtractorFallsBackToTopLevelEventType() {
+        let events: [[String: Any]] = [
+            [
+                "type": "finished",
+                "tab_id": "tab_2",
+                "detail": [
+                    "message": "done"
+                ]
+            ]
+        ]
+
+        let messages = MagiMCPEventParsing.runtimeEventMessages(
+            from: events,
+            tabID: "tab_2",
+            eventTypes: ["finished"]
+        )
+
+        XCTAssertEqual(messages, ["done"])
+    }
+
+    func testTabStatusIdleForRepairUsesPromptReadinessButNotActiveRuns() {
+        XCTAssertTrue(MagiMCPEventParsing.tabStatusIsIdleForRepair([
+            "status": "running",
+            "can_accept_exec": true
+        ]))
+        XCTAssertTrue(MagiMCPEventParsing.tabStatusIsIdleForRepair([
+            "status": "done",
+            "is_at_prompt": false
+        ]))
+        XCTAssertFalse(MagiMCPEventParsing.tabStatusIsIdleForRepair([
+            "active_run": ["run_id": "run-1"],
+            "can_accept_exec": true
+        ]))
+        XCTAssertFalse(MagiMCPEventParsing.tabStatusIsIdleForRepair([
+            "status": "approvalRequired",
+            "can_accept_exec": false
+        ]))
     }
 
     func testParseCritiquesAndEvidenceRequests() throws {
@@ -356,6 +434,8 @@ final class MagiProtocolTests: XCTestCase {
         XCTAssertTrue(prompt.contains("Required member:\nmelchior"))
         XCTAssertTrue(prompt.contains("Required round:\n1"))
         XCTAssertTrue(prompt.contains("Raw answer was Final Fantasy VI."))
+        XCTAssertTrue(prompt.contains("must be standalone lines"))
+        XCTAssertTrue(prompt.contains("Do not use Markdown fences around the JSON block."))
 
         let markers = MagiProtocolMarkers(
             runID: "run-1",

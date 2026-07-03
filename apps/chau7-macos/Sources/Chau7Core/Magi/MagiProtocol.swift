@@ -97,6 +97,8 @@ public enum MagiPromptBuilder {
         - End with one JSON object wrapped by these exact marker names.
         - Begin marker name: \(markers.begin)
         - End marker name: \(markers.end)
+        - The begin marker and end marker must be printed as standalone lines in your final answer.
+        - Do not merely describe the marker names. Do not use Markdown fences around the final JSON block.
         - JSON keys: member, round, position, summary, confidence, evidence_requests, veto.
         - member must be "\(member.id.rawValue)".
         - round must be \(roundNumber(from: roundID)).
@@ -177,6 +179,8 @@ public enum MagiPromptBuilder {
         - End with one JSON object wrapped by these exact marker names.
         - Begin marker name: \(markers.begin)
         - End marker name: \(markers.end)
+        - The begin marker and end marker must be printed as standalone lines in your final answer.
+        - Do not merely describe the marker names. Do not use Markdown fences around the final JSON block.
         - JSON keys: member, round, critiques, evidence_requests.
         - member must be "\(member.id.rawValue)".
         - round must be \(roundNumber(from: roundID)).
@@ -226,6 +230,8 @@ public enum MagiPromptBuilder {
         - End with one JSON object wrapped by these exact marker names.
         - Begin marker name: \(markers.begin)
         - End marker name: \(markers.end)
+        - The begin marker and end marker must be printed as standalone lines in your final answer.
+        - Do not merely describe the marker names. Do not use Markdown fences around the final JSON block.
         - JSON keys: member, round, verdict, vote, confidence, rationale, veto.
         - member must be "\(member.id.rawValue)".
         - round must be \(roundNumber(from: roundID)).
@@ -287,6 +293,8 @@ public enum MagiPromptBuilder {
         - End with one JSON object wrapped by these exact marker names.
         - Begin marker name: \(markers.begin)
         - End marker name: \(markers.end)
+        - The begin marker and end marker must be printed as standalone lines in your final answer.
+        - Do not merely describe the marker names. Do not use Markdown fences around the final JSON block.
         - JSON keys: member, round, verdict, vote, confidence, rationale, veto.
         - member must be "\(member.id.rawValue)".
         - round must be \(roundNumber(from: roundID)).
@@ -312,6 +320,8 @@ public enum MagiPromptBuilder {
 
         Extract or repair your own final answer from the raw transcript below. Do not add new analysis.
         Return exactly one parseable JSON block wrapped by the required markers.
+        The required begin marker and end marker must be standalone lines.
+        Do not use Markdown fences around the JSON block.
 
         Required begin marker name: \(markers.begin)
         Required end marker name: \(markers.end)
