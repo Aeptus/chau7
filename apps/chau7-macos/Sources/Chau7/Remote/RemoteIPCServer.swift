@@ -12,9 +12,8 @@ final class RemoteIPCServer {
     @ObservationIgnored var onClientConnected: (() -> Void)?
     @ObservationIgnored var onClientDisconnected: (() -> Void)?
 
-    @ObservationIgnored private var socketFD: Int32 = -1
+    @ObservationIgnored private var listener: UnixSocketListener?
     @ObservationIgnored private var clientFD: Int32 = -1
-    @ObservationIgnored private var listeningSource: DispatchSourceRead?
     @ObservationIgnored private var clientSource: DispatchSourceRead?
     @ObservationIgnored private var isListeningState = false
     @ObservationIgnored private let queue = DispatchQueue(label: "com.chau7.remote.ipc", qos: .utility)
@@ -41,55 +40,25 @@ final class RemoteIPCServer {
                 logger.error("Failed to create IPC socket directory: \(error.localizedDescription, privacy: .public)")
                 return
             }
-            unlink(path)
+            let listener = UnixSocketListener(path: path, queue: queue)
+            listener.removeStaleSocketFile()
 
-            socketFD = socket(AF_UNIX, SOCK_STREAM, 0)
-            guard socketFD >= 0 else {
-                logger.error("Failed to create socket: \(String(cString: strerror(errno)), privacy: .public)")
+            do {
+                try listener.start(
+                    backlog: 1,
+                    onAccept: { [weak self] newClientFD in
+                        self?.handleAcceptedClient(newClientFD)
+                    },
+                    onAcceptFailure: { [weak self] acceptErrno in
+                        self?.logger.warning("Failed to accept connection: \(String(cString: strerror(acceptErrno)), privacy: .public)")
+                    }
+                )
+            } catch {
+                logStartFailure(error)
                 return
             }
 
-            var addr = sockaddr_un()
-            addr.sun_family = sa_family_t(AF_UNIX)
-            let maxPathLength = MemoryLayout.size(ofValue: addr.sun_path) - 1
-            withUnsafeMutablePointer(to: &addr.sun_path) { ptr in
-                let buffer = UnsafeMutableRawPointer(ptr).assumingMemoryBound(to: CChar.self)
-                _ = path.withCString { cPath in
-                    strncpy(buffer, cPath, maxPathLength)
-                }
-            }
-
-            let bindResult = withUnsafePointer(to: &addr) { addrPtr in
-                addrPtr.withMemoryRebound(to: sockaddr.self, capacity: 1) { sockaddrPtr in
-                    bind(socketFD, sockaddrPtr, socklen_t(MemoryLayout<sockaddr_un>.size))
-                }
-            }
-
-            guard bindResult >= 0 else {
-                logger.error("Failed to bind socket: \(String(cString: strerror(errno)), privacy: .public)")
-                close(socketFD)
-                socketFD = -1
-                return
-            }
-
-            guard listen(socketFD, 1) >= 0 else {
-                logger.error("Failed to listen: \(String(cString: strerror(errno)), privacy: .public)")
-                close(socketFD)
-                socketFD = -1
-                return
-            }
-
-            let listeningFD = socketFD
-            listeningSource = DispatchSource.makeReadSource(fileDescriptor: listeningFD, queue: queue)
-            listeningSource?.setEventHandler { [weak self] in
-                self?.acceptConnection()
-            }
-            listeningSource?.setCancelHandler { [weak self] in
-                close(listeningFD)
-                self?.socketFD = -1
-            }
-            listeningSource?.resume()
-
+            self.listener = listener
             isListeningState = true
             DispatchQueue.main.async { [weak self] in
                 self?.isListening = true
@@ -108,15 +77,13 @@ final class RemoteIPCServer {
                 clientFD = -1
             }
 
-            if let ls = listeningSource {
-                ls.cancel()
-                listeningSource = nil
-            } else if socketFD >= 0 {
-                close(socketFD)
-                socketFD = -1
+            if let listener {
+                listener.stop(removeSocketFile: true)
+                self.listener = nil
+            } else {
+                unlink(socketPath.path)
             }
 
-            unlink(socketPath.path)
             isListeningState = false
             DispatchQueue.main.async { [weak self] in
                 self?.isListening = false
@@ -153,20 +120,22 @@ final class RemoteIPCServer {
         }
     }
 
-    private func acceptConnection() {
-        var clientAddr = sockaddr_un()
-        var clientAddrLen = socklen_t(MemoryLayout<sockaddr_un>.size)
-        let newClientFD = withUnsafeMutablePointer(to: &clientAddr) { addrPtr in
-            addrPtr.withMemoryRebound(to: sockaddr.self, capacity: 1) { sockaddrPtr in
-                accept(socketFD, sockaddrPtr, &clientAddrLen)
-            }
-        }
-
-        guard newClientFD >= 0 else {
-            logger.warning("Failed to accept connection: \(String(cString: strerror(errno)), privacy: .public)")
+    private func logStartFailure(_ error: Error) {
+        guard let failure = error as? UnixSocketListener.StartFailure else {
+            logger.error("Failed to start IPC server: \(error.localizedDescription, privacy: .public)")
             return
         }
+        switch failure.step {
+        case .createSocket:
+            logger.error("Failed to create socket: \(failure.errnoDescription, privacy: .public)")
+        case .bind:
+            logger.error("Failed to bind socket: \(failure.errnoDescription, privacy: .public)")
+        case .listen:
+            logger.error("Failed to listen: \(failure.errnoDescription, privacy: .public)")
+        }
+    }
 
+    private func handleAcceptedClient(_ newClientFD: Int32) {
         // Close previous client if any — cancel handler owns close(fd)
         if let cs = clientSource {
             cs.cancel()

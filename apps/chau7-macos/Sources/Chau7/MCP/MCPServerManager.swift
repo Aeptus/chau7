@@ -8,12 +8,11 @@ import Chau7Core
 final class MCPServerManager {
     static let shared = MCPServerManager()
 
-    private var serverSocket: Int32 = -1
+    private var listener: UnixSocketListener?
     private var clientSockets: [Int32] = []
     private let socketPath: String
     private let queue = DispatchQueue(label: "com.chau7.mcp.server")
     private var isRunning = false
-    private var acceptSource: DispatchSourceRead?
     private var healthCheckSource: DispatchSourceTimer?
     private var serverGeneration: UInt64 = 0
 
@@ -374,93 +373,70 @@ final class MCPServerManager {
     private func _start() {
         guard !isRunning else { return }
         let maxBindAttempts = 3
-        var bindSucceeded = false
+        var startedListener: UnixSocketListener?
+        serverGeneration &+= 1
+        let currentGeneration = serverGeneration
 
         for attempt in 0 ..< maxBindAttempts {
-            guard prepareSocketPathForBinding() else {
+            let candidate = UnixSocketListener(path: socketPath, queue: queue)
+            guard candidate.removeStaleSocketFileIfInactive() else {
+                Log.error("MCPServer: refusing to replace active socket at \(socketPath)")
                 return
             }
 
-            serverSocket = socket(AF_UNIX, SOCK_STREAM, 0)
-            guard serverSocket >= 0 else {
-                Log.error("MCPServer: failed to create socket")
-                return
-            }
-
-            var addr = sockaddr_un()
-            addr.sun_family = sa_family_t(AF_UNIX)
-            var pathBytes = [CChar](repeating: 0, count: 104)
-            _ = socketPath.withCString { src in
-                strncpy(&pathBytes, src, 103)
-            }
-            withUnsafeMutableBytes(of: &addr.sun_path) { rawBuf in
-                pathBytes.withUnsafeBytes { srcBuf in
-                    rawBuf.copyBytes(from: srcBuf.prefix(rawBuf.count))
-                }
-            }
-
-            let bindResult = withUnsafePointer(to: &addr) { ptr in
-                ptr.withMemoryRebound(to: sockaddr.self, capacity: 1) { sockPtr in
-                    bind(serverSocket, sockPtr, socklen_t(MemoryLayout<sockaddr_un>.size))
-                }
-            }
-
-            if bindResult == 0, listen(serverSocket, 5) == 0 {
-                bindSucceeded = true
-                break
-            }
-
-            let bindErrno = errno
-            if bindResult != 0 {
-                Log.warn(
-                    "MCPServer: bind attempt \(attempt + 1)/\(maxBindAttempts) failed at \(socketPath): " +
-                        "\(String(cString: strerror(bindErrno)))"
+            do {
+                // Socket permissions: owner-only (bridge runs as same user)
+                try candidate.start(
+                    backlog: 5,
+                    socketFilePermissions: 0o600,
+                    onAccept: { [weak self] clientFD in
+                        self?.handleAcceptedClient(clientFD, generation: currentGeneration)
+                    },
+                    onAcceptFailure: { [weak self] acceptErrno in
+                        guard let self, isRunning, currentGeneration == serverGeneration else { return }
+                        if acceptErrno != EAGAIN, acceptErrno != EWOULDBLOCK, acceptErrno != EBADF {
+                            Log.warn("MCPServer: accept failed: \(String(cString: strerror(acceptErrno)))")
+                        }
+                    }
                 )
-            } else {
-                Log.warn("MCPServer: listen attempt \(attempt + 1)/\(maxBindAttempts) failed")
-            }
-
-            close(serverSocket)
-            serverSocket = -1
-            if bindResult == 0 {
-                unlink(socketPath)
-            }
-
-            guard attempt < maxBindAttempts - 1, shouldRetryStart(after: bindErrno) else {
+                startedListener = candidate
                 break
+            } catch {
+                guard let failure = error as? UnixSocketListener.StartFailure else {
+                    Log.error("MCPServer: failed to start socket listener at \(socketPath): \(error)")
+                    return
+                }
+                switch failure.step {
+                case .createSocket:
+                    Log.error("MCPServer: failed to create socket")
+                    return
+                case .bind:
+                    Log.warn(
+                        "MCPServer: bind attempt \(attempt + 1)/\(maxBindAttempts) failed at \(socketPath): " +
+                            "\(failure.errnoDescription)"
+                    )
+                case .listen:
+                    Log.warn("MCPServer: listen attempt \(attempt + 1)/\(maxBindAttempts) failed")
+                    // bind succeeded, so the socket file exists — remove it
+                    // before the next attempt (or on final failure).
+                    candidate.removeStaleSocketFile()
+                }
+
+                guard attempt < maxBindAttempts - 1, failure.isRetriable else {
+                    break
+                }
+                usleep(useconds_t((attempt + 1) * 200_000))
             }
-            usleep(useconds_t((attempt + 1) * 200_000))
         }
 
-        guard bindSucceeded else {
+        guard let startedListener else {
             Log.error("MCPServer: failed to start socket listener at \(socketPath)")
             return
         }
 
-        // Set socket permissions: owner-only (bridge runs as same user)
-        chmod(socketPath, 0o600)
-
+        listener = startedListener
         isRunning = true
         Log.info("MCPServer: listening on \(socketPath)")
-
-        // Accept connections using GCD
-        serverGeneration &+= 1
-        let currentGeneration = serverGeneration
-        let listeningFD = serverSocket
-        let source = DispatchSource.makeReadSource(fileDescriptor: listeningFD, queue: queue)
-        source.setEventHandler { [weak self] in
-            self?.acceptConnection(listeningFD: listeningFD, generation: currentGeneration)
-        }
-        source.setCancelHandler { [weak self] in
-            guard let self else { return }
-            close(listeningFD)
-            if serverSocket == listeningFD {
-                serverSocket = -1
-            }
-            unlink(socketPath)
-        }
-        source.resume()
-        acceptSource = source
         startHealthChecks()
     }
 
@@ -469,8 +445,8 @@ final class MCPServerManager {
         isRunning = false
         serverGeneration &+= 1
 
-        acceptSource?.cancel()
-        acceptSource = nil
+        listener?.stop(removeSocketFile: true)
+        listener = nil
         healthCheckSource?.cancel()
         healthCheckSource = nil
         Chau7ObservabilityService.shared.setTimerActive("mcp_health_check", active: false)
@@ -509,8 +485,8 @@ final class MCPServerManager {
         let snapshot = LocalSocketServerHealthSnapshot(
             expectedRunning: true,
             isRunning: isRunning,
-            hasSocketDescriptor: serverSocket >= 0,
-            hasAcceptSource: acceptSource != nil,
+            hasSocketDescriptor: (listener?.fileDescriptor ?? -1) >= 0,
+            hasAcceptSource: listener?.isAccepting == true,
             socketPathExists: FileManager.default.fileExists(atPath: socketPath)
         )
         guard LocalSocketServerHealth.needsRecovery(snapshot) else {
@@ -527,24 +503,11 @@ final class MCPServerManager {
 
     // MARK: - Connection Handling
 
-    private func acceptConnection(listeningFD: Int32, generation: UInt64) {
-        guard isRunning, generation == serverGeneration, listeningFD == serverSocket else {
-            return
-        }
-
-        var clientAddr = sockaddr_un()
-        var clientLen = socklen_t(MemoryLayout<sockaddr_un>.size)
-
-        let clientFD = withUnsafeMutablePointer(to: &clientAddr) { ptr in
-            ptr.withMemoryRebound(to: sockaddr.self, capacity: 1) { sockPtr in
-                accept(listeningFD, sockPtr, &clientLen)
-            }
-        }
-
-        guard clientFD >= 0 else {
-            if errno != EAGAIN, errno != EWOULDBLOCK, errno != EBADF {
-                Log.warn("MCPServer: accept failed: \(String(cString: strerror(errno)))")
-            }
+    private func handleAcceptedClient(_ clientFD: Int32, generation: UInt64) {
+        guard isRunning, generation == serverGeneration else {
+            // Stale accept from a listener stopped between the socket
+            // becoming readable and this handler running — drop it.
+            close(clientFD)
             return
         }
 
@@ -566,52 +529,4 @@ final class MCPServerManager {
         }
     }
 
-    private func prepareSocketPathForBinding() -> Bool {
-        guard FileManager.default.fileExists(atPath: socketPath) else {
-            return true
-        }
-
-        if canConnectToSocket(at: socketPath) {
-            Log.error("MCPServer: refusing to replace active socket at \(socketPath)")
-            return false
-        }
-
-        unlink(socketPath)
-        return true
-    }
-
-    private func canConnectToSocket(at path: String) -> Bool {
-        let fd = socket(AF_UNIX, SOCK_STREAM, 0)
-        guard fd >= 0 else {
-            return false
-        }
-        defer { close(fd) }
-
-        var addr = sockaddr_un()
-        addr.sun_family = sa_family_t(AF_UNIX)
-        var pathBytes = [CChar](repeating: 0, count: 104)
-        _ = path.withCString { src in
-            strncpy(&pathBytes, src, 103)
-        }
-        withUnsafeMutableBytes(of: &addr.sun_path) { rawBuf in
-            pathBytes.withUnsafeBytes { srcBuf in
-                rawBuf.copyBytes(from: srcBuf.prefix(rawBuf.count))
-            }
-        }
-
-        return withUnsafePointer(to: &addr) { ptr in
-            ptr.withMemoryRebound(to: sockaddr.self, capacity: 1) { sockPtr in
-                connect(fd, sockPtr, socklen_t(MemoryLayout<sockaddr_un>.size)) == 0
-            }
-        }
-    }
-
-    private func shouldRetryStart(after error: Int32) -> Bool {
-        switch error {
-        case EADDRINUSE, EAGAIN, EINTR:
-            return true
-        default:
-            return false
-        }
-    }
 }

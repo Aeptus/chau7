@@ -43,9 +43,7 @@ final class ScriptingAPI {
     private(set) var connectedClients = 0
 
     @ObservationIgnored
-    private var socketFD: Int32 = -1
-    @ObservationIgnored
-    private var listeningSource: DispatchSourceRead?
+    private var listener: UnixSocketListener?
     @ObservationIgnored
     private var clientHandlers: [Int32: ScriptingClientHandler] = [:]
     @ObservationIgnored
@@ -90,70 +88,65 @@ final class ScriptingAPI {
     // MARK: - Server Lifecycle
 
     func startServer() {
-        guard socketFD < 0 else { return }
+        guard listener == nil else { return }
 
         let path = socketPath
         let dir = URL(fileURLWithPath: path).deletingLastPathComponent()
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         let maxBindAttempts = 3
-        var startSucceeded = false
+        var startedListener: UnixSocketListener?
 
         for attempt in 0 ..< maxBindAttempts {
-            guard prepareSocketPathForBinding(path) else {
+            let candidate = UnixSocketListener(path: path, queue: socketQueue)
+            guard candidate.removeStaleSocketFileIfInactive() else {
+                Log.error("ScriptingAPI: refusing to replace active socket at \(path)")
                 return
             }
 
-            socketFD = socket(AF_UNIX, SOCK_STREAM, 0)
-            guard socketFD >= 0 else {
-                Log.error("ScriptingAPI: failed to create socket: \(String(cString: strerror(errno)))")
-                return
-            }
-
-            var addr = makeUnixSockaddr(path: path)
-            let bindResult = withUnsafePointer(to: &addr) { addrPtr in
-                addrPtr.withMemoryRebound(to: sockaddr.self, capacity: 1) { sockPtr in
-                    bind(socketFD, sockPtr, socklen_t(MemoryLayout<sockaddr_un>.size))
+            do {
+                try candidate.start(
+                    backlog: 5,
+                    socketFilePermissions: 0o600,
+                    onAccept: { [weak self] clientFD in
+                        self?.handleAcceptedClient(clientFD)
+                    },
+                    onAcceptFailure: { acceptErrno in
+                        Log.warn("ScriptingAPI: accept failed: \(String(cString: strerror(acceptErrno)))")
+                    }
+                )
+                startedListener = candidate
+                break
+            } catch {
+                guard let failure = error as? UnixSocketListener.StartFailure else {
+                    Log.error("ScriptingAPI: failed to start socket listener: \(error)")
+                    return
                 }
-            }
+                if failure.step == .createSocket {
+                    Log.error("ScriptingAPI: failed to create socket: \(failure.errnoDescription)")
+                    return
+                }
+                Log.warn(
+                    "ScriptingAPI: socket start attempt \(attempt + 1)/\(maxBindAttempts) failed: " +
+                        "\(failure.errnoDescription)"
+                )
+                if failure.step == .listen {
+                    // bind succeeded, so the socket file exists — remove it
+                    // before the next attempt (or on final failure).
+                    candidate.removeStaleSocketFile()
+                }
 
-            if bindResult >= 0, listen(socketFD, 5) >= 0 {
-                startSucceeded = true
-                break
+                guard attempt < maxBindAttempts - 1, failure.isRetriable else {
+                    break
+                }
+                usleep(useconds_t((attempt + 1) * 200_000))
             }
-
-            let startErrno = errno
-            Log.warn(
-                "ScriptingAPI: socket start attempt \(attempt + 1)/\(maxBindAttempts) failed: " +
-                    "\(String(cString: strerror(startErrno)))"
-            )
-            close(socketFD)
-            socketFD = -1
-            if bindResult >= 0 {
-                unlink(path)
-            }
-
-            guard attempt < maxBindAttempts - 1, shouldRetryStart(after: startErrno) else {
-                break
-            }
-            usleep(useconds_t((attempt + 1) * 200_000))
         }
 
-        guard startSucceeded else {
+        guard let startedListener else {
             return
         }
 
-        chmod(path, 0o600)
-
-        let listeningFD = socketFD
-        listeningSource = DispatchSource.makeReadSource(fileDescriptor: listeningFD, queue: socketQueue)
-        listeningSource?.setEventHandler { [weak self] in
-            self?.acceptConnection()
-        }
-        listeningSource?.setCancelHandler { [weak self] in
-            close(listeningFD)
-            self?.socketFD = -1
-        }
-        listeningSource?.resume()
+        listener = startedListener
         startHealthChecks()
 
         startTime = Date()
@@ -167,17 +160,15 @@ final class ScriptingAPI {
         }
         clientHandlers.removeAll()
 
-        if let ls = listeningSource {
-            ls.cancel()
-            listeningSource = nil
-        } else if socketFD >= 0 {
-            close(socketFD)
-            socketFD = -1
+        if let listener {
+            listener.stop(removeSocketFile: true)
+            self.listener = nil
+        } else {
+            unlink(socketPath)
         }
         healthCheckSource?.cancel()
         healthCheckSource = nil
 
-        unlink(socketPath)
         isRunning = false
         connectedClients = 0
         startTime = nil
@@ -200,8 +191,8 @@ final class ScriptingAPI {
         let snapshot = LocalSocketServerHealthSnapshot(
             expectedRunning: isEnabled,
             isRunning: isRunning,
-            hasSocketDescriptor: socketFD >= 0,
-            hasAcceptSource: listeningSource != nil,
+            hasSocketDescriptor: (listener?.fileDescriptor ?? -1) >= 0,
+            hasAcceptSource: listener?.isAccepting == true,
             socketPathExists: FileManager.default.fileExists(atPath: socketPath)
         )
         guard LocalSocketServerHealth.needsRecovery(snapshot) == false else {
@@ -219,20 +210,7 @@ final class ScriptingAPI {
 
     // MARK: - Connection Handling
 
-    private func acceptConnection() {
-        var clientAddr = sockaddr_un()
-        var clientAddrLen = socklen_t(MemoryLayout<sockaddr_un>.size)
-        let clientFD = withUnsafeMutablePointer(to: &clientAddr) { addrPtr in
-            addrPtr.withMemoryRebound(to: sockaddr.self, capacity: 1) { sockPtr in
-                accept(socketFD, sockPtr, &clientAddrLen)
-            }
-        }
-
-        guard clientFD >= 0 else {
-            Log.warn("ScriptingAPI: accept failed: \(String(cString: strerror(errno)))")
-            return
-        }
-
+    private func handleAcceptedClient(_ clientFD: Int32) {
         let handler = ScriptingClientHandler(fd: clientFD, queue: socketQueue) { [weak self] json in
             guard let self else { return ["error": "server gone"] }
             return await handleRequest(json)
@@ -481,8 +459,8 @@ final class ScriptingAPI {
                 LocalSocketServerHealthSnapshot(
                     expectedRunning: isEnabled,
                     isRunning: isRunning,
-                    hasSocketDescriptor: socketFD >= 0,
-                    hasAcceptSource: listeningSource != nil,
+                    hasSocketDescriptor: (listener?.fileDescriptor ?? -1) >= 0,
+                    hasAcceptSource: listener?.isAccepting == true,
                     socketPathExists: FileManager.default.fileExists(atPath: socketPath)
                 )
             )
@@ -561,55 +539,4 @@ final class ScriptingAPI {
         parseJSONResponse(controlPlane.call(name: name, arguments: arguments))
     }
 
-    private func prepareSocketPathForBinding(_ path: String) -> Bool {
-        guard FileManager.default.fileExists(atPath: path) else {
-            return true
-        }
-
-        if canConnectToSocket(at: path) {
-            Log.error("ScriptingAPI: refusing to replace active socket at \(path)")
-            return false
-        }
-
-        unlink(path)
-        return true
-    }
-
-    private func canConnectToSocket(at path: String) -> Bool {
-        let fd = socket(AF_UNIX, SOCK_STREAM, 0)
-        guard fd >= 0 else {
-            return false
-        }
-        defer { close(fd) }
-
-        var addr = makeUnixSockaddr(path: path)
-        return withUnsafePointer(to: &addr) { addrPtr in
-            addrPtr.withMemoryRebound(to: sockaddr.self, capacity: 1) { sockPtr in
-                connect(fd, sockPtr, socklen_t(MemoryLayout<sockaddr_un>.size)) == 0
-            }
-        }
-    }
-
-    /// Build an `sockaddr_un` for an `AF_UNIX` socket targeting `path`.
-    /// Truncates to `sun_path`'s capacity (`PATH_MAX` is larger than
-    /// `sun_path`, so callers responsible for ≤108-byte socket paths).
-    private func makeUnixSockaddr(path: String) -> sockaddr_un {
-        var addr = sockaddr_un()
-        addr.sun_family = sa_family_t(AF_UNIX)
-        let maxLen = MemoryLayout.size(ofValue: addr.sun_path) - 1
-        withUnsafeMutablePointer(to: &addr.sun_path) { ptr in
-            let buf = UnsafeMutableRawPointer(ptr).assumingMemoryBound(to: CChar.self)
-            _ = path.withCString { strncpy(buf, $0, maxLen) }
-        }
-        return addr
-    }
-
-    private func shouldRetryStart(after error: Int32) -> Bool {
-        switch error {
-        case EADDRINUSE, EAGAIN, EINTR:
-            return true
-        default:
-            return false
-        }
-    }
 }

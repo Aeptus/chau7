@@ -32,9 +32,8 @@ final class ProxyIPCServer {
 
     // MARK: - Private Properties
 
-    @ObservationIgnored private var socketFD: Int32 = -1
+    @ObservationIgnored private var listener: UnixSocketListener?
     @ObservationIgnored private var clientFD: Int32 = -1
-    @ObservationIgnored private var listeningSource: DispatchSourceRead?
     @ObservationIgnored private var clientSource: DispatchSourceRead?
     @ObservationIgnored private let queue = DispatchQueue(label: "com.chau7.proxy.ipc", qos: .utility)
     @ObservationIgnored private let logger = Logger(subsystem: "com.chau7.proxy", category: "IPCServer")
@@ -60,20 +59,12 @@ final class ProxyIPCServer {
         // Perform cleanup directly without calling stop()
         // to avoid actor isolation issues
         clientSource?.cancel()
-        listeningSource?.cancel()
         if clientFD >= 0 {
             close(clientFD)
         }
-        if socketFD >= 0 {
-            close(socketFD)
-        }
-        // Compute socket path inline to avoid actor isolation issue
-        unlink(
-            RuntimeIsolation.appSupportDirectory(named: "Chau7")
-                .appendingPathComponent("Proxy", isDirectory: true)
-                .appendingPathComponent("proxy.sock")
-                .path
-        )
+        // stop() is nonisolated on the listener; it closes the listening
+        // descriptor and removes the socket file.
+        listener?.stop(removeSocketFile: true)
     }
 
     // MARK: - Public Interface
@@ -95,63 +86,26 @@ final class ProxyIPCServer {
             Log.error("ProxyIPCServer: failed to create socket directory: \(error)")
         }
 
-        // Remove any stale socket
-        unlink(path)
+        // Remove any stale socket, then bind/listen and start accepting.
+        let listener = UnixSocketListener(path: path, queue: queue)
+        listener.removeStaleSocketFile()
 
-        // Create socket
-        socketFD = socket(AF_UNIX, SOCK_STREAM, 0)
-        if socketFD < 0 {
-            logger.error("Failed to create socket: \(String(cString: strerror(errno)), privacy: .public)")
+        do {
+            try listener.start(
+                backlog: 1,
+                onAccept: { [weak self] newClientFD in
+                    self?.handleAcceptedClient(newClientFD)
+                },
+                onAcceptFailure: { [weak self] acceptErrno in
+                    self?.logger.warning("Failed to accept connection: \(String(cString: strerror(acceptErrno)), privacy: .public)")
+                }
+            )
+        } catch {
+            logStartFailure(error)
             return
         }
 
-        // Bind to path
-        var addr = sockaddr_un()
-        addr.sun_family = sa_family_t(AF_UNIX)
-
-        // Copy path to sun_path (fixed-size C array)
-        let maxPathLength = MemoryLayout.size(ofValue: addr.sun_path) - 1
-        withUnsafeMutablePointer(to: &addr.sun_path) { ptr in
-            let buffer = UnsafeMutableRawPointer(ptr).assumingMemoryBound(to: CChar.self)
-            _ = path.withCString { cPath in
-                strncpy(buffer, cPath, maxPathLength)
-            }
-        }
-
-        let bindResult = withUnsafePointer(to: &addr) { addrPtr in
-            addrPtr.withMemoryRebound(to: sockaddr.self, capacity: 1) { sockaddrPtr in
-                bind(socketFD, sockaddrPtr, socklen_t(MemoryLayout<sockaddr_un>.size))
-            }
-        }
-
-        if bindResult < 0 {
-            logger.error("Failed to bind socket: \(String(cString: strerror(errno)), privacy: .public)")
-            close(socketFD)
-            socketFD = -1
-            return
-        }
-
-        // Listen for connections
-        if listen(socketFD, 1) < 0 {
-            logger.error("Failed to listen: \(String(cString: strerror(errno)), privacy: .public)")
-            close(socketFD)
-            socketFD = -1
-            return
-        }
-
-        // Set up dispatch source for incoming connections.
-        // Capture fd by value so cancel handler closes the correct descriptor.
-        let listeningFD = socketFD
-        listeningSource = DispatchSource.makeReadSource(fileDescriptor: listeningFD, queue: queue)
-        listeningSource?.setEventHandler { [weak self] in
-            self?.acceptConnection()
-        }
-        listeningSource?.setCancelHandler { [weak self] in
-            close(listeningFD)
-            self?.socketFD = -1
-        }
-        listeningSource?.resume()
-
+        self.listener = listener
         isListening = true
         logger.info("IPC server listening at \(path, privacy: .public)")
     }
@@ -169,36 +123,34 @@ final class ProxyIPCServer {
             clientFD = -1
         }
 
-        if let ls = listeningSource {
-            ls.cancel()
-            listeningSource = nil
-        } else if socketFD >= 0 {
-            close(socketFD)
-            socketFD = -1
+        if let listener {
+            listener.stop(removeSocketFile: true)
+            self.listener = nil
+        } else {
+            unlink(socketPath.path)
         }
-
-        unlink(socketPath.path)
 
         isListening = false
     }
 
     // MARK: - Private Methods
 
-    private func acceptConnection() {
-        var clientAddr = sockaddr_un()
-        var clientAddrLen = socklen_t(MemoryLayout<sockaddr_un>.size)
-
-        let newClientFD = withUnsafeMutablePointer(to: &clientAddr) { addrPtr in
-            addrPtr.withMemoryRebound(to: sockaddr.self, capacity: 1) { sockaddrPtr in
-                accept(socketFD, sockaddrPtr, &clientAddrLen)
-            }
-        }
-
-        if newClientFD < 0 {
-            logger.warning("Failed to accept connection: \(String(cString: strerror(errno)), privacy: .public)")
+    private func logStartFailure(_ error: Error) {
+        guard let failure = error as? UnixSocketListener.StartFailure else {
+            logger.error("Failed to start IPC server: \(error.localizedDescription, privacy: .public)")
             return
         }
+        switch failure.step {
+        case .createSocket:
+            logger.error("Failed to create socket: \(failure.errnoDescription, privacy: .public)")
+        case .bind:
+            logger.error("Failed to bind socket: \(failure.errnoDescription, privacy: .public)")
+        case .listen:
+            logger.error("Failed to listen: \(failure.errnoDescription, privacy: .public)")
+        }
+    }
 
+    private func handleAcceptedClient(_ newClientFD: Int32) {
         // Close previous client if any — cancel handler owns close(fd)
         if let cs = clientSource {
             cs.cancel()
