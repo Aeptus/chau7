@@ -201,7 +201,7 @@ struct MagiMCPOrchestrator {
                         markers: markers
                     )
                 }
-                printLine(memberLine(session.member, compact(position.recommendation), state: .done))
+                printMemberOutput(session.member, position.recommendation, state: .done)
                 positions.append(position)
                 run.positions.append(position)
                 try writeCheckpoint(&run, stage: "round-1-\(session.member.id.rawValue)-position", technicalLog: technicalLog)
@@ -634,8 +634,37 @@ struct MagiMCPOrchestrator {
         _ detail: String,
         state: MagiMemberLineState
     ) -> String {
+        "\(memberPrefix(memberID, displayName: displayName, state: state).styled)\(detail)"
+    }
+
+    private func printMemberOutput(
+        _ member: MagiMember,
+        _ detail: String,
+        state: MagiMemberLineState
+    ) {
+        let prefix = memberPrefix(member.id, displayName: member.persona.displayName, state: state)
+        let availableWidth = max(32, terminalStyle.wrapColumn - prefix.visibleLength)
+        let lines = MagiTerminalText.wrapped(detail, width: availableWidth)
+        guard let first = lines.first else {
+            printLine(prefix.styled)
+            return
+        }
+
+        printLine("\(prefix.styled)\(first)")
+        let continuationPrefix = String(repeating: " ", count: prefix.visibleLength)
+        for line in lines.dropFirst() {
+            printLine("\(continuationPrefix)\(line)")
+        }
+    }
+
+    private func memberPrefix(
+        _ memberID: MagiMemberID,
+        displayName: String,
+        state: MagiMemberLineState
+    ) -> (styled: String, visibleLength: Int) {
         let label = terminalStyle.styled(displayName, .bold, accentStyle(for: memberID))
-        return "\(state.symbol) \(label)> \(detail)"
+        let visible = "\(state.symbol) \(displayName)> "
+        return ("\(state.symbol) \(label)> ", visible.count)
     }
 
     private func collectorLine(
@@ -1766,7 +1795,10 @@ struct MagiMCPOrchestrator {
                 )
             }
             let verdict = result.vote.verdictKind.map { "[\($0.rawValue)] " } ?? ""
-            printLine("- \(session.member.persona.displayName): \(verdict)\(result.vote.choice)")
+            let voteDetail = result.vote.rationale.isEmpty
+                ? "\(verdict)\(result.vote.choice)"
+                : "\(verdict)\(result.vote.choice) - \(result.vote.rationale)"
+            printMemberOutput(session.member, voteDetail, state: .done)
             votes.append(result.vote)
             if let veto = result.veto {
                 vetoes.append(veto)
@@ -2186,6 +2218,7 @@ enum MagiANSIStyle: String {
 struct MagiRunTerminalStyle {
     var isEnabled: Bool
     var supportsDynamicOutput: Bool
+    var wrapColumn: Int
 
     init(
         environment: [String: String] = ProcessInfo.processInfo.environment,
@@ -2194,6 +2227,7 @@ struct MagiRunTerminalStyle {
         let canUseTerminalControl = stdoutIsTTY && environment["TERM"] != "dumb"
         self.isEnabled = canUseTerminalControl && environment["NO_COLOR"] == nil
         self.supportsDynamicOutput = canUseTerminalControl && environment["MAGI_NO_ANIMATION"] == nil
+        self.wrapColumn = min(140, max(72, Int(environment["COLUMNS"] ?? "") ?? 110))
     }
 
     func styled(_ text: String, _ styles: MagiANSIStyle...) -> String {
