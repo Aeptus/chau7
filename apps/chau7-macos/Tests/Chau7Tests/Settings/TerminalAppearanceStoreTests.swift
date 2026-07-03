@@ -62,6 +62,20 @@ final class TerminalAppearanceStoreTests: XCTestCase {
         XCTAssertEqual(reloaded.customColorScheme, custom)
     }
 
+    func testResetEqualsFreshInstall() {
+        let store = TerminalAppearanceStore(defaults: defaults)
+        store.fontFamily = "Menlo"
+        store.fontSize = 40
+        store.colorSchemeName = "Custom"
+
+        store.resetToDefaults()
+
+        XCTAssertEqual(store.fontFamily, "SF Mono")
+        XCTAssertEqual(store.fontSize, 11)
+        XCTAssertEqual(store.colorSchemeName, "Default")
+        XCTAssertNil(store.customColorScheme)
+    }
+
     func testFacadeForwardsToStore() {
         let before = FeatureSettings.shared.fontSize
         FeatureSettings.shared.fontSize = before == 20 ? 21 : 20

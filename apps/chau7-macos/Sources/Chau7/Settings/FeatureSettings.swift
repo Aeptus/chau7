@@ -3093,31 +3093,14 @@ final class FeatureSettings {
     func resetAllToDefaults() {
         let home = RuntimeIsolation.homePath()
 
-        // Font
-        fontFamily = "SF Mono"
-        fontWeight = 5
-        fontSize = 11
-        customFontFamily = ""
-        defaultZoomPercent = 100
+        // Extracted domains reset through their stores, deriving from each
+        // loader's fallbacks so defaults exist exactly once per domain.
+        appearanceStore.resetToDefaults()
         enableLigatures = false
-
-        // Colors
-        colorSchemeName = "Default"
-        customColorScheme = nil
-
-        // Shell
-        shellType = .system
-        customShellPath = ""
-        startupCommand = ""
-        isLsColorsEnabled = true
-
-        // Shortcuts
+        shellStore.resetToDefaults()
         keybindingPreset = "default"
-        customShortcuts = KeyboardShortcut.shortcuts(for: keybindingPreset)
-        isShortcutHelperHintEnabled = true
-
-        // Notifications
-        notificationSettings = .default
+        shortcutStore.resetToDefaults()
+        notificationStore.resetToDefaults()
         findCaseSensitiveDefault = false
         findRegexDefault = false
         lastTabCloseBehavior = .keepWindow
@@ -3239,13 +3222,7 @@ final class FeatureSettings {
     }
 
     func resetFontColorsToDefaults() {
-        fontFamily = "SF Mono"
-        fontWeight = 5
-        fontSize = 11
-        customFontFamily = ""
-        defaultZoomPercent = 100
-        colorSchemeName = "Default"
-        customColorScheme = nil
+        appearanceStore.resetToDefaults()
         windowOpacity = 1.0
         appTheme = .system
         enableLigatures = false
@@ -3282,18 +3259,14 @@ final class FeatureSettings {
         dangerousOutputHighlightMaxIntervalMs = 2000
         dangerousOutputHighlightLowPowerEnabled = true
         defaultStartDirectory = RuntimeIsolation.homePath()
-        shellType = .system
-        customShellPath = ""
-        startupCommand = ""
-        isLsColorsEnabled = true
+        shellStore.resetToDefaults()
         activePollingRateCap = .displayNative
         inactiveViewMaxFPS = 42
     }
 
     func resetInputToDefaults() {
         keybindingPreset = "default"
-        customShortcuts = KeyboardShortcut.shortcuts(for: keybindingPreset)
-        isShortcutHelperHintEnabled = true
+        shortcutStore.resetToDefaults()
         isCopyOnSelectEnabled = true
         isCmdClickPathsEnabled = true
         cmdClickOpensInternalEditor = true

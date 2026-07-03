@@ -52,6 +52,18 @@ final class ShortcutSettingsStore {
         self.isShortcutHelperHintEnabled = defaults.object(forKey: Keys.shortcutHelperHint) as? Bool ?? true
     }
 
+    /// Reset by deriving from the loader (single source of defaults).
+    /// The keybinding preset stays facade-owned; reset applies its current
+    /// value the same way a fresh install would.
+    func resetToDefaults() {
+        for key in [Keys.customShortcuts, Keys.shortcutHelperHint] {
+            defaults.removeObject(forKey: key)
+        }
+        let fresh = ShortcutSettingsStore(defaults: defaults)
+        customShortcuts = fresh.customShortcuts
+        isShortcutHelperHintEnabled = fresh.isShortcutHelperHintEnabled
+    }
+
     // MARK: - Queries + mutations
 
     func shortcut(for action: String) -> KeyboardShortcut? {

@@ -73,6 +73,50 @@ final class NotificationSettingsStoreTests: XCTestCase {
         XCTAssertTrue(defaults.bool(forKey: "notification.finished.persistUntilOpen.v1"))
     }
 
+    func testResetEqualsFreshInstall() {
+        // The divergence class the review caught: reset used to hardcode its
+        // own copies of defaults, which drifted from the loader's fallbacks.
+        // Reset is now DERIVED from the loader, so the two must always agree.
+        let store = NotificationSettingsStore(defaults: defaults)
+        store.settings.pushTaskCompletionsToiOS = false
+        store.settings.mutedRepos = ["/tmp/x": RepoMute(snoozeUntil: nil)]
+
+        store.resetToDefaults()
+
+        let freshSuite = "NotificationSettingsStoreTests-fresh-\(UUID().uuidString)"
+        let fresh = NotificationSettingsStore(defaults: UserDefaults(suiteName: freshSuite)!)
+        defer { UserDefaults(suiteName: freshSuite)!.removePersistentDomain(forName: freshSuite) }
+        // The reset path runs didSet normalization (which expands trigger
+        // overrides to explicit entries) while a fresh init does not, so
+        // compare semantics rather than raw storage.
+        XCTAssertEqual(store.settings.pushTaskCompletionsToiOS, fresh.settings.pushTaskCompletionsToiOS)
+        XCTAssertEqual(store.settings.mutedRepos, fresh.settings.mutedRepos)
+        // Action configs mint a fresh UUID per instantiation; compare shape.
+        XCTAssertEqual(
+            bindingShapes(store.settings.triggerActionBindings),
+            bindingShapes(fresh.settings.triggerActionBindings)
+        )
+        XCTAssertEqual(
+            bindingShapes(store.settings.groupActionBindings),
+            bindingShapes(fresh.settings.groupActionBindings)
+        )
+        for trigger in NotificationTriggerCatalog.all {
+            XCTAssertEqual(
+                store.settings.triggerState.isEnabled(for: trigger),
+                fresh.settings.triggerState.isEnabled(for: trigger),
+                "trigger \(trigger.id) enabled state must match a fresh install after reset"
+            )
+        }
+    }
+
+    private func bindingShapes(
+        _ bindings: [String: [NotificationActionConfig]]
+    ) -> [String: [String]] {
+        bindings.mapValues { actions in
+            actions.map { "\($0.actionType.rawValue)|\($0.enabled)|\($0.config.sorted { $0.key < $1.key })" }
+        }
+    }
+
     func testFacadeForwardsToStore() {
         // The FeatureSettings singleton must observe/mutate the same values
         // consumers see through the store-backed forwarding property.

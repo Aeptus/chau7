@@ -46,4 +46,16 @@ final class ShellSettingsStore {
         self.startupCommand = defaults.string(forKey: Keys.startupCommand) ?? ""
         self.isLsColorsEnabled = defaults.object(forKey: Keys.lsColorsEnabled) as? Bool ?? true
     }
+
+    /// Reset by deriving from the loader (single source of defaults).
+    func resetToDefaults() {
+        for key in [Keys.shellType, Keys.customShellPath, Keys.startupCommand, Keys.lsColorsEnabled] {
+            defaults.removeObject(forKey: key)
+        }
+        let fresh = ShellSettingsStore(defaults: defaults)
+        shellType = fresh.shellType
+        customShellPath = fresh.customShellPath
+        startupCommand = fresh.startupCommand
+        isLsColorsEnabled = fresh.isLsColorsEnabled
+    }
 }

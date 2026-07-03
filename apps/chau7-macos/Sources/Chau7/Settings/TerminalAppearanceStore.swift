@@ -117,6 +117,27 @@ final class TerminalAppearanceStore {
         }
     }
 
+    /// Reset by deriving from the loader: remove the persisted keys and
+    /// reload, so the init fallbacks are the single source of defaults
+    /// (hardcoded reset copies previously drifted from them).
+    func resetToDefaults() {
+        for key in [
+            Keys.fontFamily, Keys.fontWeight, Keys.fontSize,
+            Keys.customFontFamily, Keys.defaultZoomPercent,
+            Keys.colorSchemeName, Keys.customColorScheme
+        ] {
+            defaults.removeObject(forKey: key)
+        }
+        let fresh = TerminalAppearanceStore(defaults: defaults)
+        fontFamily = fresh.fontFamily
+        fontWeight = fresh.fontWeight
+        fontSize = fresh.fontSize
+        customFontFamily = fresh.customFontFamily
+        defaultZoomPercent = fresh.defaultZoomPercent
+        colorSchemeName = fresh.colorSchemeName
+        customColorScheme = fresh.customColorScheme
+    }
+
     // MARK: - Font catalog
 
     /// Available monospace fonts for the terminal, filtered by system availability.

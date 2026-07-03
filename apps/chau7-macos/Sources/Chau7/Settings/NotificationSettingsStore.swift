@@ -60,6 +60,21 @@ final class NotificationSettingsStore {
         self.settings = Self.loadAndMigrate(defaults: defaults)
     }
 
+    /// Reset by deriving from the loader (single source of defaults). The
+    /// one-shot migration flags stay set, so re-loading seeds catalog
+    /// defaults without re-running migrations.
+    func resetToDefaults() {
+        for key in [
+            Keys.notificationTriggerState, Keys.notificationMutedRepos,
+            Keys.notificationPushTaskCompletions, Keys.notificationFilters,
+            Keys.triggerActionBindings, Keys.notificationRateLimitConfig,
+            Keys.triggerConditions, Keys.groupActionBindings, Keys.groupConditions
+        ] {
+            defaults.removeObject(forKey: key)
+        }
+        settings = Self.loadAndMigrate(defaults: defaults)
+    }
+
     // MARK: - Loading + one-time migrations
 
     private static func loadAndMigrate(defaults: UserDefaults) -> NotificationSettings {
