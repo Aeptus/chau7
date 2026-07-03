@@ -177,6 +177,30 @@ final class MagiFirstRunTests: XCTestCase {
         XCTAssertEqual(art.displayName, "Custom Council")
         XCTAssertEqual(art.color, "magenta")
         XCTAssertTrue(art.asciiArt.contains("CUSTOM"))
+        XCTAssertFalse(art.processingLines.isEmpty)
+    }
+
+    func testCouncilArtFileParsesProcessingLines() {
+        let content = """
+        # Custom Council
+        council_id: custom
+        display_name: Custom Council
+        color: cyan
+
+        ## ASCII Art
+        +--- CUSTOM ---+
+
+        ## Processing Lines
+        - polishing the serious buttons
+        aligning committee vibes
+        """
+
+        let art = MagiCouncilArtFile.parse(councilID: "custom", content: content)
+
+        XCTAssertEqual(art.processingLines, [
+            "polishing the serious buttons",
+            "aligning committee vibes"
+        ])
     }
 
     func testCouncilArtFileFallsBackToDefaultArt() {
@@ -185,6 +209,7 @@ final class MagiFirstRunTests: XCTestCase {
         XCTAssertEqual(art.councilID, "magi")
         XCTAssertEqual(art.displayName, "MAGI")
         XCTAssertTrue(art.asciiArt.contains("MAGI COUNCIL"))
+        XCTAssertEqual(art.processingLines, MagiCouncilArtFile.defaultProcessingLines)
     }
 
     func testConfigTOMLCodecRejectsInvalidClass() {

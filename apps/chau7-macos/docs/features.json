@@ -128,7 +128,7 @@
   {
     "category": "AI Integration",
     "feature": "MAGI Run Presentation",
-    "description": "magi ask uses ANSI color when available, member accents, compact collector status markers, and periodic progress pulses while waiting for agent output or structured repair",
+    "description": "magi ask uses ANSI color when available, member accents, compact collector status markers, and a single high-speed in-place processing line while waiting for agent output or structured repair",
     "status": "Shipped",
     "differentiator": "Yes"
   },

@@ -86,12 +86,14 @@ struct MagiCLIRunner {
             let interruptFlag = MagiInterruptFlag.shared
             interruptFlag.install()
             printRunLaunchBanner(config: config)
+            let councilArt = loadCouncilArt(councilID: config.defaultCouncilID)
             let orchestrator = MagiMCPOrchestrator(
                 client: client,
                 paths: paths,
                 fileManager: fileManager,
                 isInteractive: isInteractiveTerminal,
-                isInterrupted: { interruptFlag.isInterrupted }
+                isInterrupted: { interruptFlag.isInterrupted },
+                processingLines: councilArt.processingLines
             )
             _ = try orchestrator.run(question: question, config: config)
             return .success

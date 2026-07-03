@@ -368,21 +368,37 @@ public struct MagiCouncilArt: Codable, Equatable, Sendable {
     public var displayName: String
     public var color: String
     public var asciiArt: String
+    public var processingLines: [String]
 
     public init(
         councilID: String,
         displayName: String,
         color: String = "cyan",
-        asciiArt: String
+        asciiArt: String,
+        processingLines: [String] = MagiCouncilArtFile.defaultProcessingLines
     ) {
         self.councilID = councilID
         self.displayName = displayName
         self.color = color
         self.asciiArt = asciiArt
+        self.processingLines = processingLines
     }
 }
 
 public enum MagiCouncilArtFile {
+    public static let defaultProcessingLines = [
+        "indexing second opinions at irresponsible velocity",
+        "compressing tiny doubts into one larger doubt",
+        "calibrating dramatic silence generator",
+        "reconciling vibes against checksum 0xC0FFEE",
+        "sorting objections by imaginary clipboard weight",
+        "rotating committee polygons for morale",
+        "measuring confidence with suspiciously warm calipers",
+        "shuffling ceremonial spreadsheets",
+        "warming up the official-looking tubes",
+        "asking the blinking cursor to act natural"
+    ]
+
     public static func fileName(for councilID: String) -> String {
         "\(sanitize(councilID)).md"
     }
@@ -398,12 +414,16 @@ public enum MagiCouncilArtFile {
             | logic core        risk core            human |
             |  [ 01 ]            [ 02 ]             [ 03 ] |
             +----------------------------------------------+
-            """
+            """,
+            processingLines: defaultProcessingLines
         )
     }
 
     public static func content(for art: MagiCouncilArt) -> String {
-        """
+        let processingLines = art.processingLines
+            .map { "- \($0)" }
+            .joined(separator: "\n")
+        return """
         # \(art.displayName)
         council_id: \(art.councilID)
         display_name: \(art.displayName)
@@ -412,17 +432,24 @@ public enum MagiCouncilArtFile {
 
         ## ASCII Art
         \(art.asciiArt)
+
+        ## Processing Lines
+        \(processingLines)
         """
     }
 
     public static func parse(councilID: String, content: String) -> MagiCouncilArt {
         let fallback = defaultArt(councilID: councilID)
         let metadata = parseMetadata(content)
+        let processingLines = parsedProcessingLines(in: content)
         return MagiCouncilArt(
             councilID: metadata["council_id"].flatMap(nonEmpty) ?? councilID,
             displayName: metadata["display_name"].flatMap(nonEmpty) ?? fallback.displayName,
             color: metadata["color"].flatMap(nonEmpty) ?? fallback.color,
-            asciiArt: section(named: "ASCII Art", in: content).flatMap(nonEmpty) ?? fallback.asciiArt
+            asciiArt: section(named: "ASCII Art", in: content).flatMap(nonEmpty) ?? fallback.asciiArt,
+            processingLines: processingLines.isEmpty
+                ? fallback.processingLines
+                : processingLines
         )
     }
 
@@ -452,6 +479,19 @@ public enum MagiCouncilArtFile {
         return lines[bodyStart ..< bodyEnd]
             .joined(separator: "\n")
             .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private static func parsedProcessingLines(in content: String) -> [String] {
+        guard let section = section(named: "Processing Lines", in: content) else { return [] }
+        return section.components(separatedBy: .newlines)
+            .map { rawLine in
+                let trimmed = rawLine.trimmingCharacters(in: .whitespacesAndNewlines)
+                if trimmed.hasPrefix("- ") {
+                    return String(trimmed.dropFirst(2)).trimmingCharacters(in: .whitespacesAndNewlines)
+                }
+                return trimmed
+            }
+            .filter { !$0.isEmpty }
     }
 
     private static func nonEmpty(_ value: String) -> String? {

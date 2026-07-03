@@ -82,7 +82,7 @@ Detection methods:
 - **MAGI shared first-run setup** — `magi config` can apply one provider/class choice to Melchior, Balthasar, and Casper, with a per-member path still available for mixed-provider councils.
 - **MAGI evidence collector cleanup** — approved collectors run in temporary Chau7 tabs that close after output capture, and evidence requests without explicit collectors do not silently fall back to repo status.
 - **MAGI deliberation transcript** — live `magi ask` output renders the council as staged debate, frames fact gathering as approved deliberation material, and records vague uncollectible requests as `not_actionable`.
-- **MAGI run presentation** — `magi ask` uses ANSI color when available, member accents, compact collector status markers, and periodic progress pulses while waiting for agent output or structured repair.
+- **MAGI run presentation** — `magi ask` uses ANSI color when available, member accents, compact collector status markers, and a single high-speed in-place processing line while waiting for agent output or structured repair.
 - **MAGI council ASCII art** — interactive home and ask flows show the MAGI ASCII logo plus editable council launch art from `~/.chau7/magi/councils/<council-id>.md`.
 - **MAGI council tab lifecycle** — council agent tabs are named for Melchior, Balthasar, and Casper during launch, then auto-close after checkpointing unless `auto_close_agent_tabs` is disabled.
 - **Branded tab logos** — detected agents show their brand logo in the tab when one is bundled; the rest fall back to their brand tab color.

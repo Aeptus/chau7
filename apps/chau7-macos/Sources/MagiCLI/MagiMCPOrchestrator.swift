@@ -44,6 +44,7 @@ struct MagiMCPOrchestrator {
     var isInteractive: Bool
     var readLine: () -> String? = { Swift.readLine(strippingNewline: true) }
     var printLine: (String) -> Void = { FileHandle.standardOutput.writeLine($0) }
+    var printRaw: (String) -> Void = { FileHandle.standardOutput.writeText($0) }
     var isInterrupted: () -> Bool = { false }
     var roundTimeoutSeconds: TimeInterval = 900
     var repairTimeoutSeconds: TimeInterval = 120
@@ -51,9 +52,11 @@ struct MagiMCPOrchestrator {
     var launchTimeoutMs = 60000
     var launchMemberThrottleSeconds: TimeInterval = 0.6
     var progressPulseSeconds: TimeInterval = 10
+    var progressFrameSeconds: TimeInterval = 0.12
     var idleRepairGraceSeconds: TimeInterval = 12
     var repairTranscriptMaxCharacters = MagiPromptBuilder.defaultRepairTranscriptMaxCharacters
     var terminalStyle = MagiRunTerminalStyle()
+    var processingLines = MagiCouncilArtFile.defaultProcessingLines
 
     // swiftlint:disable:next function_body_length
     func run(question: String, config: MagiConfig) throws -> MagiRun {
@@ -657,11 +660,83 @@ struct MagiMCPOrchestrator {
         eventCount: Int,
         mode: MagiProgressMode = .waiting
     ) -> String {
-        let phrases = mode == .repair ? repairProgressPhrases : waitProgressPhrases
+        let phrases = mode == .repair
+            ? repairProgressPhrases + effectiveProcessingLines
+            : effectiveProcessingLines
         let phrase = phrases[pulse % phrases.count]
-        let telemetry = "buffer \(formatCharacterCount(terminalCharacters)) / events \(eventCount)"
-        let detail = "\(stageKind.outputName.lowercased()) \(phrase) [\(telemetry)]"
+        let checksum = String(format: "%04X", (pulse * 137 + terminalCharacters + eventCount) % 65_535)
+        let telemetry = "buf \(formatCharacterCount(terminalCharacters)) // evt \(eventCount) // chk \(checksum)"
+        let detail = "\(stageKind.outputName.uppercased()) // \(phrase) // \(telemetry)"
         return memberLine(member, "\(stage): \(detail)", state: mode == .repair ? .repair : .working)
+    }
+
+    private var effectiveProcessingLines: [String] {
+        let configured = processingLines
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        return configured.isEmpty ? MagiCouncilArtFile.defaultProcessingLines : configured
+    }
+
+    private func renderProgressLine(
+        member: MagiMember,
+        stage: String,
+        stageKind: MagiProtocolStage,
+        pulse: Int,
+        terminalCharacters: Int,
+        eventCount: Int,
+        mode: MagiProgressMode = .waiting
+    ) {
+        let line = progressLine(
+            member: member,
+            stage: stage,
+            stageKind: stageKind,
+            pulse: pulse,
+            terminalCharacters: terminalCharacters,
+            eventCount: eventCount,
+            mode: mode
+        )
+        if terminalStyle.supportsDynamicOutput {
+            printRaw("\r\(terminalStyle.clearLine)\(line)")
+        } else {
+            printLine(line)
+        }
+    }
+
+    private func clearProgressLine() {
+        guard terminalStyle.supportsDynamicOutput else { return }
+        printRaw("\r\(terminalStyle.clearLine)")
+    }
+
+    private func sleepBeforeNextPoll(
+        member: MagiMember,
+        stage: String,
+        stageKind: MagiProtocolStage,
+        pulse: inout Int,
+        terminalCharacters: Int,
+        eventCount: Int,
+        mode: MagiProgressMode = .waiting,
+        duration: TimeInterval = 3
+    ) throws {
+        guard terminalStyle.supportsDynamicOutput else {
+            Thread.sleep(forTimeInterval: duration)
+            return
+        }
+
+        let deadline = Date().addingTimeInterval(duration)
+        while Date() < deadline {
+            try throwIfInterrupted(stage: stage)
+            renderProgressLine(
+                member: member,
+                stage: stage,
+                stageKind: stageKind,
+                pulse: pulse,
+                terminalCharacters: terminalCharacters,
+                eventCount: eventCount,
+                mode: mode
+            )
+            pulse += 1
+            Thread.sleep(forTimeInterval: min(progressFrameSeconds, max(0.01, deadline.timeIntervalSinceNow)))
+        }
     }
 
     private func formatCharacterCount(_ count: Int) -> String {
@@ -672,16 +747,6 @@ struct MagiMCPOrchestrator {
             return String(format: "%.1fk", Double(count) / 1000)
         }
         return String(count)
-    }
-
-    private var waitProgressPhrases: [String] {
-        [
-            "watching signal",
-            "listening for marked output",
-            "holding isolation",
-            "checking transcript",
-            "awaiting final block"
-        ]
     }
 
     private var repairProgressPhrases: [String] {
@@ -1253,15 +1318,25 @@ struct MagiMCPOrchestrator {
             let output = capture.combinedOutput
             lastOutput = output
             let now = Date()
-            if progressPulseSeconds > 0, now >= nextProgressPulseAt {
-                printLine(progressLine(
+            if terminalStyle.supportsDynamicOutput {
+                renderProgressLine(
                     member: member,
                     stage: stage,
                     stageKind: stageKind,
                     pulse: progressPulse,
                     terminalCharacters: capture.terminalOutput.count,
                     eventCount: capture.eventMessages.count
-                ))
+                )
+                progressPulse += 1
+            } else if progressPulseSeconds > 0, now >= nextProgressPulseAt {
+                renderProgressLine(
+                    member: member,
+                    stage: stage,
+                    stageKind: stageKind,
+                    pulse: progressPulse,
+                    terminalCharacters: capture.terminalOutput.count,
+                    eventCount: capture.eventMessages.count
+                )
                 progressPulse += 1
                 nextProgressPulseAt = now.addingTimeInterval(progressPulseSeconds)
             }
@@ -1327,6 +1402,7 @@ struct MagiMCPOrchestrator {
                     tabID: tabID,
                     output: output
                 ))
+                clearProgressLine()
                 return parsed
             } catch {
                 lastError = error
@@ -1358,9 +1434,18 @@ struct MagiMCPOrchestrator {
                     )
                     break
                 }
-                Thread.sleep(forTimeInterval: 3)
+                try sleepBeforeNextPoll(
+                    member: member,
+                    stage: stage,
+                    stageKind: stageKind,
+                    pulse: &progressPulse,
+                    terminalCharacters: capture.terminalOutput.count,
+                    eventCount: capture.eventMessages.count
+                )
             }
         }
+
+        clearProgressLine()
 
         let parseError = lastError?.localizedDescription ?? "structured block did not appear before timeout"
         recordCapture(rawTranscript(
@@ -1430,6 +1515,8 @@ struct MagiMCPOrchestrator {
         let parseError = context.parseError
         let lastOutput = context.lastOutput
         let lastError = context.lastError
+        clearProgressLine()
+        defer { clearProgressLine() }
         printLine(memberLine(member, "requesting structured output repair", state: .repair))
         technicalLog.record(
             "structured_repair_requested",
@@ -1481,8 +1568,8 @@ struct MagiMCPOrchestrator {
             let repairCapture = try pollStructuredOutput(tabID: tabID, repositoryRoot: repositoryRoot)
             repairOutput = repairCapture.combinedOutput
             let now = Date()
-            if progressPulseSeconds > 0, now >= nextRepairProgressPulseAt {
-                printLine(progressLine(
+            if terminalStyle.supportsDynamicOutput {
+                renderProgressLine(
                     member: member,
                     stage: "\(stage) repair",
                     stageKind: stageKind,
@@ -1490,7 +1577,18 @@ struct MagiMCPOrchestrator {
                     terminalCharacters: repairCapture.terminalOutput.count,
                     eventCount: repairCapture.eventMessages.count,
                     mode: .repair
-                ))
+                )
+                repairPulse += 1
+            } else if progressPulseSeconds > 0, now >= nextRepairProgressPulseAt {
+                renderProgressLine(
+                    member: member,
+                    stage: "\(stage) repair",
+                    stageKind: stageKind,
+                    pulse: repairPulse,
+                    terminalCharacters: repairCapture.terminalOutput.count,
+                    eventCount: repairCapture.eventMessages.count,
+                    mode: .repair
+                )
                 repairPulse += 1
                 nextRepairProgressPulseAt = now.addingTimeInterval(progressPulseSeconds)
             }
@@ -1523,7 +1621,15 @@ struct MagiMCPOrchestrator {
                     message: error.localizedDescription,
                     fields: ["stage_kind": stageKind.rawValue]
                 )
-                Thread.sleep(forTimeInterval: 3)
+                try sleepBeforeNextPoll(
+                    member: member,
+                    stage: "\(stage) repair",
+                    stageKind: stageKind,
+                    pulse: &repairPulse,
+                    terminalCharacters: repairCapture.terminalOutput.count,
+                    eventCount: repairCapture.eventMessages.count,
+                    mode: .repair
+                )
             }
         }
 
@@ -2079,18 +2185,25 @@ enum MagiANSIStyle: String {
 
 struct MagiRunTerminalStyle {
     var isEnabled: Bool
+    var supportsDynamicOutput: Bool
 
     init(
         environment: [String: String] = ProcessInfo.processInfo.environment,
         stdoutIsTTY: Bool = isatty(STDOUT_FILENO) != 0
     ) {
-        self.isEnabled = stdoutIsTTY && environment["NO_COLOR"] == nil && environment["TERM"] != "dumb"
+        let canUseTerminalControl = stdoutIsTTY && environment["TERM"] != "dumb"
+        self.isEnabled = canUseTerminalControl && environment["NO_COLOR"] == nil
+        self.supportsDynamicOutput = canUseTerminalControl && environment["MAGI_NO_ANIMATION"] == nil
     }
 
     func styled(_ text: String, _ styles: MagiANSIStyle...) -> String {
         guard isEnabled, !styles.isEmpty else { return text }
         let prefix = styles.map(\.rawValue).joined(separator: ";")
         return "\u{001B}[\(prefix)m\(text)\u{001B}[0m"
+    }
+
+    var clearLine: String {
+        "\u{001B}[2K"
     }
 }
 
