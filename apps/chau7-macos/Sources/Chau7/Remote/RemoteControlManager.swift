@@ -18,10 +18,34 @@ final class RemoteControlManager {
     private(set) var remoteActivity: RemoteActivityState?
     private(set) var interactivePrompts: [RemoteInteractivePrompt] = []
 
-    @ObservationIgnored private var process: Process?
-    @ObservationIgnored private var outputPipe: Pipe?
-    @ObservationIgnored private var errorPipe: Pipe?
     @ObservationIgnored private let logger = Logger(subsystem: "com.chau7.remote", category: "RemoteManager")
+    /// Shared Go-sidecar process lifecycle (chmod, Process construction,
+    /// pipe draining, termination). Lazy so the configuration closures can
+    /// capture `self`.
+    @ObservationIgnored private lazy var sidecar = ManagedGoSidecar(
+        configuration: ManagedGoSidecar.Configuration(
+            name: "remote agent",
+            logger: logger,
+            stopsPipeMonitoringBeforeTerminate: false,
+            onStdoutData: { [weak self] data in
+                guard let output = String(data: data, encoding: .utf8) else { return }
+                self?.logger.debug("Remote stdout: \(output, privacy: .public)")
+            },
+            onStderrData: { [weak self] data in
+                guard let output = String(data: data, encoding: .utf8) else { return }
+                self?.logger.warning("Remote stderr: \(output, privacy: .public)")
+            },
+            onExit: { [weak self] status in
+                self?.handleAgentExit(status: status)
+            }
+        )
+    )
+    /// Locates (or rebuilds) the chau7-remote binary; extracted from the
+    /// resolution chain that previously lived on this manager.
+    @ObservationIgnored private lazy var binaryProvider = RemoteAgentBinaryProvider(
+        logger: logger,
+        dataDirectory: { [weak self] in self?.dataDirectory() }
+    )
     /// Last tab-list count emitted to the remote client, used to throttle
     /// the noisy "sent tab list with N tabs" log so it only fires on change.
     @ObservationIgnored private var lastSentTabListCount: Int?
@@ -212,26 +236,17 @@ final class RemoteControlManager {
 
     private func startAgent() {
         guard !isAgentRunning else { return }
-        guard let binaryPath = remoteBinaryPath() else {
-            let error = lastError ?? "Remote agent binary not found."
+        guard let binaryPath = binaryProvider.resolveBinary() else {
+            let error = binaryProvider.lastError ?? lastError ?? "Remote agent binary not found."
             logger.error("\(error, privacy: .public)")
             lastError = error
             return
         }
 
-        do {
-            try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: binaryPath.path)
-        } catch {
-            logger.warning("Failed to set remote binary permissions: \(error.localizedDescription, privacy: .public)")
-        }
-
-        let process = Process()
-        process.executableURL = binaryPath
         guard let dataDir = dataDirectory() else {
             lastError = "Cannot start remote agent: data directory unavailable"
             return
         }
-        process.currentDirectoryURL = dataDir
 
         var env = ProcessInfo.processInfo.environment
         guard let socketPath = ipcSocketPath() else {
@@ -246,40 +261,13 @@ final class RemoteControlManager {
         // relaunched app's single-client IPC socket and fight the fresh agent
         // for the one client slot, plus duplicate its identity on the relay.
         env["CHAU7_PARENT_PID"] = String(ProcessInfo.processInfo.processIdentifier)
-        process.environment = env
-
-        let outputPipe = Pipe()
-        let errorPipe = Pipe()
-        process.standardOutput = outputPipe
-        process.standardError = errorPipe
-        self.outputPipe = outputPipe
-        self.errorPipe = errorPipe
-
-        ManagedProcess.monitorOutput(of: outputPipe) { [weak self] data in
-            guard let output = String(data: data, encoding: .utf8) else { return }
-            self?.logger.debug("Remote stdout: \(output, privacy: .public)")
-        }
-
-        ManagedProcess.monitorOutput(of: errorPipe) { [weak self] data in
-            guard let output = String(data: data, encoding: .utf8) else { return }
-            self?.logger.warning("Remote stderr: \(output, privacy: .public)")
-        }
-
-        process.terminationHandler = { [weak self] proc in
-            Task { @MainActor in
-                guard let self else { return }
-                self.isAgentRunning = false
-                if proc.terminationStatus != 0 {
-                    let error = "Remote agent exited with status \(proc.terminationStatus)"
-                    self.logger.error("\(error, privacy: .public)")
-                    self.lastError = error
-                }
-            }
-        }
 
         do {
-            try process.run()
-            self.process = process
+            try sidecar.launch(ManagedGoSidecar.LaunchSpec(
+                binaryURL: binaryPath,
+                currentDirectoryURL: dataDir,
+                environment: env
+            ))
             isAgentRunning = true
             activeRelayURL = relayURL
             lastError = nil
@@ -292,14 +280,23 @@ final class RemoteControlManager {
         }
     }
 
+    /// Unexpected agent exit (deliberate stops detach the handler first).
+    /// The stale process reference is deliberately kept — `stopAgent()`'s
+    /// state resets still apply after an unexpected exit, as they always did.
+    private func handleAgentExit(status: Int32) {
+        isAgentRunning = false
+        if status != 0 {
+            let error = "Remote agent exited with status \(status)"
+            logger.error("\(error, privacy: .public)")
+            lastError = error
+        }
+    }
+
     func stopAgent() {
-        guard let process else { return }
-        process.terminationHandler = nil
+        guard sidecar.hasProcess else { return }
         cancelPendingOutputFlush()
-        // Terminate process BEFORE closing pipes to avoid SIGPIPE
-        ManagedProcess.terminate(process, name: "remote agent", logger: logger)
-        ManagedProcess.cleanup(outputPipe: &outputPipe, errorPipe: &errorPipe)
-        self.process = nil
+        // The sidecar terminates the process BEFORE closing pipes (SIGPIPE).
+        sidecar.stop()
         isAgentRunning = false
         activeRelayURL = nil
         pairingInfo = nil
@@ -1312,220 +1309,6 @@ final class RemoteControlManager {
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         let data = try JSONEncoder().encode(state)
         try data.write(to: url, options: .atomic)
-    }
-
-    private func remoteBinaryPath() -> URL? {
-        let fileManager = FileManager.default
-
-        if let sourceURL = remoteAgentSourceURL(),
-           let installedPath = installedRemoteBinaryPath(),
-           shouldRefreshInstalledRemoteBinary(at: installedPath, from: sourceURL) {
-            if buildRemoteAgent(from: sourceURL, outputURL: installedPath),
-               FileManager.default.isExecutableFile(atPath: installedPath.path) {
-                return installedPath
-            }
-        }
-
-        if let devPath = devRemoteBinaryPath(),
-           fileManager.isExecutableFile(atPath: devPath.path) {
-            return devPath
-        }
-
-        if let installedPath = installedRemoteBinaryPath(),
-           fileManager.isExecutableFile(atPath: installedPath.path) {
-            return installedPath
-        }
-
-        if let bundlePath = bundledRemoteBinaryPath(),
-           fileManager.isExecutableFile(atPath: bundlePath.path) {
-            syncInstalledRemoteBinary(from: bundlePath)
-            if let installedPath = installedRemoteBinaryPath(),
-               fileManager.isExecutableFile(atPath: installedPath.path) {
-                return installedPath
-            }
-            return bundlePath
-        }
-
-        if let sourceURL = remoteAgentSourceURL(),
-           let installedPath = installedRemoteBinaryPath(),
-           buildRemoteAgent(from: sourceURL, outputURL: installedPath),
-           fileManager.isExecutableFile(atPath: installedPath.path) {
-            return installedPath
-        }
-
-        return nil
-    }
-
-    private func syncInstalledRemoteBinary(from bundledPath: URL) {
-        guard let installedPath = installedRemoteBinaryPath() else { return }
-        let fileManager = FileManager.default
-
-        if fileManager.fileExists(atPath: installedPath.path),
-           !shouldReplaceInstalledRemoteBinary(at: installedPath, with: bundledPath) {
-            return
-        }
-
-        do {
-            try fileManager.createDirectory(
-                at: installedPath.deletingLastPathComponent(),
-                withIntermediateDirectories: true
-            )
-            if fileManager.fileExists(atPath: installedPath.path) {
-                try fileManager.removeItem(at: installedPath)
-            }
-            try fileManager.copyItem(at: bundledPath, to: installedPath)
-            try fileManager.setAttributes([.posixPermissions: 0o755], ofItemAtPath: installedPath.path)
-        } catch {
-            logger.warning("Failed to sync bundled remote agent to App Support: \(error.localizedDescription, privacy: .public)")
-        }
-    }
-
-    private func shouldReplaceInstalledRemoteBinary(at installedPath: URL, with bundledPath: URL) -> Bool {
-        let fileManager = FileManager.default
-        guard fileManager.fileExists(atPath: installedPath.path) else { return true }
-        guard fileManager.isExecutableFile(atPath: installedPath.path),
-              fileManager.isExecutableFile(atPath: bundledPath.path) else {
-            return true
-        }
-        return !fileManager.contentsEqual(atPath: installedPath.path, andPath: bundledPath.path)
-    }
-
-    private func shouldRefreshInstalledRemoteBinary(at binaryURL: URL, from sourceURL: URL) -> Bool {
-        guard let binaryDate = modificationDate(for: binaryURL) else {
-            return true
-        }
-
-        let fileManager = FileManager.default
-        guard let enumerator = fileManager.enumerator(
-            at: sourceURL,
-            includingPropertiesForKeys: [.contentModificationDateKey, .isRegularFileKey],
-            options: [.skipsHiddenFiles]
-        ) else {
-            return false
-        }
-
-        for case let candidate as URL in enumerator {
-            guard ["go", "mod", "sum"].contains(candidate.pathExtension) else { continue }
-            guard let sourceDate = modificationDate(for: candidate), sourceDate > binaryDate else { continue }
-            return true
-        }
-
-        return false
-    }
-
-    private func modificationDate(for url: URL) -> Date? {
-        (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
-    }
-
-    private func bundledRemoteBinaryPath() -> URL? {
-        if let bundlePath = Chau7Resources.bundle.url(forResource: "chau7-remote", withExtension: nil) {
-            return bundlePath
-        }
-
-        if let resourcesURL = Chau7Resources.bundle.resourceURL {
-            let candidate = resourcesURL.appendingPathComponent("chau7-remote")
-            if FileManager.default.fileExists(atPath: candidate.path) {
-                return candidate
-            }
-        }
-
-        return nil
-    }
-
-    private func installedRemoteBinaryPath() -> URL? {
-        dataDirectory()?.appendingPathComponent("chau7-remote")
-    }
-
-    private func devRemoteBinaryPath() -> URL? {
-        guard let projectRoot = projectRootURL() else { return nil }
-        let packagedBuildPath = projectRoot
-            .appendingPathComponent("apps/chau7-macos/build/remote-agent/chau7-remote")
-        if FileManager.default.isExecutableFile(atPath: packagedBuildPath.path) {
-            return packagedBuildPath
-        }
-
-        let devPath = projectRoot
-            .appendingPathComponent("services/chau7-remote/chau7-remote")
-        if FileManager.default.isExecutableFile(atPath: devPath.path) {
-            return devPath
-        }
-
-        let buildPath = projectRoot
-            .appendingPathComponent("services/chau7-remote/cmd/chau7-remote/chau7-remote")
-        if FileManager.default.isExecutableFile(atPath: buildPath.path) {
-            return buildPath
-        }
-
-        return nil
-    }
-
-    private func remoteAgentSourceURL() -> URL? {
-        guard let projectRoot = projectRootURL() else { return nil }
-        let sourceURL = projectRoot.appendingPathComponent("services/chau7-remote")
-        let goMod = sourceURL.appendingPathComponent("go.mod")
-        guard FileManager.default.fileExists(atPath: goMod.path) else { return nil }
-        return sourceURL
-    }
-
-    private func projectRootURL() -> URL? {
-        URL(fileURLWithPath: #file)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-    }
-
-    private func buildRemoteAgent(from sourceURL: URL, outputURL: URL) -> Bool {
-        let outputDir = outputURL.deletingLastPathComponent()
-        do {
-            try FileManager.default.createDirectory(at: outputDir, withIntermediateDirectories: true)
-        } catch {
-            logger.error("Failed to create remote agent output directory: \(error.localizedDescription, privacy: .public)")
-            lastError = "Failed to create remote agent output directory."
-            return false
-        }
-
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-        process.arguments = ["go", "build", "-o", outputURL.path, "./cmd/chau7-remote"]
-        process.currentDirectoryURL = sourceURL
-
-        let outputPipe = Pipe()
-        process.standardOutput = outputPipe
-        process.standardError = outputPipe
-
-        do {
-            try process.run()
-            process.waitUntilExit()
-        } catch {
-            logger.error("Failed to launch go build: \(error.localizedDescription, privacy: .public)")
-            lastError = "Failed to launch Go build for remote agent."
-            return false
-        }
-
-        let outputData = outputPipe.fileHandleForReading.readDataToEndOfFile()
-        let output = String(data: outputData, encoding: .utf8) ?? ""
-
-        guard process.terminationStatus == 0 else {
-            logger.error("Remote agent build failed: \(output, privacy: .public)")
-            let trimmed = output.trimmingCharacters(in: .whitespacesAndNewlines)
-            if trimmed.isEmpty {
-                lastError = "Remote agent build failed. Make sure Go is installed."
-            } else {
-                lastError = "Remote agent build failed. \(trimmed)"
-            }
-            return false
-        }
-
-        do {
-            try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: outputURL.path)
-        } catch {
-            logger.warning("Failed to set remote binary permissions: \(error.localizedDescription, privacy: .public)")
-        }
-
-        return true
     }
 }
 

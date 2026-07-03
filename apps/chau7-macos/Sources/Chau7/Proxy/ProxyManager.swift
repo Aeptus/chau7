@@ -66,14 +66,34 @@ final class ProxyManager {
 
     // MARK: - Private Properties
 
-    @ObservationIgnored private var process: Process?
     /// Restart-backoff bookkeeping for the unexpected-exit auto-restart.
     @ObservationIgnored private var restartAttempts = 0
     @ObservationIgnored private var processStartedAt: Date?
-    @ObservationIgnored private var outputPipe: Pipe?
-    @ObservationIgnored private var errorPipe: Pipe?
     @ObservationIgnored private var isStopping = false
     @ObservationIgnored private let logger = Logger(subsystem: "com.chau7.proxy", category: "ProxyManager")
+    /// Shared Go-sidecar process lifecycle (chmod, Process construction,
+    /// pipe draining via ManagedProcess.monitorOutput — which handles EOF
+    /// correctly, nil-ing the readabilityHandler to prevent a 100%-CPU spin —
+    /// and termination). Lazy so the configuration closures can capture
+    /// `self`.
+    @ObservationIgnored private lazy var sidecar = ManagedGoSidecar(
+        configuration: ManagedGoSidecar.Configuration(
+            name: "proxy",
+            logger: logger,
+            stopsPipeMonitoringBeforeTerminate: true,
+            onStdoutData: { [weak self] data in
+                guard let output = String(data: data, encoding: .utf8) else { return }
+                self?.handleProxyOutput(output, isStderr: false)
+            },
+            onStderrData: { [weak self] data in
+                guard let output = String(data: data, encoding: .utf8) else { return }
+                self?.handleProxyOutput(output, isStderr: true)
+            },
+            onExit: { [weak self] status in
+                self?.handleProxyExit(status: status)
+            }
+        )
+    )
 
     /// Path to the bundled proxy binary
     private var proxyBinaryPath: URL? {
@@ -204,23 +224,11 @@ final class ProxyManager {
             return
         }
 
-        // Ensure binary is executable
-        do {
-            try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: binaryPath.path)
-        } catch {
-            logger.warning("Failed to set binary permissions: \(error.localizedDescription)")
-        }
-
         self.port = port
         tlsPort = port + 1
 
         // Remove stale socket file
         try? FileManager.default.removeItem(at: socketPath)
-
-        // Configure process
-        let process = Process()
-        process.executableURL = binaryPath
-        process.currentDirectoryURL = dataDirectory
 
         // Set environment variables for the proxy
         var env = ProcessInfo.processInfo.environment
@@ -235,79 +243,14 @@ final class ProxyManager {
         // Parent-death detection: the proxy exits when this app dies, so an
         // orphan can never hold the port against the relaunched app.
         env["CHAU7_PARENT_PID"] = String(ProcessInfo.processInfo.processIdentifier)
-        process.environment = env
-
-        // Setup pipes for output
-        let outputPipe = Pipe()
-        let errorPipe = Pipe()
-        process.standardOutput = outputPipe
-        process.standardError = errorPipe
-
-        self.outputPipe = outputPipe
-        self.errorPipe = errorPipe
-
-        // Monitor output via ManagedProcess.monitorOutput which handles EOF
-        // correctly (nils the readabilityHandler to prevent a 100%-CPU spin).
-        ManagedProcess.monitorOutput(of: outputPipe) { [weak self] data in
-            guard let output = String(data: data, encoding: .utf8) else { return }
-            self?.handleProxyOutput(output, isStderr: false)
-        }
-
-        ManagedProcess.monitorOutput(of: errorPipe) { [weak self] data in
-            guard let output = String(data: data, encoding: .utf8) else { return }
-            self?.handleProxyOutput(output, isStderr: true)
-        }
-
-        // Handle process termination with auto-restart on unexpected exit
-        process.terminationHandler = { [weak self] proc in
-            Task { @MainActor in
-                guard let self = self else { return }
-                self.isRunning = false
-                self.process = nil
-                // Stop pipe monitoring immediately on process exit to prevent
-                // the readabilityHandler spin loop on EOF.
-                ManagedProcess.cleanup(outputPipe: &self.outputPipe, errorPipe: &self.errorPipe)
-
-                if proc.terminationStatus != 0, !self.isStopping {
-                    let error = "Proxy exited with status \(proc.terminationStatus)"
-                    self.logger.error("\(error, privacy: .public)")
-                    self.lastError = error
-                    NotificationCenter.default.post(
-                        name: .proxyStatusChanged,
-                        object: ProxyStatusEvent.stopped(error: error)
-                    )
-
-                    // Auto-restart with exponential backoff. A fixed 2s retry
-                    // forever turned a persistent failure (port held, bad
-                    // config) into a 2s crash loop; backoff caps at 60s and
-                    // never gives up (watchdogs retry, not quit) — the
-                    // attempt counter resets after a healthy >60s run.
-                    if let startedAt = self.processStartedAt,
-                       Date().timeIntervalSince(startedAt) > 60 {
-                        self.restartAttempts = 0
-                    }
-                    self.restartAttempts += 1
-                    let delay = min(pow(2.0, Double(self.restartAttempts)), 60.0)
-                    let restartPort = self.port
-                    self.logger.info("Auto-restarting proxy in \(delay, privacy: .public)s (attempt \(self.restartAttempts, privacy: .public))...")
-                    DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
-                        guard let self, !self.isRunning, !self.isStopping else { return }
-                        start(port: restartPort)
-                    }
-                } else {
-                    self.logger.info("Proxy stopped cleanly")
-                    NotificationCenter.default.post(
-                        name: .proxyStatusChanged,
-                        object: ProxyStatusEvent.stoppedClean
-                    )
-                }
-            }
-        }
 
         // Start the process
         do {
-            try process.run()
-            self.process = process
+            try sidecar.launch(ManagedGoSidecar.LaunchSpec(
+                binaryURL: binaryPath,
+                currentDirectoryURL: dataDirectory,
+                environment: env
+            ))
             processStartedAt = Date()
             isRunning = true
             lastError = nil
@@ -325,6 +268,50 @@ final class ProxyManager {
             NotificationCenter.default.post(
                 name: .proxyStatusChanged,
                 object: ProxyStatusEvent.error(errorMessage)
+            )
+        }
+    }
+
+    /// Unexpected proxy exit (deliberate stops detach the handler first):
+    /// drop the stale process, report, and auto-restart on failure exits.
+    private func handleProxyExit(status: Int32) {
+        isRunning = false
+        // Drop the process reference and stop pipe monitoring immediately on
+        // process exit to prevent the readabilityHandler spin loop on EOF.
+        sidecar.clearProcessAfterExit()
+
+        if status != 0, !isStopping {
+            let error = "Proxy exited with status \(status)"
+            logger.error("\(error, privacy: .public)")
+            lastError = error
+            NotificationCenter.default.post(
+                name: .proxyStatusChanged,
+                object: ProxyStatusEvent.stopped(error: error)
+            )
+
+            // Auto-restart with exponential backoff. A fixed 2s retry
+            // forever turned a persistent failure (port held, bad
+            // config) into a 2s crash loop; backoff caps at 60s and
+            // never gives up (watchdogs retry, not quit) — the
+            // attempt counter resets after a healthy >60s run.
+            if let startedAt = processStartedAt,
+               Date().timeIntervalSince(startedAt) > 60 {
+                restartAttempts = 0
+            }
+            restartAttempts += 1
+            let delay = min(pow(2.0, Double(restartAttempts)), 60.0)
+            let restartPort = port
+            let attempt = restartAttempts
+            logger.info("Auto-restarting proxy in \(delay, privacy: .public)s (attempt \(attempt, privacy: .public))...")
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+                guard let self, !self.isRunning, !self.isStopping else { return }
+                start(port: restartPort)
+            }
+        } else {
+            logger.info("Proxy stopped cleanly")
+            NotificationCenter.default.post(
+                name: .proxyStatusChanged,
+                object: ProxyStatusEvent.stoppedClean
             )
         }
     }
@@ -388,19 +375,18 @@ final class ProxyManager {
 
     /// Stops the proxy server
     func stop() {
-        guard isRunning, let process = process else {
+        guard isRunning, sidecar.hasProcess else {
             logger.info("Proxy not running")
             return
         }
 
         isStopping = true
         logger.info("Stopping proxy...")
-        process.terminationHandler = nil
-        ManagedProcess.cleanup(outputPipe: &outputPipe, errorPipe: &errorPipe)
-        ManagedProcess.terminate(process, name: "proxy", logger: logger)
+        // The sidecar stops pipe monitoring before terminating (its
+        // configured teardown order for the proxy).
+        sidecar.stop()
 
         isRunning = false
-        self.process = nil
     }
 
     /// Restarts the proxy server
