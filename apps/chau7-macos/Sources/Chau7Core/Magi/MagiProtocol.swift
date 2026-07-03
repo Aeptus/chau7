@@ -354,10 +354,20 @@ public enum MagiPromptBuilder {
         }
 
         if let markerRange = transcript.range(of: markers.begin, options: .backwards) {
-            let contextBefore = min(repairTranscriptContextBeforeMarker, maxCharacters / 3)
-            let distanceBeforeMarker = transcript.distance(from: transcript.startIndex, to: markerRange.lowerBound)
-            let contextDistance = min(contextBefore, distanceBeforeMarker)
-            let start = transcript.index(markerRange.lowerBound, offsetBy: -contextDistance)
+            // Start at the beginning of the line that carries the marker: a
+            // fixed pre-marker context window dragged in stale lines from the
+            // previous session whenever the current block was shorter than
+            // the window (the marker-window test pins this). The distance cap
+            // guards against pathological unbroken lines.
+            let contextCap = min(repairTranscriptContextBeforeMarker, maxCharacters / 3)
+            var start = markerRange.lowerBound
+            var walked = 0
+            while start > transcript.startIndex, walked < contextCap {
+                let previous = transcript.index(before: start)
+                if transcript[previous].isNewline { break }
+                start = previous
+                walked += 1
+            }
             return clippedExcerpt(from: transcript, start: start, maxCharacters: maxCharacters)
         }
 

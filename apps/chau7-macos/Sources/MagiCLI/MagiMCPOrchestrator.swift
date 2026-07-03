@@ -1368,6 +1368,62 @@ struct MagiMCPOrchestrator {
             repairSucceeded: false
         ))
 
+        return try runStructuredRepair(
+            context: StructuredRepairContext(
+                runID: runID,
+                roundID: roundID,
+                stageKind: stageKind,
+                stage: stage,
+                member: member,
+                tabID: tabID,
+                repositoryRoot: repositoryRoot,
+                expectedMarkers: expectedMarkers,
+                parseError: parseError,
+                lastOutput: lastOutput,
+                lastError: lastError
+            ),
+            technicalLog: technicalLog,
+            recordCapture: recordCapture,
+            parser: parser
+        )
+    }
+
+    /// Inputs the repair sub-flow needs from the wait loop that spawned it.
+    private struct StructuredRepairContext {
+        let runID: String
+        let roundID: String
+        let stageKind: MagiProtocolStage
+        let stage: String
+        let member: MagiMember
+        let tabID: String
+        let repositoryRoot: String?
+        let expectedMarkers: MagiProtocolMarkers
+        let parseError: String
+        let lastOutput: String
+        let lastError: Error?
+    }
+
+    /// The structured-output repair sub-flow of `waitForParsed`: sends the
+    /// repair prompt, polls until the re-emitted block parses, and records
+    /// the terminal outcome. Split out so the poll loop and the repair flow
+    /// each stay within readable (and lintable) bounds.
+    private func runStructuredRepair<T>(
+        context: StructuredRepairContext,
+        technicalLog: MagiTechnicalLog,
+        recordCapture: (MagiRawTranscript) -> Void,
+        parser: (String) throws -> T
+    ) throws -> T {
+        let runID = context.runID
+        let roundID = context.roundID
+        let stageKind = context.stageKind
+        let stage = context.stage
+        let member = context.member
+        let tabID = context.tabID
+        let repositoryRoot = context.repositoryRoot
+        let expectedMarkers = context.expectedMarkers
+        let parseError = context.parseError
+        let lastOutput = context.lastOutput
+        let lastError = context.lastError
         printLine(memberLine(member, "requesting structured output repair", state: .repair))
         technicalLog.record(
             "structured_repair_requested",
