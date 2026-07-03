@@ -59,7 +59,9 @@ final class MagiCLICommandTests: XCTestCase {
         XCTAssertEqual(paths.globalRoot, "/home/user/.chau7/magi")
         XCTAssertEqual(paths.globalConfigPath, "/home/user/.chau7/magi/config.toml")
         XCTAssertEqual(paths.globalPersonaDirectory, "/home/user/.chau7/magi/personas")
+        XCTAssertEqual(paths.globalCouncilDirectory, "/home/user/.chau7/magi/councils")
         XCTAssertEqual(paths.personaPath(for: .melchior), "/home/user/.chau7/magi/personas/melchior.md")
+        XCTAssertEqual(paths.councilPath(for: "magi"), "/home/user/.chau7/magi/councils/magi.md")
     }
 
     func testPathsResolveArtifactsToRepositoryRootWhenInsideGitRepo() throws {

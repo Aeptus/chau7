@@ -85,7 +85,7 @@ struct MagiCLIRunner {
 
             let interruptFlag = MagiInterruptFlag.shared
             interruptFlag.install()
-            printHeader()
+            printRunLaunchBanner(config: config)
             let orchestrator = MagiMCPOrchestrator(
                 client: client,
                 paths: paths,
@@ -140,14 +140,11 @@ struct MagiCLIRunner {
     }
 
     private func printHomeScreen() {
-        let art = """
-        __  __    _    ____ ___
-        |  \\/  |  / \\  / ___|_ _|
-        | |\\/| | / _ \\| |  _ | |
-        | |  | |/ ___ \\ |_| || |
-        |_|  |_/_/   \\_\\____|___|
-        """
-        writeProgressive(art, styles: [.bold, .cyan], lineDelay: 0.045)
+        let config = try? loadConfig()
+        let councilID = config?.defaultCouncilID ?? "magi"
+        let councilArt = loadCouncilArt(councilID: councilID)
+
+        printMagiASCII()
         writeStdout(styled("WELCOME TO MAGI SYSTEM", .bold))
         pauseBoot(0.22)
         writeStdout()
@@ -162,43 +159,68 @@ struct MagiCLIRunner {
             : "config missing; type --config"
         printBootLine("config", configDetail, ok: configPresent)
         printBootLine("mood", "serious council, questionable coffee")
-        printBootLine("council", "selected: Melchior / Balthasar / Casper")
+        printBootLine("council", "selected: \(councilArt.displayName) (\(councilID))")
         writeStdout()
-        printCouncilArt()
+        printCouncilArt(councilArt)
         writeStdout()
         writeMuted("Ask a question, type --config, doctor, help, or quit.")
     }
 
-    private func printCouncilArt() {
-        let melchior = """
-        +-- MELCHIOR --+
-        |     /\\      |
-        |    /__\\     |
-        |   /_||_\\    |
-        |   LOGIC     |
-        +-------------+
+    private func printRunLaunchBanner(config: MagiConfig) {
+        guard isInteractiveTerminal else {
+            printHeader()
+            return
+        }
+
+        let councilArt = loadCouncilArt(councilID: config.defaultCouncilID)
+        printMagiASCII()
+        printBootLine("core protocol", "Multi Agent Gathering Intelligence online")
+        printBootLine("council", "selected: \(councilArt.displayName) (\(config.defaultCouncilID))")
+        writeStdout()
+        printCouncilArt(councilArt)
+        writeStdout()
+    }
+
+    private func printMagiASCII() {
+        let art = """
+        __  __    _    ____ ___
+        |  \\/  |  / \\  / ___|_ _|
+        | |\\/| | / _ \\| |  _ | |
+        | |  | |/ ___ \\ |_| || |
+        |_|  |_/_/   \\_\\____|___|
         """
-        let balthasar = """
-        +-- BALTHASAR --+
-        |   [======]   |
-        |   | RISK |   |
-        |   [______]   |
-        |  CONTINUITY  |
-        +---------------+
-        """
-        let casper = """
-        +--- CASPER ---+
-        |     .--.     |
-        |    (    )    |
-        |     `--'     |
-        |    HUMAN     |
-        +--------------+
-        """
-        writeProgressive(melchior, styles: [.cyan], lineDelay: 0.035)
-        pauseBoot(0.10)
-        writeProgressive(balthasar, styles: [.yellow], lineDelay: 0.035)
-        pauseBoot(0.10)
-        writeProgressive(casper, styles: [.magenta], lineDelay: 0.035)
+        writeProgressive(art, styles: [.bold, .cyan], lineDelay: 0.045)
+    }
+
+    private func printCouncilArt(_ art: MagiCouncilArt) {
+        writeProgressive(
+            art.asciiArt,
+            styles: [.bold, ansiStyle(named: art.color) ?? .cyan],
+            lineDelay: 0.035
+        )
+    }
+
+    private func loadCouncilArt(councilID: String) -> MagiCouncilArt {
+        let path = paths.councilPath(for: councilID)
+        guard let content = try? String(contentsOfFile: path, encoding: .utf8) else {
+            return MagiCouncilArtFile.defaultArt(councilID: councilID, displayName: councilID.uppercased())
+        }
+        return MagiCouncilArtFile.parse(councilID: councilID, content: content)
+    }
+
+    private func ansiStyle(named color: String) -> ANSIStyle? {
+        switch color.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+        case "cyan", "blue":
+            return .cyan
+        case "green":
+            return .green
+        case "yellow":
+            return .yellow
+        case "magenta", "purple":
+            return .magenta
+        default:
+            return nil
+        }
     }
 
     private func printBootLine(_ label: String, _ detail: String, ok: Bool = true) {
@@ -413,7 +435,7 @@ struct MagiCLIRunner {
                         fileManager: fileManager,
                         overwrite: false
                     )
-                    writeSaved("Persona files checked.")
+                    writeSaved("Persona and council files checked.")
                 case "help", "?":
                     continue
                 default:
@@ -449,7 +471,7 @@ struct MagiCLIRunner {
         writeStdout("  6. Toggle veto blocks verdict")
         writeStdout("  7. Toggle agent tab auto-close")
         writeStdout("  8. Run doctor")
-        writeStdout("  9. Check/create persona files")
+        writeStdout("  9. Check/create persona/council files")
         writeMuted("Press return, q, or back to close.")
     }
 
@@ -478,6 +500,7 @@ struct MagiCLIRunner {
         writeStdout("Doctor")
         writeStdout("Global config: \(paths.globalConfigPath)")
         writeStdout("Personas: \(paths.globalPersonaDirectory)")
+        writeStdout("Councils: \(paths.globalCouncilDirectory)")
         let socketPath = "\(paths.homeDirectory)/.chau7/mcp.sock"
         let socketStatus = fileManager.fileExists(atPath: socketPath) ? "present" : "missing"
         writeStdout("Chau7 MCP socket: \(socketPath) (\(socketStatus))")
@@ -575,6 +598,7 @@ struct MagiCLIRunner {
             writeStdout("Global root: \(paths.globalRoot)")
             writeStdout("Global config: \(paths.globalConfigPath)")
             writeStdout("Personas: \(paths.globalPersonaDirectory)")
+            writeStdout("Councils: \(paths.globalCouncilDirectory)")
             writeStdout()
             writeStdout("Status")
             writeStdout("configured")

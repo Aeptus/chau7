@@ -96,8 +96,16 @@ public struct MagiCLIPaths: Codable, Equatable, Sendable {
         "\(globalRoot)/personas"
     }
 
+    public var globalCouncilDirectory: String {
+        "\(globalRoot)/councils"
+    }
+
     public func personaPath(for memberID: MagiMemberID) -> String {
         "\(globalPersonaDirectory)/\(MagiPersonaFile.fileName(for: memberID))"
+    }
+
+    public func councilPath(for councilID: String) -> String {
+        "\(globalCouncilDirectory)/\(MagiCouncilArtFile.fileName(for: councilID))"
     }
 
     public func runRoot(runID: String, repositoryRoot: String?) -> String {

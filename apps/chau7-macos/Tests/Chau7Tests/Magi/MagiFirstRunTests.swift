@@ -158,6 +158,35 @@ final class MagiFirstRunTests: XCTestCase {
         XCTAssertFalse(decoded.autoCloseAgentTabs)
     }
 
+    func testCouncilArtFileParsesEditableASCIIArt() {
+        let content = """
+        # Custom Council
+        council_id: custom
+        display_name: Custom Council
+        color: magenta
+
+        ## ASCII Art
+        +--- CUSTOM ---+
+        | council art |
+        +------------+
+        """
+
+        let art = MagiCouncilArtFile.parse(councilID: "custom", content: content)
+
+        XCTAssertEqual(art.councilID, "custom")
+        XCTAssertEqual(art.displayName, "Custom Council")
+        XCTAssertEqual(art.color, "magenta")
+        XCTAssertTrue(art.asciiArt.contains("CUSTOM"))
+    }
+
+    func testCouncilArtFileFallsBackToDefaultArt() {
+        let art = MagiCouncilArtFile.parse(councilID: "magi", content: "# Empty")
+
+        XCTAssertEqual(art.councilID, "magi")
+        XCTAssertEqual(art.displayName, "MAGI")
+        XCTAssertTrue(art.asciiArt.contains("MAGI COUNCIL"))
+    }
+
     func testConfigTOMLCodecRejectsInvalidClass() {
         let content = """
         schema_version = 1
@@ -185,11 +214,12 @@ final class MagiFirstRunTests: XCTestCase {
 
         let result = try MagiFirstRunInstaller.install(config: config, paths: paths)
 
-        XCTAssertEqual(result.createdPaths.count, 4)
+        XCTAssertEqual(result.createdPaths.count, 5)
         XCTAssertTrue(FileManager.default.fileExists(atPath: paths.globalConfigPath))
         XCTAssertTrue(FileManager.default.fileExists(atPath: paths.personaPath(for: .melchior)))
         XCTAssertTrue(FileManager.default.fileExists(atPath: paths.personaPath(for: .balthasar)))
         XCTAssertTrue(FileManager.default.fileExists(atPath: paths.personaPath(for: .casper)))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: paths.councilPath(for: "magi")))
         XCTAssertEqual(MagiFirstRunInstaller.missingPersonaFiles(paths: paths), [])
 
         let decoded = try MagiConfigTOMLCodec.decode(String(contentsOfFile: paths.globalConfigPath, encoding: .utf8))
@@ -198,6 +228,10 @@ final class MagiFirstRunTests: XCTestCase {
         let melchior = try String(contentsOfFile: paths.personaPath(for: .melchior), encoding: .utf8)
         XCTAssertTrue(melchior.contains("# Melchior"))
         XCTAssertTrue(melchior.contains("## Veto Policy"))
+
+        let council = try String(contentsOfFile: paths.councilPath(for: "magi"), encoding: .utf8)
+        XCTAssertTrue(council.contains("## ASCII Art"))
+        XCTAssertTrue(council.contains("MAGI COUNCIL"))
     }
 
     func testInstallerDoesNotOverwriteExistingFilesByDefault() throws {
@@ -210,13 +244,15 @@ final class MagiFirstRunTests: XCTestCase {
 
         try "custom-config".write(toFile: paths.globalConfigPath, atomically: true, encoding: .utf8)
         try "custom-persona".write(toFile: paths.personaPath(for: .casper), atomically: true, encoding: .utf8)
+        try "custom-council".write(toFile: paths.councilPath(for: "magi"), atomically: true, encoding: .utf8)
 
         let result = try MagiFirstRunInstaller.install(config: config, paths: paths)
 
         XCTAssertEqual(result.createdPaths, [])
-        XCTAssertEqual(result.skippedPaths.count, 4)
+        XCTAssertEqual(result.skippedPaths.count, 5)
         XCTAssertEqual(try String(contentsOfFile: paths.globalConfigPath, encoding: .utf8), "custom-config")
         XCTAssertEqual(try String(contentsOfFile: paths.personaPath(for: .casper), encoding: .utf8), "custom-persona")
+        XCTAssertEqual(try String(contentsOfFile: paths.councilPath(for: "magi"), encoding: .utf8), "custom-council")
     }
 
     private func temporaryHome() -> URL {

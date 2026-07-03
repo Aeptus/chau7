@@ -363,6 +363,115 @@ public enum MagiPersonaFile {
     }
 }
 
+public struct MagiCouncilArt: Codable, Equatable, Sendable {
+    public var councilID: String
+    public var displayName: String
+    public var color: String
+    public var asciiArt: String
+
+    public init(
+        councilID: String,
+        displayName: String,
+        color: String = "cyan",
+        asciiArt: String
+    ) {
+        self.councilID = councilID
+        self.displayName = displayName
+        self.color = color
+        self.asciiArt = asciiArt
+    }
+}
+
+public enum MagiCouncilArtFile {
+    public static func fileName(for councilID: String) -> String {
+        "\(sanitize(councilID)).md"
+    }
+
+    public static func defaultArt(councilID: String = "magi", displayName: String = "MAGI") -> MagiCouncilArt {
+        MagiCouncilArt(
+            councilID: councilID,
+            displayName: displayName,
+            color: "cyan",
+            asciiArt: """
+            +---------------- MAGI COUNCIL ----------------+
+            | MELCHIOR          BALTHASAR           CASPER |
+            | logic core        risk core            human |
+            |  [ 01 ]            [ 02 ]             [ 03 ] |
+            +----------------------------------------------+
+            """
+        )
+    }
+
+    public static func content(for art: MagiCouncilArt) -> String {
+        """
+        # \(art.displayName)
+        council_id: \(art.councilID)
+        display_name: \(art.displayName)
+        color: \(art.color)
+        editable: true
+
+        ## ASCII Art
+        \(art.asciiArt)
+        """
+    }
+
+    public static func parse(councilID: String, content: String) -> MagiCouncilArt {
+        let fallback = defaultArt(councilID: councilID)
+        let metadata = parseMetadata(content)
+        return MagiCouncilArt(
+            councilID: metadata["council_id"].flatMap(nonEmpty) ?? councilID,
+            displayName: metadata["display_name"].flatMap(nonEmpty) ?? fallback.displayName,
+            color: metadata["color"].flatMap(nonEmpty) ?? fallback.color,
+            asciiArt: section(named: "ASCII Art", in: content).flatMap(nonEmpty) ?? fallback.asciiArt
+        )
+    }
+
+    private static func parseMetadata(_ content: String) -> [String: String] {
+        var values: [String: String] = [:]
+        for rawLine in content.components(separatedBy: .newlines) {
+            let line = rawLine.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !line.hasPrefix("#"), let colon = line.firstIndex(of: ":") else { continue }
+            let key = String(line[..<colon]).trimmingCharacters(in: .whitespacesAndNewlines)
+            let value = String(line[line.index(after: colon)...]).trimmingCharacters(in: .whitespacesAndNewlines)
+            values[key] = value
+        }
+        return values
+    }
+
+    private static func section(named name: String, in content: String) -> String? {
+        let lines = content.components(separatedBy: .newlines)
+        guard let start = lines.firstIndex(where: { $0.trimmingCharacters(in: .whitespacesAndNewlines) == "## \(name)" }) else {
+            return nil
+        }
+
+        let bodyStart = lines.index(after: start)
+        let bodyEnd = lines[bodyStart...].firstIndex { line in
+            line.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("## ")
+        } ?? lines.endIndex
+
+        return lines[bodyStart ..< bodyEnd]
+            .joined(separator: "\n")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private static func nonEmpty(_ value: String) -> String? {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    private static func sanitize(_ value: String) -> String {
+        let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-_"))
+        let scalars = value.lowercased().unicodeScalars.map { scalar -> Character in
+            allowed.contains(scalar) ? Character(scalar) : "-"
+        }
+        let sanitized = String(scalars)
+            .split(separator: "-")
+            .joined(separator: "-")
+            .trimmingCharacters(in: CharacterSet(charactersIn: "-_"))
+        return sanitized.isEmpty ? "magi" : sanitized
+    }
+}
+
 // MARK: - Installation
 
 public struct MagiFirstRunInstallResult: Equatable, Sendable {
@@ -401,6 +510,10 @@ public enum MagiFirstRunInstaller {
             at: URL(fileURLWithPath: paths.globalPersonaDirectory),
             withIntermediateDirectories: true
         )
+        try fileManager.createDirectory(
+            at: URL(fileURLWithPath: paths.globalCouncilDirectory),
+            withIntermediateDirectories: true
+        )
 
         var createdPaths: [String] = []
         var skippedPaths: [String] = []
@@ -431,6 +544,19 @@ public enum MagiFirstRunInstaller {
                 skippedPaths: &skippedPaths
             )
         }
+
+        let councilArt = MagiCouncilArtFile.defaultArt(
+            councilID: config.defaultCouncilID,
+            displayName: config.defaultCouncilID.uppercased()
+        )
+        try write(
+            MagiCouncilArtFile.content(for: councilArt),
+            to: paths.councilPath(for: config.defaultCouncilID),
+            fileManager: fileManager,
+            overwrite: overwrite,
+            createdPaths: &createdPaths,
+            skippedPaths: &skippedPaths
+        )
 
         return MagiFirstRunInstallResult(createdPaths: createdPaths, skippedPaths: skippedPaths)
     }
