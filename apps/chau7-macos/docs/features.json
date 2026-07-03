@@ -71,6 +71,13 @@
   },
   {
     "category": "AI Integration",
+    "feature": "MAGI Bounded Structured Repair",
+    "description": "Structured-output repair ignores stale prior completion events, sends only the relevant transcript excerpt to the repair prompt, and accepts model list fields returned as either strings or arrays",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "AI Integration",
     "feature": "MAGI MCP Contract Preflight",
     "description": "magi ask verifies that the running Chau7 MCP socket supports filtered full-message repo events before launching agents and fails immediately with a restart instruction when the app process is stale",
     "status": "Shipped",

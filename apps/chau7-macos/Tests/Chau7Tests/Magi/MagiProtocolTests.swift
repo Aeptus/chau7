@@ -261,6 +261,54 @@ final class MagiProtocolTests: XCTestCase {
         XCTAssertEqual(result.evidenceRequests[0].priority, .medium)
     }
 
+    func testParseCritiquesAcceptsStringFieldsFromModels() throws {
+        let markers = MagiProtocolMarkers(
+            runID: "run-1",
+            roundID: "round-2",
+            memberID: .melchior,
+            stage: .critique
+        )
+        let output = """
+        \(markers.begin)
+        {
+          "member": "melchior",
+          "round": 2,
+          "critiques": [
+            {
+              "target_member_id": "balthasar",
+              "agreements": "VI is a strong overall answer.",
+              "disagreements": "Risk framing is too conservative.",
+              "missing_evidence": "Weighting model is unresolved.",
+              "evidence_requests": [
+                {
+                  "priority": "low",
+                  "reason": "Need one searchable phrase.",
+                  "required_evidence": "critical reception",
+                  "proposed_collectors": "web.query:Final Fantasy VI reception"
+                }
+              ]
+            }
+          ],
+          "evidence_requests": []
+        }
+        \(markers.end)
+        """
+
+        let result = try MagiTranscriptParser.parseCritiques(
+            criticMemberID: .melchior,
+            roundID: "round-2",
+            output: output,
+            markers: markers
+        )
+
+        XCTAssertEqual(result.critiques.count, 1)
+        XCTAssertEqual(result.critiques[0].agreements, ["VI is a strong overall answer."])
+        XCTAssertEqual(result.critiques[0].disagreements, ["Risk framing is too conservative."])
+        XCTAssertEqual(result.critiques[0].missingEvidence, ["Weighting model is unresolved."])
+        XCTAssertEqual(result.evidenceRequests[0].requiredEvidence, ["critical reception"])
+        XCTAssertEqual(result.evidenceRequests[0].proposedCollectors, ["web.query:Final Fantasy VI reception"])
+    }
+
     func testParseVoteWithBlockingVeto() throws {
         let markers = MagiProtocolMarkers(
             runID: "run-1",
@@ -436,6 +484,8 @@ final class MagiProtocolTests: XCTestCase {
         XCTAssertTrue(prompt.contains("Raw answer was Final Fantasy VI."))
         XCTAssertTrue(prompt.contains("must be standalone lines"))
         XCTAssertTrue(prompt.contains("Do not use Markdown fences around the JSON block."))
+        XCTAssertTrue(prompt.contains("Raw transcript excerpt:"))
+        XCTAssertTrue(prompt.contains("If the excerpt only shows the task and no usable answer"))
 
         let markers = MagiProtocolMarkers(
             runID: "run-1",
@@ -444,6 +494,52 @@ final class MagiProtocolTests: XCTestCase {
             stage: .position
         )
         XCTAssertEqual(MagiTranscriptParser.blockCandidates(in: prompt, markers: markers), [])
+    }
+
+    func testRepairTranscriptExcerptFocusesOnExpectedMarkerWindow() {
+        let markers = MagiProtocolMarkers(
+            runID: "run-1",
+            roundID: "round-2",
+            memberID: .balthasar,
+            stage: .critique
+        )
+        let stale = String(repeating: "old session output\n", count: 500)
+        let current = """
+        MAGI cross-examination
+        Begin marker name: \(markers.begin)
+        Current council packet.
+        """
+
+        let excerpt = MagiPromptBuilder.repairTranscriptExcerpt(
+            stale + current,
+            markers: markers,
+            maxCharacters: 400
+        )
+
+        XCTAssertFalse(excerpt.contains("old session output"))
+        XCTAssertTrue(excerpt.contains(markers.begin))
+        XCTAssertTrue(excerpt.contains("Current council packet."))
+        XCTAssertTrue(excerpt.contains("[earlier transcript omitted]"))
+    }
+
+    func testRepairTranscriptExcerptFallsBackToTailWithoutMarker() {
+        let markers = MagiProtocolMarkers(
+            runID: "run-1",
+            roundID: "round-2",
+            memberID: .casper,
+            stage: .critique
+        )
+        let transcript = String(repeating: "older\n", count: 200) + "recent answer text"
+
+        let excerpt = MagiPromptBuilder.repairTranscriptExcerpt(
+            transcript,
+            markers: markers,
+            maxCharacters: 80
+        )
+
+        XCTAssertTrue(excerpt.contains("recent answer text"))
+        XCTAssertFalse(excerpt.contains(String(repeating: "older\n", count: 50)))
+        XCTAssertTrue(excerpt.contains("[earlier transcript omitted]"))
     }
 
     func testPersonaFileParserUsesUserEditablePrompt() {

@@ -51,6 +51,8 @@ struct MagiMCPOrchestrator {
     var launchTimeoutMs = 60000
     var launchMemberThrottleSeconds: TimeInterval = 0.6
     var progressPulseSeconds: TimeInterval = 10
+    var idleRepairGraceSeconds: TimeInterval = 12
+    var repairTranscriptMaxCharacters = MagiPromptBuilder.defaultRepairTranscriptMaxCharacters
     var terminalStyle = MagiRunTerminalStyle()
 
     // swiftlint:disable:next function_body_length
@@ -1223,6 +1225,13 @@ struct MagiMCPOrchestrator {
         parser: (String) throws -> T
     ) throws -> T {
         let deadline = Date().addingTimeInterval(roundTimeoutSeconds)
+        let startedAt = Date()
+        let expectedMarkers = MagiProtocolMarkers(
+            runID: runID,
+            roundID: roundID,
+            memberID: member.id,
+            stage: stageKind
+        )
         var lastError: Error?
         var lastOutput = ""
         var lastLoggedOutputCount: Int?
@@ -1326,7 +1335,13 @@ struct MagiMCPOrchestrator {
                 if shouldRepairImmediately(error) {
                     break
                 }
-                if shouldRepairAfterIdleMissingBlock(error, capture: capture) {
+                if shouldRepairAfterIdleMissingBlock(
+                    error,
+                    capture: capture,
+                    output: output,
+                    markers: expectedMarkers,
+                    elapsed: Date().timeIntervalSince(startedAt)
+                ) {
                     technicalLog.record(
                         "structured_parse_idle_without_block",
                         stage: stage,
@@ -1362,13 +1377,28 @@ struct MagiMCPOrchestrator {
             message: parseError,
             fields: ["stage_kind": stageKind.rawValue]
         )
+        let repairTranscript = MagiPromptBuilder.repairTranscriptExcerpt(
+            lastOutput,
+            markers: expectedMarkers,
+            maxCharacters: repairTranscriptMaxCharacters
+        )
+        technicalLog.record(
+            "structured_repair_transcript_excerpt",
+            stage: stage,
+            memberID: member.id,
+            tabID: tabID,
+            fields: [
+                "raw_characters": String(lastOutput.count),
+                "excerpt_characters": String(repairTranscript.count)
+            ]
+        )
         let repairPrompt = MagiPromptBuilder.repairPrompt(
             runID: runID,
             roundID: roundID,
             member: member,
             stage: stageKind,
             parseError: parseError,
-            rawTranscript: lastOutput
+            rawTranscript: repairTranscript
         )
         try sendPrompt(
             repairPrompt,
@@ -1489,13 +1519,20 @@ struct MagiMCPOrchestrator {
         }
     }
 
-    private func shouldRepairAfterIdleMissingBlock(_ error: Error, capture: MagiPolledOutput) -> Bool {
+    private func shouldRepairAfterIdleMissingBlock(
+        _ error: Error,
+        capture: MagiPolledOutput,
+        output: String,
+        markers: MagiProtocolMarkers,
+        elapsed: TimeInterval
+    ) -> Bool {
         guard case .missingBlock = error as? MagiTranscriptParseError else {
             return false
         }
-        if !capture.eventMessages.isEmpty {
+        if output.contains(markers.begin) || output.contains(markers.end) {
             return true
         }
+        guard elapsed >= idleRepairGraceSeconds else { return false }
         return capture.tabStatus.map(MagiMCPEventParsing.tabStatusIsIdleForRepair) ?? false
     }
 

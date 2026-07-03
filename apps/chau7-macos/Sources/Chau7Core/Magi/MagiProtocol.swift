@@ -56,6 +56,9 @@ public enum MagiTabTitleFormatter {
 // MARK: - Prompt Builder
 
 public enum MagiPromptBuilder {
+    public static let defaultRepairTranscriptMaxCharacters = 24_000
+    private static let repairTranscriptContextBeforeMarker = 6_000
+
     public static func independentAnalysisPrompt(
         runID: String,
         roundID: String,
@@ -318,7 +321,8 @@ public enum MagiPromptBuilder {
         Parse error:
         \(parseError)
 
-        Extract or repair your own final answer from the raw transcript below. Do not add new analysis.
+        Extract or repair your own final answer from the raw transcript excerpt below. Do not add new analysis if your answer is present.
+        If the excerpt only shows the task and no usable answer, answer that task now using only the supplied MAGI context.
         Return exactly one parseable JSON block wrapped by the required markers.
         The required begin marker and end marker must be standalone lines.
         Do not use Markdown fences around the JSON block.
@@ -335,9 +339,30 @@ public enum MagiPromptBuilder {
         Required stage:
         \(stage.outputName)
 
-        Raw transcript:
+        Raw transcript excerpt:
         \(rawTranscript)
         """
+    }
+
+    public static func repairTranscriptExcerpt(
+        _ transcript: String,
+        markers: MagiProtocolMarkers,
+        maxCharacters: Int = defaultRepairTranscriptMaxCharacters
+    ) -> String {
+        guard maxCharacters > 0, transcript.count > maxCharacters else {
+            return transcript
+        }
+
+        if let markerRange = transcript.range(of: markers.begin, options: .backwards) {
+            let contextBefore = min(repairTranscriptContextBeforeMarker, maxCharacters / 3)
+            let distanceBeforeMarker = transcript.distance(from: transcript.startIndex, to: markerRange.lowerBound)
+            let contextDistance = min(contextBefore, distanceBeforeMarker)
+            let start = transcript.index(markerRange.lowerBound, offsetBy: -contextDistance)
+            return clippedExcerpt(from: transcript, start: start, maxCharacters: maxCharacters)
+        }
+
+        let start = transcript.index(transcript.endIndex, offsetBy: -maxCharacters)
+        return clippedExcerpt(from: transcript, start: start, maxCharacters: maxCharacters)
     }
 
     public static func roundNumber(from roundID: String) -> Int {
@@ -369,6 +394,18 @@ public enum MagiPromptBuilder {
             \(packet.content)
             """
         }.joined(separator: "\n\n")
+    }
+
+    private static func clippedExcerpt(from transcript: String, start: String.Index, maxCharacters: Int) -> String {
+        let end = transcript.index(start, offsetBy: maxCharacters, limitedBy: transcript.endIndex) ?? transcript.endIndex
+        var excerpt = String(transcript[start ..< end])
+        if start > transcript.startIndex {
+            excerpt = "[earlier transcript omitted]\n" + excerpt
+        }
+        if end < transcript.endIndex {
+            excerpt += "\n[later transcript omitted]"
+        }
+        return excerpt
     }
 }
 
@@ -707,9 +744,9 @@ private struct CritiquePayload: Decodable {
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         self.targetMemberID = try container.decode(String.self, forKey: .targetMemberID)
-        self.agreements = try container.decodeIfPresent([String].self, forKey: .agreements) ?? []
-        self.disagreements = try container.decodeIfPresent([String].self, forKey: .disagreements) ?? []
-        self.missingEvidence = try container.decodeIfPresent([String].self, forKey: .missingEvidence) ?? []
+        self.agreements = try decodeStringList(container, forKey: .agreements)
+        self.disagreements = try decodeStringList(container, forKey: .disagreements)
+        self.missingEvidence = try decodeStringList(container, forKey: .missingEvidence)
         self.evidenceRequests = try container.decodeIfPresent([EvidenceRequestPayload].self, forKey: .evidenceRequests) ?? []
     }
 }
@@ -784,9 +821,23 @@ private struct EvidenceRequestPayload: Decodable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         self.priority = try container.decodeIfPresent(String.self, forKey: .priority) ?? MagiEvidencePriority.medium.rawValue
         self.reason = try container.decodeIfPresent(String.self, forKey: .reason) ?? ""
-        self.requiredEvidence = try container.decodeIfPresent([String].self, forKey: .requiredEvidence) ?? []
-        self.proposedCollectors = try container.decodeIfPresent([String].self, forKey: .proposedCollectors) ?? []
+        self.requiredEvidence = try decodeStringList(container, forKey: .requiredEvidence)
+        self.proposedCollectors = try decodeStringList(container, forKey: .proposedCollectors)
     }
+}
+
+private func decodeStringList<K: CodingKey>(
+    _ container: KeyedDecodingContainer<K>,
+    forKey key: K
+) throws -> [String] {
+    if let array = try? container.decodeIfPresent([String].self, forKey: key) {
+        return array
+    }
+    if let string = try? container.decodeIfPresent(String.self, forKey: key) {
+        let trimmed = string.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? [] : [trimmed]
+    }
+    return []
 }
 
 private struct VetoPayload: Decodable {
