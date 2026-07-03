@@ -79,6 +79,11 @@ public struct AIEventSource: RawRepresentable, Equatable, Hashable, Codable, Sen
     // when a history monitor, hook, or OSC 9 parser is wired for the tool.
     // The aiEventSource(for:) lookup in AppModel uses these via the registry,
     // so they must remain defined even without active producers.
+    //
+    // These statics are typed conveniences over `AIToolRegistry.allTools`
+    // event-source raw values. AIToolRegistryTests
+    // .testEventSourceStaticsMatchRegistry fails if this list and the
+    // registry drift apart.
     public static let gemini = AIEventSource(rawValue: "gemini")
     public static let chatgpt = AIEventSource(rawValue: "chatgpt")
     public static let cursor = AIEventSource(rawValue: "cursor")
@@ -94,30 +99,24 @@ public struct AIEventSource: RawRepresentable, Equatable, Hashable, Codable, Sen
     public static let amp = AIEventSource(rawValue: "amp")
     public static let continueAI = AIEventSource(rawValue: "continue_ai")
 
+    /// Sources with dedicated notification adapters in
+    /// `NotificationProviderAdapterRegistry` (provider-specific event shapes).
+    /// Every other registry tool routes through the generic AI adapter.
+    public static let dedicatedAdapterSources: Set<AIEventSource> = [.claudeCode, .codex]
+
+    /// Event sources for every tool in `AIToolRegistry` that declares one.
+    /// Derived — adding a tool to the registry automatically adds it here.
+    public static let registryToolSources: [AIEventSource] = AIToolRegistry.allTools.compactMap(\.eventSource)
+
     /// Sources that route through the "generic AI" notification adapter —
     /// tool-level sources that emit `AIEvent` payloads but don't have a
-    /// dedicated adapter like ClaudeCode or Codex. When adding a new
-    /// tool-level source, include it here so `NotificationProviderAdapter
-    /// Registry.adapt(_:)` routes it through the generic path. A source
-    /// that's declared-but-omitted from this set will fall through the
-    /// registry's `default:` branch to `.unknown`-style handling.
-    public static let genericAIAdapterSources: Set<AIEventSource> = [
-        .runtime,
-        .gemini,
-        .chatgpt,
-        .cursor,
-        .windsurf,
-        .copilot,
-        .aider,
-        .cline,
-        .cody,
-        .amazonQ,
-        .devin,
-        .goose,
-        .mentat,
-        .amp,
-        .continueAI
-    ]
+    /// dedicated adapter like ClaudeCode or Codex. Derived from
+    /// `AIToolRegistry.allTools` (every registry tool source minus the
+    /// dedicated-adapter ones) plus `.runtime`, so
+    /// `NotificationProviderAdapterRegistry.adapt(_:)` routes a newly
+    /// registered tool through the generic path with no extra edit.
+    public static let genericAIAdapterSources: Set<AIEventSource> =
+        Set(registryToolSources).subtracting(dedicatedAdapterSources).union([.runtime])
 
     public static func forProvider(_ provider: String?) -> AIEventSource? {
         guard let trimmed = provider?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(),

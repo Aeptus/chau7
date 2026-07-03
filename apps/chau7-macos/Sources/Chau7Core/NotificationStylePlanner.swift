@@ -2,15 +2,9 @@ import Foundation
 
 public enum NotificationStylePlanner {
     public static func defaultStyleAction(for event: AIEvent) -> NotificationActionConfig? {
-        let preset: String
-        switch NotificationSemanticMapping.normalize(event.type) {
-        case "error", "failed", "context_limit", "tool_failed", "response_failed":
-            preset = "error"
-        case "permission", "attention_required", "elicitation":
-            preset = "attention"
-        case "finished", "waiting_input", "idle":
-            preset = "waiting"
-        default:
+        // One vocabulary table declares the preset per trigger type; types
+        // without a preset (informational ones) get no default styling.
+        guard let preset = TriggerVocabulary.entry(forType: event.type)?.stylePreset else {
             return nil
         }
 

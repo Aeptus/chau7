@@ -29,6 +29,10 @@ public struct AIToolDefinition: Sendable {
     /// Must match the `rawValue` of the corresponding `AIEventSource` static constant.
     /// Nil means this tool has no dedicated event source (falls back to `.historyMonitor`).
     public let eventSourceRawValue: String?
+    /// Display name used by notification-settings surfaces when it differs
+    /// from `displayName` (e.g. "Claude" → "Claude Code", "Copilot" →
+    /// "GitHub Copilot"). Defaults to `displayName`.
+    public let notificationDisplayName: String
     /// Whether this tool renders the full-screen TUI that `InteractivePrompt
     /// Detector` scans for numbered-option prompts and that `AISubmitHeuristics`
     /// detects two-phase Enter submissions against. Non-TUI tools (Cursor,
@@ -45,6 +49,7 @@ public struct AIToolDefinition: Sendable {
         logoAssetName: String?,
         tabColorName: String?,
         eventSourceRawValue: String?,
+        notificationDisplayName: String? = nil,
         usesTerminalUIHeuristics: Bool = false
     ) {
         self.displayName = displayName
@@ -55,7 +60,20 @@ public struct AIToolDefinition: Sendable {
         self.logoAssetName = logoAssetName
         self.tabColorName = tabColorName
         self.eventSourceRawValue = eventSourceRawValue
+        self.notificationDisplayName = notificationDisplayName ?? displayName
         self.usesTerminalUIHeuristics = usesTerminalUIHeuristics
+    }
+
+    /// camelCase localization-key segment derived from `eventSourceRawValue`
+    /// ("claude_code" → "claudeCode", "continue_ai" → "continueAI"). Nil when
+    /// the tool has no event source.
+    public var eventSourceCamelKey: String? {
+        eventSourceRawValue?.snakeToCamelKey
+    }
+
+    /// The tool's `AIEventSource`, when it has one.
+    public var eventSource: AIEventSource? {
+        eventSourceRawValue.map(AIEventSource.init(rawValue:))
     }
 
     /// How to construct a resume command for this tool.
@@ -111,6 +129,7 @@ public enum AIToolRegistry {
             logoAssetName: "claude-logo",
             tabColorName: "purple",
             eventSourceRawValue: "claude_code",
+            notificationDisplayName: "Claude Code",
             usesTerminalUIHeuristics: true
         ),
         // — Codex (OpenAI) —
@@ -165,7 +184,8 @@ public enum AIToolRegistry {
             resumeFormat: nil,
             logoAssetName: "copilot-logo",
             tabColorName: "orange",
-            eventSourceRawValue: "copilot"
+            eventSourceRawValue: "copilot",
+            notificationDisplayName: "GitHub Copilot"
         ),
         // — Aider —
         AIToolDefinition(
@@ -413,5 +433,22 @@ public enum AIToolRegistry {
             return nil
         }
         return value
+    }
+}
+
+extension String {
+    /// "snake_case" → "snakeCase", used to derive localization-key segments
+    /// from source raw values and trigger types. Components after the first
+    /// that are 1–2 characters long are fully uppercased, matching the Swift
+    /// acronym convention the shipped keys already use ("amazon_q" →
+    /// "amazonQ", "continue_ai" → "continueAI").
+    var snakeToCamelKey: String {
+        let parts = split(separator: "_")
+        guard let first = parts.first else { return self }
+        return parts.dropFirst().reduce(String(first)) { partial, component in
+            component.count <= 2
+                ? partial + component.uppercased()
+                : partial + component.prefix(1).uppercased() + component.dropFirst()
+        }
     }
 }

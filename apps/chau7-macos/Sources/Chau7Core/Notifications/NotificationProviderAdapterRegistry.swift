@@ -44,11 +44,12 @@ public enum NotificationProviderAdapterRegistry {
         case .apiProxy:
             return adaptMappedSourceEvent(event, policy: .apiProxy)
         default:
-            // Generic AI sources (15 tool-level sources that share the
-            // semantic-mapping path) route via the set declared on
-            // `AIEventSource` so adding a new tool only touches that file.
-            // Any source that's neither dedicated nor in the generic set
-            // falls through to the unknown-source adapter.
+            // Generic AI sources (tool-level sources that share the
+            // semantic-mapping path) route via the set derived from
+            // `AIToolRegistry.allTools`, so adding a new tool needs no edit
+            // here or on `AIEventSource`. Any source that's neither
+            // dedicated nor in the generic set falls through to the
+            // unknown-source adapter.
             if AIEventSource.genericAIAdapterSources.contains(event.source) {
                 return adaptMappedSourceEvent(event, policy: .genericAI)
             }

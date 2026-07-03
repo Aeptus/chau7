@@ -241,4 +241,78 @@ final class AIToolRegistryTests: XCTestCase {
             .sorted()
         XCTAssertEqual(flagged, ["Claude", "Codex", "Gemini"])
     }
+
+    // MARK: - Registry as the single tool-identity table (drift guards)
+
+    /// Every `AIEventSource` tool static must have a registry tool declaring
+    /// its raw value, and vice versa. If this fails after adding a tool to
+    /// `AIToolRegistry.allTools`, add the matching static on `AIEventSource`
+    /// (and extend this list); if it fails after adding a static, register
+    /// the tool.
+    func testEventSourceStaticsMatchRegistry() {
+        let statics: [AIEventSource] = [
+            .claudeCode, .codex, .gemini, .chatgpt, .cursor, .windsurf,
+            .copilot, .aider, .cline, .cody, .amazonQ, .devin, .goose,
+            .mentat, .amp, .continueAI
+        ]
+        XCTAssertEqual(
+            Set(AIEventSource.registryToolSources),
+            Set(statics),
+            "AIEventSource tool statics and AIToolRegistry event sources drifted apart"
+        )
+        XCTAssertEqual(
+            AIEventSource.registryToolSources.count,
+            Set(AIEventSource.registryToolSources).count,
+            "duplicate event source raw values in AIToolRegistry"
+        )
+    }
+
+    /// The generic-adapter set is derived: all registry tool sources minus
+    /// the dedicated adapters, plus the runtime agent.
+    func testGenericAIAdapterSourcesDerivedFromRegistry() {
+        let expected = Set(AIEventSource.registryToolSources)
+            .subtracting([.claudeCode, .codex])
+            .union([.runtime])
+        XCTAssertEqual(AIEventSource.genericAIAdapterSources, expected)
+        XCTAssertFalse(AIEventSource.genericAIAdapterSources.contains(.claudeCode))
+        XCTAssertFalse(AIEventSource.genericAIAdapterSources.contains(.codex))
+        XCTAssertTrue(AIEventSource.genericAIAdapterSources.contains(.runtime))
+    }
+
+    /// The notification trigger catalog derives its per-AI-source rows from
+    /// the registry: every registry tool source must have a source info whose
+    /// label is the tool's notification display name.
+    func testTriggerCatalogSourcesDerivedFromRegistry() {
+        let infosBySource = Dictionary(
+            uniqueKeysWithValues: NotificationTriggerCatalog.sources.map { ($0.id, $0) }
+        )
+        for tool in AIToolRegistry.allTools {
+            guard let source = tool.eventSource else { continue }
+            let info = infosBySource[source]
+            XCTAssertNotNil(info, "\(tool.displayName) missing from NotificationTriggerCatalog.sources")
+            XCTAssertEqual(info?.labelFallback, tool.notificationDisplayName)
+            XCTAssertEqual(info?.labelKey, "notifications.source.\(tool.eventSourceCamelKey ?? "")")
+        }
+    }
+
+    func testNotificationDisplayNameOverrides() {
+        XCTAssertEqual(AIToolRegistry.tool(named: "Claude")?.notificationDisplayName, "Claude Code")
+        XCTAssertEqual(AIToolRegistry.tool(named: "Copilot")?.notificationDisplayName, "GitHub Copilot")
+        // Defaults to displayName when no override is given.
+        XCTAssertEqual(AIToolRegistry.tool(named: "Codex")?.notificationDisplayName, "Codex")
+        XCTAssertEqual(AIToolRegistry.tool(named: "Gemini")?.notificationDisplayName, "Gemini")
+    }
+
+    func testEventSourceCamelKeyDerivation() {
+        XCTAssertEqual(AIToolRegistry.tool(named: "Claude")?.eventSourceCamelKey, "claudeCode")
+        XCTAssertEqual(AIToolRegistry.tool(named: "Amazon Q")?.eventSourceCamelKey, "amazonQ")
+        XCTAssertEqual(AIToolRegistry.tool(named: "Continue")?.eventSourceCamelKey, "continueAI")
+        XCTAssertEqual(AIToolRegistry.tool(named: "ChatGPT")?.eventSourceCamelKey, "chatgpt")
+        // Multi-word components stay title-cased; short (<=2 char) tails are
+        // acronym-uppercased.
+        XCTAssertEqual("needs_validation".snakeToCamelKey, "needsValidation")
+        XCTAssertEqual("git_branch_changed".snakeToCamelKey, "gitBranchChanged")
+        XCTAssertEqual("continue_ai".snakeToCamelKey, "continueAI")
+        XCTAssertEqual("finished".snakeToCamelKey, "finished")
+    }
 }

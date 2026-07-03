@@ -196,209 +196,89 @@ public struct NotificationTriggerState: Codable, Equatable, Sendable {
 public enum NotificationTriggerCatalog {
     public static let wildcardType = "*"
 
-    public static let sources: [NotificationTriggerSourceInfo] = [
-        // Core sources
+    /// Every source's label key follows `notifications.source.<camelKey>`.
+    private static func sourceInfo(
+        _ id: AIEventSource,
+        camel: String,
+        label: String,
+        sortOrder: Int
+    ) -> NotificationTriggerSourceInfo {
         NotificationTriggerSourceInfo(
-            id: .eventsLog,
-            labelKey: "notifications.source.eventsLog",
-            labelFallback: "AI Events Log",
-            sortOrder: 0
-        ),
-        NotificationTriggerSourceInfo(
-            id: .terminalSession,
-            labelKey: "notifications.source.terminalSession",
-            labelFallback: "Terminal Session",
-            sortOrder: 1
-        ),
-        NotificationTriggerSourceInfo(
-            id: .historyMonitor,
-            labelKey: "notifications.source.historyMonitor",
-            labelFallback: "History Monitor",
-            sortOrder: 2
-        ),
-        // Shell source
-        NotificationTriggerSourceInfo(
-            id: .shell,
-            labelKey: "notifications.source.shell",
-            labelFallback: "Shell",
-            sortOrder: 10
-        ),
-        // AI Coding Apps (sorted together)
-        NotificationTriggerSourceInfo(
-            id: .claudeCode,
-            labelKey: "notifications.source.claudeCode",
-            labelFallback: "Claude Code",
-            sortOrder: 20
-        ),
-        NotificationTriggerSourceInfo(
-            id: .codex,
-            labelKey: "notifications.source.codex",
-            labelFallback: "Codex",
-            sortOrder: 21
-        ),
-        NotificationTriggerSourceInfo(
-            id: .gemini,
-            labelKey: "notifications.source.gemini",
-            labelFallback: "Gemini",
-            sortOrder: 22
-        ),
-        NotificationTriggerSourceInfo(
-            id: .chatgpt,
-            labelKey: "notifications.source.chatgpt",
-            labelFallback: "ChatGPT",
-            sortOrder: 23
-        ),
-        NotificationTriggerSourceInfo(
-            id: .cursor,
-            labelKey: "notifications.source.cursor",
-            labelFallback: "Cursor",
-            sortOrder: 24
-        ),
-        NotificationTriggerSourceInfo(
-            id: .windsurf,
-            labelKey: "notifications.source.windsurf",
-            labelFallback: "Windsurf",
-            sortOrder: 25
-        ),
-        NotificationTriggerSourceInfo(
-            id: .copilot,
-            labelKey: "notifications.source.copilot",
-            labelFallback: "GitHub Copilot",
-            sortOrder: 26
-        ),
-        NotificationTriggerSourceInfo(
-            id: .aider,
-            labelKey: "notifications.source.aider",
-            labelFallback: "Aider",
-            sortOrder: 27
-        ),
-        NotificationTriggerSourceInfo(
-            id: .cline,
-            labelKey: "notifications.source.cline",
-            labelFallback: "Cline",
-            sortOrder: 28
-        ),
-        NotificationTriggerSourceInfo(
-            id: .cody,
-            labelKey: "notifications.source.cody",
-            labelFallback: "Cody",
-            sortOrder: 29
-        ),
-        NotificationTriggerSourceInfo(
-            id: .amazonQ,
-            labelKey: "notifications.source.amazonQ",
-            labelFallback: "Amazon Q",
-            sortOrder: 30
-        ),
-        NotificationTriggerSourceInfo(
-            id: .devin,
-            labelKey: "notifications.source.devin",
-            labelFallback: "Devin",
-            sortOrder: 31
-        ),
-        NotificationTriggerSourceInfo(
-            id: .goose,
-            labelKey: "notifications.source.goose",
-            labelFallback: "Goose",
-            sortOrder: 32
-        ),
-        NotificationTriggerSourceInfo(
-            id: .mentat,
-            labelKey: "notifications.source.mentat",
-            labelFallback: "Mentat",
-            sortOrder: 33
-        ),
-        NotificationTriggerSourceInfo(
-            id: .amp,
-            labelKey: "notifications.source.amp",
-            labelFallback: "Amp",
-            sortOrder: 34
-        ),
-        NotificationTriggerSourceInfo(
-            id: .continueAI,
-            labelKey: "notifications.source.continueAI",
-            labelFallback: "Continue",
-            sortOrder: 35
-        ),
-        NotificationTriggerSourceInfo(
-            id: .runtime,
-            labelKey: "notifications.source.runtime",
-            labelFallback: "Runtime Agent",
-            sortOrder: 36
-        ),
-        // App source
-        NotificationTriggerSourceInfo(
-            id: .app,
-            labelKey: "notifications.source.app",
-            labelFallback: "App",
-            sortOrder: 100
-        ),
-        // Catch-all sources (last)
-        NotificationTriggerSourceInfo(
-            id: .apiProxy,
-            labelKey: "notifications.source.apiProxy",
-            labelFallback: "API Proxy",
-            sortOrder: 200
-        ),
-        NotificationTriggerSourceInfo(
-            id: .unknown,
-            labelKey: "notifications.source.unknown",
-            labelFallback: "Unknown",
-            sortOrder: 201
+            id: id,
+            labelKey: "notifications.source.\(camel)",
+            labelFallback: label,
+            sortOrder: sortOrder
         )
-    ]
+    }
+
+    public static let sources: [NotificationTriggerSourceInfo] =
+        // Core sources
+        [
+            sourceInfo(.eventsLog, camel: "eventsLog", label: "AI Events Log", sortOrder: 0),
+            sourceInfo(.terminalSession, camel: "terminalSession", label: "Terminal Session", sortOrder: 1),
+            sourceInfo(.historyMonitor, camel: "historyMonitor", label: "History Monitor", sortOrder: 2),
+            // Shell source
+            sourceInfo(.shell, camel: "shell", label: "Shell", sortOrder: 10)
+        ]
+        // AI Coding Apps (derived from AIToolRegistry, sorted together)
+        + aiSources.enumerated().map { index, src in
+            sourceInfo(src.source, camel: src.camelCase, label: src.name, sortOrder: 20 + index)
+        }
+
+        + [
+            // App source
+            sourceInfo(.app, camel: "app", label: "App", sortOrder: 100),
+            // Catch-all sources (last)
+            sourceInfo(.apiProxy, camel: "apiProxy", label: "API Proxy", sortOrder: 200),
+            sourceInfo(.unknown, camel: "unknown", label: "Unknown", sortOrder: 201)
+        ]
 
     // MARK: - AI Trigger Matrix
 
+    /// Localization-key segment for a trigger type ("needs_validation" →
+    /// "needsValidation"); the wildcard maps to "other".
+    private static func typeCamelKey(_ type: String) -> String {
+        type == wildcardType ? "other" : type.snakeToCamelKey
+    }
+
     /// Trigger types shared across all AI coding tools.
-    /// (type, camelKey for localization, label suffix, description suffix, defaultEnabled)
-    private static let aiTriggerTypes: [(type: String, camelKey: String, labelSuffix: String, descSuffix: String, defaultEnabled: Bool)] = [
+    /// (type, label suffix, description suffix, defaultEnabled)
+    private static let aiTriggerTypes: [(type: String, labelSuffix: String, descSuffix: String, defaultEnabled: Bool)] = [
         // Default-on set is intentionally limited to two situations: the agent
         // has finished working (finished / failed / response_failed) and the
         // agent is waiting on the user (permission / waiting_input /
         // attention_required / elicitation). Mid-run noise (tool_failed) and the
         // idle heuristic stay off by default — explicit waiting_input/permission
         // hooks cover "needs me", so idle would only double up with noise.
-        ("finished", "finished", "Response complete", "finished responding.", true),
-        ("failed", "failed", "Task failed", "failed or exited with an error.", true),
-        ("permission", "permission", "Permission request", "needs permission to continue.", true),
-        ("waiting_input", "waitingInput", "Waiting for input", "is waiting for your input.", true),
-        ("attention_required", "attentionRequired", "Needs attention", "needs your attention.", true),
-        ("tool_failed", "toolFailed", "Tool failed", "tool execution failed.", false),
-        ("response_failed", "responseFailed", "Response failed", "response ended with an error.", true),
-        ("elicitation", "elicitation", "MCP input request", "MCP server requesting user input.", true),
-        ("authentication_succeeded", "authenticationSucceeded", "Authentication complete", "completed authentication.", false),
-        ("idle", "idle", "Session idle", "session appears idle.", false),
-        ("token_threshold", "tokenThreshold", "Token threshold", "Token usage exceeded threshold.", false),
-        ("cost_threshold", "costThreshold", "Cost threshold", "Session cost exceeded threshold.", false),
-        ("tool_called", "toolCalled", "Tool called", "called a tool.", false),
-        ("file_edited", "fileEdited", "File edited", "edited a file.", false),
-        ("error", "error", "Error occurred", "encountered an error.", false),
-        ("context_limit", "contextLimit", "Context limit", "approaching context window limit.", false),
-        (wildcardType, "other", "Other events", "event types.", false)
+        ("finished", "Response complete", "finished responding.", true),
+        ("failed", "Task failed", "failed or exited with an error.", true),
+        ("permission", "Permission request", "needs permission to continue.", true),
+        ("waiting_input", "Waiting for input", "is waiting for your input.", true),
+        ("attention_required", "Needs attention", "needs your attention.", true),
+        ("tool_failed", "Tool failed", "tool execution failed.", false),
+        ("response_failed", "Response failed", "response ended with an error.", true),
+        ("elicitation", "MCP input request", "MCP server requesting user input.", true),
+        ("authentication_succeeded", "Authentication complete", "completed authentication.", false),
+        ("idle", "Session idle", "session appears idle.", false),
+        ("token_threshold", "Token threshold", "Token usage exceeded threshold.", false),
+        ("cost_threshold", "Cost threshold", "Session cost exceeded threshold.", false),
+        ("tool_called", "Tool called", "called a tool.", false),
+        ("file_edited", "File edited", "edited a file.", false),
+        ("error", "Error occurred", "encountered an error.", false),
+        ("context_limit", "Context limit", "approaching context window limit.", false),
+        (wildcardType, "Other events", "event types.", false)
     ]
 
-    /// AI sources that share the same trigger structure.
-    /// (source, display name, camelCase key for localization)
-    private static let aiSources: [(source: AIEventSource, name: String, camelCase: String)] = [
-        (.claudeCode, "Claude Code", "claudeCode"),
-        (.codex, "Codex", "codex"),
-        (.gemini, "Gemini", "gemini"),
-        (.chatgpt, "ChatGPT", "chatgpt"),
-        (.cursor, "Cursor", "cursor"),
-        (.windsurf, "Windsurf", "windsurf"),
-        (.copilot, "GitHub Copilot", "copilot"),
-        (.aider, "Aider", "aider"),
-        (.cline, "Cline", "cline"),
-        (.cody, "Cody", "cody"),
-        (.amazonQ, "Amazon Q", "amazonQ"),
-        (.devin, "Devin", "devin"),
-        (.goose, "Goose", "goose"),
-        (.mentat, "Mentat", "mentat"),
-        (.amp, "Amp", "amp"),
-        (.continueAI, "Continue", "continueAI"),
-        (.runtime, "Runtime Agent", "runtime")
-    ]
+    /// AI sources that share the same trigger structure, derived from
+    /// `AIToolRegistry.allTools` (every tool with an event source, in registry
+    /// order) plus the runtime agent — adding a tool to the registry adds its
+    /// notification source, triggers, and localization keys automatically.
+    /// (source, notification display name, camelCase key for localization)
+    private static let aiSources: [(source: AIEventSource, name: String, camelCase: String)] =
+        AIToolRegistry.allTools.compactMap { tool in
+            guard let source = tool.eventSource, let camel = tool.eventSourceCamelKey else { return nil }
+            return (source, tool.notificationDisplayName, camel)
+        } + [(.runtime, "Runtime Agent", "runtime")]
 
     /// All AI triggers generated from the source × type matrix.
     private static let aiTriggers: [NotificationTrigger] = aiSources.flatMap { src in
@@ -406,11 +286,11 @@ public enum NotificationTriggerCatalog {
             NotificationTrigger(
                 source: src.source,
                 type: tt.type,
-                labelKey: "notifications.trigger.\(src.camelCase).\(tt.camelKey).label",
+                labelKey: "notifications.trigger.\(src.camelCase).\(typeCamelKey(tt.type)).label",
                 labelFallback: tt.type == wildcardType
                     ? "Other \(src.name) events"
                     : tt.labelSuffix,
-                descriptionKey: "notifications.trigger.\(src.camelCase).\(tt.camelKey).description",
+                descriptionKey: "notifications.trigger.\(src.camelCase).\(typeCamelKey(tt.type)).description",
                 descriptionFallback: tt.type == wildcardType
                     ? "Any other \(src.name) event types."
                     : "\(src.name) \(tt.descSuffix)",
@@ -422,423 +302,119 @@ public enum NotificationTriggerCatalog {
 
     // MARK: - Non-AI Triggers (unique types and descriptions)
 
-    private static let eventsLogTriggers: [NotificationTrigger] = [
-        NotificationTrigger(
-            source: .eventsLog,
-            type: "finished",
-            labelKey: "notifications.trigger.eventsLog.finished.label",
-            labelFallback: "Task finished",
-            descriptionKey: "notifications.trigger.eventsLog.finished.description",
-            descriptionFallback: "An AI event reports a completed task.",
-            defaultEnabled: true,
-            displayContexts: [.settings, .activity]
-        ),
-        NotificationTrigger(
-            source: .eventsLog,
-            type: "failed",
-            labelKey: "notifications.trigger.eventsLog.failed.label",
-            labelFallback: "Task failed",
-            descriptionKey: "notifications.trigger.eventsLog.failed.description",
-            descriptionFallback: "An AI event reports a failure or error.",
-            defaultEnabled: true,
-            displayContexts: [.settings, .activity]
-        ),
-        NotificationTrigger(
-            source: .eventsLog,
-            type: "needs_validation",
-            labelKey: "notifications.trigger.eventsLog.needsValidation.label",
-            labelFallback: "Needs validation",
-            descriptionKey: "notifications.trigger.eventsLog.needsValidation.description",
-            descriptionFallback: "An AI event requests review or confirmation.",
-            defaultEnabled: false,
-            displayContexts: [.settings, .activity]
-        ),
-        NotificationTrigger(
-            source: .eventsLog,
-            type: "permission",
-            labelKey: "notifications.trigger.eventsLog.permission.label",
-            labelFallback: "Permission request",
-            descriptionKey: "notifications.trigger.eventsLog.permission.description",
-            descriptionFallback: "An AI event requests permission to proceed.",
-            defaultEnabled: true,
-            displayContexts: [.settings, .activity]
-        ),
-        NotificationTrigger(
-            source: .eventsLog,
-            type: "tool_complete",
-            labelKey: "notifications.trigger.eventsLog.toolComplete.label",
-            labelFallback: "Tool complete",
-            descriptionKey: "notifications.trigger.eventsLog.toolComplete.description",
-            descriptionFallback: "An AI event reports a tool finished executing.",
-            defaultEnabled: false,
-            displayContexts: [.settings, .activity]
-        ),
-        NotificationTrigger(
-            source: .eventsLog,
-            type: "session_end",
-            labelKey: "notifications.trigger.eventsLog.sessionEnd.label",
-            labelFallback: "Session ended",
-            descriptionKey: "notifications.trigger.eventsLog.sessionEnd.description",
-            descriptionFallback: "An AI event reports a session ended.",
-            defaultEnabled: false,
-            displayContexts: [.settings, .activity]
-        ),
-        NotificationTrigger(
-            source: .eventsLog,
-            type: "idle",
-            labelKey: "notifications.trigger.eventsLog.idle.label",
-            labelFallback: "Command idle",
-            descriptionKey: "notifications.trigger.eventsLog.idle.description",
-            descriptionFallback: "An AI event reports inactivity or waiting for input.",
-            defaultEnabled: false,
-            displayContexts: [.settings, .activity]
-        ),
-        NotificationTrigger(
-            source: .eventsLog,
-            type: "notification",
-            labelKey: "notifications.trigger.eventsLog.notification.label",
-            labelFallback: "Custom notification",
-            descriptionKey: "notifications.trigger.eventsLog.notification.description",
-            descriptionFallback: "An AI event requests a custom notification.",
-            defaultEnabled: false,
-            displayContexts: [.settings, .activity]
-        ),
-        NotificationTrigger(
-            source: .eventsLog,
-            type: wildcardType,
-            labelKey: "notifications.trigger.eventsLog.other.label",
-            labelFallback: "Other events",
-            descriptionKey: "notifications.trigger.eventsLog.other.description",
-            descriptionFallback: "Any other AI event types not listed above.",
-            defaultEnabled: false,
-            displayContexts: [.settings, .activity]
-        )
-    ]
+    /// One row of a per-source trigger table: `(type, label, description)`
+    /// plus defaults. Localization keys are derived mechanically as
+    /// `notifications.trigger.<sourceCamel>.<typeCamel>.label` /
+    /// `.description` — the exact convention every previously hand-written
+    /// entry already followed. `NotificationTriggerCatalogGoldenTests` pins
+    /// the full derived key set byte-for-byte.
+    private struct TriggerSpec {
+        let type: String
+        let label: String
+        let description: String
+        let defaultEnabled: Bool
+        let displayContexts: NotificationTriggerDisplay
 
-    private static let terminalSessionTriggers: [NotificationTrigger] = [
-        NotificationTrigger(
-            source: .terminalSession,
-            type: "finished",
-            labelKey: "notifications.trigger.terminalSession.finished.label",
-            labelFallback: "AI tool finished",
-            descriptionKey: "notifications.trigger.terminalSession.finished.description",
-            descriptionFallback: "An AI tool finished in the terminal.",
-            defaultEnabled: true,
-            displayContexts: [.settings, .activity]
-        ),
-        NotificationTrigger(
-            source: .terminalSession,
-            type: "permission",
-            labelKey: "notifications.trigger.terminalSession.permission.label",
-            labelFallback: "AI tool needs permission",
-            descriptionKey: "notifications.trigger.terminalSession.permission.description",
-            descriptionFallback: "An AI tool in the terminal needs permission to continue.",
-            defaultEnabled: true,
-            displayContexts: [.settings, .activity]
-        ),
-        NotificationTrigger(
-            source: .terminalSession,
-            type: "idle",
-            labelKey: "notifications.trigger.terminalSession.idle.label",
-            labelFallback: "Command idle",
-            descriptionKey: "notifications.trigger.terminalSession.idle.description",
-            descriptionFallback: "Terminal command produced no output for the idle timeout.",
-            defaultEnabled: false,
-            displayContexts: [.settings, .activity]
-        ),
-        NotificationTrigger(
-            source: .terminalSession,
-            type: "failed",
-            labelKey: "notifications.trigger.terminalSession.failed.label",
-            labelFallback: "Shell exited",
-            descriptionKey: "notifications.trigger.terminalSession.failed.description",
-            descriptionFallback: "Terminal shell process exited.",
-            defaultEnabled: true,
-            displayContexts: [.settings, .activity]
-        ),
-        NotificationTrigger(
-            source: .terminalSession,
-            type: "info",
-            labelKey: "notifications.trigger.terminalSession.info.label",
-            labelFallback: "AI tool started",
-            descriptionKey: "notifications.trigger.terminalSession.info.description",
-            descriptionFallback: "An AI tool started in the terminal.",
-            defaultEnabled: false,
-            displayContexts: [.settings, .activity]
-        )
-    ]
+        init(
+            _ type: String,
+            _ label: String,
+            _ description: String,
+            defaultEnabled: Bool = false,
+            displayContexts: NotificationTriggerDisplay = [.settings, .activity]
+        ) {
+            self.type = type
+            self.label = label
+            self.description = description
+            self.defaultEnabled = defaultEnabled
+            self.displayContexts = displayContexts
+        }
+    }
 
-    private static let historyMonitorTriggers: [NotificationTrigger] = [
-        NotificationTrigger(
-            source: .historyMonitor,
-            type: "finished",
-            labelKey: "notifications.trigger.historyMonitor.finished.label",
-            labelFallback: "Session completed (history)",
-            descriptionKey: "notifications.trigger.historyMonitor.finished.description",
-            descriptionFallback: "AI session completed as detected by history file monitoring.",
-            defaultEnabled: true,
-            displayContexts: [.settings, .activity]
-        ),
-        NotificationTrigger(
-            source: .historyMonitor,
-            type: "idle",
-            labelKey: "notifications.trigger.historyMonitor.idle.label",
-            labelFallback: "History idle",
-            descriptionKey: "notifications.trigger.historyMonitor.idle.description",
-            descriptionFallback: "No new history entries for the idle timeout.",
-            defaultEnabled: false,
-            displayContexts: [.settings, .activity]
-        )
-    ]
+    /// Expands a source's spec table into catalog triggers with derived keys.
+    private static func buildTriggers(
+        source: AIEventSource,
+        sourceCamel: String,
+        _ specs: [TriggerSpec]
+    ) -> [NotificationTrigger] {
+        specs.map { spec in
+            NotificationTrigger(
+                source: source,
+                type: spec.type,
+                labelKey: "notifications.trigger.\(sourceCamel).\(typeCamelKey(spec.type)).label",
+                labelFallback: spec.label,
+                descriptionKey: "notifications.trigger.\(sourceCamel).\(typeCamelKey(spec.type)).description",
+                descriptionFallback: spec.description,
+                defaultEnabled: spec.defaultEnabled,
+                displayContexts: spec.displayContexts
+            )
+        }
+    }
 
-    private static let shellTriggers: [NotificationTrigger] = [
-        NotificationTrigger(
-            source: .shell,
-            type: "command_finished",
-            labelKey: "notifications.trigger.shell.commandFinished.label",
-            labelFallback: "Command finished",
-            descriptionKey: "notifications.trigger.shell.commandFinished.description",
-            descriptionFallback: "A shell command completed execution.",
-            // Off by default: plain shell command completion is not an agent
-            // event and would notify on every command. Opt in from settings.
-            defaultEnabled: false,
-            displayContexts: [.settings, .activity]
-        ),
-        NotificationTrigger(
-            source: .shell,
-            type: "command_failed",
-            labelKey: "notifications.trigger.shell.commandFailed.label",
-            labelFallback: "Command failed",
-            descriptionKey: "notifications.trigger.shell.commandFailed.description",
-            descriptionFallback: "A shell command exited with non-zero status.",
-            // Off by default: a non-zero shell exit is not an agent event and
-            // would notify on every failed command. Opt in from settings.
-            defaultEnabled: false,
-            displayContexts: [.settings, .activity]
-        ),
-        NotificationTrigger(
-            source: .shell,
-            type: "exit_code_match",
-            labelKey: "notifications.trigger.shell.exitCodeMatch.label",
-            labelFallback: "Exit code match",
-            descriptionKey: "notifications.trigger.shell.exitCodeMatch.description",
-            descriptionFallback: "Command exited with a specific exit code.",
-            defaultEnabled: false,
-            displayContexts: [.settings, .activity]
-        ),
-        NotificationTrigger(
-            source: .shell,
-            type: "pattern_match",
-            labelKey: "notifications.trigger.shell.patternMatch.label",
-            labelFallback: "Output pattern match",
-            descriptionKey: "notifications.trigger.shell.patternMatch.description",
-            descriptionFallback: "Command output matched a configured pattern.",
-            defaultEnabled: false,
-            displayContexts: [.settings, .activity]
-        ),
-        NotificationTrigger(
-            source: .shell,
-            type: "long_running",
-            labelKey: "notifications.trigger.shell.longRunning.label",
-            labelFallback: "Long-running command",
-            descriptionKey: "notifications.trigger.shell.longRunning.description",
-            descriptionFallback: "Command has been running longer than threshold.",
-            defaultEnabled: false,
-            displayContexts: [.settings, .activity]
-        ),
-        NotificationTrigger(
-            source: .shell,
-            type: "process_started",
-            labelKey: "notifications.trigger.shell.processStarted.label",
-            labelFallback: "Process started",
-            descriptionKey: "notifications.trigger.shell.processStarted.description",
-            descriptionFallback: "A new process was started in the shell.",
-            defaultEnabled: false,
-            displayContexts: [.settings, .activity]
-        ),
-        NotificationTrigger(
-            source: .shell,
-            type: "process_ended",
-            labelKey: "notifications.trigger.shell.processEnded.label",
-            labelFallback: "Process ended",
-            descriptionKey: "notifications.trigger.shell.processEnded.description",
-            descriptionFallback: "A shell process has terminated.",
-            defaultEnabled: false,
-            displayContexts: [.settings, .activity]
-        ),
-        NotificationTrigger(
-            source: .shell,
-            type: "directory_changed",
-            labelKey: "notifications.trigger.shell.directoryChanged.label",
-            labelFallback: "Directory changed",
-            descriptionKey: "notifications.trigger.shell.directoryChanged.description",
-            descriptionFallback: "Working directory was changed (cd).",
-            defaultEnabled: false,
-            displayContexts: [.settings, .activity]
-        ),
-        NotificationTrigger(
-            source: .shell,
-            type: "git_branch_changed",
-            labelKey: "notifications.trigger.shell.gitBranchChanged.label",
-            labelFallback: "Git branch changed",
-            descriptionKey: "notifications.trigger.shell.gitBranchChanged.description",
-            descriptionFallback: "Git branch was switched or changed.",
-            defaultEnabled: false,
-            displayContexts: [.settings, .activity]
-        ),
-        NotificationTrigger(
-            source: .shell,
-            type: wildcardType,
-            labelKey: "notifications.trigger.shell.other.label",
-            labelFallback: "Other shell events",
-            descriptionKey: "notifications.trigger.shell.other.description",
-            descriptionFallback: "Any other shell event types.",
-            defaultEnabled: false,
-            displayContexts: [.settings, .activity]
-        )
-    ]
+    private static let eventsLogTriggers: [NotificationTrigger] = buildTriggers(source: .eventsLog, sourceCamel: "eventsLog", [
+        .init("finished", "Task finished", "An AI event reports a completed task.", defaultEnabled: true),
+        .init("failed", "Task failed", "An AI event reports a failure or error.", defaultEnabled: true),
+        .init("needs_validation", "Needs validation", "An AI event requests review or confirmation."),
+        .init("permission", "Permission request", "An AI event requests permission to proceed.", defaultEnabled: true),
+        .init("tool_complete", "Tool complete", "An AI event reports a tool finished executing."),
+        .init("session_end", "Session ended", "An AI event reports a session ended."),
+        .init("idle", "Command idle", "An AI event reports inactivity or waiting for input."),
+        .init("notification", "Custom notification", "An AI event requests a custom notification."),
+        .init(wildcardType, "Other events", "Any other AI event types not listed above.")
+    ])
 
-    private static let appTriggers: [NotificationTrigger] = [
-        NotificationTrigger(
-            source: .app,
-            type: "launch",
-            labelKey: "notifications.trigger.app.launch.label",
-            labelFallback: "App launched",
-            descriptionKey: "notifications.trigger.app.launch.description",
-            descriptionFallback: "The app was launched.",
-            defaultEnabled: false,
-            displayContexts: [.settings, .activity]
-        ),
-        NotificationTrigger(
-            source: .app,
-            type: "update_available",
-            labelKey: "notifications.trigger.app.updateAvailable.label",
-            labelFallback: "Update available",
-            descriptionKey: "notifications.trigger.app.updateAvailable.description",
-            descriptionFallback: "A new version is available.",
-            defaultEnabled: true,
-            displayContexts: [.settings, .activity]
-        ),
-        NotificationTrigger(
-            source: .app,
-            type: "file_conflict",
-            labelKey: "notifications.trigger.app.fileConflict.label",
-            labelFallback: "File conflict detected",
-            descriptionKey: "notifications.trigger.app.fileConflict.description",
-            descriptionFallback: "Multiple tabs modified the same file, risking merge conflicts.",
-            defaultEnabled: true,
-            displayContexts: [.settings, .activity]
-        ),
-        NotificationTrigger(
-            source: .app,
-            type: "memory_threshold",
-            labelKey: "notifications.trigger.app.memoryThreshold.label",
-            labelFallback: "Memory threshold",
-            descriptionKey: "notifications.trigger.app.memoryThreshold.description",
-            descriptionFallback: "Memory usage exceeded threshold.",
-            defaultEnabled: false,
-            displayContexts: [.settings, .activity]
-        ),
-        NotificationTrigger(
-            source: .app,
-            type: "tab_opened",
-            labelKey: "notifications.trigger.app.tabOpened.label",
-            labelFallback: "Tab opened",
-            descriptionKey: "notifications.trigger.app.tabOpened.description",
-            descriptionFallback: "A new tab was opened.",
-            defaultEnabled: false,
-            displayContexts: [.settings, .activity]
-        ),
-        NotificationTrigger(
-            source: .app,
-            type: "tab_closed",
-            labelKey: "notifications.trigger.app.tabClosed.label",
-            labelFallback: "Tab closed",
-            descriptionKey: "notifications.trigger.app.tabClosed.description",
-            descriptionFallback: "A tab was closed.",
-            defaultEnabled: false,
-            displayContexts: [.settings, .activity]
-        ),
+    private static let terminalSessionTriggers: [NotificationTrigger] = buildTriggers(source: .terminalSession, sourceCamel: "terminalSession", [
+        .init("finished", "AI tool finished", "An AI tool finished in the terminal.", defaultEnabled: true),
+        .init("permission", "AI tool needs permission", "An AI tool in the terminal needs permission to continue.", defaultEnabled: true),
+        .init("idle", "Command idle", "Terminal command produced no output for the idle timeout."),
+        .init("failed", "Shell exited", "Terminal shell process exited.", defaultEnabled: true),
+        .init("info", "AI tool started", "An AI tool started in the terminal.")
+    ])
+
+    private static let historyMonitorTriggers: [NotificationTrigger] = buildTriggers(source: .historyMonitor, sourceCamel: "historyMonitor", [
+        .init("finished", "Session completed (history)", "AI session completed as detected by history file monitoring.", defaultEnabled: true),
+        .init("idle", "History idle", "No new history entries for the idle timeout.")
+    ])
+
+    private static let shellTriggers: [NotificationTrigger] = buildTriggers(source: .shell, sourceCamel: "shell", [
+        // command_finished / command_failed are off by default: plain shell
+        // command completion or a non-zero exit is not an agent event and
+        // would notify on every command. Opt in from settings.
+        .init("command_finished", "Command finished", "A shell command completed execution."),
+        .init("command_failed", "Command failed", "A shell command exited with non-zero status."),
+        .init("exit_code_match", "Exit code match", "Command exited with a specific exit code."),
+        .init("pattern_match", "Output pattern match", "Command output matched a configured pattern."),
+        .init("long_running", "Long-running command", "Command has been running longer than threshold."),
+        .init("process_started", "Process started", "A new process was started in the shell."),
+        .init("process_ended", "Process ended", "A shell process has terminated."),
+        .init("directory_changed", "Directory changed", "Working directory was changed (cd)."),
+        .init("git_branch_changed", "Git branch changed", "Git branch was switched or changed."),
+        .init(wildcardType, "Other shell events", "Any other shell event types.")
+    ])
+
+    private static let appTriggers: [NotificationTrigger] = buildTriggers(source: .app, sourceCamel: "app", [
+        .init("launch", "App launched", "The app was launched."),
+        .init("update_available", "Update available", "A new version is available.", defaultEnabled: true),
+        .init("file_conflict", "File conflict detected", "Multiple tabs modified the same file, risking merge conflicts.", defaultEnabled: true),
+        .init("memory_threshold", "Memory threshold", "Memory usage exceeded threshold."),
+        .init("tab_opened", "Tab opened", "A new tab was opened."),
+        .init("tab_closed", "Tab closed", "A tab was closed."),
         // The following triggers have no event emitters yet — hidden from settings, visible in activity only.
-        NotificationTrigger(
-            source: .app,
-            type: "window_focused",
-            labelKey: "notifications.trigger.app.windowFocused.label",
-            labelFallback: "Window focused",
-            descriptionKey: "notifications.trigger.app.windowFocused.description",
-            descriptionFallback: "App window gained focus.",
-            defaultEnabled: false,
-            displayContexts: [.activity]
-        ),
-        NotificationTrigger(
-            source: .app,
-            type: "window_unfocused",
-            labelKey: "notifications.trigger.app.windowUnfocused.label",
-            labelFallback: "Window unfocused",
-            descriptionKey: "notifications.trigger.app.windowUnfocused.description",
-            descriptionFallback: "App window lost focus.",
-            defaultEnabled: false,
-            displayContexts: [.activity]
-        ),
-        NotificationTrigger(
-            source: .app,
-            type: "file_modified",
-            labelKey: "notifications.trigger.app.fileModified.label",
-            labelFallback: "File modified",
-            descriptionKey: "notifications.trigger.app.fileModified.description",
-            descriptionFallback: "A watched file was modified.",
-            defaultEnabled: false,
-            displayContexts: [.activity]
-        ),
-        NotificationTrigger(
-            source: .app,
-            type: "docker_event",
-            labelKey: "notifications.trigger.app.dockerEvent.label",
-            labelFallback: "Docker event",
-            descriptionKey: "notifications.trigger.app.dockerEvent.description",
-            descriptionFallback: "A Docker container event occurred.",
-            defaultEnabled: false,
-            displayContexts: [.activity]
-        ),
-        NotificationTrigger(
-            source: .app,
-            type: wildcardType,
-            labelKey: "notifications.trigger.app.other.label",
-            labelFallback: "Other app events",
-            descriptionKey: "notifications.trigger.app.other.description",
-            descriptionFallback: "Any other app event types.",
-            defaultEnabled: false,
-            displayContexts: [.settings, .activity]
-        )
-    ]
+        .init("window_focused", "Window focused", "App window gained focus.", displayContexts: [.activity]),
+        .init("window_unfocused", "Window unfocused", "App window lost focus.", displayContexts: [.activity]),
+        .init("file_modified", "File modified", "A watched file was modified.", displayContexts: [.activity]),
+        .init("docker_event", "Docker event", "A Docker container event occurred.", displayContexts: [.activity]),
+        .init(wildcardType, "Other app events", "Any other app event types.")
+    ])
 
     // MARK: - Catch-All Triggers (sources without dedicated trigger sets)
 
-    private static let apiProxyTriggers: [NotificationTrigger] = [
-        NotificationTrigger(
-            source: .apiProxy,
-            type: wildcardType,
-            labelKey: "notifications.trigger.apiProxy.other.label",
-            labelFallback: "API Proxy events",
-            descriptionKey: "notifications.trigger.apiProxy.other.description",
-            descriptionFallback: "Any event from the API proxy.",
-            defaultEnabled: false,
-            displayContexts: [.settings, .activity]
-        )
-    ]
+    private static let apiProxyTriggers: [NotificationTrigger] = buildTriggers(source: .apiProxy, sourceCamel: "apiProxy", [
+        .init(wildcardType, "API Proxy events", "Any event from the API proxy.")
+    ])
 
-    private static let unknownSourceTriggers: [NotificationTrigger] = [
-        NotificationTrigger(
-            source: .unknown,
-            type: wildcardType,
-            labelKey: "notifications.trigger.unknown.other.label",
-            labelFallback: "Unknown source events",
-            descriptionKey: "notifications.trigger.unknown.other.description",
-            descriptionFallback: "Events from unrecognized sources.",
-            defaultEnabled: false,
-            displayContexts: [.settings, .activity]
-        )
-    ]
+    private static let unknownSourceTriggers: [NotificationTrigger] = buildTriggers(source: .unknown, sourceCamel: "unknown", [
+        .init(wildcardType, "Unknown source events", "Events from unrecognized sources.")
+    ])
 
     // MARK: - Combined Catalog
 
