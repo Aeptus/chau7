@@ -424,7 +424,14 @@ final class RemoteControlManager {
             return
         }
 
-        session.sendInput(text)
+        // Older iOS builds append LF as the submit byte; terminals submit on
+        // CR. Translate a trailing LF so remote sends actually submit instead
+        // of stacking a line break in the TUI's input field.
+        if text.hasSuffix("\n"), !text.hasSuffix("\r\n") {
+            session.sendInput(String(text.dropLast()) + "\r")
+        } else {
+            session.sendInput(text)
+        }
     }
 
     // MARK: - Approval Frames

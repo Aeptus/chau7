@@ -1178,7 +1178,11 @@ final class RemoteClient {
             return false
         }
         var data = Data(text.utf8)
-        if appendNewline { data.append(0x0A) }
+        // Submit with CR (0x0D): that's what the Return key sends on a real
+        // terminal. LF (0x0A) makes TUI composers (Claude Code, Codex) insert
+        // a line break inside the input field instead of submitting, so the
+        // text visibly arrived but never left the field.
+        if appendNewline { data.append(0x0D) }
         guard sendEncrypted(type: .input, tabID: tabID, payload: data) else {
             reportBlockedInput(
                 "Input could not be encrypted for the current remote session.",
