@@ -540,27 +540,11 @@ enum DangerousCommandProtectionLevel: String, CaseIterable, Codable {
 final class FeatureSettings {
     static let shared = FeatureSettings()
 
-    private struct MCPRemoteSettings {
-        var enabled: Bool
-        var maxTabs: Int
-        var requiresApproval: Bool
-        var showTabIndicator: Bool
-        var permissionMode: MCPPermissionMode
-        var allowedCommands: [String]
-        var blockedCommands: [String]
-        var profiles: [MCPProfile]
-        var remoteEnabled: Bool
-        var remoteRelayURL: String
-    }
-
     private struct IntegrationSettings {
         var shellEventConfig: ShellEventConfig
         var appEventConfig: AppEventConfig
         var hasRequestedNotificationPermission: Bool
         var errorExplainEnabled: Bool
-        var isCTOEnabled: Bool
-        var ctoPrefix: String
-        var ctoTabOverrides: [String: Bool]
     }
 
     // MARK: - Font Settings (forwarded to TerminalAppearanceStore)
@@ -972,61 +956,48 @@ final class FeatureSettings {
         set { tabDisplayStore.tabSwitchShortcutMode = newValue }
     }
 
-    // MARK: - Menu Bar Only Mode
+    // MARK: - App Chrome (forwarded to AppChromeSettingsStore)
+
+    /// The app-level chrome domain (theme, language, window mode/opacity,
+    /// launch at login, ligatures) lives in its own store; these facade
+    /// properties keep existing consumers source-compatible.
+    @ObservationIgnored private let appChromeStore = AppChromeSettingsStore()
 
     var menuBarOnlyMode: Bool {
-        didSet { UserDefaults.standard.set(menuBarOnlyMode, forKey: "window.menuBarOnlyMode") }
+        get { appChromeStore.menuBarOnlyMode }
+        set { appChromeStore.menuBarOnlyMode = newValue }
     }
 
     /// When true, the terminal window floats above other apps (.floating level).
     var windowFloating: Bool {
-        didSet {
-            UserDefaults.standard.set(windowFloating, forKey: "window.floating")
-            NotificationCenter.default.post(name: .windowFloatingChanged, object: nil)
-        }
+        get { appChromeStore.windowFloating }
+        set { appChromeStore.windowFloating = newValue }
     }
-
-    // MARK: - Window Transparency
 
     var windowOpacity: Double {
-        didSet {
-            let clamped = max(0.3, min(windowOpacity, 1.0))
-            if windowOpacity != clamped {
-                windowOpacity = clamped
-                return
-            }
-            UserDefaults.standard.set(windowOpacity, forKey: Keys.windowOpacity)
-            NotificationCenter.default.post(name: .terminalOpacityChanged, object: nil)
-        }
+        get { appChromeStore.windowOpacity }
+        set { appChromeStore.windowOpacity = newValue }
     }
-
-    // MARK: - App Theme
 
     var appTheme: AppTheme {
-        didSet {
-            UserDefaults.standard.set(appTheme.rawValue, forKey: Keys.appTheme)
-            NotificationCenter.default.post(name: .appThemeChanged, object: nil)
-        }
+        get { appChromeStore.appTheme }
+        set { appChromeStore.appTheme = newValue }
     }
-
-    // MARK: - Language Setting
 
     var appLanguage: AppLanguage {
-        didSet {
-            UserDefaults.standard.set(appLanguage.rawValue, forKey: Keys.appLanguage)
-            LocalizationManager.shared.currentLanguage = appLanguage
-        }
+        get { appChromeStore.appLanguage }
+        set { appChromeStore.appLanguage = newValue }
     }
 
-    // MARK: - Launch at Login
-
     var launchAtLogin: Bool {
-        didSet {
-            UserDefaults.standard.set(launchAtLogin, forKey: Keys.launchAtLogin)
-            if oldValue != launchAtLogin {
-                LaunchAtLoginManager.setEnabled(launchAtLogin)
-            }
-        }
+        get { appChromeStore.launchAtLogin }
+        set { appChromeStore.launchAtLogin = newValue }
+    }
+
+    /// Enable font ligature rendering (e.g., =>, ->, === in Fira Code, JetBrains Mono).
+    var enableLigatures: Bool {
+        get { appChromeStore.enableLigatures }
+        set { appChromeStore.enableLigatures = newValue }
     }
 
     // MARK: - iCloud Sync (NEW)
@@ -1040,10 +1011,18 @@ final class FeatureSettings {
         }
     }
 
-    // MARK: - F05: Auto Tab Themes by AI Model
+    // MARK: - Productivity Features (forwarded to ProductivitySettingsStore)
+
+    /// The productivity feature cluster (broadcast, clipboard history,
+    /// bookmarks, snippets, copy-on-select, timestamps, badges, cmd-click
+    /// paths, option-click cursor, auto tab themes, custom AI detection)
+    /// lives in its own store; these facade properties keep existing
+    /// consumers source-compatible.
+    @ObservationIgnored private let productivityStore = ProductivitySettingsStore()
 
     var isAutoTabThemeEnabled: Bool {
-        didSet { UserDefaults.standard.set(isAutoTabThemeEnabled, forKey: Keys.autoTabTheme) }
+        get { productivityStore.isAutoTabThemeEnabled }
+        set { productivityStore.isAutoTabThemeEnabled = newValue }
     }
 
     /// AI model to tab color mapping — generated from AIToolRegistry.
@@ -1057,20 +1036,19 @@ final class FeatureSettings {
         return map
     }()
 
-    // MARK: - F18: Copy-on-Select
-
     var isCopyOnSelectEnabled: Bool {
-        didSet { UserDefaults.standard.set(isCopyOnSelectEnabled, forKey: Keys.copyOnSelect) }
+        get { productivityStore.isCopyOnSelectEnabled }
+        set { productivityStore.isCopyOnSelectEnabled = newValue }
     }
 
-    // MARK: - F19: Line Timestamps
-
     var isLineTimestampsEnabled: Bool {
-        didSet { UserDefaults.standard.set(isLineTimestampsEnabled, forKey: Keys.lineTimestamps) }
+        get { productivityStore.isLineTimestampsEnabled }
+        set { productivityStore.isLineTimestampsEnabled = newValue }
     }
 
     var timestampFormat: String {
-        didSet { UserDefaults.standard.set(timestampFormat, forKey: Keys.timestampFormat) }
+        get { productivityStore.timestampFormat }
+        set { productivityStore.timestampFormat = newValue }
     }
 
     // MARK: - Tab Display Customization (forwarded to TabDisplaySettingsStore)
@@ -1186,26 +1164,26 @@ final class FeatureSettings {
         set { tabDisplayStore.customTitleOnly = newValue }
     }
 
-    // MARK: - F20: Last Command Badge
-
     var isLastCommandBadgeEnabled: Bool {
-        didSet { UserDefaults.standard.set(isLastCommandBadgeEnabled, forKey: Keys.lastCommandBadge) }
+        get { productivityStore.isLastCommandBadgeEnabled }
+        set { productivityStore.isLastCommandBadgeEnabled = newValue }
     }
 
-    // MARK: - F03: Cmd+Click Paths
-
     var isCmdClickPathsEnabled: Bool {
-        didSet { UserDefaults.standard.set(isCmdClickPathsEnabled, forKey: Keys.cmdClickPaths) }
+        get { productivityStore.isCmdClickPathsEnabled }
+        set { productivityStore.isCmdClickPathsEnabled = newValue }
     }
 
     /// Open Cmd+Click file paths in internal editor (right panel) instead of external editor
     var cmdClickOpensInternalEditor: Bool {
-        didSet { UserDefaults.standard.set(cmdClickOpensInternalEditor, forKey: Keys.cmdClickOpensInternalEditor) }
+        get { productivityStore.cmdClickOpensInternalEditor }
+        set { productivityStore.cmdClickOpensInternalEditor = newValue }
     }
 
     /// Option+click to position cursor in the command line (like iTerm2)
     var isOptionClickCursorEnabled: Bool {
-        didSet { UserDefaults.standard.set(isOptionClickCursorEnabled, forKey: Keys.optionClickCursor) }
+        get { productivityStore.isOptionClickCursorEnabled }
+        set { productivityStore.isOptionClickCursorEnabled = newValue }
     }
 
     /// Allow terminal apps (vim, tmux, Codex, etc.) to capture mouse events.
@@ -1222,11 +1200,6 @@ final class FeatureSettings {
         didSet { UserDefaults.standard.set(useMetalRenderer, forKey: Keys.useMetalRenderer) }
     }
 
-    /// Enable font ligature rendering (e.g., =>, ->, === in Fira Code, JetBrains Mono).
-    var enableLigatures: Bool = UserDefaults.standard.bool(forKey: "terminal.enableLigatures") {
-        didSet { UserDefaults.standard.set(enableLigatures, forKey: "terminal.enableLigatures") }
-    }
-
     /// Click on input line to position cursor (like modern text editors).
     /// Single click moves cursor, click+drag selects text.
     var isClickToPositionEnabled: Bool {
@@ -1234,7 +1207,8 @@ final class FeatureSettings {
     }
 
     var defaultEditor: String {
-        didSet { UserDefaults.standard.set(defaultEditor, forKey: Keys.defaultEditor) }
+        get { productivityStore.defaultEditor }
+        set { productivityStore.defaultEditor = newValue }
     }
 
     var urlHandler: URLHandler {
@@ -1263,91 +1237,75 @@ final class FeatureSettings {
         didSet { UserDefaults.standard.set(inactiveViewMaxFPS, forKey: "rendering.inactiveViewMaxFPS") }
     }
 
-    // MARK: - Custom AI Detection (NEW)
+    // MARK: - Custom AI Detection (forwarded to ProductivitySettingsStore)
 
     var customAIDetectionRules: [CustomAIDetectionRule] {
-        didSet {
-            if let data = JSONOperations.encode(customAIDetectionRules, context: "customAIDetectionRules") {
-                UserDefaults.standard.set(data, forKey: Keys.customAIDetectionRules)
-            }
-        }
+        get { productivityStore.customAIDetectionRules }
+        set { productivityStore.customAIDetectionRules = newValue }
     }
 
-    // MARK: - F13: Broadcast Input
+    // MARK: - F13/F16/F17/F21 (forwarded to ProductivitySettingsStore)
 
     var isBroadcastEnabled: Bool {
-        didSet { UserDefaults.standard.set(isBroadcastEnabled, forKey: Keys.broadcastEnabled) }
+        get { productivityStore.isBroadcastEnabled }
+        set { productivityStore.isBroadcastEnabled = newValue }
     }
 
-    // MARK: - F16: Clipboard History
-
     var isClipboardHistoryEnabled: Bool {
-        didSet { UserDefaults.standard.set(isClipboardHistoryEnabled, forKey: Keys.clipboardHistory) }
+        get { productivityStore.isClipboardHistoryEnabled }
+        set { productivityStore.isClipboardHistoryEnabled = newValue }
     }
 
     var clipboardHistoryMaxItems: Int {
-        didSet {
-            let clamped = max(1, min(clipboardHistoryMaxItems, 1000))
-            if clipboardHistoryMaxItems != clamped {
-                clipboardHistoryMaxItems = clamped
-                return
-            }
-            UserDefaults.standard.set(clipboardHistoryMaxItems, forKey: Keys.clipboardHistoryMax)
-        }
+        get { productivityStore.clipboardHistoryMaxItems }
+        set { productivityStore.clipboardHistoryMaxItems = newValue }
     }
 
-    // MARK: - F17: Bookmarks
-
     var isBookmarksEnabled: Bool {
-        didSet { UserDefaults.standard.set(isBookmarksEnabled, forKey: Keys.bookmarksEnabled) }
+        get { productivityStore.isBookmarksEnabled }
+        set { productivityStore.isBookmarksEnabled = newValue }
     }
 
     var maxBookmarksPerTab: Int {
-        didSet {
-            let clamped = max(1, min(maxBookmarksPerTab, 200))
-            if maxBookmarksPerTab != clamped {
-                maxBookmarksPerTab = clamped
-                return
-            }
-            UserDefaults.standard.set(maxBookmarksPerTab, forKey: Keys.maxBookmarks)
-        }
+        get { productivityStore.maxBookmarksPerTab }
+        set { productivityStore.maxBookmarksPerTab = newValue }
     }
 
-    // MARK: - F21: Snippets
-
     var isSnippetsEnabled: Bool {
-        didSet { UserDefaults.standard.set(isSnippetsEnabled, forKey: Keys.snippetsEnabled) }
+        get { productivityStore.isSnippetsEnabled }
+        set { productivityStore.isSnippetsEnabled = newValue }
     }
 
     var isRepoSnippetsEnabled: Bool {
-        didSet { UserDefaults.standard.set(isRepoSnippetsEnabled, forKey: Keys.repoSnippetsEnabled) }
+        get { productivityStore.isRepoSnippetsEnabled }
+        set { productivityStore.isRepoSnippetsEnabled = newValue }
     }
 
+    /// Cross-cutting security toggle — stays on the facade rather than moving
+    /// into ProductivitySettingsStore.
     var allowProtectedFolderAccess: Bool {
         didSet { UserDefaults.standard.set(allowProtectedFolderAccess, forKey: Keys.allowProtectedFolderAccess) }
     }
 
+    /// Cross-cutting repo state (paired with KnownRepoIdentityStore) — stays
+    /// on the facade rather than moving into ProductivitySettingsStore.
     var recentRepoRoots: [String] {
         didSet { UserDefaults.standard.set(recentRepoRoots, forKey: Keys.recentRepoRoots) }
     }
 
     var repoSnippetPath: String {
-        didSet {
-            let trimmed = repoSnippetPath.trimmingCharacters(in: .whitespacesAndNewlines)
-            if repoSnippetPath != trimmed {
-                repoSnippetPath = trimmed
-                return
-            }
-            UserDefaults.standard.set(repoSnippetPath, forKey: Keys.repoSnippetPath)
-        }
+        get { productivityStore.repoSnippetPath }
+        set { productivityStore.repoSnippetPath = newValue }
     }
 
     var snippetInsertMode: String {
-        didSet { UserDefaults.standard.set(snippetInsertMode, forKey: Keys.snippetInsertMode) }
+        get { productivityStore.snippetInsertMode }
+        set { productivityStore.snippetInsertMode = newValue }
     }
 
     var snippetPlaceholdersEnabled: Bool {
-        didSet { UserDefaults.standard.set(snippetPlaceholdersEnabled, forKey: Keys.snippetPlaceholders) }
+        get { productivityStore.snippetPlaceholdersEnabled }
+        set { productivityStore.snippetPlaceholdersEnabled = newValue }
     }
 
     func recordRecentRepo(_ path: String, branch: String? = nil) {
@@ -1619,51 +1577,58 @@ final class FeatureSettings {
         }
     }
 
-    // MARK: - Token Optimization (CTO) Settings
+    // MARK: - MCP / Remote / CTO (forwarded to MCPRemoteSettingsStore)
+
+    /// The MCP + remote control + CTO integration domain lives in its own
+    /// store; these facade properties keep existing consumers
+    /// source-compatible. Assigned in `init` (not inline) because the store's
+    /// init runs the RTK → CTO key migration, which must happen before
+    /// `tabDisplayStore` loads `showTabCTOIndicator`.
+    @ObservationIgnored private let mcpRemoteStore: MCPRemoteSettingsStore
 
     var tokenOptimizationMode: TokenOptimizationMode {
-        didSet {
-            UserDefaults.standard.set(tokenOptimizationMode.rawValue, forKey: Keys.tokenOptimizationMode)
-            NotificationCenter.default.post(name: .tokenOptimizationModeChanged, object: nil)
-        }
+        get { mcpRemoteStore.tokenOptimizationMode }
+        set { mcpRemoteStore.tokenOptimizationMode = newValue }
     }
 
-    // MARK: - MCP Settings
-
     var mcpEnabled: Bool {
-        didSet { UserDefaults.standard.set(mcpEnabled, forKey: Keys.mcpEnabled) }
+        get { mcpRemoteStore.mcpEnabled }
+        set { mcpRemoteStore.mcpEnabled = newValue }
     }
 
     var mcpMaxTabs: Int {
-        didSet { UserDefaults.standard.set(mcpMaxTabs, forKey: Keys.mcpMaxTabs) }
+        get { mcpRemoteStore.mcpMaxTabs }
+        set { mcpRemoteStore.mcpMaxTabs = newValue }
     }
 
     var mcpRequiresApproval: Bool {
-        didSet { UserDefaults.standard.set(mcpRequiresApproval, forKey: Keys.mcpRequiresApproval) }
+        get { mcpRemoteStore.mcpRequiresApproval }
+        set { mcpRemoteStore.mcpRequiresApproval = newValue }
     }
 
     var mcpShowTabIndicator: Bool {
-        didSet { UserDefaults.standard.set(mcpShowTabIndicator, forKey: Keys.mcpShowTabIndicator) }
+        get { mcpRemoteStore.mcpShowTabIndicator }
+        set { mcpRemoteStore.mcpShowTabIndicator = newValue }
     }
 
     var mcpPermissionMode: MCPPermissionMode {
-        didSet { UserDefaults.standard.set(mcpPermissionMode.rawValue, forKey: Keys.mcpPermissionMode) }
+        get { mcpRemoteStore.mcpPermissionMode }
+        set { mcpRemoteStore.mcpPermissionMode = newValue }
     }
 
     var mcpAllowedCommands: [String] {
-        didSet { UserDefaults.standard.set(mcpAllowedCommands, forKey: Keys.mcpAllowedCommands) }
+        get { mcpRemoteStore.mcpAllowedCommands }
+        set { mcpRemoteStore.mcpAllowedCommands = newValue }
     }
 
     var mcpBlockedCommands: [String] {
-        didSet { UserDefaults.standard.set(mcpBlockedCommands, forKey: Keys.mcpBlockedCommands) }
+        get { mcpRemoteStore.mcpBlockedCommands }
+        set { mcpRemoteStore.mcpBlockedCommands = newValue }
     }
 
     var mcpProfiles: [MCPProfile] {
-        didSet {
-            if let data = Persist.encodeLogged(mcpProfiles, context: "settings.mcpProfiles") {
-                UserDefaults.standard.set(data, forKey: Keys.mcpProfiles)
-            }
-        }
+        get { mcpRemoteStore.mcpProfiles }
+        set { mcpRemoteStore.mcpProfiles = newValue }
     }
 
     /// Add a command to the allowed list of a specific profile, or to the global list.
@@ -1681,25 +1646,14 @@ final class FeatureSettings {
         }
     }
 
-    // MARK: - Remote Control Settings
-
     var isRemoteEnabled: Bool {
-        didSet {
-            UserDefaults.standard.set(isRemoteEnabled, forKey: Keys.remoteEnabled)
-            NotificationCenter.default.post(name: .remoteEnabledChanged, object: self)
-        }
+        get { mcpRemoteStore.isRemoteEnabled }
+        set { mcpRemoteStore.isRemoteEnabled = newValue }
     }
 
     var remoteRelayURL: String {
-        didSet {
-            let trimmed = remoteRelayURL.trimmingCharacters(in: .whitespacesAndNewlines)
-            if remoteRelayURL != trimmed {
-                remoteRelayURL = trimmed
-                return
-            }
-            UserDefaults.standard.set(remoteRelayURL, forKey: Keys.remoteRelayURL)
-            NotificationCenter.default.post(name: .remoteRelayURLChanged, object: self)
-        }
+        get { mcpRemoteStore.remoteRelayURL }
+        set { mcpRemoteStore.remoteRelayURL = newValue }
     }
 
     // MARK: - Shell Event Detection Settings
@@ -1734,25 +1688,21 @@ final class FeatureSettings {
         didSet { UserDefaults.standard.set(errorExplainEnabled, forKey: Keys.errorExplainEnabled) }
     }
 
-    // MARK: - CTO Integration
+    // MARK: - CTO Integration (forwarded to MCPRemoteSettingsStore)
 
     var isCTOEnabled: Bool {
-        didSet { UserDefaults.standard.set(isCTOEnabled, forKey: Keys.ctoEnabled) }
+        get { mcpRemoteStore.isCTOEnabled }
+        set { mcpRemoteStore.isCTOEnabled = newValue }
     }
 
     var ctoPrefix: String {
-        didSet {
-            let trimmed = ctoPrefix.replacingOccurrences(of: "\n", with: " ").trimmingCharacters(in: .newlines)
-            if ctoPrefix != trimmed {
-                ctoPrefix = trimmed
-                return
-            }
-            UserDefaults.standard.set(ctoPrefix, forKey: Keys.ctoPrefix)
-        }
+        get { mcpRemoteStore.ctoPrefix }
+        set { mcpRemoteStore.ctoPrefix = newValue }
     }
 
     var ctoTabOverrides: [String: Bool] {
-        didSet { UserDefaults.standard.set(ctoTabOverrides, forKey: Keys.ctoTabOverrides) }
+        get { mcpRemoteStore.ctoTabOverrides }
+        set { mcpRemoteStore.ctoTabOverrides = newValue }
     }
 
     func isCTOEnabled(forTabIdentifier tabIdentifier: String?) -> Bool {
@@ -1812,53 +1762,19 @@ final class FeatureSettings {
         static let findCaseSensitiveDefault = "search.defaultCaseSensitive"
         static let findRegexDefault = "search.defaultRegex"
         /// Tab Behavior lives in TabDisplaySettingsStore.Keys
-        /// Window Opacity
-        static let windowOpacity = "window.opacity"
-        /// App Theme
-        static let appTheme = "app.theme"
-        /// Language
-        static let appLanguage = "app.language"
-        /// Launch at login
-        static let launchAtLogin = "app.launchAtLogin"
+        /// App chrome (theme, language, launch at login, window mode/opacity,
+        /// ligatures) lives in AppChromeSettingsStore.Keys
         /// iCloud Sync (NEW)
         static let iCloudSyncEnabled = "sync.iCloudEnabled"
-        /// F05
-        static let autoTabTheme = "feature.autoTabTheme"
-        /// F18
-        static let copyOnSelect = "feature.copyOnSelect"
-        // F19
-        static let lineTimestamps = "feature.lineTimestamps"
-        static let timestampFormat = "feature.timestampFormat"
-        /// Tab Display lives in TabDisplaySettingsStore.Keys
-        /// F20
-        static let lastCommandBadge = "feature.lastCommandBadge"
-        // F03
-        static let cmdClickPaths = "feature.cmdClickPaths"
-        static let cmdClickOpensInternalEditor = "feature.cmdClickOpensInternalEditor"
-        static let optionClickCursor = "feature.optionClickCursor"
+        /// Productivity features (F03/F05/F13/F16/F17/F18/F19/F20/F21 +
+        /// custom AI detection) live in ProductivitySettingsStore.Keys
         static let mouseReporting = "feature.mouseReporting"
         static let useMetalRenderer = "feature.useMetalRenderer"
         static let clickToPosition = "feature.clickToPosition"
-        static let defaultEditor = "feature.defaultEditor"
         static let urlHandler = "feature.urlHandler"
         static let activePollingRateCap = "feature.activePollingRateCap"
-        static let customAIDetectionRules = "ai.customDetectionRules"
-        /// F13
-        static let broadcastEnabled = "feature.broadcastEnabled"
-        // F16
-        static let clipboardHistory = "feature.clipboardHistory"
-        static let clipboardHistoryMax = "feature.clipboardHistoryMax"
-        // F17
-        static let bookmarksEnabled = "feature.bookmarksEnabled"
-        static let maxBookmarks = "feature.maxBookmarks"
-        // F21
-        static let snippetsEnabled = "feature.snippetsEnabled"
-        static let repoSnippetsEnabled = "feature.repoSnippetsEnabled"
         static let allowProtectedFolderAccess = "feature.allowProtectedFolderAccess"
         static let recentRepoRoots = "feature.recentRepoRoots"
-        static let repoSnippetPath = "feature.repoSnippetPath"
-        static let snippetInsertMode = "feature.snippetInsertMode"
-        static let snippetPlaceholders = "feature.snippetPlaceholders"
         // F08
         static let syntaxHighlight = "feature.syntaxHighlight"
         static let clickableURLs = "feature.clickableURLs"
@@ -1879,20 +1795,8 @@ final class FeatureSettings {
         static let apiAnalyticsPort = "analytics.api.port"
         static let apiAnalyticsLogPrompts = "analytics.api.logPrompts"
         static let apiAnalyticsIncludeOpenAI = "analytics.api.includeOpenAI"
-        /// Token Optimization (CTO)
-        static let tokenOptimizationMode = "cto.mode"
-        // MCP
-        static let mcpEnabled = "mcp.enabled"
-        static let mcpMaxTabs = "mcp.maxTabs"
-        static let mcpRequiresApproval = "mcp.requiresApproval"
-        static let mcpShowTabIndicator = "mcp.showTabIndicator"
-        static let mcpPermissionMode = "mcp.permissionMode"
-        static let mcpAllowedCommands = "mcp.allowedCommands"
-        static let mcpBlockedCommands = "mcp.blockedCommands"
-        static let mcpProfiles = "mcp.profiles"
-        // Remote Control
-        static let remoteEnabled = "remote.enabled"
-        static let remoteRelayURL = "remote.relayURL"
+        // Token Optimization (CTO), MCP, and Remote Control live in
+        // MCPRemoteSettingsStore.Keys
         // Bug Report
         static let bugReportContactName = "bugReport.contactName"
         static let bugReportContactHandle = "bugReport.contactHandle"
@@ -1905,10 +1809,7 @@ final class FeatureSettings {
         static let hasRequestedNotificationPermission = "notifications.hasRequestedPermission"
         /// LLM / Error Explanation
         static let errorExplainEnabled = "feature.errorExplainEnabled"
-        // CTO Integration
-        static let ctoEnabled = "feature.ctoEnabled"
-        static let ctoPrefix = "feature.ctoPrefix"
-        static let ctoTabOverrides = "feature.ctoTabOverrides"
+        // CTO Integration lives in MCPRemoteSettingsStore.Keys
     }
 
     // MARK: - Init
@@ -1916,23 +1817,10 @@ final class FeatureSettings {
     private init() {
         let defaults = UserDefaults.standard
 
-        // One-time migration: RTK → CTO UserDefaults keys
-        if !defaults.bool(forKey: "cto.migrated.v1") {
-            let migrations: [(old: String, new: String)] = [
-                ("tabs.display.showRTKIndicator", TabDisplaySettingsStore.Keys.showTabCTOIndicator),
-                ("rtk.mode", Keys.tokenOptimizationMode),
-                ("feature.rtkEnabled", Keys.ctoEnabled),
-                ("feature.rtkPrefix", Keys.ctoPrefix),
-                ("feature.rtkTabOverrides", Keys.ctoTabOverrides)
-            ]
-            for (old, new) in migrations {
-                if let value = defaults.object(forKey: old), defaults.object(forKey: new) == nil {
-                    defaults.set(value, forKey: new)
-                }
-                defaults.removeObject(forKey: old)
-            }
-            defaults.set(true, forKey: "cto.migrated.v1")
-        }
+        // MCP/remote/CTO settings live in MCPRemoteSettingsStore; its init
+        // runs the one-time RTK → CTO key migration, so it must be created
+        // first.
+        self.mcpRemoteStore = MCPRemoteSettingsStore()
 
         // Tab behavior/display/hover-card settings live in
         // TabDisplaySettingsStore; created after the migration above so the
@@ -1946,56 +1834,14 @@ final class FeatureSettings {
         self.findCaseSensitiveDefault = defaults.object(forKey: Keys.findCaseSensitiveDefault) as? Bool ?? false
         self.findRegexDefault = defaults.object(forKey: Keys.findRegexDefault) as? Bool ?? false
 
-        // Menu Bar Only Mode
-        self.menuBarOnlyMode = defaults.bool(forKey: "window.menuBarOnlyMode")
-        self.windowFloating = defaults.bool(forKey: "window.floating")
-
-        // Window Opacity
-        self.windowOpacity = defaults.object(forKey: Keys.windowOpacity) as? Double ?? 1.0
-
-        // App Theme
-        if let themeRaw = defaults.string(forKey: Keys.appTheme),
-           let theme = AppTheme(rawValue: themeRaw) {
-            self.appTheme = theme
-        } else {
-            self.appTheme = .system
-        }
-
-        // Language
-        if let langRaw = defaults.string(forKey: Keys.appLanguage),
-           let lang = AppLanguage(rawValue: langRaw) {
-            self.appLanguage = lang
-        } else {
-            self.appLanguage = .system
-        }
-
-        // Launch at Login
-        if defaults.object(forKey: Keys.launchAtLogin) != nil {
-            self.launchAtLogin = defaults.object(forKey: Keys.launchAtLogin) as? Bool ?? false
-        } else {
-            self.launchAtLogin = LaunchAtLoginManager.isEnabled()
-        }
+        // App chrome (theme, language, window mode/opacity, launch at login,
+        // ligatures) lives in AppChromeSettingsStore.
 
         // iCloud Sync (NEW)
         self.iCloudSyncEnabled = defaults.object(forKey: Keys.iCloudSyncEnabled) as? Bool ?? false
 
-        // F05: Auto Tab Theme (default: enabled)
-        self.isAutoTabThemeEnabled = defaults.object(forKey: Keys.autoTabTheme) as? Bool ?? true
-
-        // F18: Copy on Select (default: enabled)
-        self.isCopyOnSelectEnabled = defaults.object(forKey: Keys.copyOnSelect) as? Bool ?? true
-
-        // F19: Line Timestamps (default: disabled)
-        self.isLineTimestampsEnabled = defaults.object(forKey: Keys.lineTimestamps) as? Bool ?? false
-        self.timestampFormat = defaults.string(forKey: Keys.timestampFormat) ?? "HH:mm:ss"
-
-        // F20: Last Command Badge (default: enabled)
-        self.isLastCommandBadgeEnabled = defaults.object(forKey: Keys.lastCommandBadge) as? Bool ?? true
-
-        // F03: Cmd+Click Paths (default: enabled)
-        self.isCmdClickPathsEnabled = defaults.object(forKey: Keys.cmdClickPaths) as? Bool ?? true
-        self.cmdClickOpensInternalEditor = defaults.object(forKey: Keys.cmdClickOpensInternalEditor) as? Bool ?? true
-        self.isOptionClickCursorEnabled = defaults.object(forKey: Keys.optionClickCursor) as? Bool ?? true
+        // Productivity features (F03/F05/F13/F16/F17/F18/F19/F20/F21 +
+        // custom AI detection) live in ProductivitySettingsStore.
         // Mouse reporting: disabled by default so text selection always works
         // Users can enable if they want vim/tmux mouse support (hold Shift to bypass)
         self.isMouseReportingEnabled = defaults.object(forKey: Keys.mouseReporting) as? Bool ?? false
@@ -2003,7 +1849,6 @@ final class FeatureSettings {
         self.useMetalRenderer = defaults.object(forKey: Keys.useMetalRenderer) as? Bool ?? true
         // Click-to-position: enabled by default (like modern text editors)
         self.isClickToPositionEnabled = defaults.object(forKey: Keys.clickToPosition) as? Bool ?? true
-        self.defaultEditor = defaults.string(forKey: Keys.defaultEditor) ?? "" // Empty = use $EDITOR or system default
         if let handlerRaw = defaults.string(forKey: Keys.urlHandler),
            let handler = URLHandler(rawValue: handlerRaw) {
             self.urlHandler = handler
@@ -2017,33 +1862,10 @@ final class FeatureSettings {
             self.activePollingRateCap = .displayNative
         }
 
-        // Custom AI Detection (NEW)
-        if let data = defaults.data(forKey: Keys.customAIDetectionRules),
-           let rules = JSONOperations.decode([CustomAIDetectionRule].self, from: data, context: "customAIDetectionRules") {
-            self.customAIDetectionRules = rules
-        } else {
-            self.customAIDetectionRules = []
-        }
-
-        // F13: Broadcast (default: disabled)
-        self.isBroadcastEnabled = defaults.object(forKey: Keys.broadcastEnabled) as? Bool ?? false
-
-        // F16: Clipboard History (default: enabled)
-        self.isClipboardHistoryEnabled = defaults.object(forKey: Keys.clipboardHistory) as? Bool ?? true
-        self.clipboardHistoryMaxItems = defaults.object(forKey: Keys.clipboardHistoryMax) as? Int ?? 50
-
-        // F17: Bookmarks (default: enabled)
-        self.isBookmarksEnabled = defaults.object(forKey: Keys.bookmarksEnabled) as? Bool ?? true
-        self.maxBookmarksPerTab = defaults.object(forKey: Keys.maxBookmarks) as? Int ?? 20
-
-        // F21: Snippets (default: enabled)
-        self.isSnippetsEnabled = defaults.object(forKey: Keys.snippetsEnabled) as? Bool ?? true
-        self.isRepoSnippetsEnabled = defaults.object(forKey: Keys.repoSnippetsEnabled) as? Bool ?? true
+        // Cross-cutting security/repo state (the rest of F21 lives in
+        // ProductivitySettingsStore)
         self.allowProtectedFolderAccess = defaults.object(forKey: Keys.allowProtectedFolderAccess) as? Bool ?? false
         self.recentRepoRoots = defaults.stringArray(forKey: Keys.recentRepoRoots) ?? []
-        self.repoSnippetPath = defaults.string(forKey: Keys.repoSnippetPath) ?? ".chau7/snippets"
-        self.snippetInsertMode = defaults.string(forKey: Keys.snippetInsertMode) ?? "expand"
-        self.snippetPlaceholdersEnabled = defaults.object(forKey: Keys.snippetPlaceholders) as? Bool ?? true
 
         // F08: Syntax Highlighting (default: enabled)
         self.isSyntaxHighlightEnabled = defaults.object(forKey: Keys.syntaxHighlight) as? Bool ?? true
@@ -2069,78 +1891,19 @@ final class FeatureSettings {
         self.apiAnalyticsLogPrompts = defaults.object(forKey: Keys.apiAnalyticsLogPrompts) as? Bool ?? false
         self.apiAnalyticsIncludeOpenAI = defaults.object(forKey: Keys.apiAnalyticsIncludeOpenAI) as? Bool ?? true
 
-        // Token Optimization (default: off)
-        if let modeRaw = defaults.string(forKey: Keys.tokenOptimizationMode),
-           let mode = TokenOptimizationMode(rawValue: modeRaw) {
-            self.tokenOptimizationMode = mode
-        } else {
-            self.tokenOptimizationMode = .off
-        }
-
-        let mcpRemote = Self.mcpAndRemoteSettings(from: defaults)
-        (mcpEnabled, mcpMaxTabs, mcpRequiresApproval, mcpShowTabIndicator) = (
-            mcpRemote.enabled,
-            mcpRemote.maxTabs,
-            mcpRemote.requiresApproval,
-            mcpRemote.showTabIndicator
-        )
-        (mcpPermissionMode, mcpAllowedCommands, mcpBlockedCommands, mcpProfiles) = (
-            mcpRemote.permissionMode,
-            mcpRemote.allowedCommands,
-            mcpRemote.blockedCommands,
-            mcpRemote.profiles
-        )
-        (isRemoteEnabled, remoteRelayURL) = (mcpRemote.remoteEnabled, mcpRemote.remoteRelayURL)
+        // Token Optimization, MCP, Remote Control, and CTO Integration live
+        // in MCPRemoteSettingsStore (created at the top of this init).
 
         let integration = Self.integrationSettings(from: defaults)
         self.shellEventConfig = integration.shellEventConfig
         self.appEventConfig = integration.appEventConfig
         self.hasRequestedNotificationPermission = integration.hasRequestedNotificationPermission
         self.errorExplainEnabled = integration.errorExplainEnabled
-        self.isCTOEnabled = integration.isCTOEnabled
-        self.ctoPrefix = integration.ctoPrefix
-        self.ctoTabOverrides = integration.ctoTabOverrides
 
         // Bug Report Contact Info
         self.bugReportContactName = defaults.string(forKey: Keys.bugReportContactName) ?? ""
         self.bugReportContactHandle = defaults.string(forKey: Keys.bugReportContactHandle) ?? ""
         self.bugReportIssueEndpoint = defaults.string(forKey: Keys.bugReportIssueEndpoint) ?? "https://issues.chau7.sh"
-    }
-
-    private static func mcpAndRemoteSettings(from defaults: UserDefaults) -> MCPRemoteSettings {
-        // MCP (default: enabled, 4 tabs, no approval, indicator on)
-        let enabled = defaults.object(forKey: Keys.mcpEnabled) as? Bool ?? true
-        let maxTabs = defaults.object(forKey: Keys.mcpMaxTabs) as? Int ?? 4
-        let requiresApproval = defaults.object(forKey: Keys.mcpRequiresApproval) as? Bool ?? false
-        let showTabIndicator = defaults.object(forKey: Keys.mcpShowTabIndicator) as? Bool ?? true
-        let permissionMode: MCPPermissionMode
-        if let modeRaw = defaults.string(forKey: Keys.mcpPermissionMode),
-           let mode = MCPPermissionMode(rawValue: modeRaw) {
-            permissionMode = mode
-        } else {
-            permissionMode = .allowAll
-        }
-        let allowedCommands = defaults.stringArray(forKey: Keys.mcpAllowedCommands) ?? []
-        let blockedCommands = defaults.stringArray(forKey: Keys.mcpBlockedCommands) ?? []
-        let profileData = defaults.data(forKey: Keys.mcpProfiles)
-        let profiles = Persist.decodeLogged([MCPProfile].self, from: profileData, context: "mcp.profiles") ?? []
-
-        // Remote Control (default: disabled)
-        let remoteEnabled = defaults.object(forKey: Keys.remoteEnabled) as? Bool ?? false
-        let remoteRelayURL = defaults.string(forKey: Keys.remoteRelayURL) ?? "wss://relay.chau7.sh/connect"
-
-        return MCPRemoteSettings(
-            enabled: enabled,
-            maxTabs: maxTabs,
-            requiresApproval: requiresApproval,
-            showTabIndicator: showTabIndicator,
-            permissionMode: permissionMode,
-            allowedCommands: allowedCommands,
-            blockedCommands: blockedCommands,
-            profiles: profiles,
-            remoteEnabled: remoteEnabled,
-            remoteRelayURL: remoteRelayURL
-        )
     }
 
     private static func integrationSettings(from defaults: UserDefaults) -> IntegrationSettings {
@@ -2160,24 +1923,11 @@ final class FeatureSettings {
             appEventConfig = .default
         }
 
-        let ctoTabOverrides: [String: Bool]
-        if let raw = defaults.dictionary(forKey: Keys.ctoTabOverrides) {
-            ctoTabOverrides = raw.compactMapValues { value in
-                guard let boolValue = value as? Bool else { return nil }
-                return boolValue
-            }
-        } else {
-            ctoTabOverrides = [:]
-        }
-
         return IntegrationSettings(
             shellEventConfig: shellEventConfig,
             appEventConfig: appEventConfig,
             hasRequestedNotificationPermission: defaults.object(forKey: Keys.hasRequestedNotificationPermission) as? Bool ?? false,
-            errorExplainEnabled: defaults.object(forKey: Keys.errorExplainEnabled) as? Bool ?? false,
-            isCTOEnabled: defaults.object(forKey: Keys.ctoEnabled) as? Bool ?? false,
-            ctoPrefix: defaults.string(forKey: Keys.ctoPrefix) ?? "",
-            ctoTabOverrides: ctoTabOverrides
+            errorExplainEnabled: defaults.object(forKey: Keys.errorExplainEnabled) as? Bool ?? false
         )
     }
 
@@ -2687,7 +2437,6 @@ final class FeatureSettings {
         // Extracted domains reset through their stores, deriving from each
         // loader's fallbacks so defaults exist exactly once per domain.
         appearanceStore.resetToDefaults()
-        enableLigatures = false
         shellStore.resetToDefaults()
         keybindingPreset = "default"
         shortcutStore.resetToDefaults()
@@ -2696,66 +2445,30 @@ final class FeatureSettings {
         findRegexDefault = false
         tabDisplayStore.resetToDefaults()
 
-        // Language
-        appLanguage = .system
-
-        // Window
-        menuBarOnlyMode = false
-        windowFloating = false
-        windowOpacity = 1.0
-        appTheme = .system
-
-        // Launch at login
+        // App chrome (theme, language, window mode/opacity, launch at login,
+        // ligatures)
+        appChromeStore.resetToDefaults()
+        // The store's launch-at-login fallback mirrors the installed login
+        // item; a full reset must force it off.
         launchAtLogin = false
 
         // Terminal
         terminalBehaviorStore.resetToDefaults()
 
         // Features
-        isAutoTabThemeEnabled = true
-        isCopyOnSelectEnabled = true
-        isLineTimestampsEnabled = false
-        timestampFormat = "HH:mm:ss"
-        isLastCommandBadgeEnabled = true
-        isCmdClickPathsEnabled = true
-        cmdClickOpensInternalEditor = true
-        isOptionClickCursorEnabled = true
-        defaultEditor = ""
+        productivityStore.resetToDefaults()
         urlHandler = .system
         activePollingRateCap = .displayNative
-        customAIDetectionRules = []
-        isBroadcastEnabled = false
-        isClipboardHistoryEnabled = true
-        clipboardHistoryMaxItems = 50
-        isBookmarksEnabled = true
-        maxBookmarksPerTab = 20
-        isSnippetsEnabled = true
-        isRepoSnippetsEnabled = true
         allowProtectedFolderAccess = false
         recentRepoRoots = []
         KnownRepoIdentityStore.shared.reset()
-        repoSnippetPath = ".chau7/snippets"
-        snippetInsertMode = "expand"
-        snippetPlaceholdersEnabled = true
         isSyntaxHighlightEnabled = true
         isClickableURLsEnabled = true
         isInlineImagesEnabled = true
         isJSONPrettyPrintEnabled = false
         isSemanticSearchEnabled = false
         isSplitPanesEnabled = true
-        mcpEnabled = true
-        mcpMaxTabs = 4
-        mcpRequiresApproval = false
-        mcpShowTabIndicator = true
-        mcpPermissionMode = .allowAll
-        mcpAllowedCommands = []
-        mcpBlockedCommands = []
-        mcpProfiles = []
-        isRemoteEnabled = false
-        remoteRelayURL = "wss://relay.chau7.sh/connect"
-        isCTOEnabled = false
-        ctoPrefix = ""
-        ctoTabOverrides.removeAll()
+        mcpRemoteStore.resetToDefaults()
         keybindingPreset = "default"
 
         // Overlay positions
