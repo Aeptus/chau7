@@ -24,8 +24,10 @@ ci_require_cmd_strict cargo-deny "Install cargo-deny (for example: cargo install
 
 ci_run_in "Swift format check" "apps/chau7-macos" swiftformat Sources Tests --lint
 ci_run_in "Swift lint" "apps/chau7-macos" swiftlint lint --strict
-ci_run_in "Swift build" "apps/chau7-macos" "$SWIFT_BIN" build -Xswiftc -warnings-as-errors
-ci_run_in "Swift test" "apps/chau7-macos" "$SWIFT_BIN" test -Xswiftc -warnings-as-errors
+# --jobs is capped: uncapped swift-frontend fan-out saturates memory next to
+# the running Chau7 app and jetsam then SIGKILLs it (JetsamEvent 2026-07-03).
+ci_run_in "Swift build" "apps/chau7-macos" "$SWIFT_BIN" build --jobs "${CHAU7_SWIFT_JOBS:-3}" -Xswiftc -warnings-as-errors
+ci_run_in "Swift test" "apps/chau7-macos" "$SWIFT_BIN" test --jobs "${CHAU7_SWIFT_JOBS:-3}" -Xswiftc -warnings-as-errors
 ci_run_in "Swift dead-code (periphery)" "apps/chau7-macos" periphery scan --config .periphery.yml --strict
 
 ci_run_in "Rust format check" "apps/chau7-macos/rust" cargo fmt --all --check
