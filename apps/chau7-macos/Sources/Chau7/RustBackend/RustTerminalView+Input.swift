@@ -104,7 +104,7 @@ extension RustTerminalView {
     /// only per-caller difference is the `logContext` string used in the
     /// suppress log.
     private func dispatchTerminalSequence(
-        _ sequence: [UInt8], rust: RustTerminalFFI, logContext: String
+        _ sequence: [UInt8], rust: any TerminalBackend, logContext: String
     ) -> Bool {
         if let text = String(bytes: sequence, encoding: .utf8),
            !(shouldAcceptUserText?(text) ?? true) {

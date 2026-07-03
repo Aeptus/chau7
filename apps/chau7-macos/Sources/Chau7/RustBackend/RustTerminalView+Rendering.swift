@@ -48,7 +48,7 @@ extension RustTerminalView {
     }
 
     @discardableResult
-    private func drainPTYAndProcessTerminalState(rust: RustTerminalFFI) -> Bool {
+    private func drainPTYAndProcessTerminalState(rust: any TerminalBackend) -> Bool {
         terminalPollAccessLock.lock()
         defer { terminalPollAccessLock.unlock() }
         let flags = rust.pollEvents(timeout: 0)
@@ -59,7 +59,7 @@ extension RustTerminalView {
     }
 
     @discardableResult
-    func processTerminalStateAfterPollLocked(rust: RustTerminalFFI, changed: Bool) -> Bool {
+    func processTerminalStateAfterPollLocked(rust: any TerminalBackend, changed: Bool) -> Bool {
         if changed {
             retainedFrameContentVersion &+= 1
         }

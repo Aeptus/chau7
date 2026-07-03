@@ -530,7 +530,7 @@ struct TerminalPollEventFlags: OptionSet {
     static let metadataChanged = TerminalPollEventFlags(rawValue: 1 << 1)
 }
 
-final class RustTerminalFFI {
+final class RustTerminalFFI: TerminalBackend {
     private static let lock = NSLock()
     /// When the last load attempt failed. Failed loads RETRY after a cooldown
     /// instead of giving up for the app's lifetime — a transient dlopen
@@ -1902,7 +1902,7 @@ final class RustTerminalView: NSView {
     // MARK: - Properties
 
     /// The Rust terminal core (owns PTY and state)
-    var rustTerminal: RustTerminalFFI?
+    var rustTerminal: (any TerminalBackend)?
 
     /// Native renderer for Rust grid
     var gridView: RustGridView!
