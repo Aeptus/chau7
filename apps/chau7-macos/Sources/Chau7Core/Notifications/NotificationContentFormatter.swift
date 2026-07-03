@@ -34,7 +34,7 @@ public enum NotificationContentFormatter {
     }
 
     static func titleSuffix(forType type: String) -> String {
-        switch type.lowercased() {
+        switch NotificationSemanticMapping.normalize(type) {
         case "needs_validation":
             return LCore("aiEvent.title.needsValidation", "Needs review")
         case "idle", "waiting_input":
@@ -102,7 +102,7 @@ public enum NotificationContentFormatter {
     /// default otherwise. Unknown types fall back to "<type>: <message>".
     public static func body(for event: AIEvent) -> String {
         let message = event.message
-        switch event.type.lowercased() {
+        switch NotificationSemanticMapping.normalize(event.type) {
         case "needs_validation":
             return message.isEmpty ? LCore("aiEvent.body.needsValidation", "Your input is required.") : message
         case "idle":

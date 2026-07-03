@@ -3,7 +3,7 @@ import Foundation
 public enum NotificationStylePlanner {
     public static func defaultStyleAction(for event: AIEvent) -> NotificationActionConfig? {
         let preset: String
-        switch event.type.lowercased() {
+        switch NotificationSemanticMapping.normalize(event.type) {
         case "error", "failed", "context_limit", "tool_failed", "response_failed":
             preset = "error"
         case "permission", "attention_required", "elicitation":

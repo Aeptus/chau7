@@ -934,6 +934,10 @@ public enum NotificationTriggerCatalog {
     }
 
     fileprivate static func normalizeType(_ type: String) -> String {
-        type.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        // Shares the semantic mapping's normalizer (snake-cases hyphens and
+        // spaces): a "tool-failed" spelling used to match the semantic kind
+        // mapping but MISS the catalog lookup because this helper only
+        // trimmed and lowercased — the two vocabularies must agree.
+        NotificationSemanticMapping.normalize(type)
     }
 }
