@@ -855,38 +855,13 @@ enum DiffMode: String, Codable {
     case staged // git diff --cached
 }
 
-/// A single line in a diff hunk
-enum DiffLineType {
-    case context(String)
-    case addition(String)
-    case deletion(String)
-    case hunkHeader(String)
-}
-
-/// What the parser learned about the diff beyond the hunk content. Lets the
-/// empty-state UI explain *why* there are no hunks instead of always
-/// claiming "no changes" for files that are actually binary or renamed.
-enum DiffSummary: Equatable {
-    /// Normal textual diff (hunks may or may not be present).
-    case content
-    /// Git reported `Binary files a/foo and b/foo differ` — no textual hunks.
-    case binary
-    /// Git reported `rename from`/`rename to` lines; if textual hunks also
-    /// appear in the diff (rename + edit) they're still parsed normally and
-    /// the summary just adds the rename context.
-    case renamed(from: String, to: String)
-}
-
-/// A parsed hunk from unified diff output
-struct DiffHunk: Identifiable {
-    let id = UUID()
-    let header: String
-    let oldStart: Int
-    let oldCount: Int
-    let newStart: Int
-    let newCount: Int
-    let lines: [DiffLineType]
-}
+/// The diff value types (`DiffLineType`, `DiffSummary`, `DiffHunk`) moved to
+/// `Chau7Core/UnifiedDiffParser.swift` together with the pure parser that
+/// produces them. These typealiases keep the app-side names working for the
+/// existing view/model call sites.
+typealias DiffLineType = Chau7Core.DiffLineType
+typealias DiffSummary = Chau7Core.DiffSummary
+typealias DiffHunk = Chau7Core.DiffHunk
 
 /// Model for a git diff viewer pane.
 /// Loads unified diff output via `git diff` and parses it into structured hunks.
@@ -1073,121 +1048,15 @@ final class DiffViewerModel: Identifiable {
 
     // MARK: - Unified Diff Parser
 
-    struct ParseResult {
-        let hunks: [DiffHunk]
-        let additions: Int
-        let deletions: Int
-        let summary: DiffSummary
-    }
+    /// The parser body moved to `Chau7Core.UnifiedDiffParser` (Stage 3 of
+    /// the SOLID/DRY plan) so the pure string → hunk logic is testable
+    /// without the pane model.
+    typealias ParseResult = UnifiedDiffParser.ParseResult
 
+    /// Forwards to ``Chau7Core/UnifiedDiffParser/parseUnifiedDiff(_:)``;
+    /// kept so the model's call sites and existing tests compile unchanged.
     static func parseUnifiedDiff(_ raw: String) -> ParseResult {
-        guard !raw.isEmpty else {
-            return ParseResult(hunks: [], additions: 0, deletions: 0, summary: .content)
-        }
-
-        var hunks: [DiffHunk] = []
-        var currentLines: [DiffLineType] = []
-        var currentHeader = ""
-        var oldStart = 0, oldCount = 0, newStart = 0, newCount = 0
-        var totalAdditions = 0, totalDeletions = 0
-        var inHunk = false
-        var isBinary = false
-        var renameFrom: String?
-        var renameTo: String?
-
-        for line in raw.components(separatedBy: "\n") {
-            if line.hasPrefix("@@") {
-                // Flush previous hunk
-                if inHunk {
-                    hunks.append(DiffHunk(
-                        header: currentHeader,
-                        oldStart: oldStart, oldCount: oldCount,
-                        newStart: newStart, newCount: newCount,
-                        lines: currentLines
-                    ))
-                    currentLines = []
-                }
-
-                // Parse hunk header: @@ -oldStart,oldCount +newStart,newCount @@
-                currentHeader = line
-                let numbers = parseHunkHeader(line)
-                oldStart = numbers.oldStart
-                oldCount = numbers.oldCount
-                newStart = numbers.newStart
-                newCount = numbers.newCount
-                currentLines.append(.hunkHeader(line))
-                inHunk = true
-
-            } else if inHunk {
-                if line.hasPrefix("+") {
-                    currentLines.append(.addition(String(line.dropFirst())))
-                    totalAdditions += 1
-                } else if line.hasPrefix("-") {
-                    currentLines.append(.deletion(String(line.dropFirst())))
-                    totalDeletions += 1
-                } else if line.hasPrefix(" ") {
-                    currentLines.append(.context(String(line.dropFirst())))
-                } else if line.hasPrefix("\\") {
-                    // "\ No newline at end of file" — skip
-                }
-            } else {
-                // Pre-hunk header lines from `git diff`: detect binary and
-                // rename markers so the empty-state UI can explain *why*
-                // there are no hunks instead of just showing "no changes".
-                if line.hasPrefix("Binary files ") || line.hasPrefix("GIT binary patch") {
-                    isBinary = true
-                } else if line.hasPrefix("rename from ") {
-                    renameFrom = String(line.dropFirst("rename from ".count))
-                } else if line.hasPrefix("rename to ") {
-                    renameTo = String(line.dropFirst("rename to ".count))
-                }
-            }
-        }
-
-        // Flush last hunk
-        if inHunk {
-            hunks.append(DiffHunk(
-                header: currentHeader,
-                oldStart: oldStart, oldCount: oldCount,
-                newStart: newStart, newCount: newCount,
-                lines: currentLines
-            ))
-        }
-
-        let summary: DiffSummary
-        if isBinary {
-            summary = .binary
-        } else if let from = renameFrom, let to = renameTo {
-            summary = .renamed(from: from, to: to)
-        } else {
-            summary = .content
-        }
-
-        return ParseResult(
-            hunks: hunks,
-            additions: totalAdditions,
-            deletions: totalDeletions,
-            summary: summary
-        )
-    }
-
-    private static func parseHunkHeader(_ header: String) -> (oldStart: Int, oldCount: Int, newStart: Int, newCount: Int) {
-        // Format: @@ -oldStart[,oldCount] +newStart[,newCount] @@
-        let scanner = Scanner(string: header)
-        _ = scanner.scanString("@@")
-        _ = scanner.scanString("-")
-        let oStart = scanner.scanInt() ?? 0
-        var oCount = 1
-        if scanner.scanString(",") != nil {
-            oCount = scanner.scanInt() ?? 1
-        }
-        _ = scanner.scanString("+")
-        let nStart = scanner.scanInt() ?? 0
-        var nCount = 1
-        if scanner.scanString(",") != nil {
-            nCount = scanner.scanInt() ?? 1
-        }
-        return (oStart, oCount, nStart, nCount)
+        UnifiedDiffParser.parseUnifiedDiff(raw)
     }
 }
 

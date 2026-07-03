@@ -503,24 +503,11 @@ final class RepositoryPaneModel: Identifiable {
 
     // MARK: - Diff Stats Parsing
 
-    /// Parse `git diff --numstat` output. Combines unstaged and staged stats.
+    /// Forwards to ``Chau7Core/GitPorcelainParser/parseDiffNumstat(_:_:)``;
+    /// kept so the model's call sites and existing tests compile unchanged.
     static func parseDiffNumstat(_ unstaged: String, _ staged: String) -> [String: DiffStat] {
-        var stats: [String: DiffStat] = [:]
-        for line in (unstaged + "\n" + staged).components(separatedBy: "\n") {
-            let parts = line.split(separator: "\t")
-            guard parts.count >= 3 else { continue }
-            guard let additions = Int(parts[0]), let deletions = Int(parts[1]) else { continue }
-            let path = String(parts[2])
-            if let existing = stats[path] {
-                stats[path] = DiffStat(
-                    additions: existing.additions + additions,
-                    deletions: existing.deletions + deletions
-                )
-            } else {
-                stats[path] = DiffStat(additions: additions, deletions: deletions)
-            }
-        }
-        return stats
+        GitPorcelainParser.parseDiffNumstat(unstaged, staged)
+            .mapValues { DiffStat(additions: $0.additions, deletions: $0.deletions) }
     }
 
     // MARK: - Write Operations: Staging
@@ -741,6 +728,14 @@ final class RepositoryPaneModel: Identifiable {
 
     // MARK: - Parsing
 
+    //
+    // The parser bodies moved to `Chau7Core.GitPorcelainParser` (Stage 3 of
+    // the SOLID/DRY plan, `docs/SOLID-DRY-REVIEW.md`) where the pure
+    // string → value logic is tested directly. The `parseX` functions below
+    // are thin forwarding shims that map the Core result types onto the
+    // pane-facing types in `RepositoryPaneTypes.swift`, so the model's
+    // ~30 call sites and the existing tests compile unchanged.
+
     struct StatusParseResult {
         var staged: [FileStatus]
         var unstaged: [FileStatus]
@@ -748,168 +743,67 @@ final class RepositoryPaneModel: Identifiable {
         var conflicted: [String]
     }
 
+    /// Forwards to ``Chau7Core/GitPorcelainParser/parseStatus(_:)``.
     static func parseStatus(_ output: String) -> StatusParseResult {
-        var staged: [FileStatus] = []
-        var unstaged: [FileStatus] = []
-        var untracked: [String] = []
-        var conflicted: [String] = []
-
-        for line in output.components(separatedBy: "\n") where line.count >= 3 {
-            let x = line[line.startIndex] // index status
-            let y = line[line.index(after: line.startIndex)] // work-tree status
-            let path = String(line.dropFirst(3))
-            let displayPath: String
-            if let arrowRange = path.range(of: " -> ") {
-                displayPath = String(path[arrowRange.upperBound...])
-            } else {
-                displayPath = path
-            }
-
-            // Untracked
-            if x == "?" && y == "?" {
-                untracked.append(displayPath)
-                continue
-            }
-
-            // Unmerged (conflict)
-            if x == "U" || y == "U" || (x == "A" && y == "A") || (x == "D" && y == "D") {
-                conflicted.append(displayPath)
-                continue
-            }
-
-            // Staged (index column)
-            if x != " ", x != "?" {
-                staged.append(FileStatus(
-                    path: displayPath,
-                    changeType: Self.changeType(from: x),
-                    indexStatus: x,
-                    workTreeStatus: y
-                ))
-            }
-
-            // Unstaged (work-tree column)
-            if y != " ", y != "?" {
-                unstaged.append(FileStatus(
-                    path: displayPath,
-                    changeType: Self.changeType(from: y),
-                    indexStatus: x,
-                    workTreeStatus: y
-                ))
-            }
-        }
-
-        return StatusParseResult(staged: staged, unstaged: unstaged, untracked: untracked, conflicted: conflicted)
+        let parsed = GitPorcelainParser.parseStatus(output)
+        return StatusParseResult(
+            staged: parsed.staged.map(Self.fileStatus(from:)),
+            unstaged: parsed.unstaged.map(Self.fileStatus(from:)),
+            untracked: parsed.untracked,
+            conflicted: parsed.conflicted
+        )
     }
 
-    private static func changeType(from char: Character) -> FileChangeType {
-        switch char {
-        case "M": return .modified
-        case "A": return .added
-        case "D": return .deleted
-        case "R": return .renamed
-        case "C": return .copied
-        case "U": return .unmerged
-        default: return .modified
-        }
+    private static func fileStatus(from entry: GitPorcelainParser.FileEntry) -> FileStatus {
+        FileStatus(
+            path: entry.path,
+            changeType: FileChangeType(rawValue: entry.changeType.rawValue) ?? .modified,
+            indexStatus: entry.indexStatus,
+            workTreeStatus: entry.workTreeStatus
+        )
     }
 
-    /// Parse `git branch -v --list` which includes last commit per branch.
-    /// Format: "* main      abc1234 Last commit message" or "  feature   def5678 Some work"
+    /// Forwards to ``Chau7Core/GitPorcelainParser/parseBranchesVerbose(_:)``.
     static func parseBranchesVerbose(_ output: String) -> (names: [String], details: [String: BranchDetail]) {
-        var names: [String] = []
-        var details: [String: BranchDetail] = [:]
-        for line in output.components(separatedBy: "\n") {
-            let trimmed = line.trimmingCharacters(in: .whitespaces)
-            guard !trimmed.isEmpty else { continue }
-            let isCurrent = line.hasPrefix("*")
-            let cleaned = isCurrent ? String(trimmed.dropFirst(2)) : trimmed
-
-            // Skip detached HEAD entries like "(HEAD detached at abc1234)"
-            if cleaned.hasPrefix("(") { continue }
-
-            // Split on whitespace: name, hash, message...
-            let parts = cleaned.split(separator: " ", maxSplits: 2, omittingEmptySubsequences: true)
-            guard parts.count >= 2 else {
-                names.append(cleaned)
-                continue
+        let (names, details) = GitPorcelainParser.parseBranchesVerbose(output)
+        return (
+            names,
+            details.mapValues {
+                BranchDetail(name: $0.name, lastCommitHash: $0.lastCommitHash, lastCommitMessage: $0.lastCommitMessage)
             }
-            let name = String(parts[0])
-            let hash = String(parts[1])
-            let message = parts.count > 2 ? String(parts[2]) : ""
-            names.append(name)
-            details[name] = BranchDetail(name: name, lastCommitHash: hash, lastCommitMessage: message)
-        }
-        return (names, details)
+        )
     }
 
-    /// Parse `git rev-list --count --left-right @{upstream}...HEAD`
-    /// Output: "3\t5" where 3=behind, 5=ahead
+    /// Forwards to ``Chau7Core/GitPorcelainParser/parseAheadBehind(_:)``.
     static func parseAheadBehind(_ output: String) -> (ahead: Int, behind: Int)? {
-        let parts = output.trimmingCharacters(in: .whitespacesAndNewlines).split(separator: "\t")
-        guard parts.count == 2,
-              let behind = Int(parts[0]),
-              let ahead = Int(parts[1]) else { return nil }
-        return (ahead: ahead, behind: behind)
+        GitPorcelainParser.parseAheadBehind(output)
     }
 
+    /// Forwards to ``Chau7Core/GitPorcelainParser/parseRemoteBranches(_:)``.
     static func parseRemoteBranches(_ output: String) -> [String] {
-        output.components(separatedBy: "\n")
-            .map { $0.trimmingCharacters(in: .whitespaces) }
-            .filter { !$0.isEmpty && !$0.contains("HEAD") }
+        GitPorcelainParser.parseRemoteBranches(output)
     }
 
+    /// Forwards to ``Chau7Core/GitPorcelainParser/parseCommitLog(_:relativeDate:)``,
+    /// injecting the localized relative-date renderer that must stay app-side.
     static func parseCommitLog(_ output: String) -> [CommitEntry] {
-        let lines = output.components(separatedBy: "\n")
-        var commits: [CommitEntry] = []
-        // Each commit is 5 lines: hash, shortHash, subject, author, date
-        var i = 0
-        while i + 4 < lines.count {
-            let hash = lines[i]
-            let shortHash = lines[i + 1]
-            let subject = lines[i + 2]
-            let author = lines[i + 3]
-            let dateStr = lines[i + 4]
-            i += 5
-
-            guard !hash.isEmpty else { continue }
-
-            let date = DateFormatters.parseISO8601(dateStr) ?? Date.distantPast
-            commits.append(CommitEntry(
-                hash: hash,
-                shortHash: shortHash,
-                message: subject,
-                author: author,
-                date: date,
-                dateString: Self.relativeDate(from: date)
-            ))
+        GitPorcelainParser.parseCommitLog(output, relativeDate: relativeDate(from:)).map {
+            CommitEntry(
+                hash: $0.hash,
+                shortHash: $0.shortHash,
+                message: $0.message,
+                author: $0.author,
+                date: $0.date,
+                dateString: $0.dateString
+            )
         }
-        return commits
     }
 
+    /// Forwards to ``Chau7Core/GitPorcelainParser/parseStashList(_:)``.
     static func parseStashList(_ output: String) -> [StashEntry] {
-        guard !output.isEmpty else { return [] }
-        return output.components(separatedBy: "\n")
-            .enumerated()
-            .compactMap { index, line in
-                guard !line.isEmpty else { return nil }
-                // Format: stash@{0}: WIP on main: abc1234 message
-                // Or:     stash@{0}: On develop: saving progress
-                let parts = line.components(separatedBy: ": ")
-                let description = parts.dropFirst().joined(separator: ": ")
-
-                // Extract branch from "WIP on main" or "On develop"
-                var branch: String?
-                if parts.count >= 2 {
-                    let stashType = parts[1]
-                    if stashType.hasPrefix("WIP on ") {
-                        branch = String(stashType.dropFirst("WIP on ".count))
-                    } else if stashType.hasPrefix("On ") {
-                        branch = String(stashType.dropFirst("On ".count))
-                    }
-                }
-
-                return StashEntry(index: index, description: description.isEmpty ? line : description, branch: branch)
-            }
+        GitPorcelainParser.parseStashList(output).map {
+            StashEntry(index: $0.index, description: $0.description, branch: $0.branch)
+        }
     }
 
     private static func relativeDate(from date: Date) -> String {

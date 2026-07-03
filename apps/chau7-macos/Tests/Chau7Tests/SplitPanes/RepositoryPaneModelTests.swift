@@ -4,156 +4,72 @@ import XCTest
 
 final class RepositoryPaneModelTests: XCTestCase {
 
-    // MARK: - Status Parsing
+    // MARK: - Parser Shims
 
-    func testParseStatusEmpty() {
-        let result = RepositoryPaneModel.parseStatus("")
-        XCTAssertTrue(result.staged.isEmpty)
-        XCTAssertTrue(result.unstaged.isEmpty)
-        XCTAssertTrue(result.untracked.isEmpty)
-        XCTAssertTrue(result.conflicted.isEmpty)
-    }
+    //
+    // The pure parser bodies moved to `Chau7Core.GitPorcelainParser` and are
+    // tested exhaustively in `Core/GitPorcelainParserTests`. The tests below
+    // cover only what the model's forwarding shims add: mapping the Core
+    // result types onto the pane-facing UI types (FileStatus/FileChangeType,
+    // CommitEntry with a localized relative date, StashEntry, BranchDetail,
+    // DiffStat).
 
-    func testParseStatusStagedModified() {
-        let output = "M  src/main.swift"
-        let result = RepositoryPaneModel.parseStatus(output)
-        XCTAssertEqual(result.staged.count, 1)
-        XCTAssertEqual(result.staged[0].path, "src/main.swift")
-        XCTAssertEqual(result.staged[0].changeType, .modified)
-        XCTAssertTrue(result.unstaged.isEmpty)
-    }
-
-    func testParseStatusUnstagedModified() {
-        let output = " M src/main.swift"
-        let result = RepositoryPaneModel.parseStatus(output)
-        XCTAssertTrue(result.staged.isEmpty)
-        XCTAssertEqual(result.unstaged.count, 1)
-        XCTAssertEqual(result.unstaged[0].path, "src/main.swift")
-    }
-
-    func testParseStatusBothStagedAndUnstaged() {
-        let output = "MM src/main.swift"
-        let result = RepositoryPaneModel.parseStatus(output)
-        XCTAssertEqual(result.staged.count, 1)
-        XCTAssertEqual(result.unstaged.count, 1)
-        XCTAssertEqual(result.staged[0].path, "src/main.swift")
-        XCTAssertEqual(result.unstaged[0].path, "src/main.swift")
-    }
-
-    func testParseStatusUntracked() {
-        let output = "?? newfile.txt"
-        let result = RepositoryPaneModel.parseStatus(output)
-        XCTAssertTrue(result.staged.isEmpty)
-        XCTAssertTrue(result.unstaged.isEmpty)
-        XCTAssertEqual(result.untracked, ["newfile.txt"])
-    }
-
-    func testParseStatusAdded() {
-        let output = "A  src/new.swift"
-        let result = RepositoryPaneModel.parseStatus(output)
-        XCTAssertEqual(result.staged.count, 1)
-        XCTAssertEqual(result.staged[0].changeType, .added)
-    }
-
-    func testParseStatusDeleted() {
-        let output = "D  src/old.swift"
-        let result = RepositoryPaneModel.parseStatus(output)
-        XCTAssertEqual(result.staged.count, 1)
-        XCTAssertEqual(result.staged[0].changeType, .deleted)
-    }
-
-    func testParseStatusRenamed() {
-        let output = "R  old.swift -> new.swift"
-        let result = RepositoryPaneModel.parseStatus(output)
-        XCTAssertEqual(result.staged.count, 1)
-        XCTAssertEqual(result.staged[0].path, "new.swift")
-        XCTAssertEqual(result.staged[0].changeType, .renamed)
-    }
-
-    func testParseStatusConflict() {
-        let output = "UU src/conflict.swift"
-        let result = RepositoryPaneModel.parseStatus(output)
-        XCTAssertTrue(result.staged.isEmpty)
-        XCTAssertTrue(result.unstaged.isEmpty)
-        XCTAssertEqual(result.conflicted, ["src/conflict.swift"])
-    }
-
-    func testParseStatusConflictBothAdded() {
-        let output = "AA src/both-added.swift"
-        let result = RepositoryPaneModel.parseStatus(output)
-        XCTAssertEqual(result.conflicted, ["src/both-added.swift"])
-    }
-
-    func testParseStatusMixed() {
+    func testParseStatusShimMapsCoreEntriesOntoFileStatus() {
         let output = """
         M  staged.swift
          M unstaged.swift
         ?? untracked.txt
         A  added.swift
-        D  deleted.swift
+        R  old.swift -> new.swift
         UU conflicted.swift
         """
         let result = RepositoryPaneModel.parseStatus(output)
-        XCTAssertEqual(result.staged.count, 3) // M, A, D
-        XCTAssertEqual(result.unstaged.count, 1)
-        XCTAssertEqual(result.untracked.count, 1)
-        XCTAssertEqual(result.conflicted.count, 1)
+        XCTAssertEqual(result.staged.map(\.path), ["staged.swift", "added.swift", "new.swift"])
+        XCTAssertEqual(result.staged.map(\.changeType), [.modified, .added, .renamed])
+        XCTAssertEqual(result.staged[0].indexStatus, "M")
+        XCTAssertEqual(result.staged[0].workTreeStatus, " ")
+        XCTAssertEqual(result.unstaged.map(\.path), ["unstaged.swift"])
+        XCTAssertEqual(result.untracked, ["untracked.txt"])
+        XCTAssertEqual(result.conflicted, ["conflicted.swift"])
     }
 
-    func testParseRemoteBranches() {
-        let output = """
-          origin/HEAD -> origin/main
-          origin/main
-          origin/develop
-        """
-        let branches = RepositoryPaneModel.parseRemoteBranches(output)
-        XCTAssertEqual(branches, ["origin/main", "origin/develop"])
-    }
-
-    // MARK: - Commit Log Parsing
-
-    func testParseCommitLog() {
+    func testParseCommitLogShimRendersLocalizedRelativeDate() {
         let output = """
         abc123def456
         abc123d
         Fix login bug
         John Doe
         2026-04-01T12:00:00Z
-        def789abc012
-        def789a
-        Add new feature
-        Jane Smith
-        2026-03-31T10:00:00Z
         """
         let commits = RepositoryPaneModel.parseCommitLog(output)
-        XCTAssertEqual(commits.count, 2)
+        XCTAssertEqual(commits.count, 1)
         XCTAssertEqual(commits[0].shortHash, "abc123d")
         XCTAssertEqual(commits[0].message, "Fix login bug")
         XCTAssertEqual(commits[0].author, "John Doe")
-        XCTAssertEqual(commits[1].shortHash, "def789a")
-        XCTAssertEqual(commits[1].message, "Add new feature")
+        // The Core parser leaves dateString to the injected renderer; the
+        // shim must inject the app's localized relative-date formatting.
+        XCTAssertFalse(commits[0].dateString.isEmpty)
     }
 
-    func testParseCommitLogEmpty() {
-        XCTAssertTrue(RepositoryPaneModel.parseCommitLog("").isEmpty)
-    }
-
-    // MARK: - Stash Parsing
-
-    func testParseStashList() {
-        let output = """
-        stash@{0}: WIP on main: abc1234 some work
-        stash@{1}: On develop: saving progress
-        """
-        let stashes = RepositoryPaneModel.parseStashList(output)
-        XCTAssertEqual(stashes.count, 2)
+    func testParseStashListShimMapsBranchAndDescription() {
+        let stashes = RepositoryPaneModel.parseStashList("stash@{0}: WIP on main: abc1234 some work")
+        XCTAssertEqual(stashes.count, 1)
         XCTAssertEqual(stashes[0].index, 0)
+        XCTAssertEqual(stashes[0].branch, "main")
         XCTAssertTrue(stashes[0].description.contains("WIP"))
-        XCTAssertEqual(stashes[1].index, 1)
     }
 
-    func testParseStashListEmpty() {
-        XCTAssertTrue(RepositoryPaneModel.parseStashList("").isEmpty)
+    func testParseBranchesVerboseShimMapsBranchDetail() {
+        let (names, details) = RepositoryPaneModel.parseBranchesVerbose("* main      abc1234 Fix login bug")
+        XCTAssertEqual(names, ["main"])
+        XCTAssertEqual(details["main"]?.lastCommitHash, "abc1234")
+        XCTAssertEqual(details["main"]?.lastCommitMessage, "Fix login bug")
+    }
+
+    func testParseDiffNumstatShimMapsDiffStat() {
+        let stats = RepositoryPaneModel.parseDiffNumstat("12\t3\tsrc/main.swift", "2\t1\tsrc/main.swift")
+        XCTAssertEqual(stats["src/main.swift"]?.additions, 14)
+        XCTAssertEqual(stats["src/main.swift"]?.deletions, 4)
     }
 
     // MARK: - Write Operations (with mock runner)
@@ -185,54 +101,6 @@ final class RepositoryPaneModelTests: XCTestCase {
         let model = RepositoryPaneModel()
         model.load(directory: "/Users/me/projects/MyApp")
         XCTAssertEqual(model.repoName, "MyApp")
-    }
-
-    // MARK: - Ahead/Behind Parsing
-
-    func testParseAheadBehind() {
-        let result = RepositoryPaneModel.parseAheadBehind("3\t5")
-        XCTAssertEqual(result?.ahead, 5)
-        XCTAssertEqual(result?.behind, 3)
-    }
-
-    func testParseAheadBehindZero() {
-        let result = RepositoryPaneModel.parseAheadBehind("0\t0")
-        XCTAssertEqual(result?.ahead, 0)
-        XCTAssertEqual(result?.behind, 0)
-    }
-
-    func testParseAheadBehindInvalid() {
-        XCTAssertNil(RepositoryPaneModel.parseAheadBehind(""))
-        XCTAssertNil(RepositoryPaneModel.parseAheadBehind("not-a-number"))
-    }
-
-    // MARK: - Branch Verbose Parsing
-
-    func testParseBranchesVerbose() {
-        let output = """
-        * main      abc1234 Fix login bug
-          feature   def5678 Add new feature
-        """
-        let (names, details) = RepositoryPaneModel.parseBranchesVerbose(output)
-        XCTAssertEqual(names, ["main", "feature"])
-        XCTAssertEqual(details["main"]?.lastCommitHash, "abc1234")
-        XCTAssertEqual(details["main"]?.lastCommitMessage, "Fix login bug")
-        XCTAssertEqual(details["feature"]?.lastCommitHash, "def5678")
-    }
-
-    // MARK: - Stash Branch Parsing
-
-    func testParseStashBranch() {
-        let output = "stash@{0}: WIP on main: abc1234 some work"
-        let stashes = RepositoryPaneModel.parseStashList(output)
-        XCTAssertEqual(stashes.count, 1)
-        XCTAssertEqual(stashes[0].branch, "main")
-    }
-
-    func testParseStashBranchOnPrefix() {
-        let output = "stash@{0}: On develop: saving progress"
-        let stashes = RepositoryPaneModel.parseStashList(output)
-        XCTAssertEqual(stashes[0].branch, "develop")
     }
 
     // MARK: - Conventional Commit Prefixes
@@ -301,23 +169,6 @@ final class RepositoryPaneModelTests: XCTestCase {
 
         model.history.historySearchText = ""
         XCTAssertEqual(model.history.filteredCommits.count, 2)
-    }
-
-    // MARK: - Diff Stats Parsing
-
-    func testParseDiffNumstat() {
-        let unstaged = "12\t3\tsrc/main.swift\n5\t0\tREADME.md"
-        let staged = "2\t1\tsrc/main.swift"
-        let stats = RepositoryPaneModel.parseDiffNumstat(unstaged, staged)
-        XCTAssertEqual(stats["src/main.swift"]?.additions, 14) // 12 + 2
-        XCTAssertEqual(stats["src/main.swift"]?.deletions, 4) // 3 + 1
-        XCTAssertEqual(stats["README.md"]?.additions, 5)
-        XCTAssertEqual(stats["README.md"]?.deletions, 0)
-    }
-
-    func testParseDiffNumstatEmpty() {
-        let stats = RepositoryPaneModel.parseDiffNumstat("", "")
-        XCTAssertTrue(stats.isEmpty)
     }
 
     // MARK: - Session File Partitioning
