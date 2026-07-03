@@ -56,8 +56,8 @@ public enum MagiTabTitleFormatter {
 // MARK: - Prompt Builder
 
 public enum MagiPromptBuilder {
-    public static let defaultRepairTranscriptMaxCharacters = 24_000
-    private static let repairTranscriptContextBeforeMarker = 6_000
+    public static let defaultRepairTranscriptMaxCharacters = 24000
+    private static let repairTranscriptContextBeforeMarker = 6000
 
     public static func independentAnalysisPrompt(
         runID: String,
