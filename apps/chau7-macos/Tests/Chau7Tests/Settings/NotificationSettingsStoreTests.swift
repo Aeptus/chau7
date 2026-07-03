@@ -26,17 +26,17 @@ final class NotificationSettingsStoreTests: XCTestCase {
         XCTAssertFalse(store.settings.triggerActionBindings.isEmpty)
         XCTAssertNotNil(store.settings.triggerActionBindings["claude_code.failed"])
         XCTAssertEqual(store.settings.triggerActionBindings["claude_code.idle"], [])
-        XCTAssertFalse(store.settings.pushTaskCompletionsToiOS, "push completions default off")
+        XCTAssertTrue(store.settings.pushTaskCompletionsToiOS, "push completions default on")
         XCTAssertTrue(store.settings.mutedRepos.isEmpty)
     }
 
     func testMutationPersistsAndReloads() {
         let store = NotificationSettingsStore(defaults: defaults)
-        store.settings.pushTaskCompletionsToiOS = true
+        store.settings.pushTaskCompletionsToiOS = false
         store.settings.mutedRepos = ["/tmp/repo": RepoMute(snoozeUntil: nil)]
 
         let reloaded = NotificationSettingsStore(defaults: defaults)
-        XCTAssertTrue(reloaded.settings.pushTaskCompletionsToiOS)
+        XCTAssertFalse(reloaded.settings.pushTaskCompletionsToiOS, "an explicit off must survive the on-default")
         XCTAssertNotNil(reloaded.settings.mutedRepos["/tmp/repo"])
     }
 

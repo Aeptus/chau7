@@ -269,5 +269,10 @@ export function validatePushNotify(payload) {
   if (threadId) {
     value.thread_id = threadId;
   }
+  // Collapse key for kinds without a request/prompt id (task finished/failed).
+  const identityKey = clampString(payload.identity_key, PUSH_CAPS.id);
+  if (identityKey) {
+    value.identity_key = identityKey;
+  }
   return { ok: true, value };
 }

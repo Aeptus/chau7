@@ -67,6 +67,15 @@ export function buildApnsPayload(notify) {
   if (notify.thread_id) {
     aps['thread-id'] = notify.thread_id;
   }
+  // Category IDs registered by the iOS app (RemoteNotificationID): gives
+  // pushed approvals the same lock-screen Allow/Deny actions local
+  // notifications already have. The response plumbing (userInfo request_id →
+  // approvalNotificationResponse → queued ApprovalCoordinator send) predates
+  // this and works for remote payloads unchanged.
+  const category = APNS_CATEGORY_BY_KIND[notify.kind];
+  if (category) {
+    aps.category = category;
+  }
   return {
     aps,
     kind: notify.kind,
@@ -74,4 +83,24 @@ export function buildApnsPayload(notify) {
     prompt_id: notify.prompt_id,
     open_approvals: notify.open_approvals ?? true
   };
+}
+
+/** iOS UNNotificationCategory identifiers, keyed by push kind. */
+export const APNS_CATEGORY_BY_KIND = Object.freeze({
+  approval: 'MCP_APPROVAL',
+  interactive_prompt: 'INTERACTIVE_PROMPT'
+});
+
+/**
+ * Stable collapse identifier for a push: newer alerts for the same approval /
+ * prompt / identity replace older ones instead of stacking, and APNs
+ * store-and-forward keeps only the latest for an offline device. APNs caps
+ * the header at 64 bytes.
+ */
+export function apnsCollapseID(notify) {
+  const raw = notify.request_id || notify.prompt_id || notify.identity_key || '';
+  if (!raw) {
+    return undefined;
+  }
+  return raw.slice(0, 64);
 }

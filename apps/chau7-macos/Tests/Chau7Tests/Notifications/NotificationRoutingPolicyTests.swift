@@ -18,15 +18,15 @@ final class NotificationRoutingPolicyTests: XCTestCase {
     }
 
     func testTaskCompletionPushIsSettingsGated() {
-        let off = NotificationRoutingPolicy.surfaces(kind: .taskFinished)
-        XCTAssertFalse(off.contains(.iosPush), "default off")
-        XCTAssertTrue(off.isSuperset(of: [.macLocal, .tabStyle, .liveActivity, .mcpSubscribers]))
+        let on = NotificationRoutingPolicy.surfaces(kind: .taskFinished)
+        XCTAssertTrue(on.contains(.iosPush), "completions push by default — the paired phone should hear outcomes")
+        XCTAssertTrue(on.isSuperset(of: [.macLocal, .tabStyle, .liveActivity, .mcpSubscribers]))
 
-        let on = NotificationRoutingPolicy.surfaces(
+        let off = NotificationRoutingPolicy.surfaces(
             kind: .taskFailed,
-            settings: NotificationSurfaceSettings(pushTaskCompletions: true)
+            settings: NotificationSurfaceSettings(pushTaskCompletions: false)
         )
-        XCTAssertTrue(on.contains(.iosPush))
+        XCTAssertFalse(off.contains(.iosPush), "the Mac-side toggle still silences completion pushes")
     }
 
     func testInformationalIncludesMCP() {

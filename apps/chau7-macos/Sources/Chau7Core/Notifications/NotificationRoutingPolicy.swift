@@ -14,7 +14,7 @@ public struct NotificationSurfaceSettings: Equatable, Sendable {
     /// Route accepted task-finished/failed notifications to iOS as pushes.
     public var pushTaskCompletions: Bool
 
-    public init(pushTaskCompletions: Bool = false) {
+    public init(pushTaskCompletions: Bool = true) {
         self.pushTaskCompletions = pushTaskCompletions
     }
 }

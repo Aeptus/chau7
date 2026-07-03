@@ -4,6 +4,7 @@ import {
   shouldRemoveRegistration,
   parseApnsReason,
   buildApnsPayload,
+  apnsCollapseID,
   REMOVABLE_REASONS
 } from '../src/apns.js';
 
@@ -53,4 +54,33 @@ test('buildApnsPayload is an alert push without the silent-push flag', () => {
   assert.equal('content-available' in payload.aps, false);
   assert.equal(payload.request_id, 'r1');
   assert.equal(payload.open_approvals, true);
+});
+
+test('approval pushes carry the iOS approval category for lock-screen actions', () => {
+  const payload = buildApnsPayload({
+    kind: 'approval',
+    title: 'Approval needed',
+    body: 'git push --force',
+    request_id: 'req-1'
+  });
+  assert.equal(payload.aps.category, 'MCP_APPROVAL');
+});
+
+test('interactive prompts carry the prompt category; other kinds carry none', () => {
+  const prompt = buildApnsPayload({
+    kind: 'interactive_prompt',
+    title: 't',
+    body: 'b',
+    prompt_id: 'p1'
+  });
+  assert.equal(prompt.aps.category, 'INTERACTIVE_PROMPT');
+  const finished = buildApnsPayload({ kind: 'task_finished', title: 't', body: 'b' });
+  assert.equal(finished.aps.category, undefined);
+});
+
+test('collapse id prefers request over prompt over identity, capped at 64 bytes', () => {
+  assert.equal(apnsCollapseID({ request_id: 'r', prompt_id: 'p' }), 'r');
+  assert.equal(apnsCollapseID({ prompt_id: 'p' }), 'p');
+  assert.equal(apnsCollapseID({ identity_key: 'x'.repeat(100) }), 'x'.repeat(64));
+  assert.equal(apnsCollapseID({}), undefined);
 });

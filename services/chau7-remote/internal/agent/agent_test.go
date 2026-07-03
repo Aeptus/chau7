@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -232,6 +233,55 @@ func TestUpdatePendingApprovalSyncsRelayState(t *testing.T) {
 	}
 	if got.Approvals[0].RequestID != "req-1" {
 		t.Fatalf("unexpected request id: %s", got.Approvals[0].RequestID)
+	}
+}
+
+func TestFailedPushStaysEligibleForRetry(t *testing.T) {
+	attempts := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.HasPrefix(r.URL.Path, "/push/notify/") {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		attempts++
+		if attempts == 1 {
+			// e.g. the relay's new fail-loud response when APNs is unconfigured.
+			w.WriteHeader(http.StatusBadGateway)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer server.Close()
+
+	a := &Agent{
+		relayBaseURL: server.URL + "/connect",
+		state:        &State{DeviceID: "device-1"},
+		// Default state is push-eligible (background) — no clientState needed.
+		currentClientAppState: "background",
+		notifiedApprovalIDs:   map[string]time.Time{},
+		notifiedPromptIDs:     map[string]time.Time{},
+		notifiedEventKeys:     map[string]time.Time{},
+	}
+
+	approval := ApprovalNotificationPayload{
+		RequestID:      "req-1",
+		Command:        "git push",
+		FlaggedCommand: "git push",
+	}
+
+	a.emitApprovalPush(approval)
+	if attempts != 1 {
+		t.Fatalf("expected first push attempt, got %d", attempts)
+	}
+	// The failed attempt must not poison the dedup set: a flush retries it.
+	a.emitApprovalPush(approval)
+	if attempts != 2 {
+		t.Fatalf("failed push must stay eligible for retry, attempts=%d", attempts)
+	}
+	// Once delivered, further emits dedup.
+	a.emitApprovalPush(approval)
+	if attempts != 2 {
+		t.Fatalf("delivered push must dedup, attempts=%d", attempts)
 	}
 }
 

@@ -19,7 +19,12 @@ import {
   validatePushNotify,
   validatePushRegister
 } from './validation.js';
-import { buildApnsPayload, parseApnsReason, shouldRemoveRegistration } from './apns.js';
+import {
+  apnsCollapseID,
+  buildApnsPayload,
+  parseApnsReason,
+  shouldRemoveRegistration
+} from './apns.js';
 import { RateLimiter } from './ratelimit.js';
 import { parseToken, TOKEN_TTL_SECONDS } from './token.js';
 
@@ -332,16 +337,27 @@ export class SessionDO {
     const outcomes = await Promise.all(
       registrations.map(async (registration) => {
         const { status, reason } = await this.sendAPNSNotification(registration, payload);
-        return shouldRemoveRegistration(status, reason) ? registration.pairedDeviceId : null;
+        return { registration, status, reason };
       })
     );
-    const dead = outcomes.filter((id): id is string => id !== null);
+    const dead = outcomes
+      .filter(({ status, reason }) => shouldRemoveRegistration(status, reason))
+      .map(({ registration }) => registration.pairedDeviceId);
     if (dead.length > 0) {
       const next = await this.loadRegistrations();
       for (const id of dead) {
         delete next[id];
       }
       await this.saveRegistrations(next);
+    }
+
+    // If not a single registration was delivered to, surface the failure so
+    // the agent logs it and (crucially) does not mark the notification as
+    // pushed — it stays eligible for the next flush.
+    const anyDelivered = outcomes.some(({ status }) => status < 400);
+    if (!anyDelivered) {
+      const reasons = [...new Set(outcomes.map(({ reason, status }) => reason ?? String(status)))];
+      return new Response(`push delivery failed: ${reasons.join(',')}`, { status: 502 });
     }
 
     return new Response(null, { status: 204 });
@@ -399,7 +415,13 @@ export class SessionDO {
   ): Promise<{ status: number; reason?: string }> {
     const { APNS_TEAM_ID, APNS_KEY_ID, APNS_PRIVATE_KEY } = this.env;
     if (!APNS_TEAM_ID || !APNS_KEY_ID || !APNS_PRIVATE_KEY) {
-      return { status: 204 };
+      // Fail LOUD: this used to fake a 204 success, which silently dropped
+      // every push on deployments missing the secrets and let the agent
+      // mark the notification as delivered forever.
+      console.error(
+        'APNs push dropped: APNS_TEAM_ID / APNS_KEY_ID / APNS_PRIVATE_KEY worker secrets are not configured'
+      );
+      return { status: 503, reason: 'apns_not_configured' };
     }
 
     const host =
@@ -409,15 +431,25 @@ export class SessionDO {
     const authToken = await this.getAPNSToken(APNS_TEAM_ID, APNS_KEY_ID, APNS_PRIVATE_KEY);
     const body = buildApnsPayload(payload);
 
+    const headers: Record<string, string> = {
+      authorization: `bearer ${authToken}`,
+      'apns-push-type': 'alert',
+      'apns-priority': '10',
+      'apns-topic': registration.pushTopic,
+      // Store-and-forward: without an expiration, APNs delivers-once and a
+      // phone that is off-network at send time never sees the alert. Four
+      // hours matches how long a pending approval is plausibly actionable.
+      'apns-expiration': String(Math.floor(Date.now() / 1000) + 4 * 60 * 60),
+      'content-type': 'application/json'
+    };
+    const collapseID = apnsCollapseID(payload);
+    if (collapseID) {
+      headers['apns-collapse-id'] = collapseID;
+    }
+
     const response = await fetch(`${host}/3/device/${registration.pushToken}`, {
       method: 'POST',
-      headers: {
-        authorization: `bearer ${authToken}`,
-        'apns-push-type': 'alert',
-        'apns-priority': '10',
-        'apns-topic': registration.pushTopic,
-        'content-type': 'application/json'
-      },
+      headers,
       body: JSON.stringify(body)
     });
 

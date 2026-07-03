@@ -170,8 +170,9 @@ struct NotificationSettings: Equatable {
     /// MCP, push) for events under a muted root.
     var mutedRepos: [String: RepoMute] = [:]
     /// Route accepted task-finished/failed notifications to iOS as pushes
-    /// (frame 0x52). Off by default — approvals/prompts push regardless.
-    var pushTaskCompletionsToiOS = false
+    /// (frame 0x52). On by default — the whole point of pairing a phone is
+    /// hearing about outcomes while away; approvals/prompts push regardless.
+    var pushTaskCompletionsToiOS = true
 
     static let defaultGroupActionBindings: [String: [NotificationActionConfig]] = [
         "ai_coding.finished": [

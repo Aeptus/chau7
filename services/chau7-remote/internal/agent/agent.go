@@ -233,6 +233,7 @@ type PushNotifyPayload struct {
 	RequestID     string `json:"request_id,omitempty"`
 	PromptID      string `json:"prompt_id,omitempty"`
 	ThreadID      string `json:"thread_id,omitempty"`
+	IdentityKey   string `json:"identity_key,omitempty"`
 	OpenApprovals bool   `json:"open_approvals"`
 }
 
@@ -302,13 +303,18 @@ func NewAgent(socketPath, relayBaseURL, macName, statePath string) (*Agent, erro
 		return nil, err
 	}
 	agent := &Agent{
-		socketPath:              socketPath,
-		relayBaseURL:            relayBaseURL,
-		macName:                 macName,
-		statePath:               statePath,
-		state:                   state,
-		sendSeq:                 1,
-		currentClientAppState:   "foreground",
+		socketPath:   socketPath,
+		relayBaseURL: relayBaseURL,
+		macName:      macName,
+		statePath:    statePath,
+		state:        state,
+		sendSeq:      1,
+		// Push-eligible until the app proves it is foreground: assuming
+		// "foreground" at startup meant an agent (re)start while the phone
+		// was locked in a pocket suppressed every push until the app next
+		// connected. The worst case of "background" is a duplicate banner
+		// during the brief window before the first clientState frame.
+		currentClientAppState:   "background",
 		currentClientStreamMode: "full",
 		notifiedApprovalIDs:     map[string]time.Time{},
 		notifiedPromptIDs:       map[string]time.Time{},
@@ -985,6 +991,13 @@ func (a *Agent) resetSession() {
 	a.sessionEpoch = newSessionEpoch()
 	a.stateVersion = 0
 	a.pendingStateMu.Unlock()
+
+	// The crypto session is gone, so any clientState it carried is stale:
+	// fall back to push-eligible rather than trusting a dead session's
+	// "foreground" (a force-quit app never says goodbye).
+	a.clientStateMu.Lock()
+	a.currentClientAppState = "background"
+	a.clientStateMu.Unlock()
 }
 
 // newSessionEpoch returns a random identifier for one agent session
@@ -1335,10 +1348,16 @@ func (a *Agent) registerPushToken(pairedDeviceID, deviceName string, statePayloa
 	}
 }
 
-func (a *Agent) notifyPush(payload PushNotifyPayload) {
+// notifyPush POSTs the alert to the relay and reports whether it was
+// accepted. Callers must record dedup state only on success — the relay now
+// fails loudly (502) when nothing was delivered (e.g. APNs unconfigured), and
+// a failed push must stay eligible for the next flush.
+func (a *Agent) notifyPush(payload PushNotifyPayload) bool {
 	if err := a.relayHTTPPost("/push/notify/"+a.state.DeviceID, "push", payload); err != nil {
-		log.Printf("push notify: %v", err)
+		log.Printf("push notify (%s): %v", payload.Kind, err)
+		return false
 	}
+	return true
 }
 
 func (a *Agent) handleApprovalRequestForPush(payload []byte) {
@@ -1350,9 +1369,12 @@ func (a *Agent) handleApprovalRequestForPush(payload []byte) {
 	a.emitApprovalPush(approval)
 }
 
-// markPushedOnce records that id has been pushed and reports whether this was
-// the first time. This locked check-and-set is the single source of push
-// dedup, shared by the approval and prompt emitters.
+// markPushedOnce reserves id and reports whether this was the first claim.
+// This locked check-and-set is the single source of push dedup, shared by the
+// approval, prompt, and notification-event emitters. If the subsequent relay
+// POST fails, the caller must release the reservation with unmarkPushed so
+// the alert stays eligible for the next flush — before this, one dropped
+// attempt (relay/APNs misconfigured or unreachable) silenced the id forever.
 func (a *Agent) markPushedOnce(seen map[string]time.Time, id string) bool {
 	a.clientStateMu.Lock()
 	defer a.clientStateMu.Unlock()
@@ -1361,6 +1383,12 @@ func (a *Agent) markPushedOnce(seen map[string]time.Time, id string) bool {
 	}
 	seen[id] = time.Now()
 	return true
+}
+
+func (a *Agent) unmarkPushed(seen map[string]time.Time, id string) {
+	a.clientStateMu.Lock()
+	defer a.clientStateMu.Unlock()
+	delete(seen, id)
 }
 
 // emitApprovalPush sends a single approval push if the client is push-eligible
@@ -1391,7 +1419,7 @@ func (a *Agent) emitApprovalPush(approval ApprovalNotificationPayload) {
 	if body == "" {
 		body = headline
 	}
-	a.notifyPush(PushNotifyPayload{
+	if !a.notifyPush(PushNotifyPayload{
 		Kind:          "approval",
 		Title:         title,
 		Subtitle:      subtitle,
@@ -1399,7 +1427,9 @@ func (a *Agent) emitApprovalPush(approval ApprovalNotificationPayload) {
 		RequestID:     approval.RequestID,
 		ThreadID:      strings.TrimSpace(approval.TabTitle),
 		OpenApprovals: true,
-	})
+	}) {
+		a.unmarkPushed(a.notifiedApprovalIDs, approval.RequestID)
+	}
 }
 
 func (a *Agent) handleInteractivePromptListForPush(payload []byte) {
@@ -1449,7 +1479,7 @@ func (a *Agent) emitInteractivePromptPush(prompt RemoteInteractivePrompt) {
 	if subtitle == "" {
 		subtitle = locationSummary(prompt.TabTitle, prompt.ProjectName, prompt.BranchName, prompt.CurrentDirectory)
 	}
-	a.notifyPush(PushNotifyPayload{
+	if !a.notifyPush(PushNotifyPayload{
 		Kind:          "interactive_prompt",
 		Title:         title,
 		Subtitle:      subtitle,
@@ -1457,7 +1487,9 @@ func (a *Agent) emitInteractivePromptPush(prompt RemoteInteractivePrompt) {
 		PromptID:      prompt.ID,
 		ThreadID:      strings.TrimSpace(prompt.TabTitle),
 		OpenApprovals: true,
-	})
+	}) {
+		a.unmarkPushed(a.notifiedPromptIDs, prompt.ID)
+	}
 }
 
 // flushPendingPushNotifications pushes any currently-pending approvals and
@@ -1481,14 +1513,17 @@ func (a *Agent) handleNotificationEventForPush(payload []byte) {
 	if !a.markPushedOnce(a.notifiedEventKeys, event.IdentityKey) {
 		return
 	}
-	a.notifyPush(PushNotifyPayload{
+	if !a.notifyPush(PushNotifyPayload{
 		Kind:          event.Kind,
 		Title:         event.Title,
 		Subtitle:      event.Subtitle,
 		Body:          event.Body,
 		ThreadID:      event.ThreadID,
+		IdentityKey:   event.IdentityKey,
 		OpenApprovals: false,
-	})
+	}) {
+		a.unmarkPushed(a.notifiedEventKeys, event.IdentityKey)
+	}
 }
 
 func (a *Agent) flushPendingPushNotifications() {

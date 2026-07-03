@@ -72,7 +72,7 @@ final class NotificationSettingsStore {
         }
 
         let loadedMutedRepos = loadMutedRepos(from: defaults)
-        let loadedPushTaskCompletions = defaults.bool(forKey: Keys.notificationPushTaskCompletions)
+        let loadedPushTaskCompletions = defaults.object(forKey: Keys.notificationPushTaskCompletions) as? Bool ?? true
 
         let resolvedTriggerState: NotificationTriggerState
         if let data = defaults.data(forKey: Keys.notificationTriggerState),
