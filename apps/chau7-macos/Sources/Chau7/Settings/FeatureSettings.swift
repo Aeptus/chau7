@@ -598,209 +598,6 @@ final class FeatureSettings {
         shared.appearanceStore.availableFonts
     }
 
-    private static let defaultDangerousCommandPatterns: [String] = [
-        // Filesystem destruction
-        "rm -rf",
-        "rm -r -f",
-        "rm -fr",
-        "rm --no-preserve-root",
-        "rm -rf /",
-        "rm -rf ~",
-        "rm -rf $home",
-        "rm -rf *",
-        "rm -rf .",
-        "rm -rf ..",
-        "rm -rf ./",
-        "rm -rf ../",
-        "find / -delete",
-        "find . -delete",
-        "find .. -delete",
-        "chmod -r 777 /",
-        "chmod -r 777 ~",
-        "chown -r",
-        "chgrp -r",
-        "mv /",
-        "mv ~",
-        "dd if=",
-        "dd of=/dev/",
-        "mkfs",
-        "mkfs.ext",
-        "mkfs.xfs",
-        "mkfs.btrfs",
-        "mkfs.fat",
-        "mkfs.vfat",
-        "mkswap",
-        "wipefs",
-        "blkdiscard",
-        "shred ",
-        "sgdisk --zap-all",
-        "sfdisk",
-        "fdisk",
-        "parted rm",
-        "parted mklabel",
-        "diskutil erasedisk",
-        "diskutil erasevolume",
-        "diskutil partitiondisk",
-        "diskutil apfs deletevolume",
-        "diskutil apfs deletecontainer",
-        "diskutil secureerase",
-        "zpool destroy",
-        "btrfs subvolume delete",
-        "cryptsetup luksformat",
-        "cryptsetup lukserase",
-        "dmsetup remove",
-        "lvremove",
-        "vgremove",
-        "pvremove",
-        "swapoff -a",
-
-        // System power/process
-        "shutdown -r",
-        "shutdown -h",
-        "reboot",
-        "poweroff",
-        "halt",
-        "init 0",
-        "init 6",
-        "kill -9 -1",
-        "kill -kill -1",
-        "killall -9",
-        "pkill -9",
-
-        // Git/VCS
-        "git reset --hard",
-        "git clean -fd",
-        "git clean -fdx",
-        "git clean -ffdx",
-        "git push -f",
-        "git push --force",
-        "git push --force-with-lease",
-        "git push origin :",
-        "git branch -d",
-        "git branch -d -f",
-        "git branch -d --force",
-        "git branch -d -D",
-        "git tag -d",
-        "git reflog expire --expire=now --all",
-        "git gc --prune=now",
-        "git checkout -- .",
-        "git restore --staged",
-        "git rm -r",
-        "svn delete",
-        "hg strip",
-
-        // GitHub CLI
-        "gh repo delete",
-        "gh api repos/ -x delete",
-        "gh codespace delete",
-        "gh release delete",
-        "gh gist delete",
-
-        // Containers & Kubernetes
-        "docker system prune -a",
-        "docker system prune --volumes",
-        "docker volume prune",
-        "docker network prune",
-        "docker container prune",
-        "docker image prune -a",
-        "docker builder prune -a",
-        "docker rm -f",
-        "docker rmi -f",
-        "docker-compose down -v",
-        "docker compose down -v",
-        "kubectl delete namespace",
-        "kubectl delete ns",
-        "kubectl delete all --all",
-        "kubectl delete --all --all-namespaces",
-        "kubectl delete -f",
-        "kubectl delete pods --all",
-        "kubectl delete pvc --all",
-        "kubectl delete pv --all",
-        "helm uninstall",
-
-        // IaC
-        "terraform destroy",
-        "terraform apply -destroy",
-        "pulumi destroy",
-        "cdk destroy",
-
-        // Cloud provider CLIs
-        "aws s3 rm --recursive",
-        "aws s3 rb",
-        "aws s3api delete-bucket",
-        "aws s3api delete-object",
-        "aws s3api delete-objects",
-        "aws ec2 terminate-instances",
-        "aws autoscaling delete-auto-scaling-group",
-        "aws rds delete-db-instance",
-        "aws rds delete-db-cluster",
-        "aws cloudformation delete-stack",
-        "aws dynamodb delete-table",
-        "aws iam delete-user",
-        "aws iam delete-role",
-        "aws kms schedule-key-deletion",
-        "aws eks delete-cluster",
-        "aws ecs delete-cluster",
-        "aws lambda delete-function",
-        "aws logs delete-log-group",
-        "gcloud projects delete",
-        "gcloud compute instances delete",
-        "gcloud compute disks delete",
-        "gcloud sql instances delete",
-        "gcloud sql databases delete",
-        "gcloud container clusters delete",
-        "gcloud storage rm -r",
-        "gcloud storage buckets delete",
-        "gcloud dns managed-zones delete",
-        "az group delete",
-        "az vm delete",
-        "az aks delete",
-        "az storage account delete",
-        "az storage container delete",
-        "az storage blob delete",
-        "az sql db delete",
-        "az cosmosdb delete",
-        "az webapp delete",
-        "doctl compute droplet delete",
-        "doctl k8s cluster delete",
-        "doctl database delete",
-
-        // PaaS/DB services
-        "heroku apps:destroy",
-        "heroku pipelines:destroy",
-        "vercel remove",
-        "vercel project rm",
-        "vercel projects remove",
-        "railway project delete",
-        "fly apps destroy",
-        "supabase projects delete",
-        "supabase db reset",
-        "supabase db drop",
-        "firebase projects:delete",
-        "firebase hosting:delete",
-        "firebase functions:delete",
-        "netlify sites:delete",
-        "cloudflare zones delete",
-
-        // Backup tools
-        "rclone delete",
-        "rclone purge",
-        "restic forget --prune",
-        "restic prune",
-
-        // Databases/SQL
-        "drop database",
-        "drop schema",
-        "drop table",
-        "truncate table",
-        "delete from"
-    ]
-
-    private static let defaultDangerousProtectedProcessPatterns: [String] = [
-        "chau7",
-        "chau7-mcp-bridge"
-    ]
-
     // MARK: - Color Scheme Settings (forwarded to TerminalAppearanceStore)
 
     var colorSchemeName: String {
@@ -1592,203 +1389,123 @@ final class FeatureSettings {
 
     // MARK: - General Terminal Settings
 
+    /// The general terminal behavior domain lives in its own store; these
+    /// facade properties keep existing consumers source-compatible.
+    @ObservationIgnored private let terminalBehaviorStore = TerminalBehaviorStore()
+
     var cursorStyle: String {
-        didSet { UserDefaults.standard.set(cursorStyle, forKey: Keys.cursorStyle) }
+        get { terminalBehaviorStore.cursorStyle }
+        set { terminalBehaviorStore.cursorStyle = newValue }
     }
 
     var cursorBlink: Bool {
-        didSet { UserDefaults.standard.set(cursorBlink, forKey: Keys.cursorBlink) }
+        get { terminalBehaviorStore.cursorBlink }
+        set { terminalBehaviorStore.cursorBlink = newValue }
     }
 
-    /// Cursor blink interval in seconds (0.3–2.0). Only applies when cursorBlink is true.
     var cursorBlinkRate: Double {
-        didSet {
-            let clamped = max(0.3, min(cursorBlinkRate, 2.0))
-            if cursorBlinkRate != clamped { cursorBlinkRate = clamped
-                return
-            }
-            UserDefaults.standard.set(cursorBlinkRate, forKey: "terminal.cursorBlinkRate")
-        }
+        get { terminalBehaviorStore.cursorBlinkRate }
+        set { terminalBehaviorStore.cursorBlinkRate = newValue }
     }
 
-    /// Custom cursor color as hex string (e.g. "#FF6600"). Empty = use theme default.
     var cursorColor: String {
-        didSet { UserDefaults.standard.set(cursorColor, forKey: "terminal.cursorColor") }
+        get { terminalBehaviorStore.cursorColor }
+        set { terminalBehaviorStore.cursorColor = newValue }
     }
 
-    /// Unicode ambiguous-width treatment: 1 = single-width (Western), 2 = double-width (East Asian).
-    /// Affects terminal grid layout for characters in the Unicode Ambiguous width category.
     var unicodeAmbiguousWidth: Int {
-        didSet {
-            let clamped = (unicodeAmbiguousWidth == 2) ? 2 : 1
-            if unicodeAmbiguousWidth != clamped { unicodeAmbiguousWidth = clamped
-                return
-            }
-            UserDefaults.standard.set(unicodeAmbiguousWidth, forKey: "terminal.unicodeAmbiguousWidth")
-        }
+        get { terminalBehaviorStore.unicodeAmbiguousWidth }
+        set { terminalBehaviorStore.unicodeAmbiguousWidth = newValue }
     }
 
     var scrollbackLines: Int {
-        didSet {
-            let clamped = max(100, min(scrollbackLines, 100_000))
-            if scrollbackLines != clamped {
-                scrollbackLines = clamped
-                return
-            }
-            UserDefaults.standard.set(scrollbackLines, forKey: Keys.scrollbackLines)
-        }
+        get { terminalBehaviorStore.scrollbackLines }
+        set { terminalBehaviorStore.scrollbackLines = newValue }
     }
 
-    /// Total command-history lines retained across closed ("orphan") tabs. Per-tab
-    /// shell history accrues one file per tab ever opened; this caps the combined
-    /// closed-tab corpus. When over the cap, the oldest commands are dropped first,
-    /// but each tab keeps at least a few of its most recent ones (see
-    /// `TerminalSessionModel.pruneOrphanShellHistory`). 0 keeps only that per-tab
-    /// minimum. Active/restorable tabs are never pruned.
     var shellHistoryMaxLines: Int {
-        didSet {
-            let clamped = max(0, min(shellHistoryMaxLines, 1_000_000))
-            if shellHistoryMaxLines != clamped {
-                shellHistoryMaxLines = clamped
-                return
-            }
-            UserDefaults.standard.set(shellHistoryMaxLines, forKey: Keys.shellHistoryMaxLines)
-        }
+        get { terminalBehaviorStore.shellHistoryMaxLines }
+        set { terminalBehaviorStore.shellHistoryMaxLines = newValue }
     }
 
-    /// Maximum number of scrollback lines restored when tabs are recovered.
-    /// Set to 0 to disable scrollback restoration.
     var restoredScrollbackLines: Int {
-        didSet {
-            let clamped = max(0, min(restoredScrollbackLines, 10000))
-            if restoredScrollbackLines != clamped {
-                restoredScrollbackLines = clamped
-                return
-            }
-            UserDefaults.standard.set(restoredScrollbackLines, forKey: Keys.restoredScrollbackLines)
-        }
+        get { terminalBehaviorStore.restoredScrollbackLines }
+        set { terminalBehaviorStore.restoredScrollbackLines = newValue }
     }
 
-    /// Maximum runtime events retained per session journal.
     var runtimeEventJournalCapacity: Int {
-        get {
-            let raw = UserDefaults.standard.object(forKey: Keys.runtimeEventJournalCapacity) as? Int ?? 1000
-            return max(100, min(raw, 10000))
-        }
-        set {
-            let clamped = max(100, min(newValue, 10000))
-            UserDefaults.standard.set(clamped, forKey: Keys.runtimeEventJournalCapacity)
-        }
+        get { terminalBehaviorStore.runtimeEventJournalCapacity }
+        set { terminalBehaviorStore.runtimeEventJournalCapacity = newValue }
     }
 
-    /// Maximum characters stored per output_chunk journal event.
     var runtimeOutputChunkLimit: Int {
-        get {
-            let raw = UserDefaults.standard.object(forKey: Keys.runtimeOutputChunkLimit) as? Int ?? 8192
-            return max(1024, min(raw, 65536))
-        }
-        set {
-            let clamped = max(1024, min(newValue, 65536))
-            UserDefaults.standard.set(clamped, forKey: Keys.runtimeOutputChunkLimit)
-        }
+        get { terminalBehaviorStore.runtimeOutputChunkLimit }
+        set { terminalBehaviorStore.runtimeOutputChunkLimit = newValue }
     }
 
     var runtimeCostThresholdsUSD: [Double] {
-        get {
-            let raw = UserDefaults.standard.array(forKey: Keys.runtimeCostThresholdsUSD) as? [Double] ?? [1, 5, 10]
-            return Array(Set(raw.filter { $0 > 0 })).sorted()
-        }
-        set {
-            let normalized = Array(Set(newValue.filter { $0 > 0 })).sorted()
-            UserDefaults.standard.set(normalized, forKey: Keys.runtimeCostThresholdsUSD)
-        }
+        get { terminalBehaviorStore.runtimeCostThresholdsUSD }
+        set { terminalBehaviorStore.runtimeCostThresholdsUSD = newValue }
     }
 
     var isUsageMonitoringEnabled: Bool {
-        get { UserDefaults.standard.object(forKey: Keys.usageMonitoringEnabled) as? Bool ?? false }
-        set {
-            UserDefaults.standard.set(newValue, forKey: Keys.usageMonitoringEnabled)
-            NotificationCenter.default.post(name: .usageMonitoringSettingsChanged, object: nil)
-        }
+        get { terminalBehaviorStore.isUsageMonitoringEnabled }
+        set { terminalBehaviorStore.isUsageMonitoringEnabled = newValue }
     }
 
     var isClaudeStatusLineQuotaCaptureEnabled: Bool {
-        get { UserDefaults.standard.object(forKey: Keys.claudeStatusLineQuotaCaptureEnabled) as? Bool ?? false }
-        set {
-            UserDefaults.standard.set(newValue, forKey: Keys.claudeStatusLineQuotaCaptureEnabled)
-            NotificationCenter.default.post(name: .usageMonitoringSettingsChanged, object: nil)
-        }
+        get { terminalBehaviorStore.isClaudeStatusLineQuotaCaptureEnabled }
+        set { terminalBehaviorStore.isClaudeStatusLineQuotaCaptureEnabled = newValue }
     }
 
     var isUsageQuotaWarningsEnabled: Bool {
-        get { UserDefaults.standard.object(forKey: Keys.usageQuotaWarningsEnabled) as? Bool ?? false }
-        set {
-            UserDefaults.standard.set(newValue, forKey: Keys.usageQuotaWarningsEnabled)
-            NotificationCenter.default.post(name: .usageMonitoringSettingsChanged, object: nil)
-        }
+        get { terminalBehaviorStore.isUsageQuotaWarningsEnabled }
+        set { terminalBehaviorStore.isUsageQuotaWarningsEnabled = newValue }
     }
 
     var bellEnabled: Bool {
-        didSet { UserDefaults.standard.set(bellEnabled, forKey: Keys.bellEnabled) }
+        get { terminalBehaviorStore.bellEnabled }
+        set { terminalBehaviorStore.bellEnabled = newValue }
     }
 
     var bellSound: String {
-        didSet { UserDefaults.standard.set(bellSound, forKey: Keys.bellSound) }
+        get { terminalBehaviorStore.bellSound }
+        set { terminalBehaviorStore.bellSound = newValue }
     }
 
-    /// Visual flash on bell (combinable with audible bell)
     var bellVisual: Bool {
-        didSet { UserDefaults.standard.set(bellVisual, forKey: "terminal.bellVisual") }
+        get { terminalBehaviorStore.bellVisual }
+        set { terminalBehaviorStore.bellVisual = newValue }
     }
 
-    /// Minimum seconds between bell triggers (rate limiting to prevent spam)
     var bellRateLimitSeconds: Double {
-        didSet {
-            let clamped = max(0, min(bellRateLimitSeconds, 60))
-            if bellRateLimitSeconds != clamped { bellRateLimitSeconds = clamped
-                return
-            }
-            UserDefaults.standard.set(bellRateLimitSeconds, forKey: "terminal.bellRateLimitSeconds")
-        }
+        get { terminalBehaviorStore.bellRateLimitSeconds }
+        set { terminalBehaviorStore.bellRateLimitSeconds = newValue }
     }
 
     var dangerousCommandHighlightScope: DangerousCommandHighlightScope {
-        didSet {
-            UserDefaults.standard.set(dangerousCommandHighlightScope.rawValue, forKey: Keys.dangerousCommandHighlightScope)
-            NotificationCenter.default.post(name: .terminalDangerousCommandHighlightChanged, object: nil)
-        }
+        get { terminalBehaviorStore.dangerousCommandHighlightScope }
+        set { terminalBehaviorStore.dangerousCommandHighlightScope = newValue }
     }
 
     var dangerousCommandPatterns: [String] {
-        didSet {
-            if let data = JSONOperations.encode(dangerousCommandPatterns, context: "dangerousCommandPatterns") {
-                UserDefaults.standard.set(data, forKey: Keys.dangerousCommandPatterns)
-            }
-            NotificationCenter.default.post(name: .terminalDangerousCommandHighlightChanged, object: nil)
-        }
+        get { terminalBehaviorStore.dangerousCommandPatterns }
+        set { terminalBehaviorStore.dangerousCommandPatterns = newValue }
     }
 
     var dangerousCommandProtectChau7Enabled: Bool {
-        didSet { UserDefaults.standard.set(dangerousCommandProtectChau7Enabled, forKey: Keys.dangerousCommandProtectChau7Enabled) }
+        get { terminalBehaviorStore.dangerousCommandProtectChau7Enabled }
+        set { terminalBehaviorStore.dangerousCommandProtectChau7Enabled = newValue }
     }
 
     var dangerousCommandProtectChau7Level: DangerousCommandProtectionLevel {
-        didSet { UserDefaults.standard.set(dangerousCommandProtectChau7Level.rawValue, forKey: Keys.dangerousCommandProtectChau7Level) }
+        get { terminalBehaviorStore.dangerousCommandProtectChau7Level }
+        set { terminalBehaviorStore.dangerousCommandProtectChau7Level = newValue }
     }
 
     var dangerousCommandProtectedProcessPatterns: [String] {
-        didSet {
-            let cleaned = dangerousCommandProtectedProcessPatterns
-                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-                .filter { !$0.isEmpty }
-            if dangerousCommandProtectedProcessPatterns != cleaned {
-                dangerousCommandProtectedProcessPatterns = cleaned
-                return
-            }
-            if let data = JSONOperations.encode(cleaned, context: "dangerousCommandProtectedProcessPatterns") {
-                UserDefaults.standard.set(data, forKey: Keys.dangerousCommandProtectedProcessPatterns)
-            }
-        }
+        get { terminalBehaviorStore.dangerousCommandProtectedProcessPatterns }
+        set { terminalBehaviorStore.dangerousCommandProtectedProcessPatterns = newValue }
     }
 
     func dangerousCommandSelfProtectionContext(
@@ -1822,46 +1539,23 @@ final class FeatureSettings {
     }
 
     var dangerousOutputHighlightIdleDelayMs: Int {
-        didSet {
-            let clamped = max(0, min(dangerousOutputHighlightIdleDelayMs, 5000))
-            if dangerousOutputHighlightIdleDelayMs != clamped {
-                dangerousOutputHighlightIdleDelayMs = clamped
-                return
-            }
-            UserDefaults.standard.set(dangerousOutputHighlightIdleDelayMs, forKey: Keys.dangerousOutputHighlightIdleDelayMs)
-        }
+        get { terminalBehaviorStore.dangerousOutputHighlightIdleDelayMs }
+        set { terminalBehaviorStore.dangerousOutputHighlightIdleDelayMs = newValue }
     }
 
     var dangerousOutputHighlightMaxIntervalMs: Int {
-        didSet {
-            let clamped = max(250, min(dangerousOutputHighlightMaxIntervalMs, 10000))
-            if dangerousOutputHighlightMaxIntervalMs != clamped {
-                dangerousOutputHighlightMaxIntervalMs = clamped
-                return
-            }
-            UserDefaults.standard.set(dangerousOutputHighlightMaxIntervalMs, forKey: Keys.dangerousOutputHighlightMaxIntervalMs)
-        }
+        get { terminalBehaviorStore.dangerousOutputHighlightMaxIntervalMs }
+        set { terminalBehaviorStore.dangerousOutputHighlightMaxIntervalMs = newValue }
     }
 
     var dangerousOutputHighlightLowPowerEnabled: Bool {
-        didSet {
-            UserDefaults.standard.set(dangerousOutputHighlightLowPowerEnabled, forKey: Keys.dangerousOutputHighlightLowPowerEnabled)
-            NotificationCenter.default.post(name: .terminalDangerousCommandHighlightChanged, object: nil)
-        }
+        get { terminalBehaviorStore.dangerousOutputHighlightLowPowerEnabled }
+        set { terminalBehaviorStore.dangerousOutputHighlightLowPowerEnabled = newValue }
     }
 
     var defaultStartDirectory: String {
-        didSet {
-            let trimmed = defaultStartDirectory.trimmingCharacters(in: .whitespacesAndNewlines)
-            let normalized = trimmed.isEmpty
-                ? RuntimeIsolation.homePath()
-                : trimmed
-            if defaultStartDirectory != normalized {
-                defaultStartDirectory = normalized
-                return
-            }
-            UserDefaults.standard.set(defaultStartDirectory, forKey: Keys.defaultStartDirectory)
-        }
+        get { terminalBehaviorStore.defaultStartDirectory }
+        set { terminalBehaviorStore.defaultStartDirectory = newValue }
     }
 
     // MARK: - API Analytics Settings
@@ -2179,30 +1873,7 @@ final class FeatureSettings {
         static let smartScrollEnabled = "feature.smartScrollEnabled"
         /// F11
         static let keybindingPreset = "feature.keybindingPreset"
-        // General
-        static let cursorStyle = "terminal.cursorStyle"
-        static let cursorBlink = "terminal.cursorBlink"
-        static let scrollbackLines = "terminal.scrollbackLines"
-        static let shellHistoryMaxLines = "terminal.shellHistoryMaxLines"
-        static let restoredScrollbackLines = "terminal.restoredScrollbackLines"
-        static let runtimeEventJournalCapacity = "runtime.eventJournalCapacity"
-        static let runtimeOutputChunkLimit = "runtime.outputChunkLimit"
-        static let runtimeCostThresholdsUSD = "runtime.costThresholdsUSD"
-        static let usageMonitoringEnabled = "usage.monitoring.enabled"
-        static let claudeStatusLineQuotaCaptureEnabled = "usage.claude.statusLine.enabled"
-        static let usageQuotaWarningsEnabled = "usage.quotaWarnings.enabled"
-        static let bellEnabled = "terminal.bellEnabled"
-        static let bellSound = "terminal.bellSound"
-        static let dangerousCommandHighlightEnabled = "terminal.dangerousCommandHighlightEnabled"
-        static let dangerousCommandHighlightScope = "terminal.dangerousCommandHighlightScope"
-        static let dangerousCommandPatterns = "terminal.dangerousCommandPatterns"
-        static let dangerousCommandProtectChau7Enabled = "terminal.dangerousCommandProtectChau7Enabled"
-        static let dangerousCommandProtectChau7Level = "terminal.dangerousCommandProtectChau7Level"
-        static let dangerousCommandProtectedProcessPatterns = "terminal.dangerousCommandProtectedProcessPatterns"
-        static let dangerousOutputHighlightIdleDelayMs = "terminal.dangerousOutputHighlightIdleDelayMs"
-        static let dangerousOutputHighlightMaxIntervalMs = "terminal.dangerousOutputHighlightMaxIntervalMs"
-        static let dangerousOutputHighlightLowPowerEnabled = "terminal.dangerousOutputHighlightLowPowerEnabled"
-        static let defaultStartDirectory = "terminal.defaultStartDirectory"
+        /// Overlay Positions
         static let overlayPositionsMap = "overlay.positions.map"
         // API Analytics
         static let apiAnalyticsEnabled = "analytics.api.enabled"
@@ -2245,7 +1916,6 @@ final class FeatureSettings {
 
     private init() {
         let defaults = UserDefaults.standard
-        let home = RuntimeIsolation.homePath()
 
         // One-time migration: RTK → CTO UserDefaults keys
         if !defaults.bool(forKey: "cto.migrated.v1") {
@@ -2425,50 +2095,6 @@ final class FeatureSettings {
 
         // F11: Keybindings (default: "default")
         self.keybindingPreset = defaults.string(forKey: Keys.keybindingPreset) ?? "default"
-
-        // General Terminal Settings
-        self.cursorStyle = defaults.string(forKey: Keys.cursorStyle) ?? "block"
-        self.cursorBlink = defaults.object(forKey: Keys.cursorBlink) as? Bool ?? true
-        self.cursorBlinkRate = defaults.object(forKey: "terminal.cursorBlinkRate") as? Double ?? 0.6
-        self.cursorColor = defaults.string(forKey: "terminal.cursorColor") ?? ""
-        self.unicodeAmbiguousWidth = defaults.object(forKey: "terminal.unicodeAmbiguousWidth") as? Int ?? 1
-        self.scrollbackLines = defaults.object(forKey: Keys.scrollbackLines) as? Int ?? 10000
-        self.shellHistoryMaxLines = defaults.object(forKey: Keys.shellHistoryMaxLines) as? Int ?? 1000
-        self.restoredScrollbackLines = defaults.object(forKey: Keys.restoredScrollbackLines) as? Int ?? 500
-        self.bellEnabled = defaults.object(forKey: Keys.bellEnabled) as? Bool ?? true
-        self.bellSound = defaults.string(forKey: Keys.bellSound) ?? "default"
-        self.bellVisual = defaults.object(forKey: "terminal.bellVisual") as? Bool ?? false
-        self.bellRateLimitSeconds = defaults.object(forKey: "terminal.bellRateLimitSeconds") as? Double ?? 0.1
-        if let raw = defaults.string(forKey: Keys.dangerousCommandHighlightScope),
-           let scope = DangerousCommandHighlightScope(rawValue: raw) {
-            self.dangerousCommandHighlightScope = scope
-        } else {
-            let enabled = defaults.object(forKey: Keys.dangerousCommandHighlightEnabled) as? Bool ?? true
-            self.dangerousCommandHighlightScope = enabled ? .allOutputs : .none
-        }
-        if let data = defaults.data(forKey: Keys.dangerousCommandPatterns),
-           let patterns = JSONOperations.decode([String].self, from: data, context: "dangerousCommandPatterns") {
-            self.dangerousCommandPatterns = patterns
-        } else {
-            self.dangerousCommandPatterns = Self.defaultDangerousCommandPatterns
-        }
-        self.dangerousCommandProtectChau7Enabled = defaults.object(forKey: Keys.dangerousCommandProtectChau7Enabled) as? Bool ?? true
-        if let raw = defaults.string(forKey: Keys.dangerousCommandProtectChau7Level),
-           let level = DangerousCommandProtectionLevel(rawValue: raw) {
-            self.dangerousCommandProtectChau7Level = level
-        } else {
-            self.dangerousCommandProtectChau7Level = .blocking
-        }
-        if let data = defaults.data(forKey: Keys.dangerousCommandProtectedProcessPatterns),
-           let patterns = JSONOperations.decode([String].self, from: data, context: "dangerousCommandProtectedProcessPatterns") {
-            self.dangerousCommandProtectedProcessPatterns = patterns
-        } else {
-            self.dangerousCommandProtectedProcessPatterns = Self.defaultDangerousProtectedProcessPatterns
-        }
-        self.dangerousOutputHighlightIdleDelayMs = defaults.object(forKey: Keys.dangerousOutputHighlightIdleDelayMs) as? Int ?? 500
-        self.dangerousOutputHighlightMaxIntervalMs = defaults.object(forKey: Keys.dangerousOutputHighlightMaxIntervalMs) as? Int ?? 2000
-        self.dangerousOutputHighlightLowPowerEnabled = defaults.object(forKey: Keys.dangerousOutputHighlightLowPowerEnabled) as? Bool ?? true
-        self.defaultStartDirectory = defaults.string(forKey: Keys.defaultStartDirectory) ?? home
 
         // API Analytics (default: disabled)
         self.isAPIAnalyticsEnabled = defaults.object(forKey: Keys.apiAnalyticsEnabled) as? Bool ?? false
@@ -3091,8 +2717,6 @@ final class FeatureSettings {
     // MARK: - Reset to Defaults (NEW)
 
     func resetAllToDefaults() {
-        let home = RuntimeIsolation.homePath()
-
         // Extracted domains reset through their stores, deriving from each
         // loader's fallbacks so defaults exist exactly once per domain.
         appearanceStore.resetToDefaults()
@@ -3122,26 +2746,7 @@ final class FeatureSettings {
         launchAtLogin = false
 
         // Terminal
-        cursorStyle = "block"
-        cursorBlink = true
-        cursorBlinkRate = 0.6
-        cursorColor = ""
-        unicodeAmbiguousWidth = 1
-        scrollbackLines = 10000
-        restoredScrollbackLines = 500
-        bellEnabled = true
-        bellSound = "default"
-        bellVisual = false
-        bellRateLimitSeconds = 0.1
-        dangerousCommandHighlightScope = .allOutputs
-        dangerousCommandPatterns = Self.defaultDangerousCommandPatterns
-        dangerousCommandProtectChau7Enabled = true
-        dangerousCommandProtectChau7Level = .blocking
-        dangerousCommandProtectedProcessPatterns = Self.defaultDangerousProtectedProcessPatterns
-        dangerousOutputHighlightIdleDelayMs = 500
-        dangerousOutputHighlightMaxIntervalMs = 2000
-        dangerousOutputHighlightLowPowerEnabled = true
-        defaultStartDirectory = home
+        terminalBehaviorStore.resetToDefaults()
 
         // Tab Display
         showTabIcons = true
@@ -3239,26 +2844,7 @@ final class FeatureSettings {
     }
 
     func resetTerminalToDefaults() {
-        cursorStyle = "block"
-        cursorBlink = true
-        cursorBlinkRate = 0.6
-        cursorColor = ""
-        unicodeAmbiguousWidth = 1
-        scrollbackLines = 10000
-        restoredScrollbackLines = 500
-        bellEnabled = true
-        bellSound = "default"
-        bellVisual = false
-        bellRateLimitSeconds = 0.1
-        dangerousCommandHighlightScope = .allOutputs
-        dangerousCommandPatterns = Self.defaultDangerousCommandPatterns
-        dangerousCommandProtectChau7Enabled = true
-        dangerousCommandProtectChau7Level = .blocking
-        dangerousCommandProtectedProcessPatterns = Self.defaultDangerousProtectedProcessPatterns
-        dangerousOutputHighlightIdleDelayMs = 500
-        dangerousOutputHighlightMaxIntervalMs = 2000
-        dangerousOutputHighlightLowPowerEnabled = true
-        defaultStartDirectory = RuntimeIsolation.homePath()
+        terminalBehaviorStore.resetToDefaults()
         shellStore.resetToDefaults()
         activePollingRateCap = .displayNative
         inactiveViewMaxFPS = 42
