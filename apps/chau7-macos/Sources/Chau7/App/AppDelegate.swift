@@ -18,15 +18,14 @@ private final class OverlayBlurView: NSVisualEffectView {
     /// (e.g., SwiftUI gesture handlers where the cast may fail due to @NSApplicationDelegateAdaptor wrapping).
     weak static var shared: AppDelegate?
 
-    private static let passwordAutofillSelector = NSSelectorFromString("_handleInsertFromPasswordsCommand:")
     var model: AppModel?
     var overlayModel: OverlayTabsModel?
-    private struct OverlayHost {
+    struct OverlayHost {
         let window: NSWindow
         let model: OverlayTabsModel
     }
 
-    private var overlayHosts: [OverlayHost] = []
+    var overlayHosts: [OverlayHost] = []
     /// Debounce for bursty `didChangeScreenParametersNotification` re-clamps.
     private var screenParamsDebounce: DispatchWorkItem?
     private(set) weak var activeOverlayModel: OverlayTabsModel?
@@ -40,7 +39,7 @@ private final class OverlayBlurView: NSVisualEffectView {
     private var isClosingTab = false // Flag to prevent windowShouldClose from hiding window during tab close
     private var nextOverlayWindowNumber = 1
     /// Tracks windows that were hidden via orderOut - used to trigger tab bar refresh only when needed
-    private var hiddenWindowNumbers: Set<Int> = []
+    var hiddenWindowNumbers: Set<Int> = []
     /// Tracks windows that have been shown at least once
     private var shownWindowNumbers: Set<Int> = []
     private var pendingSelectedTabRevealEventsByWindow: [Int: Set<TabSurfaceReactivationEvent>] = [:]
@@ -64,15 +63,15 @@ private final class OverlayBlurView: NSVisualEffectView {
     private var lastOverlayLifecycleLogAt: CFAbsoluteTime = 0
     private var lastOverlayLifecycleReason = ""
     /// Centralized autosave timer — saves all windows atomically every 30s
-    private var multiWindowAutoSaveTimer: DispatchSourceTimer?
-    private var lastSavedWindowStates: [[SavedTabState]] = []
-    private var lastSavedWindowStatesAt: Date?
+    var multiWindowAutoSaveTimer: DispatchSourceTimer?
+    var lastSavedWindowStates: [[SavedTabState]] = []
+    var lastSavedWindowStatesAt: Date?
     /// Cheap structural fingerprint of the live windows at the time
     /// `lastSavedWindowStates` was captured. Termination may only reuse the
     /// cached snapshot when the current fingerprint still matches — otherwise
     /// a tab created/renamed/recolored/cd'd (or an AI session started) in the
     /// final seconds before quit would be silently lost to timer phase.
-    private var lastSavedWindowStatesSignature: [[String]] = []
+    var lastSavedWindowStatesSignature: [[String]] = []
 
     // MARK: - App Nap Prevention
 
@@ -80,11 +79,11 @@ private final class OverlayBlurView: NSVisualEffectView {
     /// Held while the app is active, while startup/restore scopes are active,
     /// or while any visible selected terminal remains live-rendered.
     /// This intentionally favors responsiveness over battery savings for visible shells.
-    private var activityToken: NSObjectProtocol?
-    private var telemetryRepairWorkItem: DispatchWorkItem?
-    private var appNapObservers: [Any] = []
-    private var isAppActive = true
-    private var latencyCriticalScopes: [String: DispatchWorkItem] = [:]
+    var activityToken: NSObjectProtocol?
+    var telemetryRepairWorkItem: DispatchWorkItem?
+    var appNapObservers: [Any] = []
+    var isAppActive = true
+    var latencyCriticalScopes: [String: DispatchWorkItem] = [:]
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         Self.shared = self
@@ -663,109 +662,6 @@ private final class OverlayBlurView: NSVisualEffectView {
         ensureActiveOverlayModel()?.newTab()
     }
 
-    // MARK: - App Nap Management
-
-    private func startAppNapManagement() {
-        enableLowLatency()
-
-        let activateObs = NotificationCenter.default.addObserver(
-            forName: NSApplication.didBecomeActiveNotification,
-            object: nil,
-            queue: .main
-        ) { [weak self] _ in
-            MainActor.assumeIsolated {
-                self?.isAppActive = true
-                self?.telemetryRepairWorkItem?.cancel()
-                self?.telemetryRepairWorkItem = nil
-                self?.enableLowLatency()
-                // Returning to the app is the moment a repo may have been moved
-                // in Finder; heal any group tags now orphaned by the move.
-                self?.reconcileStaleRepoGroupsAcrossWindows()
-            }
-        }
-        let resignObs = NotificationCenter.default.addObserver(
-            forName: NSApplication.didResignActiveNotification,
-            object: nil,
-            queue: .main
-        ) { [weak self] _ in
-            MainActor.assumeIsolated {
-                self?.isAppActive = false
-                self?.scheduleRecentTelemetryRepairSweep()
-                self?.refreshLowLatencyActivity()
-            }
-        }
-        appNapObservers = [activateObs, resignObs]
-        Log.info("App Nap management started (conditional latency-critical activity)")
-    }
-
-    private func enableLowLatency() {
-        refreshLowLatencyActivity()
-    }
-
-    /// Re-tags tabs whose repo group points at a directory that no longer
-    /// exists (e.g. after the repo was moved or renamed on disk) across every
-    /// open window. Cheap and idempotent — a no-op when nothing has moved.
-    private func reconcileStaleRepoGroupsAcrossWindows() {
-        for host in overlayHosts {
-            host.model.reconcileStaleRepoGroups()
-        }
-    }
-
-    private func refreshLowLatencyActivity() {
-        let hasLatencyCriticalScopes = !latencyCriticalScopes.isEmpty
-        let hasVisibleLiveWindows = hasVisibleLiveWindowsForLowLatency
-        let shouldHoldLowLatency = LowLatencyActivityPolicy.shouldHoldActivity(
-            LowLatencyActivityPolicyInput(
-                isAppActive: isAppActive,
-                hasLatencyCriticalScopes: hasLatencyCriticalScopes,
-                hasVisibleLiveWindows: hasVisibleLiveWindows
-            )
-        )
-        if shouldHoldLowLatency {
-            guard activityToken == nil else { return }
-            activityToken = ProcessInfo.processInfo.beginActivity(
-                options: [.userInitiatedAllowingIdleSystemSleep, .latencyCritical],
-                reason: "Terminal requires low-latency input processing"
-            )
-            let scopeSummary = latencyCriticalScopes.keys.sorted().joined(separator: ",")
-            Log.info("App Nap: acquired latency-critical activity active=\(isAppActive) scopes=\(scopeSummary.isEmpty ? "(none)" : scopeSummary)")
-            return
-        }
-
-        guard let activityToken else { return }
-        ProcessInfo.processInfo.endActivity(activityToken)
-        self.activityToken = nil
-        Log.info(
-            "App Nap: released latency-critical activity active=\(isAppActive) scopes=\(hasLatencyCriticalScopes) visibleLiveWindows=\(hasVisibleLiveWindows)"
-        )
-    }
-
-    private func beginLatencyCriticalScope(reason: String, timeout: TimeInterval) {
-        latencyCriticalScopes[reason]?.cancel()
-        let releaseWorkItem = DispatchWorkItem { [weak self] in
-            MainActor.assumeIsolated {
-                self?.endLatencyCriticalScope(reason: reason)
-            }
-        }
-        latencyCriticalScopes[reason] = releaseWorkItem
-        enableLowLatency()
-        DispatchQueue.main.asyncAfter(deadline: .now() + timeout, execute: releaseWorkItem)
-        Log.info("App Nap: began latency-critical scope reason=\(reason) timeout=\(Int(timeout.rounded()))s")
-    }
-
-    private func endLatencyCriticalScope(reason: String) {
-        guard let item = latencyCriticalScopes.removeValue(forKey: reason) else { return }
-        item.cancel()
-        refreshLowLatencyActivity()
-        Log.info("App Nap: ended latency-critical scope reason=\(reason)")
-    }
-
-    private var hasVisibleLiveWindowsForLowLatency: Bool {
-        overlayHosts.contains { host in
-            host.model.shouldHoldLowLatencyWhileInactive
-        }
-    }
-
     func showSSHManager() {
         SSHConnectionWindowController.shared.showConnectionManager()
     }
@@ -979,900 +875,10 @@ private final class OverlayBlurView: NSVisualEffectView {
         }
     }
 
-    // MARK: - App Menu Actions
+    // MARK: - Smart Select All state (selectAll lives in AppDelegate+MenuActions)
 
-    func showAbout() {
-        let credits = L("about.credits", """
-            A modern terminal emulator designed for AI-assisted development.
-
-            Features:
-            - AI CLI Detection (Claude, Codex, Gemini)
-            - Command Palette
-            - SSH Connection Manager
-            - Inline Images
-            - Split Panes
-            - Snippets & More
-
-            Built with SwiftUI and Rust.
-
-            Copyright \u{00a9} 2024-2026 Aeptus
-        """)
-
-        let attributedCredits = NSMutableAttributedString(string: credits)
-        attributedCredits.addAttributes(
-            [.font: NSFont.systemFont(ofSize: 11)],
-            range: NSRange(location: 0, length: credits.count)
-        )
-
-        NSApp.orderFrontStandardAboutPanel(options: [
-            .applicationName: L("app.name", "Chau7"),
-            .applicationVersion: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0",
-            .version: Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "1",
-            .credits: attributedCredits
-        ])
-    }
-
-    // MARK: - File Menu Actions
-
-    func openLocation() {
-        let alert = NSAlert()
-        alert.messageText = L("alert.openLocation.title", "Open Location")
-        alert.informativeText = L("alert.openLocation.message", "Enter a directory path to open in a new tab:")
-        alert.alertStyle = .informational
-        alert.addButton(withTitle: L("button.open", "Open"))
-        alert.addButton(withTitle: L("button.cancel", "Cancel"))
-
-        let textField = NSTextField(frame: NSRect(x: 0, y: 0, width: 300, height: 24))
-        textField.stringValue = RuntimeIsolation.homePath()
-        alert.accessoryView = textField
-
-        if alert.runModal() == .alertFirstButtonReturn {
-            let path = textField.stringValue
-            if FileManager.default.fileExists(atPath: path) {
-                if let tabsModel = ensureActiveOverlayModel() {
-                    tabsModel.newTab(at: path)
-                }
-            }
-        }
-    }
-
-    func exportText() {
-        guard let terminalView = activeTerminalView(in: NSApp.keyWindow) else {
-            Log.trace("Export text: no active terminal found.")
-            return
-        }
-
-        let savePanel = NSSavePanel()
-        savePanel.allowedContentTypes = [.plainText]
-        savePanel.nameFieldStringValue = L("export.terminalText.filename", "terminal-output.txt")
-        savePanel.title = L("export.terminalText.title", "Export Terminal Text")
-
-        if savePanel.runModal() == .OK, let url = savePanel.url {
-            // Get all text from terminal buffer
-            guard let data = terminalView.getBufferAsData(),
-                  let text = String(data: data, encoding: .utf8) else {
-                Log.warn("Export text: failed to read terminal buffer.")
-                return
-            }
-            do {
-                try text.write(to: url, atomically: true, encoding: .utf8)
-                Log.info("Terminal text exported to \(url.path)")
-            } catch {
-                Log.error("Failed to export terminal text: \(error)")
-            }
-        }
-    }
-
-    func closeOtherTabs() {
-        ensureActiveOverlayModel()?.closeOtherTabs()
-    }
-
-    func reopenClosedTab() {
-        ensureActiveOverlayModel()?.reopenClosedTab()
-    }
-
-    // MARK: - Edit Menu Actions
-
-    func cut() {
-        if NSApp.sendAction(#selector(NSText.cut(_:)), to: nil, from: nil) {
-            Log.trace("Cut handled by responder chain.")
-            return
-        }
-
-        // In terminal, cut = copy (we can't cut from terminal output)
-        copyOrInterrupt()
-    }
-
-    func pasteEscaped() {
-        guard let string = NSPasteboard.general.string(forType: .string) else { return }
-        let escaped = PasteEscaper.escape(string)
-
-        guard let terminalView = activeTerminalView(in: NSApp.keyWindow) else { return }
-
-        terminalView.send(txt: escaped)
-        Log.info("Pasted escaped text.")
-    }
-
-    func autofillFromPasswords() {
-        guard let window = NSApp.keyWindow else { return }
-        if let terminalView = activeTerminalView(in: window) {
-            window.makeFirstResponder(terminalView)
-        }
-
-        if NSApp.sendAction(Self.passwordAutofillSelector, to: nil, from: nil) {
-            Log.info("Invoked Password AutoFill from Edit menu.")
-        } else {
-            Log.warn("Password AutoFill command unavailable in responder chain.")
-        }
-    }
-
-    // MARK: - Smart Select All (Cmd+A / Cmd+A Cmd+A)
-
-    private var lastSelectAllTime: Date?
-    private let doubleTapThreshold: TimeInterval = 0.4 // 400ms for double-tap
-
-    func selectAll() {
-        guard let window = NSApp.keyWindow else { return }
-        if let terminalView = activeTerminalView(in: window) {
-            let now = Date()
-
-            // Check if this is a double-tap (Cmd+A Cmd+A)
-            if let lastTime = lastSelectAllTime,
-               now.timeIntervalSince(lastTime) < doubleTapThreshold {
-                // Double-tap: Select entire terminal buffer
-                if let rustView = terminalView as? RustTerminalView {
-                    rustView.selectAll(nil)
-                }
-                terminalView.clearCommandSelectionState()
-                Log.info("Cmd+A Cmd+A: Selected all terminal buffer.")
-                lastSelectAllTime = nil // Reset for next sequence
-            } else {
-                // Single tap: Select current command (including wrapped rows)
-                terminalView.selectCurrentCommand()
-                Log.info("Cmd+A: Selected current command.")
-                lastSelectAllTime = now
-            }
-            return
-        }
-
-        lastSelectAllTime = nil
-        if !NSApp.sendAction(#selector(NSText.selectAll(_:)), to: nil, from: nil) {
-            window.firstResponder?.perform(#selector(NSText.selectAll(_:)), with: nil)
-        }
-    }
-
-    func useSelectionForFind() {
-        guard let terminalView = activeTerminalView(in: NSApp.keyWindow) else { return }
-
-        if let selection = terminalView.getSelectedText() {
-            if let tabsModel = activeOverlayModel {
-                tabsModel.searchQuery = selection
-                if !tabsModel.isSearchVisible {
-                    tabsModel.toggleSearch()
-                }
-            }
-        }
-    }
-
-    func showCharacterPalette() {
-        NSApp.orderFrontCharacterPalette(nil)
-    }
-
-    // MARK: - View Menu Actions
-
-    func toggleFullScreen() {
-        guard let window = NSApp.keyWindow else { return }
-        window.toggleFullScreen(nil)
-    }
-
-    func scrollToTop() {
-        guard let terminalView = activeTerminalView(in: NSApp.keyWindow) else { return }
-        terminalView.scrollToTop()
-        Log.info("Scrolled to top.")
-    }
-
-    func scrollToBottom() {
-        guard let terminalView = activeTerminalView(in: NSApp.keyWindow) else { return }
-        terminalView.scrollToBottom()
-        Log.info("Scrolled to bottom.")
-    }
-
-    func scrollToPreviousInputLine() {
-        guard let terminalView = activeTerminalView(in: NSApp.keyWindow) else { return }
-        terminalView.scrollToPreviousInputLine()
-    }
-
-    func scrollToNextInputLine() {
-        guard let terminalView = activeTerminalView(in: NSApp.keyWindow) else { return }
-        terminalView.scrollToNextInputLine()
-    }
-
-    // MARK: - Window Menu Actions
-
-    func showTabColorPicker() {
-        ensureActiveOverlayModel()?.showTabColorPicker()
-    }
-
-    func moveTabRight() {
-        ensureActiveOverlayModel()?.moveCurrentTabRight()
-    }
-
-    func moveTabLeft() {
-        ensureActiveOverlayModel()?.moveCurrentTabLeft()
-    }
-
-    func refreshTabBar() {
-        ensureActiveOverlayModel()?.refreshTabBar()
-    }
-
-    func forceRefreshTab() {
-        ensureActiveOverlayModel()?.forceRefreshSelectedTab()
-    }
-
-    // MARK: - Dashboard
-
-    func toggleDashboard() {
-        guard let model = ensureActiveOverlayModel() else { return }
-        if let repoGroupID = model.selectedTab?.repoGroupID {
-            model.toggleDashboard(for: repoGroupID)
-        } else if let gitRoot = model.selectedTab?.session?.gitRootPath {
-            model.toggleDashboard(for: gitRoot)
-        }
-    }
-
-    // MARK: - Pane Actions
-
-    func splitHorizontally() {
-        ensureActiveOverlayModel()?.splitCurrentTabHorizontally()
-    }
-
-    func splitVertically() {
-        ensureActiveOverlayModel()?.splitCurrentTabVertically()
-    }
-
-    func openTextEditorPane() {
-        ensureActiveOverlayModel()?.toggleTextEditorInCurrentTab()
-    }
-
-    func openFilePreviewPane() {
-        ensureActiveOverlayModel()?.toggleFilePreviewInCurrentTab()
-    }
-
-    func openDiffViewerPane() {
-        guard let model = ensureActiveOverlayModel(),
-              let tab = model.tabs.first(where: { $0.id == model.selectedTabID }),
-              let session = tab.session else { return }
-
-        let dir = session.currentDirectory
-
-        // Try changed files from last AI command first
-        let tabID = session.ownerTabID?.uuidString ?? model.selectedTabID.uuidString
-        let aiFiles = CommandBlockManager.shared.lastChangedFiles(tabID: tabID)
-        if let firstFile = aiFiles.first {
-            model.openDiffViewerInCurrentTab(filePath: firstFile, directory: dir)
-            return
-        }
-
-        let accessSnapshot = ProtectedPathPolicy.ensureLiveAccessForUserInitiatedAction(
-            path: dir,
-            actionDescription: "load live Git status"
-        )
-        guard accessSnapshot.canProbeLive else { return }
-
-        // Fallback: first dirty file in working tree
-        let porcelain = GitDiffTracker.runGit(args: ["status", "--porcelain"], in: dir)
-        if let file = GitDiffTracker.firstChangedPath(inStatusPorcelain: porcelain) {
-            model.openDiffViewerInCurrentTab(filePath: file, directory: dir)
-        }
-    }
-
-    func openRepositoryPane() {
-        guard let model = ensureActiveOverlayModel(),
-              let tab = model.tabs.first(where: { $0.id == model.selectedTabID }) else { return }
-
-        // Dashboard tabs have no session — use repoGroupID instead
-        let dir: String
-        if let session = tab.session {
-            dir = session.gitRootPath ?? session.currentDirectory
-        } else if let repoGroupID = tab.repoGroupID {
-            dir = repoGroupID
-        } else {
-            return
-        }
-        model.toggleRepositoryPaneInCurrentTab(directory: dir)
-    }
-
-    func showChangedFiles() {
-        guard let model = ensureActiveOverlayModel(),
-              let tab = model.tabs.first(where: { $0.id == model.selectedTabID }),
-              let session = tab.session else { return }
-        let tabID = session.ownerTabID?.uuidString ?? model.selectedTabID.uuidString
-        let files = CommandBlockManager.shared.lastChangedFiles(tabID: tabID)
-        if files.isEmpty {
-            Log.info("AppDelegate: showChangedFiles — no changed files for tab \(tabID.prefix(8))")
-            return
-        }
-        ChangedFilesPanel.show(files: files, directory: session.currentDirectory)
-    }
-
-    // MARK: - Multi-Window Autosave
-
-    /// Start a centralized 30-second autosave timer that atomically saves ALL windows.
-    /// Replaces the per-window autosave that caused race conditions on the same UserDefaults key.
-    private func startMultiWindowAutoSaveTimer() {
-        let timer = DispatchSource.makeTimerSource(queue: .main)
-        timer.schedule(deadline: .now() + 30, repeating: 30, leeway: .seconds(5))
-        timer.setEventHandler { [weak self] in
-            Log.wakeup("autosave")
-            self?.saveAllWindowStates(reason: .autosave)
-        }
-        timer.resume()
-        multiWindowAutoSaveTimer = timer
-    }
-
-    static let terminationStateReuseFreshness: TimeInterval = 35
-
-    /// The cached snapshot is reusable at quit only when it is recent AND the
-    /// live window structure still matches the fingerprint captured when the
-    /// snapshot was saved. The autosave interval (30s) exceeds nothing here:
-    /// any structural change since the last save forces a fresh collection,
-    /// so reuse can only ever skip re-capturing scrollback content.
-    func shouldReuseCachedWindowStatesForTermination(now: Date = Date()) -> Bool {
-        guard let lastSavedWindowStatesAt,
-              !lastSavedWindowStates.isEmpty else {
-            return false
-        }
-        guard now.timeIntervalSince(lastSavedWindowStatesAt) <= Self.terminationStateReuseFreshness else {
-            return false
-        }
-        return currentWindowStateSignature() == lastSavedWindowStatesSignature
-    }
-
-    private func currentWindowStateSignature() -> [[String]] {
-        overlayHosts
-            .filter { !$0.model.tabs.isEmpty }
-            .map { $0.model.liveStateSignature() }
-    }
-
-    #if DEBUG
-    func setCachedWindowStatesForTesting(_ states: [[SavedTabState]], at date: Date?) {
-        lastSavedWindowStates = states
-        lastSavedWindowStatesAt = date
-        lastSavedWindowStatesSignature = currentWindowStateSignature()
-    }
-    #endif
-
-    private func collectRestorableWindowStates() -> [[SavedTabState]] {
-        var allWindows: [[SavedTabState]] = []
-        for host in overlayHosts {
-            let states = host.model.exportTabStates()
-            if !states.isEmpty { allWindows.append(states) }
-        }
-        return allWindows
-    }
-
-    private func persistWindowStates(_ allWindows: [[SavedTabState]], reason: TabStateSaveReason) {
-        lastSavedWindowStates = allWindows
-        lastSavedWindowStatesAt = Date()
-        lastSavedWindowStatesSignature = currentWindowStateSignature()
-
-        var legacyPayloadBytes = 0
-        var multiWindowPayloadBytes = 0
-
-        // The file-based restore bundle (below) is the full primary source: it keeps
-        // multi-MB scrollback in integrity-checked sidecar files instead of the prefs
-        // plist. UserDefaults holds a *scrollback-stripped* index — written on EVERY
-        // autosave (not just at termination) — so the restore fallback stays fresh even
-        // on an unclean quit. Regression fix: a termination-only UserDefaults write could
-        // leave a stale index that dropped recently-created tabs (and whole additional
-        // windows) when the bundle didn't cover them. The stripped index is small (KB,
-        // not MB), so this restores pre-bundle freshness without the plist-bloat that
-        // motivated moving the heavy payloads out.
-        let indexWindows = allWindows.map { window in window.map(\.strippedForRestoreIndex) }
-
-        // One token per save cycle, stamped on the index AND the bundle
-        // manifest. At restore, token equality tells whether the bundle still
-        // reflects the latest save (see RestoreSourceArbiter) — a bundle that
-        // silently failed to write for hours must not beat a fresh index.
-        let saveToken = UUID().uuidString
-        var indexWriteSucceeded = false
-
-        if let firstWindow = indexWindows.first,
-           let data = Persist.encodeLogged(firstWindow, context: "window0.tabState") {
-            legacyPayloadBytes = data.count
-            UserDefaults.standard.set(data, forKey: SavedTabState.userDefaultsKey)
-            indexWriteSucceeded = true
-        }
-        if indexWindows.count > 1 {
-            let multiState = SavedMultiWindowState(windows: indexWindows)
-            if let data = Persist.encodeLogged(multiState, context: "multiWindow.tabState") {
-                multiWindowPayloadBytes = data.count
-                UserDefaults.standard.set(data, forKey: SavedMultiWindowState.userDefaultsKey)
-            }
-        } else {
-            UserDefaults.standard.removeObject(forKey: SavedMultiWindowState.userDefaultsKey)
-        }
-        if indexWriteSucceeded {
-            UserDefaults.standard.set(saveToken, forKey: SavedTabState.restoreIndexSaveTokenKey)
-        }
-        do {
-            // sourceData nil → the bundle fingerprints from the full state (incl.
-            // scrollback) so sidecars re-flush when only scrollback changes.
-            _ = try TabRestoreBundleStore.persistCurrentBundle(
-                windowStates: allWindows,
-                reason: reason,
-                sourceData: nil,
-                saveToken: indexWriteSucceeded ? saveToken : nil
-            )
-        } catch {
-            Log.warn("Failed to persist split tab restore bundle [\(reason.rawValue)]: \(error)")
-        }
-        recordRestorePayloadBreadcrumb(
-            allWindows,
-            reason: reason,
-            legacyPayloadBytes: legacyPayloadBytes,
-            multiWindowPayloadBytes: multiWindowPayloadBytes
-        )
-        // Flush to disk immediately — UserDefaults coalesces writes and the
-        // process may exit before the next automatic sync.
-        if reason == .termination {
-            UserDefaults.standard.synchronize()
-        }
-        OverlayTabsModel.persistWindowStateBackups(windowStates: allWindows, reason: reason)
-        Log.trace("Saved \(allWindows.count) window(s) tab state [\(reason.rawValue)]")
-    }
-
-    /// Save all non-empty overlay windows' tab states atomically to UserDefaults and disk backups.
-    /// Window 0 → legacy key, windows 1..N → additional entries in the
-    /// multi-window key.
-    private func saveAllWindowStates(reason: TabStateSaveReason) {
-        let reusedTerminationSnapshot = reason == .termination && shouldReuseCachedWindowStatesForTermination()
-        let allWindows = reusedTerminationSnapshot ? lastSavedWindowStates : collectRestorableWindowStates()
-        if reusedTerminationSnapshot {
-            Log.info("Reusing cached window state snapshot for termination to avoid blocking quit")
-        }
-        guard !allWindows.isEmpty else {
-            if reason == .termination {
-                OverlayTabsModel.clearPersistedWindowState()
-                UserDefaults.standard.synchronize()
-                Log.trace("Cleared persisted window state [\(reason.rawValue)] because no visible windows remained")
-            }
-            return
-        }
-        persistWindowStates(allWindows, reason: reason)
-    }
-
-    private func recordRestorePayloadBreadcrumb(
-        _ allWindows: [[SavedTabState]],
-        reason: TabStateSaveReason,
-        legacyPayloadBytes: Int,
-        multiWindowPayloadBytes: Int
-    ) {
-        var tabCount = 0
-        var paneCount = 0
-        var largestTabPayloadBytes = 0
-        var largestTabID: String?
-        var largestTabTitle: String?
-        var largestPanePayloadBytes = 0
-        var largestPaneID: String?
-        var largestPaneDirectory: String?
-
-        for window in allWindows {
-            tabCount += window.count
-            for state in window {
-                for pane in state.paneStates ?? [] {
-                    paneCount += 1
-                    let panePayloadBytes = OverlayTabsModel.estimatedRestorePayloadBytes(for: pane)
-                    if panePayloadBytes > largestPanePayloadBytes {
-                        largestPanePayloadBytes = panePayloadBytes
-                        largestPaneID = pane.paneID
-                        largestPaneDirectory = pane.directory
-                    }
-                }
-                let payloadBytes = OverlayTabsModel.estimatedRestorePayloadBytes(for: state)
-                if payloadBytes > largestTabPayloadBytes {
-                    largestTabPayloadBytes = payloadBytes
-                    largestTabID = state.tabID
-                    largestTabTitle = state.customTitle ?? state.directory
-                }
-            }
-        }
-
-        IncidentBreadcrumbStore.shared.recordRestorePayloadSnapshot(
-            RestorePayloadBreadcrumbSnapshot(
-                reason: reason.rawValue,
-                windowCount: allWindows.count,
-                tabCount: tabCount,
-                paneCount: paneCount,
-                legacyPayloadBytes: legacyPayloadBytes,
-                multiWindowPayloadBytes: multiWindowPayloadBytes,
-                largestTabPayloadBytes: largestTabPayloadBytes,
-                largestTabID: largestTabID,
-                largestTabTitle: largestTabTitle,
-                largestPanePayloadBytes: largestPanePayloadBytes,
-                largestPaneID: largestPaneID,
-                largestPaneDirectory: largestPaneDirectory
-            )
-        )
-    }
-
-    // MARK: - Tab Move Between Windows
-
-    /// Wire tab-move callbacks on all overlay models and update their window lists.
-    /// Called after window creation, tab moves, and window activation.
-    private func wireTabMoveCallbacks() {
-        Log.info("wireTabMoveCallbacks: \(overlayHosts.count) hosts")
-        for (i, host) in overlayHosts.enumerated() {
-            // Use weak self + resolve index at call time to handle array mutations
-            let model = host.model
-            model.onMoveTabToWindow = { [weak self, weak model] tabID, targetWindowIndex in
-                guard let self, let model,
-                      let currentIndex = overlayHosts.firstIndex(where: { $0.model === model }) else { return }
-                moveTab(tabID, fromWindowIndex: currentIndex, toWindowIndex: targetWindowIndex)
-            }
-            model.onMoveGroupToWindow = { [weak self, weak model] groupID, targetWindowIndex in
-                guard let self, let model,
-                      let currentIndex = overlayHosts.firstIndex(where: { $0.model === model }) else { return }
-                moveGroup(groupID, fromWindowIndex: currentIndex, toWindowIndex: targetWindowIndex)
-            }
-            // Wire the lazy refresh callback for context menu
-            model.onRefreshWindowTitles = { [weak self] in
-                self?.wireTabMoveCallbacks()
-            }
-            // Build window titles: "Window N (M tabs)" for each OTHER window
-            let beforeCount = model.otherWindowTitles.count
-            model.otherWindowTitles = overlayHosts.enumerated().compactMap { j, other in
-                guard j != i else { return nil }
-                let tabCount = other.model.tabs.count
-                let title = other.window.title.isEmpty
-                    ? "Window \(j + 1) (\(tabCount) tab\(tabCount == 1 ? "" : "s"))"
-                    : "\(other.window.title) (\(tabCount) tab\(tabCount == 1 ? "" : "s"))"
-                return OverlayTabsModel.WindowMenuItem(id: j, title: title)
-            }
-            Log
-                .info(
-                    "wireTabMoveCallbacks: window \(i) has \(model.otherWindowTitles.count) other windows (was \(beforeCount)), onMoveTab=\(model.onMoveTabToWindow != nil), onMoveGroup=\(model.onMoveGroupToWindow != nil)"
-                )
-        }
-    }
-
-    private func hideEmptiedWindowIfNeeded(at index: Int, reason: String) {
-        guard overlayHosts.indices.contains(index) else { return }
-        let host = overlayHosts[index]
-        guard host.model.tabs.isEmpty else { return }
-        hiddenWindowNumbers.insert(host.window.windowNumber)
-        host.model.noteTabBarVisibilityChanged(isVisible: false)
-        logOverlayWindowLifecycle(reason: reason, window: host.window)
-        host.window.orderOut(nil)
-    }
-
-    /// Move a tab from one window to another. Pass toWindowIndex = -1 to create a new window.
-    private func moveTab(_ tabID: UUID, fromWindowIndex: Int, toWindowIndex: Int) {
-        // Diagnostic tag: correlate all rss samples from one drag operation.
-        let dragID = String(UUID().uuidString.prefix(8))
-        Self.logRSSSample("moveTab[\(dragID)] entry from=\(fromWindowIndex) to=\(toWindowIndex)")
-        guard fromWindowIndex < overlayHosts.count else {
-            Log.warn("moveTab: fromWindowIndex \(fromWindowIndex) out of bounds (count=\(overlayHosts.count))")
-            return
-        }
-        let source = overlayHosts[fromWindowIndex].model
-        guard let tab = source.extractTabForWindowTransfer(id: tabID) else { return }
-        // Carry any pending deferred restore state along with the tab. If
-        // the tab was still in the source model's deferred queue (not yet
-        // restored), the state would otherwise be orphaned there and the
-        // tab would arrive on the target without its persisted scrollback,
-        // resume command, or agent metadata.
-        let carriedDeferredState = source.drainDeferredRestoreState(tabID: tabID)
-        Self.logRSSSample("moveTab[\(dragID)] after extractTabForWindowTransfer")
-
-        if toWindowIndex == -1 {
-            // Create a new window and move the tab into it
-            guard let model else { return }
-            let tabsModel = OverlayTabsModel(appModel: model, restoreState: false)
-            // Replace the default fresh tab with the moved tab
-            var movedTab = tab
-            tabsModel.tabs = [movedTab]
-            tabsModel.selectedTabID = movedTab.id
-            movedTab.stampOwnerTabID()
-            tabsModel.tabs[0] = movedTab
-            if let carriedDeferredState {
-                tabsModel.queueDeferredRestoreState(tabID: movedTab.id, state: carriedDeferredState)
-            }
-            TerminalControlService.shared.register(tabsModel)
-            let windowNumber = allocateOverlayWindowNumber()
-            let window = createOverlayWindow(tabsModel: tabsModel, windowNumber: windowNumber)
-            let host = OverlayHost(window: window, model: tabsModel)
-            overlayHosts.append(host)
-            Self.logRSSSample("moveTab[\(dragID)] after createOverlayWindow")
-            wireTabMoveCallbacks()
-            Self.logRSSSample("moveTab[\(dragID)] after wireTabMoveCallbacks")
-            hideEmptiedWindowIfNeeded(at: fromWindowIndex, reason: "moveTab-hideEmptiedSource")
-            Self.logRSSSample("moveTab[\(dragID)] after hideEmptiedWindowIfNeeded")
-            showOverlayWindow(host, reason: "moveToNewWindow")
-            Self.logRSSSample("moveTab[\(dragID)] after showOverlayWindow (newWindow)")
-            Log.info("Moved tab \(tabID) to new window \(windowNumber)")
-        } else {
-            guard toWindowIndex < overlayHosts.count else {
-                Log.warn("moveTab: target window \(toWindowIndex) closed during drag (count=\(overlayHosts.count)), re-inserting tab into source")
-                source.tabs.append(tab)
-                if let carriedDeferredState {
-                    source.queueDeferredRestoreState(tabID: tab.id, state: carriedDeferredState)
-                }
-                source.selectTab(id: tab.id)
-                return
-            }
-            let target = overlayHosts[toWindowIndex].model
-            target.tabs.append(tab)
-            if let carriedDeferredState {
-                target.queueDeferredRestoreState(tabID: tab.id, state: carriedDeferredState)
-            }
-            target.selectTab(id: tab.id)
-            Self.logRSSSample("moveTab[\(dragID)] after target.tabs.append+selectTab")
-            wireTabMoveCallbacks()
-            Self.logRSSSample("moveTab[\(dragID)] after wireTabMoveCallbacks")
-            hideEmptiedWindowIfNeeded(at: fromWindowIndex, reason: "moveTab-hideEmptiedSource")
-            Self.logRSSSample("moveTab[\(dragID)] after hideEmptiedWindowIfNeeded")
-            showOverlayWindow(overlayHosts[toWindowIndex], reason: "moveToExistingWindow")
-            Self.logRSSSample("moveTab[\(dragID)] after showOverlayWindow (existingWindow)")
-            Log.info("Moved tab \(tabID) from window \(fromWindowIndex) to \(toWindowIndex)")
-        }
-
-        // Schedule delayed samples across the window during which the 50GB spike
-        // was observed (~52s after drag end in historical logs) — only when memory
-        // diagnostics are enabled, so normal drags don't keep work scheduled 50s out.
-        if EnvVars.isEnabled(EnvVars.memoryDiagnostics) {
-            for delay in [0.1, 1.0, 5.0, 15.0, 30.0, 50.0] {
-                DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
-                    Self.logRSSSample("moveTab[\(dragID)] +\(delay)s")
-                }
-            }
-        }
-    }
-
-    /// Move all tabs in a repo group from one window to another.
-    private func moveGroup(_ repoGroupID: String, fromWindowIndex: Int, toWindowIndex: Int) {
-        let repoName = URL(fileURLWithPath: repoGroupID).lastPathComponent
-        Log.info("moveGroup: \(repoName) from=\(fromWindowIndex) to=\(toWindowIndex) hosts=\(overlayHosts.count)")
-        guard fromWindowIndex < overlayHosts.count else {
-            Log.warn("moveGroup: fromWindowIndex \(fromWindowIndex) out of bounds (count=\(overlayHosts.count))")
-            return
-        }
-        let source = overlayHosts[fromWindowIndex].model
-        let groupTabs = source.extractGroupForWindowTransfer(repoGroupID: repoGroupID)
-        guard !groupTabs.isEmpty else {
-            Log.warn("moveGroup: no tabs found for group \(repoName)")
-            return
-        }
-        // Carry each tab's pending deferred restore state so none of them
-        // arrive on the target model stripped of their persisted AI /
-        // scrollback metadata.
-        let carriedDeferredStates: [(UUID, SavedTabState)] = groupTabs.compactMap { tab in
-            guard let state = source.drainDeferredRestoreState(tabID: tab.id) else { return nil }
-            return (tab.id, state)
-        }
-        Log.info("moveGroup: extracted \(groupTabs.count) tabs from \(repoName)")
-
-        if toWindowIndex == -1 {
-            guard let model else { return }
-            let tabsModel = OverlayTabsModel(appModel: model, restoreState: false)
-            tabsModel.tabs = groupTabs.map { var t = $0
-                t.stampOwnerTabID()
-                return t
-            }
-            tabsModel.selectedTabID = groupTabs[0].id
-            for (tabID, state) in carriedDeferredStates {
-                tabsModel.queueDeferredRestoreState(tabID: tabID, state: state)
-            }
-            TerminalControlService.shared.register(tabsModel)
-            let windowNumber = allocateOverlayWindowNumber()
-            let window = createOverlayWindow(tabsModel: tabsModel, windowNumber: windowNumber)
-            let host = OverlayHost(window: window, model: tabsModel)
-            overlayHosts.append(host)
-            wireTabMoveCallbacks()
-            hideEmptiedWindowIfNeeded(at: fromWindowIndex, reason: "moveGroup-hideEmptiedSource")
-            showOverlayWindow(host, reason: "moveGroupToNewWindow")
-            Log.info("Moved group \(repoGroupID) (\(groupTabs.count) tabs) to new window \(windowNumber)")
-        } else {
-            guard toWindowIndex < overlayHosts.count else {
-                Log.warn("moveGroup: target window \(toWindowIndex) closed during drag (count=\(overlayHosts.count)), re-inserting group into source")
-                source.tabs.append(contentsOf: groupTabs)
-                for (tabID, state) in carriedDeferredStates {
-                    source.queueDeferredRestoreState(tabID: tabID, state: state)
-                }
-                source.selectTab(id: groupTabs[0].id)
-                return
-            }
-            let target = overlayHosts[toWindowIndex].model
-            target.tabs.append(contentsOf: groupTabs)
-            for (tabID, state) in carriedDeferredStates {
-                target.queueDeferredRestoreState(tabID: tabID, state: state)
-            }
-            target.selectTab(id: groupTabs[0].id)
-            wireTabMoveCallbacks()
-            hideEmptiedWindowIfNeeded(at: fromWindowIndex, reason: "moveGroup-hideEmptiedSource")
-            showOverlayWindow(overlayHosts[toWindowIndex], reason: "moveGroupToExistingWindow")
-            Log.info("Moved group \(repoGroupID) (\(groupTabs.count) tabs) from window \(fromWindowIndex) to \(toWindowIndex)")
-        }
-    }
-
-    func handleTabDrop(tabID: UUID, from sourceModel: OverlayTabsModel, atScreenPoint point: CGPoint) -> Bool {
-        guard let sourceIndex = overlayHosts.firstIndex(where: { $0.model === sourceModel }) else {
-            Log.warn("handleTabDrop: source model not found in overlayHosts")
-            return false
-        }
-
-        let candidates = overlayHosts.enumerated().compactMap { index, host -> OverlayWindowDropCandidate? in
-            guard host.window.isVisible, !host.window.isMiniaturized else { return nil }
-            return OverlayWindowDropCandidate(
-                index: index,
-                primaryFrame: host.model.tabBarDropFrame,
-                fallbackFrame: host.window.frame
-            )
-        }
-
-        Log.info("handleTabDrop: point=\(Int(point.x)),\(Int(point.y)) candidates=\(candidates.count) source=\(sourceIndex)")
-        for c in candidates {
-            Log
-                .info(
-                    "  window \(c.index): tabBar=\(Int(c.primaryFrame.minX)),\(Int(c.primaryFrame.minY)),\(Int(c.primaryFrame.width))x\(Int(c.primaryFrame.height)) window=\(Int(c.fallbackFrame.minX)),\(Int(c.fallbackFrame.minY)),\(Int(c.fallbackFrame.width))x\(Int(c.fallbackFrame.height))"
-                )
-        }
-
-        guard let targetIndex = OverlayWindowDropResolver.targetIndex(
-            at: point,
-            candidates: candidates,
-            excluding: sourceIndex
-        ) else {
-            Log.info("handleTabDrop: no target window at drop point")
-            return false
-        }
-
-        Log.info("handleTabDrop: moving tab to window \(targetIndex)")
-        moveTab(tabID, fromWindowIndex: sourceIndex, toWindowIndex: targetIndex)
-        return true
-    }
-
-    func handleGroupDrop(repoGroupID: String, from sourceModel: OverlayTabsModel, atScreenPoint point: CGPoint) -> Bool {
-        let repoName = URL(fileURLWithPath: repoGroupID).lastPathComponent
-        Log.info("handleGroupDrop: \(repoName) point=(\(Int(point.x)),\(Int(point.y)))")
-        guard let sourceIndex = overlayHosts.firstIndex(where: { $0.model === sourceModel }) else {
-            Log.warn("handleGroupDrop: source model not found in overlayHosts")
-            return false
-        }
-
-        let candidates = overlayHosts.enumerated().compactMap { index, host -> OverlayWindowDropCandidate? in
-            guard host.window.isVisible, !host.window.isMiniaturized else { return nil }
-            return OverlayWindowDropCandidate(
-                index: index,
-                primaryFrame: host.model.tabBarDropFrame,
-                fallbackFrame: host.window.frame
-            )
-        }
-
-        Log.info("handleGroupDrop: group=\(repoGroupID) point=\(Int(point.x)),\(Int(point.y)) candidates=\(candidates.count) source=\(sourceIndex)")
-
-        guard let targetIndex = OverlayWindowDropResolver.targetIndex(
-            at: point,
-            candidates: candidates,
-            excluding: sourceIndex
-        ) else {
-            Log.info("handleGroupDrop: no target window at drop point")
-            return false
-        }
-
-        Log.info("handleGroupDrop: moving group to window \(targetIndex)")
-        moveGroup(repoGroupID, fromWindowIndex: sourceIndex, toWindowIndex: targetIndex)
-        return true
-    }
-
-    // MARK: - Multi-Window Restoration
-
-    /// Restore additional windows saved in the multi-window state.
-    /// The primary OverlayTabsModel already hydrates the first saved window.
-    /// This method recreates windows 1..N from the remaining saved entries.
-    private func restoreAdditionalWindows() {
-        guard let model else { return }
-        let restoreStartedAt = CFAbsoluteTimeGetCurrent()
-        defer {
-            FeatureProfiler.shared.recordMainThreadStallIfNeeded(
-                operation: "AppDelegate.restoreAdditionalWindows",
-                startedAt: restoreStartedAt,
-                thresholdMs: 150
-            )
-        }
-        let restoredWindows: [[SavedTabState]]
-        let restoreSource: String
-
-        let multiState = Persist.decodeLogged(
-            SavedMultiWindowState.self,
-            from: UserDefaults.standard.data(forKey: SavedMultiWindowState.userDefaultsKey),
-            context: "multiWindow.restore"
-        )
-        if OverlayTabsModel.bundleIsCurrentRestoreSource(),
-           let bundleWindows = TabRestoreBundleStore.loadCurrentWindowStates(), bundleWindows.count > 1 {
-            // Primary: the file-based restore bundle (windows beyond the first).
-            // Same freshest-wins arbitration as the primary-window restore so
-            // window 0 and windows 1..N come from one consistent source.
-            restoredWindows = Array(bundleWindows.dropFirst())
-            restoreSource = "restore bundle"
-        } else if let multiState, multiState.windows.count > 1 {
-            restoredWindows = Array(multiState.windows.dropFirst())
-            restoreSource = "user defaults"
-            // Keep this until the next real save replaces it. Clearing during
-            // launch removes the strongest recovery copy for additional windows.
-        } else if let backupWindows = OverlayTabsModel.restoreAdditionalWindowStatesFromBackups() {
-            let window0TabIDs = Set(overlayHosts.first?.model.tabs.map(\.id) ?? [])
-            let candidates = backupWindows.map { windowStates in
-                WindowStateRestorePlanner.CandidateWindow(
-                    tabIDs: windowStates.compactMap { UUID(uuidString: $0.tabID ?? "") }
-                )
-            }
-            let planned = WindowStateRestorePlanner.additionalWindowsFromBackup(
-                currentPrimaryTabIDs: window0TabIDs,
-                backupWindows: candidates
-            )
-            let plannedIDSets = Set(planned.map { Set($0.tabIDs) })
-            restoredWindows = backupWindows.filter { windowStates in
-                let ids = Set(windowStates.compactMap { UUID(uuidString: $0.tabID ?? "") })
-                return plannedIDSets.contains(ids)
-            }
-            restoreSource = "disk backup"
-        } else {
-            return
-        }
-
-        // Hard per-tab dedup across all windows: a saved tab restores exactly
-        // once, no matter how many window snapshots claim its ID (first
-        // occurrence wins). This replaces the old >50%-overlap window skip,
-        // which let partially-duplicated windows restore both copies and
-        // re-persist the duplication forever.
-        let window0TabIDs = Set(overlayHosts.first?.model.tabs.map(\.id) ?? [])
-        let claims = WindowStateRestorePlanner.claimTabs(
-            alreadyClaimed: window0TabIDs,
-            windows: restoredWindows.map { windowStates in
-                windowStates.map { UUID(uuidString: $0.tabID ?? "") }
-            }
-        )
-
-        for (windowIndex, windowStates) in restoredWindows.enumerated() {
-            guard !windowStates.isEmpty else { continue }
-            let windowClaims = claims[windowIndex]
-            let uniqueStates = zip(windowStates, windowClaims)
-                .filter { $0.1 == .restore }
-                .map(\.0)
-            let droppedCount = windowStates.count - uniqueStates.count
-            if droppedCount > 0 {
-                Log.warn("restoreAdditionalWindows: window \(windowIndex + 1) dropped \(droppedCount)/\(windowStates.count) tab(s) whose IDs were already restored by an earlier window")
-            }
-            guard !uniqueStates.isEmpty else {
-                Log.warn("Skipping duplicate window \(windowIndex + 1): every tab ID was already restored by an earlier window")
-                continue
-            }
-
-            // Pass pre-decoded states directly — no UserDefaults round-trip
-            let windowRestoreStartedAt = CFAbsoluteTimeGetCurrent()
-            let tabsModel = OverlayTabsModel(appModel: model, restoringStates: uniqueStates)
-            TerminalControlService.shared.register(tabsModel)
-            let windowNumber = allocateOverlayWindowNumber()
-            let window = createOverlayWindow(tabsModel: tabsModel, windowNumber: windowNumber)
-            overlayHosts.append(OverlayHost(window: window, model: tabsModel))
-            FeatureProfiler.shared.recordMainThreadStallIfNeeded(
-                operation: "AppDelegate.restoreAdditionalWindow",
-                startedAt: windowRestoreStartedAt,
-                thresholdMs: 150,
-                metadata: "index=\(windowIndex + 1) tabs=\(uniqueStates.count)"
-            )
-
-            Log.info("Restored additional window \(windowIndex + 1) with \(uniqueStates.count) tab(s) from \(restoreSource)")
-        }
-
-        // Wire callbacks for ALL windows now that additional hosts are registered.
-        // Without this, restored windows have nil onMoveTabToWindow/onMoveGroupToWindow
-        // and zero otherWindowTitles — making "Move to Window" menus empty.
-        if overlayHosts.count > 1 {
-            wireTabMoveCallbacks()
-        }
-    }
+    var lastSelectAllTime: Date?
+    let doubleTapThreshold: TimeInterval = 0.4 // 400ms for double-tap
 
     // MARK: - PTY Log Maintenance
 
@@ -1902,118 +908,7 @@ private final class OverlayBlurView: NSVisualEffectView {
         }
     }
 
-    /// Revisit recent incomplete transcript-derived runs after launch.
-    /// This catches delayed transcript flushes and app restarts without forcing a
-    /// heavyweight telemetry rewrite sweep onto the active startup/input path.
-    private func scheduleRecentTelemetryRepairSweep() {
-        telemetryRepairWorkItem?.cancel()
-
-        let workItem = DispatchWorkItem { [weak self] in
-            guard let self else { return }
-            guard !isAppActive else { return }
-
-            let report = TelemetryRepairService.shared.rebuildRecentIncompleteRuns(limit: 50)
-            guard report.inspectedRuns > 0 else { return }
-            Log.info(
-                "Deferred telemetry repair sweep inspected=\(report.inspectedRuns) rebuilt=\(report.rebuiltRuns) invalidated=\(report.invalidatedRuns) skipped=\(report.skippedRuns)"
-            )
-        }
-        telemetryRepairWorkItem = workItem
-        DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 120, execute: workItem)
-    }
-
-    // MARK: - URL Scheme Handler (chau7://)
-
-    func application(_ application: NSApplication, open urls: [URL]) {
-        for url in urls {
-            handleChau7URL(url)
-        }
-    }
-
-    private func handleChau7URL(_ url: URL) {
-        guard url.scheme == "chau7" else { return }
-        let host = url.host ?? ""
-        let path = url.path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-
-        Log.info("AppDelegate: URL handler: \(url)")
-
-        switch host {
-        case "run":
-            // chau7://run/<base64-encoded-command>
-            guard !path.isEmpty,
-                  let data = Data(base64Encoded: path),
-                  let command = String(data: data, encoding: .utf8) else {
-                Log.warn("AppDelegate: chau7://run — invalid base64 command")
-                return
-            }
-            confirmAndRun(command: command, source: url.absoluteString)
-
-        case "ssh":
-            // chau7://ssh/user@host or chau7://ssh/user@host:port
-            guard !path.isEmpty else { return }
-            let sanitized = path.replacingOccurrences(of: "'", with: "'\\''")
-            openNewTabWithCommand("ssh '\(sanitized)'")
-
-        case "cd":
-            // chau7://cd/path/to/directory
-            let dir = "/" + path // URL path is already absolute minus leading /
-            openNewTabWithCommand("cd '\(dir.replacingOccurrences(of: "'", with: "'\\''"))' && clear")
-
-        case "open":
-            // chau7://open/path/to/file.md — open file in editor pane
-            let filePath = "/" + path
-            ensureActiveOverlayModel()?.openTextEditorInCurrentTab(filePath: filePath)
-
-        default:
-            Log.warn("AppDelegate: unknown chau7:// host: \(host)")
-        }
-    }
-
-    private func confirmAndRun(command: String, source: String) {
-        let alert = NSAlert()
-        alert.messageText = L("alert.urlCommand.title", "Run command from URL?")
-        alert.informativeText = String(format: L("alert.urlCommand.message", "A URL is requesting to run:\n\n%@\n\nSource: %@"), String(command.prefix(500)), source)
-        alert.alertStyle = .warning
-        alert.addButton(withTitle: L("alert.urlCommand.confirm", "Run"))
-        alert.addButton(withTitle: L("action.cancel", "Cancel"))
-        guard alert.runModal() == .alertFirstButtonReturn else { return }
-        openNewTabWithCommand(command)
-    }
-
-    private func openNewTabWithCommand(_ command: String) {
-        guard let model = ensureActiveOverlayModel() else { return }
-        model.newTab()
-        // Delay slightly to let the terminal initialize
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-            model.selectedTab?.session?.sendInput(command + "\n")
-        }
-    }
-
-    func closeCurrentPane() {
-        ensureActiveOverlayModel()?.closeFocusedPaneInCurrentTab()
-    }
-
-    func focusNextPane() {
-        ensureActiveOverlayModel()?.focusNextPaneInCurrentTab()
-    }
-
-    func focusPreviousPane() {
-        ensureActiveOverlayModel()?.focusPreviousPaneInCurrentTab()
-    }
-
-    func appendSelectionToEditor() {
-        ensureActiveOverlayModel()?.appendSelectionToEditorInCurrentTab()
-    }
-
     // MARK: - Help Menu Actions
-
-    func showHelp() {
-        HelpWindowController.shared.show()
-    }
-
-    func showTechnologyLicenses() {
-        HelpWindowController.shared.show(topicID: "technology-licenses")
-    }
 
     func showWelcomeFromMenu() {
         // Reuse the existing property so ARC keeps the controller alive while the window is visible.
@@ -2023,48 +918,6 @@ private final class OverlayBlurView: NSVisualEffectView {
             self?.splashController = nil
         }
         splashController?.markAppReady() // app is already running, dismiss on button click
-    }
-
-    func showKeyboardShortcuts() {
-        KeyboardShortcutsWindowController.shared.show()
-    }
-
-    func showSnippetsSettings() {
-        SnippetsSettingsWindowController.shared.show()
-    }
-
-    @objc func insertSnippetByID(_ sender: Any?) {
-        guard let snippetID = sender as? String else { return }
-        guard let entry = SnippetManager.shared.entries.first(where: { $0.snippet.id == snippetID }) else { return }
-        ensureActiveOverlayModel()?.insertSnippet(entry)
-    }
-
-    func showReleaseNotes() {
-        let alert = NSAlert()
-        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0"
-        alert.messageText = L("alert.whatsNew.title", "What's New in Chau7")
-        alert.informativeText = String(
-            format: L("alert.whatsNew.message", """
-                Version %@
-                Recent Updates:
-                - Command Palette (⇧⌘P)
-                - SSH Connection Manager
-                - Inline Image Support (imgcat)
-                - Keyboard Shortcuts Editor
-                - Built-in Help Documentation
-                - Option+Click cursor positioning
-                - Auto-focus on new tabs
-                - Improved menu bar organization
-            """),
-            version
-        )
-        alert.alertStyle = .informational
-        alert.addButton(withTitle: L("button.ok", "OK"))
-        alert.runModal()
-    }
-
-    func reportIssue() {
-        BugReportWindowController.shared.show()
     }
 
     private func setupOverlayWindow() {
@@ -2402,7 +1255,7 @@ private final class OverlayBlurView: NSVisualEffectView {
     /// Returns the active overlay model, creating a new overlay window if none exists.
     /// This ensures shortcuts like Cmd+T always work, even when no overlay is open.
     @discardableResult
-    private func ensureActiveOverlayModel() -> OverlayTabsModel? {
+    func ensureActiveOverlayModel() -> OverlayTabsModel? {
         if let activeOverlayModel {
             return activeOverlayModel
         }
@@ -2420,7 +1273,7 @@ private final class OverlayBlurView: NSVisualEffectView {
         return activeOverlayModel
     }
 
-    private func createOverlayWindow(tabsModel: OverlayTabsModel, windowNumber: Int) -> NSWindow {
+    func createOverlayWindow(tabsModel: OverlayTabsModel, windowNumber: Int) -> NSWindow {
         guard let model else {
             fatalError("AppModel must be set before creating overlay windows")
         }
@@ -2497,7 +1350,7 @@ private final class OverlayBlurView: NSVisualEffectView {
         return window
     }
 
-    private func showOverlayWindow(_ host: OverlayHost, reason: String) {
+    func showOverlayWindow(_ host: OverlayHost, reason: String) {
         Log.info(
             "showOverlayWindow: begin reason=\(reason) windowNumber=\(host.window.windowNumber) selectedTab=\(host.model.selectedTabID)"
         )
@@ -2583,7 +1436,7 @@ private final class OverlayBlurView: NSVisualEffectView {
         refreshLowLatencyActivity()
     }
 
-    private func logOverlayWindowLifecycle(reason: String, window: NSWindow) {
+    func logOverlayWindowLifecycle(reason: String, window: NSWindow) {
         let now = CFAbsoluteTimeGetCurrent()
         if reason == lastOverlayLifecycleReason && (now - lastOverlayLifecycleLogAt) < 0.5 {
             return
@@ -2710,7 +1563,7 @@ private final class OverlayBlurView: NSVisualEffectView {
     }
 
     /// Returns the active terminal view if one is first responder
-    private func activeTerminalView(in window: NSWindow?) -> TerminalViewLike? {
+    func activeTerminalView(in window: NSWindow?) -> TerminalViewLike? {
         guard let window = window,
               overlayHosts.contains(where: { $0.window == window }),
               let responder = window.firstResponder else { return nil }
@@ -2902,7 +1755,7 @@ private final class OverlayBlurView: NSVisualEffectView {
         }
     }
 
-    private func allocateOverlayWindowNumber() -> Int {
+    func allocateOverlayWindowNumber() -> Int {
         defer { nextOverlayWindowNumber += 1 }
         return nextOverlayWindowNumber
     }
@@ -2915,7 +1768,7 @@ private final class OverlayBlurView: NSVisualEffectView {
     /// Log RSS as an INFO line tagged `rssSample: …`. Gated behind the
     /// `CHAU7_MEMORY_DIAGNOSTICS` env flag (off by default) so it costs nothing
     /// on the hot path; enable it when investigating the cross-window-drag leak.
-    fileprivate static func logRSSSample(_ label: String) {
+    static func logRSSSample(_ label: String) {
         guard EnvVars.isEnabled(EnvVars.memoryDiagnostics) else { return }
         if let mb = currentResidentMB() {
             Log.info("rssSample: \(mb)MB — \(label)")
