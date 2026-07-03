@@ -64,9 +64,6 @@ extension RemotePairingInfo {
         return String(data: data, encoding: .utf8)
     }
 
-    func qrPayloadString() -> String? {
-        pairingJSONString()
-    }
 }
 
 struct RemoteSessionStatus: Codable, Equatable {

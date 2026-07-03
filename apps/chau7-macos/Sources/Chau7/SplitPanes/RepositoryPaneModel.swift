@@ -813,13 +813,6 @@ final class RepositoryPaneModel: Identifiable {
         }
     }
 
-    static func parseBranches(_ output: String) -> [String] {
-        output.components(separatedBy: "\n")
-            .map { $0.trimmingCharacters(in: .whitespaces) }
-            .map { $0.hasPrefix("* ") ? String($0.dropFirst(2)) : $0 }
-            .filter { !$0.isEmpty }
-    }
-
     /// Parse `git branch -v --list` which includes last commit per branch.
     /// Format: "* main      abc1234 Last commit message" or "  feature   def5678 Some work"
     static func parseBranchesVerbose(_ output: String) -> (names: [String], details: [String: BranchDetail]) {

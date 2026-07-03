@@ -1128,8 +1128,6 @@ final class TerminalSessionModel {
     }()
 
     @ObservationIgnored private var didClearOnLaunch = false
-    @ObservationIgnored var didApplyShellIntegration = false
-    @ObservationIgnored var shellIntegrationOutputCount = 0
     @ObservationIgnored private var shouldAutoFocusOnAttach = true // Auto-focus when terminal view is attached
     @ObservationIgnored var didStartDevServerMonitor = false // Track if dev server monitor has started
     // AI detection state machine — handles sliding buffer, cooldown, re-detection
@@ -2088,16 +2086,6 @@ final class TerminalSessionModel {
     /// Returns the shell integration directory path
     static func getShellIntegrationDir() -> String? {
         return didWriteShellIntegration ? zdotdirPath : nil
-    }
-
-    /// Returns ZDOTDIR path for zsh environment (legacy compatibility)
-    static func getZdotdir() -> String? {
-        return didWriteShellIntegration ? zdotdirPath : nil
-    }
-
-    func applyShellIntegration(to view: any TerminalViewLike) {
-        // No-op: integration now happens via shell rc files at startup
-        Log.trace("Shell integration applied via shell config files.")
     }
 
     func maybeClearOnLaunch() {
@@ -3316,23 +3304,6 @@ final class TerminalSessionModel {
         // Default: no extra arguments (zsh uses ZDOTDIR, fish uses XDG_CONFIG_HOME)
         return []
     }
-
-    private static let terminalAppVersion: String? = {
-        let candidates = [
-            "/System/Applications/Utilities/Terminal.app",
-            "/Applications/Utilities/Terminal.app"
-        ]
-
-        for path in candidates {
-            let url = URL(fileURLWithPath: path)
-            if let bundle = Bundle(url: url),
-               let info = bundle.infoDictionary,
-               let version = info["CFBundleShortVersionString"] as? String {
-                return version
-            }
-        }
-        return nil
-    }()
 
     struct SearchMatch: Equatable, Identifiable {
         let id = UUID()

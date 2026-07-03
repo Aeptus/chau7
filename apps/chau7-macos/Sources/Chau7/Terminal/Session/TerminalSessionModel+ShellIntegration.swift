@@ -37,27 +37,6 @@ extension TerminalSessionModel {
         let matched: OutputPatternMatcher.Candidate?
     }
 
-    /// Schedules shell integration script to run after shell is ready.
-    /// Instead of an arbitrary delay, we wait for initial output (prompt).
-    func scheduleShellIntegration(for view: any TerminalViewLike) {
-        // The shell integration will be applied when we detect the first few outputs,
-        // indicating the shell has started and is ready for input.
-        didApplyShellIntegration = false
-        shellIntegrationOutputCount = 0
-    }
-
-    func maybeApplyShellIntegration() {
-        guard !didApplyShellIntegration else { return }
-        guard let view = activeTerminalView else { return }
-
-        // Wait for a few output events to ensure shell is ready
-        shellIntegrationOutputCount += 1
-        if shellIntegrationOutputCount >= 2 {
-            didApplyShellIntegration = true
-            applyShellIntegration(to: view)
-        }
-    }
-
     func handleInput(_ text: String) {
         lastInputAt = Date()
         let sanitizedText = sanitizeInputForBuffer(text)
@@ -227,9 +206,6 @@ extension TerminalSessionModel {
                 if let exitCode = aiExitCode {
                     finishAILogging(exitCode: exitCode)
                 }
-
-                // Shell integration check
-                maybeApplyShellIntegration()
 
                 // Prompt update handling
                 let promptToken = FeatureProfiler.shared.begin(.promptUpdate, bytes: data.count)

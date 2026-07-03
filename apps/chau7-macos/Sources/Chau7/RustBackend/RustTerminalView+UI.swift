@@ -321,16 +321,6 @@ extension RustTerminalView {
 
     // MARK: - Feed (for compatibility)
 
-    /// Feed text directly to the display (bypasses Rust terminal)
-    func feed(text: String) {
-        Log.trace("RustTerminalView[\(viewId)]: feed(text:) - Ignored (native renderer does not support direct feed)")
-    }
-
-    /// Feed bytes directly to the display (bypasses Rust terminal)
-    func feed(byteArray: [UInt8]) {
-        Log.trace("RustTerminalView[\(viewId)]: feed(byteArray:) - Ignored (native renderer does not support direct feed)")
-    }
-
     // MARK: - Clear
 
     /// Clear scrollback buffer

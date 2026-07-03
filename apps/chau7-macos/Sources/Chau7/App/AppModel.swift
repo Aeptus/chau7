@@ -245,18 +245,6 @@ final class AppModel {
         toolHistoryEntries["codex"] ?? []
     }
 
-    var claudeHistoryEntries: [HistoryEntry] {
-        toolHistoryEntries["claude"] ?? []
-    }
-
-    var codexTerminalLines: [String] {
-        toolTerminalLines["codex"] ?? []
-    }
-
-    var claudeTerminalLines: [String] {
-        toolTerminalLines["claude"] ?? []
-    }
-
     func latestSessionStatus(toolName: String, sessionId: String) -> SessionStatus? {
         let trimmedTool = toolName.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedSessionId = sessionId.trimmingCharacters(in: .whitespacesAndNewlines)

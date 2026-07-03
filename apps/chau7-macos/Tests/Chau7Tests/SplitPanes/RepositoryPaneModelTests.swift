@@ -100,22 +100,6 @@ final class RepositoryPaneModelTests: XCTestCase {
         XCTAssertEqual(result.conflicted.count, 1)
     }
 
-    // MARK: - Branch Parsing
-
-    func testParseBranches() {
-        let output = """
-          develop
-        * main
-          feature/login
-        """
-        let branches = RepositoryPaneModel.parseBranches(output)
-        XCTAssertEqual(branches, ["develop", "main", "feature/login"])
-    }
-
-    func testParseBranchesEmpty() {
-        XCTAssertTrue(RepositoryPaneModel.parseBranches("").isEmpty)
-    }
-
     func testParseRemoteBranches() {
         let output = """
           origin/HEAD -> origin/main

@@ -117,8 +117,6 @@ public enum EventTopicCatalog {
         ] {
             table[type] = []
         }
-        table["approval_needed"] = [EventTopic.approvalState]
-        table["approval_resolved"] = [EventTopic.approvalState]
 
         // Timer inventory changes.
         for type in ["timer_registered", "timer_updated", "timer_scope_updated"] {

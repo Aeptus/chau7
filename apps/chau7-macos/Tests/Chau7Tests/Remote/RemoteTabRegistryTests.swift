@@ -68,40 +68,6 @@ final class RemoteTabRegistryTests: XCTestCase {
         XCTAssertEqual(rebuilt.map { $0.tabID }, [secondTabID, firstTabID])
     }
 
-    func testBackgroundTabIDsExcludeSelectedTab() throws {
-        let firstID = UUID()
-        let secondID = UUID()
-        var registry = RemoteTabRegistry()
-        _ = registry.rebuild(
-            with: [
-                RemoteTabRegistryEntry(
-                    id: firstID,
-                    sessionIdentifier: "session-a",
-                    title: "A",
-                    projectName: nil,
-                    branchName: nil,
-                    aiProvider: nil,
-                    isActive: true,
-                    isMCPControlled: false
-                ),
-                RemoteTabRegistryEntry(
-                    id: secondID,
-                    sessionIdentifier: "session-b",
-                    title: "B",
-                    projectName: nil,
-                    branchName: nil,
-                    aiProvider: nil,
-                    isActive: false,
-                    isMCPControlled: false
-                )
-            ]
-        )
-
-        let background = registry.backgroundTabIDs(for: [firstID, secondID], selectedTabID: firstID)
-
-        XCTAssertEqual(background, try [XCTUnwrap(registry.tabID(for: secondID))])
-    }
-
     func testRebuildCarriesAIProviderAndMetadataIntoDescriptors() throws {
         var registry = RemoteTabRegistry()
         let descriptors = registry.rebuild(

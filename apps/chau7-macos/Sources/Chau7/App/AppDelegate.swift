@@ -487,10 +487,8 @@ private final class OverlayBlurView: NSVisualEffectView {
     }
 
     private func configureStartupCallbacks(for tabsModel: OverlayTabsModel) {
-        tabsModel.onStartupSelectedTabLiveFrameRecorded = { [weak self, weak tabsModel] in
-            guard let self else { return }
-            tabsModel?.usesStartupLoadingCover = false
-            completeStartupRestoreIfReady(reason: "selected_tab_live_frame")
+        tabsModel.onStartupSelectedTabLiveFrameRecorded = { [weak self] in
+            self?.completeStartupRestoreIfReady(reason: "selected_tab_live_frame")
         }
         tabsModel.onStartupRestoreWorkDrained = { [weak self] in
             self?.completeStartupRestoreIfReady(reason: "startup_restore_work_drained")
@@ -1143,11 +1141,6 @@ private final class OverlayBlurView: NSVisualEffectView {
         }
     }
 
-    func clearToPreviousMark() {
-        // This is like Cmd+L in iTerm - clears screen but keeps scrollback
-        clearScreen()
-    }
-
     func useSelectionForFind() {
         guard let terminalView = activeTerminalView(in: NSApp.keyWindow) else { return }
 
@@ -1166,11 +1159,6 @@ private final class OverlayBlurView: NSVisualEffectView {
     }
 
     // MARK: - View Menu Actions
-
-    func toggleTabBar() {
-        // Tab bar is always shown in Chau7, but this could toggle compact mode
-        Log.info("Toggle tab bar - not implemented (always visible)")
-    }
 
     func toggleFullScreen() {
         guard let window = NSApp.keyWindow else { return }

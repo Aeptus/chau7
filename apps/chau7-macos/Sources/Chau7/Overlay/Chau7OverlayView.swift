@@ -682,11 +682,6 @@ private final class TabBarHostingView: NSHostingView<ToolbarTabBarView> {
     }
 }
 
-private struct TabDropIndicator: Equatable {
-    let tabID: UUID
-    let isAfter: Bool
-}
-
 private struct TabWidthPreferenceKey: PreferenceKey {
     static var defaultValue: [UUID: CGFloat] = [:]
 
@@ -1563,81 +1558,7 @@ private struct DevServerBadge: View {
     }
 }
 
-struct StartupLoadingCoverView: View {
-    var body: some View {
-        ZStack {
-            Color.black.opacity(0.97)
-
-            VStack(spacing: 18) {
-                Image(nsImage: AppIcon.load())
-                    .resizable()
-                    .aspectRatio(contentMode: .fit)
-                    .frame(width: 72, height: 72)
-                    .cornerRadius(16)
-                    .shadow(color: .white.opacity(0.08), radius: 10)
-
-                VStack(spacing: 6) {
-                    Text("Restoring Workspace")
-                        .font(.system(size: 18, weight: .semibold))
-                        .foregroundColor(.white)
-
-                    Text("Preparing your selected terminal…")
-                        .font(.system(size: 13))
-                        .foregroundColor(.white.opacity(0.65))
-                }
-
-                ProgressView()
-                    .progressViewStyle(CircularProgressViewStyle(tint: .white))
-                    .scaleEffect(0.85)
-            }
-        }
-        .allowsHitTesting(false)
-        .accessibilityHidden(true)
-    }
-}
-
 // MARK: - Tab Switch Optimization: Cursor Placeholder
-
-struct CursorPlaceholderView: View {
-    let promptText: String
-    let cursorPosition: CGPoint
-
-    var body: some View {
-        TimelineView(.periodic(from: .now, by: 0.5)) { timeline in
-            let cursorVisible = Int(timeline.date.timeIntervalSinceReferenceDate * 2).isMultiple(of: 2)
-
-            GeometryReader { _ in
-                ZStack(alignment: .bottomLeading) {
-                    Color.black.opacity(0.95)
-
-                    VStack(alignment: .leading, spacing: 0) {
-                        Spacer()
-
-                        HStack(spacing: 0) {
-                            Text(L("$ ", "$ "))
-                                .font(.system(size: 13, design: .monospaced))
-                                .foregroundColor(.green.opacity(0.8))
-
-                            Text(promptText)
-                                .font(.system(size: 13, design: .monospaced))
-                                .foregroundColor(.white.opacity(0.7))
-                                .lineLimit(1)
-
-                            Text(" ")
-
-                            Rectangle()
-                                .fill(Color.white)
-                                .frame(width: 8, height: 16)
-                                .opacity(cursorVisible ? 1 : 0)
-                        }
-                        .padding(.horizontal, 12)
-                        .padding(.bottom, 20)
-                    }
-                }
-            }
-        }
-    }
-}
 
 struct Chau7OverlayView: View {
     var overlayModel: OverlayTabsModel
@@ -1670,11 +1591,6 @@ struct Chau7OverlayView: View {
 
     private var terminalStack: some View {
         ZStack(alignment: .top) {
-
-            if overlayModel.shouldShowStartupLoadingCover {
-                StartupLoadingCoverView()
-                    .zIndex(3)
-            }
 
             // MARK: - Tab Switch Optimization: Lazy Tab Loading
 
@@ -2192,22 +2108,6 @@ struct UnifiedTabButton: View {
         FeatureSettings.shared.customTitleOnly
             && tab.customTitle != nil
             && !tab.customTitle!.isEmpty
-    }
-
-    @ViewBuilder
-    private var tabContextMenu: some View {
-        Button(L("overlay.renameTab", "Rename Tab...")) { onRename() }
-        Divider()
-        Button(L("overlay.moveToIdle", "Move to Idle Tabs")) { onMoveToIdle() }
-        if !otherWindows.isEmpty {
-            Menu(L("menu.moveToWindow", "Move to Window")) {
-                ForEach(otherWindows) { window in
-                    Button(window.title) { onMoveToWindow?(window.id) }
-                }
-            }
-        }
-        Divider()
-        Button(L("overlay.closeTab", "Close Tab")) { onClose() }
     }
 
     var body: some View {

@@ -152,10 +152,6 @@ final class RustGridView: NSView {
 
     /// Default-init helper for blank cells. Equivalent to `RustCellData()` but
     /// kept explicit for readability.
-    fileprivate func defaultCell() -> RustCellData {
-        RustCellData()
-    }
-
     /// Read a cell's grapheme cluster as a Swift String from the local store.
     /// Returns "" for blank cells, continuation cells, or out-of-range offsets.
     private func clusterString(for cell: RustCellData) -> String {

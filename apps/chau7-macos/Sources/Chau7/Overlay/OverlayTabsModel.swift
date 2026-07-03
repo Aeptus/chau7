@@ -1039,16 +1039,6 @@ final class OverlayTabsModel {
     /// Whether the selected terminal content is ready to display (for snapshot swap)
     var isTerminalReady = true
 
-    var usesStartupLoadingCover = false
-
-    var shouldShowStartupLoadingCover: Bool {
-        false
-    }
-
-    var shouldShowSelectedSurfaceLiveRepaintCover: Bool {
-        false
-    }
-
     /// Generation counter for isTerminalReady — prevents stale asyncAfter
     /// callbacks from clobbering the state after rapid tab switches.
     @ObservationIgnored var terminalReadyGeneration: UInt64 = 0

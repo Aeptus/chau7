@@ -48,7 +48,6 @@ final class RemoteControlManager {
     @ObservationIgnored private var connectedClientStreamMode: RemoteClientStreamMode = .full
     @ObservationIgnored private var subscribedSessionIDs: Set<String> = []
     @ObservationIgnored private var activityRefreshWorkItem: DispatchWorkItem?
-    @ObservationIgnored private var backgroundSnapshotTask: Task<Void, Never>?
     @ObservationIgnored private var outputFlushTask: Task<Void, Never>?
     @ObservationIgnored private var pendingOutputByTabID = RemotePendingOutputBuffer<Data>()
 
@@ -91,7 +90,6 @@ final class RemoteControlManager {
             // starts from the primary window's selected tab rather than
             // inheriting a stale (possibly background-window) selection.
             self?.remoteSelectedTabUUID = nil
-            self?.cancelBackgroundSnapshotPrefetch()
             self?.cancelPendingOutputFlush()
             self?.refreshPairedDevices()
         }
@@ -149,7 +147,6 @@ final class RemoteControlManager {
         overlayModel.onTabsChanged = { [weak self] in
             self?.sendTabList()
             self?.sendSelectedTabSnapshot()
-            self?.scheduleBackgroundSnapshotPrefetch()
             self?.rebuildSessionStateSubscriptions()
             self?.scheduleRemoteActivityRefresh()
         }
@@ -292,7 +289,6 @@ final class RemoteControlManager {
     func stopAgent() {
         guard let process else { return }
         process.terminationHandler = nil
-        cancelBackgroundSnapshotPrefetch()
         cancelPendingOutputFlush()
         // Terminate process BEFORE closing pipes to avoid SIGPIPE
         ManagedProcess.terminate(process, name: "remote agent", logger: logger)
@@ -496,7 +492,6 @@ final class RemoteControlManager {
         connectedClientStreamMode = payload.streamMode
 
         if previousStreamMode != payload.streamMode, payload.streamMode == .approvalsOnly {
-            cancelBackgroundSnapshotPrefetch()
             cancelPendingOutputFlush()
         }
 
@@ -516,7 +511,6 @@ final class RemoteControlManager {
         }
         sendTabList()
         sendSelectedTabSnapshot()
-        scheduleBackgroundSnapshotPrefetch()
         sendRemoteActivity(force: true)
         sendInteractivePrompts(force: true)
     }
@@ -945,15 +939,6 @@ final class RemoteControlManager {
         } catch {
             logger.warning("Failed to encode tab list: \(error.localizedDescription, privacy: .public)")
         }
-    }
-
-    private func scheduleBackgroundSnapshotPrefetch() {
-        cancelBackgroundSnapshotPrefetch()
-    }
-
-    private func cancelBackgroundSnapshotPrefetch() {
-        backgroundSnapshotTask?.cancel()
-        backgroundSnapshotTask = nil
     }
 
     private func schedulePendingOutputFlush() {

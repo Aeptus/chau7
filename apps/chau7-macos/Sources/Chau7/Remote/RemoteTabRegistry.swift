@@ -74,8 +74,4 @@ struct RemoteTabRegistry {
     func tabID(forSessionIdentifier sessionIdentifier: String) -> UInt32? {
         tabIDBySessionIdentifier[sessionIdentifier]
     }
-
-    func backgroundTabIDs(for tabIDs: [UUID], selectedTabID: UUID) -> [UInt32] {
-        tabIDs.compactMap { tabIDByUUID[$0] }.filter { tabIDByUUID[selectedTabID] != $0 }
-    }
 }
