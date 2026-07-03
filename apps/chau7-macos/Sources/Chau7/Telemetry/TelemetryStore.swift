@@ -2,40 +2,25 @@ import Foundation
 import SQLite3
 import Chau7Core
 
-struct ProviderLatencyBackfillReport: Sendable {
-    var inspectedRuns = 0
-    var insertedSamples = 0
-    var skippedRuns = 0
-}
-
-/// Retention policy for the telemetry database (runs + full transcripts).
-/// Single source of truth shared by `FeatureSettings` (the Settings UI) and
-/// `TelemetryStore` (the background prune), which reads the value straight from
-/// `UserDefaults` so it never touches the main-actor settings object off-main.
-enum TelemetryRetention {
-    static let defaultsKey = "telemetry.retentionDays"
-    /// Default window. AI runs store full turn content and tool-call I/O, so the
-    /// DB grows unbounded without this — keep a month by default.
-    static let defaultDays = 30
-    /// 0 means "keep forever" (no pruning). Upper clamp guards typos.
-    static let maxDays = 3650
-
-    static var currentDays: Int {
-        UserDefaults.standard.object(forKey: defaultsKey) as? Int ?? defaultDays
-    }
-}
-
 /// SQLite-backed store for telemetry run records, turns, and tool calls.
 /// Thread-safe: all database access is serialized on a dedicated queue.
+///
+/// Schema creation/migrations live in `TelemetrySchemaMigrator`; deferred
+/// maintenance (backfills, retention prune, vacuum) lives in
+/// `TelemetryMaintenance`. Both collaborators run exclusively on this store's
+/// serial queue and reach shared row parsing / binding through the store's
+/// on-queue internals.
 final class TelemetryStore {
     static let shared = TelemetryStore()
 
-    private var db: OpaquePointer?
+    /// Only the store mutates the handle (open/integrity recovery). The
+    /// internal getter exists for `TelemetryMaintenance`, which reads it
+    /// on the store's queue only.
+    private(set) var db: OpaquePointer?
     private let queue = DispatchQueue(label: "com.chau7.telemetry.store")
     private let checkpointLogWalThresholdBytes: Int64 = 8 * 1024 * 1024
     private let checkpointLogRemainingFramesThreshold: Int32 = 1000
-    private var didScheduleDeferredMaintenance = false
-    private var didRunDeferredMaintenance = false
+    private lazy var maintenance = TelemetryMaintenance(store: self)
 
     private static var dbPath: String {
         let dir = RuntimeIsolation.chau7Directory()
@@ -49,8 +34,13 @@ final class TelemetryStore {
     }
 
     deinit {
-        queue.sync {
-            if let db = self.db {
+        // Close after in-flight writes drain, without deinit blocking on the
+        // queue — `queue.sync` here is a latent deadlock if the last strong
+        // reference is ever released from a task running on `queue` itself
+        // (same fix as SpineJournalStore.deinit).
+        let db = self.db
+        queue.async {
+            if let db {
                 sqlite3_close(db)
             }
         }
@@ -68,49 +58,32 @@ final class TelemetryStore {
         sqlite3_exec(db, "PRAGMA synchronous=NORMAL", nil, nil, nil)
         sqlite3_exec(db, "PRAGMA foreign_keys=ON", nil, nil, nil)
         verifyIntegrity()
-        createTables()
-        applyMigrations()
+        let migrator = TelemetrySchemaMigrator(db: db)
+        migrator.createTables()
+        migrator.applyMigrations()
     }
+
+    // MARK: - Maintenance (forwarders — implementation in TelemetryMaintenance)
 
     func scheduleDeferredMaintenance(reason: String) {
         queue.async {
-            guard !self.didScheduleDeferredMaintenance, !self.didRunDeferredMaintenance else { return }
-            self.didScheduleDeferredMaintenance = true
-            Log.info("TelemetryStore: starting deferred maintenance [\(reason)]")
-            self.backfillHistoricalMissingCosts()
-            self.backfillRunUsageEvidence()
-            let latencyBackfill = self._backfillCompletedRunLatencySamples()
-            if latencyBackfill.insertedSamples > 0 {
-                Log.info(
-                    "TelemetryStore: backfilled latency samples for \(latencyBackfill.insertedSamples) run(s) " +
-                        "(inspected=\(latencyBackfill.inspectedRuns), skipped=\(latencyBackfill.skippedRuns))"
-                )
-            }
-            self.pruneOldRuns(retentionDays: TelemetryRetention.currentDays)
-            self.runIncrementalVacuumIfNeeded()
-            self.didRunDeferredMaintenance = true
-            self.didScheduleDeferredMaintenance = false
+            self.maintenance.performDeferredMaintenance(reason: reason)
         }
     }
 
-    private func logStartupBackfillScan(
-        name: String,
-        scannedRows: Int,
-        touchedRows: Int,
-        startedAt: CFAbsoluteTime,
-        extra: String? = nil
-    ) {
-        let elapsedMs = Int((CFAbsoluteTimeGetCurrent() - startedAt) * 1000.0)
-        var parts = [
-            "TelemetryStore: startup backfill \(name)",
-            "scanned=\(scannedRows)",
-            "touched=\(touchedRows)",
-            "cursorMs=\(elapsedMs)"
-        ]
-        if let extra, !extra.isEmpty {
-            parts.append(extra)
+    func backfillCompletedRunLatencySamples() -> ProviderLatencyBackfillReport {
+        queue.sync {
+            maintenance.backfillCompletedRunLatencySamples()
         }
-        Log.info(parts.joined(separator: " "))
+    }
+
+    typealias PruneOutcome = TelemetryMaintenance.PruneOutcome
+
+    /// Test-visible seam for the retention prune; see
+    /// `TelemetryMaintenance.deleteRunsOlderThan` for the semantics.
+    @discardableResult
+    static func deleteRunsOlderThan(retentionDays: Int, in db: OpaquePointer) -> PruneOutcome {
+        TelemetryMaintenance.deleteRunsOlderThan(retentionDays: retentionDays, in: db)
     }
 
     private func commitWriteTransaction(_ db: OpaquePointer?, reason: String) {
@@ -184,633 +157,6 @@ final class TelemetryStore {
                 }
             }
         }
-    }
-
-    private func createTables() {
-        let sql = """
-        CREATE TABLE IF NOT EXISTS runs (
-            run_id TEXT PRIMARY KEY,
-            session_id TEXT,
-            tab_id TEXT,
-            provider TEXT NOT NULL,
-            model TEXT,
-            cwd TEXT NOT NULL,
-            repo_path TEXT,
-            started_at TEXT NOT NULL,
-            ended_at TEXT,
-            duration_ms INTEGER,
-            exit_status INTEGER,
-            total_input_tokens INTEGER,
-            total_cache_creation_input_tokens INTEGER,
-            total_cache_read_input_tokens INTEGER,
-            total_cached_input_tokens INTEGER,
-            total_output_tokens INTEGER,
-            total_reasoning_output_tokens INTEGER,
-            cost_usd REAL,
-            token_usage_source TEXT,
-            token_usage_state TEXT,
-            cost_source TEXT,
-            cost_state TEXT,
-            turn_count INTEGER DEFAULT 0,
-            tags TEXT,
-            metadata TEXT,
-            raw_transcript_ref TEXT,
-            parent_run_id TEXT,
-            error_message TEXT,
-            created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
-        );
-
-        CREATE INDEX IF NOT EXISTS idx_runs_session ON runs(session_id);
-        CREATE INDEX IF NOT EXISTS idx_runs_repo ON runs(repo_path);
-        CREATE INDEX IF NOT EXISTS idx_runs_provider ON runs(provider);
-        CREATE INDEX IF NOT EXISTS idx_runs_started ON runs(started_at);
-        CREATE INDEX IF NOT EXISTS idx_runs_tab ON runs(tab_id);
-
-        CREATE TABLE IF NOT EXISTS turns (
-            turn_id TEXT PRIMARY KEY,
-            run_id TEXT NOT NULL REFERENCES runs(run_id) ON DELETE CASCADE,
-            turn_index INTEGER NOT NULL,
-            role TEXT NOT NULL,
-            content TEXT,
-            input_tokens INTEGER,
-            cache_creation_input_tokens INTEGER,
-            cache_read_input_tokens INTEGER,
-            cached_input_tokens INTEGER,
-            output_tokens INTEGER,
-            reasoning_output_tokens INTEGER,
-            tool_calls TEXT,
-            timestamp TEXT,
-            duration_ms INTEGER
-        );
-
-        CREATE INDEX IF NOT EXISTS idx_turns_run ON turns(run_id, turn_index);
-
-        CREATE TABLE IF NOT EXISTS tool_calls (
-            call_id TEXT PRIMARY KEY,
-            run_id TEXT NOT NULL REFERENCES runs(run_id) ON DELETE CASCADE,
-            turn_id TEXT NOT NULL REFERENCES turns(turn_id) ON DELETE CASCADE,
-            tool_name TEXT NOT NULL,
-            arguments TEXT,
-            result TEXT,
-            status TEXT,
-            duration_ms INTEGER,
-            call_index INTEGER NOT NULL
-        );
-
-        CREATE INDEX IF NOT EXISTS idx_tool_calls_run ON tool_calls(run_id);
-        CREATE INDEX IF NOT EXISTS idx_tool_calls_name ON tool_calls(tool_name);
-
-        CREATE TABLE IF NOT EXISTS usage_evidence (
-            evidence_id TEXT PRIMARY KEY,
-            unique_event_key TEXT NOT NULL,
-            reconciliation_key TEXT NOT NULL,
-            source_kind TEXT NOT NULL,
-            provider TEXT NOT NULL,
-            model TEXT,
-            session_id TEXT,
-            run_id TEXT,
-            endpoint TEXT,
-            project_path TEXT,
-            input_tokens INTEGER,
-            cache_creation_input_tokens INTEGER,
-            cache_read_input_tokens INTEGER,
-            output_tokens INTEGER,
-            reasoning_output_tokens INTEGER,
-            cost_usd REAL,
-            token_usage_source TEXT,
-            token_usage_state TEXT NOT NULL,
-            cost_source TEXT,
-            cost_state TEXT NOT NULL,
-            pricing_version TEXT,
-            source_ref TEXT,
-            metadata TEXT,
-            observed_at TEXT NOT NULL,
-            created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
-        );
-
-        CREATE INDEX IF NOT EXISTS idx_usage_evidence_provider
-            ON usage_evidence(provider, observed_at DESC);
-        CREATE INDEX IF NOT EXISTS idx_usage_evidence_reconciliation
-            ON usage_evidence(reconciliation_key, source_kind);
-        CREATE INDEX IF NOT EXISTS idx_usage_evidence_run
-            ON usage_evidence(run_id);
-
-        CREATE TABLE IF NOT EXISTS provider_latency_samples (
-            sample_id TEXT PRIMARY KEY,
-            provider TEXT NOT NULL,
-            metric_kind TEXT NOT NULL,
-            latency_ms INTEGER NOT NULL,
-            model TEXT,
-            session_id TEXT,
-            run_id TEXT,
-            round_index INTEGER,
-            project_path TEXT,
-            source_kind TEXT NOT NULL,
-            observed_at TEXT NOT NULL,
-            created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
-        );
-
-        CREATE INDEX IF NOT EXISTS idx_provider_latency_samples_time
-            ON provider_latency_samples(observed_at DESC);
-        CREATE INDEX IF NOT EXISTS idx_provider_latency_samples_provider
-            ON provider_latency_samples(provider, metric_kind, observed_at DESC);
-
-        CREATE TABLE IF NOT EXISTS schema_version (
-            version INTEGER PRIMARY KEY,
-            applied_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
-        );
-
-        CREATE TABLE IF NOT EXISTS remote_client_events (
-            event_id TEXT PRIMARY KEY,
-            source TEXT NOT NULL,
-            device_id TEXT,
-            device_name TEXT,
-            app_version TEXT NOT NULL,
-            session_id TEXT,
-            event_type TEXT NOT NULL,
-            status TEXT,
-            tab_id INTEGER,
-            tab_title TEXT,
-            message TEXT,
-            metadata TEXT,
-            timestamp TEXT NOT NULL
-        );
-
-        CREATE INDEX IF NOT EXISTS idx_remote_client_events_time
-            ON remote_client_events(timestamp DESC);
-        CREATE INDEX IF NOT EXISTS idx_remote_client_events_device
-            ON remote_client_events(device_id);
-        CREATE INDEX IF NOT EXISTS idx_remote_client_events_session
-            ON remote_client_events(session_id);
-        CREATE INDEX IF NOT EXISTS idx_remote_client_events_type
-            ON remote_client_events(event_type);
-
-        INSERT OR IGNORE INTO schema_version (version) VALUES (1);
-        """
-
-        var errMsg: UnsafeMutablePointer<CChar>?
-        if sqlite3_exec(db, sql, nil, nil, &errMsg) != SQLITE_OK {
-            let msg = errMsg.map { String(cString: $0) } ?? "unknown"
-            Log.error("TelemetryStore: schema creation failed: \(msg)")
-            sqlite3_free(errMsg)
-        }
-    }
-
-    /// Current migration target. Bump this when adding new migrations.
-    private static let currentSchemaVersion = 4
-
-    private func schemaVersion() -> Int {
-        guard let db else { return 0 }
-        var stmt: OpaquePointer?
-        guard sqlite3_prepare_v2(db, "SELECT MAX(version) FROM schema_version", -1, &stmt, nil) == SQLITE_OK else { return 0 }
-        defer { sqlite3_finalize(stmt) }
-        guard sqlite3_step(stmt) == SQLITE_ROW else { return 0 }
-        return Int(sqlite3_column_int(stmt, 0))
-    }
-
-    private func setSchemaVersion(_ version: Int) {
-        guard let db else { return }
-        let sql = "INSERT OR IGNORE INTO schema_version (version) VALUES (?)"
-        var stmt: OpaquePointer?
-        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return }
-        defer { sqlite3_finalize(stmt) }
-        sqlite3_bind_int(stmt, 1, Int32(version))
-        sqlite3_step(stmt)
-    }
-
-    private func applyMigrations() {
-        guard let db else { return }
-        let version = schemaVersion()
-        guard version < Self.currentSchemaVersion else { return }
-
-        // Version 1 → 2: add columns, backfill state fields, sanitize bad data
-        if version < 2 {
-            ensureColumn(table: "runs", name: "total_cached_input_tokens", definition: "INTEGER")
-            ensureColumn(table: "runs", name: "total_cache_creation_input_tokens", definition: "INTEGER")
-            ensureColumn(table: "runs", name: "total_cache_read_input_tokens", definition: "INTEGER")
-            ensureColumn(table: "runs", name: "total_reasoning_output_tokens", definition: "INTEGER")
-            ensureColumn(table: "runs", name: "token_usage_source", definition: "TEXT")
-            ensureColumn(table: "runs", name: "token_usage_state", definition: "TEXT")
-            ensureColumn(table: "runs", name: "cost_source", definition: "TEXT")
-            ensureColumn(table: "runs", name: "cost_state", definition: "TEXT")
-
-            ensureColumn(table: "turns", name: "cache_creation_input_tokens", definition: "INTEGER")
-            ensureColumn(table: "turns", name: "cache_read_input_tokens", definition: "INTEGER")
-            ensureColumn(table: "turns", name: "cached_input_tokens", definition: "INTEGER")
-            ensureColumn(table: "turns", name: "reasoning_output_tokens", definition: "INTEGER")
-            ensureColumn(table: "provider_latency_samples", name: "round_index", definition: "INTEGER")
-
-            sqlite3_exec(
-                db,
-                """
-                UPDATE runs
-                SET token_usage_state = COALESCE(token_usage_state,
-                    CASE
-                        WHEN total_input_tokens IS NULL
-                             AND total_cache_creation_input_tokens IS NULL
-                             AND total_cache_read_input_tokens IS NULL
-                             AND total_cached_input_tokens IS NULL
-                             AND total_output_tokens IS NULL
-                             AND total_reasoning_output_tokens IS NULL
-                        THEN 'missing'
-                        ELSE 'complete'
-                    END
-                ),
-                cost_state = COALESCE(cost_state,
-                    CASE
-                        WHEN cost_usd IS NULL THEN 'missing'
-                        ELSE 'complete'
-                    END
-                ),
-                cost_source = COALESCE(cost_source,
-                    CASE
-                        WHEN cost_usd IS NULL THEN 'unavailable'
-                        ELSE 'observed'
-                    END
-                )
-                """,
-                nil,
-                nil,
-                nil
-            )
-
-            sqlite3_exec(
-                db,
-                """
-                UPDATE runs
-                SET total_input_tokens = NULL,
-                    total_cache_creation_input_tokens = NULL,
-                    total_cache_read_input_tokens = NULL,
-                    total_cached_input_tokens = NULL,
-                    total_output_tokens = NULL,
-                    total_reasoning_output_tokens = NULL,
-                    cost_usd = NULL,
-                    token_usage_source = NULL,
-                    token_usage_state = 'invalid',
-                    cost_source = 'unavailable',
-                    cost_state = 'missing',
-                    error_message = COALESCE(error_message, 'invalidated historical telemetry metrics that exceeded sanity thresholds')
-                WHERE COALESCE(total_input_tokens, 0) > 100000000
-                   OR COALESCE(total_cache_creation_input_tokens, 0) > 100000000
-                   OR COALESCE(total_cache_read_input_tokens, 0) > 100000000
-                   OR COALESCE(total_cached_input_tokens, 0) > 100000000
-                   OR COALESCE(total_output_tokens, 0) > 100000000
-                   OR COALESCE(total_reasoning_output_tokens, 0) > 100000000
-                   OR (
-                        COALESCE(total_input_tokens, 0) +
-                        COALESCE(
-                            total_cached_input_tokens,
-                            COALESCE(total_cache_creation_input_tokens, 0) + COALESCE(total_cache_read_input_tokens, 0)
-                        ) +
-                        COALESCE(total_output_tokens, 0) +
-                        COALESCE(total_reasoning_output_tokens, 0)
-                      ) > 150000000
-                """,
-                nil,
-                nil,
-                nil
-            )
-
-            setSchemaVersion(2)
-        }
-
-        // Version 2 → 3: mark when transcript repair was last attempted so the
-        // repair sweep stops re-reading/re-parsing the same immutable transcript
-        // every cycle when its metrics can't be derived.
-        if version < 3 {
-            ensureColumn(table: "runs", name: "transcript_repair_attempted_at", definition: "TEXT")
-            setSchemaVersion(3)
-        }
-
-        // Version 3 → 4: monotonic ingest sequence for deterministic ordering.
-        // ISO-text timestamps collide at the same millisecond; ingest_seq is a
-        // store-assigned insert counter used as an ORDER BY tiebreaker. Old
-        // rows keep NULL (no backfill) — the tiebreaker only has to
-        // disambiguate rows written after the migration.
-        if version < 4 {
-            ensureColumn(table: "runs", name: "ingest_seq", definition: "INTEGER")
-            ensureColumn(table: "usage_evidence", name: "ingest_seq", definition: "INTEGER")
-            ensureColumn(table: "remote_client_events", name: "ingest_seq", definition: "INTEGER")
-            setSchemaVersion(4)
-        }
-        ensureIngestSequenceInfrastructure()
-    }
-
-    /// Triggers assign ingest_seq at insert time from one shared counter
-    /// (MAX across the three tables), so no insert statement needs to know
-    /// about the column. Idempotent (IF NOT EXISTS) and shared by fresh
-    /// databases and migrated ones.
-    private func ensureIngestSequenceInfrastructure() {
-        guard let db else { return }
-        for table in ["runs", "usage_evidence", "remote_client_events"] {
-            sqlite3_exec(
-                db,
-                "CREATE INDEX IF NOT EXISTS idx_\(table)_ingest_seq ON \(table)(ingest_seq)",
-                nil, nil, nil
-            )
-            let trigger = """
-            CREATE TRIGGER IF NOT EXISTS trg_\(table)_ingest_seq
-            AFTER INSERT ON \(table)
-            WHEN NEW.ingest_seq IS NULL
-            BEGIN
-                UPDATE \(table)
-                SET ingest_seq = (
-                    SELECT COALESCE(MAX(seq), 0) + 1 FROM (
-                        SELECT MAX(ingest_seq) AS seq FROM runs
-                        UNION ALL SELECT MAX(ingest_seq) FROM usage_evidence
-                        UNION ALL SELECT MAX(ingest_seq) FROM remote_client_events
-                    )
-                )
-                WHERE rowid = NEW.rowid;
-            END
-            """
-            if sqlite3_exec(db, trigger, nil, nil, nil) != SQLITE_OK {
-                Log.warn("TelemetryStore: failed to create ingest_seq trigger for \(table)")
-            }
-        }
-    }
-
-    private func ensureColumn(table: String, name: String, definition: String) {
-        guard let db else { return }
-        var stmt: OpaquePointer?
-        guard sqlite3_prepare_v2(db, "PRAGMA table_info(\(table))", -1, &stmt, nil) == SQLITE_OK else { return }
-        defer { sqlite3_finalize(stmt) }
-
-        while sqlite3_step(stmt) == SQLITE_ROW {
-            if let colName = sqlite3_column_text(stmt, 1), String(cString: colName) == name {
-                return
-            }
-        }
-
-        let sql = "ALTER TABLE \(table) ADD COLUMN \(name) \(definition)"
-        if sqlite3_exec(db, sql, nil, nil, nil) != SQLITE_OK {
-            Log.warn("TelemetryStore: failed to add column \(table).\(name)")
-        }
-    }
-
-    /// Delete runs (and, via `ON DELETE CASCADE` + `foreign_keys=ON`, their
-    /// turns / tool_calls / latency samples) older than the retention window,
-    /// then reclaim the freed disk with a full `VACUUM`.
-    ///
-    /// A full VACUUM is used deliberately: this database was created without
-    /// `auto_vacuum`, so `PRAGMA incremental_vacuum` is a no-op on it — the only
-    /// way to shrink the file after deletes is a rewrite. It runs on the store's
-    /// serial queue during deferred (post-first-paint) maintenance, and only
-    /// when rows were actually removed, so the ~1 GB rewrite is never paid for a
-    /// no-op pass.
-    ///
-    /// `retentionDays <= 0` disables pruning entirely ("keep forever").
-    func pruneOldRuns(retentionDays: Int) {
-        guard let db else { return }
-        let startedAt = CFAbsoluteTimeGetCurrent()
-        switch Self.deleteRunsOlderThan(retentionDays: retentionDays, in: db) {
-        case .disabled:
-            Log.info("TelemetryStore: retention disabled (keep forever)")
-        case .nothingToPrune:
-            break
-        case let .failed(message):
-            Log.warn("TelemetryStore: retention prune failed: \(message)")
-        case let .pruned(deleted, clampedDays):
-            let elapsedMs = Int((CFAbsoluteTimeGetCurrent() - startedAt) * 1000.0)
-            Log.info(
-                "TelemetryStore: retention prune removed \(deleted) run(s) older than \(clampedDays)d, vacuumed in \(elapsedMs)ms"
-            )
-        }
-    }
-
-    enum PruneOutcome: Equatable {
-        case disabled
-        case nothingToPrune
-        case pruned(deleted: Int, clampedDays: Int)
-        case failed(String)
-    }
-
-    /// Pure deletion core, parameterized on the connection so it can be exercised
-    /// against a throwaway database in tests without touching the shared store's
-    /// real file. Relies on `foreign_keys=ON` + `ON DELETE CASCADE` to remove the
-    /// pruned runs' turns / tool_calls / latency samples, then a full `VACUUM`
-    /// (this DB has no `auto_vacuum`, so `incremental_vacuum` can't shrink it).
-    @discardableResult
-    static func deleteRunsOlderThan(retentionDays: Int, in db: OpaquePointer) -> PruneOutcome {
-        guard retentionDays > 0 else { return .disabled }
-        let clampedDays = max(1, min(retentionDays, TelemetryRetention.maxDays))
-        // started_at is ISO 8601 ('YYYY-MM-DDTHH:MM:...Z'); date('now','-Nd')
-        // yields 'YYYY-MM-DD'. The date prefix compares lexicographically, so a
-        // run is pruned only once its whole calendar day is past the window.
-        let whereClause = "started_at < date('now', '-\(clampedDays) days')"
-
-        var countStmt: OpaquePointer?
-        var toDelete = 0
-        if sqlite3_prepare_v2(db, "SELECT COUNT(*) FROM runs WHERE \(whereClause)", -1, &countStmt, nil) == SQLITE_OK,
-           sqlite3_step(countStmt) == SQLITE_ROW {
-            toDelete = Int(sqlite3_column_int(countStmt, 0))
-        }
-        sqlite3_finalize(countStmt)
-        guard toDelete > 0 else { return .nothingToPrune }
-
-        if sqlite3_exec(db, "DELETE FROM runs WHERE \(whereClause)", nil, nil, nil) != SQLITE_OK {
-            return .failed(String(cString: sqlite3_errmsg(db)))
-        }
-        let deleted = Int(sqlite3_changes(db))
-        if sqlite3_exec(db, "VACUUM", nil, nil, nil) != SQLITE_OK {
-            Log.warn("TelemetryStore: post-prune VACUUM failed: \(String(cString: sqlite3_errmsg(db)))")
-        }
-        return .pruned(deleted: deleted, clampedDays: clampedDays)
-    }
-
-    /// Run PRAGMA incremental_vacuum if more than 7 days have passed since the
-    /// last vacuum. WAL mode databases can accumulate free pages over time;
-    /// incremental vacuum reclaims them without the full-lock cost of VACUUM.
-    private func runIncrementalVacuumIfNeeded() {
-        guard let db else { return }
-        let key = "telemetry.store.lastVacuumTime"
-        let lastVacuum = UserDefaults.standard.double(forKey: key)
-        let now = CFAbsoluteTimeGetCurrent()
-        let sevenDays: CFAbsoluteTime = 7 * 24 * 60 * 60
-        guard lastVacuum == 0 || (now - lastVacuum) > sevenDays else { return }
-        let startedAt = CFAbsoluteTimeGetCurrent()
-        sqlite3_exec(db, "PRAGMA incremental_vacuum", nil, nil, nil)
-        let elapsedMs = Int((CFAbsoluteTimeGetCurrent() - startedAt) * 1000.0)
-        UserDefaults.standard.set(now, forKey: key)
-        Log.info("TelemetryStore: incremental vacuum completed in \(elapsedMs)ms")
-    }
-
-    private func backfillHistoricalMissingCosts() {
-        guard let db else { return }
-
-        // Only scan runs that actually need cost repair. Runs with
-        // cost_state = 'complete' are already done and are skipped.
-        let sql = """
-        SELECT * FROM runs
-        WHERE cost_state IS NOT 'complete'
-          AND token_usage_state IS NOT 'invalid'
-        """
-
-        var stmt: OpaquePointer?
-        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return }
-        defer { sqlite3_finalize(stmt) }
-
-        var repairedRuns: [TelemetryRun] = []
-        var scannedRuns = 0
-        let scanStartedAt = CFAbsoluteTimeGetCurrent()
-        while sqlite3_step(stmt) == SQLITE_ROW {
-            scannedRuns += 1
-            guard let run = parseRun(stmt),
-                  let repaired = TelemetryHistoricalCostBackfill.repairedRun(run) else {
-                continue
-            }
-            repairedRuns.append(repaired)
-        }
-
-        logStartupBackfillScan(
-            name: "historical_missing_costs",
-            scannedRows: scannedRuns,
-            touchedRows: repairedRuns.count,
-            startedAt: scanStartedAt
-        )
-
-        guard !repairedRuns.isEmpty else { return }
-
-        let updateSQL = """
-        UPDATE runs
-        SET cost_usd = ?, cost_source = ?, cost_state = ?
-        WHERE run_id = ?
-        """
-
-        var updateStmt: OpaquePointer?
-        guard sqlite3_prepare_v2(db, updateSQL, -1, &updateStmt, nil) == SQLITE_OK else { return }
-        defer { sqlite3_finalize(updateStmt) }
-
-        for run in repairedRuns {
-            sqlite3_reset(updateStmt)
-            sqlite3_clear_bindings(updateStmt)
-            bindDouble(updateStmt, 1, run.costUSD)
-            bindText(updateStmt, 2, run.costSource?.rawValue)
-            bindText(updateStmt, 3, run.costState.rawValue)
-            bindText(updateStmt, 4, run.id)
-            sqlite3_step(updateStmt)
-        }
-
-        Log.info("TelemetryStore: backfilled historical cost for \(repairedRuns.count) run(s)")
-    }
-
-    private func backfillRunUsageEvidence() {
-        guard let db else { return }
-
-        let sql = """
-        SELECT r.*
-        FROM runs r
-        LEFT JOIN usage_evidence ue
-          ON ue.evidence_id = ('run|' || r.run_id)
-        WHERE ue.evidence_id IS NULL
-        """
-
-        var stmt: OpaquePointer?
-        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return }
-        defer { sqlite3_finalize(stmt) }
-
-        var runs: [TelemetryRun] = []
-        var scannedRuns = 0
-        let scanStartedAt = CFAbsoluteTimeGetCurrent()
-        while sqlite3_step(stmt) == SQLITE_ROW {
-            scannedRuns += 1
-            guard let run = parseRun(stmt) else { continue }
-            runs.append(run)
-        }
-
-        guard !runs.isEmpty else {
-            logStartupBackfillScan(name: "run_usage_evidence", scannedRows: scannedRuns, touchedRows: 0, startedAt: scanStartedAt)
-            return
-        }
-
-        sqlite3_exec(db, "BEGIN", nil, nil, nil)
-        for run in runs {
-            _insertUsageEvidence(UsageEvidence.runSummary(run))
-        }
-        sqlite3_exec(db, "COMMIT", nil, nil, nil)
-
-        logStartupBackfillScan(
-            name: "run_usage_evidence",
-            scannedRows: scannedRuns,
-            touchedRows: runs.count,
-            startedAt: scanStartedAt
-        )
-
-        Log.info("TelemetryStore: backfilled usage evidence for \(runs.count) missing run(s)")
-    }
-
-    func backfillCompletedRunLatencySamples() -> ProviderLatencyBackfillReport {
-        queue.sync {
-            _backfillCompletedRunLatencySamples()
-        }
-    }
-
-    private func _backfillCompletedRunLatencySamples() -> ProviderLatencyBackfillReport {
-        guard let db else { return ProviderLatencyBackfillReport() }
-
-        // Only process completed runs that:
-        // 1. Have no existing latency samples (already backfilled = skip)
-        // 2. Have an authoritative transcript source (not null, not empty,
-        //    not pty_log/terminal_buffer — these can never produce samples,
-        //    so including them causes 541 N+1 queries every launch for nothing)
-        let sql = """
-        SELECT r.*
-        FROM runs r
-        WHERE r.ended_at IS NOT NULL
-          AND (
-                lower(r.provider) LIKE '%codex%'
-             OR lower(r.provider) LIKE '%claude%'
-             OR lower(r.provider) LIKE '%anthropic%'
-             OR lower(r.provider) LIKE '%openai%'
-          )
-          AND r.raw_transcript_ref IS NOT NULL
-          AND TRIM(r.raw_transcript_ref) != ''
-          AND r.raw_transcript_ref NOT IN ('pty_log', 'terminal_buffer')
-          AND NOT EXISTS (
-                SELECT 1 FROM provider_latency_samples pls
-                WHERE pls.run_id = r.run_id
-                  AND pls.source_kind = 'completed_run_turns'
-          )
-        ORDER BY r.started_at ASC
-        """
-
-        var stmt: OpaquePointer?
-        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else {
-            return ProviderLatencyBackfillReport()
-        }
-        defer { sqlite3_finalize(stmt) }
-
-        let map = columnIndexMap(stmt)
-        var report = ProviderLatencyBackfillReport()
-        let scanStartedAt = CFAbsoluteTimeGetCurrent()
-        while sqlite3_step(stmt) == SQLITE_ROW {
-            guard let run = parseRun(stmt, map) else { continue }
-            report.inspectedRuns += 1
-            let turns = _getTurns(runID: run.id)
-            let samples = ProviderLatencyAnalytics.completedRunFirstResponseSamples(run: run, turns: turns)
-            if samples.isEmpty {
-                // Insert a sentinel so NOT EXISTS skips this run on future launches.
-                // Runs that produce no samples (bad timestamps, no human→assistant pairs)
-                // would otherwise be rescanned every launch via the N+1 _getTurns query.
-                _insertLatencySentinel(runID: run.id)
-                report.skippedRuns += 1
-                continue
-            }
-            for sample in samples {
-                _insertLatencySample(sample)
-                report.insertedSamples += 1
-            }
-        }
-
-        logStartupBackfillScan(
-            name: "completed_run_latency_samples",
-            scannedRows: report.inspectedRuns,
-            touchedRows: report.insertedSamples,
-            startedAt: scanStartedAt,
-            extra: "skipped=\(report.skippedRuns)"
-        )
-
-        return report
     }
 
     // MARK: - Write
@@ -1097,7 +443,8 @@ final class TelemetryStore {
         }
     }
 
-    private func _insertUsageEvidence(_ evidence: UsageEvidence) {
+    /// On-queue write core, shared with `TelemetryMaintenance`.
+    func _insertUsageEvidence(_ evidence: UsageEvidence) {
         guard let db else { return }
         let sql = """
         INSERT INTO usage_evidence
@@ -1168,7 +515,8 @@ final class TelemetryStore {
         }
     }
 
-    private func _insertLatencySample(_ sample: ProviderLatencySample) {
+    /// On-queue write core, shared with `TelemetryMaintenance`.
+    func _insertLatencySample(_ sample: ProviderLatencySample) {
         guard let db else { return }
         let sql = """
         INSERT INTO provider_latency_samples
@@ -1212,7 +560,7 @@ final class TelemetryStore {
     /// Insert a zero-value sentinel so the NOT EXISTS filter in the backfill
     /// query skips this run on subsequent launches. The sentinel has a
     /// recognizable source_kind so it can be distinguished from real samples.
-    private func _insertLatencySentinel(runID: String) {
+    func _insertLatencySentinel(runID: String) {
         guard let db else { return }
         let sql = """
         INSERT OR IGNORE INTO provider_latency_samples
@@ -1632,7 +980,8 @@ final class TelemetryStore {
         queue.sync { _getTurns(runID: runID) }
     }
 
-    private func _getTurns(runID: String) -> [TelemetryTurn] {
+    /// On-queue read core, shared with `TelemetryMaintenance`.
+    func _getTurns(runID: String) -> [TelemetryTurn] {
         guard let db else { return [] }
         let sql = "SELECT * FROM turns WHERE run_id = ? ORDER BY turn_index"
         var stmt: OpaquePointer?
@@ -2205,11 +1554,13 @@ final class TelemetryStore {
 
     // MARK: - Row Parsing
 
-    private func parseRun(_ stmt: OpaquePointer?) -> TelemetryRun? {
+    /// The run parser is internal (not private) so `TelemetryMaintenance` can
+    /// reuse it on the store's queue instead of duplicating it.
+    func parseRun(_ stmt: OpaquePointer?) -> TelemetryRun? {
         parseRun(stmt, columnIndexMap(stmt))
     }
 
-    private func parseRun(_ stmt: OpaquePointer?, _ map: [String: Int32]) -> TelemetryRun? {
+    func parseRun(_ stmt: OpaquePointer?, _ map: [String: Int32]) -> TelemetryRun? {
         guard let stmt else { return nil }
         guard let runID = colByName(stmt, "run_id", map),
               let provider = colByName(stmt, "provider", map),
@@ -2366,7 +1717,9 @@ final class TelemetryStore {
 
     // MARK: - SQLite Bind/Read Helpers
 
-    private func bindText(_ stmt: OpaquePointer?, _ index: Int32, _ value: String?) {
+    /// bindText/bindDouble/columnIndexMap are internal (not private) so
+    /// `TelemetryMaintenance` can reuse them for its backfill statements.
+    func bindText(_ stmt: OpaquePointer?, _ index: Int32, _ value: String?) {
         if let v = value {
             sqlite3_bind_text(stmt, index, (v as NSString).utf8String, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
         } else {
@@ -2379,7 +1732,7 @@ final class TelemetryStore {
         else { sqlite3_bind_null(stmt, index) }
     }
 
-    private func bindDouble(_ stmt: OpaquePointer?, _ index: Int32, _ value: Double?) {
+    func bindDouble(_ stmt: OpaquePointer?, _ index: Int32, _ value: Double?) {
         if let v = value { sqlite3_bind_double(stmt, index, v) }
         else { sqlite3_bind_null(stmt, index) }
     }
@@ -2391,7 +1744,7 @@ final class TelemetryStore {
 
     /// Builds a column-name → index map for a prepared statement.
     /// Call once after prepare, then use the map for O(1) lookups per field.
-    private func columnIndexMap(_ stmt: OpaquePointer?) -> [String: Int32] {
+    func columnIndexMap(_ stmt: OpaquePointer?) -> [String: Int32] {
         guard let stmt else { return [:] }
         let count = sqlite3_column_count(stmt)
         var map: [String: Int32] = [:]
