@@ -53,6 +53,12 @@ final class RemoteControlManager {
 
     @ObservationIgnored private let ipc = RemoteIPCServer.shared
 
+    /// The MCP/tab side of the Remote↔MCP boundary. The composition root
+    /// (Chau7App.init) wires the production implementation explicitly; the
+    /// lazy default keeps behavior identical if this manager is touched
+    /// first. Settable so tests can inject a fake directory.
+    @ObservationIgnored lazy var tabDirectory: TabDirectoryProviding = TerminalControlService.shared
+
     @ObservationIgnored private var remoteEnabledObserver: NSObjectProtocol?
     @ObservationIgnored private var remoteRelayURLObserver: NSObjectProtocol?
 
@@ -479,9 +485,9 @@ final class RemoteControlManager {
             return
         }
         if let approvalContext, let uuid = tabRegistry.uuid(for: approvalContext.tabID) {
-            _ = TerminalControlService.shared.clearPersistentNotificationStyleAcrossWindows(tabID: uuid)
+            _ = tabDirectory.clearPersistentNotificationStyleAcrossWindows(tabID: uuid)
         }
-        TerminalControlService.shared.resolveApproval(requestID: response.requestID, approved: response.approved)
+        tabDirectory.resolveApproval(requestID: response.requestID, approved: response.approved)
         sendRemoteActivity()
         let decision: StaticString = response.approved ? "allowed" : "denied"
         logger.info("Remote: approval response for \(response.requestID, privacy: .public): \(decision)")
@@ -988,7 +994,7 @@ final class RemoteControlManager {
     /// model if the shared registry is somehow empty (e.g. very early in
     /// launch before windows register).
     private var allOverlayModels: [OverlayTabsModel] {
-        let models = TerminalControlService.shared.allModels.map(\.model)
+        let models = tabDirectory.allOverlayModels
         if models.isEmpty, let overlayModel {
             return [overlayModel]
         }
@@ -1522,3 +1528,10 @@ final class RemoteControlManager {
         return true
     }
 }
+
+// MARK: - MCPApprovalForwarding
+
+/// `sendApprovalRequest(requestID:payload:)` above witnesses the MCP layer's
+/// approval-forwarding seam, so TerminalControlService can reach the remote
+/// client without dereferencing this singleton.
+extension RemoteControlManager: MCPApprovalForwarding {}

@@ -15,14 +15,10 @@ import Chau7Core
 final class TerminalControlService {
     static let shared = TerminalControlService()
 
-    /// Weak wrapper with a stable ID so window_id doesn't shift when models deallocate.
-    private struct WeakModel {
-        let windowID: Int
-        weak var model: OverlayTabsModel?
-    }
-
-    private var registeredModels: [WeakModel] = []
-    private var nextWindowID = 0
+    /// Window/model registration state. Owned here because the MCP service is
+    /// the registration funnel (AppDelegate registers every new window through
+    /// it); the Remote layer consumes it via `TabDirectoryProviding`.
+    let registry = WindowModelRegistry()
     private var mcpTabIDs = MCPTabIDAllocator()
     private var routingIndex = TabRoutingIndex(records: [])
     private var routingIndexNeedsRebuild = true
@@ -62,15 +58,16 @@ final class TerminalControlService {
     private var pendingApprovalDetails: [String: [String: Any]] = [:]
     private let approvalLock = NSLock()
 
+    /// Forwards command-approval requests to the remote (iOS) client. Wired at
+    /// the composition root (Chau7App.init) so the MCP layer depends on an
+    /// abstraction instead of dereferencing RemoteControlManager.shared.
+    /// Nil (tests, pre-composition) skips remote forwarding.
+    var approvalForwarder: MCPApprovalForwarding?
+
     /// Register an overlay model. Call from AppDelegate for every new window.
     func register(_ model: OverlayTabsModel) {
         // Already registered? Skip.
-        if registeredModels.contains(where: { $0.model === model }) { return }
-        // Prune dead references
-        registeredModels.removeAll { $0.model == nil }
-        let id = nextWindowID
-        nextWindowID += 1
-        registeredModels.append(WeakModel(windowID: id, model: model))
+        guard registry.register(model) else { return }
         invalidateRoutingIndex(reason: "register_model")
         // A new window's initial tabs are populated in the model's initializer,
         // before this call — so the model's didSet never posted a change for
@@ -82,22 +79,19 @@ final class TerminalControlService {
 
     /// Unregister when a window closes. Optional — dead refs are pruned lazily.
     func unregister(_ model: OverlayTabsModel) {
-        registeredModels.removeAll { $0.model == nil || $0.model === model }
+        registry.unregister(model)
         invalidateRoutingIndex(reason: "unregister_model")
     }
 
     /// All currently alive (windowID, model) pairs, preserving stable IDs.
     var allModels: [(windowID: Int, model: OverlayTabsModel)] {
-        registeredModels.compactMap { entry in
-            guard let model = entry.model else { return nil }
-            return (entry.windowID, model)
-        }
+        registry.allModels
     }
 
     /// All tabs across all registered windows. Use for cross-window resolution
     /// (e.g., notification routing that must search every window, not just window 0).
     var allTabs: [OverlayTab] {
-        allModels.flatMap { $0.model.tabs }
+        registry.allTabs
     }
 
     func invalidateRoutingIndex(reason _: String) {
@@ -2204,7 +2198,7 @@ final class TerminalControlService {
 
     /// Find the OverlayTabsModel that owns a given tab UUID.
     private func modelForTab(_ uuid: UUID) -> OverlayTabsModel? {
-        allModels.first(where: { $0.model.tabs.contains(where: { $0.id == uuid }) })?.model
+        registry.model(containingTab: uuid)
     }
 
     private func resolveTab(_ tabID: String) -> (OverlayTab, TerminalSessionModel)? {
@@ -2430,7 +2424,7 @@ final class TerminalControlService {
             ]
         )
 
-        // Send approval request to iOS via RemoteControlManager
+        // Send approval request to iOS via the injected forwarder
         let payload = ApprovalRequestPayload(
             requestID: requestID,
             command: command,
@@ -2446,7 +2440,7 @@ final class TerminalControlService {
             sessionID: nil
         ).withComposedPushText()
         onMainActor {
-            RemoteControlManager.shared.sendApprovalRequest(requestID: requestID, payload: payload)
+            self.approvalForwarder?.sendApprovalRequest(requestID: requestID, payload: payload)
         }
 
         // Show local alert with three options
@@ -2574,5 +2568,16 @@ final class TerminalControlService {
             return "{}"
         }
         return str
+    }
+}
+
+// MARK: - TabDirectoryProviding
+
+/// The Remote layer's view of the MCP side: registered window models plus the
+/// two approval hooks it drives. `clearPersistentNotificationStyleAcrossWindows`
+/// and `resolveApproval` are witnessed by the existing methods above.
+extension TerminalControlService: TabDirectoryProviding {
+    var allOverlayModels: [OverlayTabsModel] {
+        registry.allModels.map(\.model)
     }
 }

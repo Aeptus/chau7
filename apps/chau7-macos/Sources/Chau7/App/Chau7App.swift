@@ -57,6 +57,11 @@ struct Chau7App: App {
         NSApplication.shared.setActivationPolicy(policy)
         appDelegate.configureModels(model: model, overlayModel: overlayModel)
         RemoteControlManager.shared.configure(overlayModel: overlayModel)
+        // Break the Remote↔MCP singleton cycle at the composition root: each
+        // side reaches the other through an injected seam instead of
+        // dereferencing the other's singleton.
+        RemoteControlManager.shared.tabDirectory = TerminalControlService.shared
+        TerminalControlService.shared.approvalForwarder = RemoteControlManager.shared
     }
 
     private static func handleCLIIfNeeded() -> Bool {
