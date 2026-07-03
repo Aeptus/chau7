@@ -54,8 +54,12 @@ final class SpineJournalStore {
     }
 
     deinit {
-        queue.sync {
-            if let db = self.db {
+        // Close after in-flight writes drain, without deinit blocking on the
+        // queue — `queue.sync` here is a latent deadlock if the last strong
+        // reference is ever released from a task running on `queue` itself.
+        let db = self.db
+        queue.async {
+            if let db {
                 sqlite3_close(db)
             }
         }

@@ -2332,7 +2332,7 @@ final class FeatureSettings {
         // Tab Display (defaults: all visible)
         self.showTabIcons = defaults.object(forKey: Keys.showTabIcons) as? Bool ?? true
         self.showTabPath = defaults.object(forKey: Keys.showTabPath) as? Bool ?? true
-        self.showTabGitIndicator = defaults.object(forKey: Keys.showTabGitIndicator) as? Bool ?? false
+        self.showTabGitIndicator = defaults.object(forKey: Keys.showTabGitIndicator) as? Bool ?? true
         self.showTabCTOIndicator = defaults.object(forKey: Keys.showTabCTOIndicator) as? Bool ?? true
         self.allowTabCTOToggle = defaults.object(forKey: Keys.allowTabCTOToggle) as? Bool ?? true
         self.showTabBroadcastIndicator = defaults.object(forKey: Keys.showTabBroadcastIndicator) as? Bool ?? true
@@ -3184,7 +3184,7 @@ final class FeatureSettings {
 
         // Features
         isAutoTabThemeEnabled = true
-        isCopyOnSelectEnabled = false
+        isCopyOnSelectEnabled = true
         isLineTimestampsEnabled = false
         timestampFormat = "HH:mm:ss"
         isLastCommandBadgeEnabled = true
@@ -3294,7 +3294,7 @@ final class FeatureSettings {
         keybindingPreset = "default"
         customShortcuts = KeyboardShortcut.shortcuts(for: keybindingPreset)
         isShortcutHelperHintEnabled = true
-        isCopyOnSelectEnabled = false
+        isCopyOnSelectEnabled = true
         isCmdClickPathsEnabled = true
         cmdClickOpensInternalEditor = true
         defaultEditor = ""

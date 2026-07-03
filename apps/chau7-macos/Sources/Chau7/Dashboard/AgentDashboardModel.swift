@@ -213,6 +213,7 @@ final class AgentDashboardModel: Identifiable {
         let activeIDs = Set(matching.map(\.id))
         fileTrackers = fileTrackers.filter { activeIDs.contains($0.key) }
         journalCursors = journalCursors.filter { activeIDs.contains($0.key) }
+        sessionCosts = sessionCosts.filter { activeIDs.contains($0.key) }
 
         // Adaptive poll interval: fast when agents are active, slow when idle
         let desiredInterval: TimeInterval

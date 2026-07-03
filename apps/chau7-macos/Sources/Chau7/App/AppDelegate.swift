@@ -59,8 +59,6 @@ private final class OverlayBlurView: NSVisualEffectView {
     private var didPerformInitialSetup = false
     private var didStartDeferredStartupWork = false
     private var didCompleteStartupRestore = false
-    private var preparedStartupWindowNumbers: Set<Int> = []
-    private var revealedStartupWindowNumbers: Set<Int> = []
     private var deferredRestoreSchedulerWorkItem: DispatchWorkItem?
     private var deferredRestoreRoundRobinIndex = 0
     private var lastOverlayLifecycleLogAt: CFAbsoluteTime = 0
@@ -241,8 +239,6 @@ private final class OverlayBlurView: NSVisualEffectView {
         didPerformInitialSetup = true
         didStartDeferredStartupWork = false
         didCompleteStartupRestore = false
-        preparedStartupWindowNumbers.removeAll()
-        revealedStartupWindowNumbers.removeAll()
 
         model.bootstrap()
         beginLatencyCriticalScope(reason: "startup-restore", timeout: 90)
@@ -400,7 +396,6 @@ private final class OverlayBlurView: NSVisualEffectView {
         Self.logRSSSample("startup_restore_ready windows=\(overlayHosts.count) pendingDeferred=\(pendingDeferredTabs)")
         let finishPresentation = { [weak self] in
             guard let self else { return }
-            revealPreparedStartupOverlayWindows(reason: "startup_ready")
             // Kick off the background-tab restore scheduler so non-selected
             // tabs hydrate their deferred payload (scrollback replay,
             // aiResumeCommand prefill, agentLaunchCommand / agentStartedAt,
@@ -2545,85 +2540,6 @@ private final class OverlayBlurView: NSVisualEffectView {
         logOverlayWindowLifecycle(reason: "showOverlayWindow-\(reason)", window: host.window)
         logOverlayDiagnostics(reason: reason, window: host.window)
         Log.info("Overlay window shown (\(reason)).")
-    }
-
-    private func prepareStartupOverlayWindow(_ host: OverlayHost, reason: String) {
-        let windowNumber = host.window.windowNumber
-        Log.info(
-            "prepareStartupOverlayWindow: begin reason=\(reason) windowNumber=\(windowNumber) selectedTab=\(host.model.selectedTabID)"
-        )
-        host.model.usesStartupLoadingCover = false
-        host.model.noteTabBarVisibilityChanged(isVisible: true)
-        if preparedStartupWindowNumbers.insert(windowNumber).inserted {
-            host.window.alphaValue = 0
-            host.window.ignoresMouseEvents = true
-            host.window.orderFront(nil)
-        }
-        StartupRestoreCoordinator.shared.noteWindowPrepared(
-            windowNumber: windowNumber,
-            selectedTabID: host.model.selectedTabID
-        )
-        NSApp.activate(ignoringOtherApps: true)
-        host.model.requestSelectedTabAuthoritativeReveal(reason: "startup_prepare")
-        logOverlayWindowLifecycle(reason: "prepareStartupOverlayWindow-\(reason)", window: host.window)
-        logOverlayDiagnostics(reason: "prepare-\(reason)", window: host.window)
-    }
-
-    private func revealPreparedStartupOverlayWindows(reason: String) {
-        for host in overlayHosts {
-            revealPreparedStartupOverlayWindow(
-                host,
-                reason: reason,
-                recordSelectedLiveFrame: false
-            )
-        }
-        // Ensure menu bar is anchored after splash dismissal and real window reveal.
-        NSApp.activate(ignoringOtherApps: true)
-    }
-
-    private func revealPreparedStartupOverlayWindow(
-        for tabsModel: OverlayTabsModel,
-        reason: String,
-        recordSelectedLiveFrame: Bool
-    ) {
-        guard let host = overlayHosts.first(where: { $0.model === tabsModel }) else { return }
-        revealPreparedStartupOverlayWindow(
-            host,
-            reason: reason,
-            recordSelectedLiveFrame: recordSelectedLiveFrame
-        )
-    }
-
-    private func revealPreparedStartupOverlayWindow(
-        _ host: OverlayHost,
-        reason: String,
-        recordSelectedLiveFrame: Bool
-    ) {
-        let windowNumber = host.window.windowNumber
-        guard preparedStartupWindowNumbers.contains(windowNumber) else { return }
-        guard revealedStartupWindowNumbers.insert(windowNumber).inserted else { return }
-
-        host.model.usesStartupLoadingCover = false
-        host.window.alphaValue = 1
-        host.window.ignoresMouseEvents = false
-        host.window.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
-        StartupRestoreCoordinator.shared.noteWindowVisible(
-            windowNumber: windowNumber,
-            selectedTabID: host.model.selectedTabID
-        )
-        if recordSelectedLiveFrame {
-            StartupRestoreCoordinator.shared.noteSelectedTabLiveFrame(
-                windowNumber: windowNumber,
-                selectedTabID: host.model.selectedTabID,
-                reason: reason
-            )
-        }
-        host.model.focusSelected()
-        completeStartupRestoreIfReady(reason: "window_surface_ready")
-        logOverlayWindowLifecycle(reason: "revealStartupOverlayWindow-\(reason)", window: host.window)
-        logOverlayDiagnostics(reason: "reveal-\(reason)", window: host.window)
-        Log.info("Startup overlay window revealed (\(reason)).")
     }
 
     private func invalidateOverlayRenderLifecycle(for window: NSWindow, reason: String) {

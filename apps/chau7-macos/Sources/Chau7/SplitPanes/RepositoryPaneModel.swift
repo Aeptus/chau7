@@ -251,6 +251,28 @@ final class RepositoryPaneModel: Identifiable {
     func refreshAll() {
         guard let dir = prepareLiveGitAccess(actionDescription: "load live Git data") else { return }
         let limit = history.commitLogLimit // capture before dispatch
+        // Capture command blocks up front (main-owned state) so the
+        // background pipeline never has to sync back onto main mid-flight.
+        let capturedCommandBlocks: [CommandBlock]
+        if let tabID {
+            // CommandBlockManager is @MainActor; the old code paid this same
+            // main.sync from INSIDE the background pipeline, which stalled
+            // the whole refresh whenever main was busy. At entry it is a
+            // bounded, upfront hop (no-op cost when already on main).
+            if Thread.isMainThread {
+                capturedCommandBlocks = MainActor.assumeIsolated {
+                    CommandBlockManager.shared.blocksForTab(tabID.uuidString)
+                }
+            } else {
+                capturedCommandBlocks = DispatchQueue.main.sync {
+                    MainActor.assumeIsolated {
+                        CommandBlockManager.shared.blocksForTab(tabID.uuidString)
+                    }
+                }
+            }
+        } else {
+            capturedCommandBlocks = []
+        }
         DispatchQueue.main.async { [weak self] in
             self?.isLoading = true
             self?.lastError = nil
@@ -304,10 +326,7 @@ final class RepositoryPaneModel: Identifiable {
                 if let session {
                     hasSession = true
                     sessionTracker.gitRoot = dir
-                    let commandBlocks = DispatchQueue.main.sync {
-                        CommandBlockManager.shared.blocksForTab(tabID.uuidString)
-                    }
-                    sessionTracker.update(from: session.journal, commandBlocks: commandBlocks)
+                    sessionTracker.update(from: session.journal, commandBlocks: capturedCommandBlocks)
                     sessionFiles = sessionTracker.touchedFiles
                     turnFiles = sessionTracker.currentTurnFiles
                     fileActions = sessionTracker.fileActions
@@ -608,31 +627,39 @@ final class RepositoryPaneModel: Identifiable {
     }
 
     func stashPop(index: Int) {
-        // Stash indices are positional — verify the stash still exists at the expected index
-        // by refreshing stashes first, then operating.
-        guard let dir = prepareLiveGitAccess(actionDescription: "pop a stash") else { return }
-        let freshList = gitRunner(["stash", "list"], dir)
-        let freshStashes = Self.parseStashList(freshList)
-        guard index < freshStashes.count else {
-            lastError = "Stash @{\(index)} no longer exists."
-            return
-        }
-        runWriteOp(args: ["stash", "pop", "stash@{\(index)}"], label: "Popping stash...") { [weak self] in
+        // Stash indices are positional — verify the stash still exists at the
+        // expected index first. The check runs a git subprocess, so it goes
+        // to loadQueue instead of blocking the caller (main) thread.
+        runStashOpAfterFreshIndexCheck(index: index, args: ["stash", "pop", "stash@{\(index)}"], label: "Popping stash...", actionDescription: "pop a stash") { [weak self] in
             self?.refreshStatus()
             self?.refreshStashes()
         }
     }
 
     func stashDrop(index: Int) {
-        guard let dir = prepareLiveGitAccess(actionDescription: "drop a stash") else { return }
-        let freshList = gitRunner(["stash", "list"], dir)
-        let freshStashes = Self.parseStashList(freshList)
-        guard index < freshStashes.count else {
-            lastError = "Stash @{\(index)} no longer exists."
-            return
-        }
-        runWriteOp(args: ["stash", "drop", "stash@{\(index)}"], label: "Dropping stash...") { [weak self] in
+        runStashOpAfterFreshIndexCheck(index: index, args: ["stash", "drop", "stash@{\(index)}"], label: "Dropping stash...", actionDescription: "drop a stash") { [weak self] in
             self?.refreshStashes()
+        }
+    }
+
+    private func runStashOpAfterFreshIndexCheck(
+        index: Int,
+        args: [String],
+        label: String,
+        actionDescription: String,
+        onSuccess: @escaping () -> Void
+    ) {
+        guard let dir = prepareLiveGitAccess(actionDescription: actionDescription) else { return }
+        loadQueue.async { [weak self] in
+            guard let self else { return }
+            let freshStashes = Self.parseStashList(gitRunner(["stash", "list"], dir))
+            DispatchQueue.main.async {
+                guard index < freshStashes.count else {
+                    self.lastError = "Stash @{\(index)} no longer exists."
+                    return
+                }
+                self.runWriteOp(args: args, label: label, onSuccess: onSuccess)
+            }
         }
     }
 

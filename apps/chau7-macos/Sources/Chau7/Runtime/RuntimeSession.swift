@@ -609,18 +609,31 @@ final class RuntimeSession: @unchecked Sendable {
     private static let approvalTimeoutResetWindowSeconds: TimeInterval = 300
 
     private func scheduleApprovalTimeout() {
-        approvalTimeoutWork?.cancel()
         let work = DispatchWorkItem { [weak self] in
             guard let self else { return }
             handleApprovalTimeout()
         }
+        // `approvalTimeoutWork` is touched from the event path (here), the
+        // main queue (timeout firing), and MCP threads (resolveApproval) —
+        // it shares the instance lock like every other mutable field, per
+        // the type's @unchecked Sendable contract. DispatchWorkItem.cancel()
+        // is non-blocking, so calling it under the lock is safe.
+        lock.lock()
+        approvalTimeoutWork?.cancel()
         approvalTimeoutWork = work
+        lock.unlock()
         DispatchQueue.main.asyncAfter(deadline: .now() + Self.approvalTimeoutSeconds, execute: work)
     }
 
-    func handleApprovalTimeout() {
+    private func cancelApprovalTimeoutLocked() {
+        lock.lock()
         approvalTimeoutWork?.cancel()
         approvalTimeoutWork = nil
+        lock.unlock()
+    }
+
+    func handleApprovalTimeout() {
+        cancelApprovalTimeoutLocked()
 
         let currentState = state
         guard currentState == .awaitingApproval else {
@@ -672,8 +685,7 @@ final class RuntimeSession: @unchecked Sendable {
     /// Resolve a pending approval. Transitions back to `.busy`.
     @discardableResult
     func resolveApproval(id approvalID: String, approved: Bool, resolvedBy: String) -> Bool {
-        approvalTimeoutWork?.cancel()
-        approvalTimeoutWork = nil
+        cancelApprovalTimeoutLocked()
         lock.lock()
         let approval = _pendingApproval
         guard approval?.id == approvalID else {

@@ -640,9 +640,14 @@ private final class TabBarHostingView: NSHostingView<ToolbarTabBarView> {
         guard FeatureSettings.shared.groupIdleTabs else { return [] }
         let threshold = FeatureSettings.shared.idleTabThresholdSeconds
         let now = Date()
+        // Must mirror `idleTabs` exactly (including the suspended check) —
+        // this fallback feeds right-click hit-testing, and a tab moved to
+        // idle via suspension previously disagreed with what the bar drew.
+        let suspended = model.suspendedTabIDs
         return Set(model.tabs.compactMap { tab in
+            guard tab.id != model.selectedTabID else { return nil }
+            if suspended.contains(tab.id) { return tab.id }
             guard let session = tab.displaySession ?? tab.session,
-                  tab.id != model.selectedTabID,
                   now.timeIntervalSince(session.lastActivityDate) > threshold else {
                 return nil
             }
