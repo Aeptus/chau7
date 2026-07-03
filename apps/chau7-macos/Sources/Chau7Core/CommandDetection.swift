@@ -162,25 +162,7 @@ public enum CommandDetection {
     public static func detectApp(from commandLine: String) -> String? {
         let tokens = tokenize(commandLine)
         guard let token = extractCommandToken(from: tokens) else { return nil }
-        let normalized = normalizeToken(token)
-
-        // Direct match
-        if let match = appNameMap[normalized] {
-            return match
-        }
-
-        // Special case: gh copilot
-        if normalized == "gh" {
-            if findSubcommand(tokens: tokens, after: "gh", looking: ["copilot"]) != nil {
-                return "Copilot"
-            }
-        }
-
-        if let aiApp = detectJavaScriptPackageRunnerTool(tokens: tokens, launcher: normalized) {
-            return aiApp
-        }
-
-        return nil
+        return detectApp(tokens: tokens, commandToken: token)
     }
 
     /// Detects an AI app name from a command line only when the launcher command
@@ -197,13 +179,19 @@ public enum CommandDetection {
         guard commandAppearsExecutable(token, currentDirectory: currentDirectory, searchPath: searchPath) else {
             return nil
         }
+        return detectApp(tokens: tokens, commandToken: token)
+    }
 
-        let normalized = normalizeToken(token)
+    /// Shared match core for the two entry points above (previously
+    /// copy-pasted, differing only by the executability guard).
+    private static func detectApp(tokens: [String], commandToken: String) -> String? {
+        let normalized = normalizeToken(commandToken)
 
         if let match = appNameMap[normalized] {
             return match
         }
 
+        // Special case: gh copilot
         if normalized == "gh" {
             if findSubcommand(tokens: tokens, after: "gh", looking: ["copilot"]) != nil {
                 return "Copilot"

@@ -14,11 +14,6 @@ public struct VisibleTerminalPollingContext: Equatable {
     public var isHidden: Bool
     public var hasVisibleWindow: Bool
     public var isWindowMiniaturized: Bool
-    /// True when the window is fully covered by other windows.
-    /// `NSWindow.isVisible` stays true for occluded windows, so without this
-    /// the selected tab keeps rendering up to ~15fps for pixels nobody sees.
-    public var isWindowOccluded: Bool
-    public var isInteractive: Bool
 
     public init(
         isTerminalStarted: Bool,
@@ -27,9 +22,7 @@ public struct VisibleTerminalPollingContext: Equatable {
         allowsLivePresentation: Bool,
         isHidden: Bool,
         hasVisibleWindow: Bool,
-        isWindowMiniaturized: Bool,
-        isWindowOccluded: Bool = false,
-        isInteractive: Bool
+        isWindowMiniaturized: Bool
     ) {
         self.isTerminalStarted = isTerminalStarted
         self.notifyUpdateChanges = notifyUpdateChanges
@@ -38,8 +31,6 @@ public struct VisibleTerminalPollingContext: Equatable {
         self.isHidden = isHidden
         self.hasVisibleWindow = hasVisibleWindow
         self.isWindowMiniaturized = isWindowMiniaturized
-        self.isWindowOccluded = isWindowOccluded
-        self.isInteractive = isInteractive
     }
 }
 
@@ -58,16 +49,15 @@ public enum VisibleTerminalPollingPolicy {
               !context.isWindowMiniaturized else {
             return .backgroundDrain
         }
-        // Occlusion deliberately does NOT demote a live tab. macOS flaps
+        // Occlusion is deliberately NOT an input to this policy. macOS flaps
         // didChangeOcclusionState spuriously on multi-display fullscreen
         // setups (observed: a focused, fully visible window receiving
-        // "occluded" every few seconds), and every false demotion threw the
+        // "occluded" every few seconds), and demoting on it threw the
         // selected tab onto the shared background drain, whose adaptive
         // stride batches output into 1–8 s walls of text. EventDrain is
         // already zero-CPU when idle and macOS skips presenting occluded
-        // pixels, so the residual cost for a genuinely covered window is
-        // grid-sync work bounded by actual output — a fair trade for never
-        // freezing the tab the user is looking at.
+        // pixels, so a genuinely covered window costs only output-bounded
+        // grid syncs.
         // Any visible window's selected tab (allowsLivePresentation == true)
         // gets event-driven polling. Pre-fix, this was gated on
         // `isInteractive`, which is only true for the key/main window — so

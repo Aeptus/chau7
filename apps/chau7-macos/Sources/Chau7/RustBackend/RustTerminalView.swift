@@ -3369,34 +3369,15 @@ final class RustTerminalView: NSView {
     }
 
     func desiredPollingMode() -> VisibleTerminalPollingMode {
-        let hasVisibleWindow: Bool
-        let isWindowMiniaturized: Bool
-        let isWindowOccluded: Bool
-        if let window {
-            hasVisibleWindow = window.isVisible
-            isWindowMiniaturized = window.isMiniaturized
-            // isVisible stays true for fully covered windows; occlusion is
-            // the signal that nobody can see the pixels. The occlusion-state
-            // window notification re-runs this policy on change, and the
-            // re-expose path forces a grid sync + immediate poll.
-            isWindowOccluded = !window.occlusionState.contains(.visible)
-        } else {
-            hasVisibleWindow = false
-            isWindowMiniaturized = false
-            isWindowOccluded = false
-        }
-
-        return VisibleTerminalPollingPolicy.mode(
+        VisibleTerminalPollingPolicy.mode(
             for: VisibleTerminalPollingContext(
                 isTerminalStarted: isTerminalStarted,
                 notifyUpdateChanges: notifyUpdateChanges,
                 isShellBootstrapPending: isShellBootstrapPending,
                 allowsLivePresentation: currentRenderPhase.allowsLivePresentation,
                 isHidden: isHidden,
-                hasVisibleWindow: hasVisibleWindow,
-                isWindowMiniaturized: isWindowMiniaturized,
-                isWindowOccluded: isWindowOccluded,
-                isInteractive: isInteractive
+                hasVisibleWindow: window?.isVisible ?? false,
+                isWindowMiniaturized: window?.isMiniaturized ?? false
             )
         )
     }

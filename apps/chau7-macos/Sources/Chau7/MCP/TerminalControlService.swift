@@ -1125,6 +1125,19 @@ final class TerminalControlService {
     }
 
     static func agentOutputLooksInputReady(_ output: String, provider: String? = nil) -> Bool {
+        agentOutputMatches(output, provider: provider, extraNeedles: [])
+    }
+
+    /// Same banner needles as input-ready plus in-flight activity markers.
+    static func agentOutputLooksResponsive(_ output: String, provider: String? = nil) -> Bool {
+        agentOutputMatches(output, provider: provider, extraNeedles: ["thinking", "working..."])
+    }
+
+    private static func agentOutputMatches(
+        _ output: String,
+        provider: String?,
+        extraNeedles: [String]
+    ) -> Bool {
         let lowercased = output.lowercased()
         var needles = [
             "openai codex",
@@ -1133,32 +1146,7 @@ final class TerminalControlService {
             "claude code",
             "google gemini"
         ]
-
-        switch provider?.lowercased() {
-        case let value? where value.contains("codex"):
-            needles.append("gpt-")
-        case let value? where value.contains("claude"):
-            needles.append(contentsOf: ["sonnet", "opus", "haiku"])
-        case let value? where value.contains("gemini"):
-            needles.append(contentsOf: ["google gemini", "gemini cli"])
-        default:
-            break
-        }
-
-        return needles.contains { lowercased.contains($0) }
-    }
-
-    static func agentOutputLooksResponsive(_ output: String, provider: String? = nil) -> Bool {
-        let lowercased = output.lowercased()
-        var needles = [
-            "openai codex",
-            "queued follow-up inputs",
-            "usage limit resets",
-            "claude code",
-            "google gemini",
-            "thinking",
-            "working..."
-        ]
+        needles.append(contentsOf: extraNeedles)
 
         switch provider?.lowercased() {
         case let value? where value.contains("codex"):
@@ -1443,7 +1431,7 @@ final class TerminalControlService {
 
         while DispatchTime.now() < deadline {
             latestResponse = encodedPTYLogOutput(tabID: tabID, lines: lines)
-            guard let json = parseJSONObject(latestResponse),
+            guard let json = decodeJSONObject(latestResponse),
                   json["error"] == nil else {
                 return latestResponse
             }
@@ -1468,14 +1456,6 @@ final class TerminalControlService {
         return latestResponse
     }
 
-    private func parseJSONObject(_ json: String) -> [String: Any]? {
-        guard let data = json.data(using: .utf8),
-              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            return nil
-        }
-        return object
-    }
-
     private func encodedPTYLogOutput(tabID: String, lines: Int) -> String {
         let result: (path: String?, transcriptData: Data?, error: String?) = onMain {
             guard let (_, session) = self.resolveTab(tabID) else {
@@ -1498,24 +1478,31 @@ final class TerminalControlService {
             return encodeAny(["tab_id": outputTabID, "output": "", "lines": 0, "source": "pty_log"])
         }
 
-        let clampedLines = max(1, lines)
-        var outputLines = text.components(separatedBy: "\n")
-        if outputLines.count > clampedLines {
-            outputLines = Array(outputLines.suffix(clampedLines))
-        }
-
-        var output = outputLines.joined(separator: "\n")
-        if output.utf8.count > Self.maxOutputBytes {
-            outputLines = Array(outputLines.suffix(max(1, clampedLines / 2)))
-            output = outputLines.joined(separator: "\n")
-        }
+        let outputLines = Self.trimmedOutputLines(
+            text.components(separatedBy: "\n"),
+            maxLines: max(1, lines)
+        )
 
         return encodeAny([
             "tab_id": outputTabID,
-            "output": output,
+            "output": outputLines.joined(separator: "\n"),
             "lines": outputLines.count,
             "source": "pty_log"
         ])
+    }
+
+    /// Trims to the last `maxLines` lines and re-slices to half if the joined
+    /// output would exceed the wire cap. Shared by the buffer and pty_log
+    /// output paths (previously duplicated with drift risk).
+    private static func trimmedOutputLines(_ lines: [String], maxLines: Int) -> [String] {
+        var outputLines = lines
+        if outputLines.count > maxLines {
+            outputLines = Array(outputLines.suffix(maxLines))
+        }
+        if outputLines.joined(separator: "\n").utf8.count > maxOutputBytes {
+            outputLines = Array(outputLines.suffix(max(1, maxLines / 2)))
+        }
+        return outputLines
     }
 
     private static func normalizedTranscriptText(from data: Data) -> String? {
@@ -1529,29 +1516,19 @@ final class TerminalControlService {
     private func formatBufferOutput(tabID: String, data: Data, lines: Int) -> String {
         let outputTabID = canonicalControlPlaneTabID(tabID)
         let text = String(decoding: data, as: UTF8.self)
-        var outputLines = text.components(separatedBy: "\n")
+        var rawLines = text.components(separatedBy: "\n")
 
         // Strip trailing empty lines (terminal buffer pads below cursor)
-        while let last = outputLines.last,
+        while let last = rawLines.last,
               last.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            outputLines.removeLast()
+            rawLines.removeLast()
         }
 
-        if outputLines.count > lines {
-            outputLines = Array(outputLines.suffix(lines))
-        }
-
-        var output = outputLines.joined(separator: "\n")
-
-        // Cap total size — re-slice and update outputLines so count stays accurate
-        if output.utf8.count > Self.maxOutputBytes {
-            outputLines = Array(outputLines.suffix(max(1, lines / 2)))
-            output = outputLines.joined(separator: "\n")
-        }
+        let outputLines = Self.trimmedOutputLines(rawLines, maxLines: lines)
 
         return encodeAny([
             "tab_id": outputTabID,
-            "output": output,
+            "output": outputLines.joined(separator: "\n"),
             "lines": outputLines.count,
             "source": "buffer"
         ])
@@ -2040,14 +2017,7 @@ final class TerminalControlService {
             result["updated_at"] = DateFormatters.iso8601NoFractional.string(from: updated)
         }
         if !frequentCmds.isEmpty {
-            result["frequent_commands"] = frequentCmds.map { cmd in
-                [
-                    "command": cmd.command,
-                    "count": cmd.count,
-                    "last_used": DateFormatters.iso8601NoFractional.string(from: cmd.lastUsed),
-                    "frecency_score": cmd.frecencyScore
-                ] as [String: Any]
-            }
+            result["frequent_commands"] = frequentCmds.map(Self.frequentCommandPayload)
         }
 
         // Aggregated stats from history.db + runs.db
@@ -2106,15 +2076,16 @@ final class TerminalControlService {
     func repoFrequentCommands(repoPath: String, limit: Int) -> String {
         let cmds = PersistentHistoryStore.shared
             .frequentCommandsForRepo(repoRoot: repoPath, limit: limit)
-        let result = cmds.map { cmd in
-            [
-                "command": cmd.command,
-                "count": cmd.count,
-                "last_used": DateFormatters.iso8601NoFractional.string(from: cmd.lastUsed),
-                "frecency_score": cmd.frecencyScore
-            ] as [String: Any]
-        }
-        return encodeAny(result)
+        return encodeAny(cmds.map(Self.frequentCommandPayload))
+    }
+
+    private static func frequentCommandPayload(_ cmd: FrequentCommand) -> [String: Any] {
+        [
+            "command": cmd.command,
+            "count": cmd.count,
+            "last_used": DateFormatters.iso8601NoFractional.string(from: cmd.lastUsed),
+            "frecency_score": cmd.frecencyScore
+        ]
     }
 
     func repoGetEvents(

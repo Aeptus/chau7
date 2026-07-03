@@ -91,7 +91,7 @@ public final class AIEventNotificationEngine {
     ) -> Outcome {
         let rawObservationNote = sessionReconciler.observeRawEvent(event, now: now)
 
-        switch NotificationIngress.ingest(event) {
+        switch NotificationProviderAdapterRegistry.adapt(event) {
         case .drop(let reason):
             return .dropped(
                 Drop(
@@ -102,7 +102,7 @@ public final class AIEventNotificationEngine {
                 )
             )
 
-        case .accept(let enriched):
+        case .emit(let enriched):
             let reconciliation = sessionReconciler.reconcile(enriched, now: now)
             let delivery: DeliveryDecision
 

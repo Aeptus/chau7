@@ -1,7 +1,7 @@
 import XCTest
 @testable import Chau7Core
 
-final class NotificationIngressTests: XCTestCase {
+final class NotificationAdapterIngressTests: XCTestCase {
     func testIngressAcceptsCanonicalClaudeNotification() {
         let event = AIEvent(
             source: .claudeCode,
@@ -16,8 +16,8 @@ final class NotificationIngressTests: XCTestCase {
             reliability: .authoritative
         )
 
-        let decision = NotificationIngress.ingest(event)
-        guard case .accept(let accepted) = decision else {
+        let decision = NotificationProviderAdapterRegistry.adapt(event)
+        guard case .emit(let accepted) = decision else {
             return XCTFail("Expected ingress acceptance")
         }
 
@@ -36,7 +36,7 @@ final class NotificationIngressTests: XCTestCase {
             reliability: .authoritative
         )
 
-        let decision = NotificationIngress.ingest(event)
+        let decision = NotificationProviderAdapterRegistry.adapt(event)
         guard case .drop(let reason) = decision else {
             return XCTFail("Expected ingress drop")
         }
@@ -54,7 +54,7 @@ final class NotificationIngressTests: XCTestCase {
             reliability: .authoritative
         )
 
-        let decision = NotificationIngress.ingest(event)
+        let decision = NotificationProviderAdapterRegistry.adapt(event)
         guard case .drop(let reason) = decision else {
             return XCTFail("Expected ingress drop")
         }
@@ -74,8 +74,8 @@ final class NotificationIngressTests: XCTestCase {
             reliability: .authoritative
         )
 
-        let decision = NotificationIngress.ingest(event)
-        guard case .accept(let accepted) = decision else {
+        let decision = NotificationProviderAdapterRegistry.adapt(event)
+        guard case .emit(let accepted) = decision else {
             return XCTFail("Expected ingress acceptance")
         }
 
@@ -95,8 +95,8 @@ final class NotificationIngressTests: XCTestCase {
             reliability: .authoritative
         )
 
-        let decision = NotificationIngress.ingest(event)
-        guard case .accept(let accepted) = decision else {
+        let decision = NotificationProviderAdapterRegistry.adapt(event)
+        guard case .emit(let accepted) = decision else {
             return XCTFail("Expected shell ingress acceptance")
         }
 
@@ -114,8 +114,8 @@ final class NotificationIngressTests: XCTestCase {
             reliability: .authoritative
         )
 
-        let decision = NotificationIngress.ingest(event)
-        guard case .accept(let accepted) = decision else {
+        let decision = NotificationProviderAdapterRegistry.adapt(event)
+        guard case .emit(let accepted) = decision else {
             return XCTFail("Expected app ingress acceptance")
         }
 

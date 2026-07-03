@@ -12,22 +12,19 @@ final class VisibleTerminalPollingPolicyTests: XCTestCase {
                     allowsLivePresentation: true,
                     isHidden: false,
                     hasVisibleWindow: true,
-                    isWindowMiniaturized: false,
-                    isInteractive: true
+                    isWindowMiniaturized: false
                 )
             ),
             .eventDrain
         )
     }
 
-    func testOccludedLiveTabStaysOnEventDrain() {
-        // Regression guard: macOS flaps occlusion spuriously on
-        // multi-display fullscreen setups, and demoting the SELECTED tab on
-        // that signal batched its output into 1-8s walls (adaptive
-        // background-drain stride) while the user was actively watching it.
-        // A live tab stays event-driven regardless of occlusion; the drain
-        // is idle-free, so a genuinely covered window costs only
-        // output-bounded grid syncs.
+    func testLiveTabStaysOnEventDrainRegardlessOfOcclusion() {
+        // Regression guard, structural edition: occlusion is no longer even
+        // an input to the policy (macOS flaps it spuriously on multi-display
+        // fullscreen setups, and demoting on it batched the selected tab's
+        // output into 1-8s walls). A live visible tab is event-driven, full
+        // stop.
         XCTAssertEqual(
             VisibleTerminalPollingPolicy.mode(
                 for: VisibleTerminalPollingContext(
@@ -37,17 +34,15 @@ final class VisibleTerminalPollingPolicyTests: XCTestCase {
                     allowsLivePresentation: true,
                     isHidden: false,
                     hasVisibleWindow: true,
-                    isWindowMiniaturized: false,
-                    isWindowOccluded: true,
-                    isInteractive: true
+                    isWindowMiniaturized: false
                 )
             ),
             .eventDrain
         )
     }
 
-    func testShellBootstrapOverridesOcclusion() {
-        // First-output detection must stay fast even if the window is covered.
+    func testShellBootstrapForcesEventDrain() {
+        // First-output detection must stay fast even mid-bootstrap.
         XCTAssertEqual(
             VisibleTerminalPollingPolicy.mode(
                 for: VisibleTerminalPollingContext(
@@ -57,9 +52,7 @@ final class VisibleTerminalPollingPolicyTests: XCTestCase {
                     allowsLivePresentation: true,
                     isHidden: false,
                     hasVisibleWindow: true,
-                    isWindowMiniaturized: false,
-                    isWindowOccluded: true,
-                    isInteractive: true
+                    isWindowMiniaturized: false
                 )
             ),
             .eventDrain
@@ -82,8 +75,7 @@ final class VisibleTerminalPollingPolicyTests: XCTestCase {
                     allowsLivePresentation: true,
                     isHidden: false,
                     hasVisibleWindow: true,
-                    isWindowMiniaturized: false,
-                    isInteractive: false
+                    isWindowMiniaturized: false
                 )
             ),
             .eventDrain
@@ -100,8 +92,7 @@ final class VisibleTerminalPollingPolicyTests: XCTestCase {
                     allowsLivePresentation: true,
                     isHidden: false,
                     hasVisibleWindow: true,
-                    isWindowMiniaturized: false,
-                    isInteractive: false
+                    isWindowMiniaturized: false
                 )
             ),
             .eventDrain
@@ -118,8 +109,7 @@ final class VisibleTerminalPollingPolicyTests: XCTestCase {
                     allowsLivePresentation: true,
                     isHidden: true,
                     hasVisibleWindow: true,
-                    isWindowMiniaturized: false,
-                    isInteractive: true
+                    isWindowMiniaturized: false
                 )
             ),
             .backgroundDrain
@@ -133,8 +123,7 @@ final class VisibleTerminalPollingPolicyTests: XCTestCase {
                     allowsLivePresentation: true,
                     isHidden: false,
                     hasVisibleWindow: true,
-                    isWindowMiniaturized: false,
-                    isInteractive: true
+                    isWindowMiniaturized: false
                 )
             ),
             .backgroundDrain
