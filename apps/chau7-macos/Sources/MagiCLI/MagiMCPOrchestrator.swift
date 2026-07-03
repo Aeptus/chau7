@@ -814,13 +814,19 @@ struct MagiMCPOrchestrator {
                 reason: agent["error"] as? String ?? "agent_launch returned \(agent)"
             )
         }
-        guard (agent["prompt"] as? String) == "sent" else {
+        let promptAccepted = AgentPromptInjectionPolicy.accepted(
+            status: promptStatus,
+            inputVisible: promptInputVisible,
+            submitted: promptSubmitted,
+            running: agentRunning
+        )
+        guard promptAccepted else {
             throw MagiMCPOrchestratorError.launchFailed(
                 member: member.persona.displayName,
                 reason: "provider launched in \(tabID), but Chau7 did not detect an attached agent for prompt injection"
             )
         }
-        guard promptInputVisible else {
+        guard promptInputVisible || (promptSubmitted && agentRunning) else {
             throw MagiMCPOrchestratorError.launchFailed(
                 member: member.persona.displayName,
                 reason: "provider launched in \(tabID), but MAGI did not observe the prompt text in the tab before submission"

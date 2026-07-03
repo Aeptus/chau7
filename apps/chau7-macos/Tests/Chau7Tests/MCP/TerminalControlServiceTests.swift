@@ -688,6 +688,29 @@ final class TerminalControlServiceTests: XCTestCase {
         XCTAssertEqual(TerminalControlService.agentPromptInjectionTimeoutMs(readyTimeoutMs: -1), 0)
     }
 
+    func testAgentPromptInjectionPolicyAcceptsRunningSubmittedUnverifiedPrompt() {
+        XCTAssertTrue(AgentPromptInjectionPolicy.accepted(
+            status: "sent_unverified",
+            inputVisible: false,
+            submitted: true,
+            running: true
+        ))
+
+        XCTAssertFalse(AgentPromptInjectionPolicy.accepted(
+            status: "sent_unverified",
+            inputVisible: false,
+            submitted: true,
+            running: false
+        ))
+
+        XCTAssertFalse(AgentPromptInjectionPolicy.accepted(
+            status: "input_not_visible",
+            inputVisible: false,
+            submitted: true,
+            running: true
+        ))
+    }
+
     func testAgentLaunchExitedBeforePromptDetectsReturnedShellWithStaleProvider() {
         XCTAssertTrue(TerminalControlService.agentLaunchExitedBeforePrompt([
             "active_app": "Codex",

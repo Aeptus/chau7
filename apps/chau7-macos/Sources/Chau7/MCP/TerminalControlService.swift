@@ -41,7 +41,12 @@ final class TerminalControlService {
         var error: String?
 
         var accepted: Bool {
-            status == "sent" || status == "skipped"
+            AgentPromptInjectionPolicy.accepted(
+                status: status,
+                inputVisible: inputVisible,
+                submitted: submitted,
+                running: running
+            )
         }
     }
 
@@ -937,6 +942,16 @@ final class TerminalControlService {
                 tabID: tabID,
                 timeoutMs: min(5000, max(1500, timeoutMs / 4))
             )
+
+            if !inputVisible, running {
+                return AgentPromptInjectionResult(
+                    status: "sent_unverified",
+                    inputVisible: false,
+                    submitted: true,
+                    running: true,
+                    error: "prompt was submitted and the agent is running, but prompt echo was not observed before submit"
+                )
+            }
 
             if !inputVisible {
                 return AgentPromptInjectionResult(
