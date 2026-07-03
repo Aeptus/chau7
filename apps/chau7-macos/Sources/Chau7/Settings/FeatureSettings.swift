@@ -816,22 +816,28 @@ final class FeatureSettings {
         appearanceStore.currentColorScheme
     }
 
-    // MARK: - Shell Settings (NEW)
+    // MARK: - Shell Settings (forwarded to ShellSettingsStore)
+
+    @ObservationIgnored private let shellStore = ShellSettingsStore()
 
     var shellType: ShellType {
-        didSet { UserDefaults.standard.set(shellType.rawValue, forKey: Keys.shellType) }
+        get { shellStore.shellType }
+        set { shellStore.shellType = newValue }
     }
 
     var customShellPath: String {
-        didSet { UserDefaults.standard.set(customShellPath, forKey: Keys.customShellPath) }
+        get { shellStore.customShellPath }
+        set { shellStore.customShellPath = newValue }
     }
 
     var startupCommand: String {
-        didSet { UserDefaults.standard.set(startupCommand, forKey: Keys.startupCommand) }
+        get { shellStore.startupCommand }
+        set { shellStore.startupCommand = newValue }
     }
 
     var isLsColorsEnabled: Bool {
-        didSet { UserDefaults.standard.set(isLsColorsEnabled, forKey: Keys.lsColorsEnabled) }
+        get { shellStore.isLsColorsEnabled }
+        set { shellStore.isLsColorsEnabled = newValue }
     }
 
     // MARK: - Keyboard Shortcuts (forwarded to ShortcutSettingsStore)
@@ -2073,13 +2079,9 @@ final class FeatureSettings {
     // MARK: - Keys
 
     private enum Keys {
-        // Font (NEW)
-        // Color Scheme (NEW)
-        // Shell (NEW)
-        static let shellType = "terminal.shellType"
-        static let customShellPath = "terminal.customShellPath"
-        static let startupCommand = "terminal.startupCommand"
-        static let lsColorsEnabled = "terminal.lsColorsEnabled"
+        /// Font (NEW)
+        /// Color Scheme (NEW)
+        /// Shell (NEW)
         /// Keyboard Shortcuts (NEW)
         static let autoSubmitRestorePrefill = "restore.autoSubmitPrefill"
         // Hover Card Sections
@@ -2261,17 +2263,6 @@ final class FeatureSettings {
             }
             defaults.set(true, forKey: "cto.migrated.v1")
         }
-
-        // Shell Settings (NEW)
-        if let shellRaw = defaults.string(forKey: Keys.shellType),
-           let shell = ShellType(rawValue: shellRaw) {
-            self.shellType = shell
-        } else {
-            self.shellType = .system
-        }
-        self.customShellPath = defaults.string(forKey: Keys.customShellPath) ?? ""
-        self.startupCommand = defaults.string(forKey: Keys.startupCommand) ?? ""
-        self.isLsColorsEnabled = defaults.object(forKey: Keys.lsColorsEnabled) as? Bool ?? true
 
         // Keyboard shortcuts live in ShortcutSettingsStore.
         self.autoSubmitRestorePrefill = defaults.object(forKey: Keys.autoSubmitRestorePrefill) as? Bool ?? false
