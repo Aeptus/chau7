@@ -18,6 +18,10 @@ final class HistoryIdleMonitor {
     /// Prevents re-firing idle callbacks on heartbeat/status entries.
     private var idleNotified: Set<String> = []
     private var closedSessions = BoundedSet<String>(maxCount: AppConstants.Limits.maxClosedSessions)
+    /// Set by `stop()` so work enqueued before the stop (a tailer entry, a
+    /// fired timer) cannot resurrect session state or fire callbacks after
+    /// `stop()` returns. Only read/written on `queue`.
+    private var isStopped = false
     private let queue = DispatchQueue(label: "com.chau7.historyIdle")
     private let minimumCheckInterval: TimeInterval = 1.0
 
@@ -48,6 +52,7 @@ final class HistoryIdleMonitor {
         tailer.start()
         self.tailer = tailer
         queue.async {
+            self.isStopped = false
             self.scheduleNextCheck(now: Date())
         }
     }
@@ -55,18 +60,28 @@ final class HistoryIdleMonitor {
     func stop() {
         tailer?.stop()
         tailer = nil
-        timer?.cancel()
-        timer = nil
-        lastSeen.removeAll()
-        lastNotified.removeAll()
-        lastEntry.removeAll()
-        idleNotified.removeAll()
-        closedSessions.removeAll(keepingCapacity: false)
+        // The timer and session maps are owned by `queue` (record/checkIdle/
+        // scheduleNextCheck all mutate them there); stop() must join the
+        // queue rather than mutate from the caller's thread — a concurrent
+        // checkIdle() against removeAll corrupts the dictionaries (observed
+        // as a SIGABRT in swift_deallocClassInstance during removeAll). The
+        // sync hop is deadlock-free: callbacks only ever main.async back.
+        queue.sync {
+            isStopped = true
+            timer?.cancel()
+            timer = nil
+            lastSeen.removeAll()
+            lastNotified.removeAll()
+            lastEntry.removeAll()
+            idleNotified.removeAll()
+            closedSessions.removeAll(keepingCapacity: false)
+        }
         Log.trace("Idle monitor stop. path=\(fileURL.path)")
     }
 
     private func record(entry: HistoryEntry) {
         queue.async {
+            guard !self.isStopped else { return }
             let now = Date()
             if entry.isExit {
                 self.closedSessions.insert(entry.sessionId)
@@ -102,6 +117,7 @@ final class HistoryIdleMonitor {
     }
 
     private func checkIdle() {
+        guard !isStopped else { return }
         let now = Date()
         let idleSeconds = max(1.0, idleSecondsProvider())
         let staleSeconds = max(idleSeconds + 1.0, staleSecondsProvider())
