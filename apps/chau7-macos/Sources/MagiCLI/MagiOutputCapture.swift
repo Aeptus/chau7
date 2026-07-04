@@ -388,6 +388,7 @@ extension MagiMCPOrchestrator {
                     state.lastError,
                     capture: capture,
                     output: state.lastOutput,
+                    markers: state.markers,
                     elapsed: Date().timeIntervalSince(state.startedAt)
                 ) {
                     let parseError = state.lastError?.localizedDescription ?? "structured block did not parse after stable output"
@@ -547,6 +548,7 @@ extension MagiMCPOrchestrator {
             state.lastError,
             capture: capture,
             output: output,
+            markers: state.markers,
             elapsed: Date().timeIntervalSince(state.startedAt)
         ) {
             recordCapture(rawTranscript(
@@ -736,12 +738,28 @@ extension MagiMCPOrchestrator {
         _ error: Error?,
         capture: MagiPolledOutput,
         output: String,
+        markers: MagiProtocolMarkers? = nil,
         elapsed: TimeInterval
     ) -> Bool {
         guard error != nil else { return false }
         guard !output.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return false }
         guard elapsed >= idleRepairGraceSeconds else { return false }
+        if let markers, shouldTreatAsEchoedPromptMarkers(output, markers: markers) {
+            return false
+        }
         return capture.tabStatus.map(MagiMCPEventParsing.tabStatusIsIdleForRepair) ?? false
+    }
+
+    func shouldTreatAsEchoedPromptMarkers(_ output: String, markers: MagiProtocolMarkers) -> Bool {
+        guard MagiTranscriptParser.blockCandidates(in: output, markers: markers).isEmpty else {
+            return false
+        }
+        let markerLines = output
+            .components(separatedBy: .newlines)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { $0.contains(markers.begin) || $0.contains(markers.end) }
+        guard !markerLines.isEmpty else { return false }
+        return markerLines.allSatisfy { $0 != markers.begin && $0 != markers.end }
     }
 
     func runtimeEventSinceMillis(startedAt: Date) -> Int64 {

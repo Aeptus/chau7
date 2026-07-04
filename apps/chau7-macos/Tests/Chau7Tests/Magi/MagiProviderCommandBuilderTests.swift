@@ -53,6 +53,43 @@ final class MagiProviderCommandBuilderTests: XCTestCase {
         XCTAssertNil(command.resolvedReasoning)
     }
 
+    func testProviderModelClassMatrix() {
+        XCTAssertEqual(
+            MagiModelClass.allCases.map {
+                MagiProviderCommandBuilder.resolvedModel(provider: .codex, modelClass: $0, explicitModelName: nil)
+            },
+            ["gpt-5.4-mini", "gpt-5.4", "gpt-5.5"]
+        )
+        XCTAssertEqual(
+            MagiModelClass.allCases.map {
+                MagiProviderCommandBuilder.resolvedModel(provider: .claude, modelClass: $0, explicitModelName: nil)
+            },
+            ["fable", "sonnet", "opus"]
+        )
+        XCTAssertEqual(
+            MagiModelClass.allCases.map {
+                MagiProviderCommandBuilder.resolvedModel(provider: .gemini, modelClass: $0, explicitModelName: nil)
+            },
+            ["gemini-2.5-flash-lite", "gemini-2.5-flash", "gemini-2.5-pro"]
+        )
+    }
+
+    func testProviderReasoningMatrixAffectsSupportedProviderCommands() {
+        let codex = MagiReasoningLevel.allCases.map {
+            MagiProviderCommandBuilder.command(for: member(provider: "codex", modelClass: .balanced, reasoning: $0)).resolvedReasoning
+        }
+        let claude = MagiReasoningLevel.allCases.map {
+            MagiProviderCommandBuilder.command(for: member(provider: "claude", modelClass: .balanced, reasoning: $0)).resolvedReasoning
+        }
+        let gemini = MagiReasoningLevel.allCases.map {
+            MagiProviderCommandBuilder.command(for: member(provider: "gemini", modelClass: .balanced, reasoning: $0)).resolvedReasoning
+        }
+
+        XCTAssertEqual(codex, ["low", "medium", "high", "xhigh"])
+        XCTAssertEqual(claude, ["low", "medium", "high", "max"])
+        XCTAssertEqual(gemini, [nil, nil, nil, nil])
+    }
+
     func testCustomProviderCommandIsPreserved() {
         let command = MagiProviderCommandBuilder.command(for: member(
             provider: "custom-agent --profile magi",

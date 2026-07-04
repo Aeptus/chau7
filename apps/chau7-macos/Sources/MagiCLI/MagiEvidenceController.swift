@@ -33,7 +33,11 @@ extension MagiMCPOrchestrator {
             var reviewedRequest = request
             guard !commands.isEmpty else {
                 announceStep("No collector proposed; recorded as a deliberation note.")
-                reviewedRequest.status = .skipped
+                reviewedRequest.status = MagiEvidencePolicyEvaluator.requestStatus(
+                    commandCount: commands.count,
+                    actionableCount: commandReview.actionable.count,
+                    policy: config.evidencePolicy
+                ) ?? .skipped
                 reviewed.append(reviewedRequest)
                 continue
             }
@@ -49,25 +53,42 @@ extension MagiMCPOrchestrator {
 
             guard !commandReview.actionable.isEmpty else {
                 announceStep("No runnable collector remains; recorded as skipped without approval.")
-                reviewedRequest.status = .skipped
+                reviewedRequest.status = MagiEvidencePolicyEvaluator.requestStatus(
+                    commandCount: commands.count,
+                    actionableCount: commandReview.actionable.count,
+                    policy: config.evidencePolicy
+                ) ?? .skipped
                 reviewed.append(reviewedRequest)
                 continue
             }
 
             switch config.evidencePolicy {
             case .ask:
-                if promptYesNo("Authorize this fact gathering?", defaultValue: false) {
-                    reviewedRequest.status = .approved
+                let approved = promptYesNo("Authorize this fact gathering?", defaultValue: false)
+                reviewedRequest.status = MagiEvidencePolicyEvaluator.requestStatus(
+                    commandCount: commands.count,
+                    actionableCount: commandReview.actionable.count,
+                    policy: config.evidencePolicy,
+                    userApproved: approved
+                ) ?? .denied
+                if approved {
                     announceStep("Authorized; the fact packet enters the queue.")
                 } else {
-                    reviewedRequest.status = .denied
                     announceStep("Denied; the council proceeds without this packet.")
                 }
             case .autoDeny:
-                reviewedRequest.status = .denied
+                reviewedRequest.status = MagiEvidencePolicyEvaluator.requestStatus(
+                    commandCount: commands.count,
+                    actionableCount: commandReview.actionable.count,
+                    policy: config.evidencePolicy
+                ) ?? .denied
                 announceStep("Auto-denied by evidence policy; the council proceeds without this packet.")
             case .preapproved:
-                reviewedRequest.status = .approved
+                reviewedRequest.status = MagiEvidencePolicyEvaluator.requestStatus(
+                    commandCount: commands.count,
+                    actionableCount: commandReview.actionable.count,
+                    policy: config.evidencePolicy
+                ) ?? .approved
                 announceStep("Preapproved by evidence policy; the fact packet enters the queue.")
             }
             reviewed.append(reviewedRequest)
@@ -76,27 +97,14 @@ extension MagiMCPOrchestrator {
         return reviewed
     }
 
-    struct MagiCollectorCommandReview {
-        var actionable: [MagiCollectorCommand]
-        var skipReasons: [String: String]
-    }
-
     func reviewCollectorCommands(
         _ commands: [MagiCollectorCommand],
         config: MagiConfig
     ) -> MagiCollectorCommandReview {
-        var actionable: [MagiCollectorCommand] = []
-        var skipReasons: [String: String] = [:]
-        for command in commands {
-            if command.collectorKind == .unsupported {
-                skipReasons[command.id] = "skipped: unsupported collector"
-            } else if command.usesWeb, !config.webAccessAllowed {
-                skipReasons[command.id] = "skipped: web disabled"
-            } else {
-                actionable.append(command)
-            }
-        }
-        return MagiCollectorCommandReview(actionable: actionable, skipReasons: skipReasons)
+        MagiEvidencePolicyEvaluator.reviewCollectorCommands(
+            commands,
+            webAccessAllowed: config.webAccessAllowed
+        )
     }
 
     func evidencePolicyStageDetail(_ policy: MagiEvidenceApprovalPolicy) -> String {
@@ -293,7 +301,7 @@ extension MagiMCPOrchestrator {
             if let result = MagiCollectorOutputParser.parse(output: latest, sentinel: sentinel) {
                 return result
             }
-            Thread.sleep(forTimeInterval: 2)
+            Thread.sleep(forTimeInterval: min(2, max(0.01, deadline.timeIntervalSinceNow)))
         }
         throw MagiMCPOrchestratorError.timedOut(stage: "evidence collection", member: collectorID, lastError: nil)
     }

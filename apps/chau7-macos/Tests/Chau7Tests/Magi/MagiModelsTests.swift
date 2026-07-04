@@ -203,6 +203,21 @@ final class MagiModelsTests: XCTestCase {
         XCTAssertEqual(verdict.consensusScore, 1.0 / 3.0, accuracy: 0.001)
     }
 
+    func testEngineeringVotesWithDifferentApproveDecisionIDsDoNotInventMajorityDecision() {
+        let votes = [
+            MagiVote(id: "vote-1", memberID: .melchior, verdictKind: .approve, decisionID: "merge_after_ci", choice: "Merge after CI.", confidence: 0.8, rationale: "Contained."),
+            MagiVote(id: "vote-2", memberID: .balthasar, verdictKind: .approve, decisionID: "merge_after_rollback_plan", choice: "Merge after rollback plan.", confidence: 0.7, rationale: "Needs release safety."),
+            MagiVote(id: "vote-3", memberID: .casper, verdictKind: .reject, decisionID: "reject", choice: "Do not merge.", confidence: 0.9, rationale: "Too risky.")
+        ]
+
+        let verdict = MagiDecisionResolver.resolve(votes: votes, questionKind: .engineering)
+
+        XCTAssertEqual(verdict.kind, .deadlock)
+        XCTAssertNil(verdict.decision)
+        XCTAssertTrue(verdict.requiresAdditionalRound)
+        XCTAssertEqual(verdict.consensusScore, 1.0 / 3.0, accuracy: 0.001)
+    }
+
     func testEngineeringResolverInfersRejectFromLegacyVoteText() {
         let votes = [
             MagiVote(id: "vote-1", memberID: .melchior, choice: "Do not merge", confidence: 0.8, rationale: "Missing tests."),
@@ -228,6 +243,111 @@ final class MagiModelsTests: XCTestCase {
 
         XCTAssertEqual(verdict.kind, .deadlock)
         XCTAssertTrue(verdict.requiresAdditionalRound)
+    }
+
+    func testFinalVoteVetoPropagatesIntoBlockedVerdict() {
+        let voteRoundVeto = MagiVeto(
+            id: "round-4-balthasar-vote-veto",
+            memberID: .balthasar,
+            reason: "Release violates configured veto policy."
+        )
+        let votes = [
+            MagiVote(id: "vote-1", memberID: .melchior, verdictKind: .approve, decisionID: "ship", choice: "Ship", confidence: 0.8, rationale: "Good enough."),
+            MagiVote(id: "vote-2", memberID: .balthasar, verdictKind: .reject, decisionID: "reject", choice: "Reject", confidence: 0.9, rationale: "Blocked."),
+            MagiVote(id: "vote-3", memberID: .casper, verdictKind: .approve, decisionID: "ship", choice: "Ship", confidence: 0.8, rationale: "Useful.")
+        ]
+
+        let finalVetoes = MagiVetoResolutionScope.finalResolutionVetoes(
+            positionRoundVetoes: [],
+            voteRoundVetoes: [voteRoundVeto]
+        )
+        let verdict = MagiDecisionResolver.resolve(
+            votes: votes,
+            vetoes: finalVetoes,
+            questionKind: .engineering
+        )
+
+        XCTAssertEqual(verdict.kind, .blockedByVeto)
+        XCTAssertEqual(verdict.vetoes, [voteRoundVeto])
+        XCTAssertEqual(verdict.rationale, "A blocking veto was issued.")
+    }
+
+    func testEvidencePolicySkipsUnsupportedAndDisabledWebWithoutApproval() {
+        let request = MagiEvidenceRequest(
+            id: "request-1",
+            memberID: .melchior,
+            roundID: "round-2",
+            priority: .high,
+            reason: "Need facts.",
+            requiredEvidence: ["repo", "web"],
+            proposedCollectors: [
+                "local.git_status",
+                "web.query:Swift release notes",
+                "local.shell:printf legacy"
+            ]
+        )
+        let commands = MagiEvidenceCollectorPlanner.commands(for: request)
+
+        let review = MagiEvidencePolicyEvaluator.reviewCollectorCommands(
+            commands,
+            webAccessAllowed: false
+        )
+
+        XCTAssertEqual(review.actionable.map(\.collectorKind), [.localGitStatus])
+        XCTAssertEqual(review.skipReasons["request-1-collector-2"], "skipped: web disabled")
+        XCTAssertEqual(review.skipReasons["request-1-collector-3"], "skipped: unsupported collector")
+    }
+
+    func testEvidencePolicyMapsActionableRequestsToExplicitStates() {
+        XCTAssertEqual(
+            MagiEvidencePolicyEvaluator.requestStatus(
+                commandCount: 0,
+                actionableCount: 0,
+                policy: .ask
+            ),
+            .skipped
+        )
+        XCTAssertNil(
+            MagiEvidencePolicyEvaluator.requestStatus(
+                commandCount: 1,
+                actionableCount: 1,
+                policy: .ask
+            )
+        )
+        XCTAssertEqual(
+            MagiEvidencePolicyEvaluator.requestStatus(
+                commandCount: 1,
+                actionableCount: 1,
+                policy: .ask,
+                userApproved: true
+            ),
+            .approved
+        )
+        XCTAssertEqual(
+            MagiEvidencePolicyEvaluator.requestStatus(
+                commandCount: 1,
+                actionableCount: 1,
+                policy: .ask,
+                userApproved: false
+            ),
+            .denied
+        )
+        XCTAssertEqual(
+            MagiEvidencePolicyEvaluator.requestStatus(
+                commandCount: 1,
+                actionableCount: 1,
+                policy: .autoDeny
+            ),
+            .denied
+        )
+        XCTAssertEqual(
+            MagiEvidencePolicyEvaluator.requestStatus(
+                commandCount: 1,
+                actionableCount: 1,
+                policy: .preapproved
+            ),
+            .approved
+        )
     }
 
     func testQuestionKindInferenceExplainsEngineeringMode() {

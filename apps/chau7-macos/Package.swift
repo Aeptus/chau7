@@ -112,6 +112,7 @@ let package = Package(
             dependencies: [
                 "Chau7Core",
                 "Chau7",
+                "MagiCLI",
                 .product(name: "Atomics", package: "swift-atomics")
             ],
             path: "Tests/Chau7Tests",

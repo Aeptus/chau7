@@ -3914,6 +3914,13 @@
   },
   {
     "category": "Developer Experience",
+    "feature": "MAGI Orchestration Regression Coverage",
+    "description": "Fake-MCP and CLI-runtime tests pin pending-member collection, echoed-marker repair avoidance, engineering decision identity grouping, final-vote veto propagation, evidence policy states, collector failure cleanup, stale artifact replay/share fallback, and provider command construction",
+    "status": "Shipped",
+    "differentiator": "No"
+  },
+  {
+    "category": "Developer Experience",
     "feature": "MCP Tool Documentation Coverage Gate",
     "description": "A staged-feature-coverage gate runs scripts/check-feature-coverage.mjs to hard-fail when an MCP tool is registered in MCPSession.swift without a canonical inventory row in features.json; warns on documented-but-removed tools; deliberate bypass via CHAU7_SKIP_FEATURE_COVERAGE=1",
     "status": "Shipped",
