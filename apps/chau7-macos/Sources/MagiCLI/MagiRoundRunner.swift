@@ -2,10 +2,22 @@ import Chau7Core
 import Foundation
 
 extension MagiMCPOrchestrator {
+    func loadCouncilConfiguration(for config: MagiConfig) throws -> MagiCouncilConfiguration {
+        try MagiCouncilConfigurationStore.load(for: config, paths: paths, fileManager: fileManager)
+    }
+
     func loadCouncil(config: MagiConfig) throws -> MagiCouncil {
+        let councilConfig = try loadCouncilConfiguration(for: config)
         let members = try MagiMemberID.allCases.map { memberID -> MagiMember in
-            let memberConfig = config.members[memberID] ?? MagiMemberConfiguration(provider: "unconfigured")
-            let personaContent = try String(contentsOfFile: paths.personaPath(for: memberID), encoding: .utf8)
+            let memberConfig = councilConfig.members[memberID] ?? MagiCouncilMemberConfiguration(
+                personaFile: MagiPersonaFile.fileName(for: memberID),
+                provider: "unconfigured",
+                reasoning: config.defaultReasoning
+            )
+            let personaContent = try String(
+                contentsOfFile: paths.personaPath(fileName: memberConfig.personaFile, fallback: memberID),
+                encoding: .utf8
+            )
             let persona = MagiPersonaFileParser.parse(memberID: memberID, content: personaContent)
             return MagiMember(
                 id: memberID,
@@ -13,10 +25,16 @@ extension MagiMCPOrchestrator {
                 provider: memberConfig.provider,
                 modelClass: memberConfig.modelClass,
                 reasoning: memberConfig.reasoning,
-                modelName: memberConfig.modelName
+                modelName: memberConfig.modelName,
+                weight: memberConfig.weight
             )
         }
-        return MagiCouncil(id: config.defaultCouncilID, name: "MAGI", members: members)
+        return MagiCouncil(
+            id: councilConfig.councilID,
+            name: councilConfig.displayName,
+            members: members,
+            majorityThreshold: councilConfig.majorityThreshold
+        )
     }
 
     func launchMember(

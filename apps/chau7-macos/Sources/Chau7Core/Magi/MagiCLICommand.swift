@@ -178,8 +178,18 @@ public struct MagiCLIPaths: Codable, Equatable, Sendable {
         "\(globalPersonaDirectory)/\(MagiPersonaFile.fileName(for: memberID))"
     }
 
+    public func personaPath(fileName: String, fallback memberID: MagiMemberID) -> String {
+        let lastPathComponent = URL(fileURLWithPath: fileName).lastPathComponent
+        let safeFileName = lastPathComponent.isEmpty ? MagiPersonaFile.fileName(for: memberID) : lastPathComponent
+        return "\(globalPersonaDirectory)/\(safeFileName)"
+    }
+
     public func councilPath(for councilID: String) -> String {
         "\(globalCouncilDirectory)/\(MagiCouncilArtFile.fileName(for: councilID))"
+    }
+
+    public func councilConfigPath(for councilID: String) -> String {
+        "\(globalCouncilDirectory)/\(MagiCouncilArtFile.configFileName(for: councilID))"
     }
 
     public func runRoot(runID: String, repositoryRoot: String?) -> String {

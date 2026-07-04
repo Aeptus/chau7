@@ -144,7 +144,8 @@ extension MagiCLIRunner {
     func printConfigPanel(_ config: MagiConfig) {
         writeStdout()
         writeWizardTitle("Configuration panel")
-        writeMuted(paths.globalConfigPath)
+        writeMuted("Global: \(paths.globalConfigPath)")
+        writeMuted(activeCouncilConfigLine(for: config))
         writeStdout()
         printMembers(config)
         writeStdout()
@@ -226,6 +227,7 @@ extension MagiCLIRunner {
             writeStdout("Config")
             writeStdout("Global root: \(paths.globalRoot)")
             writeStdout("Global config: \(paths.globalConfigPath)")
+            writeStdout(activeCouncilConfigLine(for: config))
             writeStdout("Personas: \(paths.globalPersonaDirectory)")
             writeStdout("Councils: \(paths.globalCouncilDirectory)")
             writeStdout()
@@ -233,7 +235,7 @@ extension MagiCLIRunner {
             writeStdout("configured")
             writeStdout()
             printMembers(config)
-            printMissingPersonas()
+            printMissingPersonas(config: config)
             return .success
         } catch {
             writeStdout("Config")

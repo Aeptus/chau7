@@ -16,21 +16,35 @@ extension MagiCLIRunner {
         }
     }
 
-    func printMissingPersonas() {
-        let missing = MagiFirstRunInstaller.missingPersonaFiles(paths: paths, fileManager: fileManager)
+    func printMissingPersonas(config: MagiConfig? = nil) {
+        let missing: [String]
+        if let config,
+           let council = try? loadCouncilConfiguration(for: config) {
+            missing = MagiMemberID.allCases.compactMap { memberID in
+                let personaFile = council.members[memberID]?.personaFile ?? MagiPersonaFile.fileName(for: memberID)
+                let path = paths.personaPath(fileName: personaFile, fallback: memberID)
+                return fileManager.fileExists(atPath: path) ? nil : personaFile
+            }
+        } else {
+            missing = MagiFirstRunInstaller.missingPersonaFiles(paths: paths, fileManager: fileManager)
+                .map { MagiPersonaFile.fileName(for: $0) }
+        }
         writeStdout()
         writeStdout("Persona files")
         if missing.isEmpty {
             writeStdout("present")
         } else {
-            let missingNames = missing.map(\.rawValue).joined(separator: ", ")
+            let missingNames = missing.joined(separator: ", ")
             writeStdout("missing: \(missingNames)")
         }
     }
 
     func loadConfig() throws -> MagiConfig {
         let content = try String(contentsOfFile: paths.globalConfigPath, encoding: .utf8)
-        return try MagiConfigTOMLCodec.decode(content)
+        var config = try MagiConfigTOMLCodec.decode(content)
+        let council = try loadCouncilConfiguration(for: config)
+        config.members = council.memberProviderConfigurations
+        return config
     }
 
     func saveConfig(_ config: MagiConfig) throws {
@@ -43,12 +57,32 @@ extension MagiCLIRunner {
             atomically: true,
             encoding: .utf8
         )
+        try saveCouncilConfiguration(from: config)
         _ = try MagiFirstRunInstaller.install(
             config: config,
             paths: paths,
             fileManager: fileManager,
             overwrite: false
         )
+    }
+
+    func loadCouncilConfiguration(for config: MagiConfig) throws -> MagiCouncilConfiguration {
+        try MagiCouncilConfigurationStore.load(for: config, paths: paths, fileManager: fileManager)
+    }
+
+    func saveCouncilConfiguration(from config: MagiConfig) throws {
+        var council = try loadCouncilConfiguration(for: config)
+        council.councilID = config.defaultCouncilID
+        council = council.updatingMemberProviderConfigurations(config.members)
+        try MagiCouncilConfigurationStore.save(council, paths: paths, fileManager: fileManager)
+    }
+
+    func activeCouncilConfigLine(for config: MagiConfig) -> String {
+        let path = paths.councilConfigPath(for: config.defaultCouncilID)
+        if fileManager.fileExists(atPath: path) {
+            return "Active council config: \(path)"
+        }
+        return "Active council config: \(path) (legacy global fallback)"
     }
 
     func selections(from config: MagiConfig) -> [MagiMemberID: MagiFirstRunMemberSelection] {

@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- **MAGI Council Configuration Split**: MAGI global `config.toml` now persists only runtime policy and the selected default council, while council-specific member bindings, persona-file mapping, weights, display name, and majority threshold live in `~/.chau7/magi/councils/<council-id>.toml` next to the editable council art file. Legacy `[members.*]` blocks in global config still load as a migration fallback, and future saves write member settings to the council TOML instead of the global config.
 - **MAGI MCP Launch Contract**: MAGI launch verification now trusts the structured `agent_launch` contract (`prompt_input_visible`, `prompt_submitted`, `agent_running`) instead of re-polling tab buffers and duplicating provider readiness heuristics in the CLI. Incomplete launch verification fields fail clearly, while the MCP service remains the single owner of prompt-readiness probing.
 - **MAGI MCP Boundary DTOs**: MAGI now talks to Chau7 MCP through typed request/response DTOs for launch, tab output/status, prompt submission, runtime/repo events, and collector tab lifecycle. Raw `[String: Any]` handling is confined to the JSON-RPC transport internals.
 - **MAGI CLI Command Structure**: The `magi` executable entrypoint is now a small launcher, with command parsing/dispatch, the home TUI, config panel, first-run wizard, doctor checks, replay/share commands, and shared CLI support split into focused files for safer iteration.

@@ -108,7 +108,7 @@ final class MagiFirstRunTests: XCTestCase {
         XCTAssertNil(MagiFirstRunPlanner.fallbackPlan(selections: selections, dryRunResults: results))
     }
 
-    func testConfigTOMLCodecRoundTripsFirstRunConfig() throws {
+    func testConfigTOMLCodecWritesOnlyGlobalRuntimePolicy() throws {
         let config = MagiFirstRunPlanner.config(from: [
             .melchior: MagiFirstRunMemberSelection(memberID: .melchior, provider: .codex, modelClass: .fast),
             .balthasar: MagiFirstRunMemberSelection(memberID: .balthasar, provider: .claude, modelClass: .strongest),
@@ -118,12 +118,53 @@ final class MagiFirstRunTests: XCTestCase {
         let content = MagiConfigTOMLCodec.encode(config)
         let decoded = try MagiConfigTOMLCodec.decode(content)
 
-        XCTAssertTrue(content.contains("[members.melchior]"))
-        XCTAssertTrue(content.contains("provider = \"codex\""))
-        XCTAssertTrue(content.contains("class = \"strongest\""))
+        XCTAssertFalse(content.contains("[members."))
+        XCTAssertFalse(content.contains("provider = \"codex\""))
         XCTAssertTrue(content.contains("evidence_policy = \"ask\""))
         XCTAssertTrue(content.contains("auto_close_agent_tabs = true"))
-        XCTAssertEqual(decoded, config)
+        XCTAssertEqual(decoded.defaultCouncilID, config.defaultCouncilID)
+        XCTAssertEqual(decoded.evidencePolicy, config.evidencePolicy)
+        XCTAssertEqual(decoded.autoCloseAgentTabs, config.autoCloseAgentTabs)
+        XCTAssertTrue(decoded.members.isEmpty)
+    }
+
+    func testCouncilConfigTOMLCodecRoundTripsMemberBindings() throws {
+        let config = MagiFirstRunPlanner.config(from: [
+            .melchior: MagiFirstRunMemberSelection(memberID: .melchior, provider: .codex, modelClass: .fast),
+            .balthasar: MagiFirstRunMemberSelection(memberID: .balthasar, provider: .claude, modelClass: .strongest),
+            .casper: MagiFirstRunMemberSelection(memberID: .casper, provider: .gemini, modelClass: .balanced)
+        ])
+        let council = MagiCouncilConfiguration.defaultMagi(
+            members: config.members,
+            defaultReasoning: config.defaultReasoning
+        )
+
+        let content = MagiCouncilConfigTOMLCodec.encode(council)
+        let decoded = try MagiCouncilConfigTOMLCodec.decode(content)
+
+        XCTAssertTrue(content.contains("[members.melchior]"))
+        XCTAssertTrue(content.contains("persona = \"melchior.md\""))
+        XCTAssertTrue(content.contains("provider = \"codex\""))
+        XCTAssertTrue(content.contains("class = \"strongest\""))
+        XCTAssertEqual(decoded, council)
+        XCTAssertEqual(decoded.memberProviderConfigurations, config.members)
+    }
+
+    func testConfigTOMLCodecStillReadsLegacyMemberBindings() throws {
+        let content = """
+        schema_version = 1
+        evidence_policy = "ask"
+
+        [members.melchior]
+        provider = "codex"
+        class = "fast"
+        reasoning = "max"
+        """
+
+        let decoded = try MagiConfigTOMLCodec.decode(content)
+
+        XCTAssertEqual(decoded.members[.melchior]?.provider, "codex")
+        XCTAssertEqual(decoded.members[.melchior]?.modelClass, .fast)
     }
 
     func testConfigTOMLCodecReadsEvidencePolicy() throws {
@@ -245,7 +286,7 @@ final class MagiFirstRunTests: XCTestCase {
         XCTAssertEqual(art.processingLines, MagiCouncilArtFile.defaultProcessingLines)
     }
 
-    func testConfigTOMLCodecRejectsInvalidClass() {
+    func testCouncilConfigTOMLCodecRejectsInvalidClass() {
         let content = """
         schema_version = 1
 
@@ -255,7 +296,7 @@ final class MagiFirstRunTests: XCTestCase {
         reasoning = "max"
         """
 
-        XCTAssertThrowsError(try MagiConfigTOMLCodec.decode(content)) { error in
+        XCTAssertThrowsError(try MagiCouncilConfigTOMLCodec.decode(content)) { error in
             XCTAssertEqual(
                 error as? MagiConfigFileError,
                 .invalidValue(field: "members.melchior.class", value: "largest", allowed: ["fast", "balanced", "strongest"])
@@ -291,8 +332,9 @@ final class MagiFirstRunTests: XCTestCase {
 
         let result = try MagiFirstRunInstaller.install(config: config, paths: paths)
 
-        XCTAssertEqual(result.createdPaths.count, 5)
+        XCTAssertEqual(result.createdPaths.count, 6)
         XCTAssertTrue(FileManager.default.fileExists(atPath: paths.globalConfigPath))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: paths.councilConfigPath(for: "magi")))
         XCTAssertTrue(FileManager.default.fileExists(atPath: paths.personaPath(for: .melchior)))
         XCTAssertTrue(FileManager.default.fileExists(atPath: paths.personaPath(for: .balthasar)))
         XCTAssertTrue(FileManager.default.fileExists(atPath: paths.personaPath(for: .casper)))
@@ -300,7 +342,14 @@ final class MagiFirstRunTests: XCTestCase {
         XCTAssertEqual(MagiFirstRunInstaller.missingPersonaFiles(paths: paths), [])
 
         let decoded = try MagiConfigTOMLCodec.decode(String(contentsOfFile: paths.globalConfigPath, encoding: .utf8))
-        XCTAssertEqual(decoded, config)
+        XCTAssertEqual(decoded.defaultCouncilID, config.defaultCouncilID)
+        XCTAssertEqual(decoded.evidencePolicy, config.evidencePolicy)
+        XCTAssertTrue(decoded.members.isEmpty)
+
+        let councilConfig = try MagiCouncilConfigTOMLCodec.decode(
+            String(contentsOfFile: paths.councilConfigPath(for: "magi"), encoding: .utf8)
+        )
+        XCTAssertEqual(councilConfig.memberProviderConfigurations, config.members)
 
         let melchior = try String(contentsOfFile: paths.personaPath(for: .melchior), encoding: .utf8)
         XCTAssertTrue(melchior.contains("# Melchior"))
@@ -320,14 +369,16 @@ final class MagiFirstRunTests: XCTestCase {
         try MagiFirstRunInstaller.install(config: config, paths: paths)
 
         try "custom-config".write(toFile: paths.globalConfigPath, atomically: true, encoding: .utf8)
+        try "custom-council-config".write(toFile: paths.councilConfigPath(for: "magi"), atomically: true, encoding: .utf8)
         try "custom-persona".write(toFile: paths.personaPath(for: .casper), atomically: true, encoding: .utf8)
         try "custom-council".write(toFile: paths.councilPath(for: "magi"), atomically: true, encoding: .utf8)
 
         let result = try MagiFirstRunInstaller.install(config: config, paths: paths)
 
         XCTAssertEqual(result.createdPaths, [])
-        XCTAssertEqual(result.skippedPaths.count, 5)
+        XCTAssertEqual(result.skippedPaths.count, 6)
         XCTAssertEqual(try String(contentsOfFile: paths.globalConfigPath, encoding: .utf8), "custom-config")
+        XCTAssertEqual(try String(contentsOfFile: paths.councilConfigPath(for: "magi"), encoding: .utf8), "custom-council-config")
         XCTAssertEqual(try String(contentsOfFile: paths.personaPath(for: .casper), encoding: .utf8), "custom-persona")
         XCTAssertEqual(try String(contentsOfFile: paths.councilPath(for: "magi"), encoding: .utf8), "custom-council")
     }

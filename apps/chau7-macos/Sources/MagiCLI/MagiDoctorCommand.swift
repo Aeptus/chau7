@@ -28,9 +28,10 @@ extension MagiCLIRunner {
             let config = try loadConfig()
             writeStdout("Configuration")
             writeStdout("configured")
+            writeStdout(activeCouncilConfigLine(for: config))
             writeStdout()
             printMembers(config)
-            printMissingPersonas()
+            printMissingPersonas(config: config)
             printDryRunResults(for: selections(from: config))
             return .success
         } catch {

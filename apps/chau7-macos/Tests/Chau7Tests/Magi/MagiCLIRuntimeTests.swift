@@ -3,6 +3,68 @@ import XCTest
 @testable import MagiCLI
 
 final class MagiCLIRuntimeTests: XCTestCase {
+    func testLoadConfigPrefersCouncilConfigMembersOverLegacyGlobalMembers() throws {
+        let root = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let paths = MagiCLIPaths(homeDirectory: root.path, currentDirectory: "/repo")
+        try FileManager.default.createDirectory(
+            at: URL(fileURLWithPath: paths.globalCouncilDirectory),
+            withIntermediateDirectories: true
+        )
+        try """
+        schema_version = 1
+        default_council_id = "magi"
+
+        [members.melchior]
+        provider = "codex"
+        class = "fast"
+        reasoning = "max"
+        """.write(toFile: paths.globalConfigPath, atomically: true, encoding: .utf8)
+        let council = MagiCouncilConfiguration.defaultMagi(
+            members: [
+                .melchior: MagiMemberConfiguration(provider: "claude", modelClass: .strongest),
+                .balthasar: MagiMemberConfiguration(provider: "gemini", modelClass: .balanced),
+                .casper: MagiMemberConfiguration(provider: "codex", modelClass: .fast)
+            ]
+        )
+        try MagiCouncilConfigTOMLCodec.encode(council).write(
+            toFile: paths.councilConfigPath(for: "magi"),
+            atomically: true,
+            encoding: .utf8
+        )
+        let runner = MagiCLIRunner(paths: paths)
+
+        let config = try runner.loadConfig()
+
+        XCTAssertEqual(config.members[.melchior]?.provider, "claude")
+        XCTAssertEqual(config.members[.melchior]?.modelClass, .strongest)
+        XCTAssertEqual(config.members[.balthasar]?.provider, "gemini")
+    }
+
+    func testSaveConfigSplitsGlobalPolicyAndCouncilMembers() throws {
+        let root = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let paths = MagiCLIPaths(homeDirectory: root.path, currentDirectory: "/repo")
+        let runner = MagiCLIRunner(paths: paths)
+        var config = MagiConfig()
+        config.members = [
+            .melchior: MagiMemberConfiguration(provider: "codex", modelClass: .strongest),
+            .balthasar: MagiMemberConfiguration(provider: "claude", modelClass: .balanced),
+            .casper: MagiMemberConfiguration(provider: "gemini", modelClass: .fast)
+        ]
+
+        try runner.saveConfig(config)
+
+        let globalContent = try String(contentsOfFile: paths.globalConfigPath, encoding: .utf8)
+        let councilContent = try String(contentsOfFile: paths.councilConfigPath(for: "magi"), encoding: .utf8)
+        let loaded = try runner.loadConfig()
+
+        XCTAssertFalse(globalContent.contains("[members."))
+        XCTAssertTrue(councilContent.contains("[members.melchior]"))
+        XCTAssertTrue(councilContent.contains("provider = \"codex\""))
+        XCTAssertEqual(loaded.members, config.members)
+    }
+
     func testCollectPendingParsedCollectsFinishedMembersWhileFirstMemberHangs() throws {
         let runID = "run-1"
         let roundID = "round-1"

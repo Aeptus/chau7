@@ -99,6 +99,13 @@
   },
   {
     "category": "AI Integration",
+    "feature": "MAGI Council Configuration Split",
+    "description": "Global ~/.chau7/magi/config.toml stores runtime policy and the selected council, while ~/.chau7/magi/councils/<council-id>.toml stores member provider/class/model bindings, persona-file mapping, weights, display name, and majority threshold with legacy global member sections still accepted for migration",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "AI Integration",
     "feature": "MAGI Visible First-Run Wizard",
     "description": "magi config renders provider and model-class choices as numbered lists in interactive terminals and reports stdin/stdout TTY state when the wizard cannot open",
     "status": "Shipped",
