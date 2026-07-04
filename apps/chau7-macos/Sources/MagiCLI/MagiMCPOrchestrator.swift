@@ -1796,9 +1796,12 @@ struct MagiMCPOrchestrator {
                 )
             }
             let verdict = result.vote.verdictKind.map { "[\($0.rawValue)] " } ?? ""
+            let conditions = result.vote.conditions.isEmpty
+                ? ""
+                : " if \(result.vote.conditions.joined(separator: "; "))"
             let voteDetail = result.vote.rationale.isEmpty
-                ? "\(verdict)\(result.vote.choice)"
-                : "\(verdict)\(result.vote.choice) - \(result.vote.rationale)"
+                ? "\(verdict)\(result.vote.choice)\(conditions)"
+                : "\(verdict)\(result.vote.choice)\(conditions) - \(result.vote.rationale)"
             printMemberOutput(session.member, voteDetail, state: .done)
             votes.append(result.vote)
             if let veto = result.veto {

@@ -493,7 +493,9 @@ public struct MagiVote: Codable, Equatable, Sendable, Identifiable {
     public var id: String
     public var memberID: MagiMemberID
     public var verdictKind: MagiVerdictKind?
+    public var decisionID: String?
     public var choice: String
+    public var conditions: [String]
     public var confidence: Double
     public var rationale: String
     public var rawOutput: String?
@@ -502,7 +504,9 @@ public struct MagiVote: Codable, Equatable, Sendable, Identifiable {
         id: String,
         memberID: MagiMemberID,
         verdictKind: MagiVerdictKind? = nil,
+        decisionID: String? = nil,
         choice: String,
+        conditions: [String] = [],
         confidence: Double,
         rationale: String,
         rawOutput: String? = nil
@@ -510,7 +514,9 @@ public struct MagiVote: Codable, Equatable, Sendable, Identifiable {
         self.id = id
         self.memberID = memberID
         self.verdictKind = verdictKind
+        self.decisionID = decisionID
         self.choice = choice
+        self.conditions = conditions
         self.confidence = min(1, max(0, confidence))
         self.rationale = rationale
         self.rawOutput = rawOutput
@@ -518,6 +524,55 @@ public struct MagiVote: Codable, Equatable, Sendable, Identifiable {
 
     public var normalizedChoice: String {
         choice.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case memberID
+        case verdictKind
+        case decisionID
+        case choice
+        case conditions
+        case confidence
+        case rationale
+        case rawOutput
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.id = try container.decode(String.self, forKey: .id)
+        self.memberID = try container.decode(MagiMemberID.self, forKey: .memberID)
+        self.verdictKind = try container.decodeIfPresent(MagiVerdictKind.self, forKey: .verdictKind)
+        self.decisionID = try container.decodeIfPresent(String.self, forKey: .decisionID)
+        self.choice = try container.decode(String.self, forKey: .choice)
+        self.conditions = Self.decodeConditions(container)
+        self.confidence = min(1, max(0, try container.decodeIfPresent(Double.self, forKey: .confidence) ?? 0))
+        self.rationale = try container.decodeIfPresent(String.self, forKey: .rationale) ?? ""
+        self.rawOutput = try container.decodeIfPresent(String.self, forKey: .rawOutput)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(memberID, forKey: .memberID)
+        try container.encodeIfPresent(verdictKind, forKey: .verdictKind)
+        try container.encodeIfPresent(decisionID, forKey: .decisionID)
+        try container.encode(choice, forKey: .choice)
+        try container.encode(conditions, forKey: .conditions)
+        try container.encode(confidence, forKey: .confidence)
+        try container.encode(rationale, forKey: .rationale)
+        try container.encodeIfPresent(rawOutput, forKey: .rawOutput)
+    }
+
+    private static func decodeConditions(_ container: KeyedDecodingContainer<CodingKeys>) -> [String] {
+        if let conditions = try? container.decodeIfPresent([String].self, forKey: .conditions) {
+            return conditions
+        }
+        if let condition = try? container.decodeIfPresent(String.self, forKey: .conditions) {
+            let trimmed = condition.trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed.isEmpty ? [] : [trimmed]
+        }
+        return []
     }
 }
 
@@ -853,8 +908,11 @@ public enum MagiDecisionResolver {
                 ? vote.verdictKind
                 : MagiVerdictKind.inferApprovalStyle(from: choice)
             guard let kind else { return nil }
+            guard let decisionKey = engineeringDecisionKey(for: vote, kind: kind, choice: choice) else {
+                return nil
+            }
             return ResolvedVote(
-                key: kind.rawValue,
+                key: decisionKey,
                 kind: kind,
                 decision: choice.isEmpty ? kind.rawValue : choice,
                 vote: vote
@@ -868,6 +926,36 @@ public enum MagiDecisionResolver {
                 vote: vote
             )
         }
+    }
+
+    private static func engineeringDecisionKey(
+        for vote: MagiVote,
+        kind: MagiVerdictKind,
+        choice: String
+    ) -> String? {
+        let rawDecision = vote.decisionID?.trimmingCharacters(in: .whitespacesAndNewlines)
+            ?? choice.trimmingCharacters(in: .whitespacesAndNewlines)
+        let decision = normalizedKeyText(rawDecision)
+        guard !decision.isEmpty else { return nil }
+
+        let verdictOnly = normalizedKeyText(kind.rawValue)
+        guard decision != verdictOnly else { return nil }
+
+        let conditions = vote.conditions
+            .map(normalizedKeyText)
+            .filter { !$0.isEmpty }
+            .sorted()
+            .joined(separator: "|")
+        return "\(kind.rawValue):\(decision):\(conditions)"
+    }
+
+    private static func normalizedKeyText(_ value: String) -> String {
+        let normalizedScalars = value.lowercased().unicodeScalars.map { scalar -> String in
+            CharacterSet.alphanumerics.contains(scalar) ? String(scalar) : " "
+        }.joined()
+        return normalizedScalars
+            .split(whereSeparator: \.isWhitespace)
+            .joined(separator: " ")
     }
 }
 

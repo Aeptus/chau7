@@ -322,7 +322,9 @@ final class MagiProtocolTests: XCTestCase {
           "member": "balthasar",
           "round": 4,
           "verdict": "REJECT",
-          "vote": "Do not merge",
+          "decision_id": "do_not_merge",
+          "choice": "Do not merge",
+          "conditions": ["Missing rollback plan"],
           "confidence": 0.9,
           "rationale": "The risk is not reversible.",
           "veto": {
@@ -343,6 +345,8 @@ final class MagiProtocolTests: XCTestCase {
 
         XCTAssertEqual(result.vote.choice, "Do not merge")
         XCTAssertEqual(result.vote.verdictKind, .reject)
+        XCTAssertEqual(result.vote.decisionID, "do_not_merge")
+        XCTAssertEqual(result.vote.conditions, ["Missing rollback plan"])
         XCTAssertEqual(result.vote.rawOutput, output)
         XCTAssertEqual(result.veto?.memberID, .balthasar)
         XCTAssertEqual(result.veto?.blocksVerdict, true)
@@ -399,7 +403,8 @@ final class MagiProtocolTests: XCTestCase {
         XCTAssertTrue(prompt.contains("Verdict mode: engineering."))
         XCTAssertTrue(prompt.contains("verdict must be one of: APPROVE, REJECT, CONDITIONAL, NEED_EVIDENCE, ESCALATE"))
         XCTAssertTrue(prompt.contains(#""verdict": "APPROVE""#))
-        XCTAssertTrue(prompt.contains("JSON keys: member, round, verdict, vote, confidence, rationale, veto."))
+        XCTAssertTrue(prompt.contains("JSON keys: member, round, verdict, decision_id, choice, conditions, confidence, rationale, veto."))
+        XCTAssertTrue(prompt.contains("use the same decision_id only when the actionable decision and material conditions are the same"))
         XCTAssertTrue(prompt.contains("Approved fact-gathering packets entered into deliberation:"))
         XCTAssertTrue(prompt.contains("Treat approved facts as shared deliberation material."))
     }

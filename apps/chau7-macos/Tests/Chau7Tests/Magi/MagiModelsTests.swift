@@ -126,11 +126,11 @@ final class MagiModelsTests: XCTestCase {
         XCTAssertEqual(verdict.vetoes, [veto])
     }
 
-    func testEngineeringMajorityUsesApproveRejectStyleVerdict() {
+    func testEngineeringMajorityUsesCanonicalDecisionID() {
         let votes = [
-            MagiVote(id: "vote-1", memberID: .melchior, verdictKind: .approve, choice: "Merge after CI stays green.", confidence: 0.8, rationale: "The diff is contained."),
+            MagiVote(id: "vote-1", memberID: .melchior, verdictKind: .approve, decisionID: "merge_after_ci", choice: "Merge after CI stays green.", conditions: ["CI stays green"], confidence: 0.8, rationale: "The diff is contained."),
             MagiVote(id: "vote-2", memberID: .balthasar, verdictKind: .reject, choice: "Do not merge.", confidence: 0.7, rationale: "Rollback is unclear."),
-            MagiVote(id: "vote-3", memberID: .casper, verdictKind: .approve, choice: "Merge; the UX risk is acceptable.", confidence: 0.9, rationale: "The change is understandable.")
+            MagiVote(id: "vote-3", memberID: .casper, verdictKind: .approve, decisionID: "merge_after_ci", choice: "Merge once CI is green.", conditions: ["CI stays green"], confidence: 0.9, rationale: "The change is understandable.")
         ]
 
         let verdict = MagiDecisionResolver.resolve(votes: votes, questionKind: .engineering)
@@ -141,10 +141,24 @@ final class MagiModelsTests: XCTestCase {
         XCTAssertEqual(verdict.confidence, 0.85, accuracy: 0.001)
     }
 
+    func testEngineeringVotesDoNotGroupByVerdictKindAlone() {
+        let votes = [
+            MagiVote(id: "vote-1", memberID: .melchior, verdictKind: .approve, choice: "Merge after CI stays green.", confidence: 0.8, rationale: "The diff is contained."),
+            MagiVote(id: "vote-2", memberID: .balthasar, verdictKind: .reject, choice: "Do not merge.", confidence: 0.7, rationale: "Rollback is unclear."),
+            MagiVote(id: "vote-3", memberID: .casper, verdictKind: .approve, choice: "Merge; the UX risk is acceptable.", confidence: 0.9, rationale: "The change is understandable.")
+        ]
+
+        let verdict = MagiDecisionResolver.resolve(votes: votes, questionKind: .engineering)
+
+        XCTAssertEqual(verdict.kind, .deadlock)
+        XCTAssertTrue(verdict.requiresAdditionalRound)
+        XCTAssertEqual(verdict.consensusScore, 1.0 / 3.0, accuracy: 0.001)
+    }
+
     func testEngineeringResolverInfersRejectFromLegacyVoteText() {
         let votes = [
             MagiVote(id: "vote-1", memberID: .melchior, choice: "Do not merge", confidence: 0.8, rationale: "Missing tests."),
-            MagiVote(id: "vote-2", memberID: .balthasar, choice: "REJECT", confidence: 0.7, rationale: "Operational risk."),
+            MagiVote(id: "vote-2", memberID: .balthasar, choice: "do not merge", confidence: 0.7, rationale: "Operational risk."),
             MagiVote(id: "vote-3", memberID: .casper, choice: "Merge", confidence: 0.9, rationale: "The direction is good.")
         ]
 
@@ -153,6 +167,38 @@ final class MagiModelsTests: XCTestCase {
         XCTAssertEqual(verdict.kind, .reject)
         XCTAssertEqual(verdict.consensusScore, 2.0 / 3.0, accuracy: 0.001)
         XCTAssertFalse(verdict.requiresAdditionalRound)
+    }
+
+    func testEngineeringVotesWithSameDecisionIDButDifferentConditionsDoNotGroup() {
+        let votes = [
+            MagiVote(id: "vote-1", memberID: .melchior, verdictKind: .approve, decisionID: "merge", choice: "Merge", conditions: ["CI stays green"], confidence: 0.8, rationale: "Contained."),
+            MagiVote(id: "vote-2", memberID: .balthasar, verdictKind: .approve, decisionID: "merge", choice: "Merge", conditions: ["Add rollback plan"], confidence: 0.7, rationale: "Needs a safer release."),
+            MagiVote(id: "vote-3", memberID: .casper, verdictKind: .reject, decisionID: "reject", choice: "Do not merge", confidence: 0.9, rationale: "Too risky.")
+        ]
+
+        let verdict = MagiDecisionResolver.resolve(votes: votes, questionKind: .engineering)
+
+        XCTAssertEqual(verdict.kind, .deadlock)
+        XCTAssertTrue(verdict.requiresAdditionalRound)
+    }
+
+    func testMagiVoteDecodesLegacyJSONWithoutCanonicalFields() throws {
+        let data = """
+        {
+          "id": "vote-1",
+          "memberID": "melchior",
+          "verdictKind": "APPROVE",
+          "choice": "Merge",
+          "confidence": 0.75,
+          "rationale": "Legacy artifact"
+        }
+        """.data(using: .utf8)!
+
+        let vote = try JSONDecoder().decode(MagiVote.self, from: data)
+
+        XCTAssertNil(vote.decisionID)
+        XCTAssertEqual(vote.conditions, [])
+        XCTAssertEqual(vote.choice, "Merge")
     }
 
     func testMajorityVoteSelectsWinningChoice() {

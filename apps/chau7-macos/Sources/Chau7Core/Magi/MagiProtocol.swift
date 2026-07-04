@@ -235,11 +235,13 @@ public enum MagiPromptBuilder {
         - End marker name: \(markers.end)
         - The begin marker and end marker must be printed as standalone lines in your final answer.
         - Do not merely describe the marker names. Do not use Markdown fences around the final JSON block.
-        - JSON keys: member, round, verdict, vote, confidence, rationale, veto.
+        - JSON keys: member, round, verdict, decision_id, choice, conditions, confidence, rationale, veto.
         - member must be "\(member.id.rawValue)".
         - round must be \(roundNumber(from: roundID)).
         - verdict must be one of: \(verdictKinds).
-        - vote is the final answer you vote for.
+        - decision_id is a lowercase stable id for the exact decision you vote for. For engineering votes, use the same decision_id only when the actionable decision and material conditions are the same.
+        - choice is the human-readable final answer you vote for.
+        - conditions is an array of material conditions; use [] when unconditional or not applicable.
         - confidence is a number from 0 to 1.
         - veto is null unless you issue a blocking veto; if present use reason, scope, blocks_verdict.
 
@@ -248,7 +250,9 @@ public enum MagiPromptBuilder {
           "member": "\(member.id.rawValue)",
           "round": \(roundNumber(from: roundID)),
           "verdict": "\(questionKind.voteVerdictKinds[0].rawValue)",
-          "vote": "your final answer",
+          "decision_id": "canonical_decision_id",
+          "choice": "your final answer",
+          "conditions": [],
           "confidence": 0.82,
           "rationale": "short rationale",
           "veto": null
@@ -298,10 +302,13 @@ public enum MagiPromptBuilder {
         - End marker name: \(markers.end)
         - The begin marker and end marker must be printed as standalone lines in your final answer.
         - Do not merely describe the marker names. Do not use Markdown fences around the final JSON block.
-        - JSON keys: member, round, verdict, vote, confidence, rationale, veto.
+        - JSON keys: member, round, verdict, decision_id, choice, conditions, confidence, rationale, veto.
         - member must be "\(member.id.rawValue)".
         - round must be \(roundNumber(from: roundID)).
         - verdict must be one of: \(verdictKinds).
+        - decision_id is a lowercase stable id for the exact decision you vote for; do not use the verdict label alone as the decision id.
+        - choice is the human-readable final answer you vote for.
+        - conditions is an array of material conditions; use [] when unconditional or not applicable.
         """
     }
 
@@ -595,7 +602,9 @@ public enum MagiTranscriptParser {
                 id: "\(roundID)-\(memberID.rawValue)-vote",
                 memberID: memberID,
                 verdictKind: payload.verdictKind,
+                decisionID: payload.decisionID,
                 choice: payload.vote,
+                conditions: payload.conditions,
                 confidence: payload.confidence,
                 rationale: payload.rationale,
                 rawOutput: output
@@ -765,7 +774,9 @@ private struct VotePayload: Decodable {
     var member: String
     var round: Int
     var verdictKind: MagiVerdictKind?
+    var decisionID: String?
     var vote: String
+    var conditions: [String]
     var confidence: Double
     var rationale: String
     var veto: VetoPayload?
@@ -776,8 +787,11 @@ private struct VotePayload: Decodable {
         case verdict
         case verdictKind = "verdict_kind"
         case kind
+        case decisionID = "decision_id"
+        case decisionIDCamel = "decisionId"
         case vote
         case choice
+        case conditions
         case confidence
         case rationale
         case veto
@@ -802,8 +816,11 @@ private struct VotePayload: Decodable {
         } else {
             self.verdictKind = nil
         }
+        self.decisionID = try container.decodeIfPresent(String.self, forKey: .decisionID)
+            ?? container.decodeIfPresent(String.self, forKey: .decisionIDCamel)
         self.vote = try container.decodeIfPresent(String.self, forKey: .vote)
             ?? container.decode(String.self, forKey: .choice)
+        self.conditions = try decodeStringList(container, forKey: .conditions)
         self.confidence = try container.decodeIfPresent(Double.self, forKey: .confidence) ?? 0
         self.rationale = try container.decodeIfPresent(String.self, forKey: .rationale) ?? ""
         self.veto = try container.decodeIfPresent(VetoPayload.self, forKey: .veto)

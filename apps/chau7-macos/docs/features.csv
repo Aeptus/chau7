@@ -1,5 +1,5 @@
 Category,Feature,Description,Status,Differentiator
-AI Integration,MAGI Multi-Agent Decision Protocol,"CLI-first council mode that launches three isolated agents through Chau7 MCP, applies editable member personas, collects user-approved evidence, resolves majority/veto verdicts, and writes replay/share artifacts",Shipped,Yes
+AI Integration,MAGI Multi-Agent Decision Protocol,"CLI-first council mode that launches three isolated agents through Chau7 MCP, applies editable member personas, collects user-approved evidence, resolves majority/veto verdicts using canonical decision IDs plus material conditions, and writes replay/share artifacts",Shipped,Yes
 AI Integration,MAGI Command Surface,"SwiftPM executable supporting magi/MAGI direct questions, ask, doctor, config, replay, and local share generation with Chau7 MCP orchestration",Shipped,Yes
 AI Integration,MAGI Local Installer,"Scripts/install-magi-cli.sh builds the SwiftPM CLI and installs magi into ~/.local/bin by default, with uppercase MAGI supported through case-insensitive resolution or a case-sensitive alias",Shipped,Yes
 AI Integration,MAGI Production Artifacts,"Run checkpoints, failure categories, interrupted status, denied-evidence counts, complete required artifact bundles, and failure metadata in replay/share outputs make partial MAGI runs inspectable",Shipped,Yes

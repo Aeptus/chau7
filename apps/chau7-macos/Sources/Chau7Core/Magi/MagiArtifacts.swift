@@ -31,7 +31,9 @@ public enum MagiRunArtifactRenderer {
             lines.append("")
             for vote in verdict.votes {
                 let voteKind = vote.verdictKind.map { "[\($0.rawValue)] " } ?? ""
-                lines.append("- \(vote.memberID.displayName): \(voteKind)\(vote.choice) (\(formatScore(vote.confidence)))")
+                let decisionID = vote.decisionID.map { " [\($0)]" } ?? ""
+                let conditions = vote.conditions.isEmpty ? "" : " if \(vote.conditions.joined(separator: "; "))"
+                lines.append("- \(vote.memberID.displayName): \(voteKind)\(vote.choice)\(conditions)\(decisionID) (\(formatScore(vote.confidence)))")
             }
             if !verdict.vetoes.isEmpty {
                 lines.append("")
@@ -134,7 +136,9 @@ public enum MagiRunArtifactRenderer {
                     "id": vote.id,
                     "member_id": vote.memberID.rawValue,
                     "verdict_kind": vote.verdictKind?.rawValue ?? "",
+                    "decision_id": vote.decisionID ?? "",
                     "choice": vote.choice,
+                    "conditions": vote.conditions.joined(separator: " | "),
                     "confidence": formatScore(vote.confidence),
                     "rationale": vote.rationale
                 ]))
@@ -288,6 +292,8 @@ public enum MagiRunArtifactRenderer {
                         "member_id": vote.memberID.rawValue,
                         "round_id": round.id,
                         "verdict_kind": vote.verdictKind?.rawValue ?? "",
+                        "decision_id": vote.decisionID ?? "",
+                        "conditions": vote.conditions.joined(separator: " | "),
                         "confidence": formatScore(vote.confidence),
                         "rationale": vote.rationale
                     ])
@@ -437,8 +443,9 @@ public enum MagiRunArtifactRenderer {
         let decision = verdict?.decision ?? verdict?.kind.rawValue ?? "UNKNOWN"
         let votesHTML = verdict?.votes.map { vote in
             let verdictKind = vote.verdictKind.map { "\($0.rawValue) " } ?? ""
+            let conditions = vote.conditions.isEmpty ? "" : " if \(vote.conditions.joined(separator: "; "))"
             return """
-            <li><strong>\(htmlEscape(vote.memberID.displayName))</strong><span>\(htmlEscape(verdictKind + vote.choice))</span><small>confidence \(formatScore(vote
+            <li><strong>\(htmlEscape(vote.memberID.displayName))</strong><span>\(htmlEscape(verdictKind + vote.choice + conditions))</span><small>confidence \(formatScore(vote
                     .confidence))</small><p>\(htmlEscape(vote.rationale))</p></li>
             """
         }.joined(separator: "\n") ?? "<li>No votes recorded.</li>"
@@ -760,7 +767,8 @@ public enum MagiTerminalReplayRenderer {
             if voteRoundID == round.id, let verdict = run.finalVerdict {
                 for vote in verdict.votes {
                     let kind = vote.verdictKind.map { "[\($0.rawValue)] " } ?? ""
-                    lines.append("  - \(vote.memberID.displayName) vote: \(kind)\(vote.choice)")
+                    let conditions = vote.conditions.isEmpty ? "" : " if \(vote.conditions.joined(separator: "; "))"
+                    lines.append("  - \(vote.memberID.displayName) vote: \(kind)\(vote.choice)\(conditions)")
                     eventCount += 1
                 }
                 for veto in verdict.vetoes {
