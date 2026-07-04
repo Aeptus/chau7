@@ -114,14 +114,14 @@
   {
     "category": "AI Integration",
     "feature": "MAGI Evidence Collector Cleanup",
-    "description": "Approved collectors run in temporary Chau7 tabs that close after output capture, and evidence requests without explicit collectors do not silently fall back to repo status",
+    "description": "Approved collectors run in temporary Chau7 tabs that close through immediate cleanup defers, nonzero collector exits create failed evidence packets, and disabled-web, unsupported, or missing collectors are skipped before approval prompts instead of silently falling back to repo status",
     "status": "Shipped",
     "differentiator": "Yes"
   },
   {
     "category": "AI Integration",
     "feature": "MAGI Deliberation Transcript",
-    "description": "Live magi ask output renders the council as staged debate, frames fact gathering as approved deliberation material, and records vague uncollectible requests as not_actionable",
+    "description": "Live magi ask output renders the council as staged debate, frames fact gathering as approved deliberation material, and records vague uncollectible requests as skipped",
     "status": "Shipped",
     "differentiator": "Yes"
   },

@@ -927,6 +927,48 @@ public struct MagiCollectorCommand: Codable, Equatable, Sendable, Identifiable {
     }
 }
 
+public struct MagiCollectorExecutionResult: Equatable, Sendable {
+    public var output: String
+    public var exitStatus: Int
+
+    public init(output: String, exitStatus: Int) {
+        self.output = output
+        self.exitStatus = exitStatus
+    }
+}
+
+public enum MagiCollectorOutputParser {
+    public static func parse(output: String, sentinel: String) -> MagiCollectorExecutionResult? {
+        var body: [String] = []
+        var exitStatus: Int?
+        let sentinelPrefix = "\(sentinel):"
+
+        for line in output.components(separatedBy: .newlines) {
+            let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmed.hasPrefix(sentinelPrefix) {
+                let rawStatus = String(trimmed.dropFirst(sentinelPrefix.count))
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                if let parsedStatus = Int(rawStatus) {
+                    exitStatus = parsedStatus
+                }
+                continue
+            }
+
+            if !line.contains(sentinel) {
+                body.append(line)
+            }
+        }
+
+        guard let exitStatus else { return nil }
+        return MagiCollectorExecutionResult(
+            output: body
+                .joined(separator: "\n")
+                .trimmingCharacters(in: .whitespacesAndNewlines),
+            exitStatus: exitStatus
+        )
+    }
+}
+
 public enum MagiEvidenceCollectorPlanner {
     public static func commands(for request: MagiEvidenceRequest) -> [MagiCollectorCommand] {
         let collectors = request.proposedCollectors

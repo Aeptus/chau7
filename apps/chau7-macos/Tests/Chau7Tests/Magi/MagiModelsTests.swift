@@ -55,7 +55,7 @@ final class MagiModelsTests: XCTestCase {
         XCTAssertEqual(MagiRoundKind.evidenceCollection.sharePolicy, .approvedEvidenceOnly)
     }
 
-    func testEvidenceRequestDefaultsToPendingApproval() {
+    func testEvidenceRequestDefaultsToRequested() {
         let request = MagiEvidenceRequest(
             id: "evidence-1",
             memberID: .balthasar,
@@ -65,10 +65,23 @@ final class MagiModelsTests: XCTestCase {
             requiredEvidence: ["test_status"]
         )
 
-        XCTAssertEqual(request.status, .pendingApproval)
+        XCTAssertEqual(request.status, .requested)
         XCTAssertEqual(request.memberID, .balthasar)
         XCTAssertEqual(request.requiredEvidence, ["test_status"])
-        XCTAssertEqual(MagiEvidenceRequestStatus.notActionable.rawValue, "not_actionable")
+        XCTAssertEqual(
+            MagiEvidenceRequestStatus.allCases.map(\.rawValue),
+            ["requested", "approved", "denied", "skipped", "failed", "fulfilled"]
+        )
+    }
+
+    func testEvidenceRequestStatusDecodesLegacyValues() throws {
+        let decoder = JSONDecoder()
+
+        let pending = try decoder.decode(MagiEvidenceRequestStatus.self, from: Data(#""pendingApproval""#.utf8))
+        let notActionable = try decoder.decode(MagiEvidenceRequestStatus.self, from: Data(#""not_actionable""#.utf8))
+
+        XCTAssertEqual(pending, .requested)
+        XCTAssertEqual(notActionable, .skipped)
     }
 
     func testEvidenceCollectorV1SetMatchesPhaseSixContract() {

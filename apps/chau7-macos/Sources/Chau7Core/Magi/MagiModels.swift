@@ -322,11 +322,37 @@ public enum MagiEvidencePriority: String, Codable, CaseIterable, Sendable {
 }
 
 public enum MagiEvidenceRequestStatus: String, Codable, CaseIterable, Sendable {
-    case pendingApproval
+    case requested
     case approved
     case denied
+    case skipped
+    case failed
     case fulfilled
-    case notActionable = "not_actionable"
+
+    public init(from decoder: Decoder) throws {
+        let rawValue = try decoder.singleValueContainer().decode(String.self)
+        switch rawValue {
+        case "pendingApproval", "pending_approval":
+            self = .requested
+        case "notActionable", "not_actionable":
+            self = .skipped
+        default:
+            guard let status = MagiEvidenceRequestStatus(rawValue: rawValue) else {
+                throw DecodingError.dataCorrupted(
+                    .init(
+                        codingPath: decoder.codingPath,
+                        debugDescription: "Unknown MAGI evidence request status: \(rawValue)"
+                    )
+                )
+            }
+            self = status
+        }
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(rawValue)
+    }
 }
 
 public struct MagiEvidenceRequest: Codable, Equatable, Sendable, Identifiable {
@@ -347,7 +373,7 @@ public struct MagiEvidenceRequest: Codable, Equatable, Sendable, Identifiable {
         reason: String,
         requiredEvidence: [String],
         proposedCollectors: [String] = [],
-        status: MagiEvidenceRequestStatus = .pendingApproval
+        status: MagiEvidenceRequestStatus = .requested
     ) {
         self.id = id
         self.memberID = memberID

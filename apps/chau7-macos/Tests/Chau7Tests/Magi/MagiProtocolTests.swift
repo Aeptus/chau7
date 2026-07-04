@@ -670,4 +670,32 @@ final class MagiProtocolTests: XCTestCase {
         XCTAssertEqual(command?.payload, "local.shell:printf no")
         XCTAssertEqual(command?.requiresMCPCommandPermission, false)
     }
+
+    func testCollectorOutputParserExtractsExitStatusAndStripsSentinel() throws {
+        let output = """
+        first line
+        MAGI_COLLECTOR_DONE_1:0
+        """
+
+        let result = try XCTUnwrap(
+            MagiCollectorOutputParser.parse(output: output, sentinel: "MAGI_COLLECTOR_DONE_1")
+        )
+
+        XCTAssertEqual(result.exitStatus, 0)
+        XCTAssertEqual(result.output, "first line")
+    }
+
+    func testCollectorOutputParserKeepsFailedOutputAndExitStatus() throws {
+        let output = """
+        permission denied
+        MAGI_COLLECTOR_DONE_2:13
+        """
+
+        let result = try XCTUnwrap(
+            MagiCollectorOutputParser.parse(output: output, sentinel: "MAGI_COLLECTOR_DONE_2")
+        )
+
+        XCTAssertEqual(result.exitStatus, 13)
+        XCTAssertEqual(result.output, "permission denied")
+    }
 }

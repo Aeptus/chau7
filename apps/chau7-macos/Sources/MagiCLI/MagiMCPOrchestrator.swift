@@ -289,13 +289,15 @@ struct MagiMCPOrchestrator {
                 technicalLog: technicalLog
             )
             run.evidencePackets.append(contentsOf: evidencePackets)
-            markEvidenceRequestsFulfilled(
-                ids: Set(evidencePackets.filter { $0.metadata["collection_status"] == "fulfilled" }.compactMap(\.requestID)),
-                in: &run
-            )
+            markEvidenceRequestsFromPackets(evidencePackets, in: &run)
             if !approvedRequests.isEmpty {
                 let admittedCount = evidencePackets.filter { $0.metadata["collection_status"] == "fulfilled" }.count
-                announceStep("\(admittedCount) fact packet(s) admitted into deliberation.")
+                let failedCount = evidencePackets.filter { $0.metadata["collection_status"] == "failed" }.count
+                if failedCount > 0 {
+                    announceStep("\(admittedCount) fact packet(s) admitted; \(failedCount) collector(s) failed.")
+                } else {
+                    announceStep("\(admittedCount) fact packet(s) admitted into deliberation.")
+                }
             }
             run.status = .running
             MagiRunStateMachine.completeRound(&run, id: round3.id)
@@ -2437,10 +2439,11 @@ struct MagiMCPOrchestrator {
                 printLine("   \(statusLine("Wants", compact(request.requiredEvidence.joined(separator: "; "))))")
             }
             let commands = MagiEvidenceCollectorPlanner.commands(for: request)
+            let commandReview = reviewCollectorCommands(commands, config: config)
             var reviewedRequest = request
             guard !commands.isEmpty else {
                 announceStep("No collector proposed; recorded as a deliberation note.")
-                reviewedRequest.status = .notActionable
+                reviewedRequest.status = .skipped
                 reviewed.append(reviewedRequest)
                 continue
             }
@@ -2448,11 +2451,17 @@ struct MagiMCPOrchestrator {
             printLine("   \(terminalStyle.styled("Proposed collectors", .bold, .cyan))")
             for command in commands {
                 let payload = command.payload.map { " \($0)" } ?? ""
-                let webNote = command.usesWeb
-                    ? (config.webAccessAllowed ? " web" : " web disabled")
-                    : " local"
+                let collectorNote = commandReview.skipReasons[command.id]
+                    ?? (command.usesWeb ? "web" : "local")
                 let collector = terminalStyle.styled(command.collectorKind.rawValue, .yellow)
-                printLine("   - \(collector):\(payload) [\(webNote)]")
+                printLine("   - \(collector):\(payload) [\(collectorNote)]")
+            }
+
+            guard !commandReview.actionable.isEmpty else {
+                announceStep("No runnable collector remains; recorded as skipped without approval.")
+                reviewedRequest.status = .skipped
+                reviewed.append(reviewedRequest)
+                continue
             }
 
             switch config.evidencePolicy {
@@ -2477,6 +2486,29 @@ struct MagiMCPOrchestrator {
         return reviewed
     }
 
+    private struct MagiCollectorCommandReview {
+        var actionable: [MagiCollectorCommand]
+        var skipReasons: [String: String]
+    }
+
+    private func reviewCollectorCommands(
+        _ commands: [MagiCollectorCommand],
+        config: MagiConfig
+    ) -> MagiCollectorCommandReview {
+        var actionable: [MagiCollectorCommand] = []
+        var skipReasons: [String: String] = [:]
+        for command in commands {
+            if command.collectorKind == .unsupported {
+                skipReasons[command.id] = "skipped: unsupported collector"
+            } else if command.usesWeb, !config.webAccessAllowed {
+                skipReasons[command.id] = "skipped: web disabled"
+            } else {
+                actionable.append(command)
+            }
+        }
+        return MagiCollectorCommandReview(actionable: actionable, skipReasons: skipReasons)
+    }
+
     private func evidencePolicyStageDetail(_ policy: MagiEvidenceApprovalPolicy) -> String {
         switch policy {
         case .ask:
@@ -2499,46 +2531,44 @@ struct MagiMCPOrchestrator {
         var packets: [MagiEvidencePacket] = []
         for request in requests {
             try throwIfInterrupted(stage: "evidence collection")
-            let commands = MagiEvidenceCollectorPlanner.commands(for: request)
+            let commands = reviewCollectorCommands(
+                MagiEvidenceCollectorPlanner.commands(for: request),
+                config: config
+            ).actionable
             for command in commands {
                 try throwIfInterrupted(stage: "evidence collection")
-                if command.usesWeb, !config.webAccessAllowed {
-                    let packet = skippedWebPacket(command: command, request: request)
-                    printLine(collectorLine(command, compact(packet.summary), state: .repair))
-                    packets.append(packet)
-                    continue
-                }
                 printLine(collectorLine(command, "running", state: .working))
                 let packet = try runCollector(command: command, request: request, technicalLog: technicalLog)
-                printLine(collectorLine(command, compact(packet.summary), state: .done))
+                let state: MagiMemberLineState = packet.metadata["collection_status"] == "failed" ? .repair : .done
+                printLine(collectorLine(command, compact(packet.summary), state: state))
                 packets.append(packet)
             }
         }
         return packets
     }
 
-    private func markEvidenceRequestsFulfilled(ids: Set<String>, in run: inout MagiRun) {
-        guard !ids.isEmpty else { return }
-        for index in run.evidenceRequests.indices where ids.contains(run.evidenceRequests[index].id) {
-            run.evidenceRequests[index].status = .fulfilled
-        }
-    }
+    private func markEvidenceRequestsFromPackets(_ packets: [MagiEvidencePacket], in run: inout MagiRun) {
+        guard !packets.isEmpty else { return }
+        let statusesByRequestID = Dictionary(grouping: packets.compactMap { packet -> (String, MagiEvidenceRequestStatus)? in
+            guard let requestID = packet.requestID,
+                  let rawStatus = packet.metadata["collection_status"],
+                  let status = MagiEvidenceRequestStatus(rawValue: rawStatus) else {
+                return nil
+            }
+            return (requestID, status)
+        }, by: { $0.0 })
 
-    private func skippedWebPacket(command: MagiCollectorCommand, request: MagiEvidenceRequest) -> MagiEvidencePacket {
-        MagiEvidencePacket(
-            id: "\(command.id)-packet",
-            requestID: request.id,
-            collectorID: command.id,
-            summary: "web access disabled",
-            content: "web.query was requested and approved, but web_access_allowed=false for this MAGI run.",
-            sourceDescription: command.sourceDescription,
-            metadata: collectorMetadata(
-                command: command,
-                tabID: nil,
-                webAccessAllowed: false,
-                collectionStatus: "skipped"
-            )
-        )
+        for index in run.evidenceRequests.indices {
+            let requestID = run.evidenceRequests[index].id
+            let statuses = statusesByRequestID[requestID]?.map(\.1) ?? []
+            if statuses.contains(.failed) {
+                run.evidenceRequests[index].status = .failed
+            } else if statuses.contains(.fulfilled) {
+                run.evidenceRequests[index].status = .fulfilled
+            } else if statuses.contains(.skipped) {
+                run.evidenceRequests[index].status = .skipped
+            }
+        }
     }
 
     private func runCollector(
@@ -2551,6 +2581,9 @@ struct MagiMCPOrchestrator {
         ])
         guard let tabID = create["tab_id"] as? String else {
             throw MagiMCPOrchestratorError.missingToolField(tool: "tab_create", field: "tab_id")
+        }
+        defer {
+            closeCollectorTab(tabID: tabID, collectorID: command.id, technicalLog: technicalLog)
         }
 
         let ready = try client.callTool(name: "tab_wait_ready", arguments: [
@@ -2572,20 +2605,34 @@ struct MagiMCPOrchestrator {
             "command": "/bin/sh -lc \(shellQuote(script))"
         ])
 
-        let output = try waitForCollector(tabID: tabID, sentinel: sentinel, collectorID: command.id)
-        closeCollectorTab(tabID: tabID, collectorID: command.id, technicalLog: technicalLog)
+        let result = try waitForCollector(tabID: tabID, sentinel: sentinel, collectorID: command.id)
+        let collectionStatus: MagiEvidenceRequestStatus = result.exitStatus == 0 ? .fulfilled : .failed
+        if collectionStatus == .failed {
+            technicalLog.record(
+                "collector_failed",
+                stage: "evidence collection",
+                level: "warning",
+                tabID: tabID,
+                message: "Collector exited with status \(result.exitStatus)",
+                fields: [
+                    "collector_id": command.id,
+                    "collector_kind": command.collectorKind.rawValue
+                ]
+            )
+        }
         return MagiEvidencePacket(
             id: "\(command.id)-packet",
             requestID: request.id,
             collectorID: command.id,
-            summary: firstNonEmptyLine(output) ?? "collector completed",
-            content: output,
+            summary: collectorSummary(output: result.output, exitStatus: result.exitStatus),
+            content: result.output,
             sourceDescription: command.sourceDescription,
             metadata: collectorMetadata(
                 command: command,
                 tabID: tabID,
                 webAccessAllowed: command.usesWeb,
-                collectionStatus: "fulfilled"
+                collectionStatus: collectionStatus.rawValue,
+                exitStatus: result.exitStatus
             )
         )
     }
@@ -2720,7 +2767,8 @@ struct MagiMCPOrchestrator {
         command: MagiCollectorCommand,
         tabID: String?,
         webAccessAllowed: Bool,
-        collectionStatus: String
+        collectionStatus: String,
+        exitStatus: Int? = nil
     ) -> [String: String] {
         var metadata: [String: String] = [
             "collector_kind": command.collectorKind.rawValue,
@@ -2733,6 +2781,9 @@ struct MagiMCPOrchestrator {
         ]
         if let tabID {
             metadata["tab_id"] = tabID
+        }
+        if let exitStatus {
+            metadata["exit_status"] = String(exitStatus)
         }
         if let payload = command.payload {
             switch command.collectorKind {
@@ -2749,26 +2800,26 @@ struct MagiMCPOrchestrator {
         return metadata
     }
 
-    private func waitForCollector(tabID: String, sentinel: String, collectorID: String) throws -> String {
+    private func waitForCollector(tabID: String, sentinel: String, collectorID: String) throws -> MagiCollectorExecutionResult {
         let deadline = Date().addingTimeInterval(collectorTimeoutSeconds)
         var latest = ""
         while Date() < deadline {
             try throwIfInterrupted(stage: "evidence collection")
-            latest = try tabOutput(tabID: tabID)
-            if latest.contains(sentinel) {
-                return strippedCollectorOutput(latest, sentinel: sentinel)
+            latest = try tabOutput(tabID: tabID, lines: fullOutputLines)
+            if let result = MagiCollectorOutputParser.parse(output: latest, sentinel: sentinel) {
+                return result
             }
             Thread.sleep(forTimeInterval: 2)
         }
         throw MagiMCPOrchestratorError.timedOut(stage: "evidence collection", member: collectorID, lastError: nil)
     }
 
-    private func strippedCollectorOutput(_ output: String, sentinel: String) -> String {
-        output
-            .components(separatedBy: .newlines)
-            .filter { !$0.contains(sentinel) }
-            .joined(separator: "\n")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
+    private func collectorSummary(output: String, exitStatus: Int) -> String {
+        guard exitStatus == 0 else {
+            let detail = firstNonEmptyLine(output).map { ": \($0)" } ?? ""
+            return "collector failed with exit status \(exitStatus)\(detail)"
+        }
+        return firstNonEmptyLine(output) ?? "collector completed"
     }
 
     private func firstNonEmptyLine(_ output: String) -> String? {
