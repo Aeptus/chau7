@@ -45,29 +45,7 @@ extension MagiMCPOrchestrator {
             member: member,
             technicalLog: technicalLog
         )
-        let launchStatus = agent.status.isEmpty ? "missing" : agent.status
-        let promptStatus = agent.promptStatus.isEmpty ? "missing" : agent.promptStatus
-        var promptInputVisible = agent.promptInputVisible ?? false
-        var promptSubmitted = agent.promptSubmitted ?? false
-        var agentRunning = agent.agentRunning ?? false
-        if !agent.promptVerificationFieldsPresent, promptStatus == "sent" {
-            technicalLog.record(
-                "member_launch_verification_fallback_started",
-                stage: "launch",
-                memberID: member.id,
-                tabID: tabID,
-                message: "agent_launch did not return prompt verification fields; querying tab output/status"
-            )
-            let fallback = verifyLaunchedMemberPrompt(
-                tabID: tabID,
-                prompt: prompt,
-                member: member,
-                technicalLog: technicalLog
-            )
-            promptInputVisible = fallback.promptInputVisible
-            promptSubmitted = fallback.promptSubmitted
-            agentRunning = fallback.agentRunning
-        }
+        let assessment = MagiAgentLaunchContract.assess(agent, tabID: tabID)
         technicalLog.record(
             "member_launch_result",
             stage: "launch",
@@ -80,47 +58,18 @@ extension MagiMCPOrchestrator {
                 "resolved_reasoning": providerCommand.resolvedReasoning ?? "",
                 "raw_provider_command": String(providerCommand.usesRawCommand),
                 "tab_title": tabTitle,
-                "status": launchStatus,
-                "prompt_status": promptStatus,
-                "prompt_input_visible": String(promptInputVisible),
-                "prompt_submitted": String(promptSubmitted),
-                "agent_running": String(agentRunning)
+                "status": assessment.launchStatus,
+                "prompt_status": assessment.promptStatus,
+                "prompt_input_visible": assessment.promptInputVisibleLogValue,
+                "prompt_submitted": assessment.promptSubmittedLogValue,
+                "agent_running": assessment.agentRunningLogValue,
+                "prompt_verification_fields_complete": String(assessment.promptVerificationFieldsComplete)
             ]
         )
-        guard agent.status == "launched" else {
+        guard assessment.accepted else {
             throw MagiMCPOrchestratorError.launchFailed(
                 member: member.persona.displayName,
-                reason: agent.error ?? "agent_launch returned status \(launchStatus)"
-            )
-        }
-        let promptAccepted = AgentPromptInjectionPolicy.accepted(
-            status: promptStatus,
-            inputVisible: promptInputVisible,
-            submitted: promptSubmitted,
-            running: agentRunning
-        )
-        guard promptAccepted else {
-            throw MagiMCPOrchestratorError.launchFailed(
-                member: member.persona.displayName,
-                reason: "provider launched in \(tabID), but Chau7 did not detect an attached agent for prompt injection"
-            )
-        }
-        guard promptInputVisible || (promptSubmitted && agentRunning) else {
-            throw MagiMCPOrchestratorError.launchFailed(
-                member: member.persona.displayName,
-                reason: "provider launched in \(tabID), but MAGI did not observe the prompt text in the tab before submission"
-            )
-        }
-        guard promptSubmitted else {
-            throw MagiMCPOrchestratorError.launchFailed(
-                member: member.persona.displayName,
-                reason: "provider launched in \(tabID), but Chau7 did not confirm prompt submission"
-            )
-        }
-        guard agentRunning else {
-            throw MagiMCPOrchestratorError.launchFailed(
-                member: member.persona.displayName,
-                reason: "provider launched in \(tabID), but the tab did not report a running agent after submission"
+                reason: assessment.failureReason ?? "agent_launch contract rejected \(tabID)"
             )
         }
         return tabID
@@ -157,127 +106,6 @@ extension MagiMCPOrchestrator {
             )
         }
         return title
-    }
-
-    func verifyLaunchedMemberPrompt(
-        tabID: String,
-        prompt: String,
-        member: MagiMember,
-        technicalLog: MagiTechnicalLog
-    ) -> MagiLaunchVerification {
-        let promptInputVisible = waitForPromptNeedle(
-            tabID: tabID,
-            prompt: prompt,
-            timeoutSeconds: 4
-        )
-        let agentRunning = waitForAgentRunning(
-            tabID: tabID,
-            provider: member.provider,
-            timeoutSeconds: 5
-        )
-        technicalLog.record(
-            "member_launch_verification_fallback_completed",
-            stage: "launch",
-            memberID: member.id,
-            tabID: tabID,
-            fields: [
-                "prompt_input_visible": String(promptInputVisible),
-                "prompt_submitted": "true",
-                "agent_running": String(agentRunning)
-            ]
-        )
-        return MagiLaunchVerification(
-            promptInputVisible: promptInputVisible,
-            promptSubmitted: true,
-            agentRunning: agentRunning
-        )
-    }
-
-    func waitForPromptNeedle(
-        tabID: String,
-        prompt: String,
-        timeoutSeconds: TimeInterval
-    ) -> Bool {
-        let needles = promptVisibilityNeedles(from: prompt)
-        guard !needles.isEmpty else { return true }
-
-        let deadline = Date().addingTimeInterval(timeoutSeconds)
-        while Date() < deadline {
-            let bufferOutput = (try? tabOutput(tabID: tabID, source: "buffer")) ?? ""
-            if needles.contains(where: { bufferOutput.contains($0) }) {
-                return true
-            }
-            Thread.sleep(forTimeInterval: 0.25)
-        }
-        return false
-    }
-
-    func waitForAgentRunning(
-        tabID: String,
-        provider: String,
-        timeoutSeconds: TimeInterval
-    ) -> Bool {
-        let deadline = Date().addingTimeInterval(timeoutSeconds)
-        while Date() < deadline {
-            if (try? tabStatusReportsRunningAgent(tabID: tabID)) == true {
-                return true
-            }
-            let bufferOutput = (try? tabOutput(tabID: tabID, source: "buffer")) ?? ""
-            if agentOutputLooksResponsive(bufferOutput, provider: provider) {
-                return true
-            }
-            Thread.sleep(forTimeInterval: 0.25)
-        }
-        return false
-    }
-
-    func tabStatusReportsRunningAgent(tabID: String) throws -> Bool {
-        let status = try client.tabStatus(MagiMCPTabStatusRequest(tabID: tabID))
-        if status.hasActiveRun {
-            return true
-        }
-
-        let hasAgentIdentity =
-            status.activeApp.isEmpty == false
-                || status.aiProvider.isEmpty == false
-        guard hasAgentIdentity else { return false }
-
-        let runningStates = ["running", "waitingForInput", "approvalRequired", "stuck"]
-        return runningStates.contains(status.status)
-            || runningStates.contains(status.rawStatus)
-    }
-
-    func agentOutputLooksResponsive(_ output: String, provider: String) -> Bool {
-        let lowercased = output.lowercased()
-        var needles = [
-            "openai codex",
-            "queued follow-up inputs",
-            "usage limit resets",
-            "claude code",
-            "google gemini",
-            "thinking",
-            "working..."
-        ]
-
-        let normalizedProvider = provider.lowercased()
-        if normalizedProvider.contains("codex") {
-            needles.append("gpt-")
-        } else if normalizedProvider.contains("claude") {
-            needles.append(contentsOf: ["sonnet", "opus", "haiku"])
-        } else if normalizedProvider.contains("gemini") {
-            needles.append(contentsOf: ["google gemini", "gemini cli"])
-        }
-
-        return needles.contains { lowercased.contains($0) }
-    }
-
-    func promptVisibilityNeedles(from prompt: String) -> [String] {
-        prompt
-            .components(separatedBy: .newlines)
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { $0.count >= 8 }
-            .prefix(3)
-            .map { String($0.prefix(min(80, $0.count))) }
     }
 
     func sendPrompt(
@@ -460,10 +288,4 @@ extension MagiMCPOrchestrator {
 struct MagiMemberTab {
     var member: MagiMember
     var tabID: String
-}
-
-struct MagiLaunchVerification {
-    var promptInputVisible: Bool
-    var promptSubmitted: Bool
-    var agentRunning: Bool
 }

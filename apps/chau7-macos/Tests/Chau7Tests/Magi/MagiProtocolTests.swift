@@ -268,6 +268,85 @@ final class MagiProtocolTests: XCTestCase {
         XCTAssertFalse(status.hasActiveRun)
     }
 
+    func testAgentLaunchContractAcceptsStructuredSentPrompt() {
+        let assessment = MagiAgentLaunchContract.assess(
+            MagiMCPAgentLaunchAgent(
+                tabID: "tab_7",
+                status: "launched",
+                promptStatus: "sent",
+                promptInputVisible: true,
+                promptSubmitted: true,
+                agentRunning: true
+            ),
+            tabID: "tab_7"
+        )
+
+        XCTAssertTrue(assessment.accepted)
+        XCTAssertNil(assessment.failureReason)
+        XCTAssertTrue(assessment.promptVerificationFieldsComplete)
+        XCTAssertEqual(assessment.promptInputVisibleLogValue, "true")
+    }
+
+    func testAgentLaunchContractAcceptsRunningSubmittedUnverifiedPrompt() {
+        let assessment = MagiAgentLaunchContract.assess(
+            MagiMCPAgentLaunchAgent(
+                tabID: "tab_7",
+                status: "launched",
+                promptStatus: "sent_unverified",
+                promptInputVisible: false,
+                promptSubmitted: true,
+                agentRunning: true
+            ),
+            tabID: "tab_7"
+        )
+
+        XCTAssertTrue(assessment.accepted)
+        XCTAssertNil(assessment.failureReason)
+    }
+
+    func testAgentLaunchContractRejectsIncompletePromptVerificationFields() {
+        let assessment = MagiAgentLaunchContract.assess(
+            MagiMCPAgentLaunchAgent(
+                tabID: "tab_7",
+                status: "launched",
+                promptStatus: "sent",
+                promptInputVisible: nil,
+                promptSubmitted: nil,
+                agentRunning: nil
+            ),
+            tabID: "tab_7"
+        )
+
+        XCTAssertFalse(assessment.accepted)
+        XCTAssertEqual(
+            assessment.failureReason,
+            "agent_launch response for tab_7 did not include complete prompt verification fields"
+        )
+        XCTAssertFalse(assessment.promptVerificationFieldsComplete)
+        XCTAssertEqual(assessment.promptSubmittedLogValue, "missing")
+    }
+
+    func testAgentLaunchContractUsesMCPPromptFailureReason() {
+        let assessment = MagiAgentLaunchContract.assess(
+            MagiMCPAgentLaunchAgent(
+                tabID: "tab_7",
+                status: "launched",
+                promptStatus: "submitted_not_running",
+                promptInputVisible: true,
+                promptSubmitted: true,
+                agentRunning: false,
+                error: "prompt was submitted, but the tab did not report a running agent"
+            ),
+            tabID: "tab_7"
+        )
+
+        XCTAssertFalse(assessment.accepted)
+        XCTAssertEqual(
+            assessment.failureReason,
+            "prompt was submitted, but the tab did not report a running agent"
+        )
+    }
+
     func testParseCritiquesAndEvidenceRequests() throws {
         let markers = MagiProtocolMarkers(
             runID: "run-1",

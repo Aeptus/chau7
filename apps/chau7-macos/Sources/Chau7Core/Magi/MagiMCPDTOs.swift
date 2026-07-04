@@ -47,8 +47,8 @@ public struct MagiMCPAgentLaunchAgent: Decodable, Equatable {
     public var agentRunning: Bool?
     public var error: String?
 
-    public var promptVerificationFieldsPresent: Bool {
-        promptInputVisible != nil || promptSubmitted != nil || agentRunning != nil
+    public var promptVerificationFieldsComplete: Bool {
+        promptInputVisible != nil && promptSubmitted != nil && agentRunning != nil
     }
 
     public init(
