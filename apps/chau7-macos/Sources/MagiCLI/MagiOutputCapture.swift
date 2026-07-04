@@ -25,23 +25,20 @@ extension MagiMCPOrchestrator {
         lines: Int? = nil,
         waitForStableMs: Int = 0
     ) throws -> String {
-        let result = try client.callTool(name: "tab_output", arguments: [
-            "tab_id": tabID,
-            "lines": lines ?? normalOutputTailLines,
-            "wait_for_stable_ms": waitForStableMs,
-            "source": source
-        ])
-        guard let output = result["output"] as? String else {
-            throw MagiMCPOrchestratorError.missingToolField(tool: "tab_output", field: "output")
-        }
-        return output
+        let result = try client.tabOutput(MagiMCPTabOutputRequest(
+            tabID: tabID,
+            lines: lines ?? normalOutputTailLines,
+            waitForStableMs: waitForStableMs,
+            source: source
+        ))
+        return result.output
     }
 
     struct MagiPolledOutput {
         var terminalOutput: String
         var eventMessages: [String]
         var eventError: String?
-        var tabStatus: [String: Any]?
+        var tabStatus: MagiMCPTabStatus?
         var tabStatusError: String?
         var terminalReadMode: MagiTerminalReadMode
 
@@ -158,16 +155,12 @@ extension MagiMCPOrchestrator {
     ) throws -> (messages: [String], error: String?) {
         let requestedTypes = Set(eventTypes.map { $0.lowercased() })
         do {
-            var arguments: [String: Any] = ["limit": 200]
-            if let sinceMillis {
-                arguments["since_millis"] = sinceMillis
-            }
-            let result = try client.callTool(name: "chau7_runtime_events", arguments: arguments)
-            guard let events = result["events"] as? [[String: Any]] else {
-                throw MagiMCPOrchestratorError.missingToolField(tool: "chau7_runtime_events", field: "events")
-            }
+            let result = try client.runtimeEvents(MagiMCPRuntimeEventsRequest(
+                limit: 200,
+                sinceMillis: sinceMillis
+            ))
             let messages = MagiMCPEventParsing.runtimeEventMessages(
-                from: events,
+                from: result.events,
                 tabID: tabID,
                 eventTypes: Array(requestedTypes)
             )
@@ -190,17 +183,14 @@ extension MagiMCPOrchestrator {
         eventTypes: [String]
     ) throws -> (messages: [String], error: String?) {
         do {
-            let result = try client.callTool(name: "repo_get_events", arguments: [
-                "repo_path": repoPath,
-                "limit": 50,
-                "tab_id": tabID,
-                "event_types": eventTypes,
-                "truncate_messages": false
-            ])
-            guard let events = result["events"] as? [[String: Any]] else {
-                throw MagiMCPOrchestratorError.missingToolField(tool: "repo_get_events", field: "events")
-            }
-            return (events.compactMap { $0["message"] as? String }, nil)
+            let result = try client.repoEvents(MagiMCPRepoGetEventsRequest(
+                repoPath: repoPath,
+                limit: 50,
+                tabID: tabID,
+                eventTypes: eventTypes,
+                truncateMessages: false
+            ))
+            return (result.events.map(\.message), nil)
         } catch let error as MagiMCPClientError {
             if case let .protocolError(message) = error,
                message.contains("unknown argument") || message.contains("Invalid params") {
@@ -213,10 +203,10 @@ extension MagiMCPOrchestrator {
         }
     }
 
-    func tabStatusSnapshot(tabID: String) -> (status: [String: Any]?, error: String?) {
+    func tabStatusSnapshot(tabID: String) -> (status: MagiMCPTabStatus?, error: String?) {
         do {
-            let result = try client.callTool(name: "tab_status", arguments: ["tab_id": tabID])
-            return (result, nil)
+            let status = try client.tabStatus(MagiMCPTabStatusRequest(tabID: tabID))
+            return (status, nil)
         } catch {
             return (nil, error.localizedDescription)
         }
@@ -1206,20 +1196,4 @@ extension MagiMCPOrchestrator {
         )
     }
 
-    func stringField(_ value: Any?) -> String {
-        guard let value else { return "" }
-        if let string = value as? String { return string }
-        if let bool = value as? Bool { return String(bool) }
-        if let int = value as? Int { return String(int) }
-        return "\(value)"
-    }
-
-    func boolField(_ value: Any?) -> Bool {
-        if let bool = value as? Bool { return bool }
-        if let string = value as? String {
-            return ["true", "yes", "1"].contains(string.lowercased())
-        }
-        if let int = value as? Int { return int != 0 }
-        return false
-    }
 }

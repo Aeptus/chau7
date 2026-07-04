@@ -30,7 +30,7 @@
   {
     "category": "AI Integration",
     "feature": "MAGI Hardened CLI Runtime",
-    "description": "Missing Chau7/MCP, provider launch failures, agent timeouts, malformed structured output, denied evidence, veto/deadlock outcomes, interrupts, and partial artifact replay paths produce clean statuses and local logs, with orchestration split across focused round, capture, evidence, checkpoint, and terminal rendering components",
+    "description": "Missing Chau7/MCP, provider launch failures, agent timeouts, malformed structured output, denied evidence, veto/deadlock outcomes, interrupts, and partial artifact replay paths produce clean statuses and local logs, with orchestration split across focused round, capture, evidence, checkpoint, terminal rendering, and typed MCP-boundary DTO components",
     "status": "Shipped",
     "differentiator": "Yes"
   },

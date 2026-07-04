@@ -159,31 +159,31 @@ final class MagiProtocolTests: XCTestCase {
     }
 
     func testRuntimeEventExtractorReadsChau7AIEventPayloads() {
-        let events: [[String: Any]] = [
-            [
-                "type": "ai_event",
-                "tab_id": "tab_1",
-                "detail": [
-                    "event_type": "agent-turn-complete",
-                    "message": "wrong tab"
-                ]
-            ],
-            [
-                "type": "ai_event",
-                "tab_id": "tab_2",
-                "detail": [
-                    "event_type": "tool_called",
-                    "message": "wrong event type"
-                ]
-            ],
-            [
-                "type": "ai_event",
-                "tab_id": "tab_2",
-                "detail": [
-                    "event_type": "agent-turn-complete",
-                    "message": "MAGI_RUN_1_ROUND_1_MELCHIOR_POSITION_BEGIN"
-                ]
-            ]
+        let events = [
+            MagiMCPRuntimeEvent(
+                type: "ai_event",
+                tabID: "tab_1",
+                detail: MagiMCPRuntimeEventDetail(
+                    eventType: "agent-turn-complete",
+                    message: "wrong tab"
+                )
+            ),
+            MagiMCPRuntimeEvent(
+                type: "ai_event",
+                tabID: "tab_2",
+                detail: MagiMCPRuntimeEventDetail(
+                    eventType: "tool_called",
+                    message: "wrong event type"
+                )
+            ),
+            MagiMCPRuntimeEvent(
+                type: "ai_event",
+                tabID: "tab_2",
+                detail: MagiMCPRuntimeEventDetail(
+                    eventType: "agent-turn-complete",
+                    message: "MAGI_RUN_1_ROUND_1_MELCHIOR_POSITION_BEGIN"
+                )
+            )
         ]
 
         let messages = MagiMCPEventParsing.runtimeEventMessages(
@@ -196,14 +196,12 @@ final class MagiProtocolTests: XCTestCase {
     }
 
     func testRuntimeEventExtractorFallsBackToTopLevelEventType() {
-        let events: [[String: Any]] = [
-            [
-                "type": "finished",
-                "tab_id": "tab_2",
-                "detail": [
-                    "message": "done"
-                ]
-            ]
+        let events = [
+            MagiMCPRuntimeEvent(
+                type: "finished",
+                tabID: "tab_2",
+                detail: MagiMCPRuntimeEventDetail(message: "done")
+            )
         ]
 
         let messages = MagiMCPEventParsing.runtimeEventMessages(
@@ -216,22 +214,58 @@ final class MagiProtocolTests: XCTestCase {
     }
 
     func testTabStatusIdleForRepairUsesPromptReadinessButNotActiveRuns() {
-        XCTAssertTrue(MagiMCPEventParsing.tabStatusIsIdleForRepair([
-            "status": "running",
-            "can_accept_exec": true
-        ]))
-        XCTAssertTrue(MagiMCPEventParsing.tabStatusIsIdleForRepair([
-            "status": "done",
-            "is_at_prompt": false
-        ]))
-        XCTAssertFalse(MagiMCPEventParsing.tabStatusIsIdleForRepair([
-            "active_run": ["run_id": "run-1"],
-            "can_accept_exec": true
-        ]))
-        XCTAssertFalse(MagiMCPEventParsing.tabStatusIsIdleForRepair([
-            "status": "approvalRequired",
-            "can_accept_exec": false
-        ]))
+        XCTAssertTrue(MagiMCPEventParsing.tabStatusIsIdleForRepair(MagiMCPTabStatus(
+            status: "running",
+            canAcceptExec: true
+        )))
+        XCTAssertTrue(MagiMCPEventParsing.tabStatusIsIdleForRepair(MagiMCPTabStatus(
+            status: "done",
+            isAtPrompt: false
+        )))
+        XCTAssertFalse(MagiMCPEventParsing.tabStatusIsIdleForRepair(MagiMCPTabStatus(
+            activeRun: .object(["run_id": .string("run-1")]),
+            canAcceptExec: true
+        )))
+        XCTAssertFalse(MagiMCPEventParsing.tabStatusIsIdleForRepair(MagiMCPTabStatus(
+            status: "approvalRequired",
+            canAcceptExec: false
+        )))
+    }
+
+    func testMCPDTOsDecodeFlexibleLaunchAndStatusFields() throws {
+        let launchJSON = """
+        {
+          "agents": [
+            {
+              "tab_id": "tab_7",
+              "status": "launched",
+              "prompt": "sent",
+              "prompt_input_visible": "true",
+              "prompt_submitted": 1,
+              "agent_running": true
+            }
+          ]
+        }
+        """
+        let launch = try JSONDecoder().decode(MagiMCPAgentLaunchResponse.self, from: Data(launchJSON.utf8))
+        XCTAssertEqual(launch.agents.first?.tabID, "tab_7")
+        XCTAssertEqual(launch.agents.first?.promptInputVisible, true)
+        XCTAssertEqual(launch.agents.first?.promptSubmitted, true)
+        XCTAssertEqual(launch.agents.first?.agentRunning, true)
+
+        let statusJSON = """
+        {
+          "status": "done",
+          "can_accept_exec": "yes",
+          "is_at_prompt": 0,
+          "active_run": null
+        }
+        """
+        let status = try JSONDecoder().decode(MagiMCPTabStatus.self, from: Data(statusJSON.utf8))
+        XCTAssertEqual(status.status, "done")
+        XCTAssertTrue(status.canAcceptExec)
+        XCTAssertFalse(status.isAtPrompt)
+        XCTAssertFalse(status.hasActiveRun)
     }
 
     func testParseCritiquesAndEvidenceRequests() throws {

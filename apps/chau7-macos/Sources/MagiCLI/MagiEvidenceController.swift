@@ -166,21 +166,16 @@ extension MagiMCPOrchestrator {
         request: MagiEvidenceRequest,
         technicalLog: MagiTechnicalLog
     ) throws -> MagiEvidencePacket {
-        let create = try client.callTool(name: "tab_create", arguments: [
-            "directory": paths.currentDirectory
-        ])
-        guard let tabID = create["tab_id"] as? String else {
+        let create = try client.createTab(MagiMCPTabCreateRequest(directory: paths.currentDirectory))
+        guard let tabID = create.tabID else {
             throw MagiMCPOrchestratorError.missingToolField(tool: "tab_create", field: "tab_id")
         }
         defer {
             closeCollectorTab(tabID: tabID, collectorID: command.id, technicalLog: technicalLog)
         }
 
-        let ready = try client.callTool(name: "tab_wait_ready", arguments: [
-            "tab_id": tabID,
-            "timeout_ms": 30000
-        ])
-        guard ready["can_accept_exec"] as? Bool == true else {
+        let ready = try client.waitReady(MagiMCPTabWaitReadyRequest(tabID: tabID, timeoutMs: 30000))
+        guard ready.canAcceptExec else {
             throw MagiMCPOrchestratorError.launchFailed(member: command.id, reason: "collector tab did not become ready")
         }
 
@@ -190,10 +185,10 @@ extension MagiMCPOrchestrator {
         status=$?
         printf '\\n\(sentinel):%s\\n' "$status"
         """
-        _ = try client.callTool(name: "tab_exec", arguments: [
-            "tab_id": tabID,
-            "command": "/bin/sh -lc \(shellQuote(script))"
-        ])
+        try client.exec(MagiMCPTabExecRequest(
+            tabID: tabID,
+            command: "/bin/sh -lc \(shellQuote(script))"
+        ))
 
         let result = try waitForCollector(tabID: tabID, sentinel: sentinel, collectorID: command.id)
         let collectionStatus: MagiEvidenceRequestStatus = result.exitStatus == 0 ? .fulfilled : .failed
@@ -233,10 +228,7 @@ extension MagiMCPOrchestrator {
         technicalLog: MagiTechnicalLog
     ) {
         do {
-            _ = try client.callTool(name: "tab_close", arguments: [
-                "tab_id": tabID,
-                "force": true
-            ])
+            try client.closeTab(MagiMCPTabCloseRequest(tabID: tabID, force: true))
             technicalLog.record(
                 "collector_tab_closed",
                 stage: "evidence collection",

@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- **MAGI MCP Boundary DTOs**: MAGI now talks to Chau7 MCP through typed request/response DTOs for launch, tab output/status, prompt submission, runtime/repo events, and collector tab lifecycle. Raw `[String: Any]` handling is confined to the JSON-RPC transport internals.
 - **MAGI CLI Command Structure**: The `magi` executable entrypoint is now a small launcher, with command parsing/dispatch, the home TUI, config panel, first-run wizard, doctor checks, replay/share commands, and shared CLI support split into focused files for safer iteration.
 - **MAGI Orchestrator Structure**: The MAGI MCP orchestration code is split into focused round running, output capture, evidence control, artifact checkpointing, and terminal rendering components so future protocol fixes can land in narrower files without changing runtime behavior.
 - **MAGI Evidence And Veto Policy**: MAGI config now uses explicit `evidence_policy` values (`ask`, `auto_deny`, `preapproved`) instead of an ignored approval boolean, with legacy `evidence_requires_approval` values migrated on read. Veto behavior is now final-vote-only: position-round veto fields are retained as deliberation notes, but only vetoes emitted during a vote round can block final resolution.

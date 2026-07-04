@@ -1,3 +1,4 @@
+import Chau7Core
 import Darwin
 import Foundation
 
@@ -37,7 +38,18 @@ enum MagiMCPClientError: Error, LocalizedError {
 }
 
 protocol MagiMCPToolCalling {
-    func callTool(name: String, arguments: [String: Any]) throws -> [String: Any]
+    func agentLaunch(_ request: MagiMCPAgentLaunchRequest) throws -> MagiMCPAgentLaunchResponse
+    func renameTab(_ request: MagiMCPTabRenameRequest) throws
+    func tabOutput(_ request: MagiMCPTabOutputRequest) throws -> MagiMCPTabOutputResponse
+    func tabStatus(_ request: MagiMCPTabStatusRequest) throws -> MagiMCPTabStatus
+    func sendInput(_ request: MagiMCPTabInputRequest) throws -> MagiMCPTabSendInputResponse
+    func submitPrompt(_ request: MagiMCPTabSubmitPromptRequest) throws -> MagiMCPTabSubmitPromptResponse
+    func closeTab(_ request: MagiMCPTabCloseRequest) throws
+    func runtimeEvents(_ request: MagiMCPRuntimeEventsRequest) throws -> MagiMCPRuntimeEventsResponse
+    func repoEvents(_ request: MagiMCPRepoGetEventsRequest) throws -> MagiMCPRepoEventsResponse
+    func createTab(_ request: MagiMCPTabCreateRequest) throws -> MagiMCPTabCreateResponse
+    func waitReady(_ request: MagiMCPTabWaitReadyRequest) throws -> MagiMCPTabWaitReadyResponse
+    func exec(_ request: MagiMCPTabExecRequest) throws
 }
 
 final class MagiMCPClient: MagiMCPToolCalling {
@@ -110,7 +122,64 @@ final class MagiMCPClient: MagiMCPToolCalling {
         try sendNotification(method: "notifications/initialized", params: [:])
     }
 
-    func callTool(name: String, arguments: [String: Any]) throws -> [String: Any] {
+    func agentLaunch(_ request: MagiMCPAgentLaunchRequest) throws -> MagiMCPAgentLaunchResponse {
+        try callTool(name: "agent_launch", arguments: request)
+    }
+
+    func renameTab(_ request: MagiMCPTabRenameRequest) throws {
+        let _: MagiMCPOperationResponse = try callTool(name: "tab_rename", arguments: request)
+    }
+
+    func tabOutput(_ request: MagiMCPTabOutputRequest) throws -> MagiMCPTabOutputResponse {
+        try callTool(name: "tab_output", arguments: request)
+    }
+
+    func tabStatus(_ request: MagiMCPTabStatusRequest) throws -> MagiMCPTabStatus {
+        try callTool(name: "tab_status", arguments: request)
+    }
+
+    func sendInput(_ request: MagiMCPTabInputRequest) throws -> MagiMCPTabSendInputResponse {
+        try callTool(name: "tab_send_input", arguments: request)
+    }
+
+    func submitPrompt(_ request: MagiMCPTabSubmitPromptRequest) throws -> MagiMCPTabSubmitPromptResponse {
+        try callTool(name: "tab_submit_prompt", arguments: request)
+    }
+
+    func closeTab(_ request: MagiMCPTabCloseRequest) throws {
+        let _: MagiMCPOperationResponse = try callTool(name: "tab_close", arguments: request)
+    }
+
+    func runtimeEvents(_ request: MagiMCPRuntimeEventsRequest) throws -> MagiMCPRuntimeEventsResponse {
+        try callTool(name: "chau7_runtime_events", arguments: request)
+    }
+
+    func repoEvents(_ request: MagiMCPRepoGetEventsRequest) throws -> MagiMCPRepoEventsResponse {
+        try callTool(name: "repo_get_events", arguments: request)
+    }
+
+    func createTab(_ request: MagiMCPTabCreateRequest) throws -> MagiMCPTabCreateResponse {
+        try callTool(name: "tab_create", arguments: request)
+    }
+
+    func waitReady(_ request: MagiMCPTabWaitReadyRequest) throws -> MagiMCPTabWaitReadyResponse {
+        try callTool(name: "tab_wait_ready", arguments: request)
+    }
+
+    func exec(_ request: MagiMCPTabExecRequest) throws {
+        let _: MagiMCPOperationResponse = try callTool(name: "tab_exec", arguments: request)
+    }
+
+    private func callTool<Request: Encodable, Response: Decodable>(
+        name: String,
+        arguments: Request
+    ) throws -> Response {
+        let rawArguments = try encodeJSONObject(arguments, context: "\(name) arguments")
+        let rawResult = try callToolRaw(name: name, arguments: rawArguments)
+        return try decodeJSONObject(Response.self, from: rawResult, context: "\(name) result")
+    }
+
+    private func callToolRaw(name: String, arguments: [String: Any]) throws -> [String: Any] {
         let response = try sendRequest(method: "tools/call", params: [
             "name": name,
             "arguments": arguments
@@ -141,6 +210,27 @@ final class MagiMCPClient: MagiMCPToolCalling {
         }
 
         return result
+    }
+
+    private func encodeJSONObject<Value: Encodable>(_ value: Value, context: String) throws -> [String: Any] {
+        let data = try JSONEncoder().encode(value)
+        guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            throw MagiMCPClientError.protocolError("could not encode \(context) as a JSON object")
+        }
+        return object
+    }
+
+    private func decodeJSONObject<Value: Decodable>(
+        _ type: Value.Type,
+        from object: [String: Any],
+        context: String
+    ) throws -> Value {
+        do {
+            let data = try JSONSerialization.data(withJSONObject: object, options: [])
+            return try JSONDecoder().decode(type, from: data)
+        } catch {
+            throw MagiMCPClientError.protocolError("could not decode \(context): \(error.localizedDescription)")
+        }
     }
 
     private func sendRequest(method: String, params: [String: Any]) throws -> [String: Any] {

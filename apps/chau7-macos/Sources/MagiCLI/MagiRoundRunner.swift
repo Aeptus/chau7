@@ -26,19 +26,18 @@ extension MagiMCPOrchestrator {
     ) throws -> String {
         let providerCommand = MagiProviderCommandBuilder.command(for: member)
         let command = providerCommand.commandLine
-        let result = try client.callTool(name: "agent_launch", arguments: [
-            "directory": paths.currentDirectory,
-            "agent_command": command,
-            "prompt": prompt,
-            "count": 1,
-            "ready_timeout_ms": launchTimeoutMs
-        ])
+        let result = try client.agentLaunch(MagiMCPAgentLaunchRequest(
+            directory: paths.currentDirectory,
+            agentCommand: command,
+            prompt: prompt,
+            count: 1,
+            readyTimeoutMs: launchTimeoutMs
+        ))
 
-        guard let agents = result["agents"] as? [[String: Any]],
-              let agent = agents.first else {
+        guard let agent = result.agents.first else {
             throw MagiMCPOrchestratorError.missingToolField(tool: "agent_launch", field: "agents[0]")
         }
-        guard let tabID = agent["tab_id"] as? String else {
+        guard let tabID = agent.tabID else {
             throw MagiMCPOrchestratorError.missingToolField(tool: "agent_launch", field: "agents[0].tab_id")
         }
         let tabTitle = renameMemberTab(
@@ -46,15 +45,12 @@ extension MagiMCPOrchestrator {
             member: member,
             technicalLog: technicalLog
         )
-        let launchStatus = agent["status"] as? String ?? "missing"
-        let promptStatus = agent["prompt"] as? String ?? "missing"
-        var promptInputVisible = boolField(agent["prompt_input_visible"])
-        var promptSubmitted = boolField(agent["prompt_submitted"])
-        var agentRunning = boolField(agent["agent_running"])
-        if agent["prompt_input_visible"] == nil,
-           agent["prompt_submitted"] == nil,
-           agent["agent_running"] == nil,
-           promptStatus == "sent" {
+        let launchStatus = agent.status.isEmpty ? "missing" : agent.status
+        let promptStatus = agent.promptStatus.isEmpty ? "missing" : agent.promptStatus
+        var promptInputVisible = agent.promptInputVisible ?? false
+        var promptSubmitted = agent.promptSubmitted ?? false
+        var agentRunning = agent.agentRunning ?? false
+        if !agent.promptVerificationFieldsPresent, promptStatus == "sent" {
             technicalLog.record(
                 "member_launch_verification_fallback_started",
                 stage: "launch",
@@ -91,10 +87,10 @@ extension MagiMCPOrchestrator {
                 "agent_running": String(agentRunning)
             ]
         )
-        guard (agent["status"] as? String) == "launched" else {
+        guard agent.status == "launched" else {
             throw MagiMCPOrchestratorError.launchFailed(
                 member: member.persona.displayName,
-                reason: agent["error"] as? String ?? "agent_launch returned \(agent)"
+                reason: agent.error ?? "agent_launch returned status \(launchStatus)"
             )
         }
         let promptAccepted = AgentPromptInjectionPolicy.accepted(
@@ -141,10 +137,7 @@ extension MagiMCPOrchestrator {
             displayName: member.persona.displayName
         )
         do {
-            _ = try client.callTool(name: "tab_rename", arguments: [
-                "tab_id": tabID,
-                "title": title
-            ])
+            try client.renameTab(MagiMCPTabRenameRequest(tabID: tabID, title: title))
             technicalLog.record(
                 "member_tab_renamed",
                 stage: "launch",
@@ -239,20 +232,19 @@ extension MagiMCPOrchestrator {
     }
 
     func tabStatusReportsRunningAgent(tabID: String) throws -> Bool {
-        let result = try client.callTool(name: "tab_status", arguments: ["tab_id": tabID])
-        if result["active_run"] is [String: Any] {
+        let status = try client.tabStatus(MagiMCPTabStatusRequest(tabID: tabID))
+        if status.hasActiveRun {
             return true
         }
 
         let hasAgentIdentity =
-            stringField(result["active_app"]).isEmpty == false
-                || stringField(result["ai_provider"]).isEmpty == false
+            status.activeApp.isEmpty == false
+                || status.aiProvider.isEmpty == false
         guard hasAgentIdentity else { return false }
 
         let runningStates = ["running", "waitingForInput", "approvalRequired", "stuck"]
-        return ["status", "raw_status"].contains { key in
-            runningStates.contains(stringField(result[key]))
-        }
+        return runningStates.contains(status.status)
+            || runningStates.contains(status.rawStatus)
     }
 
     func agentOutputLooksResponsive(_ output: String, provider: String) -> Bool {
@@ -302,29 +294,24 @@ extension MagiMCPOrchestrator {
             tabID: tabID,
             fields: ["characters": String(prompt.count)]
         )
-        let sendResult = try client.callTool(name: "tab_send_input", arguments: [
-            "tab_id": tabID,
-            "input": prompt
-        ])
+        let sendResult = try client.sendInput(MagiMCPTabInputRequest(tabID: tabID, input: prompt))
         technicalLog.record(
             "prompt_input_sent",
             stage: stage,
             memberID: memberID,
             tabID: tabID,
-            fields: ["ok": stringField(sendResult["ok"])]
+            fields: ["ok": sendResult.ok]
         )
         Thread.sleep(forTimeInterval: 0.3)
-        let submitResult = try client.callTool(name: "tab_submit_prompt", arguments: [
-            "tab_id": tabID
-        ])
+        let submitResult = try client.submitPrompt(MagiMCPTabSubmitPromptRequest(tabID: tabID))
         technicalLog.record(
             "prompt_submitted",
             stage: stage,
             memberID: memberID,
             tabID: tabID,
             fields: [
-                "ok": stringField(submitResult["ok"]),
-                "enter_count": stringField(submitResult["enter_count"])
+                "ok": submitResult.ok,
+                "enter_count": submitResult.enterCount
             ]
         )
     }
@@ -422,10 +409,7 @@ extension MagiMCPOrchestrator {
         outcome: String
     ) {
         do {
-            _ = try client.callTool(name: "tab_close", arguments: [
-                "tab_id": session.tabID,
-                "force": true
-            ])
+            try client.closeTab(MagiMCPTabCloseRequest(tabID: session.tabID, force: true))
             technicalLog.record(
                 "member_tab_closed",
                 stage: "cleanup",

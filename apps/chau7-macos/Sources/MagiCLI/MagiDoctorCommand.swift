@@ -64,16 +64,13 @@ extension MagiCLIRunner {
         }
 
         do {
-            let result = try client.callTool(name: "repo_get_events", arguments: [
-                "repo_path": repositoryRoot,
-                "limit": 1,
-                "tab_id": "tab_0",
-                "event_types": ["agent-turn-complete"],
-                "truncate_messages": false
-            ])
-            guard result["events"] is [[String: Any]] else {
-                throw MagiMCPOrchestratorError.missingToolField(tool: "repo_get_events", field: "events")
-            }
+            _ = try client.repoEvents(MagiMCPRepoGetEventsRequest(
+                repoPath: repositoryRoot,
+                limit: 1,
+                tabID: "tab_0",
+                eventTypes: ["agent-turn-complete"],
+                truncateMessages: false
+            ))
         } catch let error as MagiMCPClientError {
             if case let .protocolError(message) = error,
                message.contains("unknown argument") || message.contains("Invalid params") {
