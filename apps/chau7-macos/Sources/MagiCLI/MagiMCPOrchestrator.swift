@@ -693,7 +693,7 @@ struct MagiMCPOrchestrator {
             ? repairProgressPhrases + effectiveProcessingLines
             : effectiveProcessingLines
         let phrase = phrases[pulse % phrases.count]
-        let checksum = String(format: "%04X", (pulse * 137 + terminalCharacters + eventCount) % 65_535)
+        let checksum = String(format: "%04X", (pulse * 137 + terminalCharacters + eventCount) % 65535)
         let telemetry = "buf \(formatCharacterCount(terminalCharacters)) // evt \(eventCount) // chk \(checksum)"
         let detail = "\(stageKind.outputName.uppercased()) // \(phrase) // \(telemetry)"
         return memberLine(member, "\(stage): \(detail)", state: mode == .repair ? .repair : .working)
