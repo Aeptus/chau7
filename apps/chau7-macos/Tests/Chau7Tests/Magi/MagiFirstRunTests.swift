@@ -121,8 +121,41 @@ final class MagiFirstRunTests: XCTestCase {
         XCTAssertTrue(content.contains("[members.melchior]"))
         XCTAssertTrue(content.contains("provider = \"codex\""))
         XCTAssertTrue(content.contains("class = \"strongest\""))
+        XCTAssertTrue(content.contains("evidence_policy = \"ask\""))
         XCTAssertTrue(content.contains("auto_close_agent_tabs = true"))
         XCTAssertEqual(decoded, config)
+    }
+
+    func testConfigTOMLCodecReadsEvidencePolicy() throws {
+        let content = """
+        schema_version = 1
+        evidence_policy = "auto_deny"
+
+        [members.melchior]
+        provider = "codex"
+        class = "balanced"
+        reasoning = "max"
+        """
+
+        let decoded = try MagiConfigTOMLCodec.decode(content)
+
+        XCTAssertEqual(decoded.evidencePolicy, .autoDeny)
+    }
+
+    func testConfigTOMLCodecMigratesLegacyEvidenceApprovalBoolean() throws {
+        let content = """
+        schema_version = 1
+        evidence_requires_approval = false
+
+        [members.melchior]
+        provider = "codex"
+        class = "balanced"
+        reasoning = "max"
+        """
+
+        let decoded = try MagiConfigTOMLCodec.decode(content)
+
+        XCTAssertEqual(decoded.evidencePolicy, .preapproved)
     }
 
     func testConfigTOMLCodecDefaultsAutoCloseForOlderConfigs() throws {
@@ -226,6 +259,25 @@ final class MagiFirstRunTests: XCTestCase {
             XCTAssertEqual(
                 error as? MagiConfigFileError,
                 .invalidValue(field: "members.melchior.class", value: "largest", allowed: ["fast", "balanced", "strongest"])
+            )
+        }
+    }
+
+    func testConfigTOMLCodecRejectsInvalidEvidencePolicy() {
+        let content = """
+        schema_version = 1
+        evidence_policy = "sometimes"
+
+        [members.melchior]
+        provider = "codex"
+        class = "balanced"
+        reasoning = "max"
+        """
+
+        XCTAssertThrowsError(try MagiConfigTOMLCodec.decode(content)) { error in
+            XCTAssertEqual(
+                error as? MagiConfigFileError,
+                .invalidValue(field: "evidence_policy", value: "sometimes", allowed: ["ask", "auto_deny", "preapproved"])
             )
         }
     }

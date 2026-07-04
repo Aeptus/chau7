@@ -9,10 +9,17 @@ final class MagiModelsTests: XCTestCase {
         XCTAssertEqual(config.defaultReasoning, .max)
         XCTAssertEqual(config.fallbackStrategy, .duplicate)
         XCTAssertTrue(config.webAccessAllowed)
-        XCTAssertTrue(config.evidenceRequiresApproval)
+        XCTAssertEqual(config.evidencePolicy, .ask)
         XCTAssertTrue(config.deadlockExtraRoundEnabled)
         XCTAssertTrue(config.vetoBlocksVerdict)
         XCTAssertTrue(config.autoCloseAgentTabs)
+    }
+
+    func testEvidencePolicyContract() {
+        XCTAssertEqual(
+            MagiEvidenceApprovalPolicy.allCases.map(\.rawValue),
+            ["ask", "auto_deny", "preapproved"]
+        )
     }
 
     func testRunIDIsStableForInjectedInputs() throws {
@@ -124,6 +131,34 @@ final class MagiModelsTests: XCTestCase {
         XCTAssertEqual(verdict.kind, .blockedByVeto)
         XCTAssertNil(verdict.decision)
         XCTAssertEqual(verdict.vetoes, [veto])
+    }
+
+    func testOnlyVoteRoundVetoesAreUsedForFinalResolution() {
+        let positionVeto = MagiVeto(
+            id: "round-1-melchior-veto",
+            memberID: .melchior,
+            reason: "Early objection"
+        )
+        let voteVeto = MagiVeto(
+            id: "round-4-casper-vote-veto",
+            memberID: .casper,
+            reason: "Final blocking objection"
+        )
+
+        XCTAssertEqual(
+            MagiVetoResolutionScope.finalResolutionVetoes(
+                positionRoundVetoes: [positionVeto],
+                voteRoundVetoes: []
+            ),
+            []
+        )
+        XCTAssertEqual(
+            MagiVetoResolutionScope.finalResolutionVetoes(
+                positionRoundVetoes: [positionVeto],
+                voteRoundVetoes: [voteVeto]
+            ),
+            [voteVeto]
+        )
     }
 
     func testEngineeringMajorityUsesCanonicalDecisionID() {

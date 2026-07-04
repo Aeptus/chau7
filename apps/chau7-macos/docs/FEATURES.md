@@ -64,7 +64,7 @@ Detection methods:
 
 ### AI Features
 
-- **MAGI multi-agent decision protocol** — CLI-first council mode that launches three isolated agents through Chau7 MCP, applies editable member personas, shares only controlled council packets between rounds, collects user-approved evidence, resolves majority/veto verdicts using canonical decision IDs plus material conditions, and writes replay/share artifacts.
+- **MAGI multi-agent decision protocol** — CLI-first council mode that launches three isolated agents through Chau7 MCP, applies editable member personas, shares only controlled council packets between rounds, applies explicit ask/auto-deny/preapproved evidence policy, resolves majority/final-vote-veto verdicts using canonical decision IDs plus material conditions, and writes replay/share artifacts.
 - **MAGI command surface** — `magi`/`MAGI` supports direct questions, `ask`, `doctor`, `config`, `replay <run-id>`, and `share <run-id>` with local artifacts only in v1.
 - **MAGI local installer** — `Scripts/install-magi-cli.sh` builds the SwiftPM CLI and installs `magi` into `~/.local/bin` by default, with uppercase `MAGI` invocation supported through case-insensitive resolution or a case-sensitive alias.
 - **MAGI production artifacts** — failed, interrupted, vetoed, deadlocked, and partial runs carry checkpoint/failure metadata across decision markdown, decision JSON, transcript/replay JSONL, graph JSON, and local share HTML (a terminal replay is rendered on demand by the `replay` command).
@@ -77,7 +77,7 @@ Detection methods:
 - **MAGI bounded structured repair** — structured-output repair ignores stale prior completion events, sends only the relevant transcript excerpt to the repair prompt, and accepts model list fields returned as either strings or arrays.
 - **MAGI MCP contract preflight** — `magi ask` verifies that the running Chau7 MCP socket supports filtered, full-message repo events before launching agents, failing immediately with a restart instruction when the app process is stale.
 - **MAGI home TUI** — running `magi`/`MAGI` without arguments opens an interactive terminal home screen with progressive boot output, ASCII art, colored member panels after boot, boot-status lines ending on the selected council, an ask prompt, help, doctor access, and `--config` navigation.
-- **MAGI config panel** — `--config` opens an editable terminal panel for member provider/class/model settings, resolved launch commands, supported provider reasoning flags, global evidence/web/deadlock/veto switches, provider checks, and persona file checks.
+- **MAGI config panel** — `--config` opens an editable terminal panel for member provider/class/model settings, resolved launch commands, supported provider reasoning flags, global evidence policy/web/deadlock/veto switches, provider checks, and persona file checks.
 - **MAGI visible first-run wizard** — `magi config` renders provider and model-class choices as numbered lists in interactive terminals and explains stdin/stdout TTY state when the wizard cannot open.
 - **MAGI shared first-run setup** — `magi config` can apply one provider/class choice to Melchior, Balthasar, and Casper, with a per-member path still available for mixed-provider councils.
 - **MAGI evidence collector cleanup** — approved collectors run in temporary Chau7 tabs that close after output capture, and evidence requests without explicit collectors do not silently fall back to repo status.

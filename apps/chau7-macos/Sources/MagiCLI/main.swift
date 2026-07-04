@@ -423,7 +423,7 @@ struct MagiCLIRunner {
                     try saveConfig(config)
                     writeSaved()
                 case "4", "evidence":
-                    config.evidenceRequiresApproval.toggle()
+                    config.evidencePolicy = promptEvidencePolicy(defaultValue: config.evidencePolicy)
                     try saveConfig(config)
                     writeSaved()
                 case "5", "deadlock":
@@ -470,7 +470,7 @@ struct MagiCLIRunner {
         writeStdout()
         writeStdout("Settings")
         writeStdout("- web_access_allowed: \(boolLabel(config.webAccessAllowed))")
-        writeStdout("- evidence_requires_approval: \(boolLabel(config.evidenceRequiresApproval))")
+        writeStdout("- evidence_policy: \(config.evidencePolicy.rawValue)")
         writeStdout("- deadlock_extra_round_enabled: \(boolLabel(config.deadlockExtraRoundEnabled))")
         writeStdout("- veto_blocks_verdict: \(boolLabel(config.vetoBlocksVerdict))")
         writeStdout("- auto_close_agent_tabs: \(boolLabel(config.autoCloseAgentTabs))")
@@ -479,7 +479,7 @@ struct MagiCLIRunner {
         writeStdout("  1. Use one provider/class/model for all members")
         writeStdout("  2. Edit one member provider/class/model")
         writeStdout("  3. Toggle web access")
-        writeStdout("  4. Toggle evidence approval")
+        writeStdout("  4. Change evidence policy")
         writeStdout("  5. Toggle deadlock extra round")
         writeStdout("  6. Toggle veto blocks verdict")
         writeStdout("  7. Toggle agent tab auto-close")
@@ -505,6 +505,31 @@ struct MagiCLIRunner {
         default:
             writeStdout("Choose Melchior, Balthasar, or Casper.")
             return nil
+        }
+    }
+
+    private func promptEvidencePolicy(defaultValue: MagiEvidenceApprovalPolicy) -> MagiEvidenceApprovalPolicy {
+        while true {
+            writeChoiceLines([
+                "Evidence policy choices",
+                "  1. ask",
+                "  2. auto_deny",
+                "  3. preapproved",
+                "Default: \(defaultValue.rawValue)"
+            ])
+            let value = prompt("Choose evidence policy:")
+            if value.isEmpty { return defaultValue }
+
+            switch value.lowercased() {
+            case "1", "ask":
+                return .ask
+            case "2", "auto_deny", "auto-deny", "deny":
+                return .autoDeny
+            case "3", "preapproved", "pre-approve", "preapprove":
+                return .preapproved
+            default:
+                writeStdout("Choose ask, auto_deny, or preapproved.")
+            }
         }
     }
 

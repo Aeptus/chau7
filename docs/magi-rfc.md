@@ -76,9 +76,17 @@ The default policy is:
 ```text
 fallback = duplicate
 web = true
-evidence_requires_approval = true
+evidence_policy = ask
 deadlock_extra_round = true
 veto_blocks = true
+```
+
+Evidence policy is explicit:
+
+```text
+ask         # prompt before each actionable collector
+auto_deny   # record actionable requests as denied
+preapproved # run actionable collectors without another MAGI prompt
 ```
 
 ## Protocol
@@ -93,12 +101,12 @@ Each run follows this sequence:
 5. MAGI collects completed Round 1 outputs.
 6. Round 2: MAGI shares completed outputs and asks for critique.
 7. MAGI collects critiques and any evidence requests.
-8. If evidence was requested, ask the user for approval.
+8. If evidence was requested, apply the configured evidence policy.
 9. Run approved collectors through Chau7/MCP.
 10. Round 3: MAGI packages approved evidence.
 11. Round 4: final vote.
 12. If deadlocked, run one extra round.
-13. Resolve majority unless a blocking veto exists.
+13. Resolve majority unless a final-vote blocking veto exists.
 14. Save artifacts.
 ```
 
@@ -168,7 +176,14 @@ Evidence is a structured request, not informal chat.
 }
 ```
 
-Every evidence request must be approved by the user before collectors run.
+Every actionable evidence request must pass the configured policy before collectors run.
+`evidence_policy` controls how approval is applied:
+
+```text
+ask         # the interactive default; MAGI prompts before each actionable collector
+auto_deny   # actionable requests are marked denied without prompting
+preapproved # actionable requests are approved by configuration without prompting
+```
 
 Initial collectors should stay small:
 
@@ -181,15 +196,15 @@ local.command:<command>
 web.query:<query>
 ```
 
-All evidence collection requires explicit user approval in MAGI V1, even if an older config sets `evidence_requires_approval = false`.
+Legacy `evidence_requires_approval = true` migrates to `ask`. Legacy `evidence_requires_approval = false` migrates to `preapproved`.
 
 `local.command` is executed only through Chau7/MCP `tab_exec`, so existing MCP command permissions, prompts, and remote approval flows still apply. Fixed local collectors are also run through Chau7/MCP collector tabs.
 
-`web.query` is allowed when `web_access_allowed = true`, requires the same user approval as local evidence, and is recorded in packet metadata with the query, web-access flag, and collection status. If web access is disabled, MAGI records a skipped evidence packet instead of making a network request.
+`web.query` is allowed when `web_access_allowed = true`, follows the same evidence policy as local evidence, and is recorded in packet metadata with the query, web-access flag, and collection status. If web access is disabled, MAGI records a skipped evidence packet instead of making a network request.
 
 ## Verdicts
 
-Majority decides by default. All members have equal weight. A single deadlock triggers one extra deliberation round. A persona-defined veto blocks the normal majority verdict.
+Majority decides by default. All members have equal weight. A single deadlock triggers one extra deliberation round. A persona-defined veto blocks the normal majority verdict only when emitted in the final vote or extra deliberation vote round.
 
 Default verdict states:
 
@@ -220,7 +235,7 @@ ESCALATE
 
 For generic questions, final vote blocks must set `verdict` to `SELECT` or `RANK`.
 
-If no majority is reached, MAGI returns `DEADLOCK` and runs one extra deliberation round when `deadlock_extra_round_enabled = true`. If no majority is reached after that extra round, MAGI returns `NO_CONSENSUS`. If any persona issues a blocking veto and `veto_blocks_verdict = true`, MAGI returns `BLOCKED_BY_VETO`.
+If no majority is reached, MAGI returns `DEADLOCK` and runs one extra deliberation round when `deadlock_extra_round_enabled = true`. If no majority is reached after that extra round, MAGI returns `NO_CONSENSUS`. If any persona issues a final-vote blocking veto and `veto_blocks_verdict = true`, MAGI returns `BLOCKED_BY_VETO`. Position-round veto fields are preserved as deliberation notes but do not block unless restated in a vote round.
 
 ## Artifacts
 
@@ -263,9 +278,9 @@ The protocol is production-ready when:
 - three real Chau7 tabs spawn through MCP.
 - Round 1 isolation is preserved.
 - controlled sharing is used for later rounds.
-- vetoes block final verdicts.
+- final-vote vetoes block final verdicts.
 - deadlocks can trigger one extra round.
-- evidence approval is enforced.
+- evidence policy is enforced.
 - artifacts are complete.
 - replay and local share output work.
 - failure states are explicit and recoverable.

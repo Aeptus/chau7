@@ -79,7 +79,7 @@ struct MagiMCPOrchestrator {
             artifactBundle: artifactBundle,
             metadata: [
                 "mcp_socket": mcpSocketPath,
-                "evidence_requires_approval": "true",
+                "evidence_policy": config.evidencePolicy.rawValue,
                 "web_access_allowed": String(config.webAccessAllowed),
                 "question_kind": questionKind.rawValue,
                 "auto_close_agent_tabs": String(config.autoCloseAgentTabs),
@@ -354,6 +354,11 @@ struct MagiMCPOrchestrator {
             )
             MagiRunStateMachine.completeRound(&run, id: round4.id)
             try writeCheckpoint(&run, stage: "round-4-votes-collected", technicalLog: technicalLog)
+            let positionRoundVetoes = positions.compactMap(\.veto)
+            var resolutionVetoes = MagiVetoResolutionScope.finalResolutionVetoes(
+                positionRoundVetoes: positionRoundVetoes,
+                voteRoundVetoes: voteResults.vetoes
+            )
 
             var policy = MagiResolutionPolicy(
                 majorityThreshold: council.majorityThreshold,
@@ -362,7 +367,7 @@ struct MagiMCPOrchestrator {
             )
             var verdict = MagiDecisionResolver.resolve(
                 votes: voteResults.votes,
-                vetoes: voteResults.vetoes,
+                vetoes: resolutionVetoes,
                 policy: policy,
                 questionKind: questionKind
             )
@@ -385,7 +390,7 @@ struct MagiMCPOrchestrator {
                         member: session.member,
                         question: question,
                         votes: voteResults.votes,
-                        vetoes: voteResults.vetoes,
+                        vetoes: resolutionVetoes,
                         questionKind: questionKind
                     )
                     try sendPrompt(
@@ -406,10 +411,14 @@ struct MagiMCPOrchestrator {
                     technicalLog: technicalLog,
                     recordCapture: { run.rawTranscripts.append($0) }
                 )
+                resolutionVetoes = MagiVetoResolutionScope.finalResolutionVetoes(
+                    positionRoundVetoes: positionRoundVetoes,
+                    voteRoundVetoes: voteResults.vetoes
+                )
                 policy.deadlockExtraRoundEnabled = false
                 verdict = MagiDecisionResolver.resolve(
                     votes: voteResults.votes,
-                    vetoes: voteResults.vetoes,
+                    vetoes: resolutionVetoes,
                     policy: policy,
                     questionKind: questionKind
                 )
@@ -1839,15 +1848,11 @@ struct MagiMCPOrchestrator {
 
         announceStage(
             "PHASE 3 // FACT GATHERING",
-            "The council may request external facts before the final vote. Nothing runs without approval."
+            evidencePolicyStageDetail(config.evidencePolicy)
         )
 
-        guard isInteractive else {
+        guard config.evidencePolicy != .ask || isInteractive else {
             throw MagiMCPOrchestratorError.evidenceApprovalRequiredNonInteractive
-        }
-
-        if !config.evidenceRequiresApproval {
-            printLine("Config evidence_requires_approval=false is ignored in MAGI V1; evidence still requires approval.")
         }
 
         var reviewed: [MagiEvidenceRequest] = []
@@ -1877,17 +1882,38 @@ struct MagiMCPOrchestrator {
                 let collector = terminalStyle.styled(command.collectorKind.rawValue, .yellow)
                 printLine("   - \(collector):\(payload) [\(webNote)]")
             }
-            if promptYesNo("Authorize this fact gathering?", defaultValue: false) {
-                reviewedRequest.status = .approved
-                announceStep("Authorized; the fact packet enters the queue.")
-            } else {
+
+            switch config.evidencePolicy {
+            case .ask:
+                if promptYesNo("Authorize this fact gathering?", defaultValue: false) {
+                    reviewedRequest.status = .approved
+                    announceStep("Authorized; the fact packet enters the queue.")
+                } else {
+                    reviewedRequest.status = .denied
+                    announceStep("Denied; the council proceeds without this packet.")
+                }
+            case .autoDeny:
                 reviewedRequest.status = .denied
-                announceStep("Denied; the council proceeds without this packet.")
+                announceStep("Auto-denied by evidence policy; the council proceeds without this packet.")
+            case .preapproved:
+                reviewedRequest.status = .approved
+                announceStep("Preapproved by evidence policy; the fact packet enters the queue.")
             }
             reviewed.append(reviewedRequest)
         }
 
         return reviewed
+    }
+
+    private func evidencePolicyStageDetail(_ policy: MagiEvidenceApprovalPolicy) -> String {
+        switch policy {
+        case .ask:
+            return "The council may request external facts before the final vote. Actionable collectors require approval."
+        case .autoDeny:
+            return "The council may request external facts, but policy auto-denies actionable collectors."
+        case .preapproved:
+            return "The council may request external facts. Actionable collectors are preapproved by policy."
+        }
     }
 
     private func collectEvidence(

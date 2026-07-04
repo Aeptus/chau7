@@ -48,6 +48,8 @@ final class MagiProtocolTests: XCTestCase {
         XCTAssertTrue(prompt.contains("Request evidence only when a concrete external fact could change your position."))
         XCTAssertTrue(prompt.contains("For subjective preference questions, usually leave evidence_requests empty"))
         XCTAssertTrue(prompt.contains("Every evidence request must include at least one concrete proposed_collector."))
+        XCTAssertTrue(prompt.contains("veto must be null in this round"))
+        XCTAssertTrue(prompt.contains("Blocking vetoes are accepted only in the final vote round"))
         XCTAssertFalse(prompt.contains("local.git_diff_stat"))
         XCTAssertFalse(prompt.contains("local.shell"))
 
@@ -405,6 +407,7 @@ final class MagiProtocolTests: XCTestCase {
         XCTAssertTrue(prompt.contains(#""verdict": "APPROVE""#))
         XCTAssertTrue(prompt.contains("JSON keys: member, round, verdict, decision_id, choice, conditions, confidence, rationale, veto."))
         XCTAssertTrue(prompt.contains("use the same decision_id only when the actionable decision and material conditions are the same"))
+        XCTAssertTrue(prompt.contains("Only a veto emitted in this final vote can block the verdict"))
         XCTAssertTrue(prompt.contains("Approved fact-gathering packets entered into deliberation:"))
         XCTAssertTrue(prompt.contains("Treat approved facts as shared deliberation material."))
     }

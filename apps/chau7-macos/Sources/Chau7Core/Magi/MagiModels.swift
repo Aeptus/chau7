@@ -68,6 +68,16 @@ public enum MagiFallbackStrategy: String, Codable, CaseIterable, Identifiable, S
     }
 }
 
+public enum MagiEvidenceApprovalPolicy: String, Codable, CaseIterable, Identifiable, Sendable {
+    case ask
+    case autoDeny = "auto_deny"
+    case preapproved
+
+    public var id: String {
+        rawValue
+    }
+}
+
 // MARK: - Configuration
 
 public struct MagiMemberConfiguration: Codable, Equatable, Sendable {
@@ -97,7 +107,7 @@ public struct MagiConfig: Codable, Equatable, Sendable {
     public var defaultReasoning: MagiReasoningLevel
     public var fallbackStrategy: MagiFallbackStrategy
     public var webAccessAllowed: Bool
-    public var evidenceRequiresApproval: Bool
+    public var evidencePolicy: MagiEvidenceApprovalPolicy
     public var deadlockExtraRoundEnabled: Bool
     public var vetoBlocksVerdict: Bool
     public var autoCloseAgentTabs: Bool
@@ -109,7 +119,7 @@ public struct MagiConfig: Codable, Equatable, Sendable {
         defaultReasoning: MagiReasoningLevel = .max,
         fallbackStrategy: MagiFallbackStrategy = .duplicate,
         webAccessAllowed: Bool = true,
-        evidenceRequiresApproval: Bool = true,
+        evidencePolicy: MagiEvidenceApprovalPolicy = .ask,
         deadlockExtraRoundEnabled: Bool = true,
         vetoBlocksVerdict: Bool = true,
         autoCloseAgentTabs: Bool = true,
@@ -120,7 +130,7 @@ public struct MagiConfig: Codable, Equatable, Sendable {
         self.defaultReasoning = defaultReasoning
         self.fallbackStrategy = fallbackStrategy
         self.webAccessAllowed = webAccessAllowed
-        self.evidenceRequiresApproval = evidenceRequiresApproval
+        self.evidencePolicy = evidencePolicy
         self.deadlockExtraRoundEnabled = deadlockExtraRoundEnabled
         self.vetoBlocksVerdict = vetoBlocksVerdict
         self.autoCloseAgentTabs = autoCloseAgentTabs
@@ -419,6 +429,15 @@ public struct MagiVeto: Codable, Equatable, Sendable, Identifiable {
         self.reason = reason
         self.scope = scope
         self.blocksVerdict = blocksVerdict
+    }
+}
+
+public enum MagiVetoResolutionScope {
+    public static func finalResolutionVetoes(
+        positionRoundVetoes _: [MagiVeto],
+        voteRoundVetoes: [MagiVeto]
+    ) -> [MagiVeto] {
+        voteRoundVetoes
     }
 }
 

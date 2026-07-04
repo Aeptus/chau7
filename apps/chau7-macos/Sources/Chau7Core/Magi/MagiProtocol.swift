@@ -108,7 +108,7 @@ public enum MagiPromptBuilder {
         - confidence is a number from 0 to 1.
         - evidence_requests is an array of objects with priority, reason, required_evidence, proposed_collectors.
         - proposed_collectors may include local.git_status, local.git_diff, local.repo_search:<query>, local.file_read:<path>, local.command:<command>, or web.query:<query>.
-        - veto is null unless your persona veto policy requires a blocking veto; if present use reason, scope, blocks_verdict.
+        - veto must be null in this round. Blocking vetoes are accepted only in the final vote round; mention early blocking concerns in summary.
 
         JSON shape example:
         {
@@ -146,7 +146,7 @@ public enum MagiPromptBuilder {
             lines.append("Confidence: \(String(format: "%.2f", position.confidence))")
             lines.append("Summary: \(position.summary)")
             if let veto = position.veto {
-                lines.append("Veto: \(veto.reason)")
+                lines.append("Position-round veto note, non-blocking unless restated in final vote: \(veto.reason)")
             }
             if !position.evidenceRequests.isEmpty {
                 lines.append("Evidence requested:")
@@ -225,7 +225,7 @@ public enum MagiPromptBuilder {
         \(formatEvidence(evidencePackets))
 
         Treat approved facts as shared deliberation material. Mention them in your rationale when they changed or strengthened your vote.
-        Cast your final vote. Majority is enough. A veto blocks the verdict only when your persona veto policy requires it.
+        Cast your final vote. Majority is enough. Only a veto emitted in this final vote can block the verdict, and only when your persona veto policy requires it.
         Verdict mode: \(questionKind.rawValue).
         \(questionKind.promptInstruction)
 
@@ -243,7 +243,7 @@ public enum MagiPromptBuilder {
         - choice is the human-readable final answer you vote for.
         - conditions is an array of material conditions; use [] when unconditional or not applicable.
         - confidence is a number from 0 to 1.
-        - veto is null unless you issue a blocking veto; if present use reason, scope, blocks_verdict.
+        - veto is null unless you issue a blocking final-vote veto; if present use reason, scope, blocks_verdict.
 
         JSON shape example:
         {
@@ -292,7 +292,7 @@ public enum MagiPromptBuilder {
         Current vetoes:
         \(vetoLines)
 
-        No majority was reached. Reconsider once and cast a final vote.
+        No majority was reached. Reconsider once and cast a final vote. Only vetoes emitted in vote rounds can block final resolution.
         Verdict mode: \(questionKind.rawValue).
         \(questionKind.promptInstruction)
 

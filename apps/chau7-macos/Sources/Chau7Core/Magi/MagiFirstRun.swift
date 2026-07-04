@@ -112,7 +112,7 @@ public enum MagiFirstRunPlanner {
             defaultReasoning: .max,
             fallbackStrategy: .duplicate,
             webAccessAllowed: true,
-            evidenceRequiresApproval: true,
+            evidencePolicy: .ask,
             deadlockExtraRoundEnabled: true,
             vetoBlocksVerdict: true,
             autoCloseAgentTabs: true,
@@ -194,7 +194,7 @@ public enum MagiConfigTOMLCodec {
             "default_reasoning = \"\(config.defaultReasoning.rawValue)\"",
             "fallback_strategy = \"\(config.fallbackStrategy.rawValue)\"",
             "web_access_allowed = \(config.webAccessAllowed)",
-            "evidence_requires_approval = \(config.evidenceRequiresApproval)",
+            "evidence_policy = \"\(config.evidencePolicy.rawValue)\"",
             "deadlock_extra_round_enabled = \(config.deadlockExtraRoundEnabled)",
             "veto_blocks_verdict = \(config.vetoBlocksVerdict)",
             "auto_close_agent_tabs = \(config.autoCloseAgentTabs)",
@@ -265,7 +265,7 @@ public enum MagiConfigTOMLCodec {
             defaultReasoning: defaultReasoning,
             fallbackStrategy: fallbackStrategy,
             webAccessAllowed: bool(global["web_access_allowed"]) ?? bool(global["web"]) ?? true,
-            evidenceRequiresApproval: bool(global["evidence_requires_approval"]) ?? true,
+            evidencePolicy: try evidencePolicy(from: global),
             deadlockExtraRoundEnabled: bool(global["deadlock_extra_round_enabled"]) ?? bool(global["deadlock_extra_round"]) ?? true,
             vetoBlocksVerdict: bool(global["veto_blocks_verdict"]) ?? bool(global["veto_blocks"]) ?? true,
             autoCloseAgentTabs: bool(global["auto_close_agent_tabs"]) ?? bool(global["close_agent_tabs"]) ?? true,
@@ -288,6 +288,23 @@ public enum MagiConfigTOMLCodec {
             )
         }
         return value
+    }
+
+    private static func evidencePolicy(from global: [String: Any]) throws -> MagiEvidenceApprovalPolicy {
+        if let rawValue = string(global["evidence_policy"]), !rawValue.isEmpty {
+            return try enumValue(
+                MagiEvidenceApprovalPolicy.self,
+                rawValue: rawValue,
+                defaultValue: .ask,
+                field: "evidence_policy"
+            )
+        }
+
+        if let legacyRequiresApproval = bool(global["evidence_requires_approval"]) {
+            return legacyRequiresApproval ? .ask : .preapproved
+        }
+
+        return .ask
     }
 
     private static func string(_ value: Any?) -> String? {
