@@ -383,11 +383,17 @@ struct MagiCLIRunner {
                     writeWizardSection("Apply to all members")
                     let provider = promptProvider(defaultValue: .codex)
                     let modelClass = promptModelClass(defaultValue: .balanced)
+                    let modelName = promptModelName(
+                        defaultValue: nil,
+                        provider: provider,
+                        modelClass: modelClass
+                    )
                     for memberID in MagiMemberID.allCases {
                         config.members[memberID] = MagiMemberConfiguration(
                             provider: provider.rawValue,
                             modelClass: modelClass,
-                            reasoning: .max
+                            reasoning: .max,
+                            modelName: modelName
                         )
                     }
                     try saveConfig(config)
@@ -399,11 +405,16 @@ struct MagiCLIRunner {
                     let defaultProvider = MagiProviderID(rawValue: current.provider) ?? .codex
                     let provider = promptProvider(defaultValue: defaultProvider)
                     let modelClass = promptModelClass(defaultValue: current.modelClass)
+                    let modelName = promptModelName(
+                        defaultValue: current.modelName,
+                        provider: provider,
+                        modelClass: modelClass
+                    )
                     config.members[memberID] = MagiMemberConfiguration(
                         provider: provider.rawValue,
                         modelClass: modelClass,
                         reasoning: current.reasoning,
-                        modelName: current.modelName
+                        modelName: modelName
                     )
                     try saveConfig(config)
                     writeSaved()
@@ -465,8 +476,8 @@ struct MagiCLIRunner {
         writeStdout("- auto_close_agent_tabs: \(boolLabel(config.autoCloseAgentTabs))")
         writeStdout()
         writeStdout("Actions")
-        writeStdout("  1. Use one provider/class for all members")
-        writeStdout("  2. Edit one member")
+        writeStdout("  1. Use one provider/class/model for all members")
+        writeStdout("  2. Edit one member provider/class/model")
         writeStdout("  3. Toggle web access")
         writeStdout("  4. Toggle evidence approval")
         writeStdout("  5. Toggle deadlock extra round")
@@ -780,6 +791,27 @@ struct MagiCLIRunner {
         }
     }
 
+    private func promptModelName(
+        defaultValue: String?,
+        provider: MagiProviderID,
+        modelClass: MagiModelClass
+    ) -> String? {
+        let defaultModel = MagiProviderCommandBuilder.resolvedModel(
+            provider: provider,
+            modelClass: modelClass,
+            explicitModelName: nil
+        )
+        if let defaultValue, !defaultValue.isEmpty {
+            writeMuted("Explicit model override: \(defaultValue)")
+        } else {
+            writeMuted("Default \(modelClass.rawValue) model for \(provider.rawValue): \(defaultModel)")
+        }
+        writeMuted("Press return to use the class default. Type a model id to override it.")
+        let value = prompt("Model override:")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return value.isEmpty ? nil : value
+    }
+
     private func promptYesNo(_ message: String, defaultValue: Bool) -> Bool {
         let defaultLabel = defaultValue ? "Y/n" : "y/N"
         while true {
@@ -836,9 +868,14 @@ struct MagiCLIRunner {
 
     private func printMembers(_ config: MagiConfig) {
         writeStdout("Members")
-        for memberID in MagiMemberID.allCases {
-            let member = config.members[memberID] ?? MagiMemberConfiguration(provider: "unconfigured")
-            writeStdout("- \(memberID.displayName): provider=\(member.provider), class=\(member.modelClass.rawValue), reasoning=\(member.reasoning.rawValue)")
+        let council = MagiCouncil.defaultMagi(members: config.members)
+        for member in council.members {
+            let launchCommand = MagiProviderCommandBuilder.command(for: member)
+            let model = launchCommand.resolvedModel ?? member.modelName ?? "custom"
+            let reasoning = launchCommand.resolvedReasoning ?? "not supported by provider CLI"
+            writeStdout("- \(member.id.displayName): provider=\(member.provider), class=\(member.modelClass.rawValue), model=\(model), reasoning=\(member.reasoning.rawValue)")
+            writeMuted("  launch: \(launchCommand.commandLine)")
+            writeMuted("  cli reasoning: \(reasoning)")
         }
     }
 

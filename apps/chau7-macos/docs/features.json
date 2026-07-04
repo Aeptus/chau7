@@ -93,7 +93,7 @@
   {
     "category": "AI Integration",
     "feature": "MAGI Config Panel",
-    "description": "--config opens an editable terminal panel for member provider/class settings, global evidence/web/deadlock/veto switches, provider checks, and persona file checks",
+    "description": "--config opens an editable terminal panel for member provider/class/model settings, resolved launch commands, supported provider reasoning flags, global evidence/web/deadlock/veto switches, provider checks, and persona file checks",
     "status": "Shipped",
     "differentiator": "Yes"
   },

@@ -828,7 +828,8 @@ struct MagiMCPOrchestrator {
                 persona: persona,
                 provider: memberConfig.provider,
                 modelClass: memberConfig.modelClass,
-                reasoning: memberConfig.reasoning
+                reasoning: memberConfig.reasoning,
+                modelName: memberConfig.modelName
             )
         }
         return MagiCouncil(id: config.defaultCouncilID, name: "MAGI", members: members)
@@ -839,7 +840,8 @@ struct MagiMCPOrchestrator {
         prompt: String,
         technicalLog: MagiTechnicalLog
     ) throws -> String {
-        let command = providerCommand(for: member)
+        let providerCommand = MagiProviderCommandBuilder.command(for: member)
+        let command = providerCommand.commandLine
         let result = try client.callTool(name: "agent_launch", arguments: [
             "directory": paths.currentDirectory,
             "agent_command": command,
@@ -894,6 +896,9 @@ struct MagiMCPOrchestrator {
             fields: [
                 "provider": member.provider,
                 "agent_command": command,
+                "resolved_model": providerCommand.resolvedModel ?? "",
+                "resolved_reasoning": providerCommand.resolvedReasoning ?? "",
+                "raw_provider_command": String(providerCommand.usesRawCommand),
                 "tab_title": tabTitle,
                 "status": launchStatus,
                 "prompt_status": promptStatus,
@@ -1097,10 +1102,6 @@ struct MagiMCPOrchestrator {
             .filter { $0.count >= 8 }
             .prefix(3)
             .map { String($0.prefix(min(80, $0.count))) }
-    }
-
-    private func providerCommand(for member: MagiMember) -> String {
-        member.provider.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     private func sendPrompt(

@@ -161,6 +161,7 @@ public struct MagiMember: Codable, Equatable, Sendable, Identifiable {
     public var provider: String
     public var modelClass: MagiModelClass
     public var reasoning: MagiReasoningLevel
+    public var modelName: String?
     public var weight: Double
 
     public init(
@@ -169,6 +170,7 @@ public struct MagiMember: Codable, Equatable, Sendable, Identifiable {
         provider: String,
         modelClass: MagiModelClass = .balanced,
         reasoning: MagiReasoningLevel = .max,
+        modelName: String? = nil,
         weight: Double = 1.0
     ) {
         self.id = id
@@ -176,6 +178,7 @@ public struct MagiMember: Codable, Equatable, Sendable, Identifiable {
         self.provider = provider
         self.modelClass = modelClass
         self.reasoning = reasoning
+        self.modelName = modelName
         self.weight = max(0, weight)
     }
 }
@@ -217,6 +220,7 @@ public struct MagiCouncil: Codable, Equatable, Sendable, Identifiable {
                 provider: config.provider,
                 modelClass: config.modelClass,
                 reasoning: config.reasoning,
+                modelName: config.modelName,
                 weight: 1.0
             )
         }
