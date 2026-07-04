@@ -62,6 +62,23 @@ final class MagiProtocolTests: XCTestCase {
         XCTAssertEqual(MagiTranscriptParser.blockCandidates(in: prompt, markers: markers), [])
     }
 
+    func testBlockCandidatesIgnoreInlineEchoedMarkersAndPartialBlocks() {
+        let markers = MagiProtocolMarkers(
+            runID: "run-1",
+            roundID: "round-1",
+            memberID: .melchior,
+            stage: .position
+        )
+        let output = """
+        The prompt said begin marker name: \(markers.begin)
+        \(markers.begin)
+        {
+          "member": "melchior"
+        """
+
+        XCTAssertEqual(MagiTranscriptParser.blockCandidates(in: output, markers: markers), [])
+    }
+
     func testParsePositionUsesLatestValidMarkedJSONBlock() throws {
         let markers = MagiProtocolMarkers(
             runID: "run-1",

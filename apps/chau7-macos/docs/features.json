@@ -65,14 +65,14 @@
   {
     "category": "AI Integration",
     "feature": "MAGI Event-Backed Result Capture",
-    "description": "MAGI polls Chau7 tab-scoped AI completion events alongside PTY output so completed council responses can be parsed from agent turn notifications when scrollback misses the final structured block",
+    "description": "MAGI polls Chau7 tab-scoped AI completion events before PTY output and collects pending council members as soon as each finishes, so one slow member no longer blocks completed responses from the other tabs",
     "status": "Shipped",
     "differentiator": "Yes"
   },
   {
     "category": "AI Integration",
     "feature": "MAGI Bounded Structured Repair",
-    "description": "Structured-output repair ignores stale prior completion events, sends only the relevant transcript excerpt to the repair prompt, and accepts model list fields returned as either strings or arrays",
+    "description": "Structured-output repair ignores stale prior completion events, uses small PTY tails during normal progress, escalates to full stable output only for parse, repair, or failure paths, sends only the relevant transcript excerpt to the repair prompt, and waits for idle/stable output before repairing echoed prompt markers or partial blocks",
     "status": "Shipped",
     "differentiator": "Yes"
   },

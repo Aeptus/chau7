@@ -54,6 +54,9 @@ struct MagiMCPOrchestrator {
     var progressPulseSeconds: TimeInterval = 10
     var progressFrameSeconds: TimeInterval = 0.12
     var idleRepairGraceSeconds: TimeInterval = 12
+    var normalOutputTailLines = 240
+    var fullOutputLines = 10000
+    var normalTailPollIntervalSeconds: TimeInterval = 4
     var repairTranscriptMaxCharacters = MagiPromptBuilder.defaultRepairTranscriptMaxCharacters
     var terminalStyle = MagiRunTerminalStyle()
     var processingLines = MagiCouncilArtFile.defaultProcessingLines
@@ -174,38 +177,30 @@ struct MagiMCPOrchestrator {
             try writeCheckpoint(&run, stage: "council-launched", technicalLog: technicalLog)
 
             announceStage("PHASE 1 // PRIVATE POSITIONS", "Each member answers alone. No sibling tabs. No cross-talk.")
-            var positions: [MagiPosition] = []
-            for session in sessions {
-                try throwIfInterrupted(stage: "independent analysis")
-                let markers = MagiProtocolMarkers(
-                    runID: runID,
-                    roundID: round1.id,
-                    memberID: session.member.id,
-                    stage: .position
-                )
-                let position = try waitForParsed(
-                    runID: runID,
-                    roundID: round1.id,
-                    stageKind: .position,
-                    stage: "independent analysis",
-                    member: session.member,
-                    tabID: session.tabID,
-                    repositoryRoot: repositoryRoot,
-                    technicalLog: technicalLog,
-                    recordCapture: { run.rawTranscripts.append($0) }
-                ) { output in
+            let positions = try collectPendingParsed(
+                runID: runID,
+                roundID: round1.id,
+                stageKind: .position,
+                stage: "independent analysis",
+                sessions: sessions,
+                repositoryRoot: repositoryRoot,
+                startedAt: round1.startedAt,
+                technicalLog: technicalLog,
+                recordCapture: { run.rawTranscripts.append($0) },
+                parse: { session, output, markers in
                     try MagiTranscriptParser.parsePosition(
                         memberID: session.member.id,
                         roundID: round1.id,
                         output: output,
                         markers: markers
                     )
+                },
+                onParsed: { session, position in
+                    printMemberOutput(session.member, position.recommendation, state: .done)
+                    run.positions.append(position)
+                    try writeCheckpoint(&run, stage: "round-1-\(session.member.id.rawValue)-position", technicalLog: technicalLog)
                 }
-                printMemberOutput(session.member, position.recommendation, state: .done)
-                positions.append(position)
-                run.positions.append(position)
-                try writeCheckpoint(&run, stage: "round-1-\(session.member.id.rawValue)-position", technicalLog: technicalLog)
-            }
+            )
             MagiRunStateMachine.completeRound(&run, id: round1.id)
             try writeCheckpoint(&run, stage: "round-1-completed", technicalLog: technicalLog)
 
@@ -242,38 +237,30 @@ struct MagiMCPOrchestrator {
             }
 
             var evidenceRequests = positions.flatMap(\.evidenceRequests)
-            var critiqueResults: [(critiques: [MagiCritique], evidenceRequests: [MagiEvidenceRequest])] = []
-            for session in sessions {
-                try throwIfInterrupted(stage: "cross-examination")
-                let markers = MagiProtocolMarkers(
-                    runID: runID,
-                    roundID: round2.id,
-                    memberID: session.member.id,
-                    stage: .critique
-                )
-                let result = try waitForParsed(
-                    runID: runID,
-                    roundID: round2.id,
-                    stageKind: .critique,
-                    stage: "cross-examination",
-                    member: session.member,
-                    tabID: session.tabID,
-                    repositoryRoot: repositoryRoot,
-                    technicalLog: technicalLog,
-                    recordCapture: { run.rawTranscripts.append($0) }
-                ) { output in
+            let critiqueResults = try collectPendingParsed(
+                runID: runID,
+                roundID: round2.id,
+                stageKind: .critique,
+                stage: "cross-examination",
+                sessions: sessions,
+                repositoryRoot: repositoryRoot,
+                startedAt: round2.startedAt,
+                technicalLog: technicalLog,
+                recordCapture: { run.rawTranscripts.append($0) },
+                parse: { session, output, markers in
                     try MagiTranscriptParser.parseCritiques(
                         criticMemberID: session.member.id,
                         roundID: round2.id,
                         output: output,
                         markers: markers
                     )
+                },
+                onParsed: { session, result in
+                    printLine(memberLine(session.member, "\(result.critiques.count) challenge(s) entered", state: .done))
+                    run.critiques.append(contentsOf: result.critiques)
+                    try writeCheckpoint(&run, stage: "round-2-\(session.member.id.rawValue)-critique", technicalLog: technicalLog)
                 }
-                printLine(memberLine(session.member, "\(result.critiques.count) challenge(s) entered", state: .done))
-                critiqueResults.append(result)
-                run.critiques.append(contentsOf: result.critiques)
-                try writeCheckpoint(&run, stage: "round-2-\(session.member.id.rawValue)-critique", technicalLog: technicalLog)
-            }
+            )
             let critiques = critiqueResults.flatMap(\.critiques)
             evidenceRequests.append(contentsOf: critiqueResults.flatMap(\.evidenceRequests))
             MagiRunStateMachine.completeRound(&run, id: round2.id)
@@ -1154,11 +1141,33 @@ struct MagiMCPOrchestrator {
         )
     }
 
-    private func tabOutput(tabID: String, source: String = "pty_log") throws -> String {
+    private enum MagiTerminalReadMode {
+        case none
+        case tail
+        case fullStable
+
+        var logName: String {
+            switch self {
+            case .none:
+                return "none"
+            case .tail:
+                return "tail"
+            case .fullStable:
+                return "full_stable"
+            }
+        }
+    }
+
+    private func tabOutput(
+        tabID: String,
+        source: String = "pty_log",
+        lines: Int? = nil,
+        waitForStableMs: Int = 0
+    ) throws -> String {
         let result = try client.callTool(name: "tab_output", arguments: [
             "tab_id": tabID,
-            "lines": 10000,
-            "wait_for_stable_ms": 1000,
+            "lines": lines ?? normalOutputTailLines,
+            "wait_for_stable_ms": waitForStableMs,
             "source": source
         ])
         guard let output = result["output"] as? String else {
@@ -1173,6 +1182,7 @@ struct MagiMCPOrchestrator {
         var eventError: String?
         var tabStatus: [String: Any]?
         var tabStatusError: String?
+        var terminalReadMode: MagiTerminalReadMode
 
         var eventCharacters: Int {
             eventMessages.reduce(0) { $0 + $1.count }
@@ -1188,22 +1198,49 @@ struct MagiMCPOrchestrator {
         }
     }
 
-    private func pollStructuredOutput(tabID: String, repositoryRoot: String?) throws -> MagiPolledOutput {
-        let terminalOutput = try tabOutput(tabID: tabID)
-        let eventCapture = try tabEventMessages(tabID: tabID, repositoryRoot: repositoryRoot)
+    private func pollStructuredOutput(
+        tabID: String,
+        repositoryRoot: String?,
+        sinceMillis: Int64?,
+        terminalReadMode: MagiTerminalReadMode
+    ) throws -> MagiPolledOutput {
+        let eventCapture = try tabEventMessages(
+            tabID: tabID,
+            repositoryRoot: repositoryRoot,
+            sinceMillis: sinceMillis
+        )
+        let terminalOutput: String
+        switch terminalReadMode {
+        case .none:
+            terminalOutput = ""
+        case .tail:
+            terminalOutput = try tabOutput(
+                tabID: tabID,
+                lines: normalOutputTailLines,
+                waitForStableMs: 0
+            )
+        case .fullStable:
+            terminalOutput = try tabOutput(
+                tabID: tabID,
+                lines: fullOutputLines,
+                waitForStableMs: 1000
+            )
+        }
         let statusCapture = tabStatusSnapshot(tabID: tabID)
         return MagiPolledOutput(
             terminalOutput: terminalOutput,
             eventMessages: eventCapture.messages,
             eventError: eventCapture.error,
             tabStatus: statusCapture.status,
-            tabStatusError: statusCapture.error
+            tabStatusError: statusCapture.error,
+            terminalReadMode: terminalReadMode
         )
     }
 
     private func tabEventMessages(
         tabID: String,
-        repositoryRoot: String?
+        repositoryRoot: String?,
+        sinceMillis: Int64?
     ) throws -> (messages: [String], error: String?) {
         let eventTypes = [
             "agent-turn-complete",
@@ -1215,7 +1252,11 @@ struct MagiMCPOrchestrator {
         var messages: [String] = []
         var errors: [String] = []
 
-        let runtimeCapture = try runtimeEventMessages(tabID: tabID, eventTypes: eventTypes)
+        let runtimeCapture = try runtimeEventMessages(
+            tabID: tabID,
+            eventTypes: eventTypes,
+            sinceMillis: sinceMillis
+        )
         messages.append(contentsOf: runtimeCapture.messages)
         if let error = runtimeCapture.error {
             errors.append(error)
@@ -1251,13 +1292,16 @@ struct MagiMCPOrchestrator {
 
     private func runtimeEventMessages(
         tabID: String,
-        eventTypes: [String]
+        eventTypes: [String],
+        sinceMillis: Int64?
     ) throws -> (messages: [String], error: String?) {
         let requestedTypes = Set(eventTypes.map { $0.lowercased() })
         do {
-            let result = try client.callTool(name: "chau7_runtime_events", arguments: [
-                "limit": 500
-            ])
+            var arguments: [String: Any] = ["limit": 200]
+            if let sinceMillis {
+                arguments["since_millis"] = sinceMillis
+            }
+            let result = try client.callTool(name: "chau7_runtime_events", arguments: arguments)
             guard let events = result["events"] as? [[String: Any]] else {
                 throw MagiMCPOrchestratorError.missingToolField(tool: "chau7_runtime_events", field: "events")
             }
@@ -1322,6 +1366,537 @@ struct MagiMCPOrchestrator {
         return values.filter { seen.insert($0).inserted }
     }
 
+    private struct PendingParsedMemberState {
+        var session: MagiMemberTab
+        var markers: MagiProtocolMarkers
+        var startedAt: Date
+        var eventSinceMillis: Int64
+        var lastError: Error?
+        var lastOutput: String = ""
+        var lastCapture: MagiPolledOutput?
+        var lastLoggedOutputCount: Int?
+        var lastLoggedEventSignature: String?
+        var lastLoggedEventError: String?
+        var lastLoggedStatusError: String?
+        var lastLoggedParseError: String?
+        var nextProgressPulseAt: Date = Date()
+        var progressPulse: Int = 0
+        var nextTailPollAt: Date = Date()
+    }
+
+    private func collectPendingParsed<T>(
+        runID: String,
+        roundID: String,
+        stageKind: MagiProtocolStage,
+        stage: String,
+        sessions: [MagiMemberTab],
+        repositoryRoot: String?,
+        startedAt: Date,
+        technicalLog: MagiTechnicalLog,
+        recordCapture: (MagiRawTranscript) -> Void,
+        parse: (MagiMemberTab, String, MagiProtocolMarkers) throws -> T,
+        onParsed: (MagiMemberTab, T) throws -> Void
+    ) throws -> [T] {
+        let deadline = Date().addingTimeInterval(roundTimeoutSeconds)
+        let eventSinceMillis = runtimeEventSinceMillis(startedAt: startedAt)
+        var pendingOrder = sessions.map(\.member.id)
+        var pending = Dictionary(
+            uniqueKeysWithValues: sessions.map { session in
+                (
+                    session.member.id,
+                    PendingParsedMemberState(
+                        session: session,
+                        markers: MagiProtocolMarkers(
+                            runID: runID,
+                            roundID: roundID,
+                            memberID: session.member.id,
+                            stage: stageKind
+                        ),
+                        startedAt: startedAt,
+                        eventSinceMillis: eventSinceMillis
+                    )
+                )
+            }
+        )
+        var results: [T] = []
+
+        while !pendingOrder.isEmpty, Date() < deadline {
+            var completedMemberIDs: [MagiMemberID] = []
+
+            for memberID in pendingOrder {
+                try throwIfInterrupted(stage: stage)
+                guard var state = pending[memberID] else { continue }
+
+                let now = Date()
+                let readMode: MagiTerminalReadMode = now >= state.nextTailPollAt ? .tail : .none
+                var capture = try pollStructuredOutput(
+                    tabID: state.session.tabID,
+                    repositoryRoot: repositoryRoot,
+                    sinceMillis: state.eventSinceMillis,
+                    terminalReadMode: readMode
+                )
+                var output = capture.combinedOutput
+                if !output.isEmpty {
+                    state.lastOutput = output
+                }
+                state.lastCapture = capture
+                logStructuredPollIfNeeded(
+                    state: &state,
+                    capture: capture,
+                    stage: stage,
+                    stageKind: stageKind,
+                    technicalLog: technicalLog
+                )
+                renderPendingProgressIfNeeded(
+                    state: &state,
+                    capture: capture,
+                    stage: stage,
+                    stageKind: stageKind
+                )
+
+                do {
+                    let parsed = try parse(state.session, output, state.markers)
+                    try completePendingParse(
+                        parsed,
+                        state: state,
+                        output: output,
+                        roundID: roundID,
+                        stageKind: stageKind,
+                        stage: stage,
+                        technicalLog: technicalLog,
+                        recordCapture: recordCapture,
+                        onParsed: onParsed
+                    )
+                    results.append(parsed)
+                    completedMemberIDs.append(memberID)
+                    continue
+                } catch {
+                    state.lastError = error
+                    logStructuredParsePendingIfNeeded(
+                        state: &state,
+                        error: error,
+                        stage: stage,
+                        stageKind: stageKind,
+                        technicalLog: technicalLog
+                    )
+                }
+
+                if shouldFetchFullOutputForParse(
+                    state.lastError,
+                    capture: capture,
+                    output: output,
+                    markers: state.markers,
+                    elapsed: Date().timeIntervalSince(state.startedAt)
+                ) {
+                    capture = try pollStructuredOutput(
+                        tabID: state.session.tabID,
+                        repositoryRoot: repositoryRoot,
+                        sinceMillis: state.eventSinceMillis,
+                        terminalReadMode: .fullStable
+                    )
+                    output = capture.combinedOutput
+                    state.lastOutput = output
+                    state.lastCapture = capture
+                    logStructuredPollIfNeeded(
+                        state: &state,
+                        capture: capture,
+                        stage: stage,
+                        stageKind: stageKind,
+                        technicalLog: technicalLog
+                    )
+
+                    do {
+                        let parsed = try parse(state.session, output, state.markers)
+                        try completePendingParse(
+                            parsed,
+                            state: state,
+                            output: output,
+                            roundID: roundID,
+                            stageKind: stageKind,
+                            stage: stage,
+                            technicalLog: technicalLog,
+                            recordCapture: recordCapture,
+                            onParsed: onParsed
+                        )
+                        results.append(parsed)
+                        completedMemberIDs.append(memberID)
+                        continue
+                    } catch {
+                        state.lastError = error
+                        logStructuredParsePendingIfNeeded(
+                            state: &state,
+                            error: error,
+                            stage: stage,
+                            stageKind: stageKind,
+                            technicalLog: technicalLog
+                        )
+                    }
+                }
+
+                if shouldRunStableRepair(
+                    state.lastError,
+                    capture: capture,
+                    output: state.lastOutput,
+                    elapsed: Date().timeIntervalSince(state.startedAt)
+                ) {
+                    let parseError = state.lastError?.localizedDescription ?? "structured block did not parse after stable output"
+                    recordCapture(rawTranscript(
+                        memberID: state.session.member.id,
+                        roundID: roundID,
+                        stage: stageKind.rawValue,
+                        tabID: state.session.tabID,
+                        output: state.lastOutput,
+                        parseError: parseError,
+                        repairAttempted: true,
+                        repairSucceeded: false
+                    ))
+                    let parsed = try runStructuredRepair(
+                        context: StructuredRepairContext(
+                            runID: runID,
+                            roundID: roundID,
+                            stageKind: stageKind,
+                            stage: stage,
+                            member: state.session.member,
+                            tabID: state.session.tabID,
+                            repositoryRoot: repositoryRoot,
+                            expectedMarkers: state.markers,
+                            parseError: parseError,
+                            lastOutput: state.lastOutput,
+                            lastError: state.lastError
+                        ),
+                        technicalLog: technicalLog,
+                        recordCapture: recordCapture
+                    ) { output in
+                        try parse(state.session, output, state.markers)
+                    }
+                    try onParsed(state.session, parsed)
+                    results.append(parsed)
+                    completedMemberIDs.append(memberID)
+                    continue
+                }
+
+                if readMode == .tail {
+                    state.nextTailPollAt = Date().addingTimeInterval(normalTailPollIntervalSeconds)
+                }
+                pending[memberID] = state
+            }
+
+            if !completedMemberIDs.isEmpty {
+                for memberID in completedMemberIDs {
+                    pending.removeValue(forKey: memberID)
+                }
+                pendingOrder.removeAll { completedMemberIDs.contains($0) }
+            }
+
+            if !pendingOrder.isEmpty {
+                Thread.sleep(forTimeInterval: terminalStyle.supportsDynamicOutput ? 0.25 : 0.75)
+            }
+        }
+
+        guard pendingOrder.isEmpty else {
+            let timedOutID = pendingOrder[0]
+            guard var state = pending[timedOutID] else {
+                throw MagiMCPOrchestratorError.timedOut(stage: stage, member: "unknown", lastError: nil)
+            }
+            return try handlePendingTimeout(
+                state: &state,
+                results: results,
+                runID: runID,
+                roundID: roundID,
+                stageKind: stageKind,
+                stage: stage,
+                repositoryRoot: repositoryRoot,
+                technicalLog: technicalLog,
+                recordCapture: recordCapture,
+                parse: parse,
+                onParsed: onParsed
+            )
+        }
+
+        clearProgressLine()
+        return results
+    }
+
+    private func completePendingParse<T>(
+        _ parsed: T,
+        state: PendingParsedMemberState,
+        output: String,
+        roundID: String,
+        stageKind: MagiProtocolStage,
+        stage: String,
+        technicalLog: MagiTechnicalLog,
+        recordCapture: (MagiRawTranscript) -> Void,
+        onParsed: (MagiMemberTab, T) throws -> Void
+    ) throws {
+        technicalLog.record(
+            "structured_parse_succeeded",
+            stage: stage,
+            memberID: state.session.member.id,
+            tabID: state.session.tabID,
+            fields: [
+                "stage_kind": stageKind.rawValue,
+                "source": state.lastCapture?.terminalReadMode.logName ?? "unknown"
+            ]
+        )
+        recordCapture(rawTranscript(
+            memberID: state.session.member.id,
+            roundID: roundID,
+            stage: stageKind.rawValue,
+            tabID: state.session.tabID,
+            output: output
+        ))
+        clearProgressLine()
+        try onParsed(state.session, parsed)
+    }
+
+    private func handlePendingTimeout<T>(
+        state: inout PendingParsedMemberState,
+        results: [T],
+        runID: String,
+        roundID: String,
+        stageKind: MagiProtocolStage,
+        stage: String,
+        repositoryRoot: String?,
+        technicalLog: MagiTechnicalLog,
+        recordCapture: (MagiRawTranscript) -> Void,
+        parse: (MagiMemberTab, String, MagiProtocolMarkers) throws -> T,
+        onParsed: (MagiMemberTab, T) throws -> Void
+    ) throws -> [T] {
+        clearProgressLine()
+        let capture = try pollStructuredOutput(
+            tabID: state.session.tabID,
+            repositoryRoot: repositoryRoot,
+            sinceMillis: state.eventSinceMillis,
+            terminalReadMode: .fullStable
+        )
+        let output = capture.combinedOutput
+        state.lastOutput = output
+        state.lastCapture = capture
+
+        do {
+            let parsed = try parse(state.session, output, state.markers)
+            try completePendingParse(
+                parsed,
+                state: state,
+                output: output,
+                roundID: roundID,
+                stageKind: stageKind,
+                stage: stage,
+                technicalLog: technicalLog,
+                recordCapture: recordCapture,
+                onParsed: onParsed
+            )
+            return results + [parsed]
+        } catch {
+            state.lastError = error
+        }
+
+        let parseError = state.lastError?.localizedDescription ?? "structured block did not appear before timeout"
+        if shouldRunStableRepair(
+            state.lastError,
+            capture: capture,
+            output: output,
+            elapsed: Date().timeIntervalSince(state.startedAt)
+        ) {
+            recordCapture(rawTranscript(
+                memberID: state.session.member.id,
+                roundID: roundID,
+                stage: stageKind.rawValue,
+                tabID: state.session.tabID,
+                output: output,
+                parseError: parseError,
+                repairAttempted: true,
+                repairSucceeded: false
+            ))
+            let parsed = try runStructuredRepair(
+                context: StructuredRepairContext(
+                    runID: runID,
+                    roundID: roundID,
+                    stageKind: stageKind,
+                    stage: stage,
+                    member: state.session.member,
+                    tabID: state.session.tabID,
+                    repositoryRoot: repositoryRoot,
+                    expectedMarkers: state.markers,
+                    parseError: parseError,
+                    lastOutput: output,
+                    lastError: state.lastError
+                ),
+                technicalLog: technicalLog,
+                recordCapture: recordCapture
+            ) { repairOutput in
+                try parse(state.session, repairOutput, state.markers)
+            }
+            try onParsed(state.session, parsed)
+            return results + [parsed]
+        }
+
+        recordCapture(rawTranscript(
+            memberID: state.session.member.id,
+            roundID: roundID,
+            stage: stageKind.rawValue,
+            tabID: state.session.tabID,
+            output: output,
+            parseError: parseError,
+            repairAttempted: false,
+            repairSucceeded: false
+        ))
+        technicalLog.record(
+            "structured_parse_timed_out",
+            stage: stage,
+            level: "error",
+            memberID: state.session.member.id,
+            tabID: state.session.tabID,
+            message: parseError,
+            fields: ["stage_kind": stageKind.rawValue]
+        )
+        throw MagiMCPOrchestratorError.timedOut(
+            stage: stage,
+            member: state.session.member.persona.displayName,
+            lastError: parseError
+        )
+    }
+
+    private func logStructuredPollIfNeeded(
+        state: inout PendingParsedMemberState,
+        capture: MagiPolledOutput,
+        stage: String,
+        stageKind: MagiProtocolStage,
+        technicalLog: MagiTechnicalLog
+    ) {
+        if capture.terminalReadMode != .none, state.lastLoggedOutputCount != capture.terminalOutput.count {
+            state.lastLoggedOutputCount = capture.terminalOutput.count
+            technicalLog.record(
+                "tab_output_polled",
+                stage: stage,
+                memberID: state.session.member.id,
+                tabID: state.session.tabID,
+                fields: [
+                    "characters": String(capture.terminalOutput.count),
+                    "lines": capture.terminalReadMode == .fullStable ? String(fullOutputLines) : String(normalOutputTailLines),
+                    "mode": capture.terminalReadMode.logName,
+                    "stage_kind": stageKind.rawValue
+                ]
+            )
+        }
+
+        let eventSignature = "\(capture.eventMessages.count):\(capture.eventCharacters)"
+        if capture.eventMessages.isEmpty == false, state.lastLoggedEventSignature != eventSignature {
+            state.lastLoggedEventSignature = eventSignature
+            technicalLog.record(
+                "repo_events_polled",
+                stage: stage,
+                memberID: state.session.member.id,
+                tabID: state.session.tabID,
+                fields: [
+                    "events": String(capture.eventMessages.count),
+                    "characters": String(capture.eventCharacters),
+                    "since_millis": String(state.eventSinceMillis),
+                    "stage_kind": stageKind.rawValue
+                ]
+            )
+        }
+        if let eventError = capture.eventError, state.lastLoggedEventError != eventError {
+            state.lastLoggedEventError = eventError
+            technicalLog.record(
+                "repo_events_unavailable",
+                stage: stage,
+                level: "warning",
+                memberID: state.session.member.id,
+                tabID: state.session.tabID,
+                message: eventError
+            )
+        }
+        if let statusError = capture.tabStatusError, state.lastLoggedStatusError != statusError {
+            state.lastLoggedStatusError = statusError
+            technicalLog.record(
+                "tab_status_unavailable",
+                stage: stage,
+                level: "warning",
+                memberID: state.session.member.id,
+                tabID: state.session.tabID,
+                message: statusError
+            )
+        }
+    }
+
+    private func logStructuredParsePendingIfNeeded(
+        state: inout PendingParsedMemberState,
+        error: Error,
+        stage: String,
+        stageKind: MagiProtocolStage,
+        technicalLog: MagiTechnicalLog
+    ) {
+        let message = error.localizedDescription
+        guard state.lastLoggedParseError != message else { return }
+        state.lastLoggedParseError = message
+        technicalLog.record(
+            "structured_parse_pending",
+            stage: stage,
+            memberID: state.session.member.id,
+            tabID: state.session.tabID,
+            message: message,
+            fields: ["stage_kind": stageKind.rawValue]
+        )
+    }
+
+    private func renderPendingProgressIfNeeded(
+        state: inout PendingParsedMemberState,
+        capture: MagiPolledOutput,
+        stage: String,
+        stageKind: MagiProtocolStage,
+        mode: MagiProgressMode = .waiting
+    ) {
+        let now = Date()
+        if terminalStyle.supportsDynamicOutput || progressPulseSeconds <= 0 || now >= state.nextProgressPulseAt {
+            renderProgressLine(
+                member: state.session.member,
+                stage: stage,
+                stageKind: stageKind,
+                pulse: state.progressPulse,
+                terminalCharacters: capture.terminalOutput.count,
+                eventCount: capture.eventMessages.count,
+                mode: mode
+            )
+            state.progressPulse += 1
+            state.nextProgressPulseAt = now.addingTimeInterval(progressPulseSeconds)
+        }
+    }
+
+    private func shouldFetchFullOutputForParse(
+        _ error: Error?,
+        capture: MagiPolledOutput,
+        output: String,
+        markers: MagiProtocolMarkers,
+        elapsed: TimeInterval
+    ) -> Bool {
+        guard capture.terminalReadMode != .fullStable else { return false }
+        guard error != nil else { return false }
+        if !MagiTranscriptParser.blockCandidates(in: output, markers: markers).isEmpty {
+            return true
+        }
+        let hasMarkerText = output.contains(markers.begin) || output.contains(markers.end)
+        guard hasMarkerText || elapsed >= idleRepairGraceSeconds else { return false }
+        guard elapsed >= idleRepairGraceSeconds else { return false }
+        return capture.tabStatus.map(MagiMCPEventParsing.tabStatusIsIdleForRepair) ?? false
+    }
+
+    private func shouldRunStableRepair(
+        _ error: Error?,
+        capture: MagiPolledOutput,
+        output: String,
+        elapsed: TimeInterval
+    ) -> Bool {
+        guard error != nil else { return false }
+        guard !output.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return false }
+        guard elapsed >= idleRepairGraceSeconds else { return false }
+        return capture.tabStatus.map(MagiMCPEventParsing.tabStatusIsIdleForRepair) ?? false
+    }
+
+    private func runtimeEventSinceMillis(startedAt: Date) -> Int64 {
+        Int64(max(0, (startedAt.timeIntervalSince1970 - 2) * 1000))
+    }
+
     private func waitForParsed<T>(
         runID: String,
         roundID: String,
@@ -1353,7 +1928,12 @@ struct MagiMCPOrchestrator {
 
         while Date() < deadline {
             try throwIfInterrupted(stage: stage)
-            let capture = try pollStructuredOutput(tabID: tabID, repositoryRoot: repositoryRoot)
+            let capture = try pollStructuredOutput(
+                tabID: tabID,
+                repositoryRoot: repositoryRoot,
+                sinceMillis: runtimeEventSinceMillis(startedAt: startedAt),
+                terminalReadMode: .tail
+            )
             let output = capture.combinedOutput
             lastOutput = output
             let now = Date()
@@ -1604,7 +2184,12 @@ struct MagiMCPOrchestrator {
 
         while Date() < repairDeadline {
             try throwIfInterrupted(stage: "\(stage) repair")
-            let repairCapture = try pollStructuredOutput(tabID: tabID, repositoryRoot: repositoryRoot)
+            let repairCapture = try pollStructuredOutput(
+                tabID: tabID,
+                repositoryRoot: repositoryRoot,
+                sinceMillis: nil,
+                terminalReadMode: .fullStable
+            )
             repairOutput = repairCapture.combinedOutput
             let now = Date()
             if terminalStyle.supportsDynamicOutput {
@@ -1717,13 +2302,8 @@ struct MagiMCPOrchestrator {
     }
 
     private func shouldRepairImmediately(_ error: Error) -> Bool {
-        guard let parseError = error as? MagiTranscriptParseError else { return true }
-        switch parseError {
-        case .missingBlock:
-            return false
-        case .invalidJSON, .invalidContract:
-            return true
-        }
+        _ = error
+        return false
     }
 
     private func shouldRepairAfterIdleMissingBlock(
@@ -1736,9 +2316,7 @@ struct MagiMCPOrchestrator {
         guard case .missingBlock = error as? MagiTranscriptParseError else {
             return false
         }
-        if output.contains(markers.begin) || output.contains(markers.end) {
-            return true
-        }
+        _ = markers
         guard elapsed >= idleRepairGraceSeconds else { return false }
         return capture.tabStatus.map(MagiMCPEventParsing.tabStatusIsIdleForRepair) ?? false
     }
@@ -1778,45 +2356,39 @@ struct MagiMCPOrchestrator {
         var votes: [MagiVote] = []
         var vetoes: [MagiVeto] = []
 
-        for session in sessions {
-            try throwIfInterrupted(stage: stageName)
-            let markers = MagiProtocolMarkers(
-                runID: runID,
-                roundID: roundID,
-                memberID: session.member.id,
-                stage: .vote
-            )
-            let result = try waitForParsed(
-                runID: runID,
-                roundID: roundID,
-                stageKind: .vote,
-                stage: stageName,
-                member: session.member,
-                tabID: session.tabID,
-                repositoryRoot: repositoryRoot,
-                technicalLog: technicalLog,
-                recordCapture: recordCapture
-            ) { output in
+        _ = try collectPendingParsed(
+            runID: runID,
+            roundID: roundID,
+            stageKind: .vote,
+            stage: stageName,
+            sessions: sessions,
+            repositoryRoot: repositoryRoot,
+            startedAt: Date(),
+            technicalLog: technicalLog,
+            recordCapture: recordCapture,
+            parse: { session, output, markers in
                 try MagiTranscriptParser.parseVote(
                     memberID: session.member.id,
                     roundID: roundID,
                     output: output,
                     markers: markers
                 )
+            },
+            onParsed: { session, result in
+                let verdict = result.vote.verdictKind.map { "[\($0.rawValue)] " } ?? ""
+                let conditions = result.vote.conditions.isEmpty
+                    ? ""
+                    : " if \(result.vote.conditions.joined(separator: "; "))"
+                let voteDetail = result.vote.rationale.isEmpty
+                    ? "\(verdict)\(result.vote.choice)\(conditions)"
+                    : "\(verdict)\(result.vote.choice)\(conditions) - \(result.vote.rationale)"
+                printMemberOutput(session.member, voteDetail, state: .done)
+                votes.append(result.vote)
+                if let veto = result.veto {
+                    vetoes.append(veto)
+                }
             }
-            let verdict = result.vote.verdictKind.map { "[\($0.rawValue)] " } ?? ""
-            let conditions = result.vote.conditions.isEmpty
-                ? ""
-                : " if \(result.vote.conditions.joined(separator: "; "))"
-            let voteDetail = result.vote.rationale.isEmpty
-                ? "\(verdict)\(result.vote.choice)\(conditions)"
-                : "\(verdict)\(result.vote.choice)\(conditions) - \(result.vote.rationale)"
-            printMemberOutput(session.member, voteDetail, state: .done)
-            votes.append(result.vote)
-            if let veto = result.veto {
-                vetoes.append(veto)
-            }
-        }
+        )
 
         return (votes, vetoes)
     }
