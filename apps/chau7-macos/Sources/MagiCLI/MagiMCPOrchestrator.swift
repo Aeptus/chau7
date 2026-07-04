@@ -62,10 +62,11 @@ struct MagiMCPOrchestrator {
     var processingLines = MagiCouncilArtFile.defaultProcessingLines
 
     // swiftlint:disable:next function_body_length
-    func run(question: String, config: MagiConfig) throws -> MagiRun {
+    func run(question: String, config: MagiConfig, mode: MagiQuestionKind? = nil) throws -> MagiRun {
         let runID = MagiRunID.make()
         let council = try loadCouncil(config: config)
-        let questionKind = MagiQuestionKind.infer(from: question)
+        let questionKindSelection = questionModeSelection(question: question, override: mode)
+        let questionKind = questionKindSelection.kind
         let repositoryRoot = paths.repositoryRoot(fileManager: fileManager)
         let artifactRoot = paths.runRoot(runID: runID, repositoryRoot: repositoryRoot)
         let artifactBundle = MagiArtifactBundle(runID: runID, rootDirectory: artifactRoot)
@@ -85,6 +86,8 @@ struct MagiMCPOrchestrator {
                 "evidence_policy": config.evidencePolicy.rawValue,
                 "web_access_allowed": String(config.webAccessAllowed),
                 "question_kind": questionKind.rawValue,
+                "question_kind_source": mode == nil ? "inferred" : "explicit",
+                "question_kind_reason": questionKindSelection.reason,
                 "auto_close_agent_tabs": String(config.autoCloseAgentTabs),
                 "verdict_defaults": "majority,equal_weights,one_extra_round_on_deadlock,veto_blocks",
                 "artifact_root": artifactRoot,
@@ -100,6 +103,8 @@ struct MagiMCPOrchestrator {
             fields: [
                 "artifact_root": artifactRoot,
                 "question_kind": questionKind.rawValue,
+                "question_kind_source": mode == nil ? "inferred" : "explicit",
+                "question_kind_reason": questionKindSelection.reason,
                 "member_count": String(council.members.count)
             ]
         )
@@ -110,7 +115,7 @@ struct MagiMCPOrchestrator {
             try throwIfInterrupted(stage: "startup")
 
             printLine("RUN \(runID)")
-            printLine(statusLine("MODE", questionKind.rawValue))
+            printLine(statusLine("MODE", modeStatusText(selection: questionKindSelection, explicit: mode != nil)))
             printLine(statusLine("COUNCIL", "boot sequence accepted"))
 
             let round1 = MagiRunStateMachine.startRound(
@@ -196,7 +201,8 @@ struct MagiMCPOrchestrator {
                     )
                 },
                 onParsed: { session, position in
-                    printMemberOutput(session.member, position.recommendation, state: .done)
+                    let detail = "position sealed (confidence \(String(format: "%.2f", position.confidence)))"
+                    printLine(memberLine(session.member, detail, state: .done))
                     run.positions.append(position)
                     try writeCheckpoint(&run, stage: "round-1-\(session.member.id.rawValue)-position", technicalLog: technicalLog)
                 }
@@ -428,14 +434,7 @@ struct MagiMCPOrchestrator {
 
             let bundle = try writeCheckpoint(&run, stage: "completed", technicalLog: technicalLog)
 
-            announceStage("VERDICT", "The council has resolved.")
-            printLine(terminalStyle.styled(verdict.kind.rawValue, .bold, verdictStyle(for: verdict.kind)))
-            if let decision = verdict.decision {
-                printLine(statusLine("Decision", decision))
-            }
-            printLine(statusLine("Confidence", String(format: "%.2f", verdict.confidence)))
-            printLine(statusLine("Artifacts", bundle.rootDirectory))
-            printLine(statusLine("Technical log", technicalLog.path))
+            printFinalVerdict(verdict, bundle: bundle, technicalLog: technicalLog)
 
             closeMemberTabs(
                 sessions,
@@ -676,6 +675,120 @@ struct MagiMCPOrchestrator {
 
     private func statusLine(_ label: String, _ value: String) -> String {
         "\(terminalStyle.styled(label, .bold, .cyan)): \(value)"
+    }
+
+    private func printWrappedStatusLine(_ label: String, _ value: String) {
+        let prefix = "\(terminalStyle.styled(label, .bold, .cyan)): "
+        let visiblePrefixLength = label.count + 2
+        let width = max(32, terminalStyle.wrapColumn - visiblePrefixLength)
+        let lines = MagiTerminalText.wrapped(value, width: width)
+        guard let first = lines.first else {
+            printLine(prefix)
+            return
+        }
+        printLine("\(prefix)\(first)")
+        let continuationPrefix = String(repeating: " ", count: visiblePrefixLength)
+        for line in lines.dropFirst() {
+            printLine("\(continuationPrefix)\(line)")
+        }
+    }
+
+    private func printWrappedMemberLine(
+        _ memberID: MagiMemberID,
+        _ detail: String,
+        state: MagiMemberLineState
+    ) {
+        let prefix = memberPrefix(memberID, displayName: memberID.displayName, state: state)
+        let width = max(32, terminalStyle.wrapColumn - prefix.visibleLength)
+        let lines = MagiTerminalText.wrapped(detail, width: width)
+        guard let first = lines.first else {
+            printLine(prefix.styled)
+            return
+        }
+        printLine("\(prefix.styled)\(first)")
+        let continuationPrefix = String(repeating: " ", count: prefix.visibleLength)
+        for line in lines.dropFirst() {
+            printLine("\(continuationPrefix)\(line)")
+        }
+    }
+
+    private func printFinalVerdict(
+        _ verdict: MagiVerdict,
+        bundle: MagiArtifactBundle,
+        technicalLog: MagiTechnicalLog
+    ) {
+        announceStage("VERDICT", "The council has resolved.")
+        printLine(terminalStyle.styled(verdict.kind.rawValue, .bold, verdictStyle(for: verdict.kind)))
+        printWrappedStatusLine("Kind", verdict.kind.rawValue)
+        printWrappedStatusLine("Decision", verdict.decision ?? "none")
+        printLine(statusLine("Confidence", String(format: "%.2f", verdict.confidence)))
+        if !verdict.rationale.isEmpty {
+            printWrappedStatusLine("Rationale", verdict.rationale)
+        }
+
+        if verdict.votes.isEmpty {
+            printLine(statusLine("Member votes", "none"))
+        } else {
+            printLine(statusLine("Member votes", String(verdict.votes.count)))
+            for vote in verdict.votes.sorted(by: { $0.memberID.rawValue < $1.memberID.rawValue }) {
+                printWrappedMemberLine(vote.memberID, memberVoteSummary(vote), state: .done)
+            }
+        }
+
+        if verdict.vetoes.isEmpty {
+            printLine(statusLine("Vetoes", "none"))
+        } else {
+            printLine(statusLine("Vetoes", String(verdict.vetoes.count)))
+            for veto in verdict.vetoes.sorted(by: { $0.memberID.rawValue < $1.memberID.rawValue }) {
+                printWrappedMemberLine(veto.memberID, vetoSummary(veto), state: .repair)
+            }
+        }
+
+        printLine(statusLine("Artifact path", bundle.rootDirectory))
+        printLine(statusLine("Technical log", technicalLog.path))
+    }
+
+    private func memberVoteSummary(_ vote: MagiVote) -> String {
+        var parts: [String] = []
+        if let verdictKind = vote.verdictKind {
+            parts.append("verdict=\(verdictKind.rawValue)")
+        }
+        if let decisionID = vote.decisionID?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !decisionID.isEmpty {
+            parts.append("decision_id=\(decisionID)")
+        }
+        if !vote.choice.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            parts.append("choice=\(vote.choice)")
+        }
+        if !vote.conditions.isEmpty {
+            parts.append("conditions=\(vote.conditions.joined(separator: "; "))")
+        }
+        parts.append("confidence=\(String(format: "%.2f", vote.confidence))")
+        if !vote.rationale.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            parts.append("rationale=\(vote.rationale)")
+        }
+        return parts.joined(separator: " | ")
+    }
+
+    private func vetoSummary(_ veto: MagiVeto) -> String {
+        "veto=\(veto.reason) | scope=\(veto.scope) | blocks_verdict=\(veto.blocksVerdict)"
+    }
+
+    private func questionModeSelection(
+        question: String,
+        override: MagiQuestionKind?
+    ) -> MagiQuestionKindInference {
+        if let override {
+            return MagiQuestionKindInference(kind: override, reason: "explicit --mode")
+        }
+        return MagiQuestionKind.inferWithReason(from: question)
+    }
+
+    private func modeStatusText(selection: MagiQuestionKindInference, explicit: Bool) -> String {
+        if explicit {
+            return "\(selection.kind.rawValue) (explicit --mode)"
+        }
+        return "\(selection.kind.rawValue) (inferred: \(selection.reason))"
     }
 
     private func progressLine(
@@ -2378,13 +2491,8 @@ struct MagiMCPOrchestrator {
             },
             onParsed: { session, result in
                 let verdict = result.vote.verdictKind.map { "[\($0.rawValue)] " } ?? ""
-                let conditions = result.vote.conditions.isEmpty
-                    ? ""
-                    : " if \(result.vote.conditions.joined(separator: "; "))"
-                let voteDetail = result.vote.rationale.isEmpty
-                    ? "\(verdict)\(result.vote.choice)\(conditions)"
-                    : "\(verdict)\(result.vote.choice)\(conditions) - \(result.vote.rationale)"
-                printMemberOutput(session.member, voteDetail, state: .done)
+                let voteDetail = "vote sealed \(verdict)(confidence \(String(format: "%.2f", result.vote.confidence)))"
+                printLine(memberLine(session.member, voteDetail, state: .done))
                 votes.append(result.vote)
                 if let veto = result.veto {
                     vetoes.append(veto)

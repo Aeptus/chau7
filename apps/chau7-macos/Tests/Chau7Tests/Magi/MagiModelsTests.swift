@@ -230,6 +230,20 @@ final class MagiModelsTests: XCTestCase {
         XCTAssertTrue(verdict.requiresAdditionalRound)
     }
 
+    func testQuestionKindInferenceExplainsEngineeringMode() {
+        let inference = MagiQuestionKind.inferWithReason(from: "Should we merge this pull request?")
+
+        XCTAssertEqual(inference.kind, .engineering)
+        XCTAssertTrue(inference.reason.contains("engineering decision signal"))
+    }
+
+    func testQuestionKindInferenceExplainsGenericMode() {
+        let inference = MagiQuestionKind.inferWithReason(from: "What is the best Final Fantasy?")
+
+        XCTAssertEqual(inference.kind, .generic)
+        XCTAssertEqual(inference.reason, "no engineering decision signals matched")
+    }
+
     func testMagiVoteDecodesLegacyJSONWithoutCanonicalFields() throws {
         let data = """
         {

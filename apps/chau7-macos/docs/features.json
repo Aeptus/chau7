@@ -9,7 +9,7 @@
   {
     "category": "AI Integration",
     "feature": "MAGI Command Surface",
-    "description": "SwiftPM executable supporting magi/MAGI direct questions, ask, doctor, config, replay, and local share generation with Chau7 MCP orchestration",
+    "description": "SwiftPM executable supporting magi/MAGI direct questions, explicit --mode engineering|generic selection, ask, doctor, config, replay, and local share generation with Chau7 MCP orchestration",
     "status": "Shipped",
     "differentiator": "Yes"
   },
@@ -86,7 +86,7 @@
   {
     "category": "AI Integration",
     "feature": "MAGI Home TUI",
-    "description": "Running magi/MAGI without arguments opens an interactive terminal home screen with progressive boot output, ASCII art, colored member panels after boot, boot-status lines ending on the selected council, an ask prompt, help, doctor access, and --config navigation",
+    "description": "Running magi/MAGI without arguments opens an interactive terminal home screen with progressive boot output, ASCII art, colored member panels after boot, boot-status lines ending on the selected council, an ask prompt that returns after each run, help, doctor access, and --config navigation",
     "status": "Shipped",
     "differentiator": "Yes"
   },
@@ -128,7 +128,7 @@
   {
     "category": "AI Integration",
     "feature": "MAGI Run Presentation",
-    "description": "magi ask uses ANSI color when available, member accents, compact collector status markers, a single high-speed in-place processing line while waiting, and full wrapped public phase results instead of clipped rationale previews",
+    "description": "magi ask uses ANSI color when available, member accents, compact collector status markers, a single high-speed in-place processing line while waiting, light phase member-status lines, inferred mode explanations, and a final verdict summary with decision, confidence, rationale, member votes, vetoes, and artifact path",
     "status": "Shipped",
     "differentiator": "Yes"
   },

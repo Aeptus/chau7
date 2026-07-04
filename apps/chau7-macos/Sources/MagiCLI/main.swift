@@ -38,11 +38,11 @@ struct MagiCLIRunner {
 
     private func execute(_ command: MagiCLICommand) -> MagiCLIExitCode {
         switch command {
-        case let .ask(question):
+        case let .ask(question, mode):
             if let exitCode = ensureConfiguredForRun() {
                 return exitCode
             }
-            return runAsk(question: question)
+            return runAsk(question: question, mode: mode)
         case .doctor:
             return runDoctor()
         case .config:
@@ -62,7 +62,11 @@ struct MagiCLIRunner {
         }
     }
 
-    private func runAsk(question: String) -> MagiCLIExitCode {
+    private func runAsk(
+        question: String,
+        mode: MagiQuestionKind?,
+        showLaunchBanner: Bool = true
+    ) -> MagiCLIExitCode {
         do {
             let config = try loadConfig()
             let client = MagiMCPClient(socketPath: "\(paths.homeDirectory)/.chau7/mcp.sock")
@@ -73,6 +77,7 @@ struct MagiCLIRunner {
                 let bundle = writePreflightFailureArtifact(
                     question: question,
                     config: config,
+                    mode: mode,
                     error: error,
                     category: preflightFailureCategory(for: error)
                 )
@@ -85,7 +90,9 @@ struct MagiCLIRunner {
 
             let interruptFlag = MagiInterruptFlag.shared
             interruptFlag.install()
-            printRunLaunchBanner(config: config)
+            if showLaunchBanner {
+                printRunLaunchBanner(config: config)
+            }
             let councilArt = loadCouncilArt(councilID: config.defaultCouncilID)
             let orchestrator = MagiMCPOrchestrator(
                 client: client,
@@ -95,7 +102,7 @@ struct MagiCLIRunner {
                 isInterrupted: { interruptFlag.isInterrupted },
                 processingLines: councilArt.processingLines
             )
-            _ = try orchestrator.run(question: question, config: config)
+            _ = try orchestrator.run(question: question, config: config, mode: mode)
             return .success
         } catch {
             FileHandle.standardError.writeLine("MAGI: \(error.localizedDescription)")
@@ -133,11 +140,46 @@ struct MagiCLIRunner {
                 writeStdout()
                 writeMuted("Ask a question, type --config, doctor, help, or quit.")
             default:
+                let askRequest: HomeAskRequest
+                switch parseHomeAskInput(value) {
+                case let .success(request):
+                    askRequest = request
+                case let .failure(error):
+                    FileHandle.standardError.writeLine("MAGI: \(error.localizedDescription)")
+                    writeMuted("Ask a question, type --config, doctor, help, or quit.")
+                    continue
+                }
                 if let exitCode = ensureConfiguredForRun() {
                     return exitCode
                 }
-                return runAsk(question: value)
+                _ = runAsk(question: askRequest.question, mode: askRequest.mode, showLaunchBanner: false)
+                writeStdout()
+                writeMuted("Ask a question, type --config, doctor, help, or quit.")
             }
+        }
+    }
+
+    private struct HomeAskRequest {
+        var question: String
+        var mode: MagiQuestionKind?
+    }
+
+    private func parseHomeAskInput(_ value: String) -> Result<HomeAskRequest, MagiCLIParseError> {
+        let tokens = value.split(whereSeparator: \.isWhitespace).map(String.init)
+        let shouldParseAsCommand = tokens.first == "ask"
+            || tokens.contains("--mode")
+            || tokens.contains(where: { $0.hasPrefix("--mode=") })
+        guard shouldParseAsCommand else {
+            return .success(HomeAskRequest(question: value, mode: nil))
+        }
+
+        switch MagiCLICommandParser.parse(tokens) {
+        case let .success(.ask(question, mode)):
+            return .success(HomeAskRequest(question: question, mode: mode))
+        case let .success(command):
+            return .failure(.unsupportedModeOption(command: "\(command)"))
+        case let .failure(error):
+            return .failure(error)
         }
     }
 
@@ -235,6 +277,8 @@ struct MagiCLIRunner {
         writeStdout()
         writeWizardSection("Home commands")
         writeStdout("Type any question to ask the council.")
+        writeStdout("--mode engineering <question>  Force approve/reject-style verdicts.")
+        writeStdout("--mode generic <question>      Force select/rank verdicts.")
         writeStdout("--config  Open the configuration panel.")
         writeStdout("doctor    Check config, personas, MCP socket, and providers.")
         writeStdout("quit      Exit MAGI.")
@@ -1061,6 +1105,7 @@ struct MagiCLIRunner {
     private func writePreflightFailureArtifact(
         question: String,
         config: MagiConfig,
+        mode: MagiQuestionKind?,
         error: Error,
         category: MagiRunFailureCategory
     ) -> MagiArtifactBundle? {
@@ -1068,6 +1113,7 @@ struct MagiCLIRunner {
         let repositoryRoot = paths.repositoryRoot(fileManager: fileManager)
         let artifactRoot = paths.runRoot(runID: runID, repositoryRoot: repositoryRoot)
         let artifactBundle = MagiArtifactBundle(runID: runID, rootDirectory: artifactRoot)
+        let modeSelection = questionModeSelection(question: question, override: mode)
         let technicalLog = MagiTechnicalLog(
             path: artifactBundle.technicalLogPath,
             runID: runID,
@@ -1081,6 +1127,9 @@ struct MagiCLIRunner {
             artifactBundle: artifactBundle,
             metadata: [
                 "mcp_socket": "\(paths.homeDirectory)/.chau7/mcp.sock",
+                "question_kind": modeSelection.kind.rawValue,
+                "question_kind_source": mode == nil ? "inferred" : "explicit",
+                "question_kind_reason": modeSelection.reason,
                 "artifact_root": artifactRoot,
                 "technical_log": artifactBundle.technicalLogPath,
                 "artifact_scope": repositoryRoot == nil ? "global" : "repository",
@@ -1104,6 +1153,16 @@ struct MagiCLIRunner {
         return try? MagiRunArtifactStore.write(run: run, fileManager: fileManager)
     }
 
+    private func questionModeSelection(
+        question: String,
+        override: MagiQuestionKind?
+    ) -> MagiQuestionKindInference {
+        if let override {
+            return MagiQuestionKindInference(kind: override, reason: "explicit --mode")
+        }
+        return MagiQuestionKind.inferWithReason(from: question)
+    }
+
     private func preflightFailureCategory(for error: Error) -> MagiRunFailureCategory {
         switch error {
         case MagiMCPClientError.socketMissing:
@@ -1123,6 +1182,8 @@ struct MagiCLIRunner {
     Usage:
       magi
       magi "question"
+      magi --mode engineering "question"
+      magi --mode generic "question"
       magi ask "question"
       magi doctor
       magi config

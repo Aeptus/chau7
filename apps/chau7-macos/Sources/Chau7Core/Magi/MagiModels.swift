@@ -752,6 +752,10 @@ public enum MagiQuestionKind: String, Codable, CaseIterable, Identifiable, Senda
     }
 
     public static func infer(from question: String) -> MagiQuestionKind {
+        inferWithReason(from: question).kind
+    }
+
+    public static func inferWithReason(from question: String) -> MagiQuestionKindInference {
         let normalized = question
             .lowercased()
             .replacingOccurrences(of: "_", with: " ")
@@ -768,8 +772,11 @@ public enum MagiQuestionKind: String, Codable, CaseIterable, Identifiable, Senda
             "production",
             "security"
         ]
-        if hardEngineeringDecisionSignals.contains(where: { normalized.contains($0) }) {
-            return .engineering
+        if let signal = hardEngineeringDecisionSignals.first(where: { normalized.contains($0) }) {
+            return MagiQuestionKindInference(
+                kind: .engineering,
+                reason: "matched engineering decision signal: \(signal.trimmingCharacters(in: .whitespaces))"
+            )
         }
 
         let engineeringSignals = [
@@ -803,12 +810,29 @@ public enum MagiQuestionKind: String, Codable, CaseIterable, Identifiable, Senda
             "ready"
         ]
 
-        if engineeringSignals.contains(where: { normalized.contains($0) }),
-           approvalSignals.contains(where: { normalized.contains($0) }) {
-            return .engineering
+        let engineeringSignal = engineeringSignals.first { normalized.contains($0) }
+        let approvalSignal = approvalSignals.first { normalized.contains($0) }
+        if let engineeringSignal, let approvalSignal {
+            return MagiQuestionKindInference(
+                kind: .engineering,
+                reason: "matched engineering signal: \(engineeringSignal) and decision signal: \(approvalSignal)"
+            )
         }
 
-        return .generic
+        return MagiQuestionKindInference(
+            kind: .generic,
+            reason: "no engineering decision signals matched"
+        )
+    }
+}
+
+public struct MagiQuestionKindInference: Equatable, Sendable {
+    public var kind: MagiQuestionKind
+    public var reason: String
+
+    public init(kind: MagiQuestionKind, reason: String) {
+        self.kind = kind
+        self.reason = reason
     }
 }
 

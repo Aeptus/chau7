@@ -14,6 +14,22 @@ The default council is named `magi` and contains three members:
 
 The feature is CLI-first and should work through both `magi` and `MAGI`.
 
+Primary command forms:
+
+```text
+magi
+magi "question"
+magi --mode engineering "question"
+magi --mode generic "question"
+magi ask "question"
+magi doctor
+magi config
+magi replay <run-id>
+magi share <run-id>
+```
+
+When `--mode` is omitted, MAGI infers `engineering` or `generic` from the question and prints the deterministic reason for that inference.
+
 ## Goals
 
 - Use real Chau7 shell sessions through MCP.
@@ -221,7 +237,7 @@ RANK
 NO_CONSENSUS
 ```
 
-Generic questions can use `SELECT`, `RANK`, and `NO_CONSENSUS`. Engineering questions can use approve/reject-style verdicts.
+Generic questions can use `SELECT`, `RANK`, and `NO_CONSENSUS`. Engineering questions can use approve/reject-style verdicts. The mode can be forced with `--mode engineering` or `--mode generic`.
 
 For engineering questions, final vote blocks must set `verdict` to one of:
 
@@ -235,7 +251,24 @@ ESCALATE
 
 For generic questions, final vote blocks must set `verdict` to `SELECT` or `RANK`.
 
+Final vote blocks use canonical decision fields:
+
+```json
+{
+  "verdict": "APPROVE",
+  "decision_id": "merge_after_ci",
+  "choice": "Merge once CI is green.",
+  "conditions": ["CI stays green"],
+  "confidence": 0.82,
+  "rationale": "The change is contained."
+}
+```
+
+Engineering majorities are grouped by canonical decision identity, not by verdict label alone. `decision_id`, material `conditions`, and verdict kind must match to form a majority.
+
 If no majority is reached, MAGI returns `DEADLOCK` and runs one extra deliberation round when `deadlock_extra_round_enabled = true`. If no majority is reached after that extra round, MAGI returns `NO_CONSENSUS`. If any persona issues a final-vote blocking veto and `veto_blocks_verdict = true`, MAGI returns `BLOCKED_BY_VETO`. Position-round veto fields are preserved as deliberation notes but do not block unless restated in a vote round.
+
+The terminal keeps live deliberation compact: phase title, member status lines, and one animated processing line. The completed verdict prints kind, decision, confidence, rationale, member votes, vetoes, and the artifact path.
 
 ## Artifacts
 
