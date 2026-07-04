@@ -704,7 +704,14 @@ final class TerminalControlService {
 
         let deadline = start.addingTimeInterval(Double(boundedTimeoutMs) / 1000.0)
         while Date() < deadline {
-            Thread.sleep(forTimeInterval: min(0.1, max(0.01, deadline.timeIntervalSinceNow)))
+            // Escalating backoff: poll tightly at first so the common case (a
+            // tab that becomes ready within ~1s) returns promptly, then widen
+            // to a 0.5s cap so a long wait doesn't `onMain` (main.sync) into
+            // the main thread hundreds of times over a 30s budget. Always
+            // clamp to the remaining budget so we never overshoot `deadline`.
+            let elapsed = Date().timeIntervalSince(start)
+            let interval = min(0.5, 0.1 + elapsed * 0.1)
+            Thread.sleep(forTimeInterval: min(interval, max(0.01, deadline.timeIntervalSinceNow)))
 
             guard let snapshot = onMain({ self.tabReadinessSnapshot(tabID: tabID) }) else {
                 return jsonError("Tab not found: \(tabID)")
