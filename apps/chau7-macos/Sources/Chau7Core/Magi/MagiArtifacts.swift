@@ -639,24 +639,19 @@ public enum MagiRunArtifactRenderer {
 }
 
 public enum MagiRunArtifactStore {
-    public static func write(run: MagiRun, fileManager: FileManager = .default) throws -> MagiArtifactBundle {
-        let bundle = run.artifactBundle ?? MagiArtifactBundle(
-            runID: run.id,
-            rootDirectory: MagiArtifactBundle.rootDirectory(
-                runID: run.id,
-                repositoryRoot: nil,
-                homeDirectory: NSHomeDirectory()
-            )
-        )
-        try fileManager.createDirectory(
-            at: URL(fileURLWithPath: bundle.rootDirectory),
-            withIntermediateDirectories: true
-        )
+    public static func writeCheckpoint(
+        run: MagiRun,
+        fileManager: FileManager = .default
+    ) throws -> MagiArtifactBundle {
+        let bundle = try prepareBundle(for: run, fileManager: fileManager)
+        try writeDecisionJSON(for: run, bundle: bundle)
+        return bundle
+    }
 
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        encoder.dateEncodingStrategy = .iso8601
-        try encoder.encode(run).write(to: URL(fileURLWithPath: bundle.decisionJSONPath))
+    public static func write(run: MagiRun, fileManager: FileManager = .default) throws -> MagiArtifactBundle {
+        let bundle = try prepareBundle(for: run, fileManager: fileManager)
+
+        try writeDecisionJSON(for: run, bundle: bundle)
 
         try MagiRunArtifactRenderer.decisionMarkdown(for: run).write(
             to: URL(fileURLWithPath: bundle.decisionMarkdownPath),
@@ -685,6 +680,33 @@ public enum MagiRunArtifactStore {
         )
 
         return bundle
+    }
+
+    private static func prepareBundle(
+        for run: MagiRun,
+        fileManager: FileManager
+    ) throws -> MagiArtifactBundle {
+        let bundle = run.artifactBundle ?? MagiArtifactBundle(
+            runID: run.id,
+            rootDirectory: MagiArtifactBundle.rootDirectory(
+                runID: run.id,
+                repositoryRoot: nil,
+                homeDirectory: NSHomeDirectory()
+            )
+        )
+        try fileManager.createDirectory(
+            at: URL(fileURLWithPath: bundle.rootDirectory),
+            withIntermediateDirectories: true
+        )
+
+        return bundle
+    }
+
+    private static func writeDecisionJSON(for run: MagiRun, bundle: MagiArtifactBundle) throws {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        encoder.dateEncodingStrategy = .iso8601
+        try encoder.encode(run).write(to: URL(fileURLWithPath: bundle.decisionJSONPath), options: .atomic)
     }
 
     public static func missingRequiredPaths(

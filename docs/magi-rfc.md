@@ -295,6 +295,8 @@ replay.jsonl
 share.html
 ```
 
+During running stages, MAGI checkpoints only the current run state to `decision.json`. It does not regenerate `decision.md`, `transcript.jsonl`, `graph.json`, `replay.jsonl`, or `share.html` on every checkpoint. Completed, failed, and interrupted terminal states write the complete artifact bundle.
+
 `magi replay <run-id>` reads `decision.json` and `replay.jsonl` from the repository artifact directory first, then the global artifact directory, and renders the run timeline in the terminal. If `decision.json` is unavailable, it falls back to the replay JSONL lines.
 
 `magi share <run-id>` reads `decision.json` using the same lookup order and generates or refreshes local `share.html`. If only a preexisting `share.html` is available, it reports that file. V1 never uploads hosted share artifacts.

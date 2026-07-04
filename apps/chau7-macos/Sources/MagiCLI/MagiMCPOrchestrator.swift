@@ -512,12 +512,22 @@ struct MagiMCPOrchestrator {
             ]
         )
 
-        let bundle = try MagiRunArtifactStore.write(run: run, fileManager: fileManager)
+        let shouldWriteFullBundle = run.status == .completed
+            || run.status == .failed
+            || run.status == .interrupted
+        let bundle = try writeArtifacts(run: run, fullBundle: shouldWriteFullBundle)
         if run.artifactBundle != bundle {
             MagiRunStateMachine.recordArtifactBundle(bundle, in: &run)
-            return try MagiRunArtifactStore.write(run: run, fileManager: fileManager)
+            return try writeArtifacts(run: run, fullBundle: shouldWriteFullBundle)
         }
         return bundle
+    }
+
+    private func writeArtifacts(run: MagiRun, fullBundle: Bool) throws -> MagiArtifactBundle {
+        if fullBundle {
+            return try MagiRunArtifactStore.write(run: run, fileManager: fileManager)
+        }
+        return try MagiRunArtifactStore.writeCheckpoint(run: run, fileManager: fileManager)
     }
 
     private func throwIfInterrupted(stage: String) throws {

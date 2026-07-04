@@ -80,6 +80,46 @@ final class MagiArtifactsTests: XCTestCase {
         }
     }
 
+    func testArtifactStoreCheckpointWritesOnlyRunStateJSON() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("magi-checkpoint-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        var run = sampleRun()
+        run.status = .running
+        run.artifactBundle = MagiArtifactBundle(runID: run.id, rootDirectory: root.path)
+
+        let bundle = try MagiRunArtifactStore.writeCheckpoint(run: run)
+
+        XCTAssertTrue(FileManager.default.fileExists(atPath: bundle.decisionJSONPath))
+        let generatedPaths = bundle.requiredPaths.filter { $0 != bundle.decisionJSONPath }
+        for path in generatedPaths {
+            XCTAssertFalse(FileManager.default.fileExists(atPath: path), path)
+        }
+
+        let data = try Data(contentsOf: URL(fileURLWithPath: bundle.decisionJSONPath))
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let checkpoint = try decoder.decode(MagiRun.self, from: data)
+        XCTAssertEqual(checkpoint.id, run.id)
+        XCTAssertEqual(checkpoint.status, .running)
+    }
+
+    func testArtifactStoreFullWriteCompletesAfterCheckpoint() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("magi-checkpoint-full-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        var run = sampleRun()
+        run.status = .running
+        run.artifactBundle = MagiArtifactBundle(runID: run.id, rootDirectory: root.path)
+        _ = try MagiRunArtifactStore.writeCheckpoint(run: run)
+
+        run.status = .completed
+        let bundle = try MagiRunArtifactStore.write(run: run)
+
+        XCTAssertTrue(MagiRunArtifactStore.isComplete(bundle))
+        XCTAssertEqual(MagiRunArtifactStore.missingRequiredPaths(in: bundle), [])
+    }
+
     func testFailedRunArtifactsIncludeFailureMetadata() {
         var run = sampleRun()
         MagiRunStateMachine.markFailed(

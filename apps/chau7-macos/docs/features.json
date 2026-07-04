@@ -23,7 +23,7 @@
   {
     "category": "AI Integration",
     "feature": "MAGI Production Artifacts",
-    "description": "Run checkpoints, failure categories, interrupted status, denied-evidence counts, complete required artifact bundles, and failure metadata in replay/share outputs make partial MAGI runs inspectable",
+    "description": "Running stages write lightweight decision JSON checkpoints, while terminal states write complete required artifact bundles with failure categories, interrupted status, denied-evidence counts, and replay/share failure metadata",
     "status": "Shipped",
     "differentiator": "Yes"
   },
