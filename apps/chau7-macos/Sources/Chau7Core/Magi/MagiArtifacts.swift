@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 
 public enum MagiRunArtifactRenderer {
@@ -323,6 +324,33 @@ public enum MagiRunArtifactRenderer {
             }
         }
 
+        if voteRoundID == nil, let verdict = run.finalVerdict {
+            for vote in verdict.votes {
+                append([
+                    "type": "vote",
+                    "title": "\(vote.memberID.displayName) vote",
+                    "detail": vote.choice,
+                    "member_id": vote.memberID.rawValue,
+                    "round_id": "",
+                    "verdict_kind": vote.verdictKind?.rawValue ?? "",
+                    "decision_id": vote.decisionID ?? "",
+                    "conditions": vote.conditions.joined(separator: " | "),
+                    "confidence": formatScore(vote.confidence),
+                    "rationale": vote.rationale
+                ])
+            }
+            for veto in verdict.vetoes {
+                append([
+                    "type": "veto",
+                    "title": "\(veto.memberID.displayName) veto",
+                    "detail": veto.reason,
+                    "member_id": veto.memberID.rawValue,
+                    "round_id": "",
+                    "blocks_verdict": String(veto.blocksVerdict)
+                ])
+            }
+        }
+
         if let verdict = run.finalVerdict {
             append([
                 "type": "verdict",
@@ -331,7 +359,8 @@ public enum MagiRunArtifactRenderer {
                 "kind": verdict.kind.rawValue,
                 "decision": verdict.decision ?? "",
                 "consensus": formatScore(verdict.consensusScore),
-                "confidence": formatScore(verdict.confidence)
+                "confidence": formatScore(verdict.confidence),
+                "rationale": verdict.rationale
             ])
         }
 
@@ -645,6 +674,7 @@ public enum MagiRunArtifactStore {
     ) throws -> MagiArtifactBundle {
         let bundle = try prepareBundle(for: run, fileManager: fileManager)
         try writeDecisionJSON(for: run, bundle: bundle)
+        try writeManifest(for: run, bundle: bundle, fileManager: fileManager)
         return bundle
     }
 
@@ -678,8 +708,28 @@ public enum MagiRunArtifactStore {
             atomically: true,
             encoding: .utf8
         )
+        try writeManifest(for: run, bundle: bundle, fileManager: fileManager)
 
         return bundle
+    }
+
+    public static func manifest(
+        for run: MagiRun,
+        bundle: MagiArtifactBundle,
+        fileManager: FileManager = .default
+    ) -> MagiArtifactManifest {
+        let files = bundle.payloadPaths.map { path in
+            manifestFile(path: path, fileManager: fileManager)
+        }
+        let artifactStatus: MagiArtifactBundleStatus = files.allSatisfy { $0.status == .present }
+            ? .complete
+            : .partial
+        return MagiArtifactManifest(
+            runID: run.id,
+            runStatus: run.status,
+            artifactStatus: artifactStatus,
+            files: files
+        )
     }
 
     private static func prepareBundle(
@@ -707,6 +757,53 @@ public enum MagiRunArtifactStore {
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         encoder.dateEncodingStrategy = .iso8601
         try encoder.encode(run).write(to: URL(fileURLWithPath: bundle.decisionJSONPath), options: .atomic)
+    }
+
+    private static func writeManifest(
+        for run: MagiRun,
+        bundle: MagiArtifactBundle,
+        fileManager: FileManager
+    ) throws {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        encoder.dateEncodingStrategy = .iso8601
+        let manifest = manifest(for: run, bundle: bundle, fileManager: fileManager)
+        try encoder.encode(manifest).write(to: URL(fileURLWithPath: bundle.manifestJSONPath), options: .atomic)
+    }
+
+    private static func manifestFile(path: String, fileManager: FileManager) -> MagiArtifactManifest.File {
+        let name = URL(fileURLWithPath: path).lastPathComponent
+        guard fileManager.fileExists(atPath: path) else {
+            return MagiArtifactManifest.File(
+                name: name,
+                path: path,
+                status: .missing
+            )
+        }
+
+        do {
+            let data = try Data(contentsOf: URL(fileURLWithPath: path))
+            return MagiArtifactManifest.File(
+                name: name,
+                path: path,
+                status: .present,
+                byteCount: data.count,
+                sha256: sha256Hex(data)
+            )
+        } catch {
+            return MagiArtifactManifest.File(
+                name: name,
+                path: path,
+                status: .unreadable,
+                error: error.localizedDescription
+            )
+        }
+    }
+
+    private static func sha256Hex(_ data: Data) -> String {
+        SHA256.hash(data: data)
+            .map { String(format: "%02x", $0) }
+            .joined()
     }
 
     public static func missingRequiredPaths(
@@ -791,6 +888,9 @@ public enum MagiTerminalReplayRenderer {
                     let kind = vote.verdictKind.map { "[\($0.rawValue)] " } ?? ""
                     let conditions = vote.conditions.isEmpty ? "" : " if \(vote.conditions.joined(separator: "; "))"
                     lines.append("  - \(vote.memberID.displayName) vote: \(kind)\(vote.choice)\(conditions)")
+                    if !vote.rationale.isEmpty {
+                        lines.append("    Rationale: \(vote.rationale)")
+                    }
                     eventCount += 1
                 }
                 for veto in verdict.vetoes {
@@ -819,6 +919,22 @@ public enum MagiTerminalReplayRenderer {
                 for packet in run.evidencePackets {
                     lines.append("  - Evidence \(packet.collectorID): \(packet.summary)")
                 }
+            }
+            lines.append("")
+        }
+
+        if voteRoundID == nil, let verdict = run.finalVerdict, !verdict.votes.isEmpty || !verdict.vetoes.isEmpty {
+            lines.append("[Votes]")
+            for vote in verdict.votes {
+                let kind = vote.verdictKind.map { "[\($0.rawValue)] " } ?? ""
+                let conditions = vote.conditions.isEmpty ? "" : " if \(vote.conditions.joined(separator: "; "))"
+                lines.append("  - \(vote.memberID.displayName) vote: \(kind)\(vote.choice)\(conditions)")
+                if !vote.rationale.isEmpty {
+                    lines.append("    Rationale: \(vote.rationale)")
+                }
+            }
+            for veto in verdict.vetoes {
+                lines.append("  - \(veto.memberID.displayName) veto: \(veto.reason)")
             }
             lines.append("")
         }
@@ -899,6 +1015,9 @@ public enum MagiTerminalReplayRenderer {
                 let verdictKind = object["verdict_kind"].flatMap { $0.isEmpty ? nil : "[\($0)] " } ?? ""
                 let detail = object["detail"] ?? object["choice"] ?? ""
                 lines.append("  - \(member) vote: \(verdictKind)\(detail)")
+                if let rationale = object["rationale"], !rationale.isEmpty {
+                    lines.append("    Rationale: \(rationale)")
+                }
             case "veto":
                 let member = memberName(object["member_id"])
                 let detail = object["detail"] ?? object["reason"] ?? ""
@@ -919,6 +1038,9 @@ public enum MagiTerminalReplayRenderer {
                 }
                 if let confidence = object["confidence"], !confidence.isEmpty {
                     lines.append("Confidence: \(confidence)")
+                }
+                if let rationale = object["rationale"], !rationale.isEmpty {
+                    lines.append("Rationale: \(rationale)")
                 }
             case "failure":
                 lines.append("")

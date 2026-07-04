@@ -23,7 +23,7 @@
   {
     "category": "AI Integration",
     "feature": "MAGI Production Artifacts",
-    "description": "Running stages write lightweight decision JSON checkpoints, while terminal states write complete required artifact bundles with failure categories, interrupted status, denied-evidence counts, and replay/share failure metadata",
+    "description": "Running stages write lightweight decision JSON plus manifest checkpoints with artifact status and SHA-256 hashes, while terminal states write complete required artifact bundles with failure categories, interrupted status, denied-evidence counts, replay/share failure metadata, and replay rationales",
     "status": "Shipped",
     "differentiator": "Yes"
   },

@@ -404,6 +404,7 @@ final class MagiModelsTests: XCTestCase {
         XCTAssertEqual(bundle.graphJSONPath, "/repo/.chau7/magi/runs/run-1/graph.json")
         XCTAssertEqual(bundle.replayJSONLPath, "/repo/.chau7/magi/runs/run-1/replay.jsonl")
         XCTAssertEqual(bundle.shareHTMLPath, "/repo/.chau7/magi/runs/run-1/share.html")
+        XCTAssertEqual(bundle.manifestJSONPath, "/repo/.chau7/magi/runs/run-1/manifest.json")
         XCTAssertEqual(bundle.technicalLogPath, "/repo/.chau7/magi/runs/run-1/technical.jsonl")
     }
 
@@ -418,7 +419,8 @@ final class MagiModelsTests: XCTestCase {
                 "transcript.jsonl",
                 "graph.json",
                 "replay.jsonl",
-                "share.html"
+                "share.html",
+                "manifest.json"
             ]
         )
         XCTAssertEqual(
@@ -429,7 +431,8 @@ final class MagiModelsTests: XCTestCase {
                 "/repo/.chau7/magi/runs/run-1/transcript.jsonl",
                 "/repo/.chau7/magi/runs/run-1/graph.json",
                 "/repo/.chau7/magi/runs/run-1/replay.jsonl",
-                "/repo/.chau7/magi/runs/run-1/share.html"
+                "/repo/.chau7/magi/runs/run-1/share.html",
+                "/repo/.chau7/magi/runs/run-1/manifest.json"
             ]
         )
     }

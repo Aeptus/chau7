@@ -1068,6 +1068,61 @@ public struct MagiDecisionGraph: Codable, Equatable, Sendable {
     }
 }
 
+public enum MagiArtifactBundleStatus: String, Codable, CaseIterable, Sendable {
+    case partial
+    case complete
+}
+
+public enum MagiArtifactFileStatus: String, Codable, CaseIterable, Sendable {
+    case present
+    case missing
+    case unreadable
+}
+
+public struct MagiArtifactManifest: Codable, Equatable, Sendable {
+    public struct File: Codable, Equatable, Sendable {
+        public var name: String
+        public var path: String
+        public var status: MagiArtifactFileStatus
+        public var byteCount: Int?
+        public var sha256: String?
+        public var error: String?
+
+        public init(
+            name: String,
+            path: String,
+            status: MagiArtifactFileStatus,
+            byteCount: Int? = nil,
+            sha256: String? = nil,
+            error: String? = nil
+        ) {
+            self.name = name
+            self.path = path
+            self.status = status
+            self.byteCount = byteCount
+            self.sha256 = sha256
+            self.error = error
+        }
+    }
+
+    public var runID: String
+    public var runStatus: MagiRunStatus
+    public var artifactStatus: MagiArtifactBundleStatus
+    public var files: [File]
+
+    public init(
+        runID: String,
+        runStatus: MagiRunStatus,
+        artifactStatus: MagiArtifactBundleStatus,
+        files: [File]
+    ) {
+        self.runID = runID
+        self.runStatus = runStatus
+        self.artifactStatus = artifactStatus
+        self.files = files
+    }
+}
+
 public struct MagiArtifactBundle: Codable, Equatable, Sendable {
     public static let requiredFileNames = [
         "decision.md",
@@ -1075,7 +1130,8 @@ public struct MagiArtifactBundle: Codable, Equatable, Sendable {
         "transcript.jsonl",
         "graph.json",
         "replay.jsonl",
-        "share.html"
+        "share.html",
+        "manifest.json"
     ]
 
     public var runID: String
@@ -1086,6 +1142,9 @@ public struct MagiArtifactBundle: Codable, Equatable, Sendable {
     public var graphJSONPath: String
     public var replayJSONLPath: String
     public var shareHTMLPath: String
+    public var manifestJSONPath: String {
+        "\(rootDirectory)/manifest.json"
+    }
     public var technicalLogPath: String {
         "\(rootDirectory)/technical.jsonl"
     }
@@ -1103,6 +1162,18 @@ public struct MagiArtifactBundle: Codable, Equatable, Sendable {
     }
 
     public var requiredPaths: [String] {
+        [
+            decisionMarkdownPath,
+            decisionJSONPath,
+            transcriptJSONLPath,
+            graphJSONPath,
+            replayJSONLPath,
+            shareHTMLPath,
+            manifestJSONPath
+        ]
+    }
+
+    public var payloadPaths: [String] {
         [
             decisionMarkdownPath,
             decisionJSONPath,
