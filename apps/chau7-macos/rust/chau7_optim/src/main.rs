@@ -834,7 +834,28 @@ enum SwiftCommands {
     Other(Vec<OsString>),
 }
 
-fn main() -> Result<()> {
+fn main() {
+    // A crash or internal error inside the optimizer must never suppress the
+    // user's command. The CTO wrapper treats exit codes 2 and 3 as "fall
+    // through to the real binary"; every other code is taken as "optimized
+    // successfully", so the real command is not run — and the wrapper's
+    // `2>/dev/null` hides the reason. Map both panics and Err returns to exit
+    // 3 so the wrapper re-execs the real binary instead. Safe because the
+    // shadowed commands are read-only and idempotent; deliberate
+    // `process::exit` codes from command handlers (which run *after* producing
+    // output) are unaffected and still propagate as-is.
+    std::panic::set_hook(Box::new(|info| {
+        eprintln!("chau7-optim: internal panic, falling through to real binary: {info}");
+        std::process::exit(3);
+    }));
+
+    if let Err(err) = run() {
+        eprintln!("chau7-optim: internal error, falling through to real binary: {err:#}");
+        std::process::exit(3);
+    }
+}
+
+fn run() -> Result<()> {
     // Strip CTO wrapper dir from PATH to prevent infinite recursion.
     // Without this, `Command::new("ls")` inside ls.rs would resolve to the
     // CTO wrapper script, which calls chau7-optim again → infinite loop.
