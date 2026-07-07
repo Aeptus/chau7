@@ -188,9 +188,24 @@ struct TerminalViewRepresentable: NSViewRepresentable {
     ) {
         guard !rustView.isTerminalStarted else { return }
 
-        let tip = PowerUserTips.randomFormattedTip()
-        let headerBox = terminalHeaderBox(cols: rustView.renderCols, message: tip)
-        rustView.startTerminal(initialOutput: headerBox)
+        // For a restored tab, inject the persisted (already ANSI/SGR-styled)
+        // scrollback tail so the saved screen renders immediately, and skip
+        // the tip banner — a power-user tip layered over restored history is
+        // odd. `startTerminal(initialOutput:)` UTF-8-injects the string
+        // through the VTE parser, reproducing the saved styling as-is. Consume
+        // the carrier so it fires exactly once. Fresh tabs (no pending
+        // scrollback) keep the tip banner.
+        let initialOutput: String?
+        if let savedScrollback = model.pendingRestoreScrollback,
+           !savedScrollback.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            initialOutput = savedScrollback
+            model.pendingRestoreScrollback = nil
+        } else {
+            model.pendingRestoreScrollback = nil
+            let tip = PowerUserTips.randomFormattedTip()
+            initialOutput = terminalHeaderBox(cols: rustView.renderCols, message: tip)
+        }
+        rustView.startTerminal(initialOutput: initialOutput)
         rustView.appliedColorSchemeSignature = nil
         rustView.applyColorScheme(FeatureSettings.shared.currentColorScheme)
         model.attachRustTerminal(rustView)

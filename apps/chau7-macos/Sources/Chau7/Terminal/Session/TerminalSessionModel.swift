@@ -241,6 +241,11 @@ final class TerminalSessionModel {
     @ObservationIgnored var onGitRootPathChanged: ((String?) -> Void)?
     @ObservationIgnored var onRestoreBootstrapPhaseChanged: ((RestoreBootstrapPhase) -> Void)?
 
+    /// Styled scrollback tail persisted from the previous session; injected
+    /// once at terminal launch so a restored tab shows its saved content
+    /// immediately, then cleared. Nil for fresh (non-restored) tabs.
+    @ObservationIgnored var pendingRestoreScrollback: String?
+
     var gitRootPath: String? {
         didSet {
             cachedRepoName = Self.repoName(from: gitRootPath)

@@ -767,6 +767,18 @@ extension OverlayTabsModel {
             )
             resolvedPaneStates[paneID] = effectivePaneState
             paneStatesToRestore[paneID] = effectivePaneState
+
+            // Hand the persisted, already-styled scrollback tail to the
+            // session so `launchTerminal` can inject it once and the restored
+            // tab shows its saved content instantly (before the live process
+            // resumes). Skip empty/whitespace-only content so fresh-looking
+            // panes keep the normal launch banner. Runs for both the
+            // interactive (selected) and background/deferred restore profiles,
+            // since both reach this single metadata-apply site.
+            if let savedScrollback = effectivePaneState.scrollbackContent,
+               !savedScrollback.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                session.pendingRestoreScrollback = savedScrollback
+            }
         }
         return resolvedPaneStates
     }
