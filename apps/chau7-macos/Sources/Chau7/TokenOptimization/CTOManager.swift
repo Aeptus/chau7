@@ -403,14 +403,21 @@ final class CTOManager {
     /// (Xcode 3.9) while the shell's `python3` is Homebrew's 3.14, with
     /// different site-packages. Using the launch PATH makes the hardcoded fast
     /// path match what the command would resolve to when run in the terminal.
-    private func resolveRealBinary(for command: String) -> String? {
-        let fm = FileManager.default
-        let entries = ShellLaunchEnvironment.preferredPATH().split(separator: ":").map(String.init)
+    /// `pathProvider` and `isExecutable` are injectable so a test can verify the
+    /// resolution junction — that this reads the login-shell PATH, not the app's
+    /// — without the filesystem or the real `~/.chau7`. Production uses the
+    /// defaults: `ShellLaunchEnvironment.preferredPATH()` and a real exec probe.
+    func resolveRealBinary(
+        for command: String,
+        pathProvider: () -> String = { ShellLaunchEnvironment.preferredPATH() },
+        isExecutable: (String) -> Bool = { FileManager.default.isExecutableFile(atPath: $0) }
+    ) -> String? {
+        let entries = pathProvider().split(separator: ":").map(String.init)
         return ctoResolveRealBinary(
             command: command,
             pathEntries: entries,
             wrapperDirectory: wrapperBinDir.path,
-            isExecutable: { fm.isExecutableFile(atPath: $0) }
+            isExecutable: isExecutable
         )
     }
 

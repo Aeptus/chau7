@@ -765,6 +765,41 @@ final class TokenOptimizationCoreTests: XCTestCase {
         XCTAssertNil(resolved, "no real binary → nil → wrapper must not be installed")
     }
 
+    /// Junction: `CTOManager.resolveRealBinary` reads from its PATH provider and
+    /// applies the pure resolution logic. Injected deps keep this off the real
+    /// filesystem and `~/.chau7`.
+    func testCTOManagerResolveReadsFromProvidedPath() {
+        let resolved = CTOManager.shared.resolveRealBinary(
+            for: "python3",
+            pathProvider: { "/opt/homebrew/bin:/usr/bin" },
+            isExecutable: { ["/opt/homebrew/bin/python3", "/usr/bin/python3"].contains($0) }
+        )
+        XCTAssertEqual(resolved, "/opt/homebrew/bin/python3")
+    }
+
+    /// Junction regression guard (Finding 2): the default PATH source must be
+    /// the login-shell launch PATH (`ShellLaunchEnvironment.preferredPATH()`),
+    /// NOT the GUI app's `ProcessInfo` PATH. The recording probe captures which
+    /// directories are scanned; reverting the source would change them and fail
+    /// here. No filesystem access — the probe always returns false.
+    func testCTOManagerResolveDefaultsToShellLaunchPath() {
+        var scannedDirs: [String] = []
+        _ = CTOManager.shared.resolveRealBinary(
+            for: "chau7-nonexistent-probe-cmd",
+            isExecutable: { candidate in
+                scannedDirs.append((candidate as NSString).deletingLastPathComponent)
+                return false
+            }
+        )
+        let expected = ShellLaunchEnvironment.preferredPATH()
+            .split(separator: ":").map(String.init)
+            .filter { !$0.isEmpty && $0 != CTOManager.shared.wrapperBinDir.path }
+        XCTAssertEqual(
+            scannedDirs, expected,
+            "resolveRealBinary must scan the login-shell PATH (preferredPATH), not the app's PATH"
+        )
+    }
+
     // MARK: - CTOGainStats Decoding
 
     func testGainStatsDecodingRoundTrip() throws {

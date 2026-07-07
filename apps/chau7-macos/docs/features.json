@@ -1080,7 +1080,7 @@
   {
     "category": "AI Integration",
     "feature": "CTO Wrapper Install Diagnostics",
-    "description": "CTO setup logs an installed/skipped wrapper summary with the skipped-command list so a missing real binary is visible in logs rather than surfacing only as a runtime failure; real-binary PATH resolution and the wrapper exit-code fall-through contract are locked by unit and integration tests",
+    "description": "CTO setup logs an installed/skipped wrapper summary with the skipped-command list so a missing real binary is visible in logs rather than surfacing only as a runtime failure; real-binary PATH resolution (including the junction that it scans the login-shell PATH, not the app's) and the wrapper exit-code fall-through contract are locked by unit and integration tests",
     "status": "Shipped",
     "differentiator": "Yes"
   },
