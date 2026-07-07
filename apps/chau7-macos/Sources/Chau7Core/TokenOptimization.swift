@@ -93,6 +93,36 @@ public func decisionReason(
     }
 }
 
+// MARK: - Real Binary Resolution
+
+/// Resolves the real binary for a shadowed command by scanning ordered PATH
+/// entries, skipping the CTO wrapper directory (which resolves back to the
+/// wrapper and would recurse). Pure — no filesystem or process environment —
+/// so the resolution order is unit-testable.
+///
+/// `pathEntries` MUST be the **shell's** launch PATH (the order a terminal
+/// sees), not the GUI app's minimal `PATH`. Resolving against the app PATH
+/// hardcoded the wrong binary into wrappers — e.g. `/usr/bin/python3` (Xcode)
+/// instead of the shell's Homebrew `python3` — so a wrapped command execed a
+/// different interpreter than the user's shell would. `isExecutable` probes an
+/// absolute candidate path (`FileManager.isExecutableFile` in production).
+/// Returns nil when no entry outside the wrapper dir holds the command, which
+/// is the signal to NOT install a wrapper (shadowing a name with no target
+/// fails with a branded exit 127).
+public func ctoResolveRealBinary(
+    command: String,
+    pathEntries: [String],
+    wrapperDirectory: String,
+    isExecutable: (String) -> Bool
+) -> String? {
+    for dir in pathEntries {
+        if dir.isEmpty || dir == wrapperDirectory { continue }
+        let candidate = "\(dir)/\(command)"
+        if isExecutable(candidate) { return candidate }
+    }
+    return nil
+}
+
 // MARK: - Decision Reason
 
 /// Runtime telemetry **resolution** reason for token-optimization decisions —

@@ -720,6 +720,51 @@ final class TokenOptimizationCoreTests: XCTestCase {
         }
     }
 
+    // MARK: - Real Binary Resolution
+
+    /// The interpreter-mismatch bug (Finding 2): resolution must honor PATH
+    /// order, so a Homebrew entry ahead of `/usr/bin` wins. Regressing this to
+    /// the app's PATH ordering would resolve `/usr/bin/python3` instead.
+    func testResolveRealBinaryHonorsPathOrder() {
+        let present: Set<String> = ["/opt/homebrew/bin/python3", "/usr/bin/python3"]
+        let resolved = ctoResolveRealBinary(
+            command: "python3",
+            pathEntries: ["/opt/homebrew/bin", "/usr/bin"],
+            wrapperDirectory: "/home/.chau7/cto_bin",
+            isExecutable: { present.contains($0) }
+        )
+        XCTAssertEqual(resolved, "/opt/homebrew/bin/python3")
+    }
+
+    /// The recursion guard: the wrapper directory is skipped so a command never
+    /// resolves back to its own wrapper (which would re-invoke chau7-optim).
+    func testResolveRealBinarySkipsWrapperDirectory() {
+        let wrapperDir = "/home/.chau7/cto_bin"
+        let present: Set<String> = ["\(wrapperDir)/grep", "/usr/bin/grep"]
+        let resolved = ctoResolveRealBinary(
+            command: "grep",
+            pathEntries: [wrapperDir, "/usr/bin"],
+            wrapperDirectory: wrapperDir,
+            isExecutable: { present.contains($0) }
+        )
+        XCTAssertEqual(resolved, "/usr/bin/grep", "must skip the wrapper dir and resolve the real binary")
+    }
+
+    /// The install-guard input (Finding 1): when no entry outside the wrapper
+    /// dir holds the command, resolution returns nil — the signal to NOT
+    /// install a wrapper, so a bare name is never shadowed into an exit 127.
+    func testResolveRealBinaryReturnsNilWhenAbsent() {
+        let wrapperDir = "/home/.chau7/cto_bin"
+        let present: Set<String> = ["\(wrapperDir)/python"] // only the wrapper itself exists
+        let resolved = ctoResolveRealBinary(
+            command: "python",
+            pathEntries: [wrapperDir, "/usr/bin", "/bin"],
+            wrapperDirectory: wrapperDir,
+            isExecutable: { present.contains($0) }
+        )
+        XCTAssertNil(resolved, "no real binary → nil → wrapper must not be installed")
+    }
+
     // MARK: - CTOGainStats Decoding
 
     func testGainStatsDecodingRoundTrip() throws {

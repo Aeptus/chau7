@@ -1079,6 +1079,13 @@
   },
   {
     "category": "AI Integration",
+    "feature": "CTO Wrapper Install Diagnostics",
+    "description": "CTO setup logs an installed/skipped wrapper summary with the skipped-command list so a missing real binary is visible in logs rather than surfacing only as a runtime failure; real-binary PATH resolution and the wrapper exit-code fall-through contract are locked by unit and integration tests",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "AI Integration",
     "feature": "CTO Fail-Safe Optimizer Fall-Through",
     "description": "An internal chau7-optim error or panic exits 3 (the wrapper's fall-through code) so the real binary still runs and the reason prints to stderr, instead of the wrapper mistaking the failure for optimized output and suppressing the command. Deliberate handler exit codes that follow real output (grep/diff no-match/differ) are preserved",
     "status": "Shipped",

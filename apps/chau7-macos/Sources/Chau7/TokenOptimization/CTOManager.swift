@@ -134,9 +134,24 @@ final class CTOManager {
         // previous install keeps poisoning PATH after an upgrade.
         pruneStaleWrappers()
 
-        for command in supportedCommands {
-            installWrapper(for: command)
+        var skipped: [String] = []
+        for command in supportedCommands where !installWrapper(for: command) {
+            skipped.append(command)
         }
+        // Visibility for the class of bug where a supported command has no real
+        // binary on the shell PATH — the exact condition that made a `python`
+        // wrapper fail with exit 127. These are now skipped (not shadowed), so
+        // this is an INFO, not an error: a command may be legitimately absent
+        // (e.g. `rg`/`tree` not installed). The skipped list makes "why isn't
+        // <cmd> optimized" answerable from the logs instead of guesswork.
+        LogEnhanced.info(
+            .cto, "CTO wrapper install summary",
+            metadata: [
+                "installed": "\(supportedCommands.count - skipped.count)",
+                "skipped": "\(skipped.count)",
+                "skippedCommands": skipped.sorted().joined(separator: ",")
+            ]
+        )
 
         // Auto-install bundled helper binaries
         if let bundlePath = Bundle.main.url(forResource: "chau7-md", withExtension: nil) {
@@ -320,8 +335,11 @@ final class CTOManager {
     /// shell's own "command not found", breaking the command even while CTO is
     /// inactive (the fast-path guard runs before the active-session check).
     /// Any pre-existing wrapper for such a command is removed so an upgrade
-    /// heals a previously-poisoned name.
-    private func installWrapper(for command: String) {
+    /// heals a previously-poisoned name. Returns `true` when a wrapper was
+    /// installed, `false` when the command was skipped (no real binary) or the
+    /// write failed — the caller aggregates these for the setup summary.
+    @discardableResult
+    private func installWrapper(for command: String) -> Bool {
         let wrapperPath = wrapperBinDir.appendingPathComponent(command)
 
         guard let realBin = resolveRealBinary(for: command) else {
@@ -331,7 +349,7 @@ final class CTOManager {
             } else {
                 Log.trace("CTOManager: skipping wrapper for \(command) — no real binary on PATH")
             }
-            return
+            return false
         }
 
         let script = generateWrapperScript(for: command, realBin: realBin)
@@ -343,8 +361,10 @@ final class CTOManager {
                 ofItemAtPath: wrapperPath.path
             )
             Log.trace("CTOManager: installed wrapper for \(command) → \(realBin)")
+            return true
         } catch {
             Log.error("CTOManager: failed to install wrapper for \(command): \(error)")
+            return false
         }
     }
 
@@ -385,18 +405,13 @@ final class CTOManager {
     /// path match what the command would resolve to when run in the terminal.
     private func resolveRealBinary(for command: String) -> String? {
         let fm = FileManager.default
-        let wrapperDir = wrapperBinDir.path
-        let pathEnv = ShellLaunchEnvironment.preferredPATH()
-
-        for dir in pathEnv.split(separator: ":") {
-            let dirStr = String(dir)
-            if dirStr == wrapperDir { continue }
-            let candidate = "\(dirStr)/\(command)"
-            if fm.isExecutableFile(atPath: candidate) {
-                return candidate
-            }
-        }
-        return nil
+        let entries = ShellLaunchEnvironment.preferredPATH().split(separator: ":").map(String.init)
+        return ctoResolveRealBinary(
+            command: command,
+            pathEntries: entries,
+            wrapperDirectory: wrapperBinDir.path,
+            isExecutable: { fm.isExecutableFile(atPath: $0) }
+        )
     }
 
     /// Generates the shell wrapper script for a command.
