@@ -374,10 +374,19 @@ final class CTOManager {
 
     /// Resolves the real binary path for a command by searching PATH (skipping cto_bin).
     /// Called once at wrapper-generation time so the path can be hardcoded into the script.
+    ///
+    /// Resolves against `ShellLaunchEnvironment.preferredPATH()` — the exact
+    /// PATH terminals launch with (Homebrew/volta/cargo/`~/bin` ahead of the
+    /// system dirs) — **not** the GUI app's own `PATH`. A Finder/launchd-
+    /// launched app inherits only the minimal `/usr/bin:/bin:…`, so resolving
+    /// against it hardcoded the wrong binary: `python3` → `/usr/bin/python3`
+    /// (Xcode 3.9) while the shell's `python3` is Homebrew's 3.14, with
+    /// different site-packages. Using the launch PATH makes the hardcoded fast
+    /// path match what the command would resolve to when run in the terminal.
     private func resolveRealBinary(for command: String) -> String? {
         let fm = FileManager.default
         let wrapperDir = wrapperBinDir.path
-        let pathEnv = ProcessInfo.processInfo.environment["PATH"] ?? "/usr/bin:/bin:/usr/sbin:/sbin"
+        let pathEnv = ShellLaunchEnvironment.preferredPATH()
 
         for dir in pathEnv.split(separator: ":") {
             let dirStr = String(dir)
