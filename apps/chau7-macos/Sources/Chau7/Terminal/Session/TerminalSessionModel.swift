@@ -157,9 +157,6 @@ final class TerminalSessionModel {
     /// when `gitRootPath` async refresh hasn't completed yet).
     @ObservationIgnored var onCurrentDirectoryChanged: ((String) -> Void)?
 
-    /// Last rendered terminal snapshot used for snapshot-backed tab switching.
-    @ObservationIgnored var lastRenderedSnapshot: NSImage?
-
     // MARK: - Session state model
 
     //

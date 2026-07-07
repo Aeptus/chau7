@@ -434,38 +434,6 @@ final class RustGridView: NSView {
         if !metalRenderingActive { needsDisplay = true }
     }
 
-    func makeRetainedFrameImage() -> NSImage? {
-        let snapshotSize: NSSize
-        if bounds.width > 0, bounds.height > 0 {
-            snapshotSize = bounds.size
-        } else if cellSize.width > 0, cellSize.height > 0, cols > 0, rows > 0 {
-            snapshotSize = NSSize(
-                width: CGFloat(cols) * cellSize.width,
-                height: CGFloat(rows) * cellSize.height
-            )
-        } else {
-            return nil
-        }
-
-        let image = NSImage(size: snapshotSize)
-        image.lockFocus()
-        let previousMetalRenderingActive = metalRenderingActive
-        let previousFrame = frame
-        let previousBounds = bounds
-        metalRenderingActive = false
-        frame = NSRect(origin: .zero, size: snapshotSize)
-        bounds = NSRect(origin: .zero, size: snapshotSize)
-        defer {
-            bounds = previousBounds
-            frame = previousFrame
-            metalRenderingActive = previousMetalRenderingActive
-            image.unlockFocus()
-        }
-
-        draw(NSRect(origin: .zero, size: snapshotSize))
-        return image
-    }
-
     private func fontForCell(_ flags: UInt8) -> NSFont {
         let isBold = flags & RustCellFlags.bold != 0
         let isItalic = flags & RustCellFlags.italic != 0
@@ -2027,10 +1995,6 @@ final class RustTerminalView: NSView {
     /// preventing cross-tab spurious cache invalidation.
     var instanceSyncCount: UInt64 = 0
 
-    var requiresForcedRetainedFrameSync: Bool {
-        !hasRetainedFrameSourceReady || retainedFrameSourceVersion < retainedFrameContentVersion
-    }
-
     /// Selection state
     var isSelecting = false
     var selectionStart: (col: Int, row: Int)?
@@ -2916,11 +2880,6 @@ final class RustTerminalView: NSView {
                 to: phase,
                 hostsTUIApp: hostsTUIApp || (rustTerminal?.isAlternateScreenActive() ?? false)
             )
-            TabGraphicsMemoryManager.shared.handlePhaseTransition(
-                tabID: resolvedTabID,
-                from: previousPhase,
-                to: phase
-            )
             // .hidden demotion flushes the Rust scrollback ring to disk —
             // keeping the Swift-side [String] duplicate of that exact buffer
             // resident would defeat the entire reclamation.
@@ -3351,20 +3310,6 @@ final class RustTerminalView: NSView {
     func applyBellSettings(enabled: Bool, sound: String) {
         bellConfig = (enabled: enabled, sound: sound)
         Log.trace("RustTerminalView[\(viewId)]: applyBellSettings - enabled=\(enabled), sound=\(sound)")
-    }
-
-    func makeRetainedFrameImage(allowForcedSync: Bool = false) -> NSImage? {
-        guard rustTerminal != nil else {
-            return nil
-        }
-        if allowForcedSync {
-            syncGridToRenderer(force: true)
-            updateDangerousRowTints()
-        }
-        guard hasRetainedFrameSourceReady else {
-            return nil
-        }
-        return gridView?.makeRetainedFrameImage()
     }
 
 }

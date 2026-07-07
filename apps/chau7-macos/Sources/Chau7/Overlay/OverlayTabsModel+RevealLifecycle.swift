@@ -16,8 +16,6 @@ import Foundation
 ///   2. **Commit + force-reveal** — `completeSelectedTabRevealIfNeeded`
 ///      is the central commit gate; `forceSelectedTabRevealLive` is the
 ///      no-questions-asked path used when scheduling fails.
-///      `discardSettledRestorePreviews` clears stale preview snapshots
-///      on tabs whose restore bootstrap has already finished.
 ///
 ///   3. **First-frame reporting to `StartupRestoreCoordinator`** —
 ///      `noteStartupSelectedTabLiveFrameIfNeeded` and the after-bootstrap
@@ -54,20 +52,6 @@ extension OverlayTabsModel {
         terminalReadyCommitWorkItem = nil
         selectedTerminalRevealTimeoutWorkItem?.cancel()
         selectedTerminalRevealTimeoutWorkItem = nil
-    }
-
-    func discardSettledRestorePreviews(reason: String) {
-        for index in tabs.indices where tabs[index].restorePreviewSnapshot != nil {
-            let phase = tabs[index].displaySession?.restoreBootstrapPhase ?? .inactive
-            if phase != .replaying {
-                StartupRestoreCoordinator.shared.noteRestorePreviewDiscarded(
-                    tabID: tabs[index].id,
-                    windowNumber: overlayWindow?.windowNumber,
-                    reason: "\(reason)_phase_\(phase.rawValue)"
-                )
-                tabs[index].restorePreviewSnapshot = nil
-            }
-        }
     }
 
     func scheduleSelectedTerminalRevealTimeout(
@@ -129,9 +113,6 @@ extension OverlayTabsModel {
         if !force {
             session.cancelVisibleFrameReadyHandoff()
         }
-        if let selectedIndex = tabs.firstIndex(where: { $0.id == tab.id }) {
-            tabs[selectedIndex].restorePreviewSnapshot = nil
-        }
         logSelectedTabRevealCompletion(completion, tabID: tab.id, reason: reason)
     }
 
@@ -149,21 +130,6 @@ extension OverlayTabsModel {
         guard let tab = selectedTab,
               let windowNumber = overlayWindow?.windowNumber else {
             return
-        }
-        if tab.restorePreviewSnapshot != nil,
-           tab.displaySession?.isRestoreBootstrapPending == true {
-            guard let selectedSession = selectedPresentationSession(for: tab),
-                  selectedSession.presentationSurfaceState.isLivePresentable else {
-                return
-            }
-            if let selectedIndex = tabs.firstIndex(where: { $0.id == tab.id }) {
-                StartupRestoreCoordinator.shared.noteRestorePreviewDiscarded(
-                    tabID: tab.id,
-                    windowNumber: windowNumber,
-                    reason: "\(reason)_live_surface_ready"
-                )
-                tabs[selectedIndex].restorePreviewSnapshot = nil
-            }
         }
         StartupRestoreCoordinator.shared.noteSelectedTabLiveFrame(
             windowNumber: windowNumber,

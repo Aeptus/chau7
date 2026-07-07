@@ -63,7 +63,6 @@ extension OverlayTabsModel {
         total += stringPayloadBytes(state.knownRepoRoot)
         total += stringPayloadBytes(state.knownGitBranch)
         total += stringPayloadBytes(state.agentLaunchCommand)
-        total += state.previewSnapshotPNGData?.count ?? 0
         for pane in state.paneStates ?? [] {
             total += estimatedRestorePayloadBytes(for: pane)
         }
@@ -252,10 +251,6 @@ extension OverlayTabsModel {
             tab.color = TabColor(rawValue: state.color) ?? colors[i % colors.count]
             tab.stampOwnerTabID()
             controller.restoreAttachedSessionNoteIfNeeded()
-            if let preview = Self.restorePreviewImage(from: state.previewSnapshotPNGData) {
-                tab.restorePreviewSnapshot = preview
-                Log.info("Restore preview hydrated for tab=\(restoredTabID)")
-            }
 
             // Restore per-tab token optimization override
             if let overrideRaw = state.tokenOptOverride,

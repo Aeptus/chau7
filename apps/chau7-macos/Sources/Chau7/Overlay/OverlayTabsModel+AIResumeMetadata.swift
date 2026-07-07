@@ -632,9 +632,9 @@ extension OverlayTabsModel {
                 lastExitCode: state.lastExitCode,
                 lastExitAt: state.lastExitAt,
                 commandBlocks: state.commandBlocks,
-                // Legacy-only field, but it must survive sanitization:
-                // restore previews from older on-disk backups hydrate
-                // `OverlayTab.restorePreviewSnapshot` from this payload.
+                // Legacy-only field carried through sanitization so older
+                // on-disk backups still decode. The bytes are no longer used
+                // to build any image; new saves always write nil.
                 previewSnapshotPNGData: state.previewSnapshotPNGData
             )
         }

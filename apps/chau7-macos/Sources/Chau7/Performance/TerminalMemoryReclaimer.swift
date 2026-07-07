@@ -2,11 +2,9 @@ import AppKit
 
 /// Bridges OS memory-pressure reclamation onto the main thread for the
 /// main-confined per-tab caches that previously never responded to pressure:
-/// tab switch snapshots (`OverlayTab.cachedSnapshot`), the session-side
-/// snapshot mirror (`lastRenderedSnapshot`, one full Retina window bitmap per
-/// ever-selected tab), the search buffer cache (`cachedBufferData`), and the
-/// per-view scrollback line cache (`cachedBufferLines`, a full `[String]`
-/// duplicate of the Rust ring).
+/// the search buffer cache (`cachedBufferData`) and the per-view scrollback
+/// line cache (`cachedBufferLines`, a full `[String]` duplicate of the Rust
+/// ring).
 ///
 /// Policy: `.warning` clears non-selected tabs only (the selected tab's
 /// caches are hot); `.critical` clears everything — all of it is regenerable
@@ -33,7 +31,6 @@ final class TerminalMemoryReclaimer: MemoryReclaimable {
     }
 
     private static func reclaimOnMain(_ level: MemoryPressureLevel) {
-        var clearedSnapshots = 0
         var clearedBufferCaches = 0
         var volatileWindows = 0
         var seenCoordinators = Set<ObjectIdentifier>()
@@ -44,15 +41,7 @@ final class TerminalMemoryReclaimer: MemoryReclaimable {
                 let tab = model.tabs[index]
                 if level == .warning, tab.id == selectedID { continue }
 
-                if model.tabs[index].cachedSnapshot != nil {
-                    model.tabs[index].cachedSnapshot = nil
-                    clearedSnapshots += 1
-                }
                 for (_, session) in tab.splitController.terminalSessions {
-                    if session.lastRenderedSnapshot != nil {
-                        session.lastRenderedSnapshot = nil
-                        clearedSnapshots += 1
-                    }
                     if session.cachedBufferData != nil {
                         session.cachedBufferData = nil
                         clearedBufferCaches += 1
@@ -82,6 +71,6 @@ final class TerminalMemoryReclaimer: MemoryReclaimable {
             }
         }
 
-        Log.info("TerminalMemoryReclaimer[\(level)]: cleared \(clearedSnapshots) snapshot(s), \(clearedBufferCaches) buffer cache(s), \(volatileWindows) window(s) GPU-volatile")
+        Log.info("TerminalMemoryReclaimer[\(level)]: cleared \(clearedBufferCaches) buffer cache(s), \(volatileWindows) window(s) GPU-volatile")
     }
 }

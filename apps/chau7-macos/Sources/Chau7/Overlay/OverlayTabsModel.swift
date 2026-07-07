@@ -129,19 +129,6 @@ struct OverlayTab: Identifiable, Equatable {
         return URL(fileURLWithPath: path).lastPathComponent
     }
 
-    // MARK: - Tab Switch Optimization: Cached Snapshot
-
-    /// Cached screenshot of terminal content for instant visual feedback during tab switch
-    var cachedSnapshot: NSImage?
-    /// Last known cursor position for cursor-first rendering
-    var lastCursorPosition: CGPoint = .zero
-    /// Last known prompt text for cursor placeholder
-    var lastPromptText = ""
-
-    /// Passive preview restored from persisted state. Only shown while the
-    /// shell-backed restore bootstrap is still in progress.
-    var restorePreviewSnapshot: NSImage?
-
     /// The primary terminal session (first terminal in split tree)
     var session: TerminalSessionModel? {
         splitController.primarySession
@@ -774,9 +761,9 @@ struct SavedTabState: Codable {
     /// Legacy-only: old versions persisted PNG-encoded terminal snapshots
     /// for the restore-preview UI. New saves always write nil (see commit
     /// 31d08d0 "Stop encoding PNG preview snapshots in auto-save"). Kept
-    /// on SavedTabState so decoding an older on-disk backup still hydrates
-    /// `OverlayTab.restorePreviewSnapshot` — the field naturally sunsets
-    /// when the user's saved state is overwritten by a new save.
+    /// on SavedTabState purely so decoding an older on-disk backup still
+    /// succeeds; the bytes are no longer used to build any image and the
+    /// field naturally sunsets when the saved state is overwritten.
     let previewSnapshotPNGData: Data?
 
     static let userDefaultsKey = "com.chau7.savedTabState"
@@ -1298,11 +1285,6 @@ final class OverlayTabsModel {
             }
             requestSelectedTabAuthoritativeReveal(reason: "init_restore")
         }
-
-        // Register for per-phase snapshot release. Multi-window safe: every
-        // window model registers, and releases are dispatched to all (each
-        // only acts on tabs it owns).
-        TabGraphicsMemoryManager.shared.addSnapshotReleaser(self)
 
         // Setup task lifecycle observers (v1.1)
         setupTaskObservers()
@@ -1847,28 +1829,5 @@ extension String {
         guard hasPrefix(prefix) else { return nil }
         let suffix = String(dropFirst(prefix.count))
         return suffix.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : suffix
-    }
-}
-
-// MARK: - TabSnapshotReleaser
-
-extension OverlayTabsModel: TabSnapshotReleaser {
-    @MainActor
-    func releaseSnapshots(forTabID tabID: UUID, tier: TabGraphicsMemoryManager.ReleaseTier) {
-        guard let index = tabs.firstIndex(where: { $0.id == tabID }) else { return }
-        switch tier {
-        case .keepAll:
-            break
-        case .keepCachedOnly:
-            tabs[index].restorePreviewSnapshot = nil
-        case .releaseAll:
-            tabs[index].restorePreviewSnapshot = nil
-            tabs[index].cachedSnapshot = nil
-            // Session-side snapshot mirror: a full Retina window bitmap per
-            // pane that no reclamation path used to clear.
-            for (_, session) in tabs[index].splitController.terminalSessions {
-                session.lastRenderedSnapshot = nil
-            }
-        }
     }
 }

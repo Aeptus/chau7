@@ -200,7 +200,6 @@ extension OverlayTabsModel {
 
     func requestSelectedTabAuthoritativeReveal(reason: String) {
         dispatchPrecondition(condition: .onQueue(.main))
-        discardSettledRestorePreviews(reason: reason)
 
         guard let selectedTab,
               let session = selectedPresentationSession(for: selectedTab) else {

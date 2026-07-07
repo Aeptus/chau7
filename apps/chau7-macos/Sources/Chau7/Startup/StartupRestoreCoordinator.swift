@@ -182,24 +182,6 @@ final class StartupRestoreCoordinator {
         Log.info("Restore bootstrap settled: tab=\(tabID) pane=\(paneID) source=\(source)")
     }
 
-    func noteRestorePreviewShown(tabID: UUID, windowNumber: Int?, reason: String) {
-        lock.lock()
-        defer { lock.unlock() }
-        guard tracker.isActive else { return }
-        tracker.noteRestorePreviewShown()
-        let windowLabel = windowNumber.map(String.init) ?? "nil"
-        Log.info("Restore preview shown: tab=\(tabID) window=\(windowLabel) reason=\(reason)")
-    }
-
-    func noteRestorePreviewDiscarded(tabID: UUID, windowNumber: Int?, reason: String) {
-        lock.lock()
-        defer { lock.unlock() }
-        guard tracker.isActive else { return }
-        tracker.noteRestorePreviewDiscarded()
-        let windowLabel = windowNumber.map(String.init) ?? "nil"
-        Log.info("Restore preview discarded: tab=\(tabID) window=\(windowLabel) reason=\(reason)")
-    }
-
     func noteWindowVisible(windowNumber: Int, selectedTabID: UUID?) {
         lock.lock()
         tracker.noteWindowPrepared(windowNumber: windowNumber, at: Date())

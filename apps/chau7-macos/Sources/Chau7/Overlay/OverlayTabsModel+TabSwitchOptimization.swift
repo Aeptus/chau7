@@ -370,7 +370,6 @@ extension OverlayTabsModel {
             }
 
             let dir = inheritedStartDirectory()
-            tabs[idx].restorePreviewSnapshot = nil
             tabs[idx].splitController.root.closeAllSessions()
             purgeClosedTabResources(tabID: id)
             if closeWindow {
@@ -459,7 +458,6 @@ extension OverlayTabsModel {
         }
 
         // Close all sessions in the split pane tree (not just primary)
-        tabs[index].restorePreviewSnapshot = nil
         tabs[index].splitController.root.closeAllSessions()
         purgeClosedTabResources(tabID: id)
 
@@ -640,9 +638,6 @@ extension OverlayTabsModel {
         for tab in currentOtherTabs {
             if let sessionID = tab.session?.tabIdentifier {
                 CTORuntimeMonitor.shared.untrackSession(sessionID)
-            }
-            if let idx = tabs.firstIndex(where: { $0.id == tab.id }) {
-                tabs[idx].restorePreviewSnapshot = nil
             }
             tab.splitController.root.closeAllSessions()
         }
@@ -881,54 +876,6 @@ extension OverlayTabsModel {
         }
         guard selectedTabID != id else { return }
         selectTab(id: id)
-    }
-
-    // MARK: - Tab Switch Optimization: Snapshot Capture
-
-    /// Captures a screenshot of the current terminal view for instant display during tab switch
-    func captureCurrentTabSnapshot() {
-        guard let currentIndex = tabs.firstIndex(where: { $0.id == selectedTabID }) else {
-            return
-        }
-
-        let currentTab = tabs[currentIndex]
-        let session = selectedPresentationSession(for: currentTab)
-
-        if let terminalView = session?.existingRustTerminalView,
-           let image = Self.captureSnapshotImage(from: terminalView) {
-            tabs[currentIndex].cachedSnapshot = image
-            session?.lastRenderedSnapshot = image
-        } else if let cached = session?.lastRenderedSnapshot {
-            tabs[currentIndex].cachedSnapshot = cached
-            Log.trace("snapshot: used session-cached frame for tab \(selectedTabID)")
-        } else if let preview = tabs[currentIndex].restorePreviewSnapshot {
-            tabs[currentIndex].cachedSnapshot = preview
-            Log.trace("snapshot: used restore preview for tab \(selectedTabID)")
-        } else {
-            logVisualState(reason: "snapshot: skipped (no terminal view, no cached frame)")
-            return
-        }
-
-        if let session {
-            tabs[currentIndex].lastPromptText = session.displayPath()
-            tabs[currentIndex].lastCursorPosition = CGPoint(x: 50, y: 20)
-        }
-
-        cleanupDistantSnapshots(currentIndex: currentIndex)
-    }
-
-    func cleanupDistantSnapshots(currentIndex: Int) {
-        for i in 0 ..< tabs.count {
-            if abs(i - currentIndex) > 2 {
-                tabs[i].cachedSnapshot = nil
-                // The session-side mirror (one full Retina window bitmap per
-                // ever-selected tab) used to have zero clearing sites — across
-                // dozens of tabs that pinned 0.5GB+ of invisible NSImage data.
-                for (_, session) in tabs[i].splitController.terminalSessions {
-                    session.lastRenderedSnapshot = nil
-                }
-            }
-        }
     }
 
     func schedulePreviousLiveHierarchyRelease() {
