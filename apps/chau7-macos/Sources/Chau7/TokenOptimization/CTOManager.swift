@@ -19,12 +19,16 @@ import Chau7Core
 ///
 /// ## Supported Commands
 ///
-/// Optimizer-routed: `cat`, `ls`, `find`, `tree`, `grep`, `rg`, `git`, `diff`,
-///                   `cargo`, `curl`, `docker`, `kubectl`, `gh`, `pnpm`, `wget`,
-///                   `npm`, `npx`, `vitest`, `prisma`, `tsc`, `next`, `lint`,
-///                   `prettier`, `format`, `playwright`, `ruff`, `pytest`, `pip`,
-///                   `go`, `golangci-lint`
+/// Scoped to read-only inspection commands (see `ctoRewriteMap`):
+/// Optimizer-routed: `cat`, `ls`, `find`, `tree`, `grep`, `rg`, `diff`, `sed`
 /// Exec-only (no optimizer subcommand): `head`, `tail`, `wc`
+///
+/// Wrappers are installed **only for commands whose real binary is present**
+/// on the app's PATH at setup time. A wrapper is never installed for a
+/// command that doesn't resolve to a real binary — otherwise it would shadow
+/// the bare name and fail with exit 127 instead of the shell's own
+/// "command not found". Wrappers for commands no longer supported (or whose
+/// binary has since disappeared) are pruned on each `setup()`.
 final class CTOManager {
 
     static let shared = CTOManager()
@@ -123,6 +127,12 @@ final class CTOManager {
                 metadata: ["removed": "\(purged)"]
             )
         }
+
+        // Prune wrappers that are no longer supported or whose binary has
+        // gone missing — including any left over from a build that shadowed
+        // interpreters/runtimes. Without this, a stale `python` wrapper from a
+        // previous install keeps poisoning PATH after an upgrade.
+        pruneStaleWrappers()
 
         for command in supportedCommands {
             installWrapper(for: command)
@@ -304,9 +314,26 @@ final class CTOManager {
     // MARK: - Wrapper Scripts
 
     /// Installs a wrapper script for the given command.
+    ///
+    /// No-op when the command has no real binary on the app's PATH: shadowing
+    /// a name with no target would fail with a branded exit 127 instead of the
+    /// shell's own "command not found", breaking the command even while CTO is
+    /// inactive (the fast-path guard runs before the active-session check).
+    /// Any pre-existing wrapper for such a command is removed so an upgrade
+    /// heals a previously-poisoned name.
     private func installWrapper(for command: String) {
         let wrapperPath = wrapperBinDir.appendingPathComponent(command)
-        let realBin = resolveRealBinary(for: command)
+
+        guard let realBin = resolveRealBinary(for: command) else {
+            if FileManager.default.fileExists(atPath: wrapperPath.path) {
+                try? FileManager.default.removeItem(at: wrapperPath)
+                Log.info("CTOManager: removed wrapper for \(command) — no real binary on PATH")
+            } else {
+                Log.trace("CTOManager: skipping wrapper for \(command) — no real binary on PATH")
+            }
+            return
+        }
+
         let script = generateWrapperScript(for: command, realBin: realBin)
 
         do {
@@ -315,9 +342,33 @@ final class CTOManager {
                 [.posixPermissions: 0o755],
                 ofItemAtPath: wrapperPath.path
             )
-            Log.trace("CTOManager: installed wrapper for \(command) → \(realBin ?? "dynamic")")
+            Log.trace("CTOManager: installed wrapper for \(command) → \(realBin)")
         } catch {
             Log.error("CTOManager: failed to install wrapper for \(command): \(error)")
+        }
+    }
+
+    /// Removes any wrapper in `cto_bin` that isn't a currently-supported
+    /// command. Runs at the start of `setup()` so wrappers dropped from
+    /// `supportedCommands` between builds — e.g. the interpreter/runtime
+    /// wrappers that shadowed `python`/`git`/`npm` — don't linger on PATH.
+    /// Wrappers for supported commands whose binary has since disappeared are
+    /// handled by `installWrapper` (which removes them), not here.
+    private func pruneStaleWrappers() {
+        let fm = FileManager.default
+        guard let contents = try? fm.contentsOfDirectory(atPath: wrapperBinDir.path) else { return }
+        let supported = Set(supportedCommands)
+        var removed = 0
+        for file in contents where !supported.contains(file) {
+            do {
+                try fm.removeItem(atPath: wrapperBinDir.appendingPathComponent(file).path)
+                removed += 1
+            } catch {
+                Log.error("CTOManager: failed to prune stale wrapper \(file): \(error)")
+            }
+        }
+        if removed > 0 {
+            LogEnhanced.info(.cto, "CTO pruned unsupported wrappers", metadata: ["removed": "\(removed)"])
         }
     }
 

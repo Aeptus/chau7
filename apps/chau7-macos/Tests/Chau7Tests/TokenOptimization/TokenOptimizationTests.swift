@@ -642,6 +642,10 @@ final class TokenOptimizationCoreTests: XCTestCase {
 
     func testRewriteMapCoversExpectedCommands() {
         let map = ctoRewriteMap
+        // CTO shadows read-only inspection commands only. Interpreters,
+        // runtimes, package managers, and build tools are intentionally
+        // excluded (see `ctoRewriteMap` docs) — do not re-add them here
+        // without revisiting that decision.
         let expectedMappings: [String: String] = [
             "cat": "read",
             "ls": "ls",
@@ -649,33 +653,7 @@ final class TokenOptimizationCoreTests: XCTestCase {
             "tree": "tree",
             "grep": "grep",
             "rg": "rg",
-            "git": "git",
             "diff": "diff",
-            "cargo": "cargo",
-            "curl": "curl",
-            "docker": "docker",
-            "kubectl": "kubectl",
-            "gh": "gh",
-            "pnpm": "pnpm",
-            "wget": "wget",
-            "npm": "npm",
-            "npx": "npx",
-            "vitest": "vitest",
-            "prisma": "prisma",
-            "tsc": "tsc",
-            "next": "next",
-            "lint": "lint",
-            "prettier": "prettier",
-            "format": "format",
-            "playwright": "playwright",
-            "ruff": "ruff",
-            "pytest": "pytest",
-            "pip": "pip",
-            "go": "go",
-            "golangci-lint": "golangci-lint",
-            "swift": "swift",
-            "python": "python",
-            "python3": "python",
             "sed": "read"
         ]
 

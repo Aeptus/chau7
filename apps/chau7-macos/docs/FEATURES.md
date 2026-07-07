@@ -144,6 +144,8 @@ Built-in token optimizer (`chau7_optim`, forked from [RTK](https://github.com/rt
 - Token savings tracking with daily/weekly/monthly graphs.
 - Shared read pipeline: file-backed reads and stdin-backed reads use one tested filtering, truncation, non-empty-output preservation, and line-number formatting path to prevent parser drift.
 - Non-empty read guard: `chau7-optim read` preserves original output if filtering would make a non-empty file, stdin payload, or selected range look empty, so optimized `cat`/read-style commands do not masquerade as broken shell output.
+- Read-only wrapper surface: only read/inspection commands are shadowed on `PATH` — `cat`, `ls`, `find`, `tree`, `grep`, `rg`, `diff`, `sed` (plus exec-only `head`, `tail`, `wc`). Interpreters, runtimes, package managers, and build tools are not wrapped, so CTO never owns their interpreter selection, environment, or exit codes. The `chau7_optim` binary keeps its full parser set; this only changes which commands are shadowed.
+- Safe wrapper installation: a wrapper is installed only when the command's real binary resolves (never shadowing a bare name with no target into a branded exit 127, which previously fired even with CTO off), and unsupported wrappers are pruned on setup so upgrades heal previously-installed names.
 
 Supported commands (46 parsers):
 

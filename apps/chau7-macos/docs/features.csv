@@ -152,6 +152,7 @@ AI Integration,AI Event Log Tailing,Real-time tailing of ~/.ai-events.log for AI
 AI Integration,PTY Output Logging,Capture raw terminal output for AI tool sessions (codex-pty and claude-pty logs),Shipped,No
 AI Integration,Codex Session Resolver,Maps Codex OpenAI capture sessions to working directories with a bounded metadata cache,Shipped,Yes
 AI Integration,Context Token Optimization (CTO),Monitor and optimize LLM API token usage in real time — per tab or globally,Shipped,Yes
+AI Integration,CTO Read-Only Wrapper Surface,"CTO shadows only read-only inspection commands on PATH (cat, ls, find, tree, grep, rg, diff, sed, head, tail, wc); interpreters, runtimes, package managers, and build tools are never wrapped, so CTO never owns their interpreter selection, environment, or exit codes. Wrappers install only when the real binary resolves, avoiding branded exit-127 failures, and unsupported wrappers are pruned on setup",Shipped,Yes
 AI Integration,CTO Shared Read Pipeline,"File-backed reads and stdin-backed reads share one tested filtering, truncation, non-empty-output preservation, and line-number formatting path to prevent parser drift",Shipped,Yes
 AI Integration,CTO Non-Empty Read Guard,"chau7-optim read preserves original output when filtering would collapse a non-empty file, stdin payload, or selected range to empty output, preventing optimized read commands from looking broken",Shipped,Yes
 AI Integration,CTO Runtime Monitor,"Real-time CTO metrics: decision counts, mode changes, deferred operations, health assessment",Shipped,Yes

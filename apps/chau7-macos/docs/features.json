@@ -1072,6 +1072,13 @@
   },
   {
     "category": "AI Integration",
+    "feature": "CTO Read-Only Wrapper Surface",
+    "description": "CTO shadows only read-only inspection commands on PATH (cat, ls, find, tree, grep, rg, diff, sed, head, tail, wc); interpreters, runtimes, package managers, and build tools are never wrapped, so CTO never owns their interpreter selection, environment, or exit codes. Wrappers install only when the real binary resolves, avoiding branded exit-127 failures, and unsupported wrappers are pruned on setup",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "AI Integration",
     "feature": "CTO Shared Read Pipeline",
     "description": "File-backed reads and stdin-backed reads share one tested filtering, truncation, non-empty-output preservation, and line-number formatting path to prevent parser drift",
     "status": "Shipped",

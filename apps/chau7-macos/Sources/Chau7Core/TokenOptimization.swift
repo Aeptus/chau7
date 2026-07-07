@@ -892,6 +892,25 @@ public struct ProviderConsumptionStats: Identifiable, Sendable {
 
 /// Maps shell command names to their optimizer subcommand equivalents.
 /// Commands in this map are routed through `chau7-optim` when active.
+///
+/// ## Scope: read-only inspection commands only
+///
+/// CTO deliberately shadows **only** commands whose job is to *read and
+/// report* — inspecting files, trees, and diffs — where summarizing the
+/// output is safe and idempotent.
+///
+/// Interpreters, runtimes, package managers, and build tools
+/// (`python`, `python3`, `pip`, `pytest`, `go`, `swift`, `cargo`, `npm`,
+/// `npx`, `pnpm`, `vitest`, `tsc`, `next`, `prisma`, `playwright`, `ruff`,
+/// `prettier`, `lint`, `format`, `docker`, `kubectl`, `gh`, `git`, `curl`,
+/// `wget`, `golangci-lint`) are intentionally **not** shadowed. Wrapping a
+/// command you *execute* means CTO owns its interpreter selection,
+/// environment, stdin, streaming, and exit codes — maximum correctness risk
+/// for minimum predictable token savings. Those wrappers were the source of
+/// the `python`/venv/exit-code failures agents hit; keeping the surface to
+/// read-only commands removes that entire class of bug.
+///
+/// Do not re-add execution commands here without revisiting that trade-off.
 public let ctoRewriteMap: [String: String] = [
     "cat": "read",
     "ls": "ls",
@@ -899,33 +918,7 @@ public let ctoRewriteMap: [String: String] = [
     "tree": "tree",
     "grep": "grep",
     "rg": "rg",
-    "git": "git",
     "diff": "diff",
-    "cargo": "cargo",
-    "curl": "curl",
-    "docker": "docker",
-    "kubectl": "kubectl",
-    "gh": "gh",
-    "pnpm": "pnpm",
-    "wget": "wget",
-    "npm": "npm",
-    "npx": "npx",
-    "vitest": "vitest",
-    "prisma": "prisma",
-    "tsc": "tsc",
-    "next": "next",
-    "lint": "lint",
-    "prettier": "prettier",
-    "format": "format",
-    "playwright": "playwright",
-    "ruff": "ruff",
-    "pytest": "pytest",
-    "pip": "pip",
-    "go": "go",
-    "golangci-lint": "golangci-lint",
-    "swift": "swift",
-    "python": "python",
-    "python3": "python",
     "sed": "read" // sed -n 'range p' file → chau7-optim read
 ]
 
