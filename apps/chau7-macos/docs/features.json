@@ -1,6 +1,13 @@
 [
   {
     "category": "AI Integration",
+    "feature": "Chau7 Skills Model Foundation",
+    "description": "Chau7Core defines pure Agent Skills management models for skill IDs and sources, providers, user/repo scopes, install targets, lifecycle states, file hashes, Chau7 management manifests, install plans, and validation issues without introducing a competing skill package format",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "AI Integration",
     "feature": "MAGI Multi-Agent Decision Protocol",
     "description": "CLI-first council mode that launches three isolated agents through Chau7 MCP, applies editable member personas, applies explicit ask/auto-deny/preapproved evidence policy, resolves majority/final-vote-veto verdicts using canonical decision IDs plus material conditions, and writes replay/share artifacts",
     "status": "Shipped",

@@ -64,6 +64,7 @@ Detection methods:
 
 ### AI Features
 
+- **Chau7 skills model foundation** — `Chau7Core` defines the pure model layer for managing standard Agent Skills across providers and repositories, including skill IDs/sources, providers, user/repo scopes, install targets, lifecycle states, file hashes, Chau7 management manifests, install plans, and validation issues.
 - **MAGI multi-agent decision protocol** — CLI-first council mode that launches three isolated agents through Chau7 MCP, applies editable member personas, shares only controlled council packets between rounds, applies explicit ask/auto-deny/preapproved evidence policy, resolves majority/final-vote-veto verdicts using canonical decision IDs plus material conditions, and writes replay/share artifacts.
 - **MAGI command surface** — `magi`/`MAGI` supports direct questions, `ask`, `doctor`, `config`, `replay <run-id>`, and `share <run-id>` with local artifacts only in v1, plus `--mode engineering|generic` for explicit verdict mode selection. The CLI entrypoint is split into focused parser, home TUI, config panel, first-run wizard, doctor, and replay/share command modules.
 - **MAGI local installer** — `Scripts/install-magi-cli.sh` builds the SwiftPM CLI and installs `magi` into `~/.local/bin` by default, with uppercase `MAGI` invocation supported through case-insensitive resolution or a case-sensitive alias.
