@@ -28,6 +28,22 @@ public enum Chau7SkillInstallInspector {
         do {
             let data = try Data(contentsOf: URL(fileURLWithPath: target.manifestPath))
             let manifest = try JSONDecoder().decode(Chau7SkillManifest.self, from: data)
+            guard manifest.managedBy == Chau7SkillManifest.managerName else {
+                return Chau7SkillInstalledSnapshot(
+                    targetExists: true,
+                    manifest: nil,
+                    fileHashes: fileHashes
+                )
+            }
+            let issues = manifestTargetIssues(manifest, target: target)
+            guard issues.isEmpty else {
+                return Chau7SkillInstalledSnapshot(
+                    targetExists: true,
+                    manifest: nil,
+                    fileHashes: fileHashes,
+                    issues: issues
+                )
+            }
             return Chau7SkillInstalledSnapshot(
                 targetExists: true,
                 manifest: manifest,
@@ -48,5 +64,45 @@ public enum Chau7SkillInstallInspector {
                 ]
             )
         }
+    }
+
+    private static func manifestTargetIssues(
+        _ manifest: Chau7SkillManifest,
+        target: Chau7SkillInstallTarget
+    ) -> [Chau7SkillValidationIssue] {
+        var issues: [Chau7SkillValidationIssue] = []
+
+        if manifest.skillID != target.skillID {
+            issues.append(
+                Chau7SkillValidationIssue(
+                    severity: .error,
+                    code: "manifest-skill-id-mismatch",
+                    message: ".chau7-skill.json skill_id does not match the install target.",
+                    path: target.manifestPath
+                )
+            )
+        }
+        if manifest.provider != target.provider {
+            issues.append(
+                Chau7SkillValidationIssue(
+                    severity: .error,
+                    code: "manifest-provider-mismatch",
+                    message: ".chau7-skill.json provider does not match the install target.",
+                    path: target.manifestPath
+                )
+            )
+        }
+        if manifest.scope != target.scope {
+            issues.append(
+                Chau7SkillValidationIssue(
+                    severity: .error,
+                    code: "manifest-scope-mismatch",
+                    message: ".chau7-skill.json scope does not match the install target.",
+                    path: target.manifestPath
+                )
+            )
+        }
+
+        return issues
     }
 }

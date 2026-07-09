@@ -23,7 +23,7 @@
   {
     "category": "AI Integration",
     "feature": "Chau7 Skills Installer",
-    "description": "Chau7Core installs managed Agent Skills by validating the canonical source, building the install plan, staging a copied skill, injecting .chau7-skill.json, validating the staged directory, backing up replaced targets, swapping the provider install directory, and returning a structured final state without mutating the source skill",
+    "description": "Chau7Core installs managed Agent Skills by validating the canonical source, building the install plan, staging a copied skill, injecting .chau7-skill.json, validating the staged directory, verifying existing managed manifests match the requested target, backing up replaced targets, swapping the provider install directory, and returning a structured final state without mutating the source skill",
     "status": "Shipped",
     "differentiator": "Yes"
   },

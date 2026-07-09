@@ -85,6 +85,47 @@ final class Chau7SkillInstallerTests: XCTestCase {
         )
     }
 
+    func testForeignManifestIsUnmanagedConflictAndCanBeForced() throws {
+        let fixture = try makeFixture()
+        defer { remove(fixture.root) }
+        try write("foreign managed", to: URL(fileURLWithPath: fixture.target.skillMarkdownPath))
+        try writeManifest(
+            Chau7SkillManifest(
+                managedBy: "another-tool",
+                skillID: fixture.source.id,
+                skillVersion: "1.0.0",
+                provider: .claude,
+                scope: .user,
+                sourcePath: fixture.source.rootDirectory,
+                sourceHash: try Chau7SkillManifestHashing.sourceHash(rootDirectory: fixture.source.rootDirectory),
+                installedAt: "2026-07-09T12:00:00Z",
+                files: try Chau7SkillManifestHashing.managedFileHashes(rootDirectory: fixture.source.rootDirectory)
+            ),
+            to: fixture.target.manifestPath
+        )
+
+        let refused = try install(fixture: fixture)
+
+        XCTAssertEqual(refused.initialPlan.state, Chau7SkillInstallState.unmanagedConflict)
+        XCTAssertEqual(refused.finalState, Chau7SkillInstallState.unmanagedConflict)
+        XCTAssertFalse(refused.didMutate)
+        XCTAssertEqual(
+            try String(contentsOfFile: fixture.target.skillMarkdownPath, encoding: .utf8),
+            "foreign managed"
+        )
+
+        let forced = try install(fixture: fixture, force: true)
+
+        XCTAssertEqual(forced.initialPlan.state, Chau7SkillInstallState.unmanagedConflict)
+        XCTAssertEqual(forced.finalState, Chau7SkillInstallState.installed)
+        XCTAssertTrue(forced.didMutate)
+        XCTAssertEqual(
+            try String(contentsOfFile: fixture.target.skillMarkdownPath, encoding: .utf8),
+            fixture.skillMarkdown
+        )
+        XCTAssertEqual(try readManifest(at: fixture.target.manifestPath).managedBy, "chau7")
+    }
+
     func testStaleManagedInstallUpdatesAndBacksUpExistingTarget() throws {
         let fixture = try makeFixture()
         defer { remove(fixture.root) }
@@ -188,6 +229,36 @@ final class Chau7SkillInstallerTests: XCTestCase {
         XCTAssertEqual(result.finalState, Chau7SkillInstallState.broken)
         XCTAssertFalse(result.didMutate)
         XCTAssertEqual(result.issues.map { $0.code }, ["broken-manifest"])
+    }
+
+    func testMismatchedManagedManifestRefusesWithoutMutation() throws {
+        let fixture = try makeFixture()
+        defer { remove(fixture.root) }
+        try write(fixture.skillMarkdown, to: URL(fileURLWithPath: fixture.target.skillMarkdownPath))
+        try writeManifest(
+            Chau7SkillManifest(
+                skillID: "other-skill",
+                skillVersion: "1.0.0",
+                provider: .claude,
+                scope: .user,
+                sourcePath: fixture.source.rootDirectory,
+                sourceHash: try Chau7SkillManifestHashing.sourceHash(rootDirectory: fixture.source.rootDirectory),
+                installedAt: "2026-07-09T12:00:00Z",
+                files: try Chau7SkillManifestHashing.managedFileHashes(rootDirectory: fixture.source.rootDirectory)
+            ),
+            to: fixture.target.manifestPath
+        )
+
+        let result = try install(fixture: fixture, force: true)
+
+        XCTAssertEqual(result.initialPlan.state, Chau7SkillInstallState.broken)
+        XCTAssertEqual(result.finalState, Chau7SkillInstallState.broken)
+        XCTAssertFalse(result.didMutate)
+        XCTAssertEqual(result.issues.map { $0.code }, ["manifest-skill-id-mismatch"])
+        XCTAssertEqual(
+            try String(contentsOfFile: fixture.target.skillMarkdownPath, encoding: .utf8),
+            fixture.skillMarkdown
+        )
     }
 
     private struct Fixture {
@@ -312,6 +383,11 @@ final class Chau7SkillInstallerTests: XCTestCase {
     private func readManifest(at path: String) throws -> Chau7SkillManifest {
         let data = try Data(contentsOf: URL(fileURLWithPath: path))
         return try JSONDecoder().decode(Chau7SkillManifest.self, from: data)
+    }
+
+    private func writeManifest(_ manifest: Chau7SkillManifest, to path: String) throws {
+        try Chau7SkillManifestHashing.manifestData(manifest)
+            .write(to: URL(fileURLWithPath: path), options: [.atomic])
     }
 
     private func write(_ content: String, to url: URL) throws {
