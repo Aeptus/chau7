@@ -1,6 +1,13 @@
 [
   {
     "category": "AI Integration",
+    "feature": "Chau7 Built-In Agent Skills",
+    "description": "Chau7 ships chau7-magi and chau7-mcp Agent Skills under Resources/Skills, covering MAGI usage, CLI invocation, verdicts, artifacts, replay/share, council-output integrity, direct-answer versus council decisions, safe Chau7 MCP orchestration, diagnostics, permission boundaries, and the rule to never kill Chau7 itself",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "AI Integration",
     "feature": "Chau7 Skills Installer",
     "description": "Chau7Core installs managed Agent Skills by validating the canonical source, building the install plan, staging a copied skill, injecting .chau7-skill.json, validating the staged directory, backing up replaced targets, swapping the provider install directory, and returning a structured final state without mutating the source skill",
     "status": "Shipped",

@@ -150,6 +150,12 @@ if [[ -n "$RESOURCE_BUNDLE" ]]; then
     run_cmd rm -f "$BUNDLE_PROXY"
     log_ok "Removed duplicate proxy from resource bundle"
   fi
+
+  if [[ -d "$ROOT_DIR/Resources/Skills" ]]; then
+    run_cmd mkdir -p "$CONTENTS/Resources/Skills"
+    run_cmd cp -R "$ROOT_DIR/Resources/Skills/"* "$CONTENTS/Resources/Skills/"
+    log_ok "Copied built-in skills from Resources/Skills into app bundle."
+  fi
 else
   log_warn "Resource bundle not found in $BUILD_DIR (falling back to raw Resources/ copy)."
   if [[ -d "$ROOT_DIR/Resources" ]]; then

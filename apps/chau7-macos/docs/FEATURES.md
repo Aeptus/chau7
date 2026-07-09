@@ -64,6 +64,7 @@ Detection methods:
 
 ### AI Features
 
+- **Chau7 built-in Agent Skills** — Chau7 ships `chau7-magi` and `chau7-mcp` Agent Skills under `Resources/Skills`, covering MAGI usage, CLI invocation, verdicts, artifacts, replay/share, council-output integrity, direct-answer versus council decisions, safe Chau7 MCP orchestration, diagnostics, permission boundaries, and the rule to never kill Chau7 itself.
 - **Chau7 Skills installer** — `Chau7Core` installs managed Agent Skills by validating the canonical source, building the install plan, staging a copied skill, injecting `.chau7-skill.json`, validating the staged directory, backing up replaced targets, swapping the provider install directory, and returning a structured final state without mutating the source skill.
 - **Chau7 Skills install planner** — `Chau7Core` computes pure Agent Skills install plans from source validation, provider availability, target presence, managed manifests, source hashes, and installed file hashes, covering missing/install, installed/no-op, stale/update, modified/refuse, unmanaged conflict/refuse, invalid source/refuse, and unsupported provider/refuse outcomes.
 - **Chau7 Skills manifest hashing** — `Chau7Core` deterministically hashes managed Agent Skill files, excludes Chau7/Finder metadata, and builds/writes `.chau7-skill.json` manifest data with source/target metadata, aggregate source hashes, and per-file hashes.
