@@ -39,7 +39,7 @@ public struct Chau7CLIRunner {
         case "-h", "--help", "help":
             return success(usage)
         case "--version", "version":
-            return success("Chau7CLI skills phase 8\n")
+            return success("Chau7CLI skills phase 9\n")
         default:
             return failure("Unknown command: \(command)\n\n\(usage)")
         }
@@ -83,7 +83,7 @@ public struct Chau7CLIRunner {
             var lines = ["Chau7 Skills", ""]
             for source in sources {
                 let issues = Chau7SkillValidator.validate(source: source, fileManager: fileManager)
-                lines.append("- \(padded(source.id.rawValue, width: width)) bundled \(sourceStatus(for: issues))")
+                lines.append("- \(padded(source.id.rawValue, width: width)) \(sourceLabel(source)) \(sourceStatus(for: issues))")
             }
             return success(lines.joined(separator: "\n") + "\n")
         } catch {
@@ -100,12 +100,12 @@ public struct Chau7CLIRunner {
 
             for source in sources {
                 let issues = Chau7SkillValidator.validate(source: source, fileManager: fileManager)
-                lines.append("- \(padded(source.id.rawValue, width: width)) bundled \(sourceStatus(for: issues))")
+                lines.append("- \(padded(source.id.rawValue, width: width)) \(sourceLabel(source)) \(sourceStatus(for: issues))")
             }
 
             for provider in options.providers {
                 lines.append("")
-                lines.append("\(provider.displayName) user:")
+                lines.append(targetGroupTitle(provider: provider, options: options))
                 for source in sources {
                     let plan = try installPlan(source: source, provider: provider, options: options)
                     lines.append("- \(padded(source.id.rawValue, width: width)) \(displayState(plan.state))")
@@ -123,7 +123,7 @@ public struct Chau7CLIRunner {
             let options = try parseOptions(arguments, allowPathSubject: true)
             let sources: [Chau7SkillSource]
             if let subject = options.subject, subject != "all", subject.contains("/") {
-                let root = expandTilde(subject)
+                let root = resolvePath(subject)
                 sources = [
                     Chau7SkillSource(
                         id: Chau7SkillID(URL(fileURLWithPath: root).lastPathComponent),
@@ -175,7 +175,7 @@ public struct Chau7CLIRunner {
             var lines = [title, ""]
             var failed = false
             for provider in options.providers {
-                lines.append("\(provider.displayName) user:")
+                lines.append(targetGroupTitle(provider: provider, options: options))
                 for source in sources {
                     let plan = try installPlan(source: source, provider: provider, options: options)
                     let result: Chau7SkillInstallResult?
@@ -219,7 +219,7 @@ public struct Chau7CLIRunner {
             var failed = false
 
             for provider in options.providers {
-                lines.append("\(provider.displayName) user:")
+                lines.append(targetGroupTitle(provider: provider, options: options))
                 for source in sources {
                     let target = target(for: source.id, provider: provider, options: options)
                     let plan = try installPlan(source: source, provider: provider, options: options)
@@ -252,7 +252,7 @@ public struct Chau7CLIRunner {
             var failed = false
 
             for provider in options.providers {
-                lines.append("\(provider.displayName) user:")
+                lines.append(targetGroupTitle(provider: provider, options: options))
                 for source in sources {
                     let target = target(for: source.id, provider: provider, options: options)
                     let plan = try installPlan(source: source, provider: provider, options: options)
@@ -281,14 +281,18 @@ public struct Chau7CLIRunner {
     private struct SkillsOptions {
         var sourceRoot: String
         var homeDirectory: String
+        var repositoryRoot: String
+        var scope: Chau7SkillInstallScope
         var providers: [Chau7SkillProvider]
         var subject: String?
         var force: Bool
     }
 
     private func parseOptions(_ arguments: [String], allowPathSubject: Bool = false) throws -> SkillsOptions {
-        var sourceRoot = environment["CHAU7_SKILLS_SOURCE_ROOT"] ?? defaultSourceRoot()
+        var explicitSourceRoot: String?
         var homeDirectory = environment["CHAU7_HOME"] ?? FileManager.default.homeDirectoryForCurrentUser.path
+        var explicitRepositoryRoot = environment["CHAU7_REPO_ROOT"]
+        var scope: Chau7SkillInstallScope = .user
         var providers: [Chau7SkillProvider] = [.claude, .codex]
         var subject: String?
         var force = false
@@ -300,11 +304,19 @@ public struct Chau7CLIRunner {
             case "--source-root":
                 index += 1
                 guard index < arguments.count else { throw CLIError("Missing value for --source-root") }
-                sourceRoot = arguments[index]
+                explicitSourceRoot = arguments[index]
             case "--home":
                 index += 1
                 guard index < arguments.count else { throw CLIError("Missing value for --home") }
                 homeDirectory = arguments[index]
+            case "--repo":
+                index += 1
+                guard index < arguments.count else { throw CLIError("Missing value for --repo") }
+                explicitRepositoryRoot = arguments[index]
+            case "--scope":
+                index += 1
+                guard index < arguments.count else { throw CLIError("Missing value for --scope") }
+                scope = try parseScope(arguments[index])
             case "--provider":
                 index += 1
                 guard index < arguments.count else { throw CLIError("Missing value for --provider") }
@@ -326,9 +338,18 @@ public struct Chau7CLIRunner {
             index += 1
         }
 
+        let resolvedHome = resolvePath(homeDirectory)
+        let repositoryRoot = explicitRepositoryRoot.map(resolvePath) ?? repositoryRoot(from: resolvePath(currentDirectory))
+        let sourceRoot = explicitSourceRoot
+            ?? (scope == .repo
+                ? "\(repositoryRoot)/.chau7/skills"
+                : environment["CHAU7_SKILLS_SOURCE_ROOT"] ?? defaultSourceRoot())
+
         return SkillsOptions(
-            sourceRoot: expandTilde(sourceRoot),
-            homeDirectory: expandTilde(homeDirectory),
+            sourceRoot: resolvePath(sourceRoot),
+            homeDirectory: resolvedHome,
+            repositoryRoot: repositoryRoot,
+            scope: scope,
             providers: providers,
             subject: subject,
             force: force
@@ -348,6 +369,17 @@ public struct Chau7CLIRunner {
         }
     }
 
+    private func parseScope(_ value: String) throws -> Chau7SkillInstallScope {
+        switch value.lowercased() {
+        case "user":
+            return .user
+        case "repo":
+            return .repo
+        default:
+            throw CLIError("Unsupported scope: \(value)")
+        }
+    }
+
     private func selectedSources(_ options: SkillsOptions) throws -> [Chau7SkillSource] {
         let ids: [String]
         if let subject = options.subject, subject != "all" {
@@ -355,14 +387,16 @@ public struct Chau7CLIRunner {
         } else {
             ids = try availableSkillIDs(sourceRoot: options.sourceRoot)
         }
+        let sourceKind: Chau7SkillSource.Kind = options.scope == .repo ? .repo : .bundled
+        let sourceVersion: String? = options.scope == .repo ? nil : "1.0.0"
         return ids.map {
             Chau7SkillSource(
                 id: Chau7SkillID($0),
-                kind: .bundled,
+                kind: sourceKind,
                 rootDirectory: URL(fileURLWithPath: options.sourceRoot, isDirectory: true)
                     .appendingPathComponent($0, isDirectory: true)
                     .path,
-                version: "1.0.0"
+                version: sourceVersion
             )
         }
     }
@@ -398,7 +432,7 @@ public struct Chau7CLIRunner {
             target: target,
             sourceFileHashes: hashes,
             sourceValidationIssues: sourceIssues,
-            providerDetection: providerDetection(provider: provider, homeDirectory: options.homeDirectory),
+            providerDetection: providerDetection(provider: provider, options: options),
             installed: snapshot
         )
     }
@@ -411,11 +445,11 @@ public struct Chau7CLIRunner {
         try Chau7SkillInstaller.install(
             source: source,
             target: target(for: source.id, provider: provider, options: options),
-            providerDetection: providerDetection(provider: provider, homeDirectory: options.homeDirectory),
+            providerDetection: providerDetection(provider: provider, options: options),
             options: Chau7SkillInstallerOptions(
                 force: options.force,
-                temporaryDirectoryRoot: "\(options.homeDirectory)/.chau7/tmp/skills",
-                backupDirectoryRoot: "\(options.homeDirectory)/.chau7/backups/skills"
+                temporaryDirectoryRoot: "\(skillStateRoot(options))/.chau7/tmp/skills",
+                backupDirectoryRoot: "\(skillStateRoot(options))/.chau7/backups/skills"
             ),
             fileManager: fileManager
         )
@@ -428,45 +462,60 @@ public struct Chau7CLIRunner {
     ) -> Chau7SkillInstallTarget {
         switch provider {
         case .claude:
-            return ClaudeSkillInstallTargetResolver.userTarget(skillID: skillID, homeDirectory: options.homeDirectory)
+            if options.scope == .repo {
+                return ClaudeSkillInstallTargetResolver.repoTarget(
+                    skillID: skillID,
+                    repositoryRoot: options.repositoryRoot
+                )
+            }
+            return ClaudeSkillInstallTargetResolver.userTarget(
+                skillID: skillID,
+                homeDirectory: options.homeDirectory
+            )
         case .codex:
-            return CodexSkillInstallTargetResolver.userTarget(skillID: skillID, homeDirectory: options.homeDirectory)
+            if options.scope == .repo {
+                return CodexSkillInstallTargetResolver.repoTarget(
+                    skillID: skillID,
+                    repositoryRoot: options.repositoryRoot
+                )
+            }
+            return CodexSkillInstallTargetResolver.userTarget(
+                skillID: skillID,
+                homeDirectory: options.homeDirectory
+            )
         default:
+            let root = options.scope == .repo ? options.repositoryRoot : options.homeDirectory
             return Chau7SkillInstallTarget(
                 skillID: skillID,
                 provider: provider,
-                scope: .user,
-                rootDirectory: "\(options.homeDirectory)/.\(provider.rawValue)/skills"
+                scope: options.scope,
+                rootDirectory: "\(root)/.\(provider.rawValue)/skills"
             )
         }
     }
 
-    private func providerDetection(provider: Chau7SkillProvider, homeDirectory: String) -> Chau7SkillProviderDetection {
+    private func providerDetection(
+        provider: Chau7SkillProvider,
+        options: SkillsOptions
+    ) -> Chau7SkillProviderDetection {
         let path = environment["PATH"] ?? ""
-        switch provider {
-        case .claude:
-            return ClaudeSkillInstallTargetResolver.detect(
-                homeDirectory: homeDirectory,
-                environmentPATH: path,
-                explicitlyRequested: true,
-                fileManager: fileManager
-            )
-        case .codex:
-            return CodexSkillInstallTargetResolver.detect(
-                homeDirectory: homeDirectory,
-                environmentPATH: path,
-                explicitlyRequested: true,
-                fileManager: fileManager
-            )
-        default:
-            return Chau7SkillProviderDetection(
-                provider: provider,
-                isAvailable: true,
-                reasons: [.explicitlyRequested],
-                providerRoot: "\(homeDirectory)/.\(provider.rawValue)",
-                executableName: provider.rawValue
-            )
+        var reasons: [Chau7SkillProviderDetectionReason] = []
+        let providerRoot = providerRoot(provider: provider, options: options)
+        if directoryExists(atPath: providerRoot) {
+            reasons.append(.providerRootExists)
         }
+        if executableExists(named: provider.rawValue, environmentPATH: path) {
+            reasons.append(.providerCLIExists)
+        }
+        reasons.append(.explicitlyRequested)
+
+        return Chau7SkillProviderDetection(
+            provider: provider,
+            isAvailable: true,
+            reasons: reasons,
+            providerRoot: providerRoot,
+            executableName: provider.rawValue
+        )
     }
 
     private func sourceFileHashes(_ source: Chau7SkillSource) throws -> [String: Chau7SkillFileHash] {
@@ -499,6 +548,32 @@ public struct Chau7CLIRunner {
             .path
     }
 
+    private func resolvePath(_ path: String) -> String {
+        let expanded = expandTilde(path)
+        if expanded.hasPrefix("/") {
+            return URL(fileURLWithPath: expanded).standardizedFileURL.path
+        }
+        return URL(fileURLWithPath: currentDirectory, isDirectory: true)
+            .appendingPathComponent(expanded)
+            .standardizedFileURL
+            .path
+    }
+
+    private func repositoryRoot(from startPath: String) -> String {
+        let normalizedStart = (startPath as NSString).standardizingPath
+        var current = normalizedStart
+        while true {
+            if fileManager.fileExists(atPath: (current as NSString).appendingPathComponent(".git")) {
+                return current
+            }
+            let parent = (current as NSString).deletingLastPathComponent
+            if parent == current || current == "/" {
+                return normalizedStart
+            }
+            current = parent
+        }
+    }
+
     private func expandTilde(_ path: String) -> String {
         guard path == "~" || path.hasPrefix("~/") else { return path }
         let home = FileManager.default.homeDirectoryForCurrentUser.path
@@ -506,6 +581,39 @@ public struct Chau7CLIRunner {
             return home
         }
         return home + String(path.dropFirst())
+    }
+
+    private func skillStateRoot(_ options: SkillsOptions) -> String {
+        options.scope == .repo ? options.repositoryRoot : options.homeDirectory
+    }
+
+    private func providerRoot(provider: Chau7SkillProvider, options: SkillsOptions) -> String {
+        "\(skillStateRoot(options))/.\(provider.rawValue)"
+    }
+
+    private func targetGroupTitle(provider: Chau7SkillProvider, options: SkillsOptions) -> String {
+        "\(provider.displayName) \(options.scope.rawValue):"
+    }
+
+    private func sourceLabel(_ source: Chau7SkillSource) -> String {
+        source.kind.rawValue
+    }
+
+    private func directoryExists(atPath path: String) -> Bool {
+        var isDirectory: ObjCBool = false
+        return fileManager.fileExists(atPath: path, isDirectory: &isDirectory) && isDirectory.boolValue
+    }
+
+    private func executableExists(named executableName: String, environmentPATH: String) -> Bool {
+        for directory in environmentPATH.split(separator: ":").map(String.init) where !directory.isEmpty {
+            let candidate = URL(fileURLWithPath: directory, isDirectory: true)
+                .appendingPathComponent(executableName)
+                .path
+            if fileManager.isExecutableFile(atPath: candidate) {
+                return true
+            }
+        }
+        return false
     }
 
     private func sourceStatus(for issues: [Chau7SkillValidationIssue]) -> String {
@@ -582,14 +690,18 @@ public struct Chau7CLIRunner {
     private var skillsUsage: String {
         """
         Skills commands:
-          chau7-cli skills list [--source-root PATH]
-          chau7-cli skills doctor [--source-root PATH] [--home PATH]
-          chau7-cli skills install [skill-id|all] [--provider claude|codex|all] [--home PATH] [--force]
-          chau7-cli skills update [skill-id|all] [--provider claude|codex|all] [--home PATH]
-          chau7-cli skills uninstall [skill-id|all] [--provider claude|codex|all] [--home PATH] [--force]
-          chau7-cli skills validate [skill-id|all|PATH] [--source-root PATH]
-          chau7-cli skills diff [skill-id|all] [--provider claude|codex|all] [--home PATH]
-          chau7-cli skills sync [skill-id|all] [--provider claude|codex|all] [--home PATH] [--force]
+          chau7-cli skills list [--scope user|repo] [--source-root PATH] [--repo PATH]
+          chau7-cli skills doctor [--scope user|repo] [--source-root PATH] [--home PATH] [--repo PATH]
+          chau7-cli skills install [skill-id|all] [--scope user|repo] [--provider claude|codex|all] [--home PATH] [--repo PATH] [--force]
+          chau7-cli skills update [skill-id|all] [--scope user|repo] [--provider claude|codex|all] [--home PATH] [--repo PATH]
+          chau7-cli skills uninstall [skill-id|all] [--scope user|repo] [--provider claude|codex|all] [--home PATH] [--repo PATH] [--force]
+          chau7-cli skills validate [skill-id|all|PATH] [--scope user|repo] [--source-root PATH] [--repo PATH]
+          chau7-cli skills diff [skill-id|all] [--scope user|repo] [--provider claude|codex|all] [--home PATH] [--repo PATH]
+          chau7-cli skills sync [skill-id|all] [--scope user|repo] [--provider claude|codex|all] [--home PATH] [--repo PATH] [--force]
+
+        Repo scope defaults:
+          source: <repo>/.chau7/skills/<skill-id>
+          targets: <repo>/.claude/skills/<skill-id>, <repo>/.codex/skills/<skill-id>
         """
     }
 }

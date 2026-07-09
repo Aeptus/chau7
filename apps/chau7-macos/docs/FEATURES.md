@@ -64,6 +64,7 @@ Detection methods:
 
 ### AI Features
 
+- **Chau7CLI repo skills support** — `chau7-cli skills --scope repo` validates `.chau7/skills/<skill-id>` sources, installs/syncs them into repo-local `.claude/skills/<skill-id>` and `.codex/skills/<skill-id>` targets, and resolves relative skill paths from the command working directory for repo-specific agent setup.
 - **Chau7CLI skills commands** — `chau7-cli skills` provides `list`, `doctor`, `install`, `update`, `uninstall`, `validate`, `diff`, and `sync` commands over built-in Agent Skills, using shared Chau7Core validation, install inspection, planning, and installer logic for Claude/Codex user targets.
 - **Chau7 built-in Agent Skills** — Chau7 ships `chau7-magi` and `chau7-mcp` Agent Skills under `Resources/Skills`, covering MAGI usage, CLI invocation, verdicts, artifacts, replay/share, council-output integrity, direct-answer versus council decisions, safe Chau7 MCP orchestration, diagnostics, permission boundaries, and the rule to never kill Chau7 itself.
 - **Chau7 Skills installer** — `Chau7Core` installs managed Agent Skills by validating the canonical source, building the install plan, staging a copied skill, injecting `.chau7-skill.json`, validating the staged directory, backing up replaced targets, swapping the provider install directory, and returning a structured final state without mutating the source skill.

@@ -197,10 +197,129 @@ final class Chau7CLISkillsTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: codexTarget(skillID: "chau7-mcp", fixture: fixture).appendingPathComponent(".chau7-skill.json").path))
     }
 
+    func testSkillsValidateResolvesRelativeRepoSkillPath() throws {
+        let fixture = try makeFixture()
+        defer { remove(fixture.root) }
+        try writeSkill(
+            id: "repo-review",
+            description: "Review this repository.",
+            body: "Use local project context.",
+            sourceRoot: fixture.repoSourceRoot
+        )
+
+        let result = runner(fixture, currentDirectory: fixture.repo.path).run(arguments: [
+            "skills", "validate", ".chau7/skills/repo-review"
+        ])
+
+        XCTAssertEqual(result.exitCode, 0)
+        XCTAssertTrue(result.stdout.contains("- repo-review valid"))
+    }
+
+    func testRepoScopeInstallMaterializesProviderTargetsInRepo() throws {
+        let fixture = try makeFixture()
+        defer { remove(fixture.root) }
+        try writeSkill(
+            id: "repo-review",
+            description: "Review this repository.",
+            body: "Use local project context.",
+            sourceRoot: fixture.repoSourceRoot
+        )
+
+        let result = runner(fixture, currentDirectory: fixture.repo.path).run(arguments: [
+            "skills", "install", "repo-review",
+            "--scope", "repo",
+            "--provider", "all"
+        ])
+
+        XCTAssertEqual(result.exitCode, 0)
+        XCTAssertTrue(result.stdout.contains("Claude repo:"))
+        XCTAssertTrue(result.stdout.contains("Codex repo:"))
+        XCTAssertTrue(result.stdout.contains("- repo-review installed"))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: claudeRepoTarget(skillID: "repo-review", fixture: fixture).appendingPathComponent(".chau7-skill.json").path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: codexRepoTarget(skillID: "repo-review", fixture: fixture).appendingPathComponent(".chau7-skill.json").path))
+
+        let manifestData = try Data(
+            contentsOf: claudeRepoTarget(skillID: "repo-review", fixture: fixture)
+                .appendingPathComponent(".chau7-skill.json")
+        )
+        let manifest = try JSONDecoder().decode(Chau7SkillManifest.self, from: manifestData)
+        XCTAssertEqual(manifest.scope, .repo)
+        XCTAssertEqual(
+            manifest.sourcePath,
+            fixture.repoSourceRoot.appendingPathComponent("repo-review", isDirectory: true).path
+        )
+    }
+
+    func testRepoScopeSyncUsesRepoSourceAndTargets() throws {
+        let fixture = try makeFixture()
+        defer { remove(fixture.root) }
+        try writeSkill(
+            id: "repo-review",
+            description: "Review this repository.",
+            body: "Use local project context.",
+            sourceRoot: fixture.repoSourceRoot
+        )
+        try writeSkill(
+            id: "repo-docs",
+            description: "Review repository documentation.",
+            body: "Use local docs context.",
+            sourceRoot: fixture.repoSourceRoot
+        )
+
+        let result = runner(fixture, currentDirectory: fixture.repo.path).run(arguments: [
+            "skills", "sync",
+            "--scope", "repo",
+            "--provider", "claude"
+        ])
+
+        XCTAssertEqual(result.exitCode, 0)
+        XCTAssertTrue(result.stdout.contains("Claude repo:"))
+        XCTAssertTrue(result.stdout.contains("- repo-review installed"))
+        XCTAssertTrue(result.stdout.contains("- repo-docs installed"))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: claudeRepoTarget(skillID: "repo-review", fixture: fixture).appendingPathComponent(".chau7-skill.json").path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: claudeRepoTarget(skillID: "repo-docs", fixture: fixture).appendingPathComponent(".chau7-skill.json").path))
+    }
+
+    func testRepoScopeDoctorReportsRepoStates() throws {
+        let fixture = try makeFixture()
+        defer { remove(fixture.root) }
+        try writeSkill(
+            id: "repo-review",
+            description: "Review this repository.",
+            body: "Use local project context.",
+            sourceRoot: fixture.repoSourceRoot
+        )
+
+        let install = runner(fixture, currentDirectory: fixture.repo.path).run(arguments: [
+            "skills", "install", "repo-review",
+            "--scope", "repo",
+            "--provider", "claude"
+        ])
+        XCTAssertEqual(install.exitCode, 0)
+
+        let result = runner(fixture, currentDirectory: fixture.repo.path).run(arguments: [
+            "skills", "doctor",
+            "--scope", "repo",
+            "--provider", "all"
+        ])
+
+        XCTAssertEqual(result.exitCode, 0)
+        XCTAssertTrue(result.stdout.contains("- repo-review repo valid"))
+        XCTAssertTrue(result.stdout.contains("Claude repo:"))
+        XCTAssertTrue(result.stdout.contains("- repo-review installed"))
+        XCTAssertTrue(result.stdout.contains("Codex repo:"))
+        XCTAssertTrue(result.stdout.contains("- repo-review missing"))
+    }
+
     private struct Fixture {
         var root: URL
         var sourceRoot: URL
         var home: URL
+        var repo: URL
+
+        var repoSourceRoot: URL {
+            repo.appendingPathComponent(".chau7/skills", isDirectory: true)
+        }
     }
 
     private func makeFixture() throws -> Fixture {
@@ -208,21 +327,26 @@ final class Chau7CLISkillsTests: XCTestCase {
             .appendingPathComponent("chau7-cli-skills-\(UUID().uuidString)", isDirectory: true)
         let sourceRoot = root.appendingPathComponent("Resources/Skills", isDirectory: true)
         let home = root.appendingPathComponent("home", isDirectory: true)
+        let repo = root.appendingPathComponent("repo", isDirectory: true)
         try FileManager.default.createDirectory(at: sourceRoot, withIntermediateDirectories: true)
         try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(
+            at: repo.appendingPathComponent(".git", isDirectory: true),
+            withIntermediateDirectories: true
+        )
         try writeSkill(id: "chau7-magi", description: "MAGI skill.", body: "MAGI instructions.", sourceRoot: sourceRoot)
         try writeSkill(id: "chau7-mcp", description: "MCP skill.", body: "MCP instructions.", sourceRoot: sourceRoot)
-        return Fixture(root: root, sourceRoot: sourceRoot, home: home)
+        return Fixture(root: root, sourceRoot: sourceRoot, home: home, repo: repo)
     }
 
-    private func runner(_ fixture: Fixture) -> Chau7CLIRunner {
+    private func runner(_ fixture: Fixture, currentDirectory: String? = nil) -> Chau7CLIRunner {
         Chau7CLIRunner(
             environment: [
                 "CHAU7_SKILLS_SOURCE_ROOT": fixture.sourceRoot.path,
                 "CHAU7_HOME": fixture.home.path,
                 "PATH": ""
             ],
-            currentDirectory: fixture.root.path
+            currentDirectory: currentDirectory ?? fixture.root.path
         )
     }
 
@@ -285,6 +409,20 @@ final class Chau7CLISkillsTests: XCTestCase {
         URL(fileURLWithPath: CodexSkillInstallTargetResolver.userTarget(
             skillID: skillID,
             homeDirectory: fixture.home.path
+        ).skillDirectory)
+    }
+
+    private func claudeRepoTarget(skillID: Chau7SkillID, fixture: Fixture) -> URL {
+        URL(fileURLWithPath: ClaudeSkillInstallTargetResolver.repoTarget(
+            skillID: skillID,
+            repositoryRoot: fixture.repo.path
+        ).skillDirectory)
+    }
+
+    private func codexRepoTarget(skillID: Chau7SkillID, fixture: Fixture) -> URL {
+        URL(fileURLWithPath: CodexSkillInstallTargetResolver.repoTarget(
+            skillID: skillID,
+            repositoryRoot: fixture.repo.path
         ).skillDirectory)
     }
 
