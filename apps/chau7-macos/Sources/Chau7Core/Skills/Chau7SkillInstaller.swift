@@ -135,14 +135,11 @@ public enum Chau7SkillInstaller {
         )
 
         let targetURL = URL(fileURLWithPath: target.skillDirectory, isDirectory: true)
-        try fileManager.createDirectory(
-            at: targetURL.deletingLastPathComponent(),
-            withIntermediateDirectories: true
+        try replaceTargetWithRollback(
+            stagedSkillURL: stagedSkillURL,
+            targetURL: targetURL,
+            fileManager: fileManager
         )
-        if fileManager.fileExists(atPath: target.skillDirectory) {
-            try fileManager.removeItem(at: targetURL)
-        }
-        try fileManager.moveItem(at: stagedSkillURL, to: targetURL)
 
         let finalSnapshot = try Chau7SkillInstallInspector.installedSnapshot(
             target: target,
@@ -219,6 +216,52 @@ public enum Chau7SkillInstaller {
             to: candidate
         )
         return candidate.path
+    }
+
+    private static func replaceTargetWithRollback(
+        stagedSkillURL: URL,
+        targetURL: URL,
+        fileManager: FileManager
+    ) throws {
+        let parentURL = targetURL.deletingLastPathComponent()
+        try fileManager.createDirectory(at: parentURL, withIntermediateDirectories: true)
+
+        var rollbackURL: URL?
+        if fileManager.fileExists(atPath: targetURL.path) {
+            let moveAsideURL = parentURL
+                .appendingPathComponent(".chau7-skill-replace-\(UUID().uuidString)", isDirectory: true)
+            try fileManager.moveItem(at: targetURL, to: moveAsideURL)
+            rollbackURL = moveAsideURL
+        }
+
+        do {
+            try fileManager.moveItem(at: stagedSkillURL, to: targetURL)
+            if let rollbackURL {
+                try? fileManager.removeItem(at: rollbackURL)
+            }
+        } catch {
+            if let rollbackURL {
+                try? restoreRollbackTarget(
+                    rollbackURL: rollbackURL,
+                    targetURL: targetURL,
+                    fileManager: fileManager
+                )
+            }
+            throw error
+        }
+    }
+
+    private static func restoreRollbackTarget(
+        rollbackURL: URL,
+        targetURL: URL,
+        fileManager: FileManager
+    ) throws {
+        if fileManager.fileExists(atPath: targetURL.path) {
+            try fileManager.removeItem(at: targetURL)
+        }
+        if fileManager.fileExists(atPath: rollbackURL.path) {
+            try fileManager.moveItem(at: rollbackURL, to: targetURL)
+        }
     }
 
     private static func hasBlockingIssue(_ issues: [Chau7SkillValidationIssue]) -> Bool {

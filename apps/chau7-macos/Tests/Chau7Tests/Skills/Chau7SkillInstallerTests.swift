@@ -154,6 +154,42 @@ final class Chau7SkillInstallerTests: XCTestCase {
             try String(contentsOfFile: fixture.target.skillMarkdownPath, encoding: .utf8)
                 .contains("Updated skill.")
         )
+        XCTAssertEqual(try replacementRollbackDirectories(for: fixture), [])
+    }
+
+    func testReplacementFailureRestoresExistingTarget() throws {
+        let fixture = try makeFixture()
+        defer { remove(fixture.root) }
+        _ = try install(fixture: fixture)
+
+        try writeSkill(
+            name: "chau7-magi",
+            description: "Updated skill.",
+            body: "Updated instructions.",
+            to: URL(fileURLWithPath: fixture.source.rootDirectory)
+        )
+        let fileManager = FailingSecondMoveFileManager()
+
+        XCTAssertThrowsError(
+            try Chau7SkillInstaller.install(
+                source: fixture.source,
+                target: fixture.target,
+                providerDetection: availableProvider(root: fixture.providerRoot),
+                options: options(fixture: fixture),
+                fileManager: fileManager
+            )
+        )
+
+        XCTAssertTrue(FileManager.default.fileExists(atPath: fixture.target.manifestPath))
+        XCTAssertTrue(
+            try String(contentsOfFile: fixture.target.skillMarkdownPath, encoding: .utf8)
+                .contains("Test skill.")
+        )
+        XCTAssertFalse(
+            try String(contentsOfFile: fixture.target.skillMarkdownPath, encoding: .utf8)
+                .contains("Updated skill.")
+        )
+        XCTAssertEqual(try replacementRollbackDirectories(for: fixture), [])
     }
 
     func testEditedManagedInstallRefusesWithoutMutation() throws {
@@ -390,6 +426,15 @@ final class Chau7SkillInstallerTests: XCTestCase {
             .write(to: URL(fileURLWithPath: path), options: [.atomic])
     }
 
+    private func replacementRollbackDirectories(for fixture: Fixture) throws -> [String] {
+        let targetParent = URL(fileURLWithPath: fixture.target.skillDirectory, isDirectory: true)
+            .deletingLastPathComponent()
+        guard FileManager.default.fileExists(atPath: targetParent.path) else { return [] }
+        return try FileManager.default.contentsOfDirectory(atPath: targetParent.path)
+            .filter { $0.hasPrefix(".chau7-skill-replace-") }
+            .sorted()
+    }
+
     private func write(_ content: String, to url: URL) throws {
         try FileManager.default.createDirectory(
             at: url.deletingLastPathComponent(),
@@ -400,5 +445,17 @@ final class Chau7SkillInstallerTests: XCTestCase {
 
     private func remove(_ url: URL) {
         try? FileManager.default.removeItem(at: url)
+    }
+}
+
+private final class FailingSecondMoveFileManager: FileManager {
+    private var moveCount = 0
+
+    override func moveItem(at srcURL: URL, to dstURL: URL) throws {
+        moveCount += 1
+        if moveCount == 2 {
+            throw CocoaError(.fileWriteUnknown)
+        }
+        try super.moveItem(at: srcURL, to: dstURL)
     }
 }
