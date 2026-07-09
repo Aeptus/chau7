@@ -104,6 +104,28 @@ final class Chau7SkillInstallPlannerTests: XCTestCase {
         XCTAssertEqual(plan.issues.map { $0.code }, ["unmanaged-conflict"])
     }
 
+    func testTargetWithBrokenManagedMetadataPlansBroken() {
+        let issue = Chau7SkillValidationIssue(
+            severity: .error,
+            code: "broken-manifest",
+            message: ".chau7-skill.json could not be decoded.",
+            path: "/Users/me/.claude/skills/chau7-magi/.chau7-skill.json"
+        )
+
+        let plan = makePlan(
+            installed: Chau7SkillInstalledSnapshot(
+                targetExists: true,
+                manifest: nil,
+                fileHashes: fileHashes(["SKILL.md": "local"]),
+                issues: [issue]
+            )
+        )
+
+        XCTAssertEqual(plan.state, Chau7SkillInstallState.broken)
+        XCTAssertEqual(plan.action, Chau7SkillInstallPlan.Action.refuse)
+        XCTAssertEqual(plan.issues, [issue])
+    }
+
     func testSourceErrorPlansInvalidSourceBeforeTargetChecks() {
         let issue = Chau7SkillValidationIssue(
             severity: .error,

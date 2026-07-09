@@ -4,15 +4,18 @@ public struct Chau7SkillInstalledSnapshot: Codable, Equatable, Sendable {
     public var targetExists: Bool
     public var manifest: Chau7SkillManifest?
     public var fileHashes: [String: Chau7SkillFileHash]
+    public var issues: [Chau7SkillValidationIssue]
 
     public init(
         targetExists: Bool,
         manifest: Chau7SkillManifest? = nil,
-        fileHashes: [String: Chau7SkillFileHash] = [:]
+        fileHashes: [String: Chau7SkillFileHash] = [:],
+        issues: [Chau7SkillValidationIssue] = []
     ) {
         self.targetExists = targetExists
         self.manifest = manifest
         self.fileHashes = fileHashes
+        self.issues = issues
     }
 }
 
@@ -58,6 +61,16 @@ public enum Chau7SkillInstallPlanner {
                 target: target,
                 state: .missing,
                 action: .install
+            )
+        }
+
+        if !installed.issues.isEmpty {
+            return Chau7SkillInstallPlan(
+                source: source,
+                target: target,
+                state: .broken,
+                action: .refuse,
+                issues: installed.issues
             )
         }
 
