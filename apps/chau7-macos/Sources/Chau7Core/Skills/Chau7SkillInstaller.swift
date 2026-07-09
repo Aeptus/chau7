@@ -63,7 +63,10 @@ public enum Chau7SkillInstaller {
                 rootDirectory: source.rootDirectory,
                 fileManager: fileManager
             )
-        let installed = try installedSnapshot(target: target, fileManager: fileManager)
+        let installed = try Chau7SkillInstallInspector.installedSnapshot(
+            target: target,
+            fileManager: fileManager
+        )
         let initialPlan = Chau7SkillInstallPlanner.plan(
             source: source,
             target: target,
@@ -141,7 +144,10 @@ public enum Chau7SkillInstaller {
         }
         try fileManager.moveItem(at: stagedSkillURL, to: targetURL)
 
-        let finalSnapshot = try installedSnapshot(target: target, fileManager: fileManager)
+        let finalSnapshot = try Chau7SkillInstallInspector.installedSnapshot(
+            target: target,
+            fileManager: fileManager
+        )
         let finalPlan = Chau7SkillInstallPlanner.plan(
             source: source,
             target: target,
@@ -159,55 +165,6 @@ public enum Chau7SkillInstaller {
             manifest: manifest,
             issues: finalPlan.issues
         )
-    }
-
-    private static func installedSnapshot(
-        target: Chau7SkillInstallTarget,
-        fileManager: FileManager
-    ) throws -> Chau7SkillInstalledSnapshot {
-        var isDirectory: ObjCBool = false
-        guard fileManager.fileExists(atPath: target.skillDirectory, isDirectory: &isDirectory) else {
-            return Chau7SkillInstalledSnapshot(targetExists: false)
-        }
-
-        let fileHashes = isDirectory.boolValue
-            ? try Chau7SkillManifestHashing.managedFileHashes(
-                rootDirectory: target.skillDirectory,
-                fileManager: fileManager
-            )
-            : [:]
-
-        guard fileManager.fileExists(atPath: target.manifestPath) else {
-            return Chau7SkillInstalledSnapshot(
-                targetExists: true,
-                manifest: nil,
-                fileHashes: fileHashes
-            )
-        }
-
-        do {
-            let data = try Data(contentsOf: URL(fileURLWithPath: target.manifestPath))
-            let manifest = try JSONDecoder().decode(Chau7SkillManifest.self, from: data)
-            return Chau7SkillInstalledSnapshot(
-                targetExists: true,
-                manifest: manifest,
-                fileHashes: fileHashes
-            )
-        } catch {
-            return Chau7SkillInstalledSnapshot(
-                targetExists: true,
-                manifest: nil,
-                fileHashes: fileHashes,
-                issues: [
-                    Chau7SkillValidationIssue(
-                        severity: .error,
-                        code: "broken-manifest",
-                        message: ".chau7-skill.json could not be decoded.",
-                        path: target.manifestPath
-                    )
-                ]
-            )
-        }
     }
 
     private static func writeManifest(

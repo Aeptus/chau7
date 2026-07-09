@@ -1,6 +1,13 @@
 [
   {
     "category": "AI Integration",
+    "feature": "Chau7CLI Skills Commands",
+    "description": "chau7-cli skills provides list, doctor, install, update, uninstall, validate, diff, and sync commands over built-in Agent Skills, using shared Chau7Core validation, install inspection, planning, and installer logic for Claude and Codex user targets",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "AI Integration",
     "feature": "Chau7 Built-In Agent Skills",
     "description": "Chau7 ships chau7-magi and chau7-mcp Agent Skills under Resources/Skills, covering MAGI usage, CLI invocation, verdicts, artifacts, replay/share, council-output integrity, direct-answer versus council decisions, safe Chau7 MCP orchestration, diagnostics, permission boundaries, and the rule to never kill Chau7 itself",
     "status": "Shipped",
