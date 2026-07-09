@@ -64,6 +64,7 @@ Detection methods:
 
 ### AI Features
 
+- **Chau7 Skills manifest hashing** — `Chau7Core` deterministically hashes managed Agent Skill files, excludes Chau7/Finder metadata, and builds/writes `.chau7-skill.json` manifest data with source/target metadata, aggregate source hashes, and per-file hashes.
 - **Chau7 Skills provider targets** — `Chau7Core` resolves Claude and Codex user/repo Agent Skills install targets and conservatively detects provider availability from provider roots, provider CLIs on `PATH`, or explicit user provider requests.
 - **Chau7 Agent Skills validator** — `Chau7Core` validates the shared Agent Skills folder contract, including `SKILL.md` YAML frontmatter, required `name`/`description`, lowercase kebab-case names, folder/name matching, and optional `scripts`, `references`, and `assets` directories while allowing unknown provider-specific frontmatter.
 - **Chau7 skills model foundation** — `Chau7Core` defines the pure model layer for managing standard Agent Skills across providers and repositories, including skill IDs/sources, providers, user/repo scopes, install targets, lifecycle states, file hashes, Chau7 management manifests, install plans, and validation issues.
