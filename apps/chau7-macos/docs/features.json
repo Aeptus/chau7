@@ -1,6 +1,13 @@
 [
   {
     "category": "AI Integration",
+    "feature": "Chau7 Agent Skills Validator",
+    "description": "Chau7Core validates the shared Agent Skills folder contract, including SKILL.md YAML frontmatter, required name and description fields, lowercase kebab-case names, folder/name matching, and optional scripts, references, and assets directories while allowing unknown provider-specific frontmatter",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "AI Integration",
     "feature": "Chau7 Skills Model Foundation",
     "description": "Chau7Core defines pure Agent Skills management models for skill IDs and sources, providers, user/repo scopes, install targets, lifecycle states, file hashes, Chau7 management manifests, install plans, and validation issues without introducing a competing skill package format",
     "status": "Shipped",
