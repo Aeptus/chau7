@@ -15,6 +15,13 @@
   },
   {
     "category": "AI Integration",
+    "feature": "Chau7CLI Local Installer",
+    "description": "Scripts/install-chau7-cli.sh builds the SwiftPM chau7-cli product and installs both chau7-cli and a chau7 wrapper into ~/.local/bin by default, enabling the documented chau7 skills command surface without a conflicting lowercase SwiftPM product",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "AI Integration",
     "feature": "Chau7 Built-In Agent Skills",
     "description": "Chau7 ships chau7-magi and chau7-mcp Agent Skills under Resources/Skills, covering MAGI usage, CLI invocation, verdicts, artifacts, replay/share, council-output integrity, direct-answer versus council decisions, safe Chau7 MCP orchestration, diagnostics, permission boundaries, and the rule to never kill Chau7 itself",
     "status": "Shipped",

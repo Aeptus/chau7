@@ -690,6 +690,7 @@ public struct Chau7CLIRunner {
         Chau7CLI
 
         Usage:
+          chau7 skills <command>
           chau7-cli skills <command>
 
         \(skillsUsage)
@@ -699,14 +700,17 @@ public struct Chau7CLIRunner {
     private var skillsUsage: String {
         """
         Skills commands:
-          chau7-cli skills list [--scope user|repo] [--source-root PATH] [--repo PATH]
-          chau7-cli skills doctor [--scope user|repo] [--source-root PATH] [--home PATH] [--repo PATH]
-          chau7-cli skills install [skill-id|all] [--scope user|repo] [--provider claude|codex|all] [--home PATH] [--repo PATH] [--force]
-          chau7-cli skills update [skill-id|all] [--scope user|repo] [--provider claude|codex|all] [--home PATH] [--repo PATH]
-          chau7-cli skills uninstall [skill-id|all] [--scope user|repo] [--provider claude|codex|all] [--home PATH] [--repo PATH] [--force]
-          chau7-cli skills validate [skill-id|all|PATH] [--scope user|repo] [--source-root PATH] [--repo PATH]
-          chau7-cli skills diff [skill-id|all] [--scope user|repo] [--provider claude|codex|all] [--home PATH] [--repo PATH]
-          chau7-cli skills sync [skill-id|all] [--scope user|repo] [--provider claude|codex|all] [--home PATH] [--repo PATH] [--force]
+          chau7 skills list [--scope user|repo] [--source-root PATH] [--repo PATH]
+          chau7 skills doctor [--scope user|repo] [--source-root PATH] [--home PATH] [--repo PATH]
+          chau7 skills install [skill-id|all] [--scope user|repo] [--provider claude|codex|all] [--home PATH] [--repo PATH] [--force]
+          chau7 skills update [skill-id|all] [--scope user|repo] [--provider claude|codex|all] [--home PATH] [--repo PATH]
+          chau7 skills uninstall [skill-id|all] [--scope user|repo] [--provider claude|codex|all] [--home PATH] [--repo PATH] [--force]
+          chau7 skills validate [skill-id|all|PATH] [--scope user|repo] [--source-root PATH] [--repo PATH]
+          chau7 skills diff [skill-id|all] [--scope user|repo] [--provider claude|codex|all] [--home PATH] [--repo PATH]
+          chau7 skills sync [skill-id|all] [--scope user|repo] [--provider claude|codex|all] [--home PATH] [--repo PATH] [--force]
+
+        Direct binary form:
+          chau7-cli skills <command>
 
         Repo scope defaults:
           source: <repo>/.chau7/skills/<skill-id>

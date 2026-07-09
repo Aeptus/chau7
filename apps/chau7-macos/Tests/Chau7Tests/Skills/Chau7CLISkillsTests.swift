@@ -3,6 +3,19 @@ import XCTest
 @testable import Chau7Core
 
 final class Chau7CLISkillsTests: XCTestCase {
+    func testSkillsUsageMentionsChau7WrapperAndDirectBinary() throws {
+        let fixture = try makeFixture()
+        defer { remove(fixture.root) }
+
+        let result = runner(fixture).run(arguments: ["skills", "help"])
+
+        XCTAssertEqual(result.exitCode, 0)
+        XCTAssertTrue(result.stdout.contains("chau7 skills list"))
+        XCTAssertTrue(result.stdout.contains("chau7 skills install [skill-id|all]"))
+        XCTAssertTrue(result.stdout.contains("Direct binary form:"))
+        XCTAssertTrue(result.stdout.contains("chau7-cli skills <command>"))
+    }
+
     func testSkillsDoctorReportsSourcesAndProviderUserStates() throws {
         let fixture = try makeFixture()
         defer { remove(fixture.root) }
