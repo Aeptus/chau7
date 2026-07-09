@@ -1,6 +1,13 @@
 [
   {
     "category": "AI Integration",
+    "feature": "Chau7 Skills Install Planner",
+    "description": "Chau7Core computes pure Agent Skills install plans from source validation, provider availability, target presence, managed manifests, source hashes, and installed file hashes, covering missing/install, installed/no-op, stale/update, modified/refuse, unmanaged conflict/refuse, invalid source/refuse, and unsupported provider/refuse outcomes",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "AI Integration",
     "feature": "Chau7 Skills Manifest Hashing",
     "description": "Chau7Core deterministically hashes managed Agent Skill files, excludes Chau7 and Finder metadata, and builds manifest data with source and target metadata, aggregate source hashes, and per-file hashes for install/update/drift detection",
     "status": "Shipped",

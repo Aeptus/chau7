@@ -64,6 +64,7 @@ Detection methods:
 
 ### AI Features
 
+- **Chau7 Skills install planner** — `Chau7Core` computes pure Agent Skills install plans from source validation, provider availability, target presence, managed manifests, source hashes, and installed file hashes, covering missing/install, installed/no-op, stale/update, modified/refuse, unmanaged conflict/refuse, invalid source/refuse, and unsupported provider/refuse outcomes.
 - **Chau7 Skills manifest hashing** — `Chau7Core` deterministically hashes managed Agent Skill files, excludes Chau7/Finder metadata, and builds/writes `.chau7-skill.json` manifest data with source/target metadata, aggregate source hashes, and per-file hashes.
 - **Chau7 Skills provider targets** — `Chau7Core` resolves Claude and Codex user/repo Agent Skills install targets and conservatively detects provider availability from provider roots, provider CLIs on `PATH`, or explicit user provider requests.
 - **Chau7 Agent Skills validator** — `Chau7Core` validates the shared Agent Skills folder contract, including `SKILL.md` YAML frontmatter, required `name`/`description`, lowercase kebab-case names, folder/name matching, and optional `scripts`, `references`, and `assets` directories while allowing unknown provider-specific frontmatter.
