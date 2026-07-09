@@ -403,15 +403,18 @@ public struct Chau7CLIRunner {
 
     private func availableSkillIDs(sourceRoot: String) throws -> [String] {
         let rootURL = URL(fileURLWithPath: sourceRoot, isDirectory: true)
-        let contents = (try? fileManager.contentsOfDirectory(
+        guard directoryExists(atPath: rootURL.path) else {
+            throw CLIError("Skills source root does not exist: \(rootURL.path)")
+        }
+
+        let contents = try fileManager.contentsOfDirectory(
             at: rootURL,
             includingPropertiesForKeys: [.isDirectoryKey],
             options: [.skipsHiddenFiles]
-        )) ?? []
+        )
         let ids = contents.compactMap { url -> String? in
             let values = try? url.resourceValues(forKeys: [.isDirectoryKey])
             guard values?.isDirectory == true else { return nil }
-            guard fileManager.fileExists(atPath: url.appendingPathComponent("SKILL.md").path) else { return nil }
             return url.lastPathComponent
         }
         let preferred = ["chau7-magi", "chau7-mcp"].filter { ids.contains($0) }

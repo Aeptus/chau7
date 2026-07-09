@@ -9,7 +9,7 @@
   {
     "category": "AI Integration",
     "feature": "Chau7CLI Skills Commands",
-    "description": "chau7-cli skills provides list, doctor, install, update, uninstall, validate, diff, and sync commands over built-in Agent Skills, using shared Chau7Core validation, install inspection, planning, and installer logic for Claude and Codex user targets",
+    "description": "chau7-cli skills provides list, doctor, install, update, uninstall, validate, diff, and sync commands over built-in Agent Skills, using shared Chau7Core validation, install inspection, planning, and installer logic for Claude and Codex user targets, with all reporting invalid source directories instead of silently skipping them",
     "status": "Shipped",
     "differentiator": "Yes"
   },

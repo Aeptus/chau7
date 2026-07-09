@@ -74,6 +74,43 @@ final class Chau7CLISkillsTests: XCTestCase {
         XCTAssertTrue(onePath.stdout.contains("chau7-magi valid"))
     }
 
+    func testSkillsValidateAllReportsInvalidSourceDirectories() throws {
+        let fixture = try makeFixture()
+        defer { remove(fixture.root) }
+        try FileManager.default.createDirectory(
+            at: fixture.sourceRoot.appendingPathComponent("broken-skill", isDirectory: true),
+            withIntermediateDirectories: true
+        )
+
+        let result = runner(fixture).run(arguments: [
+            "skills", "validate", "all",
+            "--source-root", fixture.sourceRoot.path
+        ])
+
+        XCTAssertEqual(result.exitCode, 1)
+        XCTAssertTrue(result.stdout.contains("- broken-skill invalid"))
+        XCTAssertTrue(result.stdout.contains("error: missing-skill-md"))
+        XCTAssertTrue(result.stdout.contains("- chau7-magi   valid"))
+        XCTAssertTrue(result.stdout.contains("- chau7-mcp    valid"))
+    }
+
+    func testSkillsAllFailsClearlyWhenSourceRootIsMissing() throws {
+        let fixture = try makeFixture()
+        defer { remove(fixture.root) }
+        let missingRoot = fixture.root.appendingPathComponent("missing-skills", isDirectory: true)
+
+        let result = runner(fixture).run(arguments: [
+            "skills", "install", "all",
+            "--source-root", missingRoot.path,
+            "--provider", "claude",
+            "--home", fixture.home.path
+        ])
+
+        XCTAssertEqual(result.exitCode, 1)
+        XCTAssertEqual(result.stdout, "")
+        XCTAssertTrue(result.stderr.contains("Skills source root does not exist: \(missingRoot.path)"))
+    }
+
     func testSkillsInstallInstallsSelectedProviderTargets() throws {
         let fixture = try makeFixture()
         defer { remove(fixture.root) }
