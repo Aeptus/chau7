@@ -129,6 +129,24 @@ final class Chau7CLISkillsTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: codexTarget(skillID: "chau7-magi", fixture: fixture).path))
     }
 
+    func testSkillsInstallDefaultProvidersRefuseWhenProvidersAreUndetected() throws {
+        let fixture = try makeFixture()
+        defer { remove(fixture.root) }
+
+        let result = runner(fixture).run(arguments: [
+            "skills", "install", "chau7-magi",
+            "--source-root", fixture.sourceRoot.path,
+            "--home", fixture.home.path
+        ])
+
+        XCTAssertEqual(result.exitCode, 1)
+        XCTAssertTrue(result.stdout.contains("Claude user:"))
+        XCTAssertTrue(result.stdout.contains("Codex user:"))
+        XCTAssertTrue(result.stdout.contains("- chau7-magi unsupported provider"))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: claudeTarget(skillID: "chau7-magi", fixture: fixture).path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: codexTarget(skillID: "chau7-magi", fixture: fixture).path))
+    }
+
     func testSkillsUpdateUpdatesOnlyStaleManagedInstalls() throws {
         let fixture = try makeFixture()
         defer { remove(fixture.root) }

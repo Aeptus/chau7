@@ -284,6 +284,7 @@ public struct Chau7CLIRunner {
         var repositoryRoot: String
         var scope: Chau7SkillInstallScope
         var providers: [Chau7SkillProvider]
+        var providerSelectionWasExplicit: Bool
         var subject: String?
         var force: Bool
     }
@@ -294,6 +295,7 @@ public struct Chau7CLIRunner {
         var explicitRepositoryRoot = environment["CHAU7_REPO_ROOT"]
         var scope: Chau7SkillInstallScope = .user
         var providers: [Chau7SkillProvider] = [.claude, .codex]
+        var providerSelectionWasExplicit = false
         var subject: String?
         var force = false
 
@@ -321,6 +323,7 @@ public struct Chau7CLIRunner {
                 index += 1
                 guard index < arguments.count else { throw CLIError("Missing value for --provider") }
                 providers = try parseProviders(arguments[index])
+                providerSelectionWasExplicit = true
             case "--force":
                 force = true
             default:
@@ -351,6 +354,7 @@ public struct Chau7CLIRunner {
             repositoryRoot: repositoryRoot,
             scope: scope,
             providers: providers,
+            providerSelectionWasExplicit: providerSelectionWasExplicit,
             subject: subject,
             force: force
         )
@@ -510,11 +514,13 @@ public struct Chau7CLIRunner {
         if executableExists(named: provider.rawValue, environmentPATH: path) {
             reasons.append(.providerCLIExists)
         }
-        reasons.append(.explicitlyRequested)
+        if options.providerSelectionWasExplicit {
+            reasons.append(.explicitlyRequested)
+        }
 
         return Chau7SkillProviderDetection(
             provider: provider,
-            isAvailable: true,
+            isAvailable: !reasons.isEmpty,
             reasons: reasons,
             providerRoot: providerRoot,
             executableName: provider.rawValue

@@ -44,7 +44,7 @@
   {
     "category": "AI Integration",
     "feature": "Chau7 Skills Provider Targets",
-    "description": "Chau7Core resolves Claude and Codex user/repo Agent Skills install targets and conservatively detects provider availability from provider roots, provider CLIs on PATH, or explicit user provider requests",
+    "description": "Chau7Core resolves Claude and Codex user/repo Agent Skills install targets and conservatively detects provider availability from provider roots, provider CLIs on PATH, or explicit user provider requests, with the CLI treating --provider as the explicit override",
     "status": "Shipped",
     "differentiator": "Yes"
   },
