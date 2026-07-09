@@ -1,6 +1,13 @@
 [
   {
     "category": "AI Integration",
+    "feature": "Chau7 Skills Provider Targets",
+    "description": "Chau7Core resolves Claude and Codex user/repo Agent Skills install targets and conservatively detects provider availability from provider roots, provider CLIs on PATH, or explicit user provider requests",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "AI Integration",
     "feature": "Chau7 Agent Skills Validator",
     "description": "Chau7Core validates the shared Agent Skills folder contract, including SKILL.md YAML frontmatter, required name and description fields, lowercase kebab-case names, folder/name matching, and optional scripts, references, and assets directories while allowing unknown provider-specific frontmatter",
     "status": "Shipped",

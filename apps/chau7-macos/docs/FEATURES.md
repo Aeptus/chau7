@@ -64,6 +64,7 @@ Detection methods:
 
 ### AI Features
 
+- **Chau7 Skills provider targets** — `Chau7Core` resolves Claude and Codex user/repo Agent Skills install targets and conservatively detects provider availability from provider roots, provider CLIs on `PATH`, or explicit user provider requests.
 - **Chau7 Agent Skills validator** — `Chau7Core` validates the shared Agent Skills folder contract, including `SKILL.md` YAML frontmatter, required `name`/`description`, lowercase kebab-case names, folder/name matching, and optional `scripts`, `references`, and `assets` directories while allowing unknown provider-specific frontmatter.
 - **Chau7 skills model foundation** — `Chau7Core` defines the pure model layer for managing standard Agent Skills across providers and repositories, including skill IDs/sources, providers, user/repo scopes, install targets, lifecycle states, file hashes, Chau7 management manifests, install plans, and validation issues.
 - **MAGI multi-agent decision protocol** — CLI-first council mode that launches three isolated agents through Chau7 MCP, applies editable member personas, shares only controlled council packets between rounds, applies explicit ask/auto-deny/preapproved evidence policy, resolves majority/final-vote-veto verdicts using canonical decision IDs plus material conditions, and writes replay/share artifacts.
