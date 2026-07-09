@@ -2,13 +2,18 @@ import XCTest
 @testable import Chau7Core
 
 final class Chau7SkillBuiltInSkillsTests: XCTestCase {
+    func testBundledMagiSkillValidates() throws {
+        XCTAssertEqual(validateBuiltInSkill("chau7-magi"), [])
+    }
+
+    func testBundledMCPSkillValidates() throws {
+        XCTAssertEqual(validateBuiltInSkill("chau7-mcp"), [])
+    }
+
     func testBuiltInSkillsValidateAgainstSharedAgentSkillsContract() throws {
         for skillID in ["chau7-magi", "chau7-mcp"] {
-            let root = packageRoot()
-                .appendingPathComponent("Resources/Skills/\(skillID)", isDirectory: true)
-
             XCTAssertEqual(
-                Chau7SkillValidator.validate(rootDirectory: root.path),
+                validateBuiltInSkill(skillID),
                 [],
                 "\(skillID) should be a valid Agent Skill"
             )
@@ -52,6 +57,12 @@ final class Chau7SkillBuiltInSkillsTests: XCTestCase {
         let url = packageRoot()
             .appendingPathComponent("Resources/Skills/\(skillID)/SKILL.md")
         return try String(contentsOf: url, encoding: .utf8)
+    }
+
+    private func validateBuiltInSkill(_ skillID: String) -> [Chau7SkillValidationIssue] {
+        let root = packageRoot()
+            .appendingPathComponent("Resources/Skills/\(skillID)", isDirectory: true)
+        return Chau7SkillValidator.validate(rootDirectory: root.path)
     }
 
     private func packageRoot() -> URL {

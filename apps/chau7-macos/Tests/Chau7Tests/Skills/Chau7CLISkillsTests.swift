@@ -132,6 +132,29 @@ final class Chau7CLISkillsTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: claudeTarget(skillID: "chau7-magi", fixture: fixture).path))
     }
 
+    func testSkillsUninstallAllRemovesOnlyManagedInstallsByDefault() throws {
+        let fixture = try makeFixture()
+        defer { remove(fixture.root) }
+        try install(skillID: "chau7-magi", provider: .claude, fixture: fixture)
+        try write("local unmanaged", to: claudeTarget(skillID: "chau7-mcp", fixture: fixture).appendingPathComponent("SKILL.md"))
+
+        let result = runner(fixture).run(arguments: [
+            "skills", "uninstall", "all",
+            "--provider", "claude",
+            "--source-root", fixture.sourceRoot.path,
+            "--home", fixture.home.path
+        ])
+
+        XCTAssertEqual(result.exitCode, 1)
+        XCTAssertTrue(result.stdout.contains("- chau7-magi uninstalled"))
+        XCTAssertTrue(result.stdout.contains("- chau7-mcp refused unmanaged conflict"))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: claudeTarget(skillID: "chau7-magi", fixture: fixture).path))
+        XCTAssertEqual(
+            try String(contentsOf: claudeTarget(skillID: "chau7-mcp", fixture: fixture).appendingPathComponent("SKILL.md"), encoding: .utf8),
+            "local unmanaged"
+        )
+    }
+
     func testSkillsDiffReportsStaleStateAndHashes() throws {
         let fixture = try makeFixture()
         defer { remove(fixture.root) }

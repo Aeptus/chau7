@@ -103,6 +103,25 @@ final class Chau7SkillValidatorTests: XCTestCase {
         )
     }
 
+    func testMissingDescriptionIsReportedIndependently() throws {
+        let skill = try makeSkill(
+            name: "missing-description",
+            skillMarkdown: """
+            ---
+            name: missing-description
+            ---
+
+            Missing only the shared description field.
+            """
+        )
+        defer { remove(skill.root) }
+
+        XCTAssertEqual(
+            Chau7SkillValidator.validate(rootDirectory: skill.root.path).map(\.code),
+            ["missing-description"]
+        )
+    }
+
     func testNameMustBeLowercaseKebabCase() {
         let valid = [
             "a",
@@ -124,6 +143,24 @@ final class Chau7SkillValidatorTests: XCTestCase {
 
         XCTAssertTrue(valid.allSatisfy(Chau7SkillValidator.isValidSkillName))
         XCTAssertFalse(invalid.contains(where: Chau7SkillValidator.isValidSkillName))
+    }
+
+    func testInvalidNameIsReportedByFullValidation() throws {
+        let skill = try makeSkill(
+            name: "Repo_Review",
+            skillMarkdown: """
+            ---
+            name: Repo_Review
+            description: Invalid shared skill name.
+            ---
+            """
+        )
+        defer { remove(skill.root) }
+
+        XCTAssertEqual(
+            Chau7SkillValidator.validate(rootDirectory: skill.root.path).map(\.code),
+            ["invalid-name"]
+        )
     }
 
     func testDirectoryNameMustMatchFrontmatterName() throws {
