@@ -310,7 +310,12 @@ private final class OverlayBlurView: NSVisualEffectView {
         splashController?.dismiss { [weak self] in
             guard let self else { return }
             splashController = nil
-            for host in overlayHosts {
+            // Present in reverse: each show makes its window key, so the last
+            // one presented wins focus. Without this the HIGHEST-index window
+            // (e.g. a stray "Window 3" with one shell tab) landed on top of
+            // the primary window at every launch. Reversing keeps z-order
+            // stable and hands focus to the primary window (index 0).
+            for host in overlayHosts.reversed() {
                 showOverlayWindow(host, reason: "finishLaunching")
             }
             NSApp.activate(ignoringOtherApps: true)
