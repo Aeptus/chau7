@@ -2,11 +2,11 @@ import Chau7Core
 import SwiftUI
 import UIKit
 
-/// Approval workflow tab: interactive prompts, pending approval requests, and
-/// decision history. Every live item renders as a unified "decision card" —
-/// severity rail → identity → the ask → hero command → collapsible details →
-/// action zone — so risk reads at a glance and the two card types feel like one
-/// system. Destructive commands promote to hold-to-allow to defeat mis-taps.
+/// Approval workflow tab. Each pending decision — a command approval or a
+/// detected Claude / Codex prompt — takes the whole screen: severity up top,
+/// the command as the centrepiece, context readable inline, and deliberate
+/// actions in the thumb zone. Several pending items become a swipeable deck
+/// that advances as you decide. History lives one tap away.
 struct ApprovalsView: View {
     var client: RemoteClient
     /// Switches the main tab bar to the terminal and activates the given remote
@@ -15,156 +15,208 @@ struct ApprovalsView: View {
     @State private var hapticTrigger = false
     @State private var pendingPromptConfirmation: PendingInteractivePromptConfirmation?
     @State private var customPromptDrafts: [String: String] = [:]
+    @State private var selection: String?
+    @State private var showHistory = false
+
+    /// Approvals first (they gate a running command), then detected prompts,
+    /// merged into one ordered decision queue.
+    private var decisions: [PendingDecision] {
+        client.pendingApprovals.map(PendingDecision.approval)
+            + client.pendingInteractivePrompts.map(PendingDecision.prompt)
+    }
 
     var body: some View {
         NavigationStack {
-            List {
-                if client.pendingApprovals.isEmpty &&
-                    client.pendingInteractivePrompts.isEmpty &&
-                    client.approvalHistory.isEmpty {
-                    ContentUnavailableView(
-                        "You're all caught up",
-                        systemImage: "checkmark.shield",
-                        description: Text("Protected actions, command approvals, and detected Claude / Codex prompts land here. Agents pause until you decide.")
-                    )
-                    .listRowSeparator(.hidden)
-                    .listRowBackground(Color.clear)
+            Group {
+                if decisions.isEmpty {
+                    emptyState
+                } else {
+                    deck
                 }
-
-                if !client.pendingInteractivePrompts.isEmpty {
-                    decisionSection("Interactive prompts", count: client.pendingInteractivePrompts.count) {
-                        ForEach(client.pendingInteractivePrompts) { prompt in
-                            InteractivePromptCard(
-                                prompt: prompt,
-                                customText: binding(for: prompt.id),
-                                onRespond: { option in respondToPrompt(prompt, option: option) },
-                                onSendCustom: { sendCustomReply(for: prompt) },
-                                onDismiss: { dismissPrompt(prompt.id) },
-                                onGoToTab: { onOpenTerminalTab(prompt.tabID) }
-                            )
-                            .decisionRow()
-                            .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-                                Button(role: .destructive) {
-                                    dismissPrompt(prompt.id)
-                                } label: {
-                                    Label("Dismiss", systemImage: "xmark.circle")
-                                }
-                            }
-                        }
+            }
+            .background(Color(.systemGroupedBackground))
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .principal) {
+                    if decisions.isEmpty {
+                        Text("Approvals").font(.headline)
+                    } else {
+                        QueueIndicator(index: currentIndex, count: decisions.count)
                     }
                 }
-
-                if !client.pendingApprovals.isEmpty {
-                    decisionSection("Needs your decision", count: client.pendingApprovals.count) {
-                        ForEach(client.pendingApprovals) { request in
-                            ApprovalRequestCard(
-                                request: request,
-                                onGoToTab: tabID(for: request).map { id in { onOpenTerminalTab(id) } }
-                            ) { approved in
-                                hapticTrigger.toggle()
-                                client.respondToApproval(requestID: request.requestID, approved: approved)
-                            }
-                            .decisionRow()
+                ToolbarItem(placement: .topBarTrailing) {
+                    if !client.approvalHistory.isEmpty {
+                        Button {
+                            showHistory = true
+                        } label: {
+                            Image(systemName: "clock.arrow.circlepath")
                         }
-                    }
-                }
-
-                if !client.approvalHistory.isEmpty {
-                    Section {
-                        ForEach(client.approvalHistory.suffix(20).reversed()) { entry in
-                            ApprovalHistoryRow(entry: entry)
-                        }
-                    } header: {
-                        Text("History").font(.footnote.weight(.semibold))
+                        .accessibilityLabel("Decision history")
                     }
                 }
             }
-            .listStyle(.plain)
-            .scrollContentBackground(.hidden)
-            .background(Color(.systemGroupedBackground))
-            .navigationTitle("Approvals")
+            .sheet(isPresented: $showHistory) { historySheet }
             .sensoryFeedback(.success, trigger: hapticTrigger)
             .alert(
                 pendingPromptConfirmation?.title ?? "Confirm Prompt Response",
                 isPresented: pendingPromptConfirmationBinding
             ) {
-                Button("Cancel", role: .cancel) {
-                    pendingPromptConfirmation = nil
-                }
-                Button(
-                    pendingPromptConfirmation?.confirmationLabel ?? "Confirm",
-                    role: .destructive
-                ) {
-                    guard let pendingPromptConfirmation else { return }
-                    if client.respondToInteractivePrompt(
-                        promptID: pendingPromptConfirmation.promptID,
-                        optionID: pendingPromptConfirmation.option.id
-                    ) {
-                        hapticTrigger.toggle()
-                    }
-                    self.pendingPromptConfirmation = nil
+                Button("Cancel", role: .cancel) { pendingPromptConfirmation = nil }
+                Button(pendingPromptConfirmation?.confirmationLabel ?? "Confirm", role: .destructive) {
+                    confirmPendingPrompt()
                 }
             } message: {
                 Text(pendingPromptConfirmation?.message ?? "")
             }
         }
+        .onAppear { normalizeSelection() }
+        .onChange(of: decisions.map(\.id)) { _, _ in normalizeSelection() }
     }
 
-    /// A section that carries a title plus a live count pill, shared by both
-    /// live decision groups so their headers read identically.
+    // MARK: - Deck
+
+    private var deck: some View {
+        TabView(selection: $selection) {
+            ForEach(decisions) { decision in
+                decisionPage(decision)
+                    .tag(decision.id as String?)
+            }
+        }
+        .tabViewStyle(.page(indexDisplayMode: .never))
+    }
+
     @ViewBuilder
-    private func decisionSection(
-        _ title: String,
-        count: Int,
-        @ViewBuilder content: () -> some View
-    ) -> some View {
-        Section {
-            content()
-        } header: {
-            HStack(spacing: 6) {
-                Text(title).font(.footnote.weight(.semibold))
-                Text("\(count)")
-                    .font(.caption2.weight(.bold).monospacedDigit())
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, 7)
-                    .padding(.vertical, 1)
-                    .background(Color(.tertiarySystemFill), in: Capsule())
+    private func decisionPage(_ decision: PendingDecision) -> some View {
+        switch decision {
+        case let .approval(request):
+            FullScreenApprovalCard(
+                request: request,
+                onGoToTab: tabID(for: request).map { id in { onOpenTerminalTab(id) } }
+            ) { approved in
+                let next = nextSelection(after: decision.id)
+                hapticTrigger.toggle()
+                client.respondToApproval(requestID: request.requestID, approved: approved)
+                selection = next
+            }
+        case let .prompt(prompt):
+            FullScreenPromptCard(
+                prompt: prompt,
+                customText: binding(for: prompt.id),
+                onRespond: { option in respondToPrompt(prompt, option: option, decisionID: decision.id) },
+                onSendCustom: { sendCustomReply(for: prompt, decisionID: decision.id) },
+                onDismiss: {
+                    let next = nextSelection(after: decision.id)
+                    dismissPrompt(prompt.id)
+                    selection = next
+                },
+                onGoToTab: { onOpenTerminalTab(prompt.tabID) }
+            )
+        }
+    }
+
+    private var emptyState: some View {
+        ContentUnavailableView {
+            Label("You're all caught up", systemImage: "checkmark.shield")
+        } description: {
+            Text("Protected actions, command approvals, and detected Claude / Codex prompts appear here. Agents pause until you decide.")
+        } actions: {
+            if !client.approvalHistory.isEmpty {
+                Button("View history") { showHistory = true }
             }
         }
     }
 
+    private var historySheet: some View {
+        NavigationStack {
+            List {
+                ForEach(client.approvalHistory.suffix(50).reversed()) { entry in
+                    ApprovalHistoryRow(entry: entry)
+                }
+            }
+            .listStyle(.plain)
+            .navigationTitle("History")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") { showHistory = false }
+                }
+            }
+        }
+        .presentationDetents([.medium, .large])
+    }
+
+    // MARK: - Queue selection
+
+    private var currentIndex: Int {
+        guard let selection, let idx = decisions.firstIndex(where: { $0.id == selection }) else { return 0 }
+        return idx
+    }
+
+    /// The id to land on after the item at `id` is resolved — the next one, or
+    /// the previous when it was last, or nil when the queue empties. Computed
+    /// against the queue *before* the resolving mutation removes the item.
+    private func nextSelection(after id: String) -> String? {
+        let ids = decisions.map(\.id)
+        guard let idx = ids.firstIndex(of: id) else { return ids.first }
+        if idx + 1 < ids.count { return ids[idx + 1] }
+        if idx > 0 { return ids[idx - 1] }
+        return nil
+    }
+
+    /// Keep `selection` pointing at a real page as the queue changes.
+    private func normalizeSelection() {
+        let ids = decisions.map(\.id)
+        if let selection, ids.contains(selection) { return }
+        selection = ids.first
+    }
+
     // MARK: - Actions (preserved behaviour)
 
-    private func respondToPrompt(_ prompt: RemoteInteractivePrompt, option: RemoteInteractivePromptOption) {
+    private func respondToPrompt(_ prompt: RemoteInteractivePrompt, option: RemoteInteractivePromptOption, decisionID: String) {
         if option.isDestructive {
+            // Defer advancing until the confirmation alert is accepted.
             pendingPromptConfirmation = PendingInteractivePromptConfirmation(
                 promptID: prompt.id,
+                decisionID: decisionID,
                 promptText: prompt.prompt,
                 toolName: prompt.toolName,
                 tabTitle: prompt.tabTitle,
                 option: option
             )
         } else if client.respondToInteractivePrompt(promptID: prompt.id, optionID: option.id) {
+            let next = nextSelection(after: decisionID)
             resetCustomPromptState(for: prompt.id)
             hapticTrigger.toggle()
+            selection = next
         }
     }
 
-    private func sendCustomReply(for prompt: RemoteInteractivePrompt) {
+    private func sendCustomReply(for prompt: RemoteInteractivePrompt, decisionID: String) {
         let text = customText(for: prompt.id)
         if client.respondToInteractivePrompt(promptID: prompt.id, customText: text) {
+            let next = nextSelection(after: decisionID)
             resetCustomPromptState(for: prompt.id)
             hapticTrigger.toggle()
+            selection = next
         }
+    }
+
+    private func confirmPendingPrompt() {
+        guard let confirmation = pendingPromptConfirmation else { return }
+        let next = nextSelection(after: confirmation.decisionID)
+        if client.respondToInteractivePrompt(promptID: confirmation.promptID, optionID: confirmation.option.id) {
+            resetCustomPromptState(for: confirmation.promptID)
+            hapticTrigger.toggle()
+            selection = next
+        }
+        pendingPromptConfirmation = nil
     }
 
     private var pendingPromptConfirmationBinding: Binding<Bool> {
         Binding(
             get: { pendingPromptConfirmation != nil },
             set: { isPresented in
-                if !isPresented {
-                    pendingPromptConfirmation = nil
-                }
+                if !isPresented { pendingPromptConfirmation = nil }
             }
         )
     }
@@ -200,8 +252,22 @@ struct ApprovalsView: View {
     }
 }
 
+/// One item in the merged decision queue.
+private enum PendingDecision: Identifiable {
+    case approval(ApprovalRequest)
+    case prompt(RemoteInteractivePrompt)
+
+    var id: String {
+        switch self {
+        case let .approval(request): "approval:\(request.id)"
+        case let .prompt(prompt): "prompt:\(prompt.id)"
+        }
+    }
+}
+
 private struct PendingInteractivePromptConfirmation: Equatable {
     let promptID: String
+    let decisionID: String
     let promptText: String
     let toolName: String
     let tabTitle: String
@@ -214,15 +280,26 @@ private struct PendingInteractivePromptConfirmation: Equatable {
     }
 }
 
-// MARK: - List row styling
+// MARK: - Queue indicator
 
-private extension View {
-    /// Makes a card float edge-to-edge on the grouped background: no separator,
-    /// clear row fill, tight vertical rhythm.
-    func decisionRow() -> some View {
-        listRowSeparator(.hidden)
-            .listRowBackground(Color.clear)
-            .listRowInsets(EdgeInsets(top: 5, leading: 16, bottom: 5, trailing: 16))
+private struct QueueIndicator: View {
+    let index: Int
+    let count: Int
+
+    var body: some View {
+        VStack(spacing: 3) {
+            Text("Decision \(index + 1) of \(count)")
+                .font(.footnote.weight(.semibold))
+            if count > 1 {
+                HStack(spacing: 5) {
+                    ForEach(0 ..< count, id: \.self) { dot in
+                        Circle()
+                            .fill(dot == index ? Color.accentColor : Color.secondary.opacity(0.35))
+                            .frame(width: 6, height: 6)
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -233,19 +310,43 @@ extension ApprovalSeverity {
     /// cry wolf; protected and destructive escalate through the semantic palette.
     var accent: Color {
         switch self {
-        case .standard: Color(.tertiaryLabel)
+        case .standard: Color(.systemBlue)
         case .protected: .orange
         case .destructive: .red
         }
     }
 
-    /// Only protected and destructive warrant a badge; a standard command is
-    /// self-evident and a badge would be noise.
-    var badge: (text: String, icon: String)? {
+    var heroIcon: String {
         switch self {
-        case .standard: nil
-        case .protected: ("Protected action", "lock.shield.fill")
-        case .destructive: ("Destructive · irreversible", "exclamationmark.octagon.fill")
+        case .standard: "terminal.fill"
+        case .protected: "lock.shield.fill"
+        case .destructive: "exclamationmark.octagon.fill"
+        }
+    }
+
+    var heroTitle: String {
+        switch self {
+        case .standard: "Command approval"
+        case .protected: "Protected action"
+        case .destructive: "Destructive"
+        }
+    }
+
+    var consequence: String {
+        switch self {
+        case .standard: "Review the command, then allow or deny."
+        case .protected: "Targets a Chau7-managed process or path."
+        case .destructive: "Rewrites or deletes state — this can't be undone."
+        }
+    }
+
+    /// Tinted header band. Standard stays neutral (no alarm); protected and
+    /// destructive wash the header in their semantic hue.
+    var headerBackground: Color {
+        switch self {
+        case .standard: Color(.secondarySystemGroupedBackground)
+        case .protected: Color.orange.opacity(0.13)
+        case .destructive: Color.red.opacity(0.13)
         }
     }
 
@@ -253,44 +354,50 @@ extension ApprovalSeverity {
     var requiresHoldToAllow: Bool { self == .destructive }
 }
 
-private struct SeverityBadge: View {
-    let severity: ApprovalSeverity
+// MARK: - Shared card pieces
+
+/// The tinted top band that states what kind of decision this is and its
+/// consequence in a line, before any reading.
+private struct DecisionHeader: View {
+    let icon: String
+    let title: String
+    let subtitle: String
+    let tint: Color
+    let background: Color
+    var onDismiss: (() -> Void)?
 
     var body: some View {
-        if let badge = severity.badge {
-            Label(badge.text, systemImage: badge.icon)
-                .font(.caption2.weight(.bold))
-                .textCase(.uppercase)
-                .foregroundStyle(severity.accent)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
-                .background(severity.accent.opacity(0.14), in: Capsule())
+        HStack(alignment: .center, spacing: 12) {
+            Image(systemName: icon)
+                .font(.system(size: 19, weight: .semibold))
+                .foregroundStyle(.white)
+                .frame(width: 42, height: 42)
+                .background(tint, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.subheadline.weight(.bold))
+                    .textCase(.uppercase)
+                    .foregroundStyle(tint)
+                Text(subtitle)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 8)
+            if let onDismiss {
+                Button(action: onDismiss) {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.title3)
+                        .foregroundStyle(.tertiary)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Dismiss prompt")
+            }
         }
-    }
-}
-
-// MARK: - Card chrome
-
-/// The shared shell: a rounded surface with a leading severity rail, a hairline
-/// border, and a soft lift. Both card types pour their content into it.
-private struct DecisionCard<Content: View>: View {
-    let accent: Color
-    @ViewBuilder var content: () -> Content
-
-    var body: some View {
-        HStack(spacing: 0) {
-            Rectangle().fill(accent).frame(width: 4)
-            VStack(alignment: .leading, spacing: 12) { content() }
-                .padding(EdgeInsets(top: 14, leading: 14, bottom: 14, trailing: 14))
-                .frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .background(Color(.secondarySystemGroupedBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .strokeBorder(Color.primary.opacity(0.06), lineWidth: 1)
-        )
-        .shadow(color: .black.opacity(0.05), radius: 9, x: 0, y: 3)
+        .padding(.horizontal, 20)
+        .padding(.vertical, 16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(background)
     }
 }
 
@@ -302,11 +409,11 @@ private struct CardIdentityRow: View {
     let timestamp: Date
 
     var body: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 11) {
             Image(systemName: Self.icon(for: toolName))
-                .font(.system(size: 15, weight: .semibold))
-                .frame(width: 30, height: 30)
-                .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+                .font(.system(size: 16, weight: .semibold))
+                .frame(width: 36, height: 36)
+                .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
             VStack(alignment: .leading, spacing: 1) {
                 Text(toolName ?? "Command")
                     .font(.subheadline.weight(.semibold))
@@ -332,21 +439,27 @@ private struct CardIdentityRow: View {
         if name.contains("claude") { return "sparkles" }
         return "terminal.fill"
     }
+
+    static func location(project: String?, branch: String?, tab: String?) -> String? {
+        let parts = [project, branch].compactMap { $0?.isEmpty == false ? $0 : nil }
+        if !parts.isEmpty { return parts.joined(separator: " · ") }
+        return tab
+    }
 }
 
 /// The hero: the command rendered as a real terminal line — prompt glyph,
-/// monospace, copyable — with the severity accent on the prompt.
+/// monospace, copyable — sized up so it reads as the centrepiece.
 private struct CommandBlock: View {
     let command: String
     let accent: Color
 
     var body: some View {
-        HStack(alignment: .top, spacing: 9) {
+        HStack(alignment: .top, spacing: 10) {
             Text("$")
-                .font(.system(.callout, design: .monospaced).weight(.bold))
+                .font(.system(.title3, design: .monospaced).weight(.bold))
                 .foregroundStyle(accent)
             Text(command)
-                .font(.system(.callout, design: .monospaced))
+                .font(.system(.body, design: .monospaced))
                 .textSelection(.enabled)
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -354,72 +467,60 @@ private struct CommandBlock: View {
                 UIPasteboard.general.string = command
             } label: {
                 Image(systemName: "doc.on.doc")
-                    .font(.caption)
+                    .font(.callout)
                     .foregroundStyle(.tertiary)
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Copy command")
         }
-        .padding(12)
+        .padding(16)
         .background(Color(.tertiarySystemGroupedBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
 }
 
-/// A single collapsible "Details" disclosure that folds directory, rationale,
-/// and recent activity behind one tap — compact by default, so the decision
-/// stays above the fold.
-private struct CardDetails: View {
-    let rows: [DetailRow]
-    @State private var isExpanded = false
+/// Inline, always-readable key/value context — directory, rationale, recent
+/// command. Full-screen has the room, so nothing hides behind a disclosure.
+private struct ContextList: View {
+    let rows: [Row]
 
-    struct DetailRow: Identifiable {
+    struct Row: Identifiable {
         let icon: String
         let label: String
         let value: String
+        var isProse = false
         var id: String { label }
     }
 
     var body: some View {
         if !rows.isEmpty {
-            VStack(alignment: .leading, spacing: 0) {
-                Button {
-                    withAnimation(.easeInOut(duration: 0.18)) { isExpanded.toggle() }
-                } label: {
-                    HStack(spacing: 6) {
-                        Image(systemName: "chevron.right")
-                            .font(.caption2.weight(.bold))
-                            .rotationEffect(.degrees(isExpanded ? 90 : 0))
+            VStack(spacing: 0) {
+                ForEach(Array(rows.enumerated()), id: \.element.id) { offset, row in
+                    if offset > 0 { Divider().padding(.leading, 40) }
+                    HStack(alignment: .top, spacing: 10) {
+                        Label(row.label, systemImage: row.icon)
+                            .labelStyle(.iconOnly)
+                            .font(.caption)
                             .foregroundStyle(.tertiary)
-                        Text(isExpanded ? "Hide details" : "Details")
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                .buttonStyle(.plain)
-
-                if isExpanded {
-                    VStack(alignment: .leading, spacing: 8) {
-                        ForEach(rows) { row in
-                            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                                Label(row.label, systemImage: row.icon)
-                                    .labelStyle(.iconOnly)
-                                    .font(.caption)
-                                    .foregroundStyle(.tertiary)
-                                    .frame(width: 16)
-                                Text(row.value)
-                                    .font(.system(.caption, design: .monospaced))
-                                    .foregroundStyle(.secondary)
-                                    .textSelection(.enabled)
-                                    .fixedSize(horizontal: false, vertical: true)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                            }
+                            .frame(width: 18)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(row.label)
+                                .font(.caption2)
+                                .foregroundStyle(.tertiary)
+                            Text(row.value)
+                                .font(row.isProse ? .caption : .system(.caption, design: .monospaced))
+                                .foregroundStyle(row.isProse ? .secondary : .primary)
+                                .textSelection(.enabled)
+                                .fixedSize(horizontal: false, vertical: true)
                         }
+                        Spacer(minLength: 0)
                     }
-                    .padding(.top, 9)
-                    .transition(.opacity.combined(with: .move(edge: .top)))
+                    .padding(.vertical, 11)
+                    .padding(.horizontal, 14)
                 }
             }
+            .background(Color(.secondarySystemGroupedBackground))
+            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         }
     }
 }
@@ -434,7 +535,6 @@ private struct HoldToConfirmButton: View {
     let action: () -> Void
 
     @State private var progress: CGFloat = 0
-    @State private var isPressing = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
@@ -445,17 +545,16 @@ private struct HoldToConfirmButton: View {
                     .frame(width: geo.size.width * progress)
             }
             VStack(spacing: 1) {
-                Text(title).font(.callout.weight(.bold))
+                Text(title).font(.headline)
                 Text(subtitle).font(.caption2).opacity(0.9)
             }
             .foregroundStyle(.white)
         }
         .frame(maxWidth: .infinity)
-        .frame(height: 46)
-        .background(tint, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .frame(height: 54)
+        .background(tint, in: RoundedRectangle(cornerRadius: 15, style: .continuous))
+        .contentShape(RoundedRectangle(cornerRadius: 15, style: .continuous))
         .onLongPressGesture(minimumDuration: 0.9, pressing: { pressing in
-            isPressing = pressing
             if reduceMotion {
                 progress = pressing ? 0.5 : 0
             } else {
@@ -478,12 +577,12 @@ private struct InFlightBanner: View {
     var body: some View {
         HStack(spacing: 9) {
             ProgressView().controlSize(.small)
-            Text(label).font(.callout.weight(.semibold))
+            Text(label).font(.headline)
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 11)
+        .frame(height: 54)
         .foregroundStyle(allow ? Color.green : Color.red)
-        .background((allow ? Color.green : Color.red).opacity(0.12), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .background((allow ? Color.green : Color.red).opacity(0.12), in: RoundedRectangle(cornerRadius: 15, style: .continuous))
     }
 }
 
@@ -493,19 +592,122 @@ private struct GoToTabButton: View {
 
     var body: some View {
         Button(action: action) {
-            Label("View in terminal", systemImage: "arrow.up.forward.app")
-                .font(.caption.weight(.semibold))
+            Label("View live in terminal", systemImage: "arrow.up.forward.app")
+                .font(.subheadline.weight(.semibold))
                 .frame(maxWidth: .infinity)
         }
         .buttonStyle(.bordered)
-        .controlSize(.small)
+        .controlSize(.large)
         .accessibilityHint("Opens the terminal tab for this request so you can read the full context.")
     }
 }
 
-// MARK: - Interactive Prompt Card
+// MARK: - Full-screen approval card
 
-struct InteractivePromptCard: View {
+struct FullScreenApprovalCard: View {
+    let request: ApprovalRequest
+    var onGoToTab: (() -> Void)?
+    let onRespond: (Bool) -> Void
+
+    var body: some View {
+        VStack(spacing: 0) {
+            DecisionHeader(
+                icon: request.severity.heroIcon,
+                title: request.severity.heroTitle,
+                subtitle: request.severity.consequence,
+                tint: request.severity.accent,
+                background: request.severity.headerBackground
+            )
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: 18) {
+                    CardIdentityRow(
+                        toolName: request.toolName,
+                        location: CardIdentityRow.location(project: request.projectName, branch: request.branchName, tab: request.tabTitle),
+                        timestamp: request.timestamp
+                    )
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Wants to run")
+                            .font(.caption.weight(.semibold))
+                            .textCase(.uppercase)
+                            .foregroundStyle(.tertiary)
+                        CommandBlock(command: request.command, accent: request.severity.accent)
+                        if request.flaggedCommand != request.command {
+                            Label("Flagged as \(request.flaggedCommand)", systemImage: "flag.fill")
+                                .font(.caption)
+                                .foregroundStyle(request.severity.accent)
+                        }
+                    }
+
+                    ContextList(rows: contextRows)
+
+                    if let onGoToTab {
+                        GoToTabButton(action: onGoToTab)
+                    }
+                }
+                .padding(20)
+            }
+
+            actionBar
+        }
+    }
+
+    private var actionBar: some View {
+        VStack(spacing: 0) {
+            Divider()
+            Group {
+                if request.responseState.isBusy {
+                    InFlightBanner(
+                        label: request.responseState.actionLabel ?? "Sending…",
+                        allow: request.responseState.isAllowIntent ?? true
+                    )
+                } else {
+                    HStack(spacing: 11) {
+                        Button(role: .destructive) { onRespond(false) } label: {
+                            Text("Deny").font(.headline).frame(maxWidth: .infinity, minHeight: 54)
+                        }
+                        .buttonStyle(.bordered)
+                        .tint(.red)
+                        .frame(maxWidth: 130)
+
+                        if request.severity.requiresHoldToAllow {
+                            HoldToConfirmButton(title: "Hold to allow", subtitle: "irreversible", tint: .green, action: { onRespond(true) })
+                        } else {
+                            Button { onRespond(true) } label: {
+                                Text("Allow").font(.headline).frame(maxWidth: .infinity, minHeight: 54)
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .tint(.green)
+                        }
+                    }
+                }
+            }
+            .padding(.horizontal, 20)
+            .padding(.top, 12)
+            .padding(.bottom, 8)
+        }
+        .background(Color(.systemBackground))
+    }
+
+    private var contextRows: [ContextList.Row] {
+        var rows: [ContextList.Row] = []
+        if let dir = request.currentDirectory, !dir.isEmpty {
+            rows.append(.init(icon: "folder", label: "Directory", value: dir))
+        }
+        if let note = request.contextNote, !note.isEmpty {
+            rows.append(.init(icon: "info.circle", label: "Why", value: note, isProse: true))
+        }
+        if let recent = request.recentCommand, !recent.isEmpty, recent != request.command {
+            rows.append(.init(icon: "clock.arrow.circlepath", label: "Recent command", value: recent))
+        }
+        return rows
+    }
+}
+
+// MARK: - Full-screen prompt card
+
+struct FullScreenPromptCard: View {
     let prompt: RemoteInteractivePrompt
     @Binding var customText: String
     let onRespond: (RemoteInteractivePromptOption) -> Void
@@ -514,169 +716,67 @@ struct InteractivePromptCard: View {
     let onGoToTab: () -> Void
 
     var body: some View {
-        DecisionCard(accent: .accentColor) {
-            HStack(alignment: .top) {
-                Label("Interactive prompt", systemImage: "text.bubble.fill")
-                    .font(.caption2.weight(.bold))
-                    .textCase(.uppercase)
-                    .foregroundStyle(Color.accentColor)
-                    .padding(.horizontal, 8).padding(.vertical, 4)
-                    .background(Color.accentColor.opacity(0.14), in: Capsule())
-                Spacer()
-                Button(action: onDismiss) {
-                    Image(systemName: "xmark.circle.fill")
-                        .font(.body)
-                        .foregroundStyle(.tertiary)
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Dismiss prompt")
-            }
-
-            CardIdentityRow(
-                toolName: prompt.toolName,
-                location: Self.location(project: prompt.projectName, branch: prompt.branchName, tab: prompt.tabTitle),
-                timestamp: prompt.detectedAt
+        VStack(spacing: 0) {
+            DecisionHeader(
+                icon: "text.bubble.fill",
+                title: "Interactive prompt",
+                subtitle: "\(prompt.toolName) is waiting on your choice.",
+                tint: .accentColor,
+                background: Color.accentColor.opacity(0.12),
+                onDismiss: onDismiss
             )
 
-            Text(prompt.prompt)
-                .font(.callout.weight(.semibold))
-                .fixedSize(horizontal: false, vertical: true)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 18) {
+                    CardIdentityRow(
+                        toolName: prompt.toolName,
+                        location: CardIdentityRow.location(project: prompt.projectName, branch: prompt.branchName, tab: prompt.tabTitle),
+                        timestamp: prompt.detectedAt
+                    )
 
-            CardDetails(rows: detailRows)
+                    Text(prompt.prompt)
+                        .font(.title3.weight(.semibold))
+                        .fixedSize(horizontal: false, vertical: true)
 
-            VStack(spacing: 8) {
-                ForEach(prompt.options) { option in
-                    PromptOptionButton(option: option) { onRespond(option) }
+                    ContextList(rows: contextRows)
+
+                    VStack(spacing: 9) {
+                        ForEach(prompt.options) { option in
+                            PromptOptionButton(option: option) { onRespond(option) }
+                        }
+                    }
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Custom reply").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                        HStack(spacing: 8) {
+                            TextField("Escape prompt and send text", text: $customText, axis: .vertical)
+                                .font(.system(.callout, design: .monospaced))
+                                .lineLimit(1 ... 4)
+                                .padding(.horizontal, 12).padding(.vertical, 10)
+                                .background(Color(.tertiarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+                            Button("Send", action: onSendCustom)
+                                .font(.callout.weight(.semibold))
+                                .buttonStyle(.borderedProminent)
+                                .disabled(customText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        }
+                    }
+
+                    GoToTabButton(action: onGoToTab)
                 }
+                .padding(20)
             }
-
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Custom reply").font(.caption).foregroundStyle(.secondary)
-                HStack(spacing: 8) {
-                    TextField("Escape prompt and send text", text: $customText, axis: .vertical)
-                        .textFieldStyle(.plain)
-                        .font(.system(.callout, design: .monospaced))
-                        .lineLimit(1 ... 3)
-                        .padding(.horizontal, 11).padding(.vertical, 9)
-                        .background(Color(.tertiarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-                    Button("Send", action: onSendCustom)
-                        .font(.callout.weight(.semibold))
-                        .buttonStyle(.borderedProminent)
-                        .disabled(customText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                }
-            }
-
-            GoToTabButton(action: onGoToTab)
         }
     }
 
-    private var detailRows: [CardDetails.DetailRow] {
-        var rows: [CardDetails.DetailRow] = []
+    private var contextRows: [ContextList.Row] {
+        var rows: [ContextList.Row] = []
         if let dir = prompt.currentDirectory, !dir.isEmpty {
             rows.append(.init(icon: "folder", label: "Directory", value: dir))
         }
         if let detail = prompt.detail, !detail.isEmpty {
-            rows.append(.init(icon: "text.alignleft", label: "Prompt context", value: detail))
+            rows.append(.init(icon: "text.alignleft", label: "Prompt context", value: detail, isProse: true))
         }
         return rows
-    }
-
-    private static func location(project: String?, branch: String?, tab: String?) -> String? {
-        let parts = [project, branch].compactMap { $0?.isEmpty == false ? $0 : nil }
-        if !parts.isEmpty { return parts.joined(separator: " · ") }
-        return tab
-    }
-}
-
-// MARK: - Approval Request Card
-
-struct ApprovalRequestCard: View {
-    let request: ApprovalRequest
-    var onGoToTab: (() -> Void)?
-    let onRespond: (Bool) -> Void
-
-    var body: some View {
-        DecisionCard(accent: request.severity.accent) {
-            SeverityBadge(severity: request.severity)
-
-            CardIdentityRow(
-                toolName: request.toolName,
-                location: Self.location(project: request.projectName, branch: request.branchName, tab: request.tabTitle),
-                timestamp: request.timestamp
-            )
-
-            Text("wants to run")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-
-            CommandBlock(command: request.command, accent: request.severity.accent)
-
-            if request.flaggedCommand != request.command {
-                Label("Flagged as \(request.flaggedCommand)", systemImage: "flag.fill")
-                    .font(.caption)
-                    .foregroundStyle(request.severity.accent)
-            }
-
-            CardDetails(rows: detailRows)
-
-            if let onGoToTab {
-                GoToTabButton(action: onGoToTab)
-            }
-
-            actionZone
-        }
-    }
-
-    @ViewBuilder
-    private var actionZone: some View {
-        if request.responseState.isBusy {
-            InFlightBanner(
-                label: request.responseState.actionLabel ?? "Sending…",
-                allow: request.responseState.isAllowIntent ?? true
-            )
-        } else {
-            HStack(spacing: 10) {
-                Button(role: .destructive) { onRespond(false) } label: {
-                    Text("Deny").frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.large)
-                .tint(.red)
-
-                if request.severity.requiresHoldToAllow {
-                    HoldToConfirmButton(title: "Hold to allow", subtitle: "irreversible", tint: .green) {
-                        onRespond(true)
-                    }
-                } else {
-                    Button { onRespond(true) } label: {
-                        Text("Allow").frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.large)
-                    .tint(.green)
-                }
-            }
-        }
-    }
-
-    private var detailRows: [CardDetails.DetailRow] {
-        var rows: [CardDetails.DetailRow] = []
-        if let dir = request.currentDirectory, !dir.isEmpty {
-            rows.append(.init(icon: "folder", label: "Directory", value: dir))
-        }
-        if let note = request.contextNote, !note.isEmpty {
-            rows.append(.init(icon: "info.circle", label: "Context", value: note))
-        }
-        if let recent = request.recentCommand, !recent.isEmpty, recent != request.command {
-            rows.append(.init(icon: "clock.arrow.circlepath", label: "Recent command", value: recent))
-        }
-        return rows
-    }
-
-    private static func location(project: String?, branch: String?, tab: String?) -> String? {
-        let parts = [project, branch].compactMap { $0?.isEmpty == false ? $0 : nil }
-        if !parts.isEmpty { return parts.joined(separator: " · ") }
-        return tab
     }
 }
 
@@ -688,7 +788,7 @@ private struct PromptOptionButton: View {
 
     var body: some View {
         Button(action: action) {
-            HStack(alignment: .center, spacing: 11) {
+            HStack(alignment: .center, spacing: 12) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(option.label)
                         .font(.callout.weight(.semibold))
@@ -702,18 +802,18 @@ private struct PromptOptionButton: View {
                 }
                 Spacer(minLength: 8)
                 Image(systemName: option.isDestructive ? "exclamationmark.triangle.fill" : "arrow.turn.down.left")
-                    .font(.caption.weight(.semibold))
+                    .font(.callout.weight(.semibold))
                     .foregroundStyle(option.isDestructive ? .orange : .secondary)
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 11)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 14)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(backgroundColor)
             .overlay {
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                RoundedRectangle(cornerRadius: 13, style: .continuous)
                     .stroke(borderColor, lineWidth: 1)
             }
-            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
         }
         .buttonStyle(.plain)
     }
@@ -723,7 +823,7 @@ private struct PromptOptionButton: View {
     }
 
     private var backgroundColor: Color {
-        option.isDestructive ? Color.orange.opacity(0.10) : Color(.tertiarySystemGroupedBackground)
+        option.isDestructive ? Color.orange.opacity(0.10) : Color(.secondarySystemGroupedBackground)
     }
 
     private var borderColor: Color {
