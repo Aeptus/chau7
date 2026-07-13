@@ -17,6 +17,10 @@ final class RemoteTerminalRendererStore {
     private(set) var activeTabID: UInt32 = 0
     private(set) var isAvailable = true
 
+    /// The color scheme applied to every playback terminal. Sourced from the
+    /// user's `terminal.colorSchemeName` preference; defaults to VS Code dark.
+    private(set) var colorScheme: TerminalColorScheme = AppSettings.currentColorScheme
+
     private var playbacks: [UInt32: RemoteRustTerminalPlayback] = [:]
     private var gridSnapshotByTabID: [UInt32: RemoteTerminalRenderState] = [:]
     private var replayByTabID: [UInt32: Data] = [:]
@@ -45,6 +49,17 @@ final class RemoteTerminalRendererStore {
             activeTabID = 0
             renderState = nil
         }
+    }
+
+    /// Persist-free re-theming: applies a new scheme to all live playbacks and
+    /// refreshes the visible grid. Callers own persisting the preference.
+    func applyColorScheme(_ scheme: TerminalColorScheme) {
+        guard scheme.signature != colorScheme.signature else { return }
+        colorScheme = scheme
+        for playback in playbacks.values {
+            playback.applyColorScheme(scheme)
+        }
+        refreshActiveState()
     }
 
     func setViewport(cols: Int, rows: Int) {
@@ -122,7 +137,7 @@ final class RemoteTerminalRendererStore {
         let initialReplay = replayByTabID[tabID] ?? Data()
         guard !initialReplay.isEmpty else { return }
 
-        guard let playback = RemoteRustTerminalPlayback(cols: viewportCols, rows: viewportRows) else {
+        guard let playback = RemoteRustTerminalPlayback(cols: viewportCols, rows: viewportRows, colorScheme: colorScheme) else {
             isAvailable = false
             renderState = nil
             return

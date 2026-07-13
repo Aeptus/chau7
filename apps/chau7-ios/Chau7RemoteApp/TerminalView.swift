@@ -18,6 +18,7 @@ struct TerminalView: View {
     private var experimentalTerminalRenderer = AppSettings.experimentalTerminalRendererDefault
     @AppStorage(AppSettings.showKeyboardBarKey) private var showKeyboardBar = AppSettings.showKeyboardBarDefault
     @AppStorage(AppSettings.terminalFontSizeKey) private var terminalFontSize = AppSettings.terminalFontSizeDefault
+    @AppStorage(AppSettings.colorSchemeNameKey) private var colorSchemeName = AppSettings.colorSchemeNameDefault
 
     @State private var inputText = ""
     @State private var sendCount = 0
@@ -287,6 +288,7 @@ struct TerminalView: View {
                 RemoteTerminalTextView(
                     text: renderANSI ? client.outputText : client.strippedOutputText,
                     fontSize: CGFloat(terminalFontSize),
+                    colorScheme: AppSettings.colorScheme(named: colorSchemeName),
                     isAwayFromBottom: $textAwayFromBottom,
                     scrollToBottomToken: scrollToBottomToken
                 )

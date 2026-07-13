@@ -24,6 +24,21 @@ enum AppSettings {
     static let terminalFontSizeMax = 22.0
     static let hasCompletedOnboardingKey = "has_completed_onboarding"
 
+    // Terminal color scheme. Mirrors the macOS preset-only customization: the
+    // preference stores a preset name, resolved to a shared `TerminalColorScheme`.
+    static let colorSchemeNameKey = "terminal.colorSchemeName"
+    static let colorSchemeNameDefault = TerminalColorScheme.default.name
+
+    /// Resolves a preset name to its scheme, falling back to the default.
+    static func colorScheme(named name: String) -> TerminalColorScheme {
+        TerminalColorScheme.allPresets.first { $0.name == name } ?? .default
+    }
+
+    /// The scheme for the currently stored `colorSchemeName` preference.
+    static var currentColorScheme: TerminalColorScheme {
+        colorScheme(named: UserDefaults.standard.string(forKey: colorSchemeNameKey) ?? colorSchemeNameDefault)
+    }
+
     // Diagnostics
     static let verboseLoggingKey = "diagnostics_verbose"
     static let verboseLoggingDefault = true
@@ -57,6 +72,7 @@ struct SettingsView: View {
     private var experimentalTerminalRenderer = AppSettings.experimentalTerminalRendererDefault
     @AppStorage(AppSettings.showKeyboardBarKey) private var showKeyboardBar = AppSettings.showKeyboardBarDefault
     @AppStorage(AppSettings.terminalFontSizeKey) private var terminalFontSize = AppSettings.terminalFontSizeDefault
+    @AppStorage(AppSettings.colorSchemeNameKey) private var colorSchemeName = AppSettings.colorSchemeNameDefault
     @AppStorage(AppSettings.verboseLoggingKey) private var verboseLogging = AppSettings.verboseLoggingDefault
     @AppStorage(AppSettings.logKeystrokesKey) private var logKeystrokes = AppSettings.logKeystrokesDefault
     @AppStorage(AppSettings.hideSensitiveNotificationsKey)
@@ -97,6 +113,15 @@ struct SettingsView: View {
                     Toggle("Rich Terminal Renderer", isOn: $experimentalTerminalRenderer)
                     Toggle("Show Raw ANSI Codes", isOn: $renderANSI)
                         .disabled(experimentalTerminalRenderer)
+
+                    Picker("Color Scheme", selection: $colorSchemeName) {
+                        ForEach(TerminalColorScheme.allPresets) { scheme in
+                            Text(scheme.name).tag(scheme.name)
+                        }
+                    }
+                    .onChange(of: colorSchemeName) { _, newName in
+                        client.terminalRenderer.applyColorScheme(AppSettings.colorScheme(named: newName))
+                    }
 
                     VStack(alignment: .leading, spacing: 6) {
                         HStack {
