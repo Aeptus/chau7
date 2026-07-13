@@ -2548,7 +2548,10 @@ impl Chau7Terminal {
                 output.push_str("\x1b[0m");
                 *current_style = None;
             }
-            output.push('\n');
+            // CRLF, not bare LF: this export is re-injected through the VTE
+            // parser (no PTY line discipline), where `\n` moves down without
+            // returning to column 0 and staircases every following line.
+            output.push_str("\r\n");
         }
 
         wraps
@@ -3172,6 +3175,27 @@ mod tests {
             "Expected ANSI SGR truecolor styling in tail export, got: {:?}",
             tail
         );
+    }
+
+    #[test]
+    fn test_tail_buffer_ansi_text_round_trip_preserves_columns() {
+        let _ = env_logger::try_init();
+
+        // Regression for the restored-tab "staircase" corruption: the export is
+        // injected straight into the VTE parser (no PTY, so no ONLCR translating
+        // LF to CRLF). A bare `\n` moves the cursor down WITHOUT returning to
+        // column 0, so every replayed line inherits the previous line's end
+        // column and indentation shifts across the whole restored buffer.
+        let source = Chau7Terminal::new_with_env(40, 6, "", &[]).expect("Should create terminal");
+        source.inject_output(b"alpha\r\nbeta\r\n  indented\r\n");
+        let tail = source.tail_buffer_ansi_text(100, 65536);
+
+        let restored = Chau7Terminal::new_with_env(40, 6, "", &[]).expect("Should create terminal");
+        restored.inject_output(tail.as_bytes());
+
+        assert_eq!(restored.line_text(0).as_deref(), Some("alpha"));
+        assert_eq!(restored.line_text(1).as_deref(), Some("beta"));
+        assert_eq!(restored.line_text(2).as_deref(), Some("  indented"));
     }
 
     #[test]

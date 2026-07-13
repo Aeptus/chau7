@@ -83,6 +83,51 @@ final class PendingRestoreScrollbackTests: XCTestCase {
         XCTAssertNil(session.pendingRestoreScrollback)
     }
 
+    // MARK: - Line-ending normalization (staircase regression)
+
+    /// Legacy payloads persisted with bare LFs must be rewritten to CRLF
+    /// before parser injection: a lone LF moves the cursor down without
+    /// returning to column 0, staircasing every restored line.
+    func testNormalizerRewritesLoneLineFeedsAsCRLF() {
+        let legacy = "\u{1B}[32m$ ls\u{1B}[0m\nfile.txt\n  indented\n"
+        let normalized = RestoreScrollbackNormalizer.normalizeLineEndingsForParserInjection(legacy)
+        XCTAssertEqual(normalized, "\u{1B}[32m$ ls\u{1B}[0m\r\nfile.txt\r\n  indented\r\n")
+    }
+
+    /// Payloads captured after the CRLF export fix must pass through
+    /// unchanged — no doubled carriage returns.
+    func testNormalizerLeavesCRLFPayloadsUntouched() {
+        let modern = "$ ls\r\nfile.txt\r\n"
+        XCTAssertEqual(
+            RestoreScrollbackNormalizer.normalizeLineEndingsForParserInjection(modern),
+            modern
+        )
+    }
+
+    /// Mixed payloads normalize every logical line to CRLF exactly once.
+    func testNormalizerHandlesMixedLineEndings() {
+        let mixed = "one\r\ntwo\nthree\r\n"
+        XCTAssertEqual(
+            RestoreScrollbackNormalizer.normalizeLineEndingsForParserInjection(mixed),
+            "one\r\ntwo\r\nthree\r\n"
+        )
+    }
+
+    /// The persistence filter strips the final line terminator; the normalizer
+    /// must restore it so the shell prompt starts on a fresh line instead of
+    /// overwriting the last restored line. A trailing lone CR (a stripped
+    /// CRLF's leftover) must not survive as a bare carriage return either.
+    func testNormalizerTerminatesFinalLine() {
+        XCTAssertEqual(
+            RestoreScrollbackNormalizer.normalizeLineEndingsForParserInjection("one\ntwo"),
+            "one\r\ntwo\r\n"
+        )
+        XCTAssertEqual(
+            RestoreScrollbackNormalizer.normalizeLineEndingsForParserInjection("one\r\ntwo\r"),
+            "one\r\ntwo\r\n"
+        )
+    }
+
     // MARK: - Helpers
 
     private func makeSavedTabState() -> SavedTabState {

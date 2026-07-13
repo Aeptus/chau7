@@ -198,7 +198,7 @@ struct TerminalViewRepresentable: NSViewRepresentable {
         let initialOutput: String?
         if let savedScrollback = model.pendingRestoreScrollback,
            !savedScrollback.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            initialOutput = savedScrollback
+            initialOutput = RestoreScrollbackNormalizer.normalizeLineEndingsForParserInjection(savedScrollback)
             model.pendingRestoreScrollback = nil
         } else {
             model.pendingRestoreScrollback = nil
@@ -505,6 +505,30 @@ struct TerminalViewRepresentable: NSViewRepresentable {
 
     private func terminalFont() -> NSFont {
         return TerminalFont.resolveFont(family: settings.fontFamily, size: model.fontSize)
+    }
+}
+
+enum RestoreScrollbackNormalizer {
+    /// Saved scrollback is injected straight into the VTE parser — there is no
+    /// PTY line discipline to expand LF to CRLF, and a bare LF only moves the
+    /// cursor down while keeping its column. Payloads persisted before the
+    /// capture emitted CRLF would therefore staircase every restored line.
+    /// Rewrite lone LFs as CRLF; already-CRLF content passes through unchanged.
+    /// Always end with CRLF: `ScrollbackRestoreFilter` strips the final line
+    /// terminator on save, and without one the shell prompt (or a trailing
+    /// lone CR) would overwrite the last restored line instead of starting on
+    /// a fresh one.
+    static func normalizeLineEndingsForParserInjection(_ text: String) -> String {
+        var normalized = text
+            .replacingOccurrences(of: "\r\n", with: "\n")
+            .replacingOccurrences(of: "\n", with: "\r\n")
+        if normalized.hasSuffix("\r") {
+            normalized.removeLast()
+        }
+        if !normalized.hasSuffix("\r\n") {
+            normalized += "\r\n"
+        }
+        return normalized
     }
 }
 
