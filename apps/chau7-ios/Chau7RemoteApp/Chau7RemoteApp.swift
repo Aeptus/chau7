@@ -198,7 +198,9 @@ struct RemoteRootView: View {
 
     var body: some View {
         TabView(selection: $selectedTab) {
-            TerminalView(client: client, isPairingPresented: $isPairingPresented)
+            TerminalView(client: client, isPairingPresented: $isPairingPresented) {
+                selectedTab = .settings
+            }
                 .tabItem { Label("Terminal", systemImage: "terminal") }
                 .tag(Tab.terminal)
 

@@ -7,6 +7,9 @@ import SwiftUI
 struct TerminalView: View {
     var client: RemoteClient
     @Binding var isPairingPresented: Bool
+    /// Opens the connection settings tab; invoked on a long-press of the
+    /// connection status symbol in the tabs bar.
+    var onOpenConnectionSettings: () -> Void = {}
 
     @AppStorage(AppSettings.holdToSendKey) private var holdToSend = AppSettings.holdToSendDefault
     @AppStorage(AppSettings.appendNewlineKey) private var appendNewline = AppSettings.appendNewlineDefault
@@ -34,14 +37,6 @@ struct TerminalView: View {
                 }
             }
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .principal) {
-                    connectionStatusHeader
-                }
-                ToolbarItem(placement: .topBarTrailing) {
-                    connectButton
-                }
-            }
         }
         .alert("Protected Remote Action", isPresented: protectedSendBinding) {
             Button("Cancel", role: .cancel) {
@@ -84,21 +79,51 @@ struct TerminalView: View {
 
     // MARK: - Status
 
-    /// Live connection status shown in the navigation bar in place of the app
-    /// name (a coloured dot + a human-readable phase label).
-    private var connectionStatusHeader: some View {
-        HStack(spacing: 6) {
-            Circle()
-                .fill(client.connectionPhase.color)
-                .frame(width: 8, height: 8)
-                .accessibilityHidden(true)
-            Text(client.connectionDisplayLabel)
-                .font(.subheadline.weight(.semibold))
-                .lineLimit(1)
-                .truncationMode(.tail)
+    /// Compact, tappable connection indicator that sits at the start of the
+    /// tabs bar. Tap toggles connect/disconnect; long-press opens connection
+    /// settings. Replaces the old full-width status header + connect button.
+    private var connectionStatusSymbol: some View {
+        ConnectionStatusSymbol(phase: client.connectionPhase)
+            .frame(width: 34, height: 34)
+            .contentShape(Rectangle())
+            .onTapGesture { toggleConnection() }
+            .onLongPressGesture { onOpenConnectionSettings() }
+            .disabled(!canToggleConnection)
+            .accessibilityLabel(connectionAccessibilityLabel)
+            .accessibilityHint("Touch and hold to open connection settings.")
+            .accessibilityAddTraits(.isButton)
+    }
+
+    /// Whether the symbol tap can do anything right now. Mirrors the old
+    /// connect button guard: never attempt connect without pairing info.
+    private var canToggleConnection: Bool {
+        switch client.connectionPhase {
+        case .connected, .connecting:
+            return true
+        case .disconnected, .warning:
+            return client.pairingInfo != nil
         }
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("Connection status: \(client.connectionDisplayLabel)")
+    }
+
+    private func toggleConnection() {
+        switch client.connectionPhase {
+        case .connected, .connecting:
+            client.disconnect()
+        case .disconnected, .warning:
+            guard client.pairingInfo != nil else { return }
+            client.connect()
+        }
+    }
+
+    private var connectionAccessibilityLabel: String {
+        switch client.connectionPhase {
+        case .connected:
+            return "Connected. Double-tap to disconnect."
+        case .connecting:
+            return "Connecting. Double-tap to stop."
+        case .warning, .disconnected:
+            return "Disconnected. Double-tap to connect."
+        }
     }
 
     /// Only surfaces when there's a connection error to report — the live status
@@ -161,21 +186,12 @@ struct TerminalView: View {
         }
     }
 
-    private var connectButton: some View {
-        Button(client.isConnected ? "Disconnect" : "Connect") {
-            if client.isConnected {
-                client.disconnect()
-            } else {
-                client.connect()
-            }
-        }
-        .disabled(client.pairingInfo == nil && !client.isConnected)
-    }
-
     // MARK: - Tabs
 
     private var tabsBar: some View {
         HStack(spacing: 10) {
+            connectionStatusSymbol
+
             Menu {
                 if client.tabs.isEmpty {
                     Text("No remote tabs available yet")
@@ -707,4 +723,58 @@ private struct ProtectedRemoteSend: Identifiable {
     let text: String
     let flaggedAction: String
     let message: String
+}
+
+// MARK: - Connection Status Symbol
+
+/// Compact connection indicator with three visual states driven by
+/// `RemoteClient.ConnectionPhase`:
+/// - `.connected` → green check
+/// - `.connecting` → three orange bouncing dots
+/// - `.warning` / `.disconnected` → red cross
+private struct ConnectionStatusSymbol: View {
+    let phase: RemoteClient.ConnectionPhase
+
+    var body: some View {
+        switch phase {
+        case .connected:
+            Image(systemName: "checkmark.circle.fill")
+                .font(.headline)
+                .foregroundStyle(.green)
+        case .connecting:
+            BouncingDots()
+        case .warning, .disconnected:
+            Image(systemName: "xmark.circle.fill")
+                .font(.headline)
+                .foregroundStyle(.red)
+        }
+    }
+}
+
+/// Three small orange dots that bounce vertically in sequence, phased by index,
+/// to signal an in-progress connection. Sized to fit a toolbar/line height.
+private struct BouncingDots: View {
+    @State private var animating = false
+
+    private let dotSize: CGFloat = 5
+    private let bounce: CGFloat = 4
+
+    var body: some View {
+        HStack(spacing: 3) {
+            ForEach(0..<3, id: \.self) { index in
+                Circle()
+                    .fill(.orange)
+                    .frame(width: dotSize, height: dotSize)
+                    .offset(y: animating ? -bounce : bounce)
+                    .animation(
+                        .easeInOut(duration: 0.4)
+                            .repeatForever(autoreverses: true)
+                            .delay(Double(index) * 0.15),
+                        value: animating
+                    )
+            }
+        }
+        .onAppear { animating = true }
+        .accessibilityHidden(true)
+    }
 }
