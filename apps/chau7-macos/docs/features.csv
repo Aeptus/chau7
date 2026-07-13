@@ -345,6 +345,7 @@ Settings,Comprehensive Settings UI,Tabbed interface with fuzzy search across 100
 Settings,Settings Profiles,"Save, load, export, and import named configurations",Shipped,No
 Settings,Per-Folder Config,.chau7/config.toml in any repo — project-specific settings,Shipped,No
 Settings,Config File Watcher,Auto-reload on config changes — no restart needed,Shipped,No
+Settings,Launch At Login,"Installs or removes the user LaunchAgent plist for the next macOS login without loading it in the current session, so toggling the setting does not relaunch Chau7 immediately",Shipped,No
 Settings,iCloud Sync,Optional iCloud sync of settings across devices,Shipped,No
 Settings,100+ Feature Flags,Fine-grained toggle control over every behavior,Shipped,No
 Settings,Isolated Test App Build,Build a separate Chau7 Test.app with isolated storage and keychain namespaces,Shipped,Yes
