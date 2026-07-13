@@ -1453,6 +1453,12 @@ final class RemoteClient {
             contextNote: payload.contextNote,
             sessionID: payload.sessionID,
             timestamp: Self.parseRemoteTimestamp(payload.timestamp),
+            severity: payload.severity.flatMap(ApprovalSeverity.init(rawValue:))
+                ?? ApprovalSeverity.classify(
+                    command: payload.command,
+                    flaggedCommand: payload.flaggedCommand,
+                    reason: payload.contextNote
+                ),
             responseState: responseState
         )
     }

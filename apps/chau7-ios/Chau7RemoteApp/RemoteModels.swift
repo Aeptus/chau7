@@ -69,6 +69,17 @@ enum ApprovalResponseState: Equatable {
             "Sending Deny"
         }
     }
+
+    /// Whether the in-flight decision is an allow (true) or deny (false); nil
+    /// when idle. Drives the in-flight banner's tint.
+    var isAllowIntent: Bool? {
+        switch self {
+        case .idle:
+            nil
+        case let .queued(allow), let .sending(allow):
+            allow
+        }
+    }
 }
 
 struct ApprovalRequest: Identifiable {
@@ -84,6 +95,9 @@ struct ApprovalRequest: Identifiable {
     let contextNote: String?
     let sessionID: String?
     let timestamp: Date
+    /// Authoritative risk tier — the Mac's `severity` wire value when present,
+    /// otherwise `ApprovalSeverity.classify(...)` computed at decode time.
+    let severity: ApprovalSeverity
     var responseState: ApprovalResponseState = .idle
 
     var id: String { requestID }
