@@ -758,8 +758,15 @@ final class RemoteControlManager {
                     return nil
                 }
 
+                // Only surface a real decision: a numbered menu or a synthesized
+                // yes/no. An options-less match is a normal AI turn that merely
+                // ends in a question — not something to render as an interactive
+                // prompt on the phone. (The fallback already declines to produce
+                // options without a y/n affordance; this guards the boundary so a
+                // future detector change can't leak optionless prompts.)
                 guard let detected = InteractivePromptDetector.detect(in: text, toolName: toolName)
-                    ?? InteractivePromptDetector.fallbackInputRequest(in: text) else {
+                    ?? InteractivePromptDetector.fallbackInputRequest(in: text),
+                    !detected.options.isEmpty else {
                     return nil
                 }
 

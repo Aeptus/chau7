@@ -43,7 +43,17 @@ public enum InteractivePromptDetector {
         let lines = Array(allLines.suffix(80))
         guard let match = findFallbackPrompt(in: lines) else { return nil }
 
+        // Only surface a fallback when the tool showed an explicit yes/no
+        // affordance we can turn into real choices. A bare question or a
+        // colon-terminated line is indistinguishable from a normal end-of-turn
+        // message (an AI turn routinely ends "…shall I proceed?"), so surfacing
+        // those turned ordinary turns into phantom "interactive prompt" cards on
+        // the phone with no options. Requiring options keeps the fallback to
+        // what it can genuinely act on: a y/n confirmation the numbered-option
+        // detector missed.
         let options = synthesizedYesNoOptions(prompt: match.prompt)
+        guard !options.isEmpty else { return nil }
+
         return DetectedInteractivePrompt(
             signature: signature(prompt: match.prompt, options: options),
             prompt: match.prompt,

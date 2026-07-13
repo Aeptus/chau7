@@ -75,28 +75,25 @@ final class InteractivePromptDetectorTests: XCTestCase {
         XCTAssertEqual(prompt.options.map(\.label), ["Yes", "No"])
     }
 
-    func testFallbackDetectsFreeTextPromptForUnsupportedTool() throws {
+    func testFallbackIgnoresFreeTextQuestionWithoutYesNo() {
+        // A normal AI turn ending in a question is indistinguishable from a real
+        // prompt, so — without a y/n affordance — the fallback must not surface
+        // it. This is what stopped ordinary turns showing as phantom prompts.
         let transcript = """
         Redb needs your guidance for the next step.
         How should I proceed with the migration?
         """
 
-        let prompt = try XCTUnwrap(InteractivePromptDetector.fallbackInputRequest(in: transcript))
-        XCTAssertEqual(prompt.prompt, "How should I proceed with the migration?")
-        XCTAssertEqual(prompt.detail, "Redb needs your guidance for the next step.")
-        XCTAssertTrue(prompt.options.isEmpty)
+        XCTAssertNil(InteractivePromptDetector.fallbackInputRequest(in: transcript))
     }
 
-    func testFallbackPrefersColonTerminatedInputPrompt() throws {
+    func testFallbackIgnoresColonTerminatedInputPrompt() {
         let transcript = """
         Reviewing changeset...
         Provide additional context:
         """
 
-        let prompt = try XCTUnwrap(InteractivePromptDetector.fallbackInputRequest(in: transcript))
-        XCTAssertEqual(prompt.prompt, "Provide additional context:")
-        XCTAssertEqual(prompt.detail, "Reviewing changeset...")
-        XCTAssertTrue(prompt.options.isEmpty)
+        XCTAssertNil(InteractivePromptDetector.fallbackInputRequest(in: transcript))
     }
 
     // MARK: - Yes/No synthesis for un-numbered confirmations
@@ -122,11 +119,10 @@ final class InteractivePromptDetectorTests: XCTestCase {
         XCTAssertEqual(prompt.options.map(\.response), ["yes\r", "no\r"])
     }
 
-    func testFallbackWithoutYesNoHintHasNoOptions() throws {
-        let transcript = "Ready to proceed?"
-
-        let prompt = try XCTUnwrap(InteractivePromptDetector.fallbackInputRequest(in: transcript))
-        XCTAssertTrue(prompt.options.isEmpty, "a bare question must not guess a keystroke")
+    func testFallbackWithoutYesNoHintIsNotSurfaced() {
+        // A bare question can't be turned into real choices and mustn't guess a
+        // keystroke, so the fallback surfaces nothing at all.
+        XCTAssertNil(InteractivePromptDetector.fallbackInputRequest(in: "Ready to proceed?"))
     }
 
     func testSynthesizedYesNoOptionsDirectly() {
