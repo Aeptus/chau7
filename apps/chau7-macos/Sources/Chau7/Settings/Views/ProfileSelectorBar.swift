@@ -96,7 +96,7 @@ struct ProfileSelectorBar: View {
                 }
             }
         } label: {
-            HStack(spacing: 6) {
+            HStack(spacing: Chau7Style.Spacing.xSmall) {
                 Image(systemName: iconName)
                     .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(.secondary)
@@ -110,8 +110,8 @@ struct ProfileSelectorBar: View {
                     .foregroundStyle(.tertiary)
                     .accessibilityHidden(true)
             }
-            .padding(.horizontal, 9)
-            .frame(height: 24)
+            .padding(.horizontal, Chau7Style.Spacing.small)
+            .frame(height: Chau7Style.Control.compactTitlebarHeight)
             .contentShape(Rectangle())
         }
         .menuStyle(.borderlessButton)
@@ -167,7 +167,7 @@ struct CreateProfileSheet: View {
     @State private var selectedIcon = "person.fill"
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: Chau7Style.Spacing.medium) {
             Text(L("settings.general.profiles.createTitle", "Create New Profile"))
                 .font(.headline)
 
@@ -184,16 +184,19 @@ struct CreateProfileSheet: View {
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
 
-            LazyVGrid(columns: Array(repeating: GridItem(.fixed(44)), count: 8), spacing: 8) {
+            LazyVGrid(
+                columns: Array(repeating: GridItem(.fixed(Chau7Style.Spacing.xLarge)), count: 8),
+                spacing: Chau7Style.Spacing.small
+            ) {
                 ForEach(SettingsProfile.availableIcons, id: \.self) { icon in
                     Button(action: { selectedIcon = icon }) {
                         Image(systemName: icon)
                             .font(.system(size: 18))
-                            .frame(width: 36, height: 36)
+                            .frame(width: Chau7Style.Spacing.xLarge, height: Chau7Style.Spacing.xLarge)
                             .background(selectedIcon == icon ? Color.accentColor.opacity(0.2) : Color.secondary.opacity(0.1))
-                            .cornerRadius(8)
+                            .cornerRadius(Chau7Style.Radius.medium)
                             .overlay(
-                                RoundedRectangle(cornerRadius: 8)
+                                RoundedRectangle(cornerRadius: Chau7Style.Radius.medium)
                                     .stroke(selectedIcon == icon ? Color.accentColor : Color.clear, lineWidth: 2)
                             )
                     }
@@ -218,7 +221,7 @@ struct CreateProfileSheet: View {
                 .disabled(profileName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
         }
-        .padding(20)
+        .padding(Chau7Style.Settings.contentPadding)
         .frame(width: 400)
         .onAppear {
             if !defaultName.isEmpty {

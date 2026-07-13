@@ -5,17 +5,17 @@ import Chau7Core
 // MARK: - Settings Layout Constants
 
 enum SettingsLayout {
-    static let labelWidth: CGFloat = 220
-    static let controlSpacing: CGFloat = 16
-    static let compactRowSpacing: CGFloat = 8
-    static let minimumControlWidth: CGFloat = 160
-    static let settingsWindowMinWidth: CGFloat = 720
-    static let settingsWindowMinHeight: CGFloat = 500
-    static let sidebarMinWidth: CGFloat = 200
-    static let sidebarIdealWidth: CGFloat = 240
-    static let sidebarMaxWidth: CGFloat = 300
-    static let detailMinWidth: CGFloat = 360
-    static let detailIdealWidth: CGFloat = 680
+    static let labelWidth: CGFloat = Chau7Style.Settings.labelWidth
+    static let controlSpacing: CGFloat = Chau7Style.Settings.rowSpacing
+    static let compactRowSpacing: CGFloat = Chau7Style.Settings.compactRowSpacing
+    static let minimumControlWidth: CGFloat = Chau7Style.Control.minimumWidth
+    static let settingsWindowMinWidth: CGFloat = Chau7Style.Settings.windowMinWidth
+    static let settingsWindowMinHeight: CGFloat = Chau7Style.Settings.windowMinHeight
+    static let sidebarMinWidth: CGFloat = Chau7Style.Settings.sidebarMinWidth
+    static let sidebarIdealWidth: CGFloat = Chau7Style.Settings.sidebarIdealWidth
+    static let sidebarMaxWidth: CGFloat = Chau7Style.Settings.sidebarMaxWidth
+    static let detailMinWidth: CGFloat = Chau7Style.Settings.detailMinWidth
+    static let detailIdealWidth: CGFloat = Chau7Style.Settings.detailIdealWidth
 }
 
 // MARK: - Adaptive Settings Row Foundation
@@ -67,7 +67,7 @@ private struct SettingsAdaptiveRow<Content: View>: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.vertical, 4)
+        .padding(.vertical, Chau7Style.Settings.rowVerticalPadding)
     }
 }
 
@@ -93,7 +93,7 @@ struct SettingsSectionHeader: View {
     }
 
     var body: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: Chau7Style.Spacing.xSmall) {
             if let icon {
                 Image(systemName: icon)
                     .foregroundStyle(.secondary)
@@ -103,8 +103,8 @@ struct SettingsSectionHeader: View {
                 .font(.headline)
                 .fixedSize(horizontal: false, vertical: true)
         }
-        .padding(.top, 8)
-        .padding(.bottom, 4)
+        .padding(.top, Chau7Style.Settings.sectionTopPadding)
+        .padding(.bottom, Chau7Style.Settings.sectionBottomPadding)
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(.isHeader)
     }
@@ -168,7 +168,7 @@ struct SettingsSlider: View {
 
     var body: some View {
         SettingsAdaptiveRow(label, help: help) {
-            HStack(spacing: 8) {
+            HStack(spacing: Chau7Style.Spacing.small) {
                 Slider(value: $value, in: range, step: step)
                     .settingsControlWidth(width)
                     .disabled(disabled)
@@ -296,9 +296,9 @@ struct SettingsDirectoryField: View {
         }
 
         if axis == .horizontal {
-            HStack(spacing: 8) { controls }
+            HStack(spacing: Chau7Style.Spacing.small) { controls }
         } else {
-            VStack(alignment: .leading, spacing: 8) { controls }
+            VStack(alignment: .leading, spacing: Chau7Style.Spacing.small) { controls }
         }
     }
 
@@ -434,7 +434,7 @@ struct SettingsButtonRow: View {
 
     var body: some View {
         ViewThatFits(in: .horizontal) {
-            HStack(spacing: 12) {
+            HStack(spacing: Chau7Style.Spacing.medium) {
                 if alignment == .trailing {
                     Spacer(minLength: 0)
                 }
@@ -448,7 +448,7 @@ struct SettingsButtonRow: View {
                 }
             }
 
-            VStack(alignment: alignment, spacing: 8) {
+            VStack(alignment: alignment, spacing: Chau7Style.Spacing.small) {
                 ForEach(buttons) { button in
                     makeButton(button)
                 }
@@ -458,7 +458,7 @@ struct SettingsButtonRow: View {
                 alignment: alignment == .trailing ? .trailing : .leading
             )
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, Chau7Style.Settings.rowVerticalPadding)
     }
 
     @ViewBuilder
@@ -506,14 +506,14 @@ struct SettingsCard<Content: View>: View {
             HStack {
                 content()
 
-                Spacer(minLength: 12)
+                Spacer(minLength: Chau7Style.Spacing.medium)
 
                 if let action = action, let label = actionLabel {
                     cardButton(action: action, label: label)
                 }
             }
 
-            VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: Chau7Style.Spacing.medium) {
                 content()
 
                 if let action = action, let label = actionLabel {
@@ -521,10 +521,10 @@ struct SettingsCard<Content: View>: View {
                 }
             }
         }
-        .padding(12)
+        .padding(Chau7Style.Settings.cardPadding)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color(NSColor.controlBackgroundColor))
-        .cornerRadius(8)
+        .cornerRadius(Chau7Style.Radius.medium)
     }
 
     @ViewBuilder
@@ -548,11 +548,11 @@ struct SettingsHint: View {
     let text: String
 
     var body: some View {
-        HStack(alignment: .top, spacing: 6) {
+        HStack(alignment: .top, spacing: Chau7Style.Spacing.xSmall) {
             Image(systemName: icon)
                 .font(.system(size: 10))
                 .foregroundColor(.secondary)
-                .padding(.top, 2)
+                .padding(.top, Chau7Style.Spacing.xxxSmall)
                 .accessibilityHidden(true)
             Text(text)
                 .font(.system(size: 11))
@@ -560,7 +560,7 @@ struct SettingsHint: View {
                 .textSelection(.enabled)
                 .fixedSize(horizontal: false, vertical: true)
         }
-        .padding(.vertical, 2)
+        .padding(.vertical, Chau7Style.Spacing.xxxSmall)
         .accessibilityElement(children: .combine)
         .accessibilityLabel(text)
     }
@@ -585,7 +585,7 @@ struct SettingsDescription: View {
             .foregroundStyle(.secondary)
             .textSelection(.enabled)
             .fixedSize(horizontal: false, vertical: true)
-            .padding(.vertical, 2)
+            .padding(.vertical, Chau7Style.Spacing.xxxSmall)
     }
 }
 
@@ -601,18 +601,18 @@ struct SettingsShortcutRow: View {
                 Text(label)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
-                Spacer(minLength: 12)
+                Spacer(minLength: Chau7Style.Spacing.medium)
                 shortcutBadge
             }
 
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: Chau7Style.Spacing.xSmall) {
                 Text(label)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                 shortcutBadge
             }
         }
-        .padding(.vertical, 2)
+        .padding(.vertical, Chau7Style.Spacing.xxxSmall)
         .accessibilityElement(children: .combine)
         .accessibilityLabel(
             String(
@@ -626,10 +626,10 @@ struct SettingsShortcutRow: View {
     private var shortcutBadge: some View {
         Text(shortcut)
             .font(.system(.caption, design: .monospaced))
-            .padding(.horizontal, 8)
-            .padding(.vertical, 4)
+            .padding(.horizontal, Chau7Style.Spacing.small)
+            .padding(.vertical, Chau7Style.Spacing.xxSmall)
             .background(Color.secondary.opacity(0.1))
-            .cornerRadius(4)
+            .cornerRadius(Chau7Style.Radius.xSmall)
             .textSelection(.enabled)
     }
 }
@@ -645,26 +645,26 @@ struct SettingsDetectionRow: View {
         ViewThatFits(in: .horizontal) {
             HStack(alignment: .firstTextBaseline) {
                 nameLabel
-                Spacer(minLength: 12)
+                Spacer(minLength: Chau7Style.Spacing.medium)
                 commandsText
             }
 
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: Chau7Style.Spacing.xxSmall) {
                 nameLabel
                 commandsText
             }
         }
-        .padding(.vertical, 2)
+        .padding(.vertical, Chau7Style.Spacing.xxxSmall)
         .accessibilityElement(children: .combine)
         .accessibilityLabel(String(format: L("accessibility.aiDetection", "%@ AI detection"), name))
         .accessibilityHint(String(format: L("accessibility.commands", "Commands: %@"), commands))
     }
 
     private var nameLabel: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: Chau7Style.Spacing.xSmall) {
             Circle()
                 .fill(color)
-                .frame(width: 10, height: 10)
+                .frame(width: Chau7Style.Control.statusDot, height: Chau7Style.Control.statusDot)
                 .accessibilityHidden(true)
             Text(name)
                 .fontWeight(.medium)

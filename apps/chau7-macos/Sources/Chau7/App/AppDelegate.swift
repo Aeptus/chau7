@@ -41,7 +41,7 @@ private final class SettingsToolbarDelegate: NSObject, NSToolbarDelegate {
 
         let item = NSToolbarItem(itemIdentifier: itemIdentifier)
         let hostingView = NSHostingView(rootView: ProfileSelectorBar(overlayModel: overlayModel).localized())
-        hostingView.frame = NSRect(x: 0, y: 0, width: 220, height: 28)
+        hostingView.frame = NSRect(x: 0, y: 0, width: 220, height: Chau7Style.Control.compactTitlebarHeight)
         item.view = hostingView
         item.visibilityPriority = .high
         item.label = L("settings.profileBar.toolbarLabel", "Settings Profile")

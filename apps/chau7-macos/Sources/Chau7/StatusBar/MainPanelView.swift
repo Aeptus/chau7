@@ -119,7 +119,7 @@ struct SettingsSearchBar: View {
     @FocusState private var isFocused: Bool
 
     var body: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: Chau7Style.Spacing.small) {
             Image(systemName: "magnifyingglass")
                 .foregroundStyle(.secondary)
 
@@ -137,11 +137,11 @@ struct SettingsSearchBar: View {
                 .accessibilityLabel(L("settings.search.clear", "Clear settings search"))
             }
         }
-        .padding(8)
+        .padding(Chau7Style.Spacing.small)
         .background(Color(NSColor.controlBackgroundColor))
-        .cornerRadius(8)
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
+        .cornerRadius(Chau7Style.Radius.medium)
+        .padding(.horizontal, Chau7Style.Settings.searchHorizontalPadding)
+        .padding(.vertical, Chau7Style.Settings.searchVerticalPadding)
     }
 }
 
@@ -165,8 +165,8 @@ struct SettingsSidebarRow: View {
                     .font(.caption2)
                     .fontWeight(.semibold)
                     .foregroundColor(.white)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
+                    .padding(.horizontal, Chau7Style.Spacing.xSmall)
+                    .padding(.vertical, Chau7Style.Spacing.xxxSmall)
                     .background(Color.accentColor)
                     .clipShape(Capsule())
                     .accessibilityLabel(
@@ -210,7 +210,7 @@ struct SettingsDetailView: View {
                 }
 
                 Divider()
-                    .padding(.bottom, 16)
+                    .padding(.bottom, Chau7Style.Spacing.medium)
 
                 // Section content
                 Group {
@@ -272,7 +272,7 @@ struct SettingsDetailView: View {
                     }
                 }
             }
-            .padding(24)
+            .padding(Chau7Style.Settings.contentPadding)
             .frame(maxWidth: .infinity, alignment: .topLeading)
         }
         .id(selection)
@@ -280,7 +280,7 @@ struct SettingsDetailView: View {
     }
 
     private var sectionHeader: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: Chau7Style.Spacing.xxSmall) {
             Text(selection.title)
                 .font(.title2)
                 .fontWeight(.semibold)
@@ -292,7 +292,7 @@ struct SettingsDetailView: View {
         .accessibilityElement(children: .combine)
         .accessibilityLabel(selection.title)
         .accessibilityHint(selection.description)
-        .padding(.bottom, 12)
+        .padding(.bottom, Chau7Style.Spacing.medium)
     }
 }
 
@@ -303,7 +303,7 @@ struct SearchResultsHint: View {
     let query: String
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: Chau7Style.Spacing.small) {
             HStack {
                 Image(systemName: "magnifyingglass")
                     .foregroundStyle(.secondary)
@@ -330,8 +330,8 @@ struct SearchResultsHint: View {
                             .foregroundStyle(.secondary)
                     }
 
-                    VStack(alignment: .leading, spacing: 2) {
-                        HStack(alignment: .firstTextBaseline, spacing: 4) {
+                    VStack(alignment: .leading, spacing: Chau7Style.Spacing.xxxSmall) {
+                        HStack(alignment: .firstTextBaseline, spacing: Chau7Style.Spacing.xxSmall) {
                             searchResultIcon
                             Text(setting.title)
                                 .font(.caption)
@@ -348,10 +348,10 @@ struct SearchResultsHint: View {
                 .accessibilityHint(setting.description)
             }
         }
-        .padding(12)
+        .padding(Chau7Style.Settings.hintPadding)
         .background(Color.accentColor.opacity(0.1))
-        .cornerRadius(8)
-        .padding(.bottom, 8)
+        .cornerRadius(Chau7Style.Radius.medium)
+        .padding(.bottom, Chau7Style.Spacing.small)
     }
 
     private var searchResultIcon: some View {
