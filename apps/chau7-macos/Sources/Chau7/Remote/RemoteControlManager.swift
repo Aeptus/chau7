@@ -699,7 +699,7 @@ final class RemoteControlManager {
                 case .approvalRequired:
                     resolvedStatus = .approvalRequired
                     detail = session.effectiveIsAtPrompt ? "Approval required at prompt" : "Approval required"
-                case .waitingForInput:
+                case .waitingForInput where sessionShowsRealPromptAffordance(session, toolName: toolName):
                     resolvedStatus = .waitingInput
                     detail = session.effectiveIsAtPrompt ? "Waiting at prompt" : nil
                 case .running:
@@ -708,7 +708,12 @@ final class RemoteControlManager {
                 case .stuck:
                     resolvedStatus = .running
                     detail = "No output for a while"
-                case .done, .idle, .exited:
+                // An uncorroborated waitingForInput is the status detector
+                // reacting to a generic token ("proceed?", "continue?") in
+                // ordinary AI prose rather than a real prompt — treat it like an
+                // ended turn so the phone doesn't show a phantom "waiting for your
+                // input" indicator with no prompt behind it.
+                case .waitingForInput, .done, .idle, .exited:
                     if let outcome = recentCompletionStatus(for: session, tab: tab, now: now) {
                         resolvedStatus = outcome.status
                         detail = outcome.detail
@@ -741,6 +746,22 @@ final class RemoteControlManager {
         }
 
         return RemoteActivityProjection.project(from: candidates)
+    }
+
+    /// Whether a `.waitingForInput` session genuinely shows a prompt affordance
+    /// — a numbered menu or an explicit yes/no — versus the status detector
+    /// having flipped on a generic token ("proceed?", "continue?") buried in
+    /// ordinary AI prose. Uses the exact detection the interactive-prompt
+    /// surface uses, so the phone's "waiting" indicator and the prompt card
+    /// always agree. Only called for sessions already in `.waitingForInput`, so
+    /// the snapshot capture stays off the hot path.
+    private func sessionShowsRealPromptAffordance(_ session: TerminalSessionModel, toolName: String) -> Bool {
+        guard let snapshot = session.captureRemoteSnapshot(),
+              let text = String(data: snapshot, encoding: .utf8) else {
+            return false
+        }
+        return InteractivePromptDetector.detect(in: text, toolName: toolName) != nil
+            || InteractivePromptDetector.fallbackInputRequest(in: text) != nil
     }
 
     private func currentInteractivePrompts() -> [RemoteInteractivePrompt] {
