@@ -2371,11 +2371,11 @@
 "settings.fontColors.resetToDefaults" = "Reset Font & Colors to Defaults";
 "settings.graphics" = "Graphics";
 "settings.graphics.description" = "Sixel and Kitty graphics protocols";
-"settings.group.essentials" = "ESSENTIALS";
-"settings.group.inputProductivity" = "INPUT & PRODUCTIVITY";
-"settings.group.integrations" = "INTEGRATIONS";
-"settings.group.lookAndFeel" = "LOOK & FEEL";
-"settings.group.monitoring" = "MONITORING";
+"settings.group.aiWorkflows" = "AI WORKFLOWS";
+"settings.group.appearance" = "APPEARANCE";
+"settings.group.automation" = "AUTOMATION";
+"settings.group.general" = "GENERAL";
+"settings.group.safetyPrivacy" = "SAFETY & PRIVACY";
 "settings.group.terminal" = "TERMINAL";
 "settings.history.cancel" = "Cancel";
 "settings.history.capacity" = "Capacity";

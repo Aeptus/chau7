@@ -24,9 +24,9 @@ final class SettingsSurfaceTests: XCTestCase {
         XCTAssertTrue(duplicates.isEmpty, "Duplicate searchable setting IDs: \(duplicates)")
     }
 
-    func testWindowsSectionIsLookAndFeelAndSearchable() {
-        XCTAssertEqual(SettingsSection.windows.group, .lookAndFeel)
-        XCTAssertTrue(SettingsSectionGroup.lookAndFeel.sections.contains(.windows))
+    func testWindowsSectionIsAppearanceAndSearchable() {
+        XCTAssertEqual(SettingsSection.windows.group, .appearance)
+        XCTAssertTrue(SettingsSectionGroup.appearance.sections.contains(.windows))
 
         let windowsResults = FeatureSettings.searchSettings(query: "floating")
         XCTAssertTrue(windowsResults.contains { result in
@@ -36,11 +36,22 @@ final class SettingsSurfaceTests: XCTestCase {
 
     func testStartHereIsFirstAndSearchable() {
         XCTAssertEqual(SettingsSection.allCases.first, .startHere)
-        XCTAssertEqual(SettingsSectionGroup.essentials.sections.first, .startHere)
+        XCTAssertEqual(SettingsSectionGroup.general.sections.first, .startHere)
 
         let startHereResults = FeatureSettings.searchSettings(query: "overview")
         XCTAssertTrue(startHereResults.contains { result in
             result.section == .startHere && result.settings.contains { $0.id == "startHereStatus" }
         })
+    }
+
+    func testSettingsGroupsAreGoalOriented() {
+        XCTAssertEqual(
+            SettingsSectionGroup.allCases,
+            [.general, .appearance, .terminal, .aiWorkflows, .automation, .safetyPrivacy]
+        )
+        XCTAssertEqual(SettingsSection.repositories.group, .automation)
+        XCTAssertEqual(SettingsSection.remoteControl.group, .automation)
+        XCTAssertEqual(SettingsSection.dangerousCommands.group, .safetyPrivacy)
+        XCTAssertEqual(SettingsSection.notifications.group, .safetyPrivacy)
     }
 }

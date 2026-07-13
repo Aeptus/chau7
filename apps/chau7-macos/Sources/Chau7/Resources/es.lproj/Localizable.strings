@@ -2390,11 +2390,11 @@
 
 // MARK: - Settings: Groups
 
-"settings.group.essentials" = "ESENCIALES";
-"settings.group.inputProductivity" = "ENTRADA Y PRODUCTIVIDAD";
-"settings.group.integrations" = "INTEGRACIONES";
-"settings.group.lookAndFeel" = "APARIENCIA";
-"settings.group.monitoring" = "MONITOREO";
+"settings.group.aiWorkflows" = "FLUJOS DE IA";
+"settings.group.appearance" = "APARIENCIA";
+"settings.group.automation" = "AUTOMATIZACIÓN";
+"settings.group.general" = "GENERAL";
+"settings.group.safetyPrivacy" = "SEGURIDAD Y PRIVACIDAD";
 "settings.group.terminal" = "TERMINAL";
 
 // MARK: - Settings: History

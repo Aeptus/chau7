@@ -2339,11 +2339,11 @@
 "settings.fontColors.resetToDefaults" = "إعادة الخط والألوان إلى الإعدادات الافتراضية";
 "settings.graphics" = "الرسوميات";
 "settings.graphics.description" = "بروتوكولات Sixel و Kitty الرسومية";
-"settings.group.essentials" = "الأساسيات";
-"settings.group.inputProductivity" = "الإدخال والإنتاجية";
-"settings.group.integrations" = "عمليات التكامل";
-"settings.group.lookAndFeel" = "المظهر والإحساس";
-"settings.group.monitoring" = "المراقبة";
+"settings.group.aiWorkflows" = "سير عمل الذكاء الاصطناعي";
+"settings.group.appearance" = "المظهر";
+"settings.group.automation" = "الأتمتة";
+"settings.group.general" = "عام";
+"settings.group.safetyPrivacy" = "الأمان والخصوصية";
 "settings.group.terminal" = "الطرفية";
 "settings.history.cancel" = "إلغاء";
 "settings.history.capacity" = "السعة";

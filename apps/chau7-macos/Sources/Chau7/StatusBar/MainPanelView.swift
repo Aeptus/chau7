@@ -224,7 +224,7 @@ struct SettingsDetailView: View {
                         ProfilesBackupSettingsView()
                     case .about:
                         AboutSettingsView(model: model)
-                    // Look & Feel
+                    // Appearance
                     case .fontColors:
                         FontColorsSettingsView()
                     case .display:

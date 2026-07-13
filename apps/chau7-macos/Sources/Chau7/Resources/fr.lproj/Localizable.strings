@@ -2373,11 +2373,11 @@
 "settings.fontColors.resetToDefaults" = "Réinitialiser police et couleurs aux valeurs par défaut";
 "settings.graphics" = "Graphismes";
 "settings.graphics.description" = "Protocoles graphiques Sixel et Kitty";
-"settings.group.essentials" = "ESSENTIELS";
-"settings.group.inputProductivity" = "SAISIE ET PRODUCTIVITÉ";
-"settings.group.integrations" = "INTÉGRATIONS";
-"settings.group.lookAndFeel" = "APPARENCE";
-"settings.group.monitoring" = "SURVEILLANCE";
+"settings.group.aiWorkflows" = "FLUX IA";
+"settings.group.appearance" = "APPARENCE";
+"settings.group.automation" = "AUTOMATISATION";
+"settings.group.general" = "GÉNÉRAL";
+"settings.group.safetyPrivacy" = "SÉCURITÉ ET CONFIDENTIALITÉ";
 "settings.group.terminal" = "TERMINAL";
 "settings.history.cancel" = "Annuler";
 "settings.history.capacity" = "Capacité";

@@ -27,12 +27,12 @@ private func localizedKeywords(_ key: String, _ defaultValue: String) -> [String
 // MARK: - Settings Section Groups
 
 enum SettingsSectionGroup: String, CaseIterable, Identifiable {
-    case essentials
-    case lookAndFeel
+    case general
+    case appearance
     case terminal
-    case inputProductivity
-    case integrations
-    case monitoring
+    case aiWorkflows
+    case automation
+    case safetyPrivacy
 
     var id: String {
         rawValue
@@ -40,23 +40,23 @@ enum SettingsSectionGroup: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .essentials: return L("settings.group.essentials", "ESSENTIALS")
-        case .lookAndFeel: return L("settings.group.lookAndFeel", "LOOK & FEEL")
+        case .general: return L("settings.group.general", "GENERAL")
+        case .appearance: return L("settings.group.appearance", "APPEARANCE")
         case .terminal: return L("settings.group.terminal", "TERMINAL")
-        case .inputProductivity: return L("settings.group.inputProductivity", "INPUT & PRODUCTIVITY")
-        case .integrations: return L("settings.group.integrations", "INTEGRATIONS")
-        case .monitoring: return L("settings.group.monitoring", "MONITORING")
+        case .aiWorkflows: return L("settings.group.aiWorkflows", "AI WORKFLOWS")
+        case .automation: return L("settings.group.automation", "AUTOMATION")
+        case .safetyPrivacy: return L("settings.group.safetyPrivacy", "SAFETY & PRIVACY")
         }
     }
 
     var sections: [SettingsSection] {
         switch self {
-        case .essentials: return [.startHere, .general, .profilesBackup, .about]
-        case .lookAndFeel: return [.fontColors, .display, .windows, .tabs, .hoverCard, .repositories, .minimalMode]
-        case .terminal: return [.shell, .scrollbackPerf, .dangerousCommands, .graphics]
-        case .inputProductivity: return [.keyboardMouse, .snippetsTools, .editor]
-        case .integrations: return [.aiDetection, .tokenOptimization, .mcpControl, .remoteControl, .apiProxy, .promptInjection]
-        case .monitoring: return [.notifications, .logsHistory]
+        case .general: return [.startHere, .general, .profilesBackup, .about]
+        case .appearance: return [.fontColors, .display, .windows, .tabs, .minimalMode, .hoverCard]
+        case .terminal: return [.shell, .scrollbackPerf, .graphics, .keyboardMouse]
+        case .aiWorkflows: return [.aiDetection, .mcpControl, .promptInjection, .tokenOptimization]
+        case .automation: return [.snippetsTools, .editor, .repositories, .apiProxy, .remoteControl]
+        case .safetyPrivacy: return [.dangerousCommands, .notifications, .logsHistory]
         }
     }
 }
@@ -69,7 +69,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
     case general
     case profilesBackup
     case about
-    // Look & Feel
+    // Appearance
     case fontColors
     case display
     case windows
@@ -85,7 +85,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
     case keyboardMouse
     case snippetsTools
     case editor
-    /// Look & Feel (additional)
+    /// Appearance (additional)
     case minimalMode
     // Integrations
     case aiDetection
@@ -198,17 +198,17 @@ enum SettingsSection: String, CaseIterable, Identifiable {
     var group: SettingsSectionGroup {
         switch self {
         case .startHere, .general, .profilesBackup, .about:
-            return .essentials
-        case .fontColors, .display, .windows, .tabs, .hoverCard, .repositories, .minimalMode:
-            return .lookAndFeel
-        case .shell, .scrollbackPerf, .dangerousCommands, .graphics:
+            return .general
+        case .fontColors, .display, .windows, .tabs, .minimalMode, .hoverCard:
+            return .appearance
+        case .shell, .scrollbackPerf, .graphics, .keyboardMouse:
             return .terminal
-        case .keyboardMouse, .snippetsTools, .editor:
-            return .inputProductivity
-        case .aiDetection, .tokenOptimization, .mcpControl, .remoteControl, .apiProxy, .promptInjection:
-            return .integrations
-        case .notifications, .logsHistory:
-            return .monitoring
+        case .aiDetection, .mcpControl, .promptInjection, .tokenOptimization:
+            return .aiWorkflows
+        case .snippetsTools, .editor, .repositories, .apiProxy, .remoteControl:
+            return .automation
+        case .dangerousCommands, .notifications, .logsHistory:
+            return .safetyPrivacy
         }
     }
 }

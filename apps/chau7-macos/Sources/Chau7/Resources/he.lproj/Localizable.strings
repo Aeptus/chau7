@@ -2339,11 +2339,11 @@
 "settings.fontColors.resetToDefaults" = "אפס גופן וצבעים לברירות המחדל";
 "settings.graphics" = "גרפיקה";
 "settings.graphics.description" = "פרוטוקולי גרפיקה Sixel ו-Kitty";
-"settings.group.essentials" = "עיקרי הדברים";
-"settings.group.inputProductivity" = "קלט ופרודוקטיביות";
-"settings.group.integrations" = "שילובים";
-"settings.group.lookAndFeel" = "מראה ותחושה";
-"settings.group.monitoring" = "ניטור";
+"settings.group.aiWorkflows" = "זרימות עבודה של AI";
+"settings.group.appearance" = "מראה";
+"settings.group.automation" = "אוטומציה";
+"settings.group.general" = "כללי";
+"settings.group.safetyPrivacy" = "בטיחות ופרטיות";
 "settings.group.terminal" = "טרמינל";
 "settings.history.cancel" = "בטל";
 "settings.history.capacity" = "קיבולת";
