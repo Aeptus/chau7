@@ -188,6 +188,18 @@ final class RemoteControlManager {
         }
 
         rebuildSessionStateSubscriptions()
+
+        // Restore the agent to match the persisted enabled state. The
+        // `.remoteEnabledChanged` observer above only fires on a *toggle*, so
+        // without this an app relaunch leaves remote enabled-in-settings but
+        // agent-not-running — the relay bridge stays down until the user flips
+        // it off and on, which is why a fresh launch shows no live content on
+        // the phone even though local notifications still fire. `startAgent()`
+        // is idempotent (its `!isAgentRunning` guard) and stamps
+        // `CHAU7_PARENT_PID`, so this cleanly supersedes any orphaned agent.
+        if FeatureSettings.shared.isRemoteEnabled {
+            startAgent()
+        }
     }
 
     func recordOutput(_ data: Data, sessionIdentifier: String) {
