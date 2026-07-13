@@ -20,7 +20,7 @@ struct SettingsWindowView: View {
 struct SettingsRootView: View {
     var model: AppModel
     let overlayModel: OverlayTabsModel?
-    @State private var selection: SettingsSection = .general
+    @State private var selection: SettingsSection = .startHere
     @State private var searchQuery = ""
 
     private var matchingSections: Set<SettingsSection> {
@@ -216,6 +216,8 @@ struct SettingsDetailView: View {
                 Group {
                     switch selection {
                     // Essentials
+                    case .startHere:
+                        StartHereSettingsView(model: model)
                     case .general:
                         GeneralSettingsView(model: model)
                     case .profilesBackup:

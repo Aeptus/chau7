@@ -33,4 +33,14 @@ final class SettingsSurfaceTests: XCTestCase {
             result.section == .windows && result.settings.contains { $0.id == "windowFloating" }
         })
     }
+
+    func testStartHereIsFirstAndSearchable() {
+        XCTAssertEqual(SettingsSection.allCases.first, .startHere)
+        XCTAssertEqual(SettingsSectionGroup.essentials.sections.first, .startHere)
+
+        let startHereResults = FeatureSettings.searchSettings(query: "overview")
+        XCTAssertTrue(startHereResults.contains { result in
+            result.section == .startHere && result.settings.contains { $0.id == "startHereStatus" }
+        })
+    }
 }

@@ -51,7 +51,7 @@ enum SettingsSectionGroup: String, CaseIterable, Identifiable {
 
     var sections: [SettingsSection] {
         switch self {
-        case .essentials: return [.general, .profilesBackup, .about]
+        case .essentials: return [.startHere, .general, .profilesBackup, .about]
         case .lookAndFeel: return [.fontColors, .display, .windows, .tabs, .hoverCard, .repositories, .minimalMode]
         case .terminal: return [.shell, .scrollbackPerf, .dangerousCommands, .graphics]
         case .inputProductivity: return [.keyboardMouse, .snippetsTools, .editor]
@@ -64,6 +64,7 @@ enum SettingsSectionGroup: String, CaseIterable, Identifiable {
 // MARK: - Settings Sections
 
 enum SettingsSection: String, CaseIterable, Identifiable {
+    case startHere
     // Essentials
     case general
     case profilesBackup
@@ -103,6 +104,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
+        case .startHere: return L("settings.startHere", "Start Here")
         case .general: return L("settings.general", "General")
         case .profilesBackup: return L("settings.profilesBackup", "Sync & Backup")
         case .about: return L("settings.about", "About")
@@ -133,6 +135,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
 
     var systemImage: String {
         switch self {
+        case .startHere: return "checklist"
         case .general: return "gearshape"
         case .profilesBackup: return "arrow.triangle.2.circlepath"
         case .about: return "info.circle"
@@ -163,6 +166,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
 
     var description: String {
         switch self {
+        case .startHere: return L("settings.startHere.description", "Current setup, permissions, and service status")
         case .general: return L("settings.general.description", "Startup, language, and config file")
         case .profilesBackup: return L("settings.profilesBackup.description", "Profile auto-switch, iCloud sync, and settings backup")
         case .about: return L("settings.about.description", "Version information and links")
@@ -193,7 +197,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
 
     var group: SettingsSectionGroup {
         switch self {
-        case .general, .profilesBackup, .about:
+        case .startHere, .general, .profilesBackup, .about:
             return .essentials
         case .fontColors, .display, .windows, .tabs, .hoverCard, .repositories, .minimalMode:
             return .lookAndFeel
@@ -213,6 +217,18 @@ enum SettingsSection: String, CaseIterable, Identifiable {
 
 extension FeatureSettings {
     static let searchableSettings: [SearchableSetting] = [
+        // Start Here
+        SearchableSetting(
+            id: "startHereStatus",
+            section: .startHere,
+            title: L("settings.search.startHere.title", "Start Here Status"),
+            keywords: localizedKeywords(
+                "settings.search.startHere.keywords",
+                "status,start here,overview,setup,health,permissions,profile,mcp,remote,logs"
+            ),
+            description: L("settings.search.startHere.description", "Review launch, profile, permissions, MCP, remote, notifications, and log paths")
+        ),
+
         // General
         SearchableSetting(
             id: "language",
