@@ -2438,6 +2438,32 @@ final class TerminalSessionModel {
         )
     }
 
+    /// Remote (iOS) keyboard input. The body and the submit terminator must
+    /// be separate PTY writes: a single chunk of "text\r" reads as a paste to
+    /// TUI composers (Claude Code, Codex) and lands in the input field
+    /// without submitting. Deliver the body, then submit provider-aware after
+    /// a short delay — an Enter keypress for most tools, a delayed raw
+    /// newline for Codex — exactly like typed-then-Enter input.
+    func sendRemoteSubmittedInput(_ text: String) {
+        let provider = aiDisplayAppName ?? activeAppName ?? effectiveAIProvider
+        let plan = AIAutomationStrategy.remoteInputPlan(for: text, provider: provider)
+        if plan.submitMode != .none {
+            // The old single-chunk path set this via the trailing terminator in
+            // sendRawInput; keep command-based AI detection primed for the
+            // submit that now arrives as a separate write.
+            commandPendingDetection = true
+        }
+        if !plan.insertText.isEmpty {
+            switch plan.insertMode {
+            case .rawText:
+                sendRawInput(plan.insertText)
+            case .pasteText:
+                sendPastedInput(plan.insertText)
+            }
+        }
+        scheduleAutomationSubmit(mode: plan.submitMode, delayMs: plan.submitDelayMs)
+    }
+
     func submitAutomationPrompt() {
         let provider = aiDisplayAppName ?? activeAppName ?? effectiveAIProvider
         let ageMs = lastAutomationInputAt.map { max(0, Int(Date().timeIntervalSince($0) * 1000)) }

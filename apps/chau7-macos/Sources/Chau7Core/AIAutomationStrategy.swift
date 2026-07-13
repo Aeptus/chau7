@@ -43,6 +43,7 @@ public struct AIAutomationSubmitPlan: Equatable {
 public enum AIAutomationStrategy {
     private static let codexSubmitDelayMs = 120
     private static let recentAutomationWindowMs = 1000
+    private static let remoteSubmitDelayMs = 60
 
     public static func inputPlan(for input: String, provider: String?) -> AIAutomationInputPlan {
         let normalizedProvider = normalizedProviderKey(provider)
@@ -61,6 +62,34 @@ public enum AIAutomationStrategy {
             insertMode: .pasteText,
             submitMode: wantsSubmit ? .rawNewline : .none,
             submitDelayMs: wantsSubmit && !body.isEmpty ? codexSubmitDelayMs : 0
+        )
+    }
+
+    /// Plan for remote (iOS) keyboard input. The submit terminator must NOT
+    /// travel in the same PTY write as the body: TUI composers (Claude Code,
+    /// Codex) treat a single stdin chunk containing text + trailing CR as a
+    /// paste and insert it into the input field, whereas a real Enter arrives
+    /// as its own read. Split the trailing terminator into a separate, delayed
+    /// submit so remote sends behave like typed-then-Enter input.
+    public static func remoteInputPlan(for input: String, provider: String?) -> AIAutomationInputPlan {
+        let (body, wantsSubmit) = splitTrailingSubmit(from: input)
+        let isCodex = normalizedProviderKey(provider) == "codex"
+        guard wantsSubmit else {
+            // No submit terminator — pass through untouched. This branch also
+            // carries keyboard-bar control sequences (ESC, ^C, arrows), which
+            // must never be paste-wrapped or reordered.
+            return AIAutomationInputPlan(
+                insertText: input,
+                insertMode: .rawText,
+                submitMode: .none,
+                submitDelayMs: 0
+            )
+        }
+        return AIAutomationInputPlan(
+            insertText: body,
+            insertMode: isCodex ? .pasteText : .rawText,
+            submitMode: isCodex ? .rawNewline : .enterKey,
+            submitDelayMs: body.isEmpty ? 0 : (isCodex ? codexSubmitDelayMs : remoteSubmitDelayMs)
         )
     }
 

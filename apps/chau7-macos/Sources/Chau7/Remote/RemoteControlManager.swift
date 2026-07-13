@@ -427,14 +427,12 @@ final class RemoteControlManager {
             return
         }
 
-        // Older iOS builds append LF as the submit byte; terminals submit on
-        // CR. Translate a trailing LF so remote sends actually submit instead
-        // of stacking a line break in the TUI's input field.
-        if text.hasSuffix("\n"), !text.hasSuffix("\r\n") {
-            session.sendInput(String(text.dropLast()) + "\r")
-        } else {
-            session.sendInput(text)
-        }
+        // Body and submit terminator must be separate PTY writes — a single
+        // "text\r" (or "\n") chunk reads as a paste to TUI composers and
+        // sits in the input field unsubmitted. Any trailing terminator
+        // (including legacy iOS builds' LF) becomes a provider-aware delayed
+        // submit inside sendRemoteSubmittedInput.
+        session.sendRemoteSubmittedInput(text)
     }
 
     // MARK: - Approval Frames
@@ -473,7 +471,7 @@ final class RemoteControlManager {
         if let protectedInput = pendingProtectedInputs.removeValue(forKey: response.requestID) {
             if response.approved,
                let session = session(for: protectedInput.tabID) {
-                session.sendInput(protectedInput.text)
+                session.sendRemoteSubmittedInput(protectedInput.text)
                 logger.info("Remote: protected action approved for tab \(protectedInput.tabID, privacy: .public)")
             } else {
                 logger.info("Remote: protected action denied for tab \(protectedInput.tabID, privacy: .public)")
