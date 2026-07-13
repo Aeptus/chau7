@@ -693,21 +693,24 @@ final class RustMetalDisplayCoordinator: NSObject {
         Log.info("RustMetalDisplayCoordinator: GPU resources marked volatile")
     }
 
-    /// Marks the renderer's GPU resources as non-volatile and detects whether
-    /// the OS reclaimed *any* of them while volatile. If reclaimed, the
-    /// renderer rewrites the static vertex quad itself and we clear the CPU
-    /// glyph cache + force a full refresh so the next draw re-rasterizes.
+    /// Marks the renderer's GPU resources as non-volatile and rebuilds them.
+    ///
+    /// Rebuild is UNCONDITIONAL, not gated on the `.empty` prior state:
+    /// occluded windows keep drawing in event-drain mode, so the volatile
+    /// marking can race an in-flight GPU frame — and a purge during use makes
+    /// the prior-state signal unreliable. That exact failure shipped once: a
+    /// purged atlas came back with prior == .volatile and every glyph in the
+    /// window rendered invisible (backgrounds only) until relaunch. The
+    /// rebuild is ~5ms of ASCII pre-rasterization on a rare transition.
     func markTexturesNonVolatileAndRebuildIfNeeded() {
         guard texturesAreVolatile else { return }
         texturesAreVolatile = false
         let prior = renderer.setAtlasPurgeableState(.nonVolatile)
-        if prior == .empty {
-            Log.info("RustMetalDisplayCoordinator: GPU resources reclaimed by OS — rebuilding on next draw")
-            renderer.clearGlyphCache()
-            tripleBuffer.markFullRefresh()
-            requestSyncRender()
-            scheduleDisplay()
-        }
+        Log.info("RustMetalDisplayCoordinator: GPU resources promoted (prior=\(prior.rawValue)) — rebuilding atlas")
+        renderer.clearGlyphCache()
+        tripleBuffer.markFullRefresh()
+        requestSyncRender()
+        scheduleDisplay()
     }
 }
 

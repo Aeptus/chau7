@@ -1630,10 +1630,11 @@ final class MetalTerminalRenderer: NSObject {
 
         // The vertex quad is written once at init and never rebuilt by the
         // draw path — if the OS reclaimed it, every instance would render
-        // garbage forever. Rewrite it in place.
-        if vertexPrior == .empty {
-            rewriteVertexQuad()
-        }
+        // garbage forever. Rewrite it unconditionally: the `.empty` prior
+        // state is unreliable when the purge raced an in-flight frame (see
+        // markTexturesNonVolatileAndRebuildIfNeeded), and the rewrite is four
+        // SIMD2 writes.
+        rewriteVertexQuad()
         // Report reclamation if ANY resource was emptied — checking only the
         // atlas left a reclaimed instance/uniform buffer rendering stale rows
         // undetected.
