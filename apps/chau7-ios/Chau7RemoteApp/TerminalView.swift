@@ -27,6 +27,7 @@ struct TerminalView: View {
     @State private var textAwayFromBottom = false
     @State private var scrollToBottomToken = 0
     @State private var isErrorExpanded = false
+    @FocusState private var inputFocused: Bool
 
     var body: some View {
         NavigationStack {
@@ -71,8 +72,13 @@ struct TerminalView: View {
             statusBar
             tabsBar
             outputView
-            if showsKeyboardBar {
-                keyboardBar
+            // Opt-in escape hatch: the control keys stay available as a fixed
+            // row only when the user pinned them AND the software keyboard is
+            // down. While typing, the same keys ride above the keyboard as an
+            // accessory (see the input field's `.toolbar`), so this guard on
+            // `!inputFocused` avoids a redundant double bar.
+            if showsPinnedControlKeys {
+                controlKeyRow
             }
             inputBar
         }
@@ -335,13 +341,20 @@ struct TerminalView: View {
             .accessibilityHidden(true)
     }
 
-    // MARK: - Keyboard Bar
+    // MARK: - Control Keys
 
-    private var showsKeyboardBar: Bool {
-        showKeyboardBar && client.canSendInput
+    /// The pinned fixed row shows only when the user opted in via the toggle
+    /// AND the keyboard is down — otherwise the accessory bar covers typing.
+    private var showsPinnedControlKeys: Bool {
+        showKeyboardBar && !inputFocused && client.canSendInput
     }
 
-    private var keyboardBar: some View {
+    /// Horizontally scrolling row of terminal control keys, reused both as a
+    /// keyboard accessory (above the software keyboard while typing) and as the
+    /// opt-in pinned bar. The `maxWidth: .infinity` lets the ScrollView span the
+    /// full width when hosted inside `ToolbarItemGroup(placement: .keyboard)`,
+    /// which otherwise collapses it to its intrinsic (content) width.
+    private var controlKeyRow: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 0) {
                 TermKey("esc", labelText: "Escape", send: "\u{1B}", client: client)
@@ -359,6 +372,7 @@ struct TerminalView: View {
             .padding(.horizontal, 8)
             .padding(.vertical, 4)
         }
+        .frame(maxWidth: .infinity)
         .background(Color(UIColor.tertiarySystemBackground))
     }
 
@@ -374,16 +388,27 @@ struct TerminalView: View {
                     .frame(width: 32, height: 32)
             }
             .disabled(!client.canSendInput)
-            .accessibilityLabel(showKeyboardBar ? "Hide control keys" : "Show control keys")
+            .accessibilityLabel(showKeyboardBar ? "Unpin control keys" : "Pin control keys")
 
             TextField("Input", text: $inputText, axis: .vertical)
                 .font(.system(.body, design: .monospaced))
                 .lineLimit(1...4)
                 .textFieldStyle(.roundedBorder)
                 .submitLabel(.send)
+                .focused($inputFocused)
                 .onSubmit { if !holdToSend { submitInput(trigger: "submit_label") } }
                 .onChange(of: inputText) { oldValue, newValue in
                     handleInputChange(from: oldValue, to: newValue)
+                }
+                .toolbar {
+                    // Control keys ride above the software keyboard while the
+                    // input is focused — and only then. Gated on `canSendInput`
+                    // so we never surface keys that can't be forwarded.
+                    ToolbarItemGroup(placement: .keyboard) {
+                        if client.canSendInput {
+                            controlKeyRow
+                        }
+                    }
                 }
 
             sendButton
