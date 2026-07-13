@@ -52,7 +52,7 @@ enum SettingsSectionGroup: String, CaseIterable, Identifiable {
     var sections: [SettingsSection] {
         switch self {
         case .essentials: return [.general, .profilesBackup, .about]
-        case .lookAndFeel: return [.fontColors, .display, .tabs, .hoverCard, .repositories, .minimalMode]
+        case .lookAndFeel: return [.fontColors, .display, .windows, .tabs, .hoverCard, .repositories, .minimalMode]
         case .terminal: return [.shell, .scrollbackPerf, .dangerousCommands, .graphics]
         case .inputProductivity: return [.keyboardMouse, .snippetsTools, .editor]
         case .integrations: return [.aiDetection, .tokenOptimization, .mcpControl, .remoteControl, .apiProxy, .promptInjection]
@@ -71,6 +71,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
     // Look & Feel
     case fontColors
     case display
+    case windows
     case tabs
     case hoverCard
     case repositories
@@ -107,6 +108,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .about: return L("settings.about", "About")
         case .fontColors: return L("settings.fontColors", "Font & Colors")
         case .display: return L("settings.display", "Display")
+        case .windows: return L("settings.windows", "Windows")
         case .tabs: return L("settings.tabs", "Tabs")
         case .hoverCard: return L("settings.hoverCard", "Hover Card")
         case .repositories: return L("settings.repositories", "Repositories")
@@ -136,6 +138,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .about: return "info.circle"
         case .fontColors: return "paintbrush"
         case .display: return "eye"
+        case .windows: return "macwindow"
         case .tabs: return "rectangle.stack"
         case .hoverCard: return "text.bubble"
         case .repositories: return "folder.badge.gearshape"
@@ -164,7 +167,8 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .profilesBackup: return L("settings.profilesBackup.description", "Profile auto-switch, iCloud sync, and settings backup")
         case .about: return L("settings.about.description", "Version information and links")
         case .fontColors: return L("settings.fontColors.description", "Font, color scheme, opacity, and ligatures")
-        case .display: return L("settings.display.description", "Syntax highlighting, URLs, images, and window layout")
+        case .display: return L("settings.display.description", "Syntax highlighting, URLs, images, and output formatting")
+        case .windows: return L("settings.windows.description", "Window management and layout")
         case .tabs: return L("settings.tabs.description", "Tab behavior and appearance")
         case .hoverCard: return L("settings.hoverCard.description", "Choose which sections appear in the tab hover card")
         case .repositories: return L("settings.repositories.description", "Manage repo descriptions, labels, and favorite files")
@@ -191,7 +195,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         switch self {
         case .general, .profilesBackup, .about:
             return .essentials
-        case .fontColors, .display, .tabs, .hoverCard, .repositories, .minimalMode:
+        case .fontColors, .display, .windows, .tabs, .hoverCard, .repositories, .minimalMode:
             return .lookAndFeel
         case .shell, .scrollbackPerf, .dangerousCommands, .graphics:
             return .terminal
@@ -282,6 +286,16 @@ extension FeatureSettings {
             ),
             description: L("settings.search.export.description", "Export or import settings as JSON")
         ),
+        SearchableSetting(
+            id: "about",
+            section: .about,
+            title: L("settings.search.about.title", "About Chau7"),
+            keywords: localizedKeywords(
+                "settings.search.about.keywords",
+                "about,version,license,logs,system,credits"
+            ),
+            description: L("settings.search.about.description", "View app version, system information, links, and application logs")
+        ),
 
         // Font & Colors
         SearchableSetting(
@@ -334,6 +348,16 @@ extension FeatureSettings {
             ),
             description: L("settings.search.opacity.description", "Terminal window transparency")
         ),
+        SearchableSetting(
+            id: "appTheme",
+            section: .fontColors,
+            title: L("settings.search.appTheme.title", "App Theme"),
+            keywords: localizedKeywords(
+                "settings.search.appTheme.keywords",
+                "theme,system,light,dark,appearance"
+            ),
+            description: L("settings.search.appTheme.description", "Choose the Chau7 interface theme")
+        ),
 
         // Display
         SearchableSetting(
@@ -347,6 +371,36 @@ extension FeatureSettings {
             description: L("settings.search.syntaxHighlight.description", "Highlight code syntax in output")
         ),
         SearchableSetting(
+            id: "clickableURLs",
+            section: .display,
+            title: L("settings.search.clickableURLs.title", "Clickable URLs"),
+            keywords: localizedKeywords(
+                "settings.search.clickableURLs.keywords",
+                "url,link,browser,open,click"
+            ),
+            description: L("settings.search.clickableURLs.description", "Make terminal URLs clickable")
+        ),
+        SearchableSetting(
+            id: "inlineImages",
+            section: .display,
+            title: L("settings.search.inlineImages.title", "Inline Images"),
+            keywords: localizedKeywords(
+                "settings.search.inlineImages.keywords",
+                "image,imgcat,preview,inline"
+            ),
+            description: L("settings.search.inlineImages.description", "Display inline terminal images")
+        ),
+        SearchableSetting(
+            id: "prettyPrintJSON",
+            section: .display,
+            title: L("settings.search.prettyPrintJSON.title", "Pretty Print JSON"),
+            keywords: localizedKeywords(
+                "settings.search.prettyPrintJSON.keywords",
+                "json,format,pretty,indent"
+            ),
+            description: L("settings.search.prettyPrintJSON.description", "Format JSON output for readability")
+        ),
+        SearchableSetting(
             id: "timestamps",
             section: .display,
             title: L("settings.search.timestamps.title", "Line Timestamps"),
@@ -356,9 +410,51 @@ extension FeatureSettings {
             ),
             description: L("settings.search.timestamps.description", "Show timestamps for terminal lines")
         ),
+
+        // Windows
+        SearchableSetting(
+            id: "menuBarOnlyMode",
+            section: .windows,
+            title: L("settings.search.menuBarOnlyMode.title", "Menu Bar Only Mode"),
+            keywords: localizedKeywords(
+                "settings.search.menuBarOnlyMode.keywords",
+                "menu bar,dock,accessory,hide app,launcher"
+            ),
+            description: L("settings.search.menuBarOnlyMode.description", "Run Chau7 from the menu bar without a Dock icon")
+        ),
+        SearchableSetting(
+            id: "windowFloating",
+            section: .windows,
+            title: L("settings.search.windowFloating.title", "Floating Window"),
+            keywords: localizedKeywords(
+                "settings.search.windowFloating.keywords",
+                "float,always on top,above,window"
+            ),
+            description: L("settings.search.windowFloating.description", "Keep terminal windows above other apps")
+        ),
+        SearchableSetting(
+            id: "overlayWindow",
+            section: .windows,
+            title: L("settings.search.overlayWindow.title", "Overlay Window"),
+            keywords: localizedKeywords(
+                "settings.search.overlayWindow.keywords",
+                "overlay,show,position,workspace,reset"
+            ),
+            description: L("settings.search.overlayWindow.description", "Show or reset the remembered overlay window position")
+        ),
+        SearchableSetting(
+            id: "fullscreenToolbar",
+            section: .windows,
+            title: L("settings.search.fullscreenToolbar.title", "Fullscreen Toolbar"),
+            keywords: localizedKeywords(
+                "settings.search.fullscreenToolbar.keywords",
+                "fullscreen,toolbar,titlebar,window"
+            ),
+            description: L("settings.search.fullscreenToolbar.description", "Keep the toolbar visible in fullscreen")
+        ),
         SearchableSetting(
             id: "splitPanes",
-            section: .display,
+            section: .windows,
             title: L("settings.search.splitPanes.title", "Split Panes"),
             keywords: localizedKeywords(
                 "settings.search.splitPanes.keywords",
@@ -368,6 +464,16 @@ extension FeatureSettings {
         ),
 
         // Tabs
+        SearchableSetting(
+            id: "newTabPosition",
+            section: .tabs,
+            title: L("settings.search.newTabPosition.title", "New Tab Position"),
+            keywords: localizedKeywords(
+                "settings.search.newTabPosition.keywords",
+                "new,tab,position,after,current,end"
+            ),
+            description: L("settings.search.newTabPosition.description", "Choose where new tabs are inserted")
+        ),
         SearchableSetting(
             id: "lastTabClose",
             section: .tabs,
@@ -379,6 +485,16 @@ extension FeatureSettings {
             description: L("settings.search.lastTabClose.description", "What happens when closing the last tab")
         ),
         SearchableSetting(
+            id: "tabCloseWarnings",
+            section: .tabs,
+            title: L("settings.search.tabCloseWarnings.title", "Tab Close Warnings"),
+            keywords: localizedKeywords(
+                "settings.search.tabCloseWarnings.keywords",
+                "warn,warning,close,running process,confirm"
+            ),
+            description: L("settings.search.tabCloseWarnings.description", "Confirm before closing tabs or running processes")
+        ),
+        SearchableSetting(
             id: "newTabDirectory",
             section: .tabs,
             title: L("settings.search.newTabDirectory.title", "New Tab Directory"),
@@ -387,6 +503,36 @@ extension FeatureSettings {
                 "current,working,directory,folder,inherit"
             ),
             description: L("settings.search.newTabDirectory.description", "Open new tabs in the active tab's directory")
+        ),
+        SearchableSetting(
+            id: "tabDisplay",
+            section: .tabs,
+            title: L("settings.search.tabDisplay.title", "Tab Display"),
+            keywords: localizedKeywords(
+                "settings.search.tabDisplay.keywords",
+                "tab,icons,path,git,cto,broadcast,custom title,indicator"
+            ),
+            description: L("settings.search.tabDisplay.description", "Choose which tab indicators are visible")
+        ),
+        SearchableSetting(
+            id: "repoGrouping",
+            section: .tabs,
+            title: L("settings.search.repoGrouping.title", "Repo Grouping"),
+            keywords: localizedKeywords(
+                "settings.search.repoGrouping.keywords",
+                "repo,repository,group,git,tabs"
+            ),
+            description: L("settings.search.repoGrouping.description", "Group tabs by repository")
+        ),
+        SearchableSetting(
+            id: "tabSwitchShortcut",
+            section: .tabs,
+            title: L("settings.search.tabSwitchShortcut.title", "Switch-to-Tab Keys"),
+            keywords: localizedKeywords(
+                "settings.search.tabSwitchShortcut.keywords",
+                "switch,tab,command number,function key,f1,f12,shortcut"
+            ),
+            description: L("settings.search.tabSwitchShortcut.description", "Choose keyboard shortcuts for jumping to tabs")
         ),
 
         // Shell
@@ -463,14 +609,34 @@ extension FeatureSettings {
             description: L("settings.search.scrollback.description", "Lines to keep in scrollback")
         ),
         SearchableSetting(
-            id: "terminalBackend",
+            id: "smartScroll",
             section: .scrollbackPerf,
-            title: L("settings.search.terminalBackend.title", "Terminal Backend"),
+            title: L("settings.search.smartScroll.title", "Smart Scroll"),
             keywords: localizedKeywords(
-                "settings.search.terminalBackend.keywords",
-                "rust,metal,gpu,renderer"
+                "settings.search.smartScroll.keywords",
+                "smart,scroll,autoscroll,position,preserve"
             ),
-            description: L("settings.search.terminalBackend.description", "Choose terminal rendering backend")
+            description: L("settings.search.smartScroll.description", "Preserve scroll position while output continues")
+        ),
+        SearchableSetting(
+            id: "restoredScrollback",
+            section: .scrollbackPerf,
+            title: L("settings.search.restoredScrollback.title", "Restored Scrollback"),
+            keywords: localizedKeywords(
+                "settings.search.restoredScrollback.keywords",
+                "restore,recover,scrollback,lines,tabs"
+            ),
+            description: L("settings.search.restoredScrollback.description", "Limit how much scrollback is restored for recovered tabs")
+        ),
+        SearchableSetting(
+            id: "refreshCaps",
+            section: .scrollbackPerf,
+            title: L("settings.search.refreshCaps.title", "Refresh Caps"),
+            keywords: localizedKeywords(
+                "settings.search.refreshCaps.keywords",
+                "refresh,fps,rate,cap,battery,performance"
+            ),
+            description: L("settings.search.refreshCaps.description", "Limit active and background terminal refresh rates")
         ),
 
         // Dangerous Commands
@@ -568,6 +734,16 @@ extension FeatureSettings {
             ),
             description: L("settings.search.broadcast.description", "Send input to all tabs")
         ),
+        SearchableSetting(
+            id: "keybindingPreset",
+            section: .keyboardMouse,
+            title: L("settings.search.keybindingPreset.title", "Keybinding Preset"),
+            keywords: localizedKeywords(
+                "settings.search.keybindingPreset.keywords",
+                "preset,vim,emacs,default,keybinding,shortcut"
+            ),
+            description: L("settings.search.keybindingPreset.description", "Choose a built-in keyboard shortcut preset")
+        ),
 
         // Snippets & Tools
         SearchableSetting(
@@ -662,6 +838,16 @@ extension FeatureSettings {
             ),
             description: L("settings.search.llmProvider.description", "Configure LLM provider and API keys")
         ),
+        SearchableSetting(
+            id: "errorExplanation",
+            section: .aiDetection,
+            title: L("settings.search.errorExplanation.title", "Error Explanation"),
+            keywords: localizedKeywords(
+                "settings.search.errorExplanation.keywords",
+                "error,explain,llm,ai,diagnose"
+            ),
+            description: L("settings.search.errorExplanation.description", "Use an LLM to explain terminal errors")
+        ),
 
         // Token Optimization (CTO)
         SearchableSetting(
@@ -693,6 +879,38 @@ extension FeatureSettings {
                 "tab,override,force,enable,disable,bolt"
             ),
             description: L("settings.search.ctoPerTab.description", "Override CTO settings per tab")
+        ),
+
+        // MCP Control
+        SearchableSetting(
+            id: "mcpServer",
+            section: .mcpControl,
+            title: L("settings.search.mcpServer.title", "MCP Server"),
+            keywords: localizedKeywords(
+                "settings.search.mcpServer.keywords",
+                "mcp,server,remote,agent,tabs,automation"
+            ),
+            description: L("settings.search.mcpServer.description", "Enable MCP control and tab creation")
+        ),
+        SearchableSetting(
+            id: "mcpPermissions",
+            section: .mcpControl,
+            title: L("settings.search.mcpPermissions.title", "MCP Permissions"),
+            keywords: localizedKeywords(
+                "settings.search.mcpPermissions.keywords",
+                "permission,approval,allow,block,command,profile"
+            ),
+            description: L("settings.search.mcpPermissions.description", "Configure MCP command approval and allow/block lists")
+        ),
+        SearchableSetting(
+            id: "mcpProfiles",
+            section: .mcpControl,
+            title: L("settings.search.mcpProfiles.title", "MCP Profiles"),
+            keywords: localizedKeywords(
+                "settings.search.mcpProfiles.keywords",
+                "profile,project,permissions,mcp"
+            ),
+            description: L("settings.search.mcpProfiles.description", "Manage MCP permission profiles")
         ),
 
         // Remote Control
@@ -824,8 +1042,38 @@ extension FeatureSettings {
             ),
             description: L("settings.search.persistentHistory.description", "Save command history across sessions")
         ),
+        SearchableSetting(
+            id: "telemetryRetention",
+            section: .logsHistory,
+            title: L("settings.search.telemetryRetention.title", "Telemetry Retention"),
+            keywords: localizedKeywords(
+                "settings.search.telemetryRetention.keywords",
+                "telemetry,transcripts,history,retention,days,storage"
+            ),
+            description: L("settings.search.telemetryRetention.description", "Control how long AI transcripts are kept")
+        ),
+        SearchableSetting(
+            id: "historyLogs",
+            section: .logsHistory,
+            title: L("settings.search.historyLogs.title", "History Logs"),
+            keywords: localizedKeywords(
+                "settings.search.historyLogs.keywords",
+                "codex,claude,history,path,idle,stale,monitor"
+            ),
+            description: L("settings.search.historyLogs.description", "Configure AI history log monitoring")
+        ),
+        SearchableSetting(
+            id: "terminalLogs",
+            section: .logsHistory,
+            title: L("settings.search.terminalLogs.title", "Terminal Logs"),
+            keywords: localizedKeywords(
+                "settings.search.terminalLogs.keywords",
+                "terminal,log,path,ansi,normalize,prefill,monitor"
+            ),
+            description: L("settings.search.terminalLogs.description", "Configure PTY terminal log monitoring")
+        ),
 
-        // New sections and missing settings
+        // Additional searchable controls
         SearchableSetting(
             id: "ligatures",
             section: .fontColors,
@@ -853,6 +1101,26 @@ extension FeatureSettings {
             title: L("settings.search.groupIdleTabs.title", "Group Idle Tabs"),
             keywords: localizedKeywords("settings.search.groupIdleTabs.keywords", "idle,tabs,group,dropdown,declutter,threshold,minutes"),
             description: L("settings.search.groupIdleTabs.description", "Collect idle tabs in a dropdown chip (configurable threshold)")
+        ),
+        SearchableSetting(
+            id: "hoverCardSections",
+            section: .hoverCard,
+            title: L("settings.search.hoverCardSections.title", "Hover Card Sections"),
+            keywords: localizedKeywords(
+                "settings.search.hoverCardSections.keywords",
+                "hover,card,preview,sections,directory,git,processes,notifications"
+            ),
+            description: L("settings.search.hoverCardSections.description", "Choose which information appears in tab hover cards")
+        ),
+        SearchableSetting(
+            id: "repositoryMetadata",
+            section: .repositories,
+            title: L("settings.search.repositoryMetadata.title", "Repository Metadata"),
+            keywords: localizedKeywords(
+                "settings.search.repositoryMetadata.keywords",
+                "repository,repo,metadata,description,labels,favorite files"
+            ),
+            description: L("settings.search.repositoryMetadata.description", "Manage repository descriptions, labels, and favorite files")
         ),
         SearchableSetting(
             id: "clickToPosition",

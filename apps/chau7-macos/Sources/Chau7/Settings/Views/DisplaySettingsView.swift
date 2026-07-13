@@ -54,26 +54,6 @@ struct DisplaySettingsView: View {
 
             SettingsDivider()
 
-            // Window & Layout
-            SettingsSectionHeader(L("settings.display.windowLayout", "Window & Layout"), icon: "macwindow")
-
-            // Split Panes
-            SettingsSectionHeader(L("settings.windows.splitPanes", "Split Panes"), icon: "rectangle.split.2x1")
-
-            SettingsToggle(
-                label: L("settings.windows.enableSplitPanes", "Enable Split Panes"),
-                help: L("settings.windows.enableSplitPanes.help", "Allow splitting terminal into multiple panes within a single tab"),
-                isOn: $settings.isSplitPanesEnabled
-            )
-
-            if settings.isSplitPanesEnabled {
-                SettingsShortcutRow(label: L("settings.windows.splitHorizontal", "Split Horizontal"), shortcut: "⌘⌥H")
-                SettingsShortcutRow(label: L("settings.windows.splitVertical", "Split Vertical"), shortcut: "⌘⌥V")
-                SettingsShortcutRow(label: L("settings.windows.navigatePanes", "Navigate Panes"), shortcut: "⌘⌥Arrow")
-            }
-
-            SettingsDivider()
-
             // Reset Button
             SettingsButtonRow(buttons: [
                 .init(title: L("settings.display.resetToDefaults", "Reset Display to Defaults"), style: .plain) {

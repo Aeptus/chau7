@@ -564,12 +564,13 @@ Chau7's rendering pipeline is purpose-built for latency-sensitive terminal work:
 
 ## Settings & Configuration
 
-- Comprehensive settings UI with fuzzy search across 100+ settings.
+- Comprehensive settings UI with fuzzy search coverage for every routed settings pane, including app/window chrome, display rendering, tabs, scrollback, keyboard, AI detection, MCP, logs/history, repository metadata, hover card, and about surfaces.
 - Settings profiles — save, load, export, import named configurations.
 - Per-folder config: `.chau7/config.toml` in any repo for project-specific settings.
 - Config file watcher — auto-reload on changes, no restart needed.
 - Launch at Login installs/removes the user LaunchAgent plist for the next macOS login without loading it in the current session, so toggling the setting does not relaunch Chau7 immediately.
 - Responsive settings shell keeps the sidebar, search results, section copy, and form controls usable while resizing, with adaptive rows, wrapping text for longer localized labels and accessibility descriptions, a compact native titlebar profile selector that defaults to "Default Settings" and owns profile load/save actions, and shared golden-ratio SwiftUI style tokens for settings pane spacing, dividers, radius, cards, hints, badges, and inline control groups.
+- Windows settings are a first-class Look & Feel pane for menu bar only mode, floating-window mode, overlay/fullscreen behavior, and split-pane defaults instead of being mixed into Display.
 - Optional iCloud sync across devices — freshness-guarded: only blobs strictly newer than this Mac's last synced state apply, newer-format exports are refused, and fields absent from a blob keep their local value instead of resetting to defaults.
 - Reset individual settings or all to defaults.
 

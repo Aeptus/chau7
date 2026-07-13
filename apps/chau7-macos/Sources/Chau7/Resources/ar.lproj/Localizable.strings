@@ -2298,7 +2298,7 @@
 "settings.dangerousGuard.scope.none" = "معطّل";
 "settings.dangerousGuard.title" = "حارس الأوامر";
 "settings.display" = "العرض";
-"settings.display.description" = "تمييز الصياغة، والروابط، والصور، وتخطيط النافذة";
+"settings.display.description" = "تمييز الصياغة، والروابط، والصور، وتنسيق المخرجات";
 "settings.display.resetToDefaults" = "إعادة العرض إلى الإعدادات الافتراضية";
 "settings.display.windowLayout" = "النافذة والتخطيط";
 "settings.editor" = "محرر النص";
@@ -2860,9 +2860,14 @@
 "settings.tokenOptimization.description" = "سكربتات CTO الغلافية، والتحكم لكل بطاقة، والبادئة";
 "settings.windows.alwaysShowToolbar" = "إظهار شريط الأدوات دائمًا في وضع ملء الشاشة";
 "settings.windows.alwaysShowToolbar.help" = "إبقاء شريط الأدوات ظاهرًا عندما تكون النافذة في وضع ملء الشاشة";
+"settings.windows.appMode" = "وضع نافذة التطبيق";
 "settings.windows.enableSplitPanes" = "تفعيل تقسيم اللوحات";
 "settings.windows.enableSplitPanes.help" = "السماح بتقسيم الطرفية إلى عدة لوحات داخل بطاقة واحدة";
+"settings.windows.floatingWindow" = "إبقاء النوافذ فوق التطبيقات الأخرى";
+"settings.windows.floatingWindow.help" = "إبقاء نوافذ طرفية Chau7 فوق نوافذ التطبيقات العادية.";
 "settings.windows.fullscreen" = "ملء الشاشة";
+"settings.windows.menuBarOnlyMode" = "وضع شريط القوائم فقط";
+"settings.windows.menuBarOnlyMode.help" = "تشغيل Chau7 من شريط القوائم دون أيقونة في Dock. يسري بعد إعادة تشغيل Chau7.";
 "settings.windows.navigatePanes" = "التنقل بين اللوحات";
 "settings.windows.overlayDescription" = "تتذكر نافذة التراكب موضعها لكل مساحة عمل وتستعيده تلقائيًا.";
 "settings.windows.overlayWindow" = "نافذة التراكب";

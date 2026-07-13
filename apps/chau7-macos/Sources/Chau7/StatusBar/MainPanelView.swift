@@ -227,12 +227,16 @@ struct SettingsDetailView: View {
                         FontColorsSettingsView()
                     case .display:
                         DisplaySettingsView()
+                    case .windows:
+                        WindowsSettingsView()
                     case .tabs:
                         TabsSettingsView()
                     case .hoverCard:
                         HoverCardSettingsView()
                     case .repositories:
                         RepositoriesSettingsView()
+                    case .minimalMode:
+                        MinimalModeSettingsView()
                     // Terminal
                     case .shell:
                         ShellSettingsView()
@@ -242,8 +246,6 @@ struct SettingsDetailView: View {
                         DangerousCommandSettingsView()
                     case .graphics:
                         GraphicsSettingsView()
-                    case .minimalMode:
-                        MinimalModeSettingsView()
                     // Input & Productivity
                     case .keyboardMouse:
                         InputSettingsView()

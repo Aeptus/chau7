@@ -2330,7 +2330,7 @@
 "settings.dangerousGuard.scope.none" = "Disabled";
 "settings.dangerousGuard.title" = "Command Guard";
 "settings.display" = "Display";
-"settings.display.description" = "Syntax highlighting, URLs, images, and window layout";
+"settings.display.description" = "Syntax highlighting, URLs, images, and output formatting";
 "settings.display.resetToDefaults" = "Reset Display to Defaults";
 "settings.display.windowLayout" = "Window & Layout";
 "settings.editor" = "Text Editor";
@@ -2892,9 +2892,14 @@
 "settings.tokenOptimization.description" = "CTO wrapper scripts, per-tab control, and prefix";
 "settings.windows.alwaysShowToolbar" = "Always Show Toolbar in Fullscreen";
 "settings.windows.alwaysShowToolbar.help" = "Keep the toolbar visible when the window is in fullscreen mode";
+"settings.windows.appMode" = "App Window Mode";
 "settings.windows.enableSplitPanes" = "Enable Split Panes";
 "settings.windows.enableSplitPanes.help" = "Allow splitting terminal into multiple panes within a single tab";
+"settings.windows.floatingWindow" = "Keep Windows Above Other Apps";
+"settings.windows.floatingWindow.help" = "Keep Chau7 terminal windows above normal app windows.";
 "settings.windows.fullscreen" = "Fullscreen";
+"settings.windows.menuBarOnlyMode" = "Menu Bar Only Mode";
+"settings.windows.menuBarOnlyMode.help" = "Run Chau7 from the menu bar without a Dock icon. Takes effect after restarting Chau7.";
 "settings.windows.navigatePanes" = "Navigate Panes";
 "settings.windows.overlayDescription" = "The overlay window remembers its position per workspace and restores it automatically.";
 "settings.windows.overlayWindow" = "Overlay Window";

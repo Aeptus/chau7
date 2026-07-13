@@ -8,6 +8,23 @@ struct WindowsSettingsView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: Chau7Style.Settings.pageSectionSpacing) {
+            // App Window Mode
+            SettingsSectionHeader(L("settings.windows.appMode", "App Window Mode"), icon: "menubar.rectangle")
+
+            SettingsToggle(
+                label: L("settings.windows.menuBarOnlyMode", "Menu Bar Only Mode"),
+                help: L("settings.windows.menuBarOnlyMode.help", "Run Chau7 from the menu bar without a Dock icon. Takes effect after restarting Chau7."),
+                isOn: $settings.menuBarOnlyMode
+            )
+
+            SettingsToggle(
+                label: L("settings.windows.floatingWindow", "Keep Windows Above Other Apps"),
+                help: L("settings.windows.floatingWindow.help", "Keep Chau7 terminal windows above normal app windows."),
+                isOn: $settings.windowFloating
+            )
+
+            SettingsDivider()
+
             // Overlay
             SettingsSectionHeader(L("settings.windows.overlayWindow", "Overlay Window"), icon: "macwindow")
 

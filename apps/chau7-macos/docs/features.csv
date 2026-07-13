@@ -341,7 +341,7 @@ Appearance,Command Blocks,"Colored left-border gutter marks — green (success),
 Appearance,Turn-Linked Command Blocks,Command blocks carry runtime turn IDs and exact terminal row bounds so overlays and investigators can map shell work back to the active agent turn,Shipped,Yes
 Appearance,Line Timestamps,Optional timestamps on each terminal line in multiple formats,Shipped,No
 Appearance,JSON Pretty-Print,Optional auto-formatting of JSON output in terminal,Shipped,No
-Settings,Comprehensive Settings UI,Tabbed interface with fuzzy search across 100+ settings,Shipped,No
+Settings,Comprehensive Settings UI,"Settings UI with fuzzy search coverage for every routed settings pane, including app and window chrome, display rendering, tabs, scrollback, keyboard, AI detection, MCP, logs/history, repository metadata, hover card, and about surfaces",Shipped,No
 Settings,Settings Profiles,"Save, load, export, and import named configurations",Shipped,No
 Settings,Per-Folder Config,.chau7/config.toml in any repo — project-specific settings,Shipped,No
 Settings,Config File Watcher,Auto-reload on config changes — no restart needed,Shipped,No

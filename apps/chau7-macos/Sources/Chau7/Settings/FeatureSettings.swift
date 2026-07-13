@@ -2040,8 +2040,11 @@ final class FeatureSettings {
         var alwaysShowToolbarInFullscreen: Bool?
         var appTheme: String?
         var launchAtLogin: Bool?
+        var menuBarOnlyMode: Bool?
+        var windowFloating: Bool?
         var appLanguage: String?
         var windowOpacity: Double
+        var enableLigatures: Bool?
         var cursorStyle: String
         var cursorBlink: Bool
         var scrollbackLines: Int
@@ -2165,8 +2168,11 @@ final class FeatureSettings {
             alwaysShowToolbarInFullscreen: alwaysShowToolbarInFullscreen,
             appTheme: appTheme.rawValue,
             launchAtLogin: launchAtLogin,
+            menuBarOnlyMode: menuBarOnlyMode,
+            windowFloating: windowFloating,
             appLanguage: appLanguage.rawValue,
             windowOpacity: windowOpacity,
+            enableLigatures: enableLigatures,
             cursorStyle: cursorStyle,
             cursorBlink: cursorBlink,
             scrollbackLines: scrollbackLines,
@@ -2313,11 +2319,14 @@ final class FeatureSettings {
             appTheme = theme
         }
         launchAtLogin = imported.launchAtLogin ?? launchAtLogin
+        menuBarOnlyMode = imported.menuBarOnlyMode ?? menuBarOnlyMode
+        windowFloating = imported.windowFloating ?? windowFloating
         if let langRaw = imported.appLanguage,
            let lang = AppLanguage(rawValue: langRaw) {
             appLanguage = lang
         }
         windowOpacity = imported.windowOpacity
+        enableLigatures = imported.enableLigatures ?? enableLigatures
         cursorStyle = imported.cursorStyle
         cursorBlink = imported.cursorBlink
         scrollbackLines = imported.scrollbackLines
@@ -2716,8 +2725,11 @@ extension FeatureSettings {
             alwaysShowTabBar: true,
             appTheme: "system",
             launchAtLogin: false,
+            menuBarOnlyMode: false,
+            windowFloating: false,
             appLanguage: "system",
             windowOpacity: 1.0,
+            enableLigatures: false,
             cursorStyle: "block",
             cursorBlink: true,
             scrollbackLines: 10000,

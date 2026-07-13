@@ -2332,7 +2332,7 @@
 "settings.dangerousGuard.scope.none" = "Désactivé";
 "settings.dangerousGuard.title" = "Protection des commandes";
 "settings.display" = "Affichage";
-"settings.display.description" = "Coloration syntaxique, URL, images et disposition de la fenêtre";
+"settings.display.description" = "Coloration syntaxique, URL, images et formatage de sortie";
 "settings.display.resetToDefaults" = "Réinitialiser l'affichage aux valeurs par défaut";
 "settings.display.windowLayout" = "Fenêtre et disposition";
 "settings.editor" = "Éditeur de texte";
@@ -2894,9 +2894,14 @@
 "settings.tokenOptimization.description" = "Wrappers CTO, contrôle par onglet et préfixe";
 "settings.windows.alwaysShowToolbar" = "Toujours afficher la barre d'outils en plein écran";
 "settings.windows.alwaysShowToolbar.help" = "Garder la barre d'outils visible lorsque la fenêtre est en plein écran";
+"settings.windows.appMode" = "Mode de fenêtre de l'app";
 "settings.windows.enableSplitPanes" = "Activer les panneaux divisés";
 "settings.windows.enableSplitPanes.help" = "Permettre de diviser le terminal en plusieurs panneaux dans un seul onglet";
+"settings.windows.floatingWindow" = "Garder les fenêtres au-dessus des autres apps";
+"settings.windows.floatingWindow.help" = "Garder les fenêtres de terminal Chau7 au-dessus des fenêtres d'app normales.";
 "settings.windows.fullscreen" = "Plein écran";
+"settings.windows.menuBarOnlyMode" = "Mode barre de menus uniquement";
+"settings.windows.menuBarOnlyMode.help" = "Exécuter Chau7 depuis la barre de menus sans icône dans le Dock. Prend effet après le redémarrage de Chau7.";
 "settings.windows.navigatePanes" = "Naviguer entre les panneaux";
 "settings.windows.overlayDescription" = "La fenêtre d'overlay mémorise sa position par espace de travail et la restaure automatiquement.";
 "settings.windows.overlayWindow" = "Fenêtre d'overlay";

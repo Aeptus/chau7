@@ -2337,7 +2337,7 @@
 // MARK: - Settings: Display
 
 "settings.display" = "Pantalla";
-"settings.display.description" = "Resaltado de sintaxis, URLs, imágenes y disposición de ventana";
+"settings.display.description" = "Resaltado de sintaxis, URLs, imágenes y formato de salida";
 "settings.display.resetToDefaults" = "Restablecer pantalla a valores predeterminados";
 "settings.display.windowLayout" = "Ventana y disposición";
 
@@ -2940,9 +2940,14 @@
 "settings.tokenOptimization.description" = "Scripts de envoltura CTO, control por pestaña y prefijo";
 "settings.windows.alwaysShowToolbar" = "Siempre mostrar la barra de herramientas en pantalla completa";
 "settings.windows.alwaysShowToolbar.help" = "Mantener la barra de herramientas visible cuando la ventana está en modo de pantalla completa";
+"settings.windows.appMode" = "Modo de ventana de la app";
 "settings.windows.enableSplitPanes" = "Activar paneles divididos";
 "settings.windows.enableSplitPanes.help" = "Permitir dividir el terminal en múltiples paneles dentro de una sola pestaña";
+"settings.windows.floatingWindow" = "Mantener ventanas sobre otras apps";
+"settings.windows.floatingWindow.help" = "Mantener las ventanas de terminal de Chau7 sobre las ventanas normales de otras apps.";
 "settings.windows.fullscreen" = "Pantalla completa";
+"settings.windows.menuBarOnlyMode" = "Modo solo barra de menús";
+"settings.windows.menuBarOnlyMode.help" = "Ejecutar Chau7 desde la barra de menús sin icono en el Dock. Tiene efecto después de reiniciar Chau7.";
 "settings.windows.navigatePanes" = "Navegar paneles";
 "settings.windows.overlayDescription" = "La ventana superpuesta recuerda su posición por escritorio y la restaura automáticamente.";
 "settings.windows.overlayWindow" = "Ventana superpuesta";

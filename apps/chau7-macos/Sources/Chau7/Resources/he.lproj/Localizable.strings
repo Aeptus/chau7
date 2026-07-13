@@ -2298,7 +2298,7 @@
 "settings.dangerousGuard.scope.none" = "מושבת";
 "settings.dangerousGuard.title" = "מגן פקודות";
 "settings.display" = "תצוגה";
-"settings.display.description" = "הדגשת תחביר, כתובות URL, תמונות ופריסת חלון";
+"settings.display.description" = "הדגשת תחביר, כתובות URL, תמונות ועיצוב פלט";
 "settings.display.resetToDefaults" = "אפס תצוגה לברירות המחדל";
 "settings.display.windowLayout" = "חלון ופריסה";
 "settings.editor" = "עורך טקסט";
@@ -2860,9 +2860,14 @@
 "settings.tokenOptimization.description" = "סקריפטי עטיפה של CTO, שליטה לכל כרטיסייה וקידומת";
 "settings.windows.alwaysShowToolbar" = "הצג תמיד סרגל כלים במסך מלא";
 "settings.windows.alwaysShowToolbar.help" = "השאר את סרגל הכלים גלוי כאשר החלון במצב מסך מלא";
+"settings.windows.appMode" = "מצב חלון האפליקציה";
 "settings.windows.enableSplitPanes" = "הפעל חלוניות מפוצלות";
 "settings.windows.enableSplitPanes.help" = "אפשר פיצול הטרמינל למספר חלוניות בתוך כרטיסייה אחת";
+"settings.windows.floatingWindow" = "השאר חלונות מעל אפליקציות אחרות";
+"settings.windows.floatingWindow.help" = "השאר את חלונות הטרמינל של Chau7 מעל חלונות אפליקציה רגילים.";
 "settings.windows.fullscreen" = "מסך מלא";
+"settings.windows.menuBarOnlyMode" = "מצב שורת תפריטים בלבד";
+"settings.windows.menuBarOnlyMode.help" = "הפעל את Chau7 משורת התפריטים ללא סמל ב-Dock. נכנס לתוקף לאחר הפעלה מחדש של Chau7.";
 "settings.windows.navigatePanes" = "נווט בין חלוניות";
 "settings.windows.overlayDescription" = "חלון ה-overlay זוכר את מיקומו לכל סביבת עבודה ומשחזר אותו אוטומטית.";
 "settings.windows.overlayWindow" = "חלון Overlay";

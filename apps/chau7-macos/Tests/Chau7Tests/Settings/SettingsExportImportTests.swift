@@ -17,6 +17,31 @@ final class SettingsExportImportTests: XCTestCase {
         XCTAssertEqual(decoded.exportVersion, FeatureSettings.maxSupportedSettingsExportVersion)
     }
 
+    func testExportIncludesAppChromeVisibilitySettings() throws {
+        let settings = FeatureSettings.shared
+        let originalMenuBarOnlyMode = settings.menuBarOnlyMode
+        let originalWindowFloating = settings.windowFloating
+        let originalEnableLigatures = settings.enableLigatures
+        defer {
+            settings.menuBarOnlyMode = originalMenuBarOnlyMode
+            settings.windowFloating = originalWindowFloating
+            settings.enableLigatures = originalEnableLigatures
+        }
+
+        settings.menuBarOnlyMode = true
+        settings.windowFloating = true
+        settings.enableLigatures = true
+
+        let data = try XCTUnwrap(settings.exportSettings())
+        let decoded = try XCTUnwrap(
+            JSONOperations.decode(FeatureSettings.ExportableSettings.self, from: data, context: "test")
+        )
+
+        XCTAssertEqual(decoded.menuBarOnlyMode, true)
+        XCTAssertEqual(decoded.windowFloating, true)
+        XCTAssertEqual(decoded.enableLigatures, true)
+    }
+
     func testImportRefusesNewerExportVersion() throws {
         // A real export with only the version bumped: a future format must be
         // refused outright, not partially decoded-and-resaved.
