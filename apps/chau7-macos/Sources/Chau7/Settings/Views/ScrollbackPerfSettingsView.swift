@@ -1,6 +1,6 @@
 import SwiftUI
 
-// MARK: - Scrollback & Performance Settings
+// MARK: - Performance Settings
 
 struct ScrollbackPerfSettingsView: View {
     @Bindable var model: AppModel

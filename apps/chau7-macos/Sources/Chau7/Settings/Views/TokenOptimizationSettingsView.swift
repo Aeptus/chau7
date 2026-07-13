@@ -24,13 +24,13 @@ struct TokenOptimizationSettingsView: View {
         VStack(alignment: .leading, spacing: Chau7Style.Settings.pageSectionSpacing) {
             // Mode Selection
             SettingsSectionHeader(
-                L("cto.settings.mode", "Optimization Mode"),
+                L("cto.settings.mode", "Context Mode"),
                 icon: "bolt.horizontal.circle"
             )
 
             SettingsPicker(
                 label: L("cto.settings.mode.label", "Mode"),
-                help: L("cto.settings.mode.help", "Controls when token-optimized command output is active"),
+                help: L("cto.settings.mode.help", "Controls when context-optimized command output is active"),
                 selection: modeBinding,
                 options: TokenOptimizationMode.allCases.map { mode in
                     (value: mode.rawValue, label: mode.displayName)
@@ -89,7 +89,7 @@ struct TokenOptimizationSettingsView: View {
 
                 // CTO Runtime Telemetry
                 SettingsSectionHeader(
-                    L("cto.settings.ctoRuntime", "CTO Runtime Telemetry"),
+                    L("cto.settings.ctoRuntime", "Runtime Telemetry"),
                     icon: "chart.xyaxis.line"
                 )
 

@@ -115,19 +115,19 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .hoverCard: return L("settings.hoverCard", "Hover Card")
         case .repositories: return L("settings.repositories", "Repositories")
         case .shell: return L("settings.shell", "Shell")
-        case .scrollbackPerf: return L("settings.scrollbackPerf", "Scrollback & Performance")
-        case .dangerousCommands: return L("settings.dangerousCommands", "Dangerous Commands")
+        case .scrollbackPerf: return L("settings.scrollbackPerf", "Performance")
+        case .dangerousCommands: return L("settings.dangerousCommands", "Command Safety")
         case .graphics: return L("settings.graphics", "Graphics")
         case .keyboardMouse: return L("settings.keyboardMouse", "Keyboard & Mouse")
         case .snippetsTools: return L("settings.snippetsTools", "Snippets & Tools")
         case .editor: return L("settings.editor", "Text Editor")
         case .minimalMode: return L("settings.minimalMode", "Minimal Mode")
         case .aiDetection: return L("settings.aiDetection", "AI Detection")
-        case .tokenOptimization: return L("settings.tokenOptimization", "Token Optimization (CTO)")
-        case .mcpControl: return L("settings.mcpControl", "MCP Control")
+        case .tokenOptimization: return L("settings.tokenOptimization", "Context Optimization")
+        case .mcpControl: return L("settings.mcpControl", "Agent Control")
         case .remoteControl: return L("settings.remoteControl", "Remote Control")
-        case .apiProxy: return L("settings.apiProxy", "API Proxy")
-        case .promptInjection: return L("settings.promptInjection", "Prompt Injection")
+        case .apiProxy: return L("settings.apiProxy", "API Tracking")
+        case .promptInjection: return L("settings.promptInjection", "AI Context")
         case .notifications: return L("settings.notifications", "Notifications")
         case .logsHistory: return L("settings.logsHistory", "Logs & History")
         }
@@ -177,7 +177,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .hoverCard: return L("settings.hoverCard.description", "Choose which sections appear in the tab hover card")
         case .repositories: return L("settings.repositories.description", "Manage repo descriptions, labels, and favorite files")
         case .shell: return L("settings.shell.description", "Shell, cursor, and bell")
-        case .scrollbackPerf: return L("settings.scrollbackPerf.description", "Scrollback buffer, rendering, and backend")
+        case .scrollbackPerf: return L("settings.scrollbackPerf.description", "Rendering, scrollback, and performance limits")
         case .dangerousCommands: return L("settings.dangerousCommands.description", "Highlight and guard risky commands")
         case .graphics: return L("settings.graphics.description", "Sixel and Kitty graphics protocols")
         case .keyboardMouse: return L("settings.keyboardMouse.description", "Keyboard shortcuts and mouse behavior")
@@ -185,11 +185,11 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .editor: return L("settings.editor.description", "Built-in text editor font, indentation, and display")
         case .minimalMode: return L("settings.minimalMode.description", "Hide tab bar, title bar, and status elements")
         case .aiDetection: return L("settings.aiDetection.description", "AI CLI detection, theming, and LLM provider")
-        case .tokenOptimization: return L("settings.tokenOptimization.description", "CTO wrapper scripts, per-tab control, and prefix")
-        case .mcpControl: return L("settings.mcpControl.description", "MCP agent tab creation, limits, and approval")
+        case .tokenOptimization: return L("settings.tokenOptimization.description", "Context optimization mode, per-tab control, and prefix")
+        case .mcpControl: return L("settings.mcpControl.description", "Agent tab creation, limits, and approval")
         case .remoteControl: return L("settings.remoteControl.description", "Remote access, pairing, and SSH profiles")
-        case .apiProxy: return L("settings.apiProxy.description", "API call tracking and analytics proxy")
-        case .promptInjection: return L("settings.promptInjection.description", "Inject context into AI requests per repository")
+        case .apiProxy: return L("settings.apiProxy.description", "API call tracking and analytics")
+        case .promptInjection: return L("settings.promptInjection.description", "Add repository context to AI requests")
         case .notifications: return L("settings.notifications.description", "Alert preferences and event filters")
         case .logsHistory: return L("settings.logsHistory.description", "Log files, session tracking, and command history")
         }
@@ -226,7 +226,7 @@ extension FeatureSettings {
                 "settings.search.startHere.keywords",
                 "status,start here,overview,setup,health,permissions,profile,mcp,remote,logs"
             ),
-            description: L("settings.search.startHere.description", "Review launch, profile, permissions, MCP, remote, notifications, and log paths")
+            description: L("settings.search.startHere.description", "Review launch, profile, permissions, Agent Control, remote, notifications, and log paths")
         ),
 
         // General
@@ -613,7 +613,7 @@ extension FeatureSettings {
             description: L("settings.search.bell.description", "Terminal bell sound")
         ),
 
-        // Scrollback & Performance
+        // Performance
         SearchableSetting(
             id: "scrollback",
             section: .scrollbackPerf,
@@ -655,11 +655,11 @@ extension FeatureSettings {
             description: L("settings.search.refreshCaps.description", "Limit active and background terminal refresh rates")
         ),
 
-        // Dangerous Commands
+        // Command Safety
         SearchableSetting(
             id: "dangerousCommands",
             section: .dangerousCommands,
-            title: L("settings.search.dangerousCommands.title", "Dangerous Commands"),
+            title: L("settings.search.dangerousCommands.title", "Command Safety"),
             keywords: localizedKeywords(
                 "settings.search.dangerousCommands.keywords",
                 "dangerous,risky,destructive,rm,force,highlight,safety"
@@ -865,21 +865,21 @@ extension FeatureSettings {
             description: L("settings.search.errorExplanation.description", "Use an LLM to explain terminal errors")
         ),
 
-        // Token Optimization (CTO)
+        // Context Optimization
         SearchableSetting(
             id: "ctoMode",
             section: .tokenOptimization,
-            title: L("settings.search.ctoMode.title", "Optimization Mode"),
+            title: L("settings.search.ctoMode.title", "Context Mode"),
             keywords: localizedKeywords(
                 "settings.search.ctoMode.keywords",
                 "cto,token,optimization,mode,wrapper,all,ai,manual"
             ),
-            description: L("settings.search.ctoMode.description", "Controls when token-optimized output is active")
+            description: L("settings.search.ctoMode.description", "Controls when context optimization is active")
         ),
         SearchableSetting(
             id: "ctoPrefix",
             section: .tokenOptimization,
-            title: L("settings.search.ctoPrefix.title", "CTO Prefix"),
+            title: L("settings.search.ctoPrefix.title", "Context Prefix"),
             keywords: localizedKeywords(
                 "settings.search.ctoPrefix.keywords",
                 "cto,prefix,prepend,tab,override,integration"
@@ -889,44 +889,44 @@ extension FeatureSettings {
         SearchableSetting(
             id: "ctoPerTab",
             section: .tokenOptimization,
-            title: L("settings.search.ctoPerTab.title", "Per-Tab CTO"),
+            title: L("settings.search.ctoPerTab.title", "Per-Tab Context Optimization"),
             keywords: localizedKeywords(
                 "settings.search.ctoPerTab.keywords",
                 "tab,override,force,enable,disable,bolt"
             ),
-            description: L("settings.search.ctoPerTab.description", "Override CTO settings per tab")
+            description: L("settings.search.ctoPerTab.description", "Override context optimization per tab")
         ),
 
-        // MCP Control
+        // Agent Control
         SearchableSetting(
             id: "mcpServer",
             section: .mcpControl,
-            title: L("settings.search.mcpServer.title", "MCP Server"),
+            title: L("settings.search.mcpServer.title", "Agent Server"),
             keywords: localizedKeywords(
                 "settings.search.mcpServer.keywords",
                 "mcp,server,remote,agent,tabs,automation"
             ),
-            description: L("settings.search.mcpServer.description", "Enable MCP control and tab creation")
+            description: L("settings.search.mcpServer.description", "Enable agent control and tab creation")
         ),
         SearchableSetting(
             id: "mcpPermissions",
             section: .mcpControl,
-            title: L("settings.search.mcpPermissions.title", "MCP Permissions"),
+            title: L("settings.search.mcpPermissions.title", "Agent Permissions"),
             keywords: localizedKeywords(
                 "settings.search.mcpPermissions.keywords",
                 "permission,approval,allow,block,command,profile"
             ),
-            description: L("settings.search.mcpPermissions.description", "Configure MCP command approval and allow/block lists")
+            description: L("settings.search.mcpPermissions.description", "Configure agent command approval and allow/block lists")
         ),
         SearchableSetting(
             id: "mcpProfiles",
             section: .mcpControl,
-            title: L("settings.search.mcpProfiles.title", "MCP Profiles"),
+            title: L("settings.search.mcpProfiles.title", "Agent Profiles"),
             keywords: localizedKeywords(
                 "settings.search.mcpProfiles.keywords",
                 "profile,project,permissions,mcp"
             ),
-            description: L("settings.search.mcpProfiles.description", "Manage MCP permission profiles")
+            description: L("settings.search.mcpProfiles.description", "Manage agent permission profiles")
         ),
 
         // Remote Control
@@ -951,11 +951,11 @@ extension FeatureSettings {
             description: L("settings.search.sshProfiles.description", "Manage SSH config entries and connections")
         ),
 
-        // API Proxy
+        // API Tracking
         SearchableSetting(
             id: "apiAnalytics",
             section: .apiProxy,
-            title: L("settings.search.apiAnalytics.title", "API Analytics"),
+            title: L("settings.search.apiAnalytics.title", "API Tracking"),
             keywords: localizedKeywords(
                 "settings.search.apiAnalytics.keywords",
                 "api,proxy,analytics,cost,token,tracking"
@@ -963,16 +963,16 @@ extension FeatureSettings {
             description: L("settings.search.apiAnalytics.description", "Track API calls and token usage")
         ),
 
-        // Prompt Injection
+        // AI Context
         SearchableSetting(
             id: "promptInjection",
             section: .promptInjection,
-            title: L("settings.search.promptInjection.title", "Prompt Injection"),
+            title: L("settings.search.promptInjection.title", "AI Context"),
             keywords: localizedKeywords(
                 "settings.search.promptInjection.keywords",
                 "inject,prompt,context,prefix,prepend,append,system,repository,repo,rules"
             ),
-            description: L("settings.search.promptInjection.description", "Inject custom context into AI requests per repository")
+            description: L("settings.search.promptInjection.description", "Add custom context to AI requests per repository")
         ),
 
         // Notifications

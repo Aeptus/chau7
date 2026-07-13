@@ -923,8 +923,8 @@
 "settings.terminal.bell.sound.subtle" = "Sutil";
 "settings.terminal.bell.visualBell" = "Señal visual";
 "settings.terminal.bell.visualBell.help" = "Hacer parpadear la pantalla en lugar de reproducir un sonido";
-"settings.terminal.dangerousCommands" = "Comandos peligrosos";
-"settings.terminal.dangerousCommands.enabled" = "Resaltar comandos peligrosos";
+"settings.terminal.dangerousCommands" = "Seguridad de comandos";
+"settings.terminal.dangerousCommands.enabled" = "Resaltar comandos riesgosos";
 "settings.terminal.dangerousCommands.enabled.help" = "Hacer que los comandos de riesgo destaquen en la salida del terminal";
 "settings.terminal.dangerousCommands.scope" = "Alcance del resaltado";
 "settings.terminal.dangerousCommands.scope.help" = "Elige dónde se resaltan los patrones de riesgo";
@@ -1666,8 +1666,8 @@
 "repo.section.branches" = "Ramas";
 
 // MARK: - MCP Settings
-"mcp.settings.newProfile" = "Nuevo perfil MCP";
-"mcp.settings.editProfile" = "Editar perfil MCP";
+"mcp.settings.newProfile" = "Nuevo perfil de agente";
+"mcp.settings.editProfile" = "Editar perfil de agente";
 "mcp.settings.trigger" = "Disparador";
 "mcp.settings.type" = "Tipo";
 "mcp.settings.permissionMode" = "Modo de permisos";
@@ -1984,10 +1984,10 @@
 "cto.savings.totalCommands" = "Total de comandos";
 "cto.settings.commandLog" = "Comandos recientes del optimizador";
 "cto.settings.commands" = "Comandos optimizados";
-"cto.settings.ctoRuntime" = "Telemetría del runtime CTO";
+"cto.settings.ctoRuntime" = "Telemetría de ejecución";
 "cto.settings.howItWorks" = "Cómo funciona";
-"cto.settings.mode" = "Modo de optimización";
-"cto.settings.mode.help" = "Controla cuándo está activa la salida de comandos optimizada en tokens";
+"cto.settings.mode" = "Modo de contexto";
+"cto.settings.mode.help" = "Controla cuándo está activa la salida de comandos optimizada para contexto";
 "cto.settings.mode.label" = "Modo";
 "cto.settings.optimizer" = "Optimizador";
 "cto.settings.perTab" = "Control por pestaña";
@@ -2247,8 +2247,8 @@
 "settings.ai.removeRule" = "Eliminar regla";
 "settings.aiDetection" = "Detección de IA";
 "settings.aiDetection.description" = "Detección de CLIs de IA, temas y proveedor de LLM";
-"settings.apiProxy" = "Proxy de API";
-"settings.apiProxy.description" = "Seguimiento de llamadas API y proxy de analítica";
+"settings.apiProxy" = "Seguimiento de API";
+"settings.apiProxy.description" = "Seguimiento de llamadas API y analítica";
 "settings.appearance.appearance" = "Apariencia";
 "settings.appearance.appearance.help" = "Elige apariencia clara, oscura o seguir la del sistema";
 "settings.appearance.clickableURLs" = "URLs clicables";
@@ -2297,9 +2297,9 @@
 "settings.configFile.repo.path" = "Ruta";
 "settings.configFile.title" = "Archivo de configuración";
 
-// MARK: - Settings: Dangerous Commands
+// MARK: - Settings: Command Safety
 
-"settings.dangerousCommands" = "Comandos peligrosos";
+"settings.dangerousCommands" = "Seguridad de comandos";
 "settings.dangerousCommands.description" = "Resaltar y proteger contra comandos riesgosos";
 "settings.dangerousGuard.allowList" = "Siempre permitidos";
 "settings.dangerousGuard.allowList.clearAll" = "Borrar todo";
@@ -2453,8 +2453,8 @@
 "settings.hoverCard.sections.description" = "Elige qué secciones de información aparecen al pasar el cursor sobre una pestaña.";
 "settings.hoverCard.shellIntegration" = "Integración de shell";
 "settings.hoverCard.shellIntegration.help" = "Mostrar si la integración de shell está activa o si usa heurísticas";
-"settings.hoverCard.tokenOptimization" = "Optimización de tokens";
-"settings.hoverCard.tokenOptimization.help" = "Mostrar estado y control de CTO";
+"settings.hoverCard.tokenOptimization" = "Optimización de contexto";
+"settings.hoverCard.tokenOptimization.help" = "Mostrar estado y control de optimización de contexto";
 
 // MARK: - Settings: Input
 
@@ -2538,24 +2538,30 @@
 "settings.mcp.allowedCommands.help" = "Comandos que se ejecutan inmediatamente sin solicitar confirmación";
 "settings.mcp.appearance" = "Apariencia";
 "settings.mcp.approval" = "Requerir aprobación";
-"settings.mcp.approval.help" = "Mostrar un diálogo de confirmación antes de que MCP cree una nueva pestaña";
+"settings.mcp.approval.help" = "Mostrar un diálogo de confirmación antes de que un agente cree una nueva pestaña";
 "settings.mcp.blockedCommands" = "Comandos bloqueados";
 "settings.mcp.blockedCommands.help" = "Comandos que siempre se rechazan — nunca se ejecutan";
-"settings.mcp.enable" = "Activar MCP";
-"settings.mcp.enable.help" = "Permitir que los clientes MCP controlen las pestañas de Chau7 a través del socket local";
+"settings.mcp.enable" = "Activar control de agentes";
+"settings.mcp.enable.help" = "Permitir que los clientes de agente controlen las pestañas de Chau7 a través del socket local";
 "settings.mcp.general" = "General";
 "settings.mcp.indicator" = "Mostrar indicador en la pestaña";
-"settings.mcp.indicator.help" = "Mostrar un icono y fondo morado en las pestañas creadas por MCP";
+"settings.mcp.indicator.help" = "Mostrar un icono y fondo morado en las pestañas creadas por agentes";
 "settings.mcp.limits" = "Límites";
-"settings.mcp.maxTabs" = "Máximo de pestañas MCP";
-"settings.mcp.maxTabs.help" = "Número máximo de pestañas que un cliente MCP puede crear (1-50)";
+"settings.mcp.maxTabs" = "Máximo de pestañas de agentes";
+"settings.mcp.maxTabs.help" = "Número máximo de pestañas que un cliente de agente puede crear (1-50)";
 "settings.mcp.permissionMode" = "Modo de permisos";
-"settings.mcp.permissionMode.help" = "Controla cómo se filtran los comandos MCP";
+"settings.mcp.permissionMode.help" = "Controla cómo se filtran los comandos de agentes";
 "settings.mcp.permissions" = "Permisos de comandos";
-"settings.mcp.profiles" = "Perfiles de MCP";
+"settings.mcp.profiles" = "Perfiles de agentes";
 "settings.mcp.profiles.help" = "Los perfiles sobrescriben los permisos globales cuando su disparador coincide con el contexto de la pestaña actual.";
-"settings.mcpControl" = "Control MCP";
-"settings.mcpControl.description" = "Creación de pestañas de agente MCP, límites y aprobación";
+"settings.mcpControl" = "Control de agentes";
+"settings.mcpControl.description" = "Creación de pestañas de agente, límites y aprobación";
+"settings.search.mcpPermissions.description" = "Configurar aprobación de comandos de agentes y listas permitidas/bloqueadas";
+"settings.search.mcpPermissions.title" = "Permisos de agentes";
+"settings.search.mcpProfiles.description" = "Gestionar perfiles de permisos de agentes";
+"settings.search.mcpProfiles.title" = "Perfiles de agentes";
+"settings.search.mcpServer.description" = "Activar control de agentes y creación de pestañas";
+"settings.search.mcpServer.title" = "Servidor de agentes";
 
 // MARK: - Settings: Minimal Mode
 
@@ -2705,11 +2711,11 @@
 "settings.injection.priority.local" = "Archivo local (.chau7/injection.json)";
 "settings.injection.priority.specific" = "Regla específica desde Ajustes";
 "settings.injection.triggers" = "When to inject";
-"settings.promptInjection" = "Inyección de prompt";
-"settings.promptInjection.description" = "Inyectar contexto en solicitudes de IA por repositorio";
-"settings.search.promptInjection.description" = "Inyectar contexto personalizado en solicitudes de IA por repositorio";
+"settings.promptInjection" = "Contexto de IA";
+"settings.promptInjection.description" = "Añadir contexto de repositorio a solicitudes de IA";
+"settings.search.promptInjection.description" = "Añadir contexto personalizado a solicitudes de IA por repositorio";
 "settings.search.promptInjection.keywords" = "inyectar,prompt,contexto,prefijo,añadir,sistema,repositorio,repo,reglas";
-"settings.search.promptInjection.title" = "Inyección de prompt";
+"settings.search.promptInjection.title" = "Contexto de IA";
 "settings.remote.access" = "Acceso remoto";
 "settings.remote.agent" = "Agente remoto";
 "settings.remote.connectedDevice" = "Dispositivo conectado: %@";
@@ -2734,8 +2740,8 @@
 "settings.repositories" = "Repositorios";
 "settings.repositories.description" = "Gestionar descripciones, etiquetas y archivos favoritos de repositorios";
 "settings.repositories.recent" = "Repositorios recientes";
-"settings.scrollbackPerf" = "Historial y rendimiento";
-"settings.scrollbackPerf.description" = "Búfer de historial, renderizado y backend";
+"settings.scrollbackPerf" = "Rendimiento";
+"settings.scrollbackPerf.description" = "Renderizado, historial y límites de rendimiento";
 "settings.search.aiCustomDetection.description" = "Añadir reglas personalizadas de detección de CLI de IA";
 "settings.search.aiCustomDetection.title" = "Detección personalizada de IA";
 "settings.search.aiDetection.description" = "Detectar CLIs de IA automáticamente";
@@ -2743,7 +2749,7 @@
 "settings.search.aiToolNotifications.description" = "Notificaciones de herramientas de programación con IA";
 "settings.search.aiToolNotifications.title" = "Notificaciones de herramientas de IA";
 "settings.search.apiAnalytics.description" = "Rastrear llamadas API y uso de tokens";
-"settings.search.apiAnalytics.title" = "Analíticas de API";
+"settings.search.apiAnalytics.title" = "Seguimiento de API";
 "settings.search.appThresholds.description" = "Configurar umbrales de detección de eventos de la aplicación";
 "settings.search.appThresholds.title" = "Umbrales de eventos de la app";
 "settings.search.autoTabTheme.description" = "Colorear pestañas según el modelo de IA";
@@ -2766,18 +2772,18 @@
 "settings.search.configFile.title" = "Archivo de configuración";
 "settings.search.copyOnSelect.description" = "Copiar texto al seleccionarlo";
 "settings.search.copyOnSelect.title" = "Copiar al seleccionar";
-"settings.search.ctoMode.description" = "Controla cuándo está activa la salida optimizada de tokens";
-"settings.search.ctoMode.title" = "Modo de optimización";
-"settings.search.ctoPerTab.description" = "Anular ajustes de CTO por pestaña";
-"settings.search.ctoPerTab.title" = "CTO por pestaña";
+"settings.search.ctoMode.description" = "Controla cuándo está activa la optimización de contexto";
+"settings.search.ctoMode.title" = "Modo de contexto";
+"settings.search.ctoPerTab.description" = "Anular la optimización de contexto por pestaña";
+"settings.search.ctoPerTab.title" = "Optimización de contexto por pestaña";
 "settings.search.ctoPrefix.description" = "Texto de prefijo añadido a los comandos del terminal";
-"settings.search.ctoPrefix.title" = "Prefijo CTO";
+"settings.search.ctoPrefix.title" = "Prefijo de contexto";
 "settings.search.cursor.description" = "Apariencia del cursor del terminal";
 "settings.search.cursor.title" = "Estilo del cursor";
 "settings.search.cursorBlink.description" = "Animar el cursor con parpadeo";
 "settings.search.cursorBlink.title" = "Parpadeo del cursor";
 "settings.search.dangerousCommands.description" = "Resaltar comandos peligrosos en el terminal";
-"settings.search.dangerousCommands.title" = "Comandos peligrosos";
+"settings.search.dangerousCommands.title" = "Seguridad de comandos";
 "settings.search.defaultDir.description" = "Directorio inicial para nuevas pestañas del terminal";
 "settings.search.defaultDir.title" = "Directorio predeterminado";
 "settings.search.defaultZoom.description" = "Porcentaje de zoom predeterminado para nuevas pestañas";
@@ -2877,7 +2883,7 @@
 "settings.ssh.entries" = "Entradas de configuración SSH";
 "settings.ssh.fileWatch" = "Vigilancia de archivos";
 "settings.ssh.sync" = "Sincronización de configuración SSH";
-"settings.tabs.allowCTOToggle" = "Permitir alternar CTO en la tarjeta emergente";
+"settings.tabs.allowCTOToggle" = "Permitir alternar optimización de contexto en la tarjeta emergente";
 "settings.tabs.alwaysWarnOnClose" = "Siempre avisar antes de cerrar pestaña";
 "settings.tabs.alwaysWarnOnClose.help" = "Mostrar un diálogo de confirmación antes de cerrar cualquier pestaña";
 "settings.tabs.customTitleOnly" = "Solo título personalizado";
@@ -2936,8 +2942,8 @@
 "settings.terminal.suspendBackgroundRendering" = "Suspender renderizado en segundo plano";
 "settings.terminal.suspendDelay" = "Retraso de suspensión (segundos)";
 "settings.terminal.suspendDelay.help" = "Segundos después de salir de una pestaña antes de pausar el renderizado. Valores más altos mantienen las pestañas receptivas por más tiempo.";
-"settings.tokenOptimization" = "Optimización de tokens (CTO)";
-"settings.tokenOptimization.description" = "Scripts de envoltura CTO, control por pestaña y prefijo";
+"settings.tokenOptimization" = "Optimización de contexto";
+"settings.tokenOptimization.description" = "Modo de optimización de contexto, control por pestaña y prefijo";
 "settings.windows.alwaysShowToolbar" = "Siempre mostrar la barra de herramientas en pantalla completa";
 "settings.windows.alwaysShowToolbar.help" = "Mantener la barra de herramientas visible cuando la ventana está en modo de pantalla completa";
 "settings.windows.appMode" = "Modo de ventana de la app";

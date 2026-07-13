@@ -107,7 +107,7 @@ struct TabsSettingsView: View {
             .disabled(settings.customTitleOnly)
 
             SettingsToggle(
-                label: L("settings.tabs.allowCTOToggle", "Allow CTO Toggle in Hover Card"),
+                label: L("settings.tabs.allowCTOToggle", "Allow Context Optimization Toggle in Hover Card"),
                 help: L(
                     "settings.tabs.allowCTOToggle.help",
                     "Show a toggle button in the tab hover card to control per-tab token optimization override."

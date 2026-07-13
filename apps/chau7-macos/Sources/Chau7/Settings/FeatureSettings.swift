@@ -1795,7 +1795,7 @@ final class FeatureSettings {
         static let apiAnalyticsPort = "analytics.api.port"
         static let apiAnalyticsLogPrompts = "analytics.api.logPrompts"
         static let apiAnalyticsIncludeOpenAI = "analytics.api.includeOpenAI"
-        // Token Optimization (CTO), MCP, and Remote Control live in
+        // Context Optimization, Agent Control (MCP), and Remote Control live in
         // MCPRemoteSettingsStore.Keys
         // Bug Report
         static let bugReportContactName = "bugReport.contactName"

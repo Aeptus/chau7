@@ -64,8 +64,8 @@ struct HoverCardSettingsView: View {
             )
 
             SettingsToggle(
-                label: L("settings.hoverCard.tokenOptimization", "Token Optimization"),
-                help: L("settings.hoverCard.tokenOptimization.help", "Show CTO status and toggle"),
+                label: L("settings.hoverCard.tokenOptimization", "Context Optimization"),
+                help: L("settings.hoverCard.tokenOptimization.help", "Show context optimization status and toggle"),
                 isOn: $settings.hoverCardShowTokenOptimization
             )
 

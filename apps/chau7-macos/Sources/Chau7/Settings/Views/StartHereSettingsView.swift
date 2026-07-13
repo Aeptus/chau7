@@ -64,7 +64,7 @@ struct StartHereSettingsView: View {
             ),
             SettingsStatusItem(
                 id: "mcp",
-                label: L("settings.mcpControl", "MCP Control"),
+                label: L("settings.mcpControl", "Agent Control"),
                 value: enabledDisabled(settings.mcpEnabled),
                 detail: settings.mcpEnabled
                     ? String(format: L("settings.startHere.mcp.detail", "Max tabs: %d"), settings.mcpMaxTabs)

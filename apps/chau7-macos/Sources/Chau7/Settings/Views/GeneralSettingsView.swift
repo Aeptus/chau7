@@ -139,7 +139,7 @@ struct GeneralSettingsView: View {
             ),
             SettingsStatusItem(
                 id: "mcp",
-                label: L("settings.mcpControl", "MCP Control"),
+                label: L("settings.mcpControl", "Agent Control"),
                 value: enabledDisabled(settings.mcpEnabled),
                 systemImage: "face.dashed",
                 tone: enabledTone(settings.mcpEnabled)

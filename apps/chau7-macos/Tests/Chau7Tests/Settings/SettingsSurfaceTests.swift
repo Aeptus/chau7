@@ -54,4 +54,19 @@ final class SettingsSurfaceTests: XCTestCase {
         XCTAssertEqual(SettingsSection.dangerousCommands.group, .safetyPrivacy)
         XCTAssertEqual(SettingsSection.notifications.group, .safetyPrivacy)
     }
+
+    func testTechnicalSettingSectionsUseHumanTitles() {
+        XCTAssertEqual(SettingsSection.tokenOptimization.title, "Context Optimization")
+        XCTAssertEqual(SettingsSection.mcpControl.title, "Agent Control")
+        XCTAssertEqual(SettingsSection.promptInjection.title, "AI Context")
+        XCTAssertEqual(SettingsSection.apiProxy.title, "API Tracking")
+        XCTAssertEqual(SettingsSection.scrollbackPerf.title, "Performance")
+        XCTAssertEqual(SettingsSection.dangerousCommands.title, "Command Safety")
+
+        let settingsByID = Dictionary(uniqueKeysWithValues: FeatureSettings.searchableSettings.map { ($0.id, $0) })
+        XCTAssertEqual(settingsByID["promptInjection"]?.title, "AI Context")
+        XCTAssertEqual(settingsByID["apiAnalytics"]?.title, "API Tracking")
+        XCTAssertEqual(settingsByID["dangerousCommands"]?.title, "Command Safety")
+        XCTAssertEqual(settingsByID["mcpServer"]?.title, "Agent Server")
+    }
 }

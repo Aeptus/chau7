@@ -1,9 +1,10 @@
 import Chau7Core
 import Foundation
 
-/// Owns the MCP + remote control + CTO integration domain: MCP server
-/// enablement/limits/permissions/profiles, remote relay configuration, token
-/// optimization mode, and CTO prefix/tab overrides.
+/// Owns the Agent Control (MCP) + remote control + Context Optimization
+/// integration domain: MCP server enablement/limits/permissions/profiles,
+/// remote relay configuration, context optimization mode, and CTO prefix/tab
+/// overrides.
 ///
 /// Extracted from `FeatureSettings` (which forwards) following the
 /// store-behind-facade pattern of the other settings domains. The one-time
@@ -13,7 +14,7 @@ import Foundation
 final class MCPRemoteSettingsStore {
 
     enum Keys {
-        /// Token Optimization (CTO)
+        /// Context Optimization
         static let tokenOptimizationMode = "cto.mode"
         // MCP
         static let mcpEnabled = "mcp.enabled"
@@ -35,7 +36,7 @@ final class MCPRemoteSettingsStore {
 
     @ObservationIgnored private let defaults: UserDefaults
 
-    // MARK: - Token Optimization (CTO) Settings
+    // MARK: - Context Optimization Settings
 
     var tokenOptimizationMode: TokenOptimizationMode {
         didSet {
