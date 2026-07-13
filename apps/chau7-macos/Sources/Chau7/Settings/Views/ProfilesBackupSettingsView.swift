@@ -11,12 +11,11 @@ struct ProfilesBackupSettingsView: View {
     @State private var importError: String?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: Chau7Style.Settings.pageSectionSpacing) {
             // Profile Auto-Switch
             ProfileAutoSwitchSettingsView(switcher: switcher, settings: settings)
 
-            Divider()
-                .padding(.vertical, 8)
+            SettingsDivider()
 
             // iCloud Sync
             SettingsSectionHeader(L("settings.general.icloud", "iCloud Sync"), icon: "icloud")
@@ -38,8 +37,7 @@ struct ProfilesBackupSettingsView: View {
                 ])
             }
 
-            Divider()
-                .padding(.vertical, 8)
+            SettingsDivider()
 
             // Import/Export
             SettingsSectionHeader(L("settings.general.backup", "Settings Backup"), icon: "square.and.arrow.up.on.square")

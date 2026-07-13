@@ -7,7 +7,7 @@ struct ScrollbackPerfSettingsView: View {
     @Bindable private var settings = FeatureSettings.shared
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: Chau7Style.Settings.pageSectionSpacing) {
             // Scrollback
             SettingsSectionHeader(L("settings.terminal.scrollback", "Scrollback"), icon: "scroll")
 
@@ -31,8 +31,7 @@ struct ScrollbackPerfSettingsView: View {
                 range: 0 ... 10000
             )
 
-            Divider()
-                .padding(.vertical, 8)
+            SettingsDivider()
 
             // Performance
             SettingsSectionHeader(L("settings.terminal.performance", "Performance"), icon: "gauge.with.dots.needle.33percent")
@@ -56,8 +55,7 @@ struct ScrollbackPerfSettingsView: View {
                 )
             }
 
-            Divider()
-                .padding(.vertical, 8)
+            SettingsDivider()
 
             // Rendering
             SettingsSectionHeader(L("settings.terminal.rendering", "Rendering"), icon: "cpu")
@@ -99,8 +97,7 @@ struct ScrollbackPerfSettingsView: View {
                 suffix: " fps"
             )
 
-            Divider()
-                .padding(.vertical, 8)
+            SettingsDivider()
 
             // Reset Button
             SettingsButtonRow(buttons: [

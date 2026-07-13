@@ -8,7 +8,7 @@ struct ConfigFileSettingsView: View {
     @Bindable private var watcher = ConfigFileWatcher.shared
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: Chau7Style.Settings.pageSectionSpacing) {
             // Header
             SettingsSectionHeader(L("settings.configFile.title", "Config File"), icon: "doc.text")
 
@@ -22,8 +22,7 @@ struct ConfigFileSettingsView: View {
                 text: L("settings.configFile.description", "Config files use a TOML-like format. Per-repo configs override global settings.")
             )
 
-            Divider()
-                .padding(.vertical, 8)
+            SettingsDivider()
 
             // Global Config Path
             SettingsSectionHeader(L("settings.configFile.global", "Global Config"), icon: "folder")
@@ -46,7 +45,7 @@ struct ConfigFileSettingsView: View {
 
             // Error display
             if let error = watcher.lastError {
-                HStack(alignment: .top, spacing: 8) {
+                HStack(alignment: .top, spacing: Chau7Style.Settings.inlineControlSpacing) {
                     Image(systemName: "exclamationmark.triangle.fill")
                         .foregroundColor(.orange)
                         .font(.system(size: 12))
@@ -54,13 +53,13 @@ struct ConfigFileSettingsView: View {
                         .font(.caption)
                         .foregroundColor(.red)
                 }
-                .padding(8)
+                .padding(Chau7Style.Settings.inlineControlSpacing)
                 .background(Color.red.opacity(0.1))
                 .cornerRadius(6)
             }
 
             // Action buttons
-            HStack(spacing: 12) {
+            HStack(spacing: Chau7Style.Settings.looseControlSpacing) {
                 Button {
                     watcher.createDefaultConfig()
                     watcher.loadGlobalConfig()
@@ -98,8 +97,7 @@ struct ConfigFileSettingsView: View {
                 .controlSize(.small)
             }
 
-            Divider()
-                .padding(.vertical, 8)
+            SettingsDivider()
 
             // Repo Config Info
             SettingsSectionHeader(L("settings.configFile.repo", "Per-Repo Config"), icon: "folder.badge.gearshape")
@@ -130,7 +128,7 @@ struct ConfigFileSettingsView: View {
                 }
             }
 
-            HStack(spacing: 12) {
+            HStack(spacing: Chau7Style.Settings.looseControlSpacing) {
                 Button {
                     if let dir = watcher.repoConfigDirectory {
                         watcher.createRepoConfig(directory: dir)

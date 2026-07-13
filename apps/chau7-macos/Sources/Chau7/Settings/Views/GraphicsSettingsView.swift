@@ -11,7 +11,7 @@ struct GraphicsSettingsView: View {
     @State private var renderTestFeedback: String?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: Chau7Style.Settings.pageSectionSpacing) {
             // Sixel Protocol
             SettingsSectionHeader(L("Sixel Graphics Protocol"), icon: "photo")
 
@@ -30,8 +30,7 @@ struct GraphicsSettingsView: View {
                 bridge.saveSettings()
             }
 
-            Divider()
-                .padding(.vertical, 8)
+            SettingsDivider()
 
             // Kitty Graphics Protocol
             SettingsSectionHeader(L("Kitty Graphics Protocol"), icon: "photo.artframe")
@@ -67,13 +66,12 @@ struct GraphicsSettingsView: View {
                 bridge.saveSettings()
             }
 
-            Divider()
-                .padding(.vertical, 8)
+            SettingsDivider()
 
             // Info Section
             SettingsSectionHeader(L("graphics.protocols.title", "Protocol Information"), icon: "info.circle")
 
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: Chau7Style.Settings.inlineControlSpacing) {
                 protocolInfoRow(
                     name: L("graphics.protocol.iterm2", "iTerm2 (imgcat)"),
                     statusText: L("graphics.status.alwaysEnabled", "Always enabled"),
@@ -97,19 +95,18 @@ struct GraphicsSettingsView: View {
                     isEnabled: bridge.isKittyGraphicsEnabled
                 )
             }
-            .padding(12)
+            .padding(Chau7Style.Settings.cardPadding)
             .background(Color(NSColor.controlBackgroundColor))
-            .cornerRadius(8)
+            .cornerRadius(Chau7Style.Radius.medium)
 
             // Shortcut hints
             SettingsHint(icon: "terminal", text: L("graphics.hint.sixel", "Test Sixel: convert image.png sixel:- (requires ImageMagick)"))
             SettingsHint(icon: "terminal", text: L("graphics.hint.kitty", "Test Kitty: kitty +kitten icat image.png (requires Kitty tools)"))
 
-            Divider()
-                .padding(.vertical, 8)
+            SettingsDivider()
 
             // Test Button
-            HStack(spacing: 12) {
+            HStack(spacing: Chau7Style.Settings.looseControlSpacing) {
                 SettingsButtonRow(buttons: [
                     .init(title: L("graphics.button.renderTestImage", "Render Test Image"), icon: "photo.badge.checkmark", style: .bordered) {
                         renderTestImage()

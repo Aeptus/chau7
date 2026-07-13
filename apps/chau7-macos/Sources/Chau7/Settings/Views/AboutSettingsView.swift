@@ -6,9 +6,9 @@ struct AboutSettingsView: View {
     var model: AppModel
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: Chau7Style.Settings.pageSectionSpacing) {
             // App Info
-            HStack(alignment: .top, spacing: 16) {
+            HStack(alignment: .top, spacing: Chau7Style.Settings.looseControlSpacing) {
                 Image(systemName: "bell.badge.fill")
                     .font(.system(size: 48))
                     .foregroundStyle(.orange)
@@ -26,8 +26,7 @@ struct AboutSettingsView: View {
             }
             .padding(.bottom, 8)
 
-            Divider()
-                .padding(.vertical, 8)
+            SettingsDivider()
 
             // Version Details
             SettingsSectionHeader(L("settings.about.versionInformation", "Version Information"), icon: "info.circle")
@@ -37,8 +36,7 @@ struct AboutSettingsView: View {
             SettingsInfoRow(label: L("settings.about.version", "Version"), value: bundleVersion, monospaced: true)
             SettingsInfoRow(label: L("settings.about.built", "Built"), value: buildDateString, monospaced: true)
 
-            Divider()
-                .padding(.vertical, 8)
+            SettingsDivider()
 
             // System Info
             SettingsSectionHeader(L("settings.about.systemInformation", "System Information"), icon: "desktopcomputer")
@@ -47,13 +45,12 @@ struct AboutSettingsView: View {
             SettingsInfoRow(label: L("settings.about.architecture", "Architecture"), value: machineArchitecture, monospaced: true)
             SettingsInfoRow(label: L("settings.about.shell", "Shell"), value: ProcessInfo.processInfo.environment["SHELL"] ?? L("settings.about.unknown", "Unknown"), monospaced: true)
 
-            Divider()
-                .padding(.vertical, 8)
+            SettingsDivider()
 
             // Links
             SettingsSectionHeader(L("settings.about.links", "Links"), icon: "link")
 
-            HStack(spacing: 16) {
+            HStack(spacing: Chau7Style.Settings.looseControlSpacing) {
                 Link(destination: URL(string: "https://github.com/aeptus/chau7")!) {
                     Label(L("GitHub", "GitHub"), systemImage: "chevron.left.forwardslash.chevron.right")
                 }
@@ -68,8 +65,7 @@ struct AboutSettingsView: View {
             }
             .buttonStyle(.link)
 
-            Divider()
-                .padding(.vertical, 8)
+            SettingsDivider()
 
             // Logs
             SettingsSectionHeader(L("settings.about.applicationLog", "Application Log"), icon: "doc.text")
@@ -85,8 +81,7 @@ struct AboutSettingsView: View {
                 }
             ])
 
-            Divider()
-                .padding(.vertical, 8)
+            SettingsDivider()
 
             // Acknowledgments
             SettingsSectionHeader(L("settings.about.acknowledgments", "Acknowledgments"), icon: "heart")

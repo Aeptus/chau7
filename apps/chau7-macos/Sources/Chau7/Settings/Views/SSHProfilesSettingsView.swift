@@ -8,7 +8,7 @@ struct SSHProfilesSettingsView: View {
     @State private var selectedEntry: SSHConfigEntry?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: Chau7Style.Settings.pageSectionSpacing) {
             SettingsSectionHeader(
                 L("settings.ssh.sync", "SSH Config Sync"),
                 icon: "link"
@@ -60,7 +60,7 @@ struct SSHProfilesSettingsView: View {
     // MARK: - Empty State
 
     private var emptyStateView: some View {
-        VStack(spacing: 8) {
+        VStack(spacing: Chau7Style.Settings.inlineControlSpacing) {
             Image(systemName: "doc.text")
                 .font(.title)
                 .foregroundStyle(.secondary)
@@ -86,7 +86,7 @@ struct SSHProfilesSettingsView: View {
     }
 
     private func entryRow(_ entry: SSHConfigEntry) -> some View {
-        HStack(spacing: 12) {
+        HStack(spacing: Chau7Style.Settings.looseControlSpacing) {
             Image(systemName: entry.host.contains("*") ? "globe" : "server.rack")
                 .foregroundStyle(.secondary)
                 .frame(width: 20)
@@ -118,7 +118,7 @@ struct SSHProfilesSettingsView: View {
     // MARK: - Action Buttons
 
     private var actionButtons: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: Chau7Style.Settings.looseControlSpacing) {
             Button {
                 manager.loadSSHConfig()
             } label: {

@@ -34,11 +34,15 @@ enum Chau7Style {
 
     enum Settings {
         static let labelWidth: CGFloat = 220
+        static let pageSectionSpacing = Spacing.medium
         static let rowSpacing = Spacing.medium
         static let compactRowSpacing = Spacing.small
+        static let inlineControlSpacing = Spacing.small
+        static let looseControlSpacing = Spacing.medium
         static let rowVerticalPadding = Spacing.xSmall
         static let sectionTopPadding = Spacing.small
         static let sectionBottomPadding = Spacing.xSmall
+        static let separatorVerticalPadding = Spacing.small
         static let contentPadding = Spacing.large
         static let hintPadding = Spacing.medium
         static let searchHorizontalPadding = Spacing.medium

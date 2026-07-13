@@ -6,7 +6,7 @@ struct MinimalModeSettingsView: View {
     @Bindable private var minimalMode = MinimalMode.shared
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: Chau7Style.Settings.pageSectionSpacing) {
             // Master Toggle
             SettingsSectionHeader(L("Minimal Mode"), icon: "rectangle.compress.vertical")
 
@@ -23,8 +23,7 @@ struct MinimalModeSettingsView: View {
             // Keyboard shortcut hint
             SettingsShortcutRow(label: L("Toggle Minimal Mode"), shortcut: "Cmd+Shift+M")
 
-            Divider()
-                .padding(.vertical, 8)
+            SettingsDivider()
 
             // Individual Element Toggles
             SettingsSectionHeader(L("Hidden Elements"), icon: "eye.slash")
@@ -61,8 +60,7 @@ struct MinimalModeSettingsView: View {
                 disabled: !minimalMode.isEnabled
             )
 
-            Divider()
-                .padding(.vertical, 8)
+            SettingsDivider()
 
             // Status Summary
             SettingsSectionHeader(L("Status"), icon: "info.circle")
@@ -76,9 +74,9 @@ struct MinimalModeSettingsView: View {
                     statusRow(label: "Sidebar", active: minimalMode.hideSidebar)
                 }
             }
-            .padding(12)
+            .padding(Chau7Style.Settings.cardPadding)
             .background(Color(NSColor.controlBackgroundColor))
-            .cornerRadius(8)
+            .cornerRadius(Chau7Style.Radius.medium)
         }
     }
 

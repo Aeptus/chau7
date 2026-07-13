@@ -10,7 +10,7 @@ struct MCPSettingsView: View {
     @State private var isAddingProfile = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: Chau7Style.Settings.pageSectionSpacing) {
             SettingsSectionHeader(L("settings.mcp.general", "General"), icon: "face.dashed")
 
             SettingsToggle(
@@ -269,7 +269,7 @@ private struct MCPProfileEditorView: View {
     private let triggerTypes = ["Directory", "Git Repository", "SSH Host", "Process", "Environment Variable"]
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: Chau7Style.Settings.looseControlSpacing) {
             Text(profile == nil ? L("mcp.settings.newProfile", "New MCP Profile") : L("mcp.settings.editProfile", "Edit MCP Profile"))
                 .font(.headline)
 

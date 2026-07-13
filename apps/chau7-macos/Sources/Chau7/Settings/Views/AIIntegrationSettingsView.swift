@@ -11,7 +11,7 @@ struct AIIntegrationSettingsView: View {
     @State private var newCustomColor: TabColor = .gray
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: Chau7Style.Settings.pageSectionSpacing) {
             // Custom Rules (actionable — first)
             SettingsSectionHeader(L("settings.ai.customDetectionRules", "Custom Detection Rules"), icon: "slider.horizontal.3")
 
@@ -33,17 +33,17 @@ struct AIIntegrationSettingsView: View {
             // Add new rule
             SettingsRow(L("settings.ai.addNewRule", "Add New Rule")) {
                 ViewThatFits(in: .horizontal) {
-                    HStack(spacing: 8) {
+                    HStack(spacing: Chau7Style.Settings.inlineControlSpacing) {
                         newRulePatternField
                         newRuleNameField
                         newRuleColorPicker
                         addRuleButton
                     }
 
-                    VStack(alignment: .leading, spacing: 8) {
+                    VStack(alignment: .leading, spacing: Chau7Style.Settings.inlineControlSpacing) {
                         newRulePatternField
                         newRuleNameField
-                        HStack(spacing: 8) {
+                        HStack(spacing: Chau7Style.Settings.inlineControlSpacing) {
                             newRuleColorPicker
                             addRuleButton
                         }
@@ -51,14 +51,12 @@ struct AIIntegrationSettingsView: View {
                 }
             }
 
-            Divider()
-                .padding(.vertical, 8)
+            SettingsDivider()
 
             // LLM Provider (actionable — second)
             LLMSettingsView(settings: settings)
 
-            Divider()
-                .padding(.vertical, 8)
+            SettingsDivider()
 
             // Built-in Detection (read-only reference — last)
             SettingsSectionHeader(L("settings.ai.cliDetection", "Built-in AI CLI Detection"), icon: "sparkle.magnifyingglass")
@@ -146,7 +144,7 @@ private struct CustomRuleRow: View {
     var body: some View {
         SettingsRow(rule.displayName.isEmpty ? rule.pattern : rule.displayName) {
             ViewThatFits(in: .horizontal) {
-                HStack(spacing: 8) {
+                HStack(spacing: Chau7Style.Settings.inlineControlSpacing) {
                     ruleColor
                     rulePattern
                     Spacer(minLength: 8)
@@ -154,7 +152,7 @@ private struct CustomRuleRow: View {
                 }
 
                 VStack(alignment: .leading, spacing: 6) {
-                    HStack(spacing: 8) {
+                    HStack(spacing: Chau7Style.Settings.inlineControlSpacing) {
                         ruleColor
                         rulePattern
                     }

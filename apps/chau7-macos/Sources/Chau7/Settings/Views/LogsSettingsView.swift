@@ -7,12 +7,11 @@ struct LogsSettingsView: View {
     @Bindable private var settings = FeatureSettings.shared
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: Chau7Style.Settings.pageSectionSpacing) {
             // Persistent History (most important — at top)
             HistorySettingsView()
 
-            Divider()
-                .padding(.vertical, 8)
+            SettingsDivider()
 
             // AI Telemetry & Transcripts
             SettingsSectionHeader(
@@ -38,8 +37,7 @@ struct LogsSettingsView: View {
                     .padding(.leading, 4)
             }
 
-            Divider()
-                .padding(.vertical, 8)
+            SettingsDivider()
 
             // History Logs
             SettingsSectionHeader(L("settings.logs.historyLogs", "History Logs"), icon: "clock.arrow.circlepath")
@@ -100,8 +98,7 @@ struct LogsSettingsView: View {
                 }
             ])
 
-            Divider()
-                .padding(.vertical, 8)
+            SettingsDivider()
 
             // Terminal Logs
             SettingsSectionHeader(L("settings.logs.terminalLogs", "Terminal Logs"), icon: "doc.text")
@@ -162,8 +159,7 @@ struct LogsSettingsView: View {
                 }
             ])
 
-            Divider()
-                .padding(.vertical, 8)
+            SettingsDivider()
 
             // Sessions
             SettingsSectionHeader(L("settings.logs.activeSessions", "Active Sessions"), icon: "person.2")

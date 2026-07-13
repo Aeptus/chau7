@@ -21,7 +21,7 @@ struct TokenOptimizationSettingsView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: Chau7Style.Settings.pageSectionSpacing) {
             // Mode Selection
             SettingsSectionHeader(
                 L("cto.settings.mode", "Optimization Mode"),
@@ -40,8 +40,7 @@ struct TokenOptimizationSettingsView: View {
             modeDescriptionView
 
             if settings.tokenOptimizationMode != .off {
-                Divider()
-                    .padding(.vertical, 8)
+                SettingsDivider()
 
                 // Input Prefix
                 SettingsSectionHeader(L("cto.settings.prefix", "Input Prefix"), icon: "wand.and.stars")
@@ -73,8 +72,7 @@ struct TokenOptimizationSettingsView: View {
                     monospaced: true
                 )
 
-                Divider()
-                    .padding(.vertical, 8)
+                SettingsDivider()
 
                 // Optimizer
                 SettingsSectionHeader(
@@ -87,8 +85,7 @@ struct TokenOptimizationSettingsView: View {
                 // Wrapper script health
                 installationHealthView
 
-                Divider()
-                    .padding(.vertical, 8)
+                SettingsDivider()
 
                 // CTO Runtime Telemetry
                 SettingsSectionHeader(
@@ -98,8 +95,7 @@ struct TokenOptimizationSettingsView: View {
 
                 ctoRuntimeStatsView
 
-                Divider()
-                    .padding(.vertical, 8)
+                SettingsDivider()
 
                 // Command Log
                 SettingsSectionHeader(
@@ -109,8 +105,7 @@ struct TokenOptimizationSettingsView: View {
 
                 commandLogView
 
-                Divider()
-                    .padding(.vertical, 8)
+                SettingsDivider()
 
                 // Token Savings
                 SettingsSectionHeader(
@@ -120,8 +115,7 @@ struct TokenOptimizationSettingsView: View {
 
                 tokenSavingsView
 
-                Divider()
-                    .padding(.vertical, 8)
+                SettingsDivider()
 
                 // Per-Tab Control
                 SettingsSectionHeader(
@@ -135,8 +129,7 @@ struct TokenOptimizationSettingsView: View {
                     perTabOverridesView(overlayModel: overlayModel)
                 }
 
-                Divider()
-                    .padding(.vertical, 8)
+                SettingsDivider()
 
                 // Optimized Commands
                 SettingsSectionHeader(
@@ -146,8 +139,7 @@ struct TokenOptimizationSettingsView: View {
 
                 commandsList
 
-                Divider()
-                    .padding(.vertical, 8)
+                SettingsDivider()
 
                 // How It Works
                 SettingsSectionHeader(
@@ -159,8 +151,7 @@ struct TokenOptimizationSettingsView: View {
             }
 
             if settings.tokenOptimizationMode == .off {
-                Divider()
-                    .padding(.vertical, 8)
+                SettingsDivider()
 
                 // How It Works (visible even when off, so users can understand the feature)
                 SettingsSectionHeader(
@@ -197,7 +188,7 @@ struct TokenOptimizationSettingsView: View {
     @ViewBuilder
     private var modeDescriptionView: some View {
         let mode = settings.tokenOptimizationMode
-        HStack(alignment: .top, spacing: 12) {
+        HStack(alignment: .top, spacing: Chau7Style.Settings.looseControlSpacing) {
             Image(systemName: modeIcon(for: mode))
                 .font(.system(size: 24))
                 .foregroundStyle(modeColor(for: mode))
@@ -218,9 +209,9 @@ struct TokenOptimizationSettingsView: View {
                 }
             }
         }
-        .padding(12)
+        .padding(Chau7Style.Settings.cardPadding)
         .background(Color.secondary.opacity(0.05))
-        .cornerRadius(8)
+        .cornerRadius(Chau7Style.Radius.medium)
     }
 
     private func modeIcon(for mode: TokenOptimizationMode) -> String {
@@ -257,7 +248,7 @@ struct TokenOptimizationSettingsView: View {
     // MARK: - Optimizer Status
 
     private var optimizerStatusView: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: Chau7Style.Settings.inlineControlSpacing) {
             Text(L(
                 "cto.optimizer.desc",
                 "The optimizer filters and compresses command output before it reaches your LLM context, typically saving 60-90% of tokens. It ships built-in — no external dependencies required."
@@ -265,7 +256,7 @@ struct TokenOptimizationSettingsView: View {
             .font(.caption)
             .foregroundStyle(.secondary)
 
-            HStack(spacing: 8) {
+            HStack(spacing: Chau7Style.Settings.inlineControlSpacing) {
                 if optimizerInstalled {
                     Image(systemName: "checkmark.circle.fill")
                         .foregroundStyle(.green)
@@ -304,7 +295,7 @@ struct TokenOptimizationSettingsView: View {
     private var installationHealthView: some View {
         let allGood = !wrapperHealth.isEmpty && wrapperHealth.allSatisfy { $0.isInstalled && $0.isExecutable }
 
-        HStack(spacing: 8) {
+        HStack(spacing: Chau7Style.Settings.inlineControlSpacing) {
             Image(systemName: allGood ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
                 .foregroundStyle(allGood ? .green : .orange)
             Text(allGood
@@ -323,7 +314,7 @@ struct TokenOptimizationSettingsView: View {
 
         VStack(alignment: .leading, spacing: 4) {
             ForEach(wrapperHealth) { item in
-                HStack(spacing: 8) {
+                HStack(spacing: Chau7Style.Settings.inlineControlSpacing) {
                     Image(systemName: item.isInstalled && item.isExecutable
                         ? "checkmark.circle.fill"
                         : item.isInstalled ? "exclamationmark.circle.fill" : "xmark.circle.fill")
@@ -353,7 +344,7 @@ struct TokenOptimizationSettingsView: View {
 
             // Markdown renderer status
             Divider().padding(.vertical, 2)
-            HStack(spacing: 8) {
+            HStack(spacing: Chau7Style.Settings.inlineControlSpacing) {
                 Image(systemName: mdRendererInstalled ? "checkmark.circle.fill" : "xmark.circle.fill")
                     .font(.system(size: 12))
                     .foregroundStyle(mdRendererInstalled ? .green : .secondary)
@@ -445,7 +436,7 @@ struct TokenOptimizationSettingsView: View {
             L("cto.runtime.healthSummaryCritical", "Requires attention")
         }
 
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: Chau7Style.Settings.inlineControlSpacing) {
             statRow(
                 icon: "checkmark.seal.fill",
                 iconColor: healthColor,
@@ -522,7 +513,7 @@ struct TokenOptimizationSettingsView: View {
                     .foregroundStyle(.secondary)
                     .padding(.top, 4)
                 ForEach(health.issues, id: \.self) { issue in
-                    HStack(spacing: 8) {
+                    HStack(spacing: Chau7Style.Settings.inlineControlSpacing) {
                         Image(systemName: "exclamationmark.triangle")
                             .font(.system(size: 11))
                             .foregroundStyle(.orange)
@@ -653,7 +644,7 @@ struct TokenOptimizationSettingsView: View {
                     let ratio = totalReasonCount > 0
                         ? (Double(count) / Double(totalReasonCount) * 100)
                         : 0
-                    HStack(spacing: 8) {
+                    HStack(spacing: Chau7Style.Settings.inlineControlSpacing) {
                         Image(systemName: "list.bullet.rectangle.portrait")
                             .font(.system(size: 11))
                             .foregroundStyle(.secondary)
@@ -686,7 +677,7 @@ struct TokenOptimizationSettingsView: View {
                     let ratio = totalTriggerCount > 0
                         ? (Double(count) / Double(totalTriggerCount) * 100)
                         : 0
-                    HStack(spacing: 8) {
+                    HStack(spacing: Chau7Style.Settings.inlineControlSpacing) {
                         Image(systemName: "bolt.horizontal")
                             .font(.system(size: 11))
                             .foregroundStyle(.secondary)
@@ -708,7 +699,7 @@ struct TokenOptimizationSettingsView: View {
                     .padding(.top, 4)
 
                 ForEach(runtimeSnapshot.recentDecisions.prefix(5)) { decision in
-                    HStack(spacing: 8) {
+                    HStack(spacing: Chau7Style.Settings.inlineControlSpacing) {
                         Image(systemName: decision.changed ? "bolt.fill" : "clock.arrow.2.circlepath")
                             .font(.system(size: 11))
                             .foregroundStyle(decision.changed ? .green : .orange)
@@ -738,7 +729,7 @@ struct TokenOptimizationSettingsView: View {
                     .foregroundStyle(.secondary)
             }
 
-            HStack(spacing: 8) {
+            HStack(spacing: Chau7Style.Settings.inlineControlSpacing) {
                 Button(L("cto.runtime.refresh", "Refresh")) {
                     refreshRuntimeStats()
                 }
@@ -869,7 +860,7 @@ struct TokenOptimizationSettingsView: View {
             let skipped = entries.filter { $0.outcome == "skipped" }.count
             let errors = entries.count - optimized - fallthrough_ - skipped
 
-            HStack(spacing: 16) {
+            HStack(spacing: Chau7Style.Settings.looseControlSpacing) {
                 Label("\(optimized)", systemImage: "checkmark.circle.fill")
                     .foregroundStyle(.green)
                 Label("\(fallthrough_)", systemImage: "arrow.uturn.forward")
@@ -890,7 +881,7 @@ struct TokenOptimizationSettingsView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 2) {
                     ForEach(entries.reversed()) { entry in
-                        HStack(spacing: 8) {
+                        HStack(spacing: Chau7Style.Settings.inlineControlSpacing) {
                             Text(compactDateFormatter.string(from: entry.timestamp))
                                 .font(.system(.caption2, design: .monospaced))
                                 .foregroundStyle(.tertiary)
@@ -922,7 +913,7 @@ struct TokenOptimizationSettingsView: View {
     @ViewBuilder
     private var tokenSavingsView: some View {
         if isLoadingStats {
-            HStack(spacing: 8) {
+            HStack(spacing: Chau7Style.Settings.inlineControlSpacing) {
                 ProgressView()
                     .controlSize(.small)
                 Text(L("cto.savings.loading", "Loading token savings..."))
@@ -981,7 +972,7 @@ struct TokenOptimizationSettingsView: View {
             }
             .padding(.top, 4)
         } else {
-            HStack(spacing: 8) {
+            HStack(spacing: Chau7Style.Settings.inlineControlSpacing) {
                 Image(systemName: "chart.bar")
                     .foregroundStyle(.secondary)
                 Text(L("cto.savings.noData", "No token savings data yet. Run some commands with optimization active to see analytics."))
@@ -999,7 +990,7 @@ struct TokenOptimizationSettingsView: View {
     }
 
     private func statRow(icon: String, iconColor: Color, label: String, value: String) -> some View {
-        HStack(spacing: 8) {
+        HStack(spacing: Chau7Style.Settings.inlineControlSpacing) {
             Image(systemName: icon)
                 .foregroundStyle(iconColor)
                 .frame(width: 20)
@@ -1024,7 +1015,7 @@ struct TokenOptimizationSettingsView: View {
     @ViewBuilder
     private var perTabInfoView: some View {
         let mode = settings.tokenOptimizationMode
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: Chau7Style.Settings.inlineControlSpacing) {
             switch mode {
             case .off:
                 EmptyView()
@@ -1066,7 +1057,7 @@ struct TokenOptimizationSettingsView: View {
     }
 
     private func infoRow(icon: String, iconColor: Color, text: String) -> some View {
-        HStack(spacing: 8) {
+        HStack(spacing: Chau7Style.Settings.inlineControlSpacing) {
             Image(systemName: icon)
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(iconColor)
@@ -1085,7 +1076,7 @@ struct TokenOptimizationSettingsView: View {
 
         if !tabRows.isEmpty {
             SettingsRow(L("settings.ai.cto.applyAll", "Apply to all open tabs")) {
-                HStack(spacing: 8) {
+                HStack(spacing: Chau7Style.Settings.inlineControlSpacing) {
                     Button(L("settings.ai.cto.enableAll", "Enable all")) {
                         applyCTO(to: tabRows.map(\.id), enabled: true)
                     }
@@ -1113,7 +1104,7 @@ struct TokenOptimizationSettingsView: View {
                         ? L("settings.ai.cto.tabOverride", "Overrides global optimization setting for this tab.")
                         : L("settings.ai.cto.tabInherit", "Uses global optimization setting.")
                 ) {
-                    HStack(spacing: 12) {
+                    HStack(spacing: Chau7Style.Settings.looseControlSpacing) {
                         Toggle("", isOn: Binding(
                             get: { settings.isCTOEnabled(forTabIdentifier: row.id) },
                             set: { value in
@@ -1180,7 +1171,7 @@ struct TokenOptimizationSettingsView: View {
     private var commandsList: some View {
         VStack(alignment: .leading, spacing: 4) {
             ForEach(supportedCommands, id: \.self) { command in
-                HStack(spacing: 8) {
+                HStack(spacing: Chau7Style.Settings.inlineControlSpacing) {
                     Image(systemName: "checkmark.circle.fill")
                         .font(.system(size: 12))
                         .foregroundStyle(.green)

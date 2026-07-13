@@ -18,6 +18,16 @@ enum SettingsLayout {
     static let detailIdealWidth: CGFloat = Chau7Style.Settings.detailIdealWidth
 }
 
+// MARK: - Settings Surface Structure
+
+struct SettingsDivider: View {
+    var body: some View {
+        Divider()
+            .padding(.vertical, Chau7Style.Settings.separatorVerticalPadding)
+            .accessibilityHidden(true)
+    }
+}
+
 // MARK: - Adaptive Settings Row Foundation
 
 private struct SettingsLabelBlock: View {
@@ -296,9 +306,9 @@ struct SettingsDirectoryField: View {
         }
 
         if axis == .horizontal {
-            HStack(spacing: Chau7Style.Spacing.small) { controls }
+            HStack(spacing: Chau7Style.Settings.inlineControlSpacing) { controls }
         } else {
-            VStack(alignment: .leading, spacing: Chau7Style.Spacing.small) { controls }
+            VStack(alignment: .leading, spacing: Chau7Style.Settings.inlineControlSpacing) { controls }
         }
     }
 
@@ -434,7 +444,7 @@ struct SettingsButtonRow: View {
 
     var body: some View {
         ViewThatFits(in: .horizontal) {
-            HStack(spacing: Chau7Style.Spacing.medium) {
+            HStack(spacing: Chau7Style.Settings.looseControlSpacing) {
                 if alignment == .trailing {
                     Spacer(minLength: 0)
                 }
@@ -448,7 +458,7 @@ struct SettingsButtonRow: View {
                 }
             }
 
-            VStack(alignment: alignment, spacing: Chau7Style.Spacing.small) {
+            VStack(alignment: alignment, spacing: Chau7Style.Settings.inlineControlSpacing) {
                 ForEach(buttons) { button in
                     makeButton(button)
                 }

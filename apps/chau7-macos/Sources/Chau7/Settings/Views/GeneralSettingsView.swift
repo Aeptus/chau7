@@ -9,7 +9,7 @@ struct GeneralSettingsView: View {
     @State private var showResetConfirmation = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: Chau7Style.Settings.pageSectionSpacing) {
             // Startup
             SettingsSectionHeader(L("settings.general.startup", "Startup"), icon: "power")
 
@@ -29,8 +29,7 @@ struct GeneralSettingsView: View {
                 buttonTitle: L("settings.general.defaultDirectory.choose", "Choose...")
             )
 
-            Divider()
-                .padding(.vertical, 8)
+            SettingsDivider()
 
             // Language
             SettingsSectionHeader(L("settings.general.language", "Language"), icon: "globe")
@@ -44,14 +43,12 @@ struct GeneralSettingsView: View {
 
             SettingsDescription(text: L("settings.general.language.note", "Some changes may require restarting the app"))
 
-            Divider()
-                .padding(.vertical, 8)
+            SettingsDivider()
 
             // Config File
             ConfigFileSettingsView()
 
-            Divider()
-                .padding(.vertical, 8)
+            SettingsDivider()
 
             // Status
             SettingsSectionHeader(L("settings.general.status", "Status"), icon: "info.circle")
@@ -76,8 +73,7 @@ struct GeneralSettingsView: View {
                 monospaced: true
             )
 
-            Divider()
-                .padding(.vertical, 8)
+            SettingsDivider()
 
             // Actions
             SettingsSectionHeader(L("settings.general.actions", "Actions"), icon: "hand.tap")
@@ -94,8 +90,7 @@ struct GeneralSettingsView: View {
                 }
             ])
 
-            Divider()
-                .padding(.vertical, 8)
+            SettingsDivider()
 
             // Reset
             SettingsSectionHeader(L("settings.general.reset", "Reset"), icon: "arrow.counterclockwise")

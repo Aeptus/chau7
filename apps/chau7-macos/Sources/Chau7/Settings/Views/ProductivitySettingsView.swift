@@ -9,7 +9,7 @@ struct ProductivitySettingsView: View {
     @State private var permissionCenter = PermissionCenterModel()
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: Chau7Style.Settings.pageSectionSpacing) {
             // Snippets
             SettingsSectionHeader(L("settings.productivity.snippets", "Snippets"), icon: "text.badge.plus")
 
@@ -19,7 +19,7 @@ struct ProductivitySettingsView: View {
                     Text(L("settings.productivity.snippetsDescription", "Reusable text snippets with placeholders"))
                         .font(.system(size: 12))
                         .foregroundColor(.secondary)
-                    HStack(spacing: 12) {
+                    HStack(spacing: Chau7Style.Settings.looseControlSpacing) {
                         Label("\(SnippetManager.shared.entries.filter { $0.source == .global }.count) \(L("settings.productivity.user", "User"))", systemImage: "person.fill")
                             .font(.system(size: 11))
                             .foregroundColor(.secondary)
@@ -41,9 +41,9 @@ struct ProductivitySettingsView: View {
                 .buttonStyle(.borderedProminent)
                 .controlSize(.small)
             }
-            .padding(12)
+            .padding(Chau7Style.Settings.cardPadding)
             .background(Color(NSColor.controlBackgroundColor))
-            .cornerRadius(8)
+            .cornerRadius(Chau7Style.Radius.medium)
 
             // Shortcut hint
             HStack(spacing: 4) {
@@ -102,7 +102,7 @@ struct ProductivitySettingsView: View {
             }
             .padding(.bottom, 4)
 
-            HStack(spacing: 8) {
+            HStack(spacing: Chau7Style.Settings.inlineControlSpacing) {
                 Button(L("settings.productivity.protectedFolders.grant", "Grant Access")) {
                     ProtectedPathPolicy.resetAccessChecks()
                     ProtectedPathPolicy.requestAccessToProtectedFolders()
@@ -144,8 +144,7 @@ struct ProductivitySettingsView: View {
                 disabled: !settings.isSnippetsEnabled || settings.snippetInsertMode == "paste"
             )
 
-            Divider()
-                .padding(.vertical, 8)
+            SettingsDivider()
 
             // Clipboard History
             SettingsSectionHeader(L("settings.productivity.clipboardHistory", "Clipboard History"), icon: "doc.on.clipboard")
@@ -164,8 +163,7 @@ struct ProductivitySettingsView: View {
                 disabled: !settings.isClipboardHistoryEnabled
             )
 
-            Divider()
-                .padding(.vertical, 8)
+            SettingsDivider()
 
             // Bookmarks
             SettingsSectionHeader(L("settings.productivity.bookmarks", "Bookmarks"), icon: "bookmark")
@@ -184,8 +182,7 @@ struct ProductivitySettingsView: View {
                 disabled: !settings.isBookmarksEnabled
             )
 
-            Divider()
-                .padding(.vertical, 8)
+            SettingsDivider()
 
             // Search
             SettingsSectionHeader(L("settings.productivity.search", "Search"), icon: "magnifyingglass")
@@ -212,8 +209,7 @@ struct ProductivitySettingsView: View {
             SettingsShortcutRow(label: L("settings.productivity.findNext", "Find Next"), shortcut: "⌘G")
             SettingsShortcutRow(label: L("settings.productivity.findPrevious", "Find Previous"), shortcut: "⌘⌥G")
 
-            Divider()
-                .padding(.vertical, 8)
+            SettingsDivider()
 
             // Reset Button
             SettingsButtonRow(buttons: [
@@ -246,7 +242,7 @@ private struct PermissionsStatusSection: View {
     let permissionCenter: PermissionCenterModel
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: Chau7Style.Settings.looseControlSpacing) {
             SettingsSectionHeader(L("settings.productivity.permissions", "Permissions"), icon: "lock.shield")
 
             Text(L("settings.productivity.permissions.help", "Review notification status and protected-folder access without guessing what is blocked."))
@@ -273,9 +269,9 @@ private struct PermissionsStatusSection: View {
                 )
             }
         }
-        .padding(12)
+        .padding(Chau7Style.Settings.cardPadding)
         .background(Color(NSColor.controlBackgroundColor))
-        .cornerRadius(8)
+        .cornerRadius(Chau7Style.Radius.medium)
     }
 
     private var notificationDetail: String {

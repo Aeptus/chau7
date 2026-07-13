@@ -19,7 +19,7 @@ struct HistorySettingsView: View {
     @State private var persistentHistoryEnabled: Bool = UserDefaults.standard.object(forKey: "feature.persistentHistory") as? Bool ?? true
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: Chau7Style.Settings.pageSectionSpacing) {
             // Persistent History Toggle
             SettingsSectionHeader(
                 L("settings.history.persistent", "Persistent History"),
@@ -38,8 +38,7 @@ struct HistorySettingsView: View {
                     }
             }
 
-            Divider()
-                .padding(.vertical, 8)
+            SettingsDivider()
 
             // Capacity
             SettingsSectionHeader(
@@ -72,8 +71,7 @@ struct HistorySettingsView: View {
                 }
             }
 
-            Divider()
-                .padding(.vertical, 8)
+            SettingsDivider()
 
             // Statistics
             SettingsSectionHeader(
@@ -98,8 +96,7 @@ struct HistorySettingsView: View {
                     .padding(.leading, 4)
             }
 
-            Divider()
-                .padding(.vertical, 8)
+            SettingsDivider()
 
             // Import / Export
             SettingsSectionHeader(
@@ -107,7 +104,7 @@ struct HistorySettingsView: View {
                 icon: "arrow.left.arrow.right"
             )
 
-            HStack(spacing: 12) {
+            HStack(spacing: Chau7Style.Settings.looseControlSpacing) {
                 Button(L("settings.history.export", "Export History...")) {
                     exportHistory()
                 }
@@ -125,8 +122,7 @@ struct HistorySettingsView: View {
                     .foregroundStyle(.red)
             }
 
-            Divider()
-                .padding(.vertical, 8)
+            SettingsDivider()
 
             // Danger Zone
             SettingsSectionHeader(
@@ -134,7 +130,7 @@ struct HistorySettingsView: View {
                 icon: "trash"
             )
 
-            HStack(spacing: 12) {
+            HStack(spacing: Chau7Style.Settings.looseControlSpacing) {
                 Button(L("settings.history.clearOlder", "Clear Older Than...")) {
                     showClearOlderConfirmation = true
                 }

@@ -9,12 +9,11 @@ struct RemoteSettingsView: View {
     @State private var relayURLDraft = FeatureSettings.shared.remoteRelayURL
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: Chau7Style.Settings.pageSectionSpacing) {
             // SSH Profiles first — most commonly used section
             SSHProfilesSettingsView()
 
-            Divider()
-                .padding(.vertical, 8)
+            SettingsDivider()
 
             // Remote Control
             SettingsSectionHeader(L("settings.remote.status", "Status"), icon: "antenna.radiowaves.left.and.right")
@@ -93,7 +92,7 @@ struct RemoteSettingsView: View {
 
     private var relaySettingsView: some View {
         SettingsRow(L("settings.remote.relayUrl", "Relay URL"), help: L("settings.remote.relayUrl.help", "WebSocket relay base URL")) {
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: Chau7Style.Settings.inlineControlSpacing) {
                 HStack(alignment: .center, spacing: 10) {
                     TextField("", text: $relayURLDraft)
                         .textFieldStyle(.roundedBorder)
@@ -125,8 +124,8 @@ struct RemoteSettingsView: View {
         if let info = remote.pairingInfo {
             let payload = info.pairingJSONString()
             let prettyPayload = info.pairingJSONString(prettyPrinted: true)
-            HStack(alignment: .top, spacing: 16) {
-                VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .top, spacing: Chau7Style.Settings.looseControlSpacing) {
+                VStack(alignment: .leading, spacing: Chau7Style.Settings.inlineControlSpacing) {
                     Text(String(format: L("remote.deviceId", "Device ID: %@"), info.deviceID))
                         .font(.system(size: 12, design: .monospaced))
                     Text(String(format: L("remote.pairingCode", "Pairing Code: %@"), info.pairingCode))
@@ -152,7 +151,7 @@ struct RemoteSettingsView: View {
                         .clipShape(RoundedRectangle(cornerRadius: 8))
                     }
 
-                    HStack(spacing: 12) {
+                    HStack(spacing: Chau7Style.Settings.looseControlSpacing) {
                         Button(L("Copy Pairing JSON", "Copy Pairing JSON")) {
                             guard let payload else { return }
                             let pasteboard = NSPasteboard.general
@@ -225,11 +224,11 @@ struct RemoteSettingsView: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
         } else {
-            VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: Chau7Style.Settings.looseControlSpacing) {
                 ForEach(remote.pairedDevices) { device in
-                    HStack(alignment: .top, spacing: 12) {
+                    HStack(alignment: .top, spacing: Chau7Style.Settings.looseControlSpacing) {
                         VStack(alignment: .leading, spacing: 4) {
-                            HStack(spacing: 8) {
+                            HStack(spacing: Chau7Style.Settings.inlineControlSpacing) {
                                 Text(device.name)
                                     .fontWeight(.semibold)
                                 Text(device.isConnected ? L("status.connected", "Connected") : L("status.notConnected", "Not Connected"))

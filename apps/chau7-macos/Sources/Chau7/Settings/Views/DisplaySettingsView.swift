@@ -7,7 +7,7 @@ struct DisplaySettingsView: View {
     @Bindable private var settings = FeatureSettings.shared
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: Chau7Style.Settings.pageSectionSpacing) {
             // Display Enhancements
             SettingsSectionHeader(L("settings.appearance.displayEnhancements", "Display Enhancements"), icon: "eye")
 
@@ -52,8 +52,7 @@ struct DisplaySettingsView: View {
                 )
             }
 
-            Divider()
-                .padding(.vertical, 8)
+            SettingsDivider()
 
             // Window & Layout
             SettingsSectionHeader(L("settings.display.windowLayout", "Window & Layout"), icon: "macwindow")
@@ -73,8 +72,7 @@ struct DisplaySettingsView: View {
                 SettingsShortcutRow(label: L("settings.windows.navigatePanes", "Navigate Panes"), shortcut: "⌘⌥Arrow")
             }
 
-            Divider()
-                .padding(.vertical, 8)
+            SettingsDivider()
 
             // Reset Button
             SettingsButtonRow(buttons: [

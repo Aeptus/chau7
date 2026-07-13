@@ -18,7 +18,7 @@ struct InputSettingsView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: Chau7Style.Settings.pageSectionSpacing) {
             // Keyboard
             SettingsSectionHeader(L("settings.input.keyboard", "Keyboard"), icon: "keyboard")
 
@@ -33,8 +33,7 @@ struct InputSettingsView: View {
                 ]
             )
 
-            Divider()
-                .padding(.vertical, 8)
+            SettingsDivider()
 
             // Mouse (before shortcuts table for better flow)
             SettingsSectionHeader(L("settings.input.mouse", "Mouse"), icon: "computermouse")
@@ -96,8 +95,7 @@ struct InputSettingsView: View {
                 isOn: $settings.isClickToPositionEnabled
             )
 
-            Divider()
-                .padding(.vertical, 8)
+            SettingsDivider()
 
             // Broadcast
             SettingsSectionHeader(L("settings.input.broadcast", "Broadcast"), icon: "antenna.radiowaves.left.and.right")
@@ -108,8 +106,7 @@ struct InputSettingsView: View {
                 isOn: $settings.isBroadcastEnabled
             )
 
-            Divider()
-                .padding(.vertical, 8)
+            SettingsDivider()
 
             // Keyboard Shortcuts Editor
             SettingsSectionHeader(L("settings.input.keyboardShortcuts", "Keyboard Shortcuts"), icon: "command")
@@ -136,8 +133,7 @@ struct InputSettingsView: View {
                 isOn: $settings.isShortcutHelperHintEnabled
             )
 
-            Divider()
-                .padding(.vertical, 8)
+            SettingsDivider()
 
             // Reset Button
             SettingsButtonRow(buttons: [
@@ -209,7 +205,7 @@ struct ShortcutEditorSheet: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: Chau7Style.Settings.pageSectionSpacing) {
             Text(L("settings.input.editShortcut", "Edit Shortcut:") + " \(KeyboardShortcut.actionDisplayName(shortcut.action))")
                 .font(.headline)
 
@@ -228,7 +224,7 @@ struct ShortcutEditorSheet: View {
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
 
-            HStack(spacing: 16) {
+            HStack(spacing: Chau7Style.Settings.looseControlSpacing) {
                 Toggle(L("⌘ Cmd", "⌘ Cmd"), isOn: $useCmd)
                 Toggle(L("⇧ Shift", "⇧ Shift"), isOn: $useShift)
                 Toggle(L("⌃ Ctrl", "⌃ Ctrl"), isOn: $useCtrl)

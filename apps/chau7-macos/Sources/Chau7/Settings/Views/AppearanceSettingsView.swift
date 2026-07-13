@@ -35,7 +35,7 @@ struct ColorSchemePreview: View {
         }
         .padding(10)
         .background(Color(scheme.nsColor(for: scheme.background)))
-        .cornerRadius(8)
+        .cornerRadius(Chau7Style.Radius.medium)
         .overlay(
             RoundedRectangle(cornerRadius: 8)
                 .stroke(Color.secondary.opacity(0.3), lineWidth: 1)
@@ -69,7 +69,7 @@ struct LiveTerminalPreview: View {
                 Spacer()
             }
             .padding(.horizontal, 10)
-            .padding(.vertical, 8)
+            .padding(.vertical, Chau7Style.Settings.separatorVerticalPadding)
             .background(Color(NSColor.windowBackgroundColor))
 
             // Terminal content
@@ -89,7 +89,7 @@ struct LiveTerminalPreview: View {
                     cursor
                 }
             }
-            .padding(12)
+            .padding(Chau7Style.Settings.cardPadding)
             .background(Color(scheme.nsColor(for: scheme.background)).opacity(settings.windowOpacity))
         }
         .cornerRadius(10)

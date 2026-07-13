@@ -7,7 +7,7 @@ struct WindowsSettingsView: View {
     @Bindable private var settings = FeatureSettings.shared
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: Chau7Style.Settings.pageSectionSpacing) {
             // Overlay
             SettingsSectionHeader(L("settings.windows.overlayWindow", "Overlay Window"), icon: "macwindow")
 
@@ -22,8 +22,7 @@ struct WindowsSettingsView: View {
 
             SettingsDescription(text: L("settings.windows.overlayDescription", "The overlay window remembers its position per workspace and restores it automatically."))
 
-            Divider()
-                .padding(.vertical, 8)
+            SettingsDivider()
 
             // Fullscreen
             SettingsSectionHeader(L("settings.windows.fullscreen", "Fullscreen"), icon: "arrow.up.left.and.arrow.down.right")
@@ -34,8 +33,7 @@ struct WindowsSettingsView: View {
                 isOn: $settings.alwaysShowToolbarInFullscreen
             )
 
-            Divider()
-                .padding(.vertical, 8)
+            SettingsDivider()
 
             // Split Panes
             SettingsSectionHeader(L("settings.windows.splitPanes", "Split Panes"), icon: "rectangle.split.2x1")

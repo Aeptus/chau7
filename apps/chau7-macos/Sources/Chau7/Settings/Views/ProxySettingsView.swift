@@ -8,7 +8,7 @@ struct ProxySettingsView: View {
     @State private var showingClearConfirmation = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: Chau7Style.Settings.pageSectionSpacing) {
             // API Call Tracking
             SettingsSectionHeader(L("settings.proxy.tracking", "API Call Tracking"), icon: "chart.bar.xaxis")
 
@@ -25,8 +25,7 @@ struct ProxySettingsView: View {
                 statusIndicator
             }
 
-            Divider()
-                .padding(.vertical, 8)
+            SettingsDivider()
 
             // Privacy
             SettingsSectionHeader(L("settings.proxy.privacy", "Privacy"), icon: "lock.shield")
@@ -49,8 +48,7 @@ struct ProxySettingsView: View {
                 isOn: $settings.apiAnalyticsIncludeOpenAI
             )
 
-            Divider()
-                .padding(.vertical, 8)
+            SettingsDivider()
 
             // Advanced
             SettingsSectionHeader(L("settings.proxy.advanced", "Advanced"), icon: "gearshape.2")
@@ -71,13 +69,12 @@ struct ProxySettingsView: View {
                 }
             ])
 
-            Divider()
-                .padding(.vertical, 8)
+            SettingsDivider()
 
             // Supported Tools
             SettingsSectionHeader(L("settings.proxy.tools", "Supported Tools"), icon: "wrench.and.screwdriver")
 
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: Chau7Style.Settings.inlineControlSpacing) {
                 supportedToolRow(name: "Claude Code", supported: .full)
                 supportedToolRow(name: "Codex CLI", supported: .full)
                 supportedToolRow(name: "Gemini CLI", supported: .partial)
@@ -90,13 +87,12 @@ struct ProxySettingsView: View {
                     .padding(.top, 4)
             }
 
-            Divider()
-                .padding(.vertical, 8)
+            SettingsDivider()
 
             // How It Works
             SettingsSectionHeader(L("settings.proxy.howItWorks", "How It Works"), icon: "questionmark.circle")
 
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: Chau7Style.Settings.inlineControlSpacing) {
                 Text(L("settings.proxy.envVarsDescription", "When enabled, Chau7 sets environment variables to route API calls:"))
                     .font(.caption)
                     .foregroundColor(.secondary)

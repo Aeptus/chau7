@@ -14,7 +14,7 @@ struct PromptInjectionSettingsView: View {
     @State private var showingAddSheet = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: Chau7Style.Settings.pageSectionSpacing) {
             SettingsSectionHeader(
                 L("settings.injection.global", "All Repositories"),
                 icon: "globe"
@@ -77,7 +77,7 @@ struct PromptInjectionSettingsView: View {
                     .font(.system(.body, design: .monospaced))
                     .frame(minHeight: 80, maxHeight: 160)
                     .scrollContentBackground(.hidden)
-                    .padding(8)
+                    .padding(Chau7Style.Settings.inlineControlSpacing)
                     .background(Color(nsColor: .textBackgroundColor))
                     .clipShape(RoundedRectangle(cornerRadius: 6))
                     .overlay(
@@ -93,8 +93,7 @@ struct PromptInjectionSettingsView: View {
                     }
             }
 
-            Divider()
-                .padding(.vertical, 8)
+            SettingsDivider()
 
             // MARK: - Per-Repository Rules
 
@@ -152,8 +151,7 @@ struct PromptInjectionSettingsView: View {
             }
             .buttonStyle(.bordered)
 
-            Divider()
-                .padding(.vertical, 8)
+            SettingsDivider()
 
             // MARK: - Info
 
@@ -162,7 +160,7 @@ struct PromptInjectionSettingsView: View {
                 icon: "questionmark.circle"
             )
 
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: Chau7Style.Settings.inlineControlSpacing) {
                 Text(L(
                     "settings.injection.howItWorks.description",
                     "The proxy injects content into AI requests before forwarding them to the provider. Rules are checked in priority order:"
@@ -211,7 +209,7 @@ struct PromptInjectionSettingsView: View {
     // MARK: - Subviews
 
     private func ruleRow(_ rule: InjectionRuleStore.Rule, isLocal: Bool) -> some View {
-        HStack(spacing: 12) {
+        HStack(spacing: Chau7Style.Settings.looseControlSpacing) {
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
                     Text(rule.repository)
@@ -252,13 +250,13 @@ struct PromptInjectionSettingsView: View {
                 .buttonStyle(.borderless)
             }
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
+        .padding(.horizontal, Chau7Style.Settings.looseControlSpacing)
+        .padding(.vertical, Chau7Style.Settings.separatorVerticalPadding)
     }
 
     private func localRuleRow(_ rule: InjectionRuleStore.Rule, repoRoot: String) -> some View {
         let repoName = URL(fileURLWithPath: repoRoot).lastPathComponent
-        return HStack(spacing: 12) {
+        return HStack(spacing: Chau7Style.Settings.looseControlSpacing) {
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
                     Text(repoName)
@@ -301,12 +299,12 @@ struct PromptInjectionSettingsView: View {
             .buttonStyle(.borderless)
             .help(L("settings.injection.openFile", "Open in editor"))
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
+        .padding(.horizontal, Chau7Style.Settings.looseControlSpacing)
+        .padding(.vertical, Chau7Style.Settings.separatorVerticalPadding)
     }
 
     private func priorityRow(_ number: String, _ text: String) -> some View {
-        HStack(spacing: 8) {
+        HStack(spacing: Chau7Style.Settings.inlineControlSpacing) {
             Text(number)
                 .font(.system(.caption, design: .monospaced))
                 .fontWeight(.bold)
@@ -342,7 +340,7 @@ struct PromptInjectionSettingsView: View {
                 .font(.subheadline)
                 .fontWeight(.medium)
 
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: Chau7Style.Settings.inlineControlSpacing) {
                 ForEach(PromptInjectionTrigger.allCases) { trigger in
                     Toggle(
                         isOn: Binding(
@@ -389,7 +387,7 @@ private struct RuleEditorSheet: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: Chau7Style.Settings.pageSectionSpacing) {
             Text(isNew
                 ? L("settings.injection.editor.addTitle", "Add Repository Rule")
                 : L("settings.injection.editor.editTitle", "Edit Repository Rule")
@@ -442,7 +440,7 @@ private struct RuleEditorSheet: View {
                 .labelsHidden()
             }
 
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: Chau7Style.Settings.inlineControlSpacing) {
                 Text(L("settings.injection.editor.triggers", "When to inject"))
                     .font(.subheadline)
                     .fontWeight(.medium)
@@ -482,7 +480,7 @@ private struct RuleEditorSheet: View {
                     .font(.system(.body, design: .monospaced))
                     .frame(minHeight: 100, maxHeight: 200)
                     .scrollContentBackground(.hidden)
-                    .padding(8)
+                    .padding(Chau7Style.Settings.inlineControlSpacing)
                     .background(Color(nsColor: .textBackgroundColor))
                     .clipShape(RoundedRectangle(cornerRadius: 6))
                     .overlay(

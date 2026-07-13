@@ -27,7 +27,7 @@ struct ActionRow: View {
     }
 
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: Chau7Style.Settings.looseControlSpacing) {
             // Toggle
             Toggle("", isOn: Binding(
                 get: { action.enabled },
@@ -177,9 +177,9 @@ struct ActionPickerSheet: View {
 
             // Action list
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 16) {
+                LazyVStack(alignment: .leading, spacing: Chau7Style.Settings.pageSectionSpacing) {
                     ForEach(filteredCategories, id: \.category) { category, actions in
-                        VStack(alignment: .leading, spacing: 8) {
+                        VStack(alignment: .leading, spacing: Chau7Style.Settings.inlineControlSpacing) {
                             HStack {
                                 Image(systemName: category.icon)
                                     .foregroundStyle(.secondary)
@@ -211,7 +211,7 @@ private struct ActionPickerRow: View {
 
     var body: some View {
         Button(action: onSelect) {
-            HStack(spacing: 12) {
+            HStack(spacing: Chau7Style.Settings.looseControlSpacing) {
                 Image(systemName: actionInfo.icon)
                     .font(.title3)
                     .foregroundStyle(.primary)
@@ -240,7 +240,7 @@ private struct ActionPickerRow: View {
                     .foregroundColor(.accentColor)
             }
             .padding(.horizontal)
-            .padding(.vertical, 8)
+            .padding(.vertical, Chau7Style.Settings.separatorVerticalPadding)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -288,7 +288,7 @@ struct ActionConfigSheet: View {
 
             // Config fields
             ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
+                VStack(alignment: .leading, spacing: Chau7Style.Settings.pageSectionSpacing) {
                     // Enabled toggle
                     Toggle(L("settings.notifications.actionEnabled", "Action Enabled"), isOn: $isEnabled)
                         .padding(.horizontal)
@@ -299,8 +299,7 @@ struct ActionConfigSheet: View {
                             .foregroundStyle(.secondary)
                             .padding(.horizontal)
 
-                        Divider()
-                            .padding(.vertical, 8)
+                        SettingsDivider()
 
                         ForEach(info.configFields) { field in
                             ConfigFieldView(
@@ -409,7 +408,7 @@ struct ConfigFieldView: View {
                             Text(placeholder)
                                 .foregroundStyle(.secondary.opacity(0.5))
                                 .padding(.horizontal, 4)
-                                .padding(.vertical, 8)
+                                .padding(.vertical, Chau7Style.Settings.separatorVerticalPadding)
                                 .allowsHitTesting(false)
                         }
                     }

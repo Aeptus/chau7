@@ -10,7 +10,7 @@ struct FontColorsSettingsView: View {
     @State private var customFontValid: Bool? // nil = not yet validated
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: Chau7Style.Settings.pageSectionSpacing) {
             // Live Preview Panel
             SettingsSectionHeader(L("settings.appearance.livePreview", "Live Preview"), icon: "rectangle.inset.filled.and.cursorarrow")
 
@@ -20,8 +20,7 @@ struct FontColorsSettingsView: View {
             }
                 .padding(.bottom, 8)
 
-            Divider()
-                .padding(.vertical, 8)
+            SettingsDivider()
 
             // Font Settings
             SettingsSectionHeader(L("settings.appearance.font", "Font"), icon: "textformat")
@@ -39,7 +38,7 @@ struct FontColorsSettingsView: View {
                 help: L("settings.appearance.customFont.help", "Type an installed font family name and press Return to apply it")
             ) {
                 ViewThatFits(in: .horizontal) {
-                    HStack(spacing: 8) {
+                    HStack(spacing: Chau7Style.Settings.inlineControlSpacing) {
                         customFontTextField
                         customFontValidationIcon
                     }
@@ -87,8 +86,7 @@ struct FontColorsSettingsView: View {
                 .padding(.vertical, 4)
                 .frame(maxWidth: .infinity, alignment: .leading)
 
-            Divider()
-                .padding(.vertical, 8)
+            SettingsDivider()
 
             // Color Scheme
             SettingsSectionHeader(L("settings.appearance.colorScheme", "Color Scheme"), icon: "paintpalette")
@@ -102,10 +100,9 @@ struct FontColorsSettingsView: View {
 
             // Color Preview
             ColorSchemePreview(scheme: settings.currentColorScheme)
-                .padding(.vertical, 8)
+                .padding(.vertical, Chau7Style.Settings.separatorVerticalPadding)
 
-            Divider()
-                .padding(.vertical, 8)
+            SettingsDivider()
 
             // Window Transparency
             SettingsSectionHeader(L("settings.appearance.window", "Window"), icon: "square.on.square.dashed")
@@ -123,8 +120,7 @@ struct FontColorsSettingsView: View {
                 suffix: "%"
             )
 
-            Divider()
-                .padding(.vertical, 8)
+            SettingsDivider()
 
             // Theme
             SettingsSectionHeader(L("settings.appearance.systemTheme", "System Theme"), icon: "circle.lefthalf.filled")
@@ -136,8 +132,7 @@ struct FontColorsSettingsView: View {
                 options: AppTheme.allCases.map { (value: $0, label: $0.displayName) }
             )
 
-            Divider()
-                .padding(.vertical, 8)
+            SettingsDivider()
 
             // Reset Button
             SettingsButtonRow(buttons: [

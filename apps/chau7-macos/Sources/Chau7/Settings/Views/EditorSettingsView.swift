@@ -6,7 +6,7 @@ struct EditorSettingsView: View {
     @State private var config = EditorConfig.load()
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: Chau7Style.Settings.pageSectionSpacing) {
             // Font
             SettingsSectionHeader(L("settings.editor.font", "Font"), icon: "textformat")
 
@@ -19,8 +19,7 @@ struct EditorSettingsView: View {
             )
             .onChange(of: config.fontSize) { config.save() }
 
-            Divider()
-                .padding(.vertical, 8)
+            SettingsDivider()
 
             // Indentation
             SettingsSectionHeader(L("settings.editor.indentation", "Indentation"), icon: "increase.indent")
@@ -48,8 +47,7 @@ struct EditorSettingsView: View {
             )
             .onChange(of: config.autoIndent) { config.save() }
 
-            Divider()
-                .padding(.vertical, 8)
+            SettingsDivider()
 
             // Display
             SettingsSectionHeader(L("settings.editor.display", "Display"), icon: "eye")
@@ -82,8 +80,7 @@ struct EditorSettingsView: View {
             )
             .onChange(of: config.showMinimap) { config.save() }
 
-            Divider()
-                .padding(.vertical, 8)
+            SettingsDivider()
 
             // Editing Assistance
             SettingsSectionHeader(L("settings.editor.assistance", "Editing Assistance"), icon: "wand.and.stars")
@@ -95,8 +92,7 @@ struct EditorSettingsView: View {
             )
             .onChange(of: config.bracketMatching) { config.save() }
 
-            Divider()
-                .padding(.vertical, 8)
+            SettingsDivider()
 
             // Theme
             SettingsSectionHeader(L("settings.editor.theme", "Theme"), icon: "paintpalette")
@@ -115,8 +111,7 @@ struct EditorSettingsView: View {
             )
             .onChange(of: config.theme) { config.save() }
 
-            Divider()
-                .padding(.vertical, 8)
+            SettingsDivider()
 
             // Reset Button
             SettingsButtonRow(buttons: [

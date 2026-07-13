@@ -12,7 +12,7 @@ struct ProfileAutoSwitchSettingsView: View {
     @State private var ruleToDelete: ProfileSwitchRule?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: Chau7Style.Settings.pageSectionSpacing) {
             SettingsSectionHeader(L("Profile Auto-Switching"))
 
             SettingsToggle(
@@ -38,7 +38,7 @@ struct ProfileAutoSwitchSettingsView: View {
                     .buttonStyle(.bordered)
                     .controlSize(.small)
                 }
-                .padding(8)
+                .padding(Chau7Style.Settings.inlineControlSpacing)
                 .background(Color.blue.opacity(0.1))
                 .cornerRadius(6)
             }
@@ -52,7 +52,7 @@ struct ProfileAutoSwitchSettingsView: View {
                 Text(L("No rules configured. Add a rule to automatically switch profiles."))
                     .font(.caption)
                     .foregroundColor(.secondary)
-                    .padding(.vertical, 8)
+                    .padding(.vertical, Chau7Style.Settings.separatorVerticalPadding)
             } else {
                 ForEach(switcher.rules.sortedByPriority()) { rule in
                     ruleRow(rule)
@@ -160,7 +160,7 @@ private struct RuleEditorSheet: View {
     @State private var priority = 0
 
     var body: some View {
-        VStack(spacing: 16) {
+        VStack(spacing: Chau7Style.Settings.pageSectionSpacing) {
             Text(rule == nil ? "Add Rule" : "Edit Rule")
                 .font(.headline)
 

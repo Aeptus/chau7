@@ -19,4 +19,11 @@ final class Chau7StyleTests: XCTestCase {
         XCTAssertEqual(SettingsLayout.settingsWindowMinWidth, Chau7Style.Settings.windowMinWidth)
         XCTAssertEqual(SettingsLayout.detailIdealWidth, Chau7Style.Settings.detailIdealWidth)
     }
+
+    func testSettingsSurfaceTokensFollowSharedScale() {
+        XCTAssertEqual(Chau7Style.Settings.pageSectionSpacing, Chau7Style.Spacing.medium)
+        XCTAssertEqual(Chau7Style.Settings.inlineControlSpacing, Chau7Style.Spacing.small)
+        XCTAssertEqual(Chau7Style.Settings.looseControlSpacing, Chau7Style.Spacing.medium)
+        XCTAssertEqual(Chau7Style.Settings.separatorVerticalPadding, Chau7Style.Spacing.small)
+    }
 }

@@ -20,36 +20,31 @@ struct DangerousCommandSettingsView: View {
     @State private var showResetConfirmation = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: Chau7Style.Settings.pageSectionSpacing) {
             // Master toggle
             masterToggleSection
 
-            Divider()
-                .padding(.vertical, 8)
+            SettingsDivider()
 
             // Built-in protections
             builtInProtectionsSection
 
-            Divider()
-                .padding(.vertical, 8)
+            SettingsDivider()
 
             // Pattern list editor
             patternListSection
 
-            Divider()
-                .padding(.vertical, 8)
+            SettingsDivider()
 
             // Allow list
             allowListSection
 
-            Divider()
-                .padding(.vertical, 8)
+            SettingsDivider()
 
             // Block list
             blockListSection
 
-            Divider()
-                .padding(.vertical, 8)
+            SettingsDivider()
 
             // Reset
             resetSection
@@ -59,7 +54,7 @@ struct DangerousCommandSettingsView: View {
     // MARK: - Master Toggle
 
     private var masterToggleSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: Chau7Style.Settings.inlineControlSpacing) {
             SettingsSectionHeader(L("settings.dangerousGuard.title", "Command Guard"), icon: "shield.lefthalf.filled")
 
             SettingsToggle(
@@ -92,7 +87,7 @@ struct DangerousCommandSettingsView: View {
     // MARK: - Built-in Protections
 
     private var builtInProtectionsSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: Chau7Style.Settings.inlineControlSpacing) {
             SettingsSectionHeader(L("settings.dangerousGuard.builtIn", "Built-in Protections"), icon: "lock.shield")
 
             SettingsToggle(
@@ -123,7 +118,7 @@ struct DangerousCommandSettingsView: View {
             SettingsRow(L("settings.dangerousGuard.protectChau7.targets", "Protected Targets")) {
                 VStack(alignment: .leading, spacing: 6) {
                     ForEach(settings.dangerousCommandProtectedProcessPatterns.indices, id: \.self) { index in
-                        HStack(spacing: 8) {
+                        HStack(spacing: Chau7Style.Settings.inlineControlSpacing) {
                             TextField(
                                 L("settings.dangerousGuard.protectChau7.targets.placeholder", "Process pattern"),
                                 text: Binding(
@@ -146,7 +141,7 @@ struct DangerousCommandSettingsView: View {
                         }
                     }
 
-                    HStack(spacing: 8) {
+                    HStack(spacing: Chau7Style.Settings.inlineControlSpacing) {
                         TextField(
                             L("settings.dangerousGuard.protectChau7.targets.placeholder", "Process pattern"),
                             text: $newProtectedProcessPattern
@@ -171,7 +166,7 @@ struct DangerousCommandSettingsView: View {
     // MARK: - Pattern List
 
     private var patternListSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: Chau7Style.Settings.inlineControlSpacing) {
             SettingsSectionHeader(L("settings.dangerousGuard.patterns", "Risky Patterns"), icon: "text.magnifyingglass")
 
             Text(L("settings.dangerousGuard.patterns.help", "Commands containing any of these patterns will trigger the confirmation dialog. Matching is case-insensitive."))
@@ -181,7 +176,7 @@ struct DangerousCommandSettingsView: View {
             SettingsRow(L("settings.dangerousGuard.patterns.label", "Patterns")) {
                 VStack(alignment: .leading, spacing: 6) {
                     ForEach(settings.dangerousCommandPatterns.indices, id: \.self) { index in
-                        HStack(spacing: 8) {
+                        HStack(spacing: Chau7Style.Settings.inlineControlSpacing) {
                             TextField(
                                 L("settings.dangerousGuard.patterns.placeholder", "Pattern"),
                                 text: Binding(
@@ -204,7 +199,7 @@ struct DangerousCommandSettingsView: View {
                         }
                     }
 
-                    HStack(spacing: 8) {
+                    HStack(spacing: Chau7Style.Settings.inlineControlSpacing) {
                         TextField(
                             L("settings.dangerousGuard.patterns.placeholder", "Pattern"),
                             text: $newPattern
@@ -229,7 +224,7 @@ struct DangerousCommandSettingsView: View {
     // MARK: - Allow List
 
     private var allowListSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: Chau7Style.Settings.inlineControlSpacing) {
             SettingsSectionHeader(L("settings.dangerousGuard.allowList", "Always Allowed"), icon: "checkmark.shield")
 
             Text(L("settings.dangerousGuard.allowList.help", "Commands in this list will never trigger the confirmation dialog, even if they match risky patterns."))
@@ -245,7 +240,7 @@ struct DangerousCommandSettingsView: View {
             } else {
                 VStack(alignment: .leading, spacing: 4) {
                     ForEach(Array(guard_.allowList).sorted(), id: \.self) { command in
-                        HStack(spacing: 8) {
+                        HStack(spacing: Chau7Style.Settings.inlineControlSpacing) {
                             Text(command)
                                 .font(.system(.caption, design: .monospaced))
                                 .foregroundStyle(.primary)
@@ -278,7 +273,7 @@ struct DangerousCommandSettingsView: View {
     // MARK: - Block List
 
     private var blockListSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: Chau7Style.Settings.inlineControlSpacing) {
             SettingsSectionHeader(L("settings.dangerousGuard.blockList", "Always Blocked"), icon: "xmark.shield")
 
             Text(L("settings.dangerousGuard.blockList.help", "Commands in this list will always be blocked, regardless of patterns."))
@@ -294,7 +289,7 @@ struct DangerousCommandSettingsView: View {
             } else {
                 VStack(alignment: .leading, spacing: 4) {
                     ForEach(Array(guard_.blockList).sorted(), id: \.self) { command in
-                        HStack(spacing: 8) {
+                        HStack(spacing: Chau7Style.Settings.inlineControlSpacing) {
                             Text(command)
                                 .font(.system(.caption, design: .monospaced))
                                 .foregroundStyle(.red)
@@ -323,7 +318,7 @@ struct DangerousCommandSettingsView: View {
             }
 
             // Add to block list
-            HStack(spacing: 8) {
+            HStack(spacing: Chau7Style.Settings.inlineControlSpacing) {
                 TextField(
                     L("settings.dangerousGuard.blockList.placeholder", "Command to block"),
                     text: $newBlockCommand
@@ -346,7 +341,7 @@ struct DangerousCommandSettingsView: View {
     // MARK: - Reset
 
     private var resetSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: Chau7Style.Settings.inlineControlSpacing) {
             SettingsSectionHeader(L("settings.dangerousGuard.reset", "Reset"), icon: "arrow.counterclockwise")
 
             Button(L("settings.dangerousGuard.resetDefaults", "Reset to Defaults")) {

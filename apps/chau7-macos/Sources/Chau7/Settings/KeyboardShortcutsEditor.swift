@@ -70,9 +70,9 @@ struct KeyboardShortcutsEditorView: View {
                 TextField(L("Search shortcuts...", "Search shortcuts..."), text: $searchText)
                     .textFieldStyle(.plain)
             }
-            .padding(8)
+            .padding(Chau7Style.Settings.inlineControlSpacing)
             .background(Color(NSColor.controlBackgroundColor))
-            .cornerRadius(8)
+            .cornerRadius(Chau7Style.Radius.medium)
             .padding(.horizontal)
 
             Divider()
@@ -80,7 +80,7 @@ struct KeyboardShortcutsEditorView: View {
 
             // Shortcut list
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 16) {
+                LazyVStack(alignment: .leading, spacing: Chau7Style.Settings.pageSectionSpacing) {
                     ForEach(groupedShortcuts, id: \.0) { group, shortcuts in
                         ShortcutGroupView(
                             title: group,
@@ -140,7 +140,7 @@ private struct ShortcutGroupView: View {
     let onUpdate: (KeyboardShortcut) -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: Chau7Style.Settings.inlineControlSpacing) {
             Text(title)
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundColor(.secondary)
@@ -167,7 +167,7 @@ private struct ShortcutGroupView: View {
                 }
             }
             .background(Color(NSColor.controlBackgroundColor))
-            .cornerRadius(8)
+            .cornerRadius(Chau7Style.Radius.medium)
         }
     }
 }
@@ -195,7 +195,7 @@ private struct ShortcutRowView: View {
 
                 if isEditing {
                     // Recording state
-                    HStack(spacing: 8) {
+                    HStack(spacing: Chau7Style.Settings.inlineControlSpacing) {
                         ShortcutRecorderView(
                             onRecord: { key, modifiers in
                                 recordedKey = key
@@ -251,7 +251,7 @@ private struct ShortcutRowView: View {
                 }
             }
         }
-        .padding(.horizontal, 12)
+        .padding(.horizontal, Chau7Style.Settings.looseControlSpacing)
         .padding(.vertical, 10)
         .contentShape(Rectangle())
     }

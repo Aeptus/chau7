@@ -15,7 +15,7 @@ struct LLMSettingsView: View {
     @State private var isTesting = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: Chau7Style.Settings.pageSectionSpacing) {
             SettingsSectionHeader(L("LLM Provider"), icon: "brain")
 
             SettingsRow(
@@ -92,8 +92,7 @@ struct LLMSettingsView: View {
                 }
             }
 
-            Divider()
-                .padding(.vertical, 8)
+            SettingsDivider()
 
             SettingsSectionHeader(L("Error Explanation"), icon: "exclamationmark.bubble")
 

@@ -6,7 +6,7 @@ struct TabsSettingsView: View {
     @Bindable private var settings = FeatureSettings.shared
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: Chau7Style.Settings.pageSectionSpacing) {
             // Behavior
             SettingsSectionHeader(L("settings.tabs.behavior", "Behavior"), icon: "rectangle.stack.badge.plus")
 
@@ -74,8 +74,7 @@ struct TabsSettingsView: View {
                 options: RepoGroupingMode.allCases.map { (value: $0, label: $0.displayName) }
             )
 
-            Divider()
-                .padding(.vertical, 8)
+            SettingsDivider()
 
             // Tab Display
             SettingsSectionHeader(L("settings.tabs.display", "Tab Display"), icon: "eye")
@@ -124,8 +123,7 @@ struct TabsSettingsView: View {
             )
             .disabled(settings.customTitleOnly)
 
-            Divider()
-                .padding(.vertical, 8)
+            SettingsDivider()
 
             // Appearance
             SettingsSectionHeader(L("settings.tabs.appearance", "Appearance"), icon: "paintpalette")
@@ -142,8 +140,7 @@ struct TabsSettingsView: View {
                 isOn: $settings.isAutoTabThemeEnabled
             )
 
-            Divider()
-                .padding(.vertical, 8)
+            SettingsDivider()
 
             // Keyboard
             SettingsSectionHeader(L("settings.tabs.keyboardNavigation", "Keyboard Navigation"), icon: "keyboard")
@@ -168,8 +165,7 @@ struct TabsSettingsView: View {
             )
             SettingsShortcutRow(label: L("settings.tabs.renameTab", "Rename Tab"), shortcut: "⌘⌥R")
 
-            Divider()
-                .padding(.vertical, 8)
+            SettingsDivider()
 
             // Reset Button
             SettingsButtonRow(buttons: [
