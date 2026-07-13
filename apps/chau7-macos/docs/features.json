@@ -2430,6 +2430,13 @@
   },
   {
     "category": "Settings",
+    "feature": "Responsive Settings Shell",
+    "description": "Settings sidebar, search results, section copy, and form controls stay usable while resizing through adaptive rows, bounded window dimensions, and wrapping text for longer localized labels and accessibility descriptions",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "Settings",
     "feature": "iCloud Sync",
     "description": "Optional iCloud sync of settings across devices",
     "status": "Shipped",

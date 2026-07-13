@@ -18,6 +18,7 @@ struct AIIntegrationSettingsView: View {
             Text(L("settings.ai.customRulesDescription", "Add command or output patterns to tag custom AI CLIs."))
                 .font(.caption)
                 .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
                 .padding(.bottom, 4)
 
             // Existing rules
@@ -31,35 +32,22 @@ struct AIIntegrationSettingsView: View {
 
             // Add new rule
             SettingsRow(L("settings.ai.addNewRule", "Add New Rule")) {
-                HStack(spacing: 8) {
-                    TextField(L("settings.ai.patternPlaceholder", "Pattern"), text: $newCustomPattern)
-                        .textFieldStyle(.roundedBorder)
-                        .frame(width: 120)
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 8) {
+                        newRulePatternField
+                        newRuleNameField
+                        newRuleColorPicker
+                        addRuleButton
+                    }
 
-                    TextField(L("settings.ai.namePlaceholder", "Name"), text: $newCustomName)
-                        .textFieldStyle(.roundedBorder)
-                        .frame(width: 100)
-
-                    Picker("", selection: $newCustomColor) {
-                        ForEach(TabColor.allCases) { color in
-                            HStack(spacing: 4) {
-                                Circle()
-                                    .fill(color.color)
-                                    .frame(width: 8, height: 8)
-                                Text(color.rawValue.capitalized)
-                            }
-                            .tag(color)
+                    VStack(alignment: .leading, spacing: 8) {
+                        newRulePatternField
+                        newRuleNameField
+                        HStack(spacing: 8) {
+                            newRuleColorPicker
+                            addRuleButton
                         }
                     }
-                    .labelsHidden()
-                    .frame(width: 100)
-
-                    Button(L("settings.ai.add", "Add")) {
-                        addNewRule()
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-                    .disabled(newCustomPattern.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
             }
 
@@ -78,6 +66,7 @@ struct AIIntegrationSettingsView: View {
             Text(L("settings.ai.detectionDescription", "Chau7 automatically detects these AI CLIs and applies appropriate theming:"))
                 .font(.caption)
                 .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
                 .padding(.bottom, 4)
 
             SettingsDetectionRow(name: "Claude Code", commands: "claude, claude-code", color: TabColor.purple.color)
@@ -105,6 +94,47 @@ struct AIIntegrationSettingsView: View {
         newCustomColor = .gray
     }
 
+    private var newRulePatternField: some View {
+        TextField(L("settings.ai.patternPlaceholder", "Pattern"), text: $newCustomPattern)
+            .textFieldStyle(.roundedBorder)
+            .frame(minWidth: 120, idealWidth: 160, maxWidth: 220)
+            .accessibilityLabel(L("settings.ai.patternPlaceholder", "Pattern"))
+    }
+
+    private var newRuleNameField: some View {
+        TextField(L("settings.ai.namePlaceholder", "Name"), text: $newCustomName)
+            .textFieldStyle(.roundedBorder)
+            .frame(minWidth: 120, idealWidth: 150, maxWidth: 220)
+            .accessibilityLabel(L("settings.ai.namePlaceholder", "Name"))
+    }
+
+    private var newRuleColorPicker: some View {
+        Picker("", selection: $newCustomColor) {
+            ForEach(TabColor.allCases) { color in
+                HStack(spacing: 4) {
+                    Circle()
+                        .fill(color.color)
+                        .frame(width: 8, height: 8)
+                        .accessibilityHidden(true)
+                    Text(color.rawValue.capitalized)
+                }
+                .tag(color)
+            }
+        }
+        .labelsHidden()
+        .frame(minWidth: 120, idealWidth: 140, maxWidth: 180)
+        .accessibilityLabel(L("settings.ai.color", "Color"))
+    }
+
+    private var addRuleButton: some View {
+        Button(L("settings.ai.add", "Add")) {
+            addNewRule()
+        }
+        .buttonStyle(.bordered)
+        .controlSize(.small)
+        .disabled(newCustomPattern.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+    }
+
 }
 
 // MARK: - Custom Rule Row
@@ -115,26 +145,50 @@ private struct CustomRuleRow: View {
 
     var body: some View {
         SettingsRow(rule.displayName.isEmpty ? rule.pattern : rule.displayName) {
-            HStack(spacing: 8) {
-                Circle()
-                    .fill(TabColor(rawValue: rule.colorName)?.color ?? Color.gray)
-                    .frame(width: 10, height: 10)
-
-                Text(rule.pattern)
-                    .font(.system(.caption, design: .monospaced))
-                    .foregroundStyle(.secondary)
-
-                Spacer()
-
-                Button {
-                    onDelete()
-                } label: {
-                    Image(systemName: "trash")
-                        .foregroundStyle(.red)
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 8) {
+                    ruleColor
+                    rulePattern
+                    Spacer(minLength: 8)
+                    deleteButton
                 }
-                .buttonStyle(.borderless)
-                .help(L("settings.ai.removeRule", "Remove rule"))
+
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(spacing: 8) {
+                        ruleColor
+                        rulePattern
+                    }
+                    deleteButton
+                }
             }
         }
+    }
+
+    private var ruleColor: some View {
+        Circle()
+            .fill(TabColor(rawValue: rule.colorName)?.color ?? Color.gray)
+            .frame(width: 10, height: 10)
+            .accessibilityHidden(true)
+    }
+
+    private var rulePattern: some View {
+        Text(rule.pattern)
+            .font(.system(.caption, design: .monospaced))
+            .foregroundStyle(.secondary)
+            .textSelection(.enabled)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private var deleteButton: some View {
+        Button {
+            onDelete()
+        } label: {
+            Label(L("settings.ai.removeRule", "Remove rule"), systemImage: "trash")
+                .labelStyle(.iconOnly)
+                .foregroundStyle(.red)
+        }
+        .buttonStyle(.borderless)
+        .help(L("settings.ai.removeRule", "Remove rule"))
+        .accessibilityLabel(L("settings.ai.removeRule", "Remove rule"))
     }
 }

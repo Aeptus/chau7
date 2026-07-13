@@ -14,7 +14,10 @@ struct FontColorsSettingsView: View {
             // Live Preview Panel
             SettingsSectionHeader(L("settings.appearance.livePreview", "Live Preview"), icon: "rectangle.inset.filled.and.cursorarrow")
 
-            LiveTerminalPreview(settings: settings)
+            ScrollView(.horizontal, showsIndicators: true) {
+                LiveTerminalPreview(settings: settings)
+                    .frame(minWidth: 320)
+            }
                 .padding(.bottom, 8)
 
             Divider()
@@ -31,42 +34,20 @@ struct FontColorsSettingsView: View {
             )
 
             // Custom font entry — validates live as you type, applies on Enter
-            HStack(spacing: 8) {
-                Text(L("settings.appearance.customFont", "Custom Font"))
-                    .frame(width: 120, alignment: .trailing)
-                TextField(
-                    L("settings.appearance.customFont.placeholder", "Font family name..."),
-                    text: $customFontInput,
-                    onCommit: {
-                        let family = customFontInput.trimmingCharacters(in: .whitespacesAndNewlines)
-                        guard !family.isEmpty, customFontValid == true else { return }
-                        settings.customFontFamily = family
-                        settings.fontFamily = family
+            SettingsRow(
+                L("settings.appearance.customFont", "Custom Font"),
+                help: L("settings.appearance.customFont.help", "Type an installed font family name and press Return to apply it")
+            ) {
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 8) {
+                        customFontTextField
+                        customFontValidationIcon
                     }
-                )
-                .textFieldStyle(.roundedBorder)
-                .frame(maxWidth: 200)
-                .onAppear {
-                    customFontInput = settings.customFontFamily
-                    if !customFontInput.isEmpty {
-                        customFontValid = NSFontManager.shared.font(withFamily: customFontInput, traits: [], weight: 5, size: 12) != nil
-                    }
-                }
-                .onChange(of: customFontInput) {
-                    let family = customFontInput.trimmingCharacters(in: .whitespacesAndNewlines)
-                    if family.isEmpty {
-                        customFontValid = nil
-                    } else {
-                        customFontValid = NSFontManager.shared.font(withFamily: family, traits: [], weight: 5, size: 12) != nil
-                    }
-                }
 
-                if let valid = customFontValid {
-                    Image(systemName: valid ? "checkmark.circle.fill" : "xmark.circle.fill")
-                        .foregroundColor(valid ? .green : .red)
-                        .help(valid
-                            ? L("settings.appearance.customFont.valid", "Font found — press Enter to apply")
-                            : L("settings.appearance.customFont.invalid", "Font not found on this system"))
+                    VStack(alignment: .leading, spacing: 6) {
+                        customFontTextField
+                        customFontValidationIcon
+                    }
                 }
             }
 
@@ -166,6 +147,56 @@ struct FontColorsSettingsView: View {
             ], alignment: .trailing)
         }
     }
+
+    private var customFontTextField: some View {
+        TextField(
+            L("settings.appearance.customFont.placeholder", "Font family name..."),
+            text: $customFontInput,
+            onCommit: applyCustomFontIfValid
+        )
+        .textFieldStyle(.roundedBorder)
+        .frame(minWidth: 160, idealWidth: 200, maxWidth: 240)
+        .onAppear(perform: loadCustomFontInput)
+        .onChange(of: customFontInput) {
+            validateCustomFontInput()
+        }
+        .accessibilityLabel(L("settings.appearance.customFont", "Custom Font"))
+        .accessibilityHint(L("settings.appearance.customFont.help", "Type an installed font family name and press Return to apply it"))
+    }
+
+    @ViewBuilder
+    private var customFontValidationIcon: some View {
+        if let valid = customFontValid {
+            let message = valid
+                ? L("settings.appearance.customFont.valid", "Font found — press Enter to apply")
+                : L("settings.appearance.customFont.invalid", "Font not found on this system")
+            Image(systemName: valid ? "checkmark.circle.fill" : "xmark.circle.fill")
+                .foregroundColor(valid ? .green : .red)
+                .help(message)
+                .accessibilityLabel(message)
+        }
+    }
+
+    private func loadCustomFontInput() {
+        customFontInput = settings.customFontFamily
+        validateCustomFontInput()
+    }
+
+    private func validateCustomFontInput() {
+        let family = customFontInput.trimmingCharacters(in: .whitespacesAndNewlines)
+        if family.isEmpty {
+            customFontValid = nil
+        } else {
+            customFontValid = NSFontManager.shared.font(withFamily: family, traits: [], weight: 5, size: 12) != nil
+        }
+    }
+
+    private func applyCustomFontIfValid() {
+        let family = customFontInput.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !family.isEmpty, customFontValid == true else { return }
+        settings.customFontFamily = family
+        settings.fontFamily = family
+    }
 }
 
 // MARK: - Font Family Picker (renders each name in its own font)
@@ -180,23 +211,10 @@ private struct FontFamilyPicker: View {
     let families: [String]
 
     var body: some View {
-        HStack(alignment: .top, spacing: SettingsLayout.controlSpacing) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(label)
-                if let help {
-                    Text(help)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-            .frame(width: SettingsLayout.labelWidth, alignment: .leading)
-
+        SettingsRow(label, help: help) {
             FontFamilyPopUpButton(selection: $selection, families: families)
-                .frame(width: 150, height: 24)
-
-            Spacer()
+                .frame(minWidth: 150, idealWidth: 180, maxWidth: 220, minHeight: 24)
         }
-        .padding(.vertical, 4)
     }
 }
 

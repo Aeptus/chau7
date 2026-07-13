@@ -7,6 +7,78 @@ import Chau7Core
 enum SettingsLayout {
     static let labelWidth: CGFloat = 220
     static let controlSpacing: CGFloat = 16
+    static let compactRowSpacing: CGFloat = 8
+    static let minimumControlWidth: CGFloat = 160
+    static let settingsWindowMinWidth: CGFloat = 720
+    static let settingsWindowMinHeight: CGFloat = 500
+    static let sidebarMinWidth: CGFloat = 200
+    static let sidebarIdealWidth: CGFloat = 240
+    static let sidebarMaxWidth: CGFloat = 300
+    static let detailMinWidth: CGFloat = 360
+    static let detailIdealWidth: CGFloat = 680
+}
+
+// MARK: - Adaptive Settings Row Foundation
+
+private struct SettingsLabelBlock: View {
+    let label: String
+    let help: String?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(label)
+                .fixedSize(horizontal: false, vertical: true)
+            if let help {
+                Text(help)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .accessibilityElement(children: .combine)
+    }
+}
+
+private struct SettingsAdaptiveRow<Content: View>: View {
+    let label: String
+    let help: String?
+    let content: () -> Content
+
+    init(_ label: String, help: String? = nil, @ViewBuilder content: @escaping () -> Content) {
+        self.label = label
+        self.help = help
+        self.content = content
+    }
+
+    var body: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(alignment: .top, spacing: SettingsLayout.controlSpacing) {
+                SettingsLabelBlock(label: label, help: help)
+                    .frame(width: SettingsLayout.labelWidth, alignment: .leading)
+                content()
+                    .layoutPriority(1)
+                Spacer(minLength: 0)
+            }
+
+            VStack(alignment: .leading, spacing: SettingsLayout.compactRowSpacing) {
+                SettingsLabelBlock(label: label, help: help)
+                content()
+                    .layoutPriority(1)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, 4)
+    }
+}
+
+private extension View {
+    func settingsControlWidth(_ width: CGFloat) -> some View {
+        frame(
+            minWidth: min(SettingsLayout.minimumControlWidth, width),
+            idealWidth: width,
+            maxWidth: width
+        )
+    }
 }
 
 // MARK: - Settings Section Header
@@ -25,12 +97,16 @@ struct SettingsSectionHeader: View {
             if let icon {
                 Image(systemName: icon)
                     .foregroundStyle(.secondary)
+                    .accessibilityHidden(true)
             }
             Text(title)
                 .font(.headline)
+                .fixedSize(horizontal: false, vertical: true)
         }
         .padding(.top, 8)
         .padding(.bottom, 4)
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isHeader)
     }
 }
 
@@ -48,22 +124,9 @@ struct SettingsRow<Content: View>: View {
     }
 
     var body: some View {
-        HStack(alignment: .top, spacing: SettingsLayout.controlSpacing) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(label)
-                if let help {
-                    Text(help)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-            .frame(width: SettingsLayout.labelWidth, alignment: .leading)
-
+        SettingsAdaptiveRow(label, help: help) {
             content()
-
-            Spacer()
         }
-        .padding(.vertical, 4)
     }
 }
 
@@ -76,23 +139,12 @@ struct SettingsToggle: View {
     var disabled = false
 
     var body: some View {
-        HStack(alignment: .top, spacing: SettingsLayout.controlSpacing) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(label)
-                Text(help)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            .frame(width: SettingsLayout.labelWidth, alignment: .leading)
-
+        SettingsAdaptiveRow(label, help: help) {
             Toggle("", isOn: $isOn)
                 .toggleStyle(.switch)
                 .labelsHidden()
                 .disabled(disabled)
-
-            Spacer()
         }
-        .padding(.vertical, 4)
         .accessibilityElement(children: .combine)
         .accessibilityLabel(label)
         .accessibilityHint(help)
@@ -115,30 +167,17 @@ struct SettingsSlider: View {
     var disabled = false
 
     var body: some View {
-        HStack(alignment: .top, spacing: SettingsLayout.controlSpacing) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(label)
-                if let help {
-                    Text(help)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-            .frame(width: SettingsLayout.labelWidth, alignment: .leading)
-
+        SettingsAdaptiveRow(label, help: help) {
             HStack(spacing: 8) {
                 Slider(value: $value, in: range, step: step)
-                    .frame(width: width)
+                    .settingsControlWidth(width)
                     .disabled(disabled)
                 Text(String(format: format, value) + suffix)
                     .font(.system(.body, design: .monospaced))
                     .frame(width: 50, alignment: .trailing)
                     .foregroundStyle(disabled ? .secondary : .primary)
             }
-
-            Spacer()
         }
-        .padding(.vertical, 4)
         .accessibilityElement(children: .combine)
         .accessibilityLabel(label)
         .accessibilityHint(help ?? "")
@@ -167,27 +206,14 @@ struct SettingsStepper: View {
     var disabled = false
 
     var body: some View {
-        HStack(alignment: .top, spacing: SettingsLayout.controlSpacing) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(label)
-                if let help {
-                    Text(help)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-            .frame(width: SettingsLayout.labelWidth, alignment: .leading)
-
+        SettingsAdaptiveRow(label, help: help) {
             Stepper(value: $value, in: range) {
                 Text(value.formatted() + suffix)
                     .font(.system(.body, design: .monospaced))
                     .frame(width: 60, alignment: .trailing)
             }
             .disabled(disabled)
-
-            Spacer()
         }
-        .padding(.vertical, 4)
         .accessibilityElement(children: .combine)
         .accessibilityLabel(label)
         .accessibilityHint(help ?? "")
@@ -208,29 +234,16 @@ struct SettingsTextField: View {
     var onSubmit: (() -> Void)?
 
     var body: some View {
-        HStack(alignment: .top, spacing: SettingsLayout.controlSpacing) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(label)
-                if let help {
-                    Text(help)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-            .frame(width: SettingsLayout.labelWidth, alignment: .leading)
-
+        SettingsAdaptiveRow(label, help: help) {
             TextField(placeholder, text: $text)
                 .textFieldStyle(.roundedBorder)
-                .frame(width: width)
+                .settingsControlWidth(width)
                 .font(monospaced ? .system(size: 12, design: .monospaced) : .body)
                 .disabled(disabled)
                 .onSubmit { onSubmit?() }
                 .accessibilityLabel(label)
                 .accessibilityHint(help ?? "")
-
-            Spacer()
         }
-        .padding(.vertical, 4)
     }
 }
 
@@ -249,43 +262,44 @@ struct SettingsDirectoryField: View {
     var onSubmit: (() -> Void)?
 
     var body: some View {
-        HStack(alignment: .top, spacing: SettingsLayout.controlSpacing) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(label)
-                if let help {
-                    Text(help)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
+        SettingsAdaptiveRow(label, help: help) {
+            ViewThatFits(in: .horizontal) {
+                directoryControls(axis: .horizontal)
+                directoryControls(axis: .vertical)
             }
-            .frame(width: SettingsLayout.labelWidth, alignment: .leading)
-
-            HStack(spacing: 8) {
-                TextField(placeholder, text: $text)
-                    .textFieldStyle(.roundedBorder)
-                    .frame(width: width)
-                    .font(monospaced ? .system(size: 12, design: .monospaced) : .body)
-                    .disabled(disabled)
-                    .onSubmit { onSubmit?() }
-                    .accessibilityLabel(label)
-                    .accessibilityHint(help ?? "")
-
-                Button(action: chooseDirectory) {
-                    if let buttonIcon {
-                        Label(buttonTitle, systemImage: buttonIcon)
-                    } else {
-                        Text(buttonTitle)
-                    }
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-                .disabled(disabled)
-                .accessibilityLabel(buttonTitle)
-            }
-
-            Spacer()
         }
-        .padding(.vertical, 4)
+    }
+
+    @ViewBuilder
+    private func directoryControls(axis: Axis.Set) -> some View {
+        let controls = Group {
+            TextField(placeholder, text: $text)
+                .textFieldStyle(.roundedBorder)
+                .settingsControlWidth(width)
+                .font(monospaced ? .system(size: 12, design: .monospaced) : .body)
+                .disabled(disabled)
+                .onSubmit { onSubmit?() }
+                .accessibilityLabel(label)
+                .accessibilityHint(help ?? "")
+
+            Button(action: chooseDirectory) {
+                if let buttonIcon {
+                    Label(buttonTitle, systemImage: buttonIcon)
+                } else {
+                    Text(buttonTitle)
+                }
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+            .disabled(disabled)
+            .accessibilityLabel(buttonTitle)
+        }
+
+        if axis == .horizontal {
+            HStack(spacing: 8) { controls }
+        } else {
+            VStack(alignment: .leading, spacing: 8) { controls }
+        }
     }
 
     private func chooseDirectory() {
@@ -339,28 +353,15 @@ struct SettingsNumberField: View {
     var onSubmit: (() -> Void)?
 
     var body: some View {
-        HStack(alignment: .top, spacing: SettingsLayout.controlSpacing) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(label)
-                if let help {
-                    Text(help)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-            .frame(width: SettingsLayout.labelWidth, alignment: .leading)
-
+        SettingsAdaptiveRow(label, help: help) {
             TextField("", value: $value, format: .number)
                 .textFieldStyle(.roundedBorder)
-                .frame(width: width)
+                .settingsControlWidth(width)
                 .disabled(disabled)
                 .onSubmit { onSubmit?() }
                 .accessibilityLabel(label)
                 .accessibilityHint(help ?? "")
-
-            Spacer()
         }
-        .padding(.vertical, 4)
     }
 }
 
@@ -375,29 +376,16 @@ struct SettingsPicker<T: Hashable>: View {
     var disabled = false
 
     var body: some View {
-        HStack(alignment: .top, spacing: SettingsLayout.controlSpacing) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(label)
-                if let help {
-                    Text(help)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-            .frame(width: SettingsLayout.labelWidth, alignment: .leading)
-
+        SettingsAdaptiveRow(label, help: help) {
             Picker("", selection: $selection) {
                 ForEach(options, id: \.value) { option in
                     Text(option.label).tag(option.value)
                 }
             }
             .labelsHidden()
-            .frame(width: width)
+            .settingsControlWidth(width)
             .disabled(disabled)
-
-            Spacer()
         }
-        .padding(.vertical, 4)
         .accessibilityElement(children: .combine)
         .accessibilityLabel(label)
         .accessibilityHint(help ?? "")
@@ -414,18 +402,13 @@ struct SettingsInfoRow: View {
     var monospaced = false
 
     var body: some View {
-        HStack(alignment: .top, spacing: SettingsLayout.controlSpacing) {
-            Text(label)
-                .frame(width: SettingsLayout.labelWidth, alignment: .leading)
-
+        SettingsAdaptiveRow(label) {
             Text(value)
                 .font(monospaced ? .system(.body, design: .monospaced) : .body)
                 .foregroundStyle(valueColor)
                 .textSelection(.enabled)
-
-            Spacer()
+                .fixedSize(horizontal: false, vertical: true)
         }
-        .padding(.vertical, 4)
         .accessibilityElement(children: .combine)
         .accessibilityLabel(String(format: L("accessibility.labelValue", "%@: %@"), label, value))
     }
@@ -450,18 +433,30 @@ struct SettingsButtonRow: View {
     }
 
     var body: some View {
-        HStack(spacing: 12) {
-            if alignment == .trailing {
-                Spacer()
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 12) {
+                if alignment == .trailing {
+                    Spacer(minLength: 0)
+                }
+
+                ForEach(buttons) { button in
+                    makeButton(button)
+                }
+
+                if alignment == .leading {
+                    Spacer(minLength: 0)
+                }
             }
 
-            ForEach(buttons) { button in
-                makeButton(button)
+            VStack(alignment: alignment, spacing: 8) {
+                ForEach(buttons) { button in
+                    makeButton(button)
+                }
             }
-
-            if alignment == .leading {
-                Spacer()
-            }
+            .frame(
+                maxWidth: .infinity,
+                alignment: alignment == .trailing ? .trailing : .leading
+            )
         }
         .padding(.vertical, 4)
     }
@@ -507,26 +502,42 @@ struct SettingsCard<Content: View>: View {
     }
 
     var body: some View {
-        HStack {
-            content()
+        ViewThatFits(in: .horizontal) {
+            HStack {
+                content()
 
-            Spacer()
+                Spacer(minLength: 12)
 
-            if let action = action, let label = actionLabel {
-                Button(action: action) {
-                    if let icon = actionIcon {
-                        Label(label, systemImage: icon)
-                    } else {
-                        Text(label)
-                    }
+                if let action = action, let label = actionLabel {
+                    cardButton(action: action, label: label)
                 }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.small)
+            }
+
+            VStack(alignment: .leading, spacing: 12) {
+                content()
+
+                if let action = action, let label = actionLabel {
+                    cardButton(action: action, label: label)
+                }
             }
         }
         .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color(NSColor.controlBackgroundColor))
         .cornerRadius(8)
+    }
+
+    @ViewBuilder
+    private func cardButton(action: @escaping () -> Void, label: String) -> some View {
+        Button(action: action) {
+            if let icon = actionIcon {
+                Label(label, systemImage: icon)
+            } else {
+                Text(label)
+            }
+        }
+        .buttonStyle(.borderedProminent)
+        .controlSize(.small)
     }
 }
 
@@ -537,16 +548,21 @@ struct SettingsHint: View {
     let text: String
 
     var body: some View {
-        HStack(spacing: 6) {
+        HStack(alignment: .top, spacing: 6) {
             Image(systemName: icon)
                 .font(.system(size: 10))
                 .foregroundColor(.secondary)
+                .padding(.top, 2)
+                .accessibilityHidden(true)
             Text(text)
                 .font(.system(size: 11))
                 .foregroundColor(.secondary)
                 .textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
         }
         .padding(.vertical, 2)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(text)
     }
 }
 
@@ -568,6 +584,7 @@ struct SettingsDescription: View {
             .font(.caption)
             .foregroundStyle(.secondary)
             .textSelection(.enabled)
+            .fixedSize(horizontal: false, vertical: true)
             .padding(.vertical, 2)
     }
 }
@@ -579,17 +596,21 @@ struct SettingsShortcutRow: View {
     let shortcut: String
 
     var body: some View {
-        HStack {
-            Text(label)
-                .foregroundStyle(.secondary)
-            Spacer()
-            Text(shortcut)
-                .font(.system(.caption, design: .monospaced))
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
-                .background(Color.secondary.opacity(0.1))
-                .cornerRadius(4)
-                .textSelection(.enabled)
+        ViewThatFits(in: .horizontal) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(label)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 12)
+                shortcutBadge
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text(label)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                shortcutBadge
+            }
         }
         .padding(.vertical, 2)
         .accessibilityElement(children: .combine)
@@ -601,6 +622,16 @@ struct SettingsShortcutRow: View {
             )
         )
     }
+
+    private var shortcutBadge: some View {
+        Text(shortcut)
+            .font(.system(.caption, design: .monospaced))
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(Color.secondary.opacity(0.1))
+            .cornerRadius(4)
+            .textSelection(.enabled)
+    }
 }
 
 // MARK: - Settings Detection Row (AI detection display)
@@ -611,23 +642,42 @@ struct SettingsDetectionRow: View {
     let color: Color
 
     var body: some View {
-        HStack {
+        ViewThatFits(in: .horizontal) {
+            HStack(alignment: .firstTextBaseline) {
+                nameLabel
+                Spacer(minLength: 12)
+                commandsText
+            }
+
+            VStack(alignment: .leading, spacing: 4) {
+                nameLabel
+                commandsText
+            }
+        }
+        .padding(.vertical, 2)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(String(format: L("accessibility.aiDetection", "%@ AI detection"), name))
+        .accessibilityHint(String(format: L("accessibility.commands", "Commands: %@"), commands))
+    }
+
+    private var nameLabel: some View {
+        HStack(spacing: 6) {
             Circle()
                 .fill(color)
                 .frame(width: 10, height: 10)
                 .accessibilityHidden(true)
             Text(name)
                 .fontWeight(.medium)
-            Spacer()
-            Text(commands)
-                .font(.system(.caption, design: .monospaced))
-                .foregroundStyle(.secondary)
-                .textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
         }
-        .padding(.vertical, 2)
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel(String(format: L("accessibility.aiDetection", "%@ AI detection"), name))
-        .accessibilityHint(String(format: L("accessibility.commands", "Commands: %@"), commands))
+    }
+
+    private var commandsText: some View {
+        Text(commands)
+            .font(.system(.caption, design: .monospaced))
+            .foregroundStyle(.secondary)
+            .textSelection(.enabled)
+            .fixedSize(horizontal: false, vertical: true)
     }
 }
 

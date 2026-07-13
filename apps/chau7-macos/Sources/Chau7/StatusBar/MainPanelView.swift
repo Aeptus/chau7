@@ -65,8 +65,12 @@ struct SettingsRootView: View {
                     }
                     .listStyle(.sidebar)
                 }
-                .frame(minWidth: 220)
-                .navigationSplitViewColumnWidth(min: 220, ideal: 250, max: 320)
+                .frame(minWidth: SettingsLayout.sidebarMinWidth)
+                .navigationSplitViewColumnWidth(
+                    min: SettingsLayout.sidebarMinWidth,
+                    ideal: SettingsLayout.sidebarIdealWidth,
+                    max: SettingsLayout.sidebarMaxWidth
+                )
             } detail: {
                 SettingsDetailView(
                     selection: selection,
@@ -74,11 +78,26 @@ struct SettingsRootView: View {
                     overlayModel: overlayModel,
                     searchQuery: searchQuery
                 )
-                .frame(minWidth: 560, maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                .navigationSplitViewColumnWidth(min: 560, ideal: 700)
+                .frame(
+                    minWidth: SettingsLayout.detailMinWidth,
+                    maxWidth: .infinity,
+                    maxHeight: .infinity,
+                    alignment: .topLeading
+                )
+                .navigationSplitViewColumnWidth(
+                    min: SettingsLayout.detailMinWidth,
+                    ideal: SettingsLayout.detailIdealWidth
+                )
             }
+            .navigationSplitViewStyle(.balanced)
         }
-        .frame(minWidth: 860, maxWidth: .infinity, minHeight: 650, maxHeight: .infinity, alignment: .topLeading)
+        .frame(
+            minWidth: SettingsLayout.settingsWindowMinWidth,
+            maxWidth: .infinity,
+            minHeight: SettingsLayout.settingsWindowMinHeight,
+            maxHeight: .infinity,
+            alignment: .topLeading
+        )
         .onChange(of: searchQuery) {
             // Auto-select first matching section when searching
             if !searchQuery.isEmpty, let firstMatch = filteredSections.first {
@@ -111,6 +130,7 @@ struct SettingsSearchBar: View {
             TextField(L("Search settings...", "Search settings..."), text: $searchQuery)
                 .textFieldStyle(.plain)
                 .focused($isFocused)
+                .accessibilityLabel(L("settings.search.accessibilityLabel", "Search settings"))
 
             if !searchQuery.isEmpty {
                 Button(action: { searchQuery = "" }) {
@@ -118,6 +138,7 @@ struct SettingsSearchBar: View {
                         .foregroundStyle(.secondary)
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel(L("settings.search.clear", "Clear settings search"))
             }
         }
         .padding(8)
@@ -139,6 +160,8 @@ struct SettingsSidebarRow: View {
         HStack {
             Label(section.title, systemImage: section.systemImage)
                 .foregroundColor(isHighlighted ? .accentColor : .primary)
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
 
             if matchCount > 0 {
                 Spacer()
@@ -150,8 +173,17 @@ struct SettingsSidebarRow: View {
                     .padding(.vertical, 2)
                     .background(Color.accentColor)
                     .clipShape(Capsule())
+                    .accessibilityLabel(
+                        String(
+                            format: L("settings.search.matchCount.accessibility", "%d matching settings"),
+                            matchCount
+                        )
+                    )
             }
         }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(section.title)
+        .accessibilityHint(section.description)
     }
 }
 
@@ -245,6 +277,7 @@ struct SettingsDetailView: View {
                 }
             }
             .padding(24)
+            .frame(maxWidth: .infinity, alignment: .topLeading)
         }
         .id(selection)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -258,7 +291,11 @@ struct SettingsDetailView: View {
             Text(selection.description)
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(selection.title)
+        .accessibilityHint(selection.description)
         .padding(.bottom, 12)
     }
 }
@@ -286,23 +323,46 @@ struct SearchResultsHint: View {
             }
 
             ForEach(matchingSettings) { setting in
-                HStack {
-                    Image(systemName: "arrow.right")
-                        .font(.caption2)
-                        .foregroundColor(.accentColor)
-                    Text(setting.title)
-                        .font(.caption)
-                        .foregroundColor(.accentColor)
-                    Text(String(format: L("settings.searchResultDetail", "– %@"), setting.description))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                ViewThatFits(in: .horizontal) {
+                    HStack(alignment: .firstTextBaseline) {
+                        searchResultIcon
+                        Text(setting.title)
+                            .font(.caption)
+                            .foregroundColor(.accentColor)
+                        Text(String(format: L("settings.searchResultDetail", "– %@"), setting.description))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        HStack(alignment: .firstTextBaseline, spacing: 4) {
+                            searchResultIcon
+                            Text(setting.title)
+                                .font(.caption)
+                                .foregroundColor(.accentColor)
+                        }
+                        Text(setting.description)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                 }
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel(setting.title)
+                .accessibilityHint(setting.description)
             }
         }
         .padding(12)
         .background(Color.accentColor.opacity(0.1))
         .cornerRadius(8)
         .padding(.bottom, 8)
+    }
+
+    private var searchResultIcon: some View {
+        Image(systemName: "arrow.right")
+            .font(.caption2)
+            .foregroundColor(.accentColor)
+            .accessibilityHidden(true)
     }
 }
 
