@@ -52,3 +52,8 @@
 --disable conditionalAssignment
 --disable noForceUnwrapInTests
 --disable redundantSendable
+# The codebase uses single-line `if cond { body }` throughout (965 sites);
+# swiftformat 0.62's wrapIf*Bodies rules would rewrap all of them. Keep the
+# established style, consistent with the other opinionated rules disabled above.
+--disable wrapIfStatementBodies
+--disable wrapIfExpressionBodies

@@ -2,7 +2,7 @@ import CryptoKit
 import Foundation
 
 public enum Chau7SkillManifestHashing {
-    public static let excludedManagedFileNames: Set<String> = [
+    public static let excludedManagedFileNames: Set = [
         ".chau7-skill.json",
         ".DS_Store"
     ]
@@ -116,7 +116,7 @@ public enum Chau7SkillManifestHashing {
         return fileURL.lastPathComponent
     }
 
-    private static func hexString<D: Sequence>(for digest: D) -> String where D.Element == UInt8 {
+    private static func hexString(for digest: some Sequence<UInt8>) -> String {
         digest.map { String(format: "%02x", $0) }.joined()
     }
 }

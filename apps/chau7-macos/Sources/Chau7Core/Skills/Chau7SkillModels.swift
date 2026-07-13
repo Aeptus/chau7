@@ -21,7 +21,7 @@ public struct Chau7SkillID: Codable, Hashable, Identifiable, Sendable, Expressib
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.singleValueContainer()
-        self.init(try container.decode(String.self))
+        try self.init(container.decode(String.self))
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -116,7 +116,7 @@ public struct Chau7SkillProvider: Codable, Hashable, Identifiable, Sendable, Exp
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.singleValueContainer()
-        self.init(try container.decode(String.self))
+        try self.init(container.decode(String.self))
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -212,7 +212,7 @@ public struct Chau7SkillFileHash: Codable, Hashable, Sendable, CustomStringConve
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.singleValueContainer()
-        self.init(rawValue: try container.decode(String.self))
+        try self.init(rawValue: container.decode(String.self))
     }
 
     public func encode(to encoder: Encoder) throws {

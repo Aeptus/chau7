@@ -726,7 +726,7 @@ final class TokenOptimizationCoreTests: XCTestCase {
     /// order, so a Homebrew entry ahead of `/usr/bin` wins. Regressing this to
     /// the app's PATH ordering would resolve `/usr/bin/python3` instead.
     func testResolveRealBinaryHonorsPathOrder() {
-        let present: Set<String> = ["/opt/homebrew/bin/python3", "/usr/bin/python3"]
+        let present: Set = ["/opt/homebrew/bin/python3", "/usr/bin/python3"]
         let resolved = ctoResolveRealBinary(
             command: "python3",
             pathEntries: ["/opt/homebrew/bin", "/usr/bin"],
@@ -740,7 +740,7 @@ final class TokenOptimizationCoreTests: XCTestCase {
     /// resolves back to its own wrapper (which would re-invoke chau7-optim).
     func testResolveRealBinarySkipsWrapperDirectory() {
         let wrapperDir = "/home/.chau7/cto_bin"
-        let present: Set<String> = ["\(wrapperDir)/grep", "/usr/bin/grep"]
+        let present: Set = ["\(wrapperDir)/grep", "/usr/bin/grep"]
         let resolved = ctoResolveRealBinary(
             command: "grep",
             pathEntries: [wrapperDir, "/usr/bin"],
@@ -755,7 +755,7 @@ final class TokenOptimizationCoreTests: XCTestCase {
     /// install a wrapper, so a bare name is never shadowed into an exit 127.
     func testResolveRealBinaryReturnsNilWhenAbsent() {
         let wrapperDir = "/home/.chau7/cto_bin"
-        let present: Set<String> = ["\(wrapperDir)/python"] // only the wrapper itself exists
+        let present: Set = ["\(wrapperDir)/python"] // only the wrapper itself exists
         let resolved = ctoResolveRealBinary(
             command: "python",
             pathEntries: [wrapperDir, "/usr/bin", "/bin"],

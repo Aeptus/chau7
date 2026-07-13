@@ -591,7 +591,7 @@ public struct MagiVote: Codable, Equatable, Sendable, Identifiable {
         self.decisionID = try container.decodeIfPresent(String.self, forKey: .decisionID)
         self.choice = try container.decode(String.self, forKey: .choice)
         self.conditions = Self.decodeConditions(container)
-        self.confidence = min(1, max(0, try container.decodeIfPresent(Double.self, forKey: .confidence) ?? 0))
+        self.confidence = try min(1, max(0, container.decodeIfPresent(Double.self, forKey: .confidence) ?? 0))
         self.rationale = try container.decodeIfPresent(String.self, forKey: .rationale) ?? ""
         self.rawOutput = try container.decodeIfPresent(String.self, forKey: .rawOutput)
     }
@@ -1145,6 +1145,7 @@ public struct MagiArtifactBundle: Codable, Equatable, Sendable {
     public var manifestJSONPath: String {
         "\(rootDirectory)/manifest.json"
     }
+
     public var technicalLogPath: String {
         "\(rootDirectory)/technical.jsonl"
     }

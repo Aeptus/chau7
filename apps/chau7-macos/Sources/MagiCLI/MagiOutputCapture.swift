@@ -223,16 +223,16 @@ extension MagiMCPOrchestrator {
         var startedAt: Date
         var eventSinceMillis: Int64
         var lastError: Error?
-        var lastOutput: String = ""
+        var lastOutput = ""
         var lastCapture: MagiPolledOutput?
         var lastLoggedOutputCount: Int?
         var lastLoggedEventSignature: String?
         var lastLoggedEventError: String?
         var lastLoggedStatusError: String?
         var lastLoggedParseError: String?
-        var nextProgressPulseAt: Date = Date()
-        var progressPulse: Int = 0
-        var nextTailPollAt: Date = Date()
+        var nextProgressPulseAt = Date()
+        var progressPulse = 0
+        var nextTailPollAt = Date()
     }
 
     func collectPendingParsed<T>(
@@ -982,10 +982,10 @@ extension MagiMCPOrchestrator {
         let lastError: Error?
     }
 
-    /// The structured-output repair sub-flow of `waitForParsed`: sends the
-    /// repair prompt, polls until the re-emitted block parses, and records
-    /// the terminal outcome. Split out so the poll loop and the repair flow
-    /// each stay within readable (and lintable) bounds.
+    // The structured-output repair sub-flow of `waitForParsed`: sends the
+    // repair prompt, polls until the re-emitted block parses, and records
+    // the terminal outcome. Split out so the poll loop and the repair flow
+    // each stay within readable (and lintable) bounds.
 
     func runStructuredRepair<T>(
         context: StructuredRepairContext,

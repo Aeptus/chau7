@@ -2,15 +2,15 @@ import XCTest
 @testable import Chau7Core
 
 final class Chau7SkillBuiltInSkillsTests: XCTestCase {
-    func testBundledMagiSkillValidates() throws {
+    func testBundledMagiSkillValidates() {
         XCTAssertEqual(validateBuiltInSkill("chau7-magi"), [])
     }
 
-    func testBundledMCPSkillValidates() throws {
+    func testBundledMCPSkillValidates() {
         XCTAssertEqual(validateBuiltInSkill("chau7-mcp"), [])
     }
 
-    func testBuiltInSkillsValidateAgainstSharedAgentSkillsContract() throws {
+    func testBuiltInSkillsValidateAgainstSharedAgentSkillsContract() {
         for skillID in ["chau7-magi", "chau7-mcp"] {
             XCTAssertEqual(
                 validateBuiltInSkill(skillID),

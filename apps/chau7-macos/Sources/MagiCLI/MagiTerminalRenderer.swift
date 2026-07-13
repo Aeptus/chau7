@@ -336,7 +336,6 @@ extension MagiMCPOrchestrator {
     }
 }
 
-
 enum MagiANSIStyle: String {
     case bold = "1"
     case dim = "2"

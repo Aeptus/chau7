@@ -81,13 +81,13 @@ public struct MagiMCPAgentLaunchAgent: Decodable, Equatable {
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        tabID = try MagiMCPDTOCoding.optionalString(container, forKey: .tabID)
-        status = try MagiMCPDTOCoding.string(container, forKey: .status)
-        promptStatus = try MagiMCPDTOCoding.string(container, forKey: .promptStatus)
-        promptInputVisible = try MagiMCPDTOCoding.optionalBool(container, forKey: .promptInputVisible)
-        promptSubmitted = try MagiMCPDTOCoding.optionalBool(container, forKey: .promptSubmitted)
-        agentRunning = try MagiMCPDTOCoding.optionalBool(container, forKey: .agentRunning)
-        error = try MagiMCPDTOCoding.optionalString(container, forKey: .error)
+        self.tabID = try MagiMCPDTOCoding.optionalString(container, forKey: .tabID)
+        self.status = try MagiMCPDTOCoding.string(container, forKey: .status)
+        self.promptStatus = try MagiMCPDTOCoding.string(container, forKey: .promptStatus)
+        self.promptInputVisible = try MagiMCPDTOCoding.optionalBool(container, forKey: .promptInputVisible)
+        self.promptSubmitted = try MagiMCPDTOCoding.optionalBool(container, forKey: .promptSubmitted)
+        self.agentRunning = try MagiMCPDTOCoding.optionalBool(container, forKey: .agentRunning)
+        self.error = try MagiMCPDTOCoding.optionalString(container, forKey: .error)
     }
 }
 
@@ -203,15 +203,15 @@ public struct MagiMCPTabStatus: Decodable, Equatable {
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        activeRun = try MagiMCPDTOCoding.optionalJSONValue(container, forKey: .activeRun)
-        activeApp = try MagiMCPDTOCoding.string(container, forKey: .activeApp)
-        aiProvider = try MagiMCPDTOCoding.string(container, forKey: .aiProvider)
-        status = try MagiMCPDTOCoding.string(container, forKey: .status)
-        rawStatus = try MagiMCPDTOCoding.string(container, forKey: .rawStatus)
-        canAcceptExec = try MagiMCPDTOCoding.bool(container, forKey: .canAcceptExec)
-        readyForExec = try MagiMCPDTOCoding.bool(container, forKey: .readyForExec)
-        isAtPrompt = try MagiMCPDTOCoding.bool(container, forKey: .isAtPrompt)
-        rawIsAtPrompt = try MagiMCPDTOCoding.bool(container, forKey: .rawIsAtPrompt)
+        self.activeRun = try MagiMCPDTOCoding.optionalJSONValue(container, forKey: .activeRun)
+        self.activeApp = try MagiMCPDTOCoding.string(container, forKey: .activeApp)
+        self.aiProvider = try MagiMCPDTOCoding.string(container, forKey: .aiProvider)
+        self.status = try MagiMCPDTOCoding.string(container, forKey: .status)
+        self.rawStatus = try MagiMCPDTOCoding.string(container, forKey: .rawStatus)
+        self.canAcceptExec = try MagiMCPDTOCoding.bool(container, forKey: .canAcceptExec)
+        self.readyForExec = try MagiMCPDTOCoding.bool(container, forKey: .readyForExec)
+        self.isAtPrompt = try MagiMCPDTOCoding.bool(container, forKey: .isAtPrompt)
+        self.rawIsAtPrompt = try MagiMCPDTOCoding.bool(container, forKey: .rawIsAtPrompt)
     }
 }
 
@@ -243,7 +243,7 @@ public struct MagiMCPTabSendInputResponse: Decodable, Equatable {
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        ok = try MagiMCPDTOCoding.string(container, forKey: .ok)
+        self.ok = try MagiMCPDTOCoding.string(container, forKey: .ok)
     }
 }
 
@@ -275,8 +275,8 @@ public struct MagiMCPTabSubmitPromptResponse: Decodable, Equatable {
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        ok = try MagiMCPDTOCoding.string(container, forKey: .ok)
-        enterCount = try MagiMCPDTOCoding.string(container, forKey: .enterCount)
+        self.ok = try MagiMCPDTOCoding.string(container, forKey: .ok)
+        self.enterCount = try MagiMCPDTOCoding.string(container, forKey: .enterCount)
     }
 }
 
@@ -341,9 +341,9 @@ public struct MagiMCPRuntimeEvent: Decodable, Equatable {
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        type = try MagiMCPDTOCoding.string(container, forKey: .type)
-        tabID = try MagiMCPDTOCoding.string(container, forKey: .tabID)
-        detail = (try? container.decode(MagiMCPRuntimeEventDetail.self, forKey: .detail)) ?? MagiMCPRuntimeEventDetail()
+        self.type = try MagiMCPDTOCoding.string(container, forKey: .type)
+        self.tabID = try MagiMCPDTOCoding.string(container, forKey: .tabID)
+        self.detail = (try? container.decode(MagiMCPRuntimeEventDetail.self, forKey: .detail)) ?? MagiMCPRuntimeEventDetail()
     }
 }
 
@@ -363,8 +363,8 @@ public struct MagiMCPRuntimeEventDetail: Decodable, Equatable {
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        eventType = try MagiMCPDTOCoding.string(container, forKey: .eventType)
-        message = try MagiMCPDTOCoding.string(container, forKey: .message)
+        self.eventType = try MagiMCPDTOCoding.string(container, forKey: .eventType)
+        self.message = try MagiMCPDTOCoding.string(container, forKey: .message)
     }
 }
 
@@ -419,7 +419,7 @@ public struct MagiMCPRepoEvent: Decodable, Equatable {
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        message = try MagiMCPDTOCoding.string(container, forKey: .message)
+        self.message = try MagiMCPDTOCoding.string(container, forKey: .message)
     }
 }
 
@@ -444,7 +444,7 @@ public struct MagiMCPTabCreateResponse: Decodable, Equatable {
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        tabID = try MagiMCPDTOCoding.optionalString(container, forKey: .tabID)
+        self.tabID = try MagiMCPDTOCoding.optionalString(container, forKey: .tabID)
     }
 }
 
@@ -476,7 +476,7 @@ public struct MagiMCPTabWaitReadyResponse: Decodable, Equatable {
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        canAcceptExec = try MagiMCPDTOCoding.bool(container, forKey: .canAcceptExec)
+        self.canAcceptExec = try MagiMCPDTOCoding.bool(container, forKey: .canAcceptExec)
     }
 }
 

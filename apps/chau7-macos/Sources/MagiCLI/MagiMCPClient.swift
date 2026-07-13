@@ -170,9 +170,9 @@ final class MagiMCPClient: MagiMCPToolCalling {
         let _: MagiMCPOperationResponse = try callTool(name: "tab_exec", arguments: request)
     }
 
-    private func callTool<Request: Encodable, Response: Decodable>(
+    private func callTool<Response: Decodable>(
         name: String,
-        arguments: Request
+        arguments: some Encodable
     ) throws -> Response {
         let rawArguments = try encodeJSONObject(arguments, context: "\(name) arguments")
         let rawResult = try callToolRaw(name: name, arguments: rawArguments)
@@ -212,7 +212,7 @@ final class MagiMCPClient: MagiMCPToolCalling {
         return result
     }
 
-    private func encodeJSONObject<Value: Encodable>(_ value: Value, context: String) throws -> [String: Any] {
+    private func encodeJSONObject(_ value: some Encodable, context: String) throws -> [String: Any] {
         let data = try JSONEncoder().encode(value)
         guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             throw MagiMCPClientError.protocolError("could not encode \(context) as a JSON object")

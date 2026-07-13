@@ -49,7 +49,7 @@ final class Chau7CLISkillsTests: XCTestCase {
             - chau7-magi stale
             - chau7-mcp  unmanaged conflict
             """
-            + "\n"
+                + "\n"
         )
     }
 

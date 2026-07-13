@@ -1,7 +1,7 @@
 import Foundation
 
 public enum Chau7SkillValidator {
-    public static let allowedOptionalDirectoryNames: Set<String> = [
+    public static let allowedOptionalDirectoryNames: Set = [
         "scripts",
         "references",
         "assets"
@@ -92,7 +92,7 @@ public enum Chau7SkillValidator {
         var previousWasHyphen = false
         for scalar in scalars {
             switch scalar {
-            case "a"..."z", "0"..."9":
+            case "a" ... "z", "0" ... "9":
                 previousWasHyphen = false
             case "-":
                 if previousWasHyphen { return false }

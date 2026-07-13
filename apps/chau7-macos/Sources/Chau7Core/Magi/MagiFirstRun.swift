@@ -248,13 +248,13 @@ public enum MagiConfigTOMLCodec {
             )
         }
 
-        return MagiConfig(
+        return try MagiConfig(
             schemaVersion: int(global["schema_version"]) ?? MagiConfig.currentSchemaVersion,
             defaultCouncilID: string(global["default_council_id"]) ?? "magi",
             defaultReasoning: defaultReasoning,
             fallbackStrategy: fallbackStrategy,
             webAccessAllowed: bool(global["web_access_allowed"]) ?? bool(global["web"]) ?? true,
-            evidencePolicy: try evidencePolicy(from: global),
+            evidencePolicy: evidencePolicy(from: global),
             deadlockExtraRoundEnabled: bool(global["deadlock_extra_round_enabled"]) ?? bool(global["deadlock_extra_round"]) ?? true,
             vetoBlocksVerdict: bool(global["veto_blocks_verdict"]) ?? bool(global["veto_blocks"]) ?? true,
             autoCloseAgentTabs: bool(global["auto_close_agent_tabs"]) ?? bool(global["close_agent_tabs"]) ?? true,

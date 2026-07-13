@@ -97,9 +97,9 @@ final class Chau7SkillInstallerTests: XCTestCase {
                 provider: .claude,
                 scope: .user,
                 sourcePath: fixture.source.rootDirectory,
-                sourceHash: try Chau7SkillManifestHashing.sourceHash(rootDirectory: fixture.source.rootDirectory),
+                sourceHash: Chau7SkillManifestHashing.sourceHash(rootDirectory: fixture.source.rootDirectory),
                 installedAt: "2026-07-09T12:00:00Z",
-                files: try Chau7SkillManifestHashing.managedFileHashes(rootDirectory: fixture.source.rootDirectory)
+                files: Chau7SkillManifestHashing.managedFileHashes(rootDirectory: fixture.source.rootDirectory)
             ),
             to: fixture.target.manifestPath
         )
@@ -278,9 +278,9 @@ final class Chau7SkillInstallerTests: XCTestCase {
                 provider: .claude,
                 scope: .user,
                 sourcePath: fixture.source.rootDirectory,
-                sourceHash: try Chau7SkillManifestHashing.sourceHash(rootDirectory: fixture.source.rootDirectory),
+                sourceHash: Chau7SkillManifestHashing.sourceHash(rootDirectory: fixture.source.rootDirectory),
                 installedAt: "2026-07-09T12:00:00Z",
-                files: try Chau7SkillManifestHashing.managedFileHashes(rootDirectory: fixture.source.rootDirectory)
+                files: Chau7SkillManifestHashing.managedFileHashes(rootDirectory: fixture.source.rootDirectory)
             ),
             to: fixture.target.manifestPath
         )

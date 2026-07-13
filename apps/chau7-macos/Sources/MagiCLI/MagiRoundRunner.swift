@@ -302,7 +302,6 @@ extension MagiMCPOrchestrator {
     }
 }
 
-
 struct MagiMemberTab {
     var member: MagiMember
     var tabID: String
