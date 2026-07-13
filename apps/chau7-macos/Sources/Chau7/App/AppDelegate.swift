@@ -13,6 +13,43 @@ private final class OverlayBlurView: NSVisualEffectView {
     }
 }
 
+private extension NSToolbarItem.Identifier {
+    static let settingsProfileSelector = NSToolbarItem.Identifier("Chau7SettingsProfileSelector")
+}
+
+private final class SettingsToolbarDelegate: NSObject, NSToolbarDelegate {
+    private let overlayModel: OverlayTabsModel?
+
+    init(overlayModel: OverlayTabsModel?) {
+        self.overlayModel = overlayModel
+    }
+
+    func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
+        [.flexibleSpace, .settingsProfileSelector]
+    }
+
+    func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
+        [.flexibleSpace, .settingsProfileSelector, .flexibleSpace]
+    }
+
+    func toolbar(
+        _ toolbar: NSToolbar,
+        itemForItemIdentifier itemIdentifier: NSToolbarItem.Identifier,
+        willBeInsertedIntoToolbar flag: Bool
+    ) -> NSToolbarItem? {
+        guard itemIdentifier == .settingsProfileSelector else { return nil }
+
+        let item = NSToolbarItem(itemIdentifier: itemIdentifier)
+        let hostingView = NSHostingView(rootView: ProfileSelectorBar(overlayModel: overlayModel).localized())
+        hostingView.frame = NSRect(x: 0, y: 0, width: 220, height: 28)
+        item.view = hostingView
+        item.visibilityPriority = .high
+        item.label = L("settings.profileBar.toolbarLabel", "Settings Profile")
+        item.paletteLabel = item.label
+        return item
+    }
+}
+
 @MainActor final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     /// Direct reference for code that can't use NSApp.delegate as? AppDelegate
     /// (e.g., SwiftUI gesture handlers where the cast may fail due to @NSApplicationDelegateAdaptor wrapping).
@@ -36,6 +73,7 @@ private final class OverlayBlurView: NSVisualEffectView {
     private var appThemeObserver: Any?
     private var splashController: SplashWindowController?
     private var settingsWindow: NSWindow?
+    private var settingsToolbarDelegate: SettingsToolbarDelegate?
     private var isClosingTab = false // Flag to prevent windowShouldClose from hiding window during tab close
     private var nextOverlayWindowNumber = 1
     /// Tracks windows that were hidden via orderOut - used to trigger tab bar refresh only when needed
@@ -639,6 +677,21 @@ private final class OverlayBlurView: NSVisualEffectView {
         window.contentMinSize = settingsMinimumSize
 
         window.title = L("window.settings.title", "Chau7 Settings")
+        window.titleVisibility = .hidden
+        if #available(macOS 11.0, *) {
+            window.toolbarStyle = .unifiedCompact
+            window.titlebarSeparatorStyle = .line
+        }
+        let toolbarDelegate = SettingsToolbarDelegate(overlayModel: overlayModel)
+        let toolbar = NSToolbar(identifier: NSToolbar.Identifier("Chau7SettingsToolbar"))
+        toolbar.displayMode = .iconOnly
+        toolbar.sizeMode = .small
+        toolbar.allowsUserCustomization = false
+        toolbar.autosavesConfiguration = false
+        toolbar.delegate = toolbarDelegate
+        window.toolbar = toolbar
+        settingsToolbarDelegate = toolbarDelegate
+
         window.contentViewController = hostingController
         // setContentSize after assigning the controller, because the controller's
         // preferredContentSize would otherwise override our 860x680 default with

@@ -2431,7 +2431,7 @@
   {
     "category": "Settings",
     "feature": "Responsive Settings Shell",
-    "description": "Settings sidebar, search results, section copy, and form controls stay usable while resizing through adaptive rows, bounded window dimensions, and wrapping text for longer localized labels and accessibility descriptions",
+    "description": "Settings sidebar, search results, section copy, and form controls stay usable while resizing through adaptive rows, bounded window dimensions, wrapping text for longer localized labels and accessibility descriptions, and a compact native titlebar profile selector that defaults to Default Settings and owns profile load/save actions",
     "status": "Shipped",
     "differentiator": "Yes"
   },

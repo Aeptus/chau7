@@ -569,7 +569,7 @@ Chau7's rendering pipeline is purpose-built for latency-sensitive terminal work:
 - Per-folder config: `.chau7/config.toml` in any repo for project-specific settings.
 - Config file watcher — auto-reload on changes, no restart needed.
 - Launch at Login installs/removes the user LaunchAgent plist for the next macOS login without loading it in the current session, so toggling the setting does not relaunch Chau7 immediately.
-- Responsive settings shell keeps the sidebar, search results, section copy, and form controls usable while resizing, with adaptive rows and wrapping text for longer localized labels and accessibility descriptions.
+- Responsive settings shell keeps the sidebar, search results, section copy, and form controls usable while resizing, with adaptive rows, wrapping text for longer localized labels and accessibility descriptions, and a compact native titlebar profile selector that defaults to "Default Settings" and owns profile load/save actions.
 - Optional iCloud sync across devices — freshness-guarded: only blobs strictly newer than this Mac's last synced state apply, newer-format exports are refused, and fields absent from a blob keep their local value instead of resetting to defaults.
 - Reset individual settings or all to defaults.
 

@@ -39,58 +39,54 @@ struct SettingsRootView: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            ProfileSelectorBar(overlayModel: overlayModel)
+        NavigationSplitView {
+            VStack(spacing: 0) {
+                // Search Bar
+                SettingsSearchBar(searchQuery: $searchQuery)
 
-            NavigationSplitView {
-                VStack(spacing: 0) {
-                    // Search Bar
-                    SettingsSearchBar(searchQuery: $searchQuery)
-
-                    // Section List — grouped when browsing, flat when searching
-                    List(selection: $selection) {
-                        if isSearching {
-                            ForEach(filteredSections) { section in
-                                sidebarRow(for: section)
-                            }
-                        } else {
-                            ForEach(SettingsSectionGroup.allCases) { group in
-                                Section(header: Text(group.title)) {
-                                    ForEach(group.sections, id: \.self) { section in
-                                        sidebarRow(for: section)
-                                    }
+                // Section List — grouped when browsing, flat when searching
+                List(selection: $selection) {
+                    if isSearching {
+                        ForEach(filteredSections) { section in
+                            sidebarRow(for: section)
+                        }
+                    } else {
+                        ForEach(SettingsSectionGroup.allCases) { group in
+                            Section(header: Text(group.title)) {
+                                ForEach(group.sections, id: \.self) { section in
+                                    sidebarRow(for: section)
                                 }
                             }
                         }
                     }
-                    .listStyle(.sidebar)
                 }
-                .frame(minWidth: SettingsLayout.sidebarMinWidth)
-                .navigationSplitViewColumnWidth(
-                    min: SettingsLayout.sidebarMinWidth,
-                    ideal: SettingsLayout.sidebarIdealWidth,
-                    max: SettingsLayout.sidebarMaxWidth
-                )
-            } detail: {
-                SettingsDetailView(
-                    selection: selection,
-                    model: model,
-                    overlayModel: overlayModel,
-                    searchQuery: searchQuery
-                )
-                .frame(
-                    minWidth: SettingsLayout.detailMinWidth,
-                    maxWidth: .infinity,
-                    maxHeight: .infinity,
-                    alignment: .topLeading
-                )
-                .navigationSplitViewColumnWidth(
-                    min: SettingsLayout.detailMinWidth,
-                    ideal: SettingsLayout.detailIdealWidth
-                )
+                .listStyle(.sidebar)
             }
-            .navigationSplitViewStyle(.balanced)
+            .frame(minWidth: SettingsLayout.sidebarMinWidth)
+            .navigationSplitViewColumnWidth(
+                min: SettingsLayout.sidebarMinWidth,
+                ideal: SettingsLayout.sidebarIdealWidth,
+                max: SettingsLayout.sidebarMaxWidth
+            )
+        } detail: {
+            SettingsDetailView(
+                selection: selection,
+                model: model,
+                overlayModel: overlayModel,
+                searchQuery: searchQuery
+            )
+            .frame(
+                minWidth: SettingsLayout.detailMinWidth,
+                maxWidth: .infinity,
+                maxHeight: .infinity,
+                alignment: .topLeading
+            )
+            .navigationSplitViewColumnWidth(
+                min: SettingsLayout.detailMinWidth,
+                ideal: SettingsLayout.detailIdealWidth
+            )
         }
+        .navigationSplitViewStyle(.balanced)
         .frame(
             minWidth: SettingsLayout.settingsWindowMinWidth,
             maxWidth: .infinity,
