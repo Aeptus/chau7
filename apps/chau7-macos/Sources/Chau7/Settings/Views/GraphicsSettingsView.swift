@@ -71,37 +71,13 @@ struct GraphicsSettingsView: View {
             // Info Section
             SettingsSectionHeader(L("graphics.protocols.title", "Protocol Information"), icon: "info.circle")
 
-            VStack(alignment: .leading, spacing: Chau7Style.Settings.inlineControlSpacing) {
-                protocolInfoRow(
-                    name: L("graphics.protocol.iterm2", "iTerm2 (imgcat)"),
-                    statusText: L("graphics.status.alwaysEnabled", "Always enabled"),
-                    detail: L("graphics.protocol.iterm2.detail", "ESC ] 1337 ; File = ... BEL"),
-                    isEnabled: true
-                )
-                protocolInfoRow(
-                    name: L("graphics.protocol.sixel", "Sixel"),
-                    statusText: bridge.isSixelEnabled
-                        ? L("status.enabled", "Enabled")
-                        : L("status.disabled", "Disabled"),
-                    detail: L("graphics.protocol.sixel.detail", "DCS P ... ST"),
-                    isEnabled: bridge.isSixelEnabled
-                )
-                protocolInfoRow(
-                    name: L("graphics.protocol.kitty", "Kitty Graphics"),
-                    statusText: bridge.isKittyGraphicsEnabled
-                        ? L("status.enabled", "Enabled")
-                        : L("status.disabled", "Disabled"),
-                    detail: L("graphics.protocol.kitty.detail", "APC G ... ST"),
-                    isEnabled: bridge.isKittyGraphicsEnabled
-                )
-            }
-            .padding(Chau7Style.Settings.cardPadding)
-            .background(Color(NSColor.controlBackgroundColor))
-            .cornerRadius(Chau7Style.Radius.medium)
+            SettingsStatusGrid(items: protocolItems)
 
             // Shortcut hints
-            SettingsHint(icon: "terminal", text: L("graphics.hint.sixel", "Test Sixel: convert image.png sixel:- (requires ImageMagick)"))
-            SettingsHint(icon: "terminal", text: L("graphics.hint.kitty", "Test Kitty: kitty +kitten icat image.png (requires Kitty tools)"))
+            VStack(alignment: .leading, spacing: Chau7Style.Spacing.xxxSmall) {
+                SettingsHint(icon: "terminal", text: L("graphics.hint.sixel", "Test Sixel: convert image.png sixel:- (requires ImageMagick)"))
+                SettingsHint(icon: "terminal", text: L("graphics.hint.kitty", "Test Kitty: kitty +kitten icat image.png (requires Kitty tools)"))
+            }
 
             SettingsDivider()
 
@@ -126,24 +102,39 @@ struct GraphicsSettingsView: View {
         }
     }
 
-    // MARK: - Protocol Info Row
+    // MARK: - Protocol Summary
 
-    private func protocolInfoRow(name: String, statusText: String, detail: String, isEnabled: Bool) -> some View {
-        HStack {
-            Circle()
-                .fill(isEnabled ? Color.green : Color.secondary)
-                .frame(width: 8, height: 8)
-            Text(name)
-                .fontWeight(.medium)
-            Spacer()
-            Text(detail)
-                .font(.system(.caption, design: .monospaced))
-                .foregroundStyle(.secondary)
-            Text(statusText)
-                .font(.caption)
-                .foregroundStyle(isEnabled ? .green : .secondary)
-                .frame(width: 80, alignment: .trailing)
-        }
+    private var protocolItems: [SettingsStatusItem] {
+        [
+            SettingsStatusItem(
+                id: "iterm2",
+                label: L("graphics.protocol.iterm2", "iTerm2 (imgcat)"),
+                value: L("graphics.status.alwaysEnabled", "Always enabled"),
+                detail: L("graphics.protocol.iterm2.detail", "ESC ] 1337 ; File = ... BEL"),
+                systemImage: "photo",
+                tone: .enabled
+            ),
+            SettingsStatusItem(
+                id: "sixel",
+                label: L("graphics.protocol.sixel", "Sixel"),
+                value: bridge.isSixelEnabled
+                    ? L("status.enabled", "Enabled")
+                    : L("status.disabled", "Disabled"),
+                detail: L("graphics.protocol.sixel.detail", "DCS P ... ST"),
+                systemImage: "photo.on.rectangle",
+                tone: bridge.isSixelEnabled ? .enabled : .disabled
+            ),
+            SettingsStatusItem(
+                id: "kitty",
+                label: L("graphics.protocol.kitty", "Kitty Graphics"),
+                value: bridge.isKittyGraphicsEnabled
+                    ? L("status.enabled", "Enabled")
+                    : L("status.disabled", "Disabled"),
+                detail: L("graphics.protocol.kitty.detail", "APC G ... ST"),
+                systemImage: "photo.artframe",
+                tone: bridge.isKittyGraphicsEnabled ? .enabled : .disabled
+            )
+        ]
     }
 
     // MARK: - Test Image

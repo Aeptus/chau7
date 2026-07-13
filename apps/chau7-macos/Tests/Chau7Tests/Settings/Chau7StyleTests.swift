@@ -21,9 +21,12 @@ final class Chau7StyleTests: XCTestCase {
     }
 
     func testSettingsSurfaceTokensFollowSharedScale() {
-        XCTAssertEqual(Chau7Style.Settings.pageSectionSpacing, Chau7Style.Spacing.medium)
+        XCTAssertEqual(Chau7Style.Settings.pageSectionSpacing, Chau7Style.Spacing.small)
+        XCTAssertEqual(Chau7Style.Settings.rowVerticalPadding, Chau7Style.Spacing.xxSmall)
         XCTAssertEqual(Chau7Style.Settings.inlineControlSpacing, Chau7Style.Spacing.small)
         XCTAssertEqual(Chau7Style.Settings.looseControlSpacing, Chau7Style.Spacing.medium)
-        XCTAssertEqual(Chau7Style.Settings.separatorVerticalPadding, Chau7Style.Spacing.small)
+        XCTAssertEqual(Chau7Style.Settings.separatorVerticalPadding, Chau7Style.Spacing.xSmall)
+        XCTAssertEqual(Chau7Style.Settings.contentPadding, Chau7Style.Spacing.medium)
+        XCTAssertEqual(Chau7Style.Settings.cardPadding, Chau7Style.Spacing.small)
     }
 }

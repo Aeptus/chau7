@@ -53,25 +53,7 @@ struct GeneralSettingsView: View {
             // Status
             SettingsSectionHeader(L("settings.general.status", "Status"), icon: "info.circle")
 
-            SettingsInfoRow(label: L("settings.general.status.notifications", "Notifications"), value: model.notificationStatus, monospaced: true)
-            SettingsInfoRow(
-                label: L("settings.general.status.eventMonitoring", "Event Monitoring"),
-                value: model.isMonitoring ? L("status.active", "Active") : L("status.paused", "Paused"),
-                valueColor: model.isMonitoring ? .green : .secondary,
-                monospaced: true
-            )
-            SettingsInfoRow(
-                label: L("settings.general.status.historyMonitoring", "History Monitoring"),
-                value: model.isIdleMonitoring ? L("status.active", "Active") : L("status.paused", "Paused"),
-                valueColor: model.isIdleMonitoring ? .green : .secondary,
-                monospaced: true
-            )
-            SettingsInfoRow(
-                label: L("settings.general.status.terminalMonitoring", "Terminal Monitoring"),
-                value: model.isTerminalMonitoring ? L("status.active", "Active") : L("status.paused", "Paused"),
-                valueColor: model.isTerminalMonitoring ? .green : .secondary,
-                monospaced: true
-            )
+            SettingsStatusGrid(items: statusItems)
 
             SettingsDivider()
 
@@ -109,5 +91,82 @@ struct GeneralSettingsView: View {
         } message: {
             Text(L("settings.general.reset.confirm.message", "This will reset all Chau7 settings to their default values. This action cannot be undone."))
         }
+    }
+
+    private var statusItems: [SettingsStatusItem] {
+        [
+            SettingsStatusItem(
+                id: "notifications",
+                label: L("settings.general.status.notifications", "Notifications"),
+                value: model.notificationStatus,
+                systemImage: "bell.badge",
+                tone: .neutral
+            ),
+            SettingsStatusItem(
+                id: "eventMonitoring",
+                label: L("settings.general.status.eventMonitoring", "Event Monitoring"),
+                value: activePaused(model.isMonitoring),
+                systemImage: "waveform.path.ecg",
+                tone: activeTone(model.isMonitoring)
+            ),
+            SettingsStatusItem(
+                id: "historyMonitoring",
+                label: L("settings.general.status.historyMonitoring", "History Monitoring"),
+                value: activePaused(model.isIdleMonitoring),
+                systemImage: "clock.arrow.circlepath",
+                tone: activeTone(model.isIdleMonitoring)
+            ),
+            SettingsStatusItem(
+                id: "terminalMonitoring",
+                label: L("settings.general.status.terminalMonitoring", "Terminal Monitoring"),
+                value: activePaused(model.isTerminalMonitoring),
+                systemImage: "terminal",
+                tone: activeTone(model.isTerminalMonitoring)
+            ),
+            SettingsStatusItem(
+                id: "launchAtLogin",
+                label: L("settings.general.launchAtLogin", "Launch at Login"),
+                value: enabledDisabled(settings.launchAtLogin),
+                systemImage: "power",
+                tone: enabledTone(settings.launchAtLogin)
+            ),
+            SettingsStatusItem(
+                id: "menuBarOnly",
+                label: L("settings.windows.menuBarOnlyMode", "Menu Bar Only Mode"),
+                value: enabledDisabled(settings.menuBarOnlyMode),
+                systemImage: "menubar.rectangle",
+                tone: enabledTone(settings.menuBarOnlyMode)
+            ),
+            SettingsStatusItem(
+                id: "mcp",
+                label: L("settings.mcpControl", "MCP Control"),
+                value: enabledDisabled(settings.mcpEnabled),
+                systemImage: "face.dashed",
+                tone: enabledTone(settings.mcpEnabled)
+            ),
+            SettingsStatusItem(
+                id: "defaultDirectory",
+                label: L("settings.general.defaultDirectory", "Default Directory"),
+                value: settings.defaultStartDirectory.isEmpty ? "~" : settings.defaultStartDirectory,
+                systemImage: "folder",
+                tone: .neutral
+            )
+        ]
+    }
+
+    private func activePaused(_ isActive: Bool) -> String {
+        isActive ? L("status.active", "Active") : L("status.paused", "Paused")
+    }
+
+    private func enabledDisabled(_ isEnabled: Bool) -> String {
+        isEnabled ? L("status.enabled", "Enabled") : L("status.disabled", "Disabled")
+    }
+
+    private func activeTone(_ isActive: Bool) -> SettingsStatusTone {
+        isActive ? .active : .paused
+    }
+
+    private func enabledTone(_ isEnabled: Bool) -> SettingsStatusTone {
+        isEnabled ? .enabled : .disabled
     }
 }

@@ -424,6 +424,122 @@ struct SettingsInfoRow: View {
     }
 }
 
+// MARK: - Settings Status Summary
+
+enum SettingsStatusTone {
+    case active
+    case paused
+    case enabled
+    case disabled
+    case neutral
+    case warning
+
+    var color: Color {
+        switch self {
+        case .active, .enabled:
+            return .green
+        case .paused, .disabled:
+            return .secondary
+        case .neutral:
+            return .accentColor
+        case .warning:
+            return .orange
+        }
+    }
+}
+
+struct SettingsStatusItem: Identifiable {
+    let id: String
+    let label: String
+    let value: String
+    var detail: String?
+    var systemImage: String
+    var tone: SettingsStatusTone
+
+    init(
+        id: String,
+        label: String,
+        value: String,
+        detail: String? = nil,
+        systemImage: String,
+        tone: SettingsStatusTone = .neutral
+    ) {
+        self.id = id
+        self.label = label
+        self.value = value
+        self.detail = detail
+        self.systemImage = systemImage
+        self.tone = tone
+    }
+}
+
+struct SettingsStatusGrid: View {
+    let items: [SettingsStatusItem]
+    var minimumColumnWidth: CGFloat = 185
+
+    private var columns: [GridItem] {
+        [
+            GridItem(
+                .adaptive(minimum: minimumColumnWidth),
+                spacing: Chau7Style.Settings.inlineControlSpacing,
+                alignment: .top
+            )
+        ]
+    }
+
+    var body: some View {
+        LazyVGrid(columns: columns, alignment: .leading, spacing: Chau7Style.Settings.inlineControlSpacing) {
+            ForEach(items) { item in
+                statusCell(item)
+            }
+        }
+        .padding(Chau7Style.Settings.cardPadding)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color(NSColor.controlBackgroundColor))
+        .cornerRadius(Chau7Style.Radius.medium)
+    }
+
+    private func statusCell(_ item: SettingsStatusItem) -> some View {
+        HStack(alignment: .top, spacing: Chau7Style.Spacing.xSmall) {
+            Image(systemName: item.systemImage)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(item.tone.color)
+                .frame(width: 14, alignment: .center)
+                .accessibilityHidden(true)
+
+            VStack(alignment: .leading, spacing: Chau7Style.Spacing.xxxSmall) {
+                Text(item.label)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                HStack(alignment: .firstTextBaseline, spacing: Chau7Style.Spacing.xxSmall) {
+                    Circle()
+                        .fill(item.tone.color)
+                        .frame(width: 6, height: 6)
+                        .accessibilityHidden(true)
+                    Text(item.value)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(item.tone.color)
+                        .textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                if let detail = item.detail, !detail.isEmpty {
+                    Text(detail)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(String(format: L("accessibility.labelValue", "%@: %@"), item.label, item.value))
+        .accessibilityHint(item.detail ?? "")
+    }
+}
+
 // MARK: - Settings Button Row
 
 struct SettingsButtonRow: View {

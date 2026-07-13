@@ -210,7 +210,7 @@ struct SettingsDetailView: View {
                 }
 
                 Divider()
-                    .padding(.bottom, Chau7Style.Spacing.medium)
+                    .padding(.bottom, Chau7Style.Spacing.small)
 
                 // Section content
                 Group {
@@ -294,7 +294,7 @@ struct SettingsDetailView: View {
         .accessibilityElement(children: .combine)
         .accessibilityLabel(selection.title)
         .accessibilityHint(selection.description)
-        .padding(.bottom, Chau7Style.Spacing.medium)
+        .padding(.bottom, Chau7Style.Spacing.small)
     }
 }
 
