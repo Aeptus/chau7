@@ -333,7 +333,7 @@ private struct MCPProfileEditorView: View {
                     .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty || triggerValue.trimmingCharacters(in: .whitespaces).isEmpty)
             }
         }
-        .padding(20)
+        .padding(Chau7Style.Settings.contentPadding)
         .frame(minWidth: 460)
         .onAppear {
             if let p = profile {

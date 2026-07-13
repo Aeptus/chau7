@@ -61,7 +61,7 @@ struct KeyboardShortcutsEditorView: View {
                 }
                 .buttonStyle(.link)
             }
-            .padding()
+            .padding(Chau7Style.Settings.contentPadding)
 
             // Search
             HStack {
@@ -73,10 +73,10 @@ struct KeyboardShortcutsEditorView: View {
             .padding(Chau7Style.Settings.inlineControlSpacing)
             .background(Color(NSColor.controlBackgroundColor))
             .cornerRadius(Chau7Style.Radius.medium)
-            .padding(.horizontal)
+            .padding(.horizontal, Chau7Style.Settings.contentPadding)
 
             Divider()
-                .padding(.top, 8)
+                .padding(.top, Chau7Style.Settings.separatorVerticalPadding)
 
             // Shortcut list
             ScrollView {
@@ -93,7 +93,7 @@ struct KeyboardShortcutsEditorView: View {
                         )
                     }
                 }
-                .padding()
+                .padding(Chau7Style.Settings.contentPadding)
             }
 
             // Footer
@@ -105,7 +105,7 @@ struct KeyboardShortcutsEditorView: View {
                     .foregroundColor(.secondary)
                 Spacer()
             }
-            .padding()
+            .padding(Chau7Style.Settings.contentPadding)
             .background(Color(NSColor.controlBackgroundColor))
         }
         .alert(L("shortcuts.conflict.title", "Shortcut Conflict"), isPresented: $showConflictAlert) {
@@ -186,7 +186,7 @@ private struct ShortcutRowView: View {
     @State private var recordedModifiers: [String] = []
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: Chau7Style.Settings.compactRowSpacing) {
             HStack {
                 Text(KeyboardShortcut.actionDisplayName(shortcut.action))
                     .font(.system(size: 13))
@@ -252,7 +252,7 @@ private struct ShortcutRowView: View {
             }
         }
         .padding(.horizontal, Chau7Style.Settings.looseControlSpacing)
-        .padding(.vertical, 10)
+        .padding(.vertical, Chau7Style.Settings.inlineControlSpacing)
         .contentShape(Rectangle())
     }
 }

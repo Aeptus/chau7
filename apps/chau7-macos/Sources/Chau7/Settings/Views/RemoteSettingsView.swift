@@ -93,7 +93,7 @@ struct RemoteSettingsView: View {
     private var relaySettingsView: some View {
         SettingsRow(L("settings.remote.relayUrl", "Relay URL"), help: L("settings.remote.relayUrl.help", "WebSocket relay base URL")) {
             VStack(alignment: .leading, spacing: Chau7Style.Settings.inlineControlSpacing) {
-                HStack(alignment: .center, spacing: 10) {
+                HStack(alignment: .center, spacing: Chau7Style.Settings.inlineControlSpacing) {
                     TextField("", text: $relayURLDraft)
                         .textFieldStyle(.roundedBorder)
                         .frame(maxWidth: 360)
@@ -144,7 +144,7 @@ struct RemoteSettingsView: View {
                                 .font(.system(size: 11, design: .monospaced))
                                 .textSelection(.enabled)
                                 .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding(10)
+                                .padding(Chau7Style.Settings.cardPadding)
                         }
                         .frame(minHeight: 120)
                         .background(Color.secondary.opacity(0.08))
@@ -178,7 +178,7 @@ struct RemoteSettingsView: View {
                             .interpolation(.none)
                             .resizable()
                             .frame(width: 180, height: 180)
-                            .padding(10)
+                            .padding(Chau7Style.Settings.cardPadding)
                             .background(Color.white)
                             .clipShape(RoundedRectangle(cornerRadius: 10))
                             .overlay(

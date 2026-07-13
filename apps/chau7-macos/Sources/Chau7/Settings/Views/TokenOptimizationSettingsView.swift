@@ -364,7 +364,7 @@ struct TokenOptimizationSettingsView: View {
                 Text(L("cto.health.mdDesc", "cat README.md renders with ANSI formatting in terminal"))
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                    .padding(.leading, 28)
+                    .padding(.leading, Chau7Style.Settings.deepNestedIndent)
             }
         }
         .padding(.vertical, 4)
@@ -1196,7 +1196,7 @@ struct TokenOptimizationSettingsView: View {
     // MARK: - How It Works
 
     private var howItWorksView: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: Chau7Style.Settings.inlineControlSpacing) {
             // What the optimizer does
             Text(L("cto.howItWorks.optimizerTitle", "The Optimizer"))
                 .font(.caption)

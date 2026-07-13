@@ -273,7 +273,7 @@ struct ShortcutEditorSheet: View {
                 .disabled(key.isEmpty)
             }
         }
-        .padding(20)
+        .padding(Chau7Style.Settings.contentPadding)
         .frame(width: 400)
     }
 

@@ -73,7 +73,7 @@ struct ScrollbackPerfSettingsView: View {
                 Text(L("settings.terminal.metalRenderer.info", "New tabs will use Metal GPU rendering for display."))
                     .font(.caption)
                     .foregroundColor(.secondary)
-                    .padding(.leading, 20)
+                    .padding(.leading, Chau7Style.Settings.nestedIndent)
             }
 
             SettingsPicker(

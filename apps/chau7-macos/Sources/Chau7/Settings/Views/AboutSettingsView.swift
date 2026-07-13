@@ -24,7 +24,7 @@ struct AboutSettingsView: View {
                         .foregroundStyle(.secondary)
                 }
             }
-            .padding(.bottom, 8)
+            .padding(.bottom, Chau7Style.Settings.separatorVerticalPadding)
 
             SettingsDivider()
 

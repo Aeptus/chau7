@@ -273,7 +273,7 @@ private struct AINotificationCard: View {
     let overrideCount: Int
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: Chau7Style.Settings.inlineControlSpacing) {
             HStack(alignment: .top, spacing: Chau7Style.Settings.looseControlSpacing) {
                 Toggle("", isOn: $isEnabled)
                     .toggleStyle(.switch)
@@ -300,7 +300,7 @@ private struct AINotificationCard: View {
                 }
             }
 
-            HStack(spacing: 18) {
+            HStack(spacing: Chau7Style.Settings.looseControlSpacing) {
                 overviewToggle(
                     label: L("settings.notifications.primary.banner", "Banner"),
                     value: preference.showNotification,
@@ -345,7 +345,7 @@ private struct AINotificationCard: View {
                 .padding(.leading, 40)
             }
         }
-        .padding(14)
+        .padding(Chau7Style.Settings.cardPadding)
         .background(Color.primary.opacity(0.035))
         .cornerRadius(10)
     }
@@ -678,7 +678,7 @@ private struct UnifiedCategorySection: View {
                                 "No triggers enabled in this category."
                             )
                         )
-                        .padding(.leading, 16)
+                        .padding(.leading, Chau7Style.Settings.nestedIndent)
                         .padding(.top, 4)
                     }
 
@@ -730,8 +730,8 @@ private struct UnifiedCategorySection: View {
                         }
                     }
                 }
-                .padding(.leading, 16)
-                .padding(.top, 8)
+                .padding(.leading, Chau7Style.Settings.nestedIndent)
+                .padding(.top, Chau7Style.Settings.separatorVerticalPadding)
             }
         }
     }
@@ -800,7 +800,7 @@ private struct UnifiedSourceSection: View {
                         )
                     }
                 }
-                .padding(.leading, 16)
+                .padding(.leading, Chau7Style.Settings.nestedIndent)
             }
         }
     }
@@ -897,7 +897,7 @@ private struct UnifiedTriggerRow: View {
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
-                        .padding(.horizontal, 28)
+                        .padding(.horizontal, Chau7Style.Settings.deepNestedIndent)
                         .padding(.vertical, 4)
                     } else {
                         ForEach(actions) { action in
@@ -920,11 +920,11 @@ private struct UnifiedTriggerRow: View {
                         .foregroundColor(.accentColor)
                     }
                     .buttonStyle(.plain)
-                    .padding(.horizontal, 28)
+                    .padding(.horizontal, Chau7Style.Settings.deepNestedIndent)
                     .padding(.bottom, 4)
                 }
                 .padding(.top, 4)
-                .padding(.leading, 20)
+                .padding(.leading, Chau7Style.Settings.nestedIndent)
                 .background(Color.secondary.opacity(0.03))
             }
         }
@@ -1091,7 +1091,7 @@ private struct GroupTriggerRow: View {
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
-                        .padding(.horizontal, 28)
+                        .padding(.horizontal, Chau7Style.Settings.deepNestedIndent)
                         .padding(.vertical, 4)
                     } else {
                         ForEach(actions) { action in
@@ -1113,11 +1113,11 @@ private struct GroupTriggerRow: View {
                         .foregroundColor(.accentColor)
                     }
                     .buttonStyle(.plain)
-                    .padding(.horizontal, 28)
+                    .padding(.horizontal, Chau7Style.Settings.deepNestedIndent)
                     .padding(.bottom, 4)
                 }
                 .padding(.top, 4)
-                .padding(.leading, 20)
+                .padding(.leading, Chau7Style.Settings.nestedIndent)
                 .background(Color.secondary.opacity(0.03))
             }
         }
@@ -1180,7 +1180,7 @@ private struct PerSourceOverridesSection: View {
                         onToggleAction: onToggleAction
                     )
                 }
-                .padding(.leading, 16)
+                .padding(.leading, Chau7Style.Settings.nestedIndent)
             }
         }
     }
@@ -1249,7 +1249,7 @@ private struct OverrideSourceSection: View {
                         )
                     }
                 }
-                .padding(.leading, 16)
+                .padding(.leading, Chau7Style.Settings.nestedIndent)
             }
         }
     }
@@ -1360,7 +1360,7 @@ private struct OverrideTriggerRow: View {
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
-                        .padding(.horizontal, 28)
+                        .padding(.horizontal, Chau7Style.Settings.deepNestedIndent)
                         .padding(.vertical, 4)
                     } else {
                         ForEach(actions) { action in
@@ -1382,11 +1382,11 @@ private struct OverrideTriggerRow: View {
                         .foregroundColor(.accentColor)
                     }
                     .buttonStyle(.plain)
-                    .padding(.horizontal, 28)
+                    .padding(.horizontal, Chau7Style.Settings.deepNestedIndent)
                     .padding(.bottom, 4)
                 }
                 .padding(.top, 4)
-                .padding(.leading, 20)
+                .padding(.leading, Chau7Style.Settings.nestedIndent)
                 .background(Color.secondary.opacity(0.03))
             }
         }
@@ -1442,7 +1442,7 @@ private struct EventDetectionThresholdsSection: View {
                     )
                     .font(.caption)
                 }
-                .padding(.leading, 24)
+                .padding(.leading, Chau7Style.Settings.nestedIndent)
             }
 
             SettingsDivider()
@@ -1488,7 +1488,7 @@ private struct EventDetectionThresholdsSection: View {
                             .foregroundStyle(.tertiary)
                     }
                 }
-                .padding(.leading, 24)
+                .padding(.leading, Chau7Style.Settings.nestedIndent)
 
                 // Tab notifications (can be noisy)
                 HStack(spacing: Chau7Style.Settings.looseControlSpacing) {
@@ -1504,7 +1504,7 @@ private struct EventDetectionThresholdsSection: View {
                     )
                     .font(.caption)
                 }
-                .padding(.leading, 24)
+                .padding(.leading, Chau7Style.Settings.nestedIndent)
             }
         }
     }
@@ -1582,7 +1582,7 @@ private struct RateLimitingSection: View {
                 .foregroundStyle(.secondary)
                 .padding(.bottom, 4)
 
-            HStack(spacing: 24) {
+            HStack(spacing: Chau7Style.Settings.looseControlSpacing) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(L("settings.notifications.maxPerMinute", "Max per minute"))
                         .font(.caption)
@@ -1637,7 +1637,7 @@ private struct RateLimitingSection: View {
                         .foregroundStyle(.tertiary)
                 }
             }
-            .padding(.leading, 8)
+            .padding(.leading, Chau7Style.Settings.inlineControlSpacing)
         }
     }
 }
@@ -1779,7 +1779,7 @@ private struct ConditionRow: View {
                         .buttonStyle(.plain)
                     }
                 }
-                .padding(.leading, 24)
+                .padding(.leading, Chau7Style.Settings.nestedIndent)
                 .padding(.vertical, 4)
                 .padding(.bottom, 4)
             }

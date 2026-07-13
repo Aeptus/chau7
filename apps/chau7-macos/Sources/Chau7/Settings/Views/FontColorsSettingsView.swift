@@ -18,7 +18,7 @@ struct FontColorsSettingsView: View {
                 LiveTerminalPreview(settings: settings)
                     .frame(minWidth: 320)
             }
-                .padding(.bottom, 8)
+            .padding(.bottom, Chau7Style.Settings.separatorVerticalPadding)
 
             SettingsDivider()
 

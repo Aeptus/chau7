@@ -33,7 +33,7 @@ struct ColorSchemePreview: View {
                 }
             }
         }
-        .padding(10)
+        .padding(Chau7Style.Settings.cardPadding)
         .background(Color(scheme.nsColor(for: scheme.background)))
         .cornerRadius(Chau7Style.Radius.medium)
         .overlay(
@@ -68,7 +68,7 @@ struct LiveTerminalPreview: View {
                     .foregroundStyle(.secondary)
                 Spacer()
             }
-            .padding(.horizontal, 10)
+            .padding(.horizontal, Chau7Style.Settings.cardPadding)
             .padding(.vertical, Chau7Style.Settings.separatorVerticalPadding)
             .background(Color(NSColor.windowBackgroundColor))
 

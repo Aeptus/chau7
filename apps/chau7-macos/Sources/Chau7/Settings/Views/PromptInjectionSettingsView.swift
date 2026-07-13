@@ -505,7 +505,7 @@ private struct RuleEditorSheet: View {
                 .disabled(rule.repository.isEmpty || rule.content.isEmpty || rule.triggers.isEmpty)
             }
         }
-        .padding(24)
+        .padding(Chau7Style.Settings.contentPadding)
         .frame(width: 520)
     }
 }

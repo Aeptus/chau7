@@ -16,17 +16,21 @@ final class Chau7StyleTests: XCTestCase {
     func testSettingsLayoutReadsSharedTokens() {
         XCTAssertEqual(SettingsLayout.controlSpacing, Chau7Style.Settings.rowSpacing)
         XCTAssertEqual(SettingsLayout.compactRowSpacing, Chau7Style.Settings.compactRowSpacing)
+        XCTAssertEqual(SettingsLayout.labelWidth, Chau7Style.Settings.labelWidth)
         XCTAssertEqual(SettingsLayout.settingsWindowMinWidth, Chau7Style.Settings.windowMinWidth)
         XCTAssertEqual(SettingsLayout.detailIdealWidth, Chau7Style.Settings.detailIdealWidth)
     }
 
     func testSettingsSurfaceTokensFollowSharedScale() {
+        XCTAssertEqual(Chau7Style.Settings.labelWidth, 190)
         XCTAssertEqual(Chau7Style.Settings.pageSectionSpacing, Chau7Style.Spacing.small)
-        XCTAssertEqual(Chau7Style.Settings.rowVerticalPadding, Chau7Style.Spacing.xxSmall)
+        XCTAssertEqual(Chau7Style.Settings.rowVerticalPadding, Chau7Style.Spacing.xxxSmall)
         XCTAssertEqual(Chau7Style.Settings.inlineControlSpacing, Chau7Style.Spacing.small)
-        XCTAssertEqual(Chau7Style.Settings.looseControlSpacing, Chau7Style.Spacing.medium)
+        XCTAssertEqual(Chau7Style.Settings.looseControlSpacing, Chau7Style.Spacing.small)
         XCTAssertEqual(Chau7Style.Settings.separatorVerticalPadding, Chau7Style.Spacing.xSmall)
-        XCTAssertEqual(Chau7Style.Settings.contentPadding, Chau7Style.Spacing.medium)
+        XCTAssertEqual(Chau7Style.Settings.contentPadding, Chau7Style.Spacing.small)
         XCTAssertEqual(Chau7Style.Settings.cardPadding, Chau7Style.Spacing.small)
+        XCTAssertEqual(Chau7Style.Settings.nestedIndent, Chau7Style.Spacing.medium)
+        XCTAssertEqual(Chau7Style.Settings.deepNestedIndent, Chau7Style.Spacing.large)
     }
 }

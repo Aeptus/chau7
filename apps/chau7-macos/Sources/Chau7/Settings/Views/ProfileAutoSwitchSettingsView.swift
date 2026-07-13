@@ -96,7 +96,7 @@ struct ProfileAutoSwitchSettingsView: View {
 
     private func ruleRow(_ rule: ProfileSwitchRule) -> some View {
         HStack {
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: Chau7Style.Spacing.xxxSmall) {
                 HStack {
                     Text(rule.name)
                         .fontWeight(.medium)
@@ -205,7 +205,7 @@ private struct RuleEditorSheet: View {
                 .disabled(name.isEmpty || triggerValue.isEmpty)
             }
         }
-        .padding()
+        .padding(Chau7Style.Settings.contentPadding)
         .frame(width: 400)
         .onAppear {
             if let rule = rule {

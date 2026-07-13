@@ -35,12 +35,13 @@ private struct SettingsLabelBlock: View {
     let help: String?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: Chau7Style.Spacing.xxxSmall) {
             Text(label)
+                .font(.callout)
                 .fixedSize(horizontal: false, vertical: true)
             if let help {
                 Text(help)
-                    .font(.caption)
+                    .font(.caption2)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -66,6 +67,7 @@ private struct SettingsAdaptiveRow<Content: View>: View {
                 SettingsLabelBlock(label: label, help: help)
                     .frame(width: SettingsLayout.labelWidth, alignment: .leading)
                 content()
+                    .controlSize(.small)
                     .layoutPriority(1)
                 Spacer(minLength: 0)
             }
@@ -73,6 +75,7 @@ private struct SettingsAdaptiveRow<Content: View>: View {
             VStack(alignment: .leading, spacing: SettingsLayout.compactRowSpacing) {
                 SettingsLabelBlock(label: label, help: help)
                 content()
+                    .controlSize(.small)
                     .layoutPriority(1)
             }
         }
@@ -110,7 +113,7 @@ struct SettingsSectionHeader: View {
                     .accessibilityHidden(true)
             }
             Text(title)
-                .font(.headline)
+                .font(.subheadline.weight(.semibold))
                 .fixedSize(horizontal: false, vertical: true)
         }
         .padding(.top, Chau7Style.Settings.sectionTopPadding)
@@ -183,7 +186,7 @@ struct SettingsSlider: View {
                     .settingsControlWidth(width)
                     .disabled(disabled)
                 Text(String(format: format, value) + suffix)
-                    .font(.system(.body, design: .monospaced))
+                    .font(.system(.callout, design: .monospaced))
                     .frame(width: 50, alignment: .trailing)
                     .foregroundStyle(disabled ? .secondary : .primary)
             }
@@ -219,7 +222,7 @@ struct SettingsStepper: View {
         SettingsAdaptiveRow(label, help: help) {
             Stepper(value: $value, in: range) {
                 Text(value.formatted() + suffix)
-                    .font(.system(.body, design: .monospaced))
+                    .font(.system(.callout, design: .monospaced))
                     .frame(width: 60, alignment: .trailing)
             }
             .disabled(disabled)
@@ -248,7 +251,7 @@ struct SettingsTextField: View {
             TextField(placeholder, text: $text)
                 .textFieldStyle(.roundedBorder)
                 .settingsControlWidth(width)
-                .font(monospaced ? .system(size: 12, design: .monospaced) : .body)
+                .font(monospaced ? .system(size: 11, design: .monospaced) : .callout)
                 .disabled(disabled)
                 .onSubmit { onSubmit?() }
                 .accessibilityLabel(label)
@@ -286,7 +289,7 @@ struct SettingsDirectoryField: View {
             TextField(placeholder, text: $text)
                 .textFieldStyle(.roundedBorder)
                 .settingsControlWidth(width)
-                .font(monospaced ? .system(size: 12, design: .monospaced) : .body)
+                .font(monospaced ? .system(size: 11, design: .monospaced) : .callout)
                 .disabled(disabled)
                 .onSubmit { onSubmit?() }
                 .accessibilityLabel(label)
@@ -414,7 +417,7 @@ struct SettingsInfoRow: View {
     var body: some View {
         SettingsAdaptiveRow(label) {
             Text(value)
-                .font(monospaced ? .system(.body, design: .monospaced) : .body)
+                .font(monospaced ? .system(.callout, design: .monospaced) : .callout)
                 .foregroundStyle(valueColor)
                 .textSelection(.enabled)
                 .fixedSize(horizontal: false, vertical: true)
@@ -475,7 +478,7 @@ struct SettingsStatusItem: Identifiable {
 
 struct SettingsStatusGrid: View {
     let items: [SettingsStatusItem]
-    var minimumColumnWidth: CGFloat = 185
+    var minimumColumnWidth: CGFloat = 165
 
     private var columns: [GridItem] {
         [
@@ -509,7 +512,7 @@ struct SettingsStatusGrid: View {
 
             VStack(alignment: .leading, spacing: Chau7Style.Spacing.xxxSmall) {
                 Text(item.label)
-                    .font(.caption)
+                    .font(.caption2)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
 
@@ -519,7 +522,7 @@ struct SettingsStatusGrid: View {
                         .frame(width: 6, height: 6)
                         .accessibilityHidden(true)
                     Text(item.value)
-                        .font(.caption.weight(.semibold))
+                        .font(.caption2.weight(.semibold))
                         .foregroundStyle(item.tone.color)
                         .textSelection(.enabled)
                         .fixedSize(horizontal: false, vertical: true)
@@ -639,7 +642,7 @@ struct SettingsCard<Content: View>: View {
                 }
             }
 
-            VStack(alignment: .leading, spacing: Chau7Style.Spacing.medium) {
+            VStack(alignment: .leading, spacing: Chau7Style.Settings.inlineControlSpacing) {
                 content()
 
                 if let action = action, let label = actionLabel {
@@ -707,7 +710,7 @@ struct SettingsDescription: View {
 
     var body: some View {
         Text(text)
-            .font(.caption)
+            .font(.caption2)
             .foregroundStyle(.secondary)
             .textSelection(.enabled)
             .fixedSize(horizontal: false, vertical: true)

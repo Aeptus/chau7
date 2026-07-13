@@ -2431,7 +2431,7 @@
   {
     "category": "Settings",
     "feature": "Responsive Settings Shell",
-    "description": "Settings sidebar, search results, section copy, and form controls stay usable while resizing through adaptive rows, bounded window dimensions, wrapping text for longer localized labels and accessibility descriptions, a compact native titlebar profile selector that defaults to Default Settings and owns profile load/save actions, tighter shared golden-ratio SwiftUI style tokens, and compact reusable status summaries for app state and protocol support",
+    "description": "Settings sidebar, search results, section copy, and form controls stay usable while resizing through adaptive rows, bounded window dimensions, wrapping text for longer localized labels and accessibility descriptions, a compact native titlebar profile selector that defaults to Default Settings and owns profile load/save actions, tighter shared golden-ratio SwiftUI style tokens, small-control row defaults, shared nested indentation, and compact reusable status summaries for app state and protocol support",
     "status": "Shipped",
     "differentiator": "Yes"
   },

@@ -72,7 +72,7 @@ struct SSHProfilesSettingsView: View {
                 .foregroundStyle(.tertiary)
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 20)
+        .padding(.vertical, Chau7Style.Settings.contentPadding)
     }
 
     // MARK: - Entry List

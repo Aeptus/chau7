@@ -103,7 +103,7 @@ struct RepositoriesSettingsView: View {
             .foregroundStyle(.tertiary)
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 24)
+        .padding(.vertical, Chau7Style.Settings.contentPadding)
     }
 
     private var repoList: some View {
@@ -190,7 +190,7 @@ struct RepositoriesSettingsView: View {
             .help(L("settings.repositories.edit", "Edit metadata"))
         }
         .padding(.horizontal, Chau7Style.Settings.looseControlSpacing)
-        .padding(.vertical, 10)
+        .padding(.vertical, Chau7Style.Settings.inlineControlSpacing)
         .contentShape(Rectangle())
         .onTapGesture(count: 2) {
             editingRepo = repo
@@ -309,7 +309,7 @@ private struct RepositoryEditorSheet: View {
                 .keyboardShortcut(.defaultAction)
             }
         }
-        .padding(24)
+        .padding(Chau7Style.Settings.contentPadding)
         .frame(width: 520)
         .onAppear {
             descriptionText = repo.metadata.description ?? ""
