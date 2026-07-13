@@ -606,7 +606,13 @@ final class RemoteControlManager {
                 recentCommand: context.recentCommand,
                 contextNote: context.contextNote,
                 sessionID: context.sessionID
-            ).withComposedPushText().withSpineSeq(spineSeqProvider?())
+            ).withComposedPushText().withSpineSeq(spineSeqProvider?()).withSeverity(
+                ApprovalSeverity.classify(
+                    command: context.command,
+                    flaggedCommand: context.flaggedCommand,
+                    reason: context.contextNote
+                )
+            )
             // Security-adjacent flow: a dropped approval frame must be visible.
             guard let data = Persist.encodeLogged(payload, context: "remote.approvalRequest") else { continue }
             sendFrame(type: .approvalRequest, tabID: RemoteTabRegistry.unscopedTabID, payload: data)
@@ -1221,7 +1227,12 @@ final class RemoteControlManager {
             recentCommand: approvalContext?.recentCommand,
             contextNote: approvalContext?.contextNote,
             sessionID: approvalContext?.sessionID
-        ).withComposedPushText()
+        ).withComposedPushText().withSeverity(
+            ApprovalSeverity.classify(
+                command: text.trimmingCharacters(in: .whitespacesAndNewlines),
+                flaggedCommand: flaggedCommand
+            )
+        )
 
         sendApprovalRequest(requestID: requestID, payload: payload)
         logger.warning("Remote: queued protected action approval for tab \(tabID, privacy: .public) (\(sessionTitle, privacy: .public))")

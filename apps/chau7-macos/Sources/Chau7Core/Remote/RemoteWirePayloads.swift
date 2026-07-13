@@ -291,6 +291,11 @@ public struct ApprovalRequestPayload: Codable, Equatable, Sendable {
     /// of its own epoch-scoped counter. Old Macs omit it; the agent falls
     /// back to the internal counter.
     public let spineSeq: UInt64?
+    /// Authoritative risk tier (`ApprovalSeverity` raw value) classified on the
+    /// Mac at emit time. Optional/additive: old Macs omit it and consumers fall
+    /// back to `ApprovalSeverity.classify(...)`; stored raw so an unknown future
+    /// tier degrades to the fallback instead of failing decode.
+    public let severity: String?
 
     public init(
         requestID: String,
@@ -308,7 +313,8 @@ public struct ApprovalRequestPayload: Codable, Equatable, Sendable {
         pushTitle: String? = nil,
         pushSubtitle: String? = nil,
         pushBody: String? = nil,
-        spineSeq: UInt64? = nil
+        spineSeq: UInt64? = nil,
+        severity: String? = nil
     ) {
         self.requestID = requestID
         self.command = command
@@ -326,6 +332,7 @@ public struct ApprovalRequestPayload: Codable, Equatable, Sendable {
         self.pushSubtitle = pushSubtitle
         self.pushBody = pushBody
         self.spineSeq = spineSeq
+        self.severity = severity
     }
 
     enum CodingKeys: String, CodingKey {
@@ -345,6 +352,7 @@ public struct ApprovalRequestPayload: Codable, Equatable, Sendable {
         case pushSubtitle = "push_subtitle"
         case pushBody = "push_body"
         case spineSeq = "spine_seq"
+        case severity
     }
 
     public init(from decoder: Decoder) throws {
@@ -367,6 +375,7 @@ public struct ApprovalRequestPayload: Codable, Equatable, Sendable {
         self.pushSubtitle = try container.decodeIfPresent(String.self, forKey: .pushSubtitle)
         self.pushBody = try container.decodeIfPresent(String.self, forKey: .pushBody)
         self.spineSeq = try container.decodeIfPresent(UInt64.self, forKey: .spineSeq)
+        self.severity = try container.decodeIfPresent(String.self, forKey: .severity)
     }
 }
 

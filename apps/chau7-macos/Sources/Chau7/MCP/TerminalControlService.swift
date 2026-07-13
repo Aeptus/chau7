@@ -2460,7 +2460,9 @@ final class TerminalControlService {
             recentCommand: nil,
             contextNote: contextNote,
             sessionID: nil
-        ).withComposedPushText()
+        ).withComposedPushText().withSeverity(
+            ApprovalSeverity.classify(command: command, flaggedCommand: flaggedCommand, reason: reason)
+        )
         onMainActor {
             self.approvalForwarder?.sendApprovalRequest(requestID: requestID, payload: payload)
         }
