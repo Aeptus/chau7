@@ -1,5 +1,6 @@
-import SwiftUI
 import AppKit
+import Chau7Core
+import SwiftUI
 
 // MARK: - Color Scheme Preview
 
