@@ -624,7 +624,7 @@ struct SettingsStatusGrid: View {
             GridItem(
                 .adaptive(minimum: minimumColumnWidth),
                 spacing: Chau7Style.Settings.inlineControlSpacing,
-                alignment: .top
+                alignment: .topLeading
             )
         ]
     }
@@ -676,6 +676,7 @@ struct SettingsStatusGrid: View {
                 }
             }
         }
+        .frame(maxWidth: .infinity, alignment: .topLeading)
         .accessibilityElement(children: .combine)
         .accessibilityLabel(String(format: L("accessibility.labelValue", "%@: %@"), item.label, item.value))
         .accessibilityHint(item.detail ?? "")
