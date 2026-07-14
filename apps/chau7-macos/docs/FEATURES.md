@@ -566,7 +566,7 @@ Chau7's rendering pipeline is purpose-built for latency-sensitive terminal work:
 ## Settings & Configuration
 
 - Comprehensive settings UI with fuzzy search coverage for every routed settings pane, including app/window chrome, display rendering, tabs, performance, keyboard, AI detection, Agent Control, Context Optimization, AI Context, API Tracking, History, Diagnostics, Command Safety, repository metadata, hover card, and about surfaces.
-- Settings profiles — save, load, export, import named configurations.
+- Settings profiles — save, load, export, import named configurations, and auto-switch profiles by directory/glob, repository name, SSH host, process name, or environment variable.
 - Per-folder config: `.chau7/config.toml` in any repo for project-specific settings.
 - Config file watcher — auto-reload on changes, no restart needed.
 - Launch at Login installs/removes the user LaunchAgent plist for the next macOS login without loading it in the current session, so toggling the setting does not relaunch Chau7 immediately.

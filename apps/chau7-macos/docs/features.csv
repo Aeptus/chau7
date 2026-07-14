@@ -343,7 +343,7 @@ Appearance,Turn-Linked Command Blocks,Command blocks carry runtime turn IDs and 
 Appearance,Line Timestamps,Optional timestamps on each terminal line in multiple formats,Shipped,No
 Appearance,JSON Pretty-Print,Optional auto-formatting of JSON output in terminal,Shipped,No
 Settings,Comprehensive Settings UI,"Settings UI with fuzzy search coverage for every routed settings pane, including app and window chrome, display rendering, tabs, performance, keyboard, AI detection, Agent Control, Context Optimization, AI Context, API Tracking, History, Diagnostics, command safety, repository metadata, hover card, and about surfaces; search results scroll to and highlight stable row or section anchors",Shipped,No
-Settings,Settings Profiles,"Save, load, export, and import named configurations",Shipped,No
+Settings,Settings Profiles,"Save, load, export, import, and automatically switch named configurations by directory/glob, repository name, SSH host, process name, or environment variable",Shipped,No
 Settings,Per-Folder Config,.chau7/config.toml in any repo — project-specific settings,Shipped,No
 Settings,Config File Watcher,Auto-reload on config changes — no restart needed,Shipped,No
 Settings,Launch At Login,"Installs or removes the user LaunchAgent plist for the next macOS login without loading it in the current session, so toggling the setting does not relaunch Chau7 immediately",Shipped,No
