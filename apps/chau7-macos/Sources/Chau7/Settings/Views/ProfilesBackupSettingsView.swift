@@ -8,7 +8,10 @@ struct ProfilesBackupSettingsView: View {
     @Bindable private var settings = FeatureSettings.shared
     @State private var switcher = ProfileAutoSwitcher()
     @State private var showImportSheet = false
+    @State private var showImportConfirmation = false
+    @State private var showRestoreConfirmation = false
     @State private var showResetConfirmation = false
+    @State private var pendingImport: PendingSettingsImport?
     @State private var operationMessage: SettingsBackupOperationMessage?
 
     var body: some View {
@@ -33,7 +36,7 @@ struct ProfilesBackupSettingsView: View {
                         operationMessage = SettingsBackupOperationMessage(syncResult: settings.forceSyncToiCloud())
                     },
                     .init(title: L("settings.general.icloud.restore", "Restore from iCloud"), icon: "icloud.and.arrow.down") {
-                        operationMessage = SettingsBackupOperationMessage(restoreResult: settings.syncFromiCloud())
+                        showRestoreConfirmation = true
                     }
                 ])
             }
@@ -81,15 +84,37 @@ struct ProfilesBackupSettingsView: View {
             allowedContentTypes: [.json],
             allowsMultipleSelection: false
         ) { result in
-            importSettings(result: result)
+            prepareImport(result: result)
+        }
+        .alert(L("settings.icloud.restore.confirm.title", "Restore Settings from iCloud?"), isPresented: $showRestoreConfirmation) {
+            Button(L("button.cancel", "Cancel"), role: .cancel) {}
+            Button(L("settings.general.icloud.restore", "Restore from iCloud"), role: .destructive) {
+                operationMessage = SettingsBackupOperationMessage(restoreResult: settings.syncFromiCloud())
+            }
+        } message: {
+            Text(L("settings.icloud.restore.confirm.message", "This will replace local settings with the newest eligible iCloud settings backup. Export a local backup first if you may want to undo it."))
+        }
+        .alert(L("settings.backup.import.confirm.title", "Import Settings Backup?"), isPresented: $showImportConfirmation) {
+            Button(L("button.cancel", "Cancel"), role: .cancel) {
+                pendingImport = nil
+            }
+            Button(L("settings.general.backup.import", "Import Settings..."), role: .destructive) {
+                confirmImport()
+            }
+        } message: {
+            Text(importConfirmationMessage)
         }
         .alert(L("settings.general.reset.confirm.title", "Reset All Settings?"), isPresented: $showResetConfirmation) {
+            Button(L("settings.general.backup.export", "Export Settings...")) {
+                exportSettings()
+            }
             Button(L("button.cancel", "Cancel"), role: .cancel) {}
             Button(L("button.reset", "Reset"), role: .destructive) {
                 settings.resetAllToDefaults()
+                operationMessage = .success(L("settings.reset.success", "Settings were reset to defaults."))
             }
         } message: {
-            Text(L("settings.general.reset.confirm.message", "This will reset all Chau7 settings to their default values. This action cannot be undone."))
+            Text(L("settings.general.reset.confirm.message", "This will reset all Chau7 settings to their default values. This action cannot be undone. Export a backup first if you may want to restore your current setup."))
         }
     }
 
@@ -125,24 +150,24 @@ struct ProfilesBackupSettingsView: View {
         }
     }
 
-    private func importSettings(result: Result<[URL], Error>) {
+    private func prepareImport(result: Result<[URL], Error>) {
         operationMessage = nil
         switch result {
         case .success(let urls):
             guard let url = urls.first else { return }
             do {
                 let data = try Data(contentsOf: url)
-                if settings.importSettings(from: data) {
-                    Log.info("Settings imported successfully")
-                    operationMessage = .success(
-                        String(
-                            format: L("settings.backup.import.success", "Imported settings from %@."),
-                            url.lastPathComponent
-                        )
-                    )
-                } else {
+                guard let preview = JSONOperations.decode(FeatureSettings.ExportableSettings.self, from: data, context: "settings import preview") else {
                     operationMessage = .error(L("settings.backup.import.invalid", "Invalid settings file format."))
+                    return
                 }
+                pendingImport = PendingSettingsImport(
+                    fileName: url.lastPathComponent,
+                    data: data,
+                    exportedAt: preview.exportedAt,
+                    exportVersion: preview.exportVersion
+                )
+                showImportConfirmation = true
             } catch {
                 operationMessage = .error(
                     String(
@@ -160,6 +185,62 @@ struct ProfilesBackupSettingsView: View {
             )
         }
     }
+
+    private func confirmImport() {
+        guard let importCandidate = pendingImport else { return }
+        pendingImport = nil
+
+        if settings.importSettings(from: importCandidate.data) {
+            Log.info("Settings imported successfully")
+            operationMessage = .success(
+                String(
+                    format: L("settings.backup.import.success", "Imported settings from %@."),
+                    importCandidate.fileName
+                )
+            )
+        } else {
+            operationMessage = .error(L("settings.backup.import.invalid", "Invalid settings file format."))
+        }
+    }
+
+    private var importConfirmationMessage: String {
+        guard let pendingImport else {
+            return L("settings.backup.import.confirm.message", "This will replace current Chau7 settings with the selected backup.")
+        }
+
+        var details = String(
+            format: L("settings.backup.import.confirm.file", "This will replace current Chau7 settings with %@."),
+            pendingImport.fileName
+        )
+        if let exportedAt = pendingImport.exportedAt {
+            details += "\n" + String(
+                format: L("settings.backup.import.confirm.exportedAt", "Backup exported: %@"),
+                pendingImportDateFormatter.string(from: exportedAt)
+            )
+        }
+        if let exportVersion = pendingImport.exportVersion {
+            details += "\n" + String(
+                format: L("settings.backup.import.confirm.version", "Format version: %d"),
+                exportVersion
+            )
+        }
+        details += "\n" + L("settings.backup.import.confirm.backupFirst", "Export a local backup first if you may want to undo it.")
+        return details
+    }
+
+    private var pendingImportDateFormatter: DateFormatter {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .short
+        return formatter
+    }
+}
+
+private struct PendingSettingsImport {
+    let fileName: String
+    let data: Data
+    let exportedAt: Date?
+    let exportVersion: Int?
 }
 
 private struct SettingsBackupOperationMessage: Equatable {
