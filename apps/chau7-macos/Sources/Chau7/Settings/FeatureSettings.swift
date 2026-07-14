@@ -1002,6 +1002,24 @@ final class FeatureSettings {
 
     // MARK: - iCloud Sync (NEW)
 
+    enum SettingsCloudSyncResult: Equatable {
+        case skippedInTests
+        case disabled
+        case exportFailed
+        case syncFailed
+        case synced
+    }
+
+    enum SettingsCloudRestoreResult: Equatable {
+        case skippedInTests
+        case disabled
+        case missing
+        case notNewer
+        case restored
+        case restoredLegacy
+        case invalid
+    }
+
     var iCloudSyncEnabled: Bool {
         didSet {
             UserDefaults.standard.set(iCloudSyncEnabled, forKey: Keys.iCloudSyncEnabled)
@@ -2570,11 +2588,17 @@ final class FeatureSettings {
         UserDefaults.standard.set(date.timeIntervalSince1970, forKey: Self.lastSyncedSettingsExportedAtKey)
     }
 
-    private func pushSettingsToiCloud(_ data: Data, label: String) {
+    @discardableResult
+    private func pushSettingsToiCloud(_ data: Data, label: String) -> Bool {
         NSUbiquitousKeyValueStore.default.set(data, forKey: iCloudKey)
-        NSUbiquitousKeyValueStore.default.synchronize()
-        recordSyncedSettingsTimestamp(Date())
-        Log.info("Settings synced to iCloud (\(label))")
+        let synchronized = NSUbiquitousKeyValueStore.default.synchronize()
+        if synchronized {
+            recordSyncedSettingsTimestamp(Date())
+            Log.info("Settings synced to iCloud (\(label))")
+        } else {
+            Log.warn("Failed to synchronize settings to iCloud (\(label))")
+        }
+        return synchronized
     }
 
     func syncToiCloud() {
@@ -2588,7 +2612,7 @@ final class FeatureSettings {
         let workItem = DispatchWorkItem { [weak self] in
             guard let self = self, iCloudSyncEnabled else { return }
             guard let data = exportSettings() else { return }
-            pushSettingsToiCloud(data, label: "debounced")
+            _ = pushSettingsToiCloud(data, label: "debounced")
         }
 
         iCloudSyncWorkItem = workItem
@@ -2596,20 +2620,22 @@ final class FeatureSettings {
     }
 
     /// Force immediate sync without debouncing (e.g., on app quit)
-    func forceSyncToiCloud() {
-        guard !RuntimeIsolation.isIsolatedTestMode() else { return }
-        guard iCloudSyncEnabled else { return }
+    @discardableResult
+    func forceSyncToiCloud() -> SettingsCloudSyncResult {
+        guard !RuntimeIsolation.isIsolatedTestMode() else { return .skippedInTests }
+        guard iCloudSyncEnabled else { return .disabled }
         iCloudSyncWorkItem?.cancel()
-        guard let data = exportSettings() else { return }
-        pushSettingsToiCloud(data, label: "forced")
+        guard let data = exportSettings() else { return .exportFailed }
+        return pushSettingsToiCloud(data, label: "forced") ? .synced : .syncFailed
     }
 
-    func syncFromiCloud() {
-        guard !RuntimeIsolation.isIsolatedTestMode() else { return }
-        guard iCloudSyncEnabled else { return }
+    @discardableResult
+    func syncFromiCloud() -> SettingsCloudRestoreResult {
+        guard !RuntimeIsolation.isIsolatedTestMode() else { return .skippedInTests }
+        guard iCloudSyncEnabled else { return .disabled }
         guard let data = NSUbiquitousKeyValueStore.default.data(forKey: iCloudKey) else {
             Log.info("No iCloud settings found")
-            return
+            return .missing
         }
         // Freshness guard: whole-blob last-writer-wins with no comparison let
         // an old device's blob silently clobber newer local settings. Apply
@@ -2619,21 +2645,24 @@ final class FeatureSettings {
             let lastSynced = UserDefaults.standard.double(forKey: Self.lastSyncedSettingsExportedAtKey)
             if lastSynced > 0, incomingExportedAt.timeIntervalSince1970 <= lastSynced {
                 Log.info("Skipping iCloud settings import: incoming export is not newer than the last synced state")
-                return
+                return .notNewer
             }
             if importSettings(from: data) {
                 recordSyncedSettingsTimestamp(incomingExportedAt)
                 Log.info("Settings restored from iCloud")
+                return .restored
             } else {
                 Log.warn("Failed to restore settings from iCloud")
+                return .invalid
             }
-            return
         }
         // Pre-timestamp blob: keep legacy apply-always behavior.
         if importSettings(from: data) {
             Log.info("Settings restored from iCloud (legacy untimestamped blob)")
+            return .restoredLegacy
         } else {
             Log.warn("Failed to restore settings from iCloud")
+            return .invalid
         }
     }
 
@@ -2652,7 +2681,7 @@ final class FeatureSettings {
         guard !RuntimeIsolation.isIsolatedTestMode() else { return }
         guard iCloudSyncEnabled else { return }
         DispatchQueue.main.async { [weak self] in
-            self?.syncFromiCloud()
+            _ = self?.syncFromiCloud()
         }
     }
 }

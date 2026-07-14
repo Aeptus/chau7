@@ -2445,7 +2445,7 @@
   {
     "category": "Settings",
     "feature": "iCloud Sync",
-    "description": "Optional iCloud sync of settings across devices",
+    "description": "Optional iCloud sync of settings across devices, with freshness guards, immediate manual sync, and visible sync/restore/import/export status feedback",
     "status": "Shipped",
     "differentiator": "No"
   },
