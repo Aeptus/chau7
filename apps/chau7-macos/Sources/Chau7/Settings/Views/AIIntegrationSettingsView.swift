@@ -13,7 +13,11 @@ struct AIIntegrationSettingsView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: Chau7Style.Settings.pageSectionSpacing) {
             // Custom Rules (actionable — first)
-            SettingsSectionHeader(L("settings.ai.customDetectionRules", "Custom Detection Rules"), icon: "slider.horizontal.3")
+            SettingsSectionHeader(
+                L("settings.ai.customDetectionRules", "Custom Detection Rules"),
+                icon: "slider.horizontal.3",
+                anchorID: "aiCustomDetection"
+            )
 
             Text(L("settings.ai.customRulesDescription", "Add command or output patterns to tag custom AI CLIs."))
                 .font(.caption)
@@ -59,7 +63,11 @@ struct AIIntegrationSettingsView: View {
             SettingsDivider()
 
             // Built-in Detection (read-only reference — last)
-            SettingsSectionHeader(L("settings.ai.cliDetection", "Built-in AI CLI Detection"), icon: "sparkle.magnifyingglass")
+            SettingsSectionHeader(
+                L("settings.ai.cliDetection", "Built-in AI CLI Detection"),
+                icon: "sparkle.magnifyingglass",
+                anchorID: "aiDetection"
+            )
 
             Text(L("settings.ai.detectionDescription", "Chau7 automatically detects these AI CLIs and applies appropriate theming:"))
                 .font(.caption)

@@ -2796,6 +2796,7 @@
 "settings.search.urlHandler.description" = "בחר איזה דפדפן פותח כתובות URL";
 "settings.search.urlHandler.title" = "מטפל ב-URL";
 "settings.searchResultDetail" = "– %@";
+"settings.search.result.jumpHint" = "הצג הגדרה תואמת: %@";
 "settings.searchResults" = "נמצאו %d הגדרות תואמות עבור \"%@\"";
 "settings.shell" = "מעטפת";
 "settings.shell.description" = "Shell, סמן ופעמון";

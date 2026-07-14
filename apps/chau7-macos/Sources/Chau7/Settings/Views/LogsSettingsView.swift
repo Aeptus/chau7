@@ -192,7 +192,8 @@ private struct TelemetryRetentionSettingsView: View {
                 ),
                 value: $settings.telemetryRetentionDays,
                 range: 0 ... 365,
-                suffix: settings.telemetryRetentionDays == 0 ? "" : " days"
+                suffix: settings.telemetryRetentionDays == 0 ? "" : " days",
+                anchorID: "telemetryRetention"
             )
 
             if settings.telemetryRetentionDays == 0 {

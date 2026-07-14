@@ -54,6 +54,7 @@ struct ProfilesBackupSettingsView: View {
                     showImportSheet = true
                 }
             ])
+            .settingsSearchAnchor("export")
 
             if let error = importError {
                 Text(error)

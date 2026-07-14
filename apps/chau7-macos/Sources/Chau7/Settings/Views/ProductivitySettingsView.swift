@@ -196,7 +196,8 @@ struct ProductivitySettingsView: View {
             SettingsToggle(
                 label: L("settings.productivity.defaultCaseSensitive", "Default Case Sensitive"),
                 help: L("settings.productivity.defaultCaseSensitive.help", "Start new find sessions with case-sensitive matching"),
-                isOn: $settings.findCaseSensitiveDefault
+                isOn: $settings.findCaseSensitiveDefault,
+                anchorID: "findDefaults"
             )
 
             SettingsToggle(

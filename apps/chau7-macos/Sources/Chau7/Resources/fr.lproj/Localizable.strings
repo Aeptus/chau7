@@ -2830,6 +2830,7 @@
 "settings.search.urlHandler.description" = "Choisir quel navigateur ouvre les URL";
 "settings.search.urlHandler.title" = "Gestionnaire d'URL";
 "settings.searchResultDetail" = "– %@";
+"settings.search.result.jumpHint" = "Afficher le réglage correspondant : %@";
 "settings.searchResults" = "Trouvé %d réglages correspondants pour \"%@\"";
 "settings.shell" = "Shell";
 "settings.shell.description" = "Shell, curseur et cloche";

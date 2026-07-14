@@ -2796,6 +2796,7 @@
 "settings.search.urlHandler.description" = "اختر المتصفح الذي يفتح الروابط";
 "settings.search.urlHandler.title" = "معالج الروابط";
 "settings.searchResultDetail" = "– %@";
+"settings.search.result.jumpHint" = "إظهار الإعداد المطابق: %@";
 "settings.searchResults" = "تم العثور على %d إعدادات مطابقة لـ \"%@\"";
 "settings.shell" = "Shell";
 "settings.shell.description" = "Shell والمؤشر والجرس";

@@ -8,6 +8,23 @@ struct SearchableSetting: Identifiable {
     let title: String
     let keywords: [String]
     let description: String
+    let anchorID: String
+
+    init(
+        id: String,
+        section: SettingsSection,
+        title: String,
+        keywords: [String],
+        description: String,
+        anchorID: String? = nil
+    ) {
+        self.id = id
+        self.section = section
+        self.title = title
+        self.keywords = keywords
+        self.description = description
+        self.anchorID = anchorID ?? id
+    }
 
     func matches(_ query: String) -> Bool {
         let lowercased = query.lowercased()
@@ -22,6 +39,13 @@ private func localizedKeywords(_ key: String, _ defaultValue: String) -> [String
         .split(separator: ",")
         .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
         .filter { !$0.isEmpty }
+}
+
+private func normalizedSearchTitle(_ title: String) -> String {
+    title
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+        .lowercased()
+        .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
 }
 
 // MARK: - Settings Section Groups
@@ -1014,7 +1038,8 @@ extension FeatureSettings {
                 "settings.search.triggerActions.keywords",
                 "action,webhook,slack,discord,script,sound,docker,notification,play,run"
             ),
-            description: L("settings.search.triggerActions.description", "Configure what happens when alert triggers fire")
+            description: L("settings.search.triggerActions.description", "Configure what happens when alert triggers fire"),
+            anchorID: "notificationTriggers"
         ),
         SearchableSetting(
             id: "shellThresholds",
@@ -1199,6 +1224,14 @@ extension FeatureSettings {
     static func sectionsMatching(query: String) -> Set<SettingsSection> {
         guard !query.isEmpty else { return [] }
         return Set(searchableSettings.filter { $0.matches(query) }.map { $0.section })
+    }
+
+    static func searchAnchorID(forTitle title: String, in section: SettingsSection?) -> String? {
+        let normalizedTitle = normalizedSearchTitle(title)
+        return searchableSettings.first { setting in
+            (section == nil || setting.section == section) &&
+                normalizedSearchTitle(setting.title) == normalizedTitle
+        }?.anchorID
     }
 }
 

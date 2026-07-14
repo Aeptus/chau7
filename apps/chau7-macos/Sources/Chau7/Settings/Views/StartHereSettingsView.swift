@@ -13,7 +13,11 @@ struct StartHereSettingsView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: Chau7Style.Settings.pageSectionSpacing) {
-            SettingsSectionHeader(L("settings.startHere.operationalState", "Operational State"), icon: "checklist")
+            SettingsSectionHeader(
+                L("settings.startHere.operationalState", "Operational State"),
+                icon: "checklist",
+                anchorID: "startHereStatus"
+            )
             SettingsStatusGrid(items: operationalItems)
 
             SettingsDivider()

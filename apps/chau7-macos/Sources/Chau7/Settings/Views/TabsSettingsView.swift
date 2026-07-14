@@ -23,7 +23,8 @@ struct TabsSettingsView: View {
             SettingsToggle(
                 label: L("settings.tabs.newTabsUseCurrentDirectory", "New Tabs Use Current Directory"),
                 help: L("settings.tabs.newTabsUseCurrentDirectory.help", "Open new tabs in the active tab's folder (the first tab still uses Default Directory)"),
-                isOn: $settings.newTabsUseCurrentDirectory
+                isOn: $settings.newTabsUseCurrentDirectory,
+                anchorID: "newTabDirectory"
             )
 
             SettingsPicker(
@@ -36,7 +37,8 @@ struct TabsSettingsView: View {
             SettingsToggle(
                 label: L("settings.tabs.warnOnCloseWithProcess", "Warn When Closing Tab with Running Process"),
                 help: L("settings.tabs.warnOnCloseWithProcess.help", "Show a confirmation dialog before closing a tab that has a running process"),
-                isOn: $settings.warnOnCloseWithRunningProcess
+                isOn: $settings.warnOnCloseWithRunningProcess,
+                anchorID: "tabCloseWarnings"
             )
 
             SettingsToggle(
@@ -54,7 +56,8 @@ struct TabsSettingsView: View {
             SettingsToggle(
                 label: L("settings.tabs.groupIdleTabs", "Group Idle Tabs in Dropdown"),
                 help: L("settings.tabs.groupIdleTabs.help", "Collect idle tabs into a dropdown at the start of the tab bar to reduce clutter"),
-                isOn: $settings.groupIdleTabs
+                isOn: $settings.groupIdleTabs,
+                anchorID: "groupIdleTabs"
             )
 
             if settings.groupIdleTabs {

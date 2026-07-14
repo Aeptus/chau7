@@ -20,7 +20,8 @@ struct WindowsSettingsView: View {
             SettingsToggle(
                 label: L("settings.windows.floatingWindow", "Keep Windows Above Other Apps"),
                 help: L("settings.windows.floatingWindow.help", "Keep Chau7 terminal windows above normal app windows."),
-                isOn: $settings.windowFloating
+                isOn: $settings.windowFloating,
+                anchorID: "windowFloating"
             )
 
             SettingsDivider()
@@ -47,7 +48,8 @@ struct WindowsSettingsView: View {
             SettingsToggle(
                 label: L("settings.windows.alwaysShowToolbar", "Always Show Toolbar in Fullscreen"),
                 help: L("settings.windows.alwaysShowToolbar.help", "Keep the toolbar visible when the window is in fullscreen mode"),
-                isOn: $settings.alwaysShowToolbarInFullscreen
+                isOn: $settings.alwaysShowToolbarInFullscreen,
+                anchorID: "fullscreenToolbar"
             )
 
             SettingsDivider()

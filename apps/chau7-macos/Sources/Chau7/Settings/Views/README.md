@@ -44,6 +44,7 @@ SwiftUI settings panels for each feature area, presented in the preferences wind
 
 - `GeneralSettingsView` — main settings entry with profile management and import/export
 - `SettingsSection` / `SettingsSectionGroup` — sidebar grouping and detail routing metadata
+- `SearchableSetting` anchors — stable IDs used by settings search to scroll to and highlight matching rows or section targets
 - `FontColorsSettingsView` — visual customization with live terminal preview
 - `ShellSettingsView` / `ScrollbackPerfSettingsView` — terminal shell, scrollback, and rendering configuration
 

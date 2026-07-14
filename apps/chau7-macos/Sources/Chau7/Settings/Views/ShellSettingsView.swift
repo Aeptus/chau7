@@ -9,7 +9,7 @@ struct ShellSettingsView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: Chau7Style.Settings.pageSectionSpacing) {
             // Shell Settings
-            SettingsSectionHeader(L("settings.terminal.shell", "Shell"), icon: "terminal")
+            SettingsSectionHeader(L("settings.terminal.shell", "Shell"), icon: "terminal", anchorID: "shellHeader")
 
             SettingsPicker(
                 label: L("settings.terminal.shell", "Shell"),
@@ -75,7 +75,8 @@ struct ShellSettingsView: View {
                     (value: "block", label: L("settings.terminal.cursorBlock", "Block")),
                     (value: "underline", label: L("settings.terminal.cursorUnderline", "Underline")),
                     (value: "bar", label: L("settings.terminal.cursorBar", "Bar"))
-                ]
+                ],
+                anchorID: "cursor"
             )
 
             SettingsToggle(

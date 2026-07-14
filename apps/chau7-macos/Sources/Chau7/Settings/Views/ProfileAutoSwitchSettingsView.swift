@@ -13,7 +13,7 @@ struct ProfileAutoSwitchSettingsView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: Chau7Style.Settings.pageSectionSpacing) {
-            SettingsSectionHeader(L("Profile Auto-Switching"))
+            SettingsSectionHeader(L("Profile Auto-Switching"), anchorID: "profileAutoSwitch")
 
             SettingsToggle(
                 label: L("Enable automatic profile switching"),

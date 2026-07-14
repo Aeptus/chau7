@@ -8,7 +8,11 @@ struct EditorSettingsView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: Chau7Style.Settings.pageSectionSpacing) {
             // Font
-            SettingsSectionHeader(L("settings.editor.font", "Font"), icon: "textformat")
+            SettingsSectionHeader(
+                L("settings.editor.font", "Font"),
+                icon: "textformat",
+                anchorID: "textEditor"
+            )
 
             SettingsStepper(
                 label: L("settings.editor.fontSize", "Font Size"),

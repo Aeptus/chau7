@@ -25,6 +25,7 @@ struct AboutSettingsView: View {
                 }
             }
             .padding(.bottom, Chau7Style.Settings.separatorVerticalPadding)
+            .settingsSearchAnchor("about")
 
             SettingsDivider()
 

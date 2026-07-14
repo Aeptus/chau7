@@ -22,7 +22,8 @@ struct RepositoriesSettingsView: View {
         VStack(alignment: .leading, spacing: Chau7Style.Settings.pageSectionSpacing) {
             SettingsSectionHeader(
                 L("settings.repositories.title", "Repositories"),
-                icon: "folder.badge.gearshape"
+                icon: "folder.badge.gearshape",
+                anchorID: "repositoryMetadata"
             )
 
             Text(L(

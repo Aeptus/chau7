@@ -2828,6 +2828,7 @@
 "settings.search.urlHandler.description" = "Choose which browser opens URLs";
 "settings.search.urlHandler.title" = "URL Handler";
 "settings.searchResultDetail" = "– %@";
+"settings.search.result.jumpHint" = "Jump to matching setting: %@";
 "settings.searchResults" = "Found %d matching settings for \"%@\"";
 "settings.shell" = "Shell";
 "settings.shell.description" = "Shell, cursor, and bell";

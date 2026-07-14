@@ -16,7 +16,8 @@ struct MCPSettingsView: View {
             SettingsToggle(
                 label: L("settings.mcp.enable", "Enable Agent Control"),
                 help: L("settings.mcp.enable.help", "Allow agent clients to control Chau7 tabs via the local socket"),
-                isOn: $settings.mcpEnabled
+                isOn: $settings.mcpEnabled,
+                anchorID: "mcpServer"
             )
 
             SettingsToggle(
@@ -39,7 +40,11 @@ struct MCPSettingsView: View {
 
             // MARK: - Command Permissions
 
-            SettingsSectionHeader(L("settings.mcp.permissions", "Command Permissions"), icon: "lock.shield")
+            SettingsSectionHeader(
+                L("settings.mcp.permissions", "Command Permissions"),
+                icon: "lock.shield",
+                anchorID: "mcpPermissions"
+            )
 
             SettingsRow(L("settings.mcp.permissionMode", "Permission Mode"), help: L("settings.mcp.permissionMode.help", "Controls how agent commands are filtered")) {
                 Picker("", selection: $settings.mcpPermissionMode) {

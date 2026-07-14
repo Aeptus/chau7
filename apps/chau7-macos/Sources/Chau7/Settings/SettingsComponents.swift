@@ -18,6 +18,63 @@ enum SettingsLayout {
     static let detailIdealWidth: CGFloat = Chau7Style.Settings.detailIdealWidth
 }
 
+// MARK: - Search Anchors
+
+private struct SettingsHighlightedAnchorIDKey: EnvironmentKey {
+    static let defaultValue: String? = nil
+}
+
+private struct SettingsCurrentSectionKey: EnvironmentKey {
+    static let defaultValue: SettingsSection? = nil
+}
+
+extension EnvironmentValues {
+    var settingsHighlightedAnchorID: String? {
+        get { self[SettingsHighlightedAnchorIDKey.self] }
+        set { self[SettingsHighlightedAnchorIDKey.self] = newValue }
+    }
+
+    var settingsCurrentSection: SettingsSection? {
+        get { self[SettingsCurrentSectionKey.self] }
+        set { self[SettingsCurrentSectionKey.self] = newValue }
+    }
+}
+
+private struct SettingsSearchAnchorModifier: ViewModifier {
+    @Environment(\.settingsHighlightedAnchorID) private var highlightedAnchorID
+    let anchorID: String?
+
+    private var isHighlighted: Bool {
+        guard let anchorID, let highlightedAnchorID else { return false }
+        return anchorID == highlightedAnchorID
+    }
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if let anchorID {
+            content
+                .id(anchorID)
+                .background(
+                    RoundedRectangle(cornerRadius: Chau7Style.Radius.medium)
+                        .fill(Color.accentColor.opacity(isHighlighted ? 0.12 : 0))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: Chau7Style.Radius.medium)
+                        .stroke(Color.accentColor.opacity(isHighlighted ? 0.45 : 0), lineWidth: 1)
+                )
+                .animation(.easeInOut(duration: 0.18), value: isHighlighted)
+        } else {
+            content
+        }
+    }
+}
+
+extension View {
+    func settingsSearchAnchor(_ anchorID: String?) -> some View {
+        modifier(SettingsSearchAnchorModifier(anchorID: anchorID))
+    }
+}
+
 // MARK: - Settings Surface Structure
 
 struct SettingsDivider: View {
@@ -51,13 +108,16 @@ private struct SettingsLabelBlock: View {
 }
 
 private struct SettingsAdaptiveRow<Content: View>: View {
+    @Environment(\.settingsCurrentSection) private var currentSection
     let label: String
     let help: String?
+    let anchorID: String?
     let content: () -> Content
 
-    init(_ label: String, help: String? = nil, @ViewBuilder content: @escaping () -> Content) {
+    init(_ label: String, help: String? = nil, anchorID: String? = nil, @ViewBuilder content: @escaping () -> Content) {
         self.label = label
         self.help = help
+        self.anchorID = anchorID
         self.content = content
     }
 
@@ -81,6 +141,11 @@ private struct SettingsAdaptiveRow<Content: View>: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.vertical, Chau7Style.Settings.rowVerticalPadding)
+        .settingsSearchAnchor(resolvedAnchorID)
+    }
+
+    private var resolvedAnchorID: String? {
+        anchorID ?? FeatureSettings.searchAnchorID(forTitle: label, in: currentSection)
     }
 }
 
@@ -97,12 +162,15 @@ private extension View {
 // MARK: - Settings Section Header
 
 struct SettingsSectionHeader: View {
+    @Environment(\.settingsCurrentSection) private var currentSection
     let title: String
     let icon: String?
+    let anchorID: String?
 
-    init(_ title: String, icon: String? = nil) {
+    init(_ title: String, icon: String? = nil, anchorID: String? = nil) {
         self.title = title
         self.icon = icon
+        self.anchorID = anchorID
     }
 
     var body: some View {
@@ -120,6 +188,11 @@ struct SettingsSectionHeader: View {
         .padding(.bottom, Chau7Style.Settings.sectionBottomPadding)
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(.isHeader)
+        .settingsSearchAnchor(resolvedAnchorID)
+    }
+
+    private var resolvedAnchorID: String? {
+        anchorID ?? FeatureSettings.searchAnchorID(forTitle: title, in: currentSection)
     }
 }
 
@@ -128,16 +201,18 @@ struct SettingsSectionHeader: View {
 struct SettingsRow<Content: View>: View {
     let label: String
     let help: String?
+    let anchorID: String?
     let content: () -> Content
 
-    init(_ label: String, help: String? = nil, @ViewBuilder content: @escaping () -> Content) {
+    init(_ label: String, help: String? = nil, anchorID: String? = nil, @ViewBuilder content: @escaping () -> Content) {
         self.label = label
         self.help = help
+        self.anchorID = anchorID
         self.content = content
     }
 
     var body: some View {
-        SettingsAdaptiveRow(label, help: help) {
+        SettingsAdaptiveRow(label, help: help, anchorID: anchorID) {
             content()
         }
     }
@@ -150,9 +225,10 @@ struct SettingsToggle: View {
     let help: String
     @Binding var isOn: Bool
     var disabled = false
+    var anchorID: String? = nil
 
     var body: some View {
-        SettingsAdaptiveRow(label, help: help) {
+        SettingsAdaptiveRow(label, help: help, anchorID: anchorID) {
             Toggle("", isOn: $isOn)
                 .toggleStyle(.switch)
                 .labelsHidden()
@@ -178,9 +254,10 @@ struct SettingsSlider: View {
     var suffix = ""
     var width: CGFloat = 150
     var disabled = false
+    var anchorID: String? = nil
 
     var body: some View {
-        SettingsAdaptiveRow(label, help: help) {
+        SettingsAdaptiveRow(label, help: help, anchorID: anchorID) {
             HStack(spacing: Chau7Style.Spacing.small) {
                 Slider(value: $value, in: range, step: step)
                     .settingsControlWidth(width)
@@ -217,9 +294,10 @@ struct SettingsStepper: View {
     let range: ClosedRange<Int>
     var suffix = ""
     var disabled = false
+    var anchorID: String? = nil
 
     var body: some View {
-        SettingsAdaptiveRow(label, help: help) {
+        SettingsAdaptiveRow(label, help: help, anchorID: anchorID) {
             Stepper(value: $value, in: range) {
                 Text(value.formatted() + suffix)
                     .font(.system(.callout, design: .monospaced))
@@ -245,9 +323,10 @@ struct SettingsTextField: View {
     var monospaced = false
     var disabled = false
     var onSubmit: (() -> Void)?
+    var anchorID: String? = nil
 
     var body: some View {
-        SettingsAdaptiveRow(label, help: help) {
+        SettingsAdaptiveRow(label, help: help, anchorID: anchorID) {
             TextField(placeholder, text: $text)
                 .textFieldStyle(.roundedBorder)
                 .settingsControlWidth(width)
@@ -273,9 +352,10 @@ struct SettingsDirectoryField: View {
     var buttonTitle = "Choose..."
     var buttonIcon: String? = "folder"
     var onSubmit: (() -> Void)?
+    var anchorID: String? = nil
 
     var body: some View {
-        SettingsAdaptiveRow(label, help: help) {
+        SettingsAdaptiveRow(label, help: help, anchorID: anchorID) {
             ViewThatFits(in: .horizontal) {
                 directoryControls(axis: .horizontal)
                 directoryControls(axis: .vertical)
@@ -364,9 +444,10 @@ struct SettingsNumberField: View {
     var width: CGFloat = 100
     var disabled = false
     var onSubmit: (() -> Void)?
+    var anchorID: String? = nil
 
     var body: some View {
-        SettingsAdaptiveRow(label, help: help) {
+        SettingsAdaptiveRow(label, help: help, anchorID: anchorID) {
             TextField("", value: $value, format: .number)
                 .textFieldStyle(.roundedBorder)
                 .settingsControlWidth(width)
@@ -387,9 +468,10 @@ struct SettingsPicker<T: Hashable>: View {
     let options: [(value: T, label: String)]
     var width: CGFloat = 150
     var disabled = false
+    var anchorID: String? = nil
 
     var body: some View {
-        SettingsAdaptiveRow(label, help: help) {
+        SettingsAdaptiveRow(label, help: help, anchorID: anchorID) {
             Picker("", selection: $selection) {
                 ForEach(options, id: \.value) { option in
                     Text(option.label).tag(option.value)
@@ -413,9 +495,10 @@ struct SettingsInfoRow: View {
     let value: String
     var valueColor: Color = .primary
     var monospaced = false
+    var anchorID: String? = nil
 
     var body: some View {
-        SettingsAdaptiveRow(label) {
+        SettingsAdaptiveRow(label, anchorID: anchorID) {
             Text(value)
                 .font(monospaced ? .system(.callout, design: .monospaced) : .callout)
                 .foregroundStyle(valueColor)

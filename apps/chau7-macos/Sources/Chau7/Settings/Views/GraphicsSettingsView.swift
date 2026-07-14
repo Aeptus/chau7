@@ -13,7 +13,7 @@ struct GraphicsSettingsView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: Chau7Style.Settings.pageSectionSpacing) {
             // Sixel Protocol
-            SettingsSectionHeader(L("Sixel Graphics Protocol"), icon: "photo")
+            SettingsSectionHeader(L("Sixel Graphics Protocol"), icon: "photo", anchorID: "sixel")
 
             SettingsDescription(
                 text: L(
@@ -33,7 +33,7 @@ struct GraphicsSettingsView: View {
             SettingsDivider()
 
             // Kitty Graphics Protocol
-            SettingsSectionHeader(L("Kitty Graphics Protocol"), icon: "photo.artframe")
+            SettingsSectionHeader(L("Kitty Graphics Protocol"), icon: "photo.artframe", anchorID: "kittyGraphics")
 
             SettingsDescription(
                 text: L(

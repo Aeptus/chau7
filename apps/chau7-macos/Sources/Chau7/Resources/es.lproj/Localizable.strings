@@ -2876,6 +2876,7 @@
 "settings.search.urlHandler.description" = "Elegir qué navegador abre las URL";
 "settings.search.urlHandler.title" = "Gestor de URL";
 "settings.searchResultDetail" = "– %@";
+"settings.search.result.jumpHint" = "Mostrar el ajuste coincidente: %@";
 "settings.searchResults" = "Se encontraron %d ajustes coincidentes para \"%@\"";
 "settings.shell" = "Shell";
 "settings.shell.description" = "Shell, cursor y campana";

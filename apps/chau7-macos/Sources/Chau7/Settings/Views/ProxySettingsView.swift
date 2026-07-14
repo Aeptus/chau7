@@ -10,7 +10,11 @@ struct ProxySettingsView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: Chau7Style.Settings.pageSectionSpacing) {
             // API Call Tracking
-            SettingsSectionHeader(L("settings.proxy.tracking", "API Call Tracking"), icon: "chart.bar.xaxis")
+            SettingsSectionHeader(
+                L("settings.proxy.tracking", "API Call Tracking"),
+                icon: "chart.bar.xaxis",
+                anchorID: "apiAnalytics"
+            )
 
             SettingsToggle(
                 label: L("settings.proxy.enable", "Enable API Analytics"),

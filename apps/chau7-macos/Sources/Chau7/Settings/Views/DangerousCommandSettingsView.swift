@@ -55,7 +55,11 @@ struct DangerousCommandSettingsView: View {
 
     private var masterToggleSection: some View {
         VStack(alignment: .leading, spacing: Chau7Style.Settings.inlineControlSpacing) {
-            SettingsSectionHeader(L("settings.dangerousGuard.title", "Command Guard"), icon: "shield.lefthalf.filled")
+            SettingsSectionHeader(
+                L("settings.dangerousGuard.title", "Command Guard"),
+                icon: "shield.lefthalf.filled",
+                anchorID: "dangerousCommands"
+            )
 
             SettingsToggle(
                 label: L("settings.dangerousGuard.enabled", "Enable Dangerous Command Guard"),

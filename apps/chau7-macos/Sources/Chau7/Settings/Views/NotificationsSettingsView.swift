@@ -7,6 +7,7 @@ import Chau7Core
 /// Top-level notification settings view with a simplified AI-first front door.
 /// Advanced trigger plumbing stays available, but no longer leads the screen.
 struct NotificationsSettingsView: View {
+    @Environment(\.settingsHighlightedAnchorID) private var highlightedAnchorID
     var model: AppModel
     @Bindable private var settings = FeatureSettings.shared
     @State private var selectedTab: NotificationTab = .overview
@@ -36,6 +37,28 @@ struct NotificationsSettingsView: View {
             case .history:
                 NotificationHistoryTabView()
             }
+        }
+        .onAppear {
+            selectTabForHighlightedAnchor()
+        }
+        .onChange(of: highlightedAnchorID) {
+            selectTabForHighlightedAnchor()
+        }
+    }
+
+    private func selectTabForHighlightedAnchor() {
+        guard let highlightedAnchorID else { return }
+        switch highlightedAnchorID {
+        case "notificationTriggers", "triggerActions":
+            selectedTab = .advanced
+        case "shellThresholds", "appThresholds":
+            selectedTab = .thresholds
+        case "eventMonitoring":
+            selectedTab = .monitoring
+        case "notificationStatus", "aiToolNotifications":
+            selectedTab = .overview
+        default:
+            break
         }
     }
 }
@@ -106,7 +129,11 @@ private struct StatusPermissionsSection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: Chau7Style.Settings.looseControlSpacing) {
-            SettingsSectionHeader(L("settings.notifications.status", "Status & Permissions"), icon: "bell")
+            SettingsSectionHeader(
+                L("settings.notifications.status", "Status & Permissions"),
+                icon: "bell",
+                anchorID: "notificationStatus"
+            )
 
             SettingsInfoRow(
                 label: L("settings.notifications.status.label", "Status"),
@@ -175,7 +202,11 @@ private struct AINotificationOverviewSection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: Chau7Style.Settings.looseControlSpacing) {
-            SettingsSectionHeader(L("settings.notifications.aiOverview", "AI Notification Essentials"), icon: "brain")
+            SettingsSectionHeader(
+                L("settings.notifications.aiOverview", "AI Notification Essentials"),
+                icon: "brain",
+                anchorID: "aiToolNotifications"
+            )
 
             Text(L("settings.notifications.aiOverview.description", "Choose the only things AI tools should interrupt you for by default."))
                 .font(.caption)
@@ -507,7 +538,10 @@ private struct UnifiedTriggerSection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: Chau7Style.Settings.looseControlSpacing) {
-            SettingsSectionHeader(L("settings.notifications.triggers", "Notification Triggers"), icon: "line.3.horizontal.decrease.circle")
+            SettingsSectionHeader(
+                L("settings.notifications.triggers", "Notification Triggers"),
+                icon: "line.3.horizontal.decrease.circle"
+            )
 
             Text(L("settings.notifications.triggersDescription", "Enable triggers and configure what happens when they fire:"))
                 .font(.caption)
@@ -1416,6 +1450,7 @@ private struct EventDetectionThresholdsSection: View {
                         .font(.subheadline)
                         .fontWeight(.medium)
                 }
+                .settingsSearchAnchor("shellThresholds")
 
                 HStack(spacing: Chau7Style.Settings.looseControlSpacing) {
                     VStack(alignment: .leading, spacing: 4) {
@@ -1456,6 +1491,7 @@ private struct EventDetectionThresholdsSection: View {
                         .font(.subheadline)
                         .fontWeight(.medium)
                 }
+                .settingsSearchAnchor("appThresholds")
 
                 HStack(spacing: Chau7Style.Settings.looseControlSpacing) {
                     VStack(alignment: .leading, spacing: 4) {

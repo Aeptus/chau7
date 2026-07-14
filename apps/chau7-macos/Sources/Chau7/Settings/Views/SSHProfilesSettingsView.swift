@@ -11,7 +11,8 @@ struct SSHProfilesSettingsView: View {
         VStack(alignment: .leading, spacing: Chau7Style.Settings.pageSectionSpacing) {
             SettingsSectionHeader(
                 L("settings.ssh.sync", "SSH Config Sync"),
-                icon: "link"
+                icon: "link",
+                anchorID: "sshProfiles"
             )
 
             statusRow

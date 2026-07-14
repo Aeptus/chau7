@@ -5,7 +5,11 @@ struct HoverCardSettingsView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: Chau7Style.Settings.pageSectionSpacing) {
-            SettingsSectionHeader(L("settings.hoverCard.sections", "Visible Sections"), icon: "text.bubble")
+            SettingsSectionHeader(
+                L("settings.hoverCard.sections", "Visible Sections"),
+                icon: "text.bubble",
+                anchorID: "hoverCardSections"
+            )
 
             SettingsDescription(L("settings.hoverCard.sections.description", "Choose which information sections appear when hovering over a tab."))
 

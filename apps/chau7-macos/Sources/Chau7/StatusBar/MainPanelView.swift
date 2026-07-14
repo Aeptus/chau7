@@ -190,6 +190,7 @@ struct SettingsDetailView: View {
     var model: AppModel
     let overlayModel: OverlayTabsModel?
     var searchQuery = ""
+    @State private var focusedSearchAnchorID: String?
 
     private var matchingSettings: [SearchableSetting] {
         guard !searchQuery.isEmpty else { return [] }
@@ -198,93 +199,143 @@ struct SettingsDetailView: View {
         }
     }
 
+    private var activeSearchAnchorID: String? {
+        guard !searchQuery.isEmpty else { return nil }
+        if let focusedSearchAnchorID,
+           matchingSettings.contains(where: { $0.anchorID == focusedSearchAnchorID }) {
+            return focusedSearchAnchorID
+        }
+        return matchingSettings.first?.anchorID
+    }
+
     var body: some View {
-        ScrollView(.vertical, showsIndicators: true) {
-            VStack(alignment: .leading, spacing: 0) {
-                // Section header with description
-                sectionHeader
+        ScrollViewReader { proxy in
+            ScrollView(.vertical, showsIndicators: true) {
+                VStack(alignment: .leading, spacing: 0) {
+                    // Section header with description
+                    sectionHeader
 
-                // Search results hint
-                if !searchQuery.isEmpty, !matchingSettings.isEmpty {
-                    SearchResultsHint(matchingSettings: matchingSettings, query: searchQuery)
-                }
+                    // Search results hint
+                    if !searchQuery.isEmpty, !matchingSettings.isEmpty {
+                        SearchResultsHint(
+                            matchingSettings: matchingSettings,
+                            query: searchQuery,
+                            activeAnchorID: activeSearchAnchorID,
+                            onSelect: { setting in
+                                focusedSearchAnchorID = setting.anchorID
+                            }
+                        )
+                    }
 
-                Divider()
-                    .padding(.bottom, Chau7Style.Spacing.small)
+                    Divider()
+                        .padding(.bottom, Chau7Style.Spacing.small)
 
-                // Section content
-                Group {
-                    switch selection {
-                    // Essentials
-                    case .startHere:
-                        StartHereSettingsView(model: model)
-                    case .general:
-                        GeneralSettingsView(model: model)
-                    case .profilesBackup:
-                        ProfilesBackupSettingsView()
-                    case .about:
-                        AboutSettingsView(model: model)
-                    // Appearance
-                    case .fontColors:
-                        FontColorsSettingsView()
-                    case .display:
-                        DisplaySettingsView()
-                    case .windows:
-                        WindowsSettingsView()
-                    case .tabs:
-                        TabsSettingsView()
-                    case .hoverCard:
-                        HoverCardSettingsView()
-                    case .repositories:
-                        RepositoriesSettingsView()
-                    case .minimalMode:
-                        MinimalModeSettingsView()
-                    // Terminal
-                    case .shell:
-                        ShellSettingsView()
-                    case .scrollbackPerf:
-                        ScrollbackPerfSettingsView(model: model)
-                    case .dangerousCommands:
-                        DangerousCommandSettingsView()
-                    case .graphics:
-                        GraphicsSettingsView()
-                    // Input & Productivity
-                    case .keyboardMouse:
-                        InputSettingsView()
-                    case .snippetsTools:
-                        ProductivitySettingsView()
-                    case .editor:
-                        EditorSettingsView()
-                    // Integrations
-                    case .aiDetection:
-                        AIIntegrationSettingsView()
-                    case .tokenOptimization:
-                        TokenOptimizationSettingsView(overlayModel: overlayModel)
-                    case .mcpControl:
-                        MCPSettingsView()
-                    case .remoteControl:
-                        RemoteSettingsView()
-                    case .sshProfiles:
-                        SSHProfilesSettingsView()
-                    case .apiProxy:
-                        ProxySettingsView()
-                    case .promptInjection:
-                        PromptInjectionSettingsView()
-                    // Monitoring
-                    case .notifications:
-                        NotificationsSettingsView(model: model)
-                    case .history:
-                        HistorySettingsPageView()
-                    case .logsHistory:
-                        LogsSettingsView(model: model)
+                    // Section content
+                    Group {
+                        switch selection {
+                        // Essentials
+                        case .startHere:
+                            StartHereSettingsView(model: model)
+                        case .general:
+                            GeneralSettingsView(model: model)
+                        case .profilesBackup:
+                            ProfilesBackupSettingsView()
+                        case .about:
+                            AboutSettingsView(model: model)
+                        // Appearance
+                        case .fontColors:
+                            FontColorsSettingsView()
+                        case .display:
+                            DisplaySettingsView()
+                        case .windows:
+                            WindowsSettingsView()
+                        case .tabs:
+                            TabsSettingsView()
+                        case .hoverCard:
+                            HoverCardSettingsView()
+                        case .repositories:
+                            RepositoriesSettingsView()
+                        case .minimalMode:
+                            MinimalModeSettingsView()
+                        // Terminal
+                        case .shell:
+                            ShellSettingsView()
+                        case .scrollbackPerf:
+                            ScrollbackPerfSettingsView(model: model)
+                        case .dangerousCommands:
+                            DangerousCommandSettingsView()
+                        case .graphics:
+                            GraphicsSettingsView()
+                        // Input & Productivity
+                        case .keyboardMouse:
+                            InputSettingsView()
+                        case .snippetsTools:
+                            ProductivitySettingsView()
+                        case .editor:
+                            EditorSettingsView()
+                        // Integrations
+                        case .aiDetection:
+                            AIIntegrationSettingsView()
+                        case .tokenOptimization:
+                            TokenOptimizationSettingsView(overlayModel: overlayModel)
+                        case .mcpControl:
+                            MCPSettingsView()
+                        case .remoteControl:
+                            RemoteSettingsView()
+                        case .sshProfiles:
+                            SSHProfilesSettingsView()
+                        case .apiProxy:
+                            ProxySettingsView()
+                        case .promptInjection:
+                            PromptInjectionSettingsView()
+                        // Monitoring
+                        case .notifications:
+                            NotificationsSettingsView(model: model)
+                        case .history:
+                            HistorySettingsPageView()
+                        case .logsHistory:
+                            LogsSettingsView(model: model)
+                        }
                     }
                 }
+                .padding(Chau7Style.Settings.contentPadding)
+                .frame(maxWidth: .infinity, alignment: .topLeading)
+                .environment(\.settingsCurrentSection, selection)
+                .environment(\.settingsHighlightedAnchorID, activeSearchAnchorID)
             }
-            .padding(Chau7Style.Settings.contentPadding)
-            .frame(maxWidth: .infinity, alignment: .topLeading)
+            .id(selection)
+            .onAppear {
+                scrollToActiveSearchAnchor(proxy)
+            }
+            .onChange(of: searchQuery) {
+                focusedSearchAnchorID = nil
+                scrollToActiveSearchAnchor(proxy)
+            }
+            .onChange(of: selection) {
+                focusedSearchAnchorID = nil
+                scrollToActiveSearchAnchor(proxy)
+            }
+            .onChange(of: activeSearchAnchorID) {
+                scrollToActiveSearchAnchor(proxy)
+            }
         }
-        .id(selection)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    private func scrollToActiveSearchAnchor(_ proxy: ScrollViewProxy) {
+        guard let activeSearchAnchorID else { return }
+        scroll(proxy, to: activeSearchAnchorID)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
+            scroll(proxy, to: activeSearchAnchorID)
+        }
+    }
+
+    private func scroll(_ proxy: ScrollViewProxy, to anchorID: String) {
+        DispatchQueue.main.async {
+            withAnimation(.easeInOut(duration: 0.22)) {
+                proxy.scrollTo(anchorID, anchor: .center)
+            }
+        }
     }
 
     private var sectionHeader: some View {
@@ -309,6 +360,8 @@ struct SettingsDetailView: View {
 struct SearchResultsHint: View {
     let matchingSettings: [SearchableSetting]
     let query: String
+    let activeAnchorID: String?
+    let onSelect: (SearchableSetting) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: Chau7Style.Spacing.small) {
@@ -327,33 +380,49 @@ struct SearchResultsHint: View {
             }
 
             ForEach(matchingSettings) { setting in
-                ViewThatFits(in: .horizontal) {
-                    HStack(alignment: .firstTextBaseline) {
-                        searchResultIcon
-                        Text(setting.title)
-                            .font(.caption)
-                            .foregroundColor(.accentColor)
-                        Text(String(format: L("settings.searchResultDetail", "– %@"), setting.description))
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-
-                    VStack(alignment: .leading, spacing: Chau7Style.Spacing.xxxSmall) {
-                        HStack(alignment: .firstTextBaseline, spacing: Chau7Style.Spacing.xxSmall) {
+                Button {
+                    onSelect(setting)
+                } label: {
+                    ViewThatFits(in: .horizontal) {
+                        HStack(alignment: .firstTextBaseline) {
                             searchResultIcon
                             Text(setting.title)
                                 .font(.caption)
                                 .foregroundColor(.accentColor)
+                            Text(String(format: L("settings.searchResultDetail", "– %@"), setting.description))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
                         }
-                        Text(setting.description)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
+
+                        VStack(alignment: .leading, spacing: Chau7Style.Spacing.xxxSmall) {
+                            HStack(alignment: .firstTextBaseline, spacing: Chau7Style.Spacing.xxSmall) {
+                                searchResultIcon
+                                Text(setting.title)
+                                    .font(.caption)
+                                    .foregroundColor(.accentColor)
+                            }
+                            Text(setting.description)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
                     }
                 }
+                .buttonStyle(.plain)
+                .padding(.horizontal, Chau7Style.Spacing.xxSmall)
+                .padding(.vertical, Chau7Style.Spacing.xxxSmall)
+                .background(
+                    RoundedRectangle(cornerRadius: Chau7Style.Radius.small)
+                        .fill(Color.accentColor.opacity(activeAnchorID == setting.anchorID ? 0.14 : 0))
+                )
                 .accessibilityElement(children: .combine)
                 .accessibilityLabel(setting.title)
-                .accessibilityHint(setting.description)
+                .accessibilityHint(
+                    String(
+                        format: L("settings.search.result.jumpHint", "Show matching setting: %@"),
+                        setting.description
+                    )
+                )
             }
         }
         .padding(Chau7Style.Settings.hintPadding)

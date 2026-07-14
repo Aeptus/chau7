@@ -15,7 +15,8 @@ struct ScrollbackPerfSettingsView: View {
                 label: L("settings.terminal.bufferSize", "Buffer Size"),
                 help: L("settings.terminal.bufferSize.help", "Number of lines to keep in scrollback history (100-100,000)"),
                 value: $settings.scrollbackLines,
-                width: 100
+                width: 100,
+                anchorID: "scrollback"
             )
 
             SettingsToggle(
@@ -83,7 +84,8 @@ struct ScrollbackPerfSettingsView: View {
                     "Maximum refresh rate for the focused tab. Display Native follows your screen (up to 120 Hz on ProMotion). Lower caps trade a bit of scroll smoothness for battery life."
                 ),
                 selection: $settings.activePollingRateCap,
-                options: ActivePollingRateCap.allCases.map { (value: $0, label: $0.displayName) }
+                options: ActivePollingRateCap.allCases.map { (value: $0, label: $0.displayName) },
+                anchorID: "refreshCaps"
             )
 
             SettingsStepper(

@@ -6,6 +6,7 @@ import Chau7Core
 /// Top-level settings view for context optimization — keeping mode and input
 /// prefix prominent while runtime/debug detail stays behind Advanced.
 struct TokenOptimizationSettingsView: View {
+    @Environment(\.settingsHighlightedAnchorID) private var highlightedAnchorID
     private var settings = FeatureSettings.shared
     let overlayModel: OverlayTabsModel?
     @State private var wrapperHealth: [WrapperHealth] = []
@@ -25,7 +26,8 @@ struct TokenOptimizationSettingsView: View {
             // Mode Selection
             SettingsSectionHeader(
                 L("cto.settings.mode", "Context Mode"),
-                icon: "bolt.horizontal.circle"
+                icon: "bolt.horizontal.circle",
+                anchorID: "ctoModeHeader"
             )
 
             SettingsPicker(
@@ -34,7 +36,8 @@ struct TokenOptimizationSettingsView: View {
                 selection: modeBinding,
                 options: TokenOptimizationMode.allCases.map { mode in
                     (value: mode.rawValue, label: mode.displayName)
-                }
+                },
+                anchorID: "ctoMode"
             )
 
             modeDescriptionView
@@ -69,7 +72,8 @@ struct TokenOptimizationSettingsView: View {
                         set: { settings.ctoPrefix = $0 }
                     ),
                     width: 220,
-                    monospaced: true
+                    monospaced: true,
+                    anchorID: "ctoPrefix"
                 )
 
                 SettingsDivider()
@@ -100,10 +104,14 @@ struct TokenOptimizationSettingsView: View {
             }
         }
         .onAppear {
+            expandAdvancedIfNeeded()
             refreshAll()
         }
         .onChange(of: settings.tokenOptimizationMode) {
             refreshAll()
+        }
+        .onChange(of: highlightedAnchorID) {
+            expandAdvancedIfNeeded()
         }
     }
 
@@ -157,7 +165,8 @@ struct TokenOptimizationSettingsView: View {
                 // Per-Tab Control
                 SettingsSectionHeader(
                     L("cto.settings.perTab", "Per-Tab Control"),
-                    icon: "rectangle.stack"
+                    icon: "rectangle.stack",
+                    anchorID: "ctoPerTab"
                 )
 
                 perTabInfoView
@@ -180,6 +189,12 @@ struct TokenOptimizationSettingsView: View {
         } label: {
             Label(L("cto.settings.advanced", "Advanced"), systemImage: "slider.horizontal.3")
                 .font(.headline)
+        }
+    }
+
+    private func expandAdvancedIfNeeded() {
+        if highlightedAnchorID == "ctoPerTab" {
+            advancedExpanded = true
         }
     }
 

@@ -129,7 +129,8 @@ struct FontColorsSettingsView: View {
                 label: L("settings.appearance.appearance", "Appearance"),
                 help: L("settings.appearance.appearance.help", "Choose light, dark, or match system appearance"),
                 selection: $settings.appTheme,
-                options: AppTheme.allCases.map { (value: $0, label: $0.displayName) }
+                options: AppTheme.allCases.map { (value: $0, label: $0.displayName) },
+                anchorID: "appTheme"
             )
 
             SettingsDivider()

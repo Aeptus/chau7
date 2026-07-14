@@ -24,6 +24,33 @@ final class SettingsSurfaceTests: XCTestCase {
         XCTAssertTrue(duplicates.isEmpty, "Duplicate searchable setting IDs: \(duplicates)")
     }
 
+    func testSearchableSettingsExposeStableAnchors() {
+        let settingsByID = Dictionary(uniqueKeysWithValues: FeatureSettings.searchableSettings.map { ($0.id, $0) })
+
+        XCTAssertEqual(settingsByID["launch"]?.anchorID, "launch")
+        XCTAssertEqual(settingsByID["triggerActions"]?.anchorID, "notificationTriggers")
+
+        let emptyAnchors = FeatureSettings.searchableSettings
+            .filter { $0.anchorID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+            .map(\.id)
+        XCTAssertTrue(emptyAnchors.isEmpty, "Searchable settings with empty anchors: \(emptyAnchors)")
+    }
+
+    func testSearchAnchorTitleResolutionIsSectionScoped() {
+        XCTAssertEqual(
+            FeatureSettings.searchAnchorID(forTitle: "Launch at Login", in: .general),
+            "launch"
+        )
+        XCTAssertEqual(
+            FeatureSettings.searchAnchorID(forTitle: "Remote Access", in: .remoteControl),
+            "remote"
+        )
+        XCTAssertNil(
+            FeatureSettings.searchAnchorID(forTitle: "Remote Access", in: .general),
+            "Title-based anchor resolution should not cross settings sections."
+        )
+    }
+
     func testWindowsSectionIsAppearanceAndSearchable() {
         XCTAssertEqual(SettingsSection.windows.group, .appearance)
         XCTAssertTrue(SettingsSectionGroup.appearance.sections.contains(.windows))
