@@ -10,18 +10,12 @@ struct RemoteSettingsView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: Chau7Style.Settings.pageSectionSpacing) {
-            // SSH Profiles first — most commonly used section
-            SSHProfilesSettingsView()
-
-            SettingsDivider()
-
-            // Remote Control
             SettingsSectionHeader(L("settings.remote.status", "Status"), icon: "antenna.radiowaves.left.and.right")
             statusRow
 
             SettingsSectionHeader(L("settings.remote.access", "Remote Access"), icon: "lock.shield")
             SettingsToggle(
-                label: L("settings.remote.enable", "Enable Remote Control"),
+                label: L("settings.remote.enable", "Enable Remote Access"),
                 help: L("settings.remote.enable.help", "Allow Chau7 to be controlled from the iOS app"),
                 isOn: $settings.isRemoteEnabled
             )
@@ -272,12 +266,12 @@ struct RemoteSettingsView: View {
             if settings.isRemoteEnabled {
                 return "Relay URL changed. Apply to restart the remote agent and refresh pairing."
             }
-            return "Relay URL changed. Apply to save it. The new relay will be used the next time Remote Control is enabled."
+            return "Relay URL changed. Apply to save it. The new relay will be used the next time Remote Access is enabled."
         }
         if settings.isRemoteEnabled {
-            return "This relay URL is currently configured. Remote Control will start or reconnect against it automatically."
+            return "This relay URL is currently configured. Remote Access will start or reconnect against it automatically."
         }
-        return "This relay URL is saved but inactive until Remote Control is enabled."
+        return "This relay URL is saved but inactive until Remote Access is enabled."
     }
 
     private func applyRelayURL() {

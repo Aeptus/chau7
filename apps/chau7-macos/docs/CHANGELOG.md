@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- **Settings Overloaded Page Split**: Remote Access and SSH Profiles are now separate Automation sidebar entries, Alerts replaces the Notifications sidebar title while keeping the tabbed alert-rule editor, History and Diagnostics split the former combined logs/history surface, and Context Optimization keeps mode/prefix up front with runtime/debug details collapsed under Advanced.
 - **Settings Human-Facing Technical Titles**: Settings now presents technical panes with clearer human titles: Context Optimization, Agent Control, AI Context, API Tracking, Performance, and Command Safety. Internal config names and subsystem terms remain stable, while sidebar/search/localized copy uses the friendlier labels.
 - **Settings Goal-Oriented Sidebar**: Settings groups now follow user goals instead of implementation buckets: General, Appearance, Terminal, AI Workflows, Automation, and Safety & Privacy. Existing panes keep their detail views and search metadata, while repositories/remote move under Automation and dangerous commands/notifications/logs move under Safety & Privacy.
 - **Settings Start Here Dashboard**: Settings now open on a read-only "Start Here" page that summarizes Launch at Login, active profile, MCP status, remote status, notification status, Full Disk Access/protected-folder permission health, default directory, and event log path before users drill into editable panes.

@@ -1795,7 +1795,7 @@ final class FeatureSettings {
         static let apiAnalyticsPort = "analytics.api.port"
         static let apiAnalyticsLogPrompts = "analytics.api.logPrompts"
         static let apiAnalyticsIncludeOpenAI = "analytics.api.includeOpenAI"
-        // Context Optimization, Agent Control (MCP), and Remote Control live in
+        // Context Optimization, Agent Control (MCP), and Remote Access live in
         // MCPRemoteSettingsStore.Keys
         // Bug Report
         static let bugReportContactName = "bugReport.contactName"
@@ -1891,7 +1891,7 @@ final class FeatureSettings {
         self.apiAnalyticsLogPrompts = defaults.object(forKey: Keys.apiAnalyticsLogPrompts) as? Bool ?? false
         self.apiAnalyticsIncludeOpenAI = defaults.object(forKey: Keys.apiAnalyticsIncludeOpenAI) as? Bool ?? true
 
-        // Token Optimization, MCP, Remote Control, and CTO Integration live
+        // Context Optimization, Agent Control (MCP), and Remote Access live
         // in MCPRemoteSettingsStore (created at the top of this init).
 
         let integration = Self.integrationSettings(from: defaults)

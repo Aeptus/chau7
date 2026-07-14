@@ -2,43 +2,23 @@ import SwiftUI
 
 // MARK: - Logs Settings
 
+struct HistorySettingsPageView: View {
+    var body: some View {
+        VStack(alignment: .leading, spacing: Chau7Style.Settings.pageSectionSpacing) {
+            TelemetryRetentionSettingsView()
+
+            SettingsDivider()
+
+            HistorySettingsView()
+        }
+    }
+}
+
 struct LogsSettingsView: View {
     @Bindable var model: AppModel
-    @Bindable private var settings = FeatureSettings.shared
 
     var body: some View {
         VStack(alignment: .leading, spacing: Chau7Style.Settings.pageSectionSpacing) {
-            // Persistent History (most important — at top)
-            HistorySettingsView()
-
-            SettingsDivider()
-
-            // AI Telemetry & Transcripts
-            SettingsSectionHeader(
-                L("settings.logs.telemetry", "AI Telemetry & Transcripts"),
-                icon: "chart.bar.doc.horizontal"
-            )
-
-            SettingsStepper(
-                label: L("settings.logs.telemetryRetention", "Keep Transcripts For"),
-                help: L(
-                    "settings.logs.telemetryRetention.help",
-                    "Days of AI run history and full transcripts to keep for the usage and cost dashboards. Older runs are deleted at launch and the database is compacted. Set to 0 to keep everything forever."
-                ),
-                value: $settings.telemetryRetentionDays,
-                range: 0 ... 365,
-                suffix: settings.telemetryRetentionDays == 0 ? "" : " days"
-            )
-
-            if settings.telemetryRetentionDays == 0 {
-                Text(L("settings.logs.telemetryRetention.forever", "Keeping all telemetry forever — the database will grow without bound."))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .padding(.leading, 4)
-            }
-
-            SettingsDivider()
-
             // History Logs
             SettingsSectionHeader(L("settings.logs.historyLogs", "History Logs"), icon: "clock.arrow.circlepath")
 
@@ -190,6 +170,37 @@ struct LogsSettingsView: View {
                 }
             }
 
+        }
+    }
+}
+
+private struct TelemetryRetentionSettingsView: View {
+    @Bindable private var settings = FeatureSettings.shared
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Chau7Style.Settings.inlineControlSpacing) {
+            SettingsSectionHeader(
+                L("settings.logs.telemetry", "AI Telemetry & Transcripts"),
+                icon: "chart.bar.doc.horizontal"
+            )
+
+            SettingsStepper(
+                label: L("settings.logs.telemetryRetention", "Keep Transcripts For"),
+                help: L(
+                    "settings.logs.telemetryRetention.help",
+                    "Days of AI run history and full transcripts to keep for the usage and cost dashboards. Older runs are deleted at launch and the database is compacted. Set to 0 to keep everything forever."
+                ),
+                value: $settings.telemetryRetentionDays,
+                range: 0 ... 365,
+                suffix: settings.telemetryRetentionDays == 0 ? "" : " days"
+            )
+
+            if settings.telemetryRetentionDays == 0 {
+                Text(L("settings.logs.telemetryRetention.forever", "Keeping all telemetry forever — the database will grow without bound."))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .padding(.leading, 4)
+            }
         }
     }
 }

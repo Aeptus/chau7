@@ -20,10 +20,10 @@ SwiftUI settings panels for each feature area, presented in the preferences wind
 | `HistorySettingsView.swift` | Command history database size, retention, and export |
 | `InputSettingsView.swift` | Input behavior, keyboard shortcuts, and preset selection |
 | `LLMSettingsView.swift` | LLM provider selection, API key entry, endpoint, and connection testing |
-| `LogsSettingsView.swift` | Log path, monitoring toggle, and history display |
+| `LogsSettingsView.swift` | Diagnostic log paths, monitoring toggles, and active session display |
 | `MCPSettingsView.swift` | MCP server enablement, limits, permissions, indicators, and profiles |
 | `MinimalModeSettingsView.swift` | Minimal mode toggle and element visibility configuration |
-| `NotificationsSettingsView.swift` | Notification triggers, actions, and sound configuration |
+| `NotificationsSettingsView.swift` | Alert triggers, actions, and sound configuration |
 | `ProfileSelectorBar.swift` | Settings profile selector and save/load menu |
 | `ProductivitySettingsView.swift` | Snippets, clipboard history, bookmarks, semantic search, and protected-folder permissions |
 | `ProfileAutoSwitchSettingsView.swift` | Auto profile switching rule editor |
@@ -31,12 +31,12 @@ SwiftUI settings panels for each feature area, presented in the preferences wind
 | `PromptInjectionSettingsView.swift` | Per-repository AI prompt injection rules |
 | `ProxySettingsView.swift` | API analytics proxy enable/disable and port configuration |
 | `RepositoriesSettingsView.swift` | Per-repository metadata, labels, and favorite files |
-| `RemoteSettingsView.swift` | Remote control agent status and configuration |
+| `RemoteSettingsView.swift` | Remote access relay, pairing, device, and agent status configuration |
 | `ScrollbackPerfSettingsView.swift` | Scrollback, restore, rendering, and refresh performance settings |
 | `SSHProfilesSettingsView.swift` | SSH profile list with import from ~/.ssh/config |
 | `ShellSettingsView.swift` | Shell, startup command, shell history, cursor, and bell settings |
 | `TabsSettingsView.swift` | Tab behavior, close confirmation, and new tab position |
-| `TokenOptimizationSettingsView.swift` | Token optimization mode, prefix, runtime status, and per-tab overrides |
+| `TokenOptimizationSettingsView.swift` | Context optimization mode and prefix with runtime/debug controls under Advanced |
 | `TriggerActionsSettingsView.swift` | Notification trigger-to-action mapping editor |
 | `WindowsSettingsView.swift` | App window mode, floating windows, overlay actions, fullscreen toolbar, and split panes |
 

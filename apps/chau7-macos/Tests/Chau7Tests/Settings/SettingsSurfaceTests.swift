@@ -51,8 +51,11 @@ final class SettingsSurfaceTests: XCTestCase {
         )
         XCTAssertEqual(SettingsSection.repositories.group, .automation)
         XCTAssertEqual(SettingsSection.remoteControl.group, .automation)
+        XCTAssertEqual(SettingsSection.sshProfiles.group, .automation)
         XCTAssertEqual(SettingsSection.dangerousCommands.group, .safetyPrivacy)
         XCTAssertEqual(SettingsSection.notifications.group, .safetyPrivacy)
+        XCTAssertEqual(SettingsSection.history.group, .safetyPrivacy)
+        XCTAssertEqual(SettingsSection.logsHistory.group, .safetyPrivacy)
     }
 
     func testTechnicalSettingSectionsUseHumanTitles() {
@@ -62,11 +65,29 @@ final class SettingsSurfaceTests: XCTestCase {
         XCTAssertEqual(SettingsSection.apiProxy.title, "API Tracking")
         XCTAssertEqual(SettingsSection.scrollbackPerf.title, "Performance")
         XCTAssertEqual(SettingsSection.dangerousCommands.title, "Command Safety")
+        XCTAssertEqual(SettingsSection.remoteControl.title, "Remote Access")
+        XCTAssertEqual(SettingsSection.notifications.title, "Alerts")
+        XCTAssertEqual(SettingsSection.logsHistory.title, "Diagnostics")
 
         let settingsByID = Dictionary(uniqueKeysWithValues: FeatureSettings.searchableSettings.map { ($0.id, $0) })
         XCTAssertEqual(settingsByID["promptInjection"]?.title, "AI Context")
         XCTAssertEqual(settingsByID["apiAnalytics"]?.title, "API Tracking")
         XCTAssertEqual(settingsByID["dangerousCommands"]?.title, "Command Safety")
         XCTAssertEqual(settingsByID["mcpServer"]?.title, "Agent Server")
+    }
+
+    func testOverloadedSettingsPagesAreSplitByTask() {
+        XCTAssertTrue(SettingsSectionGroup.automation.sections.contains(.remoteControl))
+        XCTAssertTrue(SettingsSectionGroup.automation.sections.contains(.sshProfiles))
+        XCTAssertTrue(SettingsSectionGroup.safetyPrivacy.sections.contains(.history))
+        XCTAssertTrue(SettingsSectionGroup.safetyPrivacy.sections.contains(.logsHistory))
+
+        let settingsByID = Dictionary(uniqueKeysWithValues: FeatureSettings.searchableSettings.map { ($0.id, $0) })
+        XCTAssertEqual(settingsByID["remote"]?.section, .remoteControl)
+        XCTAssertEqual(settingsByID["sshProfiles"]?.section, .sshProfiles)
+        XCTAssertEqual(settingsByID["persistentHistory"]?.section, .history)
+        XCTAssertEqual(settingsByID["telemetryRetention"]?.section, .history)
+        XCTAssertEqual(settingsByID["historyLogs"]?.section, .logsHistory)
+        XCTAssertEqual(settingsByID["terminalLogs"]?.section, .logsHistory)
     }
 }

@@ -57,7 +57,7 @@
 "settings.windows.description" = "Gestión y disposición de ventanas";
 "settings.ai" = "Integración IA";
 "settings.ai.description" = "Detección y tematización de CLI de IA";
-"settings.notifications" = "Notificaciones";
+"settings.notifications" = "Alertas";
 "settings.notifications.description" = "Preferencias de alertas y filtros de eventos";
 "settings.logs" = "Registros";
 "settings.logs.description" = "Supervisión de registros e historial";
@@ -781,7 +781,7 @@
 
 // Status
 "settings.general.status" = "Estado";
-"settings.general.status.notifications" = "Notificaciones";
+"settings.general.status.notifications" = "Alertas";
 "settings.general.status.eventMonitoring" = "Supervisión de eventos";
 "settings.general.status.historyMonitoring" = "Supervisión del historial";
 "settings.general.status.terminalMonitoring" = "Supervisión del terminal";
@@ -1986,6 +1986,7 @@
 "cto.settings.commands" = "Comandos optimizados";
 "cto.settings.ctoRuntime" = "Telemetría de ejecución";
 "cto.settings.howItWorks" = "Cómo funciona";
+"cto.settings.advanced" = "Avanzado";
 "cto.settings.mode" = "Modo de contexto";
 "cto.settings.mode.help" = "Controla cuándo está activa la salida de comandos optimizada para contexto";
 "cto.settings.mode.label" = "Modo";
@@ -2399,6 +2400,8 @@
 
 // MARK: - Settings: History
 
+"settings.history" = "Historial";
+"settings.history.description" = "Historial de comandos y retención de transcripciones";
 "settings.history.cancel" = "Cancelar";
 "settings.history.capacity" = "Capacidad";
 "settings.history.clearAll" = "Borrar todo el historial";
@@ -2502,7 +2505,7 @@
 "settings.llm.provider" = "Proveedor";
 "settings.llm.provider.help" = "Elige el backend LLM para la explicación de errores y funciones de IA";
 
-// MARK: - Settings: Logs & History
+// MARK: - Settings: Diagnostics
 
 "settings.logs.activeSessions" = "Sesiones activas";
 "settings.logs.claudeHistoryPath" = "Ruta del historial de Claude";
@@ -2528,8 +2531,8 @@
 "settings.logs.staleSeconds" = "Segundos de obsolescencia";
 "settings.logs.staleSeconds.help" = "Segundos antes de marcar una sesión como cerrada";
 "settings.logs.terminalLogs" = "Registros de terminal";
-"settings.logsHistory" = "Registros e historial";
-"settings.logsHistory.description" = "Archivos de registro, seguimiento de sesiones e historial de comandos";
+"settings.logsHistory" = "Diagnósticos";
+"settings.logsHistory.description" = "Monitores de registros, rutas de diagnóstico y sesiones activas";
 
 // MARK: - Settings: MCP
 
@@ -2724,7 +2727,7 @@
 "settings.remote.devicePairedAt" = "Emparejado: %@";
 "settings.remote.devices" = "Dispositivos emparejados";
 "settings.remote.devices.empty" = "Aún no hay dispositivos emparejados.";
-"settings.remote.enable" = "Activar control remoto";
+"settings.remote.enable" = "Activar acceso remoto";
 "settings.remote.enable.help" = "Permitir que Chau7 sea controlado desde la app de iOS";
 "settings.remote.pairing" = "Emparejamiento";
 "settings.remote.relay" = "Relay";
@@ -2735,8 +2738,8 @@
 "settings.remote.revoke.confirm.message" = "Esto eliminará %@ y lo obligará a emparejarse de nuevo antes de poder reconectarse.";
 "settings.remote.revoke.confirm.title" = "¿Revocar emparejamiento?";
 "settings.remote.status" = "Estado";
-"settings.remoteControl" = "Control remoto";
-"settings.remoteControl.description" = "Acceso remoto, emparejamiento y perfiles SSH";
+"settings.remoteControl" = "Acceso remoto";
+"settings.remoteControl.description" = "Acceso de app remota, relay, emparejamiento y dispositivos";
 "settings.repositories" = "Repositorios";
 "settings.repositories.description" = "Gestionar descripciones, etiquetas y archivos favoritos de repositorios";
 "settings.repositories.recent" = "Repositorios recientes";
@@ -2746,7 +2749,7 @@
 "settings.search.aiCustomDetection.title" = "Detección personalizada de IA";
 "settings.search.aiDetection.description" = "Detectar CLIs de IA automáticamente";
 "settings.search.aiDetection.title" = "Detección de CLI de IA";
-"settings.search.aiToolNotifications.description" = "Notificaciones de herramientas de programación con IA";
+"settings.search.aiToolNotifications.description" = "Alertas de herramientas de programación con IA";
 "settings.search.aiToolNotifications.title" = "Notificaciones de herramientas de IA";
 "settings.search.apiAnalytics.description" = "Rastrear llamadas API y uso de tokens";
 "settings.search.apiAnalytics.title" = "Seguimiento de API";
@@ -2788,7 +2791,7 @@
 "settings.search.defaultDir.title" = "Directorio predeterminado";
 "settings.search.defaultZoom.description" = "Porcentaje de zoom predeterminado para nuevas pestañas";
 "settings.search.defaultZoom.title" = "Zoom predeterminado";
-"settings.search.eventMonitoring.description" = "Monitorear eventos de CLI de IA para notificaciones";
+"settings.search.eventMonitoring.description" = "Monitorear eventos de CLI de IA para alertas";
 "settings.search.eventMonitoring.title" = "Monitoreo de eventos";
 "settings.search.export.description" = "Exportar o importar ajustes como JSON";
 "settings.search.export.title" = "Exportar/Importar ajustes";
@@ -2824,9 +2827,9 @@
 "settings.search.mouseReporting.title" = "Reporte de ratón";
 "settings.search.newTabDirectory.description" = "Abrir nuevas pestañas en el directorio de la pestaña activa";
 "settings.search.newTabDirectory.title" = "Directorio de nueva pestaña";
-"settings.search.notificationStatus.description" = "Estado del permiso de notificaciones";
-"settings.search.notificationStatus.title" = "Estado de notificaciones";
-"settings.search.notificationTriggers.description" = "Activar disparadores y configurar acciones para notificaciones";
+"settings.search.notificationStatus.description" = "Estado del permiso de alertas del sistema";
+"settings.search.notificationStatus.title" = "Estado de alertas";
+"settings.search.notificationTriggers.description" = "Activar disparadores y configurar acciones de alerta";
 "settings.search.notificationTriggers.title" = "Disparadores de notificaciones";
 "settings.search.opacity.description" = "Transparencia de la ventana del terminal";
 "settings.search.opacity.title" = "Opacidad de la ventana";
@@ -2835,7 +2838,7 @@
 "settings.search.profileAutoSwitch.description" = "Cambiar automáticamente de perfil según reglas";
 "settings.search.profileAutoSwitch.title" = "Cambio automático de perfil";
 "settings.search.remote.description" = "Emparejar un iPhone y ver la salida del terminal de forma remota";
-"settings.search.remote.title" = "Control remoto";
+"settings.search.remote.title" = "Acceso remoto";
 "settings.search.scrollback.description" = "Líneas a mantener en el historial";
 "settings.search.scrollback.title" = "Líneas de historial";
 "settings.search.search.description" = "Búsqueda con reconocimiento de comandos";
@@ -2868,7 +2871,7 @@
 "settings.search.textEditor.title" = "Editor de texto";
 "settings.search.timestamps.description" = "Mostrar marcas de tiempo en las líneas del terminal";
 "settings.search.timestamps.title" = "Marcas de tiempo de líneas";
-"settings.search.triggerActions.description" = "Configurar qué sucede cuando se activan los disparadores de notificaciones";
+"settings.search.triggerActions.description" = "Configurar qué sucede cuando se activan los disparadores de alertas";
 "settings.search.triggerActions.title" = "Acciones de disparadores";
 "settings.search.urlHandler.description" = "Elegir qué navegador abre las URL";
 "settings.search.urlHandler.title" = "Gestor de URL";
@@ -2880,6 +2883,8 @@
 "settings.snippetsTools" = "Fragmentos y herramientas";
 "settings.snippetsTools.description" = "Fragmentos, portapapeles, marcadores y búsqueda";
 "settings.ssh.actions" = "Acciones";
+"settings.sshProfiles" = "Perfiles SSH";
+"settings.sshProfiles.description" = "Importar, sincronizar y exportar perfiles de conexión SSH";
 "settings.ssh.entries" = "Entradas de configuración SSH";
 "settings.ssh.fileWatch" = "Vigilancia de archivos";
 "settings.ssh.sync" = "Sincronización de configuración SSH";

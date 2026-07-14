@@ -74,7 +74,7 @@ struct StartHereSettingsView: View {
             ),
             SettingsStatusItem(
                 id: "remote",
-                label: L("settings.remoteControl", "Remote Control"),
+                label: L("settings.remoteControl", "Remote Access"),
                 value: remoteStatusValue,
                 detail: remoteStatusDetail,
                 systemImage: "antenna.radiowaves.left.and.right",
@@ -82,7 +82,7 @@ struct StartHereSettingsView: View {
             ),
             SettingsStatusItem(
                 id: "notifications",
-                label: L("settings.notifications", "Notifications"),
+                label: L("settings.notifications", "Alerts"),
                 value: model.notificationStatus,
                 detail: model.notificationWarning,
                 systemImage: "bell.badge",

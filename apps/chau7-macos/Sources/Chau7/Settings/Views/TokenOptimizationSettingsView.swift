@@ -1,11 +1,10 @@
 import SwiftUI
 import Chau7Core
 
-// MARK: - Token Optimization Settings
+// MARK: - Context Optimization Settings
 
-/// Top-level settings view for token optimization — combining optimization
-/// mode selection, input prefix, per-tab overrides, optimizer status, and
-/// token savings analytics.
+/// Top-level settings view for context optimization — keeping mode and input
+/// prefix prominent while runtime/debug detail stays behind Advanced.
 struct TokenOptimizationSettingsView: View {
     private var settings = FeatureSettings.shared
     let overlayModel: OverlayTabsModel?
@@ -15,6 +14,7 @@ struct TokenOptimizationSettingsView: View {
     @State private var gainStats: CTOGainStats?
     @State private var isLoadingStats = false
     @State private var runtimeSnapshot: CTORuntimeSnapshot = CTORuntimeMonitor.shared.snapshot()
+    @State private var advancedExpanded = false
 
     init(overlayModel: OverlayTabsModel? = nil) {
         self.overlayModel = overlayModel
@@ -74,6 +74,43 @@ struct TokenOptimizationSettingsView: View {
 
                 SettingsDivider()
 
+                // How It Works
+                SettingsSectionHeader(
+                    L("cto.settings.howItWorks", "How It Works"),
+                    icon: "questionmark.circle"
+                )
+
+                howItWorksView
+
+                SettingsDivider()
+
+                advancedDetailsView
+            }
+
+            if settings.tokenOptimizationMode == .off {
+                SettingsDivider()
+
+                // How It Works (visible even when off, so users can understand the feature)
+                SettingsSectionHeader(
+                    L("cto.settings.howItWorks", "How It Works"),
+                    icon: "questionmark.circle"
+                )
+
+                howItWorksView
+            }
+        }
+        .onAppear {
+            refreshAll()
+        }
+        .onChange(of: settings.tokenOptimizationMode) {
+            refreshAll()
+        }
+    }
+
+    @ViewBuilder
+    private var advancedDetailsView: some View {
+        DisclosureGroup(isExpanded: $advancedExpanded) {
+            VStack(alignment: .leading, spacing: Chau7Style.Settings.pageSectionSpacing) {
                 // Optimizer
                 SettingsSectionHeader(
                     L("cto.settings.optimizer", "Optimizer"),
@@ -138,35 +175,11 @@ struct TokenOptimizationSettingsView: View {
                 )
 
                 commandsList
-
-                SettingsDivider()
-
-                // How It Works
-                SettingsSectionHeader(
-                    L("cto.settings.howItWorks", "How It Works"),
-                    icon: "questionmark.circle"
-                )
-
-                howItWorksView
             }
-
-            if settings.tokenOptimizationMode == .off {
-                SettingsDivider()
-
-                // How It Works (visible even when off, so users can understand the feature)
-                SettingsSectionHeader(
-                    L("cto.settings.howItWorks", "How It Works"),
-                    icon: "questionmark.circle"
-                )
-
-                howItWorksView
-            }
-        }
-        .onAppear {
-            refreshAll()
-        }
-        .onChange(of: settings.tokenOptimizationMode) {
-            refreshAll()
+            .padding(.top, Chau7Style.Settings.inlineControlSpacing)
+        } label: {
+            Label(L("cto.settings.advanced", "Advanced"), systemImage: "slider.horizontal.3")
+                .font(.headline)
         }
     }
 

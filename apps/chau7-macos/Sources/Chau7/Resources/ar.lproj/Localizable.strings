@@ -779,7 +779,7 @@
 
 // Status
 "settings.general.status" = "الحالة";
-"settings.general.status.notifications" = "الإشعارات";
+"settings.general.status.notifications" = "التنبيهات";
 "settings.general.status.eventMonitoring" = "مراقبة الأحداث";
 "settings.general.status.historyMonitoring" = "مراقبة السجل";
 "settings.general.status.terminalMonitoring" = "مراقبة الطرفية";
@@ -1279,7 +1279,7 @@
 "settings.logs.claudeTerminalLog.help" = "المسار إلى ملف سجل غلاف PTY لـ Claude";
 "settings.logs.codexHistoryPath.help" = "المسار إلى ملف سجل OpenAI Codex";
 "settings.logs.codexTerminalLog.help" = "المسار إلى ملف سجل غلاف PTY لـ Codex";
-"settings.notifications" = "الإشعارات";
+"settings.notifications" = "التنبيهات";
 "settings.notifications.description" = "تفضيلات الإشعارات وفلاتر الأحداث";
 "settings.notifications.eventLogPath" = "مسار سجل الأحداث";
 "settings.notifications.eventLogPath.help" = "المسار إلى ملف سجل أحداث الذكاء الاصطناعي";
@@ -1955,6 +1955,7 @@
 "cto.settings.commands" = "الأوامر المحسّنة";
 "cto.settings.ctoRuntime" = "بيانات التشغيل";
 "cto.settings.howItWorks" = "كيف يعمل";
+"cto.settings.advanced" = "متقدم";
 "cto.settings.mode" = "وضع السياق";
 "cto.settings.mode.help" = "يتحكم في توقيت تفعيل مخرجات الأوامر المحسّنة للسياق";
 "cto.settings.mode.label" = "الوضع";
@@ -2345,6 +2346,8 @@
 "settings.group.general" = "عام";
 "settings.group.safetyPrivacy" = "الأمان والخصوصية";
 "settings.group.terminal" = "الطرفية";
+"settings.history" = "السجل";
+"settings.history.description" = "سجل الأوامر والاحتفاظ بالنصوص";
 "settings.history.cancel" = "إلغاء";
 "settings.history.capacity" = "السعة";
 "settings.history.clearAll" = "مسح كل السجل";
@@ -2459,8 +2462,8 @@
 "settings.logs.staleSeconds" = "ثواني التقادم";
 "settings.logs.staleSeconds.help" = "عدد الثواني قبل اعتبار الجلسة مغلقة";
 "settings.logs.terminalLogs" = "سجلات الطرفية";
-"settings.logsHistory" = "السجلات والتاريخ";
-"settings.logsHistory.description" = "ملفات السجل، وتتبع الجلسات، وسجل الأوامر";
+"settings.logsHistory" = "التشخيصات";
+"settings.logsHistory.description" = "مراقبة السجلات، ومسارات التشخيص، والجلسات النشطة";
 "settings.mcp.addProfile" = "إضافة ملف شخصي";
 "settings.mcp.allowedCommands" = "الأوامر المسموح بها";
 "settings.mcp.allowedCommands.help" = "الأوامر التي تُنفَّذ فورًا من دون طلب تأكيد";
@@ -2644,7 +2647,7 @@
 "settings.remote.devicePairedAt" = "تم الاقتران: %@";
 "settings.remote.devices" = "الأجهزة المقترنة";
 "settings.remote.devices.empty" = "لا توجد أجهزة مقترنة بعد.";
-"settings.remote.enable" = "تفعيل التحكم عن بُعد";
+"settings.remote.enable" = "تفعيل الوصول عن بُعد";
 "settings.remote.enable.help" = "السماح بالتحكم في Chau7 من تطبيق iOS";
 "settings.remote.pairing" = "الاقتران";
 "settings.remote.relay" = "المرحّل";
@@ -2655,8 +2658,8 @@
 "settings.remote.revoke.confirm.message" = "سيؤدي هذا إلى إزالة %@ وإجباره على الاقتران مجددًا قبل أن يتمكن من إعادة الاتصال.";
 "settings.remote.revoke.confirm.title" = "إلغاء الاقتران؟";
 "settings.remote.status" = "الحالة";
-"settings.remoteControl" = "التحكم عن بُعد";
-"settings.remoteControl.description" = "الوصول عن بُعد، والاقتران، وملفات تعريف SSH";
+"settings.remoteControl" = "الوصول عن بُعد";
+"settings.remoteControl.description" = "وصول التطبيق البعيد، والمرحل، والاقتران، والأجهزة";
 "settings.repositories" = "المستودعات";
 "settings.repositories.description" = "إدارة أوصاف المستودعات والوسوم والملفات المفضلة";
 "settings.repositories.recent" = "المستودعات الأخيرة";
@@ -2666,7 +2669,7 @@
 "settings.search.aiCustomDetection.title" = "اكتشاف AI مخصص";
 "settings.search.aiDetection.description" = "اكتشاف أدوات AI CLI تلقائيًا";
 "settings.search.aiDetection.title" = "اكتشاف AI CLI";
-"settings.search.aiToolNotifications.description" = "إشعارات من أدوات البرمجة بالذكاء الاصطناعي";
+"settings.search.aiToolNotifications.description" = "تنبيهات من أدوات البرمجة بالذكاء الاصطناعي";
 "settings.search.aiToolNotifications.title" = "إشعارات أدوات الذكاء الاصطناعي";
 "settings.search.apiAnalytics.description" = "تتبّع استدعاءات API واستخدام الرموز";
 "settings.search.apiAnalytics.title" = "تتبّع API";
@@ -2708,7 +2711,7 @@
 "settings.search.defaultDir.title" = "الدليل الافتراضي";
 "settings.search.defaultZoom.description" = "نسبة التكبير الافتراضية لعلامات التبويب الجديدة";
 "settings.search.defaultZoom.title" = "التكبير الافتراضي";
-"settings.search.eventMonitoring.description" = "مراقبة أحداث AI CLI للإشعارات";
+"settings.search.eventMonitoring.description" = "مراقبة أحداث AI CLI للتنبيهات";
 "settings.search.eventMonitoring.title" = "مراقبة الأحداث";
 "settings.search.export.description" = "تصدير الإعدادات أو استيرادها بصيغة JSON";
 "settings.search.export.title" = "تصدير/استيراد الإعدادات";
@@ -2744,9 +2747,9 @@
 "settings.search.mouseReporting.title" = "تقارير الفأرة";
 "settings.search.newTabDirectory.description" = "فتح علامات التبويب الجديدة في دليل علامة التبويب النشطة";
 "settings.search.newTabDirectory.title" = "دليل علامة التبويب الجديدة";
-"settings.search.notificationStatus.description" = "حالة إذن الإشعارات";
-"settings.search.notificationStatus.title" = "حالة الإشعارات";
-"settings.search.notificationTriggers.description" = "تفعيل المحفزات وضبط الإجراءات الخاصة بالإشعارات";
+"settings.search.notificationStatus.description" = "حالة إذن تنبيهات النظام";
+"settings.search.notificationStatus.title" = "حالة التنبيهات";
+"settings.search.notificationTriggers.description" = "تفعيل المحفزات وضبط إجراءات التنبيه";
 "settings.search.notificationTriggers.title" = "محفزات الإشعارات";
 "settings.search.opacity.description" = "شفافية نافذة الطرفية";
 "settings.search.opacity.title" = "شفافية النافذة";
@@ -2755,7 +2758,7 @@
 "settings.search.profileAutoSwitch.description" = "التبديل بين الملفات الشخصية تلقائيًا بناءً على القواعد";
 "settings.search.profileAutoSwitch.title" = "التبديل التلقائي للملفات الشخصية";
 "settings.search.remote.description" = "إقران iPhone وعرض مخرجات الطرفية عن بُعد";
-"settings.search.remote.title" = "التحكم عن بُعد";
+"settings.search.remote.title" = "الوصول عن بُعد";
 "settings.search.scrollback.description" = "عدد الأسطر التي يجب الاحتفاظ بها في سجل التمرير";
 "settings.search.scrollback.title" = "أسطر سجل التمرير";
 "settings.search.search.description" = "بحث واعٍ بالأوامر";
@@ -2788,7 +2791,7 @@
 "settings.search.textEditor.title" = "محرر النص";
 "settings.search.timestamps.description" = "إظهار الطوابع الزمنية لأسطر الطرفية";
 "settings.search.timestamps.title" = "الطوابع الزمنية للأسطر";
-"settings.search.triggerActions.description" = "ضبط ما يحدث عند تفعيل محفزات الإشعارات";
+"settings.search.triggerActions.description" = "ضبط ما يحدث عند تفعيل محفزات التنبيه";
 "settings.search.triggerActions.title" = "إجراءات المحفزات";
 "settings.search.urlHandler.description" = "اختر المتصفح الذي يفتح الروابط";
 "settings.search.urlHandler.title" = "معالج الروابط";
@@ -2800,6 +2803,8 @@
 "settings.snippetsTools" = "المقتطفات والأدوات";
 "settings.snippetsTools.description" = "المقتطفات، والحافظة، والعلامات المرجعية، والبحث";
 "settings.ssh.actions" = "الإجراءات";
+"settings.sshProfiles" = "ملفات تعريف SSH";
+"settings.sshProfiles.description" = "استيراد ملفات تعريف اتصال SSH ومزامنتها وتصديرها";
 "settings.ssh.entries" = "إدخالات إعدادات SSH";
 "settings.ssh.fileWatch" = "مراقبة الملف";
 "settings.ssh.sync" = "مزامنة إعدادات SSH";

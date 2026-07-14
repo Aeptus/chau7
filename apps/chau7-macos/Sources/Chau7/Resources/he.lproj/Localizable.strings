@@ -1955,6 +1955,7 @@
 "cto.settings.commands" = "פקודות";
 "cto.settings.ctoRuntime" = "טלמטריית זמן ריצה";
 "cto.settings.howItWorks" = "איך זה עובד";
+"cto.settings.advanced" = "מתקדם";
 "cto.settings.mode" = "מצב";
 "cto.settings.mode.help" = "קובע מתי פלט שעבר אופטימיזציית הקשר פעיל";
 "cto.settings.mode.label" = "מצב";
@@ -2459,8 +2460,10 @@
 "settings.logs.staleSeconds" = "שניות התיישנות";
 "settings.logs.staleSeconds.help" = "מספר השניות לפני סימון הפעלה כסגורה";
 "settings.logs.terminalLogs" = "יומני טרמינל";
-"settings.logsHistory" = "יומנים והיסטוריה";
-"settings.logsHistory.description" = "קובצי יומן, מעקב אחרי הפעלות והיסטוריית פקודות";
+"settings.history" = "היסטוריה";
+"settings.history.description" = "היסטוריית פקודות ושמירת תמלילים";
+"settings.logsHistory" = "אבחון";
+"settings.logsHistory.description" = "מנטרי יומנים, נתיבי אבחון והפעלות פעילות";
 "settings.mcp.addProfile" = "הוסף פרופיל";
 "settings.mcp.allowedCommands" = "פקודות מותרות";
 "settings.mcp.allowedCommands.help" = "פקודות שרצות מיידית ללא בקשת אישור";
@@ -2644,7 +2647,7 @@
 "settings.remote.devicePairedAt" = "צורף: %@";
 "settings.remote.devices" = "מכשירים מצורפים";
 "settings.remote.devices.empty" = "עדיין אין מכשירים מצורפים.";
-"settings.remote.enable" = "הפעל שליטה מרחוק";
+"settings.remote.enable" = "הפעל גישה מרחוק";
 "settings.remote.enable.help" = "אפשר שליטה ב-Chau7 מתוך אפליקציית iOS";
 "settings.remote.pairing" = "צימוד";
 "settings.remote.relay" = "ממסר";
@@ -2655,8 +2658,8 @@
 "settings.remote.revoke.confirm.message" = "פעולה זו תסיר את %@ ותאלץ אותו להיצמד מחדש לפני שיוכל להתחבר שוב.";
 "settings.remote.revoke.confirm.title" = "לבטל צימוד?";
 "settings.remote.status" = "מצב";
-"settings.remoteControl" = "שליטה מרחוק";
-"settings.remoteControl.description" = "גישה מרחוק, צימוד ופרופילי SSH";
+"settings.remoteControl" = "גישה מרחוק";
+"settings.remoteControl.description" = "גישה מאפליקציה מרחוק, ממסר, צימוד ומכשירים";
 "settings.repositories" = "מאגרי קוד";
 "settings.repositories.description" = "ניהול תיאורי מאגרים, תוויות וקבצים מועדפים";
 "settings.repositories.recent" = "מאגרים אחרונים";
@@ -2708,7 +2711,7 @@
 "settings.search.defaultDir.title" = "תיקיית ברירת מחדל";
 "settings.search.defaultZoom.description" = "אחוז זום ברירת מחדל לכרטיסיות חדשות";
 "settings.search.defaultZoom.title" = "זום ברירת מחדל";
-"settings.search.eventMonitoring.description" = "נטר אירועי AI CLI להתראות";
+"settings.search.eventMonitoring.description" = "נטר אירועי AI CLI עבור התראות";
 "settings.search.eventMonitoring.title" = "ניטור אירועים";
 "settings.search.export.description" = "ייצא או ייבא הגדרות כ-JSON";
 "settings.search.export.title" = "ייצוא/ייבוא הגדרות";
@@ -2744,9 +2747,9 @@
 "settings.search.mouseReporting.title" = "דיווח עכבר";
 "settings.search.newTabDirectory.description" = "פתח כרטיסיות חדשות בתיקיית הכרטיסייה הפעילה";
 "settings.search.newTabDirectory.title" = "תיקיית כרטיסייה חדשה";
-"settings.search.notificationStatus.description" = "מצב הרשאת ההתראות";
+"settings.search.notificationStatus.description" = "מצב הרשאת התראות מערכת";
 "settings.search.notificationStatus.title" = "מצב התראות";
-"settings.search.notificationTriggers.description" = "הפעל טריגרים והגדר פעולות להתראות";
+"settings.search.notificationTriggers.description" = "הפעל טריגרים והגדר פעולות התראה";
 "settings.search.notificationTriggers.title" = "טריגרי התראות";
 "settings.search.opacity.description" = "שקיפות חלון הטרמינל";
 "settings.search.opacity.title" = "אטימות חלון";
@@ -2755,7 +2758,7 @@
 "settings.search.profileAutoSwitch.description" = "החלף פרופילים אוטומטית לפי כללים";
 "settings.search.profileAutoSwitch.title" = "החלפת פרופילים אוטומטית";
 "settings.search.remote.description" = "צמד iPhone וצפה בפלט הטרמינל מרחוק";
-"settings.search.remote.title" = "שליטה מרחוק";
+"settings.search.remote.title" = "גישה מרחוק";
 "settings.search.scrollback.description" = "שורות לשמירה בגלילה לאחור";
 "settings.search.scrollback.title" = "שורות גלילה לאחור";
 "settings.search.search.description" = "חיפוש מודע-פקודות";
@@ -2788,7 +2791,7 @@
 "settings.search.textEditor.title" = "עורך טקסט";
 "settings.search.timestamps.description" = "הצג חותמות זמן לשורות הטרמינל";
 "settings.search.timestamps.title" = "חותמות זמן לשורות";
-"settings.search.triggerActions.description" = "הגדר מה קורה כאשר טריגרי התראות מופעלים";
+"settings.search.triggerActions.description" = "הגדר מה קורה כאשר טריגרי התראה מופעלים";
 "settings.search.triggerActions.title" = "פעולות טריגר";
 "settings.search.urlHandler.description" = "בחר איזה דפדפן פותח כתובות URL";
 "settings.search.urlHandler.title" = "מטפל ב-URL";
@@ -2800,6 +2803,8 @@
 "settings.snippetsTools" = "קטעים וכלים";
 "settings.snippetsTools.description" = "קטעים, לוח, סימניות וחיפוש";
 "settings.ssh.actions" = "פעולות";
+"settings.sshProfiles" = "פרופילי SSH";
+"settings.sshProfiles.description" = "ייבוא, סנכרון וייצוא של פרופילי חיבור SSH";
 "settings.ssh.entries" = "רשומות תצורת SSH";
 "settings.ssh.fileWatch" = "ניטור קבצים";
 "settings.ssh.sync" = "סנכרון תצורת SSH";

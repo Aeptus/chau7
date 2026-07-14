@@ -25,7 +25,7 @@ final class MCPRemoteSettingsStore {
         static let mcpAllowedCommands = "mcp.allowedCommands"
         static let mcpBlockedCommands = "mcp.blockedCommands"
         static let mcpProfiles = "mcp.profiles"
-        // Remote Control
+        // Remote Access
         static let remoteEnabled = "remote.enabled"
         static let remoteRelayURL = "remote.relayURL"
         // CTO Integration
@@ -83,7 +83,7 @@ final class MCPRemoteSettingsStore {
         }
     }
 
-    // MARK: - Remote Control Settings
+    // MARK: - Remote Access Settings
 
     var isRemoteEnabled: Bool {
         didSet {
@@ -146,7 +146,7 @@ final class MCPRemoteSettingsStore {
             defaults.set(true, forKey: "cto.migrated.v1")
         }
 
-        // Token Optimization (default: off)
+        // Context Optimization (default: off)
         if let modeRaw = defaults.string(forKey: Keys.tokenOptimizationMode),
            let mode = TokenOptimizationMode(rawValue: modeRaw) {
             self.tokenOptimizationMode = mode
@@ -170,7 +170,7 @@ final class MCPRemoteSettingsStore {
         let profileData = defaults.data(forKey: Keys.mcpProfiles)
         self.mcpProfiles = Persist.decodeLogged([MCPProfile].self, from: profileData, context: "mcp.profiles") ?? []
 
-        // Remote Control (default: disabled)
+        // Remote Access (default: disabled)
         self.isRemoteEnabled = defaults.object(forKey: Keys.remoteEnabled) as? Bool ?? false
         self.remoteRelayURL = defaults.string(forKey: Keys.remoteRelayURL) ?? "wss://relay.chau7.sh/connect"
 

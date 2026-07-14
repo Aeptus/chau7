@@ -97,7 +97,7 @@ struct GeneralSettingsView: View {
         [
             SettingsStatusItem(
                 id: "notifications",
-                label: L("settings.general.status.notifications", "Notifications"),
+                label: L("settings.general.status.notifications", "Alerts"),
                 value: model.notificationStatus,
                 systemImage: "bell.badge",
                 tone: .neutral

@@ -55,8 +55,8 @@ enum SettingsSectionGroup: String, CaseIterable, Identifiable {
         case .appearance: return [.fontColors, .display, .windows, .tabs, .minimalMode, .hoverCard]
         case .terminal: return [.shell, .scrollbackPerf, .graphics, .keyboardMouse]
         case .aiWorkflows: return [.aiDetection, .mcpControl, .promptInjection, .tokenOptimization]
-        case .automation: return [.snippetsTools, .editor, .repositories, .apiProxy, .remoteControl]
-        case .safetyPrivacy: return [.dangerousCommands, .notifications, .logsHistory]
+        case .automation: return [.snippetsTools, .editor, .repositories, .apiProxy, .remoteControl, .sshProfiles]
+        case .safetyPrivacy: return [.dangerousCommands, .notifications, .history, .logsHistory]
         }
     }
 }
@@ -92,10 +92,12 @@ enum SettingsSection: String, CaseIterable, Identifiable {
     case tokenOptimization
     case mcpControl
     case remoteControl
+    case sshProfiles
     case apiProxy
     case promptInjection
     // Monitoring
     case notifications
+    case history
     case logsHistory
 
     var id: String {
@@ -125,11 +127,13 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .aiDetection: return L("settings.aiDetection", "AI Detection")
         case .tokenOptimization: return L("settings.tokenOptimization", "Context Optimization")
         case .mcpControl: return L("settings.mcpControl", "Agent Control")
-        case .remoteControl: return L("settings.remoteControl", "Remote Control")
+        case .remoteControl: return L("settings.remoteControl", "Remote Access")
+        case .sshProfiles: return L("settings.sshProfiles", "SSH Profiles")
         case .apiProxy: return L("settings.apiProxy", "API Tracking")
         case .promptInjection: return L("settings.promptInjection", "AI Context")
-        case .notifications: return L("settings.notifications", "Notifications")
-        case .logsHistory: return L("settings.logsHistory", "Logs & History")
+        case .notifications: return L("settings.notifications", "Alerts")
+        case .history: return L("settings.history", "History")
+        case .logsHistory: return L("settings.logsHistory", "Diagnostics")
         }
     }
 
@@ -157,9 +161,11 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .tokenOptimization: return "bolt.horizontal.circle"
         case .mcpControl: return "face.dashed"
         case .remoteControl: return "antenna.radiowaves.left.and.right"
+        case .sshProfiles: return "network"
         case .apiProxy: return "network"
         case .promptInjection: return "text.insert"
         case .notifications: return "bell.badge"
+        case .history: return "clock.arrow.circlepath"
         case .logsHistory: return "doc.text.magnifyingglass"
         }
     }
@@ -187,11 +193,13 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .aiDetection: return L("settings.aiDetection.description", "AI CLI detection, theming, and LLM provider")
         case .tokenOptimization: return L("settings.tokenOptimization.description", "Context optimization mode, per-tab control, and prefix")
         case .mcpControl: return L("settings.mcpControl.description", "Agent tab creation, limits, and approval")
-        case .remoteControl: return L("settings.remoteControl.description", "Remote access, pairing, and SSH profiles")
+        case .remoteControl: return L("settings.remoteControl.description", "Remote app access, relay, pairing, and devices")
+        case .sshProfiles: return L("settings.sshProfiles.description", "Import, sync, and export SSH connection profiles")
         case .apiProxy: return L("settings.apiProxy.description", "API call tracking and analytics")
         case .promptInjection: return L("settings.promptInjection.description", "Add repository context to AI requests")
         case .notifications: return L("settings.notifications.description", "Alert preferences and event filters")
-        case .logsHistory: return L("settings.logsHistory.description", "Log files, session tracking, and command history")
+        case .history: return L("settings.history.description", "Command history and transcript retention")
+        case .logsHistory: return L("settings.logsHistory.description", "Log monitors, diagnostic paths, and active sessions")
         }
     }
 
@@ -205,9 +213,9 @@ enum SettingsSection: String, CaseIterable, Identifiable {
             return .terminal
         case .aiDetection, .mcpControl, .promptInjection, .tokenOptimization:
             return .aiWorkflows
-        case .snippetsTools, .editor, .repositories, .apiProxy, .remoteControl:
+        case .snippetsTools, .editor, .repositories, .apiProxy, .remoteControl, .sshProfiles:
             return .automation
-        case .dangerousCommands, .notifications, .logsHistory:
+        case .dangerousCommands, .notifications, .history, .logsHistory:
             return .safetyPrivacy
         }
     }
@@ -226,7 +234,7 @@ extension FeatureSettings {
                 "settings.search.startHere.keywords",
                 "status,start here,overview,setup,health,permissions,profile,mcp,remote,logs"
             ),
-            description: L("settings.search.startHere.description", "Review launch, profile, permissions, Agent Control, remote, notifications, and log paths")
+            description: L("settings.search.startHere.description", "Review launch, profile, permissions, Agent Control, remote access, alerts, and log paths")
         ),
 
         // General
@@ -929,20 +937,22 @@ extension FeatureSettings {
             description: L("settings.search.mcpProfiles.description", "Manage agent permission profiles")
         ),
 
-        // Remote Control
+        // Remote Access
         SearchableSetting(
             id: "remote",
             section: .remoteControl,
-            title: L("settings.search.remote.title", "Remote Control"),
+            title: L("settings.search.remote.title", "Remote Access"),
             keywords: localizedKeywords(
                 "settings.search.remote.keywords",
                 "remote,ios,relay,pairing,qr"
             ),
             description: L("settings.search.remote.description", "Pair an iPhone and view terminal output remotely")
         ),
+
+        // SSH Profiles
         SearchableSetting(
             id: "sshProfiles",
-            section: .remoteControl,
+            section: .sshProfiles,
             title: L("settings.search.sshProfiles.title", "SSH Profiles"),
             keywords: localizedKeywords(
                 "settings.search.sshProfiles.keywords",
@@ -975,16 +985,16 @@ extension FeatureSettings {
             description: L("settings.search.promptInjection.description", "Add custom context to AI requests per repository")
         ),
 
-        // Notifications
+        // Alerts
         SearchableSetting(
             id: "notificationStatus",
             section: .notifications,
-            title: L("settings.search.notificationStatus.title", "Notification Status"),
+            title: L("settings.search.notificationStatus.title", "Alert Status"),
             keywords: localizedKeywords(
                 "settings.search.notificationStatus.keywords",
                 "permission,alert,system,status"
             ),
-            description: L("settings.search.notificationStatus.description", "Notification permission status")
+            description: L("settings.search.notificationStatus.description", "System alert permission status")
         ),
         SearchableSetting(
             id: "notificationTriggers",
@@ -994,7 +1004,7 @@ extension FeatureSettings {
                 "settings.search.notificationTriggers.keywords",
                 "filter,event,type,toggle,task,complete,failed,trigger,enable,disable"
             ),
-            description: L("settings.search.notificationTriggers.description", "Enable triggers and configure actions for notifications")
+            description: L("settings.search.notificationTriggers.description", "Enable triggers and configure alert actions")
         ),
         SearchableSetting(
             id: "triggerActions",
@@ -1004,7 +1014,7 @@ extension FeatureSettings {
                 "settings.search.triggerActions.keywords",
                 "action,webhook,slack,discord,script,sound,docker,notification,play,run"
             ),
-            description: L("settings.search.triggerActions.description", "Configure what happens when notification triggers fire")
+            description: L("settings.search.triggerActions.description", "Configure what happens when alert triggers fire")
         ),
         SearchableSetting(
             id: "shellThresholds",
@@ -1034,7 +1044,7 @@ extension FeatureSettings {
                 "settings.search.aiToolNotifications.keywords",
                 "claude,codex,cursor,windsurf,copilot,aider,cline,continue,ai"
             ),
-            description: L("settings.search.aiToolNotifications.description", "Notifications from AI coding tools")
+            description: L("settings.search.aiToolNotifications.description", "Alerts from AI coding tools")
         ),
         SearchableSetting(
             id: "eventMonitoring",
@@ -1044,13 +1054,13 @@ extension FeatureSettings {
                 "settings.search.eventMonitoring.keywords",
                 "monitor,watch,ai,events,log,tailer,restart"
             ),
-            description: L("settings.search.eventMonitoring.description", "Monitor AI CLI events for notifications")
+            description: L("settings.search.eventMonitoring.description", "Monitor AI CLI events for alerts")
         ),
 
-        // Logs & History
+        // History
         SearchableSetting(
             id: "persistentHistory",
-            section: .logsHistory,
+            section: .history,
             title: L("settings.search.persistentHistory.title", "Persistent History"),
             keywords: localizedKeywords(
                 "settings.search.persistentHistory.keywords",
@@ -1060,7 +1070,7 @@ extension FeatureSettings {
         ),
         SearchableSetting(
             id: "telemetryRetention",
-            section: .logsHistory,
+            section: .history,
             title: L("settings.search.telemetryRetention.title", "Telemetry Retention"),
             keywords: localizedKeywords(
                 "settings.search.telemetryRetention.keywords",
@@ -1068,6 +1078,8 @@ extension FeatureSettings {
             ),
             description: L("settings.search.telemetryRetention.description", "Control how long AI transcripts are kept")
         ),
+
+        // Diagnostics
         SearchableSetting(
             id: "historyLogs",
             section: .logsHistory,

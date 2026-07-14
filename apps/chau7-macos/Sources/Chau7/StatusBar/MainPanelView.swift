@@ -264,6 +264,8 @@ struct SettingsDetailView: View {
                         MCPSettingsView()
                     case .remoteControl:
                         RemoteSettingsView()
+                    case .sshProfiles:
+                        SSHProfilesSettingsView()
                     case .apiProxy:
                         ProxySettingsView()
                     case .promptInjection:
@@ -271,6 +273,8 @@ struct SettingsDetailView: View {
                     // Monitoring
                     case .notifications:
                         NotificationsSettingsView(model: model)
+                    case .history:
+                        HistorySettingsPageView()
                     case .logsHistory:
                         LogsSettingsView(model: model)
                     }
