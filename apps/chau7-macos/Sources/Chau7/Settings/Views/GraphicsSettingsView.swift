@@ -86,7 +86,7 @@ struct GraphicsSettingsView: View {
                 SettingsDivider()
 
                 // Test Button
-                HStack(spacing: Chau7Style.Settings.looseControlSpacing) {
+                VStack(alignment: .leading, spacing: Chau7Style.Settings.compactRowSpacing) {
                     SettingsButtonRow(buttons: [
                         .init(title: L("graphics.button.renderTestImage", "Render Test Image"), icon: "photo.badge.checkmark", style: .bordered) {
                             renderTestImage()
@@ -97,6 +97,7 @@ struct GraphicsSettingsView: View {
                         Text(feedback)
                             .font(.caption)
                             .foregroundStyle(.green)
+                            .frame(maxWidth: .infinity, alignment: .leading)
                             .transition(.opacity)
                     }
                 }

@@ -104,17 +104,14 @@ struct HistorySettingsView: View {
                 icon: "arrow.left.arrow.right"
             )
 
-            HStack(spacing: Chau7Style.Settings.looseControlSpacing) {
-                Button(L("settings.history.export", "Export History...")) {
+            SettingsButtonRow(buttons: [
+                .init(title: L("settings.history.export", "Export History..."), icon: "square.and.arrow.up") {
                     exportHistory()
-                }
-                .buttonStyle(.bordered)
-
-                Button(L("settings.history.import", "Import History...")) {
+                },
+                .init(title: L("settings.history.import", "Import History..."), icon: "square.and.arrow.down") {
                     importHistory()
                 }
-                .buttonStyle(.bordered)
-            }
+            ])
 
             if let err = importError {
                 Text(err)
@@ -130,19 +127,18 @@ struct HistorySettingsView: View {
                 icon: "trash"
             )
 
-            HStack(spacing: Chau7Style.Settings.looseControlSpacing) {
-                Button(L("settings.history.clearOlder", "Clear Older Than...")) {
+            SettingsButtonRow(buttons: [
+                .init(title: L("settings.history.clearOlder", "Clear Older Than..."), icon: "clock.arrow.circlepath") {
                     showClearOlderConfirmation = true
-                }
-                .buttonStyle(.bordered)
-
-                Button(role: .destructive) {
+                },
+                .init(
+                    title: L("settings.history.clearAll", "Clear All History"),
+                    icon: "trash",
+                    role: .destructive
+                ) {
                     showClearConfirmation = true
-                } label: {
-                    Text(L("settings.history.clearAll", "Clear All History"))
                 }
-                .buttonStyle(.bordered)
-            }
+            ])
 
             // Clear older than confirmation
             .alert(

@@ -102,27 +102,19 @@ struct ProductivitySettingsView: View {
             }
             .padding(.bottom, 4)
 
-            HStack(spacing: Chau7Style.Settings.inlineControlSpacing) {
-                Button(L("settings.productivity.protectedFolders.grant", "Grant Access")) {
+            SettingsButtonRow(buttons: [
+                .init(title: L("settings.productivity.protectedFolders.grant", "Grant Access"), icon: "lock.open") {
                     ProtectedPathPolicy.resetAccessChecks()
                     ProtectedPathPolicy.requestAccessToProtectedFolders()
                     permissionCenter.refresh()
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-
-                Button(L("settings.productivity.protectedFolders.openSettings", "Open System Settings")) {
+                },
+                .init(title: L("settings.productivity.protectedFolders.openSettings", "Open System Settings"), icon: "gear") {
                     openFilesAndFoldersSettings()
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-
-                Button(L("settings.productivity.permissions.refresh", "Refresh Status")) {
+                },
+                .init(title: L("settings.productivity.permissions.refresh", "Refresh Status"), icon: "arrow.clockwise") {
                     permissionCenter.refresh()
                 }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-            }
+            ])
 
             PermissionsStatusSection(permissionCenter: permissionCenter)
 

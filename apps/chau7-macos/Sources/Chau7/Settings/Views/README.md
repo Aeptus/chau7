@@ -47,6 +47,7 @@ SwiftUI settings panels for each feature area, presented in the preferences wind
 - `SettingsSection` / `SettingsSectionGroup` — sidebar grouping and detail routing metadata
 - `SettingsAdvancedDisclosure` — shared progressive disclosure for non-daily settings, with search-driven expansion for hidden anchors
 - `SettingsPageSummaryView` — shared compact status strip inserted by the settings detail shell for every routed page
+- `SettingsButtonRow` / `SettingsEmptyStateView` / `SettingsStatusGrid` — shared alignment primitives for settings actions, empty lists, and status surfaces
 - `SearchableSetting` anchors — stable IDs used by settings search to scroll to and highlight matching rows or section targets
 - `FontColorsSettingsView` — visual customization with live terminal preview
 - `ShellSettingsView` / `ScrollbackPerfSettingsView` — terminal shell, scrollback, and rendering configuration

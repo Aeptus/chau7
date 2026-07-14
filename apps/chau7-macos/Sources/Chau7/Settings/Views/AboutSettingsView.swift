@@ -51,20 +51,48 @@ struct AboutSettingsView: View {
             // Links
             SettingsSectionHeader(L("settings.about.links", "Links"), icon: "link")
 
-            HStack(spacing: Chau7Style.Settings.looseControlSpacing) {
-                Link(destination: URL(string: "https://github.com/aeptus/chau7")!) {
-                    Label(L("GitHub", "GitHub"), systemImage: "chevron.left.forwardslash.chevron.right")
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: Chau7Style.Settings.looseControlSpacing) {
+                    aboutLink(
+                        title: L("GitHub", "GitHub"),
+                        systemImage: "chevron.left.forwardslash.chevron.right",
+                        destination: "https://github.com/aeptus/chau7"
+                    )
+                    aboutLink(
+                        title: L("settings.about.reportIssue", "Report Issue"),
+                        systemImage: "exclamationmark.bubble",
+                        destination: "https://github.com/aeptus/chau7/issues"
+                    )
+                    aboutLink(
+                        title: L("settings.about.documentation", "Documentation"),
+                        systemImage: "book",
+                        destination: "https://github.com/aeptus/chau7/blob/main/README.md"
+                    )
+                    Spacer(minLength: 0)
                 }
 
-                Link(destination: URL(string: "https://github.com/aeptus/chau7/issues")!) {
-                    Label(L("settings.about.reportIssue", "Report Issue"), systemImage: "exclamationmark.bubble")
+                VStack(alignment: .leading, spacing: Chau7Style.Settings.inlineControlSpacing) {
+                    aboutLink(
+                        title: L("GitHub", "GitHub"),
+                        systemImage: "chevron.left.forwardslash.chevron.right",
+                        destination: "https://github.com/aeptus/chau7"
+                    )
+                    aboutLink(
+                        title: L("settings.about.reportIssue", "Report Issue"),
+                        systemImage: "exclamationmark.bubble",
+                        destination: "https://github.com/aeptus/chau7/issues"
+                    )
+                    aboutLink(
+                        title: L("settings.about.documentation", "Documentation"),
+                        systemImage: "book",
+                        destination: "https://github.com/aeptus/chau7/blob/main/README.md"
+                    )
                 }
-
-                Link(destination: URL(string: "https://github.com/aeptus/chau7/blob/main/README.md")!) {
-                    Label(L("settings.about.documentation", "Documentation"), systemImage: "book")
-                }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
             .buttonStyle(.link)
+            .controlSize(.small)
+            .padding(.vertical, Chau7Style.Settings.rowVerticalPadding)
 
             SettingsDivider()
 
@@ -136,5 +164,19 @@ struct AboutSettingsView: View {
         #else
         return L("about.unknown", "Unknown")
         #endif
+    }
+
+    private func aboutLink(title: String, systemImage: String, destination: String) -> some View {
+        Link(destination: aboutURL(destination)) {
+            Label(title, systemImage: systemImage)
+        }
+    }
+
+    private func aboutURL(_ destination: String) -> URL {
+        guard let url = URL(string: destination) else {
+            assertionFailure("Invalid About settings URL: \(destination)")
+            return URL(fileURLWithPath: "/")
+        }
+        return url
     }
 }

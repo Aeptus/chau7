@@ -66,7 +66,7 @@ struct ProxySettingsView: View {
                     .init(title: L("settings.proxy.openFolder", "Open Database Folder"), icon: "folder", style: .bordered) {
                         openDatabaseFolder()
                     },
-                    .init(title: L("settings.proxy.clearData", "Clear All Data"), icon: "trash", style: .bordered) {
+                    .init(title: L("settings.proxy.clearData", "Clear All Data"), icon: "trash", style: .bordered, role: .destructive) {
                         showingClearConfirmation = true
                     }
                 ])

@@ -61,29 +61,22 @@ struct SSHProfilesSettingsView: View {
     // MARK: - Empty State
 
     private var emptyStateView: some View {
-        VStack(spacing: Chau7Style.Settings.inlineControlSpacing) {
-            Image(systemName: "doc.text")
-                .font(.title)
-                .foregroundStyle(.secondary)
-            Text(L("No SSH config entries found", "No SSH config entries found"))
-                .font(.body)
-                .foregroundStyle(.secondary)
-            Text(L("Add hosts to ~/.ssh/config to see them here.", "Add hosts to ~/.ssh/config to see them here."))
-                .font(.caption)
-                .foregroundStyle(.tertiary)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, Chau7Style.Settings.contentPadding)
+        SettingsEmptyStateView(
+            title: L("No SSH config entries found", "No SSH config entries found"),
+            message: L("Add hosts to ~/.ssh/config to see them here.", "Add hosts to ~/.ssh/config to see them here."),
+            systemImage: "doc.text"
+        )
     }
 
     // MARK: - Entry List
 
     private var entryListView: some View {
-        VStack(spacing: 4) {
+        VStack(spacing: Chau7Style.Settings.compactRowSpacing) {
             ForEach(manager.configEntries) { entry in
                 entryRow(entry)
             }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private func entryRow(_ entry: SSHConfigEntry) -> some View {
@@ -112,54 +105,54 @@ struct SSHProfilesSettingsView: View {
             .disabled(entry.host.contains("*"))
             .accessibilityLabel(String(format: L("ssh.importHost", "Import %@ to Chau7"), entry.host))
         }
-        .padding(.vertical, 4)
-        .padding(.horizontal, 8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, Chau7Style.Settings.separatorVerticalPadding)
+        .padding(.horizontal, Chau7Style.Settings.inlineControlSpacing)
     }
 
     // MARK: - Action Buttons
 
     private var actionButtons: some View {
-        HStack(spacing: Chau7Style.Settings.looseControlSpacing) {
-            Button {
+        SettingsButtonRow(buttons: [
+            .init(
+                title: L("Refresh", "Refresh"),
+                icon: "arrow.clockwise",
+                accessibilityLabel: L("Refresh SSH config", "Refresh SSH config")
+            ) {
                 manager.loadSSHConfig()
-            } label: {
-                Label(L("Refresh", "Refresh"), systemImage: "arrow.clockwise")
-            }
-            .accessibilityLabel(L("Refresh SSH config", "Refresh SSH config"))
-
-            Button {
+            },
+            .init(
+                title: L("Import All", "Import All"),
+                icon: "square.and.arrow.down.on.square",
+                isDisabled: manager.configEntries.isEmpty,
+                accessibilityLabel: L("Import all SSH config entries", "Import all SSH config entries")
+            ) {
                 showImportConfirmation = true
-            } label: {
-                Label(L("Import All", "Import All"), systemImage: "square.and.arrow.down.on.square")
-            }
-            .disabled(manager.configEntries.isEmpty)
-            .accessibilityLabel(L("Import all SSH config entries", "Import all SSH config entries"))
-            .alert(L("alert.importSSH.title", "Import All Entries?"), isPresented: $showImportConfirmation) {
-                Button(L("Import", "Import"), role: .none) {
-                    let connections = manager.importAllEntries()
-                    for connection in connections {
-                        sshManager.addConnection(connection)
-                    }
-                }
-                Button(L("Cancel", "Cancel"), role: .cancel) {}
-            } message: {
-                Text(
-                    String(
-                        format: L("ssh.importAll.confirm", "This will import %d SSH hosts into Chau7."),
-                        manager.configEntries.filter { !$0.host.contains("*") }.count
-                    )
-                )
-            }
-
-            Spacer()
-
-            Button {
+            },
+            .init(
+                title: L("Export to SSH Config", "Export to SSH Config"),
+                icon: "square.and.arrow.up",
+                isDisabled: sshManager.connections.isEmpty,
+                accessibilityLabel: L("Export Chau7 connections to SSH config", "Export Chau7 connections to SSH config")
+            ) {
                 exportAllConnections()
-            } label: {
-                Label(L("Export to SSH Config", "Export to SSH Config"), systemImage: "square.and.arrow.up")
             }
-            .disabled(sshManager.connections.isEmpty)
-            .accessibilityLabel(L("Export Chau7 connections to SSH config", "Export Chau7 connections to SSH config"))
+        ])
+        .alert(L("alert.importSSH.title", "Import All Entries?"), isPresented: $showImportConfirmation) {
+            Button(L("Import", "Import"), role: .none) {
+                let connections = manager.importAllEntries()
+                for connection in connections {
+                    sshManager.addConnection(connection)
+                }
+            }
+            Button(L("Cancel", "Cancel"), role: .cancel) {}
+        } message: {
+            Text(
+                String(
+                    format: L("ssh.importAll.confirm", "This will import %d SSH hosts into Chau7."),
+                    manager.configEntries.filter { !$0.host.contains("*") }.count
+                )
+            )
         }
     }
 

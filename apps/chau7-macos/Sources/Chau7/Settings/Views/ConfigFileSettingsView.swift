@@ -59,43 +59,29 @@ struct ConfigFileSettingsView: View {
             }
 
             // Action buttons
-            HStack(spacing: Chau7Style.Settings.looseControlSpacing) {
-                Button {
+            SettingsButtonRow(buttons: [
+                .init(
+                    title: L("settings.configFile.createDefault", "Create Default Config"),
+                    icon: "doc.badge.plus"
+                ) {
                     watcher.createDefaultConfig()
                     watcher.loadGlobalConfig()
-                } label: {
-                    Label(
-                        L("settings.configFile.createDefault", "Create Default Config"),
-                        systemImage: "doc.badge.plus"
-                    )
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-
-                Button {
+                },
+                .init(
+                    title: L("settings.configFile.openInEditor", "Open in Editor"),
+                    icon: "pencil",
+                    isDisabled: watcher.globalConfig == nil
+                ) {
                     openConfigInEditor()
-                } label: {
-                    Label(
-                        L("settings.configFile.openInEditor", "Open in Editor"),
-                        systemImage: "pencil"
-                    )
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-                .disabled(watcher.globalConfig == nil)
-
-                Button {
+                },
+                .init(
+                    title: L("settings.configFile.reload", "Reload Now"),
+                    icon: "arrow.clockwise"
+                ) {
                     watcher.loadGlobalConfig()
                     watcher.applyConfig()
-                } label: {
-                    Label(
-                        L("settings.configFile.reload", "Reload Now"),
-                        systemImage: "arrow.clockwise"
-                    )
                 }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-            }
+            ])
 
             SettingsDivider()
 
@@ -128,34 +114,25 @@ struct ConfigFileSettingsView: View {
                 }
             }
 
-            HStack(spacing: Chau7Style.Settings.looseControlSpacing) {
-                Button {
+            SettingsButtonRow(buttons: [
+                .init(
+                    title: L("settings.configFile.repo.create", "Create Per-Repo Config"),
+                    icon: "doc.badge.plus",
+                    isDisabled: watcher.repoConfigDirectory == nil
+                ) {
                     if let dir = watcher.repoConfigDirectory {
                         watcher.createRepoConfig(directory: dir)
                         watcher.loadRepoConfig(directory: dir)
                     }
-                } label: {
-                    Label(
-                        L("settings.configFile.repo.create", "Create Per-Repo Config"),
-                        systemImage: "doc.badge.plus"
-                    )
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-                .disabled(watcher.repoConfigDirectory == nil)
-
-                Button {
+                },
+                .init(
+                    title: L("settings.configFile.openInEditor", "Open in Editor"),
+                    icon: "pencil",
+                    isDisabled: watcher.repoConfig == nil
+                ) {
                     openRepoConfigInEditor()
-                } label: {
-                    Label(
-                        L("settings.configFile.openInEditor", "Open in Editor"),
-                        systemImage: "pencil"
-                    )
                 }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-                .disabled(watcher.repoConfig == nil)
-            }
+            ])
         }
     }
 

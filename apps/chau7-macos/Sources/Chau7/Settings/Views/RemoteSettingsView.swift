@@ -145,23 +145,22 @@ struct RemoteSettingsView: View {
                         .clipShape(RoundedRectangle(cornerRadius: 8))
                     }
 
-                    HStack(spacing: Chau7Style.Settings.looseControlSpacing) {
-                        Button(L("Copy Pairing JSON", "Copy Pairing JSON")) {
+                    SettingsButtonRow(buttons: [
+                        .init(title: L("Copy Pairing JSON", "Copy Pairing JSON"), icon: "doc.on.doc") {
                             guard let payload else { return }
                             let pasteboard = NSPasteboard.general
                             pasteboard.clearContents()
                             pasteboard.setString(payload, forType: .string)
-                        }
-                        Button(L("Copy Pairing Code", "Copy Pairing Code")) {
+                        },
+                        .init(title: L("Copy Pairing Code", "Copy Pairing Code"), icon: "number.square") {
                             let pasteboard = NSPasteboard.general
                             pasteboard.clearContents()
                             pasteboard.setString(info.pairingCode, forType: .string)
-                        }
-                        Button(L("Regenerate", "Regenerate")) {
+                        },
+                        .init(title: L("Regenerate", "Regenerate"), icon: "arrow.clockwise") {
                             remote.regeneratePairing()
                         }
-                    }
-                    .buttonStyle(.bordered)
+                    ])
                 }
 
                 Spacer()

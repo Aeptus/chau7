@@ -693,6 +693,9 @@ struct SettingsButtonRow: View {
         let title: String
         var icon: String?
         var style: ButtonType = .bordered
+        var role: ButtonRole?
+        var isDisabled = false
+        var accessibilityLabel: String?
         var action: () -> Void
 
         enum ButtonType {
@@ -741,16 +744,56 @@ struct SettingsButtonRow: View {
 
         switch button.style {
         case .bordered:
-            Button(action: button.action) { label }
+            Button(role: button.role, action: button.action) { label }
                 .buttonStyle(.bordered)
+                .controlSize(.small)
+                .disabled(button.isDisabled)
+                .accessibilityLabel(button.accessibilityLabel ?? button.title)
         case .borderedProminent:
-            Button(action: button.action) { label }
+            Button(role: button.role, action: button.action) { label }
                 .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+                .disabled(button.isDisabled)
+                .accessibilityLabel(button.accessibilityLabel ?? button.title)
         case .plain:
-            Button(action: button.action) { label }
+            Button(role: button.role, action: button.action) { label }
                 .buttonStyle(.plain)
                 .foregroundColor(.accentColor)
+                .controlSize(.small)
+                .disabled(button.isDisabled)
+                .accessibilityLabel(button.accessibilityLabel ?? button.title)
         }
+    }
+}
+
+// MARK: - Settings Empty State
+
+struct SettingsEmptyStateView: View {
+    let title: String
+    let message: String
+    let systemImage: String
+
+    var body: some View {
+        VStack(spacing: Chau7Style.Settings.inlineControlSpacing) {
+            Image(systemName: systemImage)
+                .font(.title2)
+                .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
+            Text(title)
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+            Text(message)
+                .font(.caption)
+                .foregroundStyle(.tertiary)
+                .multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: .infinity, alignment: .center)
+        .padding(.vertical, Chau7Style.Settings.contentPadding)
+        .padding(.horizontal, Chau7Style.Settings.contentPadding)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(title)
+        .accessibilityHint(message)
     }
 }
 
