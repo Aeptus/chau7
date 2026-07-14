@@ -400,6 +400,13 @@
   },
   {
     "category": "Terminal Core",
+    "feature": "Overlay Windows Close For Real",
+    "description": "Closing a secondary overlay window (red-X, Cmd+Shift+W, or closing its last tab) tears down its shells gracefully and removes its host from the append-only overlayHosts instead of only hiding it via orderOut, so a closed window no longer lingers with a live shell to be re-persisted and restored on next launch. No privileged main window: closing the last window clears persisted window state and the status-bar summon recreates one on demand.",
+    "status": "Shipped",
+    "differentiator": "No"
+  },
+  {
+    "category": "Terminal Core",
     "feature": "Stabilized Scrollback Restore",
     "description": "Restored scrollback is replayed through the shell again, with restore-artifact filtering preserved, to avoid fresh post-relaunch history corruption while keeping fast visible startup",
     "status": "Shipped",

@@ -480,6 +480,7 @@ Chau7's rendering pipeline is purpose-built for latency-sensitive terminal work:
 - Minimal mode — strip all chrome for maximum terminal space.
 - Window position memory per workspace, session restoration on relaunch.
 - Session restoration keeps production tab-state backups isolated from dev/test bundle writes and retains the multi-window recovery payload until the next save replaces it.
+- Closing a window closes it for real — its shells are gracefully torn down (like closing a tab) and its host is removed from `overlayHosts`, so a closed window is no longer re-persisted or restored on the next launch. No privileged "main" window: any window is fully closeable, closing the last one clears persisted window state, and the status-bar summon opens a fresh window when none remain.
 - Menu bar only mode — no Dock icon.
 
 ## Productivity

@@ -540,6 +540,19 @@ extension OverlayTabsModel {
         }
     }
 
+    /// Gracefully close every session in this window's tabs when the window itself
+    /// is being closed (not the whole app). Mirrors `closeAllSessionsForTermination`
+    /// but uses the same graceful path as single-tab close (`closeAllSessions` →
+    /// `dispose` → `closeSession`), so shells get their normal `exit`/cleanup with the
+    /// existing forced-termination escalation as a backstop — rather than an immediate
+    /// SIGKILL, which is reserved for app termination.
+    func closeAllSessionsForWindowClose() {
+        dispatchPrecondition(condition: .onQueue(.main))
+        for tab in tabs {
+            tab.splitController.root.closeAllSessions()
+        }
+    }
+
     func closeOtherTabs() {
         guard tabs.count > 1 else { return }
         let currentID = selectedTabID

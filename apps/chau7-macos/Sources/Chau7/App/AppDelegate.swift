@@ -746,19 +746,11 @@ private final class SettingsToolbarDelegate: NSObject, NSToolbarDelegate {
             Log.trace("Close window: no key window.")
             return
         }
-        // If it's an overlay window, hide it instead of closing
-        if overlayHosts.contains(where: { $0.window == window }) {
-            if let host = overlayHosts.first(where: { $0.window == window }) {
-                host.model.noteTabBarVisibilityChanged(isVisible: false)
-            }
-            hiddenWindowNumbers.insert(window.windowNumber)
-            logOverlayWindowLifecycle(reason: "closeWindow-orderOut", window: window)
-            window.orderOut(nil)
-            Log.info("Overlay window hidden via Close Window.")
-        } else {
-            window.close()
-            Log.info("Window closed.")
-        }
+        // Overlay windows tear down their host + shells first; non-overlay windows
+        // (e.g. Settings) just close. tearDownOverlayHost is a no-op for non-overlay.
+        tearDownOverlayHost(for: window)
+        window.close()
+        Log.info("Window closed.")
     }
 
     func printTerminal() {
@@ -997,24 +989,64 @@ private final class SettingsToolbarDelegate: NSObject, NSToolbarDelegate {
         logOverlayDiagnostics(reason: "setup", window: window)
     }
 
+    /// Fully tear down an overlay window on a user-initiated close: gracefully close
+    /// its shells, drop its host from `overlayHosts` (otherwise append-only, which is
+    /// why "closed" windows used to linger — hidden, still persisted, and restored on
+    /// next launch), and persist the pruned state so it does not come back.
+    ///
+    /// Chau7 has no privileged "main" window: every overlay window is fully closeable,
+    /// and the status-bar summon (`showOverlay`) recreates one when none remain.
+    /// Returns `false` for non-overlay windows so callers can fall back to default
+    /// handling. Must run on the main thread (same queue as the autosave timer).
+    @discardableResult
+    func tearDownOverlayHost(for window: NSWindow) -> Bool {
+        guard let index = overlayHosts.firstIndex(where: { $0.window == window }) else {
+            return false
+        }
+        let host = overlayHosts[index]
+        logOverlayWindowLifecycle(reason: "tearDownOverlayHost", window: window)
+
+        // Graceful shell teardown — same path as closing a tab.
+        host.model.closeAllSessionsForWindowClose()
+        // Registry cleanup — the service's designed "unregister when a window closes".
+        TerminalControlService.shared.unregister(host.model)
+
+        // Per-window bookkeeping (mirrors windowWillClose / hide-path cleanup).
+        hiddenWindowNumbers.remove(window.windowNumber)
+        clearSelectedTabRevealCycle(for: window.windowNumber)
+        pendingLifecycleDemotionsByWindow.removeValue(forKey: window.windowNumber)?.cancel()
+
+        // Break the append-only invariant on purpose: remove the host.
+        overlayHosts.remove(at: index)
+        if activeOverlayModel === host.model {
+            activeOverlayModel = overlayHosts.first?.model
+        }
+        // Re-wire move callbacks / window titles now that indices shifted.
+        wireTabMoveCallbacks()
+
+        // Persist the pruned set. `.manual`/`.autosave` only prune non-empty payloads;
+        // they do NOT clear on empty (only `.termination` does), so when the last
+        // window is gone wipe persisted state explicitly to avoid resurrecting it.
+        if overlayHosts.isEmpty {
+            OverlayTabsModel.clearPersistedWindowState()
+        } else {
+            saveAllWindowStates(reason: .manual)
+        }
+        return true
+    }
+
     func windowShouldClose(_ sender: NSWindow) -> Bool {
         Log.info("windowShouldClose called for window: \(sender.title), isClosingTab=\(isClosingTab)")
         if overlayHosts.contains(where: { $0.window == sender }) {
             if isClosingTab {
-                // Don't hide window - we're just closing a tab, not the window
+                // Don't close the window - we're just closing a tab, not the window
                 Log.info("windowShouldClose: ignoring - tab close in progress")
                 return false
             }
-            Log.info("windowShouldClose: hiding overlay window instead of closing")
-            hiddenWindowNumbers.insert(sender.windowNumber)
-            if let host = overlayHosts.first(where: { $0.window == sender }) {
-                host.model.noteTabBarVisibilityChanged(isVisible: false)
-            }
-            clearSelectedTabRevealCycle(for: sender.windowNumber)
+            Log.info("windowShouldClose: tearing down overlay window")
             refreshLowLatencyActivity()
-            logOverlayWindowLifecycle(reason: "windowShouldClose-orderOut", window: sender)
-            sender.orderOut(nil)
-            return false
+            tearDownOverlayHost(for: sender)
+            return true // host removed & shells closed; let AppKit finish the close
         }
         Log.info("windowShouldClose: allowing window to close")
         return true
@@ -1402,11 +1434,12 @@ private final class SettingsToolbarDelegate: NSObject, NSToolbarDelegate {
 
         tabsModel.overlayWindow = window
         tabsModel.onCloseLastTab = { [weak self, weak window] in
-            guard let window else { return }
-            self?.hiddenWindowNumbers.insert(window.windowNumber)
-            tabsModel.noteTabBarVisibilityChanged(isVisible: false)
-            self?.logOverlayWindowLifecycle(reason: "onCloseLastTab-orderOut", window: window)
-            window.orderOut(nil)
+            guard let self, let window else { return }
+            // Closing the last tab closes the window for real (no privileged main
+            // window). closeTab injected a fresh tab before firing this; it is torn
+            // down gracefully with the rest.
+            self.tearDownOverlayHost(for: window)
+            window.close()
         }
         Log.info("Overlay window created.")
         return window
