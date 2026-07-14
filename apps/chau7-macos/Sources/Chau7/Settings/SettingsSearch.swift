@@ -199,7 +199,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .startHere: return L("settings.startHere.description", "Current setup, permissions, and service status")
         case .general: return L("settings.general.description", "Startup, language, default directory, and advanced config files")
         case .profilesBackup: return L("settings.profilesBackup.description", "Profile auto-switch, iCloud sync, and settings backup")
-        case .about: return L("settings.about.description", "Version information and links")
+        case .about: return L("settings.about.summaryDescription", "Version, support links, diagnostics, and acknowledgments")
         case .fontColors: return L("settings.fontColors.description", "Font, color scheme, opacity, and ligatures")
         case .display: return L("settings.display.description", "Syntax highlighting, URLs, images, and output formatting")
         case .windows: return L("settings.windows.description", "Window management and layout")
@@ -353,6 +353,36 @@ extension FeatureSettings {
                 "about,version,license,logs,system,credits"
             ),
             description: L("settings.search.about.description", "View app version, system information, links, and application logs")
+        ),
+        SearchableSetting(
+            id: "aboutSupportInfo",
+            section: .about,
+            title: L("settings.about.copySupportInfo", "Copy Support Info"),
+            keywords: localizedKeywords(
+                "settings.search.aboutSupportInfo.keywords",
+                "support,copy,issue,bug,report,github,help"
+            ),
+            description: L("settings.search.aboutSupportInfo.description", "Copy build, system, and log details for support")
+        ),
+        SearchableSetting(
+            id: "aboutDiagnostics",
+            section: .about,
+            title: L("settings.about.diagnostics", "Diagnostics"),
+            keywords: localizedKeywords(
+                "settings.search.aboutDiagnostics.keywords",
+                "diagnostics,version,build,bundle,macos,architecture,log,debug"
+            ),
+            description: L("settings.search.aboutDiagnostics.description", "Review build, system, and log details")
+        ),
+        SearchableSetting(
+            id: "aboutAcknowledgments",
+            section: .about,
+            title: L("settings.about.acknowledgments", "Acknowledgments"),
+            keywords: localizedKeywords(
+                "settings.search.aboutAcknowledgments.keywords",
+                "license,licenses,acknowledgments,credits,agpl,open source"
+            ),
+            description: L("settings.search.aboutAcknowledgments.description", "Open licenses, credits, and acknowledgments")
         ),
 
         // Font & Colors

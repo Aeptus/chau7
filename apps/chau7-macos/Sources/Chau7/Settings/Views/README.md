@@ -7,7 +7,7 @@ SwiftUI settings panels for each feature area, presented in the preferences wind
 | File | Purpose |
 |------|---------|
 | `AIIntegrationSettingsView.swift` | AI CLI detection patterns and theming configuration |
-| `AboutSettingsView.swift` | App info, version, and credits display |
+| `AboutSettingsView.swift` | App identity, support links, copied diagnostics, logs, and acknowledgments |
 | `AppearanceSettingsView.swift` | Shared appearance preview helpers used by font/color settings |
 | `ConfigFileSettingsView.swift` | Config file (.chau7.toml) enable/disable, path display, and reload |
 | `DangerousCommandSettingsView.swift` | Dangerous command guard toggle and pattern list editor |

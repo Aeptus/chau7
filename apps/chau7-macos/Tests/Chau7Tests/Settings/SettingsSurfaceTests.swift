@@ -145,5 +145,8 @@ final class SettingsSurfaceTests: XCTestCase {
         XCTAssertEqual(settingsByID["terminalLogs"]?.section, .logsHistory)
         XCTAssertEqual(settingsByID["debugConsole"]?.section, .logsHistory)
         XCTAssertEqual(settingsByID["resetSettings"]?.section, .profilesBackup)
+        XCTAssertEqual(settingsByID["aboutSupportInfo"]?.section, .about)
+        XCTAssertEqual(settingsByID["aboutDiagnostics"]?.section, .about)
+        XCTAssertEqual(settingsByID["aboutAcknowledgments"]?.section, .about)
     }
 }

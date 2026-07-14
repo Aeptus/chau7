@@ -2403,7 +2403,7 @@
   {
     "category": "Settings",
     "feature": "Comprehensive Settings UI",
-    "description": "Settings UI with fuzzy search coverage for every routed settings pane, including app and window chrome, display rendering, tabs, performance, keyboard, AI detection, Agent Control, Context Optimization, AI Context, API Tracking, History, Diagnostics, command safety, repository metadata, hover card, and about surfaces; search results scroll to and highlight stable row or section anchors",
+    "description": "Settings UI with fuzzy search coverage for every routed settings pane, including app and window chrome, display rendering, tabs, performance, keyboard, AI detection, Agent Control, Context Optimization, AI Context, API Tracking, History, Diagnostics, command safety, repository metadata, hover card, and About support/diagnostics surfaces; search results scroll to and highlight stable row or section anchors",
     "status": "Shipped",
     "differentiator": "No"
   },

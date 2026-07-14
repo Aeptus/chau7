@@ -144,25 +144,26 @@ struct SettingsPageSummaryView: View {
                     tone: .neutral
                 ),
                 statusItem(
-                    "profile",
-                    L("settings.startHere.activeProfile", "Active Profile"),
-                    activeProfileName,
-                    icon: settings.activeProfile?.icon ?? "person.crop.circle",
+                    "support",
+                    L("settings.about.support", "Support"),
+                    L("status.available", "Available"),
+                    detail: L("settings.about.support.detail", "GitHub, issues, documentation"),
+                    icon: "questionmark.circle",
                     tone: .neutral
                 ),
                 statusItem(
                     "logs",
-                    L("settings.notifications.eventLogPath", "Event Log Path"),
-                    compactPath(model.logPath),
+                    L("settings.about.logPath", "Log Path"),
+                    compactPath(model.logFilePath),
                     icon: "doc.text.magnifyingglass",
                     tone: .neutral
                 ),
                 statusItem(
                     "diagnostics",
                     L("settings.logsHistory", "Diagnostics"),
-                    activePaused(model.isIdleMonitoring || model.isTerminalMonitoring),
+                    L("status.available", "Available"),
                     icon: "stethoscope",
-                    tone: activeTone(model.isIdleMonitoring || model.isTerminalMonitoring)
+                    tone: .neutral
                 )
             ]
         case .fontColors:
