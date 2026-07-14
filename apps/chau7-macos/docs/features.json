@@ -2410,7 +2410,7 @@
   {
     "category": "Settings",
     "feature": "Settings Profiles",
-    "description": "Save, load, export, import, and automatically switch named configurations by directory/glob, repository name, SSH host, process name, or environment variable",
+    "description": "Save, load, export, import, and automatically switch the live runtime profile by directory/glob, repository name, SSH host, process name, or environment variable",
     "status": "Shipped",
     "differentiator": "No"
   },
