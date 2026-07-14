@@ -215,6 +215,9 @@ struct SettingsDetailView: View {
                     // Section header with description
                     sectionHeader
 
+                    SettingsPageSummaryView(section: selection, model: model)
+                        .padding(.bottom, Chau7Style.Spacing.small)
+
                     // Search results hint
                     if !searchQuery.isEmpty, !matchingSettings.isEmpty {
                         SearchResultsHint(

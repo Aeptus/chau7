@@ -34,6 +34,7 @@ SwiftUI settings panels for each feature area, presented in the preferences wind
 | `RemoteSettingsView.swift` | Remote access relay, pairing, device, and agent status configuration |
 | `ScrollbackPerfSettingsView.swift` | Scrollback, restore, rendering, and refresh performance settings |
 | `SSHProfilesSettingsView.swift` | SSH profile list with import from ~/.ssh/config |
+| `SettingsPageSummaryView.swift` | Shared per-page status strip for settings enabled state, health, key values, warnings, and counts |
 | `ShellSettingsView.swift` | Shell, startup command, shell history, cursor, and bell settings |
 | `TabsSettingsView.swift` | Tab behavior, close confirmation, and new tab position |
 | `TokenOptimizationSettingsView.swift` | Context optimization mode and prefix with runtime/debug controls under Advanced |
@@ -45,6 +46,7 @@ SwiftUI settings panels for each feature area, presented in the preferences wind
 - `GeneralSettingsView` — main settings entry with profile management and import/export
 - `SettingsSection` / `SettingsSectionGroup` — sidebar grouping and detail routing metadata
 - `SettingsAdvancedDisclosure` — shared progressive disclosure for non-daily settings, with search-driven expansion for hidden anchors
+- `SettingsPageSummaryView` — shared compact status strip inserted by the settings detail shell for every routed page
 - `SearchableSetting` anchors — stable IDs used by settings search to scroll to and highlight matching rows or section targets
 - `FontColorsSettingsView` — visual customization with live terminal preview
 - `ShellSettingsView` / `ScrollbackPerfSettingsView` — terminal shell, scrollback, and rendering configuration

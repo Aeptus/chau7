@@ -68,6 +68,16 @@ final class SettingsSurfaceTests: XCTestCase {
         ))
     }
 
+    func testEverySectionHasPageSummaryItems() {
+        for section in SettingsSection.allCases {
+            XCTAssertGreaterThan(
+                settingsPageSummaryMinimumItemCount(for: section),
+                0,
+                "\(section) is missing a page summary."
+            )
+        }
+    }
+
     func testWindowsSectionIsAppearanceAndSearchable() {
         XCTAssertEqual(SettingsSection.windows.group, .appearance)
         XCTAssertTrue(SettingsSectionGroup.appearance.sections.contains(.windows))
