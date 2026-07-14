@@ -44,7 +44,7 @@
 "settings.advanced" = "متقدم";
 "graphics.advanced.protocolNotes" = "ملاحظات البروتوكول";
 "settings.general" = "عام";
-"settings.general.description" = "تفضيلات وسلوك التطبيق";
+"settings.general.description" = "بدء التشغيل واللغة والدليل الافتراضي وملفات الإعدادات المتقدمة";
 "settings.appearance" = "المظهر";
 "settings.appearance.description" = "التخصيص المرئي والسمات";
 "settings.terminal" = "الطرفية";
@@ -2699,6 +2699,7 @@
 "settings.search.copyOnSelect.title" = "نسخ عند التحديد";
 "settings.search.ctoMode.description" = "يتحكم في توقيت تفعيل تحسين السياق";
 "settings.search.ctoMode.title" = "وضع السياق";
+"settings.search.debugConsole.description" = "فتح وحدة تحكم تشخيص وقت التشغيل في Chau7";
 "settings.search.ctoPerTab.description" = "تجاوز تحسين السياق لكل علامة تبويب";
 "settings.search.ctoPerTab.title" = "تحسين السياق لكل علامة تبويب";
 "settings.search.ctoPrefix.description" = "نص بادئة يُضاف قبل أوامر الطرفية";

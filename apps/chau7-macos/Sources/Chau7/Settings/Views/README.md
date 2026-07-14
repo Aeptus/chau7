@@ -14,7 +14,7 @@ SwiftUI settings panels for each feature area, presented in the preferences wind
 | `DisplaySettingsView.swift` | Terminal output rendering toggles such as URLs, images, JSON, and timestamps |
 | `EditorSettingsView.swift` | Text editor font size, tab size, word wrap, and bracket matching |
 | `FontColorsSettingsView.swift` | Font, color scheme, app theme, opacity, ligatures, and live preview |
-| `GeneralSettingsView.swift` | Startup, language, config file, status, app actions, and reset |
+| `GeneralSettingsView.swift` | Startup, language, default directory, and advanced config file loading |
 | `GraphicsSettingsView.swift` | Sixel and Kitty graphics protocol settings |
 | `HoverCardSettingsView.swift` | Tab hover card visible-section toggles |
 | `HistorySettingsView.swift` | Command history database size, retention, and export |
@@ -43,7 +43,7 @@ SwiftUI settings panels for each feature area, presented in the preferences wind
 
 ## Key Types
 
-- `GeneralSettingsView` — main settings entry with profile management and import/export
+- `GeneralSettingsView` — focused app-basics pane for startup, language, default directory, and advanced config file loading
 - `SettingsSection` / `SettingsSectionGroup` — sidebar grouping and detail routing metadata
 - `SettingsAdvancedDisclosure` — shared progressive disclosure for non-daily settings, with search-driven expansion for hidden anchors
 - `SettingsPageSummaryView` — shared compact status strip inserted by the settings detail shell for every routed page

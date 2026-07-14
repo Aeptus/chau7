@@ -26,6 +26,7 @@ struct SettingsPageSummaryView: View {
     @Bindable private var sshProfiles = SharedSSHProfileManager.shared
     @Bindable private var sshConnections = SSHConnectionManager.shared
     @Bindable private var injectionStore = InjectionRuleStore.shared
+    @Bindable private var configWatcher = ConfigFileWatcher.shared
 
     var body: some View {
         SettingsStatusGrid(items: summaryItems, minimumColumnWidth: 150)
@@ -84,11 +85,11 @@ struct SettingsPageSummaryView: View {
                     tone: .neutral
                 ),
                 statusItem(
-                    "profile",
-                    L("settings.startHere.activeProfile", "Active Profile"),
-                    activeProfileName,
-                    icon: settings.activeProfile?.icon ?? "person.crop.circle",
-                    tone: .neutral
+                    "configFile",
+                    L("settings.configFile.title", "Config File"),
+                    enabledDisabled(configWatcher.isEnabled),
+                    icon: "doc.text",
+                    tone: enabledTone(configWatcher.isEnabled)
                 ),
                 statusItem(
                     "defaultDirectory",

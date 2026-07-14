@@ -44,7 +44,7 @@
 "settings.advanced" = "Avanzado";
 "graphics.advanced.protocolNotes" = "Notas del protocolo";
 "settings.general" = "General";
-"settings.general.description" = "Preferencias y comportamiento de la aplicación";
+"settings.general.description" = "Inicio, idioma, directorio predeterminado y archivos de configuracion avanzados";
 "settings.appearance" = "Apariencia";
 "settings.appearance.description" = "Personalización visual y temas";
 "settings.terminal" = "Terminal";
@@ -2779,6 +2779,7 @@
 "settings.search.copyOnSelect.title" = "Copiar al seleccionar";
 "settings.search.ctoMode.description" = "Controla cuándo está activa la optimización de contexto";
 "settings.search.ctoMode.title" = "Modo de contexto";
+"settings.search.debugConsole.description" = "Abrir la consola de diagnóstico en tiempo de ejecución de Chau7";
 "settings.search.ctoPerTab.description" = "Anular la optimización de contexto por pestaña";
 "settings.search.ctoPerTab.title" = "Optimización de contexto por pestaña";
 "settings.search.ctoPrefix.description" = "Texto de prefijo añadido a los comandos del terminal";

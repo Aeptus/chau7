@@ -143,5 +143,6 @@ final class SettingsSurfaceTests: XCTestCase {
         XCTAssertEqual(settingsByID["telemetryRetention"]?.section, .history)
         XCTAssertEqual(settingsByID["historyLogs"]?.section, .logsHistory)
         XCTAssertEqual(settingsByID["terminalLogs"]?.section, .logsHistory)
+        XCTAssertEqual(settingsByID["debugConsole"]?.section, .logsHistory)
     }
 }

@@ -44,7 +44,7 @@
 "settings.advanced" = "מתקדם";
 "graphics.advanced.protocolNotes" = "הערות פרוטוקול";
 "settings.general" = "כללי";
-"settings.general.description" = "העדפות והתנהגות יישום";
+"settings.general.description" = "הפעלה, שפה, ספריית ברירת מחדל וקובצי תצורה מתקדמים";
 "settings.appearance" = "מראה";
 "settings.appearance.description" = "התאמה אישית ויזואלית וערכות נושא";
 "settings.terminal" = "מסוף";
@@ -2699,6 +2699,7 @@
 "settings.search.copyOnSelect.title" = "העתקה בעת בחירה";
 "settings.search.ctoMode.description" = "קובע מתי אופטימיזציית הקשר פעילה";
 "settings.search.ctoMode.title" = "מצב הקשר";
+"settings.search.debugConsole.description" = "פתיחת קונסולת אבחון זמן הריצה של Chau7";
 "settings.search.ctoPerTab.description" = "עקוף אופטימיזציית הקשר לכל כרטיסייה";
 "settings.search.ctoPerTab.title" = "אופטימיזציית הקשר לכל כרטיסייה";
 "settings.search.ctoPrefix.description" = "טקסט קידומת שמתווסף לפקודות טרמינל";

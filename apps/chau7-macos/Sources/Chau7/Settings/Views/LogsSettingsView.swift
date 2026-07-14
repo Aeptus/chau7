@@ -174,6 +174,16 @@ struct LogsSettingsView: View {
                 }
             }
 
+            SettingsDivider()
+
+            SettingsSectionHeader(L("settings.general.actions", "Actions"), icon: "wrench.and.screwdriver")
+
+            SettingsButtonRow(buttons: [
+                .init(title: L("settings.general.actions.debugConsole", "Debug Console"), icon: "terminal") {
+                    DebugConsoleController.shared.show()
+                }
+            ])
+            .settingsSearchAnchor("debugConsole")
         }
     }
 }

@@ -44,7 +44,7 @@
 "settings.advanced" = "Advanced";
 "graphics.advanced.protocolNotes" = "Protocol Notes";
 "settings.general" = "General";
-"settings.general.description" = "Application preferences and behavior";
+"settings.general.description" = "Startup, language, default directory, and advanced config files";
 "settings.appearance" = "Appearance";
 "settings.appearance.description" = "Visual customization and themes";
 "settings.terminal" = "Terminal";
@@ -2731,6 +2731,7 @@
 "settings.search.copyOnSelect.title" = "Copy on Select";
 "settings.search.ctoMode.description" = "Controls when context optimization is active";
 "settings.search.ctoMode.title" = "Context Mode";
+"settings.search.debugConsole.description" = "Open Chau7's runtime diagnostics console";
 "settings.search.ctoPerTab.description" = "Override context optimization per tab";
 "settings.search.ctoPerTab.title" = "Per-Tab Context Optimization";
 "settings.search.ctoPrefix.description" = "Prefix text prepended to terminal commands";

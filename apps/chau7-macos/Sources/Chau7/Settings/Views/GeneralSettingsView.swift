@@ -1,12 +1,9 @@
 import SwiftUI
-import AppKit
 
 // MARK: - General Settings
 
 struct GeneralSettingsView: View {
-    var model: AppModel
     @Bindable private var settings = FeatureSettings.shared
-    @State private var showResetConfirmation = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: Chau7Style.Settings.pageSectionSpacing) {
@@ -46,128 +43,13 @@ struct GeneralSettingsView: View {
 
             SettingsDivider()
 
-            // Config File
-            ConfigFileSettingsView()
-
-            SettingsDivider()
-
-            // Status
-            SettingsSectionHeader(L("settings.general.status", "Status"), icon: "info.circle")
-
-            SettingsStatusGrid(items: statusItems)
-
-            SettingsDivider()
-
-            // Actions
-            SettingsSectionHeader(L("settings.general.actions", "Actions"), icon: "hand.tap")
-
-            SettingsButtonRow(buttons: [
-                .init(title: L("settings.general.actions.showOverlay", "Show Overlay"), icon: "rectangle.inset.filled") {
-                    (NSApp.delegate as? AppDelegate)?.showOverlay()
-                },
-                .init(title: L("settings.general.actions.resetWindowPositions", "Reset Window Positions"), icon: "arrow.counterclockwise") {
-                    FeatureSettings.shared.resetOverlayOffsets()
-                },
-                .init(title: L("settings.general.actions.debugConsole", "Debug Console"), icon: "terminal") {
-                    DebugConsoleController.shared.show()
-                }
-            ])
-
-            SettingsDivider()
-
-            // Reset
-            SettingsSectionHeader(L("settings.general.reset", "Reset"), icon: "arrow.counterclockwise")
-
-            SettingsButtonRow(buttons: [
-                .init(title: L("settings.general.reset.all", "Reset All Settings to Defaults"), style: .plain) {
-                    showResetConfirmation = true
-                }
-            ], alignment: .trailing)
-        }
-        .alert(L("settings.general.reset.confirm.title", "Reset All Settings?"), isPresented: $showResetConfirmation) {
-            Button(L("button.cancel", "Cancel"), role: .cancel) {}
-            Button(L("button.reset", "Reset"), role: .destructive) {
-                settings.resetAllToDefaults()
+            SettingsAdvancedDisclosure(
+                L("settings.configFile.title", "Config File"),
+                icon: "doc.text",
+                searchAnchorIDs: ["configFile"]
+            ) {
+                ConfigFileSettingsView(showsTitle: false)
             }
-        } message: {
-            Text(L("settings.general.reset.confirm.message", "This will reset all Chau7 settings to their default values. This action cannot be undone."))
         }
-    }
-
-    private var statusItems: [SettingsStatusItem] {
-        [
-            SettingsStatusItem(
-                id: "notifications",
-                label: L("settings.general.status.notifications", "Alerts"),
-                value: model.notificationStatus,
-                systemImage: "bell.badge",
-                tone: .neutral
-            ),
-            SettingsStatusItem(
-                id: "eventMonitoring",
-                label: L("settings.general.status.eventMonitoring", "Event Monitoring"),
-                value: activePaused(model.isMonitoring),
-                systemImage: "waveform.path.ecg",
-                tone: activeTone(model.isMonitoring)
-            ),
-            SettingsStatusItem(
-                id: "historyMonitoring",
-                label: L("settings.general.status.historyMonitoring", "History Monitoring"),
-                value: activePaused(model.isIdleMonitoring),
-                systemImage: "clock.arrow.circlepath",
-                tone: activeTone(model.isIdleMonitoring)
-            ),
-            SettingsStatusItem(
-                id: "terminalMonitoring",
-                label: L("settings.general.status.terminalMonitoring", "Terminal Monitoring"),
-                value: activePaused(model.isTerminalMonitoring),
-                systemImage: "terminal",
-                tone: activeTone(model.isTerminalMonitoring)
-            ),
-            SettingsStatusItem(
-                id: "launchAtLogin",
-                label: L("settings.general.launchAtLogin", "Launch at Login"),
-                value: enabledDisabled(settings.launchAtLogin),
-                systemImage: "power",
-                tone: enabledTone(settings.launchAtLogin)
-            ),
-            SettingsStatusItem(
-                id: "menuBarOnly",
-                label: L("settings.windows.menuBarOnlyMode", "Menu Bar Only Mode"),
-                value: enabledDisabled(settings.menuBarOnlyMode),
-                systemImage: "menubar.rectangle",
-                tone: enabledTone(settings.menuBarOnlyMode)
-            ),
-            SettingsStatusItem(
-                id: "mcp",
-                label: L("settings.mcpControl", "Agent Control"),
-                value: enabledDisabled(settings.mcpEnabled),
-                systemImage: "face.dashed",
-                tone: enabledTone(settings.mcpEnabled)
-            ),
-            SettingsStatusItem(
-                id: "defaultDirectory",
-                label: L("settings.general.defaultDirectory", "Default Directory"),
-                value: settings.defaultStartDirectory.isEmpty ? "~" : settings.defaultStartDirectory,
-                systemImage: "folder",
-                tone: .neutral
-            )
-        ]
-    }
-
-    private func activePaused(_ isActive: Bool) -> String {
-        isActive ? L("status.active", "Active") : L("status.paused", "Paused")
-    }
-
-    private func enabledDisabled(_ isEnabled: Bool) -> String {
-        isEnabled ? L("status.enabled", "Enabled") : L("status.disabled", "Disabled")
-    }
-
-    private func activeTone(_ isActive: Bool) -> SettingsStatusTone {
-        isActive ? .active : .paused
-    }
-
-    private func enabledTone(_ isEnabled: Bool) -> SettingsStatusTone {
-        isEnabled ? .enabled : .disabled
     }
 }

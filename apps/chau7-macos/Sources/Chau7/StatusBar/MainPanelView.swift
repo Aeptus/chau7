@@ -240,7 +240,7 @@ struct SettingsDetailView: View {
                         case .startHere:
                             StartHereSettingsView(model: model)
                         case .general:
-                            GeneralSettingsView(model: model)
+                            GeneralSettingsView()
                         case .profilesBackup:
                             ProfilesBackupSettingsView()
                         case .about:

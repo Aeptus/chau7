@@ -8,6 +8,7 @@ struct ProfilesBackupSettingsView: View {
     @Bindable private var settings = FeatureSettings.shared
     @State private var switcher = ProfileAutoSwitcher()
     @State private var showImportSheet = false
+    @State private var showResetConfirmation = false
     @State private var importError: String?
 
     var body: some View {
@@ -62,6 +63,21 @@ struct ProfilesBackupSettingsView: View {
                     .foregroundColor(.red)
                     .padding(.top, 4)
             }
+
+            SettingsDivider()
+
+            // Reset
+            SettingsSectionHeader(L("settings.general.reset", "Reset"), icon: "arrow.counterclockwise")
+
+            SettingsButtonRow(buttons: [
+                .init(
+                    title: L("settings.general.reset.all", "Reset All Settings to Defaults"),
+                    style: .plain,
+                    role: .destructive
+                ) {
+                    showResetConfirmation = true
+                }
+            ], alignment: .trailing)
         }
         .fileImporter(
             isPresented: $showImportSheet,
@@ -69,6 +85,14 @@ struct ProfilesBackupSettingsView: View {
             allowsMultipleSelection: false
         ) { result in
             importSettings(result: result)
+        }
+        .alert(L("settings.general.reset.confirm.title", "Reset All Settings?"), isPresented: $showResetConfirmation) {
+            Button(L("button.cancel", "Cancel"), role: .cancel) {}
+            Button(L("button.reset", "Reset"), role: .destructive) {
+                settings.resetAllToDefaults()
+            }
+        } message: {
+            Text(L("settings.general.reset.confirm.message", "This will reset all Chau7 settings to their default values. This action cannot be undone."))
         }
     }
 

@@ -197,7 +197,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
     var description: String {
         switch self {
         case .startHere: return L("settings.startHere.description", "Current setup, permissions, and service status")
-        case .general: return L("settings.general.description", "Startup, language, and config file")
+        case .general: return L("settings.general.description", "Startup, language, default directory, and advanced config files")
         case .profilesBackup: return L("settings.profilesBackup.description", "Profile auto-switch, iCloud sync, and settings backup")
         case .about: return L("settings.about.description", "Version information and links")
         case .fontColors: return L("settings.fontColors.description", "Font, color scheme, opacity, and ligatures")
@@ -1124,6 +1124,16 @@ extension FeatureSettings {
                 "terminal,log,path,ansi,normalize,prefill,monitor"
             ),
             description: L("settings.search.terminalLogs.description", "Configure PTY terminal log monitoring")
+        ),
+        SearchableSetting(
+            id: "debugConsole",
+            section: .logsHistory,
+            title: L("settings.general.actions.debugConsole", "Debug Console"),
+            keywords: localizedKeywords(
+                "settings.search.debugConsole.keywords",
+                "debug,console,diagnostics,logs,troubleshooting,state,events"
+            ),
+            description: L("settings.search.debugConsole.description", "Open Chau7's runtime diagnostics console")
         ),
 
         // Additional searchable controls

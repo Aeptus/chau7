@@ -5,17 +5,21 @@ import Chau7Core
 /// Provides controls for enabling/disabling config file loading,
 /// viewing the config path, creating defaults, and reloading.
 struct ConfigFileSettingsView: View {
+    var showsTitle = true
     @Bindable private var watcher = ConfigFileWatcher.shared
 
     var body: some View {
         VStack(alignment: .leading, spacing: Chau7Style.Settings.pageSectionSpacing) {
             // Header
-            SettingsSectionHeader(L("settings.configFile.title", "Config File"), icon: "doc.text")
+            if showsTitle {
+                SettingsSectionHeader(L("settings.configFile.title", "Config File"), icon: "doc.text")
+            }
 
             SettingsToggle(
                 label: L("settings.configFile.enabled", "Load Config Files"),
                 help: L("settings.configFile.enabled.help", "Load settings from ~/.chau7/config.toml and per-repo .chau7/config.toml"),
-                isOn: $watcher.isEnabled
+                isOn: $watcher.isEnabled,
+                anchorID: "configFile"
             )
 
             SettingsDescription(
