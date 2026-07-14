@@ -85,6 +85,62 @@ struct SettingsDivider: View {
     }
 }
 
+func settingsAdvancedDisclosureShouldExpand(highlightedAnchorID: String?, searchAnchorIDs: Set<String>) -> Bool {
+    guard let highlightedAnchorID else { return false }
+    return searchAnchorIDs.contains(highlightedAnchorID)
+}
+
+struct SettingsAdvancedDisclosure<Content: View>: View {
+    @Environment(\.settingsHighlightedAnchorID) private var highlightedAnchorID
+
+    let title: String
+    let icon: String
+    let searchAnchorIDs: Set<String>
+    let content: () -> Content
+
+    @State private var isExpanded = false
+
+    init(
+        _ title: String = L("settings.advanced", "Advanced"),
+        icon: String = "slider.horizontal.3",
+        searchAnchorIDs: [String] = [],
+        @ViewBuilder content: @escaping () -> Content
+    ) {
+        self.title = title
+        self.icon = icon
+        self.searchAnchorIDs = Set(searchAnchorIDs)
+        self.content = content
+    }
+
+    var body: some View {
+        DisclosureGroup(isExpanded: $isExpanded) {
+            VStack(alignment: .leading, spacing: Chau7Style.Settings.pageSectionSpacing) {
+                content()
+            }
+            .padding(.top, Chau7Style.Settings.inlineControlSpacing)
+        } label: {
+            Label(title, systemImage: icon)
+                .font(.subheadline.weight(.semibold))
+        }
+        .onAppear(perform: expandIfHighlighted)
+        .onChange(of: highlightedAnchorID) {
+            expandIfHighlighted()
+        }
+    }
+
+    private func expandIfHighlighted() {
+        guard settingsAdvancedDisclosureShouldExpand(
+            highlightedAnchorID: highlightedAnchorID,
+            searchAnchorIDs: searchAnchorIDs
+        ) else {
+            return
+        }
+        withAnimation(.easeInOut(duration: 0.18)) {
+            isExpanded = true
+        }
+    }
+}
+
 // MARK: - Adaptive Settings Row Foundation
 
 private struct SettingsLabelBlock: View {

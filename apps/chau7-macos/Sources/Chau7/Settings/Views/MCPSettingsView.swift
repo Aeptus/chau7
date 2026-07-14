@@ -27,15 +27,17 @@ struct MCPSettingsView: View {
                 disabled: !settings.mcpEnabled
             )
 
-            SettingsSectionHeader(L("settings.mcp.limits", "Limits"), icon: "number.square")
+            SettingsAdvancedDisclosure {
+                SettingsSectionHeader(L("settings.mcp.limits", "Limits"), icon: "number.square")
 
-            SettingsRow(L("settings.mcp.maxTabs", "Max Agent Tabs"), help: L("settings.mcp.maxTabs.help", "Maximum number of tabs an agent client can create (1-50)")) {
-                Stepper(value: $settings.mcpMaxTabs, in: 1 ... 50) {
-                    Text("\(settings.mcpMaxTabs)")
-                        .monospacedDigit()
-                        .frame(width: 30, alignment: .trailing)
+                SettingsRow(L("settings.mcp.maxTabs", "Max Agent Tabs"), help: L("settings.mcp.maxTabs.help", "Maximum number of tabs an agent client can create (1-50)")) {
+                    Stepper(value: $settings.mcpMaxTabs, in: 1 ... 50) {
+                        Text("\(settings.mcpMaxTabs)")
+                            .monospacedDigit()
+                            .frame(width: 30, alignment: .trailing)
+                    }
+                    .disabled(!settings.mcpEnabled)
                 }
-                .disabled(!settings.mcpEnabled)
             }
 
             // MARK: - Command Permissions

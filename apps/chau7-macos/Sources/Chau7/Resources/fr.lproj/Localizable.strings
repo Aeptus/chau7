@@ -41,6 +41,8 @@
 
 // MARK: - Settings Sections
 "settings.title" = "Réglages";
+"settings.advanced" = "Avancé";
+"graphics.advanced.protocolNotes" = "Notes sur le protocole";
 "settings.general" = "Général";
 "settings.general.description" = "Préférences et comportement de l'application";
 "settings.appearance" = "Apparence";

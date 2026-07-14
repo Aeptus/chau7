@@ -41,6 +41,8 @@
 
 // MARK: - Settings Sections
 "settings.title" = "הגדרות";
+"settings.advanced" = "מתקדם";
+"graphics.advanced.protocolNotes" = "הערות פרוטוקול";
 "settings.general" = "כללי";
 "settings.general.description" = "העדפות והתנהגות יישום";
 "settings.appearance" = "מראה";

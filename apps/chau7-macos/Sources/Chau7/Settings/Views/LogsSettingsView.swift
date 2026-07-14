@@ -31,52 +31,54 @@ struct LogsSettingsView: View {
                 model.applyIdleMonitoringState()
             }
 
-            SettingsTextField(
-                label: L("settings.logs.idleSeconds", "Idle Seconds"),
-                help: L("settings.logs.idleSeconds.help", "Seconds of inactivity before sending idle notification"),
-                placeholder: "300",
-                text: $model.idleSecondsText,
-                width: 80,
-                onSubmit: { model.restartIdleMonitors() }
-            )
+            SettingsAdvancedDisclosure {
+                SettingsTextField(
+                    label: L("settings.logs.idleSeconds", "Idle Seconds"),
+                    help: L("settings.logs.idleSeconds.help", "Seconds of inactivity before sending idle notification"),
+                    placeholder: "300",
+                    text: $model.idleSecondsText,
+                    width: 80,
+                    onSubmit: { model.restartIdleMonitors() }
+                )
 
-            SettingsTextField(
-                label: L("settings.logs.staleSeconds", "Stale Seconds"),
-                help: L("settings.logs.staleSeconds.help", "Seconds before marking a session as closed"),
-                placeholder: "3600",
-                text: $model.staleSecondsText,
-                width: 80,
-                onSubmit: { model.restartIdleMonitors() }
-            )
+                SettingsTextField(
+                    label: L("settings.logs.staleSeconds", "Stale Seconds"),
+                    help: L("settings.logs.staleSeconds.help", "Seconds before marking a session as closed"),
+                    placeholder: "3600",
+                    text: $model.staleSecondsText,
+                    width: 80,
+                    onSubmit: { model.restartIdleMonitors() }
+                )
 
-            SettingsTextField(
-                label: L("settings.logs.codexHistoryPath", "Codex History Path"),
-                help: L("settings.logs.codexHistoryPath.help", "Path to the OpenAI Codex history file"),
-                placeholder: "~/.codex/history.jsonl",
-                text: $model.codexHistoryPath,
-                width: 300,
-                monospaced: true,
-                onSubmit: { model.restartIdleMonitors() }
-            )
+                SettingsTextField(
+                    label: L("settings.logs.codexHistoryPath", "Codex History Path"),
+                    help: L("settings.logs.codexHistoryPath.help", "Path to the OpenAI Codex history file"),
+                    placeholder: "~/.codex/history.jsonl",
+                    text: $model.codexHistoryPath,
+                    width: 300,
+                    monospaced: true,
+                    onSubmit: { model.restartIdleMonitors() }
+                )
 
-            SettingsTextField(
-                label: L("settings.logs.claudeHistoryPath", "Claude History Path"),
-                help: L("settings.logs.claudeHistoryPath.help", "Path to the Claude Code history file"),
-                placeholder: "~/.claude/history.jsonl",
-                text: $model.claudeHistoryPath,
-                width: 300,
-                monospaced: true,
-                onSubmit: { model.restartIdleMonitors() }
-            )
+                SettingsTextField(
+                    label: L("settings.logs.claudeHistoryPath", "Claude History Path"),
+                    help: L("settings.logs.claudeHistoryPath.help", "Path to the Claude Code history file"),
+                    placeholder: "~/.claude/history.jsonl",
+                    text: $model.claudeHistoryPath,
+                    width: 300,
+                    monospaced: true,
+                    onSubmit: { model.restartIdleMonitors() }
+                )
 
-            SettingsButtonRow(buttons: [
-                .init(title: L("settings.logs.restartMonitors", "Restart Monitors"), icon: "arrow.clockwise") {
-                    model.restartIdleMonitors()
-                },
-                .init(title: L("settings.logs.clearHistory", "Clear History"), icon: "trash") {
-                    model.clearHistory()
-                }
-            ])
+                SettingsButtonRow(buttons: [
+                    .init(title: L("settings.logs.restartMonitors", "Restart Monitors"), icon: "arrow.clockwise") {
+                        model.restartIdleMonitors()
+                    },
+                    .init(title: L("settings.logs.clearHistory", "Clear History"), icon: "trash") {
+                        model.clearHistory()
+                    }
+                ])
+            }
 
             SettingsDivider()
 
@@ -107,37 +109,39 @@ struct LogsSettingsView: View {
                 isOn: $model.isTerminalAnsi
             )
 
-            SettingsTextField(
-                label: L("settings.logs.codexTerminalLog", "Codex Terminal Log"),
-                help: L("settings.logs.codexTerminalLog.help", "Path to the Codex PTY wrapper log file"),
-                placeholder: "~/Library/Logs/Chau7/codex-pty.log",
-                text: $model.codexTerminalPath,
-                width: 300,
-                monospaced: true,
-                onSubmit: { model.restartTerminalMonitors() }
-            )
+            SettingsAdvancedDisclosure {
+                SettingsTextField(
+                    label: L("settings.logs.codexTerminalLog", "Codex Terminal Log"),
+                    help: L("settings.logs.codexTerminalLog.help", "Path to the Codex PTY wrapper log file"),
+                    placeholder: "~/Library/Logs/Chau7/codex-pty.log",
+                    text: $model.codexTerminalPath,
+                    width: 300,
+                    monospaced: true,
+                    onSubmit: { model.restartTerminalMonitors() }
+                )
 
-            SettingsTextField(
-                label: L("settings.logs.claudeTerminalLog", "Claude Terminal Log"),
-                help: L("settings.logs.claudeTerminalLog.help", "Path to the Claude PTY wrapper log file"),
-                placeholder: "~/Library/Logs/Chau7/claude-pty.log",
-                text: $model.claudeTerminalPath,
-                width: 300,
-                monospaced: true,
-                onSubmit: { model.restartTerminalMonitors() }
-            )
+                SettingsTextField(
+                    label: L("settings.logs.claudeTerminalLog", "Claude Terminal Log"),
+                    help: L("settings.logs.claudeTerminalLog.help", "Path to the Claude PTY wrapper log file"),
+                    placeholder: "~/Library/Logs/Chau7/claude-pty.log",
+                    text: $model.claudeTerminalPath,
+                    width: 300,
+                    monospaced: true,
+                    onSubmit: { model.restartTerminalMonitors() }
+                )
 
-            SettingsButtonRow(buttons: [
-                .init(title: L("settings.logs.restartMonitors", "Restart Monitors"), icon: "arrow.clockwise") {
-                    model.restartTerminalMonitors()
-                },
-                .init(title: L("settings.logs.reloadLastLines", "Reload Last Lines"), icon: "arrow.clockwise.circle") {
-                    model.reloadTerminalPrefill()
-                },
-                .init(title: L("settings.logs.clearLogs", "Clear Logs"), icon: "trash") {
-                    model.clearTerminalLogs()
-                }
-            ])
+                SettingsButtonRow(buttons: [
+                    .init(title: L("settings.logs.restartMonitors", "Restart Monitors"), icon: "arrow.clockwise") {
+                        model.restartTerminalMonitors()
+                    },
+                    .init(title: L("settings.logs.reloadLastLines", "Reload Last Lines"), icon: "arrow.clockwise.circle") {
+                        model.reloadTerminalPrefill()
+                    },
+                    .init(title: L("settings.logs.clearLogs", "Clear Logs"), icon: "trash") {
+                        model.clearTerminalLogs()
+                    }
+                ])
+            }
 
             SettingsDivider()
 

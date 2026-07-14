@@ -41,6 +41,8 @@
 
 // MARK: - Settings Sections
 "settings.title" = "الإعدادات";
+"settings.advanced" = "متقدم";
+"graphics.advanced.protocolNotes" = "ملاحظات البروتوكول";
 "settings.general" = "عام";
 "settings.general.description" = "تفضيلات وسلوك التطبيق";
 "settings.appearance" = "المظهر";

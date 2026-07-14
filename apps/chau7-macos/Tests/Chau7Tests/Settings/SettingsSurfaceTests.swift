@@ -51,6 +51,23 @@ final class SettingsSurfaceTests: XCTestCase {
         )
     }
 
+    func testAdvancedDisclosureExpansionIsDrivenByChildSearchAnchors() {
+        let hiddenAnchors: Set<String> = ["ctoPerTab", "proxyInternals"]
+
+        XCTAssertTrue(settingsAdvancedDisclosureShouldExpand(
+            highlightedAnchorID: "ctoPerTab",
+            searchAnchorIDs: hiddenAnchors
+        ))
+        XCTAssertFalse(settingsAdvancedDisclosureShouldExpand(
+            highlightedAnchorID: "launch",
+            searchAnchorIDs: hiddenAnchors
+        ))
+        XCTAssertFalse(settingsAdvancedDisclosureShouldExpand(
+            highlightedAnchorID: nil,
+            searchAnchorIDs: hiddenAnchors
+        ))
+    }
+
     func testWindowsSectionIsAppearanceAndSearchable() {
         XCTAssertEqual(SettingsSection.windows.group, .appearance)
         XCTAssertTrue(SettingsSectionGroup.appearance.sections.contains(.windows))

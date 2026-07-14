@@ -6,7 +6,6 @@ import Chau7Core
 /// Top-level settings view for context optimization — keeping mode and input
 /// prefix prominent while runtime/debug detail stays behind Advanced.
 struct TokenOptimizationSettingsView: View {
-    @Environment(\.settingsHighlightedAnchorID) private var highlightedAnchorID
     private var settings = FeatureSettings.shared
     let overlayModel: OverlayTabsModel?
     @State private var wrapperHealth: [WrapperHealth] = []
@@ -15,7 +14,6 @@ struct TokenOptimizationSettingsView: View {
     @State private var gainStats: CTOGainStats?
     @State private var isLoadingStats = false
     @State private var runtimeSnapshot: CTORuntimeSnapshot = CTORuntimeMonitor.shared.snapshot()
-    @State private var advancedExpanded = false
 
     init(overlayModel: OverlayTabsModel? = nil) {
         self.overlayModel = overlayModel
@@ -104,97 +102,81 @@ struct TokenOptimizationSettingsView: View {
             }
         }
         .onAppear {
-            expandAdvancedIfNeeded()
             refreshAll()
         }
         .onChange(of: settings.tokenOptimizationMode) {
             refreshAll()
         }
-        .onChange(of: highlightedAnchorID) {
-            expandAdvancedIfNeeded()
-        }
     }
 
     @ViewBuilder
     private var advancedDetailsView: some View {
-        DisclosureGroup(isExpanded: $advancedExpanded) {
-            VStack(alignment: .leading, spacing: Chau7Style.Settings.pageSectionSpacing) {
-                // Optimizer
-                SettingsSectionHeader(
-                    L("cto.settings.optimizer", "Optimizer"),
-                    icon: "checkmark.shield"
-                )
+        SettingsAdvancedDisclosure(searchAnchorIDs: ["ctoPerTab"]) {
+            // Optimizer
+            SettingsSectionHeader(
+                L("cto.settings.optimizer", "Optimizer"),
+                icon: "checkmark.shield"
+            )
 
-                optimizerStatusView
+            optimizerStatusView
 
-                // Wrapper script health
-                installationHealthView
+            // Wrapper script health
+            installationHealthView
 
-                SettingsDivider()
+            SettingsDivider()
 
-                // CTO Runtime Telemetry
-                SettingsSectionHeader(
-                    L("cto.settings.ctoRuntime", "Runtime Telemetry"),
-                    icon: "chart.xyaxis.line"
-                )
+            // CTO Runtime Telemetry
+            SettingsSectionHeader(
+                L("cto.settings.ctoRuntime", "Runtime Telemetry"),
+                icon: "chart.xyaxis.line"
+            )
 
-                ctoRuntimeStatsView
+            ctoRuntimeStatsView
 
-                SettingsDivider()
+            SettingsDivider()
 
-                // Command Log
-                SettingsSectionHeader(
-                    L("cto.settings.commandLog", "Recent Optimizer Commands"),
-                    icon: "terminal"
-                )
+            // Command Log
+            SettingsSectionHeader(
+                L("cto.settings.commandLog", "Recent Optimizer Commands"),
+                icon: "terminal"
+            )
 
-                commandLogView
+            commandLogView
 
-                SettingsDivider()
+            SettingsDivider()
 
-                // Token Savings
-                SettingsSectionHeader(
-                    L("cto.settings.savings", "Token Savings"),
-                    icon: "chart.bar"
-                )
+            // Token Savings
+            SettingsSectionHeader(
+                L("cto.settings.savings", "Token Savings"),
+                icon: "chart.bar"
+            )
 
-                tokenSavingsView
+            tokenSavingsView
 
-                SettingsDivider()
+            SettingsDivider()
 
-                // Per-Tab Control
-                SettingsSectionHeader(
-                    L("cto.settings.perTab", "Per-Tab Control"),
-                    icon: "rectangle.stack",
-                    anchorID: "ctoPerTab"
-                )
+            // Per-Tab Control
+            SettingsSectionHeader(
+                L("cto.settings.perTab", "Per-Tab Control"),
+                icon: "rectangle.stack",
+                anchorID: "ctoPerTab"
+            )
 
-                perTabInfoView
+            perTabInfoView
 
-                if let overlayModel {
-                    perTabOverridesView(overlayModel: overlayModel)
-                }
-
-                SettingsDivider()
-
-                // Optimized Commands
-                SettingsSectionHeader(
-                    L("cto.settings.commands", "Optimized Commands"),
-                    icon: "terminal"
-                )
-
-                commandsList
+            if let overlayModel {
+                perTabOverridesView(overlayModel: overlayModel)
             }
-            .padding(.top, Chau7Style.Settings.inlineControlSpacing)
-        } label: {
-            Label(L("cto.settings.advanced", "Advanced"), systemImage: "slider.horizontal.3")
-                .font(.headline)
-        }
-    }
 
-    private func expandAdvancedIfNeeded() {
-        if highlightedAnchorID == "ctoPerTab" {
-            advancedExpanded = true
+            SettingsDivider()
+
+            // Optimized Commands
+            SettingsSectionHeader(
+                L("cto.settings.commands", "Optimized Commands"),
+                icon: "terminal"
+            )
+
+            commandsList
         }
     }
 

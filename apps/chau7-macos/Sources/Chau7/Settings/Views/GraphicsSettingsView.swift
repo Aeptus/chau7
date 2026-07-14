@@ -15,12 +15,6 @@ struct GraphicsSettingsView: View {
             // Sixel Protocol
             SettingsSectionHeader(L("Sixel Graphics Protocol"), icon: "photo", anchorID: "sixel")
 
-            SettingsDescription(
-                text: L(
-                    "Sixel is a bitmap graphics format that allows programs to display images directly in the terminal using DCS escape sequences. Widely supported by tools like libsixel and ImageMagick."
-                )
-            )
-
             SettingsToggle(
                 label: L("Enable Sixel Protocol"),
                 help: L("Allow programs to display inline images using the Sixel graphics protocol (DCS sequences)"),
@@ -35,12 +29,6 @@ struct GraphicsSettingsView: View {
             // Kitty Graphics Protocol
             SettingsSectionHeader(L("Kitty Graphics Protocol"), icon: "photo.artframe", anchorID: "kittyGraphics")
 
-            SettingsDescription(
-                text: L(
-                    "The Kitty graphics protocol provides a modern, efficient way to display images in the terminal using APC escape sequences. Supports PNG, JPEG, and raw pixel data with features like image placement and animation."
-                )
-            )
-
             SettingsToggle(
                 label: L("Enable Kitty Graphics"),
                 help: L("Allow programs to display inline images using the Kitty graphics protocol (APC sequences)"),
@@ -50,50 +38,67 @@ struct GraphicsSettingsView: View {
                 bridge.saveSettings()
             }
 
-            SettingsSlider(
-                label: L("Image Cache Size"),
-                help: L("Maximum memory used to cache decoded Kitty images (64-1024 MB)"),
-                value: $cacheSliderValue,
-                range: 64 ... 1024,
-                step: 64,
-                format: "%.0f",
-                suffix: " MB",
-                width: 200,
-                disabled: !bridge.isKittyGraphicsEnabled
-            )
-            .onChange(of: cacheSliderValue) {
-                bridge.kittyCacheLimitMB = Int(cacheSliderValue)
-                bridge.saveSettings()
-            }
-
             SettingsDivider()
 
-            // Info Section
-            SettingsSectionHeader(L("graphics.protocols.title", "Protocol Information"), icon: "info.circle")
+            SettingsAdvancedDisclosure {
+                SettingsSectionHeader(L("graphics.advanced.protocolNotes", "Protocol Notes"), icon: "info.circle")
 
-            SettingsStatusGrid(items: protocolItems)
+                SettingsDescription(
+                    text: L(
+                        "Sixel is a bitmap graphics format that allows programs to display images directly in the terminal using DCS escape sequences. Widely supported by tools like libsixel and ImageMagick."
+                    )
+                )
 
-            // Shortcut hints
-            VStack(alignment: .leading, spacing: Chau7Style.Spacing.xxxSmall) {
-                SettingsHint(icon: "terminal", text: L("graphics.hint.sixel", "Test Sixel: convert image.png sixel:- (requires ImageMagick)"))
-                SettingsHint(icon: "terminal", text: L("graphics.hint.kitty", "Test Kitty: kitty +kitten icat image.png (requires Kitty tools)"))
-            }
+                SettingsDescription(
+                    text: L(
+                        "The Kitty graphics protocol provides a modern, efficient way to display images in the terminal using APC escape sequences. Supports PNG, JPEG, and raw pixel data with features like image placement and animation."
+                    )
+                )
 
-            SettingsDivider()
+                SettingsSlider(
+                    label: L("Image Cache Size"),
+                    help: L("Maximum memory used to cache decoded Kitty images (64-1024 MB)"),
+                    value: $cacheSliderValue,
+                    range: 64 ... 1024,
+                    step: 64,
+                    format: "%.0f",
+                    suffix: " MB",
+                    width: 200,
+                    disabled: !bridge.isKittyGraphicsEnabled
+                )
+                .onChange(of: cacheSliderValue) {
+                    bridge.kittyCacheLimitMB = Int(cacheSliderValue)
+                    bridge.saveSettings()
+                }
 
-            // Test Button
-            HStack(spacing: Chau7Style.Settings.looseControlSpacing) {
-                SettingsButtonRow(buttons: [
-                    .init(title: L("graphics.button.renderTestImage", "Render Test Image"), icon: "photo.badge.checkmark", style: .bordered) {
-                        renderTestImage()
+                SettingsDivider()
+
+                SettingsSectionHeader(L("graphics.protocols.title", "Protocol Information"), icon: "info.circle")
+
+                SettingsStatusGrid(items: protocolItems)
+
+                // Shortcut hints
+                VStack(alignment: .leading, spacing: Chau7Style.Spacing.xxxSmall) {
+                    SettingsHint(icon: "terminal", text: L("graphics.hint.sixel", "Test Sixel: convert image.png sixel:- (requires ImageMagick)"))
+                    SettingsHint(icon: "terminal", text: L("graphics.hint.kitty", "Test Kitty: kitty +kitten icat image.png (requires Kitty tools)"))
+                }
+
+                SettingsDivider()
+
+                // Test Button
+                HStack(spacing: Chau7Style.Settings.looseControlSpacing) {
+                    SettingsButtonRow(buttons: [
+                        .init(title: L("graphics.button.renderTestImage", "Render Test Image"), icon: "photo.badge.checkmark", style: .bordered) {
+                            renderTestImage()
+                        }
+                    ], alignment: .leading)
+
+                    if let feedback = renderTestFeedback {
+                        Text(feedback)
+                            .font(.caption)
+                            .foregroundStyle(.green)
+                            .transition(.opacity)
                     }
-                ], alignment: .leading)
-
-                if let feedback = renderTestFeedback {
-                    Text(feedback)
-                        .font(.caption)
-                        .foregroundStyle(.green)
-                        .transition(.opacity)
                 }
             }
         }

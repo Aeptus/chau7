@@ -54,70 +54,69 @@ struct ProxySettingsView: View {
 
             SettingsDivider()
 
-            // Advanced
-            SettingsSectionHeader(L("settings.proxy.advanced", "Advanced"), icon: "gearshape.2")
-
-            SettingsRow(L("settings.proxy.port", "Port"), help: L("settings.proxy.port.help", "Local proxy port for intercepting API calls")) {
-                TextField("", value: $settings.apiAnalyticsPort, format: .number)
-                    .frame(width: 80)
-                    .textFieldStyle(.roundedBorder)
-                    .multilineTextAlignment(.trailing)
-            }
-
-            SettingsButtonRow(buttons: [
-                .init(title: L("settings.proxy.openFolder", "Open Database Folder"), icon: "folder", style: .bordered) {
-                    openDatabaseFolder()
-                },
-                .init(title: L("settings.proxy.clearData", "Clear All Data"), icon: "trash", style: .bordered) {
-                    showingClearConfirmation = true
+            SettingsAdvancedDisclosure {
+                SettingsRow(L("settings.proxy.port", "Port"), help: L("settings.proxy.port.help", "Local proxy port for intercepting API calls")) {
+                    TextField("", value: $settings.apiAnalyticsPort, format: .number)
+                        .frame(width: 80)
+                        .textFieldStyle(.roundedBorder)
+                        .multilineTextAlignment(.trailing)
                 }
-            ])
 
-            SettingsDivider()
+                SettingsButtonRow(buttons: [
+                    .init(title: L("settings.proxy.openFolder", "Open Database Folder"), icon: "folder", style: .bordered) {
+                        openDatabaseFolder()
+                    },
+                    .init(title: L("settings.proxy.clearData", "Clear All Data"), icon: "trash", style: .bordered) {
+                        showingClearConfirmation = true
+                    }
+                ])
 
-            // Supported Tools
-            SettingsSectionHeader(L("settings.proxy.tools", "Supported Tools"), icon: "wrench.and.screwdriver")
+                SettingsDivider()
 
-            VStack(alignment: .leading, spacing: Chau7Style.Settings.inlineControlSpacing) {
-                supportedToolRow(name: "Claude Code", supported: .full)
-                supportedToolRow(name: "Codex CLI", supported: .full)
-                supportedToolRow(name: "Gemini CLI", supported: .partial)
-                supportedToolRow(name: "Aider", supported: .full)
-                supportedToolRow(name: "Cursor", supported: .full)
+                // Supported Tools
+                SettingsSectionHeader(L("settings.proxy.tools", "Supported Tools"), icon: "wrench.and.screwdriver")
 
-                Text(L("settings.proxy.geminiNote", "Gemini CLI support is partial — may not work when Google OAuth session is cached."))
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                    .padding(.top, 4)
-            }
+                VStack(alignment: .leading, spacing: Chau7Style.Settings.inlineControlSpacing) {
+                    supportedToolRow(name: "Claude Code", supported: .full)
+                    supportedToolRow(name: "Codex CLI", supported: .full)
+                    supportedToolRow(name: "Gemini CLI", supported: .partial)
+                    supportedToolRow(name: "Aider", supported: .full)
+                    supportedToolRow(name: "Cursor", supported: .full)
 
-            SettingsDivider()
-
-            // How It Works
-            SettingsSectionHeader(L("settings.proxy.howItWorks", "How It Works"), icon: "questionmark.circle")
-
-            VStack(alignment: .leading, spacing: Chau7Style.Settings.inlineControlSpacing) {
-                Text(L("settings.proxy.envVarsDescription", "When enabled, Chau7 sets environment variables to route API calls:"))
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-
-                VStack(alignment: .leading, spacing: 4) {
-                    codeRow("ANTHROPIC_BASE_URL")
-                    codeRow("OPENAI_BASE_URL")
-                    codeRow("GOOGLE_GEMINI_BASE_URL")
+                    Text(L("settings.proxy.geminiNote", "Gemini CLI support is partial — may not work when Google OAuth session is cached."))
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .padding(.top, 4)
                 }
-                .padding(.vertical, 4)
 
-                Text(L("settings.proxy.openaiNote", "OpenAI SDKs expect OPENAI_BASE_URL to include /v1. Chau7 sets this automatically."))
+                SettingsDivider()
+
+                // How It Works
+                SettingsSectionHeader(L("settings.proxy.howItWorks", "How It Works"), icon: "questionmark.circle")
+
+                VStack(alignment: .leading, spacing: Chau7Style.Settings.inlineControlSpacing) {
+                    Text(L("settings.proxy.envVarsDescription", "When enabled, Chau7 sets environment variables to route API calls:"))
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        codeRow("ANTHROPIC_BASE_URL")
+                        codeRow("OPENAI_BASE_URL")
+                        codeRow("GOOGLE_GEMINI_BASE_URL")
+                    }
+                    .padding(.vertical, 4)
+
+                    Text(L("settings.proxy.openaiNote", "OpenAI SDKs expect OPENAI_BASE_URL to include /v1. Chau7 sets this automatically."))
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+
+                    Text(L(
+                        "settings.proxy.forwardingNote",
+                        "The proxy logs metadata (model, tokens, latency) then forwards requests to the real APIs. Auth headers pass through unchanged."
+                    ))
                     .font(.caption)
                     .foregroundColor(.secondary)
-
-                Text(L(
-                    "settings.proxy.forwardingNote",
-                    "The proxy logs metadata (model, tokens, latency) then forwards requests to the real APIs. Auth headers pass through unchanged."
-                ))
-                .font(.caption)
-                .foregroundColor(.secondary)
+                }
             }
         }
         .onAppear {
