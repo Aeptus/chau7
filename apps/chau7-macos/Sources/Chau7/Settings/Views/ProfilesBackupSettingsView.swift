@@ -16,8 +16,26 @@ struct ProfilesBackupSettingsView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: Chau7Style.Settings.pageSectionSpacing) {
-            // Profile Auto-Switch
-            ProfileAutoSwitchSettingsView(switcher: switcher, settings: settings)
+            // Import/Export
+            SettingsSectionHeader(L("settings.general.backup", "Settings Backup"), icon: "square.and.arrow.up.on.square")
+
+            Text(L("settings.general.backup.description", "Export your settings to a JSON file or import from a backup."))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            SettingsButtonRow(buttons: [
+                .init(title: L("settings.general.backup.export", "Export Settings..."), icon: "square.and.arrow.up") {
+                    exportSettings()
+                },
+                .init(title: L("settings.general.backup.import", "Import Settings..."), icon: "square.and.arrow.down") {
+                    showImportSheet = true
+                }
+            ])
+            .settingsSearchAnchor("export")
+
+            if let operationMessage {
+                SettingsBackupOperationMessageView(message: operationMessage)
+            }
 
             SettingsDivider()
 
@@ -43,31 +61,8 @@ struct ProfilesBackupSettingsView: View {
 
             SettingsDivider()
 
-            // Import/Export
-            SettingsSectionHeader(L("settings.general.backup", "Settings Backup"), icon: "square.and.arrow.up.on.square")
-
-            Text(L("settings.general.backup.description", "Export your settings to a JSON file or import from a backup."))
-                .font(.caption)
-                .foregroundStyle(.secondary)
-
-            SettingsButtonRow(buttons: [
-                .init(title: L("settings.general.backup.export", "Export Settings..."), icon: "square.and.arrow.up") {
-                    exportSettings()
-                },
-                .init(title: L("settings.general.backup.import", "Import Settings..."), icon: "square.and.arrow.down") {
-                    showImportSheet = true
-                }
-            ])
-            .settingsSearchAnchor("export")
-
-            if let operationMessage {
-                SettingsBackupOperationMessageView(message: operationMessage)
-            }
-
-            SettingsDivider()
-
-            // Reset
-            SettingsSectionHeader(L("settings.general.reset", "Reset"), icon: "arrow.counterclockwise")
+            // Recovery
+            SettingsSectionHeader(L("settings.backup.recovery", "Recovery"), icon: "arrow.counterclockwise", anchorID: "resetSettings")
 
             SettingsButtonRow(buttons: [
                 .init(
@@ -78,6 +73,16 @@ struct ProfilesBackupSettingsView: View {
                     showResetConfirmation = true
                 }
             ], alignment: .trailing)
+
+            SettingsDivider()
+
+            SettingsAdvancedDisclosure(
+                L("settings.profileAutomation", "Profile Automation"),
+                icon: "arrow.triangle.swap",
+                searchAnchorIDs: ["profileAutoSwitch"]
+            ) {
+                ProfileAutoSwitchSettingsView(switcher: switcher, settings: settings)
+            }
         }
         .fileImporter(
             isPresented: $showImportSheet,

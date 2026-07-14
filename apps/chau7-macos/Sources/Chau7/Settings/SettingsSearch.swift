@@ -335,6 +335,16 @@ extension FeatureSettings {
             description: L("settings.search.export.description", "Export or import settings as JSON")
         ),
         SearchableSetting(
+            id: "resetSettings",
+            section: .profilesBackup,
+            title: L("settings.general.reset.all", "Reset All Settings to Defaults"),
+            keywords: localizedKeywords(
+                "settings.search.resetSettings.keywords",
+                "reset,defaults,recovery,restore,clear,settings"
+            ),
+            description: L("settings.search.resetSettings.description", "Reset Chau7 settings after exporting a backup if needed")
+        ),
+        SearchableSetting(
             id: "about",
             section: .about,
             title: L("settings.search.about.title", "About Chau7"),

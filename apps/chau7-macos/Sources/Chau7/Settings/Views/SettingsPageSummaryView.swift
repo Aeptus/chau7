@@ -27,6 +27,7 @@ struct SettingsPageSummaryView: View {
     @Bindable private var sshConnections = SSHConnectionManager.shared
     @Bindable private var injectionStore = InjectionRuleStore.shared
     @Bindable private var configWatcher = ConfigFileWatcher.shared
+    @State private var profileSwitcher = ProfileAutoSwitcher.shared
 
     var body: some View {
         SettingsStatusGrid(items: summaryItems, minimumColumnWidth: 150)
@@ -122,11 +123,15 @@ struct SettingsPageSummaryView: View {
                     tone: enabledTone(settings.iCloudSyncEnabled)
                 ),
                 statusItem(
-                    "backup",
-                    L("settings.profilesBackup", "Sync & Backup"),
-                    L("status.available", "Available"),
-                    icon: "arrow.triangle.2.circlepath",
-                    tone: .neutral
+                    "profileAutoSwitch",
+                    L("Profile Auto-Switching", "Profile Auto-Switching"),
+                    enabledDisabled(profileSwitcher.isEnabled),
+                    detail: String(
+                        format: L("settings.profileAutoSwitch.rules.count", "%d rules"),
+                        profileSwitcher.rules.count
+                    ),
+                    icon: "arrow.triangle.swap",
+                    tone: enabledTone(profileSwitcher.isEnabled)
                 )
             ]
         case .about:

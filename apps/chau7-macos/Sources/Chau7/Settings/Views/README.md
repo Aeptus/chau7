@@ -27,7 +27,7 @@ SwiftUI settings panels for each feature area, presented in the preferences wind
 | `ProfileSelectorBar.swift` | Settings profile selector and save/load menu |
 | `ProductivitySettingsView.swift` | Snippets, clipboard history, bookmarks, semantic search, and protected-folder permissions |
 | `ProfileAutoSwitchSettingsView.swift` | Auto profile switching rule editor |
-| `ProfilesBackupSettingsView.swift` | iCloud sync, profile auto-switching, and settings import/export |
+| `ProfilesBackupSettingsView.swift` | Settings backup/import, iCloud sync, recovery reset, and advanced profile automation |
 | `PromptInjectionSettingsView.swift` | Per-repository AI prompt injection rules |
 | `ProxySettingsView.swift` | API analytics proxy enable/disable and port configuration |
 | `RepositoriesSettingsView.swift` | Per-repository metadata, labels, and favorite files |
