@@ -2,9 +2,223 @@ import SwiftUI
 import AppKit
 import Chau7Core
 
+enum DebugConsoleSurface: String, CaseIterable, Hashable, Identifiable {
+    case all
+    case diagnostics
+    case runtimeInspector
+    case usageMonitor
+
+    var id: String { rawValue }
+
+    var tabs: [DebugConsoleTab] {
+        switch self {
+        case .all:
+            return DebugConsoleTab.allCases
+        case .diagnostics:
+            return [.health, .logs, .performance, .lag]
+        case .runtimeInspector:
+            return [.state, .events, .report]
+        case .usageMonitor:
+            return [.usage, .analytics, .repos, .tokenOptimizer]
+        }
+    }
+
+    var defaultTab: DebugConsoleTab {
+        switch self {
+        case .all:
+            return .health
+        case .diagnostics:
+            return .health
+        case .runtimeInspector:
+            return .state
+        case .usageMonitor:
+            return .usage
+        }
+    }
+
+    var title: String {
+        switch self {
+        case .all:
+            return L("debug.surface.all.title", "Debug Console")
+        case .diagnostics:
+            return L("debug.surface.diagnostics.title", "Diagnostics")
+        case .runtimeInspector:
+            return L("debug.surface.runtime.title", "Runtime Inspector")
+        case .usageMonitor:
+            return L("debug.surface.usage.title", "Usage Monitor")
+        }
+    }
+
+    var subtitle: String {
+        switch self {
+        case .all:
+            return L("debug.surface.all.subtitle", "All diagnostic surfaces")
+        case .diagnostics:
+            return L("debug.surface.diagnostics.subtitle", "Health, logs, lag, and performance")
+        case .runtimeInspector:
+            return L("debug.surface.runtime.subtitle", "Tabs, sessions, events, and snapshots")
+        case .usageMonitor:
+            return L("debug.surface.usage.subtitle", "AI usage, cost, quota, and repositories")
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .all:
+            return "ladybug.fill"
+        case .diagnostics:
+            return "stethoscope"
+        case .runtimeInspector:
+            return "scope"
+        case .usageMonitor:
+            return "chart.line.uptrend.xyaxis"
+        }
+    }
+
+    var tint: Color {
+        switch self {
+        case .all:
+            return .orange
+        case .diagnostics:
+            return .green
+        case .runtimeInspector:
+            return .blue
+        case .usageMonitor:
+            return .purple
+        }
+    }
+
+    var windowTitle: String {
+        switch self {
+        case .all:
+            return L("window.debugConsole", "Chau7 Debug Console")
+        case .diagnostics:
+            return L("window.diagnostics", "Chau7 Diagnostics")
+        case .runtimeInspector:
+            return L("window.runtimeInspector", "Chau7 Runtime Inspector")
+        case .usageMonitor:
+            return L("window.usageMonitor", "Chau7 Usage Monitor")
+        }
+    }
+
+    var initialSize: NSSize {
+        switch self {
+        case .all:
+            return NSSize(width: 900, height: 620)
+        case .diagnostics, .runtimeInspector, .usageMonitor:
+            return NSSize(width: 840, height: 580)
+        }
+    }
+}
+
+enum DebugConsoleTab: String, CaseIterable, Hashable, Identifiable {
+    case state
+    case tokenOptimizer
+    case events
+    case lag
+    case performance
+    case logs
+    case report
+    case analytics
+    case health
+    case repos
+    case usage
+
+    enum Section: String, CaseIterable, Hashable, Identifiable {
+        case operate
+        case inspect
+        case observe
+        case account
+
+        var id: String { rawValue }
+
+        var title: String {
+            switch self {
+            case .operate:
+                return L("debug.nav.operate", "Operate")
+            case .inspect:
+                return L("debug.nav.inspect", "Inspect")
+            case .observe:
+                return L("debug.nav.observe", "Observe")
+            case .account:
+                return L("debug.nav.account", "Account")
+            }
+        }
+    }
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .state:
+            return L("State", "State")
+        case .tokenOptimizer:
+            return L("debug.optimizer", "Token Optimizer")
+        case .events:
+            return L("Events", "Events")
+        case .lag:
+            return L("Lag", "Lag")
+        case .performance:
+            return L("debug.perfTab", "Perf")
+        case .logs:
+            return L("Logs", "Logs")
+        case .report:
+            return L("Report", "Report")
+        case .analytics:
+            return L("debug.analytics", "Analytics")
+        case .health:
+            return L("debug.health", "Health")
+        case .repos:
+            return L("debug.repos", "Repos")
+        case .usage:
+            return L("debug.usage", "Usage")
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .state:
+            return "switch.2"
+        case .tokenOptimizer:
+            return "wand.and.stars"
+        case .events:
+            return "timeline.selection"
+        case .lag:
+            return "speedometer"
+        case .performance:
+            return "gauge.with.dots.needle.bottom.50percent"
+        case .logs:
+            return "doc.text.magnifyingglass"
+        case .report:
+            return "square.and.arrow.up"
+        case .analytics:
+            return "chart.bar.xaxis"
+        case .health:
+            return "heart.text.square"
+        case .repos:
+            return "folder"
+        case .usage:
+            return "gauge.open.with.lines.needle.33percent"
+        }
+    }
+
+    var section: Section {
+        switch self {
+        case .health, .logs:
+            return .operate
+        case .state, .events, .report:
+            return .inspect
+        case .lag, .performance:
+            return .observe
+        case .usage, .analytics, .repos, .tokenOptimizer:
+            return .account
+        }
+    }
+}
+
 // MARK: - Debug Console View
 
-/// A hidden debug console accessible via Cmd+Shift+L (when enabled).
+/// A hidden debug console accessible via Cmd+Option+L (when enabled).
 /// Shows real-time state, token optimizer runtime, event history, and allows generating bug reports.
 struct DebugConsoleView: View {
     private static let allAnalyticsProviderKey = "all"
@@ -29,10 +243,11 @@ struct DebugConsoleView: View {
         }
     }
 
-    var appModel: AppModel
-    var overlayModel: OverlayTabsModel
+    let appModel: AppModel
+    let overlayModel: OverlayTabsModel
+    let surface: DebugConsoleSurface
     @Bindable private var settings = FeatureSettings.shared
-    @State private var selectedTab = 0
+    @State private var selectedTab: DebugConsoleTab
     @State private var showAllEvents = true
     @State private var logFilter = ""
     @State private var autoRefresh = true
@@ -103,63 +318,40 @@ struct DebugConsoleView: View {
         return formatter
     }()
 
+    init(
+        appModel: AppModel,
+        overlayModel: OverlayTabsModel,
+        surface: DebugConsoleSurface = .all,
+        onClose: @escaping () -> Void
+    ) {
+        self.appModel = appModel
+        self.overlayModel = overlayModel
+        self.surface = surface
+        self.onClose = onClose
+        _selectedTab = State(initialValue: surface.defaultTab)
+    }
+
     var body: some View {
         VStack(spacing: 0) {
-            // Header
             header
 
             Divider()
 
-            // Tab picker
-            Picker("", selection: $selectedTab) {
-                Text(L("State", "State")).tag(0)
-                Text(L("debug.optimizer", "Token Optimizer")).tag(1)
-                Text(L("Events", "Events")).tag(2)
-                Text(L("Lag", "Lag")).tag(3)
-                Text(L("debug.perfTab", "Perf")).tag(4)
-                Text(L("Logs", "Logs")).tag(5)
-                Text(L("Report", "Report")).tag(6)
-                Text("Analytics").tag(7)
-                Text("Health").tag(8)
-                Text("Repos").tag(9)
-                Text("Usage").tag(10)
-            }
-            .pickerStyle(.segmented)
-            .padding(8)
+            HStack(spacing: 0) {
+                navigationView
 
-            Divider()
+                Divider()
 
-            // Content
-            Group {
-                switch selectedTab {
-                case 0: stateView
-                case 1: tokenOptimizerView
-                case 2: eventsView
-                case 3: lagTimelineView
-                case 4: performanceView
-                case 5: logsView
-                case 6: reportView
-                case 7: analyticsView
-                case 8: healthDashboardView
-                case 9: reposTabView
-                case 10: DebugUsageTabView()
-                default: stateView
-                }
+                selectedTabView
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .frame(width: 700, height: 500)
+        .frame(minWidth: 780, minHeight: 540)
         .background(Color(nsColor: .windowBackgroundColor))
         .onAppear { startRefresh() }
         .onDisappear { stopRefresh() }
         .onChange(of: selectedTab) {
-            if selectedTab == 1 {
-                refreshCTOData()
-            } else if selectedTab == 7 || selectedTab == 9 {
-                requestAnalyticsRefresh(force: true)
-            } else if selectedTab == 10 {
-                UsageMonitor.shared.refreshNow()
-            }
+            refreshSelectedTab(force: true)
         }
         .onChange(of: ctoTimePeriod) {
             refreshCTOData()
@@ -170,12 +362,17 @@ struct DebugConsoleView: View {
 
     private var header: some View {
         HStack {
-            Image(systemName: "ladybug.fill")
+            Image(systemName: surface.icon)
                 .font(.system(size: 16))
-                .foregroundStyle(.orange)
+                .foregroundStyle(surface.tint)
 
-            Text(L("Debug Console", "Debug Console"))
-                .font(.system(size: 14, weight: .semibold))
+            VStack(alignment: .leading, spacing: 2) {
+                Text(surface.title)
+                    .font(.system(size: 14, weight: .semibold))
+                Text(surface.subtitle)
+                    .font(.system(size: 10))
+                    .foregroundStyle(.secondary)
+            }
 
             Spacer()
 
@@ -194,6 +391,86 @@ struct DebugConsoleView: View {
             .buttonStyle(.plain)
         }
         .padding(12)
+    }
+
+    private var navigationView: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 12) {
+                ForEach(DebugConsoleTab.Section.allCases) { section in
+                    let tabs = visibleTabs.filter { $0.section == section }
+                    if !tabs.isEmpty {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(section.title)
+                                .font(.system(size: 10, weight: .semibold))
+                                .foregroundStyle(.secondary)
+                                .textCase(.uppercase)
+                                .padding(.horizontal, 8)
+
+                            ForEach(tabs) { tab in
+                                debugTabButton(tab)
+                            }
+                        }
+                    }
+                }
+            }
+            .padding(8)
+        }
+        .frame(width: 176)
+        .background(Color(nsColor: .controlBackgroundColor).opacity(0.72))
+    }
+
+    private var visibleTabs: [DebugConsoleTab] {
+        surface.tabs
+    }
+
+    private func debugTabButton(_ tab: DebugConsoleTab) -> some View {
+        Button {
+            selectedTab = tab
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: tab.icon)
+                    .font(.system(size: 12))
+                    .frame(width: 16)
+                Text(tab.title)
+                    .font(.system(size: 12, weight: selectedTab == tab ? .semibold : .regular))
+                    .lineLimit(1)
+                Spacer()
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 6)
+            .foregroundStyle(selectedTab == tab ? .primary : .secondary)
+            .background(selectedTab == tab ? Color.accentColor.opacity(0.16) : Color.clear)
+            .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+        }
+        .buttonStyle(.plain)
+    }
+
+    @ViewBuilder
+    private var selectedTabView: some View {
+        switch selectedTab {
+        case .state:
+            stateView
+        case .tokenOptimizer:
+            tokenOptimizerView
+        case .events:
+            eventsView
+        case .lag:
+            lagTimelineView
+        case .performance:
+            performanceView
+        case .logs:
+            logsView
+        case .report:
+            reportView
+        case .analytics:
+            analyticsView
+        case .health:
+            healthDashboardView
+        case .repos:
+            reposTabView
+        case .usage:
+            DebugUsageTabView()
+        }
     }
 
     // MARK: - State View
@@ -2966,24 +3243,29 @@ struct DebugConsoleView: View {
         return formatter
     }
 
+    private func refreshSelectedTab(force: Bool = false) {
+        switch selectedTab {
+        case .performance:
+            perfSnapshot = FeatureProfiler.shared.snapshot()
+        case .tokenOptimizer:
+            refreshCTOData()
+        case .logs:
+            loadLogs()
+        case .analytics, .repos:
+            requestAnalyticsRefresh(force: force)
+        case .usage:
+            UsageMonitor.shared.refreshNow()
+        case .state, .events, .lag, .report, .health:
+            break
+        }
+    }
+
     private func startRefresh() {
         stopRefresh()
         refreshTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { _ in
             let startedAt = CFAbsoluteTimeGetCurrent()
             WakeupProfiler.shared.record("debug.refreshTick")
-            // Force view refresh
-            if selectedTab == 4 {
-                perfSnapshot = FeatureProfiler.shared.snapshot()
-            }
-            if selectedTab == 1 {
-                refreshCTOData()
-            }
-            if selectedTab == 5 {
-                loadLogs()
-            }
-            if selectedTab == 7 || selectedTab == 9 {
-                requestAnalyticsRefresh()
-            }
+            refreshSelectedTab()
             let durationMs = (CFAbsoluteTimeGetCurrent() - startedAt) * 1000.0
             FeatureProfiler.shared.record(feature: .debugRefresh, durationMs: durationMs)
         }
@@ -3011,10 +3293,12 @@ final class DebugConsoleController {
     static let shared = DebugConsoleController()
     private init() {}
 
-    private var window: NSWindow?
+    private var windows: [DebugConsoleSurface: NSWindow] = [:]
     var windowAppearance: NSAppearance? {
         didSet {
-            window?.appearance = windowAppearance
+            for window in windows.values {
+                window.appearance = windowAppearance
+            }
         }
     }
 
@@ -3027,44 +3311,47 @@ final class DebugConsoleController {
         BugReporter.shared.configure(appModel: appModel, overlayModel: overlayModel)
     }
 
-    func toggle() {
-        if let window, window.isVisible {
+    func toggle(surface: DebugConsoleSurface = .all) {
+        if let window = windows[surface], window.isVisible {
             window.orderOut(nil)
         } else {
-            show()
+            show(surface: surface)
         }
     }
 
-    func show() {
+    func show(surface: DebugConsoleSurface = .all) {
         guard let appModel, let overlayModel else {
-            Log.warn("Debug console not configured")
+            Log.warn("\(surface.title) not configured")
             return
         }
 
-        if window == nil {
+        if windows[surface] == nil {
             let view = DebugConsoleView(
                 appModel: appModel,
                 overlayModel: overlayModel,
-                onClose: { [weak self] in self?.window?.orderOut(nil) }
+                surface: surface,
+                onClose: { [weak self] in self?.windows[surface]?.orderOut(nil) }
             )
             let hostingView = NSHostingView(rootView: view.localized())
+            let initialSize = surface.initialSize
 
             let newWindow = NSWindow(
-                contentRect: NSRect(x: 0, y: 0, width: 700, height: 500),
+                contentRect: NSRect(x: 0, y: 0, width: initialSize.width, height: initialSize.height),
                 styleMask: [.titled, .closable, .resizable, .miniaturizable],
                 backing: .buffered,
                 defer: false
             )
-            newWindow.title = L("window.debugConsole", "Chau7 Debug Console")
+            newWindow.title = surface.windowTitle
             newWindow.contentView = hostingView
             newWindow.center()
             newWindow.isReleasedWhenClosed = false
+            newWindow.minSize = NSSize(width: 780, height: 540)
             newWindow.appearance = windowAppearance
 
-            window = newWindow
+            windows[surface] = newWindow
         }
 
-        window?.makeKeyAndOrderFront(nil)
+        windows[surface]?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
     }
 }

@@ -2648,7 +2648,7 @@
   {
     "category": "Debugging",
     "feature": "Debug Console",
-    "description": "Cmd+Option+L — live log viewer with 10 tabs: State, Token Optimizer, Events, Lag, Perf, Logs, Report, Analytics, Health, Repos",
+    "description": "Cmd+Option+L — scoped sidebar surfaces for Diagnostics, Runtime Inspector, Usage Monitor, and the full console, covering Health, Logs, Perf, Lag, State, Events, Report, Usage, Analytics, Repos, and Token Optimizer",
     "status": "Shipped",
     "differentiator": "No"
   },

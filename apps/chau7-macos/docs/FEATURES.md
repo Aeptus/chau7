@@ -635,7 +635,7 @@ Chau7's rendering pipeline is purpose-built for latency-sensitive terminal work:
 
 ### Debugging
 
-- Debug console (`Cmd+Option+L`) — 10 tabs: State, Token Optimizer, Events, Lag, Perf, Logs, Report, Analytics, Health, Repos.
+- Debug console (`Cmd+Option+L`) — scoped sidebar surfaces for Diagnostics, Runtime Inspector, Usage Monitor, and the full console, covering Health, Logs, Perf, Lag, State, Events, Report, Usage, Analytics, Repos, and Token Optimizer.
 - Notification reliability dashboard — Debug Console health view summarizes recent completed, dropped, retried, rate-limited, and authoritative notification deliveries.
 - Data Explorer (`Cmd+Shift+D`) reloads its history and telemetry content whenever the singleton window is reopened.
 - Sessions Explorer rows use the latest run metadata for provider and repo labels.

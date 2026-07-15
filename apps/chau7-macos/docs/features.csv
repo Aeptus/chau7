@@ -377,7 +377,7 @@ Scripting,Settings API,Query and modify settings programmatically from any langu
 Overlay,Repo Dashboard Dismissal Consistency,"Repo badges highlight while their dashboard overlay is open, and clicking any tab closes the dashboard again, including the already-selected tab",Shipped,No
 Debugging,Data Explorer Refresh,Reopening the singleton Data Explorer window rebuilds its SwiftUI content so history and telemetry reload,Shipped,No
 Debugging,Session Explorer Metadata,Sessions Explorer rows derive provider and repo labels from the latest run for each session,Shipped,No
-Debugging,Debug Console,"Cmd+Option+L — live log viewer with 10 tabs: State, Token Optimizer, Events, Lag, Perf, Logs, Report, Analytics, Health, Repos",Shipped,No
+Debugging,Debug Console,"Cmd+Option+L — scoped sidebar surfaces for Diagnostics, Runtime Inspector, Usage Monitor, and the full console, covering Health, Logs, Perf, Lag, State, Events, Report, Usage, Analytics, Repos, and Token Optimizer",Shipped,No
 Debugging,State Inspector,View live app state: tabs and sessions and models,Shipped,No
 Debugging,Feature Profiler,Per-feature timing metrics with os.signpost integration,Shipped,No
 Debugging,Structured Logging,"Category-based logging with correlation IDs (App, Tabs, Terminal, Render, etc.)",Shipped,No
