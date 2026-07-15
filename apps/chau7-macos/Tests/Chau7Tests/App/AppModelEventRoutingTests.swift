@@ -261,4 +261,43 @@ final class AppModelEventRoutingTests: XCTestCase {
         XCTAssertEqual(emitted?.tabID, stampedTabID)
         XCTAssertEqual(emitted?.sessionID, "claude-session-4")
     }
+
+    func testDroppedClaudeToolEventStillAdoptsSessionIdentity() {
+        let model = makeModel()
+        let stampedTabID = UUID()
+        var adoptedRequest: HistorySessionAdoptionRequest?
+
+        model.historySessionAdopter = { request in
+            adoptedRequest = request
+            return true
+        }
+
+        let toolEvent = ClaudeCodeEvent(
+            type: .toolStart,
+            hook: "PreToolUse",
+            sessionId: "claude-session-tool-event",
+            transcriptPath: "/tmp/transcript.jsonl",
+            toolName: "Bash",
+            message: "ls",
+            cwd: "/tmp/chau7",
+            tabID: stampedTabID.uuidString,
+            timestamp: Date()
+        )
+
+        model.handleClaudeCodeMonitorEvent(toolEvent)
+
+        XCTAssertTrue(
+            waitUntil { adoptedRequest != nil },
+            "raw Claude tool events should adopt tab identity before notification ingress drops them"
+        )
+        XCTAssertEqual(adoptedRequest?.toolName, "Claude")
+        XCTAssertEqual(adoptedRequest?.sessionId, "claude-session-tool-event")
+        XCTAssertEqual(adoptedRequest?.directory, "/tmp/chau7")
+        XCTAssertEqual(adoptedRequest?.tabID, stampedTabID)
+        XCTAssertEqual(adoptedRequest?.reason, .historyEntry)
+        XCTAssertFalse(
+            model.recentEvents.contains { $0.rawType == "tool_start" && $0.sessionID == "claude-session-tool-event" },
+            "tool_start remains non-user-facing; the fix should not make it a recent notification event"
+        )
+    }
 }

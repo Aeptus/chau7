@@ -1634,6 +1634,12 @@ final class AppModel {
 
     @MainActor
     private func publishUnifiedEventOnMain(_ event: AIEvent, notify: Bool, envelope: EventEnvelope) {
+        // Identity adoption is tab/session state, not notification delivery.
+        // Run it before notification filtering so raw Claude lifecycle/tool
+        // events can stamp a Shell-labeled tab as Claude even when they are not
+        // user-facing notifications.
+        adoptUnifiedEventSessionIdentityIfNeeded(event)
+
         guard let acceptedEvent = notifications?.manager.processUnifiedEvent(
             event,
             deliveryRequested: notify
@@ -1647,7 +1653,6 @@ final class AppModel {
     @MainActor
     private func publishAcceptedUnifiedEventOnMain(_ acceptedEvent: EnrichedEvent, envelope: EventEnvelope) {
         let event = acceptedEvent.event
-        adoptUnifiedEventSessionIdentityIfNeeded(event)
         let surfaces = NotificationRoutingPolicy.surfaces(
             kind: acceptedEvent.kind,
             settings: NotificationSurfaceSettings(

@@ -722,6 +722,13 @@
   },
   {
     "category": "AI Detection",
+    "feature": "Pre-Notification AI Identity Adoption",
+    "description": "Claude hook events hydrate the tab's provider and session identity before notification filtering, so raw lifecycle and tool hooks can fix a Shell-labeled AI tab immediately while still staying out of user-facing notification history",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "AI Detection",
     "feature": "Corroborated Output Origination",
     "description": "An output-pattern match only originates a new AI identity on a tab when a live process-tree signal corroborates it (otherwise it merely confirms an existing identity), and API-endpoint/website substrings are excluded from fingerprints, so incidental output like an OpenAI URL in a git push can't flag a plain shell as ChatGPT",
     "status": "Shipped",

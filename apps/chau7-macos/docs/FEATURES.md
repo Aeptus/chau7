@@ -57,6 +57,7 @@ Chau7 recognizes AI CLIs the moment they launch — no configuration required. T
 
 Detection methods:
 - Live process-tree resolution. Each session polls `ps` descendants of its shell PID and matches executable basenames against the registry — the OS is the ground truth for identity. A tab labeled Codex that starts running Claude updates to Claude within ~1.5s without requiring user action.
+- Pre-notification AI identity adoption. Claude hook events hydrate the tab's provider/session identity before notification filtering, so raw lifecycle/tool hooks can fix a Shell-labeled AI tab immediately while still staying out of user-facing notification history.
 - Command line tokenization with wrapper skipping (env, sudo, command, builtin, exec, noglob, time). Command detection gates output scanning to prevent false positives.
 - Output banner matching for all supported CLIs. Patterns require tool-specific context to avoid substring collisions, and exclude API-endpoint/website substrings (e.g. `openai.com/v1`) that appear in ordinary project code rather than CLI banners.
 - Corroborated output origination. An output-pattern match can only *originate* a new tool identity on a tab that has none when a live process-tree signal corroborates it; otherwise output matching only *confirms* an already-established identity. This prevents incidental output — an API URL printed by a `git push` in a repo that uses that API — from flipping a plain shell to an AI tool.
