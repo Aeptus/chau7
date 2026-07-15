@@ -53,6 +53,23 @@ final class RustTermBridgeParityTests: XCTestCase {
         XCTAssertEqual(clusterString(buffer.getCell(row: 0, col: 1), in: buffer), "x")
     }
 
+    func testGlyphForegroundIsRescuedWhenItWouldMatchDarkBackground() {
+        var fixture = makeFixture(
+            cells: [
+                makeCell("x", fg: (0, 0, 0), bg: (30, 30, 30))
+            ]
+        )
+        let bridge = RustTermBridge()
+        let buffer = TripleBufferedTerminal(rows: 1, cols: 1)
+
+        sync(fixture: &fixture, rows: 1, cols: 1, bridge: bridge, buffer: buffer)
+
+        let cell = buffer.getCell(row: 0, col: 0)
+        XCTAssertEqual(clusterString(cell, in: buffer), "x")
+        XCTAssertGreaterThanOrEqual(contrastRatio(cell.foregroundColor, cell.backgroundColor), 1.4)
+        XCTAssertGreaterThan(cell.foregroundColor.x + cell.foregroundColor.y + cell.foregroundColor.z, 0.1)
+    }
+
     // MARK: - Helpers
 
     /// A test fixture owning the cells array AND the packed UTF-8 cluster bytes
@@ -154,6 +171,8 @@ final class RustTermBridgeParityTests: XCTestCase {
 
     private func makeCell(
         _ character: String,
+        fg: (UInt8, UInt8, UInt8) = (255, 255, 255),
+        bg: (UInt8, UInt8, UInt8) = (0, 0, 0),
         flags: UInt8 = 0,
         linkID: UInt16 = 0
     ) -> RustCellData {
@@ -164,9 +183,12 @@ final class RustTermBridgeParityTests: XCTestCase {
         cell.cluster_offset = UInt32(byte)
         cell.cluster_len = 1
         cell.width = 1
-        cell.fg_r = 255
-        cell.fg_g = 255
-        cell.fg_b = 255
+        cell.fg_r = fg.0
+        cell.fg_g = fg.1
+        cell.fg_b = fg.2
+        cell.bg_r = bg.0
+        cell.bg_g = bg.1
+        cell.bg_b = bg.2
         cell.flags = flags
         cell.link_id = linkID
         return cell
@@ -175,5 +197,27 @@ final class RustTermBridgeParityTests: XCTestCase {
     /// Read a terminal cell's cluster bytes from the buffer's parallel clusters store.
     private func clusterString(_ cell: TerminalCell, in tb: TripleBufferedTerminal) -> String {
         tb.renderBuffer.clusterString(at: cell.clusterStart, length: cell.clusterLen)
+    }
+
+    private func contrastRatio(_ lhs: SIMD4<Float>, _ rhs: SIMD4<Float>) -> Float {
+        let l1 = relativeLuminance(lhs)
+        let l2 = relativeLuminance(rhs)
+        let lighter = max(l1, l2)
+        let darker = min(l1, l2)
+        return (lighter + 0.05) / (darker + 0.05)
+    }
+
+    private func relativeLuminance(_ color: SIMD4<Float>) -> Float {
+        let r = linearizedSRGB(color.x)
+        let g = linearizedSRGB(color.y)
+        let b = linearizedSRGB(color.z)
+        return 0.2126 * r + 0.7152 * g + 0.0722 * b
+    }
+
+    private func linearizedSRGB(_ component: Float) -> Float {
+        if component <= 0.03928 {
+            return component / 12.92
+        }
+        return pow((component + 0.055) / 1.055, 2.4)
     }
 }

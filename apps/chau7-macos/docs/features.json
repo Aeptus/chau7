@@ -420,6 +420,13 @@
     "differentiator": "Yes"
   },
   {
+    "category": "Terminal Core",
+    "feature": "Low-Contrast Glyph Rescue",
+    "description": "Metal keeps glyph-bearing cells readable when resolved foreground and background colors are nearly indistinguishable, while preserving hidden text and wide-cell continuation behavior",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
     "category": "Performance",
     "feature": "LRU-Backed Syntax-Highlight Cache",
     "description": "Terminal-output syntax highlighter caches results in NSCache (real bounded LRU with cost-based eviction and OS-pressure hook) instead of a dictionary with order-unspecified prefix-eviction, so hot lines stay cached on busy streams",

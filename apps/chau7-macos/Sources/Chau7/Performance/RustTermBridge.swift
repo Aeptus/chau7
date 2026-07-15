@@ -17,9 +17,12 @@ final class RustTermBridge {
 
     // MARK: - Properties
 
-    /// Default foreground for the current color scheme (used when Rust sends 0,0,0 fg for default)
+    /// Default foreground for the current color scheme, used as a readability
+    /// fallback when a glyph-bearing cell resolves to foreground/background
+    /// colors that are visually indistinguishable.
     private var defaultFg: SIMD4<Float> = SIMD4(1, 1, 1, 1)
     private var defaultBg: SIMD4<Float> = SIMD4(0, 0, 0, 1)
+    private static let minimumReadableContrast: Float = 1.4
 
     /// Viewport-relative row tints. Set before each syncToTripleBuffer call.
     /// Key = viewport row (0-based), value = SIMD4 RGBA tint color.
@@ -150,6 +153,10 @@ final class RustTermBridge {
             swap(&fg, &bg)
         }
 
+        if Self.shouldRescueForeground(cell: cell, fg: fg, bg: bg) {
+            fg = readableForegroundFallback(against: bg)
+        }
+
         // Handle dim: reduce fg intensity
         if flags & RustCellFlags.dim != 0 {
             fg = SIMD4(fg.x * 0.6, fg.y * 0.6, fg.z * 0.6, fg.w)
@@ -220,5 +227,46 @@ final class RustTermBridge {
         let g = Float((val >> 8) & 0xFF) / 255.0
         let b = Float(val & 0xFF) / 255.0
         return SIMD4(r, g, b, 1.0)
+    }
+
+    private static func shouldRescueForeground(cell: RustCellData, fg: SIMD4<Float>, bg: SIMD4<Float>) -> Bool {
+        guard cell.cluster_len > 0,
+              cell.continuation == 0,
+              cell.flags & RustCellFlags.hidden == 0 else {
+            return false
+        }
+        return contrastRatio(fg, bg) < minimumReadableContrast
+    }
+
+    private func readableForegroundFallback(against bg: SIMD4<Float>) -> SIMD4<Float> {
+        if Self.contrastRatio(defaultFg, bg) >= Self.minimumReadableContrast {
+            return defaultFg
+        }
+
+        let black = SIMD4<Float>(0, 0, 0, 1)
+        let white = SIMD4<Float>(1, 1, 1, 1)
+        return Self.contrastRatio(black, bg) > Self.contrastRatio(white, bg) ? black : white
+    }
+
+    private static func contrastRatio(_ lhs: SIMD4<Float>, _ rhs: SIMD4<Float>) -> Float {
+        let l1 = relativeLuminance(lhs)
+        let l2 = relativeLuminance(rhs)
+        let lighter = max(l1, l2)
+        let darker = min(l1, l2)
+        return (lighter + 0.05) / (darker + 0.05)
+    }
+
+    private static func relativeLuminance(_ color: SIMD4<Float>) -> Float {
+        let r = linearizedSRGB(color.x)
+        let g = linearizedSRGB(color.y)
+        let b = linearizedSRGB(color.z)
+        return 0.2126 * r + 0.7152 * g + 0.0722 * b
+    }
+
+    private static func linearizedSRGB(_ component: Float) -> Float {
+        if component <= 0.03928 {
+            return component / 12.92
+        }
+        return pow((component + 0.055) / 1.055, 2.4)
     }
 }
