@@ -107,8 +107,8 @@ struct AboutSettingsView: View {
             SettingsInfoRow(label: L("settings.about.logPath", "Log Path"), value: model.logFilePath, monospaced: true)
 
             SettingsButtonRow(buttons: [
-                .init(title: L("settings.about.debugConsole", "Debug Console"), icon: "terminal") {
-                    DebugConsoleController.shared.show()
+                .init(title: L("debug.surface.diagnostics.title", "Diagnostics"), icon: "stethoscope") {
+                    DebugConsoleController.shared.show(surface: .diagnostics)
                 }
             ])
 

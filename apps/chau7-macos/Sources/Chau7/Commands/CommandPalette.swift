@@ -577,8 +577,17 @@ final class CommandPaletteProvider {
             PaletteCommand(title: L("commandPalette.command.settings", "Settings..."), shortcut: "⌘,", category: .window, icon: "gear") {
                 delegate.showSettings()
             },
-            PaletteCommand(title: L("commandPalette.command.debugConsole", "Debug Console"), shortcut: "⇧⌘L", category: .window, icon: "terminal") {
-                DebugConsoleController.shared.toggle()
+            PaletteCommand(title: L("debug.surface.diagnostics.title", "Diagnostics"), shortcut: nil, category: .window, icon: "stethoscope") {
+                DebugConsoleController.shared.show(surface: .diagnostics)
+            },
+            PaletteCommand(title: L("debug.surface.usage.title", "Usage Monitor"), shortcut: nil, category: .window, icon: "chart.line.uptrend.xyaxis") {
+                DebugConsoleController.shared.show(surface: .usageMonitor)
+            },
+            PaletteCommand(title: L("debug.surface.runtime.title", "Runtime Inspector"), shortcut: nil, category: .window, icon: "scope") {
+                DebugConsoleController.shared.show(surface: .runtimeInspector)
+            },
+            PaletteCommand(title: L("commandPalette.command.debugConsole", "Debug Console"), shortcut: "⌥⌘L", category: .window, icon: "terminal") {
+                DebugConsoleController.shared.toggle(surface: .all)
             },
             PaletteCommand(title: L("commandPalette.command.sshConnections", "SSH Connections..."), shortcut: "⇧⌘O", category: .window, icon: "server.rack") {
                 delegate.showSSHManager()

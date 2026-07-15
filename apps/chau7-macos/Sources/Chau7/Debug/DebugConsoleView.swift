@@ -283,7 +283,6 @@ struct DebugConsoleView: View {
     // Category & level filtering
     @State private var enabledCategories: Set<LogCategory> = Set(LogCategory.allCases)
     @State private var enabledLevels: Set = ["INFO", "WARN", "ERROR", "TRACE", "DEBUG"]
-    @State private var bugReportDescription = ""
     @State private var lastReportPath: String?
     // Repos tab state
     @State private var repoSortOrder: RepoSortOrder = .lastActive
@@ -2775,29 +2774,41 @@ struct DebugConsoleView: View {
 
     private var reportView: some View {
         VStack(spacing: 16) {
-            GroupBox(L("Generate Bug Report", "Generate Bug Report")) {
+            GroupBox(L("debug.report.issue.title", "Report Issue")) {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text(L("Describe the issue:", "Describe the issue:"))
-                        .font(.system(size: 11, weight: .medium))
+                    Text(L(
+                        "debug.report.issue.description",
+                        "Open the privacy-first report flow. Sensitive diagnostics stay off until you explicitly include them."
+                    ))
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
 
-                    TextEditor(text: $bugReportDescription)
-                        .font(.system(size: 11))
-                        .frame(height: 100)
-                        .border(Color.gray.opacity(0.3))
+                    Button(L("commandPalette.command.reportIssue", "Report Issue")) {
+                        BugReportWindowController.shared.show()
+                    }
+                    .buttonStyle(.borderedProminent)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
 
-                    HStack {
-                        Button(L("Generate Github Report", "Generate Github Report")) {
-                            if let issueURL = BugReporter.shared.prefilledIssueURL(userDescription: bugReportDescription) {
-                                lastReportPath = issueURL.absoluteString
-                                NSWorkspace.shared.open(issueURL)
-                            } else {
-                                lastReportPath = nil
+            GroupBox(L("debug.report.localDiagnostics", "Local Diagnostics")) {
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack(spacing: 12) {
+                        Button(L("Capture Snapshot", "Capture Snapshot")) {
+                            let snapshot = StateSnapshot.capture(from: appModel, overlayModel: overlayModel)
+                            if let path = snapshot.save() {
+                                lastReportPath = path
                             }
                         }
-                        .buttonStyle(.borderedProminent)
 
-                        Button(L("Save Report", "Save Report")) {
-                            lastReportPath = BugReporter.shared.generateReport(userDescription: bugReportDescription)
+                        Button(L("Copy State JSON", "Copy State JSON")) {
+                            let snapshot = StateSnapshot.capture(from: appModel, overlayModel: overlayModel)
+                            if let data = JSONOperations.encode(snapshot, context: "debug state snapshot"),
+                               let json = String(data: data, encoding: .utf8) {
+                                NSPasteboard.general.clearContents()
+                                NSPasteboard.general.setString(json, forType: .string)
+                                lastReportPath = L("debug.report.stateCopied", "State JSON copied.")
+                            }
                         }
 
                         Button(L("Open Reports Folder", "Open Reports Folder")) {
@@ -2809,8 +2820,6 @@ struct DebugConsoleView: View {
                         HStack {
                             Image(systemName: "checkmark.circle.fill")
                                 .foregroundStyle(.green)
-                            Text(L("Report draft:", "Report draft:"))
-                                .font(.system(size: 10))
                             Text(path)
                                 .font(.system(size: 10, design: .monospaced))
                                 .lineLimit(1)
@@ -2820,30 +2829,18 @@ struct DebugConsoleView: View {
                 }
             }
 
-            GroupBox(L("Quick Actions", "Quick Actions")) {
-                HStack(spacing: 12) {
-                    Button(L("Capture Snapshot", "Capture Snapshot")) {
-                        let snapshot = StateSnapshot.capture(from: appModel, overlayModel: overlayModel)
-                        if let path = snapshot.save() {
-                            lastReportPath = path
-                        }
-                    }
-
-                    Button(L("Copy State JSON", "Copy State JSON")) {
-                        let snapshot = StateSnapshot.capture(from: appModel, overlayModel: overlayModel)
-                        if let data = JSONOperations.encode(snapshot, context: "debug state snapshot"),
-                           let json = String(data: data, encoding: .utf8) {
-                            NSPasteboard.general.clearContents()
-                            NSPasteboard.general.setString(json, forType: .string)
-                        }
-                    }
-
+            GroupBox(L("debug.report.maintenance", "Maintenance")) {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(L("debug.report.maintenance.description", "Clear in-memory event buffers without deleting logs or reports."))
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
                     Button(L("Clear Event History", "Clear Event History")) {
                         appModel.claudeCodeEvents.removeAll()
                         appModel.recentEvents.removeAll()
                     }
                     .foregroundStyle(.red)
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
 
             Spacer()

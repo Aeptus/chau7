@@ -179,8 +179,14 @@ struct LogsSettingsView: View {
             SettingsSectionHeader(L("settings.general.actions", "Actions"), icon: "wrench.and.screwdriver")
 
             SettingsButtonRow(buttons: [
-                .init(title: L("settings.general.actions.debugConsole", "Debug Console"), icon: "terminal") {
-                    DebugConsoleController.shared.show()
+                .init(title: L("debug.surface.diagnostics.title", "Diagnostics"), icon: "stethoscope") {
+                    DebugConsoleController.shared.show(surface: .diagnostics)
+                },
+                .init(title: L("debug.surface.usage.title", "Usage Monitor"), icon: "chart.line.uptrend.xyaxis") {
+                    DebugConsoleController.shared.show(surface: .usageMonitor)
+                },
+                .init(title: L("debug.surface.runtime.title", "Runtime Inspector"), icon: "scope") {
+                    DebugConsoleController.shared.show(surface: .runtimeInspector)
                 }
             ])
             .settingsSearchAnchor("debugConsole")

@@ -1168,12 +1168,12 @@ extension FeatureSettings {
         SearchableSetting(
             id: "debugConsole",
             section: .logsHistory,
-            title: L("settings.general.actions.debugConsole", "Debug Console"),
+            title: L("debug.surface.diagnostics.title", "Diagnostics"),
             keywords: localizedKeywords(
                 "settings.search.debugConsole.keywords",
-                "debug,console,diagnostics,logs,troubleshooting,state,events"
+                "debug,console,diagnostics,logs,troubleshooting,state,events,runtime,usage,cost,quota"
             ),
-            description: L("settings.search.debugConsole.description", "Open Chau7's runtime diagnostics console")
+            description: L("settings.search.debugConsole.description", "Open Chau7 diagnostics, runtime inspection, and usage monitor surfaces")
         ),
 
         // Additional searchable controls

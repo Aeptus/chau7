@@ -464,8 +464,20 @@ struct Chau7App: App {
 
                 Divider()
 
+                Button(L("debug.surface.diagnostics.title", "Diagnostics")) {
+                    DebugConsoleController.shared.show(surface: .diagnostics)
+                }
+
+                Button(L("debug.surface.usage.title", "Usage Monitor")) {
+                    DebugConsoleController.shared.show(surface: .usageMonitor)
+                }
+
+                Button(L("debug.surface.runtime.title", "Runtime Inspector")) {
+                    DebugConsoleController.shared.show(surface: .runtimeInspector)
+                }
+
                 Button(L("Debug Console", "Debug Console")) {
-                    DebugConsoleController.shared.toggle()
+                    DebugConsoleController.shared.toggle(surface: .all)
                 }
                 .keyboardShortcut("l", modifiers: [.command, .option])
             }
