@@ -12,7 +12,7 @@ struct FontColorsSettingsView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: Chau7Style.Settings.pageSectionSpacing) {
             // Live Preview Panel
-            SettingsSectionHeader(L("settings.appearance.livePreview", "Live Preview"), icon: "rectangle.inset.filled.and.cursorarrow")
+            SettingsSectionHeader(L("settings.appearance.terminalPreview", "Terminal Preview"), icon: "rectangle.inset.filled.and.cursorarrow")
 
             ScrollView(.horizontal, showsIndicators: true) {
                 LiveTerminalPreview(settings: settings)
@@ -23,7 +23,7 @@ struct FontColorsSettingsView: View {
             SettingsDivider()
 
             // Font Settings
-            SettingsSectionHeader(L("settings.appearance.font", "Font"), icon: "textformat")
+            SettingsSectionHeader(L("settings.appearance.terminalText", "Terminal Text"), icon: "textformat")
 
             FontFamilyPicker(
                 label: L("settings.appearance.fontFamily", "Font Family"),
@@ -89,7 +89,7 @@ struct FontColorsSettingsView: View {
             SettingsDivider()
 
             // Color Scheme
-            SettingsSectionHeader(L("settings.appearance.colorScheme", "Color Scheme"), icon: "paintpalette")
+            SettingsSectionHeader(L("settings.appearance.terminalColors", "Terminal Colors"), icon: "paintpalette")
 
             SettingsPicker(
                 label: L("settings.appearance.scheme", "Scheme"),
@@ -101,37 +101,6 @@ struct FontColorsSettingsView: View {
             // Color Preview
             ColorSchemePreview(scheme: settings.currentColorScheme)
                 .padding(.vertical, Chau7Style.Settings.separatorVerticalPadding)
-
-            SettingsDivider()
-
-            // Window Transparency
-            SettingsSectionHeader(L("settings.appearance.window", "Window"), icon: "square.on.square.dashed")
-
-            SettingsSlider(
-                label: L("settings.appearance.windowOpacity", "Window Opacity"),
-                help: L("settings.appearance.windowOpacity.help", "Transparency level for terminal window (30-100%)"),
-                value: Binding(
-                    get: { settings.windowOpacity * 100 },
-                    set: { settings.windowOpacity = $0 / 100 }
-                ),
-                range: 30 ... 100,
-                step: 5,
-                format: "%.0f",
-                suffix: "%"
-            )
-
-            SettingsDivider()
-
-            // Theme
-            SettingsSectionHeader(L("settings.appearance.systemTheme", "System Theme"), icon: "circle.lefthalf.filled")
-
-            SettingsPicker(
-                label: L("settings.appearance.appearance", "Appearance"),
-                help: L("settings.appearance.appearance.help", "Choose light, dark, or match system appearance"),
-                selection: $settings.appTheme,
-                options: AppTheme.allCases.map { (value: $0, label: $0.displayName) },
-                anchorID: "appTheme"
-            )
 
             SettingsDivider()
 

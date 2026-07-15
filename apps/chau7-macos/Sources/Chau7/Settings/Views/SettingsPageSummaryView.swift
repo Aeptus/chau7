@@ -171,7 +171,7 @@ struct SettingsPageSummaryView: View {
                 statusItem("font", L("settings.appearance.fontFamily", "Font Family"), settings.fontFamily, icon: "textformat", tone: .neutral),
                 statusItem("size", L("settings.appearance.fontSize", "Font Size"), "\(settings.fontSize) pt", icon: "textformat.size", tone: .neutral),
                 statusItem("scheme", L("settings.appearance.scheme", "Scheme"), settings.colorSchemeName, icon: "paintpalette", tone: .neutral),
-                statusItem("theme", L("settings.appearance.appearance", "Appearance"), settings.appTheme.displayName, icon: "circle.lefthalf.filled", tone: .neutral)
+                statusItem("zoom", L("settings.appearance.defaultZoom", "Default Zoom"), "\(settings.defaultZoomPercent)%", icon: "plus.magnifyingglass", tone: .neutral)
             ]
         case .display:
             return [
@@ -182,21 +182,21 @@ struct SettingsPageSummaryView: View {
             ]
         case .windows:
             return [
-                statusItem("menuBarOnly", L("settings.windows.menuBarOnlyMode", "Menu Bar Only Mode"), enabledDisabled(settings.menuBarOnlyMode), icon: "menubar.rectangle", tone: enabledTone(settings.menuBarOnlyMode)),
-                statusItem("floating", L("settings.windows.floatingWindow", "Keep Windows Above Other Apps"), enabledDisabled(settings.windowFloating), icon: "macwindow.badge.plus", tone: enabledTone(settings.windowFloating)),
+                statusItem("theme", L("settings.appearance.appearance", "Appearance"), settings.appTheme.displayName, icon: "circle.lefthalf.filled", tone: .neutral),
                 statusItem("opacity", L("settings.appearance.windowOpacity", "Window Opacity"), "\(Int(settings.windowOpacity * 100))%", icon: "circle.dashed", tone: .neutral),
+                statusItem("floating", L("settings.windows.floatingWindow", "Keep Windows Above Other Apps"), enabledDisabled(settings.windowFloating), icon: "macwindow.badge.plus", tone: enabledTone(settings.windowFloating)),
                 statusItem("splitPanes", L("settings.windows.splitPanes", "Split Panes"), enabledDisabled(settings.isSplitPanesEnabled), icon: "rectangle.split.2x1", tone: enabledTone(settings.isSplitPanesEnabled))
             ]
         case .tabs:
             return [
                 statusItem("newTabPosition", L("settings.tabs.newTabPosition", "New Tab Position"), newTabPositionLabel, icon: "rectangle.stack.badge.plus", tone: .neutral),
-                statusItem("directory", L("settings.tabs.newTabsUseCurrentDirectory", "New Tabs Use Current Directory"), enabledDisabled(settings.newTabsUseCurrentDirectory), icon: "folder", tone: enabledTone(settings.newTabsUseCurrentDirectory)),
                 statusItem("idleGrouping", L("settings.tabs.groupIdleTabs", "Group Idle Tabs in Dropdown"), enabledDisabled(settings.groupIdleTabs), detail: settings.groupIdleTabs ? "\(settings.idleTabThresholdMinutes) min" : nil, icon: "tray.2", tone: enabledTone(settings.groupIdleTabs)),
+                statusItem("indicators", L("settings.tabs.display", "Tab Display"), tabIndicatorSummary, icon: "eye", tone: .neutral),
                 statusItem("closeWarnings", L("settings.tabs.warnOnCloseWithProcess", "Warn When Closing Tab with Running Process"), enabledDisabled(settings.warnOnCloseWithRunningProcess || settings.alwaysWarnOnTabClose), icon: "exclamationmark.triangle", tone: enabledTone(settings.warnOnCloseWithRunningProcess || settings.alwaysWarnOnTabClose))
             ]
         case .hoverCard:
             return [
-                statusItem("directory", L("settings.hover.directory", "Directory"), enabledDisabled(settings.hoverCardShowDirectory), icon: "folder", tone: enabledTone(settings.hoverCardShowDirectory)),
+                statusItem("visible", L("settings.hoverCard.sections", "Visible Sections"), "\(visibleHoverCardSectionCount)/13", icon: "text.bubble", tone: .neutral),
                 statusItem("aiSession", L("settings.hover.aiSession", "AI Session"), enabledDisabled(settings.hoverCardShowAISession), icon: "sparkles", tone: enabledTone(settings.hoverCardShowAISession)),
                 statusItem("processes", L("settings.hover.processes", "Processes"), enabledDisabled(settings.hoverCardShowProcesses), icon: "terminal", tone: enabledTone(settings.hoverCardShowProcesses)),
                 statusItem("footer", L("settings.hover.footer", "Footer"), enabledDisabled(settings.hoverCardShowFooter), icon: "rectangle.bottomthird.inset.filled", tone: enabledTone(settings.hoverCardShowFooter))
@@ -405,6 +405,36 @@ struct SettingsPageSummaryView: View {
         settings.newTabPosition == "after"
             ? L("settings.tabs.afterCurrent", "After Current")
             : L("settings.tabs.atEnd", "At End")
+    }
+
+    private var tabIndicatorSummary: String {
+        let visibleCount = [
+            settings.showTabIcons,
+            settings.showTabPath,
+            settings.showTabGitIndicator,
+            settings.allowTabCTOToggle,
+            settings.showTabBroadcastIndicator,
+            settings.isLastCommandBadgeEnabled
+        ].filter { $0 }.count
+        return String(format: L("settings.tabs.indicators.count", "%d visible"), visibleCount)
+    }
+
+    private var visibleHoverCardSectionCount: Int {
+        [
+            settings.hoverCardShowDirectory,
+            settings.hoverCardShowGitBranch,
+            settings.hoverCardShowLastCommand,
+            settings.hoverCardShowDevServer,
+            settings.hoverCardShowAISession,
+            settings.hoverCardShowRepoStats,
+            settings.hoverCardShowConflicts,
+            settings.hoverCardShowNotificationState,
+            settings.hoverCardShowProcesses,
+            settings.hoverCardShowTokenOptimization,
+            settings.hoverCardShowShellIntegration,
+            settings.hoverCardShowBroadcast,
+            settings.hoverCardShowFooter
+        ].filter { $0 }.count
     }
 
     private var remoteStatusValue: String {

@@ -2451,6 +2451,13 @@
   },
   {
     "category": "Settings",
+    "feature": "Appearance Settings Organization",
+    "description": "Appearance settings are organized by visible surface: Windows owns app theme, opacity, floating, fullscreen, overlay, and split-pane controls; Tabs and Hover Card split long control lists into task-focused sections; Font & Colors stays focused on terminal text and palettes; Display stays focused on output readability and interactivity; page summaries and search metadata point to the new control locations",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "Settings",
     "feature": "iCloud Sync",
     "description": "Optional iCloud sync of settings across devices, with freshness guards, immediate manual sync, visible sync/restore/import/export status feedback, and confirmation for destructive restore/import/reset paths",
     "status": "Shipped",

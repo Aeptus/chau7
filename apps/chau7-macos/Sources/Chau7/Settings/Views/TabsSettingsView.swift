@@ -7,8 +7,8 @@ struct TabsSettingsView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: Chau7Style.Settings.pageSectionSpacing) {
-            // Behavior
-            SettingsSectionHeader(L("settings.tabs.behavior", "Behavior"), icon: "rectangle.stack.badge.plus")
+            // Opening & Closing
+            SettingsSectionHeader(L("settings.tabs.openingClosing", "Opening & Closing"), icon: "rectangle.stack.badge.plus")
 
             SettingsPicker(
                 label: L("settings.tabs.newTabPosition", "New Tab Position"),
@@ -47,6 +47,11 @@ struct TabsSettingsView: View {
                 isOn: $settings.alwaysWarnOnTabClose
             )
 
+            SettingsDivider()
+
+            // Organization
+            SettingsSectionHeader(L("settings.tabs.organization", "Organization"), icon: "rectangle.3.group")
+
             SettingsToggle(
                 label: L("settings.tabs.alwaysShowTabBar", "Always Show Tab Bar"),
                 help: L("settings.tabs.alwaysShowTabBar.help", "Show the tab bar even when only one tab is open"),
@@ -79,8 +84,8 @@ struct TabsSettingsView: View {
 
             SettingsDivider()
 
-            // Tab Display
-            SettingsSectionHeader(L("settings.tabs.display", "Tab Display"), icon: "eye")
+            // Tab Bar Contents
+            SettingsSectionHeader(L("settings.tabs.tabBarContents", "Tab Bar Contents"), icon: "eye")
 
             SettingsToggle(
                 label: L("settings.tabs.customTitleOnly", "Custom Title Only"),
@@ -126,16 +131,16 @@ struct TabsSettingsView: View {
             )
             .disabled(settings.customTitleOnly)
 
-            SettingsDivider()
-
-            // Appearance
-            SettingsSectionHeader(L("settings.tabs.appearance", "Appearance"), icon: "paintpalette")
-
             SettingsToggle(
                 label: L("settings.tabs.lastCommandBadge", "Last Command Badge"),
                 help: L("settings.tabs.lastCommandBadge.help", "Show the most recent command in the tab status area"),
                 isOn: $settings.isLastCommandBadgeEnabled
             )
+
+            SettingsDivider()
+
+            // Styling
+            SettingsSectionHeader(L("settings.tabs.styling", "Styling"), icon: "paintpalette")
 
             SettingsToggle(
                 label: L("settings.tabs.aiProductIcons", "AI Product Logos"),

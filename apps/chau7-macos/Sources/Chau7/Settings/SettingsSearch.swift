@@ -76,7 +76,7 @@ enum SettingsSectionGroup: String, CaseIterable, Identifiable {
     var sections: [SettingsSection] {
         switch self {
         case .general: return [.startHere, .general, .profilesBackup, .about]
-        case .appearance: return [.fontColors, .display, .windows, .tabs, .minimalMode, .hoverCard]
+        case .appearance: return [.windows, .tabs, .hoverCard, .fontColors, .display, .minimalMode]
         case .terminal: return [.shell, .scrollbackPerf, .graphics, .keyboardMouse]
         case .aiWorkflows: return [.aiDetection, .mcpControl, .promptInjection, .tokenOptimization]
         case .automation: return [.snippetsTools, .editor, .repositories, .apiProxy, .remoteControl, .sshProfiles]
@@ -200,9 +200,9 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .general: return L("settings.general.description", "Startup, language, default directory, and advanced config files")
         case .profilesBackup: return L("settings.profilesBackup.description", "Profile auto-switch, iCloud sync, and settings backup")
         case .about: return L("settings.about.summaryDescription", "Version, support links, diagnostics, and acknowledgments")
-        case .fontColors: return L("settings.fontColors.description", "Font, color scheme, opacity, and ligatures")
+        case .fontColors: return L("settings.fontColors.description", "Terminal font, color scheme, zoom, and ligatures")
         case .display: return L("settings.display.description", "Syntax highlighting, URLs, images, and output formatting")
-        case .windows: return L("settings.windows.description", "Window management and layout")
+        case .windows: return L("settings.windows.description", "App theme, opacity, window behavior, and layout")
         case .tabs: return L("settings.tabs.description", "Tab behavior and appearance")
         case .hoverCard: return L("settings.hoverCard.description", "Choose which sections appear in the tab hover card")
         case .repositories: return L("settings.repositories.description", "Manage repo descriptions, labels, and favorite files")
@@ -428,7 +428,7 @@ extension FeatureSettings {
         ),
         SearchableSetting(
             id: "opacity",
-            section: .fontColors,
+            section: .windows,
             title: L("settings.search.opacity.title", "Window Opacity"),
             keywords: localizedKeywords(
                 "settings.search.opacity.keywords",
@@ -438,7 +438,7 @@ extension FeatureSettings {
         ),
         SearchableSetting(
             id: "appTheme",
-            section: .fontColors,
+            section: .windows,
             title: L("settings.search.appTheme.title", "App Theme"),
             keywords: localizedKeywords(
                 "settings.search.appTheme.keywords",

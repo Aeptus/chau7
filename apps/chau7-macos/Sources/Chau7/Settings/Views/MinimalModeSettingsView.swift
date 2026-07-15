@@ -21,7 +21,9 @@ struct MinimalModeSettingsView: View {
             )
 
             // Keyboard shortcut hint
-            SettingsShortcutRow(label: L("Toggle Minimal Mode"), shortcut: "Cmd+Shift+M")
+            SettingsShortcutRow(label: L("Toggle Minimal Mode"), shortcut: "⌘⇧M")
+
+            SettingsStatusGrid(items: statusItems)
 
             SettingsDivider()
 
@@ -60,12 +62,9 @@ struct MinimalModeSettingsView: View {
                 disabled: !minimalMode.isEnabled
             )
 
-            SettingsDivider()
-
-            // Status Summary
-            SettingsSectionHeader(L("Status"), icon: "info.circle")
-
-            SettingsStatusGrid(items: statusItems)
+            SettingsDescription(
+                text: L("Minimal mode changes apply only while Minimal Mode is enabled.")
+            )
         }
     }
 

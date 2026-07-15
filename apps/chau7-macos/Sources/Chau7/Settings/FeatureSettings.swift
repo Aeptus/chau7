@@ -2505,12 +2505,11 @@ final class FeatureSettings {
     func resetAppearanceToDefaults() {
         resetFontColorsToDefaults()
         resetDisplayToDefaults()
+        resetWindowsToDefaults()
     }
 
     func resetFontColorsToDefaults() {
         appearanceStore.resetToDefaults()
-        windowOpacity = 1.0
-        appTheme = .system
         enableLigatures = false
     }
 
@@ -2521,7 +2520,16 @@ final class FeatureSettings {
         isJSONPrettyPrintEnabled = false
         isLineTimestampsEnabled = false
         timestampFormat = "HH:mm:ss"
+    }
+
+    func resetWindowsToDefaults() {
+        appTheme = .system
+        menuBarOnlyMode = false
+        windowFloating = false
+        windowOpacity = 1.0
+        alwaysShowToolbarInFullscreen = false
         isSplitPanesEnabled = true
+        resetOverlayOffsets()
     }
 
     func resetTerminalToDefaults() {

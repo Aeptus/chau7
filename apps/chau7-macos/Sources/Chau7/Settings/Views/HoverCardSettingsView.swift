@@ -6,12 +6,12 @@ struct HoverCardSettingsView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: Chau7Style.Settings.pageSectionSpacing) {
             SettingsSectionHeader(
-                L("settings.hoverCard.sections", "Visible Sections"),
+                L("settings.hoverCard.quickContext", "Quick Context"),
                 icon: "text.bubble",
                 anchorID: "hoverCardSections"
             )
 
-            SettingsDescription(L("settings.hoverCard.sections.description", "Choose which information sections appear when hovering over a tab."))
+            SettingsDescription(L("settings.hoverCard.quickContext.description", "Show the navigation details people scan first when hovering over a tab."))
 
             SettingsToggle(
                 label: L("settings.hoverCard.directory", "Working Directory"),
@@ -29,6 +29,19 @@ struct HoverCardSettingsView: View {
                 label: L("settings.hoverCard.lastCommand", "Last Command"),
                 help: L("settings.hoverCard.lastCommand.help", "Show the last executed command with exit status and duration"),
                 isOn: $settings.hoverCardShowLastCommand
+            )
+
+            SettingsToggle(
+                label: L("settings.hoverCard.devServer", "Dev Server"),
+                help: L("settings.hoverCard.devServer.help", "Show detected dev server name, port, and URL"),
+                isOn: $settings.hoverCardShowDevServer
+            )
+
+            SettingsDivider()
+
+            SettingsSectionHeader(
+                L("settings.hoverCard.aiRepository", "AI & Repository"),
+                icon: "sparkles"
             )
 
             SettingsToggle(
@@ -50,21 +63,22 @@ struct HoverCardSettingsView: View {
             )
 
             SettingsToggle(
-                label: L("settings.hoverCard.processes", "Process Info"),
-                help: L("settings.hoverCard.processes.help", "Show running child processes with CPU and memory usage"),
-                isOn: $settings.hoverCardShowProcesses
-            )
-
-            SettingsToggle(
-                label: L("settings.hoverCard.devServer", "Dev Server"),
-                help: L("settings.hoverCard.devServer.help", "Show detected dev server name, port, and URL"),
-                isOn: $settings.hoverCardShowDevServer
-            )
-
-            SettingsToggle(
                 label: L("settings.hoverCard.notificationState", "Notification State"),
                 help: L("settings.hoverCard.notificationState.help", "Show the current notification style applied to the tab"),
                 isOn: $settings.hoverCardShowNotificationState
+            )
+
+            SettingsDivider()
+
+            SettingsSectionHeader(
+                L("settings.hoverCard.runtimeDetails", "Runtime Details"),
+                icon: "terminal"
+            )
+
+            SettingsToggle(
+                label: L("settings.hoverCard.processes", "Process Info"),
+                help: L("settings.hoverCard.processes.help", "Show running child processes with CPU and memory usage"),
+                isOn: $settings.hoverCardShowProcesses
             )
 
             SettingsToggle(

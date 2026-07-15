@@ -81,10 +81,21 @@ final class SettingsSurfaceTests: XCTestCase {
     func testWindowsSectionIsAppearanceAndSearchable() {
         XCTAssertEqual(SettingsSection.windows.group, .appearance)
         XCTAssertTrue(SettingsSectionGroup.appearance.sections.contains(.windows))
+        XCTAssertEqual(SettingsSectionGroup.appearance.sections.first, .windows)
 
         let windowsResults = FeatureSettings.searchSettings(query: "floating")
         XCTAssertTrue(windowsResults.contains { result in
             result.section == .windows && result.settings.contains { $0.id == "windowFloating" }
+        })
+
+        let themeResults = FeatureSettings.searchSettings(query: "dark")
+        XCTAssertTrue(themeResults.contains { result in
+            result.section == .windows && result.settings.contains { $0.id == "appTheme" }
+        })
+
+        let opacityResults = FeatureSettings.searchSettings(query: "transparency")
+        XCTAssertTrue(opacityResults.contains { result in
+            result.section == .windows && result.settings.contains { $0.id == "opacity" }
         })
     }
 

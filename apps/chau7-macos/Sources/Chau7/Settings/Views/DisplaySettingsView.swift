@@ -8,25 +8,13 @@ struct DisplaySettingsView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: Chau7Style.Settings.pageSectionSpacing) {
-            // Display Enhancements
-            SettingsSectionHeader(L("settings.appearance.displayEnhancements", "Display Enhancements"), icon: "eye")
+            // Readability
+            SettingsSectionHeader(L("settings.display.readability", "Readability"), icon: "text.viewfinder")
 
             SettingsToggle(
                 label: L("settings.appearance.syntaxHighlighting", "Syntax Highlighting"),
                 help: L("settings.appearance.syntaxHighlighting.help", "Highlight code syntax in terminal output for better readability"),
                 isOn: $settings.isSyntaxHighlightEnabled
-            )
-
-            SettingsToggle(
-                label: L("settings.appearance.clickableURLs", "Clickable URLs"),
-                help: L("settings.appearance.clickableURLs.help", "Make URLs in terminal output clickable to open in browser"),
-                isOn: $settings.isClickableURLsEnabled
-            )
-
-            SettingsToggle(
-                label: L("settings.appearance.inlineImages", "Inline Images"),
-                help: L("settings.appearance.inlineImages.help", "Display images inline using iTerm2's imgcat protocol (use imgcat command)"),
-                isOn: $settings.isInlineImagesEnabled
             )
 
             SettingsToggle(
@@ -51,6 +39,23 @@ struct DisplaySettingsView: View {
                     monospaced: true
                 )
             }
+
+            SettingsDivider()
+
+            // Interactive Output
+            SettingsSectionHeader(L("settings.display.interactiveOutput", "Interactive Output"), icon: "cursorarrow.click.2")
+
+            SettingsToggle(
+                label: L("settings.appearance.clickableURLs", "Clickable URLs"),
+                help: L("settings.appearance.clickableURLs.help", "Make URLs in terminal output clickable to open in browser"),
+                isOn: $settings.isClickableURLsEnabled
+            )
+
+            SettingsToggle(
+                label: L("settings.appearance.inlineImages", "Inline Images"),
+                help: L("settings.appearance.inlineImages.help", "Display images inline using iTerm2's imgcat protocol (use imgcat command)"),
+                isOn: $settings.isInlineImagesEnabled
+            )
 
             SettingsDivider()
 
