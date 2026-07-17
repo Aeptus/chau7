@@ -8,6 +8,11 @@ import Chau7Core
 final class MCPServerManager {
     static let shared = MCPServerManager()
 
+    /// Cap on simultaneously accepted client connections. The socket is
+    /// owner-only, so this only bounds a same-user process opening connections
+    /// in a loop (fd/thread/memory exhaustion), not a cross-user attacker.
+    private static let maxConcurrentClients = 32
+
     private var listener: UnixSocketListener?
     private var clientSockets: [Int32] = []
     private let socketPath: String
@@ -507,6 +512,15 @@ final class MCPServerManager {
         guard isRunning, generation == serverGeneration else {
             // Stale accept from a listener stopped between the socket
             // becoming readable and this handler running — drop it.
+            close(clientFD)
+            return
+        }
+
+        if clientSockets.count >= Self.maxConcurrentClients {
+            Log.warn(
+                "MCPServer: refusing client fd=\(clientFD) — at max concurrent clients " +
+                    "(\(Self.maxConcurrentClients))"
+            )
             close(clientFD)
             return
         }

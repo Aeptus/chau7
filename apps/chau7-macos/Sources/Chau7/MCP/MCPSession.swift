@@ -8,6 +8,10 @@ final class MCPSession {
     /// (reviews, eval harnesses, manual debugging) without forcing clients to
     /// reconnect between tool calls.
     private static let socketIdleTimeoutSeconds = 30 * 60
+    /// Upper bound on a single JSON-RPC request line. Generous enough for large
+    /// tool payloads (e.g. agent prompts) while preventing a client that streams
+    /// bytes with no newline from growing the read buffer without limit (OOM).
+    private static let maxRequestLineBytes = 8 * 1024 * 1024
     private static let supportedProtocolVersions = ["2025-11-25", "2024-11-05"]
     private static let toolRateLimiterQueue = DispatchQueue(label: "com.chau7.mcp.tool-rate-limiter")
     private static var toolRateLimiter = MCPToolRateLimiter()
@@ -92,39 +96,77 @@ final class MCPSession {
             writeJSON(to: writeStream, json: payload, mirrorToNotificationSink: true)
         }
 
-        while true {
-            var line: UnsafeMutablePointer<CChar>?
-            var lineCap = 0
-            errno = 0
-            let bytesRead = getline(&line, &lineCap, readStream)
-            guard bytesRead > 0, let line else {
-                if errno == EINTR {
+        readLoop: while true {
+            switch readBoundedLine(from: readStream, maxBytes: Self.maxRequestLineBytes) {
+            case .endOfStream:
+                break readLoop
+            case .readError(let readErrno):
+                if readErrno == EAGAIN || readErrno == EWOULDBLOCK || readErrno == ETIMEDOUT {
+                    Log.info("MCPSession: closing idle client after read timeout (fd=\(fd))")
+                } else if readErrno != 0 {
+                    Log.warn("MCPSession: read failed for fd=\(fd): \(String(cString: strerror(readErrno)))")
+                }
+                break readLoop
+            case .tooLarge:
+                // A single request line exceeded the cap. We have consumed a
+                // partial line and cannot realign to the next JSON boundary, so
+                // report and close rather than risk interpreting garbage.
+                Log.warn("MCPSession: request line exceeded \(Self.maxRequestLineBytes) bytes (fd=\(fd)); closing")
+                writeError(to: writeStream, id: nil, code: -32700, message: "Request too large")
+                break readLoop
+            case .line(let rawLine):
+                let lineStr = rawLine.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !lineStr.isEmpty else { continue }
+
+                // Parse JSON-RPC request
+                guard let data = lineStr.data(using: .utf8),
+                      let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+                else {
+                    writeError(to: writeStream, id: nil, code: -32700, message: "Parse error")
                     continue
                 }
-                if errno == EAGAIN || errno == EWOULDBLOCK || errno == ETIMEDOUT {
-                    Log.info("MCPSession: closing idle client after read timeout (fd=\(fd))")
-                } else if errno != 0 {
-                    Log.warn("MCPSession: read failed for fd=\(fd): \(String(cString: strerror(errno)))")
+
+                if let response = handleRequestObject(json) {
+                    writeJSON(to: writeStream, json: response)
                 }
-                break
-            }
-            defer { free(line) }
-
-            let lineStr = String(cString: line).trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !lineStr.isEmpty else { continue }
-
-            // Parse JSON-RPC request
-            guard let data = lineStr.data(using: .utf8),
-                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
-            else {
-                writeError(to: writeStream, id: nil, code: -32700, message: "Parse error")
-                continue
-            }
-
-            if let response = handleRequestObject(json) {
-                writeJSON(to: writeStream, json: response)
             }
         }
+    }
+
+    private enum ReadLineResult {
+        case line(String)
+        case endOfStream
+        case tooLarge
+        case readError(Int32)
+    }
+
+    /// Read one newline-delimited line from `stream`, bounding the accumulated
+    /// bytes at `maxBytes`. Unlike `getline`, this never grows an unbounded
+    /// buffer for a client that streams without a newline — it stops at the cap.
+    /// The trailing `\n` is consumed but not included in the returned string.
+    private func readBoundedLine(from stream: UnsafeMutablePointer<FILE>, maxBytes: Int) -> ReadLineResult {
+        var bytes: [UInt8] = []
+        while true {
+            errno = 0
+            let c = fgetc(stream)
+            if c == EOF {
+                if errno == EINTR { continue }
+                if errno != 0 { return .readError(errno) }
+                // Clean end of stream: surface any final unterminated line.
+                return bytes.isEmpty ? .endOfStream : .line(decodeUTF8(bytes))
+            }
+            if c == 0x0A { // '\n'
+                return .line(decodeUTF8(bytes))
+            }
+            if bytes.count >= maxBytes {
+                return .tooLarge
+            }
+            bytes.append(UInt8(truncatingIfNeeded: c))
+        }
+    }
+
+    private func decodeUTF8(_ bytes: [UInt8]) -> String {
+        String(decoding: bytes, as: UTF8.self)
     }
 
     private func configureSocketTimeouts() {
