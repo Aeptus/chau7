@@ -70,6 +70,9 @@ final class RemoteClient {
     var pendingInteractivePrompts: [RemoteInteractivePrompt] = []
     var approvalHistory: [ApprovalHistoryEntry] = []
     private(set) var liveActivityState: RemoteActivityState?
+    /// Features the connected Mac advertised in its tab list. Empty against
+    /// older Macs — senders must fall back (e.g. escape text over .input).
+    private(set) var macCapabilities: Set<String> = []
 
     // MARK: - Pairing (persisted in Keychain)
 
@@ -371,6 +374,9 @@ final class RemoteClient {
         // next session — connect() calls disconnect() first, so wiping here
         // routinely lost pre-session events on flaky connects (NF-9).
         liveActivityState = nil
+        // The next session may be a different (older) Mac: never carry a
+        // capability advertisement across connections.
+        macCapabilities = []
         outputText = ""
         strippedOutputText = ""
         if !preserveApprovalsAndPrompts {
@@ -396,6 +402,38 @@ final class RemoteClient {
     @discardableResult
     func sendInput(_ text: String, appendNewline: Bool) -> Bool {
         sendInput(text, appendNewline: appendNewline, to: activeTabID)
+    }
+
+    /// Whether keys should go over the semantic KEY_INPUT frame. False
+    /// against older Macs (no advertisement) — callers fall back to today's
+    /// escape text over .input, which works against every Mac.
+    var supportsKeyInput: Bool {
+        macCapabilities.contains(RemoteTabListPayload.keyInputCapability)
+    }
+
+    /// Send semantic key presses to the active tab over KEY_INPUT. The Mac
+    /// encodes them through the terminal view's key encoder, so application
+    /// cursor mode and control combos behave like locally-typed keys.
+    @discardableResult
+    func sendKeyInput(_ keys: [RemoteKeyInputPayload.Key]) -> Bool {
+        guard !keys.isEmpty, supportsKeyInput, canSendInput else { return false }
+        guard let data = try? RemoteJSON.encoder.encode(RemoteKeyInputPayload(keys: keys)) else {
+            return false
+        }
+        guard sendEncrypted(type: .keyInput, tabID: activeTabID, payload: data) else {
+            reportBlockedInput(
+                "Key input could not be encrypted for the current remote session.",
+                reason: "encrypt_failed",
+                tabID: activeTabID
+            )
+            return false
+        }
+        if lastError != nil { lastError = nil }
+        DiagnosticsLog.shared.debug(.input, "Key input forwarded to relay", [
+            "tab_id": String(activeTabID),
+            "keys": String(keys.count)
+        ])
+        return true
     }
 
     func switchTab(_ tabID: UInt32) {
@@ -800,6 +838,7 @@ final class RemoteClient {
 
     private func applyTabListPayload(_ msg: TabListPayload) {
         tabs = msg.tabs
+        macCapabilities = Set(msg.capabilities ?? [])
         activeTabID = msg.tabs.first(where: \.isActive)?.tabID ?? msg.tabs.first?.tabID ?? 0
         let visibleTabIDs = Set(msg.tabs.map(\.tabID))
         outputStore.retainVisibleTabs(visibleTabIDs)

@@ -363,22 +363,22 @@ struct TerminalView: View {
     private var controlKeyRow: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 0) {
-                TermKey("esc", labelText: "Escape", send: "\u{1B}", client: client)
+                TermKey("esc", labelText: "Escape", send: "\u{1B}", semantic: .init(key: "escape"), client: client)
                 // Bare CR with no body takes the Mac's `.enterKey` submit path
                 // with zero delay — it behaves like a real Enter keypress, which
                 // is what TUI selection menus need to confirm a highlighted row.
-                TermKey("\u{23CE}", labelText: "Return", send: "\r", client: client)
-                TermKey("tab", labelText: "Tab", send: "\t", client: client)
-                TermKey("\u{21E7}\u{21E5}", labelText: "Shift Tab", send: "\u{1B}[Z", client: client)
-                TermKey("^C", labelText: "Control C", send: "\u{03}", client: client)
-                TermKey("^D", labelText: "Control D", send: "\u{04}", client: client)
-                TermKey("^Z", labelText: "Control Z", send: "\u{1A}", client: client)
-                TermKey("^L", labelText: "Control L", send: "\u{0C}", client: client)
+                TermKey("\u{23CE}", labelText: "Return", send: "\r", semantic: .init(key: "enter"), client: client)
+                TermKey("tab", labelText: "Tab", send: "\t", semantic: .init(key: "tab"), client: client)
+                TermKey("\u{21E7}\u{21E5}", labelText: "Shift Tab", send: "\u{1B}[Z", semantic: .init(key: "tab", modifiers: ["shift"]), client: client)
+                TermKey("^C", labelText: "Control C", send: "\u{03}", semantic: .init(key: "c", modifiers: ["control"]), client: client)
+                TermKey("^D", labelText: "Control D", send: "\u{04}", semantic: .init(key: "d", modifiers: ["control"]), client: client)
+                TermKey("^Z", labelText: "Control Z", send: "\u{1A}", semantic: .init(key: "z", modifiers: ["control"]), client: client)
+                TermKey("^L", labelText: "Control L", send: "\u{0C}", semantic: .init(key: "l", modifiers: ["control"]), client: client)
                 Divider().frame(height: 24).padding(.horizontal, 4)
-                TermKey("\u{2191}", labelText: "Up arrow", send: "\u{1B}[A", client: client)
-                TermKey("\u{2193}", labelText: "Down arrow", send: "\u{1B}[B", client: client)
-                TermKey("\u{2190}", labelText: "Left arrow", send: "\u{1B}[D", client: client)
-                TermKey("\u{2192}", labelText: "Right arrow", send: "\u{1B}[C", client: client)
+                TermKey("\u{2191}", labelText: "Up arrow", send: "\u{1B}[A", semantic: .init(key: "up"), client: client)
+                TermKey("\u{2193}", labelText: "Down arrow", send: "\u{1B}[B", semantic: .init(key: "down"), client: client)
+                TermKey("\u{2190}", labelText: "Left arrow", send: "\u{1B}[D", semantic: .init(key: "left"), client: client)
+                TermKey("\u{2192}", labelText: "Right arrow", send: "\u{1B}[C", semantic: .init(key: "right"), client: client)
             }
             .padding(.horizontal, 8)
             .padding(.vertical, 4)
@@ -734,13 +734,26 @@ struct TermKey: View {
     let label: String
     let accessibilityName: String
     let sequence: String
+    /// Semantic identity of the key (TerminalKeyPress vocabulary). When set
+    /// and the Mac advertises key_input, the press goes over the KEY_INPUT
+    /// frame so the Mac's encoder resolves application-cursor mode and
+    /// control combos; otherwise the raw `sequence` rides .input as before,
+    /// which works against every Mac.
+    let semanticKey: RemoteKeyInputPayload.Key?
     let client: RemoteClient
     @State private var tapCount = 0
 
-    init(_ label: String, labelText: String, send sequence: String, client: RemoteClient) {
+    init(
+        _ label: String,
+        labelText: String,
+        send sequence: String,
+        semantic semanticKey: RemoteKeyInputPayload.Key? = nil,
+        client: RemoteClient
+    ) {
         self.label = label
         self.accessibilityName = labelText
         self.sequence = sequence
+        self.semanticKey = semanticKey
         self.client = client
     }
 
@@ -748,7 +761,12 @@ struct TermKey: View {
         Button {
             tapCount += 1
             DiagnosticsLog.shared.keystroke(label, field: "key_bar", extra: ["op": "control_key"])
-            let sent = client.sendInput(sequence, appendNewline: false)
+            let sent: Bool
+            if let semanticKey, client.supportsKeyInput {
+                sent = client.sendKeyInput([semanticKey])
+            } else {
+                sent = client.sendInput(sequence, appendNewline: false)
+            }
             if !sent {
                 DiagnosticsLog.shared.error(.input, "Control key blocked", [
                     "key": label,
