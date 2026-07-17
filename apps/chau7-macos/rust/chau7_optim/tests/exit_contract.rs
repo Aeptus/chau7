@@ -64,7 +64,11 @@ fn successful_optimization_exits_zero() {
 fn passthrough_python_invocation_skips_with_exit_3() {
     // `python --version` isn't a form the optimizer handles → intentional skip.
     let code = run(&["python", "--version"]);
-    assert_eq!(code, Some(3), "unhandled python invocation must skip (exit 3)");
+    assert_eq!(
+        code,
+        Some(3),
+        "unhandled python invocation must skip (exit 3)"
+    );
 }
 
 #[test]

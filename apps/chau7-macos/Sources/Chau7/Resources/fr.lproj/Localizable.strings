@@ -1986,7 +1986,10 @@
 "cto.savings.outputTokens" = "Jetons de sortie";
 "cto.savings.refresh" = "Actualiser";
 "cto.savings.savedTokens" = "Jetons économisés";
-"cto.savings.totalCommands" = "Nombre total de commandes";
+"cto.savings.commands" = "Commandes";
+"cto.savings.lifetimeSaved" = "Total économisé";
+"cto.savings.noRecentActivity" = "Aucune commande optimisée au cours des %d derniers jours.";
+"cto.savings.recentWindow" = "%d derniers jours";
 "cto.settings.commandLog" = "Journal des commandes";
 "cto.settings.commands" = "Commandes";
 "cto.settings.ctoRuntime" = "Télémétrie d'exécution";

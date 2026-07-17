@@ -1984,7 +1984,10 @@
 "cto.savings.outputTokens" = "Output tokens";
 "cto.savings.refresh" = "Refresh";
 "cto.savings.savedTokens" = "Tokens saved";
-"cto.savings.totalCommands" = "Total commands";
+"cto.savings.commands" = "Commands";
+"cto.savings.lifetimeSaved" = "Lifetime saved";
+"cto.savings.noRecentActivity" = "No optimized commands in the last %d days.";
+"cto.savings.recentWindow" = "Last %d days";
 "cto.settings.commandLog" = "Recent Optimizer Commands";
 "cto.settings.commands" = "Optimized Commands";
 "cto.settings.ctoRuntime" = "Runtime Telemetry";

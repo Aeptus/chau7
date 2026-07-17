@@ -681,23 +681,26 @@ final class TokenOptimizationCoreTests: XCTestCase {
     }
 
     func testRewriteMapPlusExecOnlyCoversSupportedCommands() {
-        let rewriteKeys = Set(ctoRewriteMap.keys)
-        let allCovered = rewriteKeys.union(execOnlyCommands)
+        let allCovered = Set(ctoRewriteMap.keys)
+            .union(execOnlyCommands)
+            .union(executableCommands.keys)
         let supported = Set(supportedCommands)
         XCTAssertEqual(
             allCovered,
             supported,
-            "Rewrite map + exec-only should exactly cover supportedCommands"
+            "Rewrite map + exec-only + executables should exactly cover supportedCommands"
         )
     }
 
     func testSupportedCommandsIsDerivedFromMapAndExecOnly() {
         let commands = Set(supportedCommands)
-        let expected = Set(ctoRewriteMap.keys).union(execOnlyCommands)
+        let expected = Set(ctoRewriteMap.keys)
+            .union(execOnlyCommands)
+            .union(executableCommands.keys)
         XCTAssertEqual(
             commands,
             expected,
-            "supportedCommands should equal ctoRewriteMap keys ∪ execOnlyCommands"
+            "supportedCommands should equal ctoRewriteMap keys ∪ execOnlyCommands ∪ executableCommands keys"
         )
     }
 
@@ -718,6 +721,98 @@ final class TokenOptimizationCoreTests: XCTestCase {
                 "pipe-filter command '\(cmd)' should be in ctoRewriteMap"
             )
         }
+    }
+
+    /// Regression: `head`, `tail`, and `wc` were removed from the wrapper
+    /// surface — their wrappers were no-op passthroughs that `exec`'d the real
+    /// binary on both the inactive and active paths, adding a `bash` fork per
+    /// call for zero token savings. They must not reappear in
+    /// `supportedCommands` (which would make `setup()` reinstall the dead
+    /// wrappers), and the exec-only set stays empty by design.
+    func testExecOnlyWrappersRemovedFromSurface() {
+        XCTAssertTrue(
+            execOnlyCommands.isEmpty,
+            "exec-only wrapper surface should be empty: \(execOnlyCommands)"
+        )
+        for cmd in ["head", "tail", "wc"] {
+            XCTAssertFalse(
+                supportedCommands.contains(cmd),
+                "\(cmd) must not have a wrapper — no optimizer route, no savings"
+            )
+            XCTAssertNil(ctoRewriteMap[cmd], "\(cmd) must not be optimizer-routed")
+        }
+    }
+
+    // MARK: - Executable Command Taxonomy
+
+    /// Tier 1 executables are wrapped and gated to idempotent subcommands.
+    func testExecutableCommandsTier1Gating() throws {
+        let expectedAllowlists: [String: Set<String>] = [
+            "git": ["status", "diff", "log", "show"],
+            "cargo": ["build", "test", "check", "clippy", "nextest"],
+            "swift": ["build", "test"],
+            "go": ["build", "test", "vet"]
+        ]
+        for (cmd, expected) in expectedAllowlists {
+            let policy = try XCTUnwrap(executableCommands[cmd])
+            guard case let .subcommandAllowlist(subs) = policy.gate else {
+                return XCTFail("\(cmd) should gate by subcommand allowlist")
+            }
+            XCTAssertEqual(subs, expected, "\(cmd) allowlist")
+        }
+        // Mutating subcommands must never be in any allowlist.
+        for mutation in ["commit", "push", "publish", "install", "reset", "clean"] {
+            for (cmd, subs) in expectedAllowlists {
+                XCTAssertFalse(subs.contains(mutation), "\(cmd) \(mutation) must not be optimized")
+            }
+        }
+        // curl gates by HTTP method, not subcommand.
+        let curl = try XCTUnwrap(executableCommands["curl"])
+        XCTAssertEqual(curl.gate, .curlSafeMethodsOnly)
+    }
+
+    /// The curl wrapper routes only non-mutating requests to the optimizer.
+    func testCurlMethodGateContract() {
+        let wrapper = CTOManager.shared.generateExecutableWrapperScript(
+            for: "curl",
+            policy: CTOExecPolicy(gate: .curlSafeMethodsOnly)
+        )
+        // Detects mutating flags and skips the optimizer for them.
+        XCTAssertTrue(wrapper.contains("-X|--request"), "must detect explicit method")
+        XCTAssertTrue(wrapper.contains("-d|--data"), "must detect body data")
+        XCTAssertTrue(wrapper.contains("_cto_safe"), "must gate on request safety")
+        XCTAssertTrue(wrapper.contains("for _dir in $PATH"), "must resolve curl at runtime")
+    }
+
+    /// Executable wrappers and read-only rewrites are disjoint surfaces, and
+    /// every executable is in supportedCommands so it gets a wrapper.
+    func testExecutableCommandsDisjointAndSupported() {
+        let execKeys = Set(executableCommands.keys)
+        XCTAssertTrue(
+            execKeys.isDisjoint(with: Set(ctoRewriteMap.keys)),
+            "executable and read-only surfaces must not overlap"
+        )
+        XCTAssertTrue(
+            execKeys.isDisjoint(with: execOnlyCommands),
+            "executable and exec-only surfaces must not overlap"
+        )
+        for cmd in execKeys {
+            XCTAssertTrue(supportedCommands.contains(cmd), "\(cmd) must be installed as a wrapper")
+        }
+    }
+
+    /// Tier 2 interpreters stay off the wrapper surface (regression guard for
+    /// the class of commands that broke before).
+    func testDeferredInterpretersNotWrapped() {
+        for cmd in ["python", "python3", "node", "npm", "npx", "pip", "pytest"] {
+            XCTAssertTrue(deferredExecutableCommands.contains(cmd))
+            XCTAssertNil(executableCommands[cmd], "\(cmd) must not be wrapped yet")
+            XCTAssertFalse(supportedCommands.contains(cmd), "\(cmd) must not be installed")
+        }
+        XCTAssertTrue(
+            deferredExecutableCommands.isDisjoint(with: Set(executableCommands.keys)),
+            "a command cannot be both wrapped and deferred"
+        )
     }
 
     // MARK: - Real Binary Resolution
@@ -1393,6 +1488,322 @@ final class TokenOptimizationIntegrationTests: XCTestCase {
         let snapshot = CTORuntimeMonitor.shared.snapshot()
         XCTAssertNil(snapshot.gainStats)
         XCTAssertNil(snapshot.gainStatsLastSampledAt)
+    }
+
+    // MARK: - Windowed Gain Aggregation
+
+    /// The recent-window aggregate must carry real timing, not the `0` the
+    /// first cut hardcoded — otherwise the settings panel and the debug
+    /// console's windowed view both report a bogus "0ms". Timing is summed and
+    /// the average is weighted by command count across the window, so a busy
+    /// day dominates a one-command day.
+    func testAggregateDailyStatsSumsWindowedTiming() {
+        let daily = [
+            CTOManager.DailyGainEntry(
+                date: "2026-07-13", commands: 100, inputTokens: 10000,
+                outputTokens: 4000, savedTokens: 6000, savingsPct: 60,
+                totalTimeMs: 2000, avgTimeMs: 20
+            ),
+            CTOManager.DailyGainEntry(
+                date: "2026-07-14", commands: 300, inputTokens: 30000,
+                outputTokens: 9000, savedTokens: 21000, savingsPct: 70,
+                totalTimeMs: 3000, avgTimeMs: 10
+            )
+        ]
+        let cutoff = Calendar.current.date(
+            from: DateComponents(year: 2026, month: 7, day: 13)
+        )!
+        let agg = CTOManager.aggregateDailyStats(daily, since: cutoff)
+
+        XCTAssertEqual(agg.commands, 400)
+        XCTAssertEqual(agg.savedTokens, 27000)
+        XCTAssertEqual(agg.totalTimeMs, 5000)
+        // 5000ms / 400 cmds = 12.5 → 13, NOT the naive mean of per-day
+        // averages ((20 + 10) / 2 = 15).
+        XCTAssertEqual(agg.avgTimeMs, 13)
+    }
+
+    /// Days before the cutoff are excluded from every rollup — timing included,
+    /// so a retired multi-second-per-command day can't leak into the window.
+    func testAggregateDailyStatsExcludesBeforeCutoff() {
+        let daily = [
+            CTOManager.DailyGainEntry(
+                date: "2026-07-01", commands: 999, inputTokens: 1, outputTokens: 1,
+                savedTokens: 1, savingsPct: 1, totalTimeMs: 999_000, avgTimeMs: 1000
+            ),
+            CTOManager.DailyGainEntry(
+                date: "2026-07-14", commands: 10, inputTokens: 1000, outputTokens: 400,
+                savedTokens: 600, savingsPct: 60, totalTimeMs: 100, avgTimeMs: 10
+            )
+        ]
+        let cutoff = Calendar.current.date(
+            from: DateComponents(year: 2026, month: 7, day: 10)
+        )!
+        let agg = CTOManager.aggregateDailyStats(daily, since: cutoff)
+
+        XCTAssertEqual(agg.commands, 10, "the pre-cutoff day must be dropped")
+        XCTAssertEqual(agg.totalTimeMs, 100)
+        XCTAssertEqual(agg.avgTimeMs, 10)
+    }
+
+    /// Empty window → zeroed stats, and `avgTimeMs` must not divide by zero.
+    func testAggregateDailyStatsEmptyWindowIsZero() {
+        let daily = [
+            CTOManager.DailyGainEntry(
+                date: "2026-07-01", commands: 5, inputTokens: 100, outputTokens: 50,
+                savedTokens: 50, savingsPct: 50, totalTimeMs: 500, avgTimeMs: 100
+            )
+        ]
+        let cutoff = Calendar.current.date(
+            from: DateComponents(year: 2026, month: 7, day: 14)
+        )!
+        let agg = CTOManager.aggregateDailyStats(daily, since: cutoff)
+
+        XCTAssertEqual(agg.commands, 0)
+        XCTAssertEqual(agg.totalTimeMs, 0)
+        XCTAssertEqual(agg.avgTimeMs, 0)
+    }
+
+    /// The daily decoder reads per-day timing when present and tolerates its
+    /// absence (older optimizer builds) by defaulting to 0 — a missing field
+    /// must not fail the whole decode, which would also drop `.summary` and
+    /// blank the settings panel.
+    func testDailyGainEntryDecodesTimingAndToleratesMissing() throws {
+        let withTiming = """
+        {"date":"2026-07-14","commands":144,"input_tokens":76686,
+         "output_tokens":43595,"saved_tokens":33148,"savings_pct":43.2,
+         "total_time_ms":1355,"avg_time_ms":9}
+        """.data(using: .utf8)!
+        let present = try JSONDecoder().decode(CTOManager.DailyGainEntry.self, from: withTiming)
+        XCTAssertEqual(present.totalTimeMs, 1355)
+        XCTAssertEqual(present.avgTimeMs, 9)
+
+        let withoutTiming = """
+        {"date":"2026-07-14","commands":144,"input_tokens":76686,
+         "output_tokens":43595,"saved_tokens":33148,"savings_pct":43.2}
+        """.data(using: .utf8)!
+        let missing = try JSONDecoder().decode(CTOManager.DailyGainEntry.self, from: withoutTiming)
+        XCTAssertEqual(missing.totalTimeMs, 0, "missing timing defaults to 0")
+        XCTAssertEqual(missing.avgTimeMs, 0)
+        XCTAssertEqual(missing.commands, 144, "other fields still decode")
+    }
+
+    // MARK: - Per-Session Activity (optimizer-independent)
+
+    private func logEntry(
+        _ session: String, _ cmd: String, _ rc: Int, _ outcome: String, at epoch: TimeInterval
+    ) -> CTOManager.CommandLogEntry {
+        CTOManager.CommandLogEntry(
+            timestamp: Date(timeIntervalSince1970: epoch),
+            sessionID: session, command: cmd, exitCode: rc, outcome: outcome
+        )
+    }
+
+    /// Groups by session, tallies outcomes, and derives first/last activity —
+    /// the data that replaces the fork's `--session-id` query post-migration.
+    func testAggregateSessionActivityGroupsAndCounts() throws {
+        let entries = [
+            logEntry("S1", "ls", 0, "optimized", at: 100),
+            logEntry("S1", "grep", 1, "optimized", at: 200),
+            logEntry("S1", "cat", 0, "skipped", at: 150),
+            logEntry("S2", "find", 0, "fallthrough", at: 300)
+        ]
+        let acts = CTOManager.aggregateSessionActivity(entries)
+        XCTAssertEqual(acts.count, 2)
+        // Sorted most-recently-active first: S2 (300) before S1 (200).
+        XCTAssertEqual(acts.first?.sessionID, "S2")
+
+        let s1 = try XCTUnwrap(acts.first { $0.sessionID == "S1" })
+        XCTAssertEqual(s1.totalCommands, 3)
+        XCTAssertEqual(s1.optimizedCount, 2)
+        XCTAssertEqual(s1.skippedCount, 1)
+        XCTAssertEqual(s1.firstSeen, Date(timeIntervalSince1970: 100))
+        XCTAssertEqual(s1.lastActive, Date(timeIntervalSince1970: 200))
+        // Optimized rate excludes the intentional skip: 2 / (3 - 1) = 100%.
+        XCTAssertEqual(try XCTUnwrap(s1.optimizedRatePercent), 100, accuracy: 0.001)
+
+        let s2 = try XCTUnwrap(acts.first { $0.sessionID == "S2" })
+        XCTAssertEqual(s2.fallthroughCount, 1)
+        XCTAssertEqual(try XCTUnwrap(s2.optimizedRatePercent), 0, accuracy: 0.001)
+    }
+
+    /// A session that only ever skipped has no meaningful sample → nil rate,
+    /// never a divide-by-zero.
+    func testSessionActivityAllSkipsHasNilRate() {
+        let entries = [
+            logEntry("S", "cat", 0, "skipped", at: 10),
+            logEntry("S", "cat", 0, "skipped", at: 20)
+        ]
+        let activity = CTOManager.aggregateSessionActivity(entries).first
+        XCTAssertNil(activity?.optimizedRatePercent)
+        XCTAssertEqual(activity?.skippedCount, 2)
+    }
+
+    /// Unknown outcome strings bucket into errorCount rather than being dropped.
+    func testSessionActivityUnknownOutcomeIsError() throws {
+        let entries = [logEntry("S", "ls", 137, "weird", at: 5)]
+        let activity = try XCTUnwrap(CTOManager.aggregateSessionActivity(entries).first)
+        XCTAssertEqual(activity.errorCount, 1)
+        XCTAssertEqual(activity.optimizedCount, 0)
+    }
+
+    func testAggregateSessionActivityEmpty() {
+        XCTAssertTrue(CTOManager.aggregateSessionActivity([]).isEmpty)
+    }
+
+    // MARK: - Executable Wrapper Safety
+
+    private var gitWrapperScript: String {
+        CTOManager.shared.generateExecutableWrapperScript(
+            for: "git",
+            policy: CTOExecPolicy(gate: .subcommandAllowlist(["status", "diff", "log", "show"]))
+        )
+    }
+
+    /// The generated executable wrapper embeds each hardening guarantee.
+    func testExecutableWrapperContract() {
+        let w = gitWrapperScript
+        XCTAssertTrue(w.contains("for _dir in $PATH"), "must resolve the real binary at runtime")
+        XCTAssertFalse(w.contains("/usr/bin/git"), "must NOT bake an absolute path")
+        XCTAssertTrue(w.contains("CHAU7_CTO_OPTIM_ACTIVE"), "must check the recursion sentinel")
+        XCTAssertTrue(w.contains("[ -t 0 ]"), "must bypass the optimizer for interactive callers")
+        // Gate lists exactly the read subcommands (sorted), no mutations.
+        XCTAssertTrue(w.contains("diff|log|show|status)"), "must gate on the read allowlist")
+        XCTAssertFalse(w.contains("commit"), "mutations must not appear in the gate")
+        XCTAssertTrue(w.contains("exec \"$_CTO_REAL\" \"$@\""), "must exec the real binary")
+    }
+
+    /// The load-bearing safety test: drive the generated `git` wrapper with a
+    /// fake `git` (invocation counter) and fake optimizer, and assert the real
+    /// command runs **exactly once** for a mutation, routes to the optimizer for
+    /// an idempotent read, and honors the recursion sentinel + inactive fast path.
+    func testExecutableWrapperSingleExecutionAndRouting() throws {
+        let fm = FileManager.default
+        let home = fm.temporaryDirectory.appendingPathComponent("ctoexec-\(UUID().uuidString)")
+        let binDir = home.appendingPathComponent("bin")
+        let chau7Bin = home.appendingPathComponent(".chau7/bin")
+        let ctoActive = home.appendingPathComponent(".chau7/cto_active")
+        for dir in [binDir, chau7Bin, ctoActive, home.appendingPathComponent(".chau7/cto_bin")] {
+            try fm.createDirectory(at: dir, withIntermediateDirectories: true)
+        }
+        defer { try? fm.removeItem(at: home) }
+
+        let gitCounter = home.appendingPathComponent("git.count").path
+        let optimCounter = home.appendingPathComponent("optim.count").path
+        func writeExecutable(_ url: URL, _ body: String) throws {
+            try body.write(to: url, atomically: true, encoding: .utf8)
+            try fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: url.path)
+        }
+        try writeExecutable(binDir.appendingPathComponent("git"), "#!/bin/bash\necho 1 >> \(gitCounter)\nexit 0\n")
+        try writeExecutable(chau7Bin.appendingPathComponent("chau7-optim"), "#!/bin/bash\necho 1 >> \(optimCounter)\nexit 0\n")
+        let wrapperFile = home.appendingPathComponent("git-wrapper.sh")
+        try gitWrapperScript.write(to: wrapperFile, atomically: true, encoding: .utf8)
+
+        let session = "TESTSESSION"
+        let flag = ctoActive.appendingPathComponent(session)
+        func count(_ path: String) -> Int {
+            (try? String(contentsOfFile: path, encoding: .utf8))?
+                .split(separator: "\n").count ?? 0
+        }
+        func run(_ args: [String], active: Bool, optimActive: Bool = false) throws {
+            try? fm.removeItem(atPath: gitCounter)
+            try? fm.removeItem(atPath: optimCounter)
+            if active { fm.createFile(atPath: flag.path, contents: nil) } else { try? fm.removeItem(at: flag) }
+            let proc = Process()
+            proc.executableURL = URL(fileURLWithPath: "/bin/bash")
+            proc.arguments = [wrapperFile.path] + args
+            var env = ["HOME": home.path, "PATH": "\(binDir.path):/usr/bin:/bin"]
+            if active { env["CHAU7_CTO_SESSION"] = session }
+            if optimActive { env["CHAU7_CTO_OPTIM_ACTIVE"] = "1" }
+            proc.environment = env
+            proc.standardInput = FileHandle.nullDevice // non-interactive (not a TTY)
+            proc.standardOutput = FileHandle.nullDevice
+            proc.standardError = FileHandle.nullDevice
+            try proc.run()
+            proc.waitUntilExit()
+        }
+
+        // 1. Mutation while active → passthrough: real git runs once, optimizer untouched.
+        try run(["commit", "-m", "x"], active: true)
+        XCTAssertEqual(count(gitCounter), 1, "a mutation must exec the real git exactly once")
+        XCTAssertEqual(count(optimCounter), 0, "the optimizer must never see a mutation")
+
+        // 2. Idempotent read while active, non-interactive → routes to the optimizer.
+        try run(["status"], active: true)
+        XCTAssertEqual(count(optimCounter), 1, "a read routes to the optimizer")
+        XCTAssertEqual(count(gitCounter), 0, "wrapper must not also run real git once the optimizer handled it")
+
+        // 3. Recursion sentinel set → even an allowlisted read execs real git directly.
+        try run(["status"], active: true, optimActive: true)
+        XCTAssertEqual(count(gitCounter), 1, "sentinel must bypass the optimizer")
+        XCTAssertEqual(count(optimCounter), 0)
+
+        // 4. CTO inactive → fast path execs real git once.
+        try run(["status"], active: false)
+        XCTAssertEqual(count(gitCounter), 1)
+        XCTAssertEqual(count(optimCounter), 0)
+    }
+
+    /// curl's method gate must keep mutating requests away from the optimizer
+    /// (no double-POST), while routing plain GETs through it.
+    func testCurlMethodGateSingleExecution() throws {
+        let fm = FileManager.default
+        let home = fm.temporaryDirectory.appendingPathComponent("ctocurl-\(UUID().uuidString)")
+        let binDir = home.appendingPathComponent("bin")
+        let chau7Bin = home.appendingPathComponent(".chau7/bin")
+        let ctoActive = home.appendingPathComponent(".chau7/cto_active")
+        for dir in [binDir, chau7Bin, ctoActive, home.appendingPathComponent(".chau7/cto_bin")] {
+            try fm.createDirectory(at: dir, withIntermediateDirectories: true)
+        }
+        defer { try? fm.removeItem(at: home) }
+
+        let curlCounter = home.appendingPathComponent("curl.count").path
+        let optimCounter = home.appendingPathComponent("optim.count").path
+        func writeExecutable(_ url: URL, _ body: String) throws {
+            try body.write(to: url, atomically: true, encoding: .utf8)
+            try fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: url.path)
+        }
+        try writeExecutable(binDir.appendingPathComponent("curl"), "#!/bin/bash\necho 1 >> \(curlCounter)\nexit 0\n")
+        try writeExecutable(chau7Bin.appendingPathComponent("chau7-optim"), "#!/bin/bash\necho 1 >> \(optimCounter)\nexit 0\n")
+        let wrapperFile = home.appendingPathComponent("curl-wrapper.sh")
+        try CTOManager.shared.generateExecutableWrapperScript(
+            for: "curl", policy: CTOExecPolicy(gate: .curlSafeMethodsOnly)
+        ).write(to: wrapperFile, atomically: true, encoding: .utf8)
+
+        let session = "CURLSESSION"
+        fm.createFile(atPath: ctoActive.appendingPathComponent(session).path, contents: nil)
+        func count(_ path: String) -> Int {
+            (try? String(contentsOfFile: path, encoding: .utf8))?.split(separator: "\n").count ?? 0
+        }
+        func run(_ args: [String]) throws {
+            try? fm.removeItem(atPath: curlCounter)
+            try? fm.removeItem(atPath: optimCounter)
+            let proc = Process()
+            proc.executableURL = URL(fileURLWithPath: "/bin/bash")
+            proc.arguments = [wrapperFile.path] + args
+            proc.environment = [
+                "HOME": home.path, "PATH": "\(binDir.path):/usr/bin:/bin",
+                "CHAU7_CTO_SESSION": session
+            ]
+            proc.standardInput = FileHandle.nullDevice
+            proc.standardOutput = FileHandle.nullDevice
+            proc.standardError = FileHandle.nullDevice
+            try proc.run()
+            proc.waitUntilExit()
+        }
+
+        // POST → passthrough: real curl once, optimizer never sees it.
+        try run(["-X", "POST", "http://example.test/api"])
+        XCTAssertEqual(count(curlCounter), 1, "a POST must exec real curl exactly once")
+        XCTAssertEqual(count(optimCounter), 0, "the optimizer must never see a mutating request")
+
+        // Body data (implicit POST) → also passthrough.
+        try run(["-d", "x=1", "http://example.test/api"])
+        XCTAssertEqual(count(optimCounter), 0, "--data must not reach the optimizer")
+
+        // Plain GET → routes to the optimizer.
+        try run(["http://example.test/status.json"])
+        XCTAssertEqual(count(optimCounter), 1, "a GET routes to the optimizer")
     }
 
     // MARK: - Flag Sweep

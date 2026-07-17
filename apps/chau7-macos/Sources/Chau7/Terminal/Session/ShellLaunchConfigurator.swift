@@ -112,6 +112,15 @@ enum ShellLaunchConfigurator {
           _codex_node_bin="${_codex_node_path%/*}"
           [ -n "$_codex_node_bin" ] && [ -x "$_codex_node_bin/codex" ] && path=($_codex_node_bin $path)
         fi
+        # Keep the CTO wrapper dir at the FRONT of PATH after the user's rc
+        # files. `brew shellenv` (and similar) prepend their own dirs above,
+        # which would otherwise push cto_bin behind Homebrew and leave
+        # Homebrew-installed commands (git/go/rg…) unshadowed. Only re-prepend
+        # when Chau7 already placed cto_bin on PATH (i.e. CTO is enabled);
+        # `typeset -U path` below drops the now-duplicate later entry.
+        _chau7_cto_bin="$CHAU7_USER_HOME/.chau7/cto_bin"
+        [[ ${path[(Ie)$_chau7_cto_bin]} -gt 0 ]] && path=("$_chau7_cto_bin" $path)
+        unset _chau7_cto_bin
         typeset -U path
         export PATH="${(j/:/)path}"
         unset _codex_image_bin _codex_node_path _codex_node_bin
@@ -182,6 +191,19 @@ enum ShellLaunchConfigurator {
         export CHAU7_USER_HOME="${CHAU7_USER_HOME:-${HOME:-\(fallbackHome)}}"
         [ -f "$CHAU7_USER_HOME/.bashrc" ] && source "$CHAU7_USER_HOME/.bashrc"
         [ -f "$CHAU7_USER_HOME/.bash_profile" ] && source "$CHAU7_USER_HOME/.bash_profile"
+        # Keep the CTO wrapper dir at the FRONT of PATH after the user's rc
+        # files (see the zsh integration for the rationale). Only re-prepend
+        # when Chau7 already placed cto_bin on PATH (i.e. CTO is enabled).
+        _chau7_cto_bin="$CHAU7_USER_HOME/.chau7/cto_bin"
+        case ":$PATH:" in
+          *":$_chau7_cto_bin:"*)
+            PATH=":$PATH:"
+            PATH="${PATH//:$_chau7_cto_bin:/:}"
+            PATH="${PATH#:}"; PATH="${PATH%:}"
+            export PATH="$_chau7_cto_bin:$PATH"
+            ;;
+        esac
+        unset _chau7_cto_bin
         # Per-tab isolated command history (mirrors the zsh integration). Keyed off
         # the stable CHAU7_TAB_ID so each tab keeps its own history across restore.
         if [ -n "$CHAU7_TAB_ID" ]; then
@@ -254,6 +276,14 @@ enum ShellLaunchConfigurator {
         if test -f "$CHAU7_USER_XDG_CONFIG_HOME/fish/config.fish"
           source "$CHAU7_USER_XDG_CONFIG_HOME/fish/config.fish"
         end
+        # Keep the CTO wrapper dir at the FRONT of PATH after the user's rc
+        # files (see the zsh integration for the rationale). Only re-prepend
+        # when Chau7 already placed cto_bin on PATH (i.e. CTO is enabled).
+        set -l _chau7_cto_bin "$CHAU7_USER_HOME/.chau7/cto_bin"
+        if contains -- "$_chau7_cto_bin" $PATH
+          set -gx PATH "$_chau7_cto_bin" (string match -v -- "$_chau7_cto_bin" $PATH)
+        end
+        set -e _chau7_cto_bin
         # Per-tab isolated command history (mirrors zsh/bash). fish keys history by
         # session name; derive a stable per-tab name from CHAU7_TAB_ID (hyphens are
         # not valid in a fish history session name, so swap them for underscores).

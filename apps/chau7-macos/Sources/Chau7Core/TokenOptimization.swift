@@ -980,16 +980,100 @@ public let ctoRewriteMap: [String: String] = [
     "sed": "read" // sed -n 'range p' file → chau7-optim read
 ]
 
-/// Commands that are exec-only (no optimizer subcommand mapping).
-public let execOnlyCommands: Set = ["head", "tail", "wc"]
+/// Commands that get a wrapper but have no optimizer subcommand mapping —
+/// the wrapper simply `exec`s the real binary when CTO is active.
+///
+/// ## Currently empty — and that's deliberate.
+///
+/// `head`, `tail`, and `wc` used to live here. Their wrappers did nothing
+/// useful: with no entry in `ctoRewriteMap`, the generated script `exec`s the
+/// real binary on *both* the inactive fast path and the active path, so the
+/// only effect of shadowing them was an extra `bash` fork+parse on every
+/// invocation for zero token savings (`head`/`tail` have no `chau7-optim`
+/// subcommand at all; `wc`'s output — a few integers — is already minimal, and
+/// it's overwhelmingly used as a pipe filter where the optimizer is bypassed
+/// anyway). They were removed from the wrapper surface so those names resolve
+/// straight to the real binary via PATH with no `cto_bin` shadow.
+///
+/// Keep this as a real (empty) extension point: a command that genuinely needs
+/// a wrapper but has no optimizer route can be added back here without
+/// re-plumbing `supportedCommands` or `checkInstallation`.
+public let execOnlyCommands: Set<String> = []
+
+// MARK: - Executable Commands (shadow a command that runs a real subprocess)
+
+/// How a wrapped **executable** command decides which invocations are safe to
+/// route through the optimizer. Executables (`git`/`cargo`/`swift`) differ from
+/// the read-only commands in `ctoRewriteMap`: the optimizer can't reimplement
+/// them, it *runs* the real command and filters its output — so mutating or
+/// interactive invocations must never reach it.
+public enum CTOExecGate: Sendable, Equatable {
+    /// Route to the optimizer only when the command's subcommand (the first
+    /// non-flag argument, e.g. `status` in `git status`) is in this set. Every
+    /// other subcommand — mutations (`git commit`), interactive, or unknown —
+    /// is exec'd directly, exactly once. This is what makes shadowing a
+    /// mutation-capable tool safe.
+    case subcommandAllowlist(Set<String>)
+    /// `curl`-specific: optimize only when no mutating HTTP method is present
+    /// (no `-X POST/PUT/DELETE/PATCH`, no `-d`/`--data`); anything that could
+    /// mutate server state is passed straight through. Guards against a
+    /// double-POST if the optimizer were ever re-run.
+    case curlSafeMethodsOnly
+}
+
+/// Policy for shadowing an executable command. Beyond the gate, executable
+/// wrappers always: resolve the real binary at **runtime** off the live PATH
+/// (honoring venv/nvm/rustup — the fix for the historical `python`/venv
+/// failures, never a path baked at setup), and pass through interactive
+/// invocations (`[ -t 0 ]`) so the optimizer's buffered capture can't swallow a
+/// prompt.
+public struct CTOExecPolicy: Sendable, Equatable {
+    public let gate: CTOExecGate
+    public init(gate: CTOExecGate) {
+        self.gate = gate
+    }
+}
+
+/// Executable commands CTO shadows, each gated so only idempotent, read-only
+/// invocations reach the optimizer. This is the deliberate, hardened re-entry
+/// of the high-token-savings tail (`cargo test`/`swift test`/`git diff`) that
+/// was cut when naive whole-command wrapping caused the `python`/venv/exit-code
+/// failures — see `ctoRewriteMap`'s note. Safety here rests on three
+/// guarantees baked into `generateExecutableWrapperScript`: runtime binary
+/// resolution, per-subcommand allowlisting, and single execution.
+///
+/// Rolled out in tiers. This is Tier 1 — deterministic, globally-resolved
+/// toolchains, and the token-heavy tail (`cargo test`, `swift test`, `curl`)
+/// the ROI analysis found. Every listed subcommand is idempotent (a re-run on
+/// optimizer fall-through is at worst wasteful, never a mutation).
+public let executableCommands: [String: CTOExecPolicy] = [
+    "git": CTOExecPolicy(gate: .subcommandAllowlist(["status", "diff", "log", "show"])),
+    "cargo": CTOExecPolicy(gate: .subcommandAllowlist(["build", "test", "check", "clippy", "nextest"])),
+    "swift": CTOExecPolicy(gate: .subcommandAllowlist(["build", "test"])),
+    "go": CTOExecPolicy(gate: .subcommandAllowlist(["build", "test", "vet"])),
+    "curl": CTOExecPolicy(gate: .curlSafeMethodsOnly)
+]
+
+/// Tier 2 — executables deliberately **not** wrapped yet. These resolve
+/// context-dependently (venv `python`, nvm `node`, project-local `.bin`), so
+/// even runtime PATH resolution can pick the wrong target; they are the exact
+/// class that broke before. Held until Tier 1 proves the runtime-resolution
+/// model in the field. Listed for intent, not installed.
+public let deferredExecutableCommands: Set = [
+    "python", "python3", "node", "npm", "npx", "pip", "pytest"
+]
 
 /// Commands that are commonly used as pipe filters (`cmd | grep pattern`).
 /// When stdin is piped (not a terminal), these wrappers skip the optimizer
 /// and exec the real binary directly — the output IS the data stream.
 public let pipeFilterCommands: Set = ["grep", "rg", "diff", "sed"]
 
-/// All commands that have wrapper scripts (optimizer-routed + exec-only).
-public let supportedCommands: [String] = (Array(ctoRewriteMap.keys) + Array(execOnlyCommands)).sorted()
+/// All commands that have wrapper scripts: read-only optimizer-routed commands
+/// (`ctoRewriteMap`), exec-only names (`execOnlyCommands`, currently none), and
+/// shadowed executables (`executableCommands`). Wrappers for commands absent
+/// from this list are removed by `pruneStaleWrappers()` on the next `setup()`.
+public let supportedCommands: [String] =
+    (Array(ctoRewriteMap.keys) + Array(execOnlyCommands) + Array(executableCommands.keys)).sorted()
 
 // MARK: - Wrapper Health
 

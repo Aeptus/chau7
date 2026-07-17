@@ -11,8 +11,17 @@ struct TokenOptimizationSettingsView: View {
     @State private var wrapperHealth: [WrapperHealth] = []
     @State private var mdRendererInstalled = false
     @State private var optimizerInstalled = false
+    /// Recent-window token savings (last `recentWindowDays`). The rate stats
+    /// (avg savings, avg response time) come from here so they reflect the
+    /// *current* read-only command surface, not the retired build-tool era whose
+    /// multi-second `cargo`/`swift` runs still dominate the all-time average.
     @State private var gainStats: CTOGainStats?
+    /// All-time summary — used only for the lifetime "tokens saved" total.
+    @State private var lifetimeStats: CTOGainStats?
     @State private var isLoadingStats = false
+
+    /// Trailing window (in days, inclusive of today) for the recent savings view.
+    private let recentWindowDays = 7
     @State private var runtimeSnapshot: CTORuntimeSnapshot = CTORuntimeMonitor.shared.snapshot()
 
     init(overlayModel: OverlayTabsModel? = nil) {
@@ -109,7 +118,6 @@ struct TokenOptimizationSettingsView: View {
         }
     }
 
-    @ViewBuilder
     private var advancedDetailsView: some View {
         SettingsAdvancedDisclosure(searchAnchorIDs: ["ctoPerTab"]) {
             // Optimizer
@@ -932,12 +940,16 @@ struct TokenOptimizationSettingsView: View {
             }
             .padding(.vertical, 4)
         } else if let stats = gainStats, stats.commands > 0 {
-            // Stats available
+            // Recent-window stats. The avg-savings / avg-response rows below are
+            // windowed on purpose — see `gainStats` / `loadGainStats`.
             VStack(alignment: .leading, spacing: 6) {
+                Text(L("cto.savings.recentWindow", "Last %d days", recentWindowDays))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
                 statRow(
                     icon: "number",
                     iconColor: .blue,
-                    label: L("cto.savings.totalCommands", "Total commands"),
+                    label: L("cto.savings.commands", "Commands"),
                     value: "\(stats.commands)"
                 )
                 statRow(
@@ -970,17 +982,28 @@ struct TokenOptimizationSettingsView: View {
                     label: L("cto.savings.avgResponseTime", "Avg response time"),
                     value: "\(stats.avgTimeMs)ms"
                 )
+
+                lifetimeSavedRow
             }
 
-            HStack {
-                Spacer()
-                Button(L("cto.savings.refresh", "Refresh")) {
-                    loadGainStats()
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
+            gainStatsRefreshButton
+        } else if let lifetime = lifetimeStats, lifetime.savedTokens > 0 {
+            // Optimizer has lifetime data but nothing in the recent window
+            // (idle for > `recentWindowDays`). Show the lifetime total so the
+            // panel isn't misread as "CTO never did anything".
+            VStack(alignment: .leading, spacing: 6) {
+                Text(L(
+                    "cto.savings.noRecentActivity",
+                    "No optimized commands in the last %d days.",
+                    recentWindowDays
+                ))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+                lifetimeSavedRow
             }
-            .padding(.top, 4)
+
+            gainStatsRefreshButton
         } else {
             HStack(spacing: Chau7Style.Settings.inlineControlSpacing) {
                 Image(systemName: "chart.bar")
@@ -997,6 +1020,39 @@ struct TokenOptimizationSettingsView: View {
             }
             .padding(.vertical, 4)
         }
+    }
+
+    /// Lifetime "tokens saved" total, separated from the recent-window rows by
+    /// a divider. All-time on purpose: the cumulative saved-token count is a
+    /// genuine lifetime achievement, unlike the rate metrics which mislead when
+    /// aggregated over the retired build-tool era. Renders nothing until the
+    /// all-time summary reports a non-zero saving.
+    @ViewBuilder
+    private var lifetimeSavedRow: some View {
+        if let lifetime = lifetimeStats, lifetime.savedTokens > 0 {
+            Divider()
+                .padding(.vertical, 2)
+            statRow(
+                icon: "trophy",
+                iconColor: .green,
+                label: L("cto.savings.lifetimeSaved", "Lifetime saved"),
+                value: formatNumber(lifetime.savedTokens)
+            )
+        }
+    }
+
+    /// Trailing-aligned Refresh button shared by the recent-window and
+    /// lifetime-only savings states.
+    private var gainStatsRefreshButton: some View {
+        HStack {
+            Spacer()
+            Button(L("cto.savings.refresh", "Refresh")) {
+                loadGainStats()
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+        }
+        .padding(.top, 4)
     }
 
     private func statRow(icon: String, iconColor: Color, label: String, value: String) -> some View {
@@ -1296,10 +1352,25 @@ struct TokenOptimizationSettingsView: View {
 
     private func loadGainStats() {
         isLoadingStats = true
+        let windowDays = recentWindowDays
         Task {
-            let stats = await CTOManager.shared.fetchGainStats()
+            let response = await CTOManager.shared.fetchDailyGainStats()
+            let lifetime = response?.summary
+            // Aggregate the trailing window from the daily breakdown. Fall back
+            // to the all-time summary only when there's no daily data at all
+            // (fresh install, or an optimizer too old to emit `--daily`).
+            let recent: CTOGainStats?
+            if let daily = response?.daily, !daily.isEmpty {
+                let cutoff = Calendar.current.date(
+                    byAdding: .day, value: -(windowDays - 1), to: Date()
+                ) ?? Date()
+                recent = CTOManager.aggregateDailyStats(daily, since: cutoff)
+            } else {
+                recent = lifetime
+            }
             await MainActor.run {
-                gainStats = stats
+                gainStats = recent
+                lifetimeStats = lifetime
                 isLoadingStats = false
             }
         }

@@ -1983,7 +1983,10 @@
 "cto.savings.outputTokens" = "Tokens de salida";
 "cto.savings.refresh" = "Actualizar";
 "cto.savings.savedTokens" = "Tokens ahorrados";
-"cto.savings.totalCommands" = "Total de comandos";
+"cto.savings.commands" = "Comandos";
+"cto.savings.lifetimeSaved" = "Ahorro total";
+"cto.savings.noRecentActivity" = "Sin comandos optimizados en los últimos %d días.";
+"cto.savings.recentWindow" = "Últimos %d días";
 "cto.settings.commandLog" = "Comandos recientes del optimizador";
 "cto.settings.commands" = "Comandos optimizados";
 "cto.settings.ctoRuntime" = "Telemetría de ejecución";

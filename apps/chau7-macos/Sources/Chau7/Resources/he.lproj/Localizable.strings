@@ -1952,7 +1952,10 @@
 "cto.savings.outputTokens" = "טוקני פלט";
 "cto.savings.refresh" = "רענן";
 "cto.savings.savedTokens" = "טוקנים שנחסכו";
-"cto.savings.totalCommands" = "סך כל הפקודות";
+"cto.savings.commands" = "פקודות";
+"cto.savings.lifetimeSaved" = "סך הכול שנחסך";
+"cto.savings.noRecentActivity" = "אין פקודות שעברו אופטימיזציה ב-%d הימים האחרונים.";
+"cto.savings.recentWindow" = "%d הימים האחרונים";
 "cto.settings.commandLog" = "יומן פקודות";
 "cto.settings.commands" = "פקודות";
 "cto.settings.ctoRuntime" = "טלמטריית זמן ריצה";

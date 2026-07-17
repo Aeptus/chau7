@@ -1952,7 +1952,10 @@
 "cto.savings.outputTokens" = "رموز الإخراج";
 "cto.savings.refresh" = "تحديث";
 "cto.savings.savedTokens" = "الرموز الموفَّرة";
-"cto.savings.totalCommands" = "إجمالي الأوامر";
+"cto.savings.commands" = "الأوامر";
+"cto.savings.lifetimeSaved" = "إجمالي التوفير";
+"cto.savings.noRecentActivity" = "لا توجد أوامر مُحسّنة في آخر %d أيام.";
+"cto.savings.recentWindow" = "آخر %d أيام";
 "cto.settings.commandLog" = "أوامر المحسّن الأخيرة";
 "cto.settings.commands" = "الأوامر المحسّنة";
 "cto.settings.ctoRuntime" = "بيانات التشغيل";

@@ -6,44 +6,19 @@ use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
 use std::time::{Duration, SystemTime};
 
-/// Commands that CTO already wraps (must match ctoRewriteMap + execOnlyCommands).
-const SUPPORTED_COMMANDS: &[&str] = &[
-    "cat",
-    "head",
-    "tail",
-    "ls",
-    "find",
-    "tree",
-    "grep",
-    "rg",
-    "git",
-    "diff",
-    "cargo",
-    "curl",
-    "docker",
-    "kubectl",
-    "gh",
-    "pnpm",
-    "wget",
-    "npm",
-    "npx",
-    "vitest",
-    "prisma",
-    "tsc",
-    "next",
-    "eslint",
-    "prettier",
-    "ruff",
-    "pytest",
-    "pip",
-    "go",
-    "golangci-lint",
-    "wc",
-    "playwright",
-    "swift",
-    "python",
-    "python3",
-];
+/// Commands CTO actually routes through the optimizer — the Swift
+/// `ctoRewriteMap` keys (`execOnlyCommands` is currently empty). `discover` is
+/// an advisory "what could I save" tool, so it must report only what CTO will
+/// *really* optimize. Listing the optimizer's full command surface
+/// (`cargo`/`python`/`git`/…) would advise optimizing the interpreters and
+/// build tools that were deliberately cut for safety — the exact class of
+/// commands whose wrapping caused the `python`/venv/exit-code failures.
+///
+/// Source of truth is `ctoRewriteMap` in `Chau7Core/TokenOptimization.swift`;
+/// this list is a hand-synced mirror (the Swift/Rust boundary rules out a
+/// shared constant). Keep the two in lockstep — `test_is_supported` guards the
+/// read-only boundary on this side.
+const SUPPORTED_COMMANDS: &[&str] = &["cat", "diff", "find", "grep", "ls", "rg", "sed", "tree"];
 
 /// Commands to ignore (not meaningful for optimization).
 const IGNORED_COMMANDS: &[&str] = &[
@@ -647,12 +622,21 @@ mod tests {
 
     #[test]
     fn test_is_supported() {
-        assert!(is_supported("git"));
-        assert!(is_supported("cargo"));
-        assert!(is_supported("ls"));
-        assert!(is_supported("python3"));
-        assert!(is_supported("python"));
-        assert!(is_supported("swift"));
+        // CTO's read-only routed surface (ctoRewriteMap keys) is supported.
+        for cmd in ["cat", "diff", "find", "grep", "ls", "rg", "sed", "tree"] {
+            assert!(is_supported(cmd), "{cmd} should be a supported CTO command");
+        }
+        // Interpreters / build tools are deliberately NOT routed by CTO, so
+        // discover must not advise optimizing them (regression guard for the
+        // read-only scoping decision).
+        for cmd in [
+            "git", "cargo", "python", "python3", "swift", "head", "tail", "wc",
+        ] {
+            assert!(
+                !is_supported(cmd),
+                "{cmd} must not be a supported CTO command"
+            );
+        }
     }
 
     #[test]
@@ -660,7 +644,9 @@ mod tests {
         assert!(is_ignored("cd"));
         assert!(is_ignored("echo"));
         assert!(is_ignored("mkdir"));
-        assert!(!is_ignored("python3")); // python3 is supported, not ignored
+        // Not ignored, but also no longer CTO-supported — discover simply
+        // doesn't categorize these interpreters either way.
+        assert!(!is_ignored("python3"));
         assert!(!is_ignored("swift"));
     }
 }

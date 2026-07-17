@@ -70,6 +70,8 @@ final class ShellLaunchConfiguratorTests: XCTestCase {
         // Per-tab isolated history keyed off CHAU7_TAB_ID
         XCTAssertTrue(contents.contains("export HISTFILE=\"$CHAU7_USER_HOME/.chau7/history/${CHAU7_TAB_ID}.zsh_history\""))
         XCTAssertTrue(contents.contains("setopt NO_PROMPT_CR"))
+        // CTO wrapper dir re-asserted at the FRONT of PATH after user rc files
+        XCTAssertTrue(contents.contains(#"[[ ${path[(Ie)$_chau7_cto_bin]} -gt 0 ]] && path=("$_chau7_cto_bin" $path)"#))
         // OSC 7 cwd + OSC 9 exit-status integration hooks
         XCTAssertTrue(contents.contains("chau7_emit_exit_status"))
         XCTAssertTrue(contents.contains("smartoverlay_precmd"))
@@ -99,6 +101,8 @@ final class ShellLaunchConfiguratorTests: XCTestCase {
         XCTAssertTrue(contents.contains("[ -f \"$CHAU7_USER_HOME/.bash_profile\" ] && source \"$CHAU7_USER_HOME/.bash_profile\""))
         // Per-tab isolated history keyed off CHAU7_TAB_ID
         XCTAssertTrue(contents.contains("export HISTFILE=\"$CHAU7_USER_HOME/.chau7/history/${CHAU7_TAB_ID}.bash_history\""))
+        // CTO wrapper dir re-asserted at the FRONT of PATH after user rc files
+        XCTAssertTrue(contents.contains("export PATH=\"$_chau7_cto_bin:$PATH\""))
         // Integration hooks are chained through PROMPT_COMMAND
         XCTAssertTrue(contents.contains("PROMPT_COMMAND=\"smartoverlay_precmd${PROMPT_COMMAND:+;$PROMPT_COMMAND}\""))
         XCTAssertTrue(contents.contains("PROMPT_COMMAND=\"chau7_emit_exit_status${PROMPT_COMMAND:+;$PROMPT_COMMAND}\""))
@@ -120,6 +124,8 @@ final class ShellLaunchConfiguratorTests: XCTestCase {
         XCTAssertTrue(contents.contains("source \"$CHAU7_USER_XDG_CONFIG_HOME/fish/config.fish\""))
         // Per-tab isolated history via fish_history session name (hyphens swapped)
         XCTAssertTrue(contents.contains("set -gx fish_history (string replace -a -- - _ \"chau7_$CHAU7_TAB_ID\")"))
+        // CTO wrapper dir re-asserted at the FRONT of PATH after user rc files
+        XCTAssertTrue(contents.contains("set -gx PATH \"$_chau7_cto_bin\" (string match -v -- \"$_chau7_cto_bin\" $PATH)"))
         // Integration hooks fire on prompt and PWD changes
         XCTAssertTrue(contents.contains("function smartoverlay_precmd --on-event fish_prompt --on-variable PWD"))
         XCTAssertTrue(contents.contains("function chau7_update_project --on-variable PWD"))
