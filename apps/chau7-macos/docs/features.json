@@ -2101,6 +2101,13 @@
   },
   {
     "category": "SSH, Profiles & Remote",
+    "feature": "Structured AskUserQuestion Prompts",
+    "description": "Claude Code hook events carry AskUserQuestion's exact question and option labels (PreToolUse tool_input, 16 KB-capped), producing authoritative iPhone prompt cards that bypass status gating, suppress the scraped duplicate, answer with a bare digit, and clear on PostToolUse when answered from any surface",
+    "status": "Experimental",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "SSH, Profiles & Remote",
     "feature": "Remote iPhone Profiling Hooks",
     "description": "The iPhone app emits os.signpost intervals for frame processing, output append, and ANSI stripping so receive/render lag can be measured in Instruments",
     "status": "Experimental",
