@@ -1,0 +1,9 @@
+{
+  "keys": [
+    { "key": "down" },
+    { "key": "down" },
+    { "key": "tab", "modifiers": ["shift"] },
+    { "key": "c", "modifiers": ["control"] },
+    { "key": "enter" }
+  ]
+}

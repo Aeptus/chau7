@@ -40,6 +40,16 @@ public struct AIAutomationSubmitPlan: Equatable {
     }
 }
 
+public struct AIAutomationKeyStep: Equatable {
+    public let key: RemoteKeyInputPayload.Key
+    public let delayMs: Int
+
+    public init(key: RemoteKeyInputPayload.Key, delayMs: Int) {
+        self.key = key
+        self.delayMs = delayMs
+    }
+}
+
 public enum AIAutomationStrategy {
     private static let codexSubmitDelayMs = 120
     private static let recentAutomationWindowMs = 1000
@@ -91,6 +101,24 @@ public enum AIAutomationStrategy {
             submitMode: isCodex ? .rawNewline : .enterKey,
             submitDelayMs: body.isEmpty ? 0 : (isCodex ? codexSubmitDelayMs : remoteSubmitDelayMs)
         )
+    }
+
+    /// Schedule for a remote semantic key sequence (KEY_INPUT frame). Keys
+    /// are written sequentially as separate PTY writes; a trailing Enter that
+    /// follows other keys is delayed like remote submits so the TUI re-renders
+    /// the selection before it is confirmed — the same rationale as
+    /// `remoteInputPlan`'s split body/terminator. Capped at
+    /// `RemoteKeyInputPayload.maxKeys`; excess keys are dropped.
+    public static func keyInputSchedule(for keys: [RemoteKeyInputPayload.Key]) -> [AIAutomationKeyStep] {
+        let capped = Array(keys.prefix(RemoteKeyInputPayload.maxKeys))
+        return capped.enumerated().map { index, key in
+            let isPlainEnter = ["enter", "return"]
+                .contains(key.key.trimmingCharacters(in: .whitespacesAndNewlines).lowercased())
+                && (key.modifiers ?? []).isEmpty
+            let isTrailing = index == capped.count - 1
+            let delayMs = isPlainEnter && isTrailing && index > 0 ? remoteSubmitDelayMs : 0
+            return AIAutomationKeyStep(key: key, delayMs: delayMs)
+        }
     }
 
     public static func submitPlan(provider: String?, recentAutomationInputAgeMs: Int?) -> AIAutomationSubmitPlan {

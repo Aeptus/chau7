@@ -244,10 +244,68 @@ public struct RemoteTabDescriptor: Codable, Equatable, Identifiable, Sendable {
 }
 
 public struct RemoteTabListPayload: Codable, Equatable, Sendable {
-    public let tabs: [RemoteTabDescriptor]
+    /// Advertised when the Mac can decode KEY_INPUT (0x24) frames. Clients
+    /// without the capability keep sending escape text over INPUT.
+    public static let keyInputCapability = "key_input"
 
-    public init(tabs: [RemoteTabDescriptor]) {
+    public let tabs: [RemoteTabDescriptor]
+    /// Mac feature advertisement. Additive/optional: older Macs omit it and
+    /// older clients ignore it. Normalized so an empty list is never encoded.
+    public let capabilities: [String]?
+
+    public init(tabs: [RemoteTabDescriptor], capabilities: [String]? = nil) {
         self.tabs = tabs
+        self.capabilities = capabilities?.isEmpty == true ? nil : capabilities
+    }
+}
+
+// MARK: - Key Input
+
+/// Semantic key presses from the remote client (frame 0x24). Key names and
+/// modifiers use the `TerminalKeyPress` vocabulary ("enter", "escape", "up",
+/// "down", single characters with "control"/"shift"/"option"), so the Mac
+/// encodes DECCKM application-cursor mode and control combos exactly like
+/// locally-typed keys — which raw escape text over INPUT cannot. Receivers
+/// cap processing at `maxKeys`.
+public struct RemoteKeyInputPayload: Codable, Equatable, Sendable {
+    public struct Key: Codable, Equatable, Sendable {
+        public let key: String
+        public let modifiers: [String]?
+
+        public init(key: String, modifiers: [String]? = nil) {
+            self.key = key
+            self.modifiers = modifiers?.isEmpty == true ? nil : modifiers
+        }
+
+        enum CodingKeys: String, CodingKey {
+            case key
+            case modifiers
+        }
+
+        public init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            key = try container.decode(String.self, forKey: .key)
+            // Lenient + omitempty parity: absent and [] both mean unmodified.
+            let decoded = try container.decodeIfPresent([String].self, forKey: .modifiers)
+            modifiers = decoded?.isEmpty == true ? nil : decoded
+        }
+
+        public func encode(to encoder: Encoder) throws {
+            var container = encoder.container(keyedBy: CodingKeys.self)
+            try container.encode(key, forKey: .key)
+            if let modifiers, !modifiers.isEmpty {
+                try container.encode(modifiers, forKey: .modifiers)
+            }
+        }
+    }
+
+    /// Runaway bound: no legitimate menu interaction needs more presses.
+    public static let maxKeys = 32
+
+    public let keys: [Key]
+
+    public init(keys: [Key]) {
+        self.keys = keys
     }
 }
 

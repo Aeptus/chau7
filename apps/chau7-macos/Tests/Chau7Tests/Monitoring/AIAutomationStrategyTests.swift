@@ -94,4 +94,38 @@ final class AIAutomationStrategyTests: XCTestCase {
         XCTAssertEqual(submitPlan.submitMode, .enterKey)
         XCTAssertEqual(submitPlan.submitDelayMs, 0)
     }
+
+    // MARK: - keyInputSchedule (KEY_INPUT frame)
+
+    func testKeyScheduleDelaysTrailingEnterAfterOtherKeys() {
+        let schedule = AIAutomationStrategy.keyInputSchedule(for: [
+            .init(key: "down"), .init(key: "down"), .init(key: "enter")
+        ])
+
+        XCTAssertEqual(schedule.map(\.delayMs), [0, 0, 60],
+                       "the TUI must re-render the moved selection before Enter confirms it")
+    }
+
+    func testKeyScheduleLoneEnterIsImmediate() {
+        let schedule = AIAutomationStrategy.keyInputSchedule(for: [.init(key: "enter")])
+        XCTAssertEqual(schedule.map(\.delayMs), [0])
+    }
+
+    func testKeyScheduleNonTrailingAndModifiedEnterNotDelayed() {
+        let midEnter = AIAutomationStrategy.keyInputSchedule(for: [
+            .init(key: "down"), .init(key: "enter"), .init(key: "down")
+        ])
+        XCTAssertEqual(midEnter.map(\.delayMs), [0, 0, 0])
+
+        let modified = AIAutomationStrategy.keyInputSchedule(for: [
+            .init(key: "down"), .init(key: "enter", modifiers: ["shift"])
+        ])
+        XCTAssertEqual(modified.map(\.delayMs), [0, 0])
+    }
+
+    func testKeyScheduleCapsAtMaxKeys() {
+        let keys = Array(repeating: RemoteKeyInputPayload.Key(key: "down"), count: 100)
+        let schedule = AIAutomationStrategy.keyInputSchedule(for: keys)
+        XCTAssertEqual(schedule.count, RemoteKeyInputPayload.maxKeys)
+    }
 }
