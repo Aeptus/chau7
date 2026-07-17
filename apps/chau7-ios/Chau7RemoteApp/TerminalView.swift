@@ -503,7 +503,22 @@ struct TerminalView: View {
             return
         }
 
-        guard client.sendInput(text, appendNewline: appendNewline) else {
+        // A digit answering an on-screen selection menu acts on the keypress
+        // itself; the terminator would arrive as a separate delayed Enter and
+        // land on whatever the TUI renders next. Drop it for those sends.
+        let suppressTerminator = RemoteMenuKeyHeuristics.shouldSuppressSubmitTerminator(
+            text: text,
+            hasPendingPromptForActiveTab: client.pendingInteractivePrompts
+                .contains { $0.tabID == client.activeTabID }
+        )
+        if suppressTerminator {
+            DiagnosticsLog.shared.info(.input, "Submit terminator suppressed for menu digit", [
+                "trigger": trigger,
+                "tab_id": String(client.activeTabID)
+            ])
+        }
+
+        guard client.sendInput(text, appendNewline: appendNewline && !suppressTerminator) else {
             DiagnosticsLog.shared.error(.input, "Submit blocked", [
                 "trigger": trigger,
                 "reason": client.lastError ?? "unknown"

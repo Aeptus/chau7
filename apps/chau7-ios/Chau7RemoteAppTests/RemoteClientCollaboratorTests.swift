@@ -138,6 +138,121 @@ final class RemoteSessionControllerTests: XCTestCase {
     }
 }
 
+final class RemoteMenuKeyHeuristicsTests: XCTestCase {
+
+    private func prompt(tabID: UInt32) -> RemoteInteractivePrompt {
+        RemoteInteractivePrompt(
+            id: "tab-\(tabID)-test",
+            tabID: tabID,
+            tabTitle: "Tab \(tabID)",
+            toolName: "Claude",
+            prompt: "Which option?",
+            options: [
+                RemoteInteractivePromptOption(id: "1", label: "Yes", response: "1"),
+                RemoteInteractivePromptOption(id: "2", label: "No", response: "2")
+            ],
+            detectedAt: Date(timeIntervalSince1970: 0)
+        )
+    }
+
+    private func activity(tabID: UInt32, status: RemoteActivityStatus) -> RemoteActivityState {
+        RemoteActivityState(
+            activityID: "a-\(tabID)",
+            tabID: tabID,
+            tabTitle: "Tab \(tabID)",
+            toolName: "Claude",
+            status: status,
+            headline: "",
+            isSelectedTab: true,
+            updatedAt: Date(timeIntervalSince1970: 0)
+        )
+    }
+
+    // MARK: - activeTabNeedsMenuKeys
+
+    func testPromptOnActiveTabNeedsKeys() {
+        XCTAssertTrue(RemoteMenuKeyHeuristics.activeTabNeedsMenuKeys(
+            prompts: [prompt(tabID: 3)], activity: nil, activeTabID: 3
+        ))
+    }
+
+    func testPromptOnOtherTabDoesNotNeedKeys() {
+        XCTAssertFalse(RemoteMenuKeyHeuristics.activeTabNeedsMenuKeys(
+            prompts: [prompt(tabID: 4)], activity: nil, activeTabID: 3
+        ))
+    }
+
+    func testActivityStatusDrivesKeys() {
+        for (status, expected) in [
+            (RemoteActivityStatus.waitingInput, true),
+            (.approvalRequired, true),
+            (.running, false),
+            (.idle, false),
+            (.completed, false),
+            (.failed, false)
+        ] {
+            XCTAssertEqual(
+                RemoteMenuKeyHeuristics.activeTabNeedsMenuKeys(
+                    prompts: [], activity: activity(tabID: 3, status: status), activeTabID: 3
+                ),
+                expected,
+                "status \(status)"
+            )
+        }
+    }
+
+    func testActivityForOtherTabIsIgnored() {
+        XCTAssertFalse(RemoteMenuKeyHeuristics.activeTabNeedsMenuKeys(
+            prompts: [], activity: activity(tabID: 9, status: .waitingInput), activeTabID: 3
+        ))
+    }
+
+    func testNoSignalsMeansNoKeys() {
+        XCTAssertFalse(RemoteMenuKeyHeuristics.activeTabNeedsMenuKeys(
+            prompts: [], activity: nil, activeTabID: 3
+        ))
+    }
+
+    func testUnsetActiveTabNeverNeedsKeys() {
+        XCTAssertFalse(RemoteMenuKeyHeuristics.activeTabNeedsMenuKeys(
+            prompts: [prompt(tabID: 0)],
+            activity: activity(tabID: 0, status: .waitingInput),
+            activeTabID: 0
+        ))
+    }
+
+    // MARK: - shouldSuppressSubmitTerminator
+
+    func testSuppressesShortDigitSendsWhilePromptPending() {
+        for text in ["1", "12", "123"] {
+            XCTAssertTrue(
+                RemoteMenuKeyHeuristics.shouldSuppressSubmitTerminator(
+                    text: text, hasPendingPromptForActiveTab: true
+                ),
+                "text \(text)"
+            )
+        }
+    }
+
+    func testKeepsTerminatorWithoutPendingPrompt() {
+        XCTAssertFalse(RemoteMenuKeyHeuristics.shouldSuppressSubmitTerminator(
+            text: "2", hasPendingPromptForActiveTab: false
+        ))
+    }
+
+    func testKeepsTerminatorForNonMenuText() {
+        // Too long, mixed, empty, and non-ASCII digits: all keep their Enter.
+        for text in ["1234", "1a", "", "y", "١٢"] {
+            XCTAssertFalse(
+                RemoteMenuKeyHeuristics.shouldSuppressSubmitTerminator(
+                    text: text, hasPendingPromptForActiveTab: true
+                ),
+                "text \(text)"
+            )
+        }
+    }
+}
+
 @MainActor
 final class RemoteTransportTests: XCTestCase {
 
