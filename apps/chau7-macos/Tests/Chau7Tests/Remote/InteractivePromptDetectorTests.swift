@@ -281,6 +281,196 @@ final class InteractivePromptDetectorTests: XCTestCase {
         )
     }
 
+    // MARK: - Structural detection (no keyword)
+
+    func testStructuralNumberedMenuWithArbitraryQuestionDetected() throws {
+        // AskUserQuestion-style: the question matches no prompt keyword, so
+        // only the structural pass (cursor glyph + numbered rows) can see it.
+        let transcript = """
+        Which auth method should we use for the API?
+        ❯ 1. OAuth (Recommended)
+          2. JWT
+          3. Other
+        """
+
+        let prompt = try XCTUnwrap(InteractivePromptDetector.detect(in: transcript, toolName: "Claude"))
+        XCTAssertEqual(prompt.prompt, "Which auth method should we use for the API?")
+        XCTAssertEqual(prompt.options.map(\.id), ["1", "2", "3"])
+        XCTAssertEqual(prompt.options.map(\.label), ["OAuth (Recommended)", "JWT", "Other"])
+        XCTAssertEqual(prompt.options.map(\.response), ["1\r", "2\r", "3\r"])
+        XCTAssertEqual(prompt.selectedOptionIndex, 0)
+    }
+
+    func testStructuralCursorOnSecondOptionRecordsIndex() throws {
+        let transcript = """
+        Which database migration strategy?
+          1. Expand and contract
+        ❯ 2. Blue-green
+        """
+
+        let prompt = try XCTUnwrap(InteractivePromptDetector.detect(in: transcript, toolName: "Claude"))
+        XCTAssertEqual(prompt.selectedOptionIndex, 1)
+    }
+
+    func testStructuralGlyphVariantsDetected() throws {
+        for glyph in ["›", "▸"] {
+            let transcript = """
+            Which formatting style for the export?
+            \(glyph) 1. Compact
+              2. Expanded
+            """
+            XCTAssertNotNil(
+                InteractivePromptDetector.detect(in: transcript, toolName: "Claude"),
+                "glyph \(glyph)"
+            )
+        }
+    }
+
+    func testStructuralToleratesTrailingMetaLines() throws {
+        let transcript = """
+        Which branch strategy fits this repo?
+        ❯ 1. Trunk-based
+          2. Git flow
+
+        Esc to cancel · Tab to amend · ctrl+e to explain
+        """
+
+        XCTAssertNotNil(InteractivePromptDetector.detect(in: transcript, toolName: "Claude"))
+    }
+
+    func testNumberedProseListWithoutGlyphNotDetected() {
+        let transcript = """
+        Here is my plan for the refactor:
+        1. Extract the parser
+        2. Add tests
+        3. Wire the callers
+        """
+
+        XCTAssertNil(InteractivePromptDetector.detect(in: transcript, toolName: "Claude"))
+    }
+
+    func testStarshipShellTranscriptNotDetected() {
+        // The ❯ shell prompt must not read as a menu: command + output rows
+        // don't align (nor form ≥2 cursor-free option rows under one cursor).
+        let transcript = """
+        ❯ git status
+        On branch main
+        nothing to commit, working tree clean
+        ❯ ls src
+        parser.swift
+        """
+
+        XCTAssertNil(InteractivePromptDetector.detect(in: transcript, toolName: "Claude"))
+    }
+
+    func testStructuralBlockNotAtTailNotDetected() {
+        let transcript = """
+        Which auth method should we use?
+        ❯ 1. OAuth
+          2. JWT
+        Compiling module A
+        Compiling module B
+        """
+
+        XCTAssertNil(InteractivePromptDetector.detect(in: transcript, toolName: "Claude"))
+    }
+
+    func testStructuralRequiresPromptLine() {
+        let transcript = """
+        ❯ 1. Yes
+          2. No
+        """
+
+        XCTAssertNil(InteractivePromptDetector.detect(in: transcript, toolName: "Claude"))
+    }
+
+    func testStructuralMultipleCursorRowsNotDetected() {
+        // Note the header avoids every keyword so only the structural pass
+        // runs — two cursor rows mean this isn't a coherent menu.
+        let transcript = """
+        Pick a variant for the build:
+        ❯ 1. First
+        ❯ 2. Second
+        """
+
+        XCTAssertNil(InteractivePromptDetector.detect(in: transcript, toolName: "Claude"))
+    }
+
+    func testKeywordPassWinsOverStructural() throws {
+        // Both passes match here; the keyword pass is the higher-confidence
+        // read and does not report a cursor index.
+        let transcript = """
+        Do you want to proceed?
+        ❯ 1. Yes
+          2. No
+        """
+
+        let prompt = try XCTUnwrap(InteractivePromptDetector.detect(in: transcript, toolName: "Claude"))
+        XCTAssertEqual(prompt.prompt, "Do you want to proceed?")
+        XCTAssertNil(prompt.selectedOptionIndex)
+    }
+
+    // MARK: - Structural detection: arrow-only menus
+
+    func testUnnumberedMenuSynthesizesNavigationResponses() throws {
+        let transcript = """
+        Select a model:
+          Default
+        ❯ Sonnet 4.5
+          Opus 4.8
+        """
+
+        let prompt = try XCTUnwrap(InteractivePromptDetector.detect(in: transcript, toolName: "Claude"))
+        XCTAssertEqual(prompt.prompt, "Select a model:")
+        XCTAssertEqual(prompt.options.map(\.id), ["opt-0", "opt-1", "opt-2"])
+        XCTAssertEqual(prompt.options.map(\.label), ["Default", "Sonnet 4.5", "Opus 4.8"])
+        XCTAssertEqual(prompt.options.map(\.response), ["\u{1B}[A\r", "\r", "\u{1B}[B\r"])
+        XCTAssertEqual(prompt.selectedOptionIndex, 1)
+    }
+
+    func testUnnumberedMenuRequiresMenuHeader() {
+        // Aligned short rows under a cursor row are too weak on their own
+        // (e.g. "❯ npm test" above indented result lines) — without a header
+        // that reads like a question or menu title, nothing is surfaced.
+        let transcript = """
+        Running the suite now.
+        ❯ npm test
+          PASS src/parser
+          PASS src/renderer
+        """
+
+        XCTAssertNil(InteractivePromptDetector.detect(in: transcript, toolName: "Claude"))
+    }
+
+    func testUnnumberedMenuMisalignedRowsNotDetected() {
+        let transcript = """
+        Select a target:
+        ❯ staging
+        production line with different indent
+        """
+
+        XCTAssertNil(InteractivePromptDetector.detect(in: transcript, toolName: "Claude"))
+    }
+
+    func testStructuralSignatureStableAcrossCursorMoves() throws {
+        let cursorOnFirst = """
+        Select a model:
+        ❯ Sonnet 4.5
+          Opus 4.8
+        """
+        let cursorOnSecond = """
+        Select a model:
+          Sonnet 4.5
+        ❯ Opus 4.8
+        """
+
+        let first = try XCTUnwrap(InteractivePromptDetector.detect(in: cursorOnFirst, toolName: "Claude"))
+        let second = try XCTUnwrap(InteractivePromptDetector.detect(in: cursorOnSecond, toolName: "Claude"))
+        XCTAssertEqual(first.signature, second.signature, "cursor moves must not mint a new prompt ID")
+        XCTAssertNotEqual(first.selectedOptionIndex, second.selectedOptionIndex)
+        XCTAssertNotEqual(first.options.map(\.response), second.options.map(\.response))
+    }
+
     private let basicPrompt = """
     Do you want to continue?
     1. Yes

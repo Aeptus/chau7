@@ -6,12 +6,24 @@ public struct DetectedInteractivePrompt: Equatable, Sendable {
     public let prompt: String
     public let detail: String?
     public let options: [RemoteInteractivePromptOption]
+    /// Zero-based index of the option row carrying the selection cursor when
+    /// the menu was detected structurally; nil for keyword/fallback matches.
+    /// Internal detection metadata — never serialized to the wire, and never
+    /// part of the signature (a cursor move must not mint a new prompt ID).
+    public let selectedOptionIndex: Int?
 
-    public init(signature: String, prompt: String, detail: String?, options: [RemoteInteractivePromptOption]) {
+    public init(
+        signature: String,
+        prompt: String,
+        detail: String?,
+        options: [RemoteInteractivePromptOption],
+        selectedOptionIndex: Int? = nil
+    ) {
         self.signature = signature
         self.prompt = prompt
         self.detail = detail
         self.options = options
+        self.selectedOptionIndex = selectedOptionIndex
     }
 }
 
@@ -31,7 +43,8 @@ public enum InteractivePromptDetector {
             signature: signature,
             prompt: match.prompt,
             detail: match.detail,
-            options: match.options
+            options: match.options,
+            selectedOptionIndex: match.selectedOptionIndex
         )
     }
 
@@ -102,7 +115,23 @@ public enum InteractivePromptDetector {
             .replacingOccurrences(of: "\r", with: "\n")
     }
 
-    private static func findPrompt(in lines: [String]) -> (prompt: String, detail: String?, options: [RemoteInteractivePromptOption])? {
+    private typealias PromptMatch = (
+        prompt: String,
+        detail: String?,
+        options: [RemoteInteractivePromptOption],
+        selectedOptionIndex: Int?
+    )
+
+    private static func findPrompt(in lines: [String]) -> PromptMatch? {
+        // Keyword detection first: it anchors on explicit prompt wording, so
+        // when both passes would match it is the higher-confidence read.
+        if let keyword = findKeywordPrompt(in: lines) {
+            return (keyword.prompt, keyword.detail, keyword.options, nil)
+        }
+        return findStructuralPrompt(in: lines)
+    }
+
+    private static func findKeywordPrompt(in lines: [String]) -> (prompt: String, detail: String?, options: [RemoteInteractivePromptOption])? {
         guard !lines.isEmpty else { return nil }
 
         for index in stride(from: lines.count - 1, through: 0, by: -1) {
@@ -161,14 +190,18 @@ public enum InteractivePromptDetector {
         let label = String(line[labelRange]).trimmingCharacters(in: .whitespacesAndNewlines)
         guard !label.isEmpty else { return nil }
 
-        let destructiveWords = ["deny", "reject", "cancel", "abort", "stop", "no"]
-        let isDestructive = destructiveWords.contains { label.lowercased().contains($0) }
         return RemoteInteractivePromptOption(
             id: token,
             label: label,
             response: token + "\r",
-            isDestructive: isDestructive
+            isDestructive: isDestructiveLabel(label)
         )
+    }
+
+    private static let destructiveWords = ["deny", "reject", "cancel", "abort", "stop", "no"]
+
+    private static func isDestructiveLabel(_ label: String) -> Bool {
+        destructiveWords.contains { label.lowercased().contains($0) }
     }
 
     private static func parseDetail(in lines: [String], aroundPromptAt index: Int) -> String? {
@@ -183,6 +216,184 @@ public enum InteractivePromptDetector {
         }
 
         return details.isEmpty ? nil : details.joined(separator: "\n")
+    }
+
+    // MARK: - Structural detection (no prompt keyword required)
+
+    /// Selection-cursor glyphs TUIs place on the highlighted option row.
+    /// Deliberately excludes bare ">" — shell prompts and quoted text use it.
+    private static let cursorGlyphs: Set<Character> = ["\u{276F}", "\u{203A}", "\u{25B8}"] // ❯ › ▸
+
+    private static let structuralWindowLines = 30
+    private static let maxStructuralOptions = 12
+    private static let maxUnnumberedLabelLength = 60
+
+    private static let structuralNumberedRegex = try? NSRegularExpression(
+        pattern: #"^[^A-Za-z0-9]*?([0-9]+)[.)]\s+(.+?)$"#
+    )
+
+    /// Detects a selection menu by shape instead of prompt wording: a
+    /// contiguous block of option rows at the tail of the snapshot, exactly
+    /// one of which carries a selection-cursor glyph. The glyph requirement
+    /// separates a live menu from a numbered list in ordinary prose; requiring
+    /// ≥2 aligned option rows separates it from a starship/p10k shell prompt
+    /// (`❯ git status`). This is what surfaces agent-authored questions
+    /// (AskUserQuestion) whose wording matches no keyword.
+    private static func findStructuralPrompt(in lines: [String]) -> PromptMatch? {
+        let window = Array(lines.suffix(structuralWindowLines))
+
+        // The block must sit at the snapshot tail: skip trailing empty and
+        // meta lines ("Esc to cancel …"), then require option rows directly.
+        var end = window.count - 1
+        while end >= 0 {
+            let cleaned = cleanedLine(window[end])
+            if cleaned.isEmpty || isMetaLine(cleaned) {
+                end -= 1
+                continue
+            }
+            break
+        }
+        guard end >= 1 else { return nil }
+
+        return numberedStructuralBlock(in: window, endingAt: end)
+            ?? unnumberedStructuralBlock(in: window, endingAt: end)
+    }
+
+    private static func numberedStructuralBlock(in window: [String], endingAt end: Int) -> PromptMatch? {
+        var rows: [(option: RemoteInteractivePromptOption, hasCursor: Bool)] = []
+        var index = end
+        while index >= 0, rows.count < maxStructuralOptions, let row = numberedOptionRow(window[index]) {
+            rows.insert(row, at: 0)
+            index -= 1
+        }
+        guard rows.count >= 2 else { return nil }
+        // Real menus number 1..n consecutively; anything else is prose.
+        guard rows.enumerated().allSatisfy({ Int($1.option.id) == $0 + 1 }) else { return nil }
+        let cursorRows = rows.indices.filter { rows[$0].hasCursor }
+        guard cursorRows.count == 1, let selected = cursorRows.first else { return nil }
+        guard let context = promptContext(in: window, above: index) else { return nil }
+        return (context.prompt, context.detail, rows.map(\.option), selected)
+    }
+
+    private static func numberedOptionRow(_ line: String) -> (option: RemoteInteractivePromptOption, hasCursor: Bool)? {
+        let cleaned = cleanedLine(line)
+        guard !cleaned.isEmpty, !isMetaLine(cleaned), let regex = structuralNumberedRegex else { return nil }
+        let range = NSRange(cleaned.startIndex ..< cleaned.endIndex, in: cleaned)
+        guard let match = regex.firstMatch(in: cleaned, options: [], range: range),
+              match.numberOfRanges == 3,
+              let tokenRange = Range(match.range(at: 1), in: cleaned),
+              let labelRange = Range(match.range(at: 2), in: cleaned) else {
+            return nil
+        }
+        let token = String(cleaned[tokenRange])
+        let label = String(cleaned[labelRange]).trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !label.isEmpty else { return nil }
+        let hasCursor = cleaned[..<tokenRange.lowerBound].contains { cursorGlyphs.contains($0) }
+        return (
+            RemoteInteractivePromptOption(
+                id: token,
+                label: label,
+                response: token + "\r",
+                isDestructive: isDestructiveLabel(label)
+            ),
+            hasCursor
+        )
+    }
+
+    private struct UnnumberedRow {
+        let label: String
+        let hasCursor: Bool
+        let textColumn: Int
+    }
+
+    /// Arrow-only menus have no digits to type, so options respond with the
+    /// arrow presses that move the cursor from the detected row to the target,
+    /// then Enter. These ride the existing text input path: iOS splits the
+    /// trailing CR into a separate Enter frame, and the Mac passes the CSI
+    /// body raw with a delayed Enter (remoteInputPlan).
+    private static func unnumberedStructuralBlock(in window: [String], endingAt end: Int) -> PromptMatch? {
+        var rows: [UnnumberedRow] = []
+        var index = end
+        while index >= 0, rows.count < maxStructuralOptions, let row = unnumberedOptionRow(window[index]) {
+            rows.insert(row, at: 0)
+            index -= 1
+        }
+        guard rows.count >= 2 else { return nil }
+        let cursorRows = rows.indices.filter { rows[$0].hasCursor }
+        guard cursorRows.count == 1, let selected = cursorRows.first else { return nil }
+        // All rows must align on the same text column — a menu's rows do, a
+        // shell command followed by its output does not.
+        let textColumn = rows[selected].textColumn
+        guard rows.allSatisfy({ $0.textColumn == textColumn }) else { return nil }
+        guard let context = promptContext(in: window, above: index) else { return nil }
+        // Without digits, alignment alone is too weak (e.g. "❯ npm test"
+        // above two indented result lines). Require a header that reads like
+        // a question or menu title before trusting an unnumbered block.
+        guard isLikelyMenuHeader(context.prompt) else { return nil }
+
+        let options = rows.enumerated().map { offset, row -> RemoteInteractivePromptOption in
+            let delta = offset - selected
+            let arrows = delta == 0
+                ? ""
+                : String(repeating: delta > 0 ? "\u{1B}[B" : "\u{1B}[A", count: abs(delta))
+            return RemoteInteractivePromptOption(
+                id: "opt-\(offset)",
+                label: row.label,
+                response: arrows + "\r",
+                isDestructive: isDestructiveLabel(row.label)
+            )
+        }
+        return (context.prompt, context.detail, options, selected)
+    }
+
+    private static func unnumberedOptionRow(_ line: String) -> UnnumberedRow? {
+        let normalized = line.replacingOccurrences(of: "\u{00A0}", with: " ")
+        let trimmed = normalized.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, !isMetaLine(trimmed) else { return nil }
+        // Numbered rows belong to the numbered pass.
+        guard numberedOptionRow(line) == nil else { return nil }
+        let leadingSpaces = normalized.prefix(while: { $0 == " " }).count
+
+        if let first = trimmed.first, cursorGlyphs.contains(first) {
+            let afterGlyph = trimmed.dropFirst()
+            let gap = afterGlyph.prefix(while: { $0 == " " }).count
+            let label = String(afterGlyph).trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !label.isEmpty, label.count <= maxUnnumberedLabelLength else { return nil }
+            return UnnumberedRow(label: label, hasCursor: true, textColumn: leadingSpaces + 1 + gap)
+        }
+
+        // Sibling rows: short, list-like, and free of sentence punctuation.
+        guard trimmed.count <= maxUnnumberedLabelLength,
+              !trimmed.hasSuffix("."), !trimmed.hasSuffix(":"), !trimmed.hasSuffix("?"),
+              trimmed.rangeOfCharacter(from: .letters) != nil else {
+            return nil
+        }
+        return UnnumberedRow(label: trimmed, hasCursor: false, textColumn: leadingSpaces)
+    }
+
+    private static func isLikelyMenuHeader(_ prompt: String) -> Bool {
+        if prompt.hasSuffix("?") || prompt.hasSuffix(":") {
+            return true
+        }
+        let lowered = prompt.lowercased()
+        return ["select", "choose", "pick", "which"].contains { lowered.contains($0) }
+    }
+
+    /// Nearest preceding line that can serve as the prompt text: non-empty,
+    /// not a meta line, and containing at least one letter (skips box-drawing
+    /// borders and dividers). No candidate means no prompt — a menu without a
+    /// question isn't actionable on the phone.
+    private static func promptContext(in window: [String], above index: Int) -> (prompt: String, detail: String?)? {
+        var promptIndex = index
+        while promptIndex >= 0 {
+            let cleaned = cleanedLine(window[promptIndex])
+            if cleaned.isEmpty || isMetaLine(cleaned) || cleaned.rangeOfCharacter(from: .letters) == nil {
+                promptIndex -= 1
+                continue
+            }
+            return (cleaned, parseDetail(in: window, aroundPromptAt: promptIndex))
+        }
+        return nil
     }
 
     private static func findFallbackPrompt(in lines: [String]) -> (prompt: String, detail: String?)? {
