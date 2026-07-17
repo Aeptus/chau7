@@ -200,7 +200,9 @@ public enum InteractivePromptDetector {
 
     private static let destructiveWords = ["deny", "reject", "cancel", "abort", "stop", "no"]
 
-    private static func isDestructiveLabel(_ label: String) -> Bool {
+    /// Shared destructive-option classification, also used by the structured
+    /// prompt store so hook-sourced and scraped options flag consistently.
+    public static func isDestructiveLabel(_ label: String) -> Bool {
         destructiveWords.contains { label.lowercased().contains($0) }
     }
 
