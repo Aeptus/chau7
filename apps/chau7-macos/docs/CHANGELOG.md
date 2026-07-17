@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- **Diagnostics Table Alignment**: Diagnostics Perf, Usage Monitor, and Debug Console analytics tables now share fixed-width numeric columns, monospaced values, consistent headers, and cache-aware token columns so performance and usage rows line up cleanly while remaining compact.
 - **Usage Analytics Loading**: Usage analytics dashboards now coalesce overlapping refreshes, keep proxy analytics database reads off the main thread, and show model-level proxy cost rows so expensive model choices are visible without freezing the app.
 - **Usage Analytics Dashboard Semantics**: Usage Monitor and Debug Console analytics now keep cache-write, cache-read, uncategorized-cache, output, and reasoning token buckets visible instead of collapsing recent run traffic into one ambiguous token number. Debug analytics refreshes always run off the main thread, coalesces overlapping refreshes, and includes model-level proxy cost rows so model cost differences are visible in the dashboard.
 - **Regional Usage Number Formatting**: Usage, analytics, and cost displays now respect a configurable regional number format (French by default, plus European and US choices) independent of app language. The setting is surfaced in AI Workflows settings and the usage dashboards, and precise small-cost currency formatting no longer leaks extra decimals into later normal currency values.

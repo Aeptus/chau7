@@ -580,14 +580,71 @@ struct DebugConsoleView: View {
     }
 
     private func formatTokenCount(_ count: Int) -> String {
-        if count >= 1_000_000 { return String(format: "%.1fM", Double(count) / 1_000_000) }
-        if count >= 1000 { return String(format: "%.1fK", Double(count) / 1000) }
-        return "\(count)"
+        CountFormat.abbreviated(count)
     }
 
     private func formatCost(_ cost: Double) -> String {
         if cost <= 0 { return "--" }
         return LocalizedFormatters.formatCostPrecise(cost)
+    }
+
+    private enum DebugTableColumn {
+        static let tiny: CGFloat = 42
+        static let small: CGFloat = 54
+        static let medium: CGFloat = 70
+        static let large: CGFloat = 88
+        static let cost: CGFloat = 86
+        static let time: CGFloat = 76
+        static let bytes: CGFloat = 76
+        static let provider: CGFloat = 92
+    }
+
+    @ViewBuilder
+    private func debugTableHeaderCell(
+        _ title: String,
+        width: CGFloat? = nil,
+        alignment: Alignment = .trailing
+    ) -> some View {
+        if let width {
+            Text(title)
+                .font(.system(size: 9, weight: .semibold))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .frame(width: width, alignment: alignment)
+        } else {
+            Text(title)
+                .font(.system(size: 9, weight: .semibold))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .frame(maxWidth: .infinity, alignment: alignment)
+        }
+    }
+
+    @ViewBuilder
+    private func debugTableCell(
+        _ value: String,
+        width: CGFloat? = nil,
+        alignment: Alignment = .trailing,
+        weight: Font.Weight = .regular,
+        color: Color = .primary,
+        design: Font.Design = .monospaced,
+        truncateMiddle: Bool = false
+    ) -> some View {
+        if let width {
+            Text(value)
+                .font(.system(size: 10, weight: weight, design: design))
+                .foregroundStyle(color)
+                .lineLimit(1)
+                .truncationMode(truncateMiddle ? .middle : .tail)
+                .frame(width: width, alignment: alignment)
+        } else {
+            Text(value)
+                .font(.system(size: 10, weight: weight, design: design))
+                .foregroundStyle(color)
+                .lineLimit(1)
+                .truncationMode(truncateMiddle ? .middle : .tail)
+                .frame(maxWidth: .infinity, alignment: alignment)
+        }
     }
 
     // MARK: - CTO Per-Tab Breakdown
@@ -602,34 +659,19 @@ struct DebugConsoleView: View {
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 4)
             } else {
-                VStack(alignment: .leading, spacing: 0) {
-                    // Header row
-                    HStack(spacing: 0) {
-                        Text("Tab")
-                            .frame(width: 90, alignment: .leading)
-                        Text("Cmds")
-                            .frame(width: 40, alignment: .trailing)
-                        Text("Opt")
-                            .frame(width: 40, alignment: .trailing)
-                        Text("Fall")
-                            .frame(width: 40, alignment: .trailing)
-                        Text("Skip")
-                            .frame(width: 40, alignment: .trailing)
-                        Text("Rate")
-                            .frame(width: 45, alignment: .trailing)
-                        Text("In Tok")
-                            .frame(width: 55, alignment: .trailing)
-                        Text("Out Tok")
-                            .frame(width: 55, alignment: .trailing)
-                        Text("Cost")
-                            .frame(width: 50, alignment: .trailing)
-                        Text("CTO Saved")
-                            .frame(width: 65, alignment: .trailing)
-                        Spacer()
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 8) {
+                        debugTableHeaderCell("Tab", alignment: .leading)
+                        debugTableHeaderCell("Cmds", width: DebugTableColumn.tiny)
+                        debugTableHeaderCell("Opt", width: DebugTableColumn.tiny)
+                        debugTableHeaderCell("Fall", width: DebugTableColumn.tiny)
+                        debugTableHeaderCell("Skip", width: DebugTableColumn.tiny)
+                        debugTableHeaderCell("Rate", width: DebugTableColumn.small)
+                        debugTableHeaderCell("Input", width: DebugTableColumn.medium)
+                        debugTableHeaderCell("Output", width: DebugTableColumn.medium)
+                        debugTableHeaderCell("Cost", width: DebugTableColumn.cost)
+                        debugTableHeaderCell("Saved", width: DebugTableColumn.medium)
                     }
-                    .font(.system(size: 9, weight: .semibold))
-                    .foregroundStyle(.secondary)
-                    .padding(.bottom, 4)
 
                     Divider()
 
@@ -649,38 +691,23 @@ struct DebugConsoleView: View {
                         let aiStat = aiPerTabStats.first { $0.tabID == sessionID }
                         let ctoSaved = ctoPerSessionGain[sessionID]
 
-                        HStack(spacing: 0) {
-                            Text(ctoTabLabel(for: sessionID))
-                                .frame(width: 90, alignment: .leading)
-                                .lineLimit(1)
-                                .truncationMode(.middle)
-                            Text("\(tabStat?.total ?? 0)")
-                                .frame(width: 40, alignment: .trailing)
-                            Text("\(tabStat?.optimized ?? 0)")
-                                .foregroundStyle(.green)
-                                .frame(width: 40, alignment: .trailing)
-                            Text("\(tabStat?.fallthrough ?? 0)")
-                                .foregroundStyle(.orange)
-                                .frame(width: 40, alignment: .trailing)
-                            Text("\(tabStat?.skipped ?? 0)")
-                                .foregroundStyle(.secondary)
-                                .frame(width: 40, alignment: .trailing)
-                            Text(tabStat.map { String(format: "%.0f%%", $0.rate) } ?? "--")
-                                .foregroundStyle(tabStat.map { $0.rate >= 80 ? Color.green : $0.rate >= 50 ? .orange : .red } ?? .secondary)
-                                .frame(width: 45, alignment: .trailing)
-                            Text(aiStat.map { formatTokenCount($0.totalInputTokens) } ?? "--")
-                                .frame(width: 55, alignment: .trailing)
-                            Text(aiStat.map { formatTokenCount($0.totalOutputTokens) } ?? "--")
-                                .frame(width: 55, alignment: .trailing)
-                            Text(aiStat.map { formatCost($0.totalCostUSD) } ?? "--")
-                                .frame(width: 50, alignment: .trailing)
-                            Text(ctoSaved.map { formatTokenCount($0.savedTokens) } ?? "--")
-                                .foregroundStyle(.green)
-                                .frame(width: 65, alignment: .trailing)
-                            Spacer()
+                        HStack(spacing: 8) {
+                            debugTableCell(ctoTabLabel(for: sessionID), alignment: .leading, weight: .semibold, design: .default, truncateMiddle: true)
+                            debugTableCell("\(tabStat?.total ?? 0)", width: DebugTableColumn.tiny)
+                            debugTableCell("\(tabStat?.optimized ?? 0)", width: DebugTableColumn.tiny, color: .green)
+                            debugTableCell("\(tabStat?.fallthrough ?? 0)", width: DebugTableColumn.tiny, color: .orange)
+                            debugTableCell("\(tabStat?.skipped ?? 0)", width: DebugTableColumn.tiny, color: .secondary)
+                            debugTableCell(
+                                tabStat.map { String(format: "%.0f%%", $0.rate) } ?? "--",
+                                width: DebugTableColumn.small,
+                                color: tabStat.map { $0.rate >= 80 ? Color.green : $0.rate >= 50 ? .orange : .red } ?? .secondary
+                            )
+                            debugTableCell(aiStat.map { formatTokenCount($0.totalInputTokens) } ?? "--", width: DebugTableColumn.medium)
+                            debugTableCell(aiStat.map { formatTokenCount($0.totalOutputTokens) } ?? "--", width: DebugTableColumn.medium)
+                            debugTableCell(aiStat.map { formatCost($0.totalCostUSD) } ?? "--", width: DebugTableColumn.cost)
+                            debugTableCell(ctoSaved.map { formatTokenCount($0.savedTokens) } ?? "--", width: DebugTableColumn.medium, color: .green)
                         }
-                        .font(.system(size: 10, design: .monospaced))
-                        .padding(.vertical, 2)
+                        .padding(.vertical, 3)
                     }
                 }
             }
@@ -698,73 +725,53 @@ struct DebugConsoleView: View {
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 4)
             } else {
-                VStack(alignment: .leading, spacing: 0) {
-                    HStack(spacing: 0) {
-                        Text("Provider")
-                            .frame(width: 120, alignment: .leading)
-                        Text("Runs")
-                            .frame(width: 50, alignment: .trailing)
-                        Text("Input")
-                            .frame(width: 70, alignment: .trailing)
-                        Text("Output")
-                            .frame(width: 70, alignment: .trailing)
-                        Text("Total")
-                            .frame(width: 70, alignment: .trailing)
-                        Text("Cost")
-                            .frame(width: 65, alignment: .trailing)
-                        Spacer()
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 8) {
+                        debugTableHeaderCell("Provider", alignment: .leading)
+                        debugTableHeaderCell("Runs", width: DebugTableColumn.small)
+                        debugTableHeaderCell("Input", width: DebugTableColumn.medium)
+                        debugTableHeaderCell("Cache W", width: DebugTableColumn.medium)
+                        debugTableHeaderCell("Cache R", width: DebugTableColumn.medium)
+                        debugTableHeaderCell("Output", width: DebugTableColumn.medium)
+                        debugTableHeaderCell("Metered", width: DebugTableColumn.large)
+                        debugTableHeaderCell("Cost", width: DebugTableColumn.cost)
                     }
-                    .font(.system(size: 9, weight: .semibold))
-                    .foregroundStyle(.secondary)
-                    .padding(.bottom, 4)
 
                     Divider()
 
                     ForEach(providerStats) { stat in
-                        HStack(spacing: 0) {
-                            Text(stat.provider)
-                                .frame(width: 120, alignment: .leading)
-                                .lineLimit(1)
-                                .truncationMode(.tail)
-                            Text("\(stat.runCount)")
-                                .frame(width: 50, alignment: .trailing)
-                            Text(formatTokenCount(stat.totalInputTokens))
-                                .frame(width: 70, alignment: .trailing)
-                            Text(formatTokenCount(stat.totalOutputTokens))
-                                .frame(width: 70, alignment: .trailing)
-                            Text(formatTokenCount(stat.totalInputTokens + stat.totalOutputTokens))
-                                .frame(width: 70, alignment: .trailing)
-                            Text(formatCost(stat.totalCostUSD))
-                                .frame(width: 65, alignment: .trailing)
-                            Spacer()
+                        HStack(spacing: 8) {
+                            debugTableCell(stat.provider, alignment: .leading, weight: .semibold, design: .default)
+                            debugTableCell(LocalizedFormatters.formatInteger(stat.runCount), width: DebugTableColumn.small)
+                            debugTableCell(formatTokenCount(stat.totalInputTokens), width: DebugTableColumn.medium)
+                            debugTableCell(formatTokenCount(stat.totalCacheCreationInputTokens), width: DebugTableColumn.medium)
+                            debugTableCell(formatTokenCount(stat.totalCacheReadInputTokens), width: DebugTableColumn.medium)
+                            debugTableCell(formatTokenCount(stat.totalOutputTokens), width: DebugTableColumn.medium)
+                            debugTableCell(formatTokenCount(stat.totalBillableTokens), width: DebugTableColumn.large)
+                            debugTableCell(formatCost(stat.totalCostUSD), width: DebugTableColumn.cost)
                         }
-                        .font(.system(size: 10, design: .monospaced))
-                        .padding(.vertical, 2)
+                        .padding(.vertical, 3)
                     }
 
-                    // Totals row
                     Divider()
                     let totalRuns = providerStats.reduce(0) { $0 + $1.runCount }
                     let totalIn = providerStats.reduce(0) { $0 + $1.totalInputTokens }
+                    let totalCacheWrite = providerStats.reduce(0) { $0 + $1.totalCacheCreationInputTokens }
+                    let totalCacheRead = providerStats.reduce(0) { $0 + $1.totalCacheReadInputTokens }
                     let totalOut = providerStats.reduce(0) { $0 + $1.totalOutputTokens }
+                    let totalMetered = providerStats.reduce(0) { $0 + $1.totalBillableTokens }
                     let totalCost = providerStats.reduce(0.0) { $0 + $1.totalCostUSD }
-                    HStack(spacing: 0) {
-                        Text("Total")
-                            .frame(width: 120, alignment: .leading)
-                        Text("\(totalRuns)")
-                            .frame(width: 50, alignment: .trailing)
-                        Text(formatTokenCount(totalIn))
-                            .frame(width: 70, alignment: .trailing)
-                        Text(formatTokenCount(totalOut))
-                            .frame(width: 70, alignment: .trailing)
-                        Text(formatTokenCount(totalIn + totalOut))
-                            .frame(width: 70, alignment: .trailing)
-                        Text(formatCost(totalCost))
-                            .frame(width: 65, alignment: .trailing)
-                        Spacer()
+                    HStack(spacing: 8) {
+                        debugTableCell("Total", alignment: .leading, weight: .semibold, design: .default)
+                        debugTableCell(LocalizedFormatters.formatInteger(totalRuns), width: DebugTableColumn.small, weight: .semibold)
+                        debugTableCell(formatTokenCount(totalIn), width: DebugTableColumn.medium, weight: .semibold)
+                        debugTableCell(formatTokenCount(totalCacheWrite), width: DebugTableColumn.medium, weight: .semibold)
+                        debugTableCell(formatTokenCount(totalCacheRead), width: DebugTableColumn.medium, weight: .semibold)
+                        debugTableCell(formatTokenCount(totalOut), width: DebugTableColumn.medium, weight: .semibold)
+                        debugTableCell(formatTokenCount(totalMetered), width: DebugTableColumn.large, weight: .semibold)
+                        debugTableCell(formatCost(totalCost), width: DebugTableColumn.cost, weight: .semibold)
                     }
-                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                    .padding(.vertical, 2)
+                    .padding(.vertical, 3)
                 }
             }
         }
@@ -1397,39 +1404,26 @@ struct DebugConsoleView: View {
             } else {
                 VStack(alignment: .leading, spacing: 4) {
                     HStack(spacing: 8) {
-                        Text(L("debug.perfFeature", "Feature"))
-                            .font(.system(size: 10, weight: .semibold))
-                        Spacer()
-                        Text(L("debug.perfTotal", "Total"))
-                            .font(.system(size: 10, weight: .semibold))
-                        Text(L("debug.perfAvg", "Avg"))
-                            .font(.system(size: 10, weight: .semibold))
-                        Text(L("debug.perfMax", "Max"))
-                            .font(.system(size: 10, weight: .semibold))
-                        Text(L("debug.perfCount", "Count"))
-                            .font(.system(size: 10, weight: .semibold))
-                        Text(L("debug.perfBytes", "Bytes"))
-                            .font(.system(size: 10, weight: .semibold))
+                        debugTableHeaderCell(L("debug.perfFeature", "Feature"), alignment: .leading)
+                        debugTableHeaderCell(L("debug.perfTotal", "Total"), width: DebugTableColumn.medium)
+                        debugTableHeaderCell(L("debug.perfAvg", "Avg"), width: DebugTableColumn.small)
+                        debugTableHeaderCell(L("debug.perfMax", "Max"), width: DebugTableColumn.small)
+                        debugTableHeaderCell(L("debug.perfCount", "Count"), width: DebugTableColumn.small)
+                        debugTableHeaderCell(L("debug.perfBytes", "Bytes"), width: DebugTableColumn.bytes)
                     }
-                    .foregroundStyle(.secondary)
+
+                    Divider()
 
                     ForEach(ordered, id: \.key) { feature, stats in
                         HStack(spacing: 8) {
-                            Text(feature.displayName)
-                                .font(.system(size: 11, weight: .semibold))
-                            Spacer()
-                            Text("\(Int(stats.totalMs.rounded()))ms")
-                                .font(.system(size: 10, design: .monospaced))
-                            Text("\(Int(stats.averageMs.rounded()))ms")
-                                .font(.system(size: 10, design: .monospaced))
-                            Text("\(Int(stats.maxMs.rounded()))ms")
-                                .font(.system(size: 10, design: .monospaced))
-                            Text("\(stats.count)")
-                                .font(.system(size: 10, design: .monospaced))
-                            Text(formatBytes(stats.totalBytes))
-                                .font(.system(size: 10, design: .monospaced))
-                                .frame(minWidth: 60, alignment: .trailing)
+                            debugTableCell(feature.displayName, alignment: .leading, weight: .semibold, design: .default)
+                            debugTableCell("\(Int(stats.totalMs.rounded()))ms", width: DebugTableColumn.medium)
+                            debugTableCell("\(Int(stats.averageMs.rounded()))ms", width: DebugTableColumn.small)
+                            debugTableCell("\(Int(stats.maxMs.rounded()))ms", width: DebugTableColumn.small)
+                            debugTableCell(LocalizedFormatters.formatInteger(stats.count), width: DebugTableColumn.small)
+                            debugTableCell(formatBytes(stats.totalBytes), width: DebugTableColumn.bytes)
                         }
+                        .padding(.vertical, 3)
                     }
                 }
                 .padding(.vertical, 4)
@@ -1449,7 +1443,17 @@ struct DebugConsoleView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.vertical, 4)
             } else {
-                VStack(alignment: .leading, spacing: 6) {
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 8) {
+                        debugTableHeaderCell(L("debug.perfFeature", "Feature"), width: 116, alignment: .leading)
+                        debugTableHeaderCell(L("debug.perfTime", "Time"), width: DebugTableColumn.time, alignment: .leading)
+                        debugTableHeaderCell(L("debug.perfDuration", "Duration"), width: DebugTableColumn.medium)
+                        debugTableHeaderCell(L("debug.perfBytes", "Bytes"), width: DebugTableColumn.bytes)
+                        debugTableHeaderCell(L("debug.perfMetadata", "Metadata"), alignment: .leading)
+                    }
+
+                    Divider()
+
                     ForEach(events.prefix(160)) { event in
                         performanceEventRow(event)
                     }
@@ -1460,36 +1464,14 @@ struct DebugConsoleView: View {
     }
 
     private func performanceEventRow(_ event: FeatureEvent) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            HStack(spacing: 8) {
-                Text(event.feature.displayName)
-                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                    .foregroundStyle(.blue)
-
-                Text(formatTime(event.timestamp))
-                    .font(.system(size: 10, design: .monospaced))
-                    .foregroundStyle(.secondary)
-
-                Spacer()
-
-                Text("\(event.durationMs)ms")
-                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
-
-                if event.bytes > 0 {
-                    Text(formatBytes(event.bytes))
-                        .font(.system(size: 10, design: .monospaced))
-                        .foregroundStyle(.secondary)
-                }
-            }
-
-            if let metadata = event.metadata, !metadata.isEmpty {
-                Text(metadata)
-                    .font(.system(size: 10))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-            }
+        HStack(spacing: 8) {
+            debugTableCell(event.feature.displayName, width: 116, alignment: .leading, weight: .semibold, color: .blue, design: .default)
+            debugTableCell(formatTime(event.timestamp), width: DebugTableColumn.time, alignment: .leading, color: .secondary)
+            debugTableCell("\(event.durationMs)ms", width: DebugTableColumn.medium, weight: .semibold)
+            debugTableCell(event.bytes > 0 ? formatBytes(event.bytes) : "--", width: DebugTableColumn.bytes, color: .secondary)
+            debugTableCell(event.metadata?.isEmpty == false ? event.metadata ?? "" : "--", alignment: .leading, color: .secondary, design: .default)
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, 5)
         .padding(.horizontal, 8)
         .background(Color(nsColor: .controlBackgroundColor).opacity(0.5))
         .clipShape(RoundedRectangle(cornerRadius: 4))
@@ -1752,14 +1734,20 @@ struct DebugConsoleView: View {
                 if combinedProviderRows.isEmpty {
                     Text("No analytics data yet.").foregroundStyle(.secondary)
                 } else {
-                    ForEach(combinedProviderRows) { stat in
-                        HStack {
-                            Text(AnalyticsProvider.displayName(for: stat.provider)).bold()
-                            Spacer()
-                            Text("\(analyticsFormatTokens(stat.totalBillableTokens)) metered")
-                                .foregroundStyle(.secondary)
-                            Text(LocalizedFormatters.formatCostPrecise(stat.totalCostUSD))
-                                .monospaced()
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack(spacing: 8) {
+                            debugTableHeaderCell("Provider", alignment: .leading)
+                            debugTableHeaderCell("Metered", width: DebugTableColumn.large)
+                            debugTableHeaderCell("Cost", width: DebugTableColumn.cost)
+                        }
+                        Divider()
+                        ForEach(combinedProviderRows) { stat in
+                            HStack(spacing: 8) {
+                                debugTableCell(AnalyticsProvider.displayName(for: stat.provider), alignment: .leading, weight: .semibold, design: .default)
+                                debugTableCell(analyticsFormatTokens(stat.totalBillableTokens), width: DebugTableColumn.large, color: .secondary)
+                                debugTableCell(LocalizedFormatters.formatCostPrecise(stat.totalCostUSD), width: DebugTableColumn.cost, weight: .semibold)
+                            }
+                            .padding(.vertical, 3)
                         }
                     }
                 }
@@ -1769,16 +1757,22 @@ struct DebugConsoleView: View {
                 if combinedDailyTrend.isEmpty {
                     Text("No combined analytics data yet.").foregroundStyle(.secondary)
                 } else {
-                    ForEach(combinedDailyTrend) { day in
-                        HStack {
-                            Text(day.date).monospaced().font(.caption)
-                            Spacer()
-                            Text("\(analyticsFormatTokens(day.totalTokens)) tokens")
-                                .foregroundStyle(.secondary)
-                                .font(.caption)
-                            Text(LocalizedFormatters.formatCostPrecise(day.totalCostUSD))
-                                .monospaced()
-                                .bold()
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack(spacing: 8) {
+                            debugTableHeaderCell("Date", width: DebugTableColumn.large, alignment: .leading)
+                            debugTableHeaderCell("Tokens", width: DebugTableColumn.large)
+                            debugTableHeaderCell("Cost", width: DebugTableColumn.cost)
+                            Spacer(minLength: 0)
+                        }
+                        Divider()
+                        ForEach(combinedDailyTrend) { day in
+                            HStack(spacing: 8) {
+                                debugTableCell(day.date, width: DebugTableColumn.large, alignment: .leading)
+                                debugTableCell(analyticsFormatTokens(day.totalTokens), width: DebugTableColumn.large, color: .secondary)
+                                debugTableCell(LocalizedFormatters.formatCostPrecise(day.totalCostUSD), width: DebugTableColumn.cost, weight: .semibold)
+                                Spacer(minLength: 0)
+                            }
+                            .padding(.vertical, 3)
                         }
                     }
                 }
@@ -1810,16 +1804,22 @@ struct DebugConsoleView: View {
                 if proxyProviderStats.isEmpty {
                     Text("No provider data yet.").foregroundStyle(.secondary)
                 } else {
-                    ForEach(proxyProviderStats) { stat in
-                        HStack {
-                            Text(AnalyticsProvider.displayName(for: stat.provider)).bold()
-                            Spacer()
-                            Text("\(LocalizedFormatters.formatInteger(stat.callCount)) calls")
-                                .foregroundStyle(.secondary)
-                            Text("\(analyticsFormatTokens(stat.totalBillableTokens)) metered")
-                                .foregroundStyle(.secondary)
-                            Text(LocalizedFormatters.formatCostPrecise(stat.totalCostUSD))
-                                .monospaced()
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack(spacing: 8) {
+                            debugTableHeaderCell("Provider", alignment: .leading)
+                            debugTableHeaderCell("Calls", width: DebugTableColumn.medium)
+                            debugTableHeaderCell("Metered", width: DebugTableColumn.large)
+                            debugTableHeaderCell("Cost", width: DebugTableColumn.cost)
+                        }
+                        Divider()
+                        ForEach(proxyProviderStats) { stat in
+                            HStack(spacing: 8) {
+                                debugTableCell(AnalyticsProvider.displayName(for: stat.provider), alignment: .leading, weight: .semibold, design: .default)
+                                debugTableCell(LocalizedFormatters.formatInteger(stat.callCount), width: DebugTableColumn.medium, color: .secondary)
+                                debugTableCell(analyticsFormatTokens(stat.totalBillableTokens), width: DebugTableColumn.large, color: .secondary)
+                                debugTableCell(LocalizedFormatters.formatCostPrecise(stat.totalCostUSD), width: DebugTableColumn.cost, weight: .semibold)
+                            }
+                            .padding(.vertical, 3)
                         }
                     }
                 }
@@ -1829,30 +1829,28 @@ struct DebugConsoleView: View {
                 if proxyModelStats.isEmpty {
                     Text("No model data yet.").foregroundStyle(.secondary)
                 } else {
-                    VStack(alignment: .leading, spacing: 6) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack(spacing: 8) {
+                            debugTableHeaderCell("Model", alignment: .leading)
+                            debugTableHeaderCell("Provider", width: DebugTableColumn.provider, alignment: .leading)
+                            debugTableHeaderCell("Calls", width: DebugTableColumn.medium)
+                            debugTableHeaderCell("Metered", width: DebugTableColumn.large)
+                            debugTableHeaderCell("Cost", width: DebugTableColumn.cost)
+                        }
+                        Divider()
                         ForEach(proxyModelStats.prefix(15)) { model in
                             HStack(spacing: 8) {
                                 Circle()
                                     .fill(providerColor(model.provider))
                                     .frame(width: 6, height: 6)
-                                Text(model.model.isEmpty ? "(unknown)" : model.model)
-                                    .font(.system(size: 11, design: .monospaced))
-                                    .lineLimit(1)
-                                Text(AnalyticsProvider.displayName(for: model.provider))
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                                Spacer()
-                                Text("\(LocalizedFormatters.formatInteger(model.callCount)) calls")
-                                    .foregroundStyle(.secondary)
-                                    .font(.caption)
-                                Text("\(analyticsFormatTokens(model.totalBillableTokens)) metered")
-                                    .foregroundStyle(.secondary)
-                                    .font(.caption)
+                                debugTableCell(model.model.isEmpty ? "(unknown)" : model.model, alignment: .leading, design: .monospaced, truncateMiddle: true)
+                                debugTableCell(AnalyticsProvider.displayName(for: model.provider), width: DebugTableColumn.provider, alignment: .leading, color: .secondary, design: .default)
+                                debugTableCell(LocalizedFormatters.formatInteger(model.callCount), width: DebugTableColumn.medium, color: .secondary)
+                                debugTableCell(analyticsFormatTokens(model.totalBillableTokens), width: DebugTableColumn.large, color: .secondary)
                                     .help(proxyModelTokenBreakdown(model))
-                                Text(LocalizedFormatters.formatCostPrecise(model.totalCostUSD))
-                                    .monospaced()
-                                    .bold()
+                                debugTableCell(LocalizedFormatters.formatCostPrecise(model.totalCostUSD), width: DebugTableColumn.cost, weight: .semibold)
                             }
+                            .padding(.vertical, 3)
                         }
                     }
                 }
@@ -1862,19 +1860,24 @@ struct DebugConsoleView: View {
                 if proxyDailyTrend.isEmpty {
                     Text("No daily proxy data yet.").foregroundStyle(.secondary)
                 } else {
-                    ForEach(proxyDailyTrend) { day in
-                        HStack {
-                            Text(day.date).monospaced().font(.caption)
-                            Spacer()
-                            Text("\(LocalizedFormatters.formatInteger(day.callCount)) calls")
-                                .foregroundStyle(.secondary)
-                                .font(.caption)
-                            Text("\(analyticsFormatTokens(day.totalTokens)) tokens")
-                                .foregroundStyle(.secondary)
-                                .font(.caption)
-                            Text(LocalizedFormatters.formatCostPrecise(day.totalCostUSD))
-                                .monospaced()
-                                .bold()
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack(spacing: 8) {
+                            debugTableHeaderCell("Date", width: DebugTableColumn.large, alignment: .leading)
+                            debugTableHeaderCell("Calls", width: DebugTableColumn.medium)
+                            debugTableHeaderCell("Tokens", width: DebugTableColumn.large)
+                            debugTableHeaderCell("Cost", width: DebugTableColumn.cost)
+                            Spacer(minLength: 0)
+                        }
+                        Divider()
+                        ForEach(proxyDailyTrend) { day in
+                            HStack(spacing: 8) {
+                                debugTableCell(day.date, width: DebugTableColumn.large, alignment: .leading)
+                                debugTableCell(LocalizedFormatters.formatInteger(day.callCount), width: DebugTableColumn.medium, color: .secondary)
+                                debugTableCell(analyticsFormatTokens(day.totalTokens), width: DebugTableColumn.large, color: .secondary)
+                                debugTableCell(LocalizedFormatters.formatCostPrecise(day.totalCostUSD), width: DebugTableColumn.cost, weight: .semibold)
+                                Spacer(minLength: 0)
+                            }
+                            .padding(.vertical, 3)
                         }
                     }
                 }
@@ -1884,19 +1887,24 @@ struct DebugConsoleView: View {
                 if proxyHourlyTrend.isEmpty {
                     Text("No hourly proxy data yet.").foregroundStyle(.secondary)
                 } else {
-                    ForEach(proxyHourlyTrend.suffix(24)) { hour in
-                        HStack {
-                            Text(hour.hour).monospaced().font(.caption)
-                            Spacer()
-                            Text("\(LocalizedFormatters.formatInteger(hour.callCount)) calls")
-                                .foregroundStyle(.secondary)
-                                .font(.caption)
-                            Text("\(analyticsFormatTokens(hour.totalTokens)) tokens")
-                                .foregroundStyle(.secondary)
-                                .font(.caption)
-                            Text(LocalizedFormatters.formatCostPrecise(hour.totalCostUSD))
-                                .monospaced()
-                                .bold()
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack(spacing: 8) {
+                            debugTableHeaderCell("Hour", width: DebugTableColumn.large, alignment: .leading)
+                            debugTableHeaderCell("Calls", width: DebugTableColumn.medium)
+                            debugTableHeaderCell("Tokens", width: DebugTableColumn.large)
+                            debugTableHeaderCell("Cost", width: DebugTableColumn.cost)
+                            Spacer(minLength: 0)
+                        }
+                        Divider()
+                        ForEach(proxyHourlyTrend.suffix(24)) { hour in
+                            HStack(spacing: 8) {
+                                debugTableCell(hour.hour, width: DebugTableColumn.large, alignment: .leading)
+                                debugTableCell(LocalizedFormatters.formatInteger(hour.callCount), width: DebugTableColumn.medium, color: .secondary)
+                                debugTableCell(analyticsFormatTokens(hour.totalTokens), width: DebugTableColumn.large, color: .secondary)
+                                debugTableCell(LocalizedFormatters.formatCostPrecise(hour.totalCostUSD), width: DebugTableColumn.cost, weight: .semibold)
+                                Spacer(minLength: 0)
+                            }
+                            .padding(.vertical, 3)
                         }
                     }
                 }
@@ -1906,42 +1914,43 @@ struct DebugConsoleView: View {
                 if recentProxyCalls.isEmpty {
                     Text("No recent proxy calls recorded.").foregroundStyle(.secondary)
                 } else {
-                    ForEach(recentProxyCalls.prefix(15)) { call in
-                        VStack(alignment: .leading, spacing: 2) {
-                            HStack {
-                                Text(call.provider.displayName)
-                                    .font(.system(size: 11, weight: .semibold))
-                                Text(call.model)
-                                    .font(.system(size: 10, design: .monospaced))
-                                    .foregroundStyle(.secondary)
-                                    .lineLimit(1)
-                                Spacer()
-                                Text("\(analyticsFormatTokens(call.totalBillableTokens)) metered")
-                                    .foregroundStyle(.secondary)
-                                    .font(.caption)
-                                Text(call.formattedCost)
-                                    .monospaced()
-                                Text(call.formattedLatency)
-                                    .foregroundStyle(.secondary)
-                                    .font(.caption)
-                            }
-                            HStack(spacing: 8) {
-                                Text(call.formattedHour)
-                                    .font(.system(size: 9, design: .monospaced))
-                                    .foregroundStyle(.tertiary)
-                                if let projectName = call.projectName {
-                                    Text(projectName)
-                                        .font(.system(size: 9, weight: .medium))
-                                        .padding(.horizontal, 5)
-                                        .padding(.vertical, 1)
-                                        .background(Color.secondary.opacity(0.12))
-                                        .clipShape(Capsule())
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack(spacing: 8) {
+                            debugTableHeaderCell("Provider", width: DebugTableColumn.provider, alignment: .leading)
+                            debugTableHeaderCell("Model", alignment: .leading)
+                            debugTableHeaderCell("Metered", width: DebugTableColumn.large)
+                            debugTableHeaderCell("Cost", width: DebugTableColumn.cost)
+                            debugTableHeaderCell("Latency", width: DebugTableColumn.medium)
+                        }
+                        Divider()
+                        ForEach(recentProxyCalls.prefix(15)) { call in
+                            VStack(alignment: .leading, spacing: 3) {
+                                HStack(spacing: 8) {
+                                    debugTableCell(call.provider.displayName, width: DebugTableColumn.provider, alignment: .leading, weight: .semibold, design: .default)
+                                    debugTableCell(call.model, alignment: .leading, color: .secondary, design: .monospaced, truncateMiddle: true)
+                                    debugTableCell(analyticsFormatTokens(call.totalBillableTokens), width: DebugTableColumn.large, color: .secondary)
+                                    debugTableCell(call.formattedCost, width: DebugTableColumn.cost, weight: .semibold)
+                                    debugTableCell(call.formattedLatency, width: DebugTableColumn.medium, color: .secondary)
                                 }
-                                Text(call.endpoint)
-                                    .font(.system(size: 9))
-                                    .foregroundStyle(.tertiary)
-                                    .lineLimit(1)
+                                HStack(spacing: 8) {
+                                    debugTableCell(call.formattedHour, width: DebugTableColumn.time, alignment: .leading, color: .secondary)
+                                    if let projectName = call.projectName {
+                                        Text(projectName)
+                                            .font(.system(size: 9, weight: .medium))
+                                            .lineLimit(1)
+                                            .padding(.horizontal, 5)
+                                            .padding(.vertical, 1)
+                                            .background(Color.secondary.opacity(0.12))
+                                            .clipShape(Capsule())
+                                    }
+                                    Text(call.endpoint)
+                                        .font(.system(size: 9))
+                                        .foregroundStyle(.tertiary)
+                                        .lineLimit(1)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                }
                             }
+                            .padding(.vertical, 5)
                         }
                     }
                 }
@@ -1955,17 +1964,22 @@ struct DebugConsoleView: View {
                 if providerStats.isEmpty {
                     Text("No AI run telemetry yet.").foregroundStyle(.secondary)
                 } else {
-                    ForEach(providerStats, id: \.provider) { stat in
-                        HStack {
-                            Text(AnalyticsProvider.displayName(for: stat.provider)).bold()
-                            Spacer()
-                            Text("\(LocalizedFormatters.formatInteger(stat.runCount)) runs")
-                                .foregroundStyle(.secondary)
-                            Text("\(analyticsFormatTokens(stat.totalBillableTokens)) tokens")
-                                .foregroundStyle(.secondary)
-                            Text(runCostLabel(for: stat))
-                                .monospaced()
-                                .foregroundStyle(stat.pricedRunCount > 0 ? .primary : .secondary)
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack(spacing: 8) {
+                            debugTableHeaderCell("Provider", alignment: .leading)
+                            debugTableHeaderCell("Runs", width: DebugTableColumn.medium)
+                            debugTableHeaderCell("Metered", width: DebugTableColumn.large)
+                            debugTableHeaderCell("Cost", width: DebugTableColumn.cost)
+                        }
+                        Divider()
+                        ForEach(providerStats, id: \.provider) { stat in
+                            HStack(spacing: 8) {
+                                debugTableCell(AnalyticsProvider.displayName(for: stat.provider), alignment: .leading, weight: .semibold, design: .default)
+                                debugTableCell(LocalizedFormatters.formatInteger(stat.runCount), width: DebugTableColumn.medium, color: .secondary)
+                                debugTableCell(analyticsFormatTokens(stat.totalBillableTokens), width: DebugTableColumn.large, color: .secondary)
+                                debugTableCell(runCostLabel(for: stat), width: DebugTableColumn.cost, color: stat.pricedRunCount > 0 ? .primary : .secondary)
+                            }
+                            .padding(.vertical, 3)
                         }
                     }
                 }
@@ -1975,26 +1989,27 @@ struct DebugConsoleView: View {
                 if aiPerTabStats.isEmpty {
                     Text("No per-tab run data yet.").foregroundStyle(.secondary)
                 } else {
-                    ForEach(aiPerTabStats.prefix(20), id: \.tabID) { stat in
-                        let descriptor = debugTabDescriptor(
-                            for: stat.tabID,
-                            fallbackProvider: stat.lastProvider,
-                            fallbackLocationPath: stat.lastLocationPath
-                        )
-                        HStack {
-                            Text(descriptor.label)
-                                .lineLimit(1)
-                            if let provider = descriptor.providerBadge {
-                                Text(provider)
-                                    .foregroundStyle(.secondary)
-                                    .font(.caption)
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack(spacing: 8) {
+                            debugTableHeaderCell("Tab", alignment: .leading)
+                            debugTableHeaderCell("Provider", width: DebugTableColumn.provider, alignment: .leading)
+                            debugTableHeaderCell("Metered", width: DebugTableColumn.large)
+                            debugTableHeaderCell("Cost", width: DebugTableColumn.cost)
+                        }
+                        Divider()
+                        ForEach(aiPerTabStats.prefix(20), id: \.tabID) { stat in
+                            let descriptor = debugTabDescriptor(
+                                for: stat.tabID,
+                                fallbackProvider: stat.lastProvider,
+                                fallbackLocationPath: stat.lastLocationPath
+                            )
+                            HStack(spacing: 8) {
+                                debugTableCell(descriptor.label, alignment: .leading, design: .default, truncateMiddle: true)
+                                debugTableCell(descriptor.providerBadge ?? "--", width: DebugTableColumn.provider, alignment: .leading, color: .secondary, design: .default)
+                                debugTableCell(analyticsFormatTokens(stat.totalBillableTokens), width: DebugTableColumn.large, color: .secondary)
+                                debugTableCell(runCostLabel(for: stat), width: DebugTableColumn.cost, color: stat.pricedRunCount > 0 ? .primary : .secondary)
                             }
-                            Spacer()
-                            Text("billable: \(analyticsFormatTokens(stat.totalBillableTokens))")
-                                .foregroundStyle(.secondary)
-                            Text(runCostLabel(for: stat))
-                                .monospaced()
-                                .foregroundStyle(stat.pricedRunCount > 0 ? .primary : .secondary)
+                            .padding(.vertical, 3)
                         }
                     }
                 }
@@ -2004,17 +2019,27 @@ struct DebugConsoleView: View {
                 if dailyCostTrend.isEmpty {
                     Text("No daily run data yet.").foregroundStyle(.secondary)
                 } else {
-                    ForEach(dailyCostTrend, id: \.date) { day in
-                        HStack {
-                            Text(day.date).monospaced().font(.caption)
-                            Spacer()
-                            Text("\(analyticsFormatTokens(day.tokens)) tokens")
-                                .foregroundStyle(.secondary)
-                                .font(.caption)
-                            Text(runCostLabel(cost: day.cost, pricedCount: day.pricedRunCount, missingCount: max(0, day.totalRunCount - day.pricedRunCount)))
-                                .monospaced()
-                                .bold()
-                                .foregroundStyle(day.pricedRunCount > 0 ? .primary : .secondary)
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack(spacing: 8) {
+                            debugTableHeaderCell("Date", width: DebugTableColumn.large, alignment: .leading)
+                            debugTableHeaderCell("Tokens", width: DebugTableColumn.large)
+                            debugTableHeaderCell("Cost", width: DebugTableColumn.cost)
+                            Spacer(minLength: 0)
+                        }
+                        Divider()
+                        ForEach(dailyCostTrend, id: \.date) { day in
+                            HStack(spacing: 8) {
+                                debugTableCell(day.date, width: DebugTableColumn.large, alignment: .leading)
+                                debugTableCell(analyticsFormatTokens(day.tokens), width: DebugTableColumn.large, color: .secondary)
+                                debugTableCell(
+                                    runCostLabel(cost: day.cost, pricedCount: day.pricedRunCount, missingCount: max(0, day.totalRunCount - day.pricedRunCount)),
+                                    width: DebugTableColumn.cost,
+                                    weight: .semibold,
+                                    color: day.pricedRunCount > 0 ? .primary : .secondary
+                                )
+                                Spacer(minLength: 0)
+                            }
+                            .padding(.vertical, 3)
                         }
                     }
                 }
