@@ -2087,6 +2087,13 @@
   },
   {
     "category": "SSH, Profiles & Remote",
+    "feature": "Structural Prompt Detection",
+    "description": "Selection menus are detected by shape — cursor-glyph-marked (❯ › ▸) option rows at the snapshot tail — instead of only prompt keywords, so agent-authored questions like AskUserQuestion surface as iPhone prompt cards, with arrow-only menus answered via synthesized arrow-navigation responses",
+    "status": "Experimental",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "SSH, Profiles & Remote",
     "feature": "Remote iPhone Profiling Hooks",
     "description": "The iPhone app emits os.signpost intervals for frame processing, output append, and ANSI stripping so receive/render lag can be measured in Instruments",
     "status": "Experimental",
