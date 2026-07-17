@@ -109,7 +109,19 @@ struct ApprovalsView: View {
                     dismissPrompt(prompt.id)
                     selection = next
                 },
-                onGoToTab: { onOpenTerminalTab(prompt.tabID) }
+                onGoToTab: { onOpenTerminalTab(prompt.tabID) },
+                onToggleOption: { option in
+                    hapticTrigger.toggle()
+                    _ = client.toggleInteractivePromptOption(promptID: prompt.id, optionID: option.id)
+                },
+                onSubmitMultiSelect: {
+                    let next = nextSelection(after: decision.id)
+                    if client.submitInteractivePrompt(promptID: prompt.id) {
+                        resetCustomPromptState(for: prompt.id)
+                        hapticTrigger.toggle()
+                        selection = next
+                    }
+                }
             )
         }
     }
@@ -714,6 +726,10 @@ struct FullScreenPromptCard: View {
     let onSendCustom: () -> Void
     let onDismiss: () -> Void
     let onGoToTab: () -> Void
+    /// Multi-select prompts only: toggle one option in the TUI (no submit).
+    var onToggleOption: (RemoteInteractivePromptOption) -> Void = { _ in }
+    /// Multi-select prompts only: confirm the current selection with Enter.
+    var onSubmitMultiSelect: () -> Void = {}
 
     var body: some View {
         VStack(spacing: 0) {
@@ -740,9 +756,17 @@ struct FullScreenPromptCard: View {
 
                     ContextList(rows: contextRows)
 
-                    VStack(spacing: 9) {
-                        ForEach(prompt.options) { option in
-                            PromptOptionButton(option: option) { onRespond(option) }
+                    if prompt.isMultiSelect == true {
+                        MultiSelectPromptOptions(
+                            options: prompt.options,
+                            onToggle: onToggleOption,
+                            onSubmit: onSubmitMultiSelect
+                        )
+                    } else {
+                        VStack(spacing: 9) {
+                            ForEach(prompt.options) { option in
+                                PromptOptionButton(option: option) { onRespond(option) }
+                            }
                         }
                     }
 
@@ -777,6 +801,74 @@ struct FullScreenPromptCard: View {
             rows.append(.init(icon: "text.alignleft", label: "Prompt context", value: detail, isProse: true))
         }
         return rows
+    }
+}
+
+// MARK: - Multi-select options
+
+/// Checkbox-style option list for multi-select prompts. Each tap sends the
+/// option's toggle digit to the TUI immediately (the terminal is the source
+/// of truth for selection state — the local checkmarks mirror the taps made
+/// FROM THIS CARD and can drift if someone also toggles on the Mac), and the
+/// submit button confirms with a bare Enter.
+private struct MultiSelectPromptOptions: View {
+    let options: [RemoteInteractivePromptOption]
+    let onToggle: (RemoteInteractivePromptOption) -> Void
+    let onSubmit: () -> Void
+
+    @State private var toggledOptionIDs: Set<String> = []
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 9) {
+            Text("Multi-select — toggles apply live in the terminal")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+
+            ForEach(options) { option in
+                Button {
+                    if toggledOptionIDs.contains(option.id) {
+                        toggledOptionIDs.remove(option.id)
+                    } else {
+                        toggledOptionIDs.insert(option.id)
+                    }
+                    onToggle(option)
+                } label: {
+                    HStack(alignment: .center, spacing: 12) {
+                        Image(systemName: toggledOptionIDs.contains(option.id) ? "checkmark.square.fill" : "square")
+                            .font(.callout.weight(.semibold))
+                            .foregroundStyle(toggledOptionIDs.contains(option.id) ? Color.accentColor : .secondary)
+                        Text(option.label)
+                            .font(.callout.weight(.semibold))
+                            .foregroundStyle(.primary)
+                            .multilineTextAlignment(.leading)
+                        Spacer(minLength: 8)
+                        if option.isDestructive {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .font(.callout.weight(.semibold))
+                                .foregroundStyle(.orange)
+                        }
+                    }
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 14)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color(.secondarySystemGroupedBackground))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 13, style: .continuous)
+                            .stroke(Color.primary.opacity(0.08), lineWidth: 1)
+                    }
+                    .clipShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
+                }
+                .buttonStyle(.plain)
+            }
+
+            Button(action: onSubmit) {
+                Label("Submit selection", systemImage: "arrow.turn.down.left")
+                    .font(.callout.weight(.semibold))
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+            .padding(.top, 4)
+        }
     }
 }
 

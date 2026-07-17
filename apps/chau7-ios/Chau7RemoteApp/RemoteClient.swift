@@ -475,6 +475,36 @@ final class RemoteClient {
         return true
     }
 
+    /// Toggle one option of a multi-select prompt: sends the digit (which
+    /// toggles the row in the TUI) WITHOUT the submit terminator and without
+    /// completing the card — the user submits separately when done.
+    @discardableResult
+    func toggleInteractivePromptOption(promptID: String, optionID: String) -> Bool {
+        guard let prompt = pendingInteractivePrompts.first(where: { $0.id == promptID }),
+              let option = prompt.options.first(where: { $0.id == optionID }) else {
+            return false
+        }
+        var toggle = option.response
+        while toggle.hasSuffix("\r") || toggle.hasSuffix("\n") { toggle.removeLast() }
+        guard !toggle.isEmpty else { return false }
+        return sendInput(toggle, appendNewline: false, to: prompt.tabID, allowUnlistedTab: true)
+    }
+
+    /// Submit a multi-select prompt after toggling: a bare Enter confirms the
+    /// current TUI selection, then the card completes.
+    @discardableResult
+    func submitInteractivePrompt(promptID: String) -> Bool {
+        guard let promptIndex = pendingInteractivePrompts.firstIndex(where: { $0.id == promptID }) else {
+            return false
+        }
+        let prompt = pendingInteractivePrompts[promptIndex]
+        guard sendInput("\r", appendNewline: false, to: prompt.tabID, allowUnlistedTab: true) else {
+            return false
+        }
+        completeInteractivePrompt(at: promptIndex, id: prompt.id)
+        return true
+    }
+
     @discardableResult
     func respondToInteractivePrompt(promptID: String, customText: String) -> Bool {
         guard let promptIndex = pendingInteractivePrompts.firstIndex(where: { $0.id == promptID }) else {
