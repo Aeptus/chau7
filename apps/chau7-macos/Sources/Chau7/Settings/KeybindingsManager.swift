@@ -138,7 +138,7 @@ enum KeyAction: String, CaseIterable {
         case .copy: return "Copy"
         case .paste: return "Paste"
         case .selectAll: return "Select All"
-        case .clear: return "Clear Screen"
+        case .clear: return "Clear Scrollback"
         case .toggleSearch: return "Find"
         case .nextMatch: return "Find Next"
         case .previousMatch: return "Find Previous"

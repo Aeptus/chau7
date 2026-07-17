@@ -37,6 +37,7 @@ import AppKit
 /// - Cmd+E: Use Selection for Find
 /// - Cmd+K: Clear Screen
 /// - Cmd+D: Split Horizontally
+/// - Cmd+Shift+D: Data Explorer
 /// - Cmd+=/-: Zoom In/Out
 /// - Cmd+Ctrl+F: Fullscreen
 /// - Cmd+Shift+O: SSH Connections
@@ -54,13 +55,17 @@ import AppKit
 /// - Cmd+Option+L: Debug Console
 /// - Cmd+Option+G: Show Changed Files
 /// - Cmd+Option+E: Open Text Editor
+/// - Cmd+Option+O: Open File Preview
+/// - Cmd+Option+B: Repository Pane
 /// - Cmd+Option+V: Paste Escaped
 /// - Cmd+Option+W: Close Other Tabs
 /// - Cmd+Option+]/[: Focus Next/Previous Pane
+/// - Cmd+Option+Shift+D: Open Diff Viewer
 /// - Cmd+Option+Shift+E: Append Selection to Editor
 /// - Cmd+Option+Shift+R: Refresh Tab Bar (recovery)
 /// - Cmd+Option+Shift+]/[: Move Tab Right/Left
 /// - Cmd+Ctrl+W: Close Pane
+/// - Cmd+Ctrl+G: Agent Dashboard
 ///
 enum KeyboardShortcuts {
 
@@ -99,7 +104,7 @@ enum KeyboardShortcuts {
         static let clearScrollback = "k"
         static let settings = ","
         static let renameTab = "r"
-        static let snippets = "s"
+        static let snippets = ";"
         static let nextTab = "]"
         static let previousTab = "["
     }

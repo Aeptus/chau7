@@ -1868,6 +1868,7 @@
 
 "commandPalette.command.about" = "Acerca de Chau7";
 "commandPalette.command.actualSize" = "Tamaño real";
+"commandPalette.command.agentDashboard" = "Panel de agente";
 "commandPalette.command.appendSelectionToEditor" = "Agregar selección al editor";
 "commandPalette.command.clearScreen" = "Limpiar pantalla";
 "commandPalette.command.clearScrollback" = "Limpiar historial de desplazamiento";
@@ -1878,7 +1879,8 @@
 "commandPalette.command.copy" = "Copiar";
 "commandPalette.command.cut" = "Cortar";
 "commandPalette.command.debugConsole" = "Consola de depuración";
-"commandPalette.command.documentation" = "Documentación";
+"commandPalette.command.dataExplorer" = "Explorador de datos";
+"commandPalette.command.documentation" = "Ayuda de Chau7";
 "commandPalette.command.exportText" = "Exportar texto...";
 "commandPalette.command.find" = "Buscar...";
 "commandPalette.command.findNext" = "Buscar siguiente";
@@ -1894,15 +1896,21 @@
 "commandPalette.command.newTab" = "Nueva pestaña";
 "commandPalette.command.newWindow" = "Nueva ventana";
 "commandPalette.command.nextInputLine" = "Siguiente línea de entrada";
+"commandPalette.command.openDiffViewer" = "Abrir visor de diferencias";
+"commandPalette.command.openFilePreview" = "Abrir vista previa de archivo";
+"commandPalette.command.openLocation" = "Abrir ubicación...";
 "commandPalette.command.openTextEditor" = "Abrir editor de texto";
 "commandPalette.command.paste" = "Pegar";
 "commandPalette.command.pasteEscaped" = "Pegar con escape";
 "commandPalette.command.previousInputLine" = "Línea de entrada anterior";
 "commandPalette.command.print" = "Imprimir...";
+"commandPalette.command.refreshTabBar" = "Actualizar barra de pestañas";
 "commandPalette.command.reloadSnippets" = "Recargar fragmentos";
 "commandPalette.command.renameTab" = "Renombrar pestaña...";
 "commandPalette.command.reopenClosedTab" = "Reabrir pestaña cerrada";
-"commandPalette.command.reportIssue" = "Reportar un problema";
+"commandPalette.command.releaseNotes" = "Notas de la versión...";
+"commandPalette.command.reportIssue" = "Reportar un problema...";
+"commandPalette.command.repositoryPane" = "Panel de repositorio";
 "commandPalette.command.scrollToBottom" = "Ir al final";
 "commandPalette.command.scrollToTop" = "Ir al inicio";
 "commandPalette.command.selectAll" = "Seleccionar todo";
@@ -1916,14 +1924,17 @@
 "commandPalette.command.selectTab8" = "Seleccionar pestaña 8";
 "commandPalette.command.selectTab9" = "Seleccionar pestaña 9";
 "commandPalette.command.settings" = "Configuración...";
+"commandPalette.command.showChangedFiles" = "Mostrar archivos modificados";
 "commandPalette.command.showNextTab" = "Mostrar pestaña siguiente";
 "commandPalette.command.showPreviousTab" = "Mostrar pestaña anterior";
 "commandPalette.command.snippets" = "Fragmentos...";
-"commandPalette.command.splitHorizontal" = "División horizontal";
-"commandPalette.command.splitVertical" = "División vertical";
+"commandPalette.command.splitHorizontal" = "Dividir horizontalmente";
+"commandPalette.command.splitVertical" = "Dividir verticalmente";
 "commandPalette.command.sshConnections" = "Conexiones SSH...";
+"commandPalette.command.technologyLicenses" = "Tecnología, licencias y agradecimientos";
 "commandPalette.command.toggleFullScreen" = "Alternar pantalla completa";
 "commandPalette.command.useSelectionForFind" = "Usar selección para buscar";
+"commandPalette.command.welcome" = "Bienvenido a Chau7";
 "commandPalette.command.zoomIn" = "Acercar";
 "commandPalette.command.zoomOut" = "Alejar";
 

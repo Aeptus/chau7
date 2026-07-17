@@ -94,7 +94,7 @@ final class AppDelegateTests: XCTestCase {
         XCTAssertEqual(KeyboardShortcuts.Characters.clearScrollback, "k")
         XCTAssertEqual(KeyboardShortcuts.Characters.settings, ",")
         XCTAssertEqual(KeyboardShortcuts.Characters.renameTab, "r")
-        XCTAssertEqual(KeyboardShortcuts.Characters.snippets, "s")
+        XCTAssertEqual(KeyboardShortcuts.Characters.snippets, ";")
         XCTAssertEqual(KeyboardShortcuts.Characters.nextTab, "]")
         XCTAssertEqual(KeyboardShortcuts.Characters.previousTab, "[")
     }

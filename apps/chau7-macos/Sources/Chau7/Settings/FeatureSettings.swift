@@ -47,7 +47,7 @@ struct KeyboardShortcut: Codable, Identifiable, Equatable {
         KeyboardShortcut(action: "previousTab", key: "[", modifiers: ["cmd", "shift"]),
         KeyboardShortcut(action: "findPrevious", key: "g", modifiers: ["cmd", "shift"]),
         KeyboardShortcut(action: "clear", key: "k", modifiers: ["cmd", "opt"]),
-        KeyboardShortcut(action: "snippets", key: "s", modifiers: ["cmd", "opt"]),
+        KeyboardShortcut(action: "snippets", key: ";", modifiers: ["cmd"]),
         KeyboardShortcut(action: "renameTab", key: "r", modifiers: ["cmd", "opt"]),
         KeyboardShortcut(action: "debugConsole", key: "l", modifiers: ["cmd", "opt"]),
         KeyboardShortcut(action: "splitHorizontal", key: "d", modifiers: ["cmd"]),

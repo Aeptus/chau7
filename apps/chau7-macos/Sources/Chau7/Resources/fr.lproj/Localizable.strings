@@ -1871,6 +1871,7 @@
 
 "commandPalette.command.about" = "À propos";
 "commandPalette.command.actualSize" = "Taille réelle";
+"commandPalette.command.agentDashboard" = "Tableau de bord agent";
 "commandPalette.command.appendSelectionToEditor" = "Ajouter la sélection à l'éditeur";
 "commandPalette.command.clearScreen" = "Effacer l'écran";
 "commandPalette.command.clearScrollback" = "Effacer l'historique de défilement";
@@ -1881,7 +1882,8 @@
 "commandPalette.command.copy" = "Copier";
 "commandPalette.command.cut" = "Couper";
 "commandPalette.command.debugConsole" = "Console de débogage";
-"commandPalette.command.documentation" = "Documentation";
+"commandPalette.command.dataExplorer" = "Explorateur de données";
+"commandPalette.command.documentation" = "Aide Chau7";
 "commandPalette.command.exportText" = "Exporter le texte";
 "commandPalette.command.find" = "Rechercher";
 "commandPalette.command.findNext" = "Occurrence suivante";
@@ -1897,15 +1899,21 @@
 "commandPalette.command.newTab" = "Nouvel onglet";
 "commandPalette.command.newWindow" = "Nouvelle fenêtre";
 "commandPalette.command.nextInputLine" = "Ligne de saisie suivante";
+"commandPalette.command.openDiffViewer" = "Ouvrir le visualiseur de diff";
+"commandPalette.command.openFilePreview" = "Ouvrir l'aperçu de fichier";
+"commandPalette.command.openLocation" = "Ouvrir un emplacement...";
 "commandPalette.command.openTextEditor" = "Ouvrir l'éditeur de texte";
 "commandPalette.command.paste" = "Coller";
 "commandPalette.command.pasteEscaped" = "Coller avec échappement";
 "commandPalette.command.previousInputLine" = "Ligne de saisie précédente";
 "commandPalette.command.print" = "Imprimer";
+"commandPalette.command.refreshTabBar" = "Actualiser la barre d'onglets";
 "commandPalette.command.reloadSnippets" = "Recharger les extraits";
 "commandPalette.command.renameTab" = "Renommer l'onglet";
 "commandPalette.command.reopenClosedTab" = "Rouvrir l'onglet fermé";
-"commandPalette.command.reportIssue" = "Signaler un problème";
+"commandPalette.command.releaseNotes" = "Notes de version...";
+"commandPalette.command.reportIssue" = "Signaler un problème...";
+"commandPalette.command.repositoryPane" = "Panneau dépôt";
 "commandPalette.command.scrollToBottom" = "Aller en bas";
 "commandPalette.command.scrollToTop" = "Aller en haut";
 "commandPalette.command.selectAll" = "Tout sélectionner";
@@ -1919,14 +1927,17 @@
 "commandPalette.command.selectTab8" = "Sélectionner l'onglet 8";
 "commandPalette.command.selectTab9" = "Sélectionner l'onglet 9";
 "commandPalette.command.settings" = "Réglages";
+"commandPalette.command.showChangedFiles" = "Afficher les fichiers modifiés";
 "commandPalette.command.showNextTab" = "Afficher l'onglet suivant";
 "commandPalette.command.showPreviousTab" = "Afficher l'onglet précédent";
 "commandPalette.command.snippets" = "Extraits";
-"commandPalette.command.splitHorizontal" = "Division horizontale";
-"commandPalette.command.splitVertical" = "Division verticale";
+"commandPalette.command.splitHorizontal" = "Diviser horizontalement";
+"commandPalette.command.splitVertical" = "Diviser verticalement";
 "commandPalette.command.sshConnections" = "Connexions SSH";
+"commandPalette.command.technologyLicenses" = "Technologies, licences et remerciements";
 "commandPalette.command.toggleFullScreen" = "Basculer en plein écran";
 "commandPalette.command.useSelectionForFind" = "Utiliser la sélection pour la recherche";
+"commandPalette.command.welcome" = "Bienvenue dans Chau7";
 "commandPalette.command.zoomIn" = "Zoom avant";
 "commandPalette.command.zoomOut" = "Zoom arrière";
 

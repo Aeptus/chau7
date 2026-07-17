@@ -1,6 +1,12 @@
 import AppKit
 import Chau7Core
 
+struct AppMenuTabItem: Identifiable, Equatable {
+    let id: UUID
+    let number: Int
+    let title: String
+}
+
 /// Menu-bar and keyboard action handlers (App / File / Edit / View / Window /
 /// Help menus, plus Smart Select All and pane actions). These were split out of
 /// AppDelegate.swift verbatim; they remain members of AppDelegate so menu target
@@ -10,6 +16,72 @@ import Chau7Core
 /// AppDelegate.swift because it drives the splash/welcome lifecycle handle.
 extension AppDelegate {
     private static let passwordAutofillSelector = NSSelectorFromString("_handleInsertFromPasswordsCommand:")
+
+    private var menuOverlayModel: OverlayTabsModel? {
+        activeOverlayModel ?? overlayHosts.first?.model
+    }
+
+    var hasActiveOverlayWindow: Bool {
+        menuOverlayModel != nil
+    }
+
+    var hasActiveTerminalInKeyWindow: Bool {
+        activeTerminalView(in: NSApp.keyWindow) != nil
+    }
+
+    var hasMultipleTabsInActiveWindow: Bool {
+        (menuOverlayModel?.tabs.count ?? 0) > 1
+    }
+
+    var canReopenClosedTabInActiveWindow: Bool {
+        menuOverlayModel?.canReopenClosedTab ?? false
+    }
+
+    var hasMultiplePanesInActiveTab: Bool {
+        guard let tab = menuOverlayModel?.selectedTab else { return false }
+        return tab.splitController.terminalSessions.count > 1
+    }
+
+    var canOpenDiffViewerInActiveWindow: Bool {
+        menuOverlayModel?.selectedTab?.session != nil
+    }
+
+    var canOpenRepositoryPaneInActiveWindow: Bool {
+        guard let tab = menuOverlayModel?.selectedTab else { return false }
+        return tab.session != nil || tab.repoGroupID != nil
+    }
+
+    var canOpenDashboardInActiveWindow: Bool {
+        guard let tab = menuOverlayModel?.selectedTab else { return false }
+        return tab.repoGroupID != nil || tab.session?.gitRootPath != nil
+    }
+
+    var canAppendSelectionToEditorInActiveWindow: Bool {
+        guard let selection = menuOverlayModel?.selectedTab?.session?.getSelectedText() else {
+            return false
+        }
+        return !selection.isEmpty
+    }
+
+    var canShowChangedFilesInActiveWindow: Bool {
+        guard let model = menuOverlayModel,
+              let tab = model.tabs.first(where: { $0.id == model.selectedTabID }),
+              let session = tab.session else { return false }
+        let tabID = session.ownerTabID?.uuidString ?? model.selectedTabID.uuidString
+        return !CommandBlockManager.shared.lastChangedFiles(tabID: tabID).isEmpty
+    }
+
+    func menuTabItems(fallback: OverlayTabsModel? = nil) -> [AppMenuTabItem] {
+        let model = activeOverlayModel ?? fallback ?? overlayHosts.first?.model
+        return model?.tabs.enumerated().map { index, tab in
+            let name = tab.displayTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+            return AppMenuTabItem(
+                id: tab.id,
+                number: index + 1,
+                title: name.isEmpty ? "Tab \(index + 1)" : name
+            )
+        } ?? []
+    }
 
     // MARK: - App Menu Actions
 

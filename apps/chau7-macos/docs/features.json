@@ -2746,7 +2746,14 @@
   {
     "category": "Command Palette",
     "feature": "Command Palette",
-    "description": "Cmd+Option+P for fuzzy-searchable command palette (VS Code style)",
+    "description": "Cmd+Option+P opens a fuzzy-searchable command palette that mirrors the main menu command surface, including Open Location, Data Explorer, pane tools, diagnostics, release notes, acknowledgments, tab recovery, and issue reporting with current shortcuts",
+    "status": "Shipped",
+    "differentiator": "No"
+  },
+  {
+    "category": "Command Palette",
+    "feature": "App Menu Command Surface",
+    "description": "The macOS menu bar exposes Chau7-native About, Open Location, Help, release notes, acknowledgments, scoped diagnostics surfaces, active-window tab selection, and guarded tab/pane/terminal commands that disable when their target state is unavailable",
     "status": "Shipped",
     "differentiator": "No"
   },
@@ -2977,7 +2984,7 @@
   {
     "category": "Terminal",
     "feature": "Keyboard Shortcut Standardization",
-    "description": "All Chau7-specific shortcuts use Cmd+Option; tab selection internationalized (Cmd+1-9)",
+    "description": "Chau7-specific shortcuts avoid standard macOS conflicts where possible, tab selection is internationalized with Cmd+1-9, Actual Size uses Cmd+0, and Snippets uses Cmd+; for a single-key command that does not collide with Export Text",
     "status": "Shipped",
     "differentiator": "No"
   },

@@ -1869,6 +1869,7 @@
 
 "commandPalette.command.about" = "About Chau7";
 "commandPalette.command.actualSize" = "Actual Size";
+"commandPalette.command.agentDashboard" = "Agent Dashboard";
 "commandPalette.command.appendSelectionToEditor" = "Append Selection to Editor";
 "commandPalette.command.clearScreen" = "Clear Screen";
 "commandPalette.command.clearScrollback" = "Clear Scrollback";
@@ -1879,7 +1880,8 @@
 "commandPalette.command.copy" = "Copy";
 "commandPalette.command.cut" = "Cut";
 "commandPalette.command.debugConsole" = "Debug Console";
-"commandPalette.command.documentation" = "Documentation";
+"commandPalette.command.dataExplorer" = "Data Explorer";
+"commandPalette.command.documentation" = "Chau7 Help";
 "commandPalette.command.exportText" = "Export Text...";
 "commandPalette.command.find" = "Find...";
 "commandPalette.command.findNext" = "Find Next";
@@ -1895,15 +1897,21 @@
 "commandPalette.command.newTab" = "New Tab";
 "commandPalette.command.newWindow" = "New Window";
 "commandPalette.command.nextInputLine" = "Next Input Line";
+"commandPalette.command.openDiffViewer" = "Open Diff Viewer";
+"commandPalette.command.openFilePreview" = "Open File Preview";
+"commandPalette.command.openLocation" = "Open Location...";
 "commandPalette.command.openTextEditor" = "Open Text Editor";
 "commandPalette.command.paste" = "Paste";
 "commandPalette.command.pasteEscaped" = "Paste Escaped";
 "commandPalette.command.previousInputLine" = "Previous Input Line";
 "commandPalette.command.print" = "Print...";
+"commandPalette.command.refreshTabBar" = "Refresh Tab Bar";
 "commandPalette.command.reloadSnippets" = "Reload Snippets";
 "commandPalette.command.renameTab" = "Rename Tab...";
 "commandPalette.command.reopenClosedTab" = "Reopen Closed Tab";
-"commandPalette.command.reportIssue" = "Report Issue";
+"commandPalette.command.releaseNotes" = "Release Notes...";
+"commandPalette.command.reportIssue" = "Report Issue...";
+"commandPalette.command.repositoryPane" = "Repository Pane";
 "commandPalette.command.scrollToBottom" = "Scroll to Bottom";
 "commandPalette.command.scrollToTop" = "Scroll to Top";
 "commandPalette.command.selectAll" = "Select All";
@@ -1917,14 +1925,17 @@
 "commandPalette.command.selectTab8" = "Select Tab 8";
 "commandPalette.command.selectTab9" = "Select Tab 9";
 "commandPalette.command.settings" = "Settings...";
+"commandPalette.command.showChangedFiles" = "Show Changed Files";
 "commandPalette.command.showNextTab" = "Show Next Tab";
 "commandPalette.command.showPreviousTab" = "Show Previous Tab";
 "commandPalette.command.snippets" = "Snippets...";
-"commandPalette.command.splitHorizontal" = "Split Horizontal";
-"commandPalette.command.splitVertical" = "Split Vertical";
+"commandPalette.command.splitHorizontal" = "Split Horizontally";
+"commandPalette.command.splitVertical" = "Split Vertically";
 "commandPalette.command.sshConnections" = "SSH Connections...";
+"commandPalette.command.technologyLicenses" = "Technology, Licenses & Acknowledgments";
 "commandPalette.command.toggleFullScreen" = "Toggle Full Screen";
 "commandPalette.command.useSelectionForFind" = "Use Selection for Find";
+"commandPalette.command.welcome" = "Welcome to Chau7";
 "commandPalette.command.zoomIn" = "Zoom In";
 "commandPalette.command.zoomOut" = "Zoom Out";
 

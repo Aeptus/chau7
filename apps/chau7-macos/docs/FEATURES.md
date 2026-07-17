@@ -533,6 +533,7 @@ Chau7's rendering pipeline is purpose-built for latency-sensitive terminal work:
 ### Command Palette
 
 - `Cmd+Option+P` — fuzzy-searchable command palette (VS Code style).
+- The palette mirrors the main menu command surface, including Open Location, Data Explorer, pane tools, diagnostics, release notes, acknowledgments, tab recovery, and issue reporting with current shortcuts.
 
 ### Notifications
 
@@ -686,6 +687,8 @@ Chau7's rendering pipeline is purpose-built for latency-sensitive terminal work:
 | Cmd+Shift+T | Reopen closed tab |
 | Cmd+Option+R | Rename tab |
 | Cmd+/ | Keyboard Shortcuts |
+
+The Window menu disables unavailable tab and pane actions, lists tabs from the active Chau7 window, and exposes Diagnostics, Usage Monitor, Runtime Inspector, and Debug Console as scoped diagnostics entry points.
 
 ### Editing and Search
 

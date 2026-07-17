@@ -1837,6 +1837,7 @@
 
 "commandPalette.command.about" = "حول Chau7";
 "commandPalette.command.actualSize" = "الحجم الفعلي";
+"commandPalette.command.agentDashboard" = "لوحة تحكم الوكيل";
 "commandPalette.command.appendSelectionToEditor" = "إلحاق التحديد بالمحرر";
 "commandPalette.command.clearScreen" = "مسح الشاشة";
 "commandPalette.command.clearScrollback" = "مسح سجل التمرير";
@@ -1847,7 +1848,8 @@
 "commandPalette.command.copy" = "نسخ";
 "commandPalette.command.cut" = "قص";
 "commandPalette.command.debugConsole" = "وحدة التصحيح";
-"commandPalette.command.documentation" = "التوثيق";
+"commandPalette.command.dataExplorer" = "مستكشف البيانات";
+"commandPalette.command.documentation" = "مساعدة Chau7";
 "commandPalette.command.exportText" = "تصدير النص";
 "commandPalette.command.find" = "بحث...";
 "commandPalette.command.findNext" = "بحث عن التالي";
@@ -1863,15 +1865,21 @@
 "commandPalette.command.newTab" = "علامة تبويب جديدة";
 "commandPalette.command.newWindow" = "نافذة جديدة";
 "commandPalette.command.nextInputLine" = "سطر الإدخال التالي";
+"commandPalette.command.openDiffViewer" = "فتح عارض الفروقات";
+"commandPalette.command.openFilePreview" = "فتح معاينة الملف";
+"commandPalette.command.openLocation" = "فتح موقع...";
 "commandPalette.command.openTextEditor" = "فتح محرر النصوص";
 "commandPalette.command.paste" = "لصق";
 "commandPalette.command.pasteEscaped" = "لصق مع تهريب";
 "commandPalette.command.previousInputLine" = "سطر الإدخال السابق";
 "commandPalette.command.print" = "طباعة";
+"commandPalette.command.refreshTabBar" = "تحديث شريط علامات التبويب";
 "commandPalette.command.reloadSnippets" = "إعادة تحميل المقتطفات";
 "commandPalette.command.renameTab" = "إعادة تسمية علامة التبويب";
 "commandPalette.command.reopenClosedTab" = "إعادة فتح علامة التبويب المغلقة";
-"commandPalette.command.reportIssue" = "الإبلاغ عن مشكلة";
+"commandPalette.command.releaseNotes" = "ملاحظات الإصدار...";
+"commandPalette.command.reportIssue" = "الإبلاغ عن مشكلة...";
+"commandPalette.command.repositoryPane" = "جزء المستودع";
 "commandPalette.command.scrollToBottom" = "التمرير إلى الأسفل";
 "commandPalette.command.scrollToTop" = "التمرير إلى الأعلى";
 "commandPalette.command.selectAll" = "تحديد الكل";
@@ -1885,14 +1893,17 @@
 "commandPalette.command.selectTab8" = "الانتقال إلى علامة التبويب 8";
 "commandPalette.command.selectTab9" = "الانتقال إلى علامة التبويب 9";
 "commandPalette.command.settings" = "الإعدادات...";
+"commandPalette.command.showChangedFiles" = "إظهار الملفات المعدلة";
 "commandPalette.command.showNextTab" = "إظهار علامة التبويب التالية";
 "commandPalette.command.showPreviousTab" = "إظهار علامة التبويب السابقة";
 "commandPalette.command.snippets" = "المقتطفات...";
 "commandPalette.command.splitHorizontal" = "تقسيم أفقي";
 "commandPalette.command.splitVertical" = "تقسيم عمودي";
 "commandPalette.command.sshConnections" = "اتصالات SSH...";
+"commandPalette.command.technologyLicenses" = "التقنيات والتراخيص والشكر";
 "commandPalette.command.toggleFullScreen" = "تبديل ملء الشاشة";
 "commandPalette.command.useSelectionForFind" = "استخدام التحديد للبحث";
+"commandPalette.command.welcome" = "مرحبًا بك في Chau7";
 "commandPalette.command.zoomIn" = "تكبير";
 "commandPalette.command.zoomOut" = "تصغير";
 

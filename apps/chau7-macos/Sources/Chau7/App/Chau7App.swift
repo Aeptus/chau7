@@ -105,6 +105,12 @@ struct Chau7App: App {
 
             // MARK: - App Menu
 
+            CommandGroup(replacing: .appInfo) {
+                Button(L("About Chau7", "About Chau7")) {
+                    appDelegate.showAbout()
+                }
+            }
+
             CommandGroup(replacing: .appSettings) {
                 Button(L("Settings...", "Settings...")) {
                     appDelegate.showSettings()
@@ -124,6 +130,10 @@ struct Chau7App: App {
                     appDelegate.newTab()
                 }
                 .keyboardShortcut("t")
+
+                Button(L("Open Location...", "Open Location...")) {
+                    appDelegate.openLocation()
+                }
 
                 Button(L("SSH Connections...", "SSH Connections...")) {
                     appDelegate.showSSHManager()
@@ -146,11 +156,13 @@ struct Chau7App: App {
                     appDelegate.closeOtherTabs()
                 }
                 .keyboardShortcut("w", modifiers: [.command, .option])
+                .disabled(!appDelegate.hasMultipleTabsInActiveWindow)
 
                 Button(L("Reopen Closed Tab", "Reopen Closed Tab")) {
                     appDelegate.reopenClosedTab()
                 }
                 .keyboardShortcut("t", modifiers: [.command, .shift])
+                .disabled(!appDelegate.canReopenClosedTabInActiveWindow)
 
                 Divider()
 
@@ -158,16 +170,17 @@ struct Chau7App: App {
                     appDelegate.exportText()
                 }
                 .keyboardShortcut("s", modifiers: [.command, .shift])
+                .disabled(!appDelegate.hasActiveTerminalInKeyWindow)
             }
 
             CommandGroup(replacing: .saveItem) {}
-            CommandGroup(replacing: .importExport) {}
 
             CommandGroup(replacing: .printItem) {
                 Button(L("Print...", "Print...")) {
                     appDelegate.printTerminal()
                 }
                 .keyboardShortcut("p")
+                .disabled(!appDelegate.hasActiveTerminalInKeyWindow)
             }
 
             // MARK: - Edit Menu
@@ -255,7 +268,7 @@ struct Chau7App: App {
 
                 Divider()
 
-                Button(L("Enter Full Screen", "Enter Full Screen")) {
+                Button(L("Toggle Full Screen", "Toggle Full Screen")) {
                     appDelegate.toggleFullScreen()
                 }
                 .keyboardShortcut("f", modifiers: [.command, .control])
@@ -275,7 +288,7 @@ struct Chau7App: App {
                 Button(L("Actual Size", "Actual Size")) {
                     appDelegate.zoomReset()
                 }
-                .keyboardShortcut("à")
+                .keyboardShortcut("0")
 
                 Divider()
 
@@ -283,11 +296,13 @@ struct Chau7App: App {
                     appDelegate.clearScreen()
                 }
                 .keyboardShortcut("k")
+                .disabled(!appDelegate.hasActiveTerminalInKeyWindow)
 
                 Button(L("Clear Scrollback", "Clear Scrollback")) {
                     appDelegate.clearScrollback()
                 }
                 .keyboardShortcut("k", modifiers: [.command, .option])
+                .disabled(!appDelegate.hasActiveTerminalInKeyWindow)
 
                 Divider()
 
@@ -310,11 +325,13 @@ struct Chau7App: App {
                         appDelegate.splitHorizontally()
                     }
                     .keyboardShortcut("d")
+                    .disabled(!appDelegate.hasActiveOverlayWindow)
 
                     Button(L("Split Vertically", "Split Vertically")) {
                         appDelegate.splitVertically()
                     }
                     .keyboardShortcut("d", modifiers: [.command, .option])
+                    .disabled(!appDelegate.hasActiveOverlayWindow)
 
                     Divider()
 
@@ -322,31 +339,37 @@ struct Chau7App: App {
                         appDelegate.openTextEditorPane()
                     }
                     .keyboardShortcut("e", modifiers: [.command, .option])
+                    .disabled(!appDelegate.hasActiveOverlayWindow)
 
                     Button(L("Open File Preview", "Open File Preview")) {
                         appDelegate.openFilePreviewPane()
                     }
                     .keyboardShortcut("o", modifiers: [.command, .option])
+                    .disabled(!appDelegate.hasActiveOverlayWindow)
 
                     Button(L("Open Diff Viewer", "Open Diff Viewer")) {
                         appDelegate.openDiffViewerPane()
                     }
                     .keyboardShortcut("d", modifiers: [.command, .option, .shift])
+                    .disabled(!appDelegate.canOpenDiffViewerInActiveWindow)
 
-                    Button(L("Repository", "Repository")) {
+                    Button(L("Repository Pane", "Repository Pane")) {
                         appDelegate.openRepositoryPane()
                     }
                     .keyboardShortcut("b", modifiers: [.command, .option])
+                    .disabled(!appDelegate.canOpenRepositoryPaneInActiveWindow)
 
                     Button(L("Append Selection to Editor", "Append Selection to Editor")) {
                         appDelegate.appendSelectionToEditor()
                     }
                     .keyboardShortcut("e", modifiers: [.command, .option, .shift])
+                    .disabled(!appDelegate.canAppendSelectionToEditorInActiveWindow)
 
                     Button(L("Agent Dashboard", "Agent Dashboard")) {
                         appDelegate.toggleDashboard()
                     }
                     .keyboardShortcut("g", modifiers: [.command, .control])
+                    .disabled(!appDelegate.canOpenDashboardInActiveWindow)
 
                     Divider()
 
@@ -354,6 +377,7 @@ struct Chau7App: App {
                         appDelegate.closeCurrentPane()
                     }
                     .keyboardShortcut("w", modifiers: [.command, .control])
+                    .disabled(!appDelegate.hasMultiplePanesInActiveTab)
 
                     Divider()
 
@@ -361,11 +385,13 @@ struct Chau7App: App {
                         appDelegate.focusNextPane()
                     }
                     .keyboardShortcut("]", modifiers: [.command, .option])
+                    .disabled(!appDelegate.hasMultiplePanesInActiveTab)
 
                     Button(L("Focus Previous Pane", "Focus Previous Pane")) {
                         appDelegate.focusPreviousPane()
                     }
                     .keyboardShortcut("[", modifiers: [.command, .option])
+                    .disabled(!appDelegate.hasMultiplePanesInActiveTab)
                 }
 
                 Divider()
@@ -374,6 +400,7 @@ struct Chau7App: App {
                     appDelegate.showChangedFiles()
                 }
                 .keyboardShortcut("g", modifiers: [.command, .option])
+                .disabled(!appDelegate.canShowChangedFilesInActiveWindow)
             }
 
             // MARK: - Window Menu
@@ -385,6 +412,7 @@ struct Chau7App: App {
                     appDelegate.beginRenameTab()
                 }
                 .keyboardShortcut("r", modifiers: [.command, .option])
+                .disabled(!appDelegate.hasActiveOverlayWindow)
 
                 Divider()
 
@@ -402,32 +430,32 @@ struct Chau7App: App {
                     appDelegate.moveTabRight()
                 }
                 .keyboardShortcut("]", modifiers: [.command, .option, .shift])
+                .disabled(!appDelegate.hasMultipleTabsInActiveWindow)
 
                 Button(L("Move Tab Left", "Move Tab Left")) {
                     appDelegate.moveTabLeft()
                 }
                 .keyboardShortcut("[", modifiers: [.command, .option, .shift])
+                .disabled(!appDelegate.hasMultipleTabsInActiveWindow)
 
                 Divider()
 
                 Menu(L("menu.selectTab", "Select Tab")) {
+                    let tabItems = appDelegate.menuTabItems(fallback: overlayModel)
                     // Tabs 1-9 with keyboard shortcuts
-                    ForEach(Array(overlayModel.tabs.prefix(9).enumerated()), id: \.element.id) { index, tab in
-                        let name = tab.displayTitle.trimmingCharacters(in: .whitespacesAndNewlines)
-                        let fallbackName = name.isEmpty ? "Tab \(index + 1)" : name
-                        Button(fallbackName) { appDelegate.selectTab(number: index + 1) }
-                            .keyboardShortcut(KeyEquivalent(Character("\(index + 1)")))
+                    ForEach(Array(tabItems.prefix(9))) { item in
+                        Button(item.title) { appDelegate.selectTab(number: item.number) }
+                            .keyboardShortcut(KeyEquivalent(Character("\(item.number)")))
                     }
                     // Tabs 10+ without shortcuts
-                    if overlayModel.tabs.count > 9 {
+                    if tabItems.count > 9 {
                         Divider()
-                        ForEach(Array(overlayModel.tabs.dropFirst(9).enumerated()), id: \.element.id) { index, tab in
-                            let name = tab.displayTitle.trimmingCharacters(in: .whitespacesAndNewlines)
-                            let fallbackName = name.isEmpty ? "Tab \(index + 10)" : name
-                            Button(fallbackName) { appDelegate.selectTab(number: index + 10) }
+                        ForEach(Array(tabItems.dropFirst(9))) { item in
+                            Button(item.title) { appDelegate.selectTab(number: item.number) }
                         }
                     }
                 }
+                .disabled(appDelegate.menuTabItems(fallback: overlayModel).isEmpty)
 
                 Divider()
 
@@ -435,6 +463,28 @@ struct Chau7App: App {
                     appDelegate.refreshTabBar()
                 }
                 .keyboardShortcut("r", modifiers: [.command, .option, .shift])
+                .disabled(!appDelegate.hasActiveOverlayWindow)
+
+                Divider()
+
+                Menu(L("debug.menu.diagnostics", "Diagnostics")) {
+                    Button(L("debug.surface.diagnostics.title", "Diagnostics")) {
+                        DebugConsoleController.shared.show(surface: .diagnostics)
+                    }
+
+                    Button(L("debug.surface.usage.title", "Usage Monitor")) {
+                        DebugConsoleController.shared.show(surface: .usageMonitor)
+                    }
+
+                    Button(L("debug.surface.runtime.title", "Runtime Inspector")) {
+                        DebugConsoleController.shared.show(surface: .runtimeInspector)
+                    }
+
+                    Button(L("Debug Console", "Debug Console")) {
+                        DebugConsoleController.shared.toggle(surface: .all)
+                    }
+                    .keyboardShortcut("l", modifiers: [.command, .option])
+                }
             }
 
             CommandGroup(replacing: .help) {
@@ -448,6 +498,10 @@ struct Chau7App: App {
                     appDelegate.showHelp()
                 }
 
+                Button(L("Release Notes...", "Release Notes...")) {
+                    appDelegate.showReleaseNotes()
+                }
+
                 Button(L("Technology, Licenses & Acknowledgments", "Technology, Licenses & Acknowledgments")) {
                     appDelegate.showTechnologyLicenses()
                 }
@@ -457,29 +511,10 @@ struct Chau7App: App {
                 }
                 .keyboardShortcut("/", modifiers: [.command])
 
-                Button(L("Report Issue", "Report Issue")) {
+                Button(L("Report Issue...", "Report Issue...")) {
                     appDelegate.reportIssue()
                 }
                 .keyboardShortcut("i", modifiers: [.command, .option])
-
-                Divider()
-
-                Button(L("debug.surface.diagnostics.title", "Diagnostics")) {
-                    DebugConsoleController.shared.show(surface: .diagnostics)
-                }
-
-                Button(L("debug.surface.usage.title", "Usage Monitor")) {
-                    DebugConsoleController.shared.show(surface: .usageMonitor)
-                }
-
-                Button(L("debug.surface.runtime.title", "Runtime Inspector")) {
-                    DebugConsoleController.shared.show(surface: .runtimeInspector)
-                }
-
-                Button(L("Debug Console", "Debug Console")) {
-                    DebugConsoleController.shared.toggle(surface: .all)
-                }
-                .keyboardShortcut("l", modifiers: [.command, .option])
             }
         }
     }

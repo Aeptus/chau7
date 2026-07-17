@@ -1837,6 +1837,7 @@
 
 "commandPalette.command.about" = "אודות Chau7";
 "commandPalette.command.actualSize" = "גודל מקורי";
+"commandPalette.command.agentDashboard" = "לוח בקרה לסוכן";
 "commandPalette.command.appendSelectionToEditor" = "הוסף בחירה לעורך";
 "commandPalette.command.clearScreen" = "נקה מסך";
 "commandPalette.command.clearScrollback" = "נקה היסטוריית גלילה";
@@ -1847,7 +1848,8 @@
 "commandPalette.command.copy" = "העתק";
 "commandPalette.command.cut" = "גזור";
 "commandPalette.command.debugConsole" = "מסוף ניפוי שגיאות";
-"commandPalette.command.documentation" = "תיעוד";
+"commandPalette.command.dataExplorer" = "סייר נתונים";
+"commandPalette.command.documentation" = "עזרה של Chau7";
 "commandPalette.command.exportText" = "ייצא טקסט...";
 "commandPalette.command.find" = "חפש...";
 "commandPalette.command.findNext" = "חפש את הבא";
@@ -1863,15 +1865,21 @@
 "commandPalette.command.newTab" = "כרטיסייה חדשה";
 "commandPalette.command.newWindow" = "חלון חדש";
 "commandPalette.command.nextInputLine" = "שורת קלט הבאה";
+"commandPalette.command.openDiffViewer" = "פתח מציג הבדלים";
+"commandPalette.command.openFilePreview" = "פתח תצוגה מקדימה של קובץ";
+"commandPalette.command.openLocation" = "פתח מיקום...";
 "commandPalette.command.openTextEditor" = "פתח עורך טקסט";
 "commandPalette.command.paste" = "הדבק";
 "commandPalette.command.pasteEscaped" = "הדבק עם בריחה";
 "commandPalette.command.previousInputLine" = "שורת קלט קודמת";
 "commandPalette.command.print" = "הדפס...";
+"commandPalette.command.refreshTabBar" = "רענן את סרגל הכרטיסיות";
 "commandPalette.command.reloadSnippets" = "טען מקטעים מחדש";
 "commandPalette.command.renameTab" = "שנה שם לכרטיסייה...";
 "commandPalette.command.reopenClosedTab" = "פתח מחדש כרטיסייה שנסגרה";
-"commandPalette.command.reportIssue" = "דווח על בעיה";
+"commandPalette.command.releaseNotes" = "הערות גרסה...";
+"commandPalette.command.reportIssue" = "דווח על בעיה...";
+"commandPalette.command.repositoryPane" = "חלונית מאגר";
 "commandPalette.command.scrollToBottom" = "גלול לתחתית";
 "commandPalette.command.scrollToTop" = "גלול לראש";
 "commandPalette.command.selectAll" = "בחר הכול";
@@ -1885,14 +1893,17 @@
 "commandPalette.command.selectTab8" = "בחר כרטיסייה 8";
 "commandPalette.command.selectTab9" = "בחר כרטיסייה 9";
 "commandPalette.command.settings" = "הגדרות";
+"commandPalette.command.showChangedFiles" = "הצג קבצים שהשתנו";
 "commandPalette.command.showNextTab" = "הצג את הכרטיסייה הבאה";
 "commandPalette.command.showPreviousTab" = "הצג את הכרטיסייה הקודמת";
 "commandPalette.command.snippets" = "סניפטים";
 "commandPalette.command.splitHorizontal" = "פצל אופקית";
 "commandPalette.command.splitVertical" = "פצל אנכית";
 "commandPalette.command.sshConnections" = "חיבורי SSH";
+"commandPalette.command.technologyLicenses" = "טכנולוגיות, רישיונות ותודות";
 "commandPalette.command.toggleFullScreen" = "החלף מצב מסך מלא";
 "commandPalette.command.useSelectionForFind" = "השתמש בבחירה לחיפוש";
+"commandPalette.command.welcome" = "ברוכים הבאים ל-Chau7";
 "commandPalette.command.zoomIn" = "הגדל";
 "commandPalette.command.zoomOut" = "הקטן";
 
