@@ -26,6 +26,7 @@ const (
 	TypeInput                 = 0x21
 	TypeSnapshot              = 0x22
 	TypeTerminalGridSnapshot  = 0x23
+	TypeKeyInput              = 0x24
 	TypePing                  = 0x30
 	TypePong                  = 0x31
 	TypePairingInfo           = 0x40

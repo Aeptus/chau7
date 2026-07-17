@@ -593,8 +593,8 @@ func (a *Agent) handleRelayFrame(frame *protocol.Frame) {
 		}
 		a.handleClientStateFrame(frame.Payload)
 		a.sendToIPC(frame)
-	case protocol.TypeTabSwitch, protocol.TypeInput, protocol.TypeRemoteTelemetry,
-		protocol.TypeApprovalResponse:
+	case protocol.TypeTabSwitch, protocol.TypeInput, protocol.TypeKeyInput,
+		protocol.TypeRemoteTelemetry, protocol.TypeApprovalResponse:
 		if requiresEncryptedRelayFrame(frame.Type) && !wasEncrypted {
 			return
 		}
@@ -624,6 +624,7 @@ func requiresEncryptedRelayFrame(frameType uint8) bool {
 		protocol.TypeClientState,
 		protocol.TypeTabSwitch,
 		protocol.TypeInput,
+		protocol.TypeKeyInput,
 		protocol.TypeRemoteTelemetry,
 		protocol.TypeApprovalResponse:
 		return true

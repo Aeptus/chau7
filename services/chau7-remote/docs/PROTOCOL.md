@@ -126,6 +126,7 @@ Type codes (`u8`). The Swift enum `RemoteFrameType`
 - `0x21 INPUT` (encrypted, bytes)
 - `0x22 SNAPSHOT` (encrypted, bytes)
 - `0x23 TERMINAL_GRID_SNAPSHOT` (encrypted, bytes)
+- `0x24 KEY_INPUT` (encrypted, JSON — semantic key presses, iOS→Mac; forwarded opaquely by the agent)
 - `0x30 PING` (encrypted, JSON)
 - `0x31 PONG` (encrypted, JSON)
 - `0x40 PAIRING_INFO` (local IPC, JSON)
