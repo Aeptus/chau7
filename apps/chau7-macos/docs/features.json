@@ -2108,6 +2108,13 @@
   },
   {
     "category": "SSH, Profiles & Remote",
+    "feature": "Semantic Remote Key Presses",
+    "description": "The KEY_INPUT frame (0x24) carries enter/escape/arrows/control combos as named keys resolved by the Mac's terminal key encoder (DECCKM-correct), advertised via a tab-list capability with automatic escape-text fallback against older Macs",
+    "status": "Experimental",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "SSH, Profiles & Remote",
     "feature": "Remote iPhone Profiling Hooks",
     "description": "The iPhone app emits os.signpost intervals for frame processing, output append, and ANSI stripping so receive/render lag can be measured in Instruments",
     "status": "Experimental",
