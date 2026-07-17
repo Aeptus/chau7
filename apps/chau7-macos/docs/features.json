@@ -2080,6 +2080,13 @@
   },
   {
     "category": "SSH, Profiles & Remote",
+    "feature": "Remote Menu Key Driving",
+    "description": "Chau7 Remote's terminal key bar includes Return and Shift-Tab, auto-surfaces when the active tab has a pending prompt or waiting-input/approval activity, and digit sends answering a pending menu drop their trailing Enter to avoid double-acting on the next screen",
+    "status": "Experimental",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "SSH, Profiles & Remote",
     "feature": "Remote iPhone Profiling Hooks",
     "description": "The iPhone app emits os.signpost intervals for frame processing, output append, and ANSI stripping so receive/render lag can be measured in Instruments",
     "status": "Experimental",

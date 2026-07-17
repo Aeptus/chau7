@@ -296,6 +296,7 @@ Window Management,Menu Bar Only Mode,Run as a menu bar app — no Dock icon need
 "SSH, Profiles & Remote",Remote iOS 18 Minimum Target,The Chau7 Remote app and widget extension target iOS 18.0 (IPHONEOS_DEPLOYMENT_TARGET = 18.0); the shared SwiftPM package declares an .iOS(.v17) floor for library targets,Experimental,No
 "SSH, Profiles & Remote",Experimental Rust iPhone Renderer,"Optional Rust-backed terminal grid renderer for Chau7 Remote on iPhone, with text fallback retained",Experimental,Yes
 "SSH, Profiles & Remote",Selected-Tab Remote Streaming,macOS streams terminal output and snapshots only for the tab currently selected on iPhone; background tabs stay metadata/activity/approvals-only until switched to,Experimental,Yes
+"SSH, Profiles & Remote",Remote Menu Key Driving,"Chau7 Remote's terminal key bar includes Return and Shift-Tab, auto-surfaces when the active tab has a pending prompt or waiting-input/approval activity, and digit sends answering a pending menu drop their trailing Enter to avoid double-acting on the next screen",Experimental,Yes
 "SSH, Profiles & Remote",Remote iPhone Profiling Hooks,"The iPhone app emits os.signpost intervals for frame processing, output append, and ANSI stripping so receive/render lag can be measured in Instruments",Experimental,No
 Search & Find,Find Overlay,Cmd+F — search terminal output with match highlighting,Shipped,No
 Search & Find,Regex Search,Toggle regex mode for advanced pattern matching,Shipped,No
