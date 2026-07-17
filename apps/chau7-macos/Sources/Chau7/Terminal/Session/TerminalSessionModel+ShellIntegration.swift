@@ -226,9 +226,13 @@ extension TerminalSessionModel {
                     recordDangerousOutputIfNeeded()
                 }
 
-                // AI waiting detection
+                // AI waiting detection. Prefer the ANSI-stripped text so
+                // patterns match style-independently — a themed menu row like
+                // "❯ 1." can carry SGR codes between the glyph and the digits
+                // that make raw-text matching miss. Falls back to raw output
+                // under memory pressure, when sanitization is shed.
                 if let outputText {
-                    maybeDetectAIWaitingForInput(outputText)
+                    maybeDetectAIWaitingForInput(sanitizedOutputText ?? outputText)
                 }
 
                 // Dev server detection
