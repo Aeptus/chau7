@@ -49,4 +49,28 @@ final class ClaudeCodeHookConfigurationTests: XCTestCase {
             )
         }
     }
+
+    func testHelperScriptCapturesToolUseID() {
+        let script = ClaudeCodeHookConfiguration.helperScript(eventsFilePath: "~/.chau7/claude-events.jsonl")
+        XCTAssertTrue(
+            script.contains("\"toolUseID\": payload.get(\"tool_use_id\", \"\")"),
+            "Emitted event must carry tool_use_id so PreToolUse/PostToolUse pairs correlate"
+        )
+    }
+
+    func testHelperScriptCapturesToolInputForAllowlistedToolsWithSizeCap() {
+        let script = ClaudeCodeHookConfiguration.helperScript(eventsFilePath: "~/.chau7/claude-events.jsonl")
+        XCTAssertTrue(
+            script.contains("in (\"AskUserQuestion\", \"ExitPlanMode\")"),
+            "tool_input capture must be allowlisted to interactive tools"
+        )
+        XCTAssertTrue(
+            script.contains("hook == \"PreToolUse\""),
+            "tool_input capture must be limited to PreToolUse"
+        )
+        XCTAssertTrue(
+            script.contains("<= 16384"),
+            "Oversized tool_input must be omitted entirely (never truncated mid-JSON)"
+        )
+    }
 }
