@@ -358,7 +358,12 @@ struct TerminalView: View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 0) {
                 TermKey("esc", labelText: "Escape", send: "\u{1B}", client: client)
+                // Bare CR with no body takes the Mac's `.enterKey` submit path
+                // with zero delay — it behaves like a real Enter keypress, which
+                // is what TUI selection menus need to confirm a highlighted row.
+                TermKey("\u{23CE}", labelText: "Return", send: "\r", client: client)
                 TermKey("tab", labelText: "Tab", send: "\t", client: client)
+                TermKey("\u{21E7}\u{21E5}", labelText: "Shift Tab", send: "\u{1B}[Z", client: client)
                 TermKey("^C", labelText: "Control C", send: "\u{03}", client: client)
                 TermKey("^D", labelText: "Control D", send: "\u{04}", client: client)
                 TermKey("^Z", labelText: "Control Z", send: "\u{1A}", client: client)
