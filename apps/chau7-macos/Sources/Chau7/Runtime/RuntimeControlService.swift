@@ -1,7 +1,13 @@
 import Foundation
 import Chau7Core
 
-/// Bridges MCP `runtime_*` tool calls to the runtime session system.
+/// App-internal runtime session controller for the Agent Dashboard.
+///
+/// Implements the `runtime_*` operations (session/turn lifecycle, approvals)
+/// consumed in-process by `AgentDashboardSessionController`. These are NOT part
+/// of the public MCP tool surface — `MCPSession` neither registers nor
+/// dispatches them (see `MCP/README.md`: "runtime orchestration remains
+/// app-internal").
 ///
 /// Follows `TerminalControlService` pattern: `static let shared`, dispatches
 /// to main thread for tab operations, `NSLock` for session state.

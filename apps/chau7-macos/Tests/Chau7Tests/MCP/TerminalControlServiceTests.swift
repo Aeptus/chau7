@@ -632,6 +632,16 @@ final class TerminalControlServiceTests: XCTestCase {
         return json
     }
 
+    // MARK: - jsonError escaping
+
+    func testErrorResponseEscapesControlCharacters() throws {
+        // A crafted tab id with a quote, backslash, and newline must still produce
+        // valid JSON (previously a "-only escape yielded malformed output).
+        let response = TerminalControlService.shared.tabStatus(tabID: "bogus\"\\\n_id")
+        let json = try XCTUnwrap(parseJSONObject(response), "error response must be valid JSON")
+        XCTAssertTrue((json["error"] as? String ?? "").contains("bogus"))
+    }
+
     func testAgentLaunchCommandWithoutPRIsAgentCommandVerbatim() {
         XCTAssertEqual(
             TerminalControlService.agentLaunchCommand(agentCommand: "claude", prNumber: nil),

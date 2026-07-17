@@ -27,6 +27,10 @@ final class TerminalControlService {
     /// Hard ceiling — even if the user sets a higher value in settings.
     private static let absoluteMaxTabs = 50
 
+    /// Shared cap for `repo_get_events` across all transports (MCP tool +
+    /// scripting socket), matching the documented MCP contract (max 50).
+    static let repoEventsMaxLimit = 50
+
     /// Maximum output size returned by tab_output (512 KB).
     private static let maxOutputBytes = 512 * 1024
 
@@ -2114,6 +2118,9 @@ final class TerminalControlService {
         sessionID: String? = nil,
         truncateMessages: Bool = true
     ) -> String {
+        // Clamp at the source so every transport (MCP tool + scripting socket)
+        // shares one cap instead of each caller applying its own divergent limit.
+        let limit = max(1, min(limit, Self.repoEventsMaxLimit))
         // Check the per-repo event buffer in AppModel (populated on event ingestion)
         let events: [AIEvent]
         if let appModel = allModels.first?.model.appModel {
@@ -2583,7 +2590,11 @@ final class TerminalControlService {
     }
 
     private func jsonError(_ message: String) -> String {
-        "{\"error\":\"\(message.replacingOccurrences(of: "\"", with: "\\\""))\"}"
+        // Build via JSONSerialization so backslashes and control characters in
+        // caller-influenced text (tab IDs, command strings) are escaped properly
+        // — a hand-rolled `"`-only escape produced malformed JSON that
+        // `classifyToolResponse` would then misread as a non-error string.
+        encodeAny(["error": message])
     }
 
     private func encodeAny(_ value: Any) -> String {

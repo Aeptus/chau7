@@ -76,7 +76,8 @@ final class ControlPlaneService {
                   !repoPath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
                 return jsonError("repo_path is required")
             }
-            let limit = max(1, min(arguments["limit"] as? Int ?? 25, 200))
+            // Cap enforced at the source in repoGetEvents (repoEventsMaxLimit).
+            let limit = arguments["limit"] as? Int ?? 25
             return terminalControl.repoGetEvents(
                 repoPath: repoPath,
                 limit: limit,

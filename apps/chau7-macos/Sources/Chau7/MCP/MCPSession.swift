@@ -873,7 +873,8 @@ final class MCPSession {
             guard let repoPath = arguments["repo_path"] as? String else {
                 return .protocolError(code: -32602, message: "Invalid params: repo_path is required")
             }
-            let limit = min(arguments["limit"] as? Int ?? 20, 50)
+            // Cap enforced at the source in repoGetEvents (repoEventsMaxLimit).
+            let limit = arguments["limit"] as? Int ?? 20
             return classifyToolResponse(controlService.repoGetEvents(
                 repoPath: repoPath,
                 limit: limit,
