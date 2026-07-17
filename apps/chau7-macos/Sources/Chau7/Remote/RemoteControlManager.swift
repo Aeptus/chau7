@@ -75,6 +75,9 @@ final class RemoteControlManager {
     /// Live only while interactive prompts are outstanding; keeps synthesized
     /// arrow-navigation responses tracking the on-screen menu cursor.
     @ObservationIgnored private var promptRecheckTimer: Timer?
+    /// Hook-sourced interactive questions (AskUserQuestion), fed from
+    /// AppModel's Claude hook funnel via `ingestClaudeHookEvent`.
+    @ObservationIgnored private let structuredPrompts = StructuredPromptStore()
     @ObservationIgnored private var outputFlushTask: Task<Void, Never>?
     @ObservationIgnored private var pendingOutputByTabID = RemotePendingOutputBuffer<Data>()
 
@@ -586,6 +589,39 @@ final class RemoteControlManager {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.15, execute: workItem)
     }
 
+    /// Feed of Claude Code hook events for the structured prompt store,
+    /// called by AppModel after tab attribution. PreToolUse of
+    /// AskUserQuestion opens an entry; the tool's completion, the turn's
+    /// end, or the session's end closes it. A phone answer needs no special
+    /// casing: the resulting PostToolUse clears the entry within ~1s (and
+    /// iOS removes the card optimistically on tap).
+    func ingestClaudeHookEvent(_ event: ClaudeCodeEvent, runtimeTabID: UUID?) {
+        let changed: Bool
+        switch event.type {
+        case .toolStart:
+            guard let runtimeTabID else { return }
+            changed = structuredPrompts.applyToolStart(
+                toolName: event.toolName,
+                toolInputJSON: event.toolInputJSON,
+                toolUseID: event.toolUseID,
+                runtimeTabID: runtimeTabID,
+                sessionID: event.sessionId
+            )
+        case .toolComplete, .toolFailed:
+            changed = structuredPrompts.applyToolEnd(
+                toolName: event.toolName,
+                sessionID: event.sessionId
+            )
+        case .responseComplete, .responseFailed, .sessionEnd:
+            changed = structuredPrompts.applySessionTerminal(sessionID: event.sessionId)
+        default:
+            return
+        }
+        if changed {
+            scheduleRemoteActivityRefresh()
+        }
+    }
+
     /// While a prompt card is live, the synthesized arrow-navigation responses
     /// of an unnumbered menu go stale the moment someone moves the cursor on
     /// the Mac — and a cursor-only redraw fires no session-state change. A 1s
@@ -721,31 +757,44 @@ final class RemoteControlManager {
                 let resolvedStatus: RemoteActivityStatus?
                 let detail: String?
 
-                switch session.effectiveStatus {
-                case .approvalRequired:
-                    resolvedStatus = .approvalRequired
-                    detail = session.effectiveIsAtPrompt ? "Approval required at prompt" : "Approval required"
-                case .waitingForInput where sessionShowsRealPromptAffordance(session, toolName: toolName):
+                // A hook-reported structured question outranks the scraped
+                // status (except approval, which projects higher anyway): the
+                // session is definitively blocked on user input even when the
+                // output patterns never flipped effectiveStatus. Deliberately
+                // does NOT touch session.status — the override is local to the
+                // remote projection so notification/attention subsystems are
+                // unaffected.
+                if structuredPrompts.entry(forRuntimeTabID: tab.id) != nil,
+                   session.effectiveStatus != .approvalRequired {
                     resolvedStatus = .waitingInput
                     detail = session.effectiveIsAtPrompt ? "Waiting at prompt" : nil
-                case .running:
-                    resolvedStatus = .running
-                    detail = nil
-                case .stuck:
-                    resolvedStatus = .running
-                    detail = "No output for a while"
-                // An uncorroborated waitingForInput is the status detector
-                // reacting to a generic token ("proceed?", "continue?") in
-                // ordinary AI prose rather than a real prompt — treat it like an
-                // ended turn so the phone doesn't show a phantom "waiting for your
-                // input" indicator with no prompt behind it.
-                case .waitingForInput, .done, .idle, .exited:
-                    if let outcome = recentCompletionStatus(for: session, tab: tab, now: now) {
-                        resolvedStatus = outcome.status
-                        detail = outcome.detail
-                    } else {
-                        resolvedStatus = nil
+                } else {
+                    switch session.effectiveStatus {
+                    case .approvalRequired:
+                        resolvedStatus = .approvalRequired
+                        detail = session.effectiveIsAtPrompt ? "Approval required at prompt" : "Approval required"
+                    case .waitingForInput where sessionShowsRealPromptAffordance(session, toolName: toolName):
+                        resolvedStatus = .waitingInput
+                        detail = session.effectiveIsAtPrompt ? "Waiting at prompt" : nil
+                    case .running:
+                        resolvedStatus = .running
                         detail = nil
+                    case .stuck:
+                        resolvedStatus = .running
+                        detail = "No output for a while"
+                    // An uncorroborated waitingForInput is the status detector
+                    // reacting to a generic token ("proceed?", "continue?") in
+                    // ordinary AI prose rather than a real prompt — treat it like an
+                    // ended turn so the phone doesn't show a phantom "waiting for your
+                    // input" indicator with no prompt behind it.
+                    case .waitingForInput, .done, .idle, .exited:
+                        if let outcome = recentCompletionStatus(for: session, tab: tab, now: now) {
+                            resolvedStatus = outcome.status
+                            detail = outcome.detail
+                        } else {
+                            resolvedStatus = nil
+                            detail = nil
+                        }
                     }
                 }
 
@@ -794,6 +843,28 @@ final class RemoteControlManager {
         remoteControllableTabsAcrossWindows().flatMap { tab -> [RemoteInteractivePrompt] in
             guard let tabID = tabRegistry.tabID(for: tab.id) else {
                 return []
+            }
+
+            // A hook-sourced structured question is authoritative for its tab:
+            // exact text and options straight from the tool call, no status
+            // gate (the scrape's waiting-status patterns can miss a menu
+            // render), and it suppresses the scraped prompt for the same tab
+            // so one menu can't surface as two differently-identified cards.
+            if let structured = structuredPrompts.entry(forRuntimeTabID: tab.id) {
+                let session = tab.splitController.terminalSessions.first?.1
+                return [RemoteInteractivePrompt(
+                    id: "tab-\(tabID)-hook-\(structured.signature)",
+                    tabID: tabID,
+                    tabTitle: activityTabTitle(for: tab),
+                    toolName: "Claude",
+                    projectName: session.flatMap { activityProjectName(for: $0) },
+                    branchName: session.flatMap { activityBranchName(for: $0) },
+                    currentDirectory: session.flatMap { activityCurrentDirectory(for: $0) },
+                    prompt: structured.prompt,
+                    detail: structured.detail,
+                    options: structured.options,
+                    detectedAt: structured.createdAt
+                ).withComposedPushText()]
             }
 
             return tab.splitController.terminalSessions.compactMap { paneID, session in

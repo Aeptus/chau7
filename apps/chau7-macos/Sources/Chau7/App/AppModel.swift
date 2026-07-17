@@ -1118,6 +1118,14 @@ final class AppModel {
             directory: directory
         )
 
+        // Structured interactive prompts (AskUserQuestion): keep the remote
+        // prompt store in sync with the hook stream, post tab-attribution.
+        // Main-queue hop (not Task) so successive hook events reach the
+        // store in arrival order — PostToolUse must not overtake PreToolUse.
+        DispatchQueue.main.async {
+            RemoteControlManager.shared.ingestClaudeHookEvent(event, runtimeTabID: runtimeTabID)
+        }
+
         // Claude Code emits the session's authoritative cwd on every hook
         // event. Push it onto the bound tab's session so the tab's tracked
         // `currentDirectory` stays in sync even when the host shell's
