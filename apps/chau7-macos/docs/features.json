@@ -1177,8 +1177,29 @@
   },
   {
     "category": "AI Integration",
-    "feature": "CTO Read-Only Wrapper Surface",
-    "description": "CTO shadows only read-only inspection commands on PATH (cat, ls, find, tree, grep, rg, diff, sed, head, tail, wc); interpreters, runtimes, package managers, and build tools are never wrapped, so CTO never owns their interpreter selection, environment, or exit codes. Wrappers install only when the real binary resolves — from the login-shell PATH terminals launch with, not the GUI app's minimal PATH, so a wrapper never execs a different interpreter than the shell would — avoiding branded exit-127 failures and Xcode-vs-Homebrew interpreter mismatches, and unsupported wrappers are pruned on setup",
+    "feature": "CTO Tiered Wrapper Surface",
+    "description": "CTO shadows read-only inspection commands (cat, ls, find, tree, grep, rg, diff, sed) plus a hardened tier of executables (git, cargo, swift, go, curl) on PATH; interpreters and package managers (python, node, npm) remain deferred, and the former no-op exec-only wrappers (head, tail, wc) were removed. Wrappers install only when the real binary resolves and unsupported wrappers are pruned on setup",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "AI Integration",
+    "feature": "CTO Hardened Executable Optimization",
+    "description": "CTO optimizes the high-savings command tail (git/cargo/swift/go/curl) via wrappers that resolve the real binary at runtime from the live PATH (honoring venv/nvm/rustup, never a path baked at setup), gate on a per-command read-only subcommand allowlist so mutations (git commit, cargo publish) and interactive/piped invocations pass straight through with a single exec (the optimizer can never double-run a side-effecting command), and are protected from recursion by a CHAU7_CTO_OPTIM_ACTIVE sentinel plus a hardened cto_bin PATH strip in chau7-optim",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "AI Integration",
+    "feature": "CTO Wrapper PATH Precedence",
+    "description": "The zsh/bash/fish shell integration re-asserts the CTO wrapper dir at the front of PATH after the user's rc files run (e.g. brew shellenv), so Homebrew-installed commands (git, go, rg) are actually shadowed instead of silently escaping optimization",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "AI Integration",
+    "feature": "CTO Recent-Window Savings",
+    "description": "The token-savings panel reports a rolling 7-day window (average savings and response time) alongside a lifetime tokens-saved total so current performance is not masked by the cumulative all-time average, and per-session command activity is derived from the command log independently of the optimizer binary",
     "status": "Shipped",
     "differentiator": "Yes"
   },
