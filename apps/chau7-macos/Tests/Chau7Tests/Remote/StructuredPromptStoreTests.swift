@@ -149,6 +149,55 @@ final class StructuredPromptStoreTests: XCTestCase {
         XCTAssertTrue(store.isEmpty)
     }
 
+    // MARK: - ExitPlanMode
+
+    private func exitPlanInput(plan: String) -> String {
+        let data = try! JSONSerialization.data(withJSONObject: ["plan": plan])
+        return String(data: data, encoding: .utf8)!
+    }
+
+    func testExitPlanModeCarriesPlanExcerptWithoutOptions() throws {
+        let store = makeStore()
+        XCTAssertTrue(store.applyToolStart(
+            toolName: "ExitPlanMode",
+            toolInputJSON: exitPlanInput(plan: String(repeating: "step ", count: 200)),
+            toolUseID: "t1", runtimeTabID: tabA, sessionID: "s1"
+        ))
+
+        let entry = try XCTUnwrap(store.entry(forRuntimeTabID: tabA))
+        XCTAssertEqual(entry.toolName, "ExitPlanMode")
+        // No options: the on-screen approval menu labels aren't in
+        // tool_input — the entry drives status only, the scrape supplies
+        // the card.
+        XCTAssertTrue(entry.options.isEmpty)
+        XCTAssertEqual(entry.detail?.count, 501, "plan excerpt capped at 500 + ellipsis")
+    }
+
+    func testExitPlanModeWithoutPlanIsIgnored() {
+        let store = makeStore()
+        XCTAssertFalse(store.applyToolStart(
+            toolName: "ExitPlanMode", toolInputJSON: "{}",
+            toolUseID: "t1", runtimeTabID: tabA, sessionID: "s1"
+        ))
+        XCTAssertTrue(store.isEmpty)
+    }
+
+    func testToolEndClearIsScopedToTheEntryTool() {
+        let store = makeStore()
+        store.applyToolStart(
+            toolName: "ExitPlanMode", toolInputJSON: exitPlanInput(plan: "the plan"),
+            toolUseID: "t1", runtimeTabID: tabA, sessionID: "s1"
+        )
+
+        // A different interactive tool completing in the same session must
+        // not clear a plan review still on screen.
+        XCTAssertFalse(store.applyToolEnd(toolName: "AskUserQuestion", sessionID: "s1"))
+        XCTAssertNotNil(store.entry(forRuntimeTabID: tabA))
+
+        XCTAssertTrue(store.applyToolEnd(toolName: "ExitPlanMode", sessionID: "s1"))
+        XCTAssertNil(store.entry(forRuntimeTabID: tabA))
+    }
+
     // MARK: - Identity
 
     func testDuplicateApplyReportsNoChangeAndKeepsSignature() throws {

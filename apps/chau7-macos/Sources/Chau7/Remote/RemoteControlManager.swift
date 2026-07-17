@@ -889,7 +889,11 @@ final class RemoteControlManager {
             // gate (the scrape's waiting-status patterns can miss a menu
             // render), and it suppresses the scraped prompt for the same tab
             // so one menu can't surface as two differently-identified cards.
-            if let structured = structuredPrompts.entry(forRuntimeTabID: tab.id) {
+            // Options-less entries (ExitPlanMode: labels aren't in
+            // tool_input) fall through — they drive the activity projection
+            // while the scrape supplies the card with the real menu.
+            if let structured = structuredPrompts.entry(forRuntimeTabID: tab.id),
+               !structured.options.isEmpty {
                 let session = tab.splitController.terminalSessions.first?.1
                 return [RemoteInteractivePrompt(
                     id: "tab-\(tabID)-hook-\(structured.signature)",

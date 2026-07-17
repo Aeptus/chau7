@@ -8,8 +8,15 @@ public struct StructuredPromptEntry: Equatable, Sendable {
     public let runtimeTabID: UUID
     public let sessionID: String
     public let toolUseID: String
+    /// Which interactive tool produced this entry — lifecycle clears are
+    /// scoped to it so e.g. AskUserQuestion completing never clears a plan
+    /// review still on screen.
+    public let toolName: String
     public let prompt: String
     public let detail: String?
+    /// Empty for tools whose on-screen menu labels aren't in tool_input
+    /// (ExitPlanMode): those entries drive the waiting-status projection but
+    /// emit no card themselves — the scrape reads the real menu instead.
     public let options: [RemoteInteractivePromptOption]
     public let createdAt: Date
     /// Stable identity basis for the wire prompt ID: hashes the session,
@@ -30,9 +37,12 @@ public struct StructuredPromptEntry: Equatable, Sendable {
 /// desyncs when the Mac answers mid-sequence, and the scrape path covers it.
 public final class StructuredPromptStore {
     public static let askUserQuestionToolName = "AskUserQuestion"
+    public static let exitPlanModeToolName = "ExitPlanMode"
+    static let interactiveToolNames: Set<String> = [askUserQuestionToolName, exitPlanModeToolName]
     /// Deliberately generous: a question legitimately sits unanswered for a
     /// long time, and the scrape path remains as backstop after expiry.
     public static let defaultTTL: TimeInterval = 3600
+    static let maxPlanExcerptLength = 500
 
     private struct Key: Hashable {
         let runtimeTabID: UUID
@@ -60,16 +70,28 @@ public final class StructuredPromptStore {
         sessionID: String
     ) -> Bool {
         purgeExpired()
-        guard toolName == Self.askUserQuestionToolName,
-              let entry = Self.parseAskUserQuestion(
-                  toolInputJSON: toolInputJSON,
-                  toolUseID: toolUseID,
-                  runtimeTabID: runtimeTabID,
-                  sessionID: sessionID,
-                  createdAt: now()
-              ) else {
-            return false
+        let parsed: StructuredPromptEntry?
+        switch toolName {
+        case Self.askUserQuestionToolName:
+            parsed = Self.parseAskUserQuestion(
+                toolInputJSON: toolInputJSON,
+                toolUseID: toolUseID,
+                runtimeTabID: runtimeTabID,
+                sessionID: sessionID,
+                createdAt: now()
+            )
+        case Self.exitPlanModeToolName:
+            parsed = Self.parseExitPlanMode(
+                toolInputJSON: toolInputJSON,
+                toolUseID: toolUseID,
+                runtimeTabID: runtimeTabID,
+                sessionID: sessionID,
+                createdAt: now()
+            )
+        default:
+            parsed = nil
         }
+        guard let entry = parsed else { return false }
         let key = Key(runtimeTabID: runtimeTabID, sessionID: sessionID)
         guard entries[key] != entry else { return false }
         entries[key] = entry
@@ -78,11 +100,13 @@ public final class StructuredPromptStore {
 
     /// PostToolUse / PostToolUseFailure — authoritative clear: the tool
     /// finishing means the question was answered, from whichever surface.
+    /// Scoped to the entry's own tool so one interactive tool completing
+    /// never clears another's still-visible prompt.
     @discardableResult
     public func applyToolEnd(toolName: String, sessionID: String) -> Bool {
         purgeExpired()
-        guard toolName == Self.askUserQuestionToolName else { return false }
-        return removeAll { $0.sessionID == sessionID }
+        guard Self.interactiveToolNames.contains(toolName) else { return false }
+        return removeAll { $0.sessionID == sessionID && $0.toolName == toolName }
     }
 
     /// Stop / StopFailure / SessionEnd — the turn or session is over, so no
@@ -182,9 +206,52 @@ public final class StructuredPromptStore {
             runtimeTabID: runtimeTabID,
             sessionID: sessionID,
             toolUseID: toolUseID,
+            toolName: askUserQuestionToolName,
             prompt: questionText,
             detail: detailParts.isEmpty ? nil : detailParts.joined(separator: "\n"),
             options: options,
+            createdAt: createdAt,
+            signature: signature
+        )
+    }
+
+    /// Parses ExitPlanMode's tool_input: `{"plan": "<markdown>"}`. The menu
+    /// labels the TUI renders for plan approval are NOT part of tool_input
+    /// and change across Claude versions, so no options are synthesized —
+    /// the entry drives the waiting-status projection (and its push) while
+    /// the scrape supplies the card with the real on-screen choices.
+    static func parseExitPlanMode(
+        toolInputJSON: String?,
+        toolUseID: String,
+        runtimeTabID: UUID,
+        sessionID: String,
+        createdAt: Date
+    ) -> StructuredPromptEntry? {
+        guard let toolInputJSON,
+              let data = toolInputJSON.data(using: .utf8),
+              let root = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+              let plan = (root["plan"] as? String)?
+                  .trimmingCharacters(in: .whitespacesAndNewlines),
+              !plan.isEmpty else {
+            return nil
+        }
+
+        var excerpt = plan
+        if excerpt.count > maxPlanExcerptLength {
+            excerpt = String(excerpt.prefix(maxPlanExcerptLength)) + "…"
+        }
+
+        let signatureBasis = [sessionID, toolUseID, exitPlanModeToolName].joined(separator: "\n")
+        let signature = Data(SHA256.hash(data: Data(signatureBasis.utf8)).prefix(12)).base64EncodedString()
+
+        return StructuredPromptEntry(
+            runtimeTabID: runtimeTabID,
+            sessionID: sessionID,
+            toolUseID: toolUseID,
+            toolName: exitPlanModeToolName,
+            prompt: "Claude finished a plan and is waiting for review",
+            detail: excerpt,
+            options: [],
             createdAt: createdAt,
             signature: signature
         )
