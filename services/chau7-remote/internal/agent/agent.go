@@ -202,6 +202,9 @@ type RemoteInteractivePrompt struct {
 	Prompt           string                          `json:"prompt"`
 	Detail           string                          `json:"detail,omitempty"`
 	Options          []RemoteInteractivePromptOption `json:"options"`
+	// MultiSelect marks AskUserQuestion multi-select prompts (additive;
+	// absent/false for single-select and for older Macs).
+	MultiSelect bool `json:"multi_select,omitempty"`
 	// DetectedAt is Swift's Date wire encoding: seconds since 2001-01-01
 	// (timeIntervalSinceReferenceDate), a JSON number — not a string.
 	DetectedAt float64 `json:"detected_at"`

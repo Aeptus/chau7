@@ -18,6 +18,11 @@ public struct StructuredPromptEntry: Equatable, Sendable {
     /// (ExitPlanMode): those entries drive the waiting-status projection but
     /// emit no card themselves — the scrape reads the real menu instead.
     public let options: [RemoteInteractivePromptOption]
+    /// Multi-select AskUserQuestion. Option responses stay "digit+CR"
+    /// (toggle-then-submit, the safe single-tap behavior); a multi-select
+    /// aware client derives toggles by stripping the CR and submits with a
+    /// separate Enter.
+    public let isMultiSelect: Bool
     public let createdAt: Date
     /// Stable identity basis for the wire prompt ID: hashes the session,
     /// tool use, question, and option labels — never cursor state.
@@ -210,6 +215,7 @@ public final class StructuredPromptStore {
             prompt: questionText,
             detail: detailParts.isEmpty ? nil : detailParts.joined(separator: "\n"),
             options: options,
+            isMultiSelect: multiSelect,
             createdAt: createdAt,
             signature: signature
         )
@@ -252,6 +258,7 @@ public final class StructuredPromptStore {
             prompt: "Claude finished a plan and is waiting for review",
             detail: excerpt,
             options: [],
+            isMultiSelect: false,
             createdAt: createdAt,
             signature: signature
         )

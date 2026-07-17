@@ -906,7 +906,8 @@ final class RemoteControlManager {
                     prompt: structured.prompt,
                     detail: structured.detail,
                     options: structured.options,
-                    detectedAt: structured.createdAt
+                    detectedAt: structured.createdAt,
+                    isMultiSelect: structured.isMultiSelect
                 ).withComposedPushText()]
             }
 
