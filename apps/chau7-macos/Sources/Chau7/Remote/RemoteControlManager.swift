@@ -72,6 +72,9 @@ final class RemoteControlManager {
     @ObservationIgnored private var connectedClientStreamMode: RemoteClientStreamMode = .full
     @ObservationIgnored private var subscribedSessionIDs: Set<String> = []
     @ObservationIgnored private var activityRefreshWorkItem: DispatchWorkItem?
+    /// Live only while interactive prompts are outstanding; keeps synthesized
+    /// arrow-navigation responses tracking the on-screen menu cursor.
+    @ObservationIgnored private var promptRecheckTimer: Timer?
     @ObservationIgnored private var outputFlushTask: Task<Void, Never>?
     @ObservationIgnored private var pendingOutputByTabID = RemotePendingOutputBuffer<Data>()
 
@@ -121,6 +124,7 @@ final class RemoteControlManager {
             // inheriting a stale (possibly background-window) selection.
             self?.remoteSelectedTabUUID = nil
             self?.cancelPendingOutputFlush()
+            self?.reconcilePromptRecheckTimer(hasPrompts: false)
             self?.refreshPairedDevices()
         }
         ipc.start()
@@ -582,6 +586,27 @@ final class RemoteControlManager {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.15, execute: workItem)
     }
 
+    /// While a prompt card is live, the synthesized arrow-navigation responses
+    /// of an unnumbered menu go stale the moment someone moves the cursor on
+    /// the Mac — and a cursor-only redraw fires no session-state change. A 1s
+    /// recheck rebuilds the prompt list (diffed in sendInteractivePrompts, so
+    /// nothing is re-sent unless content actually changed) and keeps the
+    /// phone's responses tracking the on-screen cursor. Numbered menus are
+    /// immune either way: digit responses are absolute.
+    private func reconcilePromptRecheckTimer(hasPrompts: Bool) {
+        guard hasPrompts, isIPCConnected else {
+            promptRecheckTimer?.invalidate()
+            promptRecheckTimer = nil
+            return
+        }
+        guard promptRecheckTimer == nil else { return }
+        promptRecheckTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.scheduleRemoteActivityRefresh()
+            }
+        }
+    }
+
     private func sendRemoteActivity(force: Bool = false) {
         let nextActivity = currentRemoteActivity()
         let activityChanged = force || nextActivity != remoteActivity
@@ -633,6 +658,7 @@ final class RemoteControlManager {
 
     private func sendInteractivePrompts(force: Bool = false) {
         let nextPrompts = currentInteractivePrompts()
+        defer { reconcilePromptRecheckTimer(hasPrompts: !nextPrompts.isEmpty) }
         guard force || nextPrompts != interactivePrompts else { return }
 
         interactivePrompts = nextPrompts
