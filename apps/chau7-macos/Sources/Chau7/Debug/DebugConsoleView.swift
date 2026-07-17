@@ -54,6 +54,7 @@ struct DebugConsoleView: View {
     @State private var dailyCostTrend: [(date: String, cost: Double, tokens: Int, pricedRunCount: Int, totalRunCount: Int)] = []
     @State private var proxyStats: APICallStats = .init()
     @State private var proxyProviderStats: [ProxyProviderAnalytics] = []
+    @State private var proxyModelStats: [ProxyModelAnalytics] = []
     @State private var proxyDailyTrend: [ProxyDailyAnalyticsPoint] = []
     @State private var proxyHourlyTrend: [ProxyHourlyAnalyticsPoint] = []
     @State private var recentProxyCalls: [APICallEvent] = []
@@ -89,6 +90,7 @@ struct DebugConsoleView: View {
         let dailyCostTrend: [(date: String, cost: Double, tokens: Int, pricedRunCount: Int, totalRunCount: Int)]
         let proxyStats: APICallStats
         let proxyProviderStats: [ProxyProviderAnalytics]
+        let proxyModelStats: [ProxyModelAnalytics]
         let proxyDailyTrend: [ProxyDailyAnalyticsPoint]
         let proxyHourlyTrend: [ProxyHourlyAnalyticsPoint]
         let recentProxyCalls: [APICallEvent]
@@ -1717,6 +1719,14 @@ struct DebugConsoleView: View {
                     }
 
                     analyticsProviderFilterControl
+
+                    Picker("Format", selection: $settings.regionalNumberFormat) {
+                        ForEach(RegionalNumberFormat.allCases) { format in
+                            Text("\(format.displayName) (\(format.example))").tag(format)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    .frame(maxWidth: 180)
                 }
 
                 combinedAnalyticsView
@@ -1732,7 +1742,7 @@ struct DebugConsoleView: View {
         VStack(alignment: .leading, spacing: 16) {
             GroupBox("Combined Summary — \(analyticsTimeRange.rawValue)") {
                 HStack {
-                    Text("Tokens: \(analyticsFormatTokens(combinedTotalBillableTokens))")
+                    Text("Metered: \(analyticsFormatTokens(combinedTotalBillableTokens))")
                     Spacer()
                     Text("Cost: \(LocalizedFormatters.formatCostPrecise(combinedTotalCostUSD))").bold()
                 }
@@ -1746,7 +1756,7 @@ struct DebugConsoleView: View {
                         HStack {
                             Text(AnalyticsProvider.displayName(for: stat.provider)).bold()
                             Spacer()
-                            Text("\(analyticsFormatTokens(stat.totalBillableTokens)) tokens")
+                            Text("\(analyticsFormatTokens(stat.totalBillableTokens)) metered")
                                 .foregroundStyle(.secondary)
                             Text(LocalizedFormatters.formatCostPrecise(stat.totalCostUSD))
                                 .monospaced()
@@ -1786,7 +1796,7 @@ struct DebugConsoleView: View {
                     HStack {
                         Text("Calls: \(LocalizedFormatters.formatInteger(proxyStats.callCount))")
                         Spacer()
-                        Text("Tokens: \(analyticsFormatTokens(proxyStats.totalAllTokens))")
+                        Text("Metered: \(analyticsFormatTokens(proxyStats.totalAllTokens))")
                         Spacer()
                         Text("Cost: \(LocalizedFormatters.formatCostPrecise(proxyStats.totalCost))").bold()
                         Spacer()
@@ -1806,10 +1816,43 @@ struct DebugConsoleView: View {
                             Spacer()
                             Text("\(LocalizedFormatters.formatInteger(stat.callCount)) calls")
                                 .foregroundStyle(.secondary)
-                            Text("\(analyticsFormatTokens(stat.totalBillableTokens)) tokens")
+                            Text("\(analyticsFormatTokens(stat.totalBillableTokens)) metered")
                                 .foregroundStyle(.secondary)
                             Text(LocalizedFormatters.formatCostPrecise(stat.totalCostUSD))
                                 .monospaced()
+                        }
+                    }
+                }
+            }
+
+            GroupBox("Calls by Model") {
+                if proxyModelStats.isEmpty {
+                    Text("No model data yet.").foregroundStyle(.secondary)
+                } else {
+                    VStack(alignment: .leading, spacing: 6) {
+                        ForEach(proxyModelStats.prefix(15)) { model in
+                            HStack(spacing: 8) {
+                                Circle()
+                                    .fill(providerColor(model.provider))
+                                    .frame(width: 6, height: 6)
+                                Text(model.model.isEmpty ? "(unknown)" : model.model)
+                                    .font(.system(size: 11, design: .monospaced))
+                                    .lineLimit(1)
+                                Text(AnalyticsProvider.displayName(for: model.provider))
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                Spacer()
+                                Text("\(LocalizedFormatters.formatInteger(model.callCount)) calls")
+                                    .foregroundStyle(.secondary)
+                                    .font(.caption)
+                                Text("\(analyticsFormatTokens(model.totalBillableTokens)) metered")
+                                    .foregroundStyle(.secondary)
+                                    .font(.caption)
+                                    .help(proxyModelTokenBreakdown(model))
+                                Text(LocalizedFormatters.formatCostPrecise(model.totalCostUSD))
+                                    .monospaced()
+                                    .bold()
+                            }
                         }
                     }
                 }
@@ -1873,7 +1916,7 @@ struct DebugConsoleView: View {
                                     .foregroundStyle(.secondary)
                                     .lineLimit(1)
                                 Spacer()
-                                Text("\(analyticsFormatTokens(call.totalBillableTokens)) tokens")
+                                Text("\(analyticsFormatTokens(call.totalBillableTokens)) metered")
                                     .foregroundStyle(.secondary)
                                     .font(.caption)
                                 Text(call.formattedCost)
@@ -2700,9 +2743,17 @@ struct DebugConsoleView: View {
     }
 
     private func analyticsFormatTokens(_ count: Int) -> String {
-        if count >= 1_000_000 { return String(format: "%.1fM", Double(count) / 1_000_000) }
-        if count >= 1000 { return String(format: "%.1fK", Double(count) / 1000) }
-        return "\(count)"
+        CountFormat.abbreviated(count)
+    }
+
+    private func proxyModelTokenBreakdown(_ model: ProxyModelAnalytics) -> String {
+        [
+            "Input \(analyticsFormatTokens(model.totalInputTokens))",
+            "Cache write \(analyticsFormatTokens(model.totalCacheCreationTokens))",
+            "Cache read \(analyticsFormatTokens(model.totalCacheReadTokens))",
+            "Output \(analyticsFormatTokens(model.totalOutputTokens))",
+            "Reasoning \(analyticsFormatTokens(model.totalReasoningTokens))"
+        ].joined(separator: " / ")
     }
 
     private var selectedAnalyticsProviderKey: String? {
@@ -2754,31 +2805,6 @@ struct DebugConsoleView: View {
         let repoRoots = settings.recentRepoRoots
         let selectedProviderKey = analyticsProviderFilterKey
         let hourlyDays = analyticsTimeRange == .today ? 1 : min(days, 7)
-
-        if !WakeupControl.isEnabled(.asyncDebugAnalyticsRefresh) {
-            let startedAt = CFAbsoluteTimeGetCurrent()
-            let snapshot = makeAnalyticsRefreshSnapshot(
-                after: after,
-                days: days,
-                providerFilterKey: providerFilterKey,
-                repoRoots: repoRoots,
-                selectedProviderKey: selectedProviderKey,
-                hourlyDays: hourlyDays
-            )
-            let durationMs = (CFAbsoluteTimeGetCurrent() - startedAt) * 1000.0
-            WakeupProfiler.shared.record("debug.analyticsRefresh", durationMs: durationMs)
-            FeatureProfiler.shared.record(feature: .debugAnalyticsRefresh, durationMs: durationMs)
-            analyticsLastRefreshAt = Date()
-            analyticsRefreshInFlight = false
-            applyAnalyticsRefreshSnapshot(snapshot)
-            if analyticsRefreshQueued {
-                let queuedForce = analyticsRefreshQueuedForce
-                analyticsRefreshQueued = false
-                analyticsRefreshQueuedForce = false
-                requestAnalyticsRefresh(force: queuedForce)
-            }
-            return
-        }
 
         DispatchQueue.global(qos: .userInitiated).async {
             let startedAt = CFAbsoluteTimeGetCurrent()
@@ -2842,6 +2868,7 @@ struct DebugConsoleView: View {
             dailyCostTrend: TelemetryStore.shared.dailyCostTrend(days: days, providerFilterKey: providerFilterKey),
             proxyStats: ProxyAnalyticsStore.shared.overallStats(after: after, providerFilterKey: providerFilterKey),
             proxyProviderStats: ProxyAnalyticsStore.shared.providerStats(after: after, providerFilterKey: providerFilterKey),
+            proxyModelStats: ProxyAnalyticsStore.shared.modelStats(after: after, providerFilterKey: providerFilterKey),
             proxyDailyTrend: ProxyAnalyticsStore.shared.dailyTrend(days: days, providerFilterKey: providerFilterKey),
             proxyHourlyTrend: ProxyAnalyticsStore.shared.hourlyTrend(days: hourlyDays, providerFilterKey: providerFilterKey),
             recentProxyCalls: ProxyAnalyticsStore.shared.recentCalls(limit: 50, providerFilterKey: providerFilterKey),
@@ -2865,6 +2892,7 @@ struct DebugConsoleView: View {
         dailyCostTrend = snapshot.dailyCostTrend
         proxyStats = snapshot.proxyStats
         proxyProviderStats = snapshot.proxyProviderStats
+        proxyModelStats = snapshot.proxyModelStats
         proxyDailyTrend = snapshot.proxyDailyTrend
         proxyHourlyTrend = snapshot.proxyHourlyTrend
         recentProxyCalls = snapshot.recentProxyCalls
@@ -2883,7 +2911,7 @@ struct DebugConsoleView: View {
         if pricedCount == 0 {
             return missingCount > 0 ? "cost unavailable" : "no cost data"
         }
-        let prefix = String(format: "$%.4f", cost)
+        let prefix = LocalizedFormatters.formatCostPrecise(cost)
         if missingCount > 0 {
             return "\(prefix) partial"
         }

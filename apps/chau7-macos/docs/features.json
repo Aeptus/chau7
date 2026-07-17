@@ -1100,6 +1100,13 @@
   },
   {
     "category": "API Analytics",
+    "feature": "Async Usage Analytics Loading",
+    "description": "Usage dashboards coalesce overlapping refreshes, run proxy analytics database reads off the main thread, and show model-level proxy cost rows",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "API Analytics",
     "feature": "Regional Usage Number Formatting",
     "description": "Usage dashboards and cost displays use a configurable regional number format - French by default, with European and US choices independent of app language",
     "status": "Shipped",

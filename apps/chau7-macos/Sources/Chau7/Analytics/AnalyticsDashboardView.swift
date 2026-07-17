@@ -49,11 +49,17 @@ final class APIAnalyticsDashboardModel {
     var recentCalls: [APICallEvent] = []
     var isLoading = false
 
+    @ObservationIgnored private var refreshQueued = false
     @ObservationIgnored private var refreshTimer: DispatchSourceTimer?
     @ObservationIgnored private var notificationObserver: NSObjectProtocol?
     @ObservationIgnored private var lastRefreshDate = Date.distantPast
 
     func refresh() {
+        if isLoading {
+            refreshQueued = true
+            return
+        }
+
         let range = selectedRange
         let after = range.startDate
         let days = range.days
@@ -78,6 +84,10 @@ final class APIAnalyticsDashboardModel {
                 recentCalls = recent
                 isLoading = false
                 lastRefreshDate = Date()
+                if refreshQueued {
+                    refreshQueued = false
+                    refresh()
+                }
             }
         }
     }
@@ -117,6 +127,7 @@ final class APIAnalyticsDashboardModel {
 
 struct AnalyticsDashboardView: View {
     @State private var model = APIAnalyticsDashboardModel()
+    @Bindable private var settings = FeatureSettings.shared
 
     var body: some View {
         ScrollView {
@@ -142,6 +153,14 @@ struct AnalyticsDashboardView: View {
             Text("API Analytics")
                 .font(.title2.bold())
             Spacer()
+            Picker("Number Format", selection: $settings.regionalNumberFormat) {
+                ForEach(RegionalNumberFormat.allCases) { format in
+                    Text("\(format.displayName) (\(format.example))").tag(format)
+                }
+            }
+            .pickerStyle(.menu)
+            .frame(width: 180)
+
             Picker("", selection: $model.selectedRange) {
                 ForEach(AnalyticsTimeRange.allCases) { range in
                     Text(range.rawValue).tag(range)
@@ -162,23 +181,23 @@ struct AnalyticsDashboardView: View {
                 icon: "dollarsign.circle"
             )
             StatCard(
-                title: "Tokens",
+                title: "Metered Tokens",
                 value: formatTokens(model.overallStats.totalAllTokens),
                 icon: "number.circle"
             )
             StatCard(
                 title: "API Calls",
-                value: model.overallStats.callCount.formatted(),
+                value: LocalizedFormatters.formatInteger(model.overallStats.callCount),
                 icon: "arrow.up.arrow.down.circle"
             )
             StatCard(
                 title: "Avg Latency",
-                value: String(format: "%.0fms", model.overallStats.averageLatencyMs),
+                value: "\(LocalizedFormatters.formatDecimal(model.overallStats.averageLatencyMs, maximumFractionDigits: 0))ms",
                 icon: "clock"
             )
             StatCard(
                 title: "Error Rate",
-                value: String(format: "%.1f%%", model.errorRate * 100),
+                value: "\(LocalizedFormatters.formatDecimal(model.errorRate * 100, minimumFractionDigits: 1, maximumFractionDigits: 1))%",
                 icon: "exclamationmark.triangle",
                 tintColor: model.errorRate > 0.05 ? .red : nil
             )
@@ -186,9 +205,7 @@ struct AnalyticsDashboardView: View {
     }
 
     private func formatTokens(_ count: Int) -> String {
-        if count >= 1_000_000 { return String(format: "%.1fM", Double(count) / 1_000_000) }
-        if count >= 1000 { return String(format: "%.1fK", Double(count) / 1000) }
-        return "\(count)"
+        CountFormat.abbreviated(count)
     }
 }
 

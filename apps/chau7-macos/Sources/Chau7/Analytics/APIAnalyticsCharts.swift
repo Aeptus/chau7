@@ -78,13 +78,9 @@ struct DailyTrendChart: View {
     private func formatValue(_ value: Double) -> String {
         switch metric {
         case .cost:
-            if value >= 1 { return String(format: "$%.0f", value) }
-            return String(format: "$%.2f", value)
+            return LocalizedFormatters.formatCostPrecise(value)
         case .tokens:
-            let count = Int(value)
-            if count >= 1_000_000 { return String(format: "%.0fM", value / 1_000_000) }
-            if count >= 1000 { return String(format: "%.0fK", value / 1000) }
-            return "\(count)"
+            return CountFormat.abbreviated(Int(value))
         }
     }
 
@@ -214,7 +210,7 @@ struct ModelBreakdownTable: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                     Text("Calls")
                         .frame(width: 55, alignment: .trailing)
-                    Text("Tokens")
+                    Text("Metered")
                         .frame(width: 70, alignment: .trailing)
                     Text("Cost")
                         .frame(width: 70, alignment: .trailing)
@@ -238,15 +234,16 @@ struct ModelBreakdownTable: View {
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
 
-                        Text(m.callCount.formatted())
+                        Text(LocalizedFormatters.formatInteger(m.callCount))
                             .font(.system(size: 10, design: .monospaced))
                             .foregroundStyle(.secondary)
                             .frame(width: 55, alignment: .trailing)
 
-                        Text(formatTokens(m.totalTokens))
+                        Text(formatTokens(m.totalBillableTokens))
                             .font(.system(size: 10, design: .monospaced))
                             .foregroundStyle(.secondary)
                             .frame(width: 70, alignment: .trailing)
+                            .help(tokenBreakdownHelp(m))
 
                         Text(LocalizedFormatters.formatCostPrecise(m.totalCostUSD))
                             .font(.system(size: 10, design: .monospaced).bold())
@@ -269,6 +266,16 @@ struct ModelBreakdownTable: View {
 
     private func formatTokens(_ count: Int) -> String {
         CountFormat.abbreviated(count)
+    }
+
+    private func tokenBreakdownHelp(_ model: ProxyModelAnalytics) -> String {
+        [
+            "Input \(formatTokens(model.totalInputTokens))",
+            "Cache write \(formatTokens(model.totalCacheCreationTokens))",
+            "Cache read \(formatTokens(model.totalCacheReadTokens))",
+            "Output \(formatTokens(model.totalOutputTokens))",
+            "Reasoning \(formatTokens(model.totalReasoningTokens))"
+        ].joined(separator: " / ")
     }
 }
 
@@ -305,10 +312,11 @@ struct RecentCallsTable: View {
 
                                 Spacer()
 
-                                if call.totalTokens > 0 {
-                                    Text(call.formattedTokens + " tok")
+                                if call.totalBillableTokens > 0 {
+                                    Text(CountFormat.abbreviated(call.totalBillableTokens) + " metered")
                                         .font(.system(size: 9, design: .monospaced))
                                         .foregroundStyle(.secondary)
+                                        .help(callTokenBreakdownHelp(call))
                                 }
 
                                 if call.costUSD > 0 {
@@ -354,6 +362,16 @@ struct RecentCallsTable: View {
         if seconds < 3600 { return "\(seconds / 60)m ago" }
         if seconds < 86400 { return "\(seconds / 3600)h ago" }
         return "\(seconds / 86400)d ago"
+    }
+
+    private func callTokenBreakdownHelp(_ call: APICallEvent) -> String {
+        [
+            "Input \(CountFormat.abbreviated(call.inputTokens))",
+            "Cache write \(CountFormat.abbreviated(call.cacheCreationInputTokens))",
+            "Cache read \(CountFormat.abbreviated(call.cacheReadInputTokens))",
+            "Output \(CountFormat.abbreviated(call.outputTokens))",
+            "Reasoning \(CountFormat.abbreviated(call.reasoningOutputTokens))"
+        ].joined(separator: " / ")
     }
 }
 

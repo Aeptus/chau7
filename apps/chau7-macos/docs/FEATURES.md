@@ -184,6 +184,7 @@ Supported commands (46 parsers):
 - **Orphan-proof helpers** — chau7-proxy and chau7-remote exit when the parent app dies (no port-holding orphans after a crash), and the proxy's auto-restart backs off exponentially instead of crash-looping every 2 seconds.
 - **Token counting & cost calculation** — full token breakdown per call: input, output, cache creation, cache read, and reasoning tokens. Accurate cost calculation using provider-specific cache pricing (Anthropic 0.1x cache-read / 1.25x cache-write; OpenAI per-model cache-read rates, 0.1x–0.5x). Fallback estimation when extraction fails.
 - **Cache-aware usage dashboards** — Usage Monitor, Debug Console analytics, and API analytics keep cache creation/read, output, and reasoning token buckets distinguishable while still showing aggregate billable traffic and cost.
+- **Async usage analytics loading** — usage dashboards coalesce overlapping refreshes, run proxy analytics database reads off the main thread, and expose model-level cost rows.
 - **Regional number formatting** — usage dashboards and cost displays use a configurable regional number format (French default, European, or US) independently of the app language.
 - **Latency tracking** — total request duration and time-to-first-token (TTFT) per API call.
 - **Echo-only input latency** — per-session input latency measures keystroke→echo responsiveness only; command submission (Enter) is excluded for every session, so a slow command's runtime is never miscounted as UI lag.
