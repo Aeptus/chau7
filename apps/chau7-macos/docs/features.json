@@ -2094,6 +2094,13 @@
   },
   {
     "category": "SSH, Profiles & Remote",
+    "feature": "Menu Waiting-Status Gating",
+    "description": "A cursor-marked menu row (❯ 1.) flips the session to waiting-for-input so keyword-less selection menus get scanned for prompt cards, and a 1-second recheck while cards are live keeps arrow-navigation responses tracking the on-screen menu cursor",
+    "status": "Experimental",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "SSH, Profiles & Remote",
     "feature": "Remote iPhone Profiling Hooks",
     "description": "The iPhone app emits os.signpost intervals for frame processing, output append, and ANSI stripping so receive/render lag can be measured in Instruments",
     "status": "Experimental",
