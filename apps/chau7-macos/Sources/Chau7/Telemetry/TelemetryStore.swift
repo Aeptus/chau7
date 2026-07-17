@@ -1270,6 +1270,8 @@ final class TelemetryStore {
                        SUM(CASE WHEN COALESCE(cost_state, 'missing') IN ('complete', 'estimated') AND cost_usd IS NOT NULL THEN 1 ELSE 0 END) AS priced_run_count,
                        SUM(CASE WHEN COALESCE(cost_state, 'missing') = 'missing' OR cost_usd IS NULL THEN 1 ELSE 0 END) AS missing_cost_run_count,
                        COALESCE(SUM(total_input_tokens),0) AS total_input_tokens,
+                       COALESCE(SUM(total_cache_creation_input_tokens),0) AS total_cache_creation_input_tokens,
+                       COALESCE(SUM(total_cache_read_input_tokens),0) AS total_cache_read_input_tokens,
                        COALESCE(SUM(total_cached_input_tokens),0) AS total_cached_input_tokens,
                        COALESCE(SUM(total_output_tokens),0) AS total_output_tokens,
                        COALESCE(SUM(total_reasoning_output_tokens),0) AS total_reasoning_output_tokens,
@@ -1291,6 +1293,8 @@ final class TelemetryStore {
                    tab_provider_rollup.priced_run_count,
                    tab_provider_rollup.missing_cost_run_count,
                    tab_provider_rollup.total_input_tokens,
+                   tab_provider_rollup.total_cache_creation_input_tokens,
+                   tab_provider_rollup.total_cache_read_input_tokens,
                    tab_provider_rollup.total_cached_input_tokens,
                    tab_provider_rollup.total_output_tokens,
                    tab_provider_rollup.total_reasoning_output_tokens,
@@ -1321,6 +1325,8 @@ final class TelemetryStore {
                 var missingCostRunCount = 0
                 var totalInputTokens = 0
                 var totalCachedInputTokens = 0
+                var totalCacheCreationInputTokens = 0
+                var totalCacheReadInputTokens = 0
                 var totalOutputTokens = 0
                 var totalReasoningOutputTokens = 0
                 var totalCostUSD = 0.0
@@ -1340,16 +1346,18 @@ final class TelemetryStore {
                 aggregate.pricedRunCount += Int(sqlite3_column_int64(stmt, 3))
                 aggregate.missingCostRunCount += Int(sqlite3_column_int64(stmt, 4))
                 aggregate.totalInputTokens += Int(sqlite3_column_int64(stmt, 5))
-                aggregate.totalCachedInputTokens += Int(sqlite3_column_int64(stmt, 6))
-                aggregate.totalOutputTokens += Int(sqlite3_column_int64(stmt, 7))
-                aggregate.totalReasoningOutputTokens += Int(sqlite3_column_int64(stmt, 8))
-                aggregate.totalCostUSD += sqlite3_column_double(stmt, 9)
+                aggregate.totalCacheCreationInputTokens += Int(sqlite3_column_int64(stmt, 6))
+                aggregate.totalCacheReadInputTokens += Int(sqlite3_column_int64(stmt, 7))
+                aggregate.totalCachedInputTokens += Int(sqlite3_column_int64(stmt, 8))
+                aggregate.totalOutputTokens += Int(sqlite3_column_int64(stmt, 9))
+                aggregate.totalReasoningOutputTokens += Int(sqlite3_column_int64(stmt, 10))
+                aggregate.totalCostUSD += sqlite3_column_double(stmt, 11)
 
-                let latestKey = colText(stmt, 10) ?? ""
+                let latestKey = colText(stmt, 12) ?? ""
                 if latestKey >= aggregate.latestKey {
                     aggregate.latestKey = latestKey
                     aggregate.lastProvider = AnalyticsProvider.key(for: rawProvider)
-                    aggregate.lastLocationPath = colText(stmt, 11)
+                    aggregate.lastLocationPath = colText(stmt, 13)
                 }
                 aggregated[tabID] = aggregate
             }
@@ -1361,6 +1369,8 @@ final class TelemetryStore {
                     missingCostRunCount: aggregate.missingCostRunCount,
                     totalInputTokens: aggregate.totalInputTokens,
                     totalCachedInputTokens: aggregate.totalCachedInputTokens,
+                    totalCacheCreationInputTokens: aggregate.totalCacheCreationInputTokens,
+                    totalCacheReadInputTokens: aggregate.totalCacheReadInputTokens,
                     totalOutputTokens: aggregate.totalOutputTokens,
                     totalReasoningOutputTokens: aggregate.totalReasoningOutputTokens,
                     totalCostUSD: aggregate.totalCostUSD,
@@ -1451,6 +1461,8 @@ final class TelemetryStore {
                    SUM(CASE WHEN COALESCE(cost_state, 'missing') IN ('complete', 'estimated') AND cost_usd IS NOT NULL THEN 1 ELSE 0 END),
                    SUM(CASE WHEN COALESCE(cost_state, 'missing') = 'missing' OR cost_usd IS NULL THEN 1 ELSE 0 END),
                    COALESCE(SUM(total_input_tokens),0),
+                   COALESCE(SUM(total_cache_creation_input_tokens),0),
+                   COALESCE(SUM(total_cache_read_input_tokens),0),
                    COALESCE(SUM(total_cached_input_tokens),0),
                    COALESCE(SUM(total_output_tokens),0),
                    COALESCE(SUM(total_reasoning_output_tokens),0),
@@ -1486,10 +1498,12 @@ final class TelemetryStore {
                     pricedRunCount: (current?.pricedRunCount ?? 0) + Int(sqlite3_column_int64(stmt, 2)),
                     missingCostRunCount: (current?.missingCostRunCount ?? 0) + Int(sqlite3_column_int64(stmt, 3)),
                     totalInputTokens: (current?.totalInputTokens ?? 0) + Int(sqlite3_column_int64(stmt, 4)),
-                    totalCachedInputTokens: (current?.totalCachedInputTokens ?? 0) + Int(sqlite3_column_int64(stmt, 5)),
-                    totalOutputTokens: (current?.totalOutputTokens ?? 0) + Int(sqlite3_column_int64(stmt, 6)),
-                    totalReasoningOutputTokens: (current?.totalReasoningOutputTokens ?? 0) + Int(sqlite3_column_int64(stmt, 7)),
-                    totalCostUSD: (current?.totalCostUSD ?? 0) + sqlite3_column_double(stmt, 8)
+                    totalCachedInputTokens: (current?.totalCachedInputTokens ?? 0) + Int(sqlite3_column_int64(stmt, 7)),
+                    totalCacheCreationInputTokens: (current?.totalCacheCreationInputTokens ?? 0) + Int(sqlite3_column_int64(stmt, 5)),
+                    totalCacheReadInputTokens: (current?.totalCacheReadInputTokens ?? 0) + Int(sqlite3_column_int64(stmt, 6)),
+                    totalOutputTokens: (current?.totalOutputTokens ?? 0) + Int(sqlite3_column_int64(stmt, 8)),
+                    totalReasoningOutputTokens: (current?.totalReasoningOutputTokens ?? 0) + Int(sqlite3_column_int64(stmt, 9)),
+                    totalCostUSD: (current?.totalCostUSD ?? 0) + sqlite3_column_double(stmt, 10)
                 )
             }
             return aggregated.values.sorted { lhs, rhs in

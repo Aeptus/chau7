@@ -240,15 +240,19 @@ enum LocalizedFormatters {
 
     // DateFormatter/NumberFormatter creation is expensive and these are read on
     // render paths (e.g. shortTime per terminal line). Cache one instance per
-    // type, rebuilding only when the language changes. Access is main-thread only.
+    // type, rebuilding only when the language or regional number format changes.
+    // Access is main-thread only.
     private static var cachedLocaleID: String?
+    private static var cachedNumberFormatID: String?
     private static var formatterCache: [String: Any] = [:]
 
     private static func cached<T>(_ key: String, _ build: () -> T) -> T {
         let localeID = LocalizationManager.shared.currentLanguage.locale.identifier
-        if cachedLocaleID != localeID {
+        let numberFormatID = FeatureSettings.shared.regionalNumberFormat.rawValue
+        if cachedLocaleID != localeID || cachedNumberFormatID != numberFormatID {
             formatterCache.removeAll()
             cachedLocaleID = localeID
+            cachedNumberFormatID = numberFormatID
         }
         if let existing = formatterCache[key] as? T {
             return existing
@@ -338,11 +342,15 @@ enum LocalizedFormatters {
 
     // MARK: - Number Formatters
 
+    private static var numberLocale: Locale {
+        FeatureSettings.shared.regionalNumberFormat.locale
+    }
+
     /// Decimal number formatter localized (respects decimal separator)
     static var decimal: NumberFormatter {
         cached("decimal") {
             let f = NumberFormatter()
-            f.locale = LocalizationManager.shared.currentLanguage.locale
+            f.locale = numberLocale
             f.numberStyle = .decimal
             return f
         }
@@ -352,7 +360,7 @@ enum LocalizedFormatters {
     static var percent: NumberFormatter {
         cached("percent") {
             let f = NumberFormatter()
-            f.locale = LocalizationManager.shared.currentLanguage.locale
+            f.locale = numberLocale
             f.numberStyle = .percent
             f.maximumFractionDigits = 1
             return f
@@ -372,7 +380,7 @@ enum LocalizedFormatters {
     static var currency: NumberFormatter {
         cached("currency") {
             let f = NumberFormatter()
-            f.locale = LocalizationManager.shared.currentLanguage.locale
+            f.locale = numberLocale
             f.numberStyle = .currency
             f.currencyCode = "USD"
             return f
@@ -383,7 +391,7 @@ enum LocalizedFormatters {
     static var integer: NumberFormatter {
         cached("integer") {
             let f = NumberFormatter()
-            f.locale = LocalizationManager.shared.currentLanguage.locale
+            f.locale = numberLocale
             f.numberStyle = .decimal
             f.maximumFractionDigits = 0
             return f
@@ -417,9 +425,18 @@ enum LocalizedFormatters {
         relative.localizedString(for: date, relativeTo: Date())
     }
 
-    /// Formats a number with locale-appropriate decimal separator
-    static func formatDecimal(_ number: Double) -> String {
-        decimal.string(from: NSNumber(value: number)) ?? String(number)
+    /// Formats a number with locale-appropriate decimal and grouping separators.
+    static func formatDecimal(
+        _ number: Double,
+        minimumFractionDigits: Int = 0,
+        maximumFractionDigits: Int = 2
+    ) -> String {
+        let f = NumberFormatter()
+        f.locale = numberLocale
+        f.numberStyle = .decimal
+        f.minimumFractionDigits = minimumFractionDigits
+        f.maximumFractionDigits = maximumFractionDigits
+        return f.string(from: NSNumber(value: number)) ?? String(number)
     }
 
     /// Formats a number as a percentage
@@ -446,10 +463,16 @@ enum LocalizedFormatters {
     /// Formats a USD cost with extra precision for small amounts.
     /// Uses 4 decimal places for values under $0.01, 2 otherwise.
     static func formatCostPrecise(_ value: Double) -> String {
-        let f = currency
+        let f = NumberFormatter()
+        f.locale = numberLocale
+        f.numberStyle = .currency
+        f.currencyCode = "USD"
         if value < 0.01, value > 0 {
             f.minimumFractionDigits = 4
             f.maximumFractionDigits = 4
+        } else {
+            f.minimumFractionDigits = 2
+            f.maximumFractionDigits = 2
         }
         return f.string(from: NSNumber(value: value)) ?? String(format: "$%.2f", value)
     }

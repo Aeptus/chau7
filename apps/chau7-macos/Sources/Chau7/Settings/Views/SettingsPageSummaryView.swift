@@ -269,7 +269,8 @@ struct SettingsPageSummaryView: View {
                 statusItem("autoTheme", L("settings.ai.autoTheme", "AI Tab Theme"), enabledDisabled(settings.isAutoTabThemeEnabled), icon: "sparkles", tone: enabledTone(settings.isAutoTabThemeEnabled)),
                 countItem("customRules", L("settings.ai.customDetectionRules", "Custom Detection Rules"), settings.customAIDetectionRules.count, icon: "slider.horizontal.3"),
                 statusItem("errorExplain", L("settings.ai.errorExplain", "Error Explanation"), enabledDisabled(settings.errorExplainEnabled), icon: "questionmark.bubble", tone: enabledTone(settings.errorExplainEnabled)),
-                statusItem("usage", L("settings.ai.usageMonitoring", "Usage Monitoring"), enabledDisabled(settings.isUsageMonitoringEnabled), icon: "chart.bar", tone: enabledTone(settings.isUsageMonitoringEnabled))
+                statusItem("usage", L("settings.ai.usageMonitoring", "Usage Monitoring"), enabledDisabled(settings.isUsageMonitoringEnabled), icon: "chart.bar", tone: enabledTone(settings.isUsageMonitoringEnabled)),
+                statusItem("numberFormat", L("settings.ai.numberFormat", "Number Format"), settings.regionalNumberFormat.displayName, detail: settings.regionalNumberFormat.example, icon: "number", tone: .neutral)
             ]
         case .tokenOptimization:
             return [

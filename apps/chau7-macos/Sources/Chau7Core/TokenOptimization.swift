@@ -834,6 +834,8 @@ public struct TabTokenConsumption: Identifiable, Sendable {
     public let missingCostRunCount: Int
     public let totalInputTokens: Int
     public let totalCachedInputTokens: Int
+    public let totalCacheCreationInputTokens: Int
+    public let totalCacheReadInputTokens: Int
     public let totalOutputTokens: Int
     public let totalReasoningOutputTokens: Int
     public let totalCostUSD: Double
@@ -852,6 +854,8 @@ public struct TabTokenConsumption: Identifiable, Sendable {
         missingCostRunCount: Int = 0,
         totalInputTokens: Int,
         totalCachedInputTokens: Int = 0,
+        totalCacheCreationInputTokens: Int = 0,
+        totalCacheReadInputTokens: Int = 0,
         totalOutputTokens: Int,
         totalReasoningOutputTokens: Int = 0,
         totalCostUSD: Double,
@@ -864,6 +868,8 @@ public struct TabTokenConsumption: Identifiable, Sendable {
         self.missingCostRunCount = missingCostRunCount
         self.totalInputTokens = totalInputTokens
         self.totalCachedInputTokens = totalCachedInputTokens
+        self.totalCacheCreationInputTokens = totalCacheCreationInputTokens
+        self.totalCacheReadInputTokens = totalCacheReadInputTokens
         self.totalOutputTokens = totalOutputTokens
         self.totalReasoningOutputTokens = totalReasoningOutputTokens
         self.totalCostUSD = totalCostUSD
@@ -872,7 +878,15 @@ public struct TabTokenConsumption: Identifiable, Sendable {
     }
 
     public var totalBillableTokens: Int {
-        totalInputTokens + totalCachedInputTokens + totalOutputTokens + totalReasoningOutputTokens
+        totalInputTokens + effectiveCachedInputTokens + totalOutputTokens + totalReasoningOutputTokens
+    }
+
+    public var effectiveCachedInputTokens: Int {
+        max(totalCachedInputTokens, totalCacheCreationInputTokens + totalCacheReadInputTokens)
+    }
+
+    public var totalUncategorizedCachedInputTokens: Int {
+        max(0, totalCachedInputTokens - (totalCacheCreationInputTokens + totalCacheReadInputTokens))
     }
 }
 
@@ -884,6 +898,8 @@ public struct ProviderConsumptionStats: Identifiable, Sendable {
     public let missingCostRunCount: Int
     public let totalInputTokens: Int
     public let totalCachedInputTokens: Int
+    public let totalCacheCreationInputTokens: Int
+    public let totalCacheReadInputTokens: Int
     public let totalOutputTokens: Int
     public let totalReasoningOutputTokens: Int
     public let totalCostUSD: Double
@@ -898,6 +914,8 @@ public struct ProviderConsumptionStats: Identifiable, Sendable {
         missingCostRunCount: Int = 0,
         totalInputTokens: Int,
         totalCachedInputTokens: Int = 0,
+        totalCacheCreationInputTokens: Int = 0,
+        totalCacheReadInputTokens: Int = 0,
         totalOutputTokens: Int,
         totalReasoningOutputTokens: Int = 0,
         totalCostUSD: Double
@@ -908,13 +926,23 @@ public struct ProviderConsumptionStats: Identifiable, Sendable {
         self.missingCostRunCount = missingCostRunCount
         self.totalInputTokens = totalInputTokens
         self.totalCachedInputTokens = totalCachedInputTokens
+        self.totalCacheCreationInputTokens = totalCacheCreationInputTokens
+        self.totalCacheReadInputTokens = totalCacheReadInputTokens
         self.totalOutputTokens = totalOutputTokens
         self.totalReasoningOutputTokens = totalReasoningOutputTokens
         self.totalCostUSD = totalCostUSD
     }
 
     public var totalBillableTokens: Int {
-        totalInputTokens + totalCachedInputTokens + totalOutputTokens + totalReasoningOutputTokens
+        totalInputTokens + effectiveCachedInputTokens + totalOutputTokens + totalReasoningOutputTokens
+    }
+
+    public var effectiveCachedInputTokens: Int {
+        max(totalCachedInputTokens, totalCacheCreationInputTokens + totalCacheReadInputTokens)
+    }
+
+    public var totalUncategorizedCachedInputTokens: Int {
+        max(0, totalCachedInputTokens - (totalCacheCreationInputTokens + totalCacheReadInputTokens))
     }
 }
 

@@ -1094,7 +1094,14 @@
   {
     "category": "API Analytics",
     "feature": "Dashboard Cache Token Split",
-    "description": "Agent dashboard cards track cache creation and cache read tokens separately instead of collapsing all cached usage into reads",
+    "description": "Agent dashboard, Usage Monitor, Debug Console analytics, and API analytics keep cache creation and cache read tokens separate instead of collapsing all cached usage into one ambiguous token count",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "API Analytics",
+    "feature": "Regional Usage Number Formatting",
+    "description": "Usage dashboards and cost displays use a configurable regional number format - French by default, with European and US choices independent of app language",
     "status": "Shipped",
     "differentiator": "Yes"
   },

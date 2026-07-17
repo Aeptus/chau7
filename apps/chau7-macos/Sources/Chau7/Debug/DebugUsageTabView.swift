@@ -124,6 +124,14 @@ struct DebugUsageTabView: View {
                 Toggle("Enable usage/quota capture", isOn: $settings.isUsageMonitoringEnabled)
                 Toggle("Warn on unsustainable burn and 20/10/5% remaining", isOn: $settings.isUsageQuotaWarningsEnabled)
 
+                Picker("Number format", selection: $settings.regionalNumberFormat) {
+                    ForEach(RegionalNumberFormat.allCases) { format in
+                        Text("\(format.displayName) (\(format.example))").tag(format)
+                    }
+                }
+                .pickerStyle(.menu)
+                .frame(maxWidth: 260, alignment: .leading)
+
                 HStack {
                     Text("Claude statusLine capture")
                         .font(.system(size: 12))
@@ -198,11 +206,16 @@ struct DebugUsageTabView: View {
                 }
 
                 if let recent = summary.recentRunConsumption {
-                    HStack(spacing: 16) {
-                        stat("Recent Runs", "\(recent.runCount)")
-                        stat("10m Tokens", compactTokens(recent.totalBillableTokens))
-                        stat("10m Cost", currency(recent.totalCostUSD))
-                    }
+                    tokenBreakdownGrid([
+                        ("Recent Runs", LocalizedFormatters.formatInteger(recent.runCount)),
+                        ("Input", compactTokens(recent.totalInputTokens)),
+                        ("Cache Write", compactTokens(recent.totalCacheCreationInputTokens)),
+                        ("Cache Read", compactTokens(recent.totalCacheReadInputTokens)),
+                        ("Cache Other", compactTokens(recent.totalUncategorizedCachedInputTokens)),
+                        ("Output", compactTokens(recent.totalOutputTokens)),
+                        ("Reasoning", compactTokens(recent.totalReasoningOutputTokens)),
+                        ("10m Cost", currency(recent.totalCostUSD))
+                    ])
                 }
 
                 if summary.windowMetrics.isEmpty {
@@ -260,6 +273,20 @@ struct DebugUsageTabView: View {
                 .foregroundStyle(.secondary)
             Text(value)
                 .font(.system(size: 11, design: .monospaced))
+        }
+    }
+
+    private func tokenBreakdownGrid(_ values: [(String, String)]) -> some View {
+        LazyVGrid(
+            columns: [GridItem(.adaptive(minimum: 92), alignment: .leading)],
+            alignment: .leading,
+            spacing: 10
+        ) {
+            ForEach(Array(values.enumerated()), id: \.offset) { _, item in
+                if item.1 != "0" || item.0 == "Recent Runs" || item.0 == "10m Cost" {
+                    stat(item.0, item.1)
+                }
+            }
         }
     }
 
@@ -375,35 +402,29 @@ struct DebugUsageTabView: View {
     }
 
     private func currency(_ value: Double) -> String {
-        String(format: "$%.2f", value)
+        LocalizedFormatters.formatCostPrecise(value)
     }
 
     private func compactTokens(_ count: Int) -> String {
-        if count >= 1_000_000 {
-            return String(format: "%.1fM", Double(count) / 1_000_000)
-        }
-        if count >= 1000 {
-            return String(format: "%.1fK", Double(count) / 1000)
-        }
-        return "\(count)"
+        CountFormat.abbreviated(count)
     }
 
     private func paceLabel(_ percentPerMinute: Double) -> String {
-        String(format: "%.2f%%/m", percentPerMinute)
+        "\(LocalizedFormatters.formatDecimal(percentPerMinute, minimumFractionDigits: 2, maximumFractionDigits: 2))%/m"
     }
 
     private func latencyLabel(_ latencyMs: Double) -> String {
         if latencyMs >= 1000 {
-            return String(format: "%.1fs", latencyMs / 1000)
+            return "\(LocalizedFormatters.formatDecimal(latencyMs / 1000, minimumFractionDigits: 1, maximumFractionDigits: 1))s"
         }
-        return String(format: "%.0fms", latencyMs)
+        return "\(LocalizedFormatters.formatDecimal(latencyMs, maximumFractionDigits: 0))ms"
     }
 
     private func minutesLabel(_ remainingMinutes: Double) -> String {
         if remainingMinutes >= 120 {
-            return String(format: "%.1fh", remainingMinutes / 60)
+            return "\(LocalizedFormatters.formatDecimal(remainingMinutes / 60, minimumFractionDigits: 1, maximumFractionDigits: 1))h"
         }
-        return "\(Int(remainingMinutes.rounded()))m"
+        return "\(LocalizedFormatters.formatInteger(Int(remainingMinutes.rounded())))m"
     }
 
     private func comparableLatencyExplanation(for metricKinds: [ProviderLatencyMetricKind]) -> String {

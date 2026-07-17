@@ -57,6 +57,29 @@ struct AIIntegrationSettingsView: View {
 
             SettingsDivider()
 
+            SettingsSectionHeader(
+                L("settings.ai.usageDisplay", "Usage Display"),
+                icon: "chart.bar.doc.horizontal",
+                anchorID: "aiUsageDisplay"
+            )
+
+            SettingsRow(
+                L("settings.ai.numberFormat", "Number Format"),
+                help: L("settings.ai.numberFormat.help", "Controls token, cost, and dashboard number formatting independently from app language.")
+            ) {
+                Picker("", selection: $settings.regionalNumberFormat) {
+                    ForEach(RegionalNumberFormat.allCases) { format in
+                        Text("\(format.displayName) (\(format.example))").tag(format)
+                    }
+                }
+                .labelsHidden()
+                .pickerStyle(.menu)
+                .frame(minWidth: 180, idealWidth: 220, maxWidth: 260, alignment: .leading)
+                .accessibilityLabel(L("settings.ai.numberFormat", "Number Format"))
+            }
+
+            SettingsDivider()
+
             // LLM Provider (actionable — second)
             LLMSettingsView(settings: settings)
 

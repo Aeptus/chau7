@@ -1466,6 +1466,11 @@ final class FeatureSettings {
         set { terminalBehaviorStore.isUsageQuotaWarningsEnabled = newValue }
     }
 
+    var regionalNumberFormat: RegionalNumberFormat {
+        get { terminalBehaviorStore.regionalNumberFormat }
+        set { terminalBehaviorStore.regionalNumberFormat = newValue }
+    }
+
     var bellEnabled: Bool {
         get { terminalBehaviorStore.bellEnabled }
         set { terminalBehaviorStore.bellEnabled = newValue }
