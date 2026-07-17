@@ -2115,6 +2115,13 @@
   },
   {
     "category": "SSH, Profiles & Remote",
+    "feature": "Remote Menu Interaction Refinements",
+    "description": "Waiting patterns match ANSI-stripped output, ExitPlanMode plan reviews drive waiting status structurally, multi-select AskUserQuestion cards toggle live in the terminal with a separate submit (multi_select wire flag mirrored in the Go agent), and arrow-navigation prompt responses ride KEY_INPUT when supported",
+    "status": "Experimental",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "SSH, Profiles & Remote",
     "feature": "Remote iPhone Profiling Hooks",
     "description": "The iPhone app emits os.signpost intervals for frame processing, output append, and ANSI stripping so receive/render lag can be measured in Instruments",
     "status": "Experimental",
