@@ -53,7 +53,7 @@ jobs:
         run: swift test
 
       - name: Setup Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@v7
         with:
           go-version-file: apps/chau7-macos/chau7-proxy/go.mod
 
