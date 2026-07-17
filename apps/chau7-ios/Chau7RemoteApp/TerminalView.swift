@@ -82,6 +82,10 @@ struct TerminalView: View {
             }
             inputBar
         }
+        // The row also appears without a user gesture (auto-surface when the
+        // active tab waits on a menu), so animate on the resolved value rather
+        // than relying on the toggle button's withAnimation.
+        .animation(.easeInOut(duration: 0.15), value: showsPinnedControlKeys)
     }
 
     // MARK: - Status
@@ -343,10 +347,12 @@ struct TerminalView: View {
 
     // MARK: - Control Keys
 
-    /// The pinned fixed row shows only when the user opted in via the toggle
-    /// AND the keyboard is down — otherwise the accessory bar covers typing.
+    /// The pinned fixed row shows when the user opted in via the toggle OR the
+    /// active tab is waiting on a menu/input (auto-surface — the signal only
+    /// ever adds visibility), AND the keyboard is down — otherwise the
+    /// accessory bar covers typing.
     private var showsPinnedControlKeys: Bool {
-        showKeyboardBar && !inputFocused && client.canSendInput
+        (showKeyboardBar || client.activeTabNeedsMenuKeys) && !inputFocused && client.canSendInput
     }
 
     /// Horizontally scrolling row of terminal control keys, reused both as a

@@ -175,3 +175,43 @@ extension String {
         hasSuffix("/") ? String(dropLast()) : self
     }
 }
+
+// MARK: - Menu key heuristics
+
+/// Pure decision logic for driving TUI selection menus from the phone.
+/// Lives here (not on RemoteClient) so the host-less test bundle, which
+/// compiles collaborator sources directly, can exercise it.
+enum RemoteMenuKeyHeuristics {
+    /// Whether the terminal view should surface the control key row without
+    /// the user having pinned it: the active tab is showing a prompt card or
+    /// reports it is waiting for input/approval, so esc/arrows/Return are the
+    /// inputs the session actually needs right now.
+    static func activeTabNeedsMenuKeys(
+        prompts: [RemoteInteractivePrompt],
+        activity: RemoteActivityState?,
+        activeTabID: UInt32
+    ) -> Bool {
+        guard activeTabID != 0 else { return false }
+        if prompts.contains(where: { $0.tabID == activeTabID }) {
+            return true
+        }
+        guard let activity, activity.tabID == activeTabID else { return false }
+        return activity.status == .waitingInput || activity.status == .approvalRequired
+    }
+
+    /// Whether a text-field send should drop its submit terminator. TUI menus
+    /// act on a digit keypress immediately; the terminator would arrive as a
+    /// separate delayed Enter and land on whatever renders next (e.g. silently
+    /// answering the following question of a multi-question prompt). Gated on
+    /// a pending prompt for the tab — not on activity status — so numeric
+    /// free-text answers ("how many workers?") keep their Enter.
+    static func shouldSuppressSubmitTerminator(
+        text: String,
+        hasPendingPromptForActiveTab: Bool
+    ) -> Bool {
+        hasPendingPromptForActiveTab
+            && !text.isEmpty
+            && text.count <= 3
+            && text.allSatisfy { $0.isASCII && $0.isNumber }
+    }
+}

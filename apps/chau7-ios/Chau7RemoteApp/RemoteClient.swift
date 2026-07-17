@@ -148,6 +148,17 @@ final class RemoteClient {
         canSendInput(to: activeTabID)
     }
 
+    /// The active tab is showing a selection menu or waiting for input, so the
+    /// terminal view should surface the control keys (arrows/Return/esc)
+    /// without requiring the user to have pinned them.
+    var activeTabNeedsMenuKeys: Bool {
+        RemoteMenuKeyHeuristics.activeTabNeedsMenuKeys(
+            prompts: pendingInteractivePrompts,
+            activity: liveActivityState,
+            activeTabID: activeTabID
+        )
+    }
+
     /// SHA-256 fingerprint of this device's public key, for out-of-band
     /// verification against the value shown by the Mac.
     var iosKeyFingerprint: String {
