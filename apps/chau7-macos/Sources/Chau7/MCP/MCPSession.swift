@@ -814,9 +814,19 @@ final class MCPSession {
             return unsubscribeFromChau7State(arguments: arguments)
 
         // Control plane — the case label always equals the tool name and
-        // controlPlane.call forwards it, so dispatch all tab_* tools uniformly.
-        case "tab_list", "tab_create", "tab_exec", "tab_status", "tab_wait_ready",
-             "tab_send_input", "tab_press_key", "tab_submit_prompt", "tab_close", "tab_output":
+        // controlPlane.call forwards it, so dispatch tab_* tools uniformly.
+        // Read-only + tab_create carry no user-tab-hijack risk.
+        case "tab_list", "tab_create", "tab_status", "tab_wait_ready", "tab_output":
+            return classifyToolResponse(controlPlane.call(name: name, arguments: arguments))
+
+        // Mutating tab tools: MCP may only drive tabs it created. Reject attempts
+        // to exec/inject/close the user's own (non-MCP) tabs before dispatching,
+        // so a raw tab UUID can't reach a terminal the user opened themselves.
+        case "tab_exec", "tab_send_input", "tab_press_key", "tab_submit_prompt", "tab_close":
+            if let tabID = arguments["tab_id"] as? String,
+               let scopeError = controlService.mcpControlScopeError(forTabID: tabID) {
+                return classifyToolResponse(scopeError)
+            }
             return classifyToolResponse(controlPlane.call(name: name, arguments: arguments))
 
         case "agent_launch":

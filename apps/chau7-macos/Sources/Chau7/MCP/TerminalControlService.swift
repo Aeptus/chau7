@@ -2241,6 +2241,30 @@ final class TerminalControlService {
         return nil
     }
 
+    /// Guard for external MCP clients calling *mutating* tab tools (exec, input,
+    /// key press, submit, close). Returns an error JSON string when `tabID`
+    /// either does not resolve or is a tab the user opened (not MCP-controlled),
+    /// and nil when the tab is MCP-controlled and the tool may proceed.
+    ///
+    /// This limits the MCP surface to tabs it created (via `tab_create` /
+    /// `agent_launch`) so a connected agent cannot drive keystrokes into, or
+    /// close, the user's own terminals via a raw tab UUID. Read-only tools and
+    /// in-app callers (Agent Dashboard, scripting socket) deliberately bypass it.
+    func mcpControlScopeError(forTabID tabID: String) -> String? {
+        onMain {
+            guard let (tab, _) = self.resolveTab(tabID) else {
+                return self.jsonError("Tab not found: \(tabID)")
+            }
+            guard tab.isMCPControlled else {
+                return self.jsonError(
+                    "Tab \(tabID) is not MCP-controlled; MCP can only drive tabs it created " +
+                        "via tab_create or agent_launch."
+                )
+            }
+            return nil
+        }
+    }
+
     private func tabSummary(_ tab: OverlayTab) -> [String: Any] {
         let session = tab.displaySession ?? tab.session
         var result: [String: Any] = [

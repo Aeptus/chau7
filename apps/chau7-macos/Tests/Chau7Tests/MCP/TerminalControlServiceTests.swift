@@ -632,6 +632,26 @@ final class TerminalControlServiceTests: XCTestCase {
         return json
     }
 
+    // MARK: - MCP-controlled tab scoping (mutating tools)
+
+    func testMutatingScopeRejectsUserOpenedTab() throws {
+        let tab = try XCTUnwrap(overlayModel.tabs.first)
+        let tabID = TerminalControlService.shared.controlPlaneTabID(for: tab.id)
+        // The default tab was opened by the user, not created via MCP.
+        let err = try XCTUnwrap(TerminalControlService.shared.mcpControlScopeError(forTabID: tabID))
+        let json = try XCTUnwrap(parseJSONObject(err))
+        XCTAssertTrue((json["error"] as? String ?? "").contains("not MCP-controlled"), "got \(json)")
+    }
+
+    func testMutatingScopeAllowsMCPCreatedTab() throws {
+        TerminalControlService.shared.activeOverlayModelProvider = { self.overlayModel }
+        let created = try XCTUnwrap(parseJSONObject(
+            TerminalControlService.shared.createTab(directory: nil, windowID: nil)
+        ))
+        let tabID = try XCTUnwrap(created["tab_id"] as? String)
+        XCTAssertNil(TerminalControlService.shared.mcpControlScopeError(forTabID: tabID))
+    }
+
     // MARK: - jsonError escaping
 
     func testErrorResponseEscapesControlCharacters() throws {
