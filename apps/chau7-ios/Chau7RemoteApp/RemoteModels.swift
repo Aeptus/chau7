@@ -199,6 +199,33 @@ enum RemoteMenuKeyHeuristics {
         return activity.status == .waitingInput || activity.status == .approvalRequired
     }
 
+    /// Translates a scraped arrow-navigation response — repeated up/down CSI
+    /// sequences plus an optional trailing CR/LF — into semantic keys for the
+    /// KEY_INPUT frame, where the Mac's encoder handles application-cursor
+    /// mode correctly. Returns nil for anything that isn't pure navigation
+    /// (digits, y/n tokens, free text), which must stay on the text path.
+    static func semanticKeys(forNavigationResponse response: String) -> [RemoteKeyInputPayload.Key]? {
+        var rest = Substring(response)
+        var keys: [RemoteKeyInputPayload.Key] = []
+        while true {
+            if rest.hasPrefix("\u{1B}[A") {
+                keys.append(.init(key: "up"))
+                rest = rest.dropFirst(3)
+            } else if rest.hasPrefix("\u{1B}[B") {
+                keys.append(.init(key: "down"))
+                rest = rest.dropFirst(3)
+            } else {
+                break
+            }
+        }
+        if rest == "\r" || rest == "\n" {
+            keys.append(.init(key: "enter"))
+            rest = ""
+        }
+        guard rest.isEmpty, !keys.isEmpty else { return nil }
+        return keys
+    }
+
     /// Whether a text-field send should drop its submit terminator. TUI menus
     /// act on a digit keypress immediately; the terminator would arrive as a
     /// separate delayed Enter and land on whatever renders next (e.g. silently

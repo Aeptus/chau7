@@ -416,21 +416,33 @@ final class RemoteClient {
     /// cursor mode and control combos behave like locally-typed keys.
     @discardableResult
     func sendKeyInput(_ keys: [RemoteKeyInputPayload.Key]) -> Bool {
-        guard !keys.isEmpty, supportsKeyInput, canSendInput else { return false }
+        sendKeyInput(keys, to: activeTabID)
+    }
+
+    @discardableResult
+    func sendKeyInput(
+        _ keys: [RemoteKeyInputPayload.Key],
+        to tabID: UInt32,
+        allowUnlistedTab: Bool = false
+    ) -> Bool {
+        guard !keys.isEmpty, supportsKeyInput,
+              canSendInput(to: tabID, allowUnlistedTab: allowUnlistedTab) else {
+            return false
+        }
         guard let data = try? RemoteJSON.encoder.encode(RemoteKeyInputPayload(keys: keys)) else {
             return false
         }
-        guard sendEncrypted(type: .keyInput, tabID: activeTabID, payload: data) else {
+        guard sendEncrypted(type: .keyInput, tabID: tabID, payload: data) else {
             reportBlockedInput(
                 "Key input could not be encrypted for the current remote session.",
                 reason: "encrypt_failed",
-                tabID: activeTabID
+                tabID: tabID
             )
             return false
         }
         if lastError != nil { lastError = nil }
         DiagnosticsLog.shared.debug(.input, "Key input forwarded to relay", [
-            "tab_id": String(activeTabID),
+            "tab_id": String(tabID),
             "keys": String(keys.count)
         ])
         return true
@@ -1226,6 +1238,17 @@ final class RemoteClient {
             .replacingOccurrences(of: "\r\n", with: "\n")
             .replacingOccurrences(of: "\n", with: "\r")
         guard !normalizedResponse.isEmpty else { return false }
+
+        // Arrow-navigation responses (unnumbered menus) ride KEY_INPUT when
+        // the Mac supports it: the semantic keys get application-cursor-mode
+        // handling that raw CSI text cannot. Anything that isn't pure
+        // navigation — digits, y/n tokens, free text — stays on the text
+        // path, as does everything when the capability (or the send) fails.
+        if supportsKeyInput,
+           let keys = RemoteMenuKeyHeuristics.semanticKeys(forNavigationResponse: normalizedResponse),
+           sendKeyInput(keys, to: tabID, allowUnlistedTab: true) {
+            return true
+        }
 
         if normalizedResponse.hasSuffix("\r") {
             let body = String(normalizedResponse.dropLast())

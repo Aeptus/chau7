@@ -221,6 +221,33 @@ final class RemoteMenuKeyHeuristicsTests: XCTestCase {
         ))
     }
 
+    // MARK: - semanticKeys(forNavigationResponse:)
+
+    func testNavigationResponsesTranslateToSemanticKeys() {
+        XCTAssertEqual(
+            RemoteMenuKeyHeuristics.semanticKeys(forNavigationResponse: "\u{1B}[B\u{1B}[B\r")?.map(\.key),
+            ["down", "down", "enter"]
+        )
+        XCTAssertEqual(
+            RemoteMenuKeyHeuristics.semanticKeys(forNavigationResponse: "\u{1B}[A\r")?.map(\.key),
+            ["up", "enter"]
+        )
+        XCTAssertEqual(
+            RemoteMenuKeyHeuristics.semanticKeys(forNavigationResponse: "\r")?.map(\.key),
+            ["enter"],
+            "bare Enter (already-selected option) is pure navigation"
+        )
+    }
+
+    func testNonNavigationResponsesStayOnTextPath() {
+        for response in ["1\r", "y\r", "", "text\r", "\u{1B}[B1\r", "\u{1B}"] {
+            XCTAssertNil(
+                RemoteMenuKeyHeuristics.semanticKeys(forNavigationResponse: response),
+                "response \(response.debugDescription) must not translate"
+            )
+        }
+    }
+
     // MARK: - shouldSuppressSubmitTerminator
 
     func testSuppressesShortDigitSendsWhilePromptPending() {
