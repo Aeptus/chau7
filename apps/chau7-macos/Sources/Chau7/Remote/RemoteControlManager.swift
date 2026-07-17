@@ -387,6 +387,8 @@ final class RemoteControlManager {
             handleTabSwitch(frame)
         case .input:
             handleInput(frame)
+        case .keyInput:
+            handleKeyInput(frame)
         case .remoteTelemetry:
             handleRemoteTelemetry(frame)
         case .clientState:
@@ -452,6 +454,43 @@ final class RemoteControlManager {
         // (including legacy iOS builds' LF) becomes a provider-aware delayed
         // submit inside sendRemoteSubmittedInput.
         session.sendRemoteSubmittedInput(text)
+    }
+
+    /// Semantic key presses (KEY_INPUT, 0x24). Routed through the terminal
+    /// view's key encoder via sendKeyPress, so DECCKM application-cursor mode
+    /// and control combos encode exactly like locally-typed keys. No
+    /// protected-action gate: keys cannot spell commands, and digits/Enter
+    /// were already sendable as INPUT text. Unknown key names are logged and
+    /// skipped so an older Mac degrades per-key rather than dropping the
+    /// whole sequence.
+    private func handleKeyInput(_ frame: RemoteFrame) {
+        guard let payload = try? JSONDecoder().decode(RemoteKeyInputPayload.self, from: frame.payload) else {
+            sendError(code: "invalid_key_input", message: "Remote key input must be valid JSON.", tabID: frame.tabID)
+            return
+        }
+        guard let (session, _) = resolveInputTarget(for: frame.tabID) else {
+            sendError(code: "tab_unavailable", message: "That tab cannot receive remote input right now.", tabID: frame.tabID)
+            return
+        }
+
+        var accumulatedDelayMs = 0
+        for step in AIAutomationStrategy.keyInputSchedule(for: payload.keys) {
+            let keyPress: TerminalKeyPress
+            do {
+                keyPress = try TerminalKeyPress(key: step.key.key, modifiers: step.key.modifiers ?? [])
+            } catch {
+                logger.warning("Remote: skipping unsupported key input '\(step.key.key, privacy: .public)': \(error.localizedDescription, privacy: .public)")
+                continue
+            }
+            accumulatedDelayMs += step.delayMs
+            if accumulatedDelayMs == 0 {
+                session.sendKeyPress(keyPress)
+            } else {
+                DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(accumulatedDelayMs)) { [weak session] in
+                    session?.sendKeyPress(keyPress)
+                }
+            }
+        }
     }
 
     // MARK: - Approval Frames
@@ -1075,7 +1114,10 @@ final class RemoteControlManager {
         )
 
         do {
-            let payload = try JSONEncoder().encode(RemoteTabListPayload(tabs: tabPayloads))
+            let payload = try JSONEncoder().encode(RemoteTabListPayload(
+                tabs: tabPayloads,
+                capabilities: [RemoteTabListPayload.keyInputCapability]
+            ))
             sendFrame(type: .tabList, tabID: RemoteTabRegistry.unscopedTabID, payload: payload)
             // Only log at .info on tab-count change; steady-state refreshes are
             // ~1 per second and drown out every other chau7 log entry.
