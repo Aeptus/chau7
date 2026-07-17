@@ -328,7 +328,15 @@ extension TerminalSessionModel {
             "Ready for your input",
             "Enter your",
             "Type your",
-            "waiting for your input"
+            "waiting for your input",
+            // Cursor-marked first menu row: flips waiting status for
+            // keyword-less selection menus (AskUserQuestion) so the
+            // structural prompt detector gets consulted. Menus always open
+            // with option 1 selected. Best-effort on raw PTY text — matches
+            // whole-row-styled and unstyled renders; a styled glyph split
+            // from the digits by SGR codes won't match.
+            "❯ 1.",
+            "❯ 1)"
         ]
 
         let lowercased = text.lowercased()
