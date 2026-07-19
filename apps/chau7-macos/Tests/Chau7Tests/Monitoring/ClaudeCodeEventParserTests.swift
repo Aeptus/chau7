@@ -3,9 +3,11 @@ import XCTest
 
 final class ClaudeCodeEventParserTests: XCTestCase {
     func testParsesToolInputAndToolUseID() throws {
+        // swiftlint:disable line_length
         let line = """
         {"type":"tool_start","hook":"PreToolUse","sessionId":"s1","transcriptPath":"/x","toolName":"AskUserQuestion","toolUseID":"toolu_9","message":"","cwd":"/repo","tabID":"tab","timestamp":"2026-07-17T10:00:00Z","toolInput":{"questions":[{"question":"Q?","options":[{"label":"A"},{"label":"B"}]}]}}
         """
+        // swiftlint:enable line_length
 
         let event = try ClaudeCodeEventParser.parse(line: line)
         XCTAssertEqual(event.type, .toolStart)

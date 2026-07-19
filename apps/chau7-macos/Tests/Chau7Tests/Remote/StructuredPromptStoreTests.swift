@@ -11,13 +11,13 @@ final class StructuredPromptStoreTests: XCTestCase {
         labels: [String] = ["OAuth (Recommended)", "JWT", "Cancel setup"],
         multiSelect: Bool = false
     ) -> String {
-        var q: [String: Any] = [
+        var questionDict: [String: Any] = [
             "question": question,
             "options": labels.map { ["label": $0, "description": "d"] },
             "multiSelect": multiSelect
         ]
-        if let header { q["header"] = header }
-        let root: [String: Any] = ["questions": [q]]
+        if let header { questionDict["header"] = header }
+        let root: [String: Any] = ["questions": [questionDict]]
         let data = try! JSONSerialization.data(withJSONObject: root)
         return String(data: data, encoding: .utf8)!
     }
