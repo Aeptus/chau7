@@ -21,6 +21,10 @@ struct TerminalView: View {
     @AppStorage(AppSettings.colorSchemeNameKey) private var colorSchemeName = AppSettings.colorSchemeNameDefault
 
     @State private var inputText = ""
+    /// The user hid an auto-surfaced key row for the current waiting episode.
+    /// Reset when the active tab's need signal rises again, so the row
+    /// re-appears for the NEXT menu without permanently re-pinning itself.
+    @State private var autoKeysDismissed = false
     @State private var sendCount = 0
     @State private var justSent = false
     @State private var pendingProtectedSend: ProtectedRemoteSend?
@@ -72,11 +76,10 @@ struct TerminalView: View {
             statusBar
             tabsBar
             outputView
-            // Opt-in escape hatch: the control keys stay available as a fixed
-            // row only when the user pinned them AND the software keyboard is
-            // down. While typing, the same keys ride above the keyboard as an
-            // accessory (see the input field's `.toolbar`), so this guard on
-            // `!inputFocused` avoids a redundant double bar.
+            // One in-flow key row, keyboard up or down. It deliberately does
+            // NOT use a keyboard-accessory toolbar: the system accessory
+            // rendered over the input bar and fought keyboard avoidance,
+            // while an in-flow row always sits cleanly above the input.
             if showsPinnedControlKeys {
                 controlKeyRow
             }
@@ -86,6 +89,9 @@ struct TerminalView: View {
         // active tab waits on a menu), so animate on the resolved value rather
         // than relying on the toggle button's withAnimation.
         .animation(.easeInOut(duration: 0.15), value: showsPinnedControlKeys)
+        .onChange(of: client.activeTabNeedsMenuKeys) { _, needed in
+            if needed { autoKeysDismissed = false }
+        }
     }
 
     // MARK: - Status
@@ -351,13 +357,20 @@ struct TerminalView: View {
     /// active tab is waiting on a menu/input (auto-surface — the signal only
     /// ever adds visibility), AND the keyboard is down — otherwise the
     /// accessory bar covers typing.
+    /// Visible when pinned by the user OR auto-surfaced because the active
+    /// tab waits on a menu (unless the user dismissed it for this episode).
+    /// The keyboard button is authoritative: it always toggles this off/on.
     private var showsPinnedControlKeys: Bool {
-        (showKeyboardBar || client.activeTabNeedsMenuKeys) && !inputFocused && client.canSendInput
+        controlKeyRowRequested && client.canSendInput
     }
 
-    /// Horizontally scrolling row of terminal control keys, reused both as a
-    /// keyboard accessory (above the software keyboard while typing) and as the
-    /// opt-in pinned bar. The `maxWidth: .infinity` lets the ScrollView span the
+    private var controlKeyRowRequested: Bool {
+        showKeyboardBar || (client.activeTabNeedsMenuKeys && !autoKeysDismissed)
+    }
+
+    /// Horizontally scrolling row of terminal control keys, shown as one
+    /// in-flow row above the input bar. The `maxWidth: .infinity` lets the
+    /// ScrollView span the
     /// full width when hosted inside `ToolbarItemGroup(placement: .keyboard)`,
     /// which otherwise collapses it to its intrinsic (content) width.
     private var controlKeyRow: some View {
@@ -392,14 +405,14 @@ struct TerminalView: View {
     private var inputBar: some View {
         HStack(spacing: 8) {
             Button {
-                withAnimation(.easeInOut(duration: 0.15)) { showKeyboardBar.toggle() }
+                withAnimation(.easeInOut(duration: 0.15)) { toggleControlKeyRow() }
             } label: {
-                Image(systemName: showKeyboardBar ? "keyboard.chevron.compact.down" : "keyboard")
+                Image(systemName: controlKeyRowRequested ? "keyboard.chevron.compact.down" : "keyboard")
                     .font(.title3)
                     .frame(width: 32, height: 32)
             }
             .disabled(!client.canSendInput)
-            .accessibilityLabel(showKeyboardBar ? "Unpin control keys" : "Pin control keys")
+            .accessibilityLabel(controlKeyRowRequested ? "Hide control keys" : "Show control keys")
 
             TextField("Input", text: $inputText, axis: .vertical)
                 .font(.system(.body, design: .monospaced))
@@ -411,22 +424,24 @@ struct TerminalView: View {
                 .onChange(of: inputText) { oldValue, newValue in
                     handleInputChange(from: oldValue, to: newValue)
                 }
-                .toolbar {
-                    // Control keys ride above the software keyboard while the
-                    // input is focused — and only then. Gated on `canSendInput`
-                    // so we never surface keys that can't be forwarded.
-                    ToolbarItemGroup(placement: .keyboard) {
-                        if client.canSendInput {
-                            controlKeyRow
-                        }
-                    }
-                }
 
             sendButton
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
         .background(Color(UIColor.secondarySystemBackground))
+    }
+
+    /// Hide always wins over any reason the row is visible: hiding an
+    /// auto-surfaced row dismisses it for this waiting episode (it returns
+    /// for the next menu); hiding a pinned row unpins it. Showing pins it.
+    private func toggleControlKeyRow() {
+        if controlKeyRowRequested {
+            showKeyboardBar = false
+            autoKeysDismissed = true
+        } else {
+            showKeyboardBar = true
+        }
     }
 
     @ViewBuilder
