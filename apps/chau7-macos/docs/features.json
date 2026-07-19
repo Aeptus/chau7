@@ -2136,6 +2136,13 @@
   },
   {
     "category": "SSH, Profiles & Remote",
+    "feature": "iPhone Control Key Row Layout",
+    "description": "The terminal control keys render as one in-flow row above the input bar with the keyboard up or down (no keyboard-accessory overlay), and the keyboard button authoritatively hides or shows the row, dismissing auto-surfaced rows per waiting episode",
+    "status": "Experimental",
+    "differentiator": "No"
+  },
+  {
+    "category": "SSH, Profiles & Remote",
     "feature": "Remote iPhone Profiling Hooks",
     "description": "The iPhone app emits os.signpost intervals for frame processing, output append, and ANSI stripping so receive/render lag can be measured in Instruments",
     "status": "Experimental",
