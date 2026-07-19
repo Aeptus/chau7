@@ -3033,7 +3033,7 @@
   {
     "category": "Terminal",
     "feature": "Keyboard Shortcut Standardization",
-    "description": "Chau7-specific shortcuts avoid standard macOS conflicts where possible, tab selection is internationalized with Cmd+1-9, Actual Size uses Cmd+0, and Snippets uses Cmd+; for a single-key command that does not collide with Export Text",
+    "description": "Chau7-specific shortcuts avoid standard macOS conflicts where possible, tab selection is internationalized with Cmd+1-9, Actual Size uses Cmd+0, Snippets uses Cmd+; for a single-key command that does not collide with Export Text, and standard edit shortcuts stay on the macOS menu/responder-chain path before custom overlay keybindings run",
     "status": "Shipped",
     "differentiator": "No"
   },

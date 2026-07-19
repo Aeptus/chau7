@@ -1761,16 +1761,6 @@ private final class SettingsToolbarDelegate: NSObject, NSToolbarDelegate {
             }
         }
 
-        if isOverlayWindow, !isTextInputFocused(in: window),
-           let action = KeybindingsManager.shared.actionForEvent(event) {
-            if action == .closeTab {
-                closeTabFromShortcut()
-            } else {
-                KeybindingsManager.shared.executeAction(action, delegate: self, overlayModel: overlayModel)
-            }
-            return nil
-        }
-
         if isOverlayWindow {
             if eventMatchesMenuShortcut(event) {
                 return event

@@ -713,6 +713,8 @@ The Window menu disables unavailable tab and pane actions, lists tabs from the a
 | Cmd+; | Snippets |
 | Cmd+Option+P | Command palette |
 
+Standard edit shortcuts (`Cmd+C`, `Cmd+V`, `Cmd+A`) stay on the macOS menu/responder-chain path before custom overlay keybindings run, so focused text fields and terminal panes receive exactly one edit action.
+
 ### View and Terminal
 
 | Shortcut | Action |
