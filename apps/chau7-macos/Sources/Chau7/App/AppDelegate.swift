@@ -1728,6 +1728,10 @@ private final class SettingsToolbarDelegate: NSObject, NSToolbarDelegate {
             )
         }
 
+        if isOverlayWindow, eventMatchesMenuShortcut(event) {
+            return event
+        }
+
         if isOverlayWindow {
             let tabSwitchMode = FeatureSettings.shared.tabSwitchShortcutMode
             if tabSwitchMode.allowsCommandNumber,
@@ -1762,11 +1766,11 @@ private final class SettingsToolbarDelegate: NSObject, NSToolbarDelegate {
         }
 
         if isOverlayWindow {
-            if eventMatchesMenuShortcut(event) {
-                return event
-            }
             if !isTextInputFocused(in: window),
-               let action = KeybindingsManager.shared.actionForEvent(event) {
+               let action = KeybindingsManager.shared.actionForEvent(
+                   event,
+                   suppressingShippedDefaultShortcuts: true
+               ) {
                 if action == .closeTab {
                     closeTabFromShortcut()
                 } else {
