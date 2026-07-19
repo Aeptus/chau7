@@ -473,6 +473,16 @@ final class RemoteControlManager {
             return
         }
 
+        // ^C / ^U discard the line without executing anything, so no
+        // input-line hook fires — retire any advertised prefill card here.
+        // (Enter retires it through the input-line hook when the line runs.)
+        let discardsLine = payload.keys.contains { key in
+            (key.modifiers ?? []).contains("control") && ["c", "u"].contains(key.key.lowercased())
+        }
+        if discardsLine {
+            session.clearDeliveredPrefillTracking()
+        }
+
         var accumulatedDelayMs = 0
         for step in AIAutomationStrategy.keyInputSchedule(for: payload.keys) {
             let keyPress: TerminalKeyPress
@@ -884,6 +894,15 @@ final class RemoteControlManager {
                 return []
             }
 
+            // A restored tab holding an unconfirmed resume prefill is
+            // invisible from the phone — sends concatenate onto it and
+            // nothing warns the user. Surface it as a Run/Clear card: Run is
+            // a bare Enter (executes the line as-is, never clears first),
+            // Clear is ^U. Cleared automatically once any input line runs.
+            if let prefillCard = pendingPrefillPrompt(for: tab, tabID: tabID) {
+                return [prefillCard]
+            }
+
             // A hook-sourced structured question is authoritative for its tab:
             // exact text and options straight from the tool call, no status
             // gate (the scrape's waiting-status patterns can miss a menu
@@ -947,6 +966,38 @@ final class RemoteControlManager {
                 ).withComposedPushText()
             }
         }
+    }
+
+    /// Card for a delivered-but-unconfirmed restore prefill (e.g.
+    /// `claude --resume <id>` placed on the shell line awaiting Enter). Only
+    /// while no AI tool is running in the pane — once the resume executes,
+    /// provider detection retires the card even before the input-line hook
+    /// clears the tracking.
+    private func pendingPrefillPrompt(for tab: OverlayTab, tabID: UInt32) -> RemoteInteractivePrompt? {
+        for (paneID, session) in tab.splitController.terminalSessions {
+            guard let prefillText = session.deliveredPrefillText,
+                  session.aiDisplayAppName == nil,
+                  session.activeAppName == nil else {
+                continue
+            }
+            return RemoteInteractivePrompt(
+                id: "tab-\(tabID)-prefill-\(paneID.uuidString.lowercased())",
+                tabID: tabID,
+                tabTitle: activityTabTitle(for: tab),
+                toolName: activityToolName(for: session, tab: tab),
+                projectName: activityProjectName(for: session),
+                branchName: activityBranchName(for: session),
+                currentDirectory: activityCurrentDirectory(for: session),
+                prompt: "Resume command ready to run",
+                detail: prefillText,
+                options: [
+                    RemoteInteractivePromptOption(id: "run", label: "Run it", response: "\r"),
+                    RemoteInteractivePromptOption(id: "clear", label: "Clear the line", response: "\u{15}")
+                ],
+                detectedAt: session.deliveredPrefillAt ?? Date(timeIntervalSince1970: 0)
+            ).withComposedPushText()
+        }
+        return nil
     }
 
     private func activityTabTitle(for tab: OverlayTab) -> String {

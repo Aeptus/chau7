@@ -1362,6 +1362,9 @@ extension TerminalSessionModel {
     }
 
     func handleInputLine(_ line: String) {
+        // An executed input line means any delivered restore prefill either
+        // ran or was replaced — stop advertising it to the remote client.
+        clearDeliveredPrefillTracking()
         // Sanitize input to remove escape sequences that contaminate history/logs
         let sanitized = EscapeSequenceSanitizer.sanitize(line)
         let rawTrimmed = sanitized.trimmingCharacters(in: .whitespacesAndNewlines)

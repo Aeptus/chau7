@@ -1081,6 +1081,12 @@ final class TerminalSessionModel {
     @ObservationIgnored var suppressWaitingInputFallbackUntilNextUserCommand = false
     @ObservationIgnored var didLogRestoreSuppressionOnce = false
     @ObservationIgnored var deliveredSystemResumePrefillSinceLastUserCommand = false
+    /// The restore prefill currently sitting on the shell line awaiting an
+    /// explicit Enter, surfaced to the remote client as a Run/Clear card.
+    /// Cleared when any input line executes (the line ran or was replaced)
+    /// and when a remote submitted send kills the line.
+    @ObservationIgnored private(set) var deliveredPrefillText: String?
+    @ObservationIgnored private(set) var deliveredPrefillAt: Date?
     @ObservationIgnored var outputLatencySampleCount = 0
     @ObservationIgnored var outputLatencyTotalMs: Double = 0
     @ObservationIgnored let inputLagLogThresholdMs: Double = 60
@@ -2468,6 +2474,12 @@ final class TerminalSessionModel {
             // confirmation, or a stale draft — instead of concatenating onto
             // it. No-op on an empty line; ignored by TUI selection menus.
             sendRawInput("\u{15}")
+            clearDeliveredPrefillTracking()
+        } else if plan.insertText.contains("\u{15}") || plan.insertText.contains("\u{03}") {
+            // A raw ^U (prefill card's Clear) or ^C from the key bar discards
+            // the line without executing anything, so no input-line hook will
+            // fire — retire the prefill card here.
+            clearDeliveredPrefillTracking()
         }
         if !plan.insertText.isEmpty {
             switch plan.insertMode {
@@ -2478,6 +2490,13 @@ final class TerminalSessionModel {
             }
         }
         scheduleRemoteSubmit(mode: plan.submitMode, delayMs: plan.submitDelayMs)
+    }
+
+    /// Called from the ShellIntegration input-line handler too: any executed
+    /// line means the prefill either ran or was replaced.
+    func clearDeliveredPrefillTracking() {
+        deliveredPrefillText = nil
+        deliveredPrefillAt = nil
     }
 
     /// Remote submits use their own work-item pool: no mutual cancellation
@@ -2709,6 +2728,8 @@ final class TerminalSessionModel {
             pendingPrefillOnDelivered = nil
             pendingPrefillOnRejected = nil
             deliveredSystemResumePrefillSinceLastUserCommand = true
+            deliveredPrefillText = text
+            deliveredPrefillAt = Date()
             suppressWaitingInputFallbackUntilNextUserCommand = true
             pendingWaitingInputFallbackArmed = false
             pendingWaitingInputFallbackSawLiveOutput = false
