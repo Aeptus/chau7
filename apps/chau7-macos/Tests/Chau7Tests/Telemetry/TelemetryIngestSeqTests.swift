@@ -7,6 +7,17 @@ import XCTest
 /// one shared counter, so no insert statement carries the column.
 final class TelemetryIngestSeqTests: XCTestCase {
 
+    override func setUp() {
+        super.setUp()
+        // The shared telemetry store pins its SQLite connection to whichever
+        // home was active at first init. An earlier test elsewhere in the suite
+        // can isolate itself under a temp `CHAU7_HOME_ROOT` (later deleted),
+        // leaving that connection pointing at a vanished database — so inserts
+        // here would silently no-op and queries return nothing. Reopen at the
+        // current (real) home to establish a live database before each test.
+        TelemetryStore.shared.reopenForTesting()
+    }
+
     private func makeRun(id: String, startedAt: Date, repoPath: String) -> TelemetryRun {
         TelemetryRun(
             id: id,

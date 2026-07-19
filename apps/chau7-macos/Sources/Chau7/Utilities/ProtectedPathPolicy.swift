@@ -3,7 +3,14 @@ import AppKit
 import Chau7Core
 
 enum ProtectedPathPolicy {
-    private static let protectedRoots: [String] = {
+    /// Computed, not a `static let`: the protected roots are derived from the
+    /// live home directory (`RuntimeIsolation.homePath()`), which tests override
+    /// via `CHAU7_HOME_ROOT`. A cached `static let` would freeze the roots to
+    /// whichever test first touched this type, so a later test running under a
+    /// different home would see its path as `unprotected`. Recomputing per call
+    /// keeps the roots consistent with the current home (production home never
+    /// changes, so this is a no-op there).
+    private static var protectedRoots: [String] {
         let home = RuntimeIsolation.homePath()
         return [
             "\(home)/Downloads",
@@ -14,7 +21,7 @@ enum ProtectedPathPolicy {
             "/System",
             "/Library"
         ]
-    }()
+    }
 
     static func shouldSkipAutoAccess(path: String) -> Bool {
         !liveAccessSnapshot(forPath: path).canProbeLive

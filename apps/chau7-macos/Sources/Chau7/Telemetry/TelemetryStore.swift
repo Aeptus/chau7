@@ -63,6 +63,24 @@ final class TelemetryStore {
         migrator.applyMigrations()
     }
 
+    /// Test-only hook: close the live connection and reopen it at the
+    /// currently-resolved `dbPath`. The shared singleton pins its SQLite handle
+    /// to whichever home was active at first init; a test that overrides
+    /// `CHAU7_HOME_ROOT` to a temp home and then deletes it would otherwise
+    /// orphan that handle for every later test. Such tests bracket their
+    /// override with `reopenForTesting()` — once after pointing the store at
+    /// the temp home, once after restoring the real home and before deleting
+    /// the temp directory — so the process-wide connection is always valid.
+    func reopenForTesting() {
+        queue.sync {
+            if let db {
+                sqlite3_close(db)
+                self.db = nil
+            }
+            open()
+        }
+    }
+
     // MARK: - Maintenance (forwarders — implementation in TelemetryMaintenance)
 
     func scheduleDeferredMaintenance(reason: String) {
