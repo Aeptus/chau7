@@ -1438,7 +1438,7 @@ private final class SettingsToolbarDelegate: NSObject, NSToolbarDelegate {
             // Closing the last tab closes the window for real (no privileged main
             // window). closeTab injected a fresh tab before firing this; it is torn
             // down gracefully with the rest.
-            self.tearDownOverlayHost(for: window)
+            tearDownOverlayHost(for: window)
             window.close()
         }
         Log.info("Overlay window created.")

@@ -298,7 +298,9 @@ private enum ProfileSwitchTriggerKind: String, CaseIterable, Identifiable {
     case processRunning
     case environmentVariable
 
-    var id: String { rawValue }
+    var id: String {
+        rawValue
+    }
 
     var title: String {
         switch self {

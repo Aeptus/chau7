@@ -102,8 +102,11 @@ final class AIAutomationStrategyTests: XCTestCase {
             .init(key: "down"), .init(key: "down"), .init(key: "enter")
         ])
 
-        XCTAssertEqual(schedule.map(\.delayMs), [0, 0, 60],
-                       "the TUI must re-render the moved selection before Enter confirms it")
+        XCTAssertEqual(
+            schedule.map(\.delayMs),
+            [0, 0, 60],
+            "the TUI must re-render the moved selection before Enter confirms it"
+        )
     }
 
     func testKeyScheduleLoneEnterIsImmediate() {

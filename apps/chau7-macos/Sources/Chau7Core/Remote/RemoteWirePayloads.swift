@@ -284,10 +284,10 @@ public struct RemoteKeyInputPayload: Codable, Equatable, Sendable {
 
         public init(from decoder: Decoder) throws {
             let container = try decoder.container(keyedBy: CodingKeys.self)
-            key = try container.decode(String.self, forKey: .key)
+            self.key = try container.decode(String.self, forKey: .key)
             // Lenient + omitempty parity: absent and [] both mean unmodified.
             let decoded = try container.decodeIfPresent([String].self, forKey: .modifiers)
-            modifiers = decoded?.isEmpty == true ? nil : decoded
+            self.modifiers = decoded?.isEmpty == true ? nil : decoded
         }
 
         public func encode(to encoder: Encoder) throws {

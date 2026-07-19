@@ -87,7 +87,7 @@ struct LLMSettingsView: View {
                         icon: "network",
                         isDisabled: isTesting
                     ) {
-                    testConnection()
+                        testConnection()
                     }
                 ])
 

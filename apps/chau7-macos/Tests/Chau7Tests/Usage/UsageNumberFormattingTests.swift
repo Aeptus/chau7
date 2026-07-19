@@ -27,10 +27,10 @@ final class UsageNumberFormattingTests: XCTestCase {
         defer { FeatureSettings.shared.regionalNumberFormat = previous }
 
         FeatureSettings.shared.regionalNumberFormat = .french
-        XCTAssertEqual(CountFormat.abbreviated(1_200), "1,2K")
+        XCTAssertEqual(CountFormat.abbreviated(1200), "1,2K")
 
         FeatureSettings.shared.regionalNumberFormat = .unitedStates
-        XCTAssertEqual(CountFormat.abbreviated(1_200), "1.2K")
+        XCTAssertEqual(CountFormat.abbreviated(1200), "1.2K")
     }
 
     func testPreciseCostFormattingDoesNotLeakFractionDigits() {

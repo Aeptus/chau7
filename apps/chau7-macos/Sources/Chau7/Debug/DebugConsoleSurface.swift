@@ -7,7 +7,9 @@ enum DebugConsoleSurface: String, CaseIterable, Hashable, Identifiable {
     case runtimeInspector
     case usageMonitor
 
-    var id: String { rawValue }
+    var id: String {
+        rawValue
+    }
 
     var tabs: [DebugConsoleTab] {
         switch self {
@@ -129,7 +131,9 @@ enum DebugConsoleTab: String, CaseIterable, Hashable, Identifiable {
         case observe
         case account
 
-        var id: String { rawValue }
+        var id: String {
+            rawValue
+        }
 
         var title: String {
             switch self {
@@ -145,7 +149,9 @@ enum DebugConsoleTab: String, CaseIterable, Hashable, Identifiable {
         }
     }
 
-    var id: String { rawValue }
+    var id: String {
+        rawValue
+    }
 
     var title: String {
         switch self {

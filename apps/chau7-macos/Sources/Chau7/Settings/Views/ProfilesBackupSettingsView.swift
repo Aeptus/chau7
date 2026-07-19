@@ -97,7 +97,10 @@ struct ProfilesBackupSettingsView: View {
                 operationMessage = SettingsBackupOperationMessage(restoreResult: settings.syncFromiCloud())
             }
         } message: {
-            Text(L("settings.icloud.restore.confirm.message", "This will replace local settings with the newest eligible iCloud settings backup. Export a local backup first if you may want to undo it."))
+            Text(L(
+                "settings.icloud.restore.confirm.message",
+                "This will replace local settings with the newest eligible iCloud settings backup. Export a local backup first if you may want to undo it."
+            ))
         }
         .alert(L("settings.backup.import.confirm.title", "Import Settings Backup?"), isPresented: $showImportConfirmation) {
             Button(L("button.cancel", "Cancel"), role: .cancel) {
@@ -119,7 +122,10 @@ struct ProfilesBackupSettingsView: View {
                 operationMessage = .success(L("settings.reset.success", "Settings were reset to defaults."))
             }
         } message: {
-            Text(L("settings.general.reset.confirm.message", "This will reset all Chau7 settings to their default values. This action cannot be undone. Export a backup first if you may want to restore your current setup."))
+            Text(L(
+                "settings.general.reset.confirm.message",
+                "This will reset all Chau7 settings to their default values. This action cannot be undone. Export a backup first if you may want to restore your current setup."
+            ))
         }
     }
 

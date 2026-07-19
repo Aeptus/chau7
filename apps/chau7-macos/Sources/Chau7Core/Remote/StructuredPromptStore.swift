@@ -168,7 +168,7 @@ public final class StructuredPromptStore {
               questions.count == 1,
               let question = questions.first,
               let questionText = (question["question"] as? String)?
-                  .trimmingCharacters(in: .whitespacesAndNewlines),
+              .trimmingCharacters(in: .whitespacesAndNewlines),
               !questionText.isEmpty,
               let rawOptions = question["options"] as? [[String: Any]] else {
             return nil
@@ -237,7 +237,7 @@ public final class StructuredPromptStore {
               let data = toolInputJSON.data(using: .utf8),
               let root = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
               let plan = (root["plan"] as? String)?
-                  .trimmingCharacters(in: .whitespacesAndNewlines),
+              .trimmingCharacters(in: .whitespacesAndNewlines),
               !plan.isEmpty else {
             return nil
         }

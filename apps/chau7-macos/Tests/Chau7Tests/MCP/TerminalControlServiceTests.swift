@@ -660,8 +660,10 @@ final class TerminalControlServiceTests: XCTestCase {
             let submitted = try XCTUnwrap(parseJSONObject(
                 TerminalControlService.shared.pressKey(tabID: tabID, key: "enter", modifiers: [])
             ))
-            XCTAssertTrue((submitted["error"] as? String ?? "").contains("blocked"),
-                          "staged command must be blocked on Enter, got \(submitted)")
+            XCTAssertTrue(
+                (submitted["error"] as? String ?? "").contains("blocked"),
+                "staged command must be blocked on Enter, got \(submitted)"
+            )
         }
     }
 
@@ -712,15 +714,18 @@ final class TerminalControlServiceTests: XCTestCase {
     func testInputNotAtPromptBypassesCommandFilter() throws {
         let tab = try XCTUnwrap(overlayModel.tabs.first)
         let session = try XCTUnwrap(tab.session)
-        session.isAtPrompt = false  // a TUI / agent CLI is foregrounded
+        session.isAtPrompt = false // a TUI / agent CLI is foregrounded
         let tabID = TerminalControlService.shared.controlPlaneTabID(for: tab.id)
 
         try withBlockedCommand("rm") {
             let result = try XCTUnwrap(parseJSONObject(
                 TerminalControlService.shared.sendInput(tabID: tabID, input: "rm -rf important\n")
             ))
-            XCTAssertEqual(result["ok"] as? Bool, true,
-                           "off a shell prompt, input is interactive passthrough, got \(result)")
+            XCTAssertEqual(
+                result["ok"] as? Bool,
+                true,
+                "off a shell prompt, input is interactive passthrough, got \(result)"
+            )
         }
     }
 

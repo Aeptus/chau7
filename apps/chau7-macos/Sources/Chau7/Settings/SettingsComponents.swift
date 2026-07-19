@@ -49,7 +49,6 @@ private struct SettingsSearchAnchorModifier: ViewModifier {
         return anchorID == highlightedAnchorID
     }
 
-    @ViewBuilder
     func body(content: Content) -> some View {
         if let anchorID {
             content
@@ -281,7 +280,7 @@ struct SettingsToggle: View {
     let help: String
     @Binding var isOn: Bool
     var disabled = false
-    var anchorID: String? = nil
+    var anchorID: String?
 
     var body: some View {
         SettingsAdaptiveRow(label, help: help, anchorID: anchorID) {
@@ -310,7 +309,7 @@ struct SettingsSlider: View {
     var suffix = ""
     var width: CGFloat = 150
     var disabled = false
-    var anchorID: String? = nil
+    var anchorID: String?
 
     var body: some View {
         SettingsAdaptiveRow(label, help: help, anchorID: anchorID) {
@@ -350,7 +349,7 @@ struct SettingsStepper: View {
     let range: ClosedRange<Int>
     var suffix = ""
     var disabled = false
-    var anchorID: String? = nil
+    var anchorID: String?
 
     var body: some View {
         SettingsAdaptiveRow(label, help: help, anchorID: anchorID) {
@@ -379,7 +378,7 @@ struct SettingsTextField: View {
     var monospaced = false
     var disabled = false
     var onSubmit: (() -> Void)?
-    var anchorID: String? = nil
+    var anchorID: String?
 
     var body: some View {
         SettingsAdaptiveRow(label, help: help, anchorID: anchorID) {
@@ -408,7 +407,7 @@ struct SettingsDirectoryField: View {
     var buttonTitle = "Choose..."
     var buttonIcon: String? = "folder"
     var onSubmit: (() -> Void)?
-    var anchorID: String? = nil
+    var anchorID: String?
 
     var body: some View {
         SettingsAdaptiveRow(label, help: help, anchorID: anchorID) {
@@ -500,7 +499,7 @@ struct SettingsNumberField: View {
     var width: CGFloat = 100
     var disabled = false
     var onSubmit: (() -> Void)?
-    var anchorID: String? = nil
+    var anchorID: String?
 
     var body: some View {
         SettingsAdaptiveRow(label, help: help, anchorID: anchorID) {
@@ -524,7 +523,7 @@ struct SettingsPicker<T: Hashable>: View {
     let options: [(value: T, label: String)]
     var width: CGFloat = 150
     var disabled = false
-    var anchorID: String? = nil
+    var anchorID: String?
 
     var body: some View {
         SettingsAdaptiveRow(label, help: help, anchorID: anchorID) {
@@ -551,7 +550,7 @@ struct SettingsInfoRow: View {
     let value: String
     var valueColor: Color = .primary
     var monospaced = false
-    var anchorID: String? = nil
+    var anchorID: String?
 
     var body: some View {
         SettingsAdaptiveRow(label, anchorID: anchorID) {
@@ -839,7 +838,6 @@ struct SettingsCard<Content: View>: View {
         .cornerRadius(Chau7Style.Radius.medium)
     }
 
-    @ViewBuilder
     private func cardButton(action: @escaping () -> Void, label: String) -> some View {
         Button(action: action) {
             if let icon = actionIcon {

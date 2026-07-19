@@ -312,7 +312,7 @@ final class InteractivePromptDetectorTests: XCTestCase {
         XCTAssertEqual(prompt.selectedOptionIndex, 1)
     }
 
-    func testStructuralGlyphVariantsDetected() throws {
+    func testStructuralGlyphVariantsDetected() {
         for glyph in ["›", "▸"] {
             let transcript = """
             Which formatting style for the export?
@@ -326,7 +326,7 @@ final class InteractivePromptDetectorTests: XCTestCase {
         }
     }
 
-    func testStructuralToleratesTrailingMetaLines() throws {
+    func testStructuralToleratesTrailingMetaLines() {
         let transcript = """
         Which branch strategy fits this repo?
         ❯ 1. Trunk-based

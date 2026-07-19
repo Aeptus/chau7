@@ -52,7 +52,7 @@ final class SettingsSurfaceTests: XCTestCase {
     }
 
     func testAdvancedDisclosureExpansionIsDrivenByChildSearchAnchors() {
-        let hiddenAnchors: Set<String> = ["ctoPerTab", "proxyInternals"]
+        let hiddenAnchors: Set = ["ctoPerTab", "proxyInternals"]
 
         XCTAssertTrue(settingsAdvancedDisclosureShouldExpand(
             highlightedAnchorID: "ctoPerTab",

@@ -33,14 +33,14 @@ struct ProfileSelectorBar: View {
                     displayName
                 )
             )
-        .sheet(isPresented: $showCreateProfile) {
-            CreateProfileSheet(
-                settings: settings,
-                defaultName: suggestedProfileName
-            ) {
-                showCreateProfile = false
+            .sheet(isPresented: $showCreateProfile) {
+                CreateProfileSheet(
+                    settings: settings,
+                    defaultName: suggestedProfileName
+                ) {
+                    showCreateProfile = false
+                }
             }
-        }
     }
 
     // MARK: - Profile Menu

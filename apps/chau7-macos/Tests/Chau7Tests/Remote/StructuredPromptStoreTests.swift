@@ -65,13 +65,13 @@ final class StructuredPromptStoreTests: XCTestCase {
         XCTAssertTrue(entry.detail?.contains("Multi-select") == true)
     }
 
-    func testMultiQuestionPayloadIsNotSurfaced() {
+    func testMultiQuestionPayloadIsNotSurfaced() throws {
         let store = makeStore()
         let root: [String: Any] = ["questions": [
             ["question": "Q1", "options": [["label": "A"], ["label": "B"]]],
             ["question": "Q2", "options": [["label": "C"], ["label": "D"]]]
         ]]
-        let json = String(data: try! JSONSerialization.data(withJSONObject: root), encoding: .utf8)!
+        let json = try String(data: JSONSerialization.data(withJSONObject: root), encoding: .utf8)!
 
         XCTAssertFalse(store.applyToolStart(
             toolName: "AskUserQuestion", toolInputJSON: json,
@@ -82,8 +82,13 @@ final class StructuredPromptStoreTests: XCTestCase {
 
     func testMalformedOrMissingInputIsIgnored() {
         let store = makeStore()
-        for bad in [nil, "", "not json", "{\"questions\":[]}",
-                    "{\"questions\":[{\"question\":\"Q\",\"options\":[{\"label\":\"only one\"}]}]}"] {
+        for bad in [
+            nil,
+            "",
+            "not json",
+            "{\"questions\":[]}",
+            "{\"questions\":[{\"question\":\"Q\",\"options\":[{\"label\":\"only one\"}]}]}"
+        ] {
             XCTAssertFalse(store.applyToolStart(
                 toolName: "AskUserQuestion", toolInputJSON: bad,
                 toolUseID: "t", runtimeTabID: tabA, sessionID: "s1"
@@ -136,7 +141,7 @@ final class StructuredPromptStoreTests: XCTestCase {
     }
 
     func testEntriesExpireAfterTTL() {
-        var current = Date(timeIntervalSince1970: 1_000)
+        var current = Date(timeIntervalSince1970: 1000)
         let store = makeStore(ttl: 60) { current }
         store.applyToolStart(
             toolName: "AskUserQuestion", toolInputJSON: singleSelectInput(),
