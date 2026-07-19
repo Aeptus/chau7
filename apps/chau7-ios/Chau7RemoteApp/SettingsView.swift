@@ -8,8 +8,6 @@ enum AppSettings {
     // Hold-to-send is the documented default: it guards against accidental sends
     // to a live terminal that may be driving an AI agent.
     static let holdToSendDefault = true
-    static let appendNewlineKey = "append_newline"
-    static let appendNewlineDefault = true
     static let renderANSIKey = "render_ansi"
     static let renderANSIDefault = false
     static let experimentalTerminalRendererKey = "experimental_terminal_renderer"
@@ -66,7 +64,6 @@ struct SettingsView: View {
     @Binding var isPairingPresented: Bool
 
     @AppStorage(AppSettings.holdToSendKey) private var holdToSend = AppSettings.holdToSendDefault
-    @AppStorage(AppSettings.appendNewlineKey) private var appendNewline = AppSettings.appendNewlineDefault
     @AppStorage(AppSettings.renderANSIKey) private var renderANSI = AppSettings.renderANSIDefault
     @AppStorage(AppSettings.experimentalTerminalRendererKey)
     private var experimentalTerminalRenderer = AppSettings.experimentalTerminalRendererDefault
@@ -101,12 +98,11 @@ struct SettingsView: View {
 
                 Section {
                     Toggle("Hold to Send", isOn: $holdToSend)
-                    Toggle("Append Newline", isOn: $appendNewline)
                     Toggle("Show Control Keys", isOn: $showKeyboardBar)
                 } header: {
                     Text("Input")
                 } footer: {
-                    Text("Hold to Send requires a long press before input is forwarded, guarding against accidental sends. Control Keys shows the esc / tab / ^C row above the input field.")
+                    Text("Hold to Send requires a long press before input is forwarded, guarding against accidental sends. Control Keys shows the esc / tab / ^C row above the input field. Send always submits; use the control keys for raw key presses.")
                 }
 
                 Section {

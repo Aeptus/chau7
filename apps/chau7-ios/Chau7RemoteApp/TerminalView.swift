@@ -12,7 +12,6 @@ struct TerminalView: View {
     var onOpenConnectionSettings: () -> Void = {}
 
     @AppStorage(AppSettings.holdToSendKey) private var holdToSend = AppSettings.holdToSendDefault
-    @AppStorage(AppSettings.appendNewlineKey) private var appendNewline = AppSettings.appendNewlineDefault
     @AppStorage(AppSettings.renderANSIKey) private var renderANSI = AppSettings.renderANSIDefault
     @AppStorage(AppSettings.experimentalTerminalRendererKey)
     private var experimentalTerminalRenderer = AppSettings.experimentalTerminalRendererDefault
@@ -57,7 +56,7 @@ struct TerminalView: View {
                     text: pendingProtectedSend.text,
                     flaggedAction: pendingProtectedSend.flaggedAction
                 )
-                if client.sendInput(pendingProtectedSend.text, appendNewline: appendNewline) {
+                if client.sendInput(pendingProtectedSend.text, appendNewline: true) {
                     inputText = ""
                     markSent()
                     self.pendingProtectedSend = nil
@@ -533,7 +532,11 @@ struct TerminalView: View {
             ])
         }
 
-        guard client.sendInput(text, appendNewline: appendNewline && !suppressTerminator) else {
+        // Send always submits. The old "Append Newline" toggle could silently
+        // turn every send into an inert text drop (body lands in the
+        // composer, nothing executes) — a footgun, not a feature. The only
+        // terminator suppression left is the deliberate menu-digit case.
+        guard client.sendInput(text, appendNewline: !suppressTerminator) else {
             DiagnosticsLog.shared.error(.input, "Submit blocked", [
                 "trigger": trigger,
                 "reason": client.lastError ?? "unknown"
