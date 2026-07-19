@@ -1036,6 +1036,13 @@ final class TerminalSessionModel {
     /// text input and synthesized key presses, then flushes on view attachment.
     @ObservationIgnored private var pendingTerminalActions: [PendingTerminalAction] = []
     @ObservationIgnored private var pendingAutomationSubmitWorkItem: DispatchWorkItem?
+    /// Remote (iOS) submit Enters, scheduled independently of
+    /// `pendingAutomationSubmitWorkItem`: each phone send is an explicit user
+    /// action whose Enter must never be cancelled by restore-prefill
+    /// auto-submits, MCP automation, or another rapid phone send reusing a
+    /// shared slot — that cancellation is how remote text ended up printed
+    /// but never executed.
+    @ObservationIgnored private var pendingRemoteSubmitWorkItems: [UUID: DispatchWorkItem] = [:]
     @ObservationIgnored private var pendingInteractivePromptRevealWorkItem: DispatchWorkItem?
     @ObservationIgnored private var lastAutomationInputAt: Date?
     @ObservationIgnored private var settingsObservers: [NSObjectProtocol] = []
@@ -1298,6 +1305,8 @@ final class TerminalSessionModel {
         outputLatencyFallbackWorkItem?.cancel()
         scrollHighlightWorkItem?.cancel()
         pendingAutomationSubmitWorkItem?.cancel()
+        pendingRemoteSubmitWorkItems.values.forEach { $0.cancel() }
+        pendingRemoteSubmitWorkItems.removeAll()
         dangerousOutputHighlightWorkItem?.cancel()
         remoteOutputFlushWorkItem?.cancel()
         remoteOutputTranscriptFlushWorkItem?.cancel()
@@ -2461,7 +2470,23 @@ final class TerminalSessionModel {
                 sendPastedInput(plan.insertText)
             }
         }
-        scheduleAutomationSubmit(mode: plan.submitMode, delayMs: plan.submitDelayMs)
+        scheduleRemoteSubmit(mode: plan.submitMode, delayMs: plan.submitDelayMs)
+    }
+
+    /// Remote submits use their own work-item pool: no mutual cancellation
+    /// (two rapid phone sends each get their Enter) and no interference from
+    /// the automation slot shared by restore prefill and MCP submits.
+    private func scheduleRemoteSubmit(mode: AIAutomationSubmitMode, delayMs: Int) {
+        guard mode != .none else { return }
+        let id = UUID()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            pendingRemoteSubmitWorkItems.removeValue(forKey: id)
+            performAutomationSubmit(mode: mode)
+        }
+        pendingRemoteSubmitWorkItems[id] = work
+        let deadline = DispatchTime.now() + .milliseconds(max(0, delayMs))
+        DispatchQueue.main.asyncAfter(deadline: deadline, execute: work)
     }
 
     func submitAutomationPrompt() {
