@@ -20,6 +20,13 @@ final class TerminalControlService {
     /// it); the Remote layer consumes it via `TabDirectoryProviding`.
     let registry = WindowModelRegistry()
     private var mcpTabIDs = MCPTabIDAllocator()
+
+    /// Per-tab buffer of shell-prompt input MCP has staged via `tab_send_input`
+    /// but not yet submitted. Command filtering runs when the buffer is submitted
+    /// (a newline, or Enter via `tab_press_key` / `tab_submit_prompt`), so a
+    /// command staged without a trailing newline cannot be executed unchecked.
+    /// Main-thread-confined, exactly like `mcpTabIDs`.
+    private var mcpPendingInput: [UUID: String] = [:]
     private var routingIndex = TabRoutingIndex(records: [])
     private var routingIndexNeedsRebuild = true
     var activeOverlayModelProvider: (() -> OverlayTabsModel?)?
@@ -592,6 +599,14 @@ final class TerminalControlService {
         let (verdict, permissions) = MCPCommandFilter.check(command, context: context)
         if let err = enforceVerdict(verdict, permissions: permissions, fullInput: command, context: "tab \(tabID)") {
             return err
+        }
+
+        // exec sends `command + "\n"` directly (already filtered above); drop any
+        // partially-staged tab_send_input buffer so it can't prepend to it.
+        onMain {
+            if let uuid = self.resolveControlPlaneTabIDLocked(tabID) {
+                self.mcpPendingInput[uuid] = nil
+            }
         }
 
         // Validate tab existence and prompt state synchronously on main, but
@@ -1218,20 +1233,37 @@ final class TerminalControlService {
     }
 
     func sendInput(tabID: String, input: String) -> String {
-        let context = onMain { self.gatherTabContext(tabID) }
-        let (verdict, permissions) = MCPCommandFilter.checkRawInput(input, context: context)
-        if let err = enforceVerdict(verdict, permissions: permissions, fullInput: input, context: "tab \(tabID)") {
-            return err
+        guard let target = inputTargetState(tabID: tabID) else {
+            return jsonError("Tab not found: \(tabID)")
         }
 
-        // Validate tab existence synchronously, send input asynchronously.
-        // Same control-plane isolation as execInTab: do not wait inside input
-        // bookkeeping or PTY writes under backpressure.
-        let tabExists: Bool = onMain {
-            self.resolveTab(tabID) != nil
+        // Off a shell prompt (a TUI / agent CLI is foregrounded) newlines are not
+        // shell submissions, so keep the raw-passthrough behavior interactive
+        // programs rely on — and drop any stale staged buffer for the tab.
+        guard target.atPrompt else {
+            onMain { self.mcpPendingInput[target.uuid] = nil }
+            DispatchQueue.main.async {
+                guard let (_, session) = self.resolveTab(tabID) else { return }
+                session.sendOrQueueInput(input)
+            }
+            Log.info("MCP: send_input to \(tabID) (\(input.count) chars, not at prompt)")
+            return encodeAny(["ok": true])
         }
-        guard tabExists else {
-            return jsonError("Tab not found: \(tabID)")
+
+        // At a prompt: fold the input into the staged buffer and check every
+        // newline-terminated command line BEFORE any of it reaches the PTY. Chars
+        // already staged (no newline) were sent verbatim in a prior call and are
+        // on the line but un-submitted; only the newline executes them, so a
+        // blocked line means we withhold this write and the Enter never lands.
+        let combined = onMain { (self.mcpPendingInput[target.uuid] ?? "") + input }
+        for line in completeLines(in: combined) {
+            if let err = filterSubmittedLine(line, tabID: tabID) {
+                return err
+            }
+        }
+        onMain {
+            let fragment = self.trailingFragment(of: combined)
+            self.mcpPendingInput[target.uuid] = fragment.isEmpty ? nil : fragment
         }
 
         DispatchQueue.main.async {
@@ -1251,11 +1283,25 @@ final class TerminalControlService {
             return jsonError(error.localizedDescription)
         }
 
-        let tabExists: Bool = onMain {
-            self.resolveTab(tabID) != nil
-        }
-        guard tabExists else {
+        guard let target = inputTargetState(tabID: tabID) else {
             return jsonError("Tab not found: \(tabID)")
+        }
+
+        // A key press is the other way MCP submits a staged command line. At a
+        // prompt, an unmodified Enter executes whatever was staged via
+        // tab_send_input, so filter that buffer before the Enter lands; a line
+        // kill (Ctrl+C / Ctrl+U / Escape) discards the staged buffer to match.
+        if target.atPrompt {
+            if keyPress.key == "enter", keyPress.modifiers.isEmpty {
+                let pending = onMain { self.mcpPendingInput[target.uuid] ?? "" }
+                if let err = filterSubmittedLine(pending, tabID: tabID) {
+                    return err
+                }
+                onMain { self.mcpPendingInput[target.uuid] = nil }
+            } else if keyPress.key == "escape"
+                || ((keyPress.key == "c" || keyPress.key == "u") && keyPress.modifiers == [.control]) {
+                onMain { self.mcpPendingInput[target.uuid] = nil }
+            }
         }
 
         DispatchQueue.main.async {
@@ -1281,6 +1327,16 @@ final class TerminalControlService {
         }
         guard let initialState else {
             return jsonError("Tab not found: \(tabID)")
+        }
+
+        // Submitting at a shell prompt executes the staged command line, so run
+        // it through the filter first and withhold the Enter if it is blocked.
+        if let target = inputTargetState(tabID: tabID), target.atPrompt {
+            let pending = onMain { self.mcpPendingInput[target.uuid] ?? "" }
+            if let err = filterSubmittedLine(pending, tabID: tabID) {
+                return err
+            }
+            onMain { self.mcpPendingInput[target.uuid] = nil }
         }
 
         DispatchQueue.main.async {
@@ -1356,6 +1412,7 @@ final class TerminalControlService {
             Log.info("MCP: closing tab \(tabID) force=\(force) context=\(context ?? "default")")
             model.closeTab(id: uuid, skipWarning: true)
             self.mcpTabIDs.release(tabID: uuid)
+            self.mcpPendingInput[uuid] = nil
             return self.encodeAny(["ok": true])
         }
     }
@@ -2265,6 +2322,54 @@ final class TerminalControlService {
         }
     }
 
+    // MARK: - Staged-input command filtering
+
+    /// Newline-terminated segments of `text` (the submitted command lines). The
+    /// trailing un-terminated fragment is excluded — it is still being typed.
+    private func completeLines(in text: String) -> [String] {
+        var segments: [String] = []
+        var current = ""
+        for ch in text {
+            if ch == "\n" || ch == "\r" {
+                segments.append(current)
+                current = ""
+            } else {
+                current.append(ch)
+            }
+        }
+        return segments
+    }
+
+    /// Everything after the last newline in `text` — the un-submitted fragment.
+    private func trailingFragment(of text: String) -> String {
+        guard let idx = text.lastIndex(where: { $0 == "\n" || $0 == "\r" }) else {
+            return text
+        }
+        return String(text[text.index(after: idx)...])
+    }
+
+    /// Run an about-to-be-submitted command line through the MCP command filter
+    /// (allow/deny + Protect-Chau7 self-protection + approval). Returns an error
+    /// string to hand back to the client when the command must not run, or nil
+    /// when it may proceed. Runs off the main thread so `enforceVerdict` can drive
+    /// the approval modal exactly as `execInTab` does.
+    private func filterSubmittedLine(_ line: String, tabID: String) -> String? {
+        let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        let context = onMain { self.gatherTabContext(tabID) }
+        let (verdict, permissions) = MCPCommandFilter.check(trimmed, context: context)
+        return enforceVerdict(verdict, permissions: permissions, fullInput: trimmed, context: "tab \(tabID)")
+    }
+
+    /// Resolve the native UUID and shell-prompt state for a tab in one main hop.
+    private func inputTargetState(tabID: String) -> (uuid: UUID, atPrompt: Bool)? {
+        onMain {
+            guard let uuid = self.resolveControlPlaneTabIDLocked(tabID),
+                  let (_, session) = self.resolveTab(tabID) else { return nil }
+            return (uuid, session.effectiveIsAtPrompt)
+        }
+    }
+
     private func tabSummary(_ tab: OverlayTab) -> [String: Any] {
         let session = tab.displaySession ?? tab.session
         var result: [String: Any] = [
@@ -2398,7 +2503,10 @@ final class TerminalControlService {
     }
 
     private func pruneTabAliasesLocked() {
-        mcpTabIDs.prune(validTabIDs: Set(allTabs.map(\.id)))
+        let validTabIDs = Set(allTabs.map(\.id))
+        mcpTabIDs.prune(validTabIDs: validTabIDs)
+        // Drop staged input for tabs that no longer exist.
+        mcpPendingInput = mcpPendingInput.filter { validTabIDs.contains($0.key) }
     }
 
     private func preferredModelEntry(from models: [(windowID: Int, model: OverlayTabsModel)]) -> (windowID: Int, model: OverlayTabsModel)? {

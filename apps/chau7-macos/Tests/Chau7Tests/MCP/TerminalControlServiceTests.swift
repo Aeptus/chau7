@@ -632,6 +632,114 @@ final class TerminalControlServiceTests: XCTestCase {
         return json
     }
 
+    // MARK: - Staged-input command filtering (raw-input boundary)
+
+    /// Set a hard block on `command` for the duration of `body`, restoring the
+    /// prior blocked list afterward. Deterministic regardless of allowlist state.
+    private func withBlockedCommand(_ command: String, _ body: () throws -> Void) rethrows {
+        let saved = FeatureSettings.shared.mcpBlockedCommands
+        FeatureSettings.shared.mcpBlockedCommands = [command]
+        defer { FeatureSettings.shared.mcpBlockedCommands = saved }
+        try body()
+    }
+
+    func testStagedInputWithoutNewlineThenEnterIsFiltered() throws {
+        let tab = try XCTUnwrap(overlayModel.tabs.first)
+        let session = try XCTUnwrap(tab.session)
+        session.isAtPrompt = true
+        let tabID = TerminalControlService.shared.controlPlaneTabID(for: tab.id)
+
+        try withBlockedCommand("rm") {
+            // Staging (no trailing newline) is accepted — interactive typing.
+            let staged = try XCTUnwrap(parseJSONObject(
+                TerminalControlService.shared.sendInput(tabID: tabID, input: "rm -rf important")
+            ))
+            XCTAssertEqual(staged["ok"] as? Bool, true)
+
+            // Submitting the staged line via Enter now runs it through the filter.
+            let submitted = try XCTUnwrap(parseJSONObject(
+                TerminalControlService.shared.pressKey(tabID: tabID, key: "enter", modifiers: [])
+            ))
+            XCTAssertTrue((submitted["error"] as? String ?? "").contains("blocked"),
+                          "staged command must be blocked on Enter, got \(submitted)")
+        }
+    }
+
+    func testSendInputWithNewlineIsFilteredImmediately() throws {
+        let tab = try XCTUnwrap(overlayModel.tabs.first)
+        let session = try XCTUnwrap(tab.session)
+        session.isAtPrompt = true
+        let tabID = TerminalControlService.shared.controlPlaneTabID(for: tab.id)
+
+        try withBlockedCommand("rm") {
+            let result = try XCTUnwrap(parseJSONObject(
+                TerminalControlService.shared.sendInput(tabID: tabID, input: "rm -rf important\n")
+            ))
+            XCTAssertTrue((result["error"] as? String ?? "").contains("blocked"), "got \(result)")
+        }
+    }
+
+    func testStagedCommandSplitAcrossCallsIsFiltered() throws {
+        let tab = try XCTUnwrap(overlayModel.tabs.first)
+        let session = try XCTUnwrap(tab.session)
+        session.isAtPrompt = true
+        let tabID = TerminalControlService.shared.controlPlaneTabID(for: tab.id)
+
+        try withBlockedCommand("rm") {
+            _ = TerminalControlService.shared.sendInput(tabID: tabID, input: "rm ")
+            let result = try XCTUnwrap(parseJSONObject(
+                TerminalControlService.shared.sendInput(tabID: tabID, input: "-rf important\n")
+            ))
+            XCTAssertTrue((result["error"] as? String ?? "").contains("blocked"), "got \(result)")
+        }
+    }
+
+    func testSubmitPromptFiltersStagedCommand() throws {
+        let tab = try XCTUnwrap(overlayModel.tabs.first)
+        let session = try XCTUnwrap(tab.session)
+        session.isAtPrompt = true
+        let tabID = TerminalControlService.shared.controlPlaneTabID(for: tab.id)
+
+        try withBlockedCommand("rm") {
+            _ = TerminalControlService.shared.sendInput(tabID: tabID, input: "rm -rf important")
+            let result = try XCTUnwrap(parseJSONObject(
+                TerminalControlService.shared.submitPrompt(tabID: tabID)
+            ))
+            XCTAssertTrue((result["error"] as? String ?? "").contains("blocked"), "got \(result)")
+        }
+    }
+
+    func testInputNotAtPromptBypassesCommandFilter() throws {
+        let tab = try XCTUnwrap(overlayModel.tabs.first)
+        let session = try XCTUnwrap(tab.session)
+        session.isAtPrompt = false  // a TUI / agent CLI is foregrounded
+        let tabID = TerminalControlService.shared.controlPlaneTabID(for: tab.id)
+
+        try withBlockedCommand("rm") {
+            let result = try XCTUnwrap(parseJSONObject(
+                TerminalControlService.shared.sendInput(tabID: tabID, input: "rm -rf important\n")
+            ))
+            XCTAssertEqual(result["ok"] as? Bool, true,
+                           "off a shell prompt, input is interactive passthrough, got \(result)")
+        }
+    }
+
+    func testAllowedStagedCommandSubmitsWithoutFalsePositive() throws {
+        let tab = try XCTUnwrap(overlayModel.tabs.first)
+        let session = try XCTUnwrap(tab.session)
+        session.isAtPrompt = true
+        let tabID = TerminalControlService.shared.controlPlaneTabID(for: tab.id)
+
+        // .allowAll (default) + only "rm" blocked → "ls" flows through cleanly.
+        try withBlockedCommand("rm") {
+            _ = TerminalControlService.shared.sendInput(tabID: tabID, input: "ls -la")
+            let submitted = try XCTUnwrap(parseJSONObject(
+                TerminalControlService.shared.pressKey(tabID: tabID, key: "enter", modifiers: [])
+            ))
+            XCTAssertEqual(submitted["ok"] as? Bool, true, "got \(submitted)")
+        }
+    }
+
     // MARK: - MCP-controlled tab scoping (mutating tools)
 
     func testMutatingScopeRejectsUserOpenedTab() throws {
