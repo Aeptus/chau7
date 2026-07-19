@@ -2462,6 +2462,13 @@ final class TerminalSessionModel {
             // submit that now arrives as a separate write.
             commandPendingDetection = true
         }
+        if plan.clearLineFirst {
+            // ^U (kill-line) as its own PTY write: a submitted phone send
+            // replaces whatever sits on the line — a restore prefill awaiting
+            // confirmation, or a stale draft — instead of concatenating onto
+            // it. No-op on an empty line; ignored by TUI selection menus.
+            sendRawInput("\u{15}")
+        }
         if !plan.insertText.isEmpty {
             switch plan.insertMode {
             case .rawText:

@@ -63,13 +63,31 @@ final class AIAutomationStrategyTests: XCTestCase {
     }
 
     /// A bare Enter (interactive prompt confirmations) submits immediately
-    /// with no body write and no delay.
+    /// with no body write and no delay — and must NOT clear the line, since
+    /// confirming a pending resume prefill is exactly a bare Enter.
     func testRemoteInputPlanBareEnterSubmitsImmediately() {
         let plan = AIAutomationStrategy.remoteInputPlan(for: "\r", provider: "Claude")
 
         XCTAssertEqual(plan.insertText, "")
         XCTAssertEqual(plan.submitMode, .enterKey)
         XCTAssertEqual(plan.submitDelayMs, 0)
+        XCTAssertFalse(plan.clearLineFirst)
+    }
+
+    /// A submitted body is a complete message: the plan clears the input line
+    /// first so it replaces a pending prefill or stale draft instead of
+    /// concatenating onto it. Non-terminated sends keep append semantics.
+    func testRemoteInputPlanClearsLineOnlyForSubmittedBodies() {
+        XCTAssertTrue(AIAutomationStrategy.remoteInputPlan(for: "run tests\r", provider: "Claude").clearLineFirst)
+        XCTAssertTrue(AIAutomationStrategy.remoteInputPlan(for: "fix it\r", provider: "Codex").clearLineFirst)
+        XCTAssertFalse(
+            AIAutomationStrategy.remoteInputPlan(for: "partial draft", provider: "Claude").clearLineFirst,
+            "non-terminated sends append deliberately"
+        )
+        XCTAssertFalse(
+            AIAutomationStrategy.remoteInputPlan(for: "\u{1B}[A", provider: "Claude").clearLineFirst,
+            "control sequences must pass through untouched"
+        )
     }
 
     /// Keyboard-bar control sequences (ESC, ^C, arrows) carry no terminator

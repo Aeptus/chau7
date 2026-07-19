@@ -16,17 +16,25 @@ public struct AIAutomationInputPlan: Equatable {
     public let insertMode: AIAutomationInsertMode
     public let submitMode: AIAutomationSubmitMode
     public let submitDelayMs: Int
+    /// Kill the current input line (^U, its own PTY write) before inserting
+    /// the body. Set for remote submitted sends: a phone send is a complete
+    /// message, and without this it concatenates onto whatever already sits
+    /// on the line — a restore prefill awaiting confirmation, or a stale
+    /// draft from an earlier send whose Enter was lost.
+    public let clearLineFirst: Bool
 
     public init(
         insertText: String,
         insertMode: AIAutomationInsertMode,
         submitMode: AIAutomationSubmitMode,
-        submitDelayMs: Int
+        submitDelayMs: Int,
+        clearLineFirst: Bool = false
     ) {
         self.insertText = insertText
         self.insertMode = insertMode
         self.submitMode = submitMode
         self.submitDelayMs = submitDelayMs
+        self.clearLineFirst = clearLineFirst
     }
 }
 
@@ -99,7 +107,12 @@ public enum AIAutomationStrategy {
             insertText: body,
             insertMode: isCodex ? .pasteText : .rawText,
             submitMode: isCodex ? .rawNewline : .enterKey,
-            submitDelayMs: body.isEmpty ? 0 : (isCodex ? codexSubmitDelayMs : remoteSubmitDelayMs)
+            submitDelayMs: body.isEmpty ? 0 : (isCodex ? codexSubmitDelayMs : remoteSubmitDelayMs),
+            // A submitted body is a complete message: replace the line rather
+            // than append to it. Bare Enter (empty body) deliberately does NOT
+            // clear — it confirms whatever is on the line, which is how a
+            // pending resume prefill gets run from the phone.
+            clearLineFirst: !body.isEmpty
         )
     }
 
