@@ -2143,6 +2143,13 @@
   },
   {
     "category": "SSH, Profiles & Remote",
+    "feature": "Remote Sends Always Submit",
+    "description": "Codex submits press the Enter key instead of a raw LF (0x0A parses as Ctrl-J in current Codex TUIs and never submits), and the iOS Send action always carries the submit terminator — the Append Newline toggle is removed",
+    "status": "Experimental",
+    "differentiator": "No"
+  },
+  {
+    "category": "SSH, Profiles & Remote",
     "feature": "Remote iPhone Profiling Hooks",
     "description": "The iPhone app emits os.signpost intervals for frame processing, output append, and ANSI stripping so receive/render lag can be measured in Instruments",
     "status": "Experimental",
