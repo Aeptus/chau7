@@ -2,12 +2,14 @@ import XCTest
 import Chau7Core
 
 final class AIAutomationStrategyTests: XCTestCase {
-    func testCodexInputPlanSplitsTrailingSubmitIntoDelayedNewline() {
+    func testCodexInputPlanSplitsTrailingSubmitIntoDelayedEnter() {
         let plan = AIAutomationStrategy.inputPlan(for: "Are you ready\n", provider: "Codex")
 
         XCTAssertEqual(plan.insertText, "Are you ready")
         XCTAssertEqual(plan.insertMode, .pasteText)
-        XCTAssertEqual(plan.submitMode, .rawNewline)
+        // Enter key, never raw LF: current Codex TUIs parse 0x0A as Ctrl-J
+        // and a rawNewline submit silently does nothing.
+        XCTAssertEqual(plan.submitMode, .enterKey)
         XCTAssertEqual(plan.submitDelayMs, 120)
     }
 
@@ -16,16 +18,16 @@ final class AIAutomationStrategyTests: XCTestCase {
 
         XCTAssertEqual(plan.insertText, "line 1\nline 2")
         XCTAssertEqual(plan.insertMode, .pasteText)
-        XCTAssertEqual(plan.submitMode, .rawNewline)
+        XCTAssertEqual(plan.submitMode, .enterKey)
     }
 
     func testCodexExplicitSubmitUsesDelayOnlyForRecentAutomationInput() {
         let delayed = AIAutomationStrategy.submitPlan(provider: "Codex", recentAutomationInputAgeMs: 42)
         let immediate = AIAutomationStrategy.submitPlan(provider: "Codex", recentAutomationInputAgeMs: 5000)
 
-        XCTAssertEqual(delayed.submitMode, .rawNewline)
+        XCTAssertEqual(delayed.submitMode, .enterKey)
         XCTAssertEqual(delayed.submitDelayMs, 120)
-        XCTAssertEqual(immediate.submitMode, .rawNewline)
+        XCTAssertEqual(immediate.submitMode, .enterKey)
         XCTAssertEqual(immediate.submitDelayMs, 0)
     }
 
@@ -53,12 +55,12 @@ final class AIAutomationStrategyTests: XCTestCase {
         XCTAssertEqual(plan.submitDelayMs, 60)
     }
 
-    func testRemoteInputPlanUsesCodexPasteAndDelayedNewline() {
+    func testRemoteInputPlanUsesCodexPasteAndDelayedEnter() {
         let plan = AIAutomationStrategy.remoteInputPlan(for: "fix the bug\r", provider: "Codex")
 
         XCTAssertEqual(plan.insertText, "fix the bug")
         XCTAssertEqual(plan.insertMode, .pasteText)
-        XCTAssertEqual(plan.submitMode, .rawNewline)
+        XCTAssertEqual(plan.submitMode, .enterKey)
         XCTAssertEqual(plan.submitDelayMs, 120)
     }
 

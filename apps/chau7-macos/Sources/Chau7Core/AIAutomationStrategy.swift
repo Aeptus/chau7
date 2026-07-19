@@ -78,7 +78,12 @@ public enum AIAutomationStrategy {
         return AIAutomationInputPlan(
             insertText: body,
             insertMode: .pasteText,
-            submitMode: wantsSubmit ? .rawNewline : .none,
+            // Enter key (CR), not raw LF: current Codex TUIs parse 0x0A as
+            // Ctrl-J rather than Enter, so a rawNewline submit silently does
+            // nothing — text sits in the composer forever. The insertion
+            // delay below is what made automated submits reliable, not the
+            // byte choice.
+            submitMode: wantsSubmit ? .enterKey : .none,
             submitDelayMs: wantsSubmit && !body.isEmpty ? codexSubmitDelayMs : 0
         )
     }
@@ -106,7 +111,9 @@ public enum AIAutomationStrategy {
         return AIAutomationInputPlan(
             insertText: body,
             insertMode: isCodex ? .pasteText : .rawText,
-            submitMode: isCodex ? .rawNewline : .enterKey,
+            // Enter key for every provider: raw LF no longer submits in
+            // current Codex TUIs (0x0A parses as Ctrl-J, not Enter).
+            submitMode: .enterKey,
             submitDelayMs: body.isEmpty ? 0 : (isCodex ? codexSubmitDelayMs : remoteSubmitDelayMs),
             // A submitted body is a complete message: replace the line rather
             // than append to it. Bare Enter (empty body) deliberately does NOT
@@ -142,7 +149,9 @@ public enum AIAutomationStrategy {
 
         let shouldDelay = recentAutomationInputAgeMs.map { $0 >= 0 && $0 <= recentAutomationWindowMs } ?? false
         return AIAutomationSubmitPlan(
-            submitMode: .rawNewline,
+            // Enter key (CR): raw LF parses as Ctrl-J in current Codex TUIs
+            // and never submits.
+            submitMode: .enterKey,
             submitDelayMs: shouldDelay ? codexSubmitDelayMs : 0
         )
     }
