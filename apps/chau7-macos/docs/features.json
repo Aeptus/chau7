@@ -294,6 +294,13 @@
     "differentiator": "Yes"
   },
   {
+    "category": "AI Detection & Integration",
+    "feature": "Completed-Turn Tab Styling",
+    "description": "A finished Claude turn styles its tab with the green success preset (non-persistent, auto-clearing, suppressed once the tab is viewed) rather than the orange waiting style, and the PTY wait/approval heuristic matches only the trailing output region so a reply that merely contains a trigger word no longer flips a completed turn to waiting-for-input",
+    "status": "Shipped",
+    "differentiator": "No"
+  },
+  {
     "category": "Terminal Core",
     "feature": "Rust Terminal Backend",
     "description": "Custom terminal emulator written in Rust with FFI bridge — fast, memory-safe, and correct",

@@ -1251,21 +1251,30 @@ final class AppModel {
                 directory: directory
             )
             let location = event.projectName == "Unknown" ? "Claude" : event.projectName
-            let fallbackEvent = AIEvent(
+            // Claude's `Stop` hook (response_complete) marks a *finished turn*,
+            // not "the agent is blocked on a question". Emitting it as
+            // `task_finished` resolves the tab to `.done` (green) and clears the
+            // orange waiting/attention style, instead of masking every finished
+            // turn as `waiting_input`. A turn that genuinely needs the user
+            // arrives as its own authoritative event — a `permission_request`
+            // /`notification` (idle_prompt) /`elicitation`, or the idle-threshold
+            // `sessionIdle` — which `cancelPendingClaude…` lets supersede this,
+            // so a real "waiting for your answer" still turns orange.
+            let finishedEvent = AIEvent(
                 source: .claudeCode,
-                type: "waiting_input",
+                type: "task_finished",
                 tool: "Claude",
                 title: event.title,
-                message: "Claude is waiting for your input in \(location)",
-                notificationType: "idle_prompt",
+                message: "Claude finished in \(location)",
+                notificationType: "task_finished",
                 ts: DateFormatters.iso8601.string(from: event.timestamp),
                 directory: directory,
                 tabID: tabID,
                 sessionID: sessionID,
-                producer: "claude_response_complete_fallback",
+                producer: "claude_response_complete_finished",
                 reliability: .fallback
             )
-            publishUnifiedEvent(fallbackEvent, notify: true)
+            publishUnifiedEvent(finishedEvent, notify: true)
         }
 
         pendingClaudeWaitingInputFallbacks[sessionID] = work

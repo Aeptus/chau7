@@ -24,6 +24,51 @@ final class NotificationProviderAdapterRegistryTests: XCTestCase {
         XCTAssertEqual(enriched.kind, .taskFinished)
     }
 
+    /// The Claude turn-complete fallback emits `task_finished` (instead of the
+    /// old `waiting_input`). It must canonicalize to `.taskFinished` — which
+    /// resolves to `.done`/green and clears the orange waiting style — and must
+    /// NOT be dropped like the raw `response_complete` state event.
+    func testClaudeTaskFinishedResolvesToTaskFinished() {
+        let event = AIEvent(
+            source: .claudeCode,
+            type: "task_finished",
+            rawType: "task_finished",
+            tool: "Claude",
+            message: "Claude finished in Repo",
+            ts: "2026-07-17T00:00:00Z",
+            sessionID: "claude-session-1",
+            producer: "claude_response_complete_finished",
+            reliability: .fallback
+        )
+
+        let decision = NotificationProviderAdapterRegistry.adapt(event)
+        guard case let .emit(enriched) = decision else {
+            return XCTFail("Claude task_finished must be emitted, not dropped")
+        }
+        XCTAssertEqual(enriched.kind, .taskFinished)
+        XCTAssertEqual(enriched.event.type, "finished")
+    }
+
+    /// Regression guard: raw `response_complete` stays a dropped state-only
+    /// event (the Notification hook owns delivery) — only the synthesized
+    /// `task_finished` fallback surfaces the finished turn.
+    func testClaudeResponseCompleteStillDropped() {
+        let event = AIEvent(
+            source: .claudeCode,
+            type: "response_complete",
+            rawType: "response_complete",
+            tool: "Claude",
+            message: "done",
+            ts: "2026-07-17T00:00:00Z",
+            sessionID: "claude-session-2",
+            producer: "claude_monitor",
+            reliability: .authoritative
+        )
+        if case .emit = NotificationProviderAdapterRegistry.adapt(event) {
+            XCTFail("raw response_complete should remain dropped")
+        }
+    }
+
     func testChatGPTProviderCanonicalizesThroughGenericAdapter() {
         let event = AIEvent(
             source: .chatgpt,

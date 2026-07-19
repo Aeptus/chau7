@@ -38,7 +38,7 @@ final class TriggerVocabularyTests: XCTestCase {
     /// "<type>: <message>" fallback.
     func testVocabularyMatchesGoldenSnapshot() {
         let golden: [(type: String, title: String?, body: String?, style: String?)] = [
-            ("finished", "Finished", "Done.", "waiting"),
+            ("finished", "Finished", "Done.", "success"),
             ("failed", "Failed", "Check the logs.", "error"),
             ("tool_failed", "Tool failed", nil, "error"),
             ("response_failed", nil, nil, "error"),

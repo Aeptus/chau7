@@ -343,29 +343,42 @@ extension TerminalSessionModel {
             "❯ 1)"
         ]
 
-        let lowercased = text.lowercased()
+        // A genuine prompt/permission request sits at the END of the buffer.
+        // The same words appearing mid-output — an agent printing "Proceed?"
+        // or "[y/N]" inside a normal reply, or ending a message with a
+        // question — are false positives, so match only the trailing region
+        // rather than anywhere in the chunk.
+        let trailing = String(
+            text.trimmingCharacters(in: .whitespacesAndNewlines).suffix(280)
+        ).lowercased()
         let loweredApprovalPatterns = approvalPatterns.map { $0.lowercased() }
         let loweredWaitingPatterns = waitingPatterns.map { $0.lowercased() }
         let isApprovalRequired: Bool
-        if let rustMatch = RustPatternMatcher.waitPatterns.containsAny(haystack: lowercased, patterns: loweredApprovalPatterns) {
+        if let rustMatch = RustPatternMatcher.waitPatterns.containsAny(haystack: trailing, patterns: loweredApprovalPatterns) {
             isApprovalRequired = rustMatch
         } else {
             isApprovalRequired = approvalPatterns.contains { pattern in
-                lowercased.contains(pattern.lowercased())
+                trailing.contains(pattern.lowercased())
             }
         }
         let isWaiting: Bool
-        if let rustMatch = RustPatternMatcher.waitPatterns.containsAny(haystack: lowercased, patterns: loweredWaitingPatterns) {
+        if let rustMatch = RustPatternMatcher.waitPatterns.containsAny(haystack: trailing, patterns: loweredWaitingPatterns) {
             isWaiting = rustMatch
         } else {
             isWaiting = waitingPatterns.contains { pattern in
-                lowercased.contains(pattern.lowercased())
+                trailing.contains(pattern.lowercased())
             }
         }
 
         if isApprovalRequired || isWaiting {
             DispatchQueue.main.async { [weak self] in
                 guard let self, status == .running || status == .stuck else { return }
+                // The local status reflects what's on screen (a prompt) even
+                // for providers with authoritative notifications — this is
+                // deliberate and does not drive tab styling. The *notification*
+                // is what would falsely flag a finished turn as "waiting", and
+                // that is already suppressed for authoritative providers inside
+                // `emitTerminalDetectedAttentionIfNeeded`.
                 let detectedStatus: CommandStatus = isApprovalRequired ? .approvalRequired : .waitingForInput
                 status = detectedStatus
                 Log.trace("AI agent blocked detected status=\(status.rawValue)")
