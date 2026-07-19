@@ -2129,6 +2129,13 @@
   },
   {
     "category": "SSH, Profiles & Remote",
+    "feature": "Reliable Remote Input Delivery",
+    "description": "Remote submit Enters use a dedicated non-cancellable work-item pool, submitted phone sends replace the input line (^U first) instead of appending to pending prefills or stale drafts, and unconfirmed resume prefills surface on the iPhone as Run/Clear cards that retire once the line runs, is replaced, or is discarded",
+    "status": "Experimental",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "SSH, Profiles & Remote",
     "feature": "Remote iPhone Profiling Hooks",
     "description": "The iPhone app emits os.signpost intervals for frame processing, output append, and ANSI stripping so receive/render lag can be measured in Instruments",
     "status": "Experimental",
