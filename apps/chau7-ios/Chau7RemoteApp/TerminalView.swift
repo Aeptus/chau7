@@ -211,21 +211,17 @@ struct TerminalView: View {
             Menu {
                 if client.tabs.isEmpty {
                     Text("No remote tabs available yet")
+                } else if repoTabGroups.count == 1 {
+                    // A single group's header (often just "Other") is noise —
+                    // keep the flat list.
+                    tabMenuButtons(for: repoTabGroups[0].tabs)
                 } else {
-                    ForEach(client.tabs) { tab in
-                        Button {
-                            DiagnosticsLog.shared.info(.tab, "Selected remote tab", [
-                                "tab_id": String(tab.tabID),
-                                "title": tab.title
-                            ])
-                            client.switchTab(tab.tabID)
-                        } label: {
-                            Label {
-                                Text(tabMenuTitle(for: tab))
-                                    .lineLimit(1)
-                            } icon: {
-                                tabMenuIcon(for: tab)
-                            }
+                    // Repo names render as section titles — the system menu
+                    // styles them smaller and secondary, visually distinct
+                    // from the tab entries beneath them.
+                    ForEach(repoTabGroups) { group in
+                        Section(group.title) {
+                            tabMenuButtons(for: group.tabs)
                         }
                     }
                 }
@@ -272,6 +268,51 @@ struct TerminalView: View {
         .padding(.horizontal)
         .padding(.vertical, 8)
         .background(Color(UIColor.systemBackground))
+    }
+
+    private struct RepoTabGroup: Identifiable {
+        let id: String
+        let title: String
+        let tabs: [RemoteTab]
+    }
+
+    /// Tabs grouped by repo (projectName), preserving the Mac's tab order
+    /// both across groups (first appearance) and within them. Tabs without a
+    /// repo collect under "Other", always sorted last.
+    private var repoTabGroups: [RepoTabGroup] {
+        let fallback = "Other"
+        var order: [String] = []
+        var tabsByRepo: [String: [RemoteTab]] = [:]
+        for tab in client.tabs {
+            let name = tab.projectName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            let key = name.isEmpty ? fallback : name
+            if tabsByRepo[key] == nil { order.append(key) }
+            tabsByRepo[key, default: []].append(tab)
+        }
+        if let fallbackIndex = order.firstIndex(of: fallback), fallbackIndex != order.count - 1 {
+            order.remove(at: fallbackIndex)
+            order.append(fallback)
+        }
+        return order.map { RepoTabGroup(id: $0, title: $0, tabs: tabsByRepo[$0] ?? []) }
+    }
+
+    private func tabMenuButtons(for tabs: [RemoteTab]) -> some View {
+        ForEach(tabs) { tab in
+            Button {
+                DiagnosticsLog.shared.info(.tab, "Selected remote tab", [
+                    "tab_id": String(tab.tabID),
+                    "title": tab.title
+                ])
+                client.switchTab(tab.tabID)
+            } label: {
+                Label {
+                    Text(tabMenuTitle(for: tab))
+                        .lineLimit(1)
+                } icon: {
+                    tabMenuIcon(for: tab)
+                }
+            }
+        }
     }
 
     @ViewBuilder
