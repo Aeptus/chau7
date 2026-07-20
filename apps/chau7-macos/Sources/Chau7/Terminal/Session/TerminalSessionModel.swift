@@ -2587,6 +2587,15 @@ final class TerminalSessionModel {
         }
     }
 
+    /// Whether an AI CLI is actually running in this pane's process tree.
+    /// Internal for the remote prefill card: restored metadata sets
+    /// activeAppName/aiDisplayAppName BEFORE the resume command executes, so
+    /// those cannot distinguish "resume pending" from "resume running" — the
+    /// process tree can.
+    var isAIToolRunningInProcessTree: Bool {
+        hasRunningAIToolInActiveProcessTree()
+    }
+
     private func hasRunningAIToolInActiveProcessTree() -> Bool {
         let shellPID = activeRustTerminalView?.shellPid ?? 0
         guard shellPID > 0 else { return false }

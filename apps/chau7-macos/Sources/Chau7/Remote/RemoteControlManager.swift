@@ -975,9 +975,12 @@ final class RemoteControlManager {
     /// clears the tracking.
     private func pendingPrefillPrompt(for tab: OverlayTab, tabID: UInt32) -> RemoteInteractivePrompt? {
         for (paneID, session) in tab.splitController.terminalSessions {
+            // Gate on the PROCESS TREE, not activeAppName/aiDisplayAppName:
+            // restore metadata sets those to the provider name at prefill
+            // delivery — before anything executes — which would suppress the
+            // card in exactly the restored-tab scenario it exists for.
             guard let prefillText = session.deliveredPrefillText,
-                  session.aiDisplayAppName == nil,
-                  session.activeAppName == nil else {
+                  !session.isAIToolRunningInProcessTree else {
                 continue
             }
             return RemoteInteractivePrompt(
