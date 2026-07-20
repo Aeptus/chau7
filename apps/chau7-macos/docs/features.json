@@ -2150,6 +2150,13 @@
   },
   {
     "category": "SSH, Profiles & Remote",
+    "feature": "Repo-Grouped iPhone Tab Menu",
+    "description": "The Chau7 Remote tab dropdown groups tabs under their repo name as section titles, preserving the Mac's tab order across and within groups, with repo-less tabs under Other at the end",
+    "status": "Experimental",
+    "differentiator": "No"
+  },
+  {
+    "category": "SSH, Profiles & Remote",
     "feature": "Remote iPhone Profiling Hooks",
     "description": "The iPhone app emits os.signpost intervals for frame processing, output append, and ANSI stripping so receive/render lag can be measured in Instruments",
     "status": "Experimental",
