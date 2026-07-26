@@ -1144,7 +1144,8 @@ final class AppModel {
                 tabID: runtimeTabID,
                 sessionID: event.sessionId.isEmpty ? nil : event.sessionId,
                 directory: directory,
-                allowSessionIDAdoption: allowSessionIDAdoption
+                allowSessionIDAdoption: allowSessionIDAdoption,
+                trustMatchingSessionForForeignDirectory: true
             )
         }
 
@@ -1207,7 +1208,8 @@ final class AppModel {
                 tabID: resolvedTabID,
                 sessionID: session.id.isEmpty ? nil : session.id,
                 directory: directory,
-                allowSessionIDAdoption: allowSessionIDAdoption
+                allowSessionIDAdoption: allowSessionIDAdoption,
+                trustMatchingSessionForForeignDirectory: true
             )
         }
 

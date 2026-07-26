@@ -547,6 +547,34 @@ final class TerminalControlServiceTests: XCTestCase {
         )
     }
 
+    func testUpdateSessionDirectoryTrustsLiveMatchingSessionAcrossRepos() throws {
+        // Claude can change its project/cwd inside the TUI. The host shell
+        // never emits OSC 7 for that move, so a live Claude hook/idle event
+        // with the same session id must be allowed to move the tab from the
+        // launch repo to the new repo.
+        let launchRoot = try makeTempDirectoryTree(name: "mockup")
+        let movedRoot = try makeTempDirectoryTree(name: "blybot")
+        defer {
+            removeTempDirectory(launchRoot)
+            removeTempDirectory(movedRoot)
+        }
+        let tab = try XCTUnwrap(overlayModel.tabs.first)
+        let session = try XCTUnwrap(tab.session)
+        session.lastAISessionId = "session-live"
+        session.updateCurrentDirectory(launchRoot)
+        session.gitRootPath = launchRoot
+
+        let applied = TerminalControlService.shared.updateSessionDirectoryAcrossWindows(
+            tabID: tab.id,
+            sessionID: "session-live",
+            directory: movedRoot,
+            trustMatchingSessionForForeignDirectory: true
+        )
+
+        XCTAssertTrue(applied)
+        XCTAssertEqual(session.currentDirectory, movedRoot)
+    }
+
     func testUpdateSessionDirectoryAcceptsRelatedDirectory() throws {
         // Regression-guard the inverse: cd'ing within the same repo (parent →
         // subdir) must still be applied; this is the legitimate Claude-TUI

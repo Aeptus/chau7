@@ -274,7 +274,8 @@ final class TerminalControlService {
         tabID: UUID,
         sessionID: String?,
         directory: String,
-        allowSessionIDAdoption: Bool = true
+        allowSessionIDAdoption: Bool = true,
+        trustMatchingSessionForForeignDirectory: Bool = false
     ) -> Bool {
         let trimmed = directory.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return false }
@@ -286,25 +287,34 @@ final class TerminalControlService {
 
                 // Two-axis decision matrix (row = session, col = directory):
                 //                     dir related   dir foreign
-                //   session matches   accept        refuse  (stale binding,
-                //                                              foreign cwd)
+                //   session matches   accept        refuse by default
                 //   session differs   accept+adopt  refuse  (foreign event for
                 //                                              another tab)
                 // i.e. accept iff directory is related; on accept, adopt the
                 // new sessionID when it differs from the tab's live binding
                 // only if the event source has validated that the replacement
-                // identity is restorable.
-                let directoryIsRelated = !self.shouldRefuseCwdWriteAsForeign(
+                // identity is restorable. Live hook/idle callers may opt in
+                // to trusting a matching sessionID for cross-repo moves
+                // inside the same AI TUI; persisted/stale callers keep the
+                // default refusal.
+                let sessionMatches = sessionID.map { session.lastAISessionId == $0 } ?? false
+                let directoryIsForeign = self.shouldRefuseCwdWriteAsForeign(
                     session: session,
                     newDirectory: trimmed
                 )
-                guard directoryIsRelated else {
+                guard !directoryIsForeign || (trustMatchingSessionForForeignDirectory && sessionMatches) else {
                     Log.warn(
                         "updateSessionDirectory: refusing foreign-cwd write tab=\(tabID) " +
                             "session=\(sessionID ?? "nil") liveSession=\(session.lastAISessionId ?? "nil") " +
                             "tabCwd=\(session.currentDirectory) eventCwd=\(trimmed)"
                     )
                     return false
+                }
+                if directoryIsForeign {
+                    Log.info(
+                        "updateSessionDirectory: trusting matching live session across repos tab=\(tabID) " +
+                            "session=\(sessionID ?? "nil") oldCwd=\(session.currentDirectory) newCwd=\(trimmed)"
+                    )
                 }
 
                 if let sessionID,

@@ -70,6 +70,13 @@
     "differentiator": "Yes"
   },
   {
+    "category": "AI Detection & Integration",
+    "feature": "Claude Cross-Repo CWD Tracking",
+    "description": "Claude hook and idle events carry the authoritative cwd when Claude changes project inside its TUI; matching live Claude sessions can move a Chau7 tab across repo roots so path display, snippet context, and automatic repo grouping follow the real project while stale or mismatched foreign-cwd events remain blocked",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
     "category": "AI Integration",
     "feature": "MAGI Multi-Agent Decision Protocol",
     "description": "CLI-first council mode that launches three isolated agents through Chau7 MCP, applies editable member personas, applies explicit ask/auto-deny/preapproved evidence policy, resolves majority/final-vote-veto verdicts using canonical decision IDs plus material conditions, and writes replay/share artifacts",
