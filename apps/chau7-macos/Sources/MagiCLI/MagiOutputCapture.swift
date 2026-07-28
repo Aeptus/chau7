@@ -766,207 +766,6 @@ extension MagiMCPOrchestrator {
         Int64(max(0, (startedAt.timeIntervalSince1970 - 2) * 1000))
     }
 
-    func waitForParsed<T>(
-        runID: String,
-        roundID: String,
-        stageKind: MagiProtocolStage,
-        stage: String,
-        member: MagiMember,
-        tabID: String,
-        repositoryRoot: String?,
-        technicalLog: MagiTechnicalLog,
-        recordCapture: (MagiRawTranscript) -> Void,
-        parser: (String) throws -> T
-    ) throws -> T {
-        let deadline = Date().addingTimeInterval(roundTimeoutSeconds)
-        let startedAt = Date()
-        let expectedMarkers = MagiProtocolMarkers(
-            runID: runID,
-            roundID: roundID,
-            memberID: member.id,
-            stage: stageKind
-        )
-        var lastError: Error?
-        var lastOutput = ""
-        var lastLoggedOutputCount: Int?
-        var lastLoggedEventSignature: String?
-        var lastLoggedEventError: String?
-        var lastLoggedStatusError: String?
-        var nextProgressPulseAt = Date()
-        var progressPulse = 0
-
-        while Date() < deadline {
-            try throwIfInterrupted(stage: stage)
-            let capture = try pollStructuredOutput(
-                tabID: tabID,
-                repositoryRoot: repositoryRoot,
-                sinceMillis: runtimeEventSinceMillis(startedAt: startedAt),
-                terminalReadMode: .tail
-            )
-            let output = capture.combinedOutput
-            lastOutput = output
-            let now = Date()
-            if terminalStyle.supportsDynamicOutput {
-                renderProgressLine(
-                    member: member,
-                    stage: stage,
-                    stageKind: stageKind,
-                    pulse: progressPulse,
-                    terminalCharacters: capture.terminalOutput.count,
-                    eventCount: capture.eventMessages.count
-                )
-                progressPulse += 1
-            } else if progressPulseSeconds > 0, now >= nextProgressPulseAt {
-                renderProgressLine(
-                    member: member,
-                    stage: stage,
-                    stageKind: stageKind,
-                    pulse: progressPulse,
-                    terminalCharacters: capture.terminalOutput.count,
-                    eventCount: capture.eventMessages.count
-                )
-                progressPulse += 1
-                nextProgressPulseAt = now.addingTimeInterval(progressPulseSeconds)
-            }
-            if lastLoggedOutputCount != capture.terminalOutput.count {
-                lastLoggedOutputCount = capture.terminalOutput.count
-                technicalLog.record(
-                    "tab_output_polled",
-                    stage: stage,
-                    memberID: member.id,
-                    tabID: tabID,
-                    fields: ["characters": String(capture.terminalOutput.count)]
-                )
-            }
-            let eventSignature = "\(capture.eventMessages.count):\(capture.eventCharacters)"
-            if capture.eventMessages.isEmpty == false, lastLoggedEventSignature != eventSignature {
-                lastLoggedEventSignature = eventSignature
-                technicalLog.record(
-                    "repo_events_polled",
-                    stage: stage,
-                    memberID: member.id,
-                    tabID: tabID,
-                    fields: [
-                        "events": String(capture.eventMessages.count),
-                        "characters": String(capture.eventCharacters)
-                    ]
-                )
-            }
-            if let eventError = capture.eventError, lastLoggedEventError != eventError {
-                lastLoggedEventError = eventError
-                technicalLog.record(
-                    "repo_events_unavailable",
-                    stage: stage,
-                    level: "warning",
-                    memberID: member.id,
-                    tabID: tabID,
-                    message: eventError
-                )
-            }
-            if let statusError = capture.tabStatusError, lastLoggedStatusError != statusError {
-                lastLoggedStatusError = statusError
-                technicalLog.record(
-                    "tab_status_unavailable",
-                    stage: stage,
-                    level: "warning",
-                    memberID: member.id,
-                    tabID: tabID,
-                    message: statusError
-                )
-            }
-            do {
-                let parsed = try parser(output)
-                technicalLog.record(
-                    "structured_parse_succeeded",
-                    stage: stage,
-                    memberID: member.id,
-                    tabID: tabID,
-                    fields: ["stage_kind": stageKind.rawValue]
-                )
-                recordCapture(rawTranscript(
-                    memberID: member.id,
-                    roundID: roundID,
-                    stage: stageKind.rawValue,
-                    tabID: tabID,
-                    output: output
-                ))
-                clearProgressLine()
-                return parsed
-            } catch {
-                lastError = error
-                technicalLog.record(
-                    "structured_parse_pending",
-                    stage: stage,
-                    memberID: member.id,
-                    tabID: tabID,
-                    message: error.localizedDescription,
-                    fields: ["stage_kind": stageKind.rawValue]
-                )
-                if shouldRepairImmediately(error) {
-                    break
-                }
-                if shouldRepairAfterIdleMissingBlock(
-                    error,
-                    capture: capture,
-                    output: output,
-                    markers: expectedMarkers,
-                    elapsed: Date().timeIntervalSince(startedAt)
-                ) {
-                    technicalLog.record(
-                        "structured_parse_idle_without_block",
-                        stage: stage,
-                        memberID: member.id,
-                        tabID: tabID,
-                        message: error.localizedDescription,
-                        fields: ["stage_kind": stageKind.rawValue]
-                    )
-                    break
-                }
-                try sleepBeforeNextPoll(
-                    member: member,
-                    stage: stage,
-                    stageKind: stageKind,
-                    pulse: &progressPulse,
-                    terminalCharacters: capture.terminalOutput.count,
-                    eventCount: capture.eventMessages.count
-                )
-            }
-        }
-
-        clearProgressLine()
-
-        let parseError = lastError?.localizedDescription ?? "structured block did not appear before timeout"
-        recordCapture(rawTranscript(
-            memberID: member.id,
-            roundID: roundID,
-            stage: stageKind.rawValue,
-            tabID: tabID,
-            output: lastOutput,
-            parseError: parseError,
-            repairAttempted: true,
-            repairSucceeded: false
-        ))
-
-        return try runStructuredRepair(
-            context: StructuredRepairContext(
-                runID: runID,
-                roundID: roundID,
-                stageKind: stageKind,
-                stage: stage,
-                member: member,
-                tabID: tabID,
-                repositoryRoot: repositoryRoot,
-                expectedMarkers: expectedMarkers,
-                parseError: parseError,
-                lastOutput: lastOutput,
-                lastError: lastError
-            ),
-            technicalLog: technicalLog,
-            recordCapture: recordCapture,
-            parser: parser
-        )
-    }
-
     /// Inputs the repair sub-flow needs from the wait loop that spawned it.
     struct StructuredRepairContext {
         let runID: String
@@ -982,10 +781,10 @@ extension MagiMCPOrchestrator {
         let lastError: Error?
     }
 
-    // The structured-output repair sub-flow of `waitForParsed`: sends the
-    // repair prompt, polls until the re-emitted block parses, and records
-    // the terminal outcome. Split out so the poll loop and the repair flow
-    // each stay within readable (and lintable) bounds.
+    // The structured-output repair sub-flow: sends the repair prompt, polls
+    // until the re-emitted block parses, and records the terminal outcome.
+    // Split out so the pending-member loop and the repair flow each stay
+    // within readable (and lintable) bounds.
 
     func runStructuredRepair<T>(
         context: StructuredRepairContext,
@@ -1169,26 +968,6 @@ extension MagiMCPOrchestrator {
             member: member.persona.displayName,
             lastError: repairError?.localizedDescription ?? lastError?.localizedDescription
         )
-    }
-
-    func shouldRepairImmediately(_ error: Error) -> Bool {
-        _ = error
-        return false
-    }
-
-    func shouldRepairAfterIdleMissingBlock(
-        _ error: Error,
-        capture: MagiPolledOutput,
-        output: String,
-        markers: MagiProtocolMarkers,
-        elapsed: TimeInterval
-    ) -> Bool {
-        guard case .missingBlock = error as? MagiTranscriptParseError else {
-            return false
-        }
-        _ = markers
-        guard elapsed >= idleRepairGraceSeconds else { return false }
-        return capture.tabStatus.map(MagiMCPEventParsing.tabStatusIsIdleForRepair) ?? false
     }
 
     func rawTranscript(

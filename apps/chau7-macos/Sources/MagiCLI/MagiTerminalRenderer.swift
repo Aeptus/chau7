@@ -40,26 +40,6 @@ extension MagiMCPOrchestrator {
         "\(memberPrefix(memberID, displayName: displayName, state: state).styled)\(detail)"
     }
 
-    func printMemberOutput(
-        _ member: MagiMember,
-        _ detail: String,
-        state: MagiMemberLineState
-    ) {
-        let prefix = memberPrefix(member.id, displayName: member.persona.displayName, state: state)
-        let availableWidth = max(32, terminalStyle.wrapColumn - prefix.visibleLength)
-        let lines = MagiTerminalText.wrapped(detail, width: availableWidth)
-        guard let first = lines.first else {
-            printLine(prefix.styled)
-            return
-        }
-
-        printLine("\(prefix.styled)\(first)")
-        let continuationPrefix = String(repeating: " ", count: prefix.visibleLength)
-        for line in lines.dropFirst() {
-            printLine("\(continuationPrefix)\(line)")
-        }
-    }
-
     func memberPrefix(
         _ memberID: MagiMemberID,
         displayName: String,
