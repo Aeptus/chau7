@@ -2603,8 +2603,8 @@ final class TerminalSessionModel {
     }
 
     /// Auto-submits a restore prefill when safe. Provider-specific submit
-    /// strategy matters here: Codex's TUI is more reliable with a delayed raw
-    /// newline after automated text insertion than with an immediate Enter key.
+    /// strategy matters here: Codex's TUI needs a short delay after automated
+    /// text insertion, but still receives a real Enter key rather than raw LF.
     private func scheduleRestorePrefillAutoSubmit(deliveredText: String) {
         guard FeatureSettings.shared.autoSubmitRestorePrefill else { return }
 

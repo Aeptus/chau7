@@ -67,14 +67,14 @@ final class PrefillAutoSubmitTests: XCTestCase {
         XCTAssertEqual(value, false, "toggling must persist via UserDefaults")
     }
 
-    func testCodexRestorePrefillAutoSubmitsWithRawNewline() async {
+    func testCodexRestorePrefillAutoSubmitsWithEnterKey() async {
         let (session, inputs) = readySession()
         let command = "codex resume 019d25d0-d0bd-7501-99ba-1f937c17b29b"
 
         XCTAssertEqual(session.prefillInput(command), .delivered)
         await waitForAutoSubmit()
 
-        XCTAssertEqual(inputs.values, [command, "\n"])
+        XCTAssertEqual(inputs.values, [command, "\r"])
     }
 
     func testNonCodexRestorePrefillAutoSubmitsWithEnterKey() async {
