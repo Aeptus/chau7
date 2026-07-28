@@ -774,21 +774,25 @@ impl Tracker {
 }
 
 fn get_db_path() -> Result<PathBuf> {
-    // Priority 1: Environment variable RTK_DB_PATH
-    if let Ok(custom_path) = std::env::var("RTK_DB_PATH") {
-        return Ok(PathBuf::from(custom_path));
+    let env_path = std::env::var("RTK_DB_PATH").ok().map(PathBuf::from);
+    let config_path = crate::config::Config::load()
+        .ok()
+        .and_then(|config| config.tracking.database_path);
+
+    Ok(resolve_db_path(env_path, config_path))
+}
+
+fn resolve_db_path(env_path: Option<PathBuf>, config_path: Option<PathBuf>) -> PathBuf {
+    if let Some(custom_path) = env_path {
+        return custom_path;
     }
 
-    // Priority 2: Configuration file
-    if let Ok(config) = crate::config::Config::load() {
-        if let Some(db_path) = config.tracking.database_path {
-            return Ok(db_path);
-        }
+    if let Some(db_path) = config_path {
+        return db_path;
     }
 
-    // Priority 3: Default platform-specific location
     let data_dir = dirs::data_local_dir().unwrap_or_else(|| PathBuf::from("."));
-    Ok(data_dir.join("rtk").join("history.db"))
+    data_dir.join("rtk").join("history.db")
 }
 
 /// Estimate token count from text using ~4 chars = 1 token heuristic.
@@ -1076,26 +1080,15 @@ mod tests {
     // 7. get_db_path respects environment variable RTK_DB_PATH
     #[test]
     fn test_custom_db_path_env() {
-        use std::env;
-
         let custom_path = "/tmp/rtk_test_custom.db";
-        env::set_var("RTK_DB_PATH", custom_path);
-
-        let db_path = get_db_path().expect("Failed to get db path");
+        let db_path = resolve_db_path(Some(PathBuf::from(custom_path)), None);
         assert_eq!(db_path, PathBuf::from(custom_path));
-
-        env::remove_var("RTK_DB_PATH");
     }
 
     // 8. get_db_path falls back to default when no custom config
     #[test]
     fn test_default_db_path() {
-        use std::env;
-
-        // Ensure no env var is set
-        env::remove_var("RTK_DB_PATH");
-
-        let db_path = get_db_path().expect("Failed to get db path");
+        let db_path = resolve_db_path(None, None);
         assert!(db_path.ends_with("rtk/history.db"));
     }
 }
