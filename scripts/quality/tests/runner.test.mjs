@@ -79,3 +79,24 @@ test("dirty worktree can be explicitly acknowledged by env", async () => {
     else process.env.AEPTUS_SKIP_DIRTY_WORKTREE_CONFIRM = old;
   }
 });
+
+test("dirty worktree check ignores path git wrappers", async () => {
+  if (!fs.existsSync("/usr/bin/git")) return;
+  const root = makeRepo();
+  const bin = fs.mkdtempSync(path.join(os.tmpdir(), "chau7-quality-fake-git-"));
+  const fakeGit = path.join(bin, "git");
+  fs.writeFileSync(
+    fakeGit,
+    "#!/bin/sh\nif [ \"$1\" = \"status\" ]; then echo 'ok wrapped'; exit 0; fi\nexec /usr/bin/git \"$@\"\n",
+  );
+  fs.chmodSync(fakeGit, 0o755);
+
+  const oldPath = process.env.PATH;
+  try {
+    process.env.PATH = `${bin}${path.delimiter}${oldPath}`;
+    const result = await checkDirtyWorktree(root, { interactive: false });
+    assert.equal(result.status, "passed");
+  } finally {
+    process.env.PATH = oldPath;
+  }
+});

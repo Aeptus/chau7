@@ -14,6 +14,7 @@ import {
   discoverStagedFiles,
   ensureDir,
   filterQualityPaths,
+  gitExecutable,
   isWorktreeDirty,
   repoRoot,
   resolveChangedFilesFromPrepush,
@@ -75,7 +76,7 @@ function readStdinIfAvailable() {
 
 function git(root, args, options = {}) {
   try {
-    const stdout = execFileSync("git", args, {
+    const stdout = execFileSync(gitExecutable(), args, {
       cwd: root,
       encoding: "utf8",
       stdio: ["ignore", "pipe", "pipe"],
