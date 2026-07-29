@@ -51,6 +51,39 @@ final class SettingsSurfaceTests: XCTestCase {
         )
     }
 
+    @MainActor
+    func testSettingsNavigationDeepLinkRoutesToExplicitSectionAndAnchor() {
+        let navigation = SettingsNavigationModel()
+        navigation.searchQuery = "alerts"
+
+        navigation.show(section: .notifications, anchorID: "eventMonitoring")
+
+        XCTAssertEqual(navigation.selection, .notifications)
+        XCTAssertEqual(navigation.anchorID, "eventMonitoring")
+        XCTAssertEqual(navigation.searchQuery, "")
+    }
+
+    @MainActor
+    func testSettingsNavigationDeepLinkInfersSectionFromKnownAnchor() {
+        let navigation = SettingsNavigationModel(selection: .general)
+
+        navigation.show(anchorID: "snippets")
+
+        XCTAssertEqual(navigation.selection, .snippetsTools)
+        XCTAssertEqual(navigation.anchorID, "snippets")
+    }
+
+    @MainActor
+    func testSettingsNavigationSearchClearsDeepLinkAnchorAndSelectsFirstMatchingSection() {
+        let navigation = SettingsNavigationModel(selection: .notifications, anchorID: "eventMonitoring")
+
+        navigation.updateSearchQuery("snippets", firstMatchingSection: .snippetsTools)
+
+        XCTAssertEqual(navigation.selection, .snippetsTools)
+        XCTAssertEqual(navigation.searchQuery, "snippets")
+        XCTAssertNil(navigation.anchorID)
+    }
+
     func testAdvancedDisclosureExpansionIsDrivenByChildSearchAnchors() {
         let hiddenAnchors: Set = ["ctoPerTab", "proxyInternals"]
 
