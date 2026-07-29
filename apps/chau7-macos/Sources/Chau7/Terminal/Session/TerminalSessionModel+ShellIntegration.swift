@@ -354,7 +354,7 @@ extension TerminalSessionModel {
         let loweredApprovalPatterns = approvalPatterns.map { $0.lowercased() }
         let loweredWaitingPatterns = waitingPatterns.map { $0.lowercased() }
         let isApprovalRequired: Bool
-        if let rustMatch = RustPatternMatcher.waitPatterns.containsAny(haystack: trailing, patterns: loweredApprovalPatterns) {
+        if let rustMatch = RustPatternMatcher.approvalPatterns.containsAny(haystack: trailing, patterns: loweredApprovalPatterns) {
             isApprovalRequired = rustMatch
         } else {
             isApprovalRequired = approvalPatterns.contains { pattern in

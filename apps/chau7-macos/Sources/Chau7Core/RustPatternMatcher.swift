@@ -4,6 +4,13 @@ import Darwin
 public final class RustPatternMatcher {
     public static let outputPatterns = RustPatternMatcher()
     public static let waitPatterns = RustPatternMatcher()
+    /// Separate instance from `waitPatterns` on purpose. Each instance caches
+    /// exactly one compiled pattern handle, rebuilding it whenever the pattern
+    /// list changes (`ensurePatternHandle`). The waiting-input detector queries
+    /// two different lists per output chunk, so sharing one instance between
+    /// them guarantees a free + rebuild on every call — on the PTY hot path,
+    /// for every session, all serialized through this instance's lock.
+    public static let approvalPatterns = RustPatternMatcher()
 
     private typealias PatternsCreate = @convention(c) (UnsafePointer<UnsafePointer<CChar>?>?, Int) -> UnsafeMutableRawPointer?
     private typealias PatternsFree = @convention(c) (UnsafeMutableRawPointer?) -> Void
