@@ -21,8 +21,66 @@ final class InteractivePromptDetectorTests: XCTestCase {
         XCTAssertEqual(prompt.prompt, "Do you want to proceed?")
         XCTAssertEqual(prompt.options.map(\.id), ["1", "2"])
         XCTAssertEqual(prompt.options.map(\.label), ["Yes", "No"])
-        XCTAssertEqual(prompt.options.map(\.response), ["1\r", "2\r"])
+        // Cursor-marked: answered by moving the selection, not by typing the
+        // row number (Claude Code's permission menu ignores digits).
+        XCTAssertEqual(prompt.options.map(\.response), ["\r", "\u{1B}[B\r"])
+        XCTAssertEqual(prompt.selectedOptionIndex, 0)
         XCTAssertTrue(prompt.options[1].isDestructive)
+    }
+
+    func testClaudePermissionMenuWithAlwaysAllowRowNavigates() throws {
+        // The real three-option shape: option 2 grants standing permission and
+        // carries the whole command in its label.
+        let transcript = """
+        Bash command
+
+        git commit -m "wip"
+
+        This command requires approval
+
+        Do you want to proceed?
+        ❯ 1. Yes
+          2. Yes, and don't ask again for similar commands in /repo
+          3. No
+
+        Esc to cancel · Tab to amend · ctrl+e to explain
+        """
+
+        let prompt = try XCTUnwrap(InteractivePromptDetector.detect(in: transcript, toolName: "Claude"))
+        XCTAssertEqual(prompt.options.count, 3)
+        XCTAssertEqual(
+            prompt.options.map(\.response),
+            ["\r", "\u{1B}[B\r", "\u{1B}[B\u{1B}[B\r"]
+        )
+        XCTAssertEqual(prompt.selectedOptionIndex, 0)
+    }
+
+    func testNumberedMenuWithoutCursorKeepsDigitResponses() throws {
+        // No cursor glyph means no known selection to navigate from, so the
+        // digit responses stand. Guards the tools whose menus do act on digits.
+        let transcript = """
+        Do you want to proceed?
+        1. Yes
+        2. No
+        """
+
+        let prompt = try XCTUnwrap(InteractivePromptDetector.detect(in: transcript, toolName: "Claude"))
+        XCTAssertEqual(prompt.options.map(\.response), ["1\r", "2\r"])
+        XCTAssertNil(prompt.selectedOptionIndex)
+    }
+
+    func testKeywordMenuWithMultipleCursorRowsKeepsDigitResponses() throws {
+        // Two cursors is not a coherent selection reading; fall back to digits
+        // rather than navigating from a guessed row.
+        let transcript = """
+        Do you want to proceed?
+        ❯ 1. Yes
+        ❯ 2. No
+        """
+
+        let prompt = try XCTUnwrap(InteractivePromptDetector.detect(in: transcript, toolName: "Claude"))
+        XCTAssertEqual(prompt.options.map(\.response), ["1\r", "2\r"])
+        XCTAssertNil(prompt.selectedOptionIndex)
     }
 
     func testDetectsCodexOptionPrompt() throws {
@@ -37,6 +95,8 @@ final class InteractivePromptDetectorTests: XCTestCase {
         let prompt = try XCTUnwrap(InteractivePromptDetector.detect(in: transcript, toolName: "Codex"))
         XCTAssertEqual(prompt.prompt, "Do you want to continue?")
         XCTAssertEqual(prompt.options.map(\.label), ["Continue", "Cancel"])
+        // Codex renders this menu without a cursor glyph, so it keeps digits.
+        XCTAssertEqual(prompt.options.map(\.response), ["1\r", "2\r"])
     }
 
     func testDetectsCodexPromptWithoutQuestionMark() throws {
@@ -297,7 +357,10 @@ final class InteractivePromptDetectorTests: XCTestCase {
         XCTAssertEqual(prompt.prompt, "Which auth method should we use for the API?")
         XCTAssertEqual(prompt.options.map(\.id), ["1", "2", "3"])
         XCTAssertEqual(prompt.options.map(\.label), ["OAuth (Recommended)", "JWT", "Other"])
-        XCTAssertEqual(prompt.options.map(\.response), ["1\r", "2\r", "3\r"])
+        XCTAssertEqual(
+            prompt.options.map(\.response),
+            ["\r", "\u{1B}[B\r", "\u{1B}[B\u{1B}[B\r"]
+        )
         XCTAssertEqual(prompt.selectedOptionIndex, 0)
     }
 
@@ -398,7 +461,8 @@ final class InteractivePromptDetectorTests: XCTestCase {
 
     func testKeywordPassWinsOverStructural() throws {
         // Both passes match here; the keyword pass is the higher-confidence
-        // read and does not report a cursor index.
+        // read of the prompt text, and it reports the cursor row too so a
+        // keyword-matched menu is navigated exactly like a structural one.
         let transcript = """
         Do you want to proceed?
         ❯ 1. Yes
@@ -407,7 +471,7 @@ final class InteractivePromptDetectorTests: XCTestCase {
 
         let prompt = try XCTUnwrap(InteractivePromptDetector.detect(in: transcript, toolName: "Claude"))
         XCTAssertEqual(prompt.prompt, "Do you want to proceed?")
-        XCTAssertNil(prompt.selectedOptionIndex)
+        XCTAssertEqual(prompt.selectedOptionIndex, 0)
     }
 
     // MARK: - Structural detection: arrow-only menus
