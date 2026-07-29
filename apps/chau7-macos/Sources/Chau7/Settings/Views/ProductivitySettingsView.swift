@@ -12,6 +12,7 @@ struct ProductivitySettingsView: View {
         VStack(alignment: .leading, spacing: Chau7Style.Settings.pageSectionSpacing) {
             // Snippets
             SettingsSectionHeader(L("settings.productivity.snippets", "Snippets"), icon: "text.badge.plus")
+                .settingsSearchAnchor("snippets")
 
             // Quick summary and manage button
             HStack {

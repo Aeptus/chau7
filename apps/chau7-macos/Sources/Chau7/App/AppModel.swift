@@ -240,7 +240,7 @@ final class AppModel {
     /// via the active→idle bridge. 30-second cooldown prevents rapid re-firing.
     @ObservationIgnored private var sessionFinishedTimestamps: [String: Date] = [:]
 
-    /// Backward-compat computed accessors for MainPanelView / LogsSettingsView
+    /// Backward-compat computed accessors for legacy panel consumers and LogsSettingsView
     var codexHistoryEntries: [HistoryEntry] {
         toolHistoryEntries["codex"] ?? []
     }

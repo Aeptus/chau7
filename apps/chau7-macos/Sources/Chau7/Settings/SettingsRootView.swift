@@ -1,7 +1,5 @@
 import SwiftUI
 import AppKit
-import UniformTypeIdentifiers
-import Chau7Core
 
 // MARK: - Settings Window Wrapper
 
@@ -9,9 +7,10 @@ import Chau7Core
 struct SettingsWindowView: View {
     var model: AppModel
     let overlayModel: OverlayTabsModel?
+    @Bindable var navigation: SettingsNavigationModel
 
     var body: some View {
-        SettingsRootView(model: model, overlayModel: overlayModel)
+        SettingsRootView(model: model, overlayModel: overlayModel, navigation: navigation)
     }
 }
 
@@ -20,19 +19,18 @@ struct SettingsWindowView: View {
 struct SettingsRootView: View {
     var model: AppModel
     let overlayModel: OverlayTabsModel?
-    @State private var selection: SettingsSection = .startHere
-    @State private var searchQuery = ""
+    @Bindable var navigation: SettingsNavigationModel
 
     private var matchingSections: Set<SettingsSection> {
-        FeatureSettings.sectionsMatching(query: searchQuery)
+        FeatureSettings.sectionsMatching(query: navigation.searchQuery)
     }
 
     private var isSearching: Bool {
-        !searchQuery.isEmpty
+        !navigation.searchQuery.isEmpty
     }
 
     private var filteredSections: [SettingsSection] {
-        if searchQuery.isEmpty {
+        if navigation.searchQuery.isEmpty {
             return SettingsSection.allCases
         }
         return SettingsSection.allCases.filter { matchingSections.contains($0) }
@@ -42,10 +40,10 @@ struct SettingsRootView: View {
         NavigationSplitView {
             VStack(spacing: 0) {
                 // Search Bar
-                SettingsSearchBar(searchQuery: $searchQuery)
+                SettingsSearchBar(searchQuery: searchBinding)
 
                 // Section List — grouped when browsing, flat when searching
-                List(selection: $selection) {
+                List(selection: selectionBinding) {
                     if isSearching {
                         ForEach(filteredSections) { section in
                             sidebarRow(for: section)
@@ -70,10 +68,9 @@ struct SettingsRootView: View {
             )
         } detail: {
             SettingsDetailView(
-                selection: selection,
                 model: model,
                 overlayModel: overlayModel,
-                searchQuery: searchQuery
+                navigation: navigation
             )
             .frame(
                 minWidth: SettingsLayout.detailMinWidth,
@@ -94,21 +91,38 @@ struct SettingsRootView: View {
             maxHeight: .infinity,
             alignment: .topLeading
         )
-        .onChange(of: searchQuery) {
-            // Auto-select first matching section when searching
-            if !searchQuery.isEmpty, let firstMatch = filteredSections.first {
-                selection = firstMatch
-            }
-        }
     }
 
     private func sidebarRow(for section: SettingsSection) -> some View {
         SettingsSidebarRow(
             section: section,
             isHighlighted: isSearching && matchingSections.contains(section),
-            matchCount: isSearching ? FeatureSettings.searchableSettings.filter { $0.section == section && $0.matches(searchQuery) }.count : 0
+            matchCount: isSearching ? FeatureSettings.searchableSettings.filter {
+                $0.section == section && $0.matches(navigation.searchQuery)
+            }.count : 0
         )
         .tag(section)
+    }
+
+    private var selectionBinding: Binding<SettingsSection> {
+        Binding(
+            get: { navigation.selection },
+            set: { section in
+                navigation.selection = section
+                navigation.clearAnchor()
+            }
+        )
+    }
+
+    private var searchBinding: Binding<String> {
+        Binding(
+            get: { navigation.searchQuery },
+            set: { query in
+                let matches = FeatureSettings.sectionsMatching(query: query)
+                let firstMatch = query.isEmpty ? nil : SettingsSection.allCases.first { matches.contains($0) }
+                navigation.updateSearchQuery(query, firstMatchingSection: firstMatch)
+            }
+        )
     }
 }
 
@@ -186,11 +200,17 @@ struct SettingsSidebarRow: View {
 // MARK: - Settings Detail View
 
 struct SettingsDetailView: View {
-    let selection: SettingsSection
     var model: AppModel
     let overlayModel: OverlayTabsModel?
-    var searchQuery = ""
-    @State private var focusedSearchAnchorID: String?
+    @Bindable var navigation: SettingsNavigationModel
+
+    private var selection: SettingsSection {
+        navigation.selection
+    }
+
+    private var searchQuery: String {
+        navigation.searchQuery
+    }
 
     private var matchingSettings: [SearchableSetting] {
         guard !searchQuery.isEmpty else { return [] }
@@ -200,11 +220,10 @@ struct SettingsDetailView: View {
     }
 
     private var activeSearchAnchorID: String? {
-        guard !searchQuery.isEmpty else { return nil }
-        if let focusedSearchAnchorID,
-           matchingSettings.contains(where: { $0.anchorID == focusedSearchAnchorID }) {
-            return focusedSearchAnchorID
+        if let anchorID = navigation.anchorID {
+            return anchorID
         }
+        guard !searchQuery.isEmpty else { return nil }
         return matchingSettings.first?.anchorID
     }
 
@@ -225,7 +244,7 @@ struct SettingsDetailView: View {
                             query: searchQuery,
                             activeAnchorID: activeSearchAnchorID,
                             onSelect: { setting in
-                                focusedSearchAnchorID = setting.anchorID
+                                navigation.focusSearchResult(setting)
                             }
                         )
                     }
@@ -311,11 +330,9 @@ struct SettingsDetailView: View {
                 scrollToActiveSearchAnchor(proxy)
             }
             .onChange(of: searchQuery) {
-                focusedSearchAnchorID = nil
                 scrollToActiveSearchAnchor(proxy)
             }
             .onChange(of: selection) {
-                focusedSearchAnchorID = nil
                 scrollToActiveSearchAnchor(proxy)
             }
             .onChange(of: activeSearchAnchorID) {

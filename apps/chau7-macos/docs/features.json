@@ -71,6 +71,13 @@
   },
   {
     "category": "AI Detection & Integration",
+    "feature": "Menu Bar Command Center",
+    "description": "The macOS status item summarizes live AI sessions across all overlay windows, prioritizes approval-required, waiting-input, and stuck sessions, opens the exact terminal pane, exposes pinned snippets as Insert actions with clipboard fallback, and deep-links Monitoring and Snippets settings",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "AI Detection & Integration",
     "feature": "Claude Cross-Repo CWD Tracking",
     "description": "Claude hook and idle events carry the authoritative cwd when Claude changes project inside its TUI; matching live Claude sessions can move a Chau7 tab across repo roots so path display, snippet context, and automatic repo grouping follow the real project while stale or mismatched foreign-cwd events remain blocked",
     "status": "Shipped",

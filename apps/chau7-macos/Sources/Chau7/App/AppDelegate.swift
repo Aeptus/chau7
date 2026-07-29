@@ -74,6 +74,7 @@ private final class SettingsToolbarDelegate: NSObject, NSToolbarDelegate {
     private var splashController: SplashWindowController?
     private var settingsWindow: NSWindow?
     private var settingsToolbarDelegate: SettingsToolbarDelegate?
+    private let settingsNavigationModel = SettingsNavigationModel()
     private var isClosingTab = false // Flag to prevent windowShouldClose from hiding window during tab close
     private var nextOverlayWindowNumber = 1
     /// Tracks windows that were hidden via orderOut - used to trigger tab bar refresh only when needed
@@ -638,12 +639,14 @@ private final class SettingsToolbarDelegate: NSObject, NSToolbarDelegate {
         }
     }
 
-    func showSettings() {
+    func showSettings(section: SettingsSection? = nil, anchorID: String? = nil) {
+        settingsNavigationModel.show(section: section, anchorID: anchorID)
+
         // If settings window already exists, bring it to front
         if let existing = settingsWindow, existing.isVisible {
             existing.makeKeyAndOrderFront(nil)
             NSApp.activate(ignoringOtherApps: true)
-            Log.info("Settings window brought to front.")
+            Log.info("Settings window brought to front. section=\(settingsNavigationModel.selection.rawValue) anchor=\(settingsNavigationModel.anchorID ?? "none")")
             return
         }
 
@@ -660,7 +663,11 @@ private final class SettingsToolbarDelegate: NSObject, NSToolbarDelegate {
         // makes SwiftUI ScrollViews feel page-chunked. NSHostingController
         // bridges the event routing through AppKit's view-controller machinery
         // so SwiftUI gets continuous scroll deltas.
-        let settingsView = SettingsWindowView(model: model, overlayModel: overlayModel)
+        let settingsView = SettingsWindowView(
+            model: model,
+            overlayModel: overlayModel,
+            navigation: settingsNavigationModel
+        )
         let hostingController = NSHostingController(rootView: settingsView.localized())
 
         let window = NSWindow(
@@ -704,7 +711,7 @@ private final class SettingsToolbarDelegate: NSObject, NSToolbarDelegate {
         NSApp.activate(ignoringOtherApps: true)
 
         settingsWindow = window
-        Log.info("Settings window created and shown.")
+        Log.info("Settings window created and shown. section=\(settingsNavigationModel.selection.rawValue) anchor=\(settingsNavigationModel.anchorID ?? "none")")
     }
 
     func newOverlayWindow() {

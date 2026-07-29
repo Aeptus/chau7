@@ -66,6 +66,7 @@ Detection methods:
 
 ### AI Features
 
+- **Menu Bar Command Center** -- the macOS status item summarizes live AI sessions across all overlay windows, prioritizes approval-required, waiting-input, and stuck sessions, opens the exact terminal pane, exposes pinned snippets as Insert actions with clipboard fallback, and deep-links Monitoring and Snippets settings.
 - **Chau7CLI repo skills support** — `chau7-cli skills --scope repo` validates `.chau7/skills/<skill-id>` sources, installs/syncs them into repo-local `.claude/skills/<skill-id>` and `.codex/skills/<skill-id>` targets, and resolves relative skill paths from the command working directory for repo-specific agent setup.
 - **Chau7CLI skills commands** — `chau7-cli skills` provides `list`, `doctor`, `install`, `update`, `uninstall`, `validate`, `diff`, and `sync` commands over built-in Agent Skills, using shared Chau7Core validation, install inspection, planning, and installer logic for Claude/Codex user targets, with `all` reporting invalid source directories instead of silently skipping them.
 - **Chau7CLI local installer** — `Scripts/install-chau7-cli.sh` builds the SwiftPM `chau7-cli` product and installs both `chau7-cli` and a `chau7` wrapper into `~/.local/bin` by default, enabling the documented `chau7 skills ...` command surface without a conflicting lowercase SwiftPM product.
