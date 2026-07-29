@@ -931,7 +931,17 @@ final class RemoteControlManager {
             }
 
             return tab.splitController.terminalSessions.compactMap { paneID, session in
-                guard session.effectiveStatus == .waitingForInput else { return nil }
+                // Both statuses mean the same thing here: the session is
+                // blocked on the user. The status is only a cheap pre-filter
+                // that keeps snapshot capture off the hot path — the detector
+                // below is the arbiter — so admitting a second status costs a
+                // wasted scrape at worst, never a phantom card. Excluding
+                // .approvalRequired hid precisely the prompts most worth
+                // answering from the phone: a tool's permission gate is
+                // classified approvalRequired, not waitingForInput, so it
+                // reached the phone as a status badge with nothing to tap.
+                guard session.effectiveStatus == .waitingForInput
+                    || session.effectiveStatus == .approvalRequired else { return nil }
 
                 let toolName = activityToolName(for: session, tab: tab)
                 guard let snapshot = session.captureRemoteSnapshot(),
