@@ -315,6 +315,13 @@
     "differentiator": "No"
   },
   {
+    "category": "MCP Server",
+    "feature": "Codex MCP Config Self-Healing",
+    "description": "Codex MCP registration rewrites stale shell-wrapper commands and multi-line args arrays to direct chau7-mcp-bridge execution while preserving per-tool approval subsections such as tab_close",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
     "category": "Terminal Core",
     "feature": "Rust Terminal Backend",
     "description": "Custom terminal emulator written in Rust with FFI bridge — fast, memory-safe, and correct",
