@@ -30,6 +30,14 @@ struct TerminalView: View {
     @State private var textAwayFromBottom = false
     @State private var scrollToBottomToken = 0
     @State private var isErrorExpanded = false
+    /// Frozen copy of `repoTabGroups`, captured when the session menu opens.
+    /// A SwiftUI `Menu`'s content closure re-runs whenever the state it reads
+    /// changes — even while presented — so reading `client.tabs` directly would
+    /// let activity-driven tab reordering reshuffle rows under the user's
+    /// finger. Rendering from this snapshot pins the order for the open menu;
+    /// the label keeps reading live state, and closed-menu activity float is
+    /// preserved (the next open re-snapshots).
+    @State private var menuTabGroups: [RepoTabGroup] = []
     @FocusState private var inputFocused: Bool
 
     var body: some View {
@@ -209,17 +217,17 @@ struct TerminalView: View {
             connectionStatusSymbol
 
             Menu {
-                if client.tabs.isEmpty {
+                if menuTabGroups.isEmpty {
                     Text("No remote tabs available yet")
-                } else if repoTabGroups.count == 1 {
+                } else if menuTabGroups.count == 1 {
                     // A single group's header (often just "Other") is noise —
                     // keep the flat list.
-                    tabMenuButtons(for: repoTabGroups[0].tabs)
+                    tabMenuButtons(for: menuTabGroups[0].tabs)
                 } else {
                     // Repo names render as section titles — the system menu
                     // styles them smaller and secondary, visually distinct
                     // from the tab entries beneath them.
-                    ForEach(repoTabGroups) { group in
+                    ForEach(menuTabGroups) { group in
                         Section(group.title) {
                             tabMenuButtons(for: group.tabs)
                         }
@@ -247,6 +255,11 @@ struct TerminalView: View {
                 .clipShape(Capsule(style: .continuous))
             }
             .accessibilityLabel("Active session: \(activeTabMenuLabel)\(activeTabStatusDescription.map { ", \($0)" } ?? "")")
+            // Snapshot the current grouping as the menu opens. `simultaneousGesture`
+            // fires on the tap-to-open without consuming it (a plain `.onTapGesture`
+            // would swallow the tap and prevent the menu from presenting), so the
+            // rows are frozen the instant the menu appears.
+            .simultaneousGesture(TapGesture().onEnded { menuTabGroups = repoTabGroups })
 
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
