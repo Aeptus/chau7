@@ -459,6 +459,7 @@ Chau7's rendering pipeline is purpose-built for latency-sensitive terminal work:
 ### Split Panes
 
 - Horizontal (`Cmd+D`) and vertical (`Cmd+Opt+D`) splits with draggable dividers.
+- Terminal splits share one focused-pane interaction policy across SwiftUI construction and imperative refreshes: only the focused leaf owns keyboard input and the window-level Metal renderer, while visible siblings retain their lifecycle and render through an immediately refreshed CPU fallback. Native AppKit first-responder changes are the authoritative focus signal.
 - Arbitrary nesting via binary tree layout controller.
 - Persisted split-pane trees carry a schema version, so a future Chau7 build that adds a new pane kind can't silently mis-decode through an older binary — older code surfaces a clear error and falls back to a default layout instead.
 - Modal dialogs (close-confirm, Save As) and main-queue polling are injected through `Dialogs` and `MainScheduler` protocols, so the entire close-time decision path and the markdown runbook sequential runner are unit-driveable end-to-end without an AppKit modal loop or real sleeps.

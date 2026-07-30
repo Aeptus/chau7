@@ -533,9 +533,7 @@ final class RustMetalDisplayCoordinator: NSObject {
         // false a few lines before setting it to true at the bottom of
         // this function.
         if let oldView, oldView !== newView {
-            oldView.onDisplaySyncNeeded = nil
-            oldView.applyRenderPhase(.warm, isInteractive: false, reason: "metalCoordinatorSwitch")
-            oldView.isMetalRenderingActive = false
+            oldView.detachFromSharedMetalRendererForHandoff()
             if let oldContainer = oldView.superview as? RustTerminalContainerView {
                 oldContainer.metalCoordinator = nil
             }

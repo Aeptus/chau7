@@ -1705,6 +1705,13 @@ final class RustTerminalView: NSView {
     /// Callback when user input is sent
     var onInput: ((String) -> Void)?
 
+    /// Callback when AppKit makes this pane the keyboard responder.
+    ///
+    /// This is the authoritative pane-focus signal: focus can arrive through
+    /// clicks, selection drags, or responder-chain navigation, not only a
+    /// SwiftUI tap gesture.
+    var onFocus: (() -> Void)?
+
     /// Callback before user-originated text is sent to the PTY.
     var shouldAcceptUserText: ((String) -> Bool)?
 
@@ -2889,6 +2896,27 @@ final class RustTerminalView: NSView {
         }
     }
 
+    /// Releases the window-shared Metal surface without changing whether this
+    /// pane is semantically visible. A split sibling remains `.active` and
+    /// immediately resumes its CPU renderer after the GPU moves to the newly
+    /// focused pane.
+    func detachFromSharedMetalRendererForHandoff() {
+        let preservedPhase = currentRenderPhase
+        onDisplaySyncNeeded = nil
+        isMetalRenderingActive = false
+        applyRenderPhase(
+            preservedPhase,
+            isInteractive: false,
+            reason: "metalCoordinatorHandoff"
+        )
+
+        if preservedPhase.keepsVisibleSurface {
+            needsGridSync = true
+            syncGridToRenderer(force: true)
+            needsDisplay = true
+        }
+    }
+
     var isInteractiveForRendering: Bool {
         isInteractive
     }
@@ -3004,6 +3032,7 @@ final class RustTerminalView: NSView {
 
     override func becomeFirstResponder() -> Bool {
         Log.trace("RustTerminalView[\(viewId)]: becomeFirstResponder")
+        onFocus?()
         return true
     }
 

@@ -140,6 +140,7 @@ struct TerminalViewRepresentable: NSViewRepresentable {
     var model: TerminalSessionModel
     var renderPhase: TabRenderPhase
     var isInteractive: Bool
+    var onFocus: (() -> Void)?
     var onFilePathClicked: ((String, Int?, Int?) -> Void)?
     var settings = FeatureSettings.shared
 
@@ -272,6 +273,7 @@ struct TerminalViewRepresentable: NSViewRepresentable {
             existingView.onFramePresented = { [weak model] in
                 model?.notifyVisibleFrameReadyIfNeeded()
             }
+            existingView.onFocus = onFocus
             existingView.onFilePathClicked = onFilePathClicked
             existingView.onScrollbackCleared = { [weak model] in
                 model?.resetRestorationScrollbackCache()
@@ -365,6 +367,7 @@ struct TerminalViewRepresentable: NSViewRepresentable {
         view.onFramePresented = { [weak model] in
             model?.notifyVisibleFrameReadyIfNeeded()
         }
+        view.onFocus = onFocus
         view.onScrollChanged = { [weak model] in
             model?.scheduleHighlightAfterScroll()
         }
@@ -426,6 +429,7 @@ struct TerminalViewRepresentable: NSViewRepresentable {
         guard let nsView = container.rustTerminalView else { return }
         nsView.liveEligibilityReasonForProfiling = liveEligibilitySummary()
         nsView.hostsTUIApp = model.liveAgentName != nil
+        nsView.onFocus = onFocus
         let transition = context.coordinator.consumeRenderPhaseTransition(to: renderPhase)
         let keepsVisibleSurface = renderPhase.keepsVisibleSurface
         let allowsLivePresentation = renderPhase.allowsLivePresentation
@@ -498,6 +502,7 @@ struct TerminalViewRepresentable: NSViewRepresentable {
         // background-drain path now so old selected tabs do not keep spinning
         // event drain work after a switch.
         nsView.applyRenderPhase(.hidden, isInteractive: false, reason: "dismantleNSView")
+        nsView.onFocus = nil
         nsView.isHidden = true
         nsView.updatePollingMode(reason: "dismantleNSView")
         container.ownerSession?.detachTerminalContainer(container, reason: "dismantleNSView")

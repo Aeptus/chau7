@@ -36,6 +36,30 @@ final class TerminalViewRepresentableTests: XCTestCase {
         XCTAssertEqual(events, ["metal", "base"])
     }
 
+    func testBecomingFirstResponderPublishesPaneFocus() {
+        let view = RustTerminalView(frame: .zero)
+        var focusCount = 0
+        view.onFocus = {
+            focusCount += 1
+        }
+
+        XCTAssertTrue(view.becomeFirstResponder())
+        XCTAssertEqual(focusCount, 1)
+    }
+
+    func testMetalHandoffPreservesVisibleRenderPhaseAndEnablesCPUFallback() {
+        let view = RustTerminalView(frame: .zero)
+        view.applyRenderPhase(.active, isInteractive: true, reason: "test")
+        view.isMetalRenderingActive = true
+
+        view.detachFromSharedMetalRendererForHandoff()
+
+        XCTAssertEqual(view.currentRenderPhase, .active)
+        XCTAssertFalse(view.isInteractiveForRendering)
+        XCTAssertFalse(view.isMetalRenderingActive)
+        XCTAssertTrue(view.needsGridSync)
+    }
+
     func testRenderPhaseCoordinatorTracksOnlyRealPhaseTransitions() {
         let coordinator = TerminalViewRepresentable.Coordinator()
 

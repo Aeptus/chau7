@@ -259,6 +259,7 @@ Tab Management,Close Other Tabs,Cmd+Opt+W to close all tabs except the current o
 Tab Management,New Tab Position,Configure where new tabs appear (after current or at end),Shipped,No
 Tab Management,Background Tab Suspension,Inactive tabs suspend rendering after configurable delay to save resources,Shipped,No
 Split Panes,Horizontal Split,Cmd+D — split side-by-side with draggable dividers,Shipped,No
+Split Panes,Focused Terminal Renderer Ownership,"Terminal splits share one focused-pane interaction policy across SwiftUI construction and imperative refreshes: only the focused leaf owns keyboard input and the window-level Metal renderer, while visible siblings preserve their lifecycle and immediately resume the CPU fallback during renderer handoff; AppKit first-responder changes update pane focus directly",Shipped,No
 Split Panes,Word-Wrap-Aware Editor Scrolling,"The side-panel text editor hides the horizontal scroll bar when word wrap is on (default) and re-tiles the line-number gutter when its width changes, so wrapped text never shows a spurious lateral scroll; no-wrap mode keeps the horizontal scroller for long lines",Shipped,Yes
 Split Panes,Vertical Split,Cmd+Opt+D — stack panes vertically,Shipped,No
 Split Panes,Nested Splits,Arbitrary nesting depth via binary tree layout controller,Shipped,No

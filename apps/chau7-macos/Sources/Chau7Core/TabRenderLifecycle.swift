@@ -19,6 +19,21 @@ public enum TabRenderPhase: String, Equatable, Sendable {
     }
 }
 
+/// Resolves tab-level input eligibility to one pane.
+///
+/// A visible split may render every leaf, but exactly one leaf may own input
+/// and the window-shared Metal renderer. Keeping this predicate in Chau7Core
+/// gives both SwiftUI construction and imperative refreshes one source of
+/// truth.
+public enum PaneInteractionPolicy {
+    public static func isInteractive(
+        isFocused: Bool,
+        tabIsInteractive: Bool
+    ) -> Bool {
+        isFocused && tabIsInteractive
+    }
+}
+
 public struct TabRenderLifecycleInput: Equatable, Sendable {
     public let isSelectedTab: Bool
     public let isInputPriorityWindow: Bool

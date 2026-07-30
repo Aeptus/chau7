@@ -651,16 +651,20 @@ extension OverlayTabsModel {
         isFocused: Bool,
         decisionIsInteractive: Bool
     ) -> PaneRefreshPlan {
+        let isInteractive = PaneInteractionPolicy.isInteractive(
+            isFocused: isFocused,
+            tabIsInteractive: decisionIsInteractive
+        )
         if isFocused {
             return PaneRefreshPlan(
                 role: .focused,
-                isInteractive: decisionIsInteractive,
+                isInteractive: isInteractive,
                 applyRenderPhaseReason: "selectedTabInPlaceRefresh:focused"
             )
         }
         return PaneRefreshPlan(
             role: .secondary,
-            isInteractive: false,
+            isInteractive: isInteractive,
             applyRenderPhaseReason: "selectedTabInPlaceRefresh:secondary"
         )
     }

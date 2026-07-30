@@ -1821,6 +1821,13 @@
   },
   {
     "category": "Split Panes",
+    "feature": "Focused Terminal Renderer Ownership",
+    "description": "Terminal splits share one focused-pane interaction policy across SwiftUI construction and imperative refreshes: only the focused leaf owns keyboard input and the window-level Metal renderer, while visible siblings preserve their lifecycle and immediately resume the CPU fallback during renderer handoff; AppKit first-responder changes update pane focus directly",
+    "status": "Shipped",
+    "differentiator": "No"
+  },
+  {
+    "category": "Split Panes",
     "feature": "Word-Wrap-Aware Editor Scrolling",
     "description": "The side-panel text editor hides the horizontal scroll bar when word wrap is on (default) and re-tiles the line-number gutter when its width changes, so wrapped text never shows a spurious lateral scroll; no-wrap mode keeps the horizontal scroller for long lines",
     "status": "Shipped",

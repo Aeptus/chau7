@@ -18,7 +18,7 @@ struct SplitPaneView: View {
             isInteractive: isInteractive
         )
         .environment(\.paneEnvironment, PaneEnvironment(
-            onFocus: { id in controller.setFocusedPane(id) },
+            onFocus: { [weak controller] id in controller?.setFocusedPane(id) },
             onUpdateRatio: { splitID, newRatio in
                 controller.updateRatio(splitID: splitID, newRatio: newRatio)
             },
@@ -69,7 +69,10 @@ struct SplitNodeView: View {
                 id: p.id,
                 session: p.session,
                 renderPhase: renderPhase,
-                isInteractive: isInteractive,
+                isInteractive: PaneInteractionPolicy.isInteractive(
+                    isFocused: p.id == focusedID,
+                    tabIsInteractive: isInteractive
+                ),
                 onFocus: { env?.onFocus(p.id) },
                 onFilePathClicked: env?.onFilePathClicked
             )
@@ -197,15 +200,13 @@ struct TerminalPaneView: View {
     var onFilePathClicked: ((String, Int?, Int?) -> Void)? // F03: Internal editor callback
 
     var body: some View {
-        TerminalViewRepresentable(model: session, renderPhase: renderPhase, isInteractive: isInteractive, onFilePathClicked: onFilePathClicked)
-            // Use simultaneousGesture to allow the tap to be recognized without blocking
-            // the NSView's native mouse event handling for text selection
-            .simultaneousGesture(
-                TapGesture()
-                    .onEnded { _ in
-                        onFocus()
-                    }
-            )
+        TerminalViewRepresentable(
+            model: session,
+            renderPhase: renderPhase,
+            isInteractive: isInteractive,
+            onFocus: onFocus,
+            onFilePathClicked: onFilePathClicked
+        )
     }
 }
 
