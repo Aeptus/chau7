@@ -9,6 +9,10 @@ import SwiftUI
 /// (`focusedID`, `renderPhase`, `isInteractive`) and frees the leaf views
 /// from carrying closures they don't directly use.
 struct PaneEnvironment {
+    /// Whether the current tree has a sibling pane that can survive a close.
+    /// The root computes this once from all pane kinds, not only terminals.
+    let canClosePane: Bool
+
     /// Called when a pane (by id) requests keyboard focus — typically a tap
     /// or click on the pane body.
     let onFocus: (UUID) -> Void

@@ -18,6 +18,7 @@ struct SplitPaneView: View {
             isInteractive: isInteractive
         )
         .environment(\.paneEnvironment, PaneEnvironment(
+            canClosePane: controller.canClosePane,
             onFocus: { [weak controller] id in controller?.setFocusedPane(id) },
             onUpdateRatio: { splitID, newRatio in
                 controller.updateRatio(splitID: splitID, newRatio: newRatio)
@@ -74,6 +75,8 @@ struct SplitNodeView: View {
                     tabIsInteractive: isInteractive
                 ),
                 onFocus: { env?.onFocus(p.id) },
+                onClose: { env?.onClosePane(p.id) },
+                canClose: env?.canClosePane ?? false,
                 onFilePathClicked: env?.onFilePathClicked
             )
 
@@ -197,6 +200,8 @@ struct TerminalPaneView: View {
     let renderPhase: TabRenderPhase
     let isInteractive: Bool
     let onFocus: () -> Void
+    let onClose: () -> Void
+    let canClose: Bool
     var onFilePathClicked: ((String, Int?, Int?) -> Void)? // F03: Internal editor callback
 
     var body: some View {
@@ -207,6 +212,17 @@ struct TerminalPaneView: View {
             onFocus: onFocus,
             onFilePathClicked: onFilePathClicked
         )
+        .overlay(alignment: .topTrailing) {
+            if canClose {
+                PaneCloseButton(onClose: onClose)
+                    .background(
+                        .ultraThinMaterial,
+                        in: RoundedRectangle(cornerRadius: 5, style: .continuous)
+                    )
+                    .opacity(isInteractive ? 1 : 0.72)
+                    .padding(6)
+            }
+        }
     }
 }
 

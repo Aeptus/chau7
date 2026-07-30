@@ -1828,6 +1828,13 @@
   },
   {
     "category": "Split Panes",
+    "feature": "Explicit Terminal Pane Closing",
+    "description": "Headerless terminal panes expose the shared accessible pane-close control whenever a sibling can survive; pane command enablement counts every leaf kind instead of only terminals, and centralized split/close operations log tab, pane, direction, before/after counts, and resulting focus",
+    "status": "Shipped",
+    "differentiator": "No"
+  },
+  {
+    "category": "Split Panes",
     "feature": "Word-Wrap-Aware Editor Scrolling",
     "description": "The side-panel text editor hides the horizontal scroll bar when word wrap is on (default) and re-tiles the line-number gutter when its width changes, so wrapped text never shows a spurious lateral scroll; no-wrap mode keeps the horizontal scroller for long lines",
     "status": "Shipped",

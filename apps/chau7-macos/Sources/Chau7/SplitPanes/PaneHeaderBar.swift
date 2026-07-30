@@ -56,17 +56,38 @@ struct PaneHeaderBar<TitleView: View, TitleAccessory: View, Trailing: View>: Vie
 
             trailing()
 
-            Button(action: onClose) {
-                Image(systemName: "xmark")
-                    .font(.system(size: 10))
-                    .foregroundStyle(.secondary)
-            }
-            .buttonStyle(.plain)
-            .help(closeHelp)
+            PaneCloseButton(closeHelp: closeHelp, onClose: onClose)
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 5)
         .background(Color(nsColor: .controlBackgroundColor))
+    }
+}
+
+/// Shared close control for pane headers and headerless terminal panes.
+struct PaneCloseButton: View {
+    let closeHelp: String
+    let onClose: () -> Void
+
+    init(
+        closeHelp: String = L("Close Pane", "Close Pane"),
+        onClose: @escaping () -> Void
+    ) {
+        self.closeHelp = closeHelp
+        self.onClose = onClose
+    }
+
+    var body: some View {
+        Button(action: onClose) {
+            Image(systemName: "xmark")
+                .font(.system(size: 10))
+                .foregroundStyle(.secondary)
+                .frame(width: 22, height: 22)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(closeHelp)
+        .accessibilityLabel(closeHelp)
     }
 }
 

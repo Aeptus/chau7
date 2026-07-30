@@ -39,7 +39,7 @@ extension AppDelegate {
 
     var hasMultiplePanesInActiveTab: Bool {
         guard let tab = menuOverlayModel?.selectedTab else { return false }
-        return tab.splitController.terminalSessions.count > 1
+        return tab.splitController.canClosePane
     }
 
     var canOpenDiffViewerInActiveWindow: Bool {
