@@ -1564,11 +1564,17 @@ struct Chau7OverlayView: View {
     var overlayModel: OverlayTabsModel
     var appModel: AppModel
     var settings = FeatureSettings.shared
+    var providerStatusMonitor = ProviderStatusMonitor.shared
 
     var body: some View {
         // Tab bar is now in the unified toolbar (Safari-style)
         terminalStack
             .background(Color.clear)
+            .overlay {
+                if let snapshot = focusedProviderAlert {
+                    ProviderHealthBorder(snapshot: snapshot)
+                }
+            }
             .onAppear {
                 overlayModel.configureRenderSuspension(
                     enabled: appModel.isSuspendBackgroundRendering,
@@ -1587,6 +1593,17 @@ struct Chau7OverlayView: View {
                     delay: appModel.suspendRenderDelaySeconds
                 )
             }
+    }
+
+    private var focusedProviderAlert: ProviderHealthSnapshot? {
+        guard settings.showProviderHealthBorder,
+              overlayModel.overlayWindow?.isKeyWindow == true,
+              let provider = overlayModel
+                .selectedPresentationSession(for: overlayModel.selectedTab)?
+                .effectiveAIProvider else {
+            return nil
+        }
+        return providerStatusMonitor.activeSnapshot(for: provider)
     }
 
     private var terminalStack: some View {
@@ -1776,6 +1793,53 @@ struct Chau7OverlayView: View {
 
     private var reportIssueShortcutText: String {
         settings.shortcut(for: "reportIssue")?.displayString ?? "⌥⌘I"
+    }
+}
+
+private struct ProviderHealthBorder: View {
+    let snapshot: ProviderHealthSnapshot
+
+    private var color: Color {
+        switch snapshot.severity {
+        case .degraded:
+            return .orange
+        case .outage:
+            return .red
+        case .unknown, .operational:
+            return .clear
+        }
+    }
+
+    private var lineWidth: CGFloat {
+        snapshot.severity == .outage ? 2 : 1
+    }
+
+    private var accessibilityState: String {
+        switch snapshot.severity {
+        case .degraded:
+            return L("providerHealth.degraded", "degraded performance")
+        case .outage:
+            return L("providerHealth.outage", "service outage")
+        case .unknown:
+            return L("providerHealth.unknown", "status unavailable")
+        case .operational:
+            return L("providerHealth.operational", "operational")
+        }
+    }
+
+    var body: some View {
+        Rectangle()
+            .strokeBorder(color, lineWidth: lineWidth)
+            .ignoresSafeArea()
+            .allowsHitTesting(false)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(
+                String(
+                    format: L("providerHealth.accessibilityLabel", "%@ provider status"),
+                    AnalyticsProvider.displayName(for: snapshot.providerKey)
+                )
+            )
+            .accessibilityValue("\(accessibilityState). \(snapshot.summary)")
     }
 }
 

@@ -965,6 +965,13 @@
 "settings.tabs.lastCommandBadge.help" = "הצג את הפקודה האחרונה באזור המצב של הלשונית";
 "settings.tabs.aiProductIcons" = "לוגואים של מוצרי בינה מלאכותית";
 "settings.tabs.aiProductIcons.help" = "הצג לוגואים של מוצרי בינה מלאכותית עבור כלי CLI שזוהו בכרטיסיות";
+"settings.tabs.providerHealthBorder" = "מסגרת מצב שירות הספק";
+"settings.tabs.providerHealthBorder.help" = "הצג מסגרת כתומה דקה כשביצועי הספק ירודים ומסגרת אדומה בעת השבתה בכרטיסיית הבינה המלאכותית הפעילה";
+"providerHealth.degraded" = "ביצועים ירודים";
+"providerHealth.outage" = "השבתת שירות";
+"providerHealth.unknown" = "המצב אינו זמין";
+"providerHealth.operational" = "תקין";
+"providerHealth.accessibilityLabel" = "מצב הספק %@";
 
 // מקטע ניווט מקלדת
 "settings.tabs.keyboardNavigation" = "ניווט מקלדת";

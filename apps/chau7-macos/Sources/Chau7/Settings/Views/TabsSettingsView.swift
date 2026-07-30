@@ -148,6 +148,15 @@ struct TabsSettingsView: View {
                 isOn: $settings.isAutoTabThemeEnabled
             )
 
+            SettingsToggle(
+                label: L("settings.tabs.providerHealthBorder", "Provider Service Health Border"),
+                help: L(
+                    "settings.tabs.providerHealthBorder.help",
+                    "Show a thin orange border for provider degradation and a red border for outages on the focused AI tab"
+                ),
+                isOn: $settings.showProviderHealthBorder
+            )
+
             SettingsDivider()
 
             // Keyboard

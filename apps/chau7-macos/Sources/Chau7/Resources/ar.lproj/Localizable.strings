@@ -965,6 +965,13 @@
 "settings.tabs.lastCommandBadge.help" = "عرض أحدث أمر في منطقة حالة علامة التبويب";
 "settings.tabs.aiProductIcons" = "شعارات منتجات الذكاء الاصطناعي";
 "settings.tabs.aiProductIcons.help" = "عرض شعارات منتجات الذكاء الاصطناعي لأدوات CLI المكتشفة في التبويبات";
+"settings.tabs.providerHealthBorder" = "إطار حالة خدمة المزوّد";
+"settings.tabs.providerHealthBorder.help" = "إظهار إطار برتقالي رفيع عند تدهور أداء المزوّد وإطار أحمر عند انقطاع الخدمة في تبويب الذكاء الاصطناعي النشط";
+"providerHealth.degraded" = "أداء متدهور";
+"providerHealth.outage" = "انقطاع الخدمة";
+"providerHealth.unknown" = "الحالة غير متاحة";
+"providerHealth.operational" = "يعمل";
+"providerHealth.accessibilityLabel" = "حالة المزوّد %@";
 
 // قسم التنقل بلوحة المفاتيح
 "settings.tabs.keyboardNavigation" = "التنقل بلوحة المفاتيح";

@@ -1108,6 +1108,12 @@ final class FeatureSettings {
         set { tabDisplayStore.showTabBroadcastIndicator = newValue }
     }
 
+    /// Show provider service-health warnings around the focused AI tab.
+    var showProviderHealthBorder: Bool {
+        get { tabDisplayStore.showProviderHealthBorder }
+        set { tabDisplayStore.showProviderHealthBorder = newValue }
+    }
+
     // MARK: - Hover Card Sections (forwarded to TabDisplaySettingsStore)
 
     var hoverCardShowDirectory: Bool {
@@ -2092,6 +2098,7 @@ final class FeatureSettings {
         var showTabCTOIndicator: Bool?
         var allowTabCTOToggle: Bool?
         var showTabBroadcastIndicator: Bool?
+        var showProviderHealthBorder: Bool? = nil
         // Hover Card
         var hoverCardShowDirectory: Bool?
         var hoverCardShowGitBranch: Bool?
@@ -2220,6 +2227,7 @@ final class FeatureSettings {
             showTabCTOIndicator: showTabCTOIndicator,
             allowTabCTOToggle: allowTabCTOToggle,
             showTabBroadcastIndicator: showTabBroadcastIndicator,
+            showProviderHealthBorder: showProviderHealthBorder,
             hoverCardShowDirectory: hoverCardShowDirectory,
             hoverCardShowGitBranch: hoverCardShowGitBranch,
             hoverCardShowShellIntegration: hoverCardShowShellIntegration,
@@ -2389,6 +2397,7 @@ final class FeatureSettings {
         showTabCTOIndicator = imported.showTabCTOIndicator ?? true
         allowTabCTOToggle = imported.allowTabCTOToggle ?? true
         showTabBroadcastIndicator = imported.showTabBroadcastIndicator ?? true
+        showProviderHealthBorder = imported.showProviderHealthBorder ?? true
         if let v = imported.hoverCardShowDirectory { hoverCardShowDirectory = v }
         if let v = imported.hoverCardShowGitBranch { hoverCardShowGitBranch = v }
         if let v = imported.hoverCardShowShellIntegration { hoverCardShowShellIntegration = v }

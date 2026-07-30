@@ -42,6 +42,21 @@ final class SettingsExportImportTests: XCTestCase {
         XCTAssertEqual(decoded.enableLigatures, true)
     }
 
+    func testExportIncludesProviderHealthBorderSetting() throws {
+        let settings = FeatureSettings.shared
+        let originalValue = settings.showProviderHealthBorder
+        defer { settings.showProviderHealthBorder = originalValue }
+
+        settings.showProviderHealthBorder = false
+
+        let data = try XCTUnwrap(settings.exportSettings())
+        let decoded = try XCTUnwrap(
+            JSONOperations.decode(FeatureSettings.ExportableSettings.self, from: data, context: "test")
+        )
+
+        XCTAssertEqual(decoded.showProviderHealthBorder, false)
+    }
+
     func testImportRefusesNewerExportVersion() throws {
         // A real export with only the version bumped: a future format must be
         // refused outright, not partially decoded-and-resaved.

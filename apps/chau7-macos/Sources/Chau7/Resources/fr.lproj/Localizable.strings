@@ -984,6 +984,13 @@
 "settings.tabs.lastCommandBadge.help" = "Afficher la commande la plus récente dans la zone d'état de l'onglet";
 "settings.tabs.aiProductIcons" = "Logos des produits IA";
 "settings.tabs.aiProductIcons.help" = "Afficher les logos des produits IA pour les CLI IA détectées dans les onglets";
+"settings.tabs.providerHealthBorder" = "Bordure d’état du fournisseur";
+"settings.tabs.providerHealthBorder.help" = "Afficher une fine bordure orange en cas de dégradation du fournisseur et rouge en cas d’interruption dans l’onglet IA actif";
+"providerHealth.degraded" = "performances dégradées";
+"providerHealth.outage" = "interruption de service";
+"providerHealth.unknown" = "état indisponible";
+"providerHealth.operational" = "opérationnel";
+"providerHealth.accessibilityLabel" = "État du fournisseur %@";
 
 // Section Navigation au clavier
 "settings.tabs.keyboardNavigation" = "Navigation au clavier";

@@ -986,6 +986,13 @@
 "settings.tabs.lastCommandBadge.help" = "Show the most recent command in the tab status area";
 "settings.tabs.aiProductIcons" = "AI Product Logos";
 "settings.tabs.aiProductIcons.help" = "Display AI product logos for detected AI CLIs in tabs";
+"settings.tabs.providerHealthBorder" = "Provider Service Health Border";
+"settings.tabs.providerHealthBorder.help" = "Show a thin orange border for provider degradation and a red border for outages on the focused AI tab";
+"providerHealth.degraded" = "degraded performance";
+"providerHealth.outage" = "service outage";
+"providerHealth.unknown" = "status unavailable";
+"providerHealth.operational" = "operational";
+"providerHealth.accessibilityLabel" = "%@ provider status";
 
 // Keyboard Navigation Section
 "settings.tabs.keyboardNavigation" = "Keyboard Navigation";

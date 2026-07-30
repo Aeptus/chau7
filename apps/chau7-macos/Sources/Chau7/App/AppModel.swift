@@ -492,6 +492,11 @@ final class AppModel {
         startClaudeCodeMonitor()
         startAPICallObserver()
         startCleanupTimer()
+        if Bundle.main.bundleIdentifier != nil, !RuntimeIsolation.isIsolatedTestMode() {
+            Task { @MainActor in
+                ProviderStatusMonitor.shared.start()
+            }
+        }
         RuntimeSessionManager.shared.startCleanupTimer()
         // Runtime session events flow through the same spine funnel as every
         // other producer — the previous direct notify(for:) path made them

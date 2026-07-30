@@ -986,6 +986,13 @@
 "settings.tabs.lastCommandBadge.help" = "Mostrar el comando más reciente en el área de estado de la pestaña";
 "settings.tabs.aiProductIcons" = "Logos de productos IA";
 "settings.tabs.aiProductIcons.help" = "Mostrar logos de productos IA para los CLI de IA detectados en las pestañas";
+"settings.tabs.providerHealthBorder" = "Borde de estado del proveedor";
+"settings.tabs.providerHealthBorder.help" = "Mostrar un borde naranja fino si el proveedor presenta degradación y uno rojo si hay una interrupción en la pestaña de IA activa";
+"providerHealth.degraded" = "rendimiento degradado";
+"providerHealth.outage" = "interrupción del servicio";
+"providerHealth.unknown" = "estado no disponible";
+"providerHealth.operational" = "operativo";
+"providerHealth.accessibilityLabel" = "Estado del proveedor %@";
 
 // Keyboard Navigation Section
 "settings.tabs.keyboardNavigation" = "Navegación por teclado";

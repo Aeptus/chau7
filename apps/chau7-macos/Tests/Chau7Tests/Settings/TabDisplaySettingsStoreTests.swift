@@ -38,6 +38,7 @@ final class TabDisplaySettingsStoreTests: XCTestCase {
         XCTAssertTrue(store.showTabCTOIndicator)
         XCTAssertTrue(store.allowTabCTOToggle)
         XCTAssertTrue(store.showTabBroadcastIndicator)
+        XCTAssertTrue(store.showProviderHealthBorder)
         XCTAssertFalse(store.customTitleOnly)
         XCTAssertTrue(store.hoverCardShowDirectory)
         XCTAssertTrue(store.hoverCardShowGitBranch)
@@ -72,6 +73,7 @@ final class TabDisplaySettingsStoreTests: XCTestCase {
         store.showTabCTOIndicator = false
         store.allowTabCTOToggle = false
         store.showTabBroadcastIndicator = false
+        store.showProviderHealthBorder = false
         store.customTitleOnly = true
         store.hoverCardShowDirectory = false
         store.hoverCardShowShellIntegration = true
@@ -95,6 +97,7 @@ final class TabDisplaySettingsStoreTests: XCTestCase {
         XCTAssertFalse(reloaded.showTabCTOIndicator)
         XCTAssertFalse(reloaded.allowTabCTOToggle)
         XCTAssertFalse(reloaded.showTabBroadcastIndicator)
+        XCTAssertFalse(reloaded.showProviderHealthBorder)
         XCTAssertTrue(reloaded.customTitleOnly)
         XCTAssertFalse(reloaded.hoverCardShowDirectory)
         XCTAssertTrue(reloaded.hoverCardShowShellIntegration)
@@ -119,6 +122,7 @@ final class TabDisplaySettingsStoreTests: XCTestCase {
         store.tabSwitchShortcutMode = .functionKey
         store.showTabIcons = false
         store.showTabGitIndicator = false
+        store.showProviderHealthBorder = false
         store.customTitleOnly = true
         store.hoverCardShowDirectory = false
         store.hoverCardShowShellIntegration = true
@@ -140,6 +144,8 @@ final class TabDisplaySettingsStoreTests: XCTestCase {
         XCTAssertEqual(store.showTabIcons, fresh.showTabIcons)
         XCTAssertEqual(store.showTabGitIndicator, fresh.showTabGitIndicator)
         XCTAssertTrue(store.showTabGitIndicator)
+        XCTAssertEqual(store.showProviderHealthBorder, fresh.showProviderHealthBorder)
+        XCTAssertTrue(store.showProviderHealthBorder)
         XCTAssertEqual(store.customTitleOnly, fresh.customTitleOnly)
         XCTAssertEqual(store.hoverCardShowDirectory, fresh.hoverCardShowDirectory)
         XCTAssertEqual(store.hoverCardShowShellIntegration, fresh.hoverCardShowShellIntegration)

@@ -78,6 +78,13 @@
   },
   {
     "category": "AI Detection & Integration",
+    "feature": "Provider Service-Health Borders",
+    "description": "One application-wide monitor polls the official Anthropic, OpenAI, GitHub, and Google Cloud status feeds, normalizes provider-specific payloads, and outlines the focused AI tab window in orange for degraded service or red for an outage, with five-minute freshness expiry and a Tabs setting",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "AI Detection & Integration",
     "feature": "Claude Cross-Repo CWD Tracking",
     "description": "Claude hook and idle events carry the authoritative cwd when Claude changes project inside its TUI; matching live Claude sessions can move a Chau7 tab across repo roots so path display, snippet context, and automatic repo grouping follow the real project while stale or mismatched foreign-cwd events remain blocked",
     "status": "Shipped",
