@@ -308,6 +308,7 @@ final class TerminalSessionModel {
                     PromptInjectionInjector.onAIToolDetected(session: self)
                 }
             }
+            refreshCodexFeedbackMonitorIfNeeded()
         }
     }
 
@@ -587,17 +588,30 @@ final class TerminalSessionModel {
         lastOutputAt = backdated
     }
 
-    var lastAIProvider: String?
+    var lastAIProvider: String? {
+        didSet {
+            if lastAIProvider != oldValue {
+                refreshCodexFeedbackMonitorIfNeeded()
+            }
+        }
+    }
     var lastAISessionId: String? {
         didSet {
             syncRustTerminalObservabilityScope()
             if lastAISessionId != oldValue {
                 TerminalControlService.shared.invalidateRoutingIndex(reason: "ai_session_id")
+                refreshCodexFeedbackMonitorIfNeeded()
             }
         }
     }
 
-    var lastAISessionIdentitySource: AISessionIdentitySource?
+    var lastAISessionIdentitySource: AISessionIdentitySource? {
+        didSet {
+            if lastAISessionIdentitySource != oldValue {
+                refreshCodexFeedbackMonitorIfNeeded()
+            }
+        }
+    }
 
     /// Point-in-time snapshot of the identity trio. Mutate via
     /// `applyAgentIdentity(_:)` so the three fields stay coherent.
@@ -1076,6 +1090,14 @@ final class TerminalSessionModel {
     @ObservationIgnored var pendingAITimingInputAt: Date?
     @ObservationIgnored var pendingAITimingInputChars = 0
     @ObservationIgnored var pendingAIRoundTripCompleted = false
+    @ObservationIgnored var codexFeedbackMonitor: CodexFeedbackMonitor?
+    @ObservationIgnored var codexFeedbackMonitorSessionID: String?
+    @ObservationIgnored var codexFeedbackLookupGeneration: UInt64 = 0
+    @ObservationIgnored var codexFeedbackLookupRetryWorkItem: DispatchWorkItem?
+    @ObservationIgnored let codexFeedbackLookupQueue = DispatchQueue(
+        label: "com.chau7.codex-feedback-lookup",
+        qos: .utility
+    )
     @ObservationIgnored var pendingWaitingInputFallbackArmed = false
     @ObservationIgnored var pendingWaitingInputFallbackSawLiveOutput = false
     @ObservationIgnored var suppressWaitingInputFallbackUntilNextUserCommand = false
@@ -1293,6 +1315,7 @@ final class TerminalSessionModel {
         aiLogSession?.close()
         devServerMonitor.stop()
         processResourceMonitor.stop()
+        stopCodexFeedbackMonitoring()
         cancelAllPendingWorkItems()
     }
 
@@ -1316,6 +1339,7 @@ final class TerminalSessionModel {
         dangerousOutputHighlightWorkItem?.cancel()
         remoteOutputFlushWorkItem?.cancel()
         remoteOutputTranscriptFlushWorkItem?.cancel()
+        codexFeedbackLookupRetryWorkItem?.cancel()
     }
 
     // Process monitoring methods moved to TerminalSessionModel+ProcessMonitor.swift
@@ -1875,6 +1899,7 @@ final class TerminalSessionModel {
         stopIdleTimer()
         detachRepositoryBranchObserver()
         searchUpdateWorkItem?.cancel()
+        stopCodexFeedbackMonitoring()
 
         // Capture telemetry buffer before sending exit — the view may detach
         // before handleProcessTermination fires, losing the buffer snapshot.
@@ -1920,6 +1945,7 @@ final class TerminalSessionModel {
         shutdownActiveTerminalRendering()
         activeRustTerminalView?.onProcessTerminated = nil
         stopIdleTimer()
+        stopCodexFeedbackMonitoring()
         finishAILogging(exitCode: nil, mode: .appTermination)
 
         // Same flag-leak defense as `closeSession`. App termination races

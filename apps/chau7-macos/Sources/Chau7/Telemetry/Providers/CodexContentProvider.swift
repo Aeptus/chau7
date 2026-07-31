@@ -160,7 +160,7 @@ final class CodexContentProvider: RunContentProvider {
     // MARK: - File Resolution
 
     /// Codex rollout files: ~/.codex/sessions/<year>/<month>/<day>/rollout-<ts>-<id>.jsonl
-    private func findRolloutFile(sessionID: String, startedAt: Date) -> URL? {
+    func findRolloutFile(sessionID: String, startedAt: Date) -> URL? {
         if let rolloutPath = lookupRolloutPathInSQLite(sessionID: sessionID) {
             let rolloutURL = URL(fileURLWithPath: rolloutPath)
             if FileManager.default.fileExists(atPath: rolloutURL.path) {
