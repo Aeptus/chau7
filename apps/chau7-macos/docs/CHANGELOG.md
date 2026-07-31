@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Non-Secret MCP Session Diagnostics**: Every MCP connection now records bounded, single-line initialization breadcrumbs with client/server identity, requested and negotiated protocol revisions, startup status, and a stable error class. Successfully initialized clients can call `chau7_mcp_session_info` to inspect the same handshake plus the resolved bridge and Unix-socket paths without exposing tokens or API keys.
 - **AI Provider Service-Health Borders**: Chau7 polls the official Anthropic, OpenAI, GitHub, and Google Cloud status feeds once per app, normalizes provider-specific payloads into operational/degraded/outage states, and outlines the focused AI tab's window in orange for degradation or red for an outage. Observations expire after five minutes so a failed poll cannot leave a stale warning visible, and the Tabs settings page includes an exportable toggle for the border.
 
 ### Fixed

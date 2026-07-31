@@ -25,6 +25,7 @@ final class MCPSession {
     private let subscriptionStateQueue = DispatchQueue(label: "com.chau7.mcp.session.subscription-state")
     private let notificationSink: (([String: Any]) -> Void)?
     private var liveNotificationWriter: (([String: Any]) -> Void)?
+    private var handshakeDiagnostic = MCPHandshakeDiagnostic()
 
     private struct SubscriptionState {
         let id: String
@@ -217,13 +218,26 @@ final class MCPSession {
                     response: buildError(id: id, code: -32600, message: "Session is already initialized")
                 )
             }
-            guard let requestedVersion = params["protocolVersion"] as? String, !requestedVersion.isEmpty else {
+            let clientInfo = params["clientInfo"] as? [String: Any]
+            let requestedVersion = params["protocolVersion"] as? String
+            handshakeDiagnostic.recordAttempt(
+                clientName: clientInfo?["name"] as? String,
+                clientVersion: clientInfo?["version"] as? String,
+                requestedProtocolVersion: requestedVersion
+            )
+            Log.info("MCPSession: initialize attempt \(handshakeDiagnostic.logSummary)")
+
+            guard let requestedVersion, !requestedVersion.isEmpty else {
+                handshakeDiagnostic.recordRejected(errorClass: .invalidParameters)
+                Log.warn("MCPSession: initialize rejected \(handshakeDiagnostic.logSummary)")
                 return responseOrNil(
                     isNotification: isNotification,
                     response: buildError(id: id, code: -32602, message: "Invalid params: protocolVersion is required")
                 )
             }
             guard let negotiatedVersion = negotiateProtocolVersion(requestedVersion) else {
+                handshakeDiagnostic.recordRejected(errorClass: .unsupportedProtocolVersion)
+                Log.warn("MCPSession: initialize rejected \(handshakeDiagnostic.logSummary)")
                 return responseOrNil(
                     isNotification: isNotification,
                     response: buildError(
@@ -235,6 +249,8 @@ final class MCPSession {
                 )
             }
 
+            handshakeDiagnostic.recordAccepted(negotiatedProtocolVersion: negotiatedVersion)
+            Log.info("MCPSession: initialize accepted \(handshakeDiagnostic.logSummary)")
             lifecycleState = .awaitingInitializedNotification
             return responseOrNil(
                 isNotification: isNotification,
@@ -245,8 +261,8 @@ final class MCPSession {
                         "resources": ["subscribe": false, "listChanged": false]
                     ],
                     "serverInfo": [
-                        "name": "chau7",
-                        "version": "1.1.0"
+                        "name": MCPProtocolCompatibility.serverName,
+                        "version": MCPProtocolCompatibility.serverVersion
                     ]
                 ])
             )
@@ -254,6 +270,8 @@ final class MCPSession {
         case "notifications/initialized":
             if lifecycleState == .awaitingInitializedNotification {
                 lifecycleState = .ready
+                handshakeDiagnostic.recordReady()
+                Log.info("MCPSession: client ready \(handshakeDiagnostic.logSummary)")
             } else {
                 Log.warn("MCPSession: received notifications/initialized in unexpected state \(lifecycleState)")
             }
@@ -454,6 +472,11 @@ final class MCPSession {
             [
                 "name": "chau7_runtime_info",
                 "description": "Get Chau7 build and process identity for external observability: app version, build metadata, process id, launch time, and observability schema version.",
+                "inputSchema": ["type": "object", "properties": [:]]
+            ],
+            [
+                "name": "chau7_mcp_session_info",
+                "description": "Get non-secret MCP startup diagnostics for this connection: client/server identity, bridge and socket paths, negotiated protocol, startup status, and error class.",
                 "inputSchema": ["type": "object", "properties": [:]]
             ],
             [
@@ -831,6 +854,16 @@ final class MCPSession {
 
         case "chau7_runtime_info":
             return classifyToolResponse(Chau7ObservabilityService.shared.runtimeInfoJSON())
+
+        case "chau7_mcp_session_info":
+            return .toolResult(
+                toolSuccessResult(
+                    payload: handshakeDiagnostic.payload(
+                        bridgeCommandPath: RuntimeIsolation.pathInHome(".chau7/bin/chau7-mcp-bridge"),
+                        socketPath: RuntimeIsolation.pathInHome(".chau7/mcp.sock")
+                    )
+                )
+            )
 
         case "chau7_runtime_events":
             let sinceMillis = arguments["since_millis"] as? Int64

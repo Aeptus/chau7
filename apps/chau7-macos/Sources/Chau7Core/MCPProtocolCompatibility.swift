@@ -3,6 +3,9 @@ import Foundation
 /// Authoritative MCP protocol compatibility policy shared by Chau7's server
 /// boundary and diagnostics.
 public enum MCPProtocolCompatibility {
+    public static let serverName = "chau7"
+    public static let serverVersion = "1.1.0"
+
     /// Newest finalized protocol revision implemented by Chau7.
     public static let preferredVersion = "2025-11-25"
 

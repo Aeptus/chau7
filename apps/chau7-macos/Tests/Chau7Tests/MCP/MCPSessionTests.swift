@@ -67,6 +67,9 @@ final class MCPSessionTests: XCTestCase {
         let runtimeInfo = try XCTUnwrap(tools.first(where: { ($0["name"] as? String) == "chau7_runtime_info" }))
         XCTAssertTrue((runtimeInfo["description"] as? String)?.contains("build and process identity") == true)
 
+        let sessionInfo = try XCTUnwrap(tools.first(where: { ($0["name"] as? String) == "chau7_mcp_session_info" }))
+        XCTAssertTrue((sessionInfo["description"] as? String)?.contains("startup diagnostics") == true)
+
         let runtimeEvents = try XCTUnwrap(tools.first(where: { ($0["name"] as? String) == "chau7_runtime_events" }))
         XCTAssertTrue((runtimeEvents["description"] as? String)?.contains("observability events") == true)
 
@@ -118,6 +121,36 @@ final class MCPSessionTests: XCTestCase {
 
         let result = try XCTUnwrap(response["result"] as? [String: Any])
         XCTAssertEqual(result["protocolVersion"] as? String, "2025-06-18")
+    }
+
+    func testMCPSessionInfoReportsNegotiatedClientHandshake() throws {
+        let session = MCPSession(fd: -1)
+        _ = session.handleRequestObject([
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": [
+                "protocolVersion": "2025-06-18",
+                "clientInfo": ["name": "codex", "version": "0.146.0"]
+            ]
+        ])
+        _ = session.handleRequestObject([
+            "jsonrpc": "2.0",
+            "method": "notifications/initialized"
+        ])
+
+        let content = try toolStructuredContent(
+            session: session,
+            name: "chau7_mcp_session_info",
+            arguments: [:]
+        )
+        XCTAssertEqual(content["server_name"] as? String, "chau7")
+        XCTAssertEqual(content["client_name"] as? String, "codex")
+        XCTAssertEqual(content["client_version"] as? String, "0.146.0")
+        XCTAssertEqual(content["negotiated_protocol_version"] as? String, "2025-06-18")
+        XCTAssertEqual(content["startup_status"] as? String, "ready")
+        XCTAssertEqual(content["error_class"] as? String, "none")
+        XCTAssertTrue((content["resolved_command_path"] as? String)?.hasSuffix("/.chau7/bin/chau7-mcp-bridge") == true)
     }
 
     func testInitializeRejectsUnsupportedProtocolVersions() throws {

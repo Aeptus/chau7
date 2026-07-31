@@ -1548,6 +1548,13 @@
   },
   {
     "category": "MCP Tools — Observability",
+    "feature": "chau7_mcp_session_info",
+    "description": "Get non-secret diagnostics for the current MCP connection: client/server identity, resolved bridge and socket paths, requested and negotiated protocol revisions, startup status, and stable error class",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "MCP Tools — Observability",
     "feature": "chau7_runtime_events",
     "description": "Get recent Chau7 observability events with stable sequence ids. Includes app lifecycle markers and unified non-app AI events with optional tab/session/run/repo scoping",
     "status": "Shipped",
