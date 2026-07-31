@@ -185,7 +185,7 @@ AI Integration,CTO Flag Manager,Manages per-tab CTO flag files that AI tools rea
 API Analytics,Asynchronous Completed-Run Extraction,"Codex and other OpenAI-family telemetry runs finalize immediately at run end, then backfill richer transcript and tool-call content asynchronously when provider extraction completes",Shipped,Yes
 History,Persistent History Clear Ordering,History maintenance operations serialize on the DB queue so queued async inserts cannot repopulate after `clearAll()`; regression tests cover the race,Shipped,No
 MCP Server,Built-in MCP Server,Embedded JSON-RPC 2.0 server on Unix socket (~/.chau7/mcp.sock) — AI agents can control your terminal,Shipped,Yes
-MCP Server,MCP Protocol v2024-11-05,Full MCP protocol compliance with tools and resources capabilities,Shipped,Yes
+MCP Server,MCP Protocol Version Negotiation,"Negotiates finalized MCP revisions 2025-11-25, 2025-06-18, and 2024-11-05, echoing supported client revisions exactly while rejecting unknown versions",Shipped,Yes
 MCP Server,MCP Bridge Binary,Stdio-to-socket bridge binary installed at ~/.chau7/bin/chau7-mcp-bridge for standard MCP client compatibility,Shipped,Yes
 MCP Server,Auto-Registration: Claude Code,Automatically registers Chau7 MCP server in ~/.claude.json when Claude Code is installed,Shipped,Yes
 MCP Server,Auto-Registration: Cursor,Automatically registers in ~/.cursor/mcp.json when Cursor is installed,Shipped,Yes

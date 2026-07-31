@@ -106,6 +106,20 @@ final class MCPSessionTests: XCTestCase {
         XCTAssertFalse(tools.contains(where: { (($0["name"] as? String) ?? "").hasPrefix("runtime_") }))
     }
 
+    func testInitializeNegotiatesCodexProtocolVersion() throws {
+        let response = try XCTUnwrap(
+            MCPSession(fd: -1).handleRequestObject([
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "initialize",
+                "params": ["protocolVersion": "2025-06-18"]
+            ])
+        )
+
+        let result = try XCTUnwrap(response["result"] as? [String: Any])
+        XCTAssertEqual(result["protocolVersion"] as? String, "2025-06-18")
+    }
+
     func testInitializeRejectsUnsupportedProtocolVersions() throws {
         let response = try XCTUnwrap(
             MCPSession(fd: -1).handleRequestObject([
@@ -119,7 +133,7 @@ final class MCPSessionTests: XCTestCase {
         let error = try XCTUnwrap(response["error"] as? [String: Any])
         XCTAssertEqual(error["code"] as? Int, -32602)
         let data = try XCTUnwrap(error["data"] as? [String: Any])
-        XCTAssertEqual(data["supported"] as? [String], ["2025-11-25", "2024-11-05"])
+        XCTAssertEqual(data["supported"] as? [String], ["2025-11-25", "2025-06-18", "2024-11-05"])
     }
 
     func testUnknownToolReturnsProtocolError() throws {

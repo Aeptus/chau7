@@ -1303,8 +1303,8 @@
   },
   {
     "category": "MCP Server",
-    "feature": "MCP Protocol v2024-11-05",
-    "description": "Full MCP protocol compliance with tools and resources capabilities",
+    "feature": "MCP Protocol Version Negotiation",
+    "description": "Negotiates finalized MCP revisions 2025-11-25, 2025-06-18, and 2024-11-05, echoing supported client revisions exactly while rejecting unknown versions",
     "status": "Shipped",
     "differentiator": "Yes"
   },

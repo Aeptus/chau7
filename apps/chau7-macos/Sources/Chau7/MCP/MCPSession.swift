@@ -12,7 +12,6 @@ final class MCPSession {
     /// tool payloads (e.g. agent prompts) while preventing a client that streams
     /// bytes with no newline from growing the read buffer without limit (OOM).
     private static let maxRequestLineBytes = 8 * 1024 * 1024
-    private static let supportedProtocolVersions = ["2025-11-25", "2024-11-05"]
     private static let toolRateLimiterQueue = DispatchQueue(label: "com.chau7.mcp.tool-rate-limiter")
     private static var toolRateLimiter = MCPToolRateLimiter()
 
@@ -231,7 +230,7 @@ final class MCPSession {
                         id: id,
                         code: -32602,
                         message: "Unsupported protocol version: \(requestedVersion)",
-                        data: ["supported": Self.supportedProtocolVersions]
+                        data: ["supported": MCPProtocolCompatibility.supportedVersions]
                     )
                 )
             }
@@ -1049,7 +1048,7 @@ final class MCPSession {
     }
 
     private func negotiateProtocolVersion(_ requestedVersion: String) -> String? {
-        Self.supportedProtocolVersions.contains(requestedVersion) ? requestedVersion : nil
+        MCPProtocolCompatibility.negotiate(requestedVersion: requestedVersion)
     }
 
     private func validate(arguments: [String: Any], against definition: [String: Any], toolName: String) -> String? {
