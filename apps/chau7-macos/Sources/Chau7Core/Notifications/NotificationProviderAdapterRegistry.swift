@@ -178,6 +178,14 @@ public enum NotificationProviderAdapterRegistry {
 
         switch rawType {
         case "agent_turn_complete", "agentturncomplete":
+            if CodexFeedbackProposalClassifier.detect(in: event.message) != nil {
+                return emitEnriched(
+                    event,
+                    kind: .waitingForInput,
+                    rawType: originalRawType,
+                    reliability: .heuristic
+                )
+            }
             return emitEnriched(event, kind: .taskFinished, rawType: originalRawType, reliability: .authoritative)
         case "approval_requested", "approvalrequested":
             return emitEnriched(event, kind: .permissionRequired, rawType: originalRawType, reliability: .authoritative)

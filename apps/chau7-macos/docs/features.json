@@ -841,6 +841,13 @@
   },
   {
     "category": "AI Integration",
+    "feature": "Codex Feedback Prompt Detection",
+    "description": "Structured request_user_input records are authoritative waiting-input evidence, while completed Codex turns ending in an explicit choice or confirmation request are conservatively reclassified as heuristic waiting-input events instead of false completions",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "AI Integration",
     "feature": "Codex Resume Fallback Cache",
     "description": "Claimed explicit Codex session matches are reused across history growth so autosave avoids repeated fallback rescans and unresolved resume-metadata log spam",
     "status": "Shipped",

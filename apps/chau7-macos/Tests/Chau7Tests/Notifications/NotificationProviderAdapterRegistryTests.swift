@@ -464,6 +464,36 @@ final class NotificationProviderAdapterRegistryTests: XCTestCase {
         XCTAssertEqual(enriched.event.reliability, .authoritative)
     }
 
+    func testCodexAgentTurnCompleteWithExplicitChoicesCanonicalizesToWaitingInput() {
+        let event = AIEvent(
+            source: .codex,
+            type: "agent-turn-complete",
+            rawType: "agent-turn-complete",
+            tool: "Codex",
+            title: "Codex finished",
+            message: """
+            Recommended grouping:
+            - #1 cache correctness
+            - #2 webhook observability
+            Tell me `all` or the numbers you want addressed.
+            """,
+            ts: "2026-04-02T00:00:00Z",
+            tabID: UUID(uuidString: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA"),
+            producer: "codex_notify_hook",
+            reliability: .authoritative
+        )
+
+        let decision = NotificationProviderAdapterRegistry.adapt(event)
+        guard case let .emit(enriched) = decision else {
+            return XCTFail("Expected Codex choice ending to emit waiting input")
+        }
+
+        XCTAssertEqual(enriched.event.type, "waiting_input")
+        XCTAssertEqual(enriched.event.rawType, "agent-turn-complete")
+        XCTAssertEqual(enriched.kind, .waitingForInput)
+        XCTAssertEqual(enriched.event.reliability, .heuristic)
+    }
+
     func testCodexApprovalRequestedCanonicalizesToPermission() {
         let event = AIEvent(
             source: .codex,
