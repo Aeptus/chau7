@@ -671,13 +671,26 @@ final class RemoteControlManager {
         }
     }
 
-    /// While a prompt card is live, the synthesized arrow-navigation responses
-    /// of an unnumbered menu go stale the moment someone moves the cursor on
-    /// the Mac — and a cursor-only redraw fires no session-state change. A 1s
-    /// recheck rebuilds the prompt list (diffed in sendInteractivePrompts, so
-    /// nothing is re-sent unless content actually changed) and keeps the
-    /// phone's responses tracking the on-screen cursor. Numbered menus are
-    /// immune either way: digit responses are absolute.
+    /// Whether any live prompt answers by moving a selection cursor. Those
+    /// responses are relative to where the cursor sits, so they go stale when
+    /// it moves on the Mac and need the recheck below. Absolute responses —
+    /// digits, y/n, the restore card's bare Enter and ^U — never do, and a
+    /// card like the restore prefill can sit unanswered for hours, so arming
+    /// the timer for those would pin the Mac at 1 Hz indefinitely for nothing.
+    private func hasCursorRelativePrompt(_ prompts: [RemoteInteractivePrompt]) -> Bool {
+        prompts.contains { prompt in
+            prompt.options.contains { option in
+                option.response.contains("\u{1B}[A") || option.response.contains("\u{1B}[B")
+            }
+        }
+    }
+
+    /// While a cursor-driven prompt card is live, its arrow-navigation
+    /// responses go stale the moment someone moves the cursor on the Mac — and
+    /// a cursor-only redraw fires no session-state change. A 1s recheck
+    /// rebuilds the prompt list (diffed in sendInteractivePrompts, so nothing
+    /// is re-sent unless content actually changed) and keeps the phone's
+    /// responses tracking the on-screen cursor.
     private func reconcilePromptRecheckTimer(hasPrompts: Bool) {
         guard hasPrompts, isIPCConnected else {
             promptRecheckTimer?.invalidate()
@@ -743,7 +756,7 @@ final class RemoteControlManager {
 
     private func sendInteractivePrompts(force: Bool = false) {
         let nextPrompts = currentInteractivePrompts()
-        defer { reconcilePromptRecheckTimer(hasPrompts: !nextPrompts.isEmpty) }
+        defer { reconcilePromptRecheckTimer(hasPrompts: hasCursorRelativePrompt(nextPrompts)) }
         guard force || nextPrompts != interactivePrompts else { return }
 
         interactivePrompts = nextPrompts
