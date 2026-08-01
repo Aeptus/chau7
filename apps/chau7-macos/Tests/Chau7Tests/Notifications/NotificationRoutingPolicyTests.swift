@@ -35,6 +35,7 @@ final class NotificationRoutingPolicyTests: XCTestCase {
         // Routing now declares them MCP-visible.
         let surfaces = NotificationRoutingPolicy.surfaces(kind: .informational)
         XCTAssertTrue(surfaces.contains(.mcpSubscribers))
+        XCTAssertTrue(surfaces.contains(.tabStyle))
         XCTAssertFalse(surfaces.contains(.iosPush))
         XCTAssertFalse(surfaces.contains(.liveActivity))
     }

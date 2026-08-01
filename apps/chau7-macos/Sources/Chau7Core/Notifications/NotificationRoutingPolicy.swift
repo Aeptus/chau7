@@ -53,7 +53,9 @@ public enum NotificationRoutingPolicy {
             // Includes `.app`-source events: they are MCP-visible by policy
             // now (the old implicit behavior dropped them from observability
             // while still allowing local delivery — an undeclared asymmetry).
-            return [.macLocal, .mcpSubscribers]
+            // Tab styling is eligible too; only informational types with an
+            // explicit vocabulary style (such as dev_server_started) use it.
+            return [.macLocal, .tabStyle, .mcpSubscribers]
 
         case .unknown:
             // Adapters drop unknown kinds before routing; defensive empty.

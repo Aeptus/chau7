@@ -376,6 +376,11 @@ public enum NotificationTriggerCatalog {
     ])
 
     private static let shellTriggers: [NotificationTrigger] = buildTriggers(source: .shell, sourceCamel: "shell", [
+        // Script/task outcomes are a conservative, authoritative subset of
+        // shell completions and are useful enough to surface by default.
+        .init("script_succeeded", "Script succeeded", "A shell script or task completed successfully.", defaultEnabled: true),
+        .init("script_failed", "Script failed", "A shell script or task exited with non-zero status.", defaultEnabled: true),
+        .init("dev_server_started", "Dev server started", "A development server is listening and ready.", defaultEnabled: true),
         // command_finished / command_failed are off by default: plain shell
         // command completion or a non-zero exit is not an agent event and
         // would notify on every command. Opt in from settings.

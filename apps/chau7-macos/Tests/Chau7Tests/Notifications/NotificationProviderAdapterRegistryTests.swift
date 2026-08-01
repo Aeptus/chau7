@@ -664,6 +664,37 @@ final class NotificationProviderAdapterRegistryTests: XCTestCase {
         XCTAssertEqual(enriched.kind, .taskFailed)
     }
 
+    func testShellScriptOutcomeKindsAreCanonical() {
+        let success = AIEvent(
+            source: .shell,
+            type: "script_succeeded",
+            tool: "Shell",
+            message: "Completed: swift test",
+            ts: "2026-04-01T00:00:00Z",
+            directory: "/tmp/test",
+            reliability: .authoritative
+        )
+        let server = AIEvent(
+            source: .shell,
+            type: "dev_server_started",
+            tool: "Vite",
+            message: "Vite is ready at http://localhost:5173",
+            ts: "2026-04-01T00:00:00Z",
+            directory: "/tmp/test",
+            reliability: .authoritative
+        )
+
+        guard case let .emit(successEvent) = NotificationProviderAdapterRegistry.adapt(success),
+              case let .emit(serverEvent) = NotificationProviderAdapterRegistry.adapt(server) else {
+            return XCTFail("Expected canonical shell events")
+        }
+
+        XCTAssertEqual(successEvent.event.type, "script_succeeded")
+        XCTAssertEqual(successEvent.kind, .taskFinished)
+        XCTAssertEqual(serverEvent.event.type, "dev_server_started")
+        XCTAssertEqual(serverEvent.kind, .informational)
+    }
+
     func testAppUpdateAvailablePreservesTriggerTypeAndCanonicalizes() {
         let event = AIEvent(
             source: .app,

@@ -1295,9 +1295,25 @@ final class TerminalSessionModel {
 
     private func setupDevServerMonitor() {
         devServerMonitor.onDevServerChanged = { [weak self] serverInfo in
-            self?.devServer = serverInfo
+            guard let self else { return }
+            devServer = serverInfo
             if let serverInfo {
                 Log.info("Dev server detected: \(serverInfo.name)\(serverInfo.port.map { " on port \($0)" } ?? " (port pending)")")
+                let endpoint = serverInfo.url
+                    ?? serverInfo.port.map { "http://localhost:\($0)" }
+                    ?? "a local port"
+                appModel?.recordEvent(
+                    source: .shell,
+                    type: "dev_server_started",
+                    tool: serverInfo.name,
+                    message: "\(serverInfo.name) is ready at \(endpoint)",
+                    notify: true,
+                    directory: currentDirectory,
+                    tabID: ownerTabID,
+                    sessionID: nil,
+                    producer: "dev_server_monitor",
+                    reliability: .authoritative
+                )
             } else {
                 Log.info("Dev server stopped")
             }

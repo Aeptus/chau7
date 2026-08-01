@@ -123,6 +123,9 @@ final class NotificationTriggerCatalogGoldenTests: XCTestCase {
         golden("history_monitor", "historyMonitor", "finished", "finished", "Session completed (history)", "AI session completed as detected by history file monitoring.", true),
         golden("history_monitor", "historyMonitor", "idle", "idle", "History idle", "No new history entries for the idle timeout.", false),
         // shell
+        golden("shell", "shell", "script_succeeded", "scriptSucceeded", "Script succeeded", "A shell script or task completed successfully.", true),
+        golden("shell", "shell", "script_failed", "scriptFailed", "Script failed", "A shell script or task exited with non-zero status.", true),
+        golden("shell", "shell", "dev_server_started", "devServerStarted", "Dev server started", "A development server is listening and ready.", true),
         golden("shell", "shell", "command_finished", "commandFinished", "Command finished", "A shell command completed execution.", false),
         golden("shell", "shell", "command_failed", "commandFailed", "Command failed", "A shell command exited with non-zero status.", false),
         golden("shell", "shell", "exit_code_match", "exitCodeMatch", "Exit code match", "Command exited with a specific exit code.", false),

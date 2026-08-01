@@ -249,11 +249,11 @@ private enum MappedSourceAdapterPolicy {
 
         case .shell:
             switch normalizedType {
-            case "command_finished":
+            case "command_finished", "script_succeeded":
                 return .taskFinished
-            case "command_failed":
+            case "command_failed", "script_failed":
                 return .taskFailed
-            case "exit_code_match", "pattern_match", "long_running", "process_started", "process_ended",
+            case "dev_server_started", "exit_code_match", "pattern_match", "long_running", "process_started", "process_ended",
                  "directory_changed", "git_branch_changed", "other":
                 return .informational
             default:

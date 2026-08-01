@@ -50,10 +50,11 @@ public enum NotificationSemanticMapping {
 
     public static func kind(forRawType value: String) -> NotificationSemanticKind? {
         switch normalize(value) {
-        case "finished", "response_complete", "responsecomplete", "task_finished", "taskfinished", "agent_turn_complete", "agentturncomplete":
+        case "finished", "response_complete", "responsecomplete", "task_finished", "taskfinished", "agent_turn_complete", "agentturncomplete",
+             "script_succeeded", "scriptsucceeded":
             return .taskFinished
         case "failed", "error", "context_limit", "contextlimit", "exit_failed", "exitfailed",
-             "response_failed", "responsefailed":
+             "response_failed", "responsefailed", "script_failed", "scriptfailed":
             return .taskFailed
         case "tool_failed", "toolfailed":
             return .toolFailed
@@ -67,7 +68,7 @@ public enum NotificationSemanticMapping {
             return .authenticationSucceeded
         case "idle":
             return .idle
-        case "informational", "info":
+        case "informational", "info", "dev_server_started", "devserverstarted":
             return .informational
         default:
             return nil

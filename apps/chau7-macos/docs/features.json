@@ -1051,6 +1051,13 @@
   },
   {
     "category": "Notifications",
+    "feature": "Shell Script Outcome Attention",
+    "description": "Authoritative shell exit statuses notify and highlight conservative package scripts, executable script files, and build/test runners green on success or red on failure; listening dev servers emit green readiness while heuristic exits and intentional server shutdowns stay quiet",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "Notifications",
     "feature": "Dock Bounce On Agent Events",
     "description": "Default agent finished/approval/feedback notifications bounce the Dock icon - informational (single bounce) for completion, critical (bounces until focused) for approval and feedback",
     "status": "Shipped",

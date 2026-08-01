@@ -40,6 +40,9 @@ final class TriggerVocabularyTests: XCTestCase {
         let golden: [(type: String, title: String?, body: String?, style: String?)] = [
             ("finished", "Finished", "Done.", "success"),
             ("failed", "Failed", "Check the logs.", "error"),
+            ("script_succeeded", "Script succeeded", "The shell script completed successfully.", "success"),
+            ("script_failed", "Script failed", "The shell script exited with an error.", "error"),
+            ("dev_server_started", "Dev server started", "The development server is ready.", "success"),
             ("tool_failed", "Tool failed", nil, "error"),
             ("response_failed", nil, nil, "error"),
             ("permission", "Permission needed", "Needs your permission to continue.", "attention"),
