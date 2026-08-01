@@ -120,12 +120,12 @@ final class RemoteClient {
     /// timing-dependent and could mute unrelated notifications.
     private var pushDeliveredIDs: [String] = []
     private static let pushDeliveredIDCap = 128
-    /// Interactive prompts the user just answered or dismissed, keyed by prompt
-    /// id → when it was suppressed. The Mac keeps re-pushing a prompt until its
-    /// terminal actually advances, so without this the just-handled prompt
-    /// reappears on the next authoritative list. Suppression is dropped once the
-    /// Mac stops listing the prompt (the tab cleared) or after a safety timeout.
-    private var suppressedPromptIDs: [String: Date] = [:]
+    /// Interactive prompts the user just answered or dismissed. The Mac keeps
+    /// re-pushing a prompt until its terminal actually advances, so without this
+    /// the just-handled prompt reappears on the next authoritative list.
+    /// Suppression is dropped once the Mac stops listing the prompt — i.e. the
+    /// underlying state changed — so a genuinely new occurrence still surfaces.
+    private var suppressedPromptIDs: Set<String> = []
     private var pendingStateFetchTask: Task<Void, Never>?
     private var lastPendingStateFetchAt: Date?
     let terminalRenderer = RemoteTerminalRendererStore()
@@ -137,10 +137,6 @@ final class RemoteClient {
     private static let handshakeTimeoutSeconds = 12.0
     private static let repairFallbackAttempt = 3
     private static let pendingStateFetchMinimumInterval: TimeInterval = 1
-    /// How long a just-answered/dismissed prompt stays hidden if the Mac keeps
-    /// listing it (i.e. the terminal never advanced). After this the prompt is
-    /// shown again so a still-pending action isn't lost forever.
-    private static let promptSuppressionMaxAge: TimeInterval = 20
     /// Frames larger than this get decode/decrypt offloaded to a detached task;
     /// smaller control frames are processed inline (detach overhead > work).
     private static let frameOffloadThreshold = 8192
@@ -1569,19 +1565,20 @@ final class RemoteClient {
     /// Project the reconciler's authoritative prompt list into the UI,
     /// applying the answered-prompt suppression overlay on top.
     private func syncPrompts(with changes: PendingStateReconciler.PromptChanges) {
-        let now = Date()
         let nextPromptIDs = Set(changes.prompts.map(\.id))
 
-        // Drop suppression once the Mac stops listing the prompt (the terminal
-        // advanced, so the tab cleared) or after the safety timeout, so a
-        // genuinely-still-pending prompt resurfaces instead of vanishing.
-        suppressedPromptIDs = suppressedPromptIDs.filter { id, suppressedAt in
-            nextPromptIDs.contains(id) && now.timeIntervalSince(suppressedAt) < Self.promptSuppressionMaxAge
-        }
+        // Drop suppression once the Mac stops listing the prompt: the terminal
+        // advanced, so a later prompt with the same id is a new occurrence and
+        // must surface. Deliberately no time-based expiry — the Mac re-pushes an
+        // unchanged prompt indefinitely, and some cards are backed by state that
+        // never self-clears (a restored tab's unrun resume prefill persists until
+        // the line is actually run). Expiring on a timer turned "dismiss" into a
+        // recurring nag for exactly those, with nothing new to tell the user.
+        suppressedPromptIDs.formIntersection(nextPromptIDs)
 
         // Hide prompts the user just answered/dismissed; the Mac re-pushes them
         // until its terminal catches up, which is what made them "come back".
-        let visiblePrompts = changes.prompts.filter { suppressedPromptIDs[$0.id] == nil }
+        let visiblePrompts = changes.prompts.filter { !suppressedPromptIDs.contains($0.id) }
 
         let previousPromptIDs = Set(pendingInteractivePrompts.map(\.id))
         let visiblePromptIDs = Set(visiblePrompts.map(\.id))
@@ -1609,13 +1606,15 @@ final class RemoteClient {
         pendingInteractivePrompts.remove(at: index)
         _ = pendingReconciler.applyLocalPromptCompletion(promptID: id)
         clearPushDeliveredID(id)
-        suppressedPromptIDs[id] = Date()
+        suppressedPromptIDs.insert(id)
         RemoteNotificationScheduler.removeInteractivePromptNotifications(promptIDs: [id])
     }
 
     /// Dismiss a detected prompt from the phone without sending anything to the
-    /// terminal. It resurfaces if the Mac still lists it after the safety
-    /// timeout, or sooner if the tab briefly clears and the prompt recurs.
+    /// terminal. It stays dismissed for as long as the Mac keeps listing that
+    /// same prompt, and resurfaces only if the tab clears and the prompt recurs
+    /// — a new occurrence, not the one that was waved off. The tab's own
+    /// waiting/approval status still shows the session is blocked.
     func dismissInteractivePrompt(promptID: String) {
         guard let index = pendingInteractivePrompts.firstIndex(where: { $0.id == promptID }) else { return }
         completeInteractivePrompt(at: index, id: promptID)
