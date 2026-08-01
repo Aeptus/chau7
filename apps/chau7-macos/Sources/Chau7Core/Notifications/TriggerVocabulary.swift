@@ -58,8 +58,8 @@ public enum TriggerVocabulary {
             title: ("aiEvent.title.finished", "Finished"),
             body: ("aiEvent.body.finished", "Done."),
             // A completed turn is a success, not a "waiting" prompt: use the
-            // green success preset (non-persistent, auto-clears, suppressed once
-            // the tab is viewed) rather than the orange waiting style.
+            // green success preset (non-persistent, retained until viewed)
+            // rather than the orange waiting style.
             stylePreset: "success"
         ),
         Entry(

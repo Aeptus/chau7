@@ -114,7 +114,7 @@ final class TriggerVocabularyTests: XCTestCase {
             XCTAssertEqual(action?.config["style"], entry.stylePreset, "style planner drift for \(entry.type)")
             if entry.stylePreset != nil {
                 XCTAssertEqual(action?.actionType, .styleTab)
-                XCTAssertEqual(action?.config["autoClearSeconds"], "30")
+                XCTAssertNil(action?.config["autoClearSeconds"])
             }
         }
         let unknownEvent = AIEvent(type: "mystery", tool: "Tool", message: "", ts: "2026-01-01T00:00:00Z")

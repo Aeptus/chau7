@@ -103,6 +103,13 @@ final class NotificationSettingsStore {
         normalizedBindings = migrateFinishedColorDefault(normalizedBindings, defaults: defaults)
         normalizedBindings = migratePermissionPersistence(normalizedBindings, defaults: defaults)
         normalizedBindings = migrateFinishedPersistUntilOpen(normalizedBindings, defaults: defaults)
+        normalizedBindings = migrateDefaultErrorPersistUntilOpen(
+            normalizedBindings,
+            defaults: defaults,
+            storageKey: Keys.triggerActionBindings,
+            migrationKey: "notification.error.persistUntilOpen.v1",
+            triggerKeys: ["claude_code.failed", "codex.failed"]
+        )
 
         let loadedRateLimitConfig: NotificationRateLimiter.Config
         if let data = defaults.data(forKey: Keys.notificationRateLimitConfig),
@@ -128,7 +135,14 @@ final class NotificationSettingsStore {
         } else {
             loadedGroupActionBindings = NotificationSettings.defaultGroupActionBindings
         }
-        let normalizedGroupActionBindings = normalizedAgentGroupActionBindings(loadedGroupActionBindings)
+        let migratedGroupActionBindings = migrateDefaultErrorPersistUntilOpen(
+            loadedGroupActionBindings,
+            defaults: defaults,
+            storageKey: Keys.groupActionBindings,
+            migrationKey: "notification.groupError.persistUntilOpen.v1",
+            triggerKeys: ["ai_coding.failed", "ai_coding.response_failed"]
+        )
+        let normalizedGroupActionBindings = normalizedAgentGroupActionBindings(migratedGroupActionBindings)
 
         let loadedGroupConditions: [String: TriggerCondition]
         if let data = defaults.data(forKey: Keys.groupConditions),
@@ -330,6 +344,49 @@ final class NotificationSettingsStore {
         return normalizedBindings
     }
 
+    /// One-time migration for the shipped error style, which previously
+    /// disappeared after 60 seconds even when the user never opened its tab.
+    /// Only the literal old style/timeout pair is changed; other configured
+    /// timeouts remain user-owned.
+    private static func migrateDefaultErrorPersistUntilOpen(
+        _ bindings: [String: [NotificationActionConfig]],
+        defaults: UserDefaults,
+        storageKey: String,
+        migrationKey: String,
+        triggerKeys: [String]
+    ) -> [String: [NotificationActionConfig]] {
+        guard !defaults.bool(forKey: migrationKey) else { return bindings }
+        var normalizedBindings = bindings
+        var migrated = false
+
+        for triggerKey in triggerKeys {
+            guard var actions = normalizedBindings[triggerKey] else { continue }
+            for index in actions.indices where actions[index].actionType == .styleTab {
+                let config = actions[index].config
+                guard config["style"] == "error",
+                      config["autoClearSeconds"] == "60",
+                      config["persistent"] == nil else { continue }
+                var migratedConfig = config
+                migratedConfig["autoClearSeconds"] = "0"
+                actions[index] = NotificationActionConfig(
+                    actionType: .styleTab,
+                    enabled: actions[index].enabled,
+                    config: migratedConfig
+                )
+                migrated = true
+                Log.info("FeatureSettings migration: \(triggerKey) error style now persists until the tab is opened")
+            }
+            normalizedBindings[triggerKey] = actions
+        }
+
+        if migrated,
+           let data = JSONOperations.encode(normalizedBindings, context: "\(migrationKey).bindings") {
+            defaults.set(data, forKey: storageKey)
+        }
+        defaults.set(true, forKey: migrationKey)
+        return normalizedBindings
+    }
+
     // MARK: - Persistence
 
     private func persist() {
@@ -433,7 +490,7 @@ final class NotificationSettingsStore {
             NotificationActionConfig(actionType: .dockBounce, enabled: true, config: ["critical": "false"]),
             NotificationActionConfig(actionType: .styleTab, enabled: true, config: [
                 "style": "error",
-                "autoClearSeconds": "60"
+                "autoClearSeconds": "0"
             ])
         ]
 

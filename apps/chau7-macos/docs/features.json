@@ -317,7 +317,7 @@
   {
     "category": "AI Detection & Integration",
     "feature": "Completed-Turn Tab Styling",
-    "description": "A finished Claude turn styles its tab with the green success preset (non-persistent, auto-clearing, suppressed once the tab is viewed) rather than the orange waiting style, and the PTY wait/approval heuristic matches only the trailing output region so a reply that merely contains a trigger word no longer flips a completed turn to waiting-for-input",
+    "description": "A finished Claude turn styles its tab with the green success preset (non-persistent, retained until the tab is viewed) rather than the orange waiting style, and the PTY wait/approval heuristic matches only the trailing output region so a reply that merely contains a trigger word no longer flips a completed turn to waiting-for-input",
     "status": "Shipped",
     "differentiator": "No"
   },
@@ -2410,14 +2410,14 @@
   {
     "category": "Notifications",
     "feature": "Auto Tab Styling",
-    "description": "Tabs change color on events — auto-clear after configurable timeout, clear persistent approval styling immediately on approval resolution, and style all tabs affected by a file conflict",
+    "description": "Tabs change color on events, keep shipped outcome styles until the tab is viewed, support explicit user-configured auto-clear timeouts, clear persistent approval styling immediately on approval resolution, and style all tabs affected by a file conflict",
     "status": "Shipped",
     "differentiator": "No"
   },
   {
     "category": "Notifications",
-    "feature": "Persistent Completion Tab Highlight",
-    "description": "The green \"finished\" tab highlight persists until you open the tab instead of auto-clearing after ~30s; opening the tab clears its non-persistent highlight, matching permission highlights that stay until resolved",
+    "feature": "Persistent Outcome Tab Highlights",
+    "description": "Green completion and dev-server-ready highlights plus red failure highlights persist until you open the tab instead of auto-clearing after a timeout; opening the tab clears those non-persistent highlights while permission highlights stay until resolved",
     "status": "Shipped",
     "differentiator": "Yes"
   },
@@ -3754,7 +3754,7 @@
   {
     "category": "Notifications",
     "feature": "Tab Highlight Coverage",
-    "description": "All user-facing AI events (permission, waiting_input, finished, failed, idle, tool_failed, response_failed, elicitation) trigger tab border/color highlights with 30s auto-clear",
+    "description": "All user-facing AI events (permission, waiting_input, finished, failed, idle, tool_failed, response_failed, elicitation) trigger tab border/color highlights; shipped outcome styles clear when viewed and explicit user-configured timers remain available",
     "status": "Shipped",
     "differentiator": "Yes"
   },

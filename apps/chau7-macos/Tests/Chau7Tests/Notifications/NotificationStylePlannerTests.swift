@@ -37,9 +37,9 @@ final class NotificationStylePlannerTests: XCTestCase {
 
         XCTAssertEqual(actions.count, 1)
         XCTAssertEqual(actions.first?.actionType, .styleTab)
-        // A finished turn now defaults to the green success preset (see
-        // TriggerVocabulary): non-persistent, auto-clearing, suppressed on view.
+        // A finished turn defaults to green and remains until the tab is viewed.
         XCTAssertEqual(actions.first?.config["style"], "success")
+        XCTAssertNil(actions.first?.config["autoClearSeconds"])
     }
 
     func testStyleOnlyActionsRespectExplicitDisabledStyleAction() {

@@ -191,7 +191,7 @@ struct NotificationSettings: Equatable {
             NotificationActionConfig(actionType: .dockBounce, enabled: true, config: ["critical": "false"]),
             NotificationActionConfig(actionType: .styleTab, enabled: true, config: [
                 "style": "error",
-                "autoClearSeconds": "60"
+                "autoClearSeconds": "0"
             ])
         ],
         "ai_coding.permission": [
@@ -243,7 +243,7 @@ struct NotificationSettings: Equatable {
             NotificationActionConfig(actionType: .dockBounce, enabled: true, config: ["critical": "false"]),
             NotificationActionConfig(actionType: .styleTab, enabled: true, config: [
                 "style": "error",
-                "autoClearSeconds": "60"
+                "autoClearSeconds": "0"
             ])
         ],
         "ai_coding.idle": []

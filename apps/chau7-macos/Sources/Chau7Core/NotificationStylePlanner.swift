@@ -11,7 +11,10 @@ public enum NotificationStylePlanner {
         return NotificationActionConfig(
             actionType: .styleTab,
             enabled: true,
-            config: ["style": preset, "autoClearSeconds": "30"]
+            // No timer by default: non-persistent styles are acknowledged and
+            // cleared when the user selects the tab. Explicit user bindings
+            // can still opt into autoClearSeconds.
+            config: ["style": preset]
         )
     }
 
