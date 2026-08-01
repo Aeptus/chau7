@@ -30,14 +30,6 @@ struct TerminalView: View {
     @State private var textAwayFromBottom = false
     @State private var scrollToBottomToken = 0
     @State private var isErrorExpanded = false
-    /// Frozen copy of `repoTabGroups`, captured when the session menu opens.
-    /// A SwiftUI `Menu`'s content closure re-runs whenever the state it reads
-    /// changes — even while presented — so reading `client.tabs` directly would
-    /// let activity-driven tab reordering reshuffle rows under the user's
-    /// finger. Rendering from this snapshot pins the order for the open menu;
-    /// the label keeps reading live state, and closed-menu activity float is
-    /// preserved (the next open re-snapshots).
-    @State private var menuTabGroups: [RepoTabGroup] = []
     @FocusState private var inputFocused: Bool
 
     var body: some View {
@@ -217,17 +209,18 @@ struct TerminalView: View {
             connectionStatusSymbol
 
             Menu {
-                if menuTabGroups.isEmpty {
+                let groups = repoTabGroups
+                if groups.isEmpty {
                     Text("No remote tabs available yet")
-                } else if menuTabGroups.count == 1 {
+                } else if groups.count == 1 {
                     // A single group's header (often just "Other") is noise —
                     // keep the flat list.
-                    tabMenuButtons(for: menuTabGroups[0].tabs)
+                    tabMenuButtons(for: groups[0].tabs)
                 } else {
                     // Repo names render as section titles — the system menu
                     // styles them smaller and secondary, visually distinct
                     // from the tab entries beneath them.
-                    ForEach(menuTabGroups) { group in
+                    ForEach(groups) { group in
                         Section(group.title) {
                             tabMenuButtons(for: group.tabs)
                         }
@@ -255,11 +248,6 @@ struct TerminalView: View {
                 .clipShape(Capsule(style: .continuous))
             }
             .accessibilityLabel("Active session: \(activeTabMenuLabel)\(activeTabStatusDescription.map { ", \($0)" } ?? "")")
-            // Snapshot the current grouping as the menu opens. `simultaneousGesture`
-            // fires on the tap-to-open without consuming it (a plain `.onTapGesture`
-            // would swallow the tap and prevent the menu from presenting), so the
-            // rows are frozen the instant the menu appears.
-            .simultaneousGesture(TapGesture().onEnded { menuTabGroups = repoTabGroups })
 
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
@@ -289,22 +277,28 @@ struct TerminalView: View {
         let tabs: [RemoteTab]
     }
 
-    /// Tabs grouped by repo (projectName), preserving the Mac's tab order
-    /// both across groups (first appearance) and within them. Tabs without a
-    /// repo collect under "Other", always sorted last.
+    /// Tabs grouped by repo (projectName), keeping the Mac's tab order within
+    /// each group. Tabs without a repo collect under "Other", always last.
+    ///
+    /// Groups are ordered by name rather than by first appearance in
+    /// `client.tabs`. A SwiftUI `Menu` re-runs its content closure whenever the
+    /// state it reads changes — including while presented — and activity
+    /// re-sends reorder `client.tabs`, so first-appearance ordering let a
+    /// single tab moving reshuffle every group under the user's finger. Sorting
+    /// by name makes group order a function of the repo set alone, so it is
+    /// stable across activity churn without needing to freeze the menu.
     private var repoTabGroups: [RepoTabGroup] {
         let fallback = "Other"
-        var order: [String] = []
         var tabsByRepo: [String: [RemoteTab]] = [:]
         for tab in client.tabs {
             let name = tab.projectName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            let key = name.isEmpty ? fallback : name
-            if tabsByRepo[key] == nil { order.append(key) }
-            tabsByRepo[key, default: []].append(tab)
+            tabsByRepo[name.isEmpty ? fallback : name, default: []].append(tab)
         }
-        if let fallbackIndex = order.firstIndex(of: fallback), fallbackIndex != order.count - 1 {
-            order.remove(at: fallbackIndex)
-            order.append(fallback)
+        let order = tabsByRepo.keys.sorted { lhs, rhs in
+            // "Other" is a catch-all, not a repo — it sorts last regardless.
+            if lhs == fallback { return false }
+            if rhs == fallback { return true }
+            return lhs.localizedCaseInsensitiveCompare(rhs) == .orderedAscending
         }
         return order.map { RepoTabGroup(id: $0, title: $0, tabs: tabsByRepo[$0] ?? []) }
     }
