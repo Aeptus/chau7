@@ -108,7 +108,12 @@ public extension RemoteInteractivePrompt {
                 projectName: projectName,
                 branchName: branchName,
                 currentDirectory: currentDirectory
-            )
+            ),
+            // Must be carried through: every prompt is composed via this
+            // method on its way to the wire, so dropping the flag here made
+            // multi-select AskUserQuestion cards indistinguishable from
+            // single-choice ones on the phone — the checkbox UI never armed.
+            isMultiSelect: isMultiSelect
         )
     }
 }

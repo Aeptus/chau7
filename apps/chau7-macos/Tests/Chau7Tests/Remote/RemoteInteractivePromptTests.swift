@@ -67,6 +67,23 @@ final class RemoteInteractivePromptTests: XCTestCase {
         XCTAssertNil(object["multi_select"])
     }
 
+    func testComposedPushTextPreservesMultiSelect() throws {
+        // Every prompt is composed through withComposedPushText() on its way to
+        // the wire, so a field dropped there is dropped for all of them —
+        // silently, since composition is otherwise additive.
+        let multi = RemoteInteractivePrompt(
+            id: "p",
+            tabID: 1,
+            tabTitle: "t",
+            toolName: "Claude",
+            prompt: "Pick several",
+            options: [RemoteInteractivePromptOption(id: "1", label: "A", response: "1\r")],
+            detectedAt: Date(timeIntervalSince1970: 0),
+            isMultiSelect: true
+        )
+        XCTAssertEqual(multi.withComposedPushText().isMultiSelect, true)
+    }
+
     func testDecodesWithoutMultiSelectKey() throws {
         // Prompts from older Macs (and the Go agent's re-encode) omit the key.
         let json = """
