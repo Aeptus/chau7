@@ -127,6 +127,14 @@ final class ScrollbackMemoryManager {
                     Log.info("ScrollbackMemoryManager[\(viewId)]: skipping flush for TUI tab \(oldPhase) -> \(newPhase)")
                     return
                 }
+                stateLock.lock()
+                let alreadyIdleFlushed = idleFlushedTabIDs.remove(tabID) != nil
+                stateLock.unlock()
+                if alreadyIdleFlushed {
+                    rustFFI.setScrollbackSize(UInt32(Self.viewportFloor))
+                    Log.info("ScrollbackMemoryManager[\(viewId)]: reused idle-flush cache for hidden transition")
+                    return
+                }
                 if flush(tabID: tabID, viewId: viewId, rustFFI: rustFFI) {
                     // Free the ring buffer only after the buffer has either
                     // been persisted and verified, or proven empty.
@@ -172,6 +180,13 @@ final class ScrollbackMemoryManager {
         let queue = perTabQueue(for: tabID)
         queue.async { [weak self] in
             guard let self else { return }
+            stateLock.lock()
+            let alreadyFlushed = idleFlushedTabIDs.contains(tabID)
+            stateLock.unlock()
+            guard !alreadyFlushed else {
+                Log.trace("ScrollbackMemoryManager[\(viewId)]: idleFlush coalesced (already flushed)")
+                return
+            }
             let text = TerminalWorkProfiler.shared.measure(
                 .fullBufferCapture,
                 context: TerminalWorkContext(

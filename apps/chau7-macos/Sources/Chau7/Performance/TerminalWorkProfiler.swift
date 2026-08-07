@@ -7,6 +7,7 @@ enum TerminalWorkOperation: String, CaseIterable {
     case cursorModeRead
     case fullBufferCapture
     case tailBufferCapture
+    case terminalStateExtraction
     case terminalStateProcessing
 }
 

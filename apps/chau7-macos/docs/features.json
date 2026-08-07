@@ -3738,6 +3738,13 @@
     "differentiator": "Yes"
   },
   {
+    "category": "Performance",
+    "feature": "Off-Main Background Terminal Snapshots",
+    "description": "Shared background drains extract cursor state, output bytes, shell events, and lifecycle facts under the terminal poll lock on a utility queue; AppKit receives an immutable snapshot while drain-only tabs skip presentation grids and callbacks",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
     "category": "MCP Server",
     "feature": "PTY Log Output Flush",
     "description": "Active AI PTY log is flushed before tab_output reads it",

@@ -146,6 +146,50 @@ final class ScrollbackMemoryManagerTests: XCTestCase {
 
         XCTAssertTrue(rust.replayedBuffers.isEmpty, "reload must be a no-op for tabs that weren't idle-flushed")
     }
+
+    func testRepeatedIdleFlushCapturesOnlyOnce() {
+        let tabID = UUID()
+        let rust = MockScrollbackRustFFI(capturedText: "plain\n", capturedAnsiText: "\u{1B}[32mgreen\u{1B}[0m\n")
+        let manager = ScrollbackMemoryManager(cacheDirectory: tempDirectory)
+
+        manager.idleFlush(viewId: "test", tabID: tabID, rustFFI: rust, hostsTUIApp: false)
+        manager.idleFlush(viewId: "test", tabID: tabID, rustFFI: rust, hostsTUIApp: false)
+        manager.drainPendingOperationsForTesting(tabID: tabID)
+
+        XCTAssertEqual(rust.ansiCaptureCount, 1)
+        XCTAssertEqual(rust.scrollbackSizes.count, 1)
+    }
+
+    func testHiddenTransitionReusesExistingIdleFlushCapture() {
+        let tabID = UUID()
+        let ansi = "\u{1B}[34mblue\u{1B}[0m\n"
+        let rust = MockScrollbackRustFFI(capturedText: "blue\n", capturedAnsiText: ansi)
+        let manager = ScrollbackMemoryManager(cacheDirectory: tempDirectory)
+
+        manager.idleFlush(viewId: "test", tabID: tabID, rustFFI: rust, hostsTUIApp: false)
+        manager.drainPendingOperationsForTesting(tabID: tabID)
+        manager.handlePhaseTransition(
+            viewId: "test",
+            tabID: tabID,
+            rustFFI: rust,
+            from: .warm,
+            to: .hidden
+        )
+        manager.drainPendingOperationsForTesting(tabID: tabID)
+
+        XCTAssertEqual(rust.ansiCaptureCount, 1)
+        XCTAssertEqual(rust.plainCaptureCount, 0)
+
+        manager.handlePhaseTransition(
+            viewId: "test",
+            tabID: tabID,
+            rustFFI: rust,
+            from: .hidden,
+            to: .active
+        )
+        manager.drainPendingOperationsForTesting(tabID: tabID)
+        XCTAssertEqual(rust.replayedBuffers, [Data(ansi.utf8)])
+    }
 }
 
 private enum TestError: Error {

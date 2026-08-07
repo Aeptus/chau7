@@ -1152,7 +1152,11 @@ final class RustTerminalFFI: TerminalBackend {
         // Free the output buffer (ptr is already mutable)
         freeOutputFn(ptr, len)
 
-        Log.trace("RustTerminalFFI[\(instanceId)]: getLastOutput - Retrieved \(len) bytes")
+        Log.traceThrottled(
+            "rust-terminal-last-output-\(instanceId)",
+            interval: 5.0,
+            "RustTerminalFFI[\(instanceId)]: getLastOutput - Retrieved \(len) bytes"
+        )
         return data
     }
 
@@ -1363,7 +1367,11 @@ final class RustTerminalFFI: TerminalBackend {
         defer { freeStringFn(ptr) }
 
         let text = String(cString: ptr)
-        Log.trace("RustTerminalFFI[\(instanceId)]: fullBufferText - \(text.count) characters")
+        Log.traceThrottled(
+            "rust-terminal-full-buffer-\(instanceId)",
+            interval: 5.0,
+            "RustTerminalFFI[\(instanceId)]: fullBufferText - \(text.count) characters"
+        )
         return text
     }
 
@@ -1382,7 +1390,11 @@ final class RustTerminalFFI: TerminalBackend {
         defer { freeStringFn(ptr) }
 
         let text = String(cString: ptr)
-        Log.trace("RustTerminalFFI[\(instanceId)]: fullBufferAnsiText - \(text.count) characters")
+        Log.traceThrottled(
+            "rust-terminal-full-buffer-ansi-\(instanceId)",
+            interval: 5.0,
+            "RustTerminalFFI[\(instanceId)]: fullBufferAnsiText - \(text.count) characters"
+        )
         return text
     }
 
@@ -2979,11 +2991,17 @@ final class RustTerminalView: NSView {
         // event drain's blocking poll returned. This also processes pending
         // events (titles, clipboard, shell integration).
         let followUpFlags = rust.pollEvents(timeout: 0)
-        let result = processTerminalStateAfterPollLocked(
+        let snapshot = extractTerminalDrainSnapshotLocked(
             rust: rust,
-            changed: drainGridChanged || followUpFlags.contains(.gridChanged)
+            changed: drainGridChanged || followUpFlags.contains(.gridChanged),
+            caller: "eventDrain"
         )
         terminalPollAccessLock.unlock()
+        let result = applyTerminalDrainSnapshot(
+            snapshot,
+            rust: rust,
+            backendLockHeld: false
+        )
 
         guard notifyUpdateChanges else {
             // Data was drained (prevents PTY blocking) but we can't render
