@@ -47,7 +47,7 @@ struct ProxySettingsView: View {
                 label: L("settings.proxy.includeOpenAI", "Route OpenAI-Compatible Clients"),
                 help: L(
                     "settings.proxy.includeOpenAI.help",
-                    "Inject OPENAI_BASE_URL so Codex CLI and other OpenAI-compatible clients are routed through the proxy. Disable if you only want Anthropic and Gemini analytics."
+                    "Route Codex with its supported openai_base_url setting and a process-scoped local certificate; other OpenAI-compatible clients receive OPENAI_BASE_URL. Codex starts directly if proxy trust is unavailable."
                 ),
                 isOn: $settings.apiAnalyticsIncludeOpenAI
             )
