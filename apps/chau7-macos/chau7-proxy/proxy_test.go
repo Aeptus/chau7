@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -11,6 +12,91 @@ import (
 	"testing"
 	"time"
 )
+
+func TestProxyHandler_StoresAnthropicProjectHeaderExactly(t *testing.T) {
+	const projectPath = "/tmp/Claude Project/été"
+	upstream := mockUpstream(t, func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get(HeaderProject); got != "" {
+			t.Errorf("internal project header leaked upstream: %q", got)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"model": "claude-sonnet-4",
+			"usage": map[string]int{"input_tokens": 1, "output_tokens": 1},
+		})
+	})
+	defer upstream.Close()
+
+	original := ProviderConfigs[ProviderAnthropic]
+	ProviderConfigs[ProviderAnthropic] = ProviderConfig{BaseURL: upstream.URL}
+	defer func() { ProviderConfigs[ProviderAnthropic] = original }()
+
+	proxy, db, _ := setupTestProxy(t)
+	defer func() { _ = db.Close() }()
+
+	req := httptest.NewRequest("POST", "/v1/messages", bytes.NewBufferString(`{"model":"claude-sonnet-4"}`))
+	req.Header.Set("anthropic-version", "2023-06-01")
+	req.Header.Set(HeaderProject, projectPath)
+	recorder := httptest.NewRecorder()
+	proxy.ServeHTTP(recorder, req)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("Anthropic call failed: %d: %s", recorder.Code, recorder.Body.String())
+	}
+	assertStoredProjectPath(t, db, ProviderAnthropic, projectPath)
+}
+
+func TestProxyHandler_StoresCodexPathProjectExactly(t *testing.T) {
+	const projectPath = "/tmp/Codex Project/été"
+	upstream := mockUpstream(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/responses" {
+			t.Errorf("internal correlation prefix was not stripped: %q", r.URL.Path)
+		}
+		if got := r.Header.Get(HeaderProject); got != "" {
+			t.Errorf("materialized project header leaked upstream: %q", got)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"model": "gpt-5",
+			"usage": map[string]int{"input_tokens": 1, "output_tokens": 1},
+		})
+	})
+	defer upstream.Close()
+
+	original := ProviderConfigs[ProviderOpenAI]
+	ProviderConfigs[ProviderOpenAI] = ProviderConfig{BaseURL: upstream.URL}
+	defer func() { ProviderConfigs[ProviderOpenAI] = original }()
+
+	proxy, db, _ := setupTestProxy(t)
+	defer func() { _ = db.Close() }()
+
+	projectToken := base64.RawURLEncoding.EncodeToString([]byte(projectPath))
+	path := projectCorrelationPathPrefix + projectToken + "/v1/responses"
+	req := httptest.NewRequest("POST", path, bytes.NewBufferString(`{"model":"gpt-5"}`))
+	req.Header.Set("Authorization", "Bearer sk-test")
+	recorder := httptest.NewRecorder()
+	proxy.ServeHTTP(recorder, req)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("OpenAI call failed: %d: %s", recorder.Code, recorder.Body.String())
+	}
+	assertStoredProjectPath(t, db, ProviderOpenAI, projectPath)
+}
+
+func assertStoredProjectPath(t *testing.T, db *Database, provider Provider, expected string) {
+	t.Helper()
+	var projectPath string
+	err := db.db.QueryRow(
+		"SELECT project_path FROM api_calls WHERE provider = ? ORDER BY id DESC LIMIT 1",
+		string(provider),
+	).Scan(&projectPath)
+	if err != nil {
+		t.Fatalf("read stored project path: %v", err)
+	}
+	if projectPath != expected {
+		t.Fatalf("stored project path = %q, want %q", projectPath, expected)
+	}
+}
 
 // mockUpstream creates a mock upstream server for testing
 func mockUpstream(t *testing.T, handler http.HandlerFunc) *httptest.Server {

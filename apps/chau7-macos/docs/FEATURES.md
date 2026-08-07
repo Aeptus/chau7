@@ -212,6 +212,7 @@ Supported commands (46 parsers):
 - **Timeline visualization** — scrubber timeline showing command blocks and metrics.
 - **Provider filtering** — include or exclude specific API providers.
 - **Correlation headers** — `X-Chau7-Session`, `X-Chau7-Tab`, `X-Chau7-Project` for tracing (plus `X-Chau7-Context-Pack` for baseline estimation).
+- **Reliable repository attribution** — Claude receives supported custom correlation headers and Codex carries its project through a proxy-only encoded path; both store the exact repository path without leaking Chau7 metadata upstream. New-call attribution ratios expose regressions, and repository/timestamp lookups use an index installed for both fresh and existing databases. Historical unattributed rows are deliberately left untouched because their repository cannot be inferred safely.
 - **Per-repository prompt injection** — inject content into API requests per repository via `~/.chau7/prompt-rules.json`. Rules match by repository name (portable) or absolute path, choose prepend to user message (default), append, or system prompt, and now control when injection fires: every prompt, the first matching prompt in a shell session, or the first matching prompt after `/compact` or `/clear`. Supports Anthropic Messages, OpenAI Chat Completions, OpenAI Responses (Codex), and Gemini, plus optional repo-local `.chau7/injection.json` overrides.
 
 ## MCP Server

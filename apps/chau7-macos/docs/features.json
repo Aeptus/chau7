@@ -1737,6 +1737,13 @@
   },
   {
     "category": "API Analytics",
+    "feature": "Reliable Repository Attribution",
+    "description": "Claude custom headers and a proxy-only encoded Codex path preserve the exact repository on newly stored calls; the proxy strips internal metadata upstream, reports the new-call attribution ratio, and installs a project/timestamp index without guessing historical attribution",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "API Analytics",
     "feature": "Token Counting & Cost Calculation",
     "description": "Count input/output tokens per call and calculate aggregate cost",
     "status": "Shipped",

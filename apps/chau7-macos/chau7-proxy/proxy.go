@@ -24,6 +24,7 @@ type ProxyHandler struct {
 	mockup      *MockupClient      // v1.2
 	injector    *Injector
 	client      *http.Client
+	attribution *AttributionDiagnostics
 }
 
 // NewProxyHandler creates a new proxy handler
@@ -36,6 +37,7 @@ func NewProxyHandler(config *Config, db *Database, ipc *IPCNotifier, taskManager
 		baseline:    baseline,
 		mockup:      mockup,
 		injector:    injector,
+		attribution: &AttributionDiagnostics{},
 		client: &http.Client{
 			Timeout: 5 * time.Minute, // Long timeout for streaming responses
 			Transport: &http.Transport{
@@ -49,6 +51,11 @@ func NewProxyHandler(config *Config, db *Database, ipc *IPCNotifier, taskManager
 
 // ServeHTTP handles incoming HTTP requests
 func (p *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if err := applyPathCorrelation(r); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
 	// WebSocket upgrade: tunnel bidirectionally instead of request-response proxy.
 	// Codex CLI uses WebSocket transport for the Responses API; stripping the
 	// Upgrade header forces a fallback to HTTPS POST which may fail auth checks
@@ -266,6 +273,8 @@ func (p *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if err != nil {
 		log.Printf("[WARN] Failed to log API call: %v", err)
+	} else {
+		p.recordAttribution(headers.Project)
 	}
 
 	// If this call was made during candidate grace period, track it for potential reassignment
@@ -326,6 +335,28 @@ func (p *ProxyHandler) logError(headers *CorrelationHeaders, provider Provider, 
 
 	if _, err := p.db.InsertAPICallWithTask(record, "", headers.TabID, headers.Project); err != nil {
 		log.Printf("[WARN] Failed to log error: %v", err)
+	} else {
+		p.recordAttribution(headers.Project)
+	}
+}
+
+func (p *ProxyHandler) recordAttribution(projectPath string) {
+	snapshot, shouldReport := p.attribution.Record(projectPath)
+	if !shouldReport {
+		return
+	}
+
+	message := fmt.Sprintf(
+		"proxy attribution: attributed=%d unattributed=%d total=%d ratio=%.1f%%",
+		snapshot.Attributed,
+		snapshot.Unattributed,
+		snapshot.Total,
+		snapshot.Ratio()*100,
+	)
+	if snapshot.Unattributed > 0 {
+		log.Printf("[WARN] %s", message)
+	} else {
+		log.Printf("[INFO] %s", message)
 	}
 }
 

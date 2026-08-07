@@ -247,6 +247,7 @@ MCP Resources,chau7://telemetry/sessions/current,Read-only resource: currently a
 MCP Resources,chau7://telemetry/runs/<run_id>,Dynamic resource: specific run details by ID,Shipped,No
 API Analytics,API Call Logging,"Capture every LLM API call — tokens in/out, cost, latency, model, endpoint",Shipped,Yes
 API Analytics,TLS/WSS Proxy,"Go-based proxy (chau7-proxy) intercepts API calls to Claude, OpenAI, Gemini, Anthropic with TLS and WebSocket support",Shipped,Yes
+API Analytics,Reliable Repository Attribution,"Claude custom headers and a proxy-only encoded Codex path preserve the exact repository on newly stored calls; the proxy strips internal metadata upstream, reports the new-call attribution ratio, and installs a project/timestamp index without guessing historical attribution",Shipped,Yes
 API Analytics,Token Counting & Cost Calculation,Count input/output tokens per call and calculate aggregate cost,Shipped,Yes
 API Analytics,Latency Tracking,Record API response times for performance analysis,Shipped,No
 API Analytics,Task Detection & Assessment,Auto-detect AI task candidates from API activity with confidence scoring — approve or fail with notes,Shipped,Yes

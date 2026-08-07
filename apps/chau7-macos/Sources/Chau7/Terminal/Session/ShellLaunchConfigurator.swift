@@ -165,11 +165,19 @@ enum ShellLaunchConfigurator {
           chpwd_functions+=smartoverlay_precmd
         fi
         smartoverlay_precmd
-        # Chau7 CLI header injection for Claude Code
+        # Chau7 proxy attribution for Claude Code and Codex
         chau7_update_project() {
           local git_root=$(git rev-parse --show-toplevel 2>/dev/null)
           export CHAU7_PROJECT="${git_root:-$PWD}"
-          export ANTHROPIC_EXTRA_HEADERS="X-Chau7-Session:${CHAU7_SESSION_ID:-},X-Chau7-Tab:${CHAU7_TAB_ID:-},X-Chau7-Project:${CHAU7_PROJECT:-}"
+          if [ "$CHAU7_PROXY_CORRELATION_ENABLED" = "1" ]; then
+            export ANTHROPIC_CUSTOM_HEADERS="X-Chau7-Session:${CHAU7_SESSION_ID:-}
+        X-Chau7-Tab:${CHAU7_TAB_ID:-}
+        X-Chau7-Project:${CHAU7_PROJECT:-}"
+          fi
+          if [ -n "$CHAU7_OPENAI_PROXY_BASE_URL" ]; then
+            local project_token=$(printf '%s' "$CHAU7_PROJECT" | base64 | tr '+/' '-_' | tr -d '=\n')
+            export OPENAI_BASE_URL="$CHAU7_OPENAI_PROXY_BASE_URL/_chau7/project/$project_token/v1"
+          fi
         }
         chau7_update_project
         if command -v add-zsh-hook >/dev/null 2>&1; then
@@ -235,11 +243,19 @@ enum ShellLaunchConfigurator {
           printf '\\e]9;chau7;exit=%s\\a' "$code"
         }
         PROMPT_COMMAND="smartoverlay_precmd${PROMPT_COMMAND:+;$PROMPT_COMMAND}"
-        # Chau7 CLI header injection for Claude Code
+        # Chau7 proxy attribution for Claude Code and Codex
         chau7_update_project() {
           local git_root=$(git rev-parse --show-toplevel 2>/dev/null)
           export CHAU7_PROJECT="${git_root:-$PWD}"
-          export ANTHROPIC_EXTRA_HEADERS="X-Chau7-Session:${CHAU7_SESSION_ID:-},X-Chau7-Tab:${CHAU7_TAB_ID:-},X-Chau7-Project:${CHAU7_PROJECT:-}"
+          if [ "$CHAU7_PROXY_CORRELATION_ENABLED" = "1" ]; then
+            export ANTHROPIC_CUSTOM_HEADERS="X-Chau7-Session:${CHAU7_SESSION_ID:-}
+        X-Chau7-Tab:${CHAU7_TAB_ID:-}
+        X-Chau7-Project:${CHAU7_PROJECT:-}"
+          fi
+          if [ -n "$CHAU7_OPENAI_PROXY_BASE_URL" ]; then
+            local project_token=$(printf '%s' "$CHAU7_PROJECT" | base64 | tr '+/' '-_' | tr -d '=\n')
+            export OPENAI_BASE_URL="$CHAU7_OPENAI_PROXY_BASE_URL/_chau7/project/$project_token/v1"
+          fi
         }
         chau7_update_project
         # Update on directory change via PROMPT_COMMAND
@@ -319,7 +335,7 @@ enum ShellLaunchConfigurator {
             end
           end
         end
-        # Chau7 CLI header injection for Claude Code
+        # Chau7 proxy attribution for Claude Code and Codex
         function chau7_update_project --on-variable PWD
           set -l git_root (git rev-parse --show-toplevel 2>/dev/null)
           if test -n "$git_root"
@@ -327,7 +343,15 @@ enum ShellLaunchConfigurator {
           else
             set -gx CHAU7_PROJECT $PWD
           end
-          set -gx ANTHROPIC_EXTRA_HEADERS "X-Chau7-Session:$CHAU7_SESSION_ID,X-Chau7-Tab:$CHAU7_TAB_ID,X-Chau7-Project:$CHAU7_PROJECT"
+          if test "$CHAU7_PROXY_CORRELATION_ENABLED" = "1"
+            set -gx ANTHROPIC_CUSTOM_HEADERS "X-Chau7-Session:$CHAU7_SESSION_ID
+        X-Chau7-Tab:$CHAU7_TAB_ID
+        X-Chau7-Project:$CHAU7_PROJECT"
+          end
+          if test -n "$CHAU7_OPENAI_PROXY_BASE_URL"
+            set -l project_token (printf '%s' "$CHAU7_PROJECT" | base64 | tr '+/' '-_' | tr -d '=\n')
+            set -gx OPENAI_BASE_URL "$CHAU7_OPENAI_PROXY_BASE_URL/_chau7/project/$project_token/v1"
+          end
         end
         # Initialize on startup
         chau7_update_project
@@ -469,6 +493,22 @@ enum ShellLaunchConfigurator {
         var includeOpenAI: Bool
     }
 
+    static func anthropicCorrelationHeaders(sessionID: String, tabID: String, projectDirectory: String) -> String {
+        [
+            "X-Chau7-Session:\(sessionID)",
+            "X-Chau7-Tab:\(tabID)",
+            "X-Chau7-Project:\(projectDirectory)",
+        ].joined(separator: "\n")
+    }
+
+    static func proxyProjectPath(_ projectDirectory: String) -> String {
+        let token = Data(projectDirectory.utf8).base64EncodedString()
+            .replacingOccurrences(of: "+", with: "-")
+            .replacingOccurrences(of: "/", with: "_")
+            .replacingOccurrences(of: "=", with: "")
+        return "/_chau7/project/\(token)"
+    }
+
     /// Everything the launch environment depends on, gathered by the caller so
     /// the assembly itself is a pure function.
     struct LaunchEnvironmentInputs {
@@ -564,12 +604,19 @@ enum ShellLaunchConfigurator {
 
             // Claude Code / Anthropic SDK (HTTP — no WebSocket needed)
             dict["ANTHROPIC_BASE_URL"] = proxyBase
+            dict["ANTHROPIC_CUSTOM_HEADERS"] = anthropicCorrelationHeaders(
+                sessionID: inputs.proxyCorrelationSessionID,
+                tabID: inputs.tabID,
+                projectDirectory: inputs.projectDirectory
+            )
+            dict["CHAU7_PROXY_CORRELATION_ENABLED"] = "1"
 
             if analytics.includeOpenAI {
                 // Codex CLI / OpenAI SDK — routed through the TLS port so that
                 // subscription-based Codex can do its native WSS upgrade through
                 // the proxy. The self-signed cert is trusted via the login keychain.
-                dict["OPENAI_BASE_URL"] = "\(tlsBase)/v1"
+                dict["CHAU7_OPENAI_PROXY_BASE_URL"] = tlsBase
+                dict["OPENAI_BASE_URL"] = "\(tlsBase)\(proxyProjectPath(inputs.projectDirectory))/v1"
             }
 
             // Gemini CLI / Google GenAI SDK (HTTP — no WebSocket needed)

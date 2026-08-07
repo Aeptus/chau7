@@ -3,11 +3,64 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 )
+
+func TestDatabase_ProjectTimestampIndexIsRecreatedAndUsed(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "project-index.db")
+	db, err := NewDatabase(dbPath)
+	if err != nil {
+		t.Fatalf("create database: %v", err)
+	}
+	if _, err := db.db.Exec("DROP INDEX idx_api_calls_project_timestamp"); err != nil {
+		t.Fatalf("drop project index: %v", err)
+	}
+	if _, err := db.db.Exec("ALTER TABLE api_calls DROP COLUMN project_path"); err != nil {
+		t.Fatalf("remove legacy-missing project column fixture: %v", err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatalf("close database: %v", err)
+	}
+
+	db, err = NewDatabase(dbPath)
+	if err != nil {
+		t.Fatalf("reopen existing database: %v", err)
+	}
+	defer func() { _ = db.Close() }()
+
+	rows, err := db.db.Query(`
+		EXPLAIN QUERY PLAN
+		SELECT provider, COUNT(*), MAX(timestamp)
+		FROM api_calls
+		WHERE project_path = ? AND timestamp >= ?
+		GROUP BY provider
+	`, "/repo", "2026-01-01T00:00:00Z")
+	if err != nil {
+		t.Fatalf("explain repo aggregate: %v", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	var details []string
+	for rows.Next() {
+		var id, parent, unused int
+		var detail string
+		if err := rows.Scan(&id, &parent, &unused, &detail); err != nil {
+			t.Fatalf("scan query plan: %v", err)
+		}
+		details = append(details, detail)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("query plan rows: %v", err)
+	}
+	plan := strings.Join(details, " | ")
+	if !strings.Contains(plan, "idx_api_calls_project_timestamp") {
+		t.Fatalf("repo aggregate did not use project index: %s", plan)
+	}
+}
 
 func TestNewDatabase(t *testing.T) {
 	// Create temp directory for test

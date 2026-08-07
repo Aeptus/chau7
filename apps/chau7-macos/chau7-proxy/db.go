@@ -365,6 +365,7 @@ func initSchema(db *sql.DB) error {
 	postMigrationIndexes := `
 		CREATE INDEX IF NOT EXISTS idx_api_calls_task ON api_calls(task_id);
 		CREATE INDEX IF NOT EXISTS idx_api_calls_cost_ts ON api_calls(timestamp, cost_usd);
+		CREATE INDEX IF NOT EXISTS idx_api_calls_project_timestamp ON api_calls(project_path, timestamp);
 	`
 	if _, err := db.Exec(postMigrationIndexes); err != nil {
 		return err
@@ -387,9 +388,10 @@ func runMigrations(db *sql.DB) error {
 	if err != nil {
 		return err
 	}
-	defer func() { _ = rows.Close() }()
 
 	hasTaskID := false
+	hasTabID := false
+	hasProjectPath := false
 	hasCacheTokens := false
 	hasTTFT := false
 	hasPricingVersion := false
@@ -404,6 +406,10 @@ func runMigrations(db *sql.DB) error {
 		switch name {
 		case "task_id":
 			hasTaskID = true
+		case "tab_id":
+			hasTabID = true
+		case "project_path":
+			hasProjectPath = true
 		case "cache_creation_input_tokens":
 			hasCacheTokens = true
 		case "ttft_ms":
@@ -412,15 +418,27 @@ func runMigrations(db *sql.DB) error {
 			hasPricingVersion = true
 		}
 	}
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		return err
+	}
+	if err := rows.Close(); err != nil {
+		return err
+	}
 
-	if !hasTaskID {
-		migrations := []string{
-			"ALTER TABLE api_calls ADD COLUMN task_id TEXT",
-			"ALTER TABLE api_calls ADD COLUMN tab_id TEXT",
-			"ALTER TABLE api_calls ADD COLUMN project_path TEXT",
-		}
-		for _, m := range migrations {
-			_, _ = db.Exec(m) // Ignore errors for columns that may already exist
+	correlationMigrations := []struct {
+		missing bool
+		sql     string
+	}{
+		{!hasTaskID, "ALTER TABLE api_calls ADD COLUMN task_id TEXT"},
+		{!hasTabID, "ALTER TABLE api_calls ADD COLUMN tab_id TEXT"},
+		{!hasProjectPath, "ALTER TABLE api_calls ADD COLUMN project_path TEXT"},
+	}
+	for _, migration := range correlationMigrations {
+		if migration.missing {
+			if _, err := db.Exec(migration.sql); err != nil {
+				return err
+			}
 		}
 	}
 

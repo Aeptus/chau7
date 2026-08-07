@@ -76,6 +76,10 @@ final class ShellLaunchConfiguratorTests: XCTestCase {
         XCTAssertTrue(contents.contains("chau7_emit_exit_status"))
         XCTAssertTrue(contents.contains("smartoverlay_precmd"))
         XCTAssertTrue(contents.contains(#"print -Pn "\e]7;file://$HOSTNAME$PWD\a""#))
+        XCTAssertTrue(contents.contains("ANTHROPIC_CUSTOM_HEADERS"))
+        XCTAssertFalse(contents.contains("ANTHROPIC_EXTRA_HEADERS"))
+        XCTAssertTrue(contents.contains("X-Chau7-Session:${CHAU7_SESSION_ID:-}\nX-Chau7-Tab:${CHAU7_TAB_ID:-}\nX-Chau7-Project:${CHAU7_PROJECT:-}"))
+        XCTAssertTrue(contents.contains("CHAU7_OPENAI_PROXY_BASE_URL/_chau7/project/$project_token/v1"))
         // Startup command runs last
         XCTAssertTrue(contents.hasSuffix("if [ -n \"$CHAU7_STARTUP_CMD\" ]; then\n  eval \"$CHAU7_STARTUP_CMD\"\nfi"))
     }
@@ -106,6 +110,9 @@ final class ShellLaunchConfiguratorTests: XCTestCase {
         // Integration hooks are chained through PROMPT_COMMAND
         XCTAssertTrue(contents.contains("PROMPT_COMMAND=\"smartoverlay_precmd${PROMPT_COMMAND:+;$PROMPT_COMMAND}\""))
         XCTAssertTrue(contents.contains("PROMPT_COMMAND=\"chau7_emit_exit_status${PROMPT_COMMAND:+;$PROMPT_COMMAND}\""))
+        XCTAssertTrue(contents.contains("ANTHROPIC_CUSTOM_HEADERS"))
+        XCTAssertTrue(contents.contains("X-Chau7-Session:${CHAU7_SESSION_ID:-}\nX-Chau7-Tab:${CHAU7_TAB_ID:-}\nX-Chau7-Project:${CHAU7_PROJECT:-}"))
+        XCTAssertTrue(contents.contains("CHAU7_OPENAI_PROXY_BASE_URL/_chau7/project/$project_token/v1"))
         // Startup command runs last
         XCTAssertTrue(contents.hasSuffix("if [ -n \"$CHAU7_STARTUP_CMD\" ]; then\n  eval \"$CHAU7_STARTUP_CMD\"\nfi"))
     }
@@ -129,6 +136,9 @@ final class ShellLaunchConfiguratorTests: XCTestCase {
         // Integration hooks fire on prompt and PWD changes
         XCTAssertTrue(contents.contains("function smartoverlay_precmd --on-event fish_prompt --on-variable PWD"))
         XCTAssertTrue(contents.contains("function chau7_update_project --on-variable PWD"))
+        XCTAssertTrue(contents.contains("ANTHROPIC_CUSTOM_HEADERS"))
+        XCTAssertTrue(contents.contains("X-Chau7-Session:$CHAU7_SESSION_ID\nX-Chau7-Tab:$CHAU7_TAB_ID\nX-Chau7-Project:$CHAU7_PROJECT"))
+        XCTAssertTrue(contents.contains("CHAU7_OPENAI_PROXY_BASE_URL/_chau7/project/$project_token/v1"))
         // Startup command runs last
         XCTAssertTrue(contents.hasSuffix("if test -n \"$CHAU7_STARTUP_CMD\"\n  eval \"$CHAU7_STARTUP_CMD\"\nend"))
     }
@@ -300,17 +310,30 @@ final class ShellLaunchConfiguratorTests: XCTestCase {
             apiAnalytics: ShellLaunchConfigurator.APIAnalyticsProxyContext(port: 8899, includeOpenAI: true)
         ))
         XCTAssertEqual(withOpenAI["ANTHROPIC_BASE_URL"], "http://127.0.0.1:8899")
-        XCTAssertEqual(withOpenAI["OPENAI_BASE_URL"], "https://127.0.0.1:8900/v1")
+        XCTAssertEqual(
+            withOpenAI["ANTHROPIC_CUSTOM_HEADERS"],
+            "X-Chau7-Session:session-123\nX-Chau7-Tab:tab-456\nX-Chau7-Project:/Users/tester/project"
+        )
+        XCTAssertEqual(withOpenAI["CHAU7_PROXY_CORRELATION_ENABLED"], "1")
+        XCTAssertEqual(withOpenAI["CHAU7_OPENAI_PROXY_BASE_URL"], "https://127.0.0.1:8900")
+        XCTAssertEqual(
+            withOpenAI["OPENAI_BASE_URL"],
+            "https://127.0.0.1:8900/_chau7/project/L1VzZXJzL3Rlc3Rlci9wcm9qZWN0/v1"
+        )
         XCTAssertEqual(withOpenAI["GOOGLE_GEMINI_BASE_URL"], "http://127.0.0.1:8899")
 
         let withoutOpenAI = launchEnvironment(makeInputs(
             apiAnalytics: ShellLaunchConfigurator.APIAnalyticsProxyContext(port: 8899, includeOpenAI: false)
         ))
         XCTAssertEqual(withoutOpenAI["ANTHROPIC_BASE_URL"], "http://127.0.0.1:8899")
+        XCTAssertNotNil(withoutOpenAI["ANTHROPIC_CUSTOM_HEADERS"])
         XCTAssertNil(withoutOpenAI["OPENAI_BASE_URL"])
+        XCTAssertNil(withoutOpenAI["CHAU7_OPENAI_PROXY_BASE_URL"])
 
         let disabled = launchEnvironment(makeInputs(apiAnalytics: nil))
         XCTAssertNil(disabled["ANTHROPIC_BASE_URL"])
+        XCTAssertNil(disabled["ANTHROPIC_CUSTOM_HEADERS"])
+        XCTAssertNil(disabled["CHAU7_PROXY_CORRELATION_ENABLED"])
         XCTAssertNil(disabled["OPENAI_BASE_URL"])
         XCTAssertNil(disabled["GOOGLE_GEMINI_BASE_URL"])
     }
