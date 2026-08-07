@@ -470,6 +470,13 @@
   },
   {
     "category": "Performance",
+    "feature": "Database-Free Tab Hover Cards",
+    "description": "Hover-card view rendering consumes only in-memory active-run and cached repository snapshots; completed-run and tool-summary SQLite reads run on a utility queue and generation-check publication when the pointer changes tabs",
+    "status": "Shipped",
+    "differentiator": "No"
+  },
+  {
+    "category": "Performance",
     "feature": "LRU-Backed Syntax-Highlight Cache",
     "description": "Terminal-output syntax highlighter caches results in NSCache (real bounded LRU with cost-based eviction and OS-pressure hook) instead of a dictionary with order-unspecified prefix-eviction, so hot lines stay cached on busy streams",
     "status": "Shipped",

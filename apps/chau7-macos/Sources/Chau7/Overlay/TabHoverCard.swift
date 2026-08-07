@@ -73,6 +73,7 @@ private struct TabHoverCardContent: View {
     var session: TerminalSessionModel
     var settings = FeatureSettings.shared
     var conflictDetector = ConflictDetector.shared
+    @State private var analyticsModel = TabHoverCardAnalyticsModel()
     let isSuspended: Bool
     let isBroadcastIncluded: Bool
     let onHoverChanged: (Bool) -> Void
@@ -115,6 +116,15 @@ private struct TabHoverCardContent: View {
         return trimmed
     }
 
+    private var repoRoot: String {
+        session.displayGitRootPath ?? session.displayPath()
+    }
+
+    private var analyticsLoadKey: String {
+        let hasRepositoryModel = session.repositoryModel == nil ? "no-repo-model" : "repo-model"
+        return "\(tab.id.uuidString)|\(repoRoot)|\(hasRepositoryModel)"
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
 
@@ -154,6 +164,13 @@ private struct TabHoverCardContent: View {
         .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
         .shadow(color: .black.opacity(0.5), radius: 12, y: 4)
         .onHover { onHoverChanged($0) }
+        .onAppear(perform: refreshAnalyticsSnapshots)
+        .onChange(of: analyticsLoadKey) { _, _ in
+            refreshAnalyticsSnapshots()
+        }
+        .onDisappear {
+            analyticsModel.cancel()
+        }
     }
 
     // MARK: - Header
@@ -539,9 +556,10 @@ private struct TabHoverCardContent: View {
     @ViewBuilder
     private var aiSessionRow: some View {
         let tabID = tab.id.uuidString
-        // Try active run first, fall back to most recent completed run for this tab
-        let run: TelemetryRun? = TelemetryRecorder.shared.activeRunForTab(tabID)
-            ?? TelemetryStore.shared.latestRunForTab(tabID)
+        // Active runs are an in-memory lookup. Completed runs and their tools
+        // come from the background-loaded snapshot above.
+        let activeRun = TelemetryRecorder.shared.activeRunForTab(tabID)
+        let run: TelemetryRun? = activeRun ?? analyticsModel.completedRun
         if let run {
             VStack(alignment: .leading, spacing: 4) {
                 // Provider + model
@@ -584,10 +602,10 @@ private struct TabHoverCardContent: View {
                 .padding(.leading, 24)
 
                 // Top tool calls
-                let tools = TelemetryStore.shared.toolCallSummary(runID: run.id)
+                let tools = activeRun == nil ? analyticsModel.topTools : []
                 if !tools.isEmpty {
                     HStack(spacing: 8) {
-                        ForEach(tools.prefix(3), id: \.tool) { entry in
+                        ForEach(tools.prefix(3)) { entry in
                             Text("\(entry.tool) \u{00d7}\(entry.count)")
                                 .font(.system(size: 10, design: .monospaced))
                                 .foregroundStyle(.secondary)
@@ -609,9 +627,8 @@ private struct TabHoverCardContent: View {
 
     @ViewBuilder
     private var repoStatsRow: some View {
-        let repoRoot = session.displayGitRootPath ?? session.displayPath()
-        let stats = RepoStatsProvider.stats(for: repoRoot)
-        if stats.totalRuns > 0 || stats.totalCommands > 0 {
+        if let stats = session.repositoryModel?.stats,
+           stats.totalRuns > 0 || stats.totalCommands > 0 {
             HStack(spacing: 6) {
                 Image(systemName: "chart.bar.fill")
                     .font(.system(size: 11))
@@ -623,7 +640,22 @@ private struct TabHoverCardContent: View {
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
             }
+        } else if session.repositoryModel != nil,
+                  session.repositoryModel?.stats == nil {
+            HStack(spacing: 6) {
+                ProgressView()
+                    .controlSize(.mini)
+                    .frame(width: 16)
+                Text(L("hovercard.loadingStats", "Loading stats\u{2026}"))
+                    .font(.system(size: 10))
+                    .foregroundStyle(.secondary)
+            }
         }
+    }
+
+    private func refreshAnalyticsSnapshots() {
+        session.repositoryModel?.refreshStatsIfNeeded()
+        analyticsModel.refresh(tabID: tab.id.uuidString)
     }
 
     private func repoStatsParts(_ stats: RepoStats) -> [String] {

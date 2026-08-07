@@ -51,6 +51,12 @@ struct RepoStats {
 /// Assembles RepoStats from PersistentHistoryStore + TelemetryStore.
 enum RepoStatsProvider {
     static func stats(for repoRoot: String, providerFilterKey: String? = nil) -> RepoStats {
+#if DEBUG
+        if Thread.isMainThread {
+            Log.error("RepoStatsProvider.stats called on the main thread for \(repoRoot)")
+            assertionFailure("RepoStatsProvider.stats must not run on the main thread")
+        }
+#endif
         let cmdStats = PersistentHistoryStore.shared.commandStatsForRepo(repoRoot: repoRoot)
         let lastCmd = PersistentHistoryStore.shared.lastCommandTimestampForRepo(repoRoot: repoRoot)
         let runStats = TelemetryStore.shared.runStatsForRepo(repoPath: repoRoot, providerFilterKey: providerFilterKey)
