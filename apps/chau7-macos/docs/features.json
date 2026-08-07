@@ -3809,6 +3809,13 @@
   },
   {
     "category": "Restore",
+    "feature": "Claude Resume Rejection Warning Deduplication",
+    "description": "Missing-transcript warnings emit once per canonical Claude session and directory identity across duplicate candidate validation and repeated autosaves while distinct rejected identities remain visible",
+    "status": "Shipped",
+    "differentiator": "No"
+  },
+  {
+    "category": "Restore",
     "feature": "Resume Restore Delivery Ledger",
     "description": "Pane-owned resume restore records scheduled, queued, delivered, rejected, and superseded outcomes per pane so stale retries stay diagnosable",
     "status": "Shipped",

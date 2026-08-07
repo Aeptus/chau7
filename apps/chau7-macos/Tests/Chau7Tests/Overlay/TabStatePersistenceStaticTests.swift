@@ -13,9 +13,12 @@ final class TabStatePersistenceStaticTests: XCTestCase {
     override func setUp() {
         super.setUp()
         ClaudeSessionResolver.clearCache()
+        OverlayTabsModel.resetRestoredResumeRejectionWarningsForTesting()
     }
 
     override func tearDown() {
+        Log.sink = nil
+        OverlayTabsModel.resetRestoredResumeRejectionWarningsForTesting()
         ClaudeSessionResolver.clearCache()
         super.tearDown()
     }
@@ -118,6 +121,47 @@ final class TabStatePersistenceStaticTests: XCTestCase {
         XCTAssertNil(sanitized[0].aiProvider)
         XCTAssertNil(sanitized[0].aiSessionId)
         XCTAssertNil(sanitized[0].aiResumeCommand)
+    }
+
+    func testRejectedClaudeIdentityWarnsOnceAcrossRepeatedSanitization() throws {
+        let home = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let firstSessionID = UUID().uuidString.lowercased()
+        let secondSessionID = UUID().uuidString.lowercased()
+        var rejectionWarnings: [String] = []
+        Log.sink = { line in
+            if line.contains("dropping unrestorable Claude metadata") {
+                rejectionWarnings.append(line)
+            }
+        }
+
+        let firstState = makeTopLevelState(
+            tabID: UUID(),
+            aiProvider: "claude",
+            aiSessionId: firstSessionID,
+            aiResumeCommand: "claude --resume \(firstSessionID)"
+        )
+        for _ in 0..<3 {
+            _ = OverlayTabsModel.sanitizeRestoredAIResumeOwnership(
+                states: [firstState],
+                environment: ["CHAU7_HOME_ROOT": home.path]
+            )
+        }
+
+        XCTAssertEqual(rejectionWarnings.count, 1)
+
+        let secondState = makeTopLevelState(
+            tabID: UUID(),
+            aiProvider: "claude",
+            aiSessionId: secondSessionID,
+            aiResumeCommand: "claude --resume \(secondSessionID)"
+        )
+        _ = OverlayTabsModel.sanitizeRestoredAIResumeOwnership(
+            states: [secondState],
+            environment: ["CHAU7_HOME_ROOT": home.path]
+        )
+
+        XCTAssertEqual(rejectionWarnings.count, 2, "distinct rejected identities should warn independently")
     }
 
     func testSanitizeFallsBackToClaudeAgentLaunchCommandWhenSavedSessionIsDead() throws {

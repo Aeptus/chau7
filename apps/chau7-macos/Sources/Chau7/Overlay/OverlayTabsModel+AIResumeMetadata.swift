@@ -1,6 +1,31 @@
 import Chau7Core
 import Foundation
 
+private enum RestoredResumeRejectionWarningGate {
+    private static let lock = NSLock()
+    private static var warnedIdentities = Set<String>()
+
+    static func warnIfNeeded(sessionId: String, directory: String) {
+        let canonicalDirectory = URL(fileURLWithPath: directory).standardizedFileURL.path
+        let identityKey = "claude|\(sessionId)|\(canonicalDirectory)"
+
+        lock.lock()
+        let shouldWarn = warnedIdentities.insert(identityKey).inserted
+        lock.unlock()
+
+        guard shouldWarn else { return }
+        Log.warn(
+            "sanitizeRestoredAIResumeOwnership: dropping unrestorable Claude metadata session=\(sessionId.prefix(8)) dir=\(directory)"
+        )
+    }
+
+    static func resetForTesting() {
+        lock.lock()
+        warnedIdentities.removeAll()
+        lock.unlock()
+    }
+}
+
 /// AI resume metadata resolution for `OverlayTabsModel`. Six concerns:
 ///
 ///   1. **Live-session resolution** — `resolveResumeMetadata` walks the
@@ -425,8 +450,9 @@ extension OverlayTabsModel {
                     fileManager: fileManager,
                     environment: environment
                 ) else {
-                    Log.warn(
-                        "sanitizeRestoredAIResumeOwnership: dropping unrestorable Claude metadata session=\(sessionId.prefix(8)) dir=\(directory)"
+                    RestoredResumeRejectionWarningGate.warnIfNeeded(
+                        sessionId: sessionId,
+                        directory: directory
                     )
                     return nil
                 }
@@ -514,12 +540,17 @@ extension OverlayTabsModel {
             fileManager: fileManager,
             environment: environment
         ) else {
-            Log.warn(
-                "sanitizeRestoredAIResumeOwnership: dropping unrestorable Claude metadata session=\(sessionId.prefix(8)) dir=\(directory)"
+            RestoredResumeRejectionWarningGate.warnIfNeeded(
+                sessionId: sessionId,
+                directory: directory
             )
             return false
         }
         return true
+    }
+
+    static func resetRestoredResumeRejectionWarningsForTesting() {
+        RestoredResumeRejectionWarningGate.resetForTesting()
     }
 
     static func restoredClaudeTranscriptExists(
