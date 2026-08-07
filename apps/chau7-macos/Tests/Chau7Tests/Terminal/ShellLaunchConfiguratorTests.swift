@@ -78,7 +78,9 @@ final class ShellLaunchConfiguratorTests: XCTestCase {
         XCTAssertTrue(contents.contains(#"print -Pn "\e]7;file://$HOSTNAME$PWD\a""#))
         XCTAssertTrue(contents.contains("ANTHROPIC_CUSTOM_HEADERS"))
         XCTAssertFalse(contents.contains("ANTHROPIC_EXTRA_HEADERS"))
-        XCTAssertTrue(contents.contains("X-Chau7-Session:${CHAU7_SESSION_ID:-}\nX-Chau7-Tab:${CHAU7_TAB_ID:-}\nX-Chau7-Project:${CHAU7_PROJECT:-}"))
+        XCTAssertTrue(contents.contains("X-Chau7-Session: ${CHAU7_SESSION_ID:-}\nX-Chau7-Tab: ${CHAU7_TAB_ID:-}\nX-Chau7-Project: ${CHAU7_PROJECT:-}"))
+        XCTAssertTrue(contents.contains("CHAU7_ANTHROPIC_CUSTOM_HEADERS_BASE"))
+        XCTAssertTrue(contents.contains("export ENABLE_TOOL_SEARCH=true"))
         XCTAssertTrue(contents.contains("CHAU7_OPENAI_PROXY_BASE_URL/_chau7/project/$project_token/v1"))
         XCTAssertTrue(contents.contains("CHAU7_CODEX_PROXY_WRAPPER_DIR/codex"))
         // Startup command runs last
@@ -112,7 +114,9 @@ final class ShellLaunchConfiguratorTests: XCTestCase {
         XCTAssertTrue(contents.contains("PROMPT_COMMAND=\"smartoverlay_precmd${PROMPT_COMMAND:+;$PROMPT_COMMAND}\""))
         XCTAssertTrue(contents.contains("PROMPT_COMMAND=\"chau7_emit_exit_status${PROMPT_COMMAND:+;$PROMPT_COMMAND}\""))
         XCTAssertTrue(contents.contains("ANTHROPIC_CUSTOM_HEADERS"))
-        XCTAssertTrue(contents.contains("X-Chau7-Session:${CHAU7_SESSION_ID:-}\nX-Chau7-Tab:${CHAU7_TAB_ID:-}\nX-Chau7-Project:${CHAU7_PROJECT:-}"))
+        XCTAssertTrue(contents.contains("X-Chau7-Session: ${CHAU7_SESSION_ID:-}\nX-Chau7-Tab: ${CHAU7_TAB_ID:-}\nX-Chau7-Project: ${CHAU7_PROJECT:-}"))
+        XCTAssertTrue(contents.contains("CHAU7_ANTHROPIC_CUSTOM_HEADERS_BASE"))
+        XCTAssertTrue(contents.contains("export ENABLE_TOOL_SEARCH=true"))
         XCTAssertTrue(contents.contains("CHAU7_OPENAI_PROXY_BASE_URL/_chau7/project/$project_token/v1"))
         XCTAssertTrue(contents.contains("CHAU7_CODEX_PROXY_WRAPPER_DIR/codex"))
         // Startup command runs last
@@ -139,7 +143,9 @@ final class ShellLaunchConfiguratorTests: XCTestCase {
         XCTAssertTrue(contents.contains("function smartoverlay_precmd --on-event fish_prompt --on-variable PWD"))
         XCTAssertTrue(contents.contains("function chau7_update_project --on-variable PWD"))
         XCTAssertTrue(contents.contains("ANTHROPIC_CUSTOM_HEADERS"))
-        XCTAssertTrue(contents.contains("X-Chau7-Session:$CHAU7_SESSION_ID\nX-Chau7-Tab:$CHAU7_TAB_ID\nX-Chau7-Project:$CHAU7_PROJECT"))
+        XCTAssertTrue(contents.contains("X-Chau7-Session: $CHAU7_SESSION_ID\nX-Chau7-Tab: $CHAU7_TAB_ID\nX-Chau7-Project: $CHAU7_PROJECT"))
+        XCTAssertTrue(contents.contains("CHAU7_ANTHROPIC_CUSTOM_HEADERS_BASE"))
+        XCTAssertTrue(contents.contains("set -gx ENABLE_TOOL_SEARCH true"))
         XCTAssertTrue(contents.contains("CHAU7_OPENAI_PROXY_BASE_URL/_chau7/project/$project_token/v1"))
         XCTAssertTrue(contents.contains("CHAU7_CODEX_PROXY_WRAPPER_DIR/codex"))
         // Startup command runs last
@@ -428,10 +434,7 @@ final class ShellLaunchConfiguratorTests: XCTestCase {
             )
         ))
         XCTAssertEqual(withOpenAI["ANTHROPIC_BASE_URL"], "http://127.0.0.1:8899")
-        XCTAssertEqual(
-            withOpenAI["ANTHROPIC_CUSTOM_HEADERS"],
-            "X-Chau7-Session:session-123\nX-Chau7-Tab:tab-456\nX-Chau7-Project:/Users/tester/project"
-        )
+        XCTAssertNil(withOpenAI["ANTHROPIC_CUSTOM_HEADERS"])
         XCTAssertEqual(withOpenAI["CHAU7_PROXY_CORRELATION_ENABLED"], "1")
         XCTAssertEqual(withOpenAI["CHAU7_OPENAI_PROXY_BASE_URL"], "https://127.0.0.1:8900")
         XCTAssertEqual(withOpenAI["CHAU7_CODEX_PROXY_WRAPPER_DIR"], "/integration/bin")
@@ -446,7 +449,10 @@ final class ShellLaunchConfiguratorTests: XCTestCase {
             apiAnalytics: ShellLaunchConfigurator.APIAnalyticsProxyContext(port: 8899, includeOpenAI: false)
         ))
         XCTAssertEqual(withoutOpenAI["ANTHROPIC_BASE_URL"], "http://127.0.0.1:8899")
-        XCTAssertNotNil(withoutOpenAI["ANTHROPIC_CUSTOM_HEADERS"])
+        XCTAssertEqual(
+            withoutOpenAI["ANTHROPIC_CUSTOM_HEADERS"],
+            "X-Chau7-Session: session-123\nX-Chau7-Tab: tab-456\nX-Chau7-Project: /Users/tester/project"
+        )
         XCTAssertNil(withoutOpenAI["OPENAI_BASE_URL"])
         XCTAssertNil(withoutOpenAI["CHAU7_OPENAI_PROXY_BASE_URL"])
         XCTAssertNil(withoutOpenAI["CHAU7_CODEX_PROXY_WRAPPER_DIR"])
@@ -458,6 +464,89 @@ final class ShellLaunchConfiguratorTests: XCTestCase {
         XCTAssertNil(disabled["CHAU7_PROXY_CORRELATION_ENABLED"])
         XCTAssertNil(disabled["OPENAI_BASE_URL"])
         XCTAssertNil(disabled["GOOGLE_GEMINI_BASE_URL"])
+    }
+
+    func testLaunchEnvironmentPreservesInheritedAnthropicHeadersForShellMerge() {
+        let env = launchEnvironment(makeInputs(
+            processEnvironment: [
+                "HOME": "/Users/tester",
+                "ANTHROPIC_CUSTOM_HEADERS": "X-Organization: example\nX-Gateway: enabled",
+            ],
+            integrationDir: "/integration",
+            apiAnalytics: ShellLaunchConfigurator.APIAnalyticsProxyContext(port: 8899, includeOpenAI: false)
+        ))
+
+        XCTAssertEqual(
+            env["ANTHROPIC_CUSTOM_HEADERS"],
+            "X-Organization: example\nX-Gateway: enabled"
+        )
+    }
+
+    func testMergedAnthropicCorrelationHeadersPreservesExistingValues() {
+        XCTAssertEqual(
+            ShellLaunchConfigurator.mergedAnthropicCorrelationHeaders(
+                existing: "X-Organization: example\n",
+                sessionID: "session-123",
+                tabID: "tab-456",
+                projectDirectory: "/repo"
+            ),
+            "X-Organization: example\nX-Chau7-Session: session-123\nX-Chau7-Tab: tab-456\nX-Chau7-Project: /repo"
+        )
+    }
+
+    func testBashIntegrationMergesClaudeHeadersAndRespectsToolSearchPreference() throws {
+        let baseDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("claude-header-merge-tests-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: baseDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: baseDir) }
+        try """
+        export ANTHROPIC_CUSTOM_HEADERS='X-Organization: example'
+        export ENABLE_TOOL_SEARCH=false
+        """.write(to: baseDir.appendingPathComponent(".bashrc"), atomically: true, encoding: .utf8)
+        let integration = baseDir.appendingPathComponent("integration")
+        try FileManager.default.createDirectory(at: integration, withIntermediateDirectories: true)
+        XCTAssertTrue(ShellLaunchConfigurator.writeShellIntegrationFiles(
+            to: integration.path,
+            environment: ["HOME": baseDir.path]
+        ))
+
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/bash")
+        process.arguments = [
+            "--noprofile",
+            "--norc",
+            "-c",
+            "source \"\(integration.path)/.bashrc\"; printf '\\nHEADERS_START\\n%s\\nHEADERS_END\\nTOOL=%s\\n' \"$ANTHROPIC_CUSTOM_HEADERS\" \"$ENABLE_TOOL_SEARCH\"",
+        ]
+        process.currentDirectoryURL = baseDir
+        process.environment = [
+            "HOME": baseDir.path,
+            "CHAU7_USER_HOME": baseDir.path,
+            "CHAU7_PROXY_CORRELATION_ENABLED": "1",
+            "CHAU7_SESSION_ID": "session-123",
+            "CHAU7_TAB_ID": "tab-456",
+            "PATH": "/usr/bin:/bin",
+        ]
+        let outputPipe = Pipe()
+        process.standardOutput = outputPipe
+        try process.run()
+        process.waitUntilExit()
+        XCTAssertEqual(process.terminationStatus, 0)
+        let output = String(decoding: outputPipe.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+        let headerBlock = try XCTUnwrap(
+            output.components(separatedBy: "HEADERS_START\n").last?
+                .components(separatedBy: "\nHEADERS_END").first
+        )
+        let expectedHeaderPrefix =
+            "X-Organization: example\nX-Chau7-Session: session-123\nX-Chau7-Tab: tab-456\nX-Chau7-Project: "
+        XCTAssertTrue(headerBlock.hasPrefix(expectedHeaderPrefix))
+        let reportedProject = String(headerBlock.dropFirst(expectedHeaderPrefix.count))
+        XCTAssertEqual(
+            URL(fileURLWithPath: reportedProject).lastPathComponent,
+            baseDir.lastPathComponent
+        )
+        XCTAssertTrue(FileManager.default.fileExists(atPath: reportedProject))
+        XCTAssertTrue(output.contains("TOOL=false"), "An explicit user preference must win")
     }
 
     // MARK: - Shell Arguments

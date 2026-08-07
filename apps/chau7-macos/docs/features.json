@@ -1751,6 +1751,13 @@
   },
   {
     "category": "API Analytics",
+    "feature": "Claude Gateway Header Compatibility",
+    "description": "Chau7 appends correlation headers after user shell configuration without replacing existing Anthropic gateway headers, enables MCP tool search only when no user preference exists, and leaves subscription credentials untouched",
+    "status": "Shipped",
+    "differentiator": "No"
+  },
+  {
+    "category": "API Analytics",
     "feature": "Token Counting & Cost Calculation",
     "description": "Count input/output tokens per call and calculate aggregate cost",
     "status": "Shipped",
