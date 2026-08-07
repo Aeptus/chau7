@@ -1511,11 +1511,14 @@ final class OverlayTabsModel {
             } else {
                 persistedIdentity.sessionIdSource ?? fallbackMetadata?.sessionIdSource
             }
+            // A fallback command is trusted only after its provider/session metadata
+            // survives restore validation. Reusing the raw command here could revive
+            // a Claude session whose transcript was already rejected as missing.
             let resumeCommand = Self.buildAIResumeCommand(
                 provider: effectiveProvider,
                 sessionId: effectiveSessionID,
                 sessionIdSource: effectiveSessionIDSource
-            ) ?? Self.normalizedResumeCommand(fallbackPaneState?.aiResumeCommand)
+            )
             let resumeDirectory = Self.resolveRestoreDirectoryForMetadata(
                 provider: effectiveProvider,
                 sessionId: effectiveSessionID,

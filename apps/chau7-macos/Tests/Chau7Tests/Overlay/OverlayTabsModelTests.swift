@@ -2469,6 +2469,39 @@ final class OverlayTabsModelTests: XCTestCase {
         XCTAssertNil(sanitized.first?.paneStates?.first?.aiSessionIdSource)
     }
 
+    func testExportTabStatesDoesNotReintroduceRejectedClaudeFallbackAcrossAutosaves() throws {
+        let tab = try XCTUnwrap(model.tabs.first)
+        let (paneID, session) = try XCTUnwrap(tab.splitController.terminalSessions.first)
+        let directory = makeTemporaryRepoRoot().path
+        let rejectedSessionID = UUID().uuidString.lowercased()
+        session.currentDirectory = directory
+        model.persistedRestoreFallbackStatesByTabID[tab.id] = makeSavedTabState(
+            tabID: tab.id,
+            paneID: paneID,
+            title: "Rejected Claude Restore",
+            directory: directory,
+            aiProvider: "claude",
+            aiSessionId: rejectedSessionID,
+            aiResumeCommand: "claude --resume \(rejectedSessionID)"
+        )
+
+        for cycle in 1...3 {
+            let exported = try XCTUnwrap(model.exportTabStates().first)
+            let pane = try XCTUnwrap(exported.paneStates?.first)
+
+            XCTAssertNil(exported.aiProvider, "autosave \(cycle) must keep rejected provider cleared")
+            XCTAssertNil(exported.aiSessionId, "autosave \(cycle) must keep rejected identity cleared")
+            XCTAssertNil(exported.aiSessionIdSource, "autosave \(cycle) must keep rejected source cleared")
+            XCTAssertNil(exported.aiResumeCommand, "autosave \(cycle) must not revive the raw command")
+            XCTAssertNil(pane.aiProvider, "autosave \(cycle) must keep pane provider cleared")
+            XCTAssertNil(pane.aiSessionId, "autosave \(cycle) must keep pane identity cleared")
+            XCTAssertNil(pane.aiSessionIdSource, "autosave \(cycle) must keep pane source cleared")
+            XCTAssertNil(pane.aiResumeCommand, "autosave \(cycle) must keep pane command cleared")
+
+            model.persistedRestoreFallbackStatesByTabID[tab.id] = exported
+        }
+    }
+
     func testSanitizeRestoredAIResumeOwnershipKeepsClaudeUUIDWithTranscript() throws {
         let home = try temporaryHomeDirectory()
         defer { try? FileManager.default.removeItem(at: home) }

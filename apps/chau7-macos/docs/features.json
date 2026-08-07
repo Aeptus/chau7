@@ -3802,6 +3802,13 @@
   },
   {
     "category": "Restore",
+    "feature": "Rejected Claude Resume Persistence Guard",
+    "description": "Autosave derives fallback resume commands only from provider and session metadata that passed transcript validation, so rejected raw Claude resume commands cannot reappear across later save cycles while valid Claude and Codex restores remain canonical",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "Restore",
     "feature": "Resume Restore Delivery Ledger",
     "description": "Pane-owned resume restore records scheduled, queued, delivered, rejected, and superseded outcomes per pane so stale retries stay diagnosable",
     "status": "Shipped",
