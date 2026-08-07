@@ -3731,6 +3731,13 @@
     "differentiator": "Yes"
   },
   {
+    "category": "Performance",
+    "feature": "Terminal Background-Work Profiling",
+    "description": "Backend output reads, grid snapshots, cursor-mode checks, persistence captures, and terminal-state processing are aggregated by render phase, visibility, and caller with byte counts plus total, main-thread, and maximum duration",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
     "category": "MCP Server",
     "feature": "PTY Log Output Flush",
     "description": "Active AI PTY log is flushed before tab_output reads it",

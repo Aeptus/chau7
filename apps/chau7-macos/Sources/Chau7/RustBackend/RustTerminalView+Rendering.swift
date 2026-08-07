@@ -12,6 +12,52 @@ extension RustTerminalView {
         )
     }
 
+    func refreshTerminalWorkProfileContext() {
+        let visibility: String
+        if !notifyUpdateChanges {
+            visibility = "drainOnly"
+        } else if isHidden {
+            visibility = "hidden"
+        } else if window?.isVisible == true {
+            visibility = "visible"
+        } else {
+            visibility = "windowHidden"
+        }
+        terminalWorkContextLock.lock()
+        terminalWorkRenderPhase = currentRenderPhase.rawValue
+        terminalWorkVisibility = visibility
+        terminalWorkContextLock.unlock()
+    }
+
+    func terminalWorkContext(caller: String) -> TerminalWorkContext {
+        terminalWorkContextLock.lock()
+        let phase = terminalWorkRenderPhase
+        let visibility = terminalWorkVisibility
+        terminalWorkContextLock.unlock()
+        return TerminalWorkContext(
+            renderPhase: phase,
+            visibility: visibility,
+            caller: caller
+        )
+    }
+
+    func measuredGridSnapshot(
+        rust: any TerminalBackend,
+        caller: String
+    ) -> (snapshot: UnsafeMutablePointer<RustGridSnapshot>, free: () -> Void)? {
+        TerminalWorkProfiler.shared.measure(
+            .getGrid,
+            context: terminalWorkContext(caller: caller),
+            bytes: { result in
+                guard let snapshot = result?.snapshot.pointee else { return 0 }
+                let cells = Int(snapshot.cols) * Int(snapshot.rows) * MemoryLayout<RustCellData>.stride
+                return cells + snapshot.clusters_len
+            }
+        ) {
+            rust.getGrid()
+        }
+    }
+
     // MARK: - Polling Lifecycle
 
     func stopPollingLoop() {
@@ -54,12 +100,28 @@ extension RustTerminalView {
         let flags = rust.pollEvents(timeout: 0)
         return processTerminalStateAfterPollLocked(
             rust: rust,
-            changed: flags.contains(.gridChanged)
+            changed: flags.contains(.gridChanged),
+            caller: "livePoll"
         )
     }
 
     @discardableResult
-    func processTerminalStateAfterPollLocked(rust: any TerminalBackend, changed: Bool) -> Bool {
+    func processTerminalStateAfterPollLocked(
+        rust: any TerminalBackend,
+        changed: Bool,
+        caller: String = "terminalPoll"
+    ) -> Bool {
+        let profileContext = terminalWorkContext(caller: caller)
+        let processingStartedAt = CFAbsoluteTimeGetCurrent()
+        var processedBytes = 0
+        defer {
+            TerminalWorkProfiler.shared.record(
+                .terminalStateProcessing,
+                context: profileContext,
+                durationMs: (CFAbsoluteTimeGetCurrent() - processingStartedAt) * 1000.0,
+                bytes: processedBytes
+            )
+        }
         if changed {
             retainedFrameContentVersion &+= 1
         }
@@ -138,7 +200,12 @@ extension RustTerminalView {
 
         // Update application cursor mode (DECCKM) from terminal state
         // This affects how arrow keys are encoded (CSI vs SS3 sequences)
-        let cursorMode = rust.isApplicationCursorMode()
+        let cursorMode = TerminalWorkProfiler.shared.measure(
+            .cursorModeRead,
+            context: profileContext
+        ) {
+            rust.isApplicationCursorMode()
+        }
         if cursorMode != applicationCursorMode {
             applicationCursorMode = cursorMode
             Log.trace("RustTerminalView[\(viewId)]: Application cursor mode changed to \(cursorMode)")
@@ -147,7 +214,15 @@ extension RustTerminalView {
         // Retrieve raw output bytes from the last poll and forward to onOutput callback.
         // This enables shell integration, logging, and output detectors to receive data.
         // (Ensures onOutput callback fires so shell integration and detectors receive data)
-        if var outputData = rust.getLastOutput(), !outputData.isEmpty {
+        let lastOutput = TerminalWorkProfiler.shared.measure(
+            .getLastOutput,
+            context: profileContext,
+            bytes: { $0?.count ?? 0 }
+        ) {
+            rust.getLastOutput()
+        }
+        if var outputData = lastOutput, !outputData.isEmpty {
+            processedBytes = outputData.count
             // Cancel the shell-startup-slow timer on first PTY output
             if startupBytesLogged == 0 {
                 isAwaitingInitialPTYOutput = false
@@ -320,12 +395,12 @@ extension RustTerminalView {
         }
 
         return { [weak self, weak rust] in
-            guard let rust = rust else { return nil }
-            guard let (grid, freeGrid) = rust.getGrid() else { return nil }
+            guard let self, let rust else { return nil }
+            guard let (grid, freeGrid) = self.measuredGridSnapshot(rust: rust, caller: "metalGridProvider") else { return nil }
 
             let cursor = rust.cursorPosition
             let cursorVisible = grid.pointee.cursor_visible != 0
-            self?.cachedScrollbackRows = Int(grid.pointee.scrollback_rows)
+            self.cachedScrollbackRows = Int(grid.pointee.scrollback_rows)
             // grid is UnsafeMutablePointer<RustGridSnapshot>, cast to raw for the generic provider
             let rawPtr = UnsafeMutableRawPointer(grid)
             return (grid: rawPtr, cursor: cursor, cursorVisible: cursorVisible, free: freeGrid)
@@ -364,7 +439,7 @@ extension RustTerminalView {
             return
         }
 
-        guard let (grid, freeGrid) = rust.getGrid() else {
+        guard let (grid, freeGrid) = measuredGridSnapshot(rust: rust, caller: "cpuRenderer") else {
             Log.trace("RustTerminalView[\(viewId)]: syncGridToRenderer - getGrid returned nil")
             return
         }

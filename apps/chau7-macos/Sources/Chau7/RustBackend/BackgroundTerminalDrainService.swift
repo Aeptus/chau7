@@ -128,7 +128,11 @@ final class BackgroundTerminalDrainService {
                 guard let view, let rust = view.rustTerminal else { return }
                 view.terminalPollAccessLock.lock()
                 defer { view.terminalPollAccessLock.unlock() }
-                _ = view.processTerminalStateAfterPollLocked(rust: rust, changed: gridChanged)
+                _ = view.processTerminalStateAfterPollLocked(
+                    rust: rust,
+                    changed: gridChanged,
+                    caller: "backgroundDrain"
+                )
                 if gridChanged {
                     view.onBufferChanged?()
                 }

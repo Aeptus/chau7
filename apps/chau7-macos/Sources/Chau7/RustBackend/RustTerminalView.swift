@@ -1863,6 +1863,9 @@ final class RustTerminalView: NSView {
 
     /// Whether this view is registered for shared background PTY drain.
     let terminalPollAccessLock = NSLock()
+    let terminalWorkContextLock = NSLock()
+    var terminalWorkRenderPhase = TabRenderPhase.hidden.rawValue
+    var terminalWorkVisibility = "hidden"
     private var isLivePollingActive = false
     var livePollingActiveForProfiling: Bool {
         isLivePollingActive
@@ -2814,6 +2817,7 @@ final class RustTerminalView: NSView {
     }
 
     func updatePollingMode(reason: String) {
+        refreshTerminalWorkProfileContext()
         let desiredMode = desiredPollingMode()
         let actualMode = actualPollingMode
         // Ensure background drain registration even when the polling mode
@@ -3153,19 +3157,43 @@ final class RustTerminalView: NSView {
 
     /// Returns the full terminal buffer (screen + scrollback) as UTF-8 Data.
     func getBufferAsData() -> Data? {
-        guard let text = rustTerminal?.fullBufferText() else { return nil }
+        guard let rust = rustTerminal else { return nil }
+        let text = TerminalWorkProfiler.shared.measure(
+            .fullBufferCapture,
+            context: terminalWorkContext(caller: "sessionPlainSnapshot"),
+            bytes: { $0?.utf8.count ?? 0 }
+        ) {
+            rust.fullBufferText()
+        }
+        guard let text else { return nil }
         return text.data(using: .utf8)
     }
 
     /// Returns the full terminal buffer (screen + scrollback) as ANSI-styled UTF-8 Data.
     func getStyledBufferAsData() -> Data? {
-        guard let text = rustTerminal?.fullBufferAnsiText() else { return nil }
+        guard let rust = rustTerminal else { return nil }
+        let text = TerminalWorkProfiler.shared.measure(
+            .fullBufferCapture,
+            context: terminalWorkContext(caller: "sessionStyledSnapshot"),
+            bytes: { $0?.utf8.count ?? 0 }
+        ) {
+            rust.fullBufferAnsiText()
+        }
+        guard let text else { return nil }
         return text.data(using: .utf8)
     }
 
     /// Returns a bounded ANSI-styled terminal tail as UTF-8 Data.
     func getStyledTailBufferAsData(maxLines: Int, maxBytes: Int) -> Data? {
-        guard let text = rustTerminal?.tailBufferAnsiText(maxLines: maxLines, maxBytes: maxBytes) else {
+        guard let rust = rustTerminal else { return nil }
+        let text = TerminalWorkProfiler.shared.measure(
+            .tailBufferCapture,
+            context: terminalWorkContext(caller: "restorationTailSnapshot"),
+            bytes: { $0?.utf8.count ?? 0 }
+        ) {
+            rust.tailBufferAnsiText(maxLines: maxLines, maxBytes: maxBytes)
+        }
+        guard let text else {
             return nil
         }
         return text.data(using: .utf8)
@@ -3173,7 +3201,7 @@ final class RustTerminalView: NSView {
 
     func captureRemoteGridSnapshotPayload() -> Data? {
         guard let rust = rustTerminal,
-              let gridResult = rust.getGrid() else {
+              let gridResult = measuredGridSnapshot(rust: rust, caller: "remoteGridSnapshot") else {
             return nil
         }
         defer { gridResult.free() }

@@ -532,6 +532,7 @@ Developer Experience,Local Quality Pipeline,"Registry-driven pre-commit/pre-push
 Developer Experience,Feature Inventory Schema Gate,"A staged-features-csv quality gate runs scripts/check-features-csv.mjs to deterministically reject malformed features.csv rows (wrong column count, unquoted commas, invalid Status/Differentiator, blank lines) at commit time",Shipped,No
 Overlay,Shortcut Helper Hint,"Floating hint box showing keyboard shortcuts (⌘/) and report issue (⌥⌘I), positioned 4pt from tab bar and window edge",Shipped,No
 Performance,Power Efficiency,"Adaptive clipboard polling, shared background drain, event-driven focus detection, timer leeway coalescing, wakeup stats logging",Shipped,Yes
+Performance,Terminal Background-Work Profiling,"Backend output reads, grid snapshots, cursor-mode checks, persistence captures, and terminal-state processing are aggregated by render phase, visibility, and caller with byte counts plus total, main-thread, and maximum duration",Shipped,Yes
 MCP Server,PTY Log Output Flush,Active AI PTY log is flushed before tab_output reads it,Shipped,Yes
 Telemetry,PTY Log Tail Normalization,PTY log tails are terminal-normalized before transcript parsing,Shipped,No
 Developer Experience,SwiftPM README Resource Exclusion,SwiftPM package metadata excludes each directory's README.md from resource scanning so per-directory docs aren't bundled as app resources,Shipped,No

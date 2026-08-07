@@ -172,7 +172,18 @@ final class ScrollbackMemoryManager {
         let queue = perTabQueue(for: tabID)
         queue.async { [weak self] in
             guard let self else { return }
-            guard let text = rustFFI.captureFullBufferAnsiText() else {
+            let text = TerminalWorkProfiler.shared.measure(
+                .fullBufferCapture,
+                context: TerminalWorkContext(
+                    renderPhase: TabRenderPhase.warm.rawValue,
+                    visibility: "drainOnly",
+                    caller: "idleScrollbackFlush"
+                ),
+                bytes: { $0?.utf8.count ?? 0 }
+            ) {
+                rustFFI.captureFullBufferAnsiText()
+            }
+            guard let text else {
                 Log.warn("ScrollbackMemoryManager[\(viewId)]: idleFlush - no buffer captured")
                 return
             }
@@ -247,7 +258,18 @@ final class ScrollbackMemoryManager {
     // MARK: - Flush (demote → .hidden)
 
     private func flush(tabID: UUID, viewId: String, rustFFI: any ScrollbackMemoryRustFFI) -> Bool {
-        guard let text = rustFFI.captureFullBufferText() else {
+        let text = TerminalWorkProfiler.shared.measure(
+            .fullBufferCapture,
+            context: TerminalWorkContext(
+                renderPhase: TabRenderPhase.hidden.rawValue,
+                visibility: "drainOnly",
+                caller: "hiddenPhaseFlush"
+            ),
+            bytes: { $0?.utf8.count ?? 0 }
+        ) {
+            rustFFI.captureFullBufferText()
+        }
+        guard let text else {
             Log.warn("ScrollbackMemoryManager[\(viewId)]: flush - no buffer text captured")
             return false
         }
