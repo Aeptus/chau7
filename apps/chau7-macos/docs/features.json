@@ -246,6 +246,13 @@
   },
   {
     "category": "API Analytics",
+    "feature": "Versioned Latency-Sample Sequencing",
+    "description": "Telemetry schema v5 gives provider latency samples the same shared monotonic ingest sequence as runs, usage evidence, and remote events, atomically replacing v4 trigger definitions so upgraded and fresh databases behave identically",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "API Analytics",
     "feature": "Echo-Only Input Latency",
     "description": "Per-session input latency measures keystroke-to-echo responsiveness only; command submission (Enter) is excluded for every session so a slow command's runtime is never miscounted as UI lag",
     "status": "Shipped",
