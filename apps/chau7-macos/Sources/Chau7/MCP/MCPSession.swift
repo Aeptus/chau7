@@ -555,6 +555,28 @@ final class MCPSession {
                 ]
             ],
             [
+                "name": "tab_request_control",
+                "description": "Request user-confirmed MCP control of an existing user-opened tab. Chau7 always shows a local confirmation. A granted control session lasts until tab_release_control, tab closure, or Chau7 quits.",
+                "inputSchema": [
+                    "type": "object",
+                    "properties": [
+                        "tab_id": ["type": "string", "description": "Existing tab ID from tab_list"]
+                    ],
+                    "required": ["tab_id"]
+                ]
+            ],
+            [
+                "name": "tab_release_control",
+                "description": "Release MCP control of a tab without closing it. Subsequent mutating tab tools will be rejected until control is granted again.",
+                "inputSchema": [
+                    "type": "object",
+                    "properties": [
+                        "tab_id": ["type": "string", "description": "MCP-controlled tab ID"]
+                    ],
+                    "required": ["tab_id"]
+                ]
+            ],
+            [
                 "name": "tab_exec",
                 "description": [
                     "Execute a shell command in a tab — use this to launch an AI agent (e.g. claude, codex) or run any command.",
@@ -575,7 +597,8 @@ final class MCPSession {
                 "description": [
                     "Get detailed live status of a tab: process state, working directory, active app, AI provider/session metadata,",
                     "exec-acceptance fields (`can_accept_exec` / `exec_acceptance_mode`), prompt-ready fields (`ready_for_exec` / `readiness_reason`),",
-                    "child processes, and active telemetry run."
+                    "MCP authorization fields (`mcp_mutation_allowed` / `mcp_control_required`), child processes, and active telemetry run.",
+                    "For user-opened tabs, action readiness remains false until tab_request_control is granted."
                 ].joined(separator: " "),
                 "inputSchema": [
                     "type": "object",
@@ -890,13 +913,34 @@ final class MCPSession {
         // Control plane — the case label always equals the tool name and
         // controlPlane.call forwards it, so dispatch tab_* tools uniformly.
         // Read-only + tab_create carry no user-tab-hijack risk.
-        case "tab_list", "tab_create", "tab_status", "tab_wait_ready", "tab_output":
+        case "tab_list", "tab_create", "tab_output":
+            return classifyToolResponse(controlPlane.call(name: name, arguments: arguments))
+
+        case "tab_status":
+            guard let tabID = arguments["tab_id"] as? String else {
+                return .protocolError(code: -32602, message: "Invalid params: tab_id is required")
+            }
+            return classifyToolResponse(controlService.mcpTabStatus(tabID: tabID))
+
+        case "tab_wait_ready":
+            guard let tabID = arguments["tab_id"] as? String else {
+                return .protocolError(code: -32602, message: "Invalid params: tab_id is required")
+            }
+            return classifyToolResponse(controlService.waitForMCPControlledTabReady(
+                tabID: tabID,
+                timeoutMs: arguments["timeout_ms"] as? Int ?? 30000
+            ))
+
+        // This is the only mutating operation intentionally allowed on a
+        // user-owned tab: it cannot touch the PTY and always requires a local
+        // Chau7 confirmation before changing the control capability.
+        case "tab_request_control":
             return classifyToolResponse(controlPlane.call(name: name, arguments: arguments))
 
         // Mutating tab tools: MCP may only drive tabs it created. Reject attempts
         // to exec/inject/close the user's own (non-MCP) tabs before dispatching,
         // so a raw tab UUID can't reach a terminal the user opened themselves.
-        case "tab_exec", "tab_send_input", "tab_press_key", "tab_submit_prompt", "tab_close":
+        case "tab_exec", "tab_send_input", "tab_press_key", "tab_submit_prompt", "tab_close", "tab_release_control":
             if let tabID = arguments["tab_id"] as? String,
                let scopeError = controlService.mcpControlScopeError(forTabID: tabID) {
                 return classifyToolResponse(scopeError)

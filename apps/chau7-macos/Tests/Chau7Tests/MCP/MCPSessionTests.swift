@@ -99,6 +99,10 @@ final class MCPSessionTests: XCTestCase {
         let tabWaitReady = try XCTUnwrap(tools.first(where: { ($0["name"] as? String) == "tab_wait_ready" }))
         XCTAssertTrue((tabWaitReady["description"] as? String)?.contains("can_accept_exec=true") == true)
 
+        let requestControl = try XCTUnwrap(tools.first(where: { ($0["name"] as? String) == "tab_request_control" }))
+        XCTAssertTrue((requestControl["description"] as? String)?.contains("local confirmation") == true)
+        XCTAssertNotNil(tools.first(where: { ($0["name"] as? String) == "tab_release_control" }))
+
         let repoEvents = try XCTUnwrap(tools.first(where: { ($0["name"] as? String) == "repo_get_events" }))
         let repoEventsSchema = try XCTUnwrap(repoEvents["inputSchema"] as? [String: Any])
         let repoEventsProperties = try XCTUnwrap(repoEventsSchema["properties"] as? [String: Any])

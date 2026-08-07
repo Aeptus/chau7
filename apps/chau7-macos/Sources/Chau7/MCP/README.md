@@ -17,10 +17,12 @@ Model Context Protocol server: exposes Chau7 tab control, output, and telemetry 
 ## Key Patterns
 
 - MCP tab limit: configurable (default 4, max 50) — `isMCPControlled` flag per tab
+- Existing user tabs remain read-only until `tab_request_control` receives an explicit local confirmation; `tab_release_control` revokes the process-local grant without closing the tab
 - `allModels` and `allTabs` search across all windows for cross-window operations
 - `repo_get_metadata` / `repo_set_metadata` / `repo_frequent_commands` for repo memory
 - `tab_list` and `tab_status` are the authoritative live discovery/control path for active AI tabs
-- `tab_status.can_accept_exec` / `exec_acceptance_mode` are the canonical launch signals for deterministic `tab_exec` submission
+- MCP `tab_status.can_accept_exec` / `exec_acceptance_mode` combine terminal readiness with MCP mutation authority, so they remain false for user tabs until control is granted
+- `terminal_can_accept_exec` / `terminal_ready_for_exec` preserve the underlying terminal-only facts when `mcp_control_required=true`
 - `tab_status.ready_for_exec` / `readiness_reason` remain the stricter prompt-ready signals for immediate non-queued execution
 - `tab_exec` can still be called during shell bootstrap or before the live terminal view attaches; Chau7 queues the command when needed
 - `tab_wait_ready` now waits for deterministic exec acceptance rather than stricter prompt-ready state

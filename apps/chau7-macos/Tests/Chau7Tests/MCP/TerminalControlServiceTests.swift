@@ -30,6 +30,7 @@ final class TerminalControlServiceTests: XCTestCase {
             TerminalControlService.shared.unregister(overlayModel)
         }
         TerminalControlService.shared.activeOverlayModelProvider = nil
+        TerminalControlService.shared.tabControlApprovalHandler = nil
         FeatureSettings.shared.mcpPermissionMode = savedPermissionMode
         FeatureSettings.shared.mcpRequiresApproval = savedRequiresApproval
         FeatureSettings.shared.mcpEnabled = savedMCPEnabled
@@ -91,6 +92,79 @@ final class TerminalControlServiceTests: XCTestCase {
         XCTAssertEqual(json["ready_for_exec"] as? Bool, true)
         XCTAssertEqual(json["readiness_reason"] as? String, "ready")
         XCTAssertEqual(json["has_terminal_view"] as? Bool, true)
+    }
+
+    func testMCPStatusDoesNotAdvertiseMutationReadinessForUserTab() throws {
+        let session = try XCTUnwrap(overlayModel.tabs.first?.session)
+        session.status = .running
+        session.isShellLoading = false
+        session.isAtPrompt = true
+        session.attachRustTerminal(RustTerminalView(frame: .zero))
+
+        let response = TerminalControlService.shared.mcpTabStatus(tabID: overlayModel.selectedTabID.uuidString)
+        let json = try XCTUnwrap(parseJSONObject(response))
+
+        XCTAssertEqual(json["is_mcp_controlled"] as? Bool, false)
+        XCTAssertEqual(json["mcp_mutation_allowed"] as? Bool, false)
+        XCTAssertEqual(json["mcp_control_required"] as? Bool, true)
+        XCTAssertEqual(json["terminal_can_accept_exec"] as? Bool, true)
+        XCTAssertEqual(json["terminal_ready_for_exec"] as? Bool, true)
+        XCTAssertEqual(json["can_accept_exec"] as? Bool, false)
+        XCTAssertEqual(json["ready_for_exec"] as? Bool, false)
+        XCTAssertEqual(json["readiness_reason"] as? String, "mcp_control_required")
+    }
+
+    func testRequestControlAdoptsExistingTabAfterUserConfirmation() throws {
+        let tabID = TerminalControlService.shared.controlPlaneTabID(for: overlayModel.selectedTabID)
+        TerminalControlService.shared.tabControlApprovalHandler = { message in
+            XCTAssertTrue(message.contains("All connected local MCP clients"))
+            return true
+        }
+
+        let response = TerminalControlService.shared.requestMCPControl(tabID: tabID)
+        let json = try XCTUnwrap(parseJSONObject(response))
+
+        XCTAssertEqual(json["ok"] as? Bool, true)
+        XCTAssertEqual(json["status"] as? String, "control_granted")
+        XCTAssertEqual(overlayModel.tabs.first?.isMCPControlled, true)
+        XCTAssertNil(TerminalControlService.shared.mcpControlScopeError(forTabID: tabID))
+    }
+
+    func testRequestControlDenialLeavesExistingTabReadOnly() throws {
+        let tabID = TerminalControlService.shared.controlPlaneTabID(for: overlayModel.selectedTabID)
+        TerminalControlService.shared.tabControlApprovalHandler = { _ in false }
+
+        let response = TerminalControlService.shared.requestMCPControl(tabID: tabID)
+        let json = try XCTUnwrap(parseJSONObject(response))
+
+        XCTAssertEqual(json["error"] as? String, "Tab control denied by user.")
+        XCTAssertEqual(overlayModel.tabs.first?.isMCPControlled, false)
+        XCTAssertNotNil(TerminalControlService.shared.mcpControlScopeError(forTabID: tabID))
+    }
+
+    func testReleaseControlRevokesMutationWithoutClosingTab() throws {
+        let tabID = TerminalControlService.shared.controlPlaneTabID(for: overlayModel.selectedTabID)
+        overlayModel.tabs[0].isMCPControlled = true
+
+        let response = TerminalControlService.shared.releaseMCPControl(tabID: tabID)
+        let json = try XCTUnwrap(parseJSONObject(response))
+
+        XCTAssertEqual(json["ok"] as? Bool, true)
+        XCTAssertEqual(json["status"] as? String, "control_released")
+        XCTAssertEqual(overlayModel.tabs.count, 1)
+        XCTAssertEqual(overlayModel.tabs.first?.isMCPControlled, false)
+        XCTAssertNotNil(TerminalControlService.shared.mcpControlScopeError(forTabID: tabID))
+    }
+
+    func testMCPWaitReadyFailsImmediatelyWhenControlIsRequired() throws {
+        let tabID = TerminalControlService.shared.controlPlaneTabID(for: overlayModel.selectedTabID)
+        let response = TerminalControlService.shared.waitForMCPControlledTabReady(tabID: tabID, timeoutMs: 30_000)
+        let json = try XCTUnwrap(parseJSONObject(response))
+
+        XCTAssertEqual(json["can_accept_exec"] as? Bool, false)
+        XCTAssertEqual(json["ready_for_exec"] as? Bool, false)
+        XCTAssertEqual(json["timed_out"] as? Bool, false)
+        XCTAssertTrue((json["error"] as? String)?.contains("tab_request_control") == true)
     }
 
     func testWaitForTabReadyReturnsImmediateSnapshotWhenExecCanBeAccepted() throws {

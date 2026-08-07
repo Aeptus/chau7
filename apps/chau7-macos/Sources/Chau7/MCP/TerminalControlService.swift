@@ -80,6 +80,10 @@ final class TerminalControlService {
     /// Nil (tests, pre-composition) skips remote forwarding.
     var approvalForwarder: MCPApprovalForwarding?
 
+    /// Test seam for the synchronous, user-visible tab-adoption confirmation.
+    /// Production leaves this nil and uses the Chau7-owned NSAlert.
+    var tabControlApprovalHandler: ((String) -> Bool)?
+
     /// Register an overlay model. Call from AppDelegate for every new window.
     func register(_ model: OverlayTabsModel) {
         // Already registered? Skip.
@@ -680,44 +684,52 @@ final class TerminalControlService {
             guard let (tab, session) = self.resolveTab(tabID) else {
                 return self.jsonError("Tab not found: \(tabID)")
             }
+            return self.encodeAny(self.tabStatusPayload(tab: tab, session: session, enforceMCPControl: false))
+        }
+    }
 
-            var result: [String: Any] = self.tabSummary(tab)
-            self.addExecutionReadinessFields(to: &result, session: session)
-
-            // Add process group info
-            if let pg = session.processGroup {
-                result["processes"] = pg.children.map { proc in
-                    [
-                        "pid": proc.pid,
-                        "name": proc.name,
-                        "cpu_percent": proc.cpuPercent,
-                        "rss_bytes": proc.rssBytes
-                    ] as [String: Any]
-                }
+    /// MCP projection of tab status. Terminal readiness and caller authority
+    /// are intentionally combined here because the public MCP contract says
+    /// `can_accept_exec=true` means an MCP `tab_exec` call will be accepted.
+    /// Internal runtime/scripting callers keep using `tabStatus`, where the
+    /// fields describe terminal readiness independent of MCP ownership.
+    func mcpTabStatus(tabID: String) -> String {
+        onMain {
+            guard let (tab, session) = self.resolveTab(tabID) else {
+                return self.jsonError("Tab not found: \(tabID)")
             }
-
-            // Look up active telemetry run using the session's tabIdentifier
-            // (which is what TelemetryRecorder uses — NOT the OverlayTab UUID)
-            if let run = TelemetryRecorder.shared.activeRunForTab(session.tabIdentifier) {
-                result["active_run"] = [
-                    "run_id": run.id,
-                    "provider": run.provider,
-                    "started_at": TelemetryStore.isoString(from: run.startedAt),
-                    "session_id": run.sessionID as Any,
-                    "duration_so_far_ms": Int(Date().timeIntervalSince(run.startedAt) * 1000)
-                ] as [String: Any]
-            }
-
-            return self.encodeAny(result)
+            return self.encodeAny(self.tabStatusPayload(tab: tab, session: session, enforceMCPControl: true))
         }
     }
 
     func waitForTabReady(tabID: String, timeoutMs: Int = 30000) -> String {
+        waitForTabReady(tabID: tabID, timeoutMs: timeoutMs, enforceMCPControl: false)
+    }
+
+    func waitForMCPControlledTabReady(tabID: String, timeoutMs: Int = 30000) -> String {
+        waitForTabReady(tabID: tabID, timeoutMs: timeoutMs, enforceMCPControl: true)
+    }
+
+    private func waitForTabReady(tabID: String, timeoutMs: Int, enforceMCPControl: Bool) -> String {
         let boundedTimeoutMs = max(0, min(timeoutMs, 120_000))
         let start = Date()
 
-        guard var lastSnapshot = onMain({ self.tabReadinessSnapshot(tabID: tabID) }) else {
+        guard var lastSnapshot = onMain({
+            self.tabReadinessSnapshot(tabID: tabID, enforceMCPControl: enforceMCPControl)
+        }) else {
             return jsonError("Tab not found: \(tabID)")
+        }
+
+        if lastSnapshot["mcp_control_required"] as? Bool == true {
+            return encodeAny([
+                "error": "Tab \(tabID) requires explicit MCP control. Call tab_request_control first.",
+                "tab_id": tabID,
+                "can_accept_exec": false,
+                "ready_for_exec": false,
+                "timed_out": false,
+                "waited_ms": 0,
+                "status": lastSnapshot
+            ])
         }
 
         if lastSnapshot["can_accept_exec"] as? Bool == true {
@@ -742,10 +754,24 @@ final class TerminalControlService {
             let interval = min(0.5, 0.1 + elapsed * 0.1)
             Thread.sleep(forTimeInterval: min(interval, max(0.01, deadline.timeIntervalSinceNow)))
 
-            guard let snapshot = onMain({ self.tabReadinessSnapshot(tabID: tabID) }) else {
+            guard let snapshot = onMain({
+                self.tabReadinessSnapshot(tabID: tabID, enforceMCPControl: enforceMCPControl)
+            }) else {
                 return jsonError("Tab not found: \(tabID)")
             }
             lastSnapshot = snapshot
+
+            if snapshot["mcp_control_required"] as? Bool == true {
+                return encodeAny([
+                    "error": "MCP control of tab \(tabID) was released while waiting.",
+                    "tab_id": tabID,
+                    "can_accept_exec": false,
+                    "ready_for_exec": false,
+                    "timed_out": false,
+                    "waited_ms": Int(Date().timeIntervalSince(start) * 1000),
+                    "status": snapshot
+                ])
+            }
 
             if snapshot["can_accept_exec"] as? Bool == true {
                 let waitedMs = Int(Date().timeIntervalSince(start) * 1000)
@@ -2325,10 +2351,98 @@ final class TerminalControlService {
             guard tab.isMCPControlled else {
                 return self.jsonError(
                     "Tab \(tabID) is not MCP-controlled; MCP can only drive tabs it created " +
-                        "via tab_create or agent_launch."
+                        "via tab_create or agent_launch, or tabs the user grants via tab_request_control."
                 )
             }
             return nil
+        }
+    }
+
+    /// Ask the user to grant MCP control over an existing tab. The grant uses
+    /// the same process-local `isMCPControlled` capability as MCP-created tabs:
+    /// it lasts until release, tab closure, or app termination and is visible
+    /// through the tab's MCP indicator. It is deliberately never silent,
+    /// regardless of the separate "approve tab creation" setting.
+    func requestMCPControl(tabID: String) -> String {
+        onMain {
+            guard FeatureSettings.shared.mcpEnabled else {
+                return self.jsonError("MCP is disabled in settings.")
+            }
+            guard let uuid = self.resolveControlPlaneTabIDLocked(tabID),
+                  let model = self.modelForTab(uuid),
+                  let index = model.tabs.firstIndex(where: { $0.id == uuid }),
+                  let session = model.tabs[index].displaySession ?? model.tabs[index].session else {
+                return self.jsonError("Tab not found: \(tabID)")
+            }
+
+            if model.tabs[index].isMCPControlled {
+                return self.encodeAny([
+                    "ok": true,
+                    "tab_id": tabID,
+                    "is_mcp_controlled": true,
+                    "status": "already_controlled"
+                ])
+            }
+
+            let maxTabs = min(FeatureSettings.shared.mcpMaxTabs, Self.absoluteMaxTabs)
+            let controlledCount = model.tabs.filter(\.isMCPControlled).count
+            guard controlledCount < maxTabs else {
+                return self.jsonError("MCP tab limit reached (\(maxTabs)). Release or close an MCP-controlled tab first.")
+            }
+
+            let message = "An MCP client wants to control the existing tab “\(model.tabs[index].displayTitle)” " +
+                "in \(session.currentDirectory).\n\nAll connected local MCP clients will be able to send commands and key presses, " +
+                "and close this tab, until control is released, the tab closes, or Chau7 quits."
+            let approved = self.tabControlApprovalHandler?(message) ?? self.requestApproval(message: message)
+            guard approved else {
+                Log.info("MCP: control request denied for \(tabID)")
+                return self.jsonError("Tab control denied by user.")
+            }
+
+            model.tabs[index].isMCPControlled = true
+            Log.info("MCP: user granted control of existing tab \(tabID)")
+            Chau7ObservabilityService.shared.recordEvent(
+                type: "tab_control_granted",
+                subsystem: "mcp_approvals",
+                tabID: uuid.uuidString,
+                detail: ["control_plane_tab_id": tabID]
+            )
+            return self.encodeAny([
+                "ok": true,
+                "tab_id": tabID,
+                "is_mcp_controlled": true,
+                "status": "control_granted"
+            ])
+        }
+    }
+
+    /// Revoke MCP mutation authority without closing the user's tab.
+    func releaseMCPControl(tabID: String) -> String {
+        onMain {
+            guard let uuid = self.resolveControlPlaneTabIDLocked(tabID),
+                  let model = self.modelForTab(uuid),
+                  let index = model.tabs.firstIndex(where: { $0.id == uuid }) else {
+                return self.jsonError("Tab not found: \(tabID)")
+            }
+            guard model.tabs[index].isMCPControlled else {
+                return self.jsonError("Tab \(tabID) is not MCP-controlled.")
+            }
+
+            model.tabs[index].isMCPControlled = false
+            self.mcpPendingInput[uuid] = nil
+            Log.info("MCP: control released for \(tabID)")
+            Chau7ObservabilityService.shared.recordEvent(
+                type: "tab_control_released",
+                subsystem: "mcp_approvals",
+                tabID: uuid.uuidString,
+                detail: ["control_plane_tab_id": tabID]
+            )
+            return self.encodeAny([
+                "ok": true,
+                "tab_id": tabID,
+                "is_mcp_controlled": false,
+                "status": "control_released"
+            ])
         }
     }
 
@@ -2436,22 +2550,79 @@ final class TerminalControlService {
         )
     }
 
-    private func addExecutionReadinessFields(to result: inout [String: Any], session: TerminalSessionModel?) {
+    private func addExecutionReadinessFields(
+        to result: inout [String: Any],
+        session: TerminalSessionModel?,
+        mcpControlAllowed: Bool? = nil
+    ) {
         let readiness = tabExecutionReadiness(for: session)
         result["shell_loading"] = session?.isShellLoading ?? true
         result["has_terminal_view"] = session?.existingRustTerminalView != nil
+        result["mcp_mutation_allowed"] = mcpControlAllowed ?? true
+        result["mcp_control_required"] = mcpControlAllowed == false
+
+        if mcpControlAllowed == false {
+            // Preserve the underlying terminal facts for diagnostics while
+            // keeping the public action fields truthful for this MCP caller.
+            result["terminal_can_accept_exec"] = readiness.canAcceptExec
+            result["terminal_ready_for_exec"] = readiness.isReady
+            result["can_accept_exec"] = false
+            result["exec_acceptance_mode"] = TabExecutionReadiness.AcceptanceMode.blocked.rawValue
+            result["ready_for_exec"] = false
+            result["readiness_reason"] = "mcp_control_required"
+            return
+        }
         result["can_accept_exec"] = readiness.canAcceptExec
         result["exec_acceptance_mode"] = readiness.acceptanceMode.rawValue
         result["ready_for_exec"] = readiness.isReady
         result["readiness_reason"] = readiness.reason.rawValue
     }
 
-    private func tabReadinessSnapshot(tabID: String) -> [String: Any]? {
+    private func tabReadinessSnapshot(tabID: String, enforceMCPControl: Bool = false) -> [String: Any]? {
         guard let (tab, session) = resolveTab(tabID) else {
             return nil
         }
         var result = tabSummary(tab)
-        addExecutionReadinessFields(to: &result, session: session)
+        addExecutionReadinessFields(
+            to: &result,
+            session: session,
+            mcpControlAllowed: enforceMCPControl ? tab.isMCPControlled : nil
+        )
+        return result
+    }
+
+    private func tabStatusPayload(
+        tab: OverlayTab,
+        session: TerminalSessionModel,
+        enforceMCPControl: Bool
+    ) -> [String: Any] {
+        var result = tabSummary(tab)
+        addExecutionReadinessFields(
+            to: &result,
+            session: session,
+            mcpControlAllowed: enforceMCPControl ? tab.isMCPControlled : nil
+        )
+
+        if let pg = session.processGroup {
+            result["processes"] = pg.children.map { proc in
+                [
+                    "pid": proc.pid,
+                    "name": proc.name,
+                    "cpu_percent": proc.cpuPercent,
+                    "rss_bytes": proc.rssBytes
+                ] as [String: Any]
+            }
+        }
+
+        if let run = TelemetryRecorder.shared.activeRunForTab(session.tabIdentifier) {
+            result["active_run"] = [
+                "run_id": run.id,
+                "provider": run.provider,
+                "started_at": TelemetryStore.isoString(from: run.startedAt),
+                "session_id": run.sessionID as Any,
+                "duration_so_far_ms": Int(Date().timeIntervalSince(run.startedAt) * 1000)
+            ] as [String: Any]
+        }
         return result
     }
 

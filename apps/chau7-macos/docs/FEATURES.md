@@ -254,15 +254,17 @@ Every cross-window tab operation dispatches to the main thread before touching t
 
 ## MCP Tools
 
-### Tab Management (12 tools)
+### Tab Management (14 tools)
 
 | Tool | Description |
 | --- | --- |
 | `tab_list` | List all tabs across all windows with status, cwd, git branch, CTO state, active app. Primary live discovery API for active AI tabs |
 | `tab_create` | Open a new tab with optional directory and target window — respects approval gate and tab limit, and returns exec-acceptance plus prompt-readiness fields |
+| `tab_request_control` | Request control of an existing user-opened tab — always requires an explicit Chau7-owned local confirmation before MCP terminal mutations are enabled |
+| `tab_release_control` | Revoke MCP control of a tab without closing it and clear any staged MCP input |
 | `tab_exec` | Execute a command in a tab — auto-queues when shell/bootstrap state still needs to settle so launchers can submit deterministically without waiting for prompt-ready rendering |
-| `tab_status` | Detailed live tab status: process state, child processes (PID/CPU/RSS), active telemetry run, git branch, `ai_provider`, `ai_session_id`, deterministic exec-acceptance fields (`can_accept_exec` / `exec_acceptance_mode`), and stricter prompt-ready fields (`ready_for_exec` / `readiness_reason`) |
-| `tab_wait_ready` | Wait until `tab_exec` will be accepted (`can_accept_exec=true`) and return the last observed status snapshot on success or timeout |
+| `tab_status` | Detailed live tab status including authorization-aware exec/prompt readiness; user tabs expose `mcp_control_required` and terminal-only readiness until control is granted |
+| `tab_wait_ready` | Wait until `tab_exec` will be accepted (`can_accept_exec=true`); fail immediately with `mcp_control_required` for unauthorized user tabs, otherwise return the last status snapshot on success or timeout |
 | `tab_send_input` | Send raw input for interactive prompts — no auto-newline appended |
 | `tab_press_key` | Send terminal key presses for interactive TUIs — Enter, Escape, arrows, backspace, delete, paging keys, and ctrl/alt combos |
 | `tab_submit_prompt` | Submit the current interactive prompt by sending Enter as a key press |

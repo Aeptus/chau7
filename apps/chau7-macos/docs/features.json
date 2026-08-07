@@ -1401,6 +1401,20 @@
   },
   {
     "category": "MCP Tools — Tab Management",
+    "feature": "tab_request_control",
+    "description": "Request control of an existing user-opened tab — always requires an explicit Chau7-owned local confirmation before MCP terminal mutations are enabled",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "MCP Tools — Tab Management",
+    "feature": "tab_release_control",
+    "description": "Revoke MCP control of a tab without closing it and clear any staged MCP input",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "MCP Tools — Tab Management",
     "feature": "tab_exec",
     "description": "Execute a shell command in a tab — auto-queues when shell/bootstrap state still needs to settle so launchers can submit deterministically without waiting for prompt-ready rendering",
     "status": "Shipped",
@@ -1409,14 +1423,14 @@
   {
     "category": "MCP Tools — Tab Management",
     "feature": "tab_status",
-    "description": "Detailed live tab status: process state, child processes (PID/CPU/RSS), active telemetry run, git branch, ai_provider, ai_session_id, deterministic exec-acceptance fields via can_accept_exec/exec_acceptance_mode, and stricter prompt-ready fields via ready_for_exec/readiness_reason",
+    "description": "Detailed live tab status: process state, child processes (PID/CPU/RSS), active telemetry run, AI identity, and authorization-aware exec/prompt readiness; user tabs expose mcp_control_required plus underlying terminal-only readiness until control is granted",
     "status": "Shipped",
     "differentiator": "Yes"
   },
   {
     "category": "MCP Tools — Tab Management",
     "feature": "tab_wait_ready",
-    "description": "Wait until tab_exec will be accepted (can_accept_exec=true) and return the last observed status snapshot on success or timeout",
+    "description": "Wait until tab_exec will be accepted (can_accept_exec=true); fail immediately with mcp_control_required for unauthorized user tabs, otherwise return the last status snapshot on success or timeout",
     "status": "Shipped",
     "differentiator": "Yes"
   },
