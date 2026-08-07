@@ -280,6 +280,13 @@
     "differentiator": "Yes"
   },
   {
+    "category": "Monitoring",
+    "feature": "Event-Driven Missing-File Recovery",
+    "description": "File monitors and JSONL tailers use bounded exponential retries for short replacement windows, then watch the nearest existing parent for recreation; canonical paths share one filesystem source and parent-watch handoffs recheck targets to avoid missed creations",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
     "category": "Developer Experience",
     "feature": "Registry-Driven Quality Firewall",
     "description": "Thin Husky hooks delegate to pnpm quality modes backed by a central registry, affected-surface pre-push scoping, conservative full-suite triggers, content-hash caching, reproducible failure commands, dirty-worktree handling, and runner/registry tests",

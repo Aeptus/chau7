@@ -9,10 +9,19 @@ final class FileTailer<T> {
     private let onItem: (T) -> Void
     private let pollInterval: DispatchTimeInterval
     private let createIfMissing: Bool
+    private let retryPolicy: FileObservationRetryPolicy
+    private let watchRegistry: FileSystemWatchRegistry
+    private let clock: () -> TimeInterval
 
     private var timer: DispatchSourceTimer?
-    private var fsSource: DispatchSourceFileSystemObject?
-    private var monitorFD: Int32 = -1
+    private var targetWatch: FileSystemWatchRegistry.Subscription?
+    private var parentWatch: FileSystemWatchRegistry.Subscription?
+    private var parentWatchURL: URL?
+    private var retryWorkItem: DispatchWorkItem?
+    private var retryAttempt = 0
+    private var retryStartedAt: TimeInterval = 0
+    private var isWaitingForRecreation = false
+    private var isRunning = false
     private var offset: UInt64 = 0
     private var buffer = ""
     private let queue: DispatchQueue
@@ -32,6 +41,9 @@ final class FileTailer<T> {
         createIfMissing: Bool = false,
         maxBufferSize: Int = 4 * 1024 * 1024,
         queueLabel: String = "com.chau7.tailer",
+        retryPolicy: FileObservationRetryPolicy = .default,
+        watchRegistry: FileSystemWatchRegistry = .shared,
+        clock: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime },
         parser: @escaping (String) throws -> T,
         onItem: @escaping (T) -> Void
     ) {
@@ -39,6 +51,9 @@ final class FileTailer<T> {
         self.pollInterval = pollInterval
         self.createIfMissing = createIfMissing
         self.maxBufferSize = maxBufferSize
+        self.retryPolicy = retryPolicy
+        self.watchRegistry = watchRegistry
+        self.clock = clock
         self.queue = DispatchQueue(label: queueLabel)
         self.parser = parser
         self.onItem = onItem
@@ -67,6 +82,9 @@ final class FileTailer<T> {
     }
 
     private func startOnQueue(prefillLines: Int) {
+        stopOnQueue()
+        isRunning = true
+        beginRecoveryWindow()
         if createIfMissing, !FileManager.default.fileExists(atPath: fileURL.path) {
             Log.warn("File not found. Creating empty file at \(fileURL.path)")
             FileManager.default.createFile(atPath: fileURL.path, contents: Data(), attributes: nil)
@@ -108,16 +126,18 @@ final class FileTailer<T> {
     /// raced a tick mid-read on the queue.
     func stop() {
         queue.async { [self] in
-            fsSource?.cancel()
-            fsSource = nil
-            monitorFD = -1
-            timer?.cancel()
-            timer = nil
-            buffer = ""
-            try? readHandle?.close()
-            readHandle = nil
+            stopOnQueue()
             Log.trace("FileTailer stop. path=\(fileURL.path)")
         }
+    }
+
+    deinit {
+        isRunning = false
+        retryWorkItem?.cancel()
+        targetWatch?.cancel()
+        parentWatch?.cancel()
+        timer?.cancel()
+        try? readHandle?.close()
     }
 
     /// (Re)creates the kqueue source. O_EVTONLY watches the original inode —
@@ -125,39 +145,39 @@ final class FileTailer<T> {
     /// never fires again and the tailer silently degrades to the 5x-slower
     /// safety poll, so a rename event re-arms against the new inode.
     private func armFileSystemSourceOnQueue() {
-        fsSource?.cancel()
-        fsSource = nil
-        monitorFD = -1
-
-        let fd = Darwin.open(fileURL.path, O_EVTONLY)
-        guard fd >= 0 else {
-            // Path momentarily gone (mid-replace): the safety poll keeps
-            // tailing; retry the re-arm shortly.
-            queue.asyncAfter(deadline: .now() + 1.0) { [weak self] in
-                guard let self, timer != nil else { return }
-                armFileSystemSourceOnQueue()
+        guard isRunning else { return }
+        targetWatch?.cancel()
+        targetWatch = watchRegistry.watch(
+            url: fileURL,
+            eventMask: [.write, .extend, .delete, .rename],
+            callbackQueue: queue
+        ) { [weak self] flags in
+            guard let self, isRunning else { return }
+            if flags.contains(.rename) || flags.contains(.delete) {
+                targetWatch?.cancel()
+                targetWatch = nil
+                try? readHandle?.close()
+                readHandle = nil
+                beginRecoveryWindow()
+                isWaitingForRecreation = true
+                scheduleTargetAttempt(after: retryPolicy.replacementDelay)
+                armNearestExistingParentOnQueue()
+            } else {
+                tick()
             }
+        }
+        guard targetWatch != nil else {
+            handleMissingTargetOnQueue()
             return
         }
-        monitorFD = fd
-        let source = DispatchSource.makeFileSystemObjectSource(
-            fileDescriptor: fd,
-            eventMask: [.write, .extend, .rename],
-            queue: queue
-        )
-        source.setEventHandler { [weak self, weak source] in
-            guard let self else { return }
-            tick()
-            if let source, source.data.contains(.rename) {
-                queue.asyncAfter(deadline: .now() + 0.2) { [weak self] in
-                    guard let self, timer != nil else { return }
-                    armFileSystemSourceOnQueue()
-                }
-            }
-        }
-        source.setCancelHandler { Darwin.close(fd) }
-        source.resume()
-        fsSource = source
+
+        isWaitingForRecreation = false
+        retryWorkItem?.cancel()
+        retryWorkItem = nil
+        parentWatch?.cancel()
+        parentWatch = nil
+        parentWatchURL = nil
+        retryAttempt = 0
     }
 
     private func openReadHandle() {
@@ -166,7 +186,17 @@ final class FileTailer<T> {
     }
 
     private func tick() {
-        if let size = currentFileSize(), size < offset {
+        guard isRunning, !isWaitingForRecreation else { return }
+        guard let currentSize = currentFileSize() else {
+            try? readHandle?.close()
+            readHandle = nil
+            beginRecoveryWindow()
+            isWaitingForRecreation = true
+            handleMissingTargetOnQueue()
+            return
+        }
+
+        if currentSize < offset {
             offset = 0
             buffer = ""
             openReadHandle()
@@ -246,6 +276,92 @@ final class FileTailer<T> {
 
     private func currentFileSize() -> UInt64? {
         try? FileManager.default.attributesOfItem(atPath: fileURL.path)[.size] as? UInt64
+    }
+
+    private func beginRecoveryWindow() {
+        retryStartedAt = clock()
+        retryAttempt = 0
+        retryWorkItem?.cancel()
+        retryWorkItem = nil
+    }
+
+    private func handleMissingTargetOnQueue() {
+        guard isRunning else { return }
+        isWaitingForRecreation = true
+        if armNearestExistingParentOnQueue() { return }
+        let elapsed = max(0, clock() - retryStartedAt)
+        guard let delay = retryPolicy.delay(forAttempt: retryAttempt, elapsed: elapsed) else {
+            retryWorkItem?.cancel()
+            retryWorkItem = nil
+            Log.trace("FileTailer: active retries exhausted for \(fileURL.path); waiting for parent event")
+            return
+        }
+        retryAttempt += 1
+        scheduleTargetAttempt(after: delay)
+    }
+
+    private func scheduleTargetAttempt(after delay: TimeInterval) {
+        retryWorkItem?.cancel()
+        let workItem = DispatchWorkItem { [weak self] in
+            guard let self, isRunning else { return }
+            retryWorkItem = nil
+            armFileSystemSourceOnQueue()
+        }
+        retryWorkItem = workItem
+        queue.asyncAfter(deadline: .now() + delay, execute: workItem)
+    }
+
+    @discardableResult
+    private func armNearestExistingParentOnQueue() -> Bool {
+        guard isRunning,
+              let parentURL = FileSystemWatchRegistry.nearestExistingParent(of: fileURL) else { return false }
+        if parentWatch != nil, parentWatchURL == parentURL { return false }
+
+        parentWatch?.cancel()
+        parentWatchURL = parentURL
+        parentWatch = watchRegistry.watch(
+            url: parentURL,
+            eventMask: [.write, .delete, .rename],
+            callbackQueue: queue
+        ) { [weak self] flags in
+            guard let self, isRunning else { return }
+            if flags.contains(.delete) || flags.contains(.rename) {
+                parentWatch?.cancel()
+                parentWatch = nil
+                parentWatchURL = nil
+                armNearestExistingParentOnQueue()
+                return
+            }
+            armFileSystemSourceOnQueue()
+            if !isWaitingForRecreation {
+                tick()
+            }
+        }
+
+        // Close the handoff race where the target appears after the failed
+        // open but before the newly discovered parent watch is installed.
+        if parentWatch != nil {
+            armFileSystemSourceOnQueue()
+            return true
+        }
+        return false
+    }
+
+    private func stopOnQueue() {
+        isRunning = false
+        retryWorkItem?.cancel()
+        retryWorkItem = nil
+        targetWatch?.cancel()
+        targetWatch = nil
+        parentWatch?.cancel()
+        parentWatch = nil
+        parentWatchURL = nil
+        timer?.cancel()
+        timer = nil
+        isWaitingForRecreation = false
+        buffer = ""
+        try? readHandle?.close()
+        readHandle = nil
     }
 
     private func prefillLastLines(count: Int) {
