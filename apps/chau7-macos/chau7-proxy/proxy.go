@@ -475,6 +475,12 @@ func (p *ProxyHandler) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Bad upstream URL", http.StatusBadGateway)
 		return
 	}
+	upgradeRequest, err := buildWebSocketUpgradeRequest(r, upstreamParsed)
+	if err != nil {
+		log.Printf("[ERROR] WebSocket: failed to build upgrade request: %v", err)
+		http.Error(w, "Failed to build upgrade", http.StatusBadGateway)
+		return
+	}
 
 	host := upstreamParsed.Hostname()
 	port := upstreamParsed.Port()
@@ -495,27 +501,7 @@ func (p *ProxyHandler) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	}
 	defer func() { _ = tlsConn.Close() }()
 
-	// Build the upgrade request to send to upstream.
-	// Use the upstream path and forward all headers except X-Chau7-*.
-	path := upstreamParsed.Path
-	if upstreamParsed.RawQuery != "" {
-		path += "?" + upstreamParsed.RawQuery
-	}
-
-	var reqBuf bytes.Buffer
-	fmt.Fprintf(&reqBuf, "%s %s HTTP/1.1\r\n", r.Method, path)
-	fmt.Fprintf(&reqBuf, "Host: %s\r\n", host)
-	for key, values := range r.Header {
-		if IsCorrelationHeader(key) {
-			continue
-		}
-		for _, v := range values {
-			fmt.Fprintf(&reqBuf, "%s: %s\r\n", key, v)
-		}
-	}
-	reqBuf.WriteString("\r\n")
-
-	if _, err := tlsConn.Write(reqBuf.Bytes()); err != nil {
+	if _, err := tlsConn.Write(upgradeRequest); err != nil {
 		log.Printf("[ERROR] WebSocket: failed to write upgrade request: %v", err)
 		http.Error(w, "Failed to send upgrade", http.StatusBadGateway)
 		return
@@ -546,6 +532,32 @@ func (p *ProxyHandler) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		done <- struct{}{}
 	}()
 	<-done
+}
+
+// buildWebSocketUpgradeRequest retargets a client upgrade request to the
+// selected upstream while preserving authentication and WebSocket negotiation
+// headers. Chau7 correlation metadata is intentionally consumed locally.
+func buildWebSocketUpgradeRequest(r *http.Request, upstream *url.URL) ([]byte, error) {
+	request := r.Clone(r.Context())
+	request.URL = &url.URL{
+		Path:     upstream.Path,
+		RawPath:  upstream.RawPath,
+		RawQuery: upstream.RawQuery,
+	}
+	request.Host = upstream.Host
+	request.RequestURI = ""
+	request.Header = r.Header.Clone()
+	StripCorrelationHeaders(request.Header)
+	request.Body = nil
+	request.GetBody = nil
+	request.ContentLength = 0
+	request.TransferEncoding = nil
+
+	var buf bytes.Buffer
+	if err := request.Write(&buf); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
 }
 
 // firstByteReader wraps an io.Reader and records the timestamp of the first

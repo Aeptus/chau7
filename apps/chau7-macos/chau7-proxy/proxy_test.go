@@ -1,17 +1,66 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/base64"
 	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 )
+
+func TestBuildWebSocketUpgradeRequestPreservesSubscriptionAuth(t *testing.T) {
+	const projectPath = "/tmp/Codex Subscription/été"
+	projectToken := base64.RawURLEncoding.EncodeToString([]byte(projectPath))
+	req := httptest.NewRequest(
+		"GET",
+		projectCorrelationPathPrefix+projectToken+"/v1/responses?model=gpt-5",
+		nil,
+	)
+	req.Header.Set("Authorization", "Bearer opaque-chatgpt-access-token")
+	req.Header.Set("Connection", "Upgrade")
+	req.Header.Set("Upgrade", "websocket")
+	req.Header.Set("Sec-WebSocket-Key", "test-websocket-key")
+	req.Header.Set("Sec-WebSocket-Version", "13")
+
+	if err := applyPathCorrelation(req); err != nil {
+		t.Fatalf("apply correlation path: %v", err)
+	}
+	upstream, err := url.Parse(GetUpstreamURL(DetectProvider(req), req))
+	if err != nil {
+		t.Fatalf("parse upstream: %v", err)
+	}
+	raw, err := buildWebSocketUpgradeRequest(req, upstream)
+	if err != nil {
+		t.Fatalf("build upgrade request: %v", err)
+	}
+	forwarded, err := http.ReadRequest(bufio.NewReader(bytes.NewReader(raw)))
+	if err != nil {
+		t.Fatalf("parse forwarded request: %v", err)
+	}
+
+	if got, want := forwarded.Host, "chatgpt.com"; got != want {
+		t.Errorf("host = %q, want %q", got, want)
+	}
+	if got, want := forwarded.URL.RequestURI(), "/backend-api/codex/responses?model=gpt-5"; got != want {
+		t.Errorf("request URI = %q, want %q", got, want)
+	}
+	if got, want := forwarded.Header.Get("Authorization"), "Bearer opaque-chatgpt-access-token"; got != want {
+		t.Errorf("authorization = %q, want %q", got, want)
+	}
+	if !isWebSocketUpgrade(forwarded) {
+		t.Error("WebSocket negotiation headers were not preserved")
+	}
+	if got := forwarded.Header.Get(HeaderProject); got != "" {
+		t.Errorf("internal project header leaked upstream: %q", got)
+	}
+}
 
 func TestProxyHandler_StoresAnthropicProjectHeaderExactly(t *testing.T) {
 	const projectPath = "/tmp/Claude Project/été"

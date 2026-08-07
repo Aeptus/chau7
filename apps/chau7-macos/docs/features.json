@@ -1745,7 +1745,7 @@
   {
     "category": "API Analytics",
     "feature": "Subscription-Safe Codex Proxy Routing",
-    "description": "A shell-scoped wrapper uses Codex's supported openai_base_url configuration while preserving its built-in ChatGPT-authenticated provider, scopes and combines CA trust for the Codex process, and falls back to direct Codex when proxy trust is unavailable",
+    "description": "A shell-scoped wrapper uses Codex's supported openai_base_url configuration while preserving its built-in ChatGPT-authenticated provider, scopes and combines CA trust for the Codex process, and falls back to direct Codex when proxy trust is unavailable; HTTPS and WebSocket forwarding preserve ChatGPT authorization while consuming private correlation metadata locally",
     "status": "Shipped",
     "differentiator": "Yes"
   },
