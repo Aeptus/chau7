@@ -54,11 +54,19 @@ final class RepositoryModel: Identifiable {
 
     @ObservationIgnored private var refreshWorkItem: DispatchWorkItem?
     @ObservationIgnored private var saveWorkItem: DispatchWorkItem?
+    @ObservationIgnored private var lastStatsRefreshAt: Date?
+    @ObservationIgnored private var statsRefreshInFlight = false
+    @ObservationIgnored private var statsDirty = true
+    @ObservationIgnored private var statsInvalidationGeneration: UInt64 = 0
     @ObservationIgnored private static let gitQueue = DispatchQueue(label: "com.chau7.repository.git", qos: .utility)
     @ObservationIgnored private static let metadataQueue = DispatchQueue(label: "com.chau7.repository.metadata", qos: .utility)
+    @ObservationIgnored private static let statsQueue = DispatchQueue(label: "com.chau7.repository.stats", qos: .utility)
     @ObservationIgnored private let gitRunner: ([String], String) -> String
     @ObservationIgnored private let identityRecorder: (String, String?, Bool) -> Void
     @ObservationIgnored private let refreshDelay: TimeInterval
+    @ObservationIgnored private let statsTTL: TimeInterval
+    @ObservationIgnored private let statsLoader: (String) -> RepoStats?
+    @ObservationIgnored private let now: () -> Date
 
     init(
         rootPath: String,
@@ -72,7 +80,10 @@ final class RepositoryModel: Identifiable {
                 preserveExistingBranch: preserveExistingBranch
             )
         },
-        refreshDelay: TimeInterval = 0.1
+        refreshDelay: TimeInterval = 0.1,
+        statsTTL: TimeInterval = 30,
+        statsLoader: @escaping (String) -> RepoStats? = { RepoStatsProvider.stats(for: $0) },
+        now: @escaping () -> Date = Date.init
     ) {
         self.id = rootPath
         self.rootPath = rootPath
@@ -81,6 +92,9 @@ final class RepositoryModel: Identifiable {
         self.gitRunner = gitRunner
         self.identityRecorder = identityRecorder
         self.refreshDelay = refreshDelay
+        self.statsTTL = max(0, statsTTL)
+        self.statsLoader = statsLoader
+        self.now = now
     }
 
     /// Refresh the branch name from git. Coalesces rapid calls via work item cancellation.
@@ -143,16 +157,52 @@ final class RepositoryModel: Identifiable {
         }
     }
 
-    /// Refresh computed stats from both SQLite stores. Call on demand
-    /// (hover card, debug console, MCP tool) — not on every tab switch.
-    func refreshStats() {
+    /// Refresh computed stats when the cached snapshot is missing, dirty, or
+    /// older than `statsTTL`. Concurrent requests coalesce into one load.
+    /// The last successful snapshot remains visible while a refresh is running.
+    func refreshStatsIfNeeded(force: Bool = false) {
+        dispatchPrecondition(condition: .onQueue(.main))
+        guard !statsRefreshInFlight else { return }
+
+        let refreshRequestedAt = now()
+        if !force,
+           !statsDirty,
+           stats != nil,
+           let lastStatsRefreshAt,
+           refreshRequestedAt.timeIntervalSince(lastStatsRefreshAt) < statsTTL {
+            return
+        }
+
+        statsRefreshInFlight = true
+        let invalidationGenerationAtStart = statsInvalidationGeneration
         let root = rootPath
-        Self.metadataQueue.async { [weak self] in
-            let computed = RepoStatsProvider.stats(for: root)
+        let loader = statsLoader
+        Self.statsQueue.async { [weak self] in
+            let computed = loader(root)
             DispatchQueue.main.async {
-                self?.stats = computed
+                guard let self else { return }
+                self.statsRefreshInFlight = false
+                guard let computed else {
+                    // Preserve the last-known snapshot and retry on next demand.
+                    self.statsDirty = true
+                    return
+                }
+                self.stats = computed
+                self.lastStatsRefreshAt = self.now()
+                // An event may invalidate the cache while SQLite is still
+                // assembling this snapshot. Do not let an older completion
+                // erase that newer invalidation.
+                self.statsDirty = self.statsInvalidationGeneration != invalidationGenerationAtStart
             }
         }
+    }
+
+    /// Mark the snapshot stale without discarding it. The next hover/request
+    /// performs the refresh, avoiding eager database work after every event.
+    func invalidateStats() {
+        dispatchPrecondition(condition: .onQueue(.main))
+        statsInvalidationGeneration &+= 1
+        statsDirty = true
     }
 
     /// Replace metadata wholesale and schedule a debounced save.
