@@ -196,6 +196,7 @@ Supported commands (46 parsers):
 - **Async usage analytics loading** — usage dashboards coalesce overlapping refreshes, run proxy analytics database reads off the main thread, and expose model-level cost rows.
 - **Regional number formatting** — usage dashboards and cost displays use a configurable regional number format (French default, European, or US) independently of the app language.
 - **Latency tracking** — total request duration and time-to-first-token (TTFT) per API call.
+- **Deterministic latency-sample reads** — equal-timestamp samples retain their monotonic ingestion order through canonicalization, while throttled SQLite preparation diagnostics expose schema/query failures without flooding logs.
 - **Versioned latency-sample sequencing** — telemetry schema v5 gives provider latency samples the same shared monotonic ingest sequence as runs, usage evidence, and remote events; v4 trigger definitions are replaced atomically so upgraded and fresh databases behave identically.
 - **Echo-only input latency** — per-session input latency measures keystroke→echo responsiveness only; command submission (Enter) is excluded for every session, so a slow command's runtime is never miscounted as UI lag.
 - **Configurable telemetry retention** — AI run history and full transcripts in `runs.db` are pruned at launch to a user-set window (default 30 days; `0` = keep forever, set in Settings → History), cascading to child rows and reclaiming disk with a full `VACUUM`, so the database can't grow without bound.

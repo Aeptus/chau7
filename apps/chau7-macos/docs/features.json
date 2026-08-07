@@ -246,6 +246,13 @@
   },
   {
     "category": "API Analytics",
+    "feature": "Deterministic Latency-Sample Reads",
+    "description": "Equal-timestamp provider latency samples retain their monotonic ingestion order through canonicalization, while throttled SQLite preparation diagnostics expose schema and query failures without flooding logs",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "API Analytics",
     "feature": "Versioned Latency-Sample Sequencing",
     "description": "Telemetry schema v5 gives provider latency samples the same shared monotonic ingest sequence as runs, usage evidence, and remote events, atomically replacing v4 trigger definitions so upgraded and fresh databases behave identically",
     "status": "Shipped",

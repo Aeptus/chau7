@@ -193,6 +193,31 @@ final class ProviderLatencyAnalyticsTests: XCTestCase {
         XCTAssertEqual(canonical.first?.id, "completed")
     }
 
+    func testCanonicalLatencySamplesPreservesInputOrderForEqualTimestamps() {
+        let timestamp = date(2026, 4, 14, 20, 0, 0)
+        let first = ProviderLatencySample(
+            id: "z-first",
+            provider: "openai",
+            metricKind: .apiRequest,
+            latencyMs: 100,
+            timestamp: timestamp,
+            sourceKind: "proxy_api_ttft"
+        )
+        let second = ProviderLatencySample(
+            id: "a-second",
+            provider: "openai",
+            metricKind: .apiRequest,
+            latencyMs: 200,
+            timestamp: timestamp,
+            sourceKind: "proxy_api_ttft"
+        )
+
+        XCTAssertEqual(
+            ProviderLatencyAnalytics.canonicalLatencySamples([first, second]).map(\.id),
+            [first.id, second.id]
+        )
+    }
+
     private func date(_ year: Int, _ month: Int, _ day: Int, _ hour: Int) -> Date {
         date(year, month, day, hour, 0, 0)
     }

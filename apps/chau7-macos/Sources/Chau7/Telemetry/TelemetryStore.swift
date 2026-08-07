@@ -20,6 +20,8 @@ final class TelemetryStore {
     private let queue = DispatchQueue(label: "com.chau7.telemetry.store")
     private let checkpointLogWalThresholdBytes: Int64 = 8 * 1024 * 1024
     private let checkpointLogRemainingFramesThreshold: Int32 = 1000
+    private let latencySamplesPrepareFailureLogInterval: TimeInterval = 60
+    private var lastLatencySamplesPrepareFailureLogAt = Date.distantPast
     private lazy var maintenance = TelemetryMaintenance(store: self)
 
     private static var dbPath: String {
@@ -1427,7 +1429,11 @@ final class TelemetryStore {
             sql += " ORDER BY observed_at ASC, ingest_seq ASC"
 
             var stmt: OpaquePointer?
-            guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return [] }
+            let prepareResult = sqlite3_prepare_v2(db, sql, -1, &stmt, nil)
+            guard prepareResult == SQLITE_OK else {
+                logLatencySamplesPrepareFailure(db: db, resultCode: prepareResult)
+                return []
+            }
             defer { sqlite3_finalize(stmt) }
 
             var bindIndex: Int32 = 1
@@ -1468,6 +1474,19 @@ final class TelemetryStore {
             }
             return ProviderLatencyAnalytics.canonicalLatencySamples(samples)
         }
+    }
+
+    /// This query feeds several analytics surfaces, so a persistent schema
+    /// mismatch can otherwise generate a log line on every refresh. The store
+    /// queue serializes both the timestamp and SQLite handle access.
+    private func logLatencySamplesPrepareFailure(db: OpaquePointer, resultCode: Int32) {
+        let now = Date()
+        guard now.timeIntervalSince(lastLatencySamplesPrepareFailureLogAt) >= latencySamplesPrepareFailureLogInterval else {
+            return
+        }
+        lastLatencySamplesPrepareFailureLogAt = now
+        let detail = String(cString: sqlite3_errmsg(db))
+        Log.warn("TelemetryStore: failed to prepare provider latency query: rc=\(resultCode) detail=\(detail)")
     }
 
     /// Token usage aggregated per provider, ordered by cost descending.

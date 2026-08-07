@@ -2,7 +2,7 @@ import XCTest
 @testable import Chau7
 @testable import Chau7Core
 
-/// A6 contract: the schema-v4 ingest_seq column makes same-timestamp rows
+/// A6 contract: the ingest_seq column makes same-timestamp rows
 /// order deterministically. The sequence is assigned by insert triggers from
 /// one shared counter, so no insert statement carries the column.
 final class TelemetryIngestSeqTests: XCTestCase {
@@ -62,5 +62,46 @@ final class TelemetryIngestSeqTests: XCTestCase {
         for _ in 0 ..< 5 {
             XCTAssertEqual(TelemetryStore.shared.listRuns(filter: filter).map(\.id), first)
         }
+    }
+
+    func testSameTimestampLatencySamplesOrderByInsertionOrder() {
+        let provider = "ingest-seq-\(UUID().uuidString.lowercased())"
+        let sharedInstant = Date(timeIntervalSince1970: 1_751_200_000)
+        // Deliberately oppose lexical ID order so this proves ingest_seq is
+        // the tiebreaker rather than ProviderLatencySample.id.
+        let firstID = "z-first-\(UUID().uuidString)"
+        let secondID = "a-second-\(UUID().uuidString)"
+
+        TelemetryStore.shared.insertLatencySample(
+            ProviderLatencySample(
+                id: firstID,
+                provider: provider,
+                metricKind: .apiRequest,
+                latencyMs: 100,
+                timestamp: sharedInstant,
+                sourceKind: "ingest_seq_test"
+            )
+        )
+        TelemetryStore.shared.insertLatencySample(
+            ProviderLatencySample(
+                id: secondID,
+                provider: provider,
+                metricKind: .apiRequest,
+                latencyMs: 200,
+                timestamp: sharedInstant,
+                sourceKind: "ingest_seq_test"
+            )
+        )
+
+        let listed = TelemetryStore.shared.latencySamples(
+            after: sharedInstant.addingTimeInterval(-1),
+            providerFilterKey: provider,
+            metricKind: .apiRequest
+        )
+
+        XCTAssertEqual(
+            listed.map(\.id), [firstID, secondID],
+            "observed_at ASC ties must break by ingest_seq ASC — got \(listed.map(\.id))"
+        )
     }
 }
