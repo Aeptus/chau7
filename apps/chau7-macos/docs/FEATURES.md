@@ -693,6 +693,7 @@ Chau7's rendering pipeline is purpose-built for latency-sensitive terminal work:
 
 ### Monitoring
 
+- File watches are owner-scoped: closing a text-editor pane cancels its watch and pending autosave work even when the model remains retained, invalidates late load completions, and app/history-monitor teardown explicitly stops owned tailers and timers.
 - Missing-file recovery uses bounded exponential retries during likely atomic replacement, then becomes event-driven by watching the nearest existing parent. Canonically identical paths share one underlying filesystem source, and parent deletion/recreation is handled without permanent polling.
 - Dev server detection by command hints, output patterns, and port scanning with 30s liveness polling. Handles server restarts, slow starts, and external kills.
 - Git branch change notifications.

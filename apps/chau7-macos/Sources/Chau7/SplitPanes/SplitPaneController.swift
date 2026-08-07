@@ -430,11 +430,19 @@ final class TextEditorModel: Identifiable {
     @ObservationIgnored
     private var fileMonitor: FileMonitor?
     @ObservationIgnored
+    private let fileWatchRegistry: FileSystemWatchRegistry
+    @ObservationIgnored
     private var loadedContentHash: String?
     @ObservationIgnored
     private var isApplyingExternalReload = false
     @ObservationIgnored
+    private var isDisposed = false
+    @ObservationIgnored
     var untitledSaveHandler: ((TextEditorModel) -> Bool)?
+
+    init(fileWatchRegistry: FileSystemWatchRegistry = .shared) {
+        self.fileWatchRegistry = fileWatchRegistry
+    }
 
     /// The file name for display
     var fileName: String {
@@ -458,6 +466,7 @@ final class TextEditorModel: Identifiable {
     ///   - path: Absolute path to the file
     ///   - scrollToLine: Optional line number to scroll to after loading (1-based)
     func loadFile(at path: String, scrollToLine line: Int? = nil) {
+        guard !isDisposed else { return }
         // Create a unique token for this load operation
         let token = UUID()
         loadingToken = token
@@ -661,10 +670,19 @@ final class TextEditorModel: Identifiable {
     }
 
     deinit {
-        stopWatchingCurrentFile()
+        dispose()
         // Autosave + runbook work items are owned by their respective
         // helpers (`autoSaver`, `runbook`) and cancelled in their own
         // deinits when the model drops the last reference.
+    }
+
+    func dispose() {
+        isDisposed = true
+        loadingToken = nil
+        isLoading = false
+        autoSaver.cancelPendingSave()
+        autoSaver.cancelStatusClear()
+        stopWatchingCurrentFile()
     }
 
     private func scheduleAutoSaveIfNeeded() {
@@ -676,9 +694,12 @@ final class TextEditorModel: Identifiable {
     }
 
     private func startWatchingCurrentFile() {
-        guard let path = filePath, !path.isEmpty else { return }
+        guard !isDisposed, let path = filePath, !path.isEmpty else { return }
         stopWatchingCurrentFile()
-        fileMonitor = FileMonitor(url: URL(fileURLWithPath: path)) { [weak self] in
+        fileMonitor = FileMonitor(
+            url: URL(fileURLWithPath: path),
+            watchRegistry: fileWatchRegistry
+        ) { [weak self] in
             DispatchQueue.main.async {
                 self?.handleExternalFileChange()
             }

@@ -461,6 +461,9 @@ final class AppModel {
     deinit {
         pendingClaudeWaitingInputFallbacks.values.forEach { $0.cancel() }
         claudeMonitorNotificationTask?.cancel()
+        stopTailer()
+        stopIdleMonitors()
+        stopTerminalMonitors()
         Log.warn("AppModel deinit — possible SwiftUI scene recreation (pid=\(ProcessInfo.processInfo.processIdentifier))")
     }
 

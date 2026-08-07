@@ -129,6 +129,10 @@ final class TextEditorPane: PaneNode {
         self.editor = editor
     }
 
+    func dispose() {
+        editor.dispose()
+    }
+
     func savedRepresentation() -> SavedSplitNode {
         SavedSplitNode(
             kind: .textEditor,

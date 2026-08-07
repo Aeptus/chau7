@@ -95,16 +95,62 @@ final class PaneNodeContractTests: XCTestCase {
         XCTAssertNotNil(session)
     }
 
-    func testNonTerminalPaneDisposeIsHarmlessNoOp() {
-        // The default protocol implementation is no-op; non-terminal panes
-        // get this for free. Just verify it doesn't crash and doesn't
-        // mutate observable state on the wrapped model.
+    func testTextEditorPaneDisposePreservesEditorContent() {
         let editor = TextEditorModel()
         editor.updateContent("preserved\n")
         let pane = TextEditorPane(editor: editor)
         pane.dispose()
-        XCTAssertEqual(editor.content, "preserved\n", "Default dispose must not mutate the model")
+        XCTAssertEqual(editor.content, "preserved\n", "Dispose must not mutate editor content")
         XCTAssertTrue(editor.isDirty)
+    }
+
+    func testTextEditorPaneDisposeStopsFileWatchWhileEditorIsRetained() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("chau7-pane-dispose-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let fileURL = directory.appendingPathComponent("note.md")
+        try "note".write(to: fileURL, atomically: false, encoding: .utf8)
+        let registry = FileSystemWatchRegistry(label: "com.chau7.tests.editor-dispose")
+        let editor = TextEditorModel(fileWatchRegistry: registry)
+        let pane = TextEditorPane(editor: editor)
+
+        editor.loadFile(at: fileURL.path)
+        waitUntil { registry.activeWatchCountForTesting() == 1 }
+
+        pane.dispose()
+        waitUntil { registry.activeWatchCountForTesting() == 0 }
+        XCTAssertEqual(editor.content, "note", "retained editor remains readable after disposal")
+    }
+
+    func testDisposedTextEditorCannotRestartWatchFromLaterLoad() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("chau7-editor-late-load-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let fileURL = directory.appendingPathComponent("note.md")
+        try "note".write(to: fileURL, atomically: false, encoding: .utf8)
+        let registry = FileSystemWatchRegistry(label: "com.chau7.tests.editor-late-load")
+        let editor = TextEditorModel(fileWatchRegistry: registry)
+
+        editor.dispose()
+        editor.loadFile(at: fileURL.path)
+        RunLoop.current.run(until: Date().addingTimeInterval(0.1))
+        registry.drainForTesting()
+
+        XCTAssertEqual(registry.activeWatchCountForTesting(), 0)
+        XCTAssertNil(editor.filePath)
+    }
+
+    private func waitUntil(
+        timeout: TimeInterval = 3,
+        condition: @escaping () -> Bool
+    ) {
+        let deadline = Date().addingTimeInterval(timeout)
+        while !condition(), Date() < deadline {
+            RunLoop.current.run(until: Date().addingTimeInterval(0.01))
+        }
+        XCTAssertTrue(condition())
     }
 
     // MARK: - Existential erasure round-trip

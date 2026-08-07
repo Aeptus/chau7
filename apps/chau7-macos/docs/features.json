@@ -287,6 +287,13 @@
     "differentiator": "Yes"
   },
   {
+    "category": "Monitoring",
+    "feature": "Owner-Scoped File Watch Disposal",
+    "description": "Text-editor pane disposal cancels file watches and pending autosave work even when models remain retained, invalidates late load completions, and app/history-monitor destruction explicitly stops owned tailers and timers",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
     "category": "Developer Experience",
     "feature": "Registry-Driven Quality Firewall",
     "description": "Thin Husky hooks delegate to pnpm quality modes backed by a central registry, affected-surface pre-push scoping, conservative full-suite triggers, content-hash caching, reproducible failure commands, dirty-worktree handling, and runner/registry tests",
