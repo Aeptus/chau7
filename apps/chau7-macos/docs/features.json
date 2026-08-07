@@ -1793,6 +1793,13 @@
   },
   {
     "category": "API Analytics",
+    "feature": "Indexed Repository Proxy Summaries",
+    "description": "One project-indexed aggregate returns repository proxy totals, providers, and last-call time under one database lock; missing repositories skip hourly aggregation and populated summaries reuse the same connection",
+    "status": "Shipped",
+    "differentiator": "No"
+  },
+  {
+    "category": "API Analytics",
     "feature": "Timeline Visualization",
     "description": "Visual timeline scrubber showing command blocks and metrics over time",
     "status": "Shipped",

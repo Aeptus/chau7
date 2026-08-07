@@ -208,6 +208,7 @@ Supported commands (46 parsers):
 - **Background completion extraction for Codex/OpenAI runs** — run-end finalization no longer waits on heavy transcript extraction for OpenAI-family sessions. Completed rows are persisted immediately, then richer turns and tool calls are backfilled asynchronously when extraction finishes.
 - **Recent proxy call context** — recent API calls in the Debug Console include local hour, repo name, and endpoint context for faster investigation.
 - **Repo-level aggregated metrics** — per-repository stats (commands, success rate, AI runs, tokens, cost, providers, top tools) in Debug Console, Data Explorer, and hover card.
+- **Indexed repository proxy summaries** — one project-indexed aggregate returns proxy totals, providers, and last-call time under a single database lock; repositories with no attributed rows skip hourly aggregation entirely, while populated summaries reuse the same connection for their trend.
 - **Repo-aware debug labels** — per-tab token and CTO rows use `provider/custom title + repo`, with split-session disambiguation when needed.
 - **Timeline visualization** — scrubber timeline showing command blocks and metrics.
 - **Provider filtering** — include or exclude specific API providers.

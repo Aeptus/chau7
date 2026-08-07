@@ -98,19 +98,27 @@ final class ProxyAnalyticsStore {
 
     private static let isoBasic = DateFormatters.iso8601NoFractional
 
-    private var databasePath: String {
+    private static var defaultDatabasePath: String {
         RuntimeIsolation.appSupportDirectory(named: "Chau7")
             .appendingPathComponent("Proxy", isDirectory: true)
             .appendingPathComponent("analytics.db")
             .path
     }
 
+    private let databasePath: String
+
     /// Persistent read-only connection, opened lazily on first query.
     /// Eliminates per-call sqlite3_open / sqlite3_close overhead.
     private var persistentDB: OpaquePointer?
     private let dbLock = NSLock()
 
-    private init() {}
+    private init() {
+        databasePath = Self.defaultDatabasePath
+    }
+
+    init(databasePath: String) {
+        self.databasePath = databasePath
+    }
 
     deinit {
         if let db = persistentDB {
@@ -366,46 +374,12 @@ final class ProxyAnalyticsStore {
 
     func hourlyTrend(days: Int = 1, providerFilterKey: String? = nil, projectPath: String? = nil) -> [ProxyHourlyAnalyticsPoint] {
         withDatabase { db in
-            let clampedDays = max(1, min(days, 90))
-            var sql = """
-            SELECT strftime('%Y-%m-%d %H:00', datetime(timestamp, 'localtime')) AS hour,
-                   provider,
-                   COUNT(*),
-                   COALESCE(SUM(input_tokens), 0) + COALESCE(SUM(output_tokens), 0)
-                     + COALESCE(SUM(cache_creation_input_tokens), 0)
-                     + COALESCE(SUM(cache_read_input_tokens), 0)
-                     + COALESCE(SUM(reasoning_output_tokens), 0),
-                   COALESCE(SUM(cost_usd), 0)
-            FROM api_calls
-            WHERE timestamp >= datetime('now', 'localtime', '-\(clampedDays) days')
-            """
-            if let projectPath, !projectPath.isEmpty {
-                sql += " AND project_path = ?"
-            }
-            sql += """
-            GROUP BY hour, provider
-            ORDER BY hour
-            """
-            return SQLiteStatement.withStatement(db, sql) { stmt -> [ProxyHourlyAnalyticsPoint] in
-                if let projectPath, !projectPath.isEmpty {
-                    stmt.bindText(1, projectPath)
-                }
-
-                var aggregated: [String: ProxyHourlyAnalyticsPoint] = [:]
-                while stmt.step() == .row {
-                    guard let hour = stmt.columnText(0) else { continue }
-                    let rawProvider = stmt.columnText(1)
-                    guard AnalyticsProvider.matches(rawProvider, filterKey: providerFilterKey) else { continue }
-                    let current = aggregated[hour]
-                    aggregated[hour] = ProxyHourlyAnalyticsPoint(
-                        hour: hour,
-                        callCount: (current?.callCount ?? 0) + Int(stmt.columnInt64(2)),
-                        totalTokens: (current?.totalTokens ?? 0) + Int(stmt.columnInt64(3)),
-                        totalCostUSD: (current?.totalCostUSD ?? 0) + stmt.columnDouble(4)
-                    )
-                }
-                return aggregated.keys.sorted().compactMap { aggregated[$0] }
-            } ?? []
+            hourlyTrend(
+                db: db,
+                days: days,
+                providerFilterKey: providerFilterKey,
+                projectPath: projectPath
+            )
         } ?? []
     }
 
@@ -548,18 +522,127 @@ final class ProxyAnalyticsStore {
     }
 
     func repoSummary(projectPath: String, after: Date? = nil, providerFilterKey: String? = nil, hourlyDays: Int = 1) -> ProxyRepoAnalyticsSummary {
-        let stats = overallStats(after: after, providerFilterKey: providerFilterKey, projectPath: projectPath)
-        let providers = providerStats(after: after, providerFilterKey: providerFilterKey, projectPath: projectPath).map(\.provider)
-        let hourlyCost = hourlyTrend(days: hourlyDays, providerFilterKey: providerFilterKey, projectPath: projectPath)
-        let lastCallAt = mostRecentCallTimestamp(after: after, providerFilterKey: providerFilterKey, projectPath: projectPath)
-        return ProxyRepoAnalyticsSummary(
-            callCount: stats.callCount,
-            totalTokens: stats.totalAllTokens,
-            totalCostUSD: stats.totalCost,
-            providers: providers,
-            lastCallAt: lastCallAt,
-            hourlyCost: hourlyCost
-        )
+        guard !projectPath.isEmpty else { return .empty }
+        return withDatabase { db in
+            var sql = """
+            SELECT provider,
+                   COUNT(*),
+                   COALESCE(SUM(input_tokens), 0)
+                     + COALESCE(SUM(output_tokens), 0)
+                     + COALESCE(SUM(cache_creation_input_tokens), 0)
+                     + COALESCE(SUM(cache_read_input_tokens), 0)
+                     + COALESCE(SUM(reasoning_output_tokens), 0),
+                   COALESCE(SUM(cost_usd), 0),
+                   MAX(timestamp)
+            FROM api_calls
+            WHERE project_path = ?
+            """
+            if after != nil {
+                sql += " AND timestamp >= ?"
+            }
+            sql += " GROUP BY provider"
+
+            let aggregate = SQLiteStatement.withStatement(db, sql) { stmt -> ProxyRepoAnalyticsSummary? in
+                stmt.bindText(1, projectPath)
+                if let after {
+                    stmt.bindText(2, isoString(after))
+                }
+
+                var callCount = 0
+                var totalTokens = 0
+                var totalCostUSD = 0.0
+                var providers = Set<String>()
+                var lastCallAt: Date?
+
+                while stmt.step() == .row {
+                    let rawProvider = stmt.columnText(0)
+                    guard AnalyticsProvider.matches(rawProvider, filterKey: providerFilterKey),
+                          let provider = AnalyticsProvider.key(for: rawProvider) else {
+                        continue
+                    }
+                    callCount += Int(stmt.columnInt64(1))
+                    totalTokens += Int(stmt.columnInt64(2))
+                    totalCostUSD += stmt.columnDouble(3)
+                    providers.insert(provider)
+                    if let timestamp = stmt.columnText(4).flatMap(isoDate) {
+                        lastCallAt = max(lastCallAt ?? timestamp, timestamp)
+                    }
+                }
+
+                guard callCount > 0 else { return nil }
+                return ProxyRepoAnalyticsSummary(
+                    callCount: callCount,
+                    totalTokens: totalTokens,
+                    totalCostUSD: totalCostUSD,
+                    providers: AnalyticsProvider.sortKeys(providers),
+                    lastCallAt: lastCallAt,
+                    hourlyCost: []
+                )
+            } ?? nil
+
+            guard let aggregate else { return .empty }
+            return ProxyRepoAnalyticsSummary(
+                callCount: aggregate.callCount,
+                totalTokens: aggregate.totalTokens,
+                totalCostUSD: aggregate.totalCostUSD,
+                providers: aggregate.providers,
+                lastCallAt: aggregate.lastCallAt,
+                hourlyCost: hourlyTrend(
+                    db: db,
+                    days: hourlyDays,
+                    providerFilterKey: providerFilterKey,
+                    projectPath: projectPath
+                )
+            )
+        } ?? .empty
+    }
+
+    private func hourlyTrend(
+        db: OpaquePointer,
+        days: Int,
+        providerFilterKey: String?,
+        projectPath: String?
+    ) -> [ProxyHourlyAnalyticsPoint] {
+        let clampedDays = max(1, min(days, 90))
+        var sql = """
+        SELECT strftime('%Y-%m-%d %H:00', datetime(timestamp, 'localtime')) AS hour,
+               provider,
+               COUNT(*),
+               COALESCE(SUM(input_tokens), 0) + COALESCE(SUM(output_tokens), 0)
+                 + COALESCE(SUM(cache_creation_input_tokens), 0)
+                 + COALESCE(SUM(cache_read_input_tokens), 0)
+                 + COALESCE(SUM(reasoning_output_tokens), 0),
+               COALESCE(SUM(cost_usd), 0)
+        FROM api_calls
+        WHERE timestamp >= datetime('now', 'localtime', '-\(clampedDays) days')
+        """
+        if let projectPath, !projectPath.isEmpty {
+            sql += " AND project_path = ?"
+        }
+        sql += """
+        GROUP BY hour, provider
+        ORDER BY hour
+        """
+        return SQLiteStatement.withStatement(db, sql) { stmt -> [ProxyHourlyAnalyticsPoint] in
+            if let projectPath, !projectPath.isEmpty {
+                stmt.bindText(1, projectPath)
+            }
+
+            var aggregated: [String: ProxyHourlyAnalyticsPoint] = [:]
+            while stmt.step() == .row {
+                guard let hour = stmt.columnText(0) else { continue }
+                let rawProvider = stmt.columnText(1)
+                guard AnalyticsProvider.matches(rawProvider, filterKey: providerFilterKey) else { continue }
+                let current = aggregated[hour]
+                aggregated[hour] = ProxyHourlyAnalyticsPoint(
+                    hour: hour,
+                    callCount: (current?.callCount ?? 0) + Int(stmt.columnInt64(2)),
+                    totalTokens: (current?.totalTokens ?? 0) + Int(stmt.columnInt64(3)),
+                    totalCostUSD: (current?.totalCostUSD ?? 0) + stmt.columnDouble(4)
+                )
+            }
+            return aggregated.keys.sorted().compactMap { aggregated[$0] }
+        } ?? []
     }
 
     private func withDatabase<T>(_ body: (OpaquePointer) -> T?) -> T? {

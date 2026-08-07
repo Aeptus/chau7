@@ -255,6 +255,7 @@ API Analytics,Baseline Estimator,Calculate token savings from context caching st
 API Analytics,Analytics Dashboard,Command stats and error rates and API usage and timing in a unified dashboard view,Shipped,No
 API Analytics,Recent Proxy Call Context,"Recent proxy calls in Debug Console analytics show local hour, repo name, and endpoint context for each call",Shipped,No
 API Analytics,Repo-Level Aggregated Metrics,"Per-repository stats (commands, success rate, AI runs, tokens, cost, providers, top tools) in Debug Console Repos tab, Data Explorer, and hover card",Shipped,Yes
+API Analytics,Indexed Repository Proxy Summaries,"One project-indexed aggregate returns repository proxy totals, providers, and last-call time under one database lock; missing repositories skip hourly aggregation and populated summaries reuse the same connection",Shipped,No
 API Analytics,Timeline Visualization,Visual timeline scrubber showing command blocks and metrics over time,Shipped,No
 API Analytics,Provider Filtering,Include or exclude specific API providers from capture,Shipped,No
 Tab Management,Multi-Tab Interface,"Unlimited tabs per window — Cmd+T to create, Cmd+1–9 to jump",Shipped,No
