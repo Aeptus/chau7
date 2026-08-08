@@ -64,6 +64,17 @@ deploy: build
     fi
     BUNDLE_ID=$(/usr/libexec/PlistBuddy -c 'Print CFBundleIdentifier' "$APP/Contents/Info.plist")
     cp .build/debug/Chau7 "$APP/Contents/MacOS/Chau7"
+    # The Swift binary and the Go proxy agree on a wire protocol (the Codex
+    # correlation path), so hot-swapping only the Swift half leaves a pair that
+    # is individually valid and jointly broken -- which shows up as a provider
+    # 404, not as a local error. Refresh both together; ProxyManager's
+    # /health capability check is the backstop if this is ever skipped.
+    if command -v go >/dev/null 2>&1; then
+      ./chau7-proxy/build.sh darwin
+      cp chau7-proxy/build/darwin/chau7-proxy "$APP/Contents/Resources/chau7-proxy"
+    else
+      echo "⚠️  go not found — bundled proxy left as-is; it may be stale"
+    fi
     source Scripts/signing.sh
     chau7_codesign_app "$APP" "$BUNDLE_ID" "${CHAU7_CODESIGN_PURPOSE:-install}"
     echo "✅ Hot-swapped and re-signed ($BUNDLE_ID)"
