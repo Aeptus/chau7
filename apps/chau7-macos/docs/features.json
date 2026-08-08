@@ -274,6 +274,13 @@
   },
   {
     "category": "API Analytics",
+    "feature": "Proxy Version-Skew Detection",
+    "description": "chau7-proxy advertises its wire capabilities on /health and the app verifies them at startup, naming an out-of-date bundled binary with its rebuild command instead of letting the mismatch surface as an unexplained upstream provider error; a proxy predating capability advertisement reads as missing all of them, and an unreachable proxy is never reported as a mismatch",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "API Analytics",
     "feature": "Freshly Built Bundled Proxy",
     "description": "The macOS app build compiles chau7-proxy instead of copying whatever artifact was last left in build/darwin, so the bundled binary always understands the correlation path its paired Codex wrapper emits and cannot silently ship a stale protocol half",
     "status": "Shipped",

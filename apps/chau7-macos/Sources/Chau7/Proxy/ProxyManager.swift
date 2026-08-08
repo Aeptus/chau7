@@ -261,6 +261,8 @@ final class ProxyManager {
                 object: ProxyStatusEvent.running(port: port)
             )
 
+            Task { [weak self] in await self?.verifyCapabilities() }
+
         } catch {
             let errorMessage = "Failed to start proxy: \(error.localizedDescription)"
             logger.error("\(errorMessage, privacy: .public)")
@@ -396,6 +398,70 @@ final class ProxyManager {
         // Wait a moment before restarting
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
             self?.startIfEnabled()
+        }
+    }
+
+    // MARK: - Version Skew Detection
+
+    /// Wire features this build of the app requires the proxy to implement.
+    ///
+    /// The two binaries ship together but are built by different toolchains, so
+    /// a packaging step that copies a stale proxy produces a pair that is
+    /// individually valid and jointly broken. That failure is invisible locally:
+    /// it surfaces as an error from the upstream provider (a Codex `404`, when
+    /// the proxy forwarded a correlation prefix it did not recognize), which
+    /// points at the provider rather than at the skew. Ask the proxy what it
+    /// implements instead of assuming the bundle is coherent.
+    ///
+    /// Names are pinned to `Contracts/proxy-correlation.json` by
+    /// `ShellLaunchConfiguratorContractTests`.
+    /// `nonisolated` because it is an immutable constant with no actor state:
+    /// the contract test reads it off the main actor.
+    nonisolated static let requiredCapabilities: Set = ["project-path-correlation"]
+
+    /// Reads `/health` and reports any required capability the running proxy
+    /// does not advertise. Missing capabilities are a deployment fault, not a
+    /// runtime one, so this records a diagnostic rather than stopping the proxy:
+    /// the degraded proxy still forwards traffic for providers that correlate
+    /// through headers.
+    func verifyCapabilities() async {
+        guard let capabilities = await fetchCapabilities() else { return }
+
+        let missing = Self.requiredCapabilities.subtracting(capabilities)
+        guard !missing.isEmpty else { return }
+
+        let message = "Proxy is out of date: missing \(missing.sorted().joined(separator: ", ")). "
+            + "Rebuild the bundled binary (chau7-proxy/build.sh darwin) — API calls that rely on "
+            + "path correlation will fail upstream until it matches this app."
+        logger.error("\(message, privacy: .public)")
+        lastError = message
+        NotificationCenter.default.post(
+            name: .proxyStatusChanged,
+            object: ProxyStatusEvent.error(message)
+        )
+    }
+
+    /// Capabilities advertised by `/health`, or nil when they cannot be read.
+    ///
+    /// A proxy predating capability advertisement returns no `capabilities`
+    /// key at all, which is itself the skew being detected — so an absent key
+    /// decodes to an empty set rather than nil. nil is reserved for "could not
+    /// ask", where reporting a mismatch would be a false alarm.
+    private func fetchCapabilities() async -> Set<String>? {
+        guard isRunning, let url = apiURL(path: "/health") else { return nil }
+
+        do {
+            let (data, response) = try await URLSession.shared.data(from: url)
+            guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
+                return nil
+            }
+            guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                return nil
+            }
+            return Set(json["capabilities"] as? [String] ?? [])
+        } catch {
+            logger.warning("Capability check failed: \(error.localizedDescription, privacy: .public)")
+            return nil
         }
     }
 

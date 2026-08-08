@@ -10,6 +10,13 @@ import (
 
 const projectCorrelationPathPrefix = "/_chau7/project/"
 
+// CapabilityProjectPathCorrelation is advertised on /health so the app can
+// tell whether the proxy it launched understands the correlation prefix its
+// own shell wrapper emits. A bundled proxy older than the Swift binary
+// forwards the prefix verbatim, and the only symptom is a 404 from the
+// upstream provider — which points at the provider, not at the skew.
+const CapabilityProjectPathCorrelation = "project-path-correlation"
+
 // applyPathCorrelation materializes correlation carried by clients that do
 // not support custom request headers (notably Codex). The internal prefix is
 // removed before provider detection and upstream forwarding.

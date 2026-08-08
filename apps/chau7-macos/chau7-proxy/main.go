@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"crypto/tls"
+	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
@@ -208,6 +209,15 @@ func main() {
 }
 
 // handleHealth returns a health check handler
+// proxyCapabilities lists the wire features this build implements. The app
+// compares them against what its own binary expects, so a bundled proxy that
+// predates a protocol change is reported as a version skew at startup rather
+// than surfacing later as an unexplained error from the upstream provider.
+// Append here whenever a change requires both halves to agree.
+var proxyCapabilities = []string{
+	CapabilityProjectPathCorrelation,
+}
+
 func handleHealth(db *Database) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if err := db.Ping(); err != nil {
@@ -216,9 +226,19 @@ func handleHealth(db *Database) http.HandlerFunc {
 			return
 		}
 
+		body, err := json.Marshal(map[string]any{
+			"status":       "ok",
+			"capabilities": proxyCapabilities,
+		})
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			_, _ = w.Write([]byte(`{"status":"unhealthy","error":"capability encoding failed"}`))
+			return
+		}
+
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`{"status":"ok"}`))
+		_, _ = w.Write(body)
 	}
 }
 
