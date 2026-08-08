@@ -162,6 +162,100 @@ final class HistorySessionAdoptionTests: XCTestCase {
         XCTAssertEqual(session.lastAgentLaunchCommand, "codex resume 019eaaab-1111-7222-8333-444455556666")
     }
 
+    func testAuthoritativeExactTabCodexEventReplacesStaleIdentityAcrossMovedCheckout() throws {
+        let tabID = overlayModel.selectedTabID
+        let session = try XCTUnwrap(overlayModel.tabs.first?.session)
+        session.currentDirectory = "/tmp/Downloads/Repositories/Mockup"
+        session.restoreAIMetadata(
+            provider: "codex",
+            sessionId: "019dc912-2ddb-7791-b346-f15af4d592ec",
+            sessionIdSource: .explicit
+        )
+
+        let request = try XCTUnwrap(HistorySessionAdoptionRequest(
+            toolName: "Codex",
+            sessionId: "019fdbe3-084a-7d71-baff-40b1bb0f7162",
+            directory: "/tmp/Repositories/Mockup",
+            tabID: tabID,
+            observedAt: Date(timeIntervalSince1970: 1_700_000_000),
+            state: nil,
+            reason: .historyEntry,
+            identityEvidence: .authoritativeExactTab(
+                validatedDirectory: "/tmp/Repositories/Mockup"
+            )
+        ))
+
+        XCTAssertTrue(TerminalControlService.shared.adoptHistorySession(request))
+        XCTAssertEqual(session.lastAISessionId, "019fdbe3-084a-7d71-baff-40b1bb0f7162")
+        XCTAssertEqual(session.lastAISessionIdentitySource, .observed)
+        XCTAssertEqual(session.currentDirectory, "/tmp/Repositories/Mockup")
+        XCTAssertEqual(
+            session.lastAgentLaunchCommand,
+            "codex resume 019fdbe3-084a-7d71-baff-40b1bb0f7162"
+        )
+    }
+
+    func testInferredCodexEventCannotReplaceStaleIdentityAcrossMovedCheckout() throws {
+        let tabID = overlayModel.selectedTabID
+        let session = try XCTUnwrap(overlayModel.tabs.first?.session)
+        session.currentDirectory = "/tmp/Downloads/Repositories/Mockup"
+        session.restoreAIMetadata(
+            provider: "codex",
+            sessionId: "019dc912-2ddb-7791-b346-f15af4d592ec",
+            sessionIdSource: .explicit
+        )
+
+        let request = try XCTUnwrap(HistorySessionAdoptionRequest(
+            toolName: "Codex",
+            sessionId: "019fdbe3-084a-7d71-baff-40b1bb0f7162",
+            directory: "/tmp/Repositories/Mockup",
+            tabID: tabID,
+            observedAt: Date(timeIntervalSince1970: 1_700_000_000),
+            state: nil,
+            reason: .historyEntry
+        ))
+
+        XCTAssertFalse(TerminalControlService.shared.adoptHistorySession(request))
+        XCTAssertEqual(session.lastAISessionId, "019dc912-2ddb-7791-b346-f15af4d592ec")
+        XCTAssertEqual(session.currentDirectory, "/tmp/Downloads/Repositories/Mockup")
+    }
+
+    func testAuthoritativeMovedCheckoutEventCannotClaimAnotherPanesSession() throws {
+        let targetTabID = overlayModel.selectedTabID
+        let targetSession = try XCTUnwrap(overlayModel.tabs.first?.session)
+        targetSession.currentDirectory = "/tmp/Downloads/Repositories/Mockup"
+        targetSession.restoreAIMetadata(
+            provider: "codex",
+            sessionId: "019dc912-2ddb-7791-b346-f15af4d592ec",
+            sessionIdSource: .explicit
+        )
+
+        overlayModel.newTab(at: "/tmp/Repositories/Mockup")
+        let owningSession = try XCTUnwrap(overlayModel.tabs.last?.session)
+        owningSession.restoreAIMetadata(
+            provider: "codex",
+            sessionId: "019fdbe3-084a-7d71-baff-40b1bb0f7162",
+            sessionIdSource: .observed
+        )
+
+        let request = try XCTUnwrap(HistorySessionAdoptionRequest(
+            toolName: "Codex",
+            sessionId: "019fdbe3-084a-7d71-baff-40b1bb0f7162",
+            directory: "/tmp/Repositories/Mockup",
+            tabID: targetTabID,
+            observedAt: Date(timeIntervalSince1970: 1_700_000_000),
+            state: nil,
+            reason: .historyEntry,
+            identityEvidence: .authoritativeExactTab(
+                validatedDirectory: "/tmp/Repositories/Mockup"
+            )
+        ))
+
+        XCTAssertFalse(TerminalControlService.shared.adoptHistorySession(request))
+        XCTAssertEqual(targetSession.lastAISessionId, "019dc912-2ddb-7791-b346-f15af4d592ec")
+        XCTAssertEqual(owningSession.lastAISessionId, "019fdbe3-084a-7d71-baff-40b1bb0f7162")
+    }
+
     func testUnifiedEventWithExplicitTabIDAdoptsResumeIdentity() throws {
         let tabID = overlayModel.selectedTabID
         let session = try XCTUnwrap(overlayModel.tabs.first?.session)

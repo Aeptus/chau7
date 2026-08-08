@@ -177,7 +177,24 @@ final class TerminalControlService {
                 return false
             }
 
-            return session.adoptAIHistorySession(request)
+            let replacementDirectory = request.crossDirectoryReplacementDirectory
+            let shouldReplaceDirectory = replacementDirectory != nil
+                && self.historyAdoptionDirectoryRank(
+                    session: session,
+                    directory: request.directory
+                ) == nil
+            var changed = session.adoptAIHistorySession(request)
+            if shouldReplaceDirectory,
+               let replacementDirectory,
+               session.currentDirectory != replacementDirectory {
+                let previousDirectory = session.currentDirectory
+                session.currentDirectory = replacementDirectory
+                changed = true
+                Log.info(
+                    "History adoption migrated directory tab=\(tab.id) from=\(previousDirectory) to=\(replacementDirectory) session=\(request.sessionId.prefix(8))"
+                )
+            }
+            return changed
         }
     }
 
@@ -2028,9 +2045,14 @@ final class TerminalControlService {
             return false
         }
 
+        if storedSessionId != request.sessionId,
+           historySessionIsClaimedByAnotherPane(request.sessionId, excluding: session) {
+            return false
+        }
+
         if directoryRank == nil {
-            guard request.tabID != nil,
-                  storedSessionId == nil else {
+            guard request.canReplaceAcrossDirectory
+                || (request.tabID != nil && storedSessionId == nil) else {
                 return false
             }
         }
@@ -2052,6 +2074,20 @@ final class TerminalControlService {
             return existingProvider == request.providerKey
         case nil:
             return existingProvider == request.providerKey
+        }
+    }
+
+    private func historySessionIsClaimedByAnotherPane(
+        _ sessionId: String,
+        excluding excludedSession: TerminalSessionModel
+    ) -> Bool {
+        allModels.contains { _, model in
+            model.tabs.contains { tab in
+                tab.splitController.terminalSessions.contains { _, session in
+                    session !== excludedSession
+                        && session.normalizedStoredAISessionId() == sessionId
+                }
+            }
         }
     }
 

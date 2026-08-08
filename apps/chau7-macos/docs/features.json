@@ -3844,6 +3844,13 @@
   },
   {
     "category": "Restore",
+    "feature": "Corroborated Codex Resume Identity",
+    "description": "Exact-tab authoritative Codex notify events can replace a stale restored identity across a moved checkout only when a local rollout validates the session and directory and no other live pane owns it",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "Restore",
     "feature": "Resume Restore Delivery Ledger",
     "description": "Pane-owned resume restore records scheduled, queued, delivered, rejected, and superseded outcomes per pane so stale retries stay diagnosable",
     "status": "Shipped",

@@ -1453,7 +1453,8 @@ final class AppModel {
         tabID explicitTabID: UUID? = nil,
         observedAt: Date,
         state: HistorySessionState?,
-        reason: HistorySessionAdoptionRequest.Reason
+        reason: HistorySessionAdoptionRequest.Reason,
+        identityEvidence: HistorySessionAdoptionRequest.IdentityEvidence = .inferred
     ) -> Bool {
         let tabID = explicitTabID ?? resolveTabForSession(
             toolName: toolName,
@@ -1467,7 +1468,8 @@ final class AppModel {
             tabID: tabID,
             observedAt: observedAt,
             state: state,
-            reason: reason
+            reason: reason,
+            identityEvidence: identityEvidence
         ) else {
             return false
         }
@@ -1486,6 +1488,18 @@ final class AppModel {
 
         let directory = event.directory ?? historyEventDirectory(for: event.tool, sessionID: sessionID)
         let observedAt = DateFormatters.iso8601.date(from: event.ts) ?? Date()
+        let identityEvidence: HistorySessionAdoptionRequest.IdentityEvidence
+        if event.source == .codex,
+           event.producer == "codex_notify_hook",
+           event.reliability == .authoritative,
+           let metadata = CodexSessionResolver.metadata(
+               forSessionID: sessionID,
+               referenceDate: observedAt
+           ) {
+            identityEvidence = .authoritativeExactTab(validatedDirectory: metadata.cwd)
+        } else {
+            identityEvidence = .inferred
+        }
         return adoptHistorySessionIdentity(
             toolName: event.tool,
             sessionID: sessionID,
@@ -1493,7 +1507,8 @@ final class AppModel {
             tabID: event.tabID,
             observedAt: observedAt,
             state: nil,
-            reason: .historyEntry
+            reason: .historyEntry,
+            identityEvidence: identityEvidence
         )
     }
 
