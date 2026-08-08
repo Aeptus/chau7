@@ -5,17 +5,18 @@ private enum RestoredResumeRejectionWarningGate {
     private static let lock = NSLock()
     private static var warnedIdentities = Set<String>()
 
-    static func warnIfNeeded(sessionId: String, directory: String) {
+    static func warnIfNeeded(provider: String, sessionId: String, directory: String) {
         let canonicalDirectory = URL(fileURLWithPath: directory).standardizedFileURL.path
-        let identityKey = "claude|\(sessionId)|\(canonicalDirectory)"
+        let identityKey = "\(provider)|\(sessionId)|\(canonicalDirectory)"
 
         lock.lock()
         let shouldWarn = warnedIdentities.insert(identityKey).inserted
         lock.unlock()
 
         guard shouldWarn else { return }
+        let displayProvider = provider.capitalized
         Log.warn(
-            "sanitizeRestoredAIResumeOwnership: dropping unrestorable Claude metadata session=\(sessionId.prefix(8)) dir=\(directory)"
+            "sanitizeRestoredAIResumeOwnership: dropping unrestorable \(displayProvider) metadata session=\(sessionId.prefix(8)) dir=\(directory)"
         )
     }
 
@@ -149,7 +150,17 @@ extension OverlayTabsModel {
         let cacheKey = ObjectIdentifier(session)
         if let cached = codexResumeFallbackCache[cacheKey],
            cached.signature == fallbackSignature {
-            return cached.metadata
+            if let metadata = cached.metadata,
+               metadata.provider == "codex",
+               Self.codexSessionRequiresRolloutValidation(metadata.sessionId),
+               !Self.restoredCodexRolloutExists(
+                   sessionId: metadata.sessionId,
+                   referenceDate: referenceDate
+               ) {
+                codexResumeFallbackCache.removeValue(forKey: cacheKey)
+            } else {
+                return cached.metadata
+            }
         }
         if explicitProvider == "codex",
            let explicitSessionId,
@@ -157,7 +168,15 @@ extension OverlayTabsModel {
            cached.stableSignature == stableFallbackSignature,
            cached.metadata?.provider == "codex",
            cached.metadata?.sessionId == explicitSessionId {
-            return cached.metadata
+            if Self.codexSessionRequiresRolloutValidation(explicitSessionId),
+               !Self.restoredCodexRolloutExists(
+                   sessionId: explicitSessionId,
+                   referenceDate: referenceDate
+               ) {
+                codexResumeFallbackCache.removeValue(forKey: cacheKey)
+            } else {
+                return cached.metadata
+            }
         }
 
         let observedCandidates = recentHistoryEntries.compactMap { entry -> CodexSessionResolver.Candidate? in
@@ -210,7 +229,12 @@ extension OverlayTabsModel {
             }
             if let explicitSessionId,
                explicitProvider == "codex",
-               !claimedSessionIds.contains(explicitSessionId) {
+               !claimedSessionIds.contains(explicitSessionId),
+               (!Self.codexSessionRequiresRolloutValidation(explicitSessionId)
+                   || Self.restoredCodexRolloutExists(
+                       sessionId: explicitSessionId,
+                       referenceDate: referenceDate
+                   )) {
                 let preservedExplicit = (provider: "codex", sessionId: explicitSessionId)
                 codexResumeFallbackCache[cacheKey] = CachedCodexResumeFallback(
                     signature: fallbackSignature,
@@ -425,6 +449,7 @@ extension OverlayTabsModel {
     private static func sanitizeRestoredResumeCandidate(
         _ candidate: RestoredResumeCandidate,
         directory: String,
+        referenceDate: Date?,
         claimedSessions: Set<AIResumeOwnership.ClaimedSession>,
         fileManager: FileManager,
         environment: [String: String]
@@ -451,6 +476,7 @@ extension OverlayTabsModel {
                     environment: environment
                 ) else {
                     RestoredResumeRejectionWarningGate.warnIfNeeded(
+                        provider: provider,
                         sessionId: sessionId,
                         directory: directory
                     )
@@ -463,6 +489,22 @@ extension OverlayTabsModel {
                     environment: environment
                 )
             }
+        } else if provider == "codex",
+                  codexSessionRequiresRolloutValidation(sessionId) {
+            guard restoredCodexRolloutExists(
+                sessionId: sessionId,
+                referenceDate: referenceDate,
+                fileManager: fileManager,
+                environment: environment
+            ) else {
+                RestoredResumeRejectionWarningGate.warnIfNeeded(
+                    provider: provider,
+                    sessionId: sessionId,
+                    directory: directory
+                )
+                return nil
+            }
+            resumeDirectory = nil
         } else {
             resumeDirectory = nil
         }
@@ -481,6 +523,7 @@ extension OverlayTabsModel {
     private static func sanitizeRestoredResumeCandidates(
         _ candidates: [RestoredResumeCandidate],
         directory: String,
+        referenceDate: Date?,
         claimedSessions: Set<AIResumeOwnership.ClaimedSession>,
         fileManager: FileManager,
         environment: [String: String]
@@ -489,6 +532,7 @@ extension OverlayTabsModel {
             if let sanitized = sanitizeRestoredResumeCandidate(
                 candidate,
                 directory: directory,
+                referenceDate: referenceDate,
                 claimedSessions: claimedSessions,
                 fileManager: fileManager,
                 environment: environment
@@ -524,14 +568,32 @@ extension OverlayTabsModel {
         )
     }
 
-    private static func validateRestoredClaudeMetadata(
+    private static func validateRestoredMetadata(
         provider: String,
         sessionId: String,
         sessionIdSource: AISessionIdentitySource?,
         directory: String,
+        referenceDate: Date?,
         fileManager: FileManager,
         environment: [String: String]
     ) -> Bool {
+        if provider == "codex" {
+            guard codexSessionRequiresRolloutValidation(sessionId) else { return true }
+            guard restoredCodexRolloutExists(
+                sessionId: sessionId,
+                referenceDate: referenceDate,
+                fileManager: fileManager,
+                environment: environment
+            ) else {
+                RestoredResumeRejectionWarningGate.warnIfNeeded(
+                    provider: provider,
+                    sessionId: sessionId,
+                    directory: directory
+                )
+                return false
+            }
+            return true
+        }
         guard provider == "claude" else { return true }
         guard sessionIdSource != .synthetic else { return true }
         guard restoredClaudeTranscriptExists(
@@ -541,12 +603,32 @@ extension OverlayTabsModel {
             environment: environment
         ) else {
             RestoredResumeRejectionWarningGate.warnIfNeeded(
+                provider: provider,
                 sessionId: sessionId,
                 directory: directory
             )
             return false
         }
         return true
+    }
+
+    private static func codexSessionRequiresRolloutValidation(_ sessionId: String) -> Bool {
+        UUID(uuidString: sessionId) != nil
+    }
+
+    static func restoredCodexRolloutExists(
+        sessionId: String,
+        referenceDate: Date? = nil,
+        fileManager: FileManager = .default,
+        environment: [String: String] = ProcessInfo.processInfo.environment
+    ) -> Bool {
+        guard let normalizedSessionId = normalizeAISessionId(sessionId) else { return false }
+        return CodexSessionResolver.metadata(
+            forSessionID: normalizedSessionId,
+            referenceDate: referenceDate,
+            fileManager: fileManager,
+            environment: environment
+        ) != nil
     }
 
     static func resetRestoredResumeRejectionWarningsForTesting() {
@@ -586,6 +668,12 @@ extension OverlayTabsModel {
                         aiSessionIdSource: paneState.aiSessionIdSource
                     ),
                     directory: paneState.directory,
+                    referenceDate: [
+                        paneState.lastInputAt,
+                        paneState.lastOutputAt,
+                        paneState.agentStartedAt,
+                        paneState.lastExitAt
+                    ].compactMap { $0 }.max(),
                     claimedSessions: claimedSessions,
                     fileManager: fileManager,
                     environment: environment
@@ -626,6 +714,11 @@ extension OverlayTabsModel {
                     aiSessionIdSource: state.aiSessionIdSource
                 ),
                 directory: state.directory,
+                referenceDate: [
+                    state.lastInputAt,
+                    state.agentStartedAt,
+                    state.lastExitAt
+                ].compactMap { $0 }.max(),
                 claimedSessions: claimedSessions,
                 fileManager: fileManager,
                 environment: environment
@@ -782,11 +875,17 @@ extension OverlayTabsModel {
             fallbackAISessionIdSource: fallbackAISessionIdSource
         )
         for candidate in candidates {
-            guard validateRestoredClaudeMetadata(
+            guard validateRestoredMetadata(
                 provider: candidate.provider,
                 sessionId: candidate.sessionId,
                 sessionIdSource: candidate.sessionIdSource,
                 directory: paneState.directory,
+                referenceDate: [
+                    paneState.lastInputAt,
+                    paneState.lastOutputAt,
+                    paneState.agentStartedAt,
+                    paneState.lastExitAt
+                ].compactMap { $0 }.max(),
                 fileManager: fileManager,
                 environment: environment
             ) else {
@@ -934,11 +1033,26 @@ extension OverlayTabsModel {
         sessionId: String?,
         directory: String,
         referenceDate: Date?,
-        claimedSessionIds: Set<String> = []
+        claimedSessionIds: Set<String> = [],
+        fileManager: FileManager = .default,
+        environment: [String: String] = ProcessInfo.processInfo.environment
     ) -> (provider: String, sessionId: String)? {
         if let provider, let sessionId {
             guard !claimedSessionIds.contains(sessionId) else {
                 Log.info("resolveAIResumeMetadata: explicit sessionId=\(sessionId) already claimed by another tab, skipping")
+                return nil
+            }
+            if provider == "codex",
+               codexSessionRequiresRolloutValidation(sessionId),
+               !restoredCodexRolloutExists(
+                   sessionId: sessionId,
+                   referenceDate: referenceDate,
+                   fileManager: fileManager,
+                   environment: environment
+               ) {
+                Log.info(
+                    "resolveAIResumeMetadata: explicit Codex sessionId=\(sessionId) has no rollout, skipping"
+                )
                 return nil
             }
             Log.trace("resolveAIResumeMetadata: using explicit session metadata provider=\(provider), sessionId=\(sessionId)")

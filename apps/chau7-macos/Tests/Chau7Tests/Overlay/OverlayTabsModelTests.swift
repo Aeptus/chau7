@@ -2251,7 +2251,10 @@ final class OverlayTabsModelTests: XCTestCase {
     }
 
     func testSanitizeRestoredAIResumeOwnershipDropsDuplicateSessionIDs() {
-        let duplicateSessionID = "019d25d0-d0bd-7501-99ba-1f937c17b29b"
+        // This fixture tests ownership deduplication, not modern Codex rollout
+        // validation. Keep it opaque so those two independent policies do not
+        // make the test depend on a synthetic ~/.codex rollout file.
+        let duplicateSessionID = "duplicate-session-001"
         let states = [
             SavedTabState(
                 tabID: UUID().uuidString,
@@ -2379,7 +2382,9 @@ final class OverlayTabsModelTests: XCTestCase {
     }
 
     func testSanitizeRestoredAIResumeOwnershipUsesAgentLaunchResumeCommandWhenResumeCommandMissing() {
-        let sessionID = "019e0bd8-1367-7e53-97a5-3977e8d37c8a"
+        // Opaque legacy ID keeps this test focused on candidate precedence;
+        // UUID-shaped modern IDs are covered by CodexRestoreValidationTests.
+        let sessionID = "agent-launch-session-001"
         let paneID = UUID().uuidString
         let states = [
             SavedTabState(

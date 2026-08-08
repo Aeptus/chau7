@@ -3851,6 +3851,13 @@
   },
   {
     "category": "Restore",
+    "feature": "Codex Rollout-Validated Persistence",
+    "description": "UUID-shaped Codex session identities require a matching local rollout before autosave or restore trusts them, preventing obsolete resume commands from surviving another relaunch while preserving opaque legacy IDs and isolating resolver caches by sessions root",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "Restore",
     "feature": "Resume Restore Delivery Ledger",
     "description": "Pane-owned resume restore records scheduled, queued, delivered, rejected, and superseded outcomes per pane so stale retries stay diagnosable",
     "status": "Shipped",
