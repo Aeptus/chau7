@@ -2786,7 +2786,7 @@ final class TerminalSessionModel {
             pendingWaitingInputFallbackSawLiveOutput = false
             activeTerminalView?.insertSnippet(insertion)
             markRestoreBootstrapReady(source: "resume_prefill")
-            Log.info("Resume prefill delivered: \(text.prefix(60))")
+            Log.info("Resume command injected into terminal: \(text.prefix(60))")
             onDelivered?()
             scheduleRestorePrefillAutoSubmit(deliveredText: text)
             return .delivered

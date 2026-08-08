@@ -3858,6 +3858,13 @@
   },
   {
     "category": "Restore",
+    "feature": "Precise Resume-Injection Diagnostics",
+    "description": "Restore logs distinguish inserting a resume command into the terminal from the provider accepting or running it, preventing prefill delivery from being mistaken for a successful session resume",
+    "status": "Shipped",
+    "differentiator": "No"
+  },
+  {
+    "category": "Restore",
     "feature": "Resume Restore Delivery Ledger",
     "description": "Pane-owned resume restore records scheduled, queued, delivered, rejected, and superseded outcomes per pane so stale retries stay diagnosable",
     "status": "Shipped",
