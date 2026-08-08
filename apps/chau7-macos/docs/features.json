@@ -273,6 +273,13 @@
     "differentiator": "Yes"
   },
   {
+    "category": "API Analytics",
+    "feature": "Freshly Built Bundled Proxy",
+    "description": "The macOS app build compiles chau7-proxy instead of copying whatever artifact was last left in build/darwin, so the bundled binary always understands the correlation path its paired Codex wrapper emits and cannot silently ship a stale protocol half",
+    "status": "Shipped",
+    "differentiator": "No"
+  },
+  {
     "category": "Monitoring",
     "feature": "Bounded AI Event Queues",
     "description": "Append-only hook event logs (claude-events.jsonl, .ai-events.log) are compacted to their most recent slice at monitor start before tailing, so the transient queues can't grow unbounded; durable history stays in the telemetry database",

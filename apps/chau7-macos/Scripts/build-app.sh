@@ -214,10 +214,20 @@ for legal_file in LICENSE-RTK LICENSE-RTK-APACHE UPSTREAM-SYNC.md; do
   fi
 done
 
-# Copy Go proxy binary if available
+# Copy or build the Go proxy binary.
+# Copy-only shipped a two-month-old binary against a freshly built app: the
+# Swift side had learned to emit /_chau7/project/<token>/v1 correlation paths
+# while the bundled proxy predated correlation_path.go and forwarded the
+# prefix verbatim, so Codex got a 404 from chatgpt.com. Nothing catches that
+# skew at compile time — the two halves are only wrong when paired — so build
+# the proxy here rather than trusting whatever is left in build/darwin.
 PROXY_BIN="$ROOT_DIR/chau7-proxy/build/darwin/chau7-proxy"
+if command -v go >/dev/null 2>&1; then
+    run_cmd bash "$ROOT_DIR/chau7-proxy/build.sh" darwin
+fi
 if [[ -f "$PROXY_BIN" ]]; then
     run_cmd cp "$PROXY_BIN" "$CONTENTS/Resources/chau7-proxy"
+    run_cmd chmod 755 "$CONTENTS/Resources/chau7-proxy"
     log_ok "Copied proxy binary: chau7-proxy"
 else
     log_warn "Proxy binary not found at $PROXY_BIN (run chau7-proxy/build.sh first)"
