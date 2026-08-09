@@ -12,6 +12,11 @@ import Foundation
 /// source exists, directly otherwise.
 final class UnixSocketListener {
 
+    struct SocketFileIdentity: Equatable {
+        let device: dev_t
+        let inode: ino_t
+    }
+
     /// Which syscall failed during `start`, with its errno, so callers can
     /// keep their existing per-step log messages and retry policies.
     struct StartFailure: Error {
@@ -44,6 +49,7 @@ final class UnixSocketListener {
     private let queue: DispatchQueue
     private var socketFD: Int32 = -1
     private var acceptSource: DispatchSourceRead?
+    private var ownedSocketFileIdentity: SocketFileIdentity?
 
     /// The listening descriptor, or -1 when closed. Exposed for the health
     /// snapshots the MCP and Scripting servers report. Reset to -1 by the
@@ -131,6 +137,8 @@ final class UnixSocketListener {
             throw StartFailure(step: .listen, errnoValue: listenErrno)
         }
 
+        ownedSocketFileIdentity = Self.socketFileIdentity(at: path)
+
         if let socketFilePermissions {
             chmod(path, socketFilePermissions)
         }
@@ -164,9 +172,12 @@ final class UnixSocketListener {
             socketFD = -1
         }
 
-        if removeSocketFile {
+        if removeSocketFile,
+           let ownedSocketFileIdentity,
+           Self.socketFileIdentity(at: path) == ownedSocketFileIdentity {
             unlink(path)
         }
+        ownedSocketFileIdentity = nil
     }
 
     // MARK: - Shared Socket Helpers
@@ -201,6 +212,12 @@ final class UnixSocketListener {
                 connect(fd, sockaddrPtr, socklen_t(MemoryLayout<sockaddr_un>.size)) == 0
             }
         }
+    }
+
+    private static func socketFileIdentity(at path: String) -> SocketFileIdentity? {
+        var info = stat()
+        guard lstat(path, &info) == 0 else { return nil }
+        return SocketFileIdentity(device: info.st_dev, inode: info.st_ino)
     }
 
     // MARK: - Private

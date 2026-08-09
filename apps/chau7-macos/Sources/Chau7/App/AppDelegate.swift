@@ -93,6 +93,7 @@ private final class SettingsToolbarDelegate: NSObject, NSToolbarDelegate {
     /// short enough that a genuine focus switch still demotes promptly.
     private let lifecycleDemotionDebounceSeconds: TimeInterval = 0.35
     private var selectedTabRevealCycleByWindow: [Int: Int] = [:]
+    private var ownsApplicationInstance = false
     private var didFinishLaunching = false
     private var didPerformInitialSetup = false
     private var didStartDeferredStartupWork = false
@@ -127,6 +128,23 @@ private final class SettingsToolbarDelegate: NSObject, NSToolbarDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         Self.shared = self
         Log.info("AppDelegate did finish launching.")
+
+        if !RuntimeIsolation.isIsolatedTestMode() {
+            switch ApplicationInstanceLock.shared.acquire() {
+            case .acquired(let owner):
+                ownsApplicationInstance = true
+                Log.info("Application instance acquired pid=\(owner.pid) token=\(owner.launchToken.uuidString)")
+            case .alreadyRunning(let owner):
+                Log.warn("Duplicate application launch refused owner_pid=\(owner?.pid.description ?? "unknown")")
+                ApplicationInstanceLock.shared.activateExistingApplication(owner: owner)
+                NSApp.terminate(nil)
+                return
+            case .failed(let lockErrno):
+                Log.error("Application instance lock failed errno=\(lockErrno); refusing unsafe startup")
+                NSApp.terminate(nil)
+                return
+            }
+        }
         IncidentBreadcrumbStore.shared.reportPreviousCriticalMemoryPressureIfNeeded()
         didFinishLaunching = true
         Chau7ObservabilityService.shared.recordEvent(type: "app_launched", subsystem: "app_lifecycle")
@@ -570,6 +588,11 @@ private final class SettingsToolbarDelegate: NSObject, NSToolbarDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        guard RuntimeIsolation.isIsolatedTestMode() || ownsApplicationInstance else { return }
+        defer {
+            ApplicationInstanceLock.shared.release()
+            ownsApplicationInstance = false
+        }
         multiWindowAutoSaveTimer?.cancel()
         multiWindowAutoSaveTimer = nil
         saveAllWindowStates(reason: .termination)

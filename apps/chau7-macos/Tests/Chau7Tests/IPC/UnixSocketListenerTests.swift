@@ -142,6 +142,24 @@ final class UnixSocketListenerTests: XCTestCase {
         XCTAssertEqual(connectClient(to: path), -1, "connect after stop() should fail")
     }
 
+    func testOldListenerCannotRemoveReplacementSocket() throws {
+        let path = makeSocketPath()
+        let oldListener = UnixSocketListener(path: path, queue: DispatchQueue(label: "test.usl.old"))
+        try oldListener.start(backlog: 1, onAccept: { close($0) }, onAcceptFailure: { _ in })
+
+        unlink(path)
+        let replacement = UnixSocketListener(path: path, queue: DispatchQueue(label: "test.usl.replacement"))
+        try replacement.start(backlog: 1, onAccept: { close($0) }, onAcceptFailure: { _ in })
+        defer { replacement.stop(removeSocketFile: true) }
+
+        oldListener.stop(removeSocketFile: true)
+
+        XCTAssertTrue(FileManager.default.fileExists(atPath: path))
+        let clientFD = connectClient(to: path)
+        XCTAssertGreaterThanOrEqual(clientFD, 0, "stopping an old owner must preserve the replacement listener")
+        if clientFD >= 0 { close(clientFD) }
+    }
+
     func testConcurrentConnectionsSmoke() throws {
         let path = makeSocketPath()
         let clientCount = 8

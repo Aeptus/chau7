@@ -1,5 +1,12 @@
 [
   {
+    "category": "Architecture",
+    "feature": "Single-Instance and Socket Ownership",
+    "description": "Chau7 acquires a process-lifetime lock before restoring tabs, redirects duplicate launches to the existing process, and removes Unix socket paths only while the stopping listener still owns their filesystem identity",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
     "category": "AI Integration",
     "feature": "Chau7CLI Repo Skills Support",
     "description": "chau7-cli skills --scope repo validates .chau7/skills/<skill-id> sources, installs and syncs them into repo-local .claude/skills/<skill-id> and .codex/skills/<skill-id> targets, resolves relative skill paths from the command working directory, and keeps repo install state under the repo .chau7 directory",
