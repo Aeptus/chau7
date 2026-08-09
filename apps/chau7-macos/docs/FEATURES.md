@@ -66,6 +66,7 @@ Detection methods:
 
 ### AI Features
 
+- **Expected event log severity** — routine multiline-paste interception remains auditable at info level, while idempotent attention-style cleanup for an already-closed tab is debug-only. Warning severity remains reserved for actual confirmation, blocking, homoglyph, and operational failure paths.
 - **Provider status outage backoff** — application-wide provider polling collapses an all-provider transport outage into one classified summary and exponentially backs off from one to fifteen minutes. Partial or successful refreshes reset the backoff and existing fresh observations remain available.
 - **PTY startup activity detection** — shell readiness counts both rendered grid changes and metadata-only terminal events such as OSC-7. All drain modes cancel the startup watchdog on first activity, so a responsive shell whose control sequences are consumed before raw-output capture is not mislabeled as hung.
 - **Approval timeout isolation** — every runtime approval timeout carries its request ID and can expire only that request. Late callbacks cannot touch a newer approval, and multiple independently unanswered approvals fail their turns without escalating an otherwise healthy runtime session to failed.

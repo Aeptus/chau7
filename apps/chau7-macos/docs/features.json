@@ -1,5 +1,12 @@
 [
   {
+    "category": "Scripting & Debugging",
+    "feature": "Expected Event Log Severity",
+    "description": "Routine multiline-paste interception remains auditable at info level and idempotent style cleanup for an already-closed tab is debug-only, while actual dangerous-command and operational failure paths retain warning or error severity",
+    "status": "Shipped",
+    "differentiator": "No"
+  },
+  {
     "category": "AI Detection & Integration",
     "feature": "Provider Status Outage Backoff",
     "description": "Application-wide provider polling collapses all-provider transport outages into one classified summary and exponentially backs off from one to fifteen minutes, while successful or partial rounds reset the outage state and preserve fresh observations",

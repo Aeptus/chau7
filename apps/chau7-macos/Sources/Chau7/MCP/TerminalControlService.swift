@@ -406,7 +406,7 @@ final class TerminalControlService {
             if tabExistsInModel {
                 Log.debug("clearPersistentStyle: tabID \(tabID) exists but no persistent style to clear")
             } else {
-                Log.warn("clearPersistentStyle: tabID \(tabID) not found across windows")
+                Log.debug("clearPersistentStyle: tabID \(tabID) already absent across windows")
             }
             return false
         }
