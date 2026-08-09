@@ -102,6 +102,8 @@ final class ProviderStatusMonitor {
     @ObservationIgnored private var pollingTask: Task<Void, Never>?
     @ObservationIgnored private var foregroundObserver: NSObjectProtocol?
     @ObservationIgnored private var isRefreshInFlight = false
+    @ObservationIgnored private(set) var consecutiveFailedRefreshes = 0
+    @ObservationIgnored private(set) var nextRefreshAllowedAt: Date?
 
     private static let sources: [ProviderStatusSource] = [
         ProviderStatusSource(
@@ -180,8 +182,9 @@ final class ProviderStatusMonitor {
         }
     }
 
-    func refresh() async {
+    func refresh(at now: Date = Date()) async {
         guard !isRefreshInFlight else { return }
+        if let nextRefreshAllowedAt, now < nextRefreshAllowedAt { return }
         isRefreshInFlight = true
         defer { isRefreshInFlight = false }
 
@@ -207,8 +210,9 @@ final class ProviderStatusMonitor {
             return values
         }
 
-        let checkedAt = Date()
+        let checkedAt = now
         var updatedSnapshots = snapshotsByProvider
+        var failures: [(provider: String, message: String)] = []
         for outcome in outcomes {
             switch outcome {
             case .success(let source, let data):
@@ -223,9 +227,26 @@ final class ProviderStatusMonitor {
                     )
                 }
             case .failure(let source, let message):
-                Log.warn(
-                    "Provider status fetch failed provider=\(source.providerKey): \(message)"
-                )
+                failures.append((source.providerKey, message))
+            }
+        }
+
+        if failures.count == Self.sources.count {
+            consecutiveFailedRefreshes += 1
+            let delay = Self.retryDelay(afterConsecutiveFailures: consecutiveFailedRefreshes)
+            nextRefreshAllowedAt = checkedAt.addingTimeInterval(delay)
+            let providers = failures.map(\.provider).sorted().joined(separator: ",")
+            let classes = Set(failures.map { Self.failureClass(for: $0.message) }).sorted().joined(separator: ",")
+            Log.warn(
+                "Provider status refresh unavailable providers=\(providers) " +
+                    "error_classes=\(classes) retry_in=\(Int(delay))s"
+            )
+        } else {
+            consecutiveFailedRefreshes = 0
+            nextRefreshAllowedAt = nil
+            if !failures.isEmpty {
+                let providers = failures.map(\.provider).sorted().joined(separator: ",")
+                Log.warn("Provider status partial refresh failure providers=\(providers)")
             }
         }
 
@@ -235,6 +256,20 @@ final class ProviderStatusMonitor {
             checkedAt.timeIntervalSince($0.value.checkedAt) <= Self.maximumSnapshotAge
         }
         snapshotsByProvider = updatedSnapshots
+    }
+
+    static func retryDelay(afterConsecutiveFailures failures: Int) -> TimeInterval {
+        let exponent = min(max(0, failures - 1), 4)
+        return min(15 * 60, 60 * pow(2, Double(exponent)))
+    }
+
+    static func failureClass(for message: String) -> String {
+        let normalized = message.lowercased()
+        if normalized.contains("offline") || normalized.contains("-1009") { return "offline" }
+        if normalized.contains("timed out") || normalized.contains("-1001") { return "timeout" }
+        if normalized.contains("hostname") || normalized.contains("-1003") { return "dns" }
+        if normalized.contains("connection was lost") || normalized.contains("-1005") { return "connection_lost" }
+        return "transport"
     }
 
     /// Returns a fresh alert for a detected AI tool/provider, or nil when the

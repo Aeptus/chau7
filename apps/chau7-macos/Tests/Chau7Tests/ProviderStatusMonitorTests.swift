@@ -20,6 +20,36 @@ final class ProviderStatusMonitorTests: XCTestCase {
             Set(["anthropic", "openai", "github", "google"])
         )
     }
+
+    func testFailedRefreshesBackOffAndClassifyTransportNoise() async {
+        let fetcher = CountingFailingStatusFetcher()
+        let monitor = ProviderStatusMonitor(fetcher: fetcher)
+        let now = Date(timeIntervalSince1970: 1_000)
+
+        await monitor.refresh(at: now)
+        await monitor.refresh(at: now.addingTimeInterval(30))
+
+        XCTAssertEqual(fetcher.requestCount, 4)
+        XCTAssertEqual(monitor.consecutiveFailedRefreshes, 1)
+        XCTAssertEqual(monitor.nextRefreshAllowedAt, now.addingTimeInterval(60))
+        XCTAssertEqual(ProviderStatusMonitor.failureClass(for: "NSURLErrorDomain Code=-1009 offline"), "offline")
+        XCTAssertEqual(ProviderStatusMonitor.failureClass(for: "request timed out"), "timeout")
+        XCTAssertEqual(ProviderStatusMonitor.retryDelay(afterConsecutiveFailures: 5), 15 * 60)
+    }
+}
+
+private final class CountingFailingStatusFetcher: ProviderStatusDataFetching, @unchecked Sendable {
+    private let lock = NSLock()
+    private var count = 0
+
+    var requestCount: Int {
+        lock.withLock { count }
+    }
+
+    func data(from url: URL) async throws -> Data {
+        lock.withLock { count += 1 }
+        throw URLError(.notConnectedToInternet)
+    }
 }
 
 private struct StubStatusFetcher: ProviderStatusDataFetching {
