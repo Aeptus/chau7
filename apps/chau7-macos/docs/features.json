@@ -1,5 +1,12 @@
 [
   {
+    "category": "Telemetry",
+    "feature": "Mature Latency Warning Signals",
+    "description": "Every threshold-crossing terminal latency event remains in structured telemetry, while warning logs require at least twenty samples plus sustained p95 degradation or a single event at three times the threshold",
+    "status": "Shipped",
+    "differentiator": "No"
+  },
+  {
     "category": "Scripting & Debugging",
     "feature": "Expected Event Log Severity",
     "description": "Routine multiline-paste interception remains auditable at info level and idempotent style cleanup for an already-closed tab is debug-only, while actual dangerous-command and operational failure paths retain warning or error severity",

@@ -89,31 +89,11 @@ extension TerminalSessionModel {
         lastLoggedAt: inout Date?
     ) {
         guard elapsedMs >= thresholdMs else { return }
-        // Skip first few measurements — startup/first-paint is always slow
-        guard samples.count >= 3 else { return }
-        let now = Date()
-        if let last = lastLoggedAt, now.timeIntervalSince(last) < latencyLogCooldownSeconds {
-            return
-        }
-        lastLoggedAt = now
-        let percentiles = latencyPercentilesSummary(for: samples)
-        let tabName = (tabTitleOverride?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false)
-            ? tabTitleOverride!
-            : title
+        let percentileValues = latencyPercentiles(for: samples)
+        let trimmedTabTitle = tabTitleOverride?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let tabName = (trimmedTabTitle?.isEmpty == false ? trimmedTabTitle : nil) ?? title
         let appName = activeAppName ?? "shell"
         let avg = averageMs ?? -1
-        // Tag with current CTO state for this session so we can answer
-        // "is CTO contributing to input latency?" from logs alone. The
-        // `stat()` is cheap (single syscall) and the spike path already
-        // includes higher-cost work like percentile computation.
-        let ctoActive = CTOFlagManager.isFlagActive(sessionID: tabIdentifier)
-        Log.warn(
-            "Latency spike: \(kind)=\(Int(elapsedMs.rounded()))ms avg=\(avg)ms " +
-                "p50/p95=\(percentiles) tab=\(tabName) app=\(appName) " +
-                "cwd=\(tabPathDisplayName()) cto_active=\(ctoActive)"
-        )
-
-        let percentileValues = latencyPercentiles(for: samples)
         recordLagEvent(
             kind: LagKind(rawValue: kind) ?? .input,
             elapsedMs: Int(elapsedMs.rounded()),
@@ -125,6 +105,40 @@ extension TerminalSessionModel {
             appName: appName,
             cwd: tabPathDisplayName()
         )
+
+        guard Self.shouldWarnForLatencySpike(
+            elapsedMs: elapsedMs,
+            thresholdMs: thresholdMs,
+            sampleCount: percentileValues.count,
+            p95Ms: percentileValues.p95
+        ) else { return }
+        let now = Date()
+        if let last = lastLoggedAt, now.timeIntervalSince(last) < latencyLogCooldownSeconds {
+            return
+        }
+        lastLoggedAt = now
+        let percentiles = latencyPercentilesSummary(for: samples)
+        // Tag with current CTO state for this session so we can answer
+        // "is CTO contributing to input latency?" from logs alone. The
+        // `stat()` is cheap (single syscall) and the spike path already
+        // includes higher-cost work like percentile computation.
+        let ctoActive = CTOFlagManager.isFlagActive(sessionID: tabIdentifier)
+        Log.warn(
+            "Latency spike: \(kind)=\(Int(elapsedMs.rounded()))ms avg=\(avg)ms " +
+                "p50/p95=\(percentiles) tab=\(tabName) app=\(appName) " +
+                "cwd=\(tabPathDisplayName()) cto_active=\(ctoActive)"
+        )
+
+    }
+
+    static func shouldWarnForLatencySpike(
+        elapsedMs: Double,
+        thresholdMs: Double,
+        sampleCount: Int,
+        p95Ms: Int?
+    ) -> Bool {
+        guard elapsedMs >= thresholdMs, sampleCount >= 20 else { return false }
+        return Double(p95Ms ?? 0) >= thresholdMs || elapsedMs >= thresholdMs * 3
     }
 
     private func recordLagEvent(
