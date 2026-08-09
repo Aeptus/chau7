@@ -108,6 +108,16 @@ public enum TabRenderLifecyclePolicy {
         return previousPhase != .active && nextPhase == .active
     }
 
+    public static func requiresTUIWinsizeNudge(
+        previousPhase: TabRenderPhase,
+        nextPhase: TabRenderPhase,
+        hostsTUIApp: Bool
+    ) -> Bool {
+        hostsTUIApp
+            && !previousPhase.keepsVisibleSurface
+            && nextPhase.keepsVisibleSurface
+    }
+
     public static func phase(for input: TabRenderLifecycleInput) -> TabRenderPhase {
         if input.isSelectedTab {
             guard input.isWindowVisibleForRendering else {

@@ -2895,14 +2895,22 @@ final class RustTerminalView: NSView {
 
         if previousPhase != phase {
             let resolvedTabID = UUID(uuidString: tabIdentifier)
+            let hostsLiveTUI = hostsTUIApp || (rustTerminal?.isAlternateScreenActive() ?? false)
             ScrollbackMemoryManager.shared.handlePhaseTransition(
                 viewId: String(viewId),
                 tabID: resolvedTabID,
                 rustFFI: rustTerminal,
                 from: previousPhase,
                 to: phase,
-                hostsTUIApp: hostsTUIApp || (rustTerminal?.isAlternateScreenActive() ?? false)
+                hostsTUIApp: hostsLiveTUI
             )
+            if TabRenderLifecyclePolicy.requiresTUIWinsizeNudge(
+                previousPhase: previousPhase,
+                nextPhase: phase,
+                hostsTUIApp: hostsLiveTUI
+            ) {
+                scheduleWinsizeNudge()
+            }
             // .hidden demotion flushes the Rust scrollback ring to disk —
             // keeping the Swift-side [String] duplicate of that exact buffer
             // resident would defeat the entire reclamation.

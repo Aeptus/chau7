@@ -70,6 +70,35 @@ final class ScrollbackMemoryManagerTests: XCTestCase {
         XCTAssertEqual(rust.replayedBuffers, [Data(text.utf8)])
     }
 
+    func testTUIHiddenTransitionPreservesRingWithoutCaptureOrReplay() {
+        let tabID = UUID()
+        let rust = MockScrollbackRustFFI(capturedText: "TUI history must survive\n")
+        let manager = ScrollbackMemoryManager(cacheDirectory: tempDirectory)
+
+        manager.handlePhaseTransition(
+            viewId: "test",
+            tabID: tabID,
+            rustFFI: rust,
+            from: .warm,
+            to: .hidden,
+            hostsTUIApp: true
+        )
+        manager.handlePhaseTransition(
+            viewId: "test",
+            tabID: tabID,
+            rustFFI: rust,
+            from: .hidden,
+            to: .active,
+            hostsTUIApp: true
+        )
+        manager.drainPendingOperationsForTesting(tabID: tabID)
+
+        XCTAssertTrue(rust.scrollbackSizes.isEmpty, "TUI ring capacity must remain untouched")
+        XCTAssertEqual(rust.plainCaptureCount, 0)
+        XCTAssertEqual(rust.ansiCaptureCount, 0)
+        XCTAssertTrue(rust.replayedBuffers.isEmpty)
+    }
+
     func testConfiguredScrollbackApplicationRespectsCurrentRenderPhase() {
         let tabID = UUID()
         let rust = MockScrollbackRustFFI(capturedText: nil)

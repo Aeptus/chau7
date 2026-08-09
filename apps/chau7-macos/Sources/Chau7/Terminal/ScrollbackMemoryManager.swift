@@ -103,8 +103,8 @@ final class ScrollbackMemoryManager {
     /// flattens the live TUI surface to plain text, and on reload `replayBuffer`
     /// then issues `ESC[2J ESC[H` + replays the flattened text, which destroys
     /// the running TUI's invariants (boxes/spinners/menus). Skip both for TUI
-    /// tabs: ring still gets resized so memory still tracks, but we never
-    /// flatten or repour the TUI surface from a stale snapshot.
+    /// tabs: the ring stays resident because shrinking it discards history,
+    /// while flattening and repouring would corrupt the live TUI surface.
     func handlePhaseTransition(
         viewId: String,
         tabID: UUID?,
@@ -123,8 +123,7 @@ final class ScrollbackMemoryManager {
             guard let self else { return }
             if ScrollbackRetentionPolicy.shouldFlushToDisk(from: oldPhase, to: newPhase) {
                 if hostsTUIApp {
-                    rustFFI.setScrollbackSize(UInt32(Self.viewportFloor))
-                    Log.info("ScrollbackMemoryManager[\(viewId)]: skipping flush for TUI tab \(oldPhase) -> \(newPhase)")
+                    Log.info("ScrollbackMemoryManager[\(viewId)]: preserving scrollback for TUI tab \(oldPhase) -> \(newPhase)")
                     return
                 }
                 stateLock.lock()
@@ -144,8 +143,7 @@ final class ScrollbackMemoryManager {
                 }
             } else if ScrollbackRetentionPolicy.shouldReloadFromDisk(from: oldPhase, to: newPhase) {
                 if hostsTUIApp {
-                    rustFFI.setScrollbackSize(UInt32(max(newCap, Self.viewportFloor)))
-                    Log.info("ScrollbackMemoryManager[\(viewId)]: skipping reload-replay for TUI tab \(oldPhase) -> \(newPhase)")
+                    Log.info("ScrollbackMemoryManager[\(viewId)]: TUI scrollback remained resident \(oldPhase) -> \(newPhase)")
                     return
                 }
                 reload(tabID: tabID, viewId: viewId, rustFFI: rustFFI, newCap: newCap)

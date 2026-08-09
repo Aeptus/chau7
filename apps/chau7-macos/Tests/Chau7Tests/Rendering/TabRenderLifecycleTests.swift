@@ -184,6 +184,40 @@ final class TabRenderLifecycleTests: XCTestCase {
         )
     }
 
+    func testTUIWinsizeNudgeWhenDormantSurfaceBecomesVisible() {
+        XCTAssertTrue(
+            TabRenderLifecyclePolicy.requiresTUIWinsizeNudge(
+                previousPhase: .warm,
+                nextPhase: .active,
+                hostsTUIApp: true
+            )
+        )
+        XCTAssertTrue(
+            TabRenderLifecyclePolicy.requiresTUIWinsizeNudge(
+                previousPhase: .hidden,
+                nextPhase: .passiveVisible,
+                hostsTUIApp: true
+            )
+        )
+    }
+
+    func testTUIWinsizeNudgeSkipsShellsAndAlreadyVisibleTransitions() {
+        XCTAssertFalse(
+            TabRenderLifecyclePolicy.requiresTUIWinsizeNudge(
+                previousPhase: .warm,
+                nextPhase: .active,
+                hostsTUIApp: false
+            )
+        )
+        XCTAssertFalse(
+            TabRenderLifecyclePolicy.requiresTUIWinsizeNudge(
+                previousPhase: .passiveVisible,
+                nextPhase: .active,
+                hostsTUIApp: true
+            )
+        )
+    }
+
     // MARK: - helpers
 
     private func makeInput(

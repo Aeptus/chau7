@@ -3864,6 +3864,13 @@
     "differentiator": "No"
   },
   {
+    "category": "Terminal Core",
+    "feature": "Lossless Live-TUI Suspension",
+    "description": "Memory-pressure demotion keeps a live TUI's uncached scrollback ring resident instead of shrinking it to the hidden 50-line floor, and dormant-to-visible transitions send a coalesced SIGWINCH redraw without requiring a manual pane resize",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
     "category": "Restore",
     "feature": "Resume Restore Delivery Ledger",
     "description": "Pane-owned resume restore records scheduled, queued, delivered, rejected, and superseded outcomes per pane so stale retries stay diagnosable",
