@@ -1,5 +1,12 @@
 [
   {
+    "category": "Terminal Core",
+    "feature": "Owned Terminal Shutdown Escalation",
+    "description": "Every graceful-close escalation revalidates the shell PID plus kernel start time, direct app parent, and non-zombie state before signaling, so PID reuse, reparenting, reaped shells, and permission failures cannot fall through to an unrelated direct-PID kill",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
     "category": "Architecture",
     "feature": "Single-Instance and Socket Ownership",
     "description": "Chau7 acquires a process-lifetime lock before restoring tabs, redirects duplicate launches to the existing process, and removes Unix socket paths only while the stopping listener still owns their filesystem identity",

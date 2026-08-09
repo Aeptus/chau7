@@ -91,4 +91,42 @@ final class TerminalSessionModelTerminationTests: XCTestCase {
         )
         XCTAssertEqual(pgids, [])
     }
+
+    func testShellSignalRequiresMatchingLiveOwnedProcess() {
+        let expected = TerminalSessionModel.ShellProcessIdentity(
+            pid: 600,
+            startedAtSeconds: 10,
+            startedAtMicroseconds: 20
+        )
+        let live = TerminalSessionModel.ShellProcessSnapshot(
+            identity: expected,
+            parentPID: 42,
+            isZombie: false
+        )
+
+        XCTAssertTrue(TerminalSessionModel.shouldSignalShellProcess(
+            expectedIdentity: expected,
+            snapshot: live,
+            appPID: 42
+        ))
+        XCTAssertFalse(TerminalSessionModel.shouldSignalShellProcess(
+            expectedIdentity: expected,
+            snapshot: .init(identity: expected, parentPID: 42, isZombie: true),
+            appPID: 42
+        ))
+        XCTAssertFalse(TerminalSessionModel.shouldSignalShellProcess(
+            expectedIdentity: expected,
+            snapshot: .init(identity: expected, parentPID: 99, isZombie: false),
+            appPID: 42
+        ))
+        XCTAssertFalse(TerminalSessionModel.shouldSignalShellProcess(
+            expectedIdentity: expected,
+            snapshot: .init(
+                identity: .init(pid: 600, startedAtSeconds: 11, startedAtMicroseconds: 20),
+                parentPID: 42,
+                isZombie: false
+            ),
+            appPID: 42
+        ))
+    }
 }

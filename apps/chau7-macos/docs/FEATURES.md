@@ -66,6 +66,7 @@ Detection methods:
 
 ### AI Features
 
+- **Owned terminal shutdown escalation** — every graceful-close escalation revalidates the shell's PID plus kernel start time, direct app parent, and non-zombie state before signaling. PID reuse, process reparenting, completed-but-unreaped shells, and permission failures stop escalation instead of risking an unrelated direct-PID kill.
 - **Single-instance ownership** — Chau7 takes a process-lifetime lock before restoring tabs, redirects duplicate launches to the existing process, and makes Unix socket cleanup conditional on the listener still owning the bound filesystem identity. An older process can therefore neither duplicate restored shells nor remove a newer MCP or scripting endpoint during shutdown.
 - **Menu Bar Command Center** -- the macOS status item summarizes live AI sessions across all overlay windows, prioritizes approval-required, waiting-input, and stuck sessions, opens the exact terminal pane, exposes pinned snippets as Insert actions with clipboard fallback, and deep-links Monitoring and Snippets settings.
 - **Codex feedback prompt detection** — each active Codex session tails its rollout for structured `request_user_input` calls, publishes authoritative waiting-input attention and clears it on the matching result; bounded catch-up, asynchronous rollout lookup retries, call-id deduplication, and failed-tool debounce keep the lifecycle deterministic. Completed turns that conservatively end in an explicit choice or confirmation request remain a heuristic fallback instead of false completions.

@@ -1942,6 +1942,7 @@ final class TerminalSessionModel {
 
     func closeSessionForTermination() {
         let shellPID = activeRustTerminalView?.shellPid ?? 0
+        let shellIdentity = Self.currentShellProcessSnapshot(of: shellPID)?.identity
         terminationStateQueue.sync {
             closeSessionRequested = true
             closeSessionRequestedAt = Date()
@@ -1968,14 +1969,15 @@ final class TerminalSessionModel {
         // the regular tab-close path and shouldn't trust it ran.
         releaseCTOFlagOnClose()
 
-        guard shellPID > 0 else { return }
+        guard shellPID > 0, let shellIdentity,
+              isLiveOwnedShellProcess(expectedIdentity: shellIdentity) else { return }
 
         // Kill the entire process group immediately. SIGKILL is the only
         // signal that reliably terminates deep process trees (Codex with
         // MCP servers, npm chains) without waiting for graceful shutdown.
         Log.warn("App termination: SIGKILL to shell process group (pid=\(shellPID), session='\(title)')")
         let descendants = captureDescendantPIDs(of: shellPID)
-        sendTerminationSignal(SIGKILL, toShellPID: shellPID)
+        sendTerminationSignal(SIGKILL, expectedIdentity: shellIdentity)
         killEscapedDescendants(descendants, shellPID: shellPID)
     }
 
@@ -2044,7 +2046,9 @@ final class TerminalSessionModel {
 
     private func scheduleForcedTerminationIfNeeded() {
         let shellPID = existingRustTerminalView?.shellPid ?? 0
-        guard shellPID > 0 else { return }
+        guard shellPID > 0,
+              let shellIdentity = Self.currentShellProcessSnapshot(of: shellPID)?.identity,
+              isLiveOwnedShellProcess(expectedIdentity: shellIdentity) else { return }
 
         // AI tools (Claude Code, Codex) need longer to flush buffers and clean up
         // WebSocket connections on exit. Plain shells exit in <100ms.
@@ -2052,21 +2056,21 @@ final class TerminalSessionModel {
 
         forcedTerminationWorkItem?.cancel()
         let work = DispatchWorkItem { [weak self] in
-            self?.forceTerminateShellProcessGroupIfNeeded(expectedPID: shellPID)
+            self?.forceTerminateShellProcessGroupIfNeeded(expectedIdentity: shellIdentity)
         }
         forcedTerminationWorkItem = work
         DispatchQueue.main.asyncAfter(deadline: .now() + graceDelay, execute: work)
     }
 
-    private func forceTerminateShellProcessGroupIfNeeded(expectedPID: pid_t) {
+    private func forceTerminateShellProcessGroupIfNeeded(expectedIdentity: ShellProcessIdentity) {
         var shouldForce = false
         terminationStateQueue.sync {
             shouldForce = closeSessionRequested && !didHandleProcessTermination
         }
         guard shouldForce else { return }
 
-        let currentPID = existingRustTerminalView?.shellPid ?? 0
-        guard currentPID == expectedPID, currentPID > 0 else { return }
+        guard isLiveOwnedShellProcess(expectedIdentity: expectedIdentity) else { return }
+        let currentPID = expectedIdentity.pid
 
         // Stage 1: SIGINT — gives the process a chance to handle Ctrl+C gracefully
         terminationStateQueue.sync {
@@ -2075,7 +2079,7 @@ final class TerminalSessionModel {
             }
         }
         Log.warn("Force-terminating shell process group for session '\(title)' (pid=\(currentPID))")
-        sendTerminationSignalToTree(SIGINT, shellPID: currentPID)
+        sendTerminationSignalToTree(SIGINT, expectedIdentity: expectedIdentity)
 
         // Stage 1b (AI sessions only): re-send SIGINT after 0.6s. Modern AI
         // TUIs (Codex, Claude Code) implement a "Press Ctrl+C again to exit"
@@ -2087,7 +2091,7 @@ final class TerminalSessionModel {
         let isAISession = activeAppName != nil
         if isAISession {
             let secondSigint = DispatchWorkItem { [weak self] in
-                self?.repeatSIGINTForAITUIIfNeeded(expectedPID: expectedPID)
+                self?.repeatSIGINTForAITUIIfNeeded(expectedIdentity: expectedIdentity)
             }
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.6, execute: secondSigint)
         }
@@ -2095,62 +2099,61 @@ final class TerminalSessionModel {
         // Stage 2: SIGTERM after 2s — standard termination request
         let sigtermDelay: TimeInterval = isAISession ? 2.0 : 0.5
         let sigterm = DispatchWorkItem { [weak self] in
-            self?.escalateToSIGTERM(expectedPID: expectedPID)
+            self?.escalateToSIGTERM(expectedIdentity: expectedIdentity)
         }
         forcedTerminationWorkItem = sigterm
         DispatchQueue.main.asyncAfter(deadline: .now() + sigtermDelay, execute: sigterm)
     }
 
-    private func repeatSIGINTForAITUIIfNeeded(expectedPID: pid_t) {
+    private func repeatSIGINTForAITUIIfNeeded(expectedIdentity: ShellProcessIdentity) {
         var shouldForce = false
         terminationStateQueue.sync {
             shouldForce = closeSessionRequested && !didHandleProcessTermination
         }
         guard shouldForce else { return }
 
-        let currentPID = existingRustTerminalView?.shellPid ?? 0
-        guard currentPID == expectedPID, currentPID > 0 else { return }
+        guard isLiveOwnedShellProcess(expectedIdentity: expectedIdentity) else { return }
 
         terminationStateQueue.sync {
             secondSigintSentAt = Date()
         }
-        sendTerminationSignalToTree(SIGINT, shellPID: currentPID)
+        sendTerminationSignalToTree(SIGINT, expectedIdentity: expectedIdentity)
     }
 
-    private func escalateToSIGTERM(expectedPID: pid_t) {
+    private func escalateToSIGTERM(expectedIdentity: ShellProcessIdentity) {
         var shouldForce = false
         terminationStateQueue.sync {
             shouldForce = closeSessionRequested && !didHandleProcessTermination
         }
         guard shouldForce else { return }
 
-        let currentPID = existingRustTerminalView?.shellPid ?? 0
-        guard currentPID == expectedPID, currentPID > 0 else { return }
+        guard isLiveOwnedShellProcess(expectedIdentity: expectedIdentity) else { return }
+        let currentPID = expectedIdentity.pid
 
         terminationStateQueue.sync {
             sigtermSentAt = Date()
         }
         let diagnostics = terminationDiagnosticsSummary(stage: "sigterm", shellPID: currentPID)
         Log.warn("Shell process group survived SIGINT; sending SIGTERM (pid=\(currentPID)) \(diagnostics)")
-        sendTerminationSignalToTree(SIGTERM, shellPID: currentPID)
+        sendTerminationSignalToTree(SIGTERM, expectedIdentity: expectedIdentity)
 
         // Stage 3: SIGKILL after 3s more — unconditional kill
         let hardKill = DispatchWorkItem { [weak self] in
-            self?.forceKillShellProcessGroupIfNeeded(expectedPID: expectedPID)
+            self?.forceKillShellProcessGroupIfNeeded(expectedIdentity: expectedIdentity)
         }
         forcedTerminationWorkItem = hardKill
         DispatchQueue.main.asyncAfter(deadline: .now() + 3.0, execute: hardKill)
     }
 
-    private func forceKillShellProcessGroupIfNeeded(expectedPID: pid_t) {
+    private func forceKillShellProcessGroupIfNeeded(expectedIdentity: ShellProcessIdentity) {
         var shouldForce = false
         terminationStateQueue.sync {
             shouldForce = closeSessionRequested && !didHandleProcessTermination
         }
         guard shouldForce else { return }
 
-        let currentPID = existingRustTerminalView?.shellPid ?? 0
-        guard currentPID == expectedPID, currentPID > 0 else { return }
+        guard isLiveOwnedShellProcess(expectedIdentity: expectedIdentity) else { return }
+        let currentPID = expectedIdentity.pid
 
         // Capture process tree once — used for both diagnostics and descendant kill
         let descendants = captureDescendantPIDs(of: currentPID)
@@ -2158,7 +2161,7 @@ final class TerminalSessionModel {
             stage: "sigkill", shellPID: currentPID, preCapturedDescendants: descendants
         )
         Log.error("Shell process group still alive after SIGINT+SIGTERM; sending SIGKILL (pid=\(currentPID)) \(diagnostics)")
-        sendTerminationSignal(SIGKILL, toShellPID: currentPID)
+        sendTerminationSignal(SIGKILL, expectedIdentity: expectedIdentity)
 
         // Kill escaped descendants individually (processes in child process groups
         // that the group SIGKILL above cannot reach).
@@ -2286,7 +2289,7 @@ final class TerminalSessionModel {
         // Reversed: BFS order is parents-first, so reversed gives leaf-first.
         // Killing leaves first prevents init reparenting from invalidating ppid checks.
         for desc in descendants.reversed() {
-            guard let livePPID = Self.currentParentPID(of: desc.pid) else {
+            guard let livePPID = Self.currentShellProcessSnapshot(of: desc.pid)?.parentPID else {
                 skipped += 1 // Process already exited — nothing to kill
                 continue
             }
@@ -2314,26 +2317,72 @@ final class TerminalSessionModel {
     /// Returns the current parent PID of a live process via sysctl, or nil if the
     /// process no longer exists. Used to validate a PID hasn't been recycled before
     /// sending SIGKILL.
-    private static func currentParentPID(of pid: pid_t) -> pid_t? {
+    struct ShellProcessIdentity: Equatable {
+        let pid: pid_t
+        let startedAtSeconds: Int64
+        let startedAtMicroseconds: Int32
+    }
+
+    struct ShellProcessSnapshot: Equatable {
+        let identity: ShellProcessIdentity
+        let parentPID: pid_t
+        let isZombie: Bool
+    }
+
+    static func shouldSignalShellProcess(
+        expectedIdentity: ShellProcessIdentity,
+        snapshot: ShellProcessSnapshot?,
+        appPID: pid_t
+    ) -> Bool {
+        guard let snapshot else { return false }
+        return snapshot.identity == expectedIdentity
+            && snapshot.parentPID == appPID
+            && !snapshot.isZombie
+    }
+
+    private func isLiveOwnedShellProcess(expectedIdentity: ShellProcessIdentity) -> Bool {
+        let currentPID = existingRustTerminalView?.shellPid ?? expectedIdentity.pid
+        guard currentPID == expectedIdentity.pid else { return false }
+        return Self.shouldSignalShellProcess(
+            expectedIdentity: expectedIdentity,
+            snapshot: Self.currentShellProcessSnapshot(of: currentPID),
+            appPID: ProcessInfo.processInfo.processIdentifier
+        )
+    }
+
+    private static func currentShellProcessSnapshot(of pid: pid_t) -> ShellProcessSnapshot? {
+        guard pid > 0 else { return nil }
         var info = kinfo_proc()
         var size = MemoryLayout<kinfo_proc>.size
         var mib: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_PID, pid]
         guard sysctl(&mib, 4, &info, &size, nil, 0) == 0, size > 0 else {
             return nil
         }
-        return info.kp_eproc.e_ppid
+        return ShellProcessSnapshot(
+            identity: ShellProcessIdentity(
+                pid: pid,
+                startedAtSeconds: Int64(info.kp_proc.p_starttime.tv_sec),
+                startedAtMicroseconds: Int32(info.kp_proc.p_starttime.tv_usec)
+            ),
+            parentPID: info.kp_eproc.e_ppid,
+            isZombie: info.kp_proc.p_stat == SZOMB
+        )
     }
 
-    private func sendTerminationSignal(_ signal: Int32, toShellPID shellPID: pid_t) {
+    @discardableResult
+    private func sendTerminationSignal(_ signal: Int32, expectedIdentity: ShellProcessIdentity) -> Bool {
+        guard isLiveOwnedShellProcess(expectedIdentity: expectedIdentity) else { return false }
+        let shellPID = expectedIdentity.pid
         if Darwin.kill(-shellPID, signal) == 0 {
-            return
+            return true
         }
-        if errno == ESRCH {
-            _ = Darwin.kill(shellPID, signal)
-        } else {
-            Log.warn("Failed to send signal \(signal) to process group \(shellPID): errno=\(errno)")
-            _ = Darwin.kill(shellPID, signal)
+        let groupErrno = errno
+        guard groupErrno == ESRCH else {
+            Log.warn("Failed to send signal \(signal) to process group \(shellPID): errno=\(groupErrno)")
+            return false
         }
+        guard isLiveOwnedShellProcess(expectedIdentity: expectedIdentity) else { return false }
+        return Darwin.kill(shellPID, signal) == 0
     }
 
     /// Sends `signal` to the shell's process group plus every distinct child
@@ -2347,8 +2396,9 @@ final class TerminalSessionModel {
     /// the processes that actually needed to flush. Stage 3 SIGKILL doesn't
     /// need this — `killEscapedDescendants` already kills each descendant
     /// individually.
-    private func sendTerminationSignalToTree(_ signal: Int32, shellPID: pid_t) {
-        sendTerminationSignal(signal, toShellPID: shellPID)
+    private func sendTerminationSignalToTree(_ signal: Int32, expectedIdentity: ShellProcessIdentity) {
+        guard sendTerminationSignal(signal, expectedIdentity: expectedIdentity) else { return }
+        let shellPID = expectedIdentity.pid
 
         let descendants = captureDescendantPIDs(of: shellPID)
         let pgids = Self.distinctDescendantPGIDsToSignal(
