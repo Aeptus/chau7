@@ -54,6 +54,7 @@ final class BackgroundDrainBackoffTests: XCTestCase {
     func testBackgroundSnapshotMovesBackendReadDurationOffMainThread() throws {
         let view = RustTerminalView(frame: .zero)
         view.startupBytesLogged = 2048
+        view.hasObservedInitialPTYActivity = true
         let fake = FakeTerminalBackend()
         fake.backendReadDelay = 0.002
         let output = Data("background output\n".utf8)
