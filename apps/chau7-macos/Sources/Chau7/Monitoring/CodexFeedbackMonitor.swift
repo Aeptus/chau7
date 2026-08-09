@@ -9,6 +9,25 @@ final class CodexFeedbackMonitor {
     typealias PromptHandler = (CodexFeedbackPrompt) -> Void
     typealias ResolutionHandler = (_ callID: String, _ hasOtherPendingPrompt: Bool) -> Void
 
+    struct HealthSnapshot: Equatable {
+        enum Phase: String {
+            case stopped
+            case watching
+        }
+
+        let phase: Phase
+        let rolloutName: String
+        let linesObserved: Int
+        let structuredRecordsObserved: Int
+        let pendingPromptCount: Int
+        let lastStructuredRecordAt: Date?
+
+        var summary: String {
+            "\(phase.rawValue) rollout=\(rolloutName) lines=\(linesObserved) "
+                + "structured=\(structuredRecordsObserved) pending=\(pendingPromptCount)"
+        }
+    }
+
     private enum CallState {
         case pending(CodexFeedbackPrompt)
         case announced(CodexFeedbackPrompt)
@@ -29,6 +48,10 @@ final class CodexFeedbackMonitor {
     private var statesByCallID: [String: CallState] = [:]
     private var callOrder: [String] = []
     private var pendingAnnouncements: [String: DispatchWorkItem] = [:]
+    private var phase: HealthSnapshot.Phase = .stopped
+    private var linesObserved = 0
+    private var structuredRecordsObserved = 0
+    private var lastStructuredRecordAt: Date?
 
     init(
         fileURL: URL,
@@ -62,6 +85,10 @@ final class CodexFeedbackMonitor {
             callOrder.removeAll(keepingCapacity: true)
             pendingAnnouncements.values.forEach { $0.cancel() }
             pendingAnnouncements.removeAll(keepingCapacity: true)
+            phase = .watching
+            linesObserved = 0
+            structuredRecordsObserved = 0
+            lastStructuredRecordAt = nil
             return generation
         }
 
@@ -95,11 +122,32 @@ final class CodexFeedbackMonitor {
         stateQueue.sync {
             guard isRunning else { return }
             isRunning = false
+            phase = .stopped
             generation &+= 1
             pendingAnnouncements.values.forEach { $0.cancel() }
             pendingAnnouncements.removeAll()
             statesByCallID.removeAll()
             callOrder.removeAll()
+        }
+    }
+
+    func healthSnapshot() -> HealthSnapshot {
+        stateQueue.sync {
+            HealthSnapshot(
+                phase: phase,
+                rolloutName: fileURL.lastPathComponent,
+                linesObserved: linesObserved,
+                structuredRecordsObserved: structuredRecordsObserved,
+                pendingPromptCount: statesByCallID.values.reduce(into: 0) { count, state in
+                    switch state {
+                    case .pending, .announced:
+                        count += 1
+                    case .completed:
+                        break
+                    }
+                },
+                lastStructuredRecordAt: lastStructuredRecordAt
+            )
         }
     }
 
@@ -115,6 +163,7 @@ final class CodexFeedbackMonitor {
     }
 
     private func consume(line: String, generation: UInt64) {
+        linesObserved += 1
         guard let record = CodexRolloutFeedbackParser.parse(line: line) else { return }
 
         switch record {
@@ -123,12 +172,17 @@ final class CodexFeedbackMonitor {
                   statesByCallID[callID] == nil else {
                 return
             }
+            recordStructuredActivity()
             statesByCallID[callID] = .pending(prompt)
             callOrder.append(callID)
             scheduleAnnouncement(for: prompt, callID: callID, generation: generation)
 
         case .toolCallCompleted(let callID, _):
             let priorState = statesByCallID[callID]
+            if case .completed = priorState {
+                return
+            }
+            recordStructuredActivity()
             pendingAnnouncements.removeValue(forKey: callID)?.cancel()
             if priorState == nil {
                 callOrder.append(callID)
@@ -153,6 +207,11 @@ final class CodexFeedbackMonitor {
         }
 
         pruneCompletedCallsIfNeeded()
+    }
+
+    private func recordStructuredActivity() {
+        structuredRecordsObserved += 1
+        lastStructuredRecordAt = Date()
     }
 
     private func scheduleAnnouncement(

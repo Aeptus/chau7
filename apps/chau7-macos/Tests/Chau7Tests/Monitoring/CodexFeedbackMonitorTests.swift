@@ -49,6 +49,36 @@ final class CodexFeedbackMonitorTests: XCTestCase {
         wait(for: [resolved], timeout: 5)
 
         XCTAssertEqual(resolvedCallID, "call_live")
+        let resolvedHealth = monitor.healthSnapshot()
+        XCTAssertEqual(resolvedHealth.phase, .watching)
+        XCTAssertGreaterThanOrEqual(resolvedHealth.linesObserved, 2)
+        XCTAssertEqual(resolvedHealth.structuredRecordsObserved, 2)
+        XCTAssertEqual(resolvedHealth.pendingPromptCount, 0)
+        XCTAssertNotNil(resolvedHealth.lastStructuredRecordAt)
+        monitor.stop()
+        XCTAssertEqual(monitor.healthSnapshot().phase, .stopped)
+    }
+
+    func testHealthSnapshotCountsUnrelatedAndStructuredLinesSeparately() throws {
+        let announced = expectation(description: "prompt announced")
+        let monitor = CodexFeedbackMonitor(
+            fileURL: rolloutURL,
+            debounceSeconds: 0.02,
+            onPrompt: { _ in announced.fulfill() },
+            onResolution: { _, _ in }
+        )
+        monitor.start()
+
+        try append(#"{"type":"event_msg","payload":{"type":"token_count"}}"#)
+        try append(requestLine(callID: "call_health"))
+        wait(for: [announced], timeout: 5)
+
+        let health = monitor.healthSnapshot()
+        XCTAssertEqual(health.phase, .watching)
+        XCTAssertGreaterThanOrEqual(health.linesObserved, 2)
+        XCTAssertEqual(health.structuredRecordsObserved, 1)
+        XCTAssertEqual(health.pendingPromptCount, 1)
+        XCTAssertTrue(health.summary.contains("pending=1"))
         monitor.stop()
     }
 

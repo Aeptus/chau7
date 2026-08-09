@@ -2,6 +2,18 @@ import Foundation
 import Chau7Core
 
 extension TerminalSessionModel {
+    var codexFeedbackHealthSummary: String {
+        if let monitor = codexFeedbackMonitor {
+            return monitor.healthSnapshot().summary
+        }
+        if codexFeedbackMonitorSessionID != nil {
+            return codexFeedbackLookupRetryWorkItem == nil
+                ? "unresolved"
+                : "discovering rollout"
+        }
+        return "inactive"
+    }
+
     /// Keeps exactly one structured-feedback monitor bound to the active
     /// Codex session. Rollout discovery happens off the main thread because
     /// its final fallback may scan the sessions directory.

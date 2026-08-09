@@ -1,4 +1,5 @@
 Category,Feature,Description,Status,Differentiator
+Scripting & Debugging,Codex Feedback Monitor Health,"The debug console exposes rollout discovery and exhaustion plus active rollout name, observed-line count, structured-record count, and unresolved prompt count for each Codex tab",Shipped,Yes
 AI Integration,Turn-Aware Notification Reconciliation,A short terminal coalescing window rejects lagging same-turn heuristics while later interactive observations reopen a new turn for providers such as Codex that omit explicit start lifecycle events,Shipped,Yes
 AI Integration,DND-Independent Tab Attention,"Focus modes suppress intrusive notification channels while retaining configured or default tab styling, without re-enabling rules the user explicitly disabled",Shipped,Yes
 AI Integration,Canonical Notification Semantic Precedence,"Provider-native event types remain audit provenance while the canonical adapter trigger owns downstream behavior, preventing reclassified Codex feedback requests from reverting to finished semantics during tab-attention delivery",Shipped,Yes

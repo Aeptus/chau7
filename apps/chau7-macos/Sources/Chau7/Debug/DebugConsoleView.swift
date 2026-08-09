@@ -313,6 +313,13 @@ struct DebugConsoleView: View {
                         stateRow(L("debug.inputLag", "Input Lag"), value: tab.session?.inputLatencySummary ?? L("status.notAvailable", "n/a"))
                         stateRow(L("debug.outputLag", "Output Lag"), value: tab.session?.outputLatencySummary ?? L("status.notAvailable", "n/a"))
                         stateRow(L("debug.scanLag", "Scan Lag"), value: tab.session?.scanLagSummary ?? L("status.notAvailable", "n/a"))
+                        if let session = tab.session,
+                           AIResumeParser.normalizeProviderName(session.lastAIProvider ?? "") == "codex" {
+                            stateRow(
+                                L("debug.codexFeedbackMonitor", "Codex Feedback"),
+                                value: session.codexFeedbackHealthSummary
+                            )
+                        }
                         if tab.session?.isGitRepo == true {
                             stateRow(L("debug.gitBranch", "Git Branch"), value: tab.session?.gitBranch ?? L("status.unknown", "unknown"))
                         }

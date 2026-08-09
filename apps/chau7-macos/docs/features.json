@@ -1,5 +1,12 @@
 [
   {
+    "category": "Scripting & Debugging",
+    "feature": "Codex Feedback Monitor Health",
+    "description": "The debug console exposes rollout discovery and exhaustion plus active rollout name, observed-line count, structured-record count, and unresolved prompt count for each Codex tab",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
     "category": "AI Integration",
     "feature": "Turn-Aware Notification Reconciliation",
     "description": "A short terminal coalescing window rejects lagging same-turn heuristics while later interactive observations reopen a new turn for providers such as Codex that omit explicit start lifecycle events",
