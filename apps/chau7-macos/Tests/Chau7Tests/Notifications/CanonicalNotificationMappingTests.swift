@@ -89,6 +89,30 @@ final class CanonicalNotificationMappingTests: XCTestCase {
         XCTAssertEqual(kind, .waitingForInput)
     }
 
+    func testCanonicalWaitingInputOverridesCodexTurnCompleteProvenance() {
+        let kind = NotificationSemanticMapping.kind(
+            rawType: "agent-turn-complete",
+            notificationType: nil,
+            canonicalType: "waiting_input"
+        )
+
+        XCTAssertEqual(kind, .waitingForInput)
+    }
+
+    func testAIEventExposesCanonicalSemanticKind() {
+        let event = AIEvent(
+            source: .codex,
+            type: "waiting_input",
+            rawType: "agent-turn-complete",
+            tool: "Codex",
+            message: "Choose one",
+            ts: "2026-08-09T00:00:00Z",
+            reliability: .heuristic
+        )
+
+        XCTAssertEqual(event.notificationSemanticKind, NotificationSemanticKind.waitingForInput)
+    }
+
     func testSpecificRawTypeBeatsGenericCanonicalType() {
         let kind: NotificationSemanticKind = NotificationSemanticMapping.kind(
             rawType: "permission_request",

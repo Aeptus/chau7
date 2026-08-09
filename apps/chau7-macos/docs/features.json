@@ -1,5 +1,12 @@
 [
   {
+    "category": "AI Integration",
+    "feature": "Canonical Notification Semantic Precedence",
+    "description": "Provider-native event types remain audit provenance while the canonical adapter trigger owns downstream behavior, preventing reclassified Codex feedback requests from reverting to finished semantics during tab-attention delivery",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
     "category": "Telemetry",
     "feature": "Mature Latency Warning Signals",
     "description": "Every threshold-crossing terminal latency event remains in structured telemetry, while warning logs require at least twenty samples plus sustained p95 degradation or a single event at three times the threshold",

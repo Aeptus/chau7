@@ -26,7 +26,7 @@ public enum NotificationSemanticMapping {
         let rawKind = rawType.flatMap(kind(forRawType:)) ?? .unknown
         if let canonicalType,
            let canonicalKind = kind(forRawType: canonicalType),
-           rawKind == .unknown || rawTypeShouldYieldToCanonical(rawType) {
+           rawKind == .unknown || isCanonicalTriggerType(canonicalType) {
             return canonicalKind
         }
 
@@ -87,14 +87,9 @@ public enum NotificationSemanticMapping {
             .joined(separator: "_")
     }
 
-    private static func rawTypeShouldYieldToCanonical(_ rawType: String?) -> Bool {
-        guard let rawType else { return true }
-        switch normalize(rawType) {
-        case "notification", "idle":
-            return true
-        default:
-            return false
-        }
+    private static func isCanonicalTriggerType(_ type: String) -> Bool {
+        let normalized = normalize(type)
+        return SemanticTriggerType.allCases.contains { $0.rawValue == normalized }
     }
 
     public static func isInputPromptLike(
@@ -117,5 +112,17 @@ public enum NotificationSemanticMapping {
             || haystack.contains("input requested")
             || haystack.contains("question requested")
             || haystack.contains("ready for your input")
+    }
+}
+
+public extension AIEvent {
+    /// The semantic meaning selected by the provider adapter. `type` is the
+    /// canonical trigger vocabulary; `rawType` remains provenance only.
+    var notificationSemanticKind: NotificationSemanticKind {
+        NotificationSemanticMapping.kind(
+            rawType: rawType,
+            notificationType: notificationType,
+            canonicalType: type
+        )
     }
 }

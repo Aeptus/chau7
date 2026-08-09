@@ -581,11 +581,7 @@ final class NotificationManager {
     }
 
     private func clearResolvedInteractiveAttentionIfNeeded(for event: AIEvent) {
-        let semanticKind = NotificationSemanticMapping.kind(
-            rawType: event.rawType,
-            notificationType: event.notificationType,
-            canonicalType: event.type
-        )
+        let semanticKind = event.notificationSemanticKind
         guard NotificationDeliverySemantics.shouldClearPersistentAttentionStyle(
             event: event,
             semanticKind: semanticKind
@@ -640,11 +636,7 @@ final class NotificationManager {
     }
 
     private func assertInteractiveAttentionIfNeeded(for event: AIEvent) {
-        let semanticKind = NotificationSemanticMapping.kind(
-            rawType: event.rawType,
-            notificationType: event.notificationType,
-            canonicalType: event.type
-        )
+        let semanticKind = event.notificationSemanticKind
         let attentionKind = TabAttentionKind.fromNotificationSemantic(semanticKind)
         guard attentionKind.isInteractive else { return }
         guard let tabID = event.tabID else {
