@@ -1,6 +1,13 @@
 [
   {
     "category": "AI Integration",
+    "feature": "Turn-Aware Notification Reconciliation",
+    "description": "A short terminal coalescing window rejects lagging same-turn heuristics while later interactive observations reopen a new turn for providers such as Codex that omit explicit start lifecycle events",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "AI Integration",
     "feature": "DND-Independent Tab Attention",
     "description": "Focus modes suppress intrusive notification channels while retaining configured or default tab styling, without re-enabling rules the user explicitly disabled",
     "status": "Shipped",

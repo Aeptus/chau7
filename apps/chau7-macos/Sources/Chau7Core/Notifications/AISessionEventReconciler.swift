@@ -140,6 +140,21 @@ public final class AISessionEventReconciler {
                 )
             }
 
+            // Some providers (notably Codex notify hooks) expose only turn-end
+            // events. A later turn can therefore reach an interactive prompt
+            // without an intervening user_prompt/tool_start lifecycle event.
+            // Keep the terminal coalescing window as protection against a
+            // lagging same-turn heuristic, then treat a later interactive
+            // observation as a new turn boundary.
+            if state.isInteractiveAttention,
+               observation.timestamp.timeIntervalSince(previous.updatedAt) > terminalRepeatWindow {
+                return .init(
+                    emit: true,
+                    updatesState: true,
+                    reason: "Reopened terminal session for later-turn \(state.rawValue)"
+                )
+            }
+
             if state.isTerminal {
                 if state == previous.state {
                     return sameStateDecision(
@@ -162,7 +177,7 @@ public final class AISessionEventReconciler {
             return .init(
                 emit: false,
                 updatesState: false,
-                reason: "Stale post-terminal \(state.rawValue) after \(previous.state.rawValue)"
+                reason: "Same-turn post-terminal \(state.rawValue) after \(previous.state.rawValue)"
             )
         }
 

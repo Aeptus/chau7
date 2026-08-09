@@ -152,10 +152,63 @@ final class AISessionEventReconcilerTests: XCTestCase {
         XCTAssertEqual(reconciler.reconcile(finished), .emit(finished))
         switch reconciler.reconcile(staleWaiting) {
         case .drop(let reason):
-            XCTAssertTrue(reason.contains("Stale post-terminal"))
+            XCTAssertTrue(reason.contains("Same-turn post-terminal"))
         case .emit:
             XCTFail("Fallback attention after finished should be suppressed")
         }
+    }
+
+    func testLaterHeuristicAttentionReopensNextTurnWithoutLifecycleEvent() {
+        let reconciler = AISessionEventReconciler(terminalRepeatWindow: 10)
+        let now = Date()
+        let finished = enrichedEvent(
+            type: "finished",
+            kind: .taskFinished,
+            sessionID: "SESSION-1",
+            producer: "codex_notify_hook",
+            reliability: .authoritative
+        )
+        let nextTurnFeedback = enrichedEvent(
+            type: "waiting_input",
+            kind: .waitingForInput,
+            sessionID: "session-1",
+            producer: "codex_notify_hook",
+            reliability: .heuristic
+        )
+
+        XCTAssertEqual(reconciler.reconcile(finished, now: now), .emit(finished))
+        XCTAssertEqual(
+            reconciler.reconcile(nextTurnFeedback, now: now.addingTimeInterval(11)),
+            .emit(nextTurnFeedback)
+        )
+    }
+
+    func testImmediateHeuristicAttentionRemainsCoalescedWithFinishedTurn() {
+        let reconciler = AISessionEventReconciler(terminalRepeatWindow: 10)
+        let now = Date()
+        let finished = enrichedEvent(
+            type: "finished",
+            kind: .taskFinished,
+            sessionID: "SESSION-1",
+            producer: "codex_notify_hook",
+            reliability: .authoritative
+        )
+        let laggingFeedback = enrichedEvent(
+            type: "waiting_input",
+            kind: .waitingForInput,
+            sessionID: "session-1",
+            producer: "codex_notify_hook",
+            reliability: .heuristic
+        )
+
+        XCTAssertEqual(reconciler.reconcile(finished, now: now), .emit(finished))
+        guard case .drop(let reason) = reconciler.reconcile(
+            laggingFeedback,
+            now: now.addingTimeInterval(1)
+        ) else {
+            return XCTFail("A lagging same-turn heuristic must remain suppressed")
+        }
+        XCTAssertTrue(reason.contains("Same-turn post-terminal"))
     }
 
     func testAuthoritativePermissionReopensFinishedSessionWithoutLifecycleEvent() {
