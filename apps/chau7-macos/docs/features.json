@@ -1,5 +1,12 @@
 [
   {
+    "category": "AI Integration",
+    "feature": "Approval Timeout Isolation",
+    "description": "Runtime approval timers are bound to the exact approval request that created them, so late callbacks cannot expire newer requests and repeated distinct unanswered approvals fail only their owning turns rather than poisoning the whole session",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
     "category": "Terminal Core",
     "feature": "Owned Terminal Shutdown Escalation",
     "description": "Every graceful-close escalation revalidates the shell PID plus kernel start time, direct app parent, and non-zombie state before signaling, so PID reuse, reparenting, reaped shells, and permission failures cannot fall through to an unrelated direct-PID kill",
