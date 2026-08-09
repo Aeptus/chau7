@@ -55,7 +55,7 @@ final class RustTerminalViewTextInputTests: XCTestCase {
         XCTAssertTrue(
             RustTerminalView.shouldKeepStartupPolling(
                 isTerminalStarted: true,
-                startupBytesLogged: 0,
+                hasObservedInitialPTYActivity: false,
                 awaitingInitialPTYOutput: true
             )
         )
@@ -65,7 +65,7 @@ final class RustTerminalViewTextInputTests: XCTestCase {
         XCTAssertFalse(
             RustTerminalView.shouldKeepStartupPolling(
                 isTerminalStarted: true,
-                startupBytesLogged: 1,
+                hasObservedInitialPTYActivity: true,
                 awaitingInitialPTYOutput: true
             )
         )
@@ -75,10 +75,16 @@ final class RustTerminalViewTextInputTests: XCTestCase {
         XCTAssertFalse(
             RustTerminalView.shouldKeepStartupPolling(
                 isTerminalStarted: true,
-                startupBytesLogged: 0,
+                hasObservedInitialPTYActivity: false,
                 awaitingInitialPTYOutput: false
             )
         )
+    }
+
+    func testMetadataOnlyPollCountsAsPTYStartupActivity() {
+        XCTAssertTrue(RustTerminalView.containsPTYActivity(.metadataChanged))
+        XCTAssertTrue(RustTerminalView.containsPTYActivity(.gridChanged))
+        XCTAssertFalse(RustTerminalView.containsPTYActivity([]))
     }
 
     func testShouldRefreshVisibleTerminalFromPumpOnlyForVisibleChangingTabs() {

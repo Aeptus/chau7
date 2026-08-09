@@ -66,6 +66,7 @@ Detection methods:
 
 ### AI Features
 
+- **PTY startup activity detection** — shell readiness counts both rendered grid changes and metadata-only terminal events such as OSC-7. All drain modes cancel the startup watchdog on first activity, so a responsive shell whose control sequences are consumed before raw-output capture is not mislabeled as hung.
 - **Approval timeout isolation** — every runtime approval timeout carries its request ID and can expire only that request. Late callbacks cannot touch a newer approval, and multiple independently unanswered approvals fail their turns without escalating an otherwise healthy runtime session to failed.
 - **Owned terminal shutdown escalation** — every graceful-close escalation revalidates the shell's PID plus kernel start time, direct app parent, and non-zombie state before signaling. PID reuse, process reparenting, completed-but-unreaped shells, and permission failures stop escalation instead of risking an unrelated direct-PID kill.
 - **Single-instance ownership** — Chau7 takes a process-lifetime lock before restoring tabs, redirects duplicate launches to the existing process, and makes Unix socket cleanup conditional on the listener still owning the bound filesystem identity. An older process can therefore neither duplicate restored shells nor remove a newer MCP or scripting endpoint during shutdown.

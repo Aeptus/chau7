@@ -1932,6 +1932,7 @@ final class RustTerminalView: NSView {
 
     /// Track startup bytes for debugging
     var startupBytesLogged = 0
+    var hasObservedInitialPTYActivity = false
     var recentMissingCmdClickPaths: [String: Date] = [:]
     let missingCmdClickWarningCooldown: TimeInterval = 5
 
@@ -2366,6 +2367,7 @@ final class RustTerminalView: NSView {
         isTerminalStarted = true
         didEmitProcessTermination = false
         startupBytesLogged = 0
+        hasObservedInitialPTYActivity = false
         isAwaitingInitialPTYOutput = true
 
         // Recalculate dimensions with the shared render geometry contract so
@@ -2436,7 +2438,7 @@ final class RustTerminalView: NSView {
         // Schedule a one-shot timeout: if no PTY output arrives within 5 seconds,
         // notify the UI so it can show a "shell initializing" indicator.
         let work = DispatchWorkItem { [weak self] in
-            guard let self, startupBytesLogged == 0 else { return }
+            guard let self, !hasObservedInitialPTYActivity else { return }
             Log.warn("RustTerminalView[\(viewId)]: No PTY output after 5s — shell may be hung")
             isAwaitingInitialPTYOutput = false
             shellStartupTimeoutWork = nil
@@ -2729,17 +2731,30 @@ final class RustTerminalView: NSView {
     private var isShellBootstrapPending: Bool {
         Self.shouldKeepStartupPolling(
             isTerminalStarted: isTerminalStarted,
-            startupBytesLogged: startupBytesLogged,
+            hasObservedInitialPTYActivity: hasObservedInitialPTYActivity,
             awaitingInitialPTYOutput: isAwaitingInitialPTYOutput
         )
     }
 
     static func shouldKeepStartupPolling(
         isTerminalStarted: Bool,
-        startupBytesLogged: Int,
+        hasObservedInitialPTYActivity: Bool,
         awaitingInitialPTYOutput: Bool
     ) -> Bool {
-        isTerminalStarted && startupBytesLogged == 0 && awaitingInitialPTYOutput
+        isTerminalStarted && !hasObservedInitialPTYActivity && awaitingInitialPTYOutput
+    }
+
+    static func containsPTYActivity(_ flags: TerminalPollEventFlags) -> Bool {
+        !flags.isEmpty
+    }
+
+    func noteInitialPTYActivity(_ flags: TerminalPollEventFlags) {
+        guard !hasObservedInitialPTYActivity, Self.containsPTYActivity(flags) else { return }
+        hasObservedInitialPTYActivity = true
+        isAwaitingInitialPTYOutput = false
+        shellStartupTimeoutWork?.cancel()
+        shellStartupTimeoutWork = nil
+        updatePollingMode(reason: "firstPTYActivity")
     }
 
     static func shouldRefreshVisibleTerminalFromPump(
@@ -2990,7 +3005,7 @@ final class RustTerminalView: NSView {
 
     /// Called by `TerminalEventDrain` on the main thread when PTY data arrives.
     /// Processes terminal state and triggers rendering.
-    func handleEventDrainData(drainGridChanged: Bool) {
+    func handleEventDrainData(drainFlags: TerminalPollEventFlags) {
         guard !isBeingDeallocated else { return }
         guard let rust = rustTerminal else { return }
 
@@ -2999,12 +3014,14 @@ final class RustTerminalView: NSView {
         // event drain's blocking poll returned. This also processes pending
         // events (titles, clipboard, shell integration).
         let followUpFlags = rust.pollEvents(timeout: 0)
+        let activityFlags = drainFlags.union(followUpFlags)
         let snapshot = extractTerminalDrainSnapshotLocked(
             rust: rust,
-            changed: drainGridChanged || followUpFlags.contains(.gridChanged),
+            changed: drainFlags.contains(.gridChanged) || followUpFlags.contains(.gridChanged),
             caller: "eventDrain"
         )
         terminalPollAccessLock.unlock()
+        noteInitialPTYActivity(activityFlags)
         let result = applyTerminalDrainSnapshot(
             snapshot,
             rust: rust,

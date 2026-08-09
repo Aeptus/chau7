@@ -112,7 +112,7 @@ final class TerminalEventDrain {
         Log.trace("TerminalEventDrain[\(viewId)]: cancelled, exiting")
     }
 
-    /// Dispatches `view.handleEventDrainData(drainGridChanged:)` to the main queue if no
+    /// Dispatches `view.handleEventDrainData(drainFlags:)` to the main queue if no
     /// previous dispatch is still in flight; otherwise drops this wake.
     /// Pure coalescence — see `coalesceLock` doc for the rationale.
     private func dispatchHandlerIfNotInFlight(view: RustTerminalView, flags: TerminalPollEventFlags) {
@@ -137,7 +137,7 @@ final class TerminalEventDrain {
                 finishHandler(view: nil)
                 return
             }
-            view.handleEventDrainData(drainGridChanged: flags.contains(.gridChanged))
+            view.handleEventDrainData(drainFlags: flags)
             finishHandler(view: view)
         }
     }

@@ -1,5 +1,12 @@
 [
   {
+    "category": "Terminal Core",
+    "feature": "PTY Startup Activity Detection",
+    "description": "Shell startup readiness counts rendered grid changes and metadata-only PTY events such as OSC-7 across event, background, and synchronous drain paths, preventing responsive shells from being mislabeled as hung when control sequences precede raw output capture",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
     "category": "AI Integration",
     "feature": "Approval Timeout Isolation",
     "description": "Runtime approval timers are bound to the exact approval request that created them, so late callbacks cannot expire newer requests and repeated distinct unanswered approvals fail only their owning turns rather than poisoning the whole session",

@@ -128,6 +128,7 @@ extension RustTerminalView {
             caller: caller
         )
         terminalPollAccessLock.unlock()
+        noteInitialPTYActivity(flags)
         return applyTerminalDrainSnapshot(
             snapshot,
             rust: rust,
@@ -307,7 +308,8 @@ extension RustTerminalView {
         // (Ensures onOutput callback fires so shell integration and detectors receive data)
         if var outputData = snapshot.outputData, !outputData.isEmpty {
             // Cancel the shell-startup-slow timer on first PTY output
-            if startupBytesLogged == 0 {
+            if !hasObservedInitialPTYActivity {
+                hasObservedInitialPTYActivity = true
                 isAwaitingInitialPTYOutput = false
                 shellStartupTimeoutWork?.cancel()
                 shellStartupTimeoutWork = nil

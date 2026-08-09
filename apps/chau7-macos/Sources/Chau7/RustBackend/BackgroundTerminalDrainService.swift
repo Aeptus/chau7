@@ -137,6 +137,7 @@ final class BackgroundTerminalDrainService {
                 guard let view,
                       let currentRust = view.rustTerminal,
                       currentRust === rust else { return }
+                view.noteInitialPTYActivity(flags)
                 _ = view.applyTerminalDrainSnapshot(
                     drainSnapshot,
                     rust: currentRust,
