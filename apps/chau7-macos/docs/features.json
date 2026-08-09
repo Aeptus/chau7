@@ -1,6 +1,13 @@
 [
   {
     "category": "AI Integration",
+    "feature": "DND-Independent Tab Attention",
+    "description": "Focus modes suppress intrusive notification channels while retaining configured or default tab styling, without re-enabling rules the user explicitly disabled",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "AI Integration",
     "feature": "Canonical Notification Semantic Precedence",
     "description": "Provider-native event types remain audit provenance while the canonical adapter trigger owns downstream behavior, preventing reclassified Codex feedback requests from reverting to finished semantics during tab-attention delivery",
     "status": "Shipped",

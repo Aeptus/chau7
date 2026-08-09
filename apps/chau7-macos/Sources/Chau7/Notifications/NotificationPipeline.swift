@@ -89,8 +89,9 @@ enum NotificationPipeline {
     /// the unmatched-trigger default (this logic was previously duplicated
     /// inline for both cases and had started to drift). `makeActions` is
     /// lazy and nil for the unmatched-trigger path, preserving the original
-    /// check ordering: DND → unfocused → resolve actions/all-disabled →
-    /// tab-inactive → dispatch.
+    /// check ordering: resolve actions/all-disabled → DND → unfocused →
+    /// tab-inactive → dispatch. DND suppresses intrusive delivery channels,
+    /// but preserves an available in-app tab style.
     private static func applyConditions(
         _ condition: TriggerCondition,
         triggerId: String?,
@@ -98,19 +99,26 @@ enum NotificationPipeline {
         input: Input,
         makeActions: (() -> [NotificationActionConfig])? = nil
     ) -> Decision {
-        if condition.respectDND, input.isFocusModeActive {
-            return .drop(reason: "DND/Focus active" + dropSuffix)
-        }
-        if condition.onlyWhenUnfocused, input.isAppActive {
-            return .drop(reason: "App is active (onlyWhenUnfocused)" + dropSuffix)
-        }
-
         let actions = makeActions?()
         if let actions, let triggerId {
             // If every resolved action is disabled, nothing should execute.
             guard actions.contains(where: \.enabled) else {
                 return .drop(reason: "All actions disabled for trigger \(triggerId)")
             }
+        }
+
+        if condition.respectDND, input.isFocusModeActive {
+            let styleActions = NotificationStylePlanner.styleOnlyActions(
+                for: input.event,
+                from: actions ?? []
+            )
+            if !styleActions.isEmpty {
+                return .fireStyleOnly(triggerId: triggerId, actions: styleActions)
+            }
+            return .drop(reason: "DND/Focus active" + dropSuffix)
+        }
+        if condition.onlyWhenUnfocused, input.isAppActive {
+            return .drop(reason: "App is active (onlyWhenUnfocused)" + dropSuffix)
         }
 
         if condition.onlyWhenTabInactive, input.isToolTabActive {
