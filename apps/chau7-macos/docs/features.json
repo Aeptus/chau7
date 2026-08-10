@@ -520,7 +520,7 @@
   {
     "category": "Terminal Core",
     "feature": "Per-Tab Transcript Capture",
-    "description": "Each terminal session keeps a bounded PTY transcript ring with command-boundary backfill so late AI detection can seed accurate session logs",
+    "description": "Each terminal session keeps a bounded chunked PTY transcript ring with command-boundary backfill; capacity eviction drops old chunks instead of rebuilding the full retained transcript on the main thread",
     "status": "Shipped",
     "differentiator": "Yes"
   },
