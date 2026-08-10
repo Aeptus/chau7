@@ -221,12 +221,25 @@ final class CodexContentProvider: RunContentProvider {
 
     private func globallyFindRolloutFile(sessionID: String, root: URL) -> URL? {
         Self.rolloutFileIndexLock.lock()
-        if Self.rolloutFileIndexByRoot[root.path] == nil {
-            Self.rolloutFileIndexByRoot[root.path] = buildRolloutFileIndex(root: root)
-        }
-        let match = Self.rolloutFileIndexByRoot[root.path]?[sessionID]
+        let cachedMatch = Self.rolloutFileIndexByRoot[root.path]?[sessionID]
         Self.rolloutFileIndexLock.unlock()
-        return match
+
+        if let cachedMatch,
+           FileManager.default.fileExists(atPath: cachedMatch.path) {
+            return cachedMatch
+        }
+
+        // A Codex thread can create its rollout after the first lookup. A
+        // cached miss must therefore refresh the index; otherwise every retry
+        // observes the same permanently stale snapshot. This path runs on the
+        // monitor's utility queue and only after the SQLite/current-day fast
+        // paths miss.
+        let refreshedIndex = buildRolloutFileIndex(root: root)
+        Self.rolloutFileIndexLock.lock()
+        Self.rolloutFileIndexByRoot[root.path] = refreshedIndex
+        let refreshedMatch = refreshedIndex[sessionID]
+        Self.rolloutFileIndexLock.unlock()
+        return refreshedMatch
     }
 
     private func lookupRolloutPathInSQLite(sessionID: String) -> String? {

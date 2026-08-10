@@ -1,5 +1,12 @@
 [
   {
+    "category": "AI Integration",
+    "feature": "Fresh Codex Rollout Discovery Retries",
+    "description": "Global rollout-index misses refresh on later lookup so asynchronous feedback monitoring can attach when Codex creates a session file after the first discovery attempt",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
     "category": "Scripting & Debugging",
     "feature": "Codex Feedback Monitor Health",
     "description": "The debug console exposes rollout discovery and exhaustion plus active rollout name, observed-line count, structured-record count, and unresolved prompt count for each Codex tab",
