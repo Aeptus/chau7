@@ -295,7 +295,7 @@ final class TerminalSessionModel {
             // Propagate the live TUI hint to the view. Rust's alternate-screen
             // flag remains the generic source of truth; this closes the short
             // window before a newly detected agent flips terminal modes.
-            activeRustTerminalView?.hostsTUIApp = liveAgentName != nil
+            activeRustTerminalView?.hostsTUIApp = shouldProtectTerminalUIState
             onSessionStateChanged?()
             postRuntimeReadinessChange(source: "live_agent")
             NotificationCenter.default.post(

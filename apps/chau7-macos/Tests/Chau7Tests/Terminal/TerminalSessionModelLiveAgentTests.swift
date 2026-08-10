@@ -131,6 +131,27 @@ final class TerminalSessionModelLiveAgentTests: XCTestCase {
         XCTAssertTrue(session.shouldProtectTerminalUIState)
     }
 
+    func testAttachedRestoredTUIStaysProtectedAcrossLiveProcessDetectionFlicker() {
+        let session = TerminalSessionModel(appModel: AppModel())
+        session.restoreAIMetadata(
+            provider: "claude",
+            sessionId: "restored-claude",
+            lastStatus: .running
+        )
+        let view = RustTerminalView(frame: .zero)
+        session.attachRustTerminal(view)
+        view.hostsTUIApp = session.shouldProtectTerminalUIState
+
+        session.overrideLiveAgentNameForTesting("Claude")
+        XCTAssertTrue(view.hostsTUIApp)
+
+        session.overrideLiveAgentNameForTesting(nil)
+        XCTAssertTrue(
+            view.hostsTUIApp,
+            "A transient process-tree miss must not bypass restored running-TUI protection"
+        )
+    }
+
     func testFinishedRestoredTUIAllowsScrollbackCompactionWhenNoLiveSignalRemains() {
         let session = TerminalSessionModel(appModel: AppModel())
         session.restoreAIMetadata(
