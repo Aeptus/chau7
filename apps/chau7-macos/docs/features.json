@@ -1,5 +1,12 @@
 [
   {
+    "category": "Scripting & Debugging",
+    "feature": "Structured Notification Delivery Outcomes",
+    "description": "Every notification-ledger transition emits a correlated runtime event with semantic and raw type, routing, trigger, actions, banner and style results, suppression state, and Codex prose confidence evidence",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
     "category": "AI Integration",
     "feature": "Canonical Completion Highlight Fallback",
     "description": "Producer-specific completion aliases without a direct presentation row resolve through canonical finished semantics so low-confidence Codex prose and normalized completions retain a non-interactive success highlight",

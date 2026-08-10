@@ -61,6 +61,7 @@ public enum EventTopicCatalog {
 
         // AI events (recorded via the unified pipeline).
         table["ai_event"] = [EventTopic.repoEvents]
+        table["notification_delivery"] = []
 
         // Tab lifecycle (subsystem "tabs" / native tab events).
         for type in ["tab_created", "tab_closed", "tab_opened", "tab_switched"] {

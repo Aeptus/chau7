@@ -134,6 +134,7 @@ Detection methods:
 - **Indexed AI session routing** — notification delivery, runtime strict-session lookup, and history adoption use a cached cross-window routing index built from live sessions and deferred restore metadata before falling back to recovery heuristics.
 - **AI-first notification settings** — simplified overview for Finished, Failed, and Permission Request with direct controls for banner, tab highlight, sound, and dock bounce. Waiting-input and attention-required states surface as “needs me” attention. Per-tool overrides and advanced trigger plumbing available separately.
 - **Notification delivery ledger** — lifecycle tracking for debugging: coalescing, retry scheduling, drop reasons, and real UI outcomes.
+- **Structured notification delivery outcomes** — each ledger transition is projected as a correlated runtime event with semantic/raw type, trigger, actions, banner/style results, routing, suppression reason, and Codex prose confidence evidence.
 - **PTY output logging** — capture raw terminal output for AI tool sessions.
 - **Codex session resolver** — maps Codex sessions to working directories with a bounded metadata cache.
 - **Generation-tokened event drain** — drain runloops capture a generation at start; any start/stop invalidates older loops, and the log sink, deallocation flags, and poll diagnostics are lock-guarded.

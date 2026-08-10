@@ -370,6 +370,34 @@ final class Chau7ObservabilityService {
         )
     }
 
+    func recordNotificationDeliveryOutcome(_ outcome: NotificationDeliveryOutcome) {
+        recordEvent(
+            type: "notification_delivery",
+            subsystem: "notifications",
+            nativeTabID: outcome.resolvedTabID.flatMap(UUID.init(uuidString:)),
+            detail: ([
+                "notification_event_id": outcome.eventID.uuidString,
+                "source": outcome.source,
+                "event_type": outcome.eventType,
+                "raw_type": outcome.rawType as Any,
+                "semantic_kind": outcome.semanticKind as Any,
+                "reliability": outcome.reliability,
+                "producer": outcome.producer as Any,
+                "delivery_state": outcome.deliveryState,
+                "trigger_id": outcome.triggerID as Any,
+                "actions_executed": outcome.actionsExecuted,
+                "was_rate_limited": outcome.wasRateLimited,
+                "drop_reason": outcome.dropReason as Any,
+                "resolution_method": outcome.resolutionMethod as Any,
+                "did_dispatch_banner": outcome.didDispatchBanner,
+                "did_style_tab": outcome.didStyleTab,
+                "notes": outcome.notes,
+                "classification_confidence": outcome.classificationConfidence as Any,
+                "classification_evidence": outcome.classificationEvidence
+            ] as [String: Any]).compactMapValues { $0 }
+        )
+    }
+
     func registerTimer(
         id: String,
         kind: String,

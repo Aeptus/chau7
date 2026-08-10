@@ -71,6 +71,45 @@ final class Chau7ObservabilityServiceTests: XCTestCase {
         XCTAssertEqual(detail["tool"] as? String, "Codex")
     }
 
+    func testNotificationDeliveryOutcomeIsStructuredAndCorrelated() throws {
+        let eventID = UUID()
+        let nativeTabID = UUID()
+        Chau7ObservabilityService.shared.recordNotificationDeliveryOutcome(
+            NotificationDeliveryOutcome(
+                eventID: eventID,
+                source: AIEventSource.codex.rawValue,
+                eventType: "waiting_input",
+                rawType: "agent-turn-complete",
+                semanticKind: NotificationSemanticKind.waitingForInput.rawValue,
+                reliability: AIEventReliability.heuristic.rawValue,
+                producer: "codex_notify_hook",
+                deliveryState: "completed",
+                triggerID: "codex.waiting_input",
+                actionsExecuted: ["styleTab"],
+                resolvedTabID: nativeTabID.uuidString,
+                didStyleTab: true,
+                classificationConfidence: "high",
+                classificationEvidence: ["response_directive", "multiple_options"]
+            )
+        )
+
+        let payload = try decodeObject(
+            Chau7ObservabilityService.shared.runtimeEventsJSON(sinceMillis: nil, limit: 10)
+        )
+        let event = try XCTUnwrap((payload["events"] as? [[String: Any]])?.last)
+        XCTAssertEqual(event["type"] as? String, "notification_delivery")
+        XCTAssertEqual(
+            event["tab_id"] as? String,
+            TerminalControlService.shared.controlPlaneTabID(for: nativeTabID)
+        )
+        let detail = try XCTUnwrap(event["detail"] as? [String: Any])
+        XCTAssertEqual(detail["notification_event_id"] as? String, eventID.uuidString)
+        XCTAssertEqual(detail["delivery_state"] as? String, "completed")
+        XCTAssertEqual(detail["did_style_tab"] as? Bool, true)
+        XCTAssertEqual(detail["classification_confidence"] as? String, "high")
+        XCTAssertEqual(detail["actions_executed"] as? [String], ["styleTab"])
+    }
+
     func testTimerInventoryIncludesActiveAndInactiveTimers() throws {
         Chau7ObservabilityService.shared.registerTimer(
             id: "mcp_health_check",

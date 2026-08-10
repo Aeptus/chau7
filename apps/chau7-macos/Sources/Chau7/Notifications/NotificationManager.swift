@@ -32,7 +32,7 @@ final class NotificationManager {
     /// Rate limiter — prevents notification spam from burst events
     let rateLimiter = NotificationRateLimiter()
     /// Audit trail of fired (and rate-limited) notifications
-    let history = NotificationHistory()
+    let history: NotificationHistory
 
     /// Wire the host the manager will consult for tab title / repo name
     /// / active-tab / routing answers. Calling with `nil` clears the
@@ -61,6 +61,9 @@ final class NotificationManager {
 
     init(executor: NotificationActionExecutor) {
         self.executor = executor
+        self.history = NotificationHistory { outcome in
+            Chau7ObservabilityService.shared.recordNotificationDeliveryOutcome(outcome)
+        }
         guard !isIsolatedTestMode else {
             self.useNativeNotifications = false
             return
