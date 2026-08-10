@@ -1,6 +1,13 @@
 [
   {
     "category": "AI Integration",
+    "feature": "Confidence-Tiered Codex Feedback Classification",
+    "description": "Completed-turn prose produces high, medium, or low confidence with explicit evidence so enumerated choices and direct terminal questions request attention while conversational questions retain completion semantics",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "AI Integration",
     "feature": "Optional Codex App Server Interaction Ingestion",
     "description": "An opt-in transport can normalize request-user-input, approval, and resolved JSON-RPC messages into the existing authoritative Codex attention path with shared prompt parsing and overlapping-request tracking",
     "status": "Shipped",

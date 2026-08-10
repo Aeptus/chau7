@@ -178,7 +178,7 @@ public enum NotificationProviderAdapterRegistry {
 
         switch rawType {
         case "agent_turn_complete", "agentturncomplete":
-            if CodexFeedbackProposalClassifier.detect(in: event.message) != nil {
+            if CodexFeedbackProposalClassifier.assess(in: event.message)?.shouldRequestAttention == true {
                 return emitEnriched(
                     event,
                     kind: .waitingForInput,

@@ -103,14 +103,40 @@ public enum CodexRolloutFeedbackParser {
 }
 
 public enum CodexFeedbackProposalClassifier {
+    public enum Confidence: Int, Codable, Sendable, Comparable {
+        case low = 1
+        case medium = 2
+        case high = 3
+
+        public static func < (lhs: Confidence, rhs: Confidence) -> Bool {
+            lhs.rawValue < rhs.rawValue
+        }
+    }
+
+    public struct Assessment: Equatable, Sendable {
+        public let prompt: CodexFeedbackPrompt
+        public let confidence: Confidence
+        public let evidence: [String]
+
+        public var shouldRequestAttention: Bool {
+            confidence >= .medium
+        }
+    }
+
     public static func detect(in message: String) -> CodexFeedbackPrompt? {
+        guard let assessment = assess(in: message), assessment.shouldRequestAttention else {
+            return nil
+        }
+        return assessment.prompt
+    }
+
+    public static func assess(in message: String) -> Assessment? {
         let normalized = message.replacingOccurrences(of: "\r\n", with: "\n")
         let lines = normalized.components(separatedBy: "\n")
         let tailLines = Array(lines.suffix(80))
         let tail = tailLines.joined(separator: "\n")
         let lowerTail = tail.lowercased()
-
-        guard containsResponseDirective(lowerTail) else { return nil }
+        let hasDirective = containsResponseDirective(lowerTail)
 
         let numbered = numberedOptions(in: tailLines)
         let bullets = trailingBulletOptions(in: tailLines)
@@ -118,11 +144,44 @@ public enum CodexFeedbackProposalClassifier {
         let options = deduplicated(numbered.count >= 2 ? numbered : (bullets.count >= 2 ? bullets : inline))
 
         let unresolvedDecisionCount = unresolvedDecisions(in: lowerTail)
-        guard options.count >= 2 || unresolvedDecisionCount >= 2 else { return nil }
-
         let prompt = lastDirectiveParagraph(in: tailLines)
             ?? "Codex is waiting for your choice."
-        return CodexFeedbackPrompt(callID: nil, message: prompt, optionLabels: options)
+        let feedbackPrompt = CodexFeedbackPrompt(callID: nil, message: prompt, optionLabels: options)
+
+        if hasDirective, options.count >= 2 || unresolvedDecisionCount >= 2 {
+            return Assessment(
+                prompt: feedbackPrompt,
+                confidence: .high,
+                evidence: options.count >= 2
+                    ? ["response_directive", "multiple_options"]
+                    : ["response_directive", "multiple_unresolved_decisions"]
+            )
+        }
+
+        if isDirectTerminalQuestion(prompt) {
+            return Assessment(
+                prompt: feedbackPrompt,
+                confidence: .medium,
+                evidence: ["direct_terminal_question"]
+            )
+        }
+
+        if hasDirective, containsConfirmationLanguage(lowerTail) {
+            return Assessment(
+                prompt: feedbackPrompt,
+                confidence: .medium,
+                evidence: ["response_directive", "confirmation_language"]
+            )
+        }
+
+        if prompt.hasSuffix("?") {
+            return Assessment(
+                prompt: feedbackPrompt,
+                confidence: .low,
+                evidence: ["terminal_question"]
+            )
+        }
+        return nil
     }
 
     private static func containsResponseDirective(_ text: String) -> Bool {
@@ -189,6 +248,26 @@ public enum CodexFeedbackProposalClassifier {
             return 2
         }
         return 0
+    }
+
+    private static func containsConfirmationLanguage(_ text: String) -> Bool {
+        [
+            "confirm", "confirmation", "approve", "approval", "proceed", "continue",
+            "confirme", "confirmation", "approuve", "continuer", "poursuivre"
+        ].contains { text.contains($0) }
+    }
+
+    private static func isDirectTerminalQuestion(_ prompt: String) -> Bool {
+        let normalized = prompt.lowercased()
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard normalized.hasSuffix("?") else { return false }
+        let directPatterns = [
+            "should i ", "shall i ", "do you want me ", "would you like me ",
+            "can i ", "may i ", "which ", "what do you prefer", "how should i ",
+            "proceed?", "continue?", "veux-tu ", "souhaites-tu ",
+            "souhaitez-vous ", "dois-je ", "je continue", "on continue"
+        ]
+        return directPatterns.contains { normalized.contains($0) }
     }
 
     private static func lastDirectiveParagraph(in lines: [String]) -> String? {

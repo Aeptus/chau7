@@ -79,6 +79,34 @@ final class CodexFeedbackDetectionTests: XCTestCase {
         XCTAssertEqual(proposal.optionLabels.count, 5)
         XCTAssertEqual(proposal.optionLabels.first, "supply-chain cache correctness")
         XCTAssertEqual(proposal.message, "Tell me all or the numbers you want addressed.")
+        XCTAssertEqual(CodexFeedbackProposalClassifier.assess(in: message)?.confidence, .high)
+    }
+
+    func testDirectTerminalQuestionIsMediumConfidenceAttention() throws {
+        let message = """
+        The migration is ready and tests pass.
+
+        Should I apply it to the remaining workspaces?
+        """
+
+        let assessment = try XCTUnwrap(CodexFeedbackProposalClassifier.assess(in: message))
+        XCTAssertEqual(assessment.confidence, .medium)
+        XCTAssertTrue(assessment.shouldRequestAttention)
+        XCTAssertEqual(assessment.evidence, ["direct_terminal_question"])
+        XCTAssertNotNil(CodexFeedbackProposalClassifier.detect(in: message))
+    }
+
+    func testConversationalTerminalQuestionStaysLowConfidence() throws {
+        let message = """
+        This architecture follows the existing adapter pattern.
+
+        Does that explanation make sense?
+        """
+
+        let assessment = try XCTUnwrap(CodexFeedbackProposalClassifier.assess(in: message))
+        XCTAssertEqual(assessment.confidence, .low)
+        XCTAssertFalse(assessment.shouldRequestAttention)
+        XCTAssertNil(CodexFeedbackProposalClassifier.detect(in: message))
     }
 
     func testDetectsFrenchInlineChoices() throws {
