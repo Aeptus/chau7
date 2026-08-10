@@ -284,7 +284,7 @@ struct TerminalViewRepresentable: NSViewRepresentable {
             }
             existingView.tabIdentifier = model.tabIdentifier
             existingView.persistentTabID = model.ownerTabID?.uuidString
-            existingView.hostsTUIApp = model.liveAgentName != nil
+            existingView.hostsTUIApp = model.shouldProtectTerminalUIState
             existingView.isAtPrompt = { [weak model] in model?.isAtPrompt ?? false }
             existingView.liveEligibilityReasonForProfiling = liveEligibilitySummary()
             existingView.installHistoryKeyMonitor()
@@ -380,7 +380,7 @@ struct TerminalViewRepresentable: NSViewRepresentable {
             model?.dangerousRowTints(top: top, bottom: bottom) ?? [:]
         }
         view.isAtPrompt = { [weak model] in model?.isAtPrompt ?? false }
-        view.hostsTUIApp = model.liveAgentName != nil
+        view.hostsTUIApp = model.shouldProtectTerminalUIState
         view.liveEligibilityReasonForProfiling = liveEligibilitySummary()
         view.installHistoryKeyMonitor()
 
@@ -428,7 +428,7 @@ struct TerminalViewRepresentable: NSViewRepresentable {
     func updateNSView(_ container: UnifiedTerminalContainerView, context: Context) {
         guard let nsView = container.rustTerminalView else { return }
         nsView.liveEligibilityReasonForProfiling = liveEligibilitySummary()
-        nsView.hostsTUIApp = model.liveAgentName != nil
+        nsView.hostsTUIApp = model.shouldProtectTerminalUIState
         nsView.onFocus = onFocus
         let transition = context.coordinator.consumeRenderPhaseTransition(to: renderPhase)
         let keepsVisibleSurface = renderPhase.keepsVisibleSurface

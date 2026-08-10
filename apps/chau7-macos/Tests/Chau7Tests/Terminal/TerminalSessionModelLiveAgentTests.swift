@@ -116,4 +116,39 @@ final class TerminalSessionModelLiveAgentTests: XCTestCase {
             "setting to same value must not fire (didSet guards equality)"
         )
     }
+
+    // MARK: - terminal UI state protection
+
+    func testRestoredRunningClaudeProtectsTUIBeforeLiveProcessDetection() {
+        let session = TerminalSessionModel(appModel: AppModel())
+        session.restoreAIMetadata(
+            provider: "claude",
+            sessionId: "restored-claude",
+            lastStatus: .running
+        )
+        session.overrideLiveAgentNameForTesting(nil)
+
+        XCTAssertTrue(session.shouldProtectTerminalUIState)
+    }
+
+    func testFinishedRestoredTUIAllowsScrollbackCompactionWhenNoLiveSignalRemains() {
+        let session = TerminalSessionModel(appModel: AppModel())
+        session.restoreAIMetadata(
+            provider: "codex",
+            sessionId: "restored-codex",
+            lastStatus: .done,
+            activateRestoredAppName: false
+        )
+        session.overrideLiveAgentNameForTesting(nil)
+
+        XCTAssertFalse(session.shouldProtectTerminalUIState)
+    }
+
+    func testNonTerminalAIToolDoesNotDisableScrollbackCompaction() {
+        let session = TerminalSessionModel(appModel: AppModel())
+        session.lastAIProvider = "cursor"
+        session.status = .running
+
+        XCTAssertFalse(session.shouldProtectTerminalUIState)
+    }
 }

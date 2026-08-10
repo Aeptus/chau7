@@ -118,6 +118,17 @@ public enum TabRenderLifecyclePolicy {
             && nextPhase.keepsVisibleSurface
     }
 
+    /// A restored session can be promoted before process-tree detection catches
+    /// up. If the TUI hint arrives after the view is already visible, the phase
+    /// transition above has already passed and cannot deliver the redraw nudge.
+    public static func requiresLateTUIWinsizeNudge(
+        previouslyHostedTUI: Bool,
+        hostsTUIApp: Bool,
+        phase: TabRenderPhase
+    ) -> Bool {
+        !previouslyHostedTUI && hostsTUIApp && phase.keepsVisibleSurface
+    }
+
     public static func phase(for input: TabRenderLifecycleInput) -> TabRenderPhase {
         if input.isSelectedTab {
             guard input.isWindowVisibleForRendering else {

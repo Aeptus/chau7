@@ -3992,7 +3992,7 @@
   {
     "category": "Terminal Core",
     "feature": "Lossless Live-TUI Suspension",
-    "description": "Memory-pressure demotion keeps a live TUI's uncached scrollback ring resident instead of shrinking it to the hidden 50-line floor, and dormant-to-visible transitions send a coalesced SIGWINCH redraw without requiring a manual pane resize",
+    "description": "Memory-pressure demotion uses live or canonical restored-session identity to keep a Claude/Codex TUI's uncached scrollback ring resident instead of shrinking it to the hidden 50-line floor, and both dormant-to-visible transitions and late TUI identification send a coalesced SIGWINCH redraw",
     "status": "Shipped",
     "differentiator": "Yes"
   },

@@ -1851,10 +1851,20 @@ final class RustTerminalView: NSView {
     /// Whether to enable mouse reporting to the PTY
     var allowMouseReporting = false
 
-    /// Set when the live process-tree resolver sees a known TUI app running
-    /// under this view's shell. Rust's alternate-screen flag is the generic
-    /// signal; this hint covers the detection window before the app flips modes.
-    var hostsTUIApp = false
+    /// Set when session identity says this view may host a terminal UI. This is
+    /// deliberately broader than live process detection: restored sessions can
+    /// be active before the process-tree poll catches up, and some current TUIs
+    /// use the normal screen buffer rather than advertising alternate-screen.
+    var hostsTUIApp = false {
+        didSet {
+            guard TabRenderLifecyclePolicy.requiresLateTUIWinsizeNudge(
+                previouslyHostedTUI: oldValue,
+                hostsTUIApp: hostsTUIApp,
+                phase: currentRenderPhase
+            ) else { return }
+            scheduleWinsizeNudge()
+        }
+    }
 
     /// Whether to notify of update changes (for suspended state)
     var notifyUpdateChanges = true {

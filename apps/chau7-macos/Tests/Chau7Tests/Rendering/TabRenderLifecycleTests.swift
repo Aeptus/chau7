@@ -218,6 +218,30 @@ final class TabRenderLifecycleTests: XCTestCase {
         )
     }
 
+    func testLateTUIIdentityNudgesAlreadyVisibleSurfaceOnce() {
+        XCTAssertTrue(
+            TabRenderLifecyclePolicy.requiresLateTUIWinsizeNudge(
+                previouslyHostedTUI: false,
+                hostsTUIApp: true,
+                phase: .active
+            )
+        )
+        XCTAssertFalse(
+            TabRenderLifecyclePolicy.requiresLateTUIWinsizeNudge(
+                previouslyHostedTUI: true,
+                hostsTUIApp: true,
+                phase: .active
+            )
+        )
+        XCTAssertFalse(
+            TabRenderLifecyclePolicy.requiresLateTUIWinsizeNudge(
+                previouslyHostedTUI: false,
+                hostsTUIApp: true,
+                phase: .warm
+            )
+        )
+    }
+
     // MARK: - helpers
 
     private func makeInput(
