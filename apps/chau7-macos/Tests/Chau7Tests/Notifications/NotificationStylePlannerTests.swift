@@ -110,4 +110,21 @@ final class NotificationStylePlannerTests: XCTestCase {
         XCTAssertEqual(NotificationStylePlanner.defaultStyleAction(for: toolFailed)?.config["style"], "error")
         XCTAssertEqual(NotificationStylePlanner.defaultStyleAction(for: waiting)?.config["style"], "waiting")
     }
+
+    func testCanonicalCompletionAliasStillGetsNeutralCompletionStyle() {
+        let event = AIEvent(
+            source: .codex,
+            type: "task_finished",
+            rawType: "provider_turn_done",
+            tool: "Codex",
+            message: "Does that explanation make sense?",
+            ts: "2026-08-10T00:00:00Z",
+            reliability: .authoritative
+        )
+
+        let action = NotificationStylePlanner.defaultStyleAction(for: event)
+        XCTAssertEqual(event.notificationSemanticKind, .taskFinished)
+        XCTAssertEqual(action?.config["style"], "success")
+        XCTAssertNil(action?.config["autoClearSeconds"])
+    }
 }

@@ -3,8 +3,13 @@ import Foundation
 public enum NotificationStylePlanner {
     public static func defaultStyleAction(for event: AIEvent) -> NotificationActionConfig? {
         // One vocabulary table declares the preset per trigger type; types
-        // without a preset (informational ones) get no default styling.
-        guard let preset = TriggerVocabulary.entry(forType: event.type)?.stylePreset else {
+        // without a direct row fall back through the event's canonical
+        // semantic trigger. This guarantees presentation for normalized
+        // completion aliases without duplicating the preset mapping.
+        let directPreset = TriggerVocabulary.entry(forType: event.type)?.stylePreset
+        let canonicalPreset = SemanticTriggerType(kind: event.notificationSemanticKind)
+            .flatMap { TriggerVocabulary.entry(forType: $0.rawValue)?.stylePreset }
+        guard let preset = directPreset ?? canonicalPreset else {
             return nil
         }
 

@@ -1,6 +1,13 @@
 [
   {
     "category": "AI Integration",
+    "feature": "Canonical Completion Highlight Fallback",
+    "description": "Producer-specific completion aliases without a direct presentation row resolve through canonical finished semantics so low-confidence Codex prose and normalized completions retain a non-interactive success highlight",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "AI Integration",
     "feature": "Confidence-Tiered Codex Feedback Classification",
     "description": "Completed-turn prose produces high, medium, or low confidence with explicit evidence so enumerated choices and direct terminal questions request attention while conversational questions retain completion semantics",
     "status": "Shipped",
