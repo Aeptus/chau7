@@ -365,6 +365,13 @@
   },
   {
     "category": "API Analytics",
+    "feature": "Transparent Long-Running Provider Streams",
+    "description": "The local analytics proxy no longer imposes a five-minute total or write deadline on active LLM requests; provider calls live until the originating client cancels, while request-read and idle-connection protections remain bounded",
+    "status": "Shipped",
+    "differentiator": "No"
+  },
+  {
+    "category": "API Analytics",
     "feature": "Deterministic Latency-Sample Reads",
     "description": "Equal-timestamp provider latency samples retain their monotonic ingestion order through canonicalization, while throttled SQLite preparation diagnostics expose schema and query failures without flooding logs",
     "status": "Shipped",

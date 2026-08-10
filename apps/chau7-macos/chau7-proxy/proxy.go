@@ -38,13 +38,20 @@ func NewProxyHandler(config *Config, db *Database, ipc *IPCNotifier, taskManager
 		mockup:      mockup,
 		injector:    injector,
 		attribution: &AttributionDiagnostics{},
-		client: &http.Client{
-			Timeout: 5 * time.Minute, // Long timeout for streaming responses
-			Transport: &http.Transport{
-				MaxIdleConns:        100,
-				MaxIdleConnsPerHost: 10,
-				IdleConnTimeout:     90 * time.Second,
-			},
+		client:      newUpstreamHTTPClient(),
+	}
+}
+
+// newUpstreamHTTPClient deliberately has no total request timeout. Provider
+// inference can legitimately take longer than five minutes before headers or
+// while streaming a response. The inbound request context remains the owner of
+// cancellation, so disconnecting Claude still stops the upstream operation.
+func newUpstreamHTTPClient() *http.Client {
+	return &http.Client{
+		Transport: &http.Transport{
+			MaxIdleConns:        100,
+			MaxIdleConnsPerHost: 10,
+			IdleConnTimeout:     90 * time.Second,
 		},
 	}
 }
@@ -118,7 +125,7 @@ func (p *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Create upstream request
-	upstream, err := http.NewRequest(r.Method, upstreamURL, bytes.NewReader(bodyBytes))
+	upstream, err := http.NewRequestWithContext(r.Context(), r.Method, upstreamURL, bytes.NewReader(bodyBytes))
 	if err != nil {
 		p.logError(headers, provider, model, r.URL.Path, err.Error(), startTime)
 		http.Error(w, "Failed to create upstream request", http.StatusInternalServerError)

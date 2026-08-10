@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"io"
@@ -14,6 +15,71 @@ import (
 	"testing"
 	"time"
 )
+
+func TestUpstreamClientDoesNotCapInferenceDuration(t *testing.T) {
+	client := newUpstreamHTTPClient()
+	if client.Timeout != 0 {
+		t.Fatalf("upstream client timeout = %s, want no total timeout", client.Timeout)
+	}
+}
+
+func TestProxyServerDoesNotCapStreamDuration(t *testing.T) {
+	server := newProxyHTTPServer("127.0.0.1:0", http.NewServeMux())
+	if server.WriteTimeout != 0 {
+		t.Fatalf("server write timeout = %s, want no total stream timeout", server.WriteTimeout)
+	}
+	if server.ReadTimeout != 30*time.Second {
+		t.Fatalf("server read timeout = %s, want 30s", server.ReadTimeout)
+	}
+}
+
+func TestProxyHandlerPropagatesClientCancellationUpstream(t *testing.T) {
+	upstreamStarted := make(chan struct{})
+	upstreamCancelled := make(chan struct{})
+
+	proxy, db, _ := setupTestProxy(t)
+	defer func() { _ = db.Close() }()
+	proxy.client.Transport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		close(upstreamStarted)
+		<-r.Context().Done()
+		close(upstreamCancelled)
+		return nil, r.Context().Err()
+	})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	req := httptest.NewRequest("POST", "/v1/messages", bytes.NewBufferString(`{"model":"claude-opus-5"}`)).WithContext(ctx)
+	req.Header.Set("anthropic-version", "2023-06-01")
+	recorder := httptest.NewRecorder()
+	proxyDone := make(chan struct{})
+	go func() {
+		proxy.ServeHTTP(recorder, req)
+		close(proxyDone)
+	}()
+
+	select {
+	case <-upstreamStarted:
+	case <-time.After(time.Second):
+		t.Fatal("proxy did not start the upstream request")
+	}
+	cancel()
+
+	select {
+	case <-upstreamCancelled:
+	case <-time.After(time.Second):
+		t.Fatal("upstream request was not cancelled with the client request")
+	}
+	select {
+	case <-proxyDone:
+	case <-time.After(time.Second):
+		t.Fatal("proxy handler did not return after cancellation")
+	}
+}
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(request *http.Request) (*http.Response, error) {
+	return f(request)
+}
 
 func TestBuildWebSocketUpgradeRequestPreservesSubscriptionAuth(t *testing.T) {
 	const projectPath = "/tmp/Codex Subscription/été"
