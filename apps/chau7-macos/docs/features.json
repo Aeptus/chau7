@@ -1,5 +1,12 @@
 [
   {
+    "category": "Quality",
+    "feature": "Replay-Based Notification Attention Regression Suite",
+    "description": "Versioned Codex and Claude fixtures replay provider payloads through canonical adaptation, turn reconciliation, and style planning to lock down missed-input and false-positive completion cases",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
     "category": "Scripting & Debugging",
     "feature": "Structured Notification Delivery Outcomes",
     "description": "Every notification-ledger transition emits a correlated runtime event with semantic and raw type, routing, trigger, actions, banner and style results, suppression state, and Codex prose confidence evidence",

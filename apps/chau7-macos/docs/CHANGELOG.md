@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Replay-Based Notification Attention Regression Suite**: Recorded-style Codex and Claude fixtures now replay through provider adaptation, semantic classification, turn reconciliation, and default styling. The suite locks down structured prompts, approvals, direct questions, conversational completions, same-turn suppression, later-turn reopening, failures, and state-only drops.
 - **Structured Notification Delivery Outcomes**: Every notification-ledger transition now emits a correlated `notification_delivery` runtime event with canonical/raw semantics, routing, trigger, actions, banner/style results, rate-limit/drop state, and Codex prose confidence evidence. Debug consumers no longer need to infer delivery from free-form logs.
 - **Confidence-Tiered Codex Feedback Classification**: Completed-turn prose now produces high, medium, or low confidence with explicit evidence. Enumerated choices and direct terminal questions request attention, while conversational questions remain low-confidence observations and preserve neutral completion behavior.
 - **Optional Codex App Server Interaction Ingestion**: Chau7 can normalize `tool/requestUserInput`, approval requests, and `serverRequest/resolved` JSON-RPC messages into the existing authoritative Codex attention path. Shared prompt parsing and a multi-request tracker prevent protocol support from duplicating rollout or notification logic; the default PTY launch remains unchanged.

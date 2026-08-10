@@ -143,6 +143,9 @@ let package = Package(
                 "Snippets/README.md",
                 "Terminal/README.md",
                 "Utilities/README.md",
+            ],
+            resources: [
+                .process("Fixtures")
             ]
         )
     ]
