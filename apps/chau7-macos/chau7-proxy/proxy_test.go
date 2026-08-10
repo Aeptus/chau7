@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -542,6 +543,96 @@ func TestProxyHandler_StreamingResponse(t *testing.T) {
 	body := w.Body.String()
 	if !strings.Contains(body, "message_start") {
 		t.Error("Expected streaming chunks in response")
+	}
+}
+
+func TestProxyHandlerFlushesStreamingChunkBeforeUpstreamCompletes(t *testing.T) {
+	firstChunkWritten := make(chan struct{})
+	releaseUpstream := make(chan struct{})
+	var releaseOnce sync.Once
+	release := func() {
+		releaseOnce.Do(func() { close(releaseUpstream) })
+	}
+	defer release()
+
+	upstream := mockUpstream(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		_, _ = io.WriteString(w, "data: first\n\n")
+		w.(http.Flusher).Flush()
+		close(firstChunkWritten)
+		<-releaseUpstream
+		_, _ = io.WriteString(w, "data: second\n\n")
+		w.(http.Flusher).Flush()
+	})
+	defer upstream.Close()
+
+	originalConfig := ProviderConfigs[ProviderAnthropic]
+	ProviderConfigs[ProviderAnthropic] = ProviderConfig{BaseURL: upstream.URL}
+	defer func() { ProviderConfigs[ProviderAnthropic] = originalConfig }()
+
+	proxy, db, _ := setupTestProxy(t)
+	defer func() { _ = db.Close() }()
+	downstream := httptest.NewServer(proxy)
+	defer downstream.Close()
+
+	req, err := http.NewRequest("POST", downstream.URL+"/v1/messages",
+		bytes.NewBufferString(`{"model":"claude-opus-5","messages":[],"stream" : true}`))
+	if err != nil {
+		t.Fatalf("create request: %v", err)
+	}
+	req.Header.Set("anthropic-version", "2023-06-01")
+
+	type responseResult struct {
+		response *http.Response
+		err      error
+	}
+	responseReady := make(chan responseResult, 1)
+	go func() {
+		response, requestErr := http.DefaultClient.Do(req)
+		responseReady <- responseResult{response: response, err: requestErr}
+	}()
+
+	select {
+	case <-firstChunkWritten:
+	case <-time.After(time.Second):
+		t.Fatal("upstream did not write its first streaming chunk")
+	}
+
+	var response *http.Response
+	select {
+	case result := <-responseReady:
+		if result.err != nil {
+			t.Fatalf("request proxy stream: %v", result.err)
+		}
+		response = result.response
+	case <-time.After(time.Second):
+		t.Fatal("proxy did not flush response headers with the first streaming chunk")
+	}
+	defer func() { _ = response.Body.Close() }()
+
+	reader := bufio.NewReader(response.Body)
+	firstLine := make(chan string, 1)
+	go func() {
+		line, _ := reader.ReadString('\n')
+		firstLine <- line
+	}()
+	select {
+	case line := <-firstLine:
+		if line != "data: first\n" {
+			t.Fatalf("first streamed line = %q, want first chunk", line)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("first streaming chunk remained buffered until upstream completion")
+	}
+
+	release()
+	remainder, err := io.ReadAll(reader)
+	if err != nil {
+		t.Fatalf("read remainder of proxy stream: %v", err)
+	}
+	if !strings.Contains(string(remainder), "data: second\n") {
+		t.Fatalf("stream remainder = %q, want second chunk", remainder)
 	}
 }
 

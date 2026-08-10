@@ -153,9 +153,18 @@ func (p *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var responseBuffer bytes.Buffer
 	fbr := &firstByteReader{reader: resp.Body, start: startTime}
 	tee := io.TeeReader(fbr, &responseBuffer)
+	isStreaming := IsStreamingRequest(provider, bodyBytes) ||
+		strings.HasPrefix(strings.ToLower(resp.Header.Get("Content-Type")), "text/event-stream")
 
-	// Copy response body to client
-	bytesWritten, err := io.Copy(w, tee)
+	// Copy response body to the client. Active SSE responses must flush every
+	// upstream read so provider events and keepalives reach the CLI immediately.
+	// Without this wrapper, net/http may buffer small chunks long enough for the
+	// provider client to declare an otherwise healthy stream stalled.
+	destination := io.Writer(w)
+	if isStreaming {
+		destination = streamingResponseWriter{response: w}
+	}
+	bytesWritten, err := io.Copy(destination, tee)
 	if err != nil {
 		log.Printf("[WARN] Error copying response: %v", err)
 	}
@@ -168,8 +177,6 @@ func (p *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	respBody := responseBuffer.Bytes()
 	var respMeta ResponseMetadata
 
-	// Check if this was a streaming response
-	isStreaming := IsStreamingRequest(provider, bodyBytes)
 	if isStreaming {
 		respMeta = ParseStreamingChunks(provider, respBody)
 	} else {
@@ -323,6 +330,23 @@ func (p *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		respMeta.InputTokens, respMeta.OutputTokens, latencyMs, ttftMs, FloatValue(cost), actualTaskID, cacheInfo, savedInfo)
 
 	_ = bytesWritten // Silence unused variable warning
+}
+
+// streamingResponseWriter preserves ordinary ResponseWriter semantics while
+// making each copied SSE chunk visible to the downstream client immediately.
+type streamingResponseWriter struct {
+	response http.ResponseWriter
+}
+
+func (w streamingResponseWriter) Write(chunk []byte) (int, error) {
+	written, err := w.response.Write(chunk)
+	if err != nil {
+		return written, err
+	}
+	if flusher, ok := w.response.(http.Flusher); ok {
+		flusher.Flush()
+	}
+	return written, nil
 }
 
 // logError logs an error and stores it in the database

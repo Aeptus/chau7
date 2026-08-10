@@ -366,7 +366,7 @@
   {
     "category": "API Analytics",
     "feature": "Transparent Long-Running Provider Streams",
-    "description": "The local analytics proxy no longer imposes a five-minute total or write deadline on active LLM requests; provider calls live until the originating client cancels, while request-read and idle-connection protections remain bounded",
+    "description": "The local analytics proxy no longer imposes a five-minute total or write deadline on active LLM requests and flushes every SSE chunk immediately so provider events and keepalives reach the CLI without buffering; provider calls live until the originating client cancels, while request-read and idle-connection protections remain bounded",
     "status": "Shipped",
     "differentiator": "No"
   },
