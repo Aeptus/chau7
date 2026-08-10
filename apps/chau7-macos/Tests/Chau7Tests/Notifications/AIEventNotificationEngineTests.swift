@@ -46,7 +46,7 @@ final class AIEventNotificationEngineTests: XCTestCase {
             switch accepted.delivery {
             case .dropped(let drop):
                 XCTAssertEqual(drop.stage, .reconciliation)
-                XCTAssertTrue(drop.reason.contains("Stale post-terminal"))
+                XCTAssertTrue(drop.reason.contains("Same-turn post-terminal"))
             case .deliver, .disabled:
                 XCTFail("Expected stale waiting event to be dropped by reconciliation")
             }
