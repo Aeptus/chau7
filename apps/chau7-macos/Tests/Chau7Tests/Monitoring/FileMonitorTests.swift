@@ -126,6 +126,7 @@ final class FileMonitorTests: XCTestCase {
         let fileURL = sessionDirectory.appendingPathComponent("note.md")
         let registry = FileSystemWatchRegistry(label: "com.chau7.tests.parent-recreation")
         let changed = expectation(description: "recreated file change detected")
+        changed.assertForOverFulfill = false
         let monitor = FileMonitor(
             url: fileURL,
             retryPolicy: FileObservationRetryPolicy(activeRetryDuration: 0),
@@ -146,6 +147,25 @@ final class FileMonitorTests: XCTestCase {
         wait(for: [changed], timeout: 3)
         monitor.stop()
         waitUntil { registry.activeWatchCountForTesting() == 0 }
+    }
+
+    func testRepeatedMissingFileStartStopReleasesParentSubscriptions() {
+        let fileURL = tempDir.appendingPathComponent("missing/note.md")
+        let registry = FileSystemWatchRegistry(label: "com.chau7.tests.parent-lifecycle")
+        let monitor = FileMonitor(
+            url: fileURL,
+            retryPolicy: FileObservationRetryPolicy(activeRetryDuration: 0),
+            watchRegistry: registry
+        ) {}
+
+        for _ in 0 ..< 10 {
+            monitor.start()
+            waitUntil { registry.activeWatchCountForTesting() == 1 }
+            XCTAssertEqual(registry.subscriptionCountForTesting(), 1)
+            monitor.stop()
+            waitUntil { registry.activeWatchCountForTesting() == 0 }
+            XCTAssertEqual(registry.subscriptionCountForTesting(), 0)
+        }
     }
 
     func testFileTailerRecoversAfterParentDirectoryDeletion() throws {

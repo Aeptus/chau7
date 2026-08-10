@@ -422,7 +422,7 @@
   {
     "category": "Monitoring",
     "feature": "Event-Driven Missing-File Recovery",
-    "description": "File monitors and JSONL tailers use bounded exponential retries for short replacement windows, then watch the nearest existing parent for recreation; canonical paths share one filesystem source and parent-watch handoffs recheck targets to avoid missed creations",
+    "description": "File monitors and JSONL tailers use bounded exponential retries for short replacement windows, then use canonical parent watches plus one event-scoped delayed handoff attempt for rapid nested recreation without permanent polling or leaked subscriptions",
     "status": "Shipped",
     "differentiator": "Yes"
   },

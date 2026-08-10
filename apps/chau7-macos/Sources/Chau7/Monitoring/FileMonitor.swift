@@ -142,6 +142,14 @@ final class FileMonitor {
                 return
             }
             armTargetOnQueue()
+            // Directory creation can arrive as a burst while an intermediate
+            // hierarchy is still being assembled. If the target was absent
+            // during the immediate handoff, make one delayed attempt scoped to
+            // this parent event. This closes the race without restarting the
+            // bounded recovery window or restoring permanent polling.
+            if targetWatch == nil {
+                scheduleTargetAttempt(after: retryPolicy.replacementDelay)
+            }
         }
 
         // Close the handoff race where the target appears after the failed
