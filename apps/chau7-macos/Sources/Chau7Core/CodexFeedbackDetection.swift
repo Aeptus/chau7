@@ -17,6 +17,29 @@ public enum CodexRolloutFeedbackRecord: Equatable, Sendable {
     case toolCallCompleted(callID: String, output: String)
 }
 
+public enum CodexFeedbackPromptParser {
+    public static func parse(questions: [[String: Any]], callID: String?) -> CodexFeedbackPrompt? {
+        guard !questions.isEmpty else { return nil }
+        let questionTexts = questions.compactMap { nonEmptyString($0["question"]) }
+        guard !questionTexts.isEmpty else { return nil }
+        let optionLabels = questions.flatMap { question -> [String] in
+            guard let options = question["options"] as? [[String: Any]] else { return [] }
+            return options.compactMap { nonEmptyString($0["label"]) }
+        }
+        return CodexFeedbackPrompt(
+            callID: callID,
+            message: questionTexts.joined(separator: "\n"),
+            optionLabels: optionLabels
+        )
+    }
+
+    private static func nonEmptyString(_ value: Any?) -> String? {
+        guard let value = value as? String else { return nil }
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+}
+
 public enum CodexRolloutFeedbackParser {
     public static func parse(line: String) -> CodexRolloutFeedbackRecord? {
         guard let data = line.data(using: .utf8),
@@ -55,23 +78,10 @@ public enum CodexRolloutFeedbackParser {
     private static func parsePrompt(arguments: String, callID: String) -> CodexFeedbackPrompt? {
         guard let data = arguments.data(using: .utf8),
               let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let questions = root["questions"] as? [[String: Any]],
-              !questions.isEmpty else {
+              let questions = root["questions"] as? [[String: Any]] else {
             return nil
         }
-
-        let questionTexts = questions.compactMap { nonEmptyString($0["question"]) }
-        guard !questionTexts.isEmpty else { return nil }
-        let optionLabels = questions.flatMap { question -> [String] in
-            guard let options = question["options"] as? [[String: Any]] else { return [] }
-            return options.compactMap { nonEmptyString($0["label"]) }
-        }
-
-        return CodexFeedbackPrompt(
-            callID: callID,
-            message: questionTexts.joined(separator: "\n"),
-            optionLabels: optionLabels
-        )
+        return CodexFeedbackPromptParser.parse(questions: questions, callID: callID)
     }
 
     private static func nonEmptyString(_ value: Any?) -> String? {

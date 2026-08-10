@@ -1094,6 +1094,7 @@ final class TerminalSessionModel {
     @ObservationIgnored var codexFeedbackMonitorSessionID: String?
     @ObservationIgnored var codexFeedbackLookupGeneration: UInt64 = 0
     @ObservationIgnored var codexFeedbackLookupRetryWorkItem: DispatchWorkItem?
+    @ObservationIgnored var codexAppServerInteractionTracker = CodexAppServerInteractionTracker()
     @ObservationIgnored let codexFeedbackLookupQueue = DispatchQueue(
         label: "com.chau7.codex-feedback-lookup",
         qos: .utility

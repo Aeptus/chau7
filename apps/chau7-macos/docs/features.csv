@@ -1,4 +1,5 @@
 Category,Feature,Description,Status,Differentiator
+AI Integration,Optional Codex App Server Interaction Ingestion,"An opt-in transport can normalize request-user-input, approval, and resolved JSON-RPC messages into the existing authoritative Codex attention path with shared prompt parsing and overlapping-request tracking",Shipped,Yes
 AI Integration,Fresh Codex Rollout Discovery Retries,Global rollout-index misses refresh on later lookup so asynchronous feedback monitoring can attach when Codex creates a session file after the first discovery attempt,Shipped,Yes
 Scripting & Debugging,Codex Feedback Monitor Health,"The debug console exposes rollout discovery and exhaustion plus active rollout name, observed-line count, structured-record count, and unresolved prompt count for each Codex tab",Shipped,Yes
 AI Integration,Turn-Aware Notification Reconciliation,A short terminal coalescing window rejects lagging same-turn heuristics while later interactive observations reopen a new turn for providers such as Codex that omit explicit start lifecycle events,Shipped,Yes

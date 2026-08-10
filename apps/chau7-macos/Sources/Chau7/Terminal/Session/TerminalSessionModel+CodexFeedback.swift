@@ -2,6 +2,66 @@ import Foundation
 import Chau7Core
 
 extension TerminalSessionModel {
+    /// Optional ingestion seam for Codex App Server JSON-RPC traffic. The
+    /// current PTY launch path remains unchanged; an opt-in transport can feed
+    /// messages here without creating a second notification architecture.
+    @discardableResult
+    func ingestCodexAppServerMessage(_ line: String) -> Bool {
+        guard let interaction = CodexAppServerInteractionParser.parse(line: line) else {
+            return false
+        }
+        if let threadID = interaction.threadID,
+           let activeSessionID = lastAISessionId,
+           threadID.caseInsensitiveCompare(activeSessionID) != .orderedSame {
+            return false
+        }
+
+        let outcome = codexAppServerInteractionTracker.consume(interaction)
+        switch interaction.phase {
+        case .requested:
+            guard let kind = interaction.kind else { return false }
+            let eventType: String
+            let message: String
+            switch kind {
+            case .userInput:
+                if status != .approvalRequired { status = .waitingForInput }
+                eventType = "user_input_requested"
+                let prompt = interaction.prompt
+                let options = prompt?.optionLabels.isEmpty == false
+                    ? "\nOptions: \(prompt?.optionLabels.joined(separator: ", ") ?? "")"
+                    : ""
+                message = (prompt?.message ?? "Codex is waiting for input.") + options
+            case .approval:
+                status = .approvalRequired
+                eventType = "approval_requested"
+                message = "Codex is waiting for approval."
+            }
+            appModel?.recordEvent(
+                source: .codex,
+                type: eventType,
+                tool: "Codex",
+                message: message,
+                notify: true,
+                directory: currentDirectory,
+                tabID: ownerTabID,
+                sessionID: interaction.threadID ?? lastAISessionId,
+                producer: "codex_app_server",
+                reliability: .authoritative
+            )
+
+        case .resolved:
+            if outcome.pendingKinds.contains(.approval) {
+                status = .approvalRequired
+            } else if outcome.pendingKinds.contains(.userInput) {
+                status = .waitingForInput
+            } else if outcome.resolvedKind != nil {
+                status = isAIRunning ? .running : .done
+                onPermissionResolved?()
+            }
+        }
+        return true
+    }
+
     var codexFeedbackHealthSummary: String {
         if let monitor = codexFeedbackMonitor {
             return monitor.healthSnapshot().summary

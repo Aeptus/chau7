@@ -1,6 +1,13 @@
 [
   {
     "category": "AI Integration",
+    "feature": "Optional Codex App Server Interaction Ingestion",
+    "description": "An opt-in transport can normalize request-user-input, approval, and resolved JSON-RPC messages into the existing authoritative Codex attention path with shared prompt parsing and overlapping-request tracking",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "AI Integration",
     "feature": "Fresh Codex Rollout Discovery Retries",
     "description": "Global rollout-index misses refresh on later lookup so asynchronous feedback monitoring can attach when Codex creates a session file after the first discovery attempt",
     "status": "Shipped",
