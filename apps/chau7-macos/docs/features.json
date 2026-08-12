@@ -2,7 +2,7 @@
   {
     "category": "Tabs, Panes & Windows",
     "feature": "Deterministic Tab-Group Drag Transactions",
-    "description": "Repository-group pointer movement, edge-scroll compensation, insertion slots, and stable-placeholder neighbor displacement share one pure transaction model so preview and final reorder geometry cannot diverge",
+    "description": "Repository-group drags move one layer-backed AppKit snapshot over an invisible stable SwiftUI placeholder, while pointer movement, edge-scroll compensation, insertion slots, and neighbor displacement share one pure transaction model",
     "status": "Shipped",
     "differentiator": "Yes"
   },
