@@ -207,8 +207,6 @@ struct TerminalViewRepresentable: NSViewRepresentable {
             initialOutput = terminalHeaderBox(cols: rustView.renderCols, message: tip)
         }
         rustView.startTerminal(initialOutput: initialOutput)
-        rustView.appliedColorSchemeSignature = nil
-        rustView.applyColorScheme(FeatureSettings.shared.currentColorScheme)
         model.attachRustTerminal(rustView)
 
         // Notify the window-level tabs model that a terminal started, so the

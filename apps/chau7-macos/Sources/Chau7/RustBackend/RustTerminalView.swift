@@ -2430,9 +2430,17 @@ final class RustTerminalView: NSView {
         rustTerminal?.setImageProtocols(sixel: sixelEnabled, kitty: kittyEnabled, iterm2: iterm2Enabled)
         Log.info("RustTerminalView[\(viewId)]: Image protocols configured - iTerm2=\(iterm2Enabled), Sixel=\(sixelEnabled), Kitty=\(kittyEnabled)")
 
-        if let initialOutput, !initialOutput.isEmpty {
-            injectOutput(initialOutput)
-        }
+        TerminalStartupOrdering.applyPaletteThenReplay(
+            initialOutput: initialOutput,
+            applyPalette: { [self] in
+                // `applyColorScheme` may have run while this view had no Rust
+                // terminal yet. Reapply now that setColors can reach the
+                // renderer, before restored ANSI is parsed into the grid.
+                appliedColorSchemeSignature = nil
+                applyColorScheme(FeatureSettings.shared.currentColorScheme)
+            },
+            replay: { [self] in injectOutput($0) }
+        )
 
         // Force an initial grid sync on the next poll cycle.
         // Without this, the first poll finds poll()==false (no PTY data yet)

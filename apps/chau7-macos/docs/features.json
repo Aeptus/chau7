@@ -617,6 +617,13 @@
   },
   {
     "category": "Terminal Core",
+    "feature": "Palette-Before-Replay Restore",
+    "description": "Terminal startup installs the selected 16-color palette in Rust before persisted ANSI scrollback is replayed through the VTE parser, preventing named colors from degrading to grayscale across autosaves",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "Terminal Core",
     "feature": "Emoji-Aware Glyph Coloring",
     "description": "Metal renders default or explicit emoji presentation including achromatic FE0F symbols with embedded color while keeping terminal UI symbols and box drawing tintable by ANSI foreground color",
     "status": "Shipped",
