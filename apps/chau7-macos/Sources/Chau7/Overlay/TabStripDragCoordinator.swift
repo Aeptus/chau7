@@ -17,8 +17,6 @@ final class TabStripDragCoordinator: NSObject {
     private var onCancellation: (() -> Void)?
 
     var isDragging: Bool { dragState != nil }
-    var homeRange: Range<Int>? { dragState?.homeRange }
-    var destinationIndex: Int? { dragState?.destinationIndex }
 
     func attach(to scrollView: NSScrollView?) {
         guard self.scrollView !== scrollView else { return }
@@ -45,7 +43,7 @@ final class TabStripDragCoordinator: NSObject {
                   tabWidths: tabWidths,
                   spacing: spacing
               ),
-              let snapshot = makeSnapshot(
+              let snapshotLayer = makeSnapshot(
                   of: groupFrame,
                   viewportFrame: viewportFrame,
                   documentView: documentView,
@@ -55,12 +53,12 @@ final class TabStripDragCoordinator: NSObject {
         }
 
         dragState = state
-        snapshotLayer = snapshot.layer
-        snapshotOriginX = snapshot.layer.frame.minX
+        self.snapshotLayer = snapshotLayer
+        snapshotOriginX = snapshotLayer.frame.minX
         dragOriginScreenX = NSEvent.mouseLocation.x - initialPointerTranslation
         self.onDestinationChange = onDestinationChange
         self.onCancellation = onCancellation
-        scrollView.layer?.addSublayer(snapshot.layer)
+        scrollView.layer?.addSublayer(snapshotLayer)
         startDisplayLink(for: scrollView)
         return true
     }
@@ -76,15 +74,13 @@ final class TabStripDragCoordinator: NSObject {
         return state.destinationIndex
     }
 
-    @discardableResult
-    func applyScrollCompensation(_ delta: CGFloat) -> Int? {
-        guard var state = dragState else { return nil }
+    private func applyScrollCompensation(_ delta: CGFloat) {
+        guard var state = dragState else { return }
         let previousDestination = state.destinationIndex
         state.applyScrollCompensation(delta)
         dragState = state
         moveSnapshot(to: state.effectiveTranslation)
         publishDestinationChange(from: previousDestination, to: state.destinationIndex)
-        return state.destinationIndex
     }
 
     func displacement(forTabAt index: Int) -> CGFloat {
@@ -121,7 +117,13 @@ final class TabStripDragCoordinator: NSObject {
         displayLink = link
     }
 
-    @objc private func displayLinkDidFire(_ displayLink: CADisplayLink) {
+    @objc private func displayLinkDidFire(_: CADisplayLink) {
+        displayLinkStep(pointer: NSEvent.mouseLocation)
+    }
+
+    /// One testable display-link iteration. Production calls this only from
+    /// the AppKit display link selector.
+    func displayLinkStep(pointer: CGPoint) {
         guard let scrollView,
               scrollView.window != nil,
               scrollView.documentView != nil,
@@ -130,7 +132,6 @@ final class TabStripDragCoordinator: NSObject {
             return
         }
 
-        let pointer = NSEvent.mouseLocation
         updatePointerTranslation(pointer.x - dragOriginScreenX)
         autoScrollIfNeeded(pointer: pointer, in: scrollView)
     }
@@ -182,7 +183,7 @@ final class TabStripDragCoordinator: NSObject {
         viewportFrame: CGRect,
         documentView: NSView,
         scrollView: NSScrollView
-    ) -> (layer: CALayer, documentRect: CGRect)? {
+    ) -> CALayer? {
         guard groupFrame.width > 0,
               viewportFrame.width > 0,
               scrollView.bounds.width > 0 else { return nil }
@@ -210,6 +211,6 @@ final class TabStripDragCoordinator: NSObject {
         layer.contentsScale = scrollView.window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 2
         layer.frame = clipView.convert(clipRect, to: scrollView)
         layer.zPosition = 1_000
-        return (layer, documentRect)
+        return layer
     }
 }

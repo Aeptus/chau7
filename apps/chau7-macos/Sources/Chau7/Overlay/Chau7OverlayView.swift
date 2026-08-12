@@ -861,6 +861,7 @@ private struct ToolbarTabBarView: View {
     private func resetGroupDragState() {
         groupDragCoordinator.cancel()
         draggingGroupSegmentID = nil
+        draggedGroupTabIDs = []
         groupDragHomeRange = 0 ..< 0
         groupDragCurrentSlot = 0
     }
@@ -919,6 +920,7 @@ private struct ToolbarTabBarView: View {
                 return
             }
             draggingGroupSegmentID = segmentID
+            draggedGroupTabIDs = Array(snapshot[homeRange]).map(\.id)
             groupDragHomeRange = homeRange
             groupDragCurrentSlot = start
             Log.info("Group drag started: \(URL(fileURLWithPath: groupID).lastPathComponent) range=\(start)..<\(end + 1)")
@@ -933,16 +935,10 @@ private struct ToolbarTabBarView: View {
             return
         }
 
-        // Re-sync home range when tabs are inserted/removed before the group
-        // (mirrors the single-tab dragHomeIndex re-sync pattern)
-        if let liveFirst = snapshot[groupDragHomeRange].first,
-           let liveIndex = snapshot.firstIndex(where: { $0.id == liveFirst.id }),
-           liveIndex != groupDragHomeRange.lowerBound {
-            let delta = liveIndex - groupDragHomeRange.lowerBound
-            let newStart = groupDragHomeRange.lowerBound + delta
-            let newEnd = min(groupDragHomeRange.upperBound + delta, snapshot.count)
-            groupDragHomeRange = newStart ..< newEnd
-            groupDragCurrentSlot = max(0, min(groupDragCurrentSlot + delta, snapshot.count - groupDragHomeRange.count))
+        guard Array(snapshot[groupDragHomeRange]).map(\.id) == draggedGroupTabIDs else {
+            Log.warn("Group drag aborted: tab identity changed during transaction")
+            resetGroupDragState()
+            return
         }
 
         groupDragCurrentSlot = groupDragCoordinator.updatePointerTranslation(translation.width)
@@ -1033,6 +1029,7 @@ private struct ToolbarTabBarView: View {
 
     /// Group bracket drag state
     @State private var draggingGroupSegmentID: String?
+    @State private var draggedGroupTabIDs: [UUID] = []
     @State private var groupDragHomeRange: Range<Int> = 0 ..< 0
     @State private var groupDragCurrentSlot = 0
 
