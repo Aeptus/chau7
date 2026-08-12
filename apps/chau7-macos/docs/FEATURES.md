@@ -491,6 +491,7 @@ Chau7's rendering pipeline is purpose-built for latency-sensitive terminal work:
 
 - Unlimited tabs per window — `Cmd+T` to create, and a configurable switch-to-tab shortcut mode (`Cmd+1–9`, `F1–F12`, or both) to jump (Settings → Tabs).
 - Tab renaming (`Cmd+Option+R`), 12+ colors, reordering via drag or shortcuts with center-crossing snap thresholds.
+- Repository-group drag previews and final reorders consume the same deterministic transaction geometry, including stable-placeholder neighbor displacement and exact edge-scroll compensation.
 - Repository-group dragging autoscrolls an overflowing tab bar while the pointer remains near either horizontal edge, allowing groups to reach the true beginning or end while preserving pointer alignment and destination-slot accuracy.
 - AI agent logos, git branch indicator, directory path, last command badge.
 - Broadcast input to all tabs with per-tab exclusion and visual indicator.
