@@ -755,10 +755,6 @@ private struct TabBarScrollViewportFrameKey: PreferenceKey {
     }
 }
 
-private final class WeakTabBarScrollViewBox {
-    weak var scrollView: NSScrollView?
-}
-
 private struct TabBarScrollViewResolver: NSViewRepresentable {
     let onResolve: (NSScrollView?) -> Void
 
@@ -795,10 +791,8 @@ private struct ToolbarTabBarView: View {
     @State private var draggingTabID: UUID?
     @State private var tabWidths: [UUID: CGFloat] = [:]
     @State private var recoveryDebounce: DispatchWorkItem?
-    @State private var tabBarScrollViewBox = WeakTabBarScrollViewBox()
     @State private var groupDragCoordinator = TabStripDragCoordinator()
     @State private var tabBarScrollViewportFrame: CGRect = .zero
-    @State private var groupDragAutoScrollTask: Task<Void, Never>?
 
     /// Tabs idle for 10+ minutes (empty when feature is off or no tabs are idle).
     /// Reads the setting directly to avoid subscribing to all FeatureSettings changes.
@@ -865,11 +859,8 @@ private struct ToolbarTabBarView: View {
     // MARK: - Group Bracket Drag
 
     private func resetGroupDragState() {
-        groupDragAutoScrollTask?.cancel()
-        groupDragAutoScrollTask = nil
         groupDragCoordinator.cancel()
         draggingGroupSegmentID = nil
-        groupDragPointer = nil
         groupDragHomeRange = 0 ..< 0
         groupDragCurrentSlot = 0
     }
@@ -878,8 +869,7 @@ private struct ToolbarTabBarView: View {
         groupID: String,
         segmentID: String,
         firstTabID: UUID,
-        translation: CGSize,
-        pointer: CGPoint
+        translation: CGSize
     ) {
         overlayModel.dismissHoverCard()
         // Prevent dual drag: single-tab drag takes priority
@@ -916,7 +906,14 @@ private struct ToolbarTabBarView: View {
                           width: lastMidX + (tabWidths[lastTab.id] ?? 100) / 2 - bracket.minX,
                           height: tabBarScrollViewportFrame.height
                       ),
-                      viewportFrame: tabBarScrollViewportFrame
+                      viewportFrame: tabBarScrollViewportFrame,
+                      initialPointerTranslation: translation.width,
+                      onDestinationChange: { destination in
+                          groupDragCurrentSlot = destination
+                      },
+                      onCancellation: {
+                          resetGroupDragState()
+                      }
                   ) else {
                 Log.warn("Group drag aborted: AppKit snapshot unavailable")
                 return
@@ -924,7 +921,6 @@ private struct ToolbarTabBarView: View {
             draggingGroupSegmentID = segmentID
             groupDragHomeRange = homeRange
             groupDragCurrentSlot = start
-            startGroupDragAutoScroll()
             Log.info("Group drag started: \(URL(fileURLWithPath: groupID).lastPathComponent) range=\(start)..<\(end + 1)")
         }
 
@@ -949,55 +945,8 @@ private struct ToolbarTabBarView: View {
             groupDragCurrentSlot = max(0, min(groupDragCurrentSlot + delta, snapshot.count - groupDragHomeRange.count))
         }
 
-        groupDragPointer = pointer
         groupDragCurrentSlot = groupDragCoordinator.updatePointerTranslation(translation.width)
             ?? groupDragCurrentSlot
-    }
-
-    private func autoScrollGroupDragIfNeeded() {
-        guard draggingGroupSegmentID != nil,
-              let pointer = groupDragPointer,
-              let scrollView = tabBarScrollViewBox.scrollView,
-              let documentView = scrollView.documentView else { return }
-
-        let requestedDelta = TabDragLayout.edgeAutoScrollDelta(
-            pointer: pointer,
-            viewport: tabBarScrollViewportFrame
-        )
-        guard requestedDelta != 0 else { return }
-
-        let clipView = scrollView.contentView
-        let appliedDelta = TabDragLayout.clampedAutoScrollDelta(
-            requestedDelta: requestedDelta,
-            currentOrigin: clipView.bounds.origin.x,
-            contentWidth: documentView.bounds.width,
-            viewportWidth: clipView.bounds.width
-        )
-        guard abs(appliedDelta) > 0.01 else { return }
-
-        clipView.scroll(
-            to: CGPoint(
-                x: clipView.bounds.origin.x + appliedDelta,
-                y: clipView.bounds.origin.y
-            )
-        )
-        scrollView.reflectScrolledClipView(clipView)
-
-        // Compensate the dragged group's visual offset by the exact scroll
-        // amount and feed the same delta into destination-slot calculation.
-        groupDragCurrentSlot = groupDragCoordinator.applyScrollCompensation(appliedDelta)
-            ?? groupDragCurrentSlot
-    }
-
-    private func startGroupDragAutoScroll() {
-        guard groupDragAutoScrollTask == nil else { return }
-        groupDragAutoScrollTask = Task { @MainActor in
-            while !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: 50_000_000)
-                guard !Task.isCancelled else { break }
-                autoScrollGroupDragIfNeeded()
-            }
-        }
     }
 
     private func handleGroupDragEnd(groupID: String, segmentID: String, dropScreenPoint: CGPoint) {
@@ -1084,7 +1033,6 @@ private struct ToolbarTabBarView: View {
 
     /// Group bracket drag state
     @State private var draggingGroupSegmentID: String?
-    @State private var groupDragPointer: CGPoint?
     @State private var groupDragHomeRange: Range<Int> = 0 ..< 0
     @State private var groupDragCurrentSlot = 0
 
@@ -1143,8 +1091,7 @@ private struct ToolbarTabBarView: View {
                                                     groupID: groupID,
                                                     segmentID: segmentID,
                                                     firstTabID: groupTabs[0].id,
-                                                    translation: value.translation,
-                                                    pointer: value.location
+                                                    translation: value.translation
                                                 )
                                             }
                                             .onEnded { _ in
@@ -1219,7 +1166,6 @@ private struct ToolbarTabBarView: View {
                         }
                         .background(
                             TabBarScrollViewResolver { scrollView in
-                                tabBarScrollViewBox.scrollView = scrollView
                                 groupDragCoordinator.attach(to: scrollView)
                             }
                         )
@@ -1299,8 +1245,7 @@ private struct ToolbarTabBarView: View {
             }
         }
         .onDisappear {
-            groupDragAutoScrollTask?.cancel()
-            groupDragAutoScrollTask = nil
+            resetGroupDragState()
             let now = Date()
             if now.timeIntervalSince(lastVisibilityLogAt) > 2.0 {
                 lastVisibilityLogAt = now
