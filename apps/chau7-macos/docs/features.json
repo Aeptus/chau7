@@ -630,6 +630,13 @@
     "differentiator": "Yes"
   },
   {
+    "category": "Tab Management",
+    "feature": "Tab Group Drag Edge Autoscroll",
+    "description": "Holding a repository-group drag near either horizontal edge continuously scrolls an overflowing tab bar and carries the applied distance into reorder hit-testing so groups can reach the true first or last slot",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
     "category": "Terminal Core",
     "feature": "Emoji-Aware Glyph Coloring",
     "description": "Metal renders default or explicit emoji presentation including achromatic FE0F symbols with embedded color while keeping terminal UI symbols and box drawing tintable by ANSI foreground color",

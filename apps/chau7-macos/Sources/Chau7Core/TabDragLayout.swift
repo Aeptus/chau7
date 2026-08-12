@@ -2,6 +2,56 @@ import CoreGraphics
 
 /// Geometry helpers for tab reorder previews.
 public enum TabDragLayout {
+    /// Pixel delta for one autoscroll tick while a drag is held near a
+    /// horizontal viewport edge. Speed ramps with edge penetration so entry
+    /// into the activation zone is controlled while the outer edge remains
+    /// fast enough for long tab bars.
+    public static func edgeAutoScrollDelta(
+        pointer: CGPoint,
+        viewport: CGRect,
+        edgeThreshold: CGFloat = 44,
+        verticalTolerance: CGFloat = 12,
+        minimumStep: CGFloat = 4,
+        maximumStep: CGFloat = 22
+    ) -> CGFloat {
+        guard viewport.width > 0,
+              viewport.height > 0,
+              edgeThreshold > 0,
+              maximumStep >= minimumStep,
+              pointer.y >= viewport.minY - verticalTolerance,
+              pointer.y <= viewport.maxY + verticalTolerance else {
+            return 0
+        }
+
+        let leftPenetration = viewport.minX + edgeThreshold - pointer.x
+        if leftPenetration > 0 {
+            let progress = min(1, leftPenetration / edgeThreshold)
+            return -(minimumStep + (maximumStep - minimumStep) * progress)
+        }
+
+        let rightPenetration = pointer.x - (viewport.maxX - edgeThreshold)
+        if rightPenetration > 0 {
+            let progress = min(1, rightPenetration / edgeThreshold)
+            return minimumStep + (maximumStep - minimumStep) * progress
+        }
+
+        return 0
+    }
+
+    /// Returns the realizable portion of a requested horizontal scroll delta.
+    /// The caller uses the same delta for both the clip view and drag
+    /// translation, so clamping happens once in this shared policy.
+    public static func clampedAutoScrollDelta(
+        requestedDelta: CGFloat,
+        currentOrigin: CGFloat,
+        contentWidth: CGFloat,
+        viewportWidth: CGFloat
+    ) -> CGFloat {
+        let maximumOrigin = max(0, contentWidth - viewportWidth)
+        let targetOrigin = min(maximumOrigin, max(0, currentOrigin + requestedDelta))
+        return targetOrigin - currentOrigin
+    }
+
     /// Returns the destination slot a dragged tab should visually occupy.
     ///
     /// The drag translation moves the tab's center by the same amount, so the

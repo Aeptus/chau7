@@ -744,12 +744,60 @@ private struct TabBarFrameKey: PreferenceKey {
     }
 }
 
+private struct TabBarScrollViewportFrameKey: PreferenceKey {
+    static var defaultValue: CGRect = .zero
+
+    static func reduce(value: inout CGRect, nextValue: () -> CGRect) {
+        let next = nextValue()
+        if !next.isEmpty {
+            value = next
+        }
+    }
+}
+
+private final class WeakTabBarScrollViewBox {
+    weak var scrollView: NSScrollView?
+}
+
+private struct TabBarScrollViewResolver: NSViewRepresentable {
+    let onResolve: (NSScrollView?) -> Void
+
+    func makeNSView(context: Context) -> ResolverView {
+        let view = ResolverView()
+        view.onResolve = onResolve
+        return view
+    }
+
+    func updateNSView(_ nsView: ResolverView, context: Context) {
+        nsView.onResolve = onResolve
+    }
+
+    final class ResolverView: NSView {
+        var onResolve: ((NSScrollView?) -> Void)?
+
+        override func viewDidMoveToSuperview() {
+            super.viewDidMoveToSuperview()
+            resolveEnclosingScrollView()
+        }
+
+        func resolveEnclosingScrollView() {
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                onResolve?(enclosingScrollView)
+            }
+        }
+    }
+}
+
 /// SwiftUI view for the tab bar that goes in the unified toolbar
 private struct ToolbarTabBarView: View {
     var overlayModel: OverlayTabsModel
     @State private var draggingTabID: UUID?
     @State private var tabWidths: [UUID: CGFloat] = [:]
     @State private var recoveryDebounce: DispatchWorkItem?
+    @State private var tabBarScrollViewBox = WeakTabBarScrollViewBox()
+    @State private var tabBarScrollViewportFrame: CGRect = .zero
+    @State private var groupDragAutoScrollTask: Task<Void, Never>?
 
     /// Tabs idle for 10+ minutes (empty when feature is off or no tabs are idle).
     /// Reads the setting directly to avoid subscribing to all FeatureSettings changes.
@@ -816,13 +864,24 @@ private struct ToolbarTabBarView: View {
     // MARK: - Group Bracket Drag
 
     private func resetGroupDragState() {
+        groupDragAutoScrollTask?.cancel()
+        groupDragAutoScrollTask = nil
         draggingGroupSegmentID = nil
         groupDragOffset = 0
+        groupDragGestureTranslation = 0
+        groupDragAutoScrollTranslation = 0
+        groupDragPointer = nil
         groupDragHomeRange = 0 ..< 0
         groupDragCurrentSlot = 0
     }
 
-    private func handleGroupDrag(groupID: String, segmentID: String, firstTabID: UUID, translation: CGSize) {
+    private func handleGroupDrag(
+        groupID: String,
+        segmentID: String,
+        firstTabID: UUID,
+        translation: CGSize,
+        pointer: CGPoint
+    ) {
         overlayModel.dismissHoverCard()
         // Prevent dual drag: single-tab drag takes priority
         guard draggingTabID == nil else { return }
@@ -847,6 +906,9 @@ private struct ToolbarTabBarView: View {
             groupDragHomeRange = start ..< (end + 1)
             groupDragCurrentSlot = start
             groupDragOffset = 0
+            groupDragGestureTranslation = 0
+            groupDragAutoScrollTranslation = 0
+            startGroupDragAutoScroll()
             Log.info("Group drag started: \(URL(fileURLWithPath: groupID).lastPathComponent) range=\(start)..<\(end + 1)")
         }
 
@@ -871,15 +933,71 @@ private struct ToolbarTabBarView: View {
             groupDragCurrentSlot = max(0, min(groupDragCurrentSlot + delta, snapshot.count - groupDragHomeRange.count))
         }
 
-        groupDragOffset = translation.width
+        groupDragGestureTranslation = translation.width
+        groupDragPointer = pointer
+        updateGroupDragPosition(snapshot: snapshot)
+    }
+
+    private func updateGroupDragPosition(snapshot: [OverlayTab]) {
+        guard !groupDragHomeRange.isEmpty,
+              groupDragHomeRange.upperBound <= snapshot.count else { return }
+
+        let effectiveTranslation = groupDragGestureTranslation + groupDragAutoScrollTranslation
+        groupDragOffset = effectiveTranslation
 
         let widths = snapshot.map { tabWidths[$0.id] ?? 100 }
         groupDragCurrentSlot = TabDragLayout.groupDestinationIndex(
-            for: translation.width,
+            for: effectiveTranslation,
             homeRange: groupDragHomeRange,
             tabWidths: widths,
             spacing: tabSpacing
         )
+    }
+
+    private func autoScrollGroupDragIfNeeded() {
+        guard draggingGroupSegmentID != nil,
+              let pointer = groupDragPointer,
+              let scrollView = tabBarScrollViewBox.scrollView,
+              let documentView = scrollView.documentView else { return }
+
+        let requestedDelta = TabDragLayout.edgeAutoScrollDelta(
+            pointer: pointer,
+            viewport: tabBarScrollViewportFrame
+        )
+        guard requestedDelta != 0 else { return }
+
+        let clipView = scrollView.contentView
+        let appliedDelta = TabDragLayout.clampedAutoScrollDelta(
+            requestedDelta: requestedDelta,
+            currentOrigin: clipView.bounds.origin.x,
+            contentWidth: documentView.bounds.width,
+            viewportWidth: clipView.bounds.width
+        )
+        guard abs(appliedDelta) > 0.01 else { return }
+
+        clipView.scroll(
+            to: CGPoint(
+                x: clipView.bounds.origin.x + appliedDelta,
+                y: clipView.bounds.origin.y
+            )
+        )
+        scrollView.reflectScrolledClipView(clipView)
+
+        // Compensate the dragged group's visual offset by the exact scroll
+        // amount and feed the same delta into destination-slot calculation.
+        groupDragAutoScrollTranslation += appliedDelta
+        updateGroupDragPosition(snapshot: overlayModel.tabs)
+    }
+
+    private func startGroupDragAutoScroll() {
+        guard groupDragAutoScrollTask == nil else { return }
+        groupDragAutoScrollTask = Task { @MainActor in
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 50_000_000)
+                guard !Task.isCancelled else { break }
+                autoScrollGroupDragIfNeeded()
+            }
+        }
     }
 
     private func handleGroupDragEnd(groupID: String, segmentID: String, dropScreenPoint: CGPoint) {
@@ -966,6 +1084,9 @@ private struct ToolbarTabBarView: View {
     /// Group bracket drag state
     @State private var draggingGroupSegmentID: String?
     @State private var groupDragOffset: CGFloat = 0
+    @State private var groupDragGestureTranslation: CGFloat = 0
+    @State private var groupDragAutoScrollTranslation: CGFloat = 0
+    @State private var groupDragPointer: CGPoint?
     @State private var groupDragHomeRange: Range<Int> = 0 ..< 0
     @State private var groupDragCurrentSlot = 0
 
@@ -1018,13 +1139,14 @@ private struct ToolbarTabBarView: View {
                                         }
                                     )
                                     .gesture(
-                                        DragGesture(minimumDistance: 10)
+                                        DragGesture(minimumDistance: 10, coordinateSpace: .global)
                                             .onChanged { value in
                                                 handleGroupDrag(
                                                     groupID: groupID,
                                                     segmentID: segmentID,
                                                     firstTabID: groupTabs[0].id,
-                                                    translation: value.translation
+                                                    translation: value.translation,
+                                                    pointer: value.location
                                                 )
                                             }
                                             .onEnded { _ in
@@ -1098,6 +1220,11 @@ private struct ToolbarTabBarView: View {
                                 )
                             }.sorted(by: { $0.minX < $1.minX })
                         }
+                        .background(
+                            TabBarScrollViewResolver { scrollView in
+                                tabBarScrollViewBox.scrollView = scrollView
+                            }
+                        )
                         .padding(.horizontal, 8)
                         .padding(.vertical, 3)
                     }
@@ -1106,6 +1233,17 @@ private struct ToolbarTabBarView: View {
                     .id("tabbar-scroll-\(overlayModel.tabBarRefreshToken)")
                     // Hardening: ensure ScrollView content maintains minimum size
                     .fixedSize(horizontal: false, vertical: true)
+                    .background(
+                        GeometryReader { geometry in
+                            Color.clear.preference(
+                                key: TabBarScrollViewportFrameKey.self,
+                                value: geometry.frame(in: .global)
+                            )
+                        }
+                    )
+                    .onPreferenceChange(TabBarScrollViewportFrameKey.self) { frame in
+                        tabBarScrollViewportFrame = frame
+                    }
                     .onChange(of: overlayModel.selectedTabID) {
                         withAnimation(.easeInOut(duration: 0.25)) {
                             proxy.scrollTo(overlayModel.selectedTabID, anchor: .center)
@@ -1163,6 +1301,8 @@ private struct ToolbarTabBarView: View {
             }
         }
         .onDisappear {
+            groupDragAutoScrollTask?.cancel()
+            groupDragAutoScrollTask = nil
             let now = Date()
             if now.timeIntervalSince(lastVisibilityLogAt) > 2.0 {
                 lastVisibilityLogAt = now
