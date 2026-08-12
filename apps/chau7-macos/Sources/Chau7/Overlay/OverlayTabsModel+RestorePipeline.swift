@@ -159,12 +159,22 @@ extension OverlayTabsModel {
     /// `AppDelegate.restoreAdditionalWindows` so both resolve the same source.
     static func bundleIsCurrentRestoreSource() -> Bool {
         let indexToken = UserDefaults.standard.string(forKey: SavedTabState.restoreIndexSaveTokenKey)
-        let bundleToken = TabRestoreBundleStore.loadEnvelope()?.saveToken
-        let isCurrent = RestoreSourceArbiter.bundleIsCurrent(bundleToken: bundleToken, indexToken: indexToken)
-        if !isCurrent {
-            Log.warn("restore: bundle save token \(bundleToken ?? "<none>") lags index token \(indexToken ?? "<none>"); preferring the fresher UserDefaults index")
+        let bundle = TabRestoreBundleStore.loadEnvelope()
+        let decision = RestoreSourceArbiter.decision(
+            bundleToken: bundle?.saveToken,
+            bundlePreviousIndexToken: bundle?.previousIndexSaveToken,
+            indexToken: indexToken
+        )
+        switch decision {
+        case .bundleCurrent:
+            return true
+        case .bundleAheadOfIndex:
+            Log.warn("restore: bundle save token \(bundle?.saveToken ?? "<none>") committed before index token \(indexToken ?? "<none>"); recovering the newer full bundle")
+            return true
+        case .indexCurrent:
+            Log.warn("restore: bundle save token \(bundle?.saveToken ?? "<none>") lags index token \(indexToken ?? "<none>"); preferring the fresher UserDefaults index")
+            return false
         }
-        return isCurrent
     }
 
     /// Decode from pre-decoded states (multi-window restore — avoids UserDefaults round-trip).

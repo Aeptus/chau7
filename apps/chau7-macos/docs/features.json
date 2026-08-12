@@ -624,6 +624,13 @@
   },
   {
     "category": "Terminal Core",
+    "feature": "Crash-Consistent Restore Publication",
+    "description": "Autosave commits the full bundle before publishing the stripped index and writes the index token last; bundle lineage recovers an interrupted one-transaction-newer bundle without allowing unrelated stale bundles to win",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "Terminal Core",
     "feature": "Emoji-Aware Glyph Coloring",
     "description": "Metal renders default or explicit emoji presentation including achromatic FE0F symbols with embedded color while keeping terminal UI symbols and box drawing tintable by ANSI foreground color",
     "status": "Shipped",

@@ -147,25 +147,30 @@ final class TabRestoreBundleStoreTests: XCTestCase {
             reason: .autosave,
             sourceData: sourceData,
             saveToken: "save-1",
+            previousIndexSaveToken: "save-0",
             rootURL: root,
             now: Date(timeIntervalSince1970: 1_800_000_000)
         ))
         XCTAssertEqual(first.saveToken, "save-1")
+        XCTAssertEqual(first.previousIndexSaveToken, "save-0")
 
         let second = try XCTUnwrap(try TabRestoreBundleStore.persistCurrentBundle(
             windowStates: [[state]],
             reason: .autosave,
             sourceData: sourceData,
             saveToken: "save-2",
+            previousIndexSaveToken: "save-1",
             rootURL: root,
             now: Date(timeIntervalSince1970: 1_800_000_900)
         ))
         XCTAssertEqual(second.saveToken, "save-2")
+        XCTAssertEqual(second.previousIndexSaveToken, "save-1")
 
         // The refreshed token must be durable in the manifest on disk, and
         // the sidecar content must still load.
         let reloaded = try XCTUnwrap(TabRestoreBundleStore.loadEnvelope(rootURL: root))
         XCTAssertEqual(reloaded.saveToken, "save-2")
+        XCTAssertEqual(reloaded.previousIndexSaveToken, "save-1")
         XCTAssertNotNil(TabRestoreBundleStore.loadCurrentWindowStates(rootURL: root))
     }
 
