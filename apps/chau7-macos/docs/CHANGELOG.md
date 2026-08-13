@@ -21,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Proxy Version-Skew Detection**: `chau7-proxy` now advertises the wire features it implements on `/health`, and Chau7 verifies them against what the app requires once the proxy starts. A bundled proxy older than the app it ships with is reported as an out-of-date binary with the rebuild command, instead of surfacing later as an unexplained error from the upstream provider. A proxy too old to advertise capabilities at all reads as missing every one of them, and an unreachable proxy is never reported as a mismatch.
 
 ### Fixed
+- **Audited Cloudflare Toolchain**: Issues and Relay Workers now use Wrangler 4.122.0 with compatible Workers types, clearing the vulnerable Miniflare/Undici dependency chain while preserving tests, typechecks, and dry-run builds.
 - **Deterministic Monitor Lifecycle Tests**: Process-resource timer lifecycle regressions now inject an immediate snapshot provider instead of depending on a contended `/bin/ps` subprocess during the 4,000-test suite.
 - **Stack-Wide Validation Conformance**: Committed Swift sources and tests now conform to the active formatter and linter policies, including explicit optional flattening in repository analytics and safe test-fixture guards.
 - **Reliable Concurrent Proxy Writes**: SQLite busy-timeout configuration now applies to every pooled database connection, and the concurrency regression requires every API-call write to persist while reporting individual failures.

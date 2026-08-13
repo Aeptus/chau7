@@ -1,6 +1,13 @@
 [
   {
     "category": "Developer Experience",
+    "feature": "Audited Cloudflare Worker Toolchain",
+    "description": "Issues and Relay Workers pin compatible Wrangler and Workers-types releases that pass dependency audits, tests, typechecks, and dry-run builds",
+    "status": "Shipped",
+    "differentiator": "No"
+  },
+  {
+    "category": "Developer Experience",
     "feature": "Deterministic Monitor Lifecycle Tests",
     "description": "Process-resource timer tests inject immediate snapshots so lifecycle coverage is independent of OS process-enumeration latency under full-suite load",
     "status": "Shipped",
