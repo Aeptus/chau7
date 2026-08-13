@@ -652,7 +652,7 @@ enum ShellLaunchConfigurator {
         [
             "X-Chau7-Session: \(sessionID)",
             "X-Chau7-Tab: \(tabID)",
-            "X-Chau7-Project: \(projectDirectory)",
+            "X-Chau7-Project: \(projectDirectory)"
         ].joined(separator: "\n")
     }
 

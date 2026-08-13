@@ -1,5 +1,12 @@
 [
   {
+    "category": "Developer Experience",
+    "feature": "Isolated Quality-Runner Environment Tests",
+    "description": "Quality-runner regressions scope and restore process-wide environment overrides so acknowledged dirty worktrees cannot invert fail-closed policy tests",
+    "status": "Shipped",
+    "differentiator": "No"
+  },
+  {
     "category": "Tabs, Panes & Windows",
     "feature": "Deterministic Tab-Group Drag Transactions",
     "description": "Repository-group drags move one layer-backed AppKit snapshot at native display cadence over an invisible stable SwiftUI placeholder, with label-plus-tabs geometry and attached-view coverage for scrolling, completion, stale identity, and teardown",

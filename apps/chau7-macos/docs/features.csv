@@ -1,4 +1,5 @@
 Category,Feature,Description,Status,Differentiator
+Developer Experience,Isolated Quality-Runner Environment Tests,Quality-runner regressions scope and restore process-wide environment overrides so acknowledged dirty worktrees cannot invert fail-closed policy tests,Shipped,No
 "Tabs, Panes & Windows",Deterministic Tab-Group Drag Transactions,"Repository-group drags move one layer-backed AppKit snapshot at native display cadence over an invisible stable SwiftUI placeholder, with label-plus-tabs geometry and attached-view coverage for scrolling, completion, stale identity, and teardown",Shipped,Yes
 Quality,Replay-Based Notification Attention Regression Suite,"Versioned Codex and Claude fixtures replay provider payloads through canonical adaptation, turn reconciliation, and style planning to lock down missed-input and false-positive completion cases",Shipped,Yes
 Scripting & Debugging,Structured Notification Delivery Outcomes,"Every notification-ledger transition emits a correlated runtime event with semantic and raw type, routing, trigger, actions, banner and style results, suppression state, and Codex prose confidence evidence",Shipped,Yes
