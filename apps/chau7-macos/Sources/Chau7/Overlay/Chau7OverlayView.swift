@@ -901,6 +901,7 @@ private struct ToolbarTabBarView: View {
                       homeRange: homeRange,
                       tabWidths: widths,
                       spacing: tabSpacing,
+                      leadingAccessoryWidth: bracket.maxX - bracket.minX,
                       groupFrame: CGRect(
                           x: bracket.minX,
                           y: tabBarScrollViewportFrame.minY,

@@ -11,7 +11,7 @@ final class TabStripDragCoordinatorTests: XCTestCase {
 
         XCTAssertTrue(beginDrag(with: coordinator))
         XCTAssertTrue(coordinator.isDragging)
-        XCTAssertTrue(fixture.scrollView.layer?.sublayers?.contains(where: { $0.zPosition == 1_000 }) == true)
+        XCTAssertTrue(fixture.scrollView.layer?.sublayers?.contains(where: { $0.zPosition == 1000 }) == true)
 
         coordinator.updatePointerTranslation(300)
         let transaction = try XCTUnwrap(coordinator.finish())
@@ -19,7 +19,7 @@ final class TabStripDragCoordinatorTests: XCTestCase {
         XCTAssertEqual(transaction.homeRange, 1 ..< 3)
         XCTAssertGreaterThan(transaction.destinationIndex, transaction.homeRange.lowerBound)
         XCTAssertFalse(coordinator.isDragging)
-        XCTAssertFalse(fixture.scrollView.layer?.sublayers?.contains(where: { $0.zPosition == 1_000 }) == true)
+        XCTAssertFalse(fixture.scrollView.layer?.sublayers?.contains(where: { $0.zPosition == 1000 }) == true)
     }
 
     func testDisplayStepAutoscrollsAttachedOverflowingView() {
@@ -58,7 +58,8 @@ final class TabStripDragCoordinatorTests: XCTestCase {
             homeRange: 1 ..< 3,
             tabWidths: [80, 100, 100, 90],
             spacing: 8,
-            groupFrame: CGRect(x: 88, y: 0, width: 208, height: 40),
+            leadingAccessoryWidth: 40,
+            groupFrame: CGRect(x: 40, y: 0, width: 256, height: 40),
             viewportFrame: CGRect(x: 0, y: 0, width: 300, height: 40),
             initialPointerTranslation: 0,
             onDestinationChange: { _ in },

@@ -16,7 +16,9 @@ final class TabStripDragCoordinator: NSObject {
     private var onDestinationChange: ((Int) -> Void)?
     private var onCancellation: (() -> Void)?
 
-    var isDragging: Bool { dragState != nil }
+    var isDragging: Bool {
+        dragState != nil
+    }
 
     func attach(to scrollView: NSScrollView?) {
         guard self.scrollView !== scrollView else { return }
@@ -29,6 +31,7 @@ final class TabStripDragCoordinator: NSObject {
         homeRange: Range<Int>,
         tabWidths: [CGFloat],
         spacing: CGFloat,
+        leadingAccessoryWidth: CGFloat,
         groupFrame: CGRect,
         viewportFrame: CGRect,
         initialPointerTranslation: CGFloat,
@@ -41,7 +44,8 @@ final class TabStripDragCoordinator: NSObject {
               let state = TabGroupDragState(
                   homeRange: homeRange,
                   tabWidths: tabWidths,
-                  spacing: spacing
+                  spacing: spacing,
+                  leadingAccessoryWidth: leadingAccessoryWidth
               ),
               let snapshotLayer = makeSnapshot(
                   of: groupFrame,
@@ -210,7 +214,7 @@ final class TabStripDragCoordinator: NSObject {
         layer.contentsGravity = .resize
         layer.contentsScale = scrollView.window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 2
         layer.frame = clipView.convert(clipRect, to: scrollView)
-        layer.zPosition = 1_000
+        layer.zPosition = 1000
         return layer
     }
 }

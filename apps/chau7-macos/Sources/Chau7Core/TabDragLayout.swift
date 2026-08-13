@@ -2,6 +2,29 @@ import CoreGraphics
 
 /// Geometry helpers for tab reorder previews.
 public enum TabDragLayout {
+    /// Total visual width of a dragged tab group, including an optional
+    /// leading repository label and every spacing inside that segment.
+    public static func groupWidth(
+        homeRange: Range<Int>,
+        tabWidths: [CGFloat],
+        spacing: CGFloat,
+        leadingAccessoryWidth: CGFloat = 0
+    ) -> CGFloat? {
+        guard !homeRange.isEmpty,
+              homeRange.lowerBound >= 0,
+              homeRange.upperBound <= tabWidths.count,
+              spacing >= 0,
+              leadingAccessoryWidth >= 0,
+              homeRange.allSatisfy({ tabWidths[$0] > 0 }) else {
+            return nil
+        }
+
+        let tabsWidth = homeRange.reduce(0) { $0 + tabWidths[$1] }
+            + CGFloat(homeRange.count - 1) * spacing
+        guard leadingAccessoryWidth > 0 else { return tabsWidth }
+        return leadingAccessoryWidth + spacing + tabsWidth
+    }
+
     /// Pixel delta for one autoscroll tick while a drag is held near a
     /// horizontal viewport edge. Speed ramps with edge penetration so entry
     /// into the activation zone is controlled while the outer edge remains
@@ -106,16 +129,17 @@ public enum TabDragLayout {
         for translation: CGFloat,
         homeRange: Range<Int>,
         tabWidths: [CGFloat],
-        spacing: CGFloat
+        spacing: CGFloat,
+        leadingAccessoryWidth: CGFloat = 0
     ) -> Int {
-        guard !homeRange.isEmpty,
-              homeRange.lowerBound >= 0,
-              homeRange.upperBound <= tabWidths.count else {
+        guard let groupWidth = groupWidth(
+            homeRange: homeRange,
+            tabWidths: tabWidths,
+            spacing: spacing,
+            leadingAccessoryWidth: leadingAccessoryWidth
+        ) else {
             return homeRange.lowerBound
         }
-
-        let groupWidth: CGFloat = homeRange.reduce(0) { $0 + tabWidths[$1] }
-            + CGFloat(max(0, homeRange.count - 1)) * spacing
 
         var newStart = homeRange.lowerBound
         var centerDistance: CGFloat = 0

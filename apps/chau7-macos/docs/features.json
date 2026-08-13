@@ -2,7 +2,7 @@
   {
     "category": "Tabs, Panes & Windows",
     "feature": "Deterministic Tab-Group Drag Transactions",
-    "description": "Repository-group drags move one layer-backed AppKit snapshot at native display cadence over an invisible stable SwiftUI placeholder, with attached-view coverage for edge scrolling, transaction completion, stale identity, and detached-view teardown",
+    "description": "Repository-group drags move one layer-backed AppKit snapshot at native display cadence over an invisible stable SwiftUI placeholder, with label-plus-tabs geometry and attached-view coverage for scrolling, completion, stale identity, and teardown",
     "status": "Shipped",
     "differentiator": "Yes"
   },

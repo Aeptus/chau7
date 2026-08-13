@@ -2,6 +2,29 @@ import XCTest
 @testable import Chau7Core
 
 final class TabDragLayoutTests: XCTestCase {
+    func testGroupWidthIncludesLeadingAccessoryAndInternalSpacing() {
+        XCTAssertEqual(
+            TabDragLayout.groupWidth(
+                homeRange: 1 ..< 3,
+                tabWidths: [60, 80, 120, 90],
+                spacing: 8,
+                leadingAccessoryWidth: 40
+            ),
+            256
+        )
+    }
+
+    func testGroupWidthRejectsInvalidGeometry() {
+        XCTAssertNil(
+            TabDragLayout.groupWidth(
+                homeRange: 1 ..< 3,
+                tabWidths: [60, 0, 120],
+                spacing: 8,
+                leadingAccessoryWidth: 40
+            )
+        )
+    }
+
     func testEdgeAutoScrollIsInactiveInViewportCenter() {
         XCTAssertEqual(
             TabDragLayout.edgeAutoScrollDelta(

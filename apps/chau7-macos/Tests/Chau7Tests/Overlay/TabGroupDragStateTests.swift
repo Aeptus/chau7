@@ -24,15 +24,20 @@ final class TabGroupDragStateTests: XCTestCase {
 
     func testComputesStablePlaceholderDisplacementsToTheRight() throws {
         var state = try XCTUnwrap(
-            TabGroupDragState(homeRange: 1 ..< 3, tabWidths: [60, 80, 120, 90, 70], spacing: 8)
+            TabGroupDragState(
+                homeRange: 1 ..< 3,
+                tabWidths: [60, 80, 120, 90, 70],
+                spacing: 8,
+                leadingAccessoryWidth: 40
+            )
         )
-        state.updatePointerTranslation(300)
+        state.updatePointerTranslation(250)
 
-        XCTAssertEqual(state.groupWidth, 208)
+        XCTAssertEqual(state.groupWidth, 256)
         XCTAssertEqual(state.displacement(forTabAt: 1), 0)
         XCTAssertEqual(state.displacement(forTabAt: 2), 0)
-        XCTAssertEqual(state.displacement(forTabAt: 3), -216)
-        XCTAssertEqual(state.displacement(forTabAt: 4), -216)
+        XCTAssertEqual(state.displacement(forTabAt: 3), -264)
+        XCTAssertEqual(state.displacement(forTabAt: 4), 0)
     }
 
     func testComputesStablePlaceholderDisplacementsToTheLeft() throws {

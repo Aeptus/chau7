@@ -8,16 +8,23 @@ public struct TabGroupDragState: Equatable, Sendable {
     public let homeRange: Range<Int>
     public let tabWidths: [CGFloat]
     public let spacing: CGFloat
+    public let leadingAccessoryWidth: CGFloat
 
     public private(set) var pointerTranslation: CGFloat = 0
     public private(set) var scrollCompensation: CGFloat = 0
     public private(set) var destinationIndex: Int
 
-    public init?(homeRange: Range<Int>, tabWidths: [CGFloat], spacing: CGFloat) {
+    public init?(
+        homeRange: Range<Int>,
+        tabWidths: [CGFloat],
+        spacing: CGFloat,
+        leadingAccessoryWidth: CGFloat = 0
+    ) {
         guard !homeRange.isEmpty,
               homeRange.lowerBound >= 0,
               homeRange.upperBound <= tabWidths.count,
               spacing >= 0,
+              leadingAccessoryWidth >= 0,
               tabWidths.allSatisfy({ $0 > 0 }) else {
             return nil
         }
@@ -25,7 +32,8 @@ public struct TabGroupDragState: Equatable, Sendable {
         self.homeRange = homeRange
         self.tabWidths = tabWidths
         self.spacing = spacing
-        destinationIndex = homeRange.lowerBound
+        self.leadingAccessoryWidth = leadingAccessoryWidth
+        self.destinationIndex = homeRange.lowerBound
     }
 
     public var effectiveTranslation: CGFloat {
@@ -33,8 +41,12 @@ public struct TabGroupDragState: Equatable, Sendable {
     }
 
     public var groupWidth: CGFloat {
-        homeRange.reduce(0) { $0 + tabWidths[$1] }
-            + CGFloat(homeRange.count - 1) * spacing
+        TabDragLayout.groupWidth(
+            homeRange: homeRange,
+            tabWidths: tabWidths,
+            spacing: spacing,
+            leadingAccessoryWidth: leadingAccessoryWidth
+        ) ?? 0
     }
 
     public mutating func updatePointerTranslation(_ translation: CGFloat) {
@@ -68,7 +80,8 @@ public struct TabGroupDragState: Equatable, Sendable {
             for: effectiveTranslation,
             homeRange: homeRange,
             tabWidths: tabWidths,
-            spacing: spacing
+            spacing: spacing,
+            leadingAccessoryWidth: leadingAccessoryWidth
         )
     }
 }
