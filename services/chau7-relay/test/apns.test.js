@@ -5,7 +5,10 @@ import {
   parseApnsReason,
   buildApnsPayload,
   apnsCollapseID,
-  REMOVABLE_REASONS
+  REMOVABLE_REASONS,
+  resolveAPNSToken,
+  isAPNSTokenUsable,
+  APNS_TOKEN_TTL_MS
 } from '../src/apns.js';
 
 test('410 always removes the registration', () => {
@@ -83,4 +86,112 @@ test('collapse id prefers request over prompt over identity, capped at 64 bytes'
   assert.equal(apnsCollapseID({ prompt_id: 'p' }), 'p');
   assert.equal(apnsCollapseID({ identity_key: 'x'.repeat(100) }), 'x'.repeat(64));
   assert.equal(apnsCollapseID({}), undefined);
+});
+
+// --- APNs provider token caching -------------------------------------------
+// The bug: the token lived only in Durable Object memory. DOs are evicted when
+// idle and pushes arrive in sparse bursts, so the refresh interval never
+// elapsed in memory — APNs saw a mint per burst and replied
+// TooManyProviderTokenUpdates / 502, dropping the notification.
+
+test('a live in-memory token is reused without touching storage or minting', async () => {
+  let reads = 0;
+  let mints = 0;
+  const now = 1_000_000;
+
+  const result = await resolveAPNSToken({
+    memory: { token: 'live', expiresAt: now + 60_000 },
+    readStored: async () => {
+      reads++;
+      return undefined;
+    },
+    writeStored: async () => {},
+    mint: async () => {
+      mints++;
+      return 'fresh';
+    },
+    now
+  });
+
+  assert.equal(result.token, 'live');
+  assert.equal(result.source, 'memory');
+  assert.equal(reads, 0);
+  assert.equal(mints, 0);
+});
+
+test('after eviction the persisted token is reused instead of minting', async () => {
+  let mints = 0;
+  const now = 1_000_000;
+
+  // memory undefined models a freshly constructed DO after eviction.
+  const result = await resolveAPNSToken({
+    memory: undefined,
+    readStored: async () => ({ token: 'persisted', expiresAt: now + 60_000 }),
+    writeStored: async () => {
+      throw new Error('must not rewrite a still-valid token');
+    },
+    mint: async () => {
+      mints++;
+      return 'fresh';
+    },
+    now
+  });
+
+  assert.equal(result.token, 'persisted');
+  assert.equal(result.source, 'storage');
+  assert.equal(mints, 0, 'evicted instance must not mint a new provider token');
+});
+
+test('an expired persisted token is refreshed and written back', async () => {
+  const now = 1_000_000;
+  let written;
+
+  const result = await resolveAPNSToken({
+    memory: { token: 'stale-memory', expiresAt: now - 1 },
+    readStored: async () => ({ token: 'stale-stored', expiresAt: now - 1 }),
+    writeStored: async (entry) => {
+      written = entry;
+    },
+    mint: async () => 'fresh',
+    now
+  });
+
+  assert.equal(result.token, 'fresh');
+  assert.equal(result.source, 'minted');
+  assert.equal(written.token, 'fresh');
+  assert.equal(written.expiresAt, now + APNS_TOKEN_TTL_MS);
+});
+
+test('the token is persisted before it is handed back', async () => {
+  const now = 1_000_000;
+  const order = [];
+
+  await resolveAPNSToken({
+    memory: undefined,
+    readStored: async () => undefined,
+    writeStored: async () => order.push('write'),
+    mint: async () => {
+      order.push('mint');
+      return 'fresh';
+    },
+    now
+  });
+
+  assert.deepEqual(order, ['mint', 'write'], 'persist must happen before returning');
+});
+
+test('the refresh interval stays inside the APNs one-hour token lifetime', () => {
+  assert.ok(APNS_TOKEN_TTL_MS < 60 * 60 * 1000, 'token would outlive APNs validity');
+  assert.ok(
+    APNS_TOKEN_TTL_MS > 20 * 60 * 1000,
+    'refreshing faster than 20min trips APNs rate limits'
+  );
+});
+
+test('isAPNSTokenUsable rejects missing and malformed entries', () => {
+  const now = 1_000_000;
+  assert.equal(isAPNSTokenUsable(undefined, now), false);
+  assert.equal(isAPNSTokenUsable({ token: 'x' }, now), false);
+  assert.equal(isAPNSTokenUsable({ token: 'x', expiresAt: now - 1 }, now), false);
+  assert.equal(isAPNSTokenUsable({ token: 'x', expiresAt: now + 1 }, now), true);
 });

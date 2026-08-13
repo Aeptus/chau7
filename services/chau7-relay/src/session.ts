@@ -23,6 +23,7 @@ import {
   apnsCollapseID,
   buildApnsPayload,
   parseApnsReason,
+  resolveAPNSToken,
   shouldRemoveRegistration
 } from './apns.js';
 import { RateLimiter } from './ratelimit.js';
@@ -74,13 +75,23 @@ const MAX_SEEN_NONCES = 2000;
 
 type Role = 'mac' | 'ios';
 
+/// Storage key for the APNs provider JWT. Persisted so the refresh interval
+/// survives Durable Object eviction; see getAPNSToken.
+const APNS_TOKEN_STORAGE_KEY = 'apns-provider-token';
+
+interface CachedAPNSToken {
+  token: string;
+  expiresAt: number;
+}
+
 export class SessionDO {
   private readonly state: DurableObjectState;
   private readonly env: Env;
   private readonly rateLimiter = new RateLimiter();
   /// Cached APNs provider JWT — identical across all registrations in this DO,
   /// valid up to 1h; refreshed at 50min to avoid TooManyProviderTokenUpdates.
-  private cachedAPNSToken?: { token: string; expiresAt: number };
+  /// Mirrors the persisted copy under APNS_TOKEN_STORAGE_KEY.
+  private cachedAPNSToken?: CachedAPNSToken;
   /// Cached signing key so the P-256 import happens once per JWT refresh, not per notify.
   private cachedSigningKey?: CryptoKey;
 
@@ -473,13 +484,23 @@ export class SessionDO {
   /// cache is empty or near expiry. The signing inputs (team/key) are identical
   /// for every registration in this DO, so this collapses the per-registration,
   /// per-notify ECDSA signing into one signature per ~50 minutes.
+  ///
+  /// The cache is persisted, not just held in memory. APNs rejects a provider
+  /// that refreshes its token too often with TooManyProviderTokenUpdates, and an
+  /// in-memory-only cache cannot honour that: Durable Objects are evicted when
+  /// idle, pushes arrive in sparse bursts, and every eviction silently reset the
+  /// 50-minute timer. The observed effect was a mint per burst rather than the
+  /// intended one per 50 minutes, and APNs 502s that dropped the notification.
   private async getAPNSToken(teamID: string, keyID: string, privateKey: string): Promise<string> {
-    const now = Date.now();
-    if (this.cachedAPNSToken && this.cachedAPNSToken.expiresAt > now) {
-      return this.cachedAPNSToken.token;
-    }
-    const token = await this.createAPNSToken(teamID, keyID, privateKey);
-    this.cachedAPNSToken = { token, expiresAt: now + 50 * 60 * 1000 };
+    const { token, entry } = await resolveAPNSToken({
+      memory: this.cachedAPNSToken,
+      readStored: () => this.state.storage.get<CachedAPNSToken>(APNS_TOKEN_STORAGE_KEY),
+      writeStored: (value: CachedAPNSToken) =>
+        this.state.storage.put(APNS_TOKEN_STORAGE_KEY, value),
+      mint: () => this.createAPNSToken(teamID, keyID, privateKey),
+      now: Date.now()
+    });
+    this.cachedAPNSToken = entry;
     return token;
   }
 

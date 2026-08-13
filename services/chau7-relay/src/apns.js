@@ -104,3 +104,54 @@ export function apnsCollapseID(notify) {
   }
   return raw.slice(0, 64);
 }
+
+/**
+ * How long a minted APNs provider JWT is reused before refreshing.
+ *
+ * APNs accepts a provider token for one hour and rejects a provider that
+ * refreshes too often with `TooManyProviderTokenUpdates`, so this sits inside
+ * the hour with margin rather than near either bound.
+ */
+export const APNS_TOKEN_TTL_MS = 50 * 60 * 1000;
+
+/**
+ * Whether a cached provider-token entry is still usable at `now`.
+ */
+export function isAPNSTokenUsable(entry, now) {
+  return Boolean(entry) && typeof entry.expiresAt === 'number' && entry.expiresAt > now;
+}
+
+/**
+ * Resolve an APNs provider token, minting one only when neither the in-memory
+ * nor the persisted cache holds a live entry.
+ *
+ * The storage lookup is the point of this function. Durable Objects are evicted
+ * when idle and pushes arrive in sparse bursts, so an in-memory-only cache was
+ * reset constantly — the refresh interval never elapsed in memory because the
+ * instance rarely lived that long, and APNs saw a token mint per burst instead
+ * of one per TTL. It answered with `TooManyProviderTokenUpdates`, a 502, and a
+ * dropped notification.
+ *
+ * Dependencies are injected so the ordering is unit-testable without a Worker
+ * runtime; the caller supplies storage access and the signing routine.
+ *
+ * Returns the token plus `source` ('memory' | 'storage' | 'minted') so callers
+ * and tests can distinguish a reuse from a refresh.
+ */
+export async function resolveAPNSToken({ memory, readStored, writeStored, mint, now }) {
+  if (isAPNSTokenUsable(memory, now)) {
+    return { token: memory.token, entry: memory, source: 'memory' };
+  }
+
+  const stored = await readStored();
+  if (isAPNSTokenUsable(stored, now)) {
+    return { token: stored.token, entry: stored, source: 'storage' };
+  }
+
+  const token = await mint();
+  const entry = { token, expiresAt: now + APNS_TOKEN_TTL_MS };
+  // Persist before returning: a caller that cached in memory first would lose
+  // the record on eviction and mint again, which is the original bug.
+  await writeStored(entry);
+  return { token, entry, source: 'minted' };
+}
