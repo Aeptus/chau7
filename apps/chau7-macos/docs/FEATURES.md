@@ -879,6 +879,7 @@ Legacy `AI_*` and `SMART_OVERLAY_*` environment variables are still supported.
 
 ## Quality Gates
 
+- Swift formatting/lint and Go static analysis run across the complete source and test trees; test fixture guards terminate explicitly before optional values are dereferenced.
 - Quality-runner tests isolate process-wide environment overrides, preserving fail-closed dirty-worktree coverage even when the parent pre-push invocation explicitly acknowledges local changes.
 
 - The full XCTest suite (3,000+ tests) compiles and runs under `swift test` — no test files are gated out of the package build, and a pre-commit guard rejects new `#if !SWIFT_PACKAGE` gates.

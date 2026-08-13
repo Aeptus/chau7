@@ -38,11 +38,11 @@ final class TerminalTranscriptCaptureTests: XCTestCase {
     func testRepeatedSmallAppendsKeepChunkMetadataBoundedAtCapacity() {
         let capture = TerminalTranscriptCapture(maxBytes: 64)
 
-        for value in 0 ..< 10_000 {
+        for value in 0 ..< 10000 {
             capture.append(Data([UInt8(value % 251)]))
         }
 
-        XCTAssertEqual(capture.tailData(maxBytes: 1_000).count, 64)
+        XCTAssertEqual(capture.tailData(maxBytes: 1000).count, 64)
         XCTAssertLessThanOrEqual(capture.allocatedChunkSlotCountForTesting, 128)
     }
 

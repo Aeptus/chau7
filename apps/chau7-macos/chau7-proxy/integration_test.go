@@ -117,6 +117,7 @@ func TestIntegration_FullTaskLifecycle(t *testing.T) {
 		candidate := taskManager.GetCandidate("tab_integration_test")
 		if candidate == nil {
 			t.Fatal("Expected candidate to be created")
+			return
 		}
 		if candidate.SuggestedName == "" {
 			t.Error("Candidate should have a suggested name")
@@ -130,6 +131,7 @@ func TestIntegration_FullTaskLifecycle(t *testing.T) {
 		candidate := taskManager.GetCandidate("tab_integration_test")
 		if candidate == nil {
 			t.Skip("No candidate available")
+			return
 		}
 
 		reqBody := StartTaskRequest{
@@ -156,6 +158,7 @@ func TestIntegration_FullTaskLifecycle(t *testing.T) {
 		task := taskManager.GetCurrentTask("tab_integration_test")
 		if task == nil {
 			t.Fatal("Expected active task")
+			return
 		}
 		if task.State != TaskStateActive {
 			t.Errorf("Task state = %v, want active", task.State)
@@ -191,6 +194,7 @@ func TestIntegration_FullTaskLifecycle(t *testing.T) {
 		task := taskManager.GetCurrentTask("tab_integration_test")
 		if task == nil {
 			t.Fatal("Task should still be active")
+			return
 		}
 		if task.TotalAPICalls < 2 {
 			t.Errorf("Task should have at least 2 API calls, got %d", task.TotalAPICalls)
@@ -357,6 +361,7 @@ func TestIntegration_ManualTaskTrigger(t *testing.T) {
 	task := taskManager.GetCurrentTask("tab_manual")
 	if task == nil {
 		t.Fatal("Expected immediate task creation with X-Chau7-New-Task")
+		return
 	}
 	if task.StartMethod != StartMethodManual {
 		t.Errorf("StartMethod = %v, want manual", task.StartMethod)
@@ -436,6 +441,7 @@ func TestIntegration_CandidateDismissal(t *testing.T) {
 	candidate := taskManager.GetCandidate("tab_dismiss")
 	if candidate == nil {
 		t.Fatal("Expected candidate to be created")
+		return
 	}
 
 	// Step 2: Dismiss the candidate
@@ -545,6 +551,7 @@ func TestIntegration_HeaderBasedDismiss(t *testing.T) {
 	candidate := taskManager.GetCandidate("tab_header_dismiss")
 	if candidate == nil {
 		t.Fatal("Expected candidate")
+		return
 	}
 	candidateID := candidate.ID
 

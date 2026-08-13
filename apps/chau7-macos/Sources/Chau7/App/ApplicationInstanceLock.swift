@@ -100,7 +100,7 @@ final class ApplicationInstanceLock {
 
     private static func readOwner(from fd: Int32) -> Owner? {
         guard lseek(fd, 0, SEEK_SET) >= 0 else { return nil }
-        var bytes = [UInt8](repeating: 0, count: 4_096)
+        var bytes = [UInt8](repeating: 0, count: 4096)
         let count = read(fd, &bytes, bytes.count)
         guard count > 0 else { return nil }
         return try? JSONDecoder().decode(Owner.self, from: Data(bytes.prefix(Int(count))))

@@ -158,7 +158,7 @@ final class TerminalControlServiceTests: XCTestCase {
 
     func testMCPWaitReadyFailsImmediatelyWhenControlIsRequired() throws {
         let tabID = TerminalControlService.shared.controlPlaneTabID(for: overlayModel.selectedTabID)
-        let response = TerminalControlService.shared.waitForMCPControlledTabReady(tabID: tabID, timeoutMs: 30_000)
+        let response = TerminalControlService.shared.waitForMCPControlledTabReady(tabID: tabID, timeoutMs: 30000)
         let json = try XCTUnwrap(parseJSONObject(response))
 
         XCTAssertEqual(json["can_accept_exec"] as? Bool, false)

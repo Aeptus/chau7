@@ -487,17 +487,17 @@ extension RustTerminalView {
 
         return { [weak self, weak rust] in
             guard let self, let rust else { return nil }
-            let context = self.terminalWorkContext(caller: "metalGridProvider")
+            let context = terminalWorkContext(caller: "metalGridProvider")
             guard TerminalGridSnapshotPolicy.allowsPresentationSnapshot(
                 visibility: context.visibility
             ) else {
                 return nil
             }
-            guard let (grid, freeGrid) = self.measuredGridSnapshot(rust: rust, caller: "metalGridProvider") else { return nil }
+            guard let (grid, freeGrid) = measuredGridSnapshot(rust: rust, caller: "metalGridProvider") else { return nil }
 
             let cursor = rust.cursorPosition
             let cursorVisible = grid.pointee.cursor_visible != 0
-            self.cachedScrollbackRows = Int(grid.pointee.scrollback_rows)
+            cachedScrollbackRows = Int(grid.pointee.scrollback_rows)
             // grid is UnsafeMutablePointer<RustGridSnapshot>, cast to raw for the generic provider
             let rawPtr = UnsafeMutableRawPointer(grid)
             return (grid: rawPtr, cursor: cursor, cursorVisible: cursorVisible, free: freeGrid)

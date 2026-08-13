@@ -7,7 +7,9 @@ final class RestoreSaveTransactionTests: XCTestCase {
 
         let result = RestoreSaveTransaction.commit(
             indexPayloadIsReady: true,
-            persistBundle: { events.append("bundle"); return true },
+            persistBundle: { events.append("bundle")
+                return true
+            },
             publishIndexPayload: { events.append("index-payload") },
             publishIndexToken: { events.append("index-token") }
         )
@@ -21,7 +23,9 @@ final class RestoreSaveTransactionTests: XCTestCase {
 
         let result = RestoreSaveTransaction.commit(
             indexPayloadIsReady: true,
-            persistBundle: { events.append("bundle"); return false },
+            persistBundle: { events.append("bundle")
+                return false
+            },
             publishIndexPayload: { events.append("index-payload") },
             publishIndexToken: { events.append("index-token") }
         )
@@ -35,7 +39,9 @@ final class RestoreSaveTransactionTests: XCTestCase {
 
         let result = RestoreSaveTransaction.commit(
             indexPayloadIsReady: false,
-            persistBundle: { events.append("bundle"); return true },
+            persistBundle: { events.append("bundle")
+                return true
+            },
             publishIndexPayload: { events.append("index-payload") },
             publishIndexToken: { events.append("index-token") }
         )

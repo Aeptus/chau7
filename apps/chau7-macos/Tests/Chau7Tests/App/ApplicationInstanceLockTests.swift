@@ -2,7 +2,7 @@ import XCTest
 @testable import Chau7
 
 final class ApplicationInstanceLockTests: XCTestCase {
-    func testSecondOwnerIsRefusedUntilFirstReleasesLock() throws {
+    func testSecondOwnerIsRefusedUntilFirstReleasesLock() {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("chau7-instance-lock-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: directory) }

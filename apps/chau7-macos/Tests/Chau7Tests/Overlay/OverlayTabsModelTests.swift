@@ -2490,7 +2490,7 @@ final class OverlayTabsModelTests: XCTestCase {
             aiResumeCommand: "claude --resume \(rejectedSessionID)"
         )
 
-        for cycle in 1...3 {
+        for cycle in 1 ... 3 {
             let exported = try XCTUnwrap(model.exportTabStates().first)
             let pane = try XCTUnwrap(exported.paneStates?.first)
 

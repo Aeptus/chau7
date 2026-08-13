@@ -30,7 +30,7 @@ final class CodexAppServerInteractionTests: XCTestCase {
         XCTAssertEqual(resolution.phase, .resolved)
     }
 
-    func testTrackerPreservesOtherPendingInteractionOnResolution() throws {
+    func testTrackerPreservesOtherPendingInteractionOnResolution() {
         var tracker = CodexAppServerInteractionTracker()
         let approval = CodexAppServerInteraction(
             requestID: "approval",

@@ -1,4 +1,5 @@
 Category,Feature,Description,Status,Differentiator
+Developer Experience,Cross-Language Validator Conformance,Complete-tree Swift formatting and lint plus Go static analysis enforce explicit optional flattening and terminating test-fixture guards,Shipped,No
 Developer Experience,Isolated Quality-Runner Environment Tests,Quality-runner regressions scope and restore process-wide environment overrides so acknowledged dirty worktrees cannot invert fail-closed policy tests,Shipped,No
 "Tabs, Panes & Windows",Deterministic Tab-Group Drag Transactions,"Repository-group drags move one layer-backed AppKit snapshot at native display cadence over an invisible stable SwiftUI placeholder, with label-plus-tabs geometry and attached-view coverage for scrolling, completion, stale identity, and teardown",Shipped,Yes
 Quality,Replay-Based Notification Attention Regression Suite,"Versioned Codex and Claude fixtures replay provider payloads through canonical adaptation, turn reconciliation, and style planning to lock down missed-input and false-positive completion cases",Shipped,Yes

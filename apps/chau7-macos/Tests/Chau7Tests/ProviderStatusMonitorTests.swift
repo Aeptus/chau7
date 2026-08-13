@@ -24,7 +24,7 @@ final class ProviderStatusMonitorTests: XCTestCase {
     func testFailedRefreshesBackOffAndClassifyTransportNoise() async {
         let fetcher = CountingFailingStatusFetcher()
         let monitor = ProviderStatusMonitor(fetcher: fetcher)
-        let now = Date(timeIntervalSince1970: 1_000)
+        let now = Date(timeIntervalSince1970: 1000)
 
         await monitor.refresh(at: now)
         await monitor.refresh(at: now.addingTimeInterval(30))

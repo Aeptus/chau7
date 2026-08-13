@@ -150,6 +150,7 @@ func TestTaskManager_ManualTrigger(t *testing.T) {
 	task := tm.GetCurrentTask("tab_1")
 	if task == nil {
 		t.Fatal("Expected active task")
+		return
 	}
 	if task.State != TaskStateActive {
 		t.Errorf("Task state = %v, want %v", task.State, TaskStateActive)
@@ -181,6 +182,7 @@ func TestTaskManager_NewSessionTrigger(t *testing.T) {
 	candidate := tm.GetCandidate("tab_1")
 	if candidate == nil {
 		t.Fatal("Expected pending candidate")
+		return
 	}
 	if candidate.Trigger != TriggerNewSession {
 		t.Errorf("Trigger = %v, want %v", candidate.Trigger, TriggerNewSession)
@@ -221,6 +223,7 @@ func TestTaskManager_IdleGapTrigger(t *testing.T) {
 	candidate := tm.GetCandidate("tab_1")
 	if candidate == nil {
 		t.Fatal("Expected pending candidate")
+		return
 	}
 	if candidate.Trigger != TriggerIdleGap {
 		t.Errorf("Trigger = %v, want %v", candidate.Trigger, TriggerIdleGap)
@@ -253,6 +256,7 @@ func TestTaskManager_RepoSwitchTrigger(t *testing.T) {
 	candidate := tm.GetCandidate("tab_1")
 	if candidate == nil {
 		t.Fatal("Expected pending candidate")
+		return
 	}
 	if candidate.Trigger != TriggerRepoSwitch {
 		t.Errorf("Trigger = %v, want %v", candidate.Trigger, TriggerRepoSwitch)
@@ -276,6 +280,7 @@ func TestTaskManager_CandidateConfirmation(t *testing.T) {
 	candidate := tm.GetCandidate("tab_1")
 	if candidate == nil {
 		t.Fatal("Expected candidate")
+		return
 	}
 
 	// Confirm the candidate
@@ -297,6 +302,7 @@ func TestTaskManager_CandidateConfirmation(t *testing.T) {
 	currentTask := tm.GetCurrentTask("tab_1")
 	if currentTask == nil {
 		t.Fatal("Expected active task")
+		return
 	}
 }
 
@@ -317,6 +323,7 @@ func TestTaskManager_CandidateDismissal(t *testing.T) {
 	candidate := tm.GetCandidate("tab_1")
 	if candidate == nil {
 		t.Fatal("Expected candidate")
+		return
 	}
 	candidateID := candidate.ID
 
@@ -399,6 +406,7 @@ func TestTaskManager_TaskAssessment(t *testing.T) {
 	task := tm.GetCurrentTask("tab_1")
 	if task == nil {
 		t.Fatal("Expected task")
+		return
 	}
 	if task.State != TaskStateCompleted {
 		t.Errorf("State = %v, want %v", task.State, TaskStateCompleted)
@@ -476,6 +484,7 @@ func TestTaskManager_MultipleTabsIndependent(t *testing.T) {
 
 	if task1 == nil || task2 == nil {
 		t.Fatal("Expected both tabs to have tasks")
+		return
 	}
 
 	if task1.ID == task2.ID {

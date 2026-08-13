@@ -59,7 +59,7 @@ final class FileSystemWatchRegistry {
     private var entries: [WatchKey: Entry] = [:]
 
     init(label: String = "com.chau7.filesystem-watch-registry") {
-        queue = DispatchQueue(label: label, qos: .utility)
+        self.queue = DispatchQueue(label: label, qos: .utility)
     }
 
     func watch(

@@ -21,7 +21,7 @@ struct TelemetrySchemaMigrator {
         "runs",
         "usage_evidence",
         "remote_client_events",
-        "provider_latency_samples",
+        "provider_latency_samples"
     ]
 
     let db: OpaquePointer?

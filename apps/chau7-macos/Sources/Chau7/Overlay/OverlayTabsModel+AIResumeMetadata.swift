@@ -230,11 +230,11 @@ extension OverlayTabsModel {
             if let explicitSessionId,
                explicitProvider == "codex",
                !claimedSessionIds.contains(explicitSessionId),
-               (!Self.codexSessionRequiresRolloutValidation(explicitSessionId)
-                   || Self.restoredCodexRolloutExists(
-                       sessionId: explicitSessionId,
-                       referenceDate: referenceDate
-                   )) {
+               !Self.codexSessionRequiresRolloutValidation(explicitSessionId)
+               || Self.restoredCodexRolloutExists(
+                   sessionId: explicitSessionId,
+                   referenceDate: referenceDate
+               ) {
                 let preservedExplicit = (provider: "codex", sessionId: explicitSessionId)
                 codexResumeFallbackCache[cacheKey] = CachedCodexResumeFallback(
                     signature: fallbackSignature,

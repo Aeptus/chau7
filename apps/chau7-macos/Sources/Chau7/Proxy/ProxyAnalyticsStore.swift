@@ -113,7 +113,7 @@ final class ProxyAnalyticsStore {
     private let dbLock = NSLock()
 
     private init() {
-        databasePath = Self.defaultDatabasePath
+        self.databasePath = Self.defaultDatabasePath
     }
 
     init(databasePath: String) {
@@ -578,7 +578,7 @@ final class ProxyAnalyticsStore {
                     lastCallAt: lastCallAt,
                     hourlyCost: []
                 )
-            } ?? nil
+            }.flatMap { $0 }
 
             guard let aggregate else { return .empty }
             return ProxyRepoAnalyticsSummary(

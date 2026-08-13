@@ -242,7 +242,7 @@ final class ShellLaunchConfiguratorTests: XCTestCase {
             "CHAU7_CAPTURE_CA": captureCA.path,
             "CHAU7_CAPTURE_PATH": capturePATH.path,
             "CHAU7_TEST_GIT_ROOT": "/repo/Codex Project",
-            "CODEX_CA_CERTIFICATE": userCA.path,
+            "CODEX_CA_CERTIFICATE": userCA.path
         ]
         try process.run()
         process.waitUntilExit()
@@ -287,7 +287,7 @@ final class ShellLaunchConfiguratorTests: XCTestCase {
             "PATH": "\(integrationDir.path)/bin:\(fakeBinDir.path):/usr/bin:/bin",
             "CHAU7_OPENAI_PROXY_BASE_URL": "https://127.0.0.1:8900",
             "CHAU7_CODEX_CA_CERTIFICATE": baseDir.appendingPathComponent("missing.pem").path,
-            "CHAU7_CAPTURE_ARGS": captureArgs.path,
+            "CHAU7_CAPTURE_ARGS": captureArgs.path
         ]
         try process.run()
         process.waitUntilExit()
@@ -470,7 +470,7 @@ final class ShellLaunchConfiguratorTests: XCTestCase {
         let env = launchEnvironment(makeInputs(
             processEnvironment: [
                 "HOME": "/Users/tester",
-                "ANTHROPIC_CUSTOM_HEADERS": "X-Organization: example\nX-Gateway: enabled",
+                "ANTHROPIC_CUSTOM_HEADERS": "X-Organization: example\nX-Gateway: enabled"
             ],
             integrationDir: "/integration",
             apiAnalytics: ShellLaunchConfigurator.APIAnalyticsProxyContext(port: 8899, includeOpenAI: false)
@@ -516,7 +516,7 @@ final class ShellLaunchConfiguratorTests: XCTestCase {
             "--noprofile",
             "--norc",
             "-c",
-            "source \"\(integration.path)/.bashrc\"; printf '\\nHEADERS_START\\n%s\\nHEADERS_END\\nTOOL=%s\\n' \"$ANTHROPIC_CUSTOM_HEADERS\" \"$ENABLE_TOOL_SEARCH\"",
+            "source \"\(integration.path)/.bashrc\"; printf '\\nHEADERS_START\\n%s\\nHEADERS_END\\nTOOL=%s\\n' \"$ANTHROPIC_CUSTOM_HEADERS\" \"$ENABLE_TOOL_SEARCH\""
         ]
         process.currentDirectoryURL = baseDir
         process.environment = [
@@ -525,7 +525,7 @@ final class ShellLaunchConfiguratorTests: XCTestCase {
             "CHAU7_PROXY_CORRELATION_ENABLED": "1",
             "CHAU7_SESSION_ID": "session-123",
             "CHAU7_TAB_ID": "tab-456",
-            "PATH": "/usr/bin:/bin",
+            "PATH": "/usr/bin:/bin"
         ]
         let outputPipe = Pipe()
         process.standardOutput = outputPipe

@@ -13,7 +13,9 @@ final class TabHoverCardAnalyticsModel {
         let tool: String
         let count: Int
 
-        var id: String { tool }
+        var id: String {
+            tool
+        }
     }
 
     struct Snapshot: Sendable {

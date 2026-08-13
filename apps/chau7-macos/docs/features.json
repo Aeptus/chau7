@@ -1,6 +1,13 @@
 [
   {
     "category": "Developer Experience",
+    "feature": "Cross-Language Validator Conformance",
+    "description": "Complete-tree Swift formatting and lint plus Go static analysis enforce explicit optional flattening and terminating test-fixture guards",
+    "status": "Shipped",
+    "differentiator": "No"
+  },
+  {
+    "category": "Developer Experience",
     "feature": "Isolated Quality-Runner Environment Tests",
     "description": "Quality-runner regressions scope and restore process-wide environment overrides so acknowledged dirty worktrees cannot invert fail-closed policy tests",
     "status": "Shipped",

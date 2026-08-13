@@ -141,7 +141,7 @@ final class TabStatePersistenceStaticTests: XCTestCase {
             aiSessionId: firstSessionID,
             aiResumeCommand: "claude --resume \(firstSessionID)"
         )
-        for _ in 0..<3 {
+        for _ in 0 ..< 3 {
             _ = OverlayTabsModel.sanitizeRestoredAIResumeOwnership(
                 states: [firstState],
                 environment: ["CHAU7_HOME_ROOT": home.path]
