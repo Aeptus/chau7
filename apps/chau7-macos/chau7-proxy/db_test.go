@@ -5,7 +5,6 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -81,6 +80,14 @@ func TestNewDatabase(t *testing.T) {
 	// Verify we can ping it
 	if err := db.Ping(); err != nil {
 		t.Errorf("Database ping failed: %v", err)
+	}
+}
+
+func TestSQLiteDSNPreservesExistingQuery(t *testing.T) {
+	got := sqliteDSN("file:test.db?mode=rwc")
+	want := "file:test.db?mode=rwc&_pragma=busy_timeout(5000)"
+	if got != want {
+		t.Fatalf("sqliteDSN() = %q, want %q", got, want)
 	}
 }
 
@@ -413,16 +420,14 @@ func TestDatabase_ConcurrentWrites(t *testing.T) {
 	}
 	defer func() { _ = db.Close() }()
 
-	// Sequential writes with goroutines (more realistic)
-	// In practice, API calls don't happen at exactly the same microsecond
+	const writeCount = 10
 	var wg sync.WaitGroup
-	successCount := int32(0)
+	errors := make(chan error, writeCount)
 
-	for i := 0; i < 10; i++ {
+	for i := 0; i < writeCount; i++ {
 		wg.Add(1)
 		go func(idx int) {
 			defer wg.Done()
-			// Small stagger to simulate realistic write patterns
 			time.Sleep(time.Duration(idx) * time.Millisecond)
 
 			record := &APICallRecord{
@@ -433,13 +438,17 @@ func TestDatabase_ConcurrentWrites(t *testing.T) {
 				StatusCode: 200,
 				Timestamp:  time.Now().UTC(),
 			}
-			if err := db.InsertAPICall(record); err == nil {
-				atomic.AddInt32(&successCount, 1)
+			if err := db.InsertAPICall(record); err != nil {
+				errors <- err
 			}
 		}(i)
 	}
 
 	wg.Wait()
+	close(errors)
+	for err := range errors {
+		t.Errorf("concurrent insert: %v", err)
+	}
 
 	// Verify records were written
 	records, err := db.GetRecentCalls(20)
@@ -447,8 +456,7 @@ func TestDatabase_ConcurrentWrites(t *testing.T) {
 		t.Fatalf("Failed to get records: %v", err)
 	}
 
-	// With staggered writes, most or all should succeed
-	if len(records) < 8 {
-		t.Errorf("Expected at least 8 records from staggered concurrent writes, got %d", len(records))
+	if len(records) != writeCount {
+		t.Errorf("Expected %d concurrent records, got %d", writeCount, len(records))
 	}
 }

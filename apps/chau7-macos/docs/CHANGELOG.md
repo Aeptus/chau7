@@ -22,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - **Stack-Wide Validation Conformance**: Committed Swift sources and tests now conform to the active formatter and linter policies, including explicit optional flattening in repository analytics and safe test-fixture guards.
+- **Reliable Concurrent Proxy Writes**: SQLite busy-timeout configuration now applies to every pooled database connection, and the concurrency regression requires every API-call write to persist while reporting individual failures.
 - **Deterministic Quality-Runner Environment Tests**: Dirty-worktree policy tests now isolate and restore their environment override, so running the suite with an explicit dirty-tree acknowledgement cannot invert the fail-closed regression. Shell wrapper fixtures also conform to the repository formatter.
 - **Complete Tab-Group Drag Footprint**: Group insertion thresholds and neighbor displacement now include the repository label and its spacing, matching the full AppKit snapshot instead of measuring only member tabs.
 - **Tab-Group Drag Lifecycle Hardening**: Attached-view regressions cover snapshot installation, native-cadence edge scrolling, final transaction handoff, and teardown after view detachment. A mid-drag tab identity change now cancels instead of applying stale geometry.

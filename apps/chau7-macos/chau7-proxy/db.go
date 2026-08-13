@@ -4,10 +4,13 @@ import (
 	"database/sql"
 	"encoding/json"
 	"log"
+	"strings"
 	"time"
 
 	_ "modernc.org/sqlite"
 )
+
+const sqliteBusyTimeout = "5000"
 
 // APICallRecord represents a single API call to be stored in the database
 type APICallRecord struct {
@@ -36,19 +39,13 @@ type Database struct {
 
 // NewDatabase creates and initializes the SQLite database
 func NewDatabase(dbPath string) (*Database, error) {
-	db, err := sql.Open("sqlite", dbPath)
+	db, err := sql.Open("sqlite", sqliteDSN(dbPath))
 	if err != nil {
 		return nil, err
 	}
 
 	// Enable WAL mode for better concurrent access
 	if _, err := db.Exec("PRAGMA journal_mode=WAL"); err != nil {
-		_ = db.Close()
-		return nil, err
-	}
-
-	// Set busy timeout to handle concurrent writes gracefully
-	if _, err := db.Exec("PRAGMA busy_timeout=5000"); err != nil {
 		_ = db.Close()
 		return nil, err
 	}
@@ -60,6 +57,16 @@ func NewDatabase(dbPath string) (*Database, error) {
 	}
 
 	return &Database{db: db}, nil
+}
+
+// sqliteDSN applies connection-local settings whenever database/sql opens a
+// pooled SQLite connection, not just to the connection used during startup.
+func sqliteDSN(dbPath string) string {
+	separator := "?"
+	if strings.Contains(dbPath, "?") {
+		separator = "&"
+	}
+	return dbPath + separator + "_pragma=busy_timeout(" + sqliteBusyTimeout + ")"
 }
 
 // Close closes the database connection
