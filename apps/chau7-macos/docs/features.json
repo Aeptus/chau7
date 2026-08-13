@@ -1,5 +1,12 @@
 [
   {
+    "category": "Developer Experience",
+    "feature": "Deterministic Monitor Lifecycle Tests",
+    "description": "Process-resource timer tests inject immediate snapshots so lifecycle coverage is independent of OS process-enumeration latency under full-suite load",
+    "status": "Shipped",
+    "differentiator": "No"
+  },
+  {
     "category": "API Analytics",
     "feature": "Reliable Concurrent Proxy Persistence",
     "description": "SQLite busy handling applies to every pooled proxy connection so overlapping API-call writes persist without lock-loss gaps",

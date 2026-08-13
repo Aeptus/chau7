@@ -59,6 +59,8 @@ struct ProcessGroupSnapshot {
 /// Only runs while actively needed (hover card visible).
 final class ProcessResourceMonitor {
 
+    typealias SnapshotProvider = (pid_t) -> ProcessGroupSnapshot?
+
     var onUpdate: ((ProcessGroupSnapshot?) -> Void)?
 
     private var timer: DispatchSourceTimer?
@@ -66,7 +68,12 @@ final class ProcessResourceMonitor {
     private var isStopped = true
     private var shellPID: pid_t = 0
     private let queue = DispatchQueue(label: "com.chau7.processmonitor", qos: .utility)
+    private let snapshotProvider: SnapshotProvider
     private var consecutiveNoDataPolls = 0
+
+    init(snapshotProvider: @escaping SnapshotProvider = ProcessResourceMonitor.captureSnapshot) {
+        self.snapshotProvider = snapshotProvider
+    }
 
     func start(shellPID: pid_t) {
         stop()
@@ -119,7 +126,7 @@ final class ProcessResourceMonitor {
             return
         }
 
-        let snapshot = captureSnapshot(shellPID: currentShellPID)
+        let snapshot = snapshotProvider(currentShellPID)
         let shouldSchedule = !isStopped
         let shouldPublish = !isStopped
 
@@ -142,7 +149,7 @@ final class ProcessResourceMonitor {
         }
     }
 
-    private func captureSnapshot(shellPID: pid_t) -> ProcessGroupSnapshot? {
+    private static func captureSnapshot(shellPID: pid_t) -> ProcessGroupSnapshot? {
         guard let output = SubprocessRunner.run(
             executablePath: "/bin/ps",
             arguments: ["-axo", "pid,ppid,rss,%cpu,comm"]

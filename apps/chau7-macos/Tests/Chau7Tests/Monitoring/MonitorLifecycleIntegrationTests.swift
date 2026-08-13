@@ -22,7 +22,7 @@ final class MonitorLifecycleIntegrationTests: XCTestCase {
     // MARK: - ProcessResourceMonitor lifecycle
 
     func testProcessResourceMonitorCancelsPollingAfterStop() {
-        let monitor = ProcessResourceMonitor()
+        let monitor = makeProcessResourceMonitor()
         let pid = pid_t(ProcessInfo.processInfo.processIdentifier)
 
         var updateCount = 0
@@ -69,7 +69,7 @@ final class MonitorLifecycleIntegrationTests: XCTestCase {
     }
 
     func testProcessResourceMonitorCanRestartWithoutRetainingStaleTimer() {
-        let monitor = ProcessResourceMonitor()
+        let monitor = makeProcessResourceMonitor()
         let pid = pid_t(ProcessInfo.processInfo.processIdentifier)
 
         var updateCount = 0
@@ -111,6 +111,12 @@ final class MonitorLifecycleIntegrationTests: XCTestCase {
         let finalCount = updateCount
         lock.unlock()
         XCTAssertGreaterThanOrEqual(finalCount, 2)
+    }
+
+    private func makeProcessResourceMonitor() -> ProcessResourceMonitor {
+        ProcessResourceMonitor { pid in
+            ProcessGroupSnapshot(shellPid: pid, children: [], timestamp: Date())
+        }
     }
 
     // MARK: - HistoryIdleMonitor lifecycle

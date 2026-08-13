@@ -880,6 +880,7 @@ Legacy `AI_*` and `SMART_OVERLAY_*` environment variables are still supported.
 
 ## Quality Gates
 
+- Process-resource monitor lifecycle tests inject deterministic snapshots, isolating timer start/stop behavior from OS process-enumeration latency under full-suite load.
 - Swift formatting/lint and Go static analysis run across the complete source and test trees; test fixture guards terminate explicitly before optional values are dereferenced.
 - Quality-runner tests isolate process-wide environment overrides, preserving fail-closed dirty-worktree coverage even when the parent pre-push invocation explicitly acknowledges local changes.
 

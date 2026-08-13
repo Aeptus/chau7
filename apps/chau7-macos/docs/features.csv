@@ -1,4 +1,5 @@
 Category,Feature,Description,Status,Differentiator
+Developer Experience,Deterministic Monitor Lifecycle Tests,Process-resource timer tests inject immediate snapshots so lifecycle coverage is independent of OS process-enumeration latency under full-suite load,Shipped,No
 API Analytics,Reliable Concurrent Proxy Persistence,SQLite busy handling applies to every pooled proxy connection so overlapping API-call writes persist without lock-loss gaps,Shipped,Yes
 Developer Experience,Cross-Language Validator Conformance,Complete-tree Swift formatting and lint plus Go static analysis enforce explicit optional flattening and terminating test-fixture guards,Shipped,No
 Developer Experience,Isolated Quality-Runner Environment Tests,Quality-runner regressions scope and restore process-wide environment overrides so acknowledged dirty worktrees cannot invert fail-closed policy tests,Shipped,No
