@@ -291,7 +291,10 @@ func (p *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		callID, err = p.db.InsertAPICallWithTask(record, actualTaskID, headers.TabID, headers.Project)
 	}
 	if err != nil {
-		log.Printf("[WARN] Failed to log API call: %v", err)
+		// Reached only after the busy retries are exhausted, so this is a real
+		// dropped call: it will be missing from every analytics surface.
+		log.Printf("[WARN] Dropped API call record after retries (%s %s): %v",
+			provider, r.URL.Path, err)
 	} else {
 		p.recordAttribution(headers.Project)
 	}

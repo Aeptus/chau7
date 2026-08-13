@@ -12,6 +12,53 @@ import (
 
 const sqliteBusyTimeout = "5000"
 
+// Retry budget for writes that lose the WAL write lock.
+//
+// busy_timeout already makes a contending writer wait, so reaching SQLITE_BUSY
+// means the lock was held for the entire timeout — most plausibly a WAL
+// checkpoint on a database that has grown into the hundreds of megabytes. The
+// previous behaviour logged the error and dropped the row, which is the worst
+// outcome available: the API call silently vanishes from the analytics the user
+// reads, and nothing downstream can tell that it is missing.
+//
+// Writes are recorded after the client response has already been streamed, so
+// retrying costs the user nothing.
+const (
+	sqliteBusyRetries    = 3
+	sqliteBusyRetryDelay = 250 * time.Millisecond
+)
+
+// isBusyError reports whether an error is SQLite's "locked/busy" family.
+//
+// The driver surfaces these as text rather than a typed, comparable error, so
+// this matches on the documented substrings. Both spellings appear: SQLITE_BUSY
+// for a contended write lock, SQLITE_LOCKED for a table-level conflict.
+func isBusyError(err error) bool {
+	if err == nil {
+		return false
+	}
+	message := err.Error()
+	return strings.Contains(message, "SQLITE_BUSY") ||
+		strings.Contains(message, "database is locked") ||
+		strings.Contains(message, "database table is locked")
+}
+
+// retryOnBusy runs a write, retrying while SQLite reports the database locked.
+// Non-busy errors return immediately: they are not transient and retrying them
+// would only delay the caller.
+func retryOnBusy(operation func() error) error {
+	var err error
+	for attempt := 0; attempt <= sqliteBusyRetries; attempt++ {
+		if err = operation(); !isBusyError(err) {
+			return err
+		}
+		if attempt < sqliteBusyRetries {
+			time.Sleep(sqliteBusyRetryDelay * time.Duration(attempt+1))
+		}
+	}
+	return err
+}
+
 // APICallRecord represents a single API call to be stored in the database
 type APICallRecord struct {
 	SessionID                string
@@ -49,6 +96,11 @@ func NewDatabase(dbPath string) (*Database, error) {
 		_ = db.Close()
 		return nil, err
 	}
+
+	// The pool is deliberately left unbounded. WAL exists so readers and writers
+	// proceed concurrently; capping at one connection would serialize the large
+	// analytics reads (hundreds of thousands of rows) ahead of call inserts,
+	// trading a handled wait for new latency coupling.
 
 	// Create tables
 	if err := initSchema(db); err != nil {
@@ -661,7 +713,10 @@ func (d *Database) InsertTaskAssessment(assessment *TaskAssessment) error {
 
 // InsertAPICallWithTask inserts an API call with task correlation
 func (d *Database) InsertAPICallWithTask(record *APICallRecord, taskID, tabID, projectPath string) (int64, error) {
-	result, err := d.db.Exec(`
+	var result sql.Result
+	err := retryOnBusy(func() error {
+		var execErr error
+		result, execErr = d.db.Exec(`
 		INSERT INTO api_calls (
 			session_id, provider, model, endpoint,
 			input_tokens, output_tokens,
@@ -670,26 +725,28 @@ func (d *Database) InsertAPICallWithTask(record *APICallRecord, taskID, tabID, p
 			cost_usd, pricing_version, timestamp, error_message, task_id, tab_id, project_path
 		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`,
-		record.SessionID,
-		string(record.Provider),
-		record.Model,
-		record.Endpoint,
-		record.InputTokens,
-		record.OutputTokens,
-		record.CacheCreationInputTokens,
-		record.CacheReadInputTokens,
-		record.ReasoningOutputTokens,
-		record.LatencyMs,
-		record.TTFTMs,
-		record.StatusCode,
-		record.CostUSD,
-		record.PricingVersion,
-		record.Timestamp.UTC().Format(time.RFC3339),
-		record.ErrorMessage,
-		taskID,
-		tabID,
-		projectPath,
-	)
+			record.SessionID,
+			string(record.Provider),
+			record.Model,
+			record.Endpoint,
+			record.InputTokens,
+			record.OutputTokens,
+			record.CacheCreationInputTokens,
+			record.CacheReadInputTokens,
+			record.ReasoningOutputTokens,
+			record.LatencyMs,
+			record.TTFTMs,
+			record.StatusCode,
+			record.CostUSD,
+			record.PricingVersion,
+			record.Timestamp.UTC().Format(time.RFC3339),
+			record.ErrorMessage,
+			taskID,
+			tabID,
+			projectPath,
+		)
+		return execErr
+	})
 	if err != nil {
 		return 0, err
 	}
@@ -802,7 +859,10 @@ func (d *Database) InsertAPICallWithBaseline(record *APICallRecord, taskID, tabI
 		baselineVersion = &baseline.Version
 	}
 
-	result, err := d.db.Exec(`
+	var result sql.Result
+	err := retryOnBusy(func() error {
+		var execErr error
+		result, execErr = d.db.Exec(`
 		INSERT INTO api_calls (
 			session_id, provider, model, endpoint,
 			input_tokens, output_tokens,
@@ -813,32 +873,34 @@ func (d *Database) InsertAPICallWithBaseline(record *APICallRecord, taskID, tabI
 			baseline_method, baseline_version, tokens_saved
 		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`,
-		record.SessionID,
-		string(record.Provider),
-		record.Model,
-		record.Endpoint,
-		record.InputTokens,
-		record.OutputTokens,
-		record.CacheCreationInputTokens,
-		record.CacheReadInputTokens,
-		record.ReasoningOutputTokens,
-		record.LatencyMs,
-		record.TTFTMs,
-		record.StatusCode,
-		record.CostUSD,
-		record.PricingVersion,
-		record.Timestamp.UTC().Format(time.RFC3339),
-		record.ErrorMessage,
-		taskID,
-		tabID,
-		projectPath,
-		baselineInput,
-		baselineOutput,
-		baselineTotal,
-		baselineMethod,
-		baselineVersion,
-		tokensSaved,
-	)
+			record.SessionID,
+			string(record.Provider),
+			record.Model,
+			record.Endpoint,
+			record.InputTokens,
+			record.OutputTokens,
+			record.CacheCreationInputTokens,
+			record.CacheReadInputTokens,
+			record.ReasoningOutputTokens,
+			record.LatencyMs,
+			record.TTFTMs,
+			record.StatusCode,
+			record.CostUSD,
+			record.PricingVersion,
+			record.Timestamp.UTC().Format(time.RFC3339),
+			record.ErrorMessage,
+			taskID,
+			tabID,
+			projectPath,
+			baselineInput,
+			baselineOutput,
+			baselineTotal,
+			baselineMethod,
+			baselineVersion,
+			tokensSaved,
+		)
+		return execErr
+	})
 	if err != nil {
 		return 0, err
 	}

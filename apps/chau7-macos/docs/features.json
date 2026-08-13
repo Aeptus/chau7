@@ -442,6 +442,13 @@
   },
   {
     "category": "API Analytics",
+    "feature": "Durable Call Recording Under Lock Contention",
+    "description": "API call writes that lose SQLite's WAL write lock are retried with backoff instead of being discarded, so a checkpoint on a large analytics database cannot silently erase calls from dashboards; constraint and disk errors still fail fast and an exhausted retry budget logs an explicit dropped-record warning",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "API Analytics",
     "feature": "Billable-Endpoint Token Accounting",
     "description": "Token and cost estimation runs only for endpoints that return model output, so catalog listings and token counters record no usage and frequently polled routes cannot inflate token totals or spend; classification is an allowlist, leaving unrecognized routes unrecorded rather than estimated",
     "status": "Shipped",
