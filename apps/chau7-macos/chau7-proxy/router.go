@@ -48,6 +48,41 @@ func isOpenAIPath(path string) bool {
 		strings.HasPrefix(path, "/responses")
 }
 
+// IsTokenBillableEndpoint reports whether a path returns model output that
+// costs tokens, and may therefore be estimated when a provider omits usage
+// from an otherwise successful response.
+//
+// Estimation used to run on every 200. That silently wrecked cost analytics:
+// /v1/models is a catalog listing with no model field and no usage, but Codex
+// polls it every few seconds and its ~360 KB body estimated to ~90k output
+// tokens per call — 99.8% of all recorded output tokens and most of the
+// reported spend.
+//
+// This is an allowlist rather than a denylist of known-free routes, so it fails
+// closed: an endpoint nobody has classified yet records no usage instead of
+// inventing some. Genuine completion endpoints report real usage anyway, so the
+// estimator only ever covered the fallback case.
+func IsTokenBillableEndpoint(provider Provider, path string) bool {
+	// Token counting prices nothing — it returns a count, not a completion.
+	if strings.HasSuffix(path, "/count_tokens") || strings.Contains(path, "countTokens") {
+		return false
+	}
+
+	switch provider {
+	case ProviderAnthropic:
+		return strings.HasPrefix(path, "/v1/messages") || strings.HasPrefix(path, "/v1/complete")
+	case ProviderOpenAI:
+		return isOpenAIPath(path)
+	case ProviderGemini:
+		// streamGenerateContent capitalizes the G, so one lowercase substring
+		// check silently misses every streaming call. Mirror DetectProvider.
+		return strings.Contains(path, "generateContent") ||
+			strings.Contains(path, "streamGenerateContent")
+	default:
+		return false
+	}
+}
+
 // DetectProvider determines which LLM provider the request is targeting
 // based on the request path and headers.
 //

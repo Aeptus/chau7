@@ -188,8 +188,13 @@ func (p *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		model = respMeta.Model
 	}
 
-	// Warn and estimate when metadata extraction fails on successful responses
-	if resp.StatusCode == 200 {
+	// Warn and estimate when metadata extraction fails on successful responses.
+	//
+	// Restricted to endpoints that actually bill for model output. A catalog
+	// listing has no model and no usage by definition, so warning about the
+	// absence was noise (97% of all log lines) and estimating from its body
+	// length was worse: it booked phantom tokens and cost against every poll.
+	if resp.StatusCode == 200 && IsTokenBillableEndpoint(provider, r.URL.Path) {
 		if model == "" {
 			log.Printf("[WARN] %s %s: model not extracted (streaming=%v, bodyLen=%d)",
 				provider, r.URL.Path, isStreaming, len(respBody))
