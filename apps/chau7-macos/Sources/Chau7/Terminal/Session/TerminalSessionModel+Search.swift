@@ -49,6 +49,28 @@ extension TerminalSessionModel {
         return nil
     }
 
+    /// Bounded plain-text tail for interactive-prompt detection. Unlike
+    /// `captureRemoteSnapshot` this never flattens the whole ring (the
+    /// detector only reads the last ~80 lines) and never touches
+    /// `cachedBufferData` — the multi-MB search cache stays on the search
+    /// path only.
+    func captureRemoteTailSnapshot(maxLines: Int = 200, maxBytes: Int = 65536) -> String? {
+        if let view = activeTerminalView,
+           let data = view.getTailBufferTextAsData(maxLines: maxLines, maxBytes: maxBytes),
+           !data.isEmpty {
+            return String(decoding: data, as: UTF8.self)
+        }
+
+        // Detached-session fallbacks, bounded to a tail approximation.
+        if !cachedRemoteOutputText.isEmpty {
+            return String(cachedRemoteOutputText.suffix(maxBytes))
+        }
+        if let data = cachedBufferData, !data.isEmpty {
+            return String(String(decoding: data, as: UTF8.self).suffix(maxBytes))
+        }
+        return nil
+    }
+
     func captureStyledRemoteSnapshot() -> Data? {
         guard let view = activeTerminalView,
               let data = view.getStyledBufferAsData(),

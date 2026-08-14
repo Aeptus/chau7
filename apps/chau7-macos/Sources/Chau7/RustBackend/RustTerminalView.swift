@@ -1447,6 +1447,31 @@ final class RustTerminalFFI: TerminalBackend {
         return text
     }
 
+    /// Get a bounded plain-text tail of the terminal buffer (wrapped rows
+    /// joined into logical lines). Falls back to the ANSI tail with SGR/OSC
+    /// sequences stripped when the dylib predates the plain-text symbol —
+    /// never to a full-buffer flatten.
+    func tailBufferText(maxLines: Int, maxBytes: Int) -> String? {
+        guard maxLines > 0, maxBytes > 0 else {
+            return ""
+        }
+        if let getTailBufferTextFn = Self.functions?.getTailBufferText,
+           let freeStringFn = Self.functions?.freeString {
+            guard let ptr = getTailBufferTextFn(terminal, UInt(maxLines), UInt(maxBytes)) else {
+                Log.trace("RustTerminalFFI[\(instanceId)]: tailBufferText - No text returned")
+                return nil
+            }
+            defer { freeStringFn(ptr) }
+            return String(cString: ptr)
+        }
+
+        Log.trace("RustTerminalFFI[\(instanceId)]: tailBufferText - symbol missing; stripping ANSI tail")
+        guard let styled = tailBufferAnsiText(maxLines: maxLines, maxBytes: maxBytes) else {
+            return nil
+        }
+        return ANSITailStripper.strip(styled)
+    }
+
     /// Reset performance metrics.
     func resetMetrics() {
         guard let resetMetricsFn = Self.functions?.resetMetrics else {
@@ -1678,6 +1703,23 @@ final class RustTerminalFFI: TerminalBackend {
     func setImageProtocols(sixel: Bool, kitty: Bool, iterm2: Bool) {
         guard let fn = Self.functions?.setImageProtocols else { return }
         fn(terminal, sixel, kitty, iterm2)
+    }
+}
+
+/// Minimal SGR/OSC stripper for the plain-tail fallback path. Unlike
+/// `EscapeSequenceSanitizer.sanitize` it never collapses runs of spaces or
+/// trims edges — interactive-prompt detection depends on the original column
+/// layout.
+enum ANSITailStripper {
+    private static let csiPattern = try? Regex(#"\x{1b}\[[0-9;?]*[@-~]"#)
+    private static let oscPattern = try? Regex(#"\x{1b}\][^\x{07}\x{1b}]*(?:\x{07}|\x{1b}\\)?"#)
+
+    static func strip(_ text: String) -> String {
+        guard let csiPattern, let oscPattern else { return text }
+        var result = text
+        result.replace(csiPattern, with: "")
+        result.replace(oscPattern, with: "")
+        return result
     }
 }
 
@@ -3273,6 +3315,20 @@ final class RustTerminalView: NSView {
             bytes: { $0?.utf8.count ?? 0 }
         ) {
             rust.fullBufferAnsiText()
+        }
+        guard let text else { return nil }
+        return text.data(using: .utf8)
+    }
+
+    /// Returns a bounded plain-text terminal tail as UTF-8 Data.
+    func getTailBufferTextAsData(maxLines: Int, maxBytes: Int) -> Data? {
+        guard let rust = rustTerminal else { return nil }
+        let text = TerminalWorkProfiler.shared.measure(
+            .tailBufferCapture,
+            context: terminalWorkContext(caller: "remotePromptTail"),
+            bytes: { $0?.utf8.count ?? 0 }
+        ) {
+            rust.tailBufferText(maxLines: maxLines, maxBytes: maxBytes)
         }
         guard let text else { return nil }
         return text.data(using: .utf8)

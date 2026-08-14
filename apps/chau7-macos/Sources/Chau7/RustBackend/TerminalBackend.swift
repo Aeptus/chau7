@@ -91,6 +91,9 @@ protocol TerminalBackend: ScrollbackMemoryRustFFI {
     // MARK: - Buffer Capture
 
     func tailBufferAnsiText(maxLines: Int, maxBytes: Int) -> String?
+    /// Bounded plain-text tail (wrapped rows joined into logical lines).
+    /// Never flattens the full ring; see the default below for old backends.
+    func tailBufferText(maxLines: Int, maxBytes: Int) -> String?
     func fullBufferText() -> String?
     func fullBufferAnsiText() -> String?
 
@@ -139,5 +142,11 @@ extension TerminalBackend {
     /// Default for backends (and test doubles) without debug-state support.
     func memoryStats() -> TerminalMemoryStats? {
         nil
+    }
+
+    /// Default for backends without a native plain-text tail: strip the SGR
+    /// styling out of the ANSI tail. Still bounded — never a full flatten.
+    func tailBufferText(maxLines: Int, maxBytes: Int) -> String? {
+        tailBufferAnsiText(maxLines: maxLines, maxBytes: maxBytes).map(ANSITailStripper.strip)
     }
 }

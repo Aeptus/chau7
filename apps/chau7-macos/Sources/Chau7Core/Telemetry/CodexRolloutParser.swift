@@ -171,9 +171,29 @@ public enum CodexRolloutParser {
         in text: String,
         rawSourceRef: String? = nil
     ) -> ProviderQuotaSnapshot? {
+        latestQuotaSnapshot(inChunk: text, rawSourceRef: rawSourceRef).snapshot
+    }
+
+    /// Result of scanning one incremental chunk of a rollout file.
+    public struct ChunkScanResult {
+        public let snapshot: ProviderQuotaSnapshot?
+        /// Trailing lines that did not (yet) parse as a complete JSON object —
+        /// a multi-line object split across reads. Prepend (with a newline)
+        /// to the next chunk before scanning again.
+        public let unconsumedTail: String
+    }
+
+    /// Chunk-aware variant of `latestQuotaSnapshot(in:)` for incremental
+    /// tail reads (see `JSONLTailReader`): the same scan, but the parser's
+    /// unconsumed trailing buffer is surfaced instead of dropped so records
+    /// split across chunk boundaries survive.
+    public static func latestQuotaSnapshot(
+        inChunk text: String,
+        rawSourceRef: String? = nil
+    ) -> ChunkScanResult {
         var latestSnapshot: ProviderQuotaSnapshot?
 
-        forEachJSONObject(in: text) { obj in
+        let unconsumedTail = forEachJSONObjectCollectingTail(in: text) { obj in
             guard let payload = obj["payload"] as? [String: Any],
                   let snapshot = parseQuotaSnapshot(
                       payload: payload,
@@ -193,10 +213,19 @@ public enum CodexRolloutParser {
             )
         }
 
-        return latestSnapshot
+        return ChunkScanResult(snapshot: latestSnapshot, unconsumedTail: unconsumedTail)
     }
 
     private static func forEachJSONObject(in text: String, _ body: ([String: Any]) -> Void) {
+        _ = forEachJSONObjectCollectingTail(in: text, body)
+    }
+
+    /// Walks line-accumulated JSON objects; returns whatever trailing buffer
+    /// never parsed (empty when the text ended on a complete object).
+    private static func forEachJSONObjectCollectingTail(
+        in text: String,
+        _ body: ([String: Any]) -> Void
+    ) -> String {
         var buffer = ""
 
         func flushBufferIfPossible() {
@@ -228,6 +257,7 @@ public enum CodexRolloutParser {
         }
 
         flushBufferIfPossible()
+        return buffer
     }
 
     private static func parseQuotaSnapshot(

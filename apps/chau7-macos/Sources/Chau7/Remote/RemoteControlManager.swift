@@ -705,6 +705,27 @@ final class RemoteControlManager {
         }
     }
 
+    /// One bounded tail scrape per session per refresh burst. The affordance
+    /// check and the prompt-card builder both read through this, so a refresh
+    /// costs at most one ~64 KB tail capture per waiting pane instead of two
+    /// full-ring flattens (multi-MB each with a 10k-line scrollback).
+    private var promptScrapeMemo: [String: (text: String, capturedAt: CFAbsoluteTime)] = [:]
+    private static let promptScrapeMemoTTL: CFAbsoluteTime = 0.5
+
+    private func scrapedPromptTail(for session: TerminalSessionModel) -> String? {
+        let now = CFAbsoluteTimeGetCurrent()
+        if let cached = promptScrapeMemo[session.tabIdentifier],
+           now - cached.capturedAt < Self.promptScrapeMemoTTL {
+            return cached.text.isEmpty ? nil : cached.text
+        }
+        if promptScrapeMemo.count > 64 {
+            promptScrapeMemo = promptScrapeMemo.filter { now - $0.value.capturedAt < Self.promptScrapeMemoTTL }
+        }
+        let text = session.captureRemoteTailSnapshot()
+        promptScrapeMemo[session.tabIdentifier] = (text ?? "", now)
+        return text
+    }
+
     private func sendRemoteActivity(force: Bool = false) {
         let nextActivity = currentRemoteActivity()
         let activityChanged = force || nextActivity != remoteActivity
@@ -893,8 +914,7 @@ final class RemoteControlManager {
     /// always agree. Only called for sessions already in `.waitingForInput`, so
     /// the snapshot capture stays off the hot path.
     private func sessionShowsRealPromptAffordance(_ session: TerminalSessionModel, toolName: String) -> Bool {
-        guard let snapshot = session.captureRemoteSnapshot(),
-              let text = String(data: snapshot, encoding: .utf8) else {
+        guard let text = scrapedPromptTail(for: session) else {
             return false
         }
         return InteractivePromptDetector.detect(in: text, toolName: toolName) != nil
@@ -957,8 +977,7 @@ final class RemoteControlManager {
                     || session.effectiveStatus == .approvalRequired else { return nil }
 
                 let toolName = activityToolName(for: session, tab: tab)
-                guard let snapshot = session.captureRemoteSnapshot(),
-                      let text = String(data: snapshot, encoding: .utf8) else {
+                guard let text = scrapedPromptTail(for: session) else {
                     return nil
                 }
 

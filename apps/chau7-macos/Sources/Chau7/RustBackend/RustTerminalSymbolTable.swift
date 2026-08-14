@@ -84,6 +84,7 @@ struct RustTerminalSymbolTable {
     typealias GetFullBufferTextFn = @convention(c) (OpaquePointer?) -> UnsafeMutablePointer<CChar>?
     typealias GetFullBufferAnsiTextFn = @convention(c) (OpaquePointer?) -> UnsafeMutablePointer<CChar>?
     typealias GetTailBufferAnsiTextFn = @convention(c) (OpaquePointer?, UInt, UInt) -> UnsafeMutablePointer<CChar>?
+    typealias GetTailBufferTextFn = @convention(c) (OpaquePointer?, UInt, UInt) -> UnsafeMutablePointer<CChar>?
     typealias ResetMetricsFn = @convention(c) (OpaquePointer?) -> Void
     // Terminal event functions (title, exit, PTY closed)
     typealias GetPendingTitleFn = @convention(c) (OpaquePointer?) -> UnsafeMutablePointer<CChar>?
@@ -169,6 +170,7 @@ struct RustTerminalSymbolTable {
     let getFullBufferText: GetFullBufferTextFn? // Optional - for debugging
     let getFullBufferAnsiText: GetFullBufferAnsiTextFn? // Optional - for styled restoration
     let getTailBufferAnsiText: GetTailBufferAnsiTextFn? // Optional - for bounded styled restoration
+    let getTailBufferText: GetTailBufferTextFn? // Optional - bounded plain-text tail (prompt scraping)
     let resetMetrics: ResetMetricsFn? // Optional - for performance analysis
     // Terminal event functions (title, exit, PTY closed)
     let getPendingTitle: GetPendingTitleFn? // Optional - for terminal title updates
@@ -508,6 +510,10 @@ struct RustTerminalSymbolTable {
             "chau7_terminal_get_tail_buffer_ansi_text", as: GetTailBufferAnsiTextFn.self, in: handle,
             missingNote: "get_tail_buffer_ansi_text symbol not found (optional)"
         )
+        let getTailBufferText = optionalSymbol(
+            "chau7_terminal_get_tail_buffer_text", as: GetTailBufferTextFn.self, in: handle,
+            missingNote: "get_tail_buffer_text symbol not found (optional)"
+        )
         let resetMetrics = optionalSymbol(
             "chau7_terminal_reset_metrics", as: ResetMetricsFn.self, in: handle,
             missingNote: "reset_metrics symbol not found (optional)"
@@ -627,6 +633,7 @@ struct RustTerminalSymbolTable {
             getFullBufferText: getFullBufferText,
             getFullBufferAnsiText: getFullBufferAnsiText,
             getTailBufferAnsiText: getTailBufferAnsiText,
+            getTailBufferText: getTailBufferText,
             resetMetrics: resetMetrics,
             getPendingTitle: getPendingTitle,
             getPendingCwd: getPendingCwd,
