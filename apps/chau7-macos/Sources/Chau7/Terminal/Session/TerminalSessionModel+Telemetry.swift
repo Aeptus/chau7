@@ -82,6 +82,7 @@ extension TerminalSessionModel {
 
     func maybeLogLatencySpike(
         kind: String,
+        warningMetric: String? = nil,
         elapsedMs: Double,
         averageMs: Int?,
         samples: LatencySampleBuffer,
@@ -123,8 +124,9 @@ extension TerminalSessionModel {
         // `stat()` is cheap (single syscall) and the spike path already
         // includes higher-cost work like percentile computation.
         let ctoActive = CTOFlagManager.isFlagActive(sessionID: tabIdentifier)
+        let metric = warningMetric ?? kind
         Log.warn(
-            "Latency spike: \(kind)=\(Int(elapsedMs.rounded()))ms avg=\(avg)ms " +
+            "Latency spike: \(metric)=\(Int(elapsedMs.rounded()))ms avg=\(avg)ms " +
                 "p50/p95=\(percentiles) tab=\(tabName) app=\(appName) " +
                 "cwd=\(tabPathDisplayName()) cto_active=\(ctoActive)"
         )

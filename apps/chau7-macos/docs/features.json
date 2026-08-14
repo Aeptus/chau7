@@ -1,5 +1,12 @@
 [
   {
+    "category": "Performance",
+    "feature": "Accurate Terminal Scan Diagnostics",
+    "description": "Dangerous-output timer lateness is logged as scan_queue_delay while retaining the compatible structured scan category, so main-queue congestion is no longer mistaken for row-scan execution time and actual refresh work remains separately profiled",
+    "status": "Shipped",
+    "differentiator": "No"
+  },
+  {
     "category": "Scripting & Debugging",
     "feature": "Privacy-Safe Network Attribution",
     "description": "Provider-status requests log a short correlation ID, owning component, normalized host, and outcome while excluding URL paths, queries, fragments, credentials, and tokens so redacted TLS diagnostics remain attributable without exposing request data",

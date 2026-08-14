@@ -66,6 +66,7 @@ Detection methods:
 
 ### AI Features
 
+- **Accurate terminal scan diagnostics** — dangerous-output timer lateness is labeled `scan_queue_delay` in warnings rather than implying that row scanning took that long. Structured lag compatibility is preserved, and actual visible-row refresh duration remains independently profiled.
 - **Mature latency warning signals** — every threshold-crossing terminal latency event remains in structured telemetry, while warning logs require a mature sample window and either sustained p95 degradation or a three-times-threshold event. Startup and isolated moderate outliers remain measurable without becoming operational noise.
 - **Expected event log severity** — routine multiline-paste interception remains auditable at info level, while idempotent attention-style cleanup for an already-closed tab is debug-only. Warning severity remains reserved for actual confirmation, blocking, homoglyph, and operational failure paths.
 - **Provider status outage backoff** — application-wide provider polling collapses an all-provider transport outage into one classified summary and exponentially backs off from one to fifteen minutes. Partial or successful refreshes reset the backoff and existing fresh observations remain available.

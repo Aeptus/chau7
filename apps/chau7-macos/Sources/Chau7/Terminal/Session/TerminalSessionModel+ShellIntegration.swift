@@ -1908,6 +1908,7 @@ extension TerminalSessionModel {
             dangerousOutputHighlightLastRun = Date()
             maybeLogLatencySpike(
                 kind: "scan",
+                warningMetric: "scan_queue_delay",
                 elapsedMs: congestionMs,
                 averageMs: scanLagAverageMs,
                 samples: scanLagSamples,
