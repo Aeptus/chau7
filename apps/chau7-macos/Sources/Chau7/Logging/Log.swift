@@ -239,16 +239,42 @@ enum Log {
 
         let start = size > keepBytes ? size - keepBytes : 0
         try? readHandle.seek(toOffset: start)
-        guard let tailData = try? readHandle.readToEnd() else { return }
+        guard let rawTail = try? readHandle.readToEnd() else { return }
+        let tailData = start > 0
+            ? LogRetentionPolicy.lineAlignedTail(of: rawTail, maximumBytes: Int(keepBytes))
+            : rawTail
 
         try? fileHandle?.close()
         fileHandle = nil
+
+        // Keep the complete pre-rotation file for launch/recovery diagnostics.
+        // The active log starts with a line-aligned recent tail so readers can
+        // parse every record and one warning burst cannot erase all history.
+        let archiveURL = url.appendingPathExtension("1")
+        do {
+            if FileManager.default.fileExists(atPath: archiveURL.path) {
+                try FileManager.default.removeItem(at: archiveURL)
+            }
+            try FileManager.default.moveItem(at: url, to: archiveURL)
+            guard FileManager.default.createFile(atPath: url.path, contents: tailData) else {
+                throw CocoaError(.fileWriteUnknown)
+            }
+        } catch {
+            // Rotation is an observability aid, never a reason to stop logging.
+            if !FileManager.default.fileExists(atPath: url.path) {
+                _ = FileManager.default.createFile(atPath: url.path, contents: tailData)
+            } else if let fallback = try? FileHandle(forWritingTo: url) {
+                try? fallback.truncate(atOffset: 0)
+                try? fallback.write(contentsOf: tailData)
+                try? fallback.close()
+            }
+            fputs("[Chau7] WARNING: Log rotation archive failed: \(error)\n", stderr)
+        }
+
         guard let writeHandle = try? FileHandle(forWritingTo: url) else {
-            fputs("[Chau7] WARNING: Failed to reopen log after trim\n", stderr)
+            fputs("[Chau7] WARNING: Failed to reopen log after rotation\n", stderr)
             return
         }
-        try? writeHandle.truncate(atOffset: 0)
-        try? writeHandle.write(contentsOf: tailData)
         _ = try? writeHandle.seekToEnd()
         fileHandle = writeHandle
     }

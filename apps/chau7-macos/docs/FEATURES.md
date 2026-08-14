@@ -704,6 +704,8 @@ Chau7's rendering pipeline is purpose-built for latency-sensitive terminal work:
 
 ## Scripting & Debugging
 
+- **Launch-preserving log rotation** — `Chau7.log` rotates the complete previous file to `Chau7.log.1` and retains only complete recent lines in the active file. This keeps launch/recovery evidence available after a noisy runtime period and guarantees line-oriented diagnostic readers never start on a truncated record.
+
 ### Scripting API
 
 - JSON-RPC Unix socket API — control tabs, run commands, query history, manage snippets, modify settings.

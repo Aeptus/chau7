@@ -1,5 +1,12 @@
 [
   {
+    "category": "Scripting & Debugging",
+    "feature": "Launch-Preserving App Log Rotation",
+    "description": "Chau7.log rotates its complete previous generation to Chau7.log.1 and retains a line-aligned recent tail in the active file, preserving launch and recovery evidence while keeping every retained record parseable",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
     "category": "Performance",
     "feature": "Proactive Scrollback Reclamation",
     "description": "Idle warm tabs flush scrollback to disk and shrink to a resident floor while TUI tabs compact capture-if-safe/shrink-always/replay-never-while-protected, with an aggregate budget backstop, instant tab-switch paint from RAM, and zero new repeating timers",
