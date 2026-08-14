@@ -26,6 +26,17 @@ public enum ScrollbackRetentionPolicy {
         return overrideMB * 1024 * 1024
     }
 
+    /// Caps the per-tab bookkeeping trackers (input lines, dangerous-command
+    /// lines, line timestamps) that historically inherited the full
+    /// `scrollbackLines` value. Rows beyond a few thousand back are useless
+    /// to those trackers, but at 10k-100k entries × 4 trackers × 50 tabs they
+    /// were a silent multi-hundred-MB amplifier of the scrollback setting.
+    public static let maximumTrackerEntries = 5000
+
+    public static func trackerEntryCap(configuredLines: Int) -> Int {
+        max(minimumConfiguredLines, min(configuredLines, maximumTrackerEntries))
+    }
+
     /// Pure idle-flush gate: only a still-`.warm` tab that produced no PTY
     /// output since the timer was armed may flush. Missing byte counters
     /// (backend without debug stats) fail closed — never flush a tab we

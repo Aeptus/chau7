@@ -1,5 +1,6 @@
 import Foundation
 import AppKit
+import Chau7Core
 
 // MARK: - F19: Line Timestamps
 
@@ -157,6 +158,6 @@ struct TimestampOverlayView: View {
 extension TerminalSessionModel {
     /// Creates a timestamp tracker for this session
     func createTimestampTracker() -> LineTimestampTracker {
-        return LineTimestampTracker(maxEntries: FeatureSettings.shared.scrollbackLines)
+        return LineTimestampTracker(maxEntries: ScrollbackRetentionPolicy.trackerEntryCap(configuredLines: FeatureSettings.shared.scrollbackLines))
     }
 }

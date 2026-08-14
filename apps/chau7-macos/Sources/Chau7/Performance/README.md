@@ -1,31 +1,39 @@
 # Performance
 
-GPU-accelerated Metal rendering pipeline, lock-free buffers, SIMD parsing, and low-latency input.
+GPU-accelerated Metal rendering pipeline, memory-pressure handling, and
+render/work profiling.
+
+Note: earlier revisions of this README listed IOSurface/lock-free-input files
+(`IOSurfaceRenderer`, `LockFreeRingBuffer`, `LowLatencyInput`,
+`PerformanceIntegration`, `PredictiveRenderer`, `ThreadPriority`) that were
+deliberately removed along with the CVDisplayLink frame-pacing machinery (see
+`OptimalMetalView.swift` header). No IOSurface rendering exists in Chau7; keep
+this table in sync with the directory so external memory tooling doesn't
+attribute phantom subsystems.
 
 ## Files
 
 | File | Purpose |
 |------|---------|
 | `FeatureProfiler.swift` | Records per-feature timing metrics with os.signpost integration |
-| `IOSurfaceRenderer.swift` | Direct GPU-to-display rendering via IOSurface bypassing the compositor |
-| `LockFreeRingBuffer.swift` | SPSC lock-free ring buffer using Swift Atomics for PTY data transfer |
-| `LowLatencyInput.swift` | IOKit HID-based keyboard input handler bypassing the NSEvent queue |
+| `MemoryPressureCoordinator.swift` | Broadcasts pressure levels to registered `MemoryReclaimable` caches |
+| `MemoryPressureResponder.swift` | OS memory-pressure source + self-imposed footprint ceiling + scrollback budget hook |
 | `MetalTerminalRenderer.swift` | GPU-accelerated terminal renderer with dynamic glyph atlas and instanced drawing |
-| `OptimalMetalView.swift` | MTKView subclass configured for minimal display latency (VSync, frame pacing) |
-| `PerformanceIntegration.swift` | Unified API connecting all low-latency components with terminal infrastructure |
-| `PredictiveRenderer.swift` | Pre-caches likely terminal output to reduce perceived latency |
-| `RustMetalDisplayCoordinator.swift` | Metal rendering coordinator for the Rust terminal backend |
+| `OptimalMetalView.swift` | MTKView subclass configured for minimal display latency |
+| `RenderPipelineProfiler.swift` | 30s aggregates of sync/commit/draw volume per view |
+| `RustMetalDisplayCoordinator.swift` | Metal rendering coordinator for the Rust terminal backend (per window) |
 | `RustTermBridge.swift` | Converts Rust FFI GridSnapshot cell data into TerminalCell structs for Metal |
 | `SIMDTerminalParser.swift` | SIMD-accelerated byte scanner for escape sequences (16-32 bytes at a time) |
-| `ThreadPriority.swift` | Mach thread policy configuration for real-time render and input threads |
-| `TripleBuffering.swift` | Triple-buffered terminal state with dirty region tracking and atomic swaps |
+| `TerminalMemoryReclaimer.swift` | Critical-pressure reclamation of per-tab caches and invisible-window GPU resources |
+| `TerminalWorkProfiler.swift` | Aggregated terminal backend work metrics (captures, replays, tab-switch paint) |
+| `TripleBuffering.swift` | Triple-buffered terminal state with dirty row tracking and atomic swaps |
+| `WakeupProfiler.swift` | Wakeup attribution instrumentation |
 
 ## Key Types
 
 - `MetalTerminalRenderer` — core GPU renderer with glyph atlas, cursor, and decoration drawing
 - `TripleBufferedTerminal` — lock-free triple buffer managing terminal cell state for GPU upload
 - `RustMetalDisplayCoordinator` — orchestrator connecting Rust bridge, buffers, and Metal view
-- `LockFreeRingBuffer<T>` — high-throughput SPSC ring buffer with atomic read/write positions
 
 ## Dependencies
 

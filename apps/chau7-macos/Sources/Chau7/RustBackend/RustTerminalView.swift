@@ -87,6 +87,16 @@ final class RustGridView: NSView {
             + overlayCells.count * MemoryLayout<RustCellData>.stride
     }
 
+    /// Drops the retained grid copies while Metal owns presentation. The next
+    /// CPU-path `updateGrid` repopulates from a full sync (existing cold-start
+    /// behavior when dimensions differ from the empty state).
+    func releaseGridStorage() {
+        cells = []
+        clusterStorage = Data()
+        overlayCells = [:]
+        cols = 0
+        rows = 0
+    }
 
     private var regularFont = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
     private var boldFont = NSFont.monospacedSystemFont(ofSize: 13, weight: .bold)
@@ -1907,7 +1917,7 @@ final class RustTerminalView: NSView {
 
     /// Cursor line highlight support
     weak var cursorLineView: TerminalCursorLineView?
-    let inputLineTracker = InputLineTracker(maxEntries: FeatureSettings.shared.scrollbackLines)
+    let inputLineTracker = InputLineTracker(maxEntries: ScrollbackRetentionPolicy.trackerEntryCap(configuredLines: FeatureSettings.shared.scrollbackLines))
     var highlightContextLines = false
     var highlightInputHistory = false
     var isCursorLineHighlightEnabled = false
@@ -1977,7 +1987,20 @@ final class RustTerminalView: NSView {
 
     /// When true, Metal handles display — skip CPU syncGridToRenderer() and cursor blink.
     var isMetalRenderingActive = false {
-        didSet { gridView?.metalRenderingActive = isMetalRenderingActive }
+        didSet {
+            gridView?.metalRenderingActive = isMetalRenderingActive
+            // Metal owns the pixels now: the CPU-fallback copies (RustGridView
+            // grid + the CPU sync path's diff baseline) go stale immediately
+            // and were retained forever across every warm tab (~5+ MB across
+            // a 50-tab session). A later Metal→CPU handoff repopulates them
+            // via the existing full-resync cold-start path.
+            if isMetalRenderingActive, !oldValue {
+                gridView?.releaseGridStorage()
+                previousGrid = []
+                previousGridCols = 0
+                previousGridRows = 0
+            }
+        }
     }
 
     /// Overlay container for tips and inline images (non-interactive)
@@ -3029,10 +3052,11 @@ final class RustTerminalView: NSView {
             ) {
                 scheduleWinsizeNudge()
             }
-            // .hidden demotion flushes the Rust scrollback ring to disk —
-            // keeping the Swift-side [String] duplicate of that exact buffer
-            // resident would defeat the entire reclamation.
-            if phase == .hidden {
+            // Any non-live phase drops the Swift-side [String] duplicate of
+            // the buffer (previously only `.hidden`, which is pressure-only —
+            // so warm tabs kept it forever). Regenerated lazily by the next
+            // getLineText pass when the tab is selected again.
+            if !phase.allowsLivePresentation {
                 cachedBufferLines = nil
             }
         }

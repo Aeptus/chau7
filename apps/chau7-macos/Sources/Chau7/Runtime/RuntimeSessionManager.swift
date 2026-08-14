@@ -884,7 +884,9 @@ final class RuntimeSessionManager {
         let controlService = TerminalControlService.shared
         let result = controlService.tabOutput(
             tabID: session.tabID.uuidString,
-            lines: max(FeatureSettings.shared.scrollbackLines, 5000),
+            // Bounded pty_log read: a 100k scrollback setting must not balloon
+            // this transient capture; 5000 lines is ample agent context.
+            lines: ScrollbackRetentionPolicy.trackerEntryCap(configuredLines: max(FeatureSettings.shared.scrollbackLines, 5000)),
             source: "pty_log"
         )
         guard let data = result.data(using: .utf8),

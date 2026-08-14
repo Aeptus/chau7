@@ -1187,8 +1187,8 @@ final class TerminalSessionModel {
     @ObservationIgnored private var sigtermSentAt: Date?
     @ObservationIgnored private var forcedTerminationWorkItem: DispatchWorkItem?
     @ObservationIgnored var lastBestEffortOutputSheddingLogAt: Date?
-    @ObservationIgnored let dangerousCommandTracker = DangerousCommandLineTracker(maxEntries: FeatureSettings.shared.scrollbackLines)
-    @ObservationIgnored let userInputTracker = UserInputTracker(maxEntries: FeatureSettings.shared.scrollbackLines)
+    @ObservationIgnored let dangerousCommandTracker = DangerousCommandLineTracker(maxEntries: ScrollbackRetentionPolicy.trackerEntryCap(configuredLines: FeatureSettings.shared.scrollbackLines))
+    @ObservationIgnored let userInputTracker = UserInputTracker(maxEntries: ScrollbackRetentionPolicy.trackerEntryCap(configuredLines: FeatureSettings.shared.scrollbackLines))
     @ObservationIgnored var currentCommandBlockID: UUID?
     @ObservationIgnored var bufferRowProvider: (() -> Int?)?
     @ObservationIgnored var dangerousOutputHighlightWorkItem: DispatchWorkItem?
