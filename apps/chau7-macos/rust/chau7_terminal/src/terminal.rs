@@ -1935,14 +1935,36 @@ impl Chau7Terminal {
         let mut term = self.term.lock();
         let mut processor = self.processor.lock();
 
-        // Clear history ring and reset viewport (ANSI ESC[2J clears screen,
-        // ESC[H homes cursor). Using the processor ensures Alacritty's internal
-        // state stays consistent rather than poking the grid directly.
+        // Reset to a truly empty terminal before pouring the cache in. Order
+        // matters: Alacritty's ESC[2J scrolls the current viewport INTO
+        // history, so it must run before ESC[3J (clear saved lines) — the old
+        // clear_history-then-2J order left the stale on-screen rows sitting
+        // above the restored buffer. Using the processor keeps Alacritty's
+        // internal state consistent rather than poking the grid directly.
         term.grid_mut().clear_history();
-        processor.advance(&mut *term, b"\x1b[2J\x1b[H");
+        processor.advance(&mut *term, b"\x1b[2J\x1b[3J\x1b[H");
 
-        if !data.is_empty() {
-            processor.advance(&mut *term, data);
+        // The full-buffer export walks every viewport row, so rows below the
+        // cursor arrive as bare CRLF terminators (possibly followed by the
+        // exporter's final SGR reset). Feeding them advances the cursor one
+        // row per flush/reload cycle, compounding a blank line each time —
+        // trim them, keeping the last content row's own terminator.
+        const RESET: &[u8] = b"\x1b[0m";
+        let mut body = data;
+        let mut had_reset = false;
+        if body.ends_with(RESET) {
+            had_reset = true;
+            body = &body[..body.len() - RESET.len()];
+        }
+        while body.ends_with(b"\r\n\r\n") {
+            body = &body[..body.len() - 2];
+        }
+
+        if !body.is_empty() {
+            processor.advance(&mut *term, body);
+        }
+        if had_reset {
+            processor.advance(&mut *term, RESET);
         }
 
         self.grid_dirty.store(true, Ordering::Release);
@@ -3196,6 +3218,30 @@ mod tests {
         assert_eq!(restored.line_text(0).as_deref(), Some("alpha"));
         assert_eq!(restored.line_text(1).as_deref(), Some("beta"));
         assert_eq!(restored.line_text(2).as_deref(), Some("  indented"));
+    }
+
+    #[test]
+    fn test_full_buffer_ansi_text_replay_round_trip_preserves_columns() {
+        let _ = env_logger::try_init();
+
+        // The scrollback disk cache is captured with `full_buffer_ansi_text`
+        // and restored through `replay_buffer`, which injects straight into the
+        // VTE parser (no PTY line discipline, so no ONLCR expanding LF to
+        // CRLF). The export must be CRLF-terminated end to end or every
+        // restored line inherits the previous line's end column and the whole
+        // buffer staircases — including rows that scrolled into history.
+        let source = Chau7Terminal::new_with_env(40, 4, "", &[]).expect("Should create terminal");
+        source.inject_output(b"alpha\r\nbeta\r\n  indented\r\n\x1b[31mred\x1b[0m\r\ntail\r\n");
+        let export = source.full_buffer_ansi_text();
+
+        let restored = Chau7Terminal::new_with_env(40, 4, "", &[]).expect("Should create terminal");
+        restored.replay_buffer(export.as_bytes());
+
+        assert_eq!(restored.full_buffer_text(), source.full_buffer_text());
+        assert_eq!(
+            restored.line_text(0).as_deref(),
+            source.line_text(0).as_deref()
+        );
     }
 
     #[test]
