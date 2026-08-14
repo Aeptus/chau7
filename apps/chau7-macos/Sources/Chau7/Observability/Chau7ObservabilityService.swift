@@ -67,11 +67,18 @@ final class Chau7ObservabilityService {
     private var changes: [ChangeRecord] = []
     private var timers: [String: TimerRecord] = [:]
     private var listeners: [UUID: ListenerRecord] = [:]
+    private var componentRuntimeInfo: [String: [String: Any]] = [:]
 
     private init() {}
 
     func runtimeInfoJSON() -> String {
         encode(payload: runtimeInfoPayload())
+    }
+
+    func updateComponentRuntimeInfo(component: String, info: [String: Any]) {
+        queue.async {
+            self.componentRuntimeInfo[component] = info
+        }
     }
 
     func runtimeEventsJSON(sinceMillis: Int64?, limit: Int) -> String {
@@ -558,12 +565,22 @@ final class Chau7ObservabilityService {
             changes.removeAll()
             timers.removeAll()
             listeners.removeAll()
+            componentRuntimeInfo.removeAll()
         }
     }
 
     func runtimeInfoPayload() -> [String: Any] {
         let info = Bundle.main.infoDictionary ?? [:]
         let launchTime = DateFormatters.iso8601.string(from: launchedAt)
+        let appComponent: [String: Any] = [
+            "status": "running",
+            "version": info["CFBundleShortVersionString"] as? String ?? "unknown",
+            "build_number": info["CFBundleVersion"] as? String ?? "unknown",
+            "build_sha": info["Chau7BuildGitSHA"] as? String ?? "unknown",
+            "build_timestamp": info["Chau7BuildTimestamp"] as? String ?? "unknown"
+        ]
+        var components = queue.sync { componentRuntimeInfo }
+        components["app"] = appComponent
         return [
             "app_version": info["CFBundleShortVersionString"] as? String ?? "unknown",
             "build_number": info["CFBundleVersion"] as? String ?? "unknown",
@@ -575,7 +592,8 @@ final class Chau7ObservabilityService {
             "launch_time": launchTime,
             "session_started_at": launchTime,
             "mcp_protocol_version": "2025-11-25",
-            "observability_schema_version": 1
+            "observability_schema_version": 2,
+            "components": components
         ]
     }
 

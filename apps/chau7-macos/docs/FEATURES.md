@@ -704,6 +704,7 @@ Chau7's rendering pipeline is purpose-built for latency-sensitive terminal work:
 
 ## Scripting & Debugging
 
+- **Independent component identity** — the app, bundled proxy, and Cloudflare relay expose distinct build/deployment identities. `chau7_runtime_info` includes the app plus identities actually observed from helper health checks, so rebuild verification cannot accidentally validate the wrong component.
 - **Launch-preserving log rotation** — `Chau7.log` rotates the complete previous file to `Chau7.log.1` and retains only complete recent lines in the active file. This keeps launch/recovery evidence available after a noisy runtime period and guarantees line-oriented diagnostic readers never start on a truncated record.
 
 ### Scripting API

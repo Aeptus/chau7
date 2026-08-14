@@ -458,8 +458,22 @@ final class ProxyManager {
             guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
                 return nil
             }
-            return Set(json["capabilities"] as? [String] ?? [])
+            let capabilities = json["capabilities"] as? [String] ?? []
+            var runtimeInfo: [String: Any] = [
+                "status": json["status"] as? String ?? "unknown",
+                "capabilities": capabilities
+            ]
+            runtimeInfo["build"] = json["build"] as? [String: Any]
+            Chau7ObservabilityService.shared.updateComponentRuntimeInfo(
+                component: "proxy",
+                info: runtimeInfo.compactMapValues { $0 }
+            )
+            return Set(capabilities)
         } catch {
+            Chau7ObservabilityService.shared.updateComponentRuntimeInfo(
+                component: "proxy",
+                info: ["status": "unreachable"]
+            )
             logger.warning("Capability check failed: \(error.localizedDescription, privacy: .public)")
             return nil
         }

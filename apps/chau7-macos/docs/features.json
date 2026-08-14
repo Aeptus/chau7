@@ -1,6 +1,13 @@
 [
   {
     "category": "Scripting & Debugging",
+    "feature": "Independent Component Runtime Identity",
+    "description": "Relay runtime responses expose Cloudflare deployment metadata, proxy health exposes helper build identity and capabilities, and chau7_runtime_info reports identities observed for each component so verification cannot mistake an app rebuild for a relay or proxy deployment",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "Scripting & Debugging",
     "feature": "Launch-Preserving App Log Rotation",
     "description": "Chau7.log rotates its complete previous generation to Chau7.log.1 and retains a line-aligned recent tail in the active file, preserving launch and recovery evidence while keeping every retained record parseable",
     "status": "Shipped",

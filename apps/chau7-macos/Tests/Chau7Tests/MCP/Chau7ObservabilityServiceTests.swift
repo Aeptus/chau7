@@ -16,7 +16,22 @@ final class Chau7ObservabilityServiceTests: XCTestCase {
         XCTAssertNotNil(payload["build_sha"] as? String)
         XCTAssertNotNil(payload["process_id"] as? Int)
         XCTAssertEqual(payload["mcp_protocol_version"] as? String, "2025-11-25")
-        XCTAssertEqual(payload["observability_schema_version"] as? Int, 1)
+        XCTAssertEqual(payload["observability_schema_version"] as? Int, 2)
+        let components = try XCTUnwrap(payload["components"] as? [String: Any])
+        XCTAssertNotNil(components["app"] as? [String: Any])
+    }
+
+    func testRuntimeInfoIncludesObservedComponentIdentity() async throws {
+        Chau7ObservabilityService.shared.updateComponentRuntimeInfo(
+            component: "proxy",
+            info: ["status": "ok", "build_sha": "proxy-123"]
+        )
+        await Task.yield()
+
+        let payload = try decodeObject(Chau7ObservabilityService.shared.runtimeInfoJSON())
+        let components = try XCTUnwrap(payload["components"] as? [String: Any])
+        let proxy = try XCTUnwrap(components["proxy"] as? [String: Any])
+        XCTAssertEqual(proxy["build_sha"] as? String, "proxy-123")
     }
 
     func testRuntimeEventsReturnLatestEventsWithControlPlaneTabIDs() throws {

@@ -35,6 +35,7 @@ applies WebSocket backpressure (dropping/closing slow receivers).
 | Method | Path | Role | Scope |
 |--------|------|------|-------|
 | GET | `/` | — | — (landing page) |
+| GET | `/runtime` | — | — (deployment identity) |
 | WS | `/connect/:deviceId?role=mac\|ios` | mac/ios | connect |
 | POST | `/push/register/:deviceId` | mac | push |
 | POST | `/push/notify/:deviceId` | mac | push |

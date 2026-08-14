@@ -229,6 +229,8 @@ func handleHealth(db *Database) http.HandlerFunc {
 
 		body, err := json.Marshal(map[string]any{
 			"status":       "ok",
+			"component":    "chau7-proxy",
+			"build":        currentProxyBuildInfo(),
 			"capabilities": proxyCapabilities,
 		})
 		if err != nil {
