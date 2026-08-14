@@ -114,6 +114,14 @@ export function apnsCollapseID(notify) {
  */
 export const APNS_TOKEN_TTL_MS = 50 * 60 * 1000;
 
+/** Minimum quiet period after APNs rejects an over-frequent token update. */
+export const APNS_PROVIDER_UPDATE_BACKOFF_MS = 20 * 60 * 1000;
+
+/** Preserve an existing, later backoff instead of shortening it. */
+export function nextAPNSProviderBackoffUntil(existing, now) {
+  return Math.max(Number.isFinite(existing) ? existing : 0, now + APNS_PROVIDER_UPDATE_BACKOFF_MS);
+}
+
 /**
  * Whether a cached provider-token entry is still usable at `now`.
  */

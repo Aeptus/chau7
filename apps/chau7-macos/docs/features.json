@@ -4580,7 +4580,7 @@
   {
     "category": "Remote & Collaboration",
     "feature": "Relay Hibernation Backpressure & Rate-Limit",
-    "description": "Relay rebuilt on Hibernatable WebSockets with per-device rate limiting, body/frame size caps, sanitized pending-state WebSocket backpressure, and reason-based APNs registration removal",
+    "description": "Relay rebuilt on Hibernatable WebSockets with per-device rate limiting, body/frame size caps, sanitized pending-state WebSocket backpressure, reason-based APNs registration removal, and one persisted APNs provider-token broker per signing key",
     "status": "Shipped",
     "differentiator": "Yes"
   },

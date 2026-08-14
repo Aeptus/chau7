@@ -8,7 +8,9 @@ import {
   REMOVABLE_REASONS,
   resolveAPNSToken,
   isAPNSTokenUsable,
-  APNS_TOKEN_TTL_MS
+  APNS_TOKEN_TTL_MS,
+  APNS_PROVIDER_UPDATE_BACKOFF_MS,
+  nextAPNSProviderBackoffUntil
 } from '../src/apns.js';
 
 test('410 always removes the registration', () => {
@@ -194,4 +196,12 @@ test('isAPNSTokenUsable rejects missing and malformed entries', () => {
   assert.equal(isAPNSTokenUsable({ token: 'x' }, now), false);
   assert.equal(isAPNSTokenUsable({ token: 'x', expiresAt: now - 1 }, now), false);
   assert.equal(isAPNSTokenUsable({ token: 'x', expiresAt: now + 1 }, now), true);
+});
+
+test('provider-token backoff lasts at least 20 minutes and never regresses', () => {
+  const now = 1_000_000;
+  const minimum = now + APNS_PROVIDER_UPDATE_BACKOFF_MS;
+  assert.equal(nextAPNSProviderBackoffUntil(undefined, now), minimum);
+  assert.equal(nextAPNSProviderBackoffUntil(minimum - 1, now), minimum);
+  assert.equal(nextAPNSProviderBackoffUntil(minimum + 60_000, now), minimum + 60_000);
 });

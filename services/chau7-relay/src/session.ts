@@ -23,7 +23,6 @@ import {
   apnsCollapseID,
   buildApnsPayload,
   parseApnsReason,
-  resolveAPNSToken,
   shouldRemoveRegistration
 } from './apns.js';
 import { RateLimiter } from './ratelimit.js';
@@ -55,6 +54,7 @@ interface PendingStatePayload {
 }
 
 interface Env {
+  APNS_TOKEN_BROKER: DurableObjectNamespace;
   APNS_TEAM_ID?: string;
   APNS_KEY_ID?: string;
   APNS_PRIVATE_KEY?: string;
@@ -75,26 +75,10 @@ const MAX_SEEN_NONCES = 2000;
 
 type Role = 'mac' | 'ios';
 
-/// Storage key for the APNs provider JWT. Persisted so the refresh interval
-/// survives Durable Object eviction; see getAPNSToken.
-const APNS_TOKEN_STORAGE_KEY = 'apns-provider-token';
-
-interface CachedAPNSToken {
-  token: string;
-  expiresAt: number;
-}
-
 export class SessionDO {
   private readonly state: DurableObjectState;
   private readonly env: Env;
   private readonly rateLimiter = new RateLimiter();
-  /// Cached APNs provider JWT — identical across all registrations in this DO,
-  /// valid up to 1h; refreshed at 50min to avoid TooManyProviderTokenUpdates.
-  /// Mirrors the persisted copy under APNS_TOKEN_STORAGE_KEY.
-  private cachedAPNSToken?: CachedAPNSToken;
-  /// Cached signing key so the P-256 import happens once per JWT refresh, not per notify.
-  private cachedSigningKey?: CryptoKey;
-
   constructor(state: DurableObjectState, env: Env) {
     this.state = state;
     this.env = env;
@@ -439,7 +423,13 @@ export class SessionDO {
       registration.pushEnvironment === 'production'
         ? 'https://api.push.apple.com'
         : 'https://api.sandbox.push.apple.com';
-    const authToken = await this.getAPNSToken(APNS_TEAM_ID, APNS_KEY_ID, APNS_PRIVATE_KEY);
+    let authToken: string;
+    try {
+      authToken = await this.getAPNSToken(APNS_TEAM_ID, APNS_KEY_ID);
+    } catch (error) {
+      console.warn(`APNs push deferred: provider token unavailable: ${String(error)}`);
+      return { status: 503, reason: 'apns_provider_token_unavailable' };
+    }
     const body = buildApnsPayload(payload);
 
     const headers: Record<string, string> = {
@@ -473,6 +463,9 @@ export class SessionDO {
         // APNs body unavailable; status alone is still logged below.
       }
       reason = parseApnsReason(text);
+      if (reason === 'TooManyProviderTokenUpdates') {
+        await this.reportProviderTokenRateLimit(APNS_TEAM_ID, APNS_KEY_ID);
+      }
       console.warn(
         `APNs push failed: status=${response.status} device=${registration.pairedDeviceId} reason=${reason ?? text}`
       );
@@ -480,74 +473,29 @@ export class SessionDO {
     return { status: response.status, reason };
   }
 
-  /// Returns a cached APNs provider JWT, minting a fresh one only when the
-  /// cache is empty or near expiry. The signing inputs (team/key) are identical
-  /// for every registration in this DO, so this collapses the per-registration,
-  /// per-notify ECDSA signing into one signature per ~50 minutes.
-  ///
-  /// The cache is persisted, not just held in memory. APNs rejects a provider
-  /// that refreshes its token too often with TooManyProviderTokenUpdates, and an
-  /// in-memory-only cache cannot honour that: Durable Objects are evicted when
-  /// idle, pushes arrive in sparse bursts, and every eviction silently reset the
-  /// 50-minute timer. The observed effect was a mint per burst rather than the
-  /// intended one per 50 minutes, and APNs 502s that dropped the notification.
-  private async getAPNSToken(teamID: string, keyID: string, privateKey: string): Promise<string> {
-    const { token, entry } = await resolveAPNSToken({
-      memory: this.cachedAPNSToken,
-      readStored: () => this.state.storage.get<CachedAPNSToken>(APNS_TOKEN_STORAGE_KEY),
-      writeStored: (value: CachedAPNSToken) =>
-        this.state.storage.put(APNS_TOKEN_STORAGE_KEY, value),
-      mint: () => this.createAPNSToken(teamID, keyID, privateKey),
-      now: Date.now()
-    });
-    this.cachedAPNSToken = entry;
-    return token;
+  private async getAPNSToken(teamID: string, keyID: string): Promise<string> {
+    const brokerID = this.env.APNS_TOKEN_BROKER.idFromName(`${teamID}:${keyID}`);
+    const response = await this.env.APNS_TOKEN_BROKER.get(brokerID).fetch(
+      new Request('https://apns-token-broker/token', { method: 'POST' })
+    );
+    if (!response.ok) {
+      throw new Error(`broker_status_${response.status}`);
+    }
+    const payload = (await response.json()) as { token?: string };
+    if (!payload.token) {
+      throw new Error('broker_missing_token');
+    }
+    return payload.token;
   }
 
-  private async createAPNSToken(
-    teamID: string,
-    keyID: string,
-    privateKey: string
-  ): Promise<string> {
-    const header = this.base64url(JSON.stringify({ alg: 'ES256', kid: keyID, typ: 'JWT' }));
-    const claims = this.base64url(
-      JSON.stringify({ iss: teamID, iat: Math.floor(Date.now() / 1000) })
-    );
-    const signingInput = `${header}.${claims}`;
-    if (!this.cachedSigningKey) {
-      this.cachedSigningKey = await crypto.subtle.importKey(
-        'pkcs8',
-        this.pemToArrayBuffer(privateKey),
-        { name: 'ECDSA', namedCurve: 'P-256' },
-        false,
-        ['sign']
+  private async reportProviderTokenRateLimit(teamID: string, keyID: string): Promise<void> {
+    const brokerID = this.env.APNS_TOKEN_BROKER.idFromName(`${teamID}:${keyID}`);
+    try {
+      await this.env.APNS_TOKEN_BROKER.get(brokerID).fetch(
+        new Request('https://apns-token-broker/provider-update-rate-limited', { method: 'POST' })
       );
+    } catch (error) {
+      console.warn(`APNs provider-token backoff report failed: ${String(error)}`);
     }
-    const signature = await crypto.subtle.sign(
-      { name: 'ECDSA', hash: 'SHA-256' },
-      this.cachedSigningKey,
-      new TextEncoder().encode(signingInput)
-    );
-    return `${signingInput}.${this.base64url(signature)}`;
-  }
-
-  private pemToArrayBuffer(pem: string): ArrayBuffer {
-    const normalized = pem.replace(/\\n/g, '\n');
-    const base64 = normalized
-      .replace(/-----BEGIN PRIVATE KEY-----/g, '')
-      .replace(/-----END PRIVATE KEY-----/g, '')
-      .replace(/\s+/g, '');
-    const bytes = Uint8Array.from(atob(base64), (char) => char.charCodeAt(0));
-    return bytes.buffer;
-  }
-
-  private base64url(value: string | ArrayBuffer): string {
-    const bytes =
-      typeof value === 'string' ? new TextEncoder().encode(value) : new Uint8Array(value);
-    let binary = '';
-    for (const byte of bytes) {
-      binary += String.fromCharCode(byte);
-    }
-    return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
   }
 }

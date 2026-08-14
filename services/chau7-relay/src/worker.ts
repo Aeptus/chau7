@@ -15,10 +15,11 @@
  * requested, authenticated routes return 503.
  */
 import { SessionDO } from './session';
+import { APNSTokenBrokerDO } from './apns-token-broker';
 import { resolveAuthMode } from './auth.js';
 import { verifyToken } from './token.js';
 
-export { SessionDO };
+export { APNSTokenBrokerDO, SessionDO };
 
 const LANDING_HTML = `<!DOCTYPE html>
 <html lang="en">
@@ -47,6 +48,7 @@ type Role = 'mac' | 'ios';
 
 interface Env {
   SESSION: DurableObjectNamespace;
+  APNS_TOKEN_BROKER: DurableObjectNamespace;
   RELAY_SECRET?: string;
   RELAY_ALLOW_UNAUTHENTICATED?: string;
 }

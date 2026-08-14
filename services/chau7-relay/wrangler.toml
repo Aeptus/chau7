@@ -28,6 +28,14 @@ enabled = true
 name = "SESSION"
 class_name = "SessionDO"
 
+[[durable_objects.bindings]]
+name = "APNS_TOKEN_BROKER"
+class_name = "APNSTokenBrokerDO"
+
 [[migrations]]
 tag = "v1"
 new_classes = ["SessionDO"]
+
+[[migrations]]
+tag = "v2"
+new_classes = ["APNSTokenBrokerDO"]
