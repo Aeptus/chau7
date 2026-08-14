@@ -1424,6 +1424,44 @@ pub unsafe extern "C" fn chau7_terminal_get_tail_buffer_ansi_text(
     }
 }
 
+/// Get the tail of the full buffer as plain text (no SGR), wrapped rows
+/// joined into logical lines. Bounded twin of
+/// `chau7_terminal_get_tail_buffer_ansi_text` for detectors that only need
+/// recent text without flattening the entire ring.
+///
+/// # Safety
+/// - `term` must be a valid pointer
+/// - The returned pointer must be freed with `chau7_terminal_free_string`
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn chau7_terminal_get_tail_buffer_text(
+    term: *mut Chau7Terminal,
+    max_lines: usize,
+    max_bytes: usize,
+) -> *mut c_char {
+    unsafe {
+        trace!(
+            "chau7_terminal_get_tail_buffer_text({:p}, max_lines={}, max_bytes={})",
+            term, max_lines, max_bytes
+        );
+        if term.is_null() {
+            warn!("chau7_terminal_get_tail_buffer_text: term is null");
+            return std::ptr::null_mut();
+        }
+        let terminal = &*term;
+        let text = terminal.tail_buffer_text(max_lines, max_bytes);
+        match CString::new(text) {
+            Ok(cstr) => cstr.into_raw(),
+            Err(e) => {
+                error!(
+                    "chau7_terminal_get_tail_buffer_text: CString::new failed: {}",
+                    e
+                );
+                std::ptr::null_mut()
+            }
+        }
+    }
+}
+
 /// Reset performance metrics
 ///
 /// # Safety

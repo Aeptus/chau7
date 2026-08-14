@@ -2360,6 +2360,69 @@ impl Chau7Terminal {
         result
     }
 
+    /// Plain-text twin of `tail_buffer_ansi_text` for detectors that only
+    /// need recent text (e.g. remote interactive-prompt scraping): bounded at
+    /// the source, no SGR, wrapped rows joined into logical lines. Avoids
+    /// flattening the entire ring (multi-MB) to inspect a screenful.
+    pub fn tail_buffer_text(&self, max_lines: usize, max_bytes: usize) -> String {
+        if max_lines == 0 || max_bytes == 0 {
+            return String::new();
+        }
+
+        let term = self.term.lock();
+        let grid = term.grid();
+        let screen_lines = grid.screen_lines() as i32;
+        let history = grid.history_size() as i32;
+
+        let mut tail: VecDeque<String> = VecDeque::new();
+        let mut tail_bytes = 0usize;
+        let first_row = -history;
+        let mut end_row = screen_lines - 1;
+        let mut scanned_rows = 0usize;
+
+        while end_row >= first_row {
+            let mut start_row = end_row;
+            while start_row > first_row && Self::grid_line_wraps(grid, Line(start_row - 1)) {
+                start_row -= 1;
+            }
+
+            let mut current_line = String::new();
+            for row in start_row..=end_row {
+                let (line_text, _wraps) = Self::grid_line_text(grid, Line(row));
+                current_line.push_str(&line_text);
+            }
+
+            scanned_rows += (end_row - start_row + 1) as usize;
+            Self::push_front_bounded_tail_line(
+                &mut tail,
+                &mut tail_bytes,
+                current_line,
+                max_lines,
+                max_bytes,
+            );
+
+            if tail.len() >= max_lines || tail_bytes >= max_bytes {
+                break;
+            }
+            if start_row <= first_row {
+                break;
+            }
+            end_row = start_row - 1;
+        }
+
+        let result: String = tail.into_iter().collect();
+        debug!(
+            "[terminal-{}] tail_buffer_text exported {} bytes after scanning {} of {} physical rows (max_lines={}, max_bytes={})",
+            self.id,
+            result.len(),
+            scanned_rows,
+            history + screen_lines,
+            max_lines,
+            max_bytes
+        );
+        result
+    }
+
     fn push_front_bounded_tail_line(
         tail: &mut VecDeque<String>,
         tail_bytes: &mut usize,
@@ -3286,6 +3349,29 @@ mod tests {
             "primary history must shrink while the alt screen was active (got {})",
             after
         );
+    }
+
+    #[test]
+    fn test_tail_buffer_text_returns_bounded_logical_line_suffix() {
+        let _ = env_logger::try_init();
+
+        let term = Chau7Terminal::new_with_env(40, 6, "", &[]).expect("Should create terminal");
+        term.inject_output(b"alpha\r\nbeta\r\n  indented\r\ndelta\r\n");
+
+        // Last 3 non-blank logical lines, plain text, LF-terminated.
+        assert_eq!(term.tail_buffer_text(3, 65536), "beta\n  indented\ndelta\n");
+
+        // Wrapped physical rows must join into one logical line.
+        let wrapped = Chau7Terminal::new_with_env(20, 6, "", &[]).expect("Should create terminal");
+        let long_line = "x".repeat(50);
+        wrapped.inject_output(format!("{}\r\n", long_line).as_bytes());
+        assert_eq!(
+            wrapped.tail_buffer_text(1, 65536),
+            format!("{}\n", long_line)
+        );
+
+        // Byte bound is respected.
+        assert!(term.tail_buffer_text(100, 8).len() <= 8);
     }
 
     #[test]
