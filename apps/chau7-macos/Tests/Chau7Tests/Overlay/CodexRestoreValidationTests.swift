@@ -55,15 +55,15 @@ final class CodexRestoreValidationTests: XCTestCase {
 
     func testRestoreKeepsExactCodexSessionBeyondRecentDirectoryWindow() throws {
         let sessionID = "019fb204-860b-7373-b716-302df3e15d67"
-        let oldSessionDate = referenceDate.addingTimeInterval(-30 * 86_400)
+        let oldSessionDate = referenceDate.addingTimeInterval(-30 * 86400)
         try writeRollout(
             sessionID: sessionID,
             directory: "/tmp/old-checkout",
             referenceDate: oldSessionDate
         )
-        for dayOffset in 0..<14 {
+        for dayOffset in 0 ..< 14 {
             _ = try createCodexDayDirectory(
-                for: referenceDate.addingTimeInterval(-Double(dayOffset) * 86_400)
+                for: referenceDate.addingTimeInterval(-Double(dayOffset) * 86400)
             )
         }
         let state = savedState(sessionID: sessionID, directory: "/tmp/old-checkout")
