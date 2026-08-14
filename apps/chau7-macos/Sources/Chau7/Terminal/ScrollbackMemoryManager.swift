@@ -10,14 +10,17 @@ import Chau7Core
 ///   .active/.passiveVisible/.warm → configured user scrollback in RAM
 ///   .hidden                       → flushed to disk, then viewport floor in RAM
 ///
-/// On demotion to .hidden: capture the full buffer text, encode it into a
-/// verified cache payload at
-/// ~/Library/Application Support/Chau7/ScrollbackCache/<tabID>.gz, then set
-/// scrollback size to a viewport floor to free most of the ring buffer.
+/// On demotion to .hidden: capture the full buffer as ANSI text (CRLF + SGR,
+/// safe to re-inject through the VTE parser), encode it into a verified cache
+/// payload at ~/Library/Application Support/Chau7/ScrollbackCache/<tabID>.gz,
+/// then set scrollback size to a viewport floor to free most of the ring
+/// buffer.
 ///
 /// On promotion from .hidden: set scrollback size to the configured user cap,
 /// read the disk file, decompress, and replay through the Rust terminal via the
-/// replay_buffer FFI.
+/// replay_buffer FFI. Whether a reload happens is decided by the flush-time
+/// record for the tab, never by the promotion-time TUI flag (see
+/// `handlePhaseTransition`).
 final class ScrollbackMemoryManager {
     typealias CacheWriter = (Data, URL) throws -> Void
 
@@ -35,10 +38,13 @@ final class ScrollbackMemoryManager {
 
     private let stateLock = NSLock()
     private var perTabQueues: [UUID: DispatchQueue] = [:]
-    /// Tabs whose scrollback ring was flushed to disk + shrunk by the *idle*
-    /// path (not the `.hidden` phase path), so `idleReloadIfNeeded` knows to
-    /// restore them on reselection. Guarded by `stateLock`.
-    private var idleFlushedTabIDs: Set<UUID> = []
+    /// Tabs whose scrollback ring was flushed to disk + shrunk, keyed by what
+    /// actually happened at flush time. Reload decisions consult this record —
+    /// never the promotion-time TUI flag, which can flip between demotion and
+    /// promotion (agents start and stop) and would otherwise either replay into
+    /// a live TUI or strand a shrunk ring with an orphaned cache. Guarded by
+    /// `stateLock`.
+    private var flushState: [UUID: ScrollbackFlushRecord] = [:]
     private let cacheDirectoryURL: URL
     private let cacheWriter: CacheWriter
 
@@ -96,15 +102,12 @@ final class ScrollbackMemoryManager {
     /// Schedules flush/reload/cap-change on a per-tab serial queue so
     /// transitions for the same tab never overlap.
     ///
-    /// `hostsTUIApp` short-circuits the destructive flush/reload paths.
-    /// `flush()` captures the grid via `full_buffer_text` which only emits
-    /// row-text — no SGR, no cursor positioning, no preserved TUI state. For a
-    /// shell tab that's fine; for a tab running Claude/Codex/Aider/etc. it
-    /// flattens the live TUI surface to plain text, and on reload `replayBuffer`
-    /// then issues `ESC[2J ESC[H` + replays the flattened text, which destroys
-    /// the running TUI's invariants (boxes/spinners/menus). Skip both for TUI
-    /// tabs: the ring stays resident because shrinking it discards history,
-    /// while flattening and repouring would corrupt the live TUI surface.
+    /// `hostsTUIApp` short-circuits the destructive flush path: `replayBuffer`
+    /// issues `ESC[2J ESC[H` + repours the captured text, which destroys a
+    /// running TUI's invariants (boxes/spinners/menus), and shrinking the ring
+    /// discards history. So TUI tabs are never flushed, and a cache flushed
+    /// earlier is never replayed while a TUI is live — it is kept on disk and
+    /// restored on a later non-TUI promotion instead.
     func handlePhaseTransition(
         viewId: String,
         tabID: UUID?,
@@ -126,26 +129,44 @@ final class ScrollbackMemoryManager {
                     Log.info("ScrollbackMemoryManager[\(viewId)]: preserving scrollback for TUI tab \(oldPhase) -> \(newPhase)")
                     return
                 }
-                stateLock.lock()
-                let alreadyIdleFlushed = idleFlushedTabIDs.remove(tabID) != nil
-                stateLock.unlock()
-                if alreadyIdleFlushed {
+                if flushRecord(for: tabID) != nil {
                     rustFFI.setScrollbackSize(UInt32(Self.viewportFloor))
-                    Log.info("ScrollbackMemoryManager[\(viewId)]: reused idle-flush cache for hidden transition")
+                    Log.info("ScrollbackMemoryManager[\(viewId)]: reused existing flush cache for hidden transition")
                     return
                 }
                 if flush(tabID: tabID, viewId: viewId, rustFFI: rustFFI) {
                     // Free the ring buffer only after the buffer has either
                     // been persisted and verified, or proven empty.
                     rustFFI.setScrollbackSize(UInt32(Self.viewportFloor))
+                    setFlushRecord(
+                        ScrollbackFlushRecord(kind: .hiddenFlush, contentKind: .ansi, flushedAt: Date()),
+                        for: tabID
+                    )
                 } else {
                     Log.warn("ScrollbackMemoryManager[\(viewId)]: preserving in-memory scrollback because hidden flush did not complete")
                 }
             } else if ScrollbackRetentionPolicy.shouldReloadFromDisk(from: oldPhase, to: newPhase) {
-                if hostsTUIApp {
-                    Log.info("ScrollbackMemoryManager[\(viewId)]: TUI scrollback remained resident \(oldPhase) -> \(newPhase)")
+                let record = flushRecord(for: tabID)
+                let hasCache = FileManager.default.fileExists(atPath: cacheURL(for: tabID).path)
+                if record == nil, !hasCache {
+                    // Nothing was ever flushed. A TUI tab's ring was never
+                    // shrunk either, so leave it untouched (matches the
+                    // demotion-side short-circuit).
+                    if !hostsTUIApp {
+                        rustFFI.setScrollbackSize(UInt32(newCap))
+                    }
                     return
                 }
+                if hostsTUIApp {
+                    // A flush happened earlier but a TUI is live now. Growing
+                    // the ring is safe (no cell writes); replaying is not.
+                    // Keep the cache + record so a later non-TUI promotion
+                    // restores the history instead of losing it.
+                    rustFFI.setScrollbackSize(UInt32(newCap))
+                    Log.info("ScrollbackMemoryManager[\(viewId)]: deferred scrollback reload for live TUI (cache retained)")
+                    return
+                }
+                clearFlushRecord(for: tabID)
                 reload(tabID: tabID, viewId: viewId, rustFFI: rustFFI, newCap: newCap)
             } else {
                 rustFFI.setScrollbackSize(UInt32(newCap))
@@ -161,7 +182,7 @@ final class ScrollbackMemoryManager {
     /// view stays `.warm` and keeps rendering normally; only the history ring is
     /// freed. Reloaded on reselection by `idleReloadIfNeeded`.
     ///
-    /// Unlike the `.hidden` flush this captures *ANSI* (SGR preserved), so the
+    /// Like the `.hidden` flush this captures *ANSI* (SGR preserved), so the
     /// reloaded scrollback keeps its colors. TUI tabs are skipped entirely — the
     /// caller must pass `hostsTUIApp` for any alternate-screen / AI-TUI session;
     /// flattening + repouring a live TUI surface would corrupt it.
@@ -178,10 +199,7 @@ final class ScrollbackMemoryManager {
         let queue = perTabQueue(for: tabID)
         queue.async { [weak self] in
             guard let self else { return }
-            stateLock.lock()
-            let alreadyFlushed = idleFlushedTabIDs.contains(tabID)
-            stateLock.unlock()
-            guard !alreadyFlushed else {
+            guard flushRecord(for: tabID) == nil else {
                 Log.trace("ScrollbackMemoryManager[\(viewId)]: idleFlush coalesced (already flushed)")
                 return
             }
@@ -200,14 +218,15 @@ final class ScrollbackMemoryManager {
                 Log.warn("ScrollbackMemoryManager[\(viewId)]: idleFlush - no buffer captured")
                 return
             }
-            guard persist(text: text, tabID: tabID, viewId: viewId) else {
+            guard persist(text: text, contentKind: .ansi, tabID: tabID, viewId: viewId) else {
                 Log.warn("ScrollbackMemoryManager[\(viewId)]: idleFlush - persist failed; ring untouched")
                 return
             }
             rustFFI.setScrollbackSize(UInt32(Self.viewportFloor))
-            stateLock.lock()
-            idleFlushedTabIDs.insert(tabID)
-            stateLock.unlock()
+            setFlushRecord(
+                ScrollbackFlushRecord(kind: .idleFlush, contentKind: .ansi, flushedAt: Date()),
+                for: tabID
+            )
             Log.info("ScrollbackMemoryManager[\(viewId)]: idle-flushed tab \(tabID) (ring → floor \(Self.viewportFloor))")
         }
     }
@@ -225,10 +244,8 @@ final class ScrollbackMemoryManager {
         let queue = perTabQueue(for: tabID)
         queue.async { [weak self] in
             guard let self else { return }
-            stateLock.lock()
-            let wasFlushed = idleFlushedTabIDs.remove(tabID) != nil
-            stateLock.unlock()
-            guard wasFlushed else { return }
+            guard flushRecord(for: tabID) != nil else { return }
+            clearFlushRecord(for: tabID)
             reload(tabID: tabID, viewId: viewId, rustFFI: rustFFI, newCap: configuredLines)
         }
     }
@@ -265,6 +282,27 @@ final class ScrollbackMemoryManager {
         }
         stateLock.lock()
         perTabQueues[tabID] = nil
+        flushState[tabID] = nil
+        stateLock.unlock()
+    }
+
+    // MARK: - Flush records
+
+    private func flushRecord(for tabID: UUID) -> ScrollbackFlushRecord? {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        return flushState[tabID]
+    }
+
+    private func setFlushRecord(_ record: ScrollbackFlushRecord, for tabID: UUID) {
+        stateLock.lock()
+        flushState[tabID] = record
+        stateLock.unlock()
+    }
+
+    private func clearFlushRecord(for tabID: UUID) {
+        stateLock.lock()
+        flushState[tabID] = nil
         stateLock.unlock()
     }
 
@@ -280,20 +318,33 @@ final class ScrollbackMemoryManager {
             ),
             bytes: { $0?.utf8.count ?? 0 }
         ) {
-            rustFFI.captureFullBufferText()
+            // ANSI capture, not plain text: this payload is re-injected through
+            // the VTE parser on reload, where the plain capture's bare LFs
+            // staircase every line and its missing SGR drops all colors.
+            rustFFI.captureFullBufferAnsiText()
         }
         guard let text else {
             Log.warn("ScrollbackMemoryManager[\(viewId)]: flush - no buffer text captured")
             return false
         }
-        return persist(text: text, tabID: tabID, viewId: viewId)
+        return persist(text: text, contentKind: .ansi, tabID: tabID, viewId: viewId)
     }
 
     /// Encode → durably write → read back → verify a captured buffer into the
     /// tab's cache file. Shared by the `.hidden` flush and the idle flush.
     /// Returns true only once the bytes are persisted and verified (or the
     /// buffer was empty, in which case any stale cache is removed).
-    private func persist(text: String, tabID: UUID, viewId: String) -> Bool {
+    ///
+    /// Verification decodes the on-disk bytes against the size + CRC32 embedded
+    /// in the payload — never a full byte comparison against the original, so
+    /// the raw capture is not pinned across the verify step. This path runs on
+    /// the reclamation side; its transient footprint matters.
+    private func persist(
+        text: String,
+        contentKind: ScrollbackCacheContentKind,
+        tabID: UUID,
+        viewId: String
+    ) -> Bool {
         let data = Data(text.utf8)
         let url = cacheURL(for: tabID)
         guard !data.isEmpty else {
@@ -301,14 +352,18 @@ final class ScrollbackMemoryManager {
             return true
         }
 
-        let payload = Self.encodedCachePayload(for: data)
+        let expectedCount = data.count
+        let expectedCRC = CRC32.checksum(data)
+        let payload = Self.encodedCachePayload(for: data, contentKind: contentKind, crc32: expectedCRC)
         do {
             try cacheWriter(payload, url)
             let persisted = try Data(contentsOf: url)
-            guard let decoded = Self.decodedCachePayload(persisted), decoded == data else {
+            guard let decoded = Self.decodedCachePayload(persisted),
+                  decoded.data.count == expectedCount,
+                  decoded.embeddedCRC32 == expectedCRC else {
                 throw ScrollbackCacheError.verificationFailed
             }
-            Log.info("ScrollbackMemoryManager[\(viewId)]: flushed \(data.count)B raw / \(payload.count)B cache to \(url.lastPathComponent)")
+            Log.info("ScrollbackMemoryManager[\(viewId)]: flushed \(expectedCount)B raw / \(payload.count)B cache to \(url.lastPathComponent)")
             return true
         } catch {
             Log.warn("ScrollbackMemoryManager[\(viewId)]: flush write failed: \(error)")
@@ -335,57 +390,129 @@ final class ScrollbackMemoryManager {
             return
         }
 
-        guard let decompressed = Self.decodedCachePayload(compressed) else {
+        guard let decoded = Self.decodedCachePayload(compressed) else {
             Log.warn("ScrollbackMemoryManager[\(viewId)]: reload - cache decode failed")
             try? FileManager.default.removeItem(at: url)
             return
         }
 
-        rustFFI.replayBuffer(decompressed)
+        rustFFI.replayBuffer(Self.replayData(for: decoded))
         try? FileManager.default.removeItem(at: url)
-        Log.info("ScrollbackMemoryManager[\(viewId)]: reloaded \(decompressed.count)B from \(url.lastPathComponent)")
+        Log.info("ScrollbackMemoryManager[\(viewId)]: reloaded \(decoded.data.count)B from \(url.lastPathComponent)")
     }
 
-    // MARK: - Compression
+    /// ANSI payloads are CRLF-correct at the source and replay verbatim. Legacy
+    /// plain-text payloads carry bare LFs; injected without a PTY those keep the
+    /// previous line's column and staircase every restored line, so they must be
+    /// normalized first.
+    static func replayData(for decoded: DecodedScrollbackCache) -> Data {
+        switch decoded.contentKind {
+        case .ansi:
+            return decoded.data
+        case .plainText:
+            guard let text = String(data: decoded.data, encoding: .utf8) else {
+                return decoded.data
+            }
+            return Data(RestoreScrollbackNormalizer.normalizeLineEndingsForParserInjection(text).utf8)
+        }
+    }
 
-    private static let zlibCacheHeader = Data("CHAU7_SCROLLBACK_ZLIB_V1\n".utf8)
-    private static let rawCacheHeader = Data("CHAU7_SCROLLBACK_RAW_V1\n".utf8)
+    // MARK: - Cache payload codec
+
+    /// v2 payload layout, after the ASCII header line:
+    ///   contentKind: UInt8, uncompressedSize: UInt64 LE, crc32: UInt32 LE,
+    ///   then the (zlib or raw) stream. The embedded size makes decompression
+    ///   exact-size instead of guess-and-grow — the v1 heuristic capped out at
+    ///   40× expansion, and terminal scrollback routinely compresses 50-200×,
+    ///   so precisely the biggest buffers always failed verification, lost
+    ///   their cache, and kept their ring resident.
+    private static let zlibCacheHeaderV2 = Data("CHAU7_SCROLLBACK_ZLIB_V2\n".utf8)
+    private static let rawCacheHeaderV2 = Data("CHAU7_SCROLLBACK_RAW_V2\n".utf8)
+    private static let zlibCacheHeaderV1 = Data("CHAU7_SCROLLBACK_ZLIB_V1\n".utf8)
+    private static let rawCacheHeaderV1 = Data("CHAU7_SCROLLBACK_RAW_V1\n".utf8)
+    private static let cacheMetaLength = 1 + 8 + 4
+    /// Sanity ceiling for the embedded size and for legacy guess-and-grow
+    /// decompression. A 100k-line ring stays far below this.
+    private static let maxUncompressedCacheBytes = 512 * 1024 * 1024
 
     private enum ScrollbackCacheError: Error {
         case verificationFailed
     }
 
-    private static func encodedCachePayload(for data: Data) -> Data {
+    static func encodedCachePayload(
+        for data: Data,
+        contentKind: ScrollbackCacheContentKind,
+        crc32: UInt32
+    ) -> Data {
+        var meta = Data(capacity: cacheMetaLength)
+        meta.append(contentKind.rawValue)
+        appendUInt64LE(UInt64(data.count), to: &meta)
+        appendUInt32LE(crc32, to: &meta)
+
         if let compressed = compress(data) {
-            var payload = zlibCacheHeader
+            var payload = zlibCacheHeaderV2
+            payload.append(meta)
             payload.append(compressed)
             return payload
         }
 
-        var payload = rawCacheHeader
+        var payload = rawCacheHeaderV2
+        payload.append(meta)
         payload.append(data)
         return payload
     }
 
-    private static func decodedCachePayload(_ payload: Data) -> Data? {
-        if payload.starts(with: zlibCacheHeader) {
-            return decompress(Data(payload.dropFirst(zlibCacheHeader.count)))
+    static func decodedCachePayload(_ payload: Data) -> DecodedScrollbackCache? {
+        if payload.starts(with: zlibCacheHeaderV2) {
+            return decodeV2(payload.dropFirst(zlibCacheHeaderV2.count), compressed: true)
         }
-
-        if payload.starts(with: rawCacheHeader) {
-            return Data(payload.dropFirst(rawCacheHeader.count))
+        if payload.starts(with: rawCacheHeaderV2) {
+            return decodeV2(payload.dropFirst(rawCacheHeaderV2.count), compressed: false)
         }
-
-        // Backward compatibility for caches written before payload headers.
-        if let decompressed = decompress(payload) {
-            return decompressed
+        // v1 and headerless payloads predate the embedded metadata and were all
+        // written from the plain-text capture (bare LFs).
+        if payload.starts(with: zlibCacheHeaderV1) {
+            guard let data = legacyDecompress(Data(payload.dropFirst(zlibCacheHeaderV1.count))) else {
+                return nil
+            }
+            return DecodedScrollbackCache(data: data, contentKind: .plainText, embeddedCRC32: nil)
         }
-
+        if payload.starts(with: rawCacheHeaderV1) {
+            return DecodedScrollbackCache(
+                data: Data(payload.dropFirst(rawCacheHeaderV1.count)),
+                contentKind: .plainText,
+                embeddedCRC32: nil
+            )
+        }
+        if let decompressed = legacyDecompress(payload) {
+            return DecodedScrollbackCache(data: decompressed, contentKind: .plainText, embeddedCRC32: nil)
+        }
         if String(data: payload, encoding: .utf8) != nil {
-            return payload
+            return DecodedScrollbackCache(data: payload, contentKind: .plainText, embeddedCRC32: nil)
         }
-
         return nil
+    }
+
+    private static func decodeV2(_ body: Data, compressed: Bool) -> DecodedScrollbackCache? {
+        guard body.count >= cacheMetaLength else { return nil }
+        // `body` is a slice; its indices are inherited from the parent payload.
+        let meta = Data(body.prefix(cacheMetaLength))
+        guard let contentKind = ScrollbackCacheContentKind(rawValue: meta[0]) else { return nil }
+        let size = readUInt64LE(meta, at: 1)
+        let crc = readUInt32LE(meta, at: 9)
+        guard size <= UInt64(maxUncompressedCacheBytes) else { return nil }
+        let stream = Data(body.dropFirst(cacheMetaLength))
+
+        let data: Data
+        if compressed {
+            guard let decompressed = decompress(stream, exactSize: Int(size)) else { return nil }
+            data = decompressed
+        } else {
+            guard stream.count == Int(size) else { return nil }
+            data = stream
+        }
+        guard CRC32.checksum(data) == crc else { return nil }
+        return DecodedScrollbackCache(data: data, contentKind: contentKind, embeddedCRC32: crc)
     }
 
     private static func compress(_ data: Data) -> Data? {
@@ -410,15 +537,37 @@ final class ScrollbackMemoryManager {
         .nilIfEmpty
     }
 
-    private static func decompress(_ data: Data) -> Data? {
+    /// Exact-size decompression for v2 payloads: allocate precisely the
+    /// embedded uncompressed size, one pass, no growth heuristic.
+    private static func decompress(_ data: Data, exactSize: Int) -> Data? {
+        guard exactSize > 0 else { return nil }
+        return data.withUnsafeBytes { (src: UnsafeRawBufferPointer) -> Data? in
+            guard let srcBase = src.baseAddress?.assumingMemoryBound(to: UInt8.self) else {
+                return nil
+            }
+            let dst = UnsafeMutablePointer<UInt8>.allocate(capacity: exactSize)
+            defer { dst.deallocate() }
+            let written = compression_decode_buffer(
+                dst, exactSize,
+                srcBase, data.count,
+                nil,
+                COMPRESSION_ZLIB
+            )
+            guard written == exactSize else { return nil }
+            return Data(bytes: dst, count: written)
+        }
+    }
+
+    /// Guess-and-grow decompression for v1/headerless payloads, which carry no
+    /// size metadata. Grows until `maxUncompressedCacheBytes` instead of the
+    /// old three-doublings cap so existing high-ratio caches stay restorable.
+    private static func legacyDecompress(_ data: Data) -> Data? {
         data.withUnsafeBytes { (src: UnsafeRawBufferPointer) -> Data? in
             guard let srcBase = src.baseAddress?.assumingMemoryBound(to: UInt8.self) else {
                 return nil
             }
-            // Compressed text is typically 3-5x smaller than original. Start
-            // with a 10x buffer; grow if the first pass hits the cap.
             var dstCapacity = max(data.count * 10, 4096)
-            for _ in 0 ..< 3 {
+            while true {
                 let dst = UnsafeMutablePointer<UInt8>.allocate(capacity: dstCapacity)
                 defer { dst.deallocate() }
                 let written = compression_decode_buffer(
@@ -430,10 +579,40 @@ final class ScrollbackMemoryManager {
                 if written > 0, written < dstCapacity {
                     return Data(bytes: dst, count: written)
                 }
-                dstCapacity *= 2
+                guard dstCapacity < maxUncompressedCacheBytes else { return nil }
+                dstCapacity = min(dstCapacity * 2, maxUncompressedCacheBytes)
             }
-            return nil
         }
+    }
+
+    // MARK: - Little-endian meta codec
+
+    private static func appendUInt64LE(_ value: UInt64, to data: inout Data) {
+        for shift in stride(from: 0, to: 64, by: 8) {
+            data.append(UInt8(truncatingIfNeeded: value >> UInt64(shift)))
+        }
+    }
+
+    private static func appendUInt32LE(_ value: UInt32, to data: inout Data) {
+        for shift in stride(from: 0, to: 32, by: 8) {
+            data.append(UInt8(truncatingIfNeeded: value >> UInt32(shift)))
+        }
+    }
+
+    private static func readUInt64LE(_ data: Data, at offset: Int) -> UInt64 {
+        var value: UInt64 = 0
+        for i in 0 ..< 8 {
+            value |= UInt64(data[offset + i]) << UInt64(i * 8)
+        }
+        return value
+    }
+
+    private static func readUInt32LE(_ data: Data, at offset: Int) -> UInt32 {
+        var value: UInt32 = 0
+        for i in 0 ..< 4 {
+            value |= UInt32(data[offset + i]) << UInt32(i * 8)
+        }
+        return value
     }
 
     // MARK: - Paths
@@ -469,9 +648,12 @@ final class ScrollbackMemoryManager {
             }
 
             if fileManager.fileExists(atPath: url.path) {
-                try fileManager.removeItem(at: url)
+                // Atomic swap — the old remove-then-move left a window where a
+                // crash lost both the old and the new cache.
+                _ = try fileManager.replaceItemAt(url, withItemAt: tempURL)
+            } else {
+                try fileManager.moveItem(at: tempURL, to: url)
             }
-            try fileManager.moveItem(at: tempURL, to: url)
         } catch {
             try? fileManager.removeItem(at: tempURL)
             throw error
@@ -499,6 +681,70 @@ final class ScrollbackMemoryManager {
     }
 }
 
+/// What a decoded cache file contains and how it may be replayed.
+struct DecodedScrollbackCache {
+    let data: Data
+    let contentKind: ScrollbackCacheContentKind
+    /// CRC32 carried by v2 payloads; nil for v1/headerless legacy caches.
+    let embeddedCRC32: UInt32?
+}
+
+enum ScrollbackCacheContentKind: UInt8 {
+    /// Plain row text with bare LFs (legacy captures) — must be CRLF-normalized
+    /// before parser injection.
+    case plainText = 0
+    /// ANSI export: CRLF line endings + SGR, replayable verbatim.
+    case ansi = 1
+}
+
+/// What actually happened at flush time, recorded so reload decisions follow
+/// the flush-time facts rather than the promotion-time TUI flag.
+struct ScrollbackFlushRecord {
+    enum Kind {
+        case hiddenFlush
+        case idleFlush
+    }
+
+    let kind: Kind
+    let contentKind: ScrollbackCacheContentKind
+    /// PTY byte counter at flush time; lets reload detect output that arrived
+    /// after the flush. Populated once the proactive-reclamation path lands.
+    var bytesReceivedAtFlush: UInt64?
+    let flushedAt: Date
+
+    init(
+        kind: Kind,
+        contentKind: ScrollbackCacheContentKind,
+        bytesReceivedAtFlush: UInt64? = nil,
+        flushedAt: Date
+    ) {
+        self.kind = kind
+        self.contentKind = contentKind
+        self.bytesReceivedAtFlush = bytesReceivedAtFlush
+        self.flushedAt = flushedAt
+    }
+}
+
+enum CRC32 {
+    private static let table: [UInt32] = (0 ..< 256).map { index -> UInt32 in
+        var crc = UInt32(index)
+        for _ in 0 ..< 8 {
+            crc = (crc & 1) == 1 ? 0xEDB8_8320 ^ (crc >> 1) : crc >> 1
+        }
+        return crc
+    }
+
+    static func checksum(_ data: Data) -> UInt32 {
+        var crc: UInt32 = 0xFFFF_FFFF
+        data.withUnsafeBytes { (buffer: UnsafeRawBufferPointer) in
+            for byte in buffer {
+                crc = table[Int((crc ^ UInt32(byte)) & 0xFF)] ^ (crc >> 8)
+            }
+        }
+        return crc ^ 0xFFFF_FFFF
+    }
+}
+
 private extension Data {
     var nilIfEmpty: Data? {
         isEmpty ? nil : self
@@ -510,9 +756,9 @@ private extension Data {
 protocol ScrollbackMemoryRustFFI: AnyObject {
     func setScrollbackSize(_ lines: UInt32)
     func captureFullBufferText() -> String?
-    /// ANSI-styled capture (SGR preserved). Used by the idle-flush path so a
-    /// flushed-then-reloaded tab keeps its scrollback colors, unlike the plain
-    /// `.hidden` flush which intentionally flattens to text.
+    /// ANSI-styled capture (SGR preserved, CRLF line endings). Used by both
+    /// flush paths so a flushed-then-reloaded tab keeps its scrollback colors
+    /// and column alignment when re-injected through the VTE parser.
     func captureFullBufferAnsiText() -> String?
     func replayBuffer(_ data: Data)
 }
