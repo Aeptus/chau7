@@ -25,6 +25,7 @@ type ProxyHandler struct {
 	injector    *Injector
 	client      *http.Client
 	attribution *AttributionDiagnostics
+	tokenUsage  *TokenEstimateDiagnostics
 }
 
 // NewProxyHandler creates a new proxy handler
@@ -38,6 +39,7 @@ func NewProxyHandler(config *Config, db *Database, ipc *IPCNotifier, taskManager
 		mockup:      mockup,
 		injector:    injector,
 		attribution: &AttributionDiagnostics{},
+		tokenUsage:  &TokenEstimateDiagnostics{},
 		client:      newUpstreamHTTPClient(),
 	}
 }
@@ -194,6 +196,7 @@ func (p *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// listing has no model and no usage by definition, so warning about the
 	// absence was noise (97% of all log lines) and estimating from its body
 	// length was worse: it booked phantom tokens and cost against every poll.
+	usedTokenEstimate := false
 	if resp.StatusCode == 200 && IsTokenBillableEndpoint(provider, r.URL.Path) {
 		if model == "" {
 			log.Printf("[WARN] %s %s: model not extracted (streaming=%v, bodyLen=%d)",
@@ -208,11 +211,15 @@ func (p *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				estimatedOutput = estimatedOutput * 6 / 10
 			}
 			if estimatedInput > 0 || estimatedOutput > 0 {
-				log.Printf("[WARN] %s %s: no tokens extracted, using estimate in:~%d out:~%d (streaming=%v, reqLen=%d, respLen=%d)",
-					provider, r.URL.Path, estimatedInput, estimatedOutput, isStreaming, len(bodyBytes), len(respBody))
 				respMeta.InputTokens = estimatedInput
 				respMeta.OutputTokens = estimatedOutput
+				usedTokenEstimate = true
 			}
+		}
+		key := string(provider) + " " + r.URL.Path
+		if summary, shouldReport := p.tokenUsage.Observe(key, usedTokenEstimate, time.Now()); shouldReport {
+			log.Printf("[WARN] token usage extraction summary: provider=%s endpoint=%s total=%d estimated=%d estimated_pct=%.1f streaming=%v req_bytes=%d resp_bytes=%d",
+				provider, r.URL.Path, summary.Total, summary.Estimated, summary.EstimatedPercent(), isStreaming, len(bodyBytes), len(respBody))
 		}
 	}
 

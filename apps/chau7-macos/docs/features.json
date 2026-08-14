@@ -450,7 +450,7 @@
   {
     "category": "API Analytics",
     "feature": "Billable-Endpoint Token Accounting",
-    "description": "Token and cost estimation runs only for endpoints that return model output, so catalog listings and token counters record no usage and frequently polled routes cannot inflate token totals or spend; classification is an allowlist, leaving unrecognized routes unrecorded rather than estimated",
+    "description": "Token and cost estimation runs only for endpoints that return model output; Anthropic SSE parsing accepts spec-valid whitespace and gateway-rewritten event types, while fallback estimates emit bounded five-minute extraction summaries instead of per-request warnings; catalog and unrecognized routes remain unrecorded rather than estimated",
     "status": "Shipped",
     "differentiator": "Yes"
   },

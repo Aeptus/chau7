@@ -421,6 +421,14 @@ data: {"type":"message_stop"}
 			expectOutput: 75,
 		},
 		{
+			name:     "Anthropic SSE without optional space and with gateway-rewritten type",
+			provider: ProviderAnthropic,
+			chunks: "data:{\"message\":{\"model\":\"claude-sonnet-4\",\"usage\":{\"input_tokens\":31,\"cache_read_input_tokens\":7}}}\r\n" +
+				"data:{\"usage\":{\"output_tokens\":89}}\r\n",
+			expectInput:  31,
+			expectOutput: 89,
+		},
+		{
 			name:     "OpenAI streaming",
 			provider: ProviderOpenAI,
 			chunks: `data: {"id":"chatcmpl-1"}

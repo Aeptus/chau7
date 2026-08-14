@@ -274,10 +274,10 @@ func ParseStreamingChunks(provider Provider, chunks []byte) ResponseMetadata {
 
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
-		if !strings.HasPrefix(line, "data: ") {
+		if !strings.HasPrefix(line, "data:") {
 			continue
 		}
-		data := strings.TrimPrefix(line, "data: ")
+		data := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
 		if data == "[DONE]" {
 			continue
 		}
@@ -290,6 +290,7 @@ func ParseStreamingChunks(provider Provider, chunks []byte) ResponseMetadata {
 			//   message_delta → { usage: { output_tokens } }
 			var envelope struct {
 				Type    string `json:"type"`
+				Model   string `json:"model"`
 				Message struct {
 					Model string         `json:"model"`
 					Usage anthropicUsage `json:"usage"`
@@ -299,14 +300,35 @@ func ParseStreamingChunks(provider Provider, chunks []byte) ResponseMetadata {
 			if err := json.Unmarshal([]byte(data), &envelope); err != nil {
 				continue
 			}
-			switch envelope.Type {
-			case "message_start":
+			if envelope.Model != "" {
+				result.Model = envelope.Model
+			}
+			if envelope.Message.Model != "" {
 				result.Model = envelope.Message.Model
+			}
+			// Usage fields are cumulative in Anthropic events. Accept them
+			// wherever present so SSE-compatible gateways that omit or rewrite
+			// the event type cannot erase otherwise authoritative accounting.
+			if envelope.Message.Usage.InputTokens > 0 {
 				result.InputTokens = envelope.Message.Usage.InputTokens
+			}
+			if envelope.Message.Usage.CacheCreationInputTokens > 0 {
 				result.CacheCreationInputTokens = envelope.Message.Usage.CacheCreationInputTokens
+			}
+			if envelope.Message.Usage.CacheReadInputTokens > 0 {
 				result.CacheReadInputTokens = envelope.Message.Usage.CacheReadInputTokens
-			case "message_delta":
+			}
+			if envelope.Usage.InputTokens > 0 {
+				result.InputTokens = envelope.Usage.InputTokens
+			}
+			if envelope.Usage.OutputTokens > 0 {
 				result.OutputTokens = envelope.Usage.OutputTokens
+			}
+			if envelope.Usage.CacheCreationInputTokens > 0 {
+				result.CacheCreationInputTokens = envelope.Usage.CacheCreationInputTokens
+			}
+			if envelope.Usage.CacheReadInputTokens > 0 {
+				result.CacheReadInputTokens = envelope.Usage.CacheReadInputTokens
 			}
 
 		case ProviderOpenAI:
