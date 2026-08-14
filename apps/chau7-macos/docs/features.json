@@ -1,5 +1,12 @@
 [
   {
+    "category": "Scripting & Debugging",
+    "feature": "Complete Restore Phase Attribution",
+    "description": "Per-tab restore telemetry names setup, lookup, command-block, focus, metadata, resume, repository-grouping, and startup-finalization costs, including completed phases on early returns, so launch stalls can be assigned before changing thread ownership",
+    "status": "Shipped",
+    "differentiator": "No"
+  },
+  {
     "category": "Performance",
     "feature": "Accurate Terminal Scan Diagnostics",
     "description": "Dangerous-output timer lateness is logged as scan_queue_delay while retaining the compatible structured scan category, so main-queue congestion is no longer mistaken for row-scan execution time and actual refresh work remains separately profiled",

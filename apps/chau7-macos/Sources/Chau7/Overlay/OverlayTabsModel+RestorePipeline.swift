@@ -1185,17 +1185,23 @@ extension OverlayTabsModel {
                 Log.trace("restoreTabState: phase breakdown tab=\(targetTabID) total=\(totalMs)ms \(breakdown)")
             }
         }
+        recordPhase("setup", startedAt: restoreStartedAt)
+
+        let phaseLookupStart = CFAbsoluteTimeGetCurrent()
         guard let restoredTab = tabs.first(where: { $0.id == targetTabID }) else {
+            recordPhase("lookup", startedAt: phaseLookupStart)
             Log.warn("restoreTabState: tab no longer exists for id=\(targetTabID)")
             return
         }
         if executionProfile == .backgroundIdentityOnly,
            deferredRestoreStatesByTabID[targetTabID] == nil {
+            recordPhase("lookup", startedAt: phaseLookupStart)
             Log.trace(
                 "restoreTabState: skipped stale background identity restore for tab=\(targetTabID)"
             )
             return
         }
+        recordPhase("lookup", startedAt: phaseLookupStart)
 
         let phaseBlocksStart = CFAbsoluteTimeGetCurrent()
         if executionProfile.appliesCommandBlocks {
@@ -1203,8 +1209,10 @@ extension OverlayTabsModel {
         }
         recordPhase("blocks", startedAt: phaseBlocksStart)
 
+        let phaseFocusStart = CFAbsoluteTimeGetCurrent()
         let currentSessions = restoredTab.splitController.terminalSessions
         guard !currentSessions.isEmpty else {
+            recordPhase("focus", startedAt: phaseFocusStart)
             Log.warn("restoreTabState: tab \(targetTabID) has no terminal sessions")
             return
         }
@@ -1221,6 +1229,7 @@ extension OverlayTabsModel {
            restoredTab.splitController.root.paneType(for: focusedTerminalPaneID) == .terminal {
             restoredTab.splitController.setFocusedPane(focusedTerminalPaneID)
         }
+        recordPhase("focus", startedAt: phaseFocusStart)
 
         let phaseMetadataStart = CFAbsoluteTimeGetCurrent()
         let resolvedPaneStates = Self.resolveAndApplyPaneMetadata(
@@ -1255,10 +1264,13 @@ extension OverlayTabsModel {
         // without an onGitRootPathChanged callback. Re-wire here now that
         // the session is attached and any restored cwd / gitRoot will
         // re-fire the callback as `refreshGitStatus` resolves async.
+        let phaseGroupingStart = CFAbsoluteTimeGetCurrent()
         if FeatureSettings.shared.repoGroupingMode == .auto {
             setupRepoGroupingForTab(restoredTab)
         }
+        recordPhase("grouping", startedAt: phaseGroupingStart)
 
+        let phaseFinalizeStart = CFAbsoluteTimeGetCurrent()
         if startupRestoreActive,
            currentSessions.allSatisfy({ !$0.1.isRestoreBootstrapPending }) {
             let previousHadPendingWork = hasPendingStartupRestoreWork
@@ -1266,6 +1278,7 @@ extension OverlayTabsModel {
             updateSuspensionState()
             notifyStartupRestoreWorkIfDrained(previousHadPendingWork: previousHadPendingWork)
         }
+        recordPhase("finalize", startedAt: phaseFinalizeStart)
     }
 
     var selectedTab: OverlayTab? {
