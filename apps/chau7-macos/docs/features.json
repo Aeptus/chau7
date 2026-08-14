@@ -4055,7 +4055,7 @@
   {
     "category": "Restore",
     "feature": "Codex Rollout-Validated Persistence",
-    "description": "UUID-shaped Codex session identities require a matching local rollout before autosave or restore trusts them, preventing obsolete resume commands from surviving another relaunch while preserving opaque legacy IDs and isolating resolver caches by sessions root",
+    "description": "UUID-shaped Codex session identities require a matching local rollout before autosave or restore trusts them; exact persisted IDs search the complete dated archive while directory-based guesses remain recency-bounded, preserving opaque legacy IDs and isolating resolver caches by sessions root",
     "status": "Shipped",
     "differentiator": "Yes"
   },

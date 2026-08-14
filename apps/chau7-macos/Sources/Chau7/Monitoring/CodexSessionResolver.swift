@@ -200,7 +200,10 @@ enum CodexSessionResolver {
             }
         }
 
-        for url in recentDayDirectories(in: sessionsDir, fileManager: fileManager, limit: 14) {
+        // Exact session-ID lookup must not inherit the recency window used by
+        // directory-based discovery. A persisted UUID is unambiguous and may
+        // legitimately point to a rollout older than two weeks.
+        for url in allDayDirectories(in: sessionsDir, fileManager: fileManager) {
             append(url)
         }
 
@@ -223,10 +226,9 @@ enum CodexSessionResolver {
             .appendingPathComponent(String(format: "%02d", day))
     }
 
-    private static func recentDayDirectories(
+    private static func allDayDirectories(
         in sessionsDir: URL,
-        fileManager: FileManager,
-        limit: Int
+        fileManager: FileManager
     ) -> [URL] {
         let isDateComponent = { (name: String) in
             !name.isEmpty && name.allSatisfy(\.isNumber)
@@ -245,9 +247,6 @@ enum CodexSessionResolver {
                 guard let days = try? fileManager.contentsOfDirectory(atPath: monthURL.path) else { continue }
                 for day in days.filter(isDateComponent).sorted().reversed() {
                     dayDirs.append(monthURL.appendingPathComponent(day))
-                    if dayDirs.count >= limit {
-                        return dayDirs
-                    }
                 }
             }
         }

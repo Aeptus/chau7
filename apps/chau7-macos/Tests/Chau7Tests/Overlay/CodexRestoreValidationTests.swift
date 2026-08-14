@@ -53,6 +53,31 @@ final class CodexRestoreValidationTests: XCTestCase {
         XCTAssertEqual(sanitized.first?.aiResumeCommand, "codex resume \(sessionID)")
     }
 
+    func testRestoreKeepsExactCodexSessionBeyondRecentDirectoryWindow() throws {
+        let sessionID = "019fb204-860b-7373-b716-302df3e15d67"
+        let oldSessionDate = referenceDate.addingTimeInterval(-30 * 86_400)
+        try writeRollout(
+            sessionID: sessionID,
+            directory: "/tmp/old-checkout",
+            referenceDate: oldSessionDate
+        )
+        for dayOffset in 0..<14 {
+            _ = try createCodexDayDirectory(
+                for: referenceDate.addingTimeInterval(-Double(dayOffset) * 86_400)
+            )
+        }
+        let state = savedState(sessionID: sessionID, directory: "/tmp/old-checkout")
+
+        let sanitized = OverlayTabsModel.sanitizeRestoredAIResumeOwnership(
+            states: [state],
+            environment: ["CHAU7_HOME_ROOT": temporaryHome.path]
+        )
+
+        XCTAssertEqual(sanitized.first?.aiProvider, "codex")
+        XCTAssertEqual(sanitized.first?.aiSessionId, sessionID)
+        XCTAssertEqual(sanitized.first?.aiResumeCommand, "codex resume \(sessionID)")
+    }
+
     func testExplicitCodexMetadataWithoutRolloutIsNotTrustedAtSaveTime() {
         let sessionID = "019dc912-2ddb-7791-b346-f15af4d592ec"
 
@@ -115,15 +140,7 @@ final class CodexRestoreValidationTests: XCTestCase {
         directory: String,
         referenceDate: Date
     ) throws {
-        var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
-        let components = calendar.dateComponents([.year, .month, .day], from: referenceDate)
-        let dayDirectory = temporaryHome
-            .appendingPathComponent(".codex/sessions", isDirectory: true)
-            .appendingPathComponent(String(format: "%04d", components.year!), isDirectory: true)
-            .appendingPathComponent(String(format: "%02d", components.month!), isDirectory: true)
-            .appendingPathComponent(String(format: "%02d", components.day!), isDirectory: true)
-        try FileManager.default.createDirectory(at: dayDirectory, withIntermediateDirectories: true)
+        let dayDirectory = try createCodexDayDirectory(for: referenceDate)
 
         let envelope: [String: Any] = [
             "type": "session_meta",
@@ -132,5 +149,18 @@ final class CodexRestoreValidationTests: XCTestCase {
         var data = try JSONSerialization.data(withJSONObject: envelope)
         data.append(0x0A)
         try data.write(to: dayDirectory.appendingPathComponent("rollout-test-\(sessionID).jsonl"))
+    }
+
+    private func createCodexDayDirectory(for date: Date) throws -> URL {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        let components = calendar.dateComponents([.year, .month, .day], from: date)
+        let dayDirectory = temporaryHome
+            .appendingPathComponent(".codex/sessions", isDirectory: true)
+            .appendingPathComponent(String(format: "%04d", components.year!), isDirectory: true)
+            .appendingPathComponent(String(format: "%02d", components.month!), isDirectory: true)
+            .appendingPathComponent(String(format: "%02d", components.day!), isDirectory: true)
+        try FileManager.default.createDirectory(at: dayDirectory, withIntermediateDirectories: true)
+        return dayDirectory
     }
 }
