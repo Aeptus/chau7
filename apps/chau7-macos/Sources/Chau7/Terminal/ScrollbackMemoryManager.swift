@@ -35,6 +35,13 @@ final class ScrollbackMemoryManager {
         qos: .utility,
         attributes: [.concurrent]
     )
+    /// Per-tab queues preserve tab-local ordering; targeting this shared serial
+    /// queue also prevents simultaneous full-buffer captures and compression
+    /// across many tabs from multiplying peak memory and disk pressure.
+    private let operationTargetQueue = DispatchQueue(
+        label: "com.chau7.scrollback-memory.operations",
+        qos: .utility
+    )
 
     private let stateLock = NSLock()
     private var perTabQueues: [UUID: DispatchQueue] = [:]
@@ -528,7 +535,14 @@ final class ScrollbackMemoryManager {
             Log.info("ScrollbackMemoryManager[\(viewId)]: flushed \(expectedCount)B raw / \(payload.count)B cache to \(url.lastPathComponent)")
             return true
         } catch {
-            Log.warn("ScrollbackMemoryManager[\(viewId)]: flush write failed: \(error)")
+            let failureKind = if error is ScrollbackCacheError {
+                ScrollbackCacheFailureKind.corruptData
+            } else {
+                ScrollbackCacheFailureClassifier.classify(error)
+            }
+            Log.warn(
+                "ScrollbackMemoryManager[\(viewId)]: flush write failed class=\(failureKind.rawValue): \(error)"
+            )
             try? FileManager.default.removeItem(at: url)
             return false
         }
@@ -870,7 +884,8 @@ final class ScrollbackMemoryManager {
         }
         let queue = DispatchQueue(
             label: "com.chau7.scrollback-memory.tab.\(tabID.uuidString)",
-            qos: .utility
+            qos: .utility,
+            target: operationTargetQueue
         )
         perTabQueues[tabID] = queue
         return queue

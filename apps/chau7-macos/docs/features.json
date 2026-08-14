@@ -1,5 +1,12 @@
 [
   {
+    "category": "Performance",
+    "feature": "Bounded and Classified Scrollback Cache I/O",
+    "description": "Per-tab scrollback queues share one serial operation lane so concurrent demotions cannot multiply capture and compression peaks; atomic verified writes classify capacity, permission, corruption, and generic I/O failures, and failed caching never permits ring shrinkage",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
     "category": "Scripting & Debugging",
     "feature": "Complete Restore Phase Attribution",
     "description": "Per-tab restore telemetry names setup, lookup, command-block, focus, metadata, resume, repository-grouping, and startup-finalization costs, including completed phases on early returns, so launch stalls can be assigned before changing thread ownership",

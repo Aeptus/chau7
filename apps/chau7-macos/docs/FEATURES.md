@@ -446,6 +446,8 @@ The app still contains internal runtime orchestration used by dashboard and revi
 
 ## Performance
 
+- **Bounded scrollback cache I/O** — per-tab ordering is preserved through one shared serial operation lane, so simultaneous demotions cannot multiply full-buffer capture/compression peaks. Atomic verified writes classify capacity, permission, corruption, and generic I/O failures, and a failed cache never permits ring shrinkage.
+
 Chau7's rendering pipeline is purpose-built for latency-sensitive terminal work:
 
 - GPU in-flight gating: shared Metal buffers and the glyph atlas are never rewritten while a committed frame is still reading them, and GPU-failed frames force a full-refresh redraw instead of stranding the view on stale content.
