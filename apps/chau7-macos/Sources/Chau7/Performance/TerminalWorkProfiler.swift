@@ -9,6 +9,13 @@ enum TerminalWorkOperation: String, CaseIterable {
     case tailBufferCapture
     case terminalStateExtraction
     case terminalStateProcessing
+    /// VTE replay of a scrollback disk cache back into the ring. Watched by
+    /// the responsiveness gates: sustained >50ms replays mean the reload
+    /// should defer until the user scrolls instead of running at promotion.
+    case replayBuffer
+    /// Tab switch → first committed Metal frame for the incoming view.
+    /// The tab-switch latency budget instrument.
+    case tabSwitchFirstPaint
 }
 
 struct TerminalWorkContext: Hashable {

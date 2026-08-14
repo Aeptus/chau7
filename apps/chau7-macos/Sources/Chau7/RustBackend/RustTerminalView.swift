@@ -79,6 +79,14 @@ final class RustGridView: NSView {
     /// When true, Metal handles display — suppresses CPU draw() and setNeedsDisplay.
     var metalRenderingActive = false
 
+    /// Estimated resident bytes of the CPU-fallback grid copy (cells +
+    /// cluster bytes + overlay cells). O(1); used by TerminalMemoryReport.
+    var estimatedFootprintBytes: Int {
+        cells.count * MemoryLayout<RustCellData>.stride
+            + clusterStorage.count
+            + overlayCells.count * MemoryLayout<RustCellData>.stride
+    }
+
 
     private var regularFont = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
     private var boldFont = NSFont.monospacedSystemFont(ofSize: 13, weight: .bold)
@@ -2032,6 +2040,14 @@ final class RustTerminalView: NSView {
     var partialSyncCount: UInt64 = 0
     var skippedSyncCount: UInt64 = 0
     var hasRetainedFrameSourceReady = false
+
+    /// Estimated resident bytes of this view's CPU-side grid copies
+    /// (`previousGrid` diff baseline + the CPU-fallback `RustGridView`).
+    /// O(1); used by TerminalMemoryReport.
+    var estimatedCPUFallbackBytes: Int {
+        previousGrid.count * MemoryLayout<RustCellData>.stride
+            + (gridView?.estimatedFootprintBytes ?? 0)
+    }
 
     // MARK: - Buffer Line Cache (Performance fix for scrollback access)
 

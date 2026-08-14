@@ -245,6 +245,8 @@ struct DebugConsoleView: View {
             lagTimelineView
         case .performance:
             performanceView
+        case .memory:
+            DebugConsoleMemoryTabView(overlayModel: overlayModel)
         case .logs:
             logsView
         case .report:
@@ -3090,6 +3092,8 @@ struct DebugConsoleView: View {
         switch selectedTab {
         case .performance:
             perfSnapshot = FeatureProfiler.shared.snapshot()
+        case .memory:
+            break // DebugConsoleMemoryTabView refreshes itself
         case .tokenOptimizer:
             refreshCTOData()
         case .logs:

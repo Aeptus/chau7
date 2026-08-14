@@ -16,7 +16,7 @@ enum DebugConsoleSurface: String, CaseIterable, Hashable, Identifiable {
         case .all:
             return DebugConsoleTab.allCases
         case .diagnostics:
-            return [.health, .logs, .performance, .lag]
+            return [.health, .logs, .performance, .memory, .lag]
         case .runtimeInspector:
             return [.state, .events, .report]
         case .usageMonitor:
@@ -118,6 +118,7 @@ enum DebugConsoleTab: String, CaseIterable, Hashable, Identifiable {
     case events
     case lag
     case performance
+    case memory
     case logs
     case report
     case analytics
@@ -165,6 +166,8 @@ enum DebugConsoleTab: String, CaseIterable, Hashable, Identifiable {
             return L("Lag", "Lag")
         case .performance:
             return L("debug.perfTab", "Perf")
+        case .memory:
+            return L("debug.memoryTab", "Memory")
         case .logs:
             return L("Logs", "Logs")
         case .report:
@@ -192,6 +195,8 @@ enum DebugConsoleTab: String, CaseIterable, Hashable, Identifiable {
             return "speedometer"
         case .performance:
             return "gauge.with.dots.needle.bottom.50percent"
+        case .memory:
+            return "memorychip"
         case .logs:
             return "doc.text.magnifyingglass"
         case .report:
@@ -213,7 +218,7 @@ enum DebugConsoleTab: String, CaseIterable, Hashable, Identifiable {
             return .operate
         case .state, .events, .report:
             return .inspect
-        case .lag, .performance:
+        case .lag, .performance, .memory:
             return .observe
         case .usage, .analytics, .repos, .tokenOptimizer:
             return .account

@@ -396,7 +396,20 @@ final class ScrollbackMemoryManager {
             return
         }
 
-        rustFFI.replayBuffer(Self.replayData(for: decoded))
+        let replayData = Self.replayData(for: decoded)
+        // Responsiveness instrument: sustained >50ms replays here mean the
+        // reload should move off the promotion path (defer-until-scroll).
+        TerminalWorkProfiler.shared.measure(
+            .replayBuffer,
+            context: TerminalWorkContext(
+                renderPhase: "reload",
+                visibility: "background",
+                caller: "scrollbackReload"
+            ),
+            bytes: { _ in replayData.count }
+        ) {
+            rustFFI.replayBuffer(replayData)
+        }
         try? FileManager.default.removeItem(at: url)
         Log.info("ScrollbackMemoryManager[\(viewId)]: reloaded \(decoded.data.count)B from \(url.lastPathComponent)")
     }

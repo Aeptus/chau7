@@ -48,6 +48,28 @@ final class RustMetalDisplayCoordinator: NSObject {
     private var cols: Int
     private var fontConfigured = false
     private var lastFontConfigurationSignature: FontConfigurationSignature?
+    /// Set on tab switch, cleared by the first committed frame — the
+    /// tab-switch-to-first-paint responsiveness metric.
+    private var tabSwitchPaintStartedAt: CFAbsoluteTime?
+
+    /// Combined renderer + triple-buffer memory attribution for this window's
+    /// coordinator. O(1); consumed by TerminalMemoryReport.
+    struct MemoryFootprint {
+        let rendererFootprint: MetalTerminalRenderer.MemoryFootprint
+        let tripleBufferBytes: Int
+        let gridCols: Int
+        let gridRows: Int
+    }
+
+    var memoryFootprint: MemoryFootprint {
+        MemoryFootprint(
+            rendererFootprint: renderer.memoryFootprint,
+            tripleBufferBytes: tripleBuffer.estimatedFootprintBytes,
+            gridCols: cols,
+            gridRows: rows
+        )
+    }
+
     private var lastLigaturesEnabled: Bool?
     private var lastCursorBlinkEnabled: Bool?
     private var pendingRetryDisplay = false
@@ -527,6 +549,11 @@ final class RustMetalDisplayCoordinator: NSObject {
             return
         }
 
+        // Responsiveness instrument: elapsed time from here to the first
+        // committed Metal frame of the incoming view is the user-perceived
+        // tab-switch paint latency. Recorded in draw(in:) after commit.
+        tabSwitchPaintStartedAt = CFAbsoluteTimeGetCurrent()
+
         // 1. Disconnect old view/container — only when actually switching
         // from a different view. Same-view first-attach must skip this
         // block; otherwise we'd flip `isMetalRenderingActive` back to
@@ -936,6 +963,20 @@ extension RustMetalDisplayCoordinator: MTKViewDelegate {
             return
         }
         retryState.recordSuccess()
+
+        if let switchStartedAt = tabSwitchPaintStartedAt {
+            tabSwitchPaintStartedAt = nil
+            TerminalWorkProfiler.shared.record(
+                .tabSwitchFirstPaint,
+                context: TerminalWorkContext(
+                    renderPhase: terminalView?.currentRenderPhase.rawValue ?? "unknown",
+                    visibility: "live",
+                    caller: "switchToView"
+                ),
+                durationMs: (CFAbsoluteTimeGetCurrent() - switchStartedAt) * 1000.0,
+                bytes: cellCount * MemoryLayout<TerminalCell>.stride
+            )
+        }
 
         // 7. Advance triple buffer only when we consumed fresh synced terminal state.
         if shouldSync {
