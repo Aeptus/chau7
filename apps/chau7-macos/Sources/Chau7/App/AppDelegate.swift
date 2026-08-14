@@ -1101,18 +1101,25 @@ private final class SettingsToolbarDelegate: NSObject, NSToolbarDelegate {
             activeOverlayModel = host.model
             host.model.focusSelected()
 
-            // Only refresh the tab bar if this window was previously hidden.
-            // This prevents unnecessary refreshes on every focus change (e.g., Command-Tab).
-            // The NSHostingView in the toolbar can become "stale" after hide/show cycles.
+            // Recover the tab bar after every hidden-to-visible transition,
+            // including the first presentation of a restored window. Restored
+            // toolbars are created while ordered out behind the splash, so their
+            // NSHostingView can already be stale before it is ever shown.
             let wasHidden = hiddenWindowNumbers.remove(window.windowNumber) != nil
             let wasShownBefore = shownWindowNumbers.contains(window.windowNumber)
             if !wasShownBefore {
                 shownWindowNumbers.insert(window.windowNumber)
             }
-            if wasHidden, wasShownBefore {
+            if StartupWindowPresentationPolicy.shouldRecoverTabBarAfterPresentation(
+                wasHidden: wasHidden,
+                hasPresentedBefore: wasShownBefore
+            ) {
                 host.model.noteTabBarVisibilityChanged(isVisible: true)
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                    Log.info("Proactive tab bar refresh after window show")
+                    Log.info(
+                        "Proactive tab bar refresh after window presentation " +
+                            "(firstPresentation=\(!wasShownBefore))"
+                    )
                     TabBarToolbarDelegate.shared.recreateToolbar(for: window)
                     TabBarToolbarDelegate.shared.updateToolbarItemSizing(for: window)
                 }

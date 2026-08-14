@@ -653,7 +653,7 @@
   {
     "category": "Terminal Core",
     "feature": "Fixed-Delay Startup Reveal",
-    "description": "Reveal restored windows after a short splash delay instead of waiting for the full restore queue to drain",
+    "description": "Reveal restored windows after a short splash delay instead of waiting for the full restore queue to drain, and recreate the native toolbar host on every hidden-to-visible presentation so restored tab bars composite on first launch",
     "status": "Shipped",
     "differentiator": "Yes"
   },
