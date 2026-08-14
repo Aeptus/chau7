@@ -80,6 +80,11 @@ final class MemoryPressureResponder {
     }
 
     private func checkFootprintCeiling(now: Date = Date()) {
+        // Proactive scrollback budget: bounded, cheaper, and earlier than the
+        // whole-process ceiling below. Rides this existing timer — no new
+        // wakeup source.
+        ScrollbackMemoryManager.shared.enforceScrollbackBudget()
+
         let used = reportedResidentBytes()
         guard used > 0 else { return }
         let physical = UInt64(ProcessInfo.processInfo.physicalMemory)

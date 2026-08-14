@@ -438,6 +438,197 @@ final class ScrollbackMemoryManagerTests: XCTestCase {
         XCTAssertEqual(rust.scrollbackSizes, [UInt32(manager.linesCap(for: .active))])
     }
 
+    // MARK: - Proactive warm-idle reclamation (Step 4)
+
+    func testWarmPromotionReloadsIdleFlushedRing() {
+        let tabID = UUID()
+        let ansi = "\u{1B}[36midle history\u{1B}[0m\r\n"
+        let rust = MockScrollbackRustFFI(capturedText: nil, capturedAnsiText: ansi)
+        let manager = ScrollbackMemoryManager(cacheDirectory: tempDirectory)
+
+        manager.idleFlush(viewId: "test", tabID: tabID, rustFFI: rust, hostsTUIApp: false, bytesReceivedAtFlush: 100)
+        manager.drainPendingOperationsForTesting(tabID: tabID)
+        XCTAssertEqual(rust.scrollbackSizes.last, UInt32(ScrollbackRetentionPolicy.defaultHiddenViewportFloor))
+
+        // warm → active is NOT a hidden reload transition; the promotion path
+        // must still restore the idle-flushed history from disk.
+        manager.handlePhaseTransition(
+            viewId: "test",
+            tabID: tabID,
+            rustFFI: rust,
+            from: .warm,
+            to: .active,
+            hostsTUIApp: false,
+            currentBytesReceived: 100
+        )
+        manager.drainPendingOperationsForTesting(tabID: tabID)
+
+        XCTAssertEqual(rust.replayedBuffers, [Data(ansi.utf8)], "Unchanged byte counter → replay the cache alone")
+        XCTAssertEqual(rust.scrollbackSizes.last, UInt32(manager.linesCap(for: .active)))
+    }
+
+    func testReloadAppendsSeamCaptureWhenOutputArrivedAfterFlush() {
+        let tabID = UUID()
+        let ansi = "old history\r\n"
+        let rust = MockScrollbackRustFFI(capturedText: nil, capturedAnsiText: ansi)
+        let manager = ScrollbackMemoryManager(cacheDirectory: tempDirectory)
+
+        manager.idleFlush(viewId: "test", tabID: tabID, rustFFI: rust, hostsTUIApp: false, bytesReceivedAtFlush: 100)
+        manager.drainPendingOperationsForTesting(tabID: tabID)
+
+        manager.handlePhaseTransition(
+            viewId: "test",
+            tabID: tabID,
+            rustFFI: rust,
+            from: .warm,
+            to: .active,
+            hostsTUIApp: false,
+            currentBytesReceived: 150
+        )
+        manager.drainPendingOperationsForTesting(tabID: tabID)
+
+        var expected = Data(ansi.utf8)
+        expected.append(Data("\u{1B}[0m".utf8))
+        expected.append(Data(ansi.utf8)) // mock returns the same capture for the seam
+        XCTAssertEqual(
+            rust.replayedBuffers,
+            [expected],
+            "Output after the flush must be captured and replayed after the cache — never dropped"
+        )
+    }
+
+    func testIdleFlushGateRequiresQuietPTYAndWarmPhase() {
+        XCTAssertTrue(ScrollbackRetentionPolicy.shouldIdleFlush(
+            phase: .warm, bytesReceivedWhenArmed: 10, bytesReceivedNow: 10
+        ))
+        XCTAssertFalse(ScrollbackRetentionPolicy.shouldIdleFlush(
+            phase: .warm, bytesReceivedWhenArmed: 10, bytesReceivedNow: 42
+        ), "Streaming tab must not flush")
+        XCTAssertFalse(ScrollbackRetentionPolicy.shouldIdleFlush(
+            phase: .active, bytesReceivedWhenArmed: 10, bytesReceivedNow: 10
+        ), "Only .warm tabs flush")
+        XCTAssertFalse(ScrollbackRetentionPolicy.shouldIdleFlush(
+            phase: .warm, bytesReceivedWhenArmed: nil, bytesReceivedNow: nil
+        ), "Missing byte counters fail closed")
+    }
+
+    func testScrollbackBudgetFlushesLargestCandidatesFirst() {
+        let manager = ScrollbackMemoryManager(cacheDirectory: tempDirectory)
+        var flushed: [String] = []
+        manager.registerBudgetFlushCandidate(
+            tabID: UUID(),
+            candidate: ScrollbackBudgetFlushCandidate(
+                viewId: "small",
+                estimatedRingBytes: { 10_000_000 },
+                requestFlush: { flushed.append("small") }
+            )
+        )
+        manager.registerBudgetFlushCandidate(
+            tabID: UUID(),
+            candidate: ScrollbackBudgetFlushCandidate(
+                viewId: "large",
+                estimatedRingBytes: { 400_000_000 },
+                requestFlush: { flushed.append("large") }
+            )
+        )
+
+        manager.enforceScrollbackBudget(budgetBytes: 100_000_000)
+        XCTAssertEqual(flushed, ["large"], "Largest candidate flushes first; small stays once under budget")
+
+        flushed.removeAll()
+        manager.enforceScrollbackBudget(budgetBytes: 500_000_000)
+        XCTAssertTrue(flushed.isEmpty, "Under budget → nothing flushes")
+    }
+
+    // MARK: - TUI compaction (Step 5): capture-if-safe, shrink-always, replay-never while protected
+
+    func testTUICompactOnAltScreenShrinksOnlyWithoutCaptureOrReplay() {
+        let tabID = UUID()
+        let rust = MockScrollbackRustFFI(capturedText: nil, capturedAnsiText: "alt screen surface\r\n")
+        let manager = ScrollbackMemoryManager(cacheDirectory: tempDirectory)
+
+        manager.tuiIdleCompact(
+            viewId: "test",
+            tabID: tabID,
+            rustFFI: rust,
+            isOnAlternateScreen: true,
+            bytesReceivedAtFlush: 100
+        )
+        manager.drainPendingOperationsForTesting(tabID: tabID)
+
+        XCTAssertEqual(rust.scrollbackSizes, [UInt32(ScrollbackRetentionPolicy.tuiWarmTierLines)])
+        XCTAssertEqual(rust.ansiCaptureCount, 0, "Alt-screen primary grid is uncapturable; shrink-only")
+        XCTAssertTrue(rust.replayedBuffers.isEmpty)
+
+        // Later promotion: nothing on disk → just the phase cap, never a replay.
+        manager.handlePhaseTransition(
+            viewId: "test",
+            tabID: tabID,
+            rustFFI: rust,
+            from: .warm,
+            to: .active,
+            hostsTUIApp: true
+        )
+        manager.drainPendingOperationsForTesting(tabID: tabID)
+        XCTAssertTrue(rust.replayedBuffers.isEmpty)
+        XCTAssertEqual(rust.scrollbackSizes.last, UInt32(manager.linesCap(for: .active)))
+    }
+
+    func testTUICompactOnPrimaryScreenPersistsAndDefersReplayUntilUnprotected() {
+        let tabID = UUID()
+        let ansi = "claude transcript history\r\n"
+        let rust = MockScrollbackRustFFI(capturedText: nil, capturedAnsiText: ansi)
+        let manager = ScrollbackMemoryManager(cacheDirectory: tempDirectory)
+
+        manager.tuiIdleCompact(
+            viewId: "test",
+            tabID: tabID,
+            rustFFI: rust,
+            isOnAlternateScreen: false,
+            bytesReceivedAtFlush: 100
+        )
+        manager.drainPendingOperationsForTesting(tabID: tabID)
+
+        XCTAssertEqual(rust.ansiCaptureCount, 1, "Primary-screen capture is read-only and safe")
+        XCTAssertEqual(rust.scrollbackSizes.last, UInt32(ScrollbackRetentionPolicy.tuiWarmTierLines))
+
+        // Promotion while the agent TUI is still live: grow the ring, never replay.
+        manager.handlePhaseTransition(
+            viewId: "test",
+            tabID: tabID,
+            rustFFI: rust,
+            from: .warm,
+            to: .active,
+            hostsTUIApp: true,
+            currentBytesReceived: 100
+        )
+        manager.drainPendingOperationsForTesting(tabID: tabID)
+        XCTAssertTrue(rust.replayedBuffers.isEmpty, "NEVER replay into a live TUI")
+        XCTAssertEqual(rust.scrollbackSizes.last, UInt32(manager.linesCap(for: .active)))
+
+        // Agent exits; the next promotion cycle restores the deep history.
+        manager.handlePhaseTransition(
+            viewId: "test",
+            tabID: tabID,
+            rustFFI: rust,
+            from: .active,
+            to: .warm,
+            hostsTUIApp: false,
+            currentBytesReceived: 100
+        )
+        manager.handlePhaseTransition(
+            viewId: "test",
+            tabID: tabID,
+            rustFFI: rust,
+            from: .warm,
+            to: .active,
+            hostsTUIApp: false,
+            currentBytesReceived: 100
+        )
+        manager.drainPendingOperationsForTesting(tabID: tabID)
+        XCTAssertEqual(rust.replayedBuffers, [Data(ansi.utf8)], "History returns once the TUI protection clears")
+    }
+
     // MARK: - Helpers
 
     private func zlibCompress(_ data: Data) -> Data {

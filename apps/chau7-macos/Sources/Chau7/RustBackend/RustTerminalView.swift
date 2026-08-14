@@ -2083,6 +2083,9 @@ final class RustTerminalView: NSView {
     var skippedSyncCount: UInt64 = 0
     var hasRetainedFrameSourceReady = false
 
+    /// One-shot warm-idle flush timer; see `updateWarmIdleFlushTimer`.
+    var warmIdleFlushWorkItem: DispatchWorkItem?
+
     /// Estimated resident bytes of this view's CPU-side grid copies
     /// (`previousGrid` diff baseline + the CPU-fallback `RustGridView`).
     /// O(1); used by TerminalMemoryReport.
@@ -2568,6 +2571,10 @@ final class RustTerminalView: NSView {
         // Set flag to prevent event drain callbacks from accessing deallocated view
         isBeingDeallocated = true
         shellStartupTimeoutWork?.cancel()
+        warmIdleFlushWorkItem?.cancel()
+        if let tabID = UUID(uuidString: tabIdentifier) {
+            ScrollbackMemoryManager.shared.unregisterBudgetFlushCandidate(tabID: tabID)
+        }
         winsizeNudgeWork.forEach { $0.cancel() }
         removeWindowNotificationObservers()
         stopPollingLoop()
@@ -3011,8 +3018,10 @@ final class RustTerminalView: NSView {
                 rustFFI: rustTerminal,
                 from: previousPhase,
                 to: phase,
-                hostsTUIApp: hostsLiveTUI
+                hostsTUIApp: hostsLiveTUI,
+                currentBytesReceived: rustTerminal?.memoryStats()?.bytesReceived
             )
+            updateWarmIdleFlushTimer(for: phase, tabID: resolvedTabID, hostsLiveTUI: hostsLiveTUI)
             if TabRenderLifecyclePolicy.requiresTUIWinsizeNudge(
                 previousPhase: previousPhase,
                 nextPhase: phase,
@@ -3027,6 +3036,97 @@ final class RustTerminalView: NSView {
                 cachedBufferLines = nil
             }
         }
+    }
+
+    // MARK: - Warm idle flush (proactive scrollback reclamation)
+
+    /// One-shot idle timer armed when the tab enters `.warm`: after the tab
+    /// sits deselected AND its PTY stays quiet for the policy delay, the ring
+    /// is flushed to disk and shrunk to the viewport floor (screen stays
+    /// resident — tab switching still paints instantly). Cancelled on any
+    /// phase change. No repeating timers.
+    private func updateWarmIdleFlushTimer(for phase: TabRenderPhase, tabID: UUID?, hostsLiveTUI: Bool) {
+        warmIdleFlushWorkItem?.cancel()
+        warmIdleFlushWorkItem = nil
+        if let tabID {
+            ScrollbackMemoryManager.shared.unregisterBudgetFlushCandidate(tabID: tabID)
+        }
+        guard phase == .warm, let tabID else { return }
+
+        if !hostsLiveTUI {
+            registerAsBudgetFlushCandidate(tabID: tabID)
+        }
+        armWarmIdleFlush(tabID: tabID, hostsLiveTUI: hostsLiveTUI)
+    }
+
+    private func armWarmIdleFlush(tabID: UUID, hostsLiveTUI: Bool) {
+        let armedBytes = rustTerminal?.memoryStats()?.bytesReceived
+        let workItem = DispatchWorkItem { [weak self] in
+            self?.fireWarmIdleFlush(tabID: tabID, armedBytes: armedBytes, force: false)
+        }
+        warmIdleFlushWorkItem = workItem
+        let delay = hostsLiveTUI
+            ? ScrollbackRetentionPolicy.tuiIdleCompactDelay
+            : ScrollbackRetentionPolicy.warmIdleFlushDelay
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: workItem)
+    }
+
+    private func fireWarmIdleFlush(tabID: UUID, armedBytes: UInt64?, force: Bool) {
+        warmIdleFlushWorkItem = nil
+        guard currentRenderPhase == .warm else { return }
+        let stats = rustTerminal?.memoryStats()
+        let currentBytes = stats?.bytesReceived
+        let hostsLiveTUI = hostsTUIApp || (rustTerminal?.isAlternateScreenActive() ?? false)
+        if !force {
+            guard ScrollbackRetentionPolicy.shouldIdleFlush(
+                phase: currentRenderPhase,
+                bytesReceivedWhenArmed: armedBytes,
+                bytesReceivedNow: currentBytes
+            ) else {
+                // Still streaming (an agent working, a background build): re-arm
+                // and re-check after another idle window.
+                armWarmIdleFlush(tabID: tabID, hostsLiveTUI: hostsLiveTUI)
+                return
+            }
+        }
+        guard let rustTerminal else { return }
+        if hostsLiveTUI {
+            // The budget backstop only registers non-TUI candidates, so a
+            // forced fire never reaches a live TUI; belt-and-braces anyway.
+            guard !force else { return }
+            ScrollbackMemoryManager.shared.tuiIdleCompact(
+                viewId: String(viewId),
+                tabID: tabID,
+                rustFFI: rustTerminal,
+                isOnAlternateScreen: stats?.alternateScreenActive ?? rustTerminal.isAlternateScreenActive(),
+                bytesReceivedAtFlush: currentBytes
+            )
+        } else {
+            ScrollbackMemoryManager.shared.idleFlush(
+                viewId: String(viewId),
+                tabID: tabID,
+                rustFFI: rustTerminal,
+                hostsTUIApp: hostsLiveTUI,
+                bytesReceivedAtFlush: currentBytes
+            )
+        }
+    }
+
+    private func registerAsBudgetFlushCandidate(tabID: UUID) {
+        ScrollbackMemoryManager.shared.registerBudgetFlushCandidate(
+            tabID: tabID,
+            candidate: ScrollbackBudgetFlushCandidate(
+                viewId: String(viewId),
+                estimatedRingBytes: { [weak self] in
+                    self?.rustTerminal?.memoryStats()?.estimatedGridBytes ?? 0
+                },
+                requestFlush: { [weak self] in
+                    DispatchQueue.main.async {
+                        self?.fireWarmIdleFlush(tabID: tabID, armedBytes: nil, force: true)
+                    }
+                }
+            )
+        )
     }
 
     /// Releases the window-shared Metal surface without changing whether this

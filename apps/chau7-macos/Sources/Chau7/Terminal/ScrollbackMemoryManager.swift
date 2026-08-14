@@ -114,7 +114,8 @@ final class ScrollbackMemoryManager {
         rustFFI: (any ScrollbackMemoryRustFFI)?,
         from oldPhase: TabRenderPhase,
         to newPhase: TabRenderPhase,
-        hostsTUIApp: Bool = false
+        hostsTUIApp: Bool = false,
+        currentBytesReceived: UInt64? = nil
     ) {
         guard oldPhase != newPhase else { return }
         guard let rustFFI, let tabID else { return }
@@ -139,7 +140,12 @@ final class ScrollbackMemoryManager {
                     // been persisted and verified, or proven empty.
                     rustFFI.setScrollbackSize(UInt32(Self.viewportFloor))
                     setFlushRecord(
-                        ScrollbackFlushRecord(kind: .hiddenFlush, contentKind: .ansi, flushedAt: Date()),
+                        ScrollbackFlushRecord(
+                            kind: .hiddenFlush,
+                            contentKind: .ansi,
+                            bytesReceivedAtFlush: currentBytesReceived,
+                            flushedAt: Date()
+                        ),
                         for: tabID
                     )
                 } else {
@@ -167,8 +173,35 @@ final class ScrollbackMemoryManager {
                     return
                 }
                 clearFlushRecord(for: tabID)
-                reload(tabID: tabID, viewId: viewId, rustFFI: rustFFI, newCap: newCap)
+                reload(
+                    tabID: tabID,
+                    viewId: viewId,
+                    rustFFI: rustFFI,
+                    newCap: newCap,
+                    record: record,
+                    currentBytesReceived: currentBytesReceived
+                )
             } else {
+                // Warm↔active style transitions: if an idle flush shrunk this
+                // ring earlier, promotion to a live phase restores the history
+                // from disk instead of just raising the empty cap.
+                if newPhase.allowsLivePresentation, let record = flushRecord(for: tabID) {
+                    if hostsTUIApp {
+                        rustFFI.setScrollbackSize(UInt32(newCap))
+                        Log.info("ScrollbackMemoryManager[\(viewId)]: deferred idle-flush reload for live TUI (cache retained)")
+                    } else {
+                        clearFlushRecord(for: tabID)
+                        reload(
+                            tabID: tabID,
+                            viewId: viewId,
+                            rustFFI: rustFFI,
+                            newCap: newCap,
+                            record: record,
+                            currentBytesReceived: currentBytesReceived
+                        )
+                    }
+                    return
+                }
                 rustFFI.setScrollbackSize(UInt32(newCap))
                 Log.trace("ScrollbackMemoryManager[\(viewId)]: \(oldPhase) -> \(newPhase) cap=\(newCap)")
             }
@@ -190,7 +223,8 @@ final class ScrollbackMemoryManager {
         viewId: String,
         tabID: UUID,
         rustFFI: any ScrollbackMemoryRustFFI,
-        hostsTUIApp: Bool
+        hostsTUIApp: Bool,
+        bytesReceivedAtFlush: UInt64? = nil
     ) {
         guard !hostsTUIApp else {
             Log.trace("ScrollbackMemoryManager[\(viewId)]: idleFlush skipped (TUI tab)")
@@ -224,7 +258,12 @@ final class ScrollbackMemoryManager {
             }
             rustFFI.setScrollbackSize(UInt32(Self.viewportFloor))
             setFlushRecord(
-                ScrollbackFlushRecord(kind: .idleFlush, contentKind: .ansi, flushedAt: Date()),
+                ScrollbackFlushRecord(
+                    kind: .idleFlush,
+                    contentKind: .ansi,
+                    bytesReceivedAtFlush: bytesReceivedAtFlush,
+                    flushedAt: Date()
+                ),
                 for: tabID
             )
             Log.info("ScrollbackMemoryManager[\(viewId)]: idle-flushed tab \(tabID) (ring → floor \(Self.viewportFloor))")
@@ -239,14 +278,90 @@ final class ScrollbackMemoryManager {
         viewId: String,
         tabID: UUID,
         rustFFI: any ScrollbackMemoryRustFFI,
-        configuredLines: Int
+        configuredLines: Int,
+        currentBytesReceived: UInt64? = nil
     ) {
         let queue = perTabQueue(for: tabID)
         queue.async { [weak self] in
             guard let self else { return }
-            guard flushRecord(for: tabID) != nil else { return }
+            guard let record = flushRecord(for: tabID) else { return }
             clearFlushRecord(for: tabID)
-            reload(tabID: tabID, viewId: viewId, rustFFI: rustFFI, newCap: configuredLines)
+            reload(
+                tabID: tabID,
+                viewId: viewId,
+                rustFFI: rustFFI,
+                newCap: configuredLines,
+                record: record,
+                currentBytesReceived: currentBytesReceived
+            )
+        }
+    }
+
+    /// TUI warm-tab compaction: capture-if-safe, shrink-always, replay-never
+    /// while protected. Zero writes to the live TUI by construction — both
+    /// branches only read the grid or truncate history storage; the failure
+    /// mode is "less scrollback", never "corrupted TUI".
+    func tuiIdleCompact(
+        viewId: String,
+        tabID: UUID,
+        rustFFI: any ScrollbackMemoryRustFFI,
+        isOnAlternateScreen: Bool,
+        bytesReceivedAtFlush: UInt64?,
+        tierLines: Int = ScrollbackRetentionPolicy.tuiWarmTierLines
+    ) {
+        let queue = perTabQueue(for: tabID)
+        queue.async { [weak self] in
+            guard let self else { return }
+            guard flushRecord(for: tabID) == nil else {
+                Log.trace("ScrollbackMemoryManager[\(viewId)]: tuiCompact coalesced (already flushed)")
+                return
+            }
+            if isOnAlternateScreen {
+                // The primary grid (owner of all scrollback) is unreachable
+                // for capture while the alt screen is active — text exports
+                // read the active grid. Shrink-only: set_scrollback_size
+                // targets the primary grid's history via the alt-screen-aware
+                // Rust path; the visible TUI surface is untouched by
+                // construction. History beyond the tier is discarded.
+                rustFFI.setScrollbackSize(UInt32(tierLines))
+                Log.info("ScrollbackMemoryManager[\(viewId)]: tuiCompact shrink-only (alt screen) → \(tierLines) lines; deeper history discarded")
+                return
+            }
+            // Primary-screen TUI (e.g. Claude Code): the ANSI capture is a
+            // read-only export — it cannot perturb the live surface. Persist,
+            // then shrink. The record makes the full history replayable the
+            // moment the session's TUI protection clears (agent exited), via
+            // the normal promotion path.
+            let text = TerminalWorkProfiler.shared.measure(
+                .fullBufferCapture,
+                context: TerminalWorkContext(
+                    renderPhase: TabRenderPhase.warm.rawValue,
+                    visibility: "drainOnly",
+                    caller: "tuiIdleCompact"
+                ),
+                bytes: { $0?.utf8.count ?? 0 }
+            ) {
+                rustFFI.captureFullBufferAnsiText()
+            }
+            guard let text else {
+                Log.warn("ScrollbackMemoryManager[\(viewId)]: tuiCompact - no buffer captured; ring untouched")
+                return
+            }
+            guard persist(text: text, contentKind: .ansi, tabID: tabID, viewId: viewId) else {
+                Log.warn("ScrollbackMemoryManager[\(viewId)]: tuiCompact - persist failed; ring untouched")
+                return
+            }
+            rustFFI.setScrollbackSize(UInt32(tierLines))
+            setFlushRecord(
+                ScrollbackFlushRecord(
+                    kind: .tuiCompact,
+                    contentKind: .ansi,
+                    bytesReceivedAtFlush: bytesReceivedAtFlush,
+                    flushedAt: Date()
+                ),
+                for: tabID
+            )
+            Log.info("ScrollbackMemoryManager[\(viewId)]: tuiCompact persisted history and shrunk ring → \(tierLines) lines")
         }
     }
 
@@ -283,7 +398,54 @@ final class ScrollbackMemoryManager {
         stateLock.lock()
         perTabQueues[tabID] = nil
         flushState[tabID] = nil
+        budgetCandidates[tabID] = nil
         stateLock.unlock()
+    }
+
+    // MARK: - Scrollback budget backstop
+
+    /// Warm tabs eligible for immediate idle flush when the aggregate ring
+    /// estimate exceeds the budget. Registered by RustTerminalView on `.warm`,
+    /// unregistered on any other phase. Guarded by `stateLock`.
+    private var budgetCandidates: [UUID: ScrollbackBudgetFlushCandidate] = [:]
+
+    func registerBudgetFlushCandidate(tabID: UUID, candidate: ScrollbackBudgetFlushCandidate) {
+        stateLock.lock()
+        budgetCandidates[tabID] = candidate
+        stateLock.unlock()
+    }
+
+    func unregisterBudgetFlushCandidate(tabID: UUID) {
+        stateLock.lock()
+        budgetCandidates[tabID] = nil
+        stateLock.unlock()
+    }
+
+    /// Piggybacks on MemoryPressureResponder's existing 30s footprint timer
+    /// (no new wakeup source): when warm tabs' summed ring estimates exceed
+    /// the budget, flush the largest ones immediately instead of waiting out
+    /// their idle timers. This is what bounds aggregate scrollback memory
+    /// deterministically rather than hoping the timers line up.
+    func enforceScrollbackBudget(
+        budgetBytes: Int = ScrollbackRetentionPolicy.scrollbackBudgetBytes(
+            overrideMB: UserDefaults.standard.object(forKey: "terminal.scrollbackBudgetMB") as? Int
+        )
+    ) {
+        stateLock.lock()
+        let candidates = budgetCandidates
+        stateLock.unlock()
+        guard !candidates.isEmpty else { return }
+
+        let sized = candidates.map { (tabID: $0.key, candidate: $0.value, bytes: $0.value.estimatedRingBytes()) }
+        var total = sized.reduce(0) { $0 + $1.bytes }
+        guard total > budgetBytes else { return }
+
+        Log.info("ScrollbackMemoryManager: scrollback budget exceeded (\(total / (1024 * 1024))MB > \(budgetBytes / (1024 * 1024))MB) — flushing largest warm tabs")
+        for entry in sized.sorted(by: { $0.bytes > $1.bytes }) {
+            guard total > budgetBytes else { break }
+            entry.candidate.requestFlush()
+            total -= entry.bytes
+        }
     }
 
     // MARK: - Flush records
@@ -374,7 +536,14 @@ final class ScrollbackMemoryManager {
 
     // MARK: - Reload (promote from .hidden)
 
-    private func reload(tabID: UUID, viewId: String, rustFFI: any ScrollbackMemoryRustFFI, newCap: Int) {
+    private func reload(
+        tabID: UUID,
+        viewId: String,
+        rustFFI: any ScrollbackMemoryRustFFI,
+        newCap: Int,
+        record: ScrollbackFlushRecord? = nil,
+        currentBytesReceived: UInt64? = nil
+    ) {
         let effectiveCap = max(newCap, Self.viewportFloor)
         rustFFI.setScrollbackSize(UInt32(effectiveCap))
 
@@ -396,7 +565,25 @@ final class ScrollbackMemoryManager {
             return
         }
 
-        let replayData = Self.replayData(for: decoded)
+        var replayData = Self.replayData(for: decoded)
+        // Post-flush-output seam: output that arrived after the flush lives
+        // only in the shrunk in-memory ring, and `replayBuffer` clears that
+        // ring. Capture it first and replay cache + reset + current so no
+        // output is ever dropped. The cost is a small duplicated seam (the
+        // ring was at the viewport floor) — cosmetic, and strictly better
+        // than loss. Byte counters unavailable → assume output arrived.
+        let outputArrivedAfterFlush: Bool
+        if let flushedBytes = record?.bytesReceivedAtFlush, let currentBytesReceived {
+            outputArrivedAfterFlush = currentBytesReceived != flushedBytes
+        } else {
+            outputArrivedAfterFlush = record?.bytesReceivedAtFlush != nil || currentBytesReceived != nil
+        }
+        if outputArrivedAfterFlush,
+           let currentTail = rustFFI.captureFullBufferAnsiText(),
+           !currentTail.isEmpty {
+            replayData.append(Data("\u{1B}[0m".utf8))
+            replayData.append(Data(currentTail.utf8))
+        }
         // Responsiveness instrument: sustained >50ms replays here mean the
         // reload should move off the promotion path (defer-until-scroll).
         TerminalWorkProfiler.shared.measure(
@@ -694,6 +881,15 @@ final class ScrollbackMemoryManager {
     }
 }
 
+/// A warm tab's hooks for the scrollback budget backstop. `estimatedRingBytes`
+/// is an O(1) FFI stat (thread-safe); `requestFlush` triggers the tab's
+/// immediate idle flush (hops to main internally).
+struct ScrollbackBudgetFlushCandidate {
+    let viewId: String
+    let estimatedRingBytes: () -> Int
+    let requestFlush: () -> Void
+}
+
 /// What a decoded cache file contains and how it may be replayed.
 struct DecodedScrollbackCache {
     let data: Data
@@ -716,6 +912,11 @@ struct ScrollbackFlushRecord {
     enum Kind {
         case hiddenFlush
         case idleFlush
+        /// TUI warm-tab compaction: history persisted (when capture was safe)
+        /// and the ring shrunk to the TUI tier — but NEVER replayed while the
+        /// session stays protected; the promotion path defers until the
+        /// agent exits.
+        case tuiCompact
     }
 
     let kind: Kind
