@@ -1899,14 +1899,29 @@ impl Chau7Terminal {
         debug!("[terminal-{}] clear_scrollback: History cleared", self.id);
     }
 
-    /// Set the scrollback buffer size (number of lines)
+    /// Set the scrollback buffer size (number of lines).
+    ///
+    /// Routed through `Term::set_options` rather than
+    /// `grid_mut().update_history()`: `grid_mut()` returns the ACTIVE grid,
+    /// and while the alternate screen is on, the primary grid — the one that
+    /// actually owns scrollback history — is swapped into a private field.
+    /// The old direct call was therefore a silent no-op for alt-screen TUIs;
+    /// `set_options` contains the `ALT_SCREEN ? inactive_grid : grid` branch
+    /// that always targets the primary grid's history. Side effects verified
+    /// benign: the re-sent Title event is either ignored (ResetTitle) or
+    /// re-posts the current title, and the config we pass differs from the
+    /// creation-time `TermConfig::default()` only in `scrolling_history`.
     pub fn set_scrollback_size(&self, lines: usize) {
         info!(
             "[terminal-{}] set_scrollback_size: Setting scrollback to {} lines",
             self.id, lines
         );
         let mut term = self.term.lock();
-        term.grid_mut().update_history(lines);
+        let config = TermConfig {
+            scrolling_history: lines,
+            ..TermConfig::default()
+        };
+        term.set_options(config);
         self.grid_dirty.store(true, Ordering::Release);
         debug!(
             "[terminal-{}] set_scrollback_size: Scrollback set to {} lines",
@@ -3241,6 +3256,35 @@ mod tests {
         assert_eq!(
             restored.line_text(0).as_deref(),
             source.line_text(0).as_deref()
+        );
+    }
+
+    #[test]
+    fn test_set_scrollback_size_shrinks_primary_history_while_on_alt_screen() {
+        let _ = env_logger::try_init();
+
+        // Regression: `grid_mut().update_history()` targets the ACTIVE grid,
+        // so shrinking while a TUI held the alternate screen silently
+        // no-opped against the primary grid that owns all the history. The
+        // set_options routing must shrink the primary grid regardless.
+        let term = Chau7Terminal::new_with_env(20, 4, "", &[]).expect("Should create terminal");
+        let mut output = Vec::new();
+        for i in 0..200 {
+            output.extend_from_slice(format!("line {}\r\n", i).as_bytes());
+        }
+        term.inject_output(&output);
+        let before = term.debug_state().history_size;
+        assert!(before > 50, "history should have accumulated (got {})", before);
+
+        term.inject_output(b"\x1b[?1049h"); // enter alt screen
+        term.set_scrollback_size(50);
+        term.inject_output(b"\x1b[?1049l"); // leave alt screen
+
+        let after = term.debug_state().history_size;
+        assert!(
+            after <= 50,
+            "primary history must shrink while the alt screen was active (got {})",
+            after
         );
     }
 
