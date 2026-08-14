@@ -79,6 +79,7 @@ final class RustGridView: NSView {
     /// When true, Metal handles display — suppresses CPU draw() and setNeedsDisplay.
     var metalRenderingActive = false
 
+
     private var regularFont = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
     private var boldFont = NSFont.monospacedSystemFont(ofSize: 13, weight: .bold)
     private var italicFont = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
@@ -1285,6 +1286,9 @@ final class RustTerminalFFI: TerminalBackend {
         let idlePolls: UInt64
         let avgBatchSize: UInt64
         let dirtyRowCount: UInt32
+        /// Estimated resident bytes of Rust grid cell storage (history +
+        /// screen + alt screen). See DebugState in rust/chau7_terminal.
+        let estimatedGridBytes: UInt64
 
         var description: String {
             """
@@ -1299,6 +1303,7 @@ final class RustTerminalFFI: TerminalBackend {
               Perf: polls=\(pollCount), avgPoll=\(avgPollTimeUs)µs, maxPoll=\(maxPollTimeUs)µs
                     avgSnapshot=\(avgGridSnapshotTimeUs)µs, maxSnapshot=\(maxGridSnapshotTimeUs)µs
                     activity=\(activityPercent)%, idlePolls=\(idlePolls), avgBatch=\(avgBatchSize)B, dirtyRows=\(dirtyRowCount)
+              Memory: estimatedGridBytes=\(estimatedGridBytes)
             """
         }
     }
@@ -1345,11 +1350,23 @@ final class RustTerminalFFI: TerminalBackend {
             activityPercent: state.activity_percent,
             idlePolls: state.idle_polls,
             avgBatchSize: state.avg_batch_size,
-            dirtyRowCount: state.dirty_row_count
+            dirtyRowCount: state.dirty_row_count,
+            estimatedGridBytes: state.estimated_grid_bytes
         )
 
         Log.trace("RustTerminalFFI[\(instanceId)]: debugState retrieved:\n\(result.description)")
         return result
+    }
+
+    /// TerminalBackend.memoryStats — thin projection of `debugState()`.
+    func memoryStats() -> TerminalMemoryStats? {
+        guard let state = debugState() else { return nil }
+        return TerminalMemoryStats(
+            historyRows: Int(state.historySize),
+            estimatedGridBytes: Int(state.estimatedGridBytes),
+            bytesReceived: state.bytesReceived,
+            alternateScreenActive: state.alternateScreen != 0
+        )
     }
 
     /// Get the full terminal buffer text (visible + scrollback) for debugging.
@@ -1688,6 +1705,7 @@ struct RustDebugState {
     let idle_polls: UInt64
     let avg_batch_size: UInt64
     let dirty_row_count: UInt32
+    let estimated_grid_bytes: UInt64
 }
 
 // MARK: - RustTerminalView

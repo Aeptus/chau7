@@ -2086,7 +2086,7 @@ pub unsafe extern "C" fn chau7_terminal_has_pending_images(term: *mut Chau7Termi
 /// after dlopen and refuses to bind on mismatch — struct drift between the
 /// hand-mirrored Swift types and these definitions is silent memory
 /// corruption at 60fps otherwise.
-pub const CHAU7_TERMINAL_ABI_VERSION: u32 = 1;
+pub const CHAU7_TERMINAL_ABI_VERSION: u32 = 2;
 
 #[unsafe(no_mangle)]
 pub extern "C" fn chau7_terminal_abi_version() -> u32 {

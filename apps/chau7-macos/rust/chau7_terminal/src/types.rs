@@ -179,6 +179,12 @@ pub struct DebugState {
     pub avg_batch_size: u64,
     /// Dirty row count (for partial updates)
     pub dirty_row_count: u32,
+    /// Estimated resident bytes of grid cell storage (primary history +
+    /// screen + alternate screen), computed as rows × cols × sizeof(Cell).
+    /// An estimate: excludes per-cell extra storage (hyperlinks, zerowidth)
+    /// and allocator overhead. While the alternate screen is active the
+    /// primary grid is inaccessible, so its last observed size is used.
+    pub estimated_grid_bytes: u64,
 }
 
 // ============================================================================

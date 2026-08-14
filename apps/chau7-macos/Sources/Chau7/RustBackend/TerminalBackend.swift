@@ -115,4 +115,29 @@ protocol TerminalBackend: ScrollbackMemoryRustFFI {
 
     func getPendingImages() -> [(protocol: UInt8, data: Data, anchorRow: Int32, anchorCol: UInt16)]?
     func setImageProtocols(sixel: Bool, kitty: Bool, iterm2: Bool)
+
+    // MARK: - Memory / Activity Stats
+
+    /// Compact memory + activity stats derived from the Rust debug state.
+    /// Nil when the debug-state FFI is unavailable. Cheap (single FFI call,
+    /// O(1) on the Rust side); consumed by TerminalMemoryReport and the
+    /// idle-flush activity gate.
+    func memoryStats() -> TerminalMemoryStats?
+}
+
+/// See `TerminalBackend.memoryStats()`.
+struct TerminalMemoryStats {
+    let historyRows: Int
+    /// Estimated resident bytes of Rust grid cell storage (history + screen +
+    /// alt screen); see DebugState.estimated_grid_bytes in rust/chau7_terminal.
+    let estimatedGridBytes: Int
+    let bytesReceived: UInt64
+    let alternateScreenActive: Bool
+}
+
+extension TerminalBackend {
+    /// Default for backends (and test doubles) without debug-state support.
+    func memoryStats() -> TerminalMemoryStats? {
+        nil
+    }
 }

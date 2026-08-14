@@ -25,7 +25,7 @@
  hand-mirrored Swift types and these definitions is silent memory
  corruption at 60fps otherwise.
  */
-#define CHAU7_TERMINAL_ABI_VERSION 1
+#define CHAU7_TERMINAL_ABI_VERSION 2
 
 #define POLL_EVENT_GRID_CHANGED (1 << 0)
 
@@ -309,6 +309,14 @@ typedef struct DebugState {
      Dirty row count (for partial updates)
      */
     uint32_t dirty_row_count;
+    /*
+     Estimated resident bytes of grid cell storage (primary history +
+     screen + alternate screen), computed as rows × cols × sizeof(Cell).
+     An estimate: excludes per-cell extra storage (hyperlinks, zerowidth)
+     and allocator overhead. While the alternate screen is active the
+     primary grid is inaccessible, so its last observed size is used.
+     */
+    uint64_t estimated_grid_bytes;
 } DebugState;
 
 /*
@@ -823,6 +831,20 @@ char *chau7_terminal_get_full_buffer_ansi_text(struct Chau7Terminal *term);
 char *chau7_terminal_get_tail_buffer_ansi_text(struct Chau7Terminal *term,
                                                size_t max_lines,
                                                size_t max_bytes);
+
+/*
+ Get the tail of the full buffer as plain text (no SGR), wrapped rows
+ joined into logical lines. Bounded twin of
+ `chau7_terminal_get_tail_buffer_ansi_text` for detectors that only need
+ recent text without flattening the entire ring.
+
+ # Safety
+ - `term` must be a valid pointer
+ - The returned pointer must be freed with `chau7_terminal_free_string`
+ */
+char *chau7_terminal_get_tail_buffer_text(struct Chau7Terminal *term,
+                                          size_t max_lines,
+                                          size_t max_bytes);
 
 /*
  Reset performance metrics

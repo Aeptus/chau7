@@ -199,7 +199,7 @@ struct RustTerminalSymbolTable {
 
     /// ABI version this build of the Swift mirrors was written against.
     /// Must match `CHAU7_TERMINAL_ABI_VERSION` in rust/chau7_terminal/src/ffi.rs.
-    static let expectedABIVersion: UInt32 = 1
+    static let expectedABIVersion: UInt32 = 2
 
     /// A successfully loaded dylib: the bound symbol table plus the dlopen
     /// handle (kept alive for the process lifetime — closing it would

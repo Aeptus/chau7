@@ -262,6 +262,11 @@ pub struct Chau7Terminal {
     pub(crate) bytes_sent: AtomicU64,
     /// Total PTY write errors
     pub(crate) write_errors: AtomicU64,
+    /// Last observed total line count (history + screen) of the PRIMARY grid.
+    /// The primary grid is unreachable while the alternate screen is active
+    /// (`Term` swaps it into a private field), so `debug_state` records it on
+    /// every non-alt observation and reuses it for memory estimates on alt.
+    pub(crate) last_primary_total_lines: AtomicU64,
     /// Theme colors for rendering (RwLock for read-heavy access pattern)
     pub(crate) theme_colors: RwLock<ThemeColors>,
     /// Raw output bytes from the last poll (for Swift onOutput callback - Issue #3 fix)
@@ -389,6 +394,7 @@ impl Chau7Terminal {
             bytes_received: AtomicU64::new(0),
             bytes_sent: AtomicU64::new(0),
             write_errors: AtomicU64::new(0),
+            last_primary_total_lines: AtomicU64::new(0),
             theme_colors: RwLock::new(ThemeColors::default()),
             last_output: Mutex::new(Vec::new()),
             bell_pending,
@@ -670,6 +676,7 @@ impl Chau7Terminal {
             bytes_received: AtomicU64::new(0),
             bytes_sent: AtomicU64::new(0),
             write_errors: AtomicU64::new(0),
+            last_primary_total_lines: AtomicU64::new(0),
             theme_colors: RwLock::new(ThemeColors::default()),
             last_output: Mutex::new(Vec::new()),
             bell_pending,
@@ -2172,6 +2179,26 @@ impl Chau7Terminal {
         let bracketed_paste = mode.contains(TermMode::BRACKETED_PASTE);
         let alternate_screen = mode.contains(TermMode::ALT_SCREEN);
         let app_cursor = mode.contains(TermMode::APP_CURSOR);
+        let screen_lines = grid.screen_lines() as u64;
+        let active_total_lines = u64::from(history_size) + screen_lines;
+        if !alternate_screen {
+            self.last_primary_total_lines
+                .store(active_total_lines, Ordering::Relaxed);
+        }
+        // The inactive grid is private; on alt screen, use the primary grid's
+        // last observed size. The other grid (whichever is inactive) keeps no
+        // history of its own beyond one screen of rows.
+        let primary_total_lines = if alternate_screen {
+            self.last_primary_total_lines
+                .load(Ordering::Relaxed)
+                .max(screen_lines)
+        } else {
+            active_total_lines
+        };
+        let cell_bytes = std::mem::size_of::<alacritty_terminal::term::cell::Cell>() as u64;
+        let cols_estimate = u64::from(grid.columns() as u16);
+        let estimated_grid_bytes =
+            (primary_total_lines + screen_lines) * cols_estimate * cell_bytes;
         drop(term);
 
         let poll_count = self.metrics.poll_count.load(Ordering::Relaxed);
@@ -2212,6 +2239,7 @@ impl Chau7Terminal {
             idle_polls,
             avg_batch_size: bytes_batched.checked_div(batch_count).unwrap_or(0),
             dirty_row_count: self.dirty_rows.dirty_count() as u32,
+            estimated_grid_bytes,
         }
     }
 
