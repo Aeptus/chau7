@@ -1,5 +1,33 @@
 [
   {
+    "category": "Performance",
+    "feature": "Proactive Scrollback Reclamation",
+    "description": "Idle warm tabs flush scrollback to disk and shrink to a resident floor while TUI tabs compact capture-if-safe/shrink-always/replay-never-while-protected, with an aggregate budget backstop, instant tab-switch paint from RAM, and zero new repeating timers",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "Performance",
+    "feature": "Checksummed Scrollback Disk Cache",
+    "description": "Scrollback cache payloads embed content kind, uncompressed size, and CRC32 for exact-size decode and checksum verification with atomic writes, CRLF/SGR-preserving captures, and flush-time records that defer replay while a TUI is live",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "Performance",
+    "feature": "Compact Render Sync Path",
+    "description": "48-byte terminal cells, table-driven WCAG contrast rescue with a per-run memo, and per-buffer owned cluster storage keep the full-grid Metal sync loop allocation-free and materially cheaper per cell",
+    "status": "Shipped",
+    "differentiator": "No"
+  },
+  {
+    "category": "Scripting & Debugging",
+    "feature": "Per-Tab Memory Attribution",
+    "description": "An on-demand Debug Console Memory tab attributes resident bytes per pane across the Rust ring, session caches, CPU-fallback copies, and per-window Metal resources, with replay and tab-switch-to-first-paint latency instrumentation",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
     "category": "Developer Experience",
     "feature": "Audited Cloudflare Worker Toolchain",
     "description": "Issues and Relay Workers pin compatible Wrangler and Workers-types releases that pass dependency audits, tests, typechecks, and dry-run builds",
@@ -653,7 +681,7 @@
   {
     "category": "Terminal Core",
     "feature": "Fixed-Delay Startup Reveal",
-    "description": "Reveal restored windows after a short splash delay instead of waiting for the full restore queue to drain, and recreate the native toolbar host on every hidden-to-visible presentation so restored tab bars composite on first launch",
+    "description": "Reveal restored windows after a short splash delay, recreate the native toolbar host on hidden-to-visible presentation, coalesce SwiftUI geometry updates outside the render pass, and size the AppKit host through intrinsic size and constraints so restored tab bars composite without undefined mutations or deprecated clipping behavior",
     "status": "Shipped",
     "differentiator": "Yes"
   },

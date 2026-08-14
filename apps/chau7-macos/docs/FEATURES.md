@@ -455,11 +455,14 @@ Chau7's rendering pipeline is purpose-built for latency-sensitive terminal work:
 - Window-level GPU volatility: under critical pressure the glyph atlas and Metal buffers of fully invisible windows become OS-reclaimable, with reclaim-safe rebuild (including the static vertex quad) on the window's next draw.
 - Self-imposed footprint ceiling: the app polls its own memory footprint against a quarter-of-RAM ceiling (clamped 4-12GB) and proactively flushes non-selected tabs' scrollback before the OS pressure signal would ever arrive.
 - Bounded auxiliary caches: clipboard history items cap at 100KB each, session-resolver caches cap at 256 entries, closed AI-monitor sessions evict after a grace period, and aborted graphics sequences release their buffer capacity.
+- Proactive scrollback reclamation: idle warm tabs flush their ring to disk and shrink to the viewport floor, agent TUI tabs compact without ever being replayed into while live, and an aggregate scrollback budget flushes the largest warm tabs early — while the viewport plus a resident tail always stays in RAM so tab switching paints instantly.
+- Checksummed scrollback disk cache: flush payloads carry uncompressed size and CRC32 for exact-size decode and verification, are written atomically, and preserve CRLF/SGR fidelity so restored history keeps its columns and colors.
+- Per-tab memory attribution: an on-demand Debug Console Memory tab breaks resident bytes down per pane (Rust ring, session caches, CPU-fallback copies) and per window (atlas, instance and triple buffers), with replay and tab-switch-to-first-paint latency instruments.
 
 | Layer | What It Does |
 | --- | --- |
 | **Metal GPU rendering** | Hardware-accelerated text via Apple Metal |
-| **IOSurface direct display** | Bypass the macOS compositor — GPU straight to display |
+| **Direct CAMetalLayer presentation** | Minimal-latency drawable presentation without extra compositing passes |
 | **Glyph atlas caching** | Dynamic glyph cache eliminates redundant rasterization |
 | **SIMD escape parsing** | 16–32 byte SIMD-accelerated ANSI parsing in Rust |
 | **Lock-free ring buffer** | SPSC lock-free PTY pipeline — zero contention |
@@ -489,6 +492,8 @@ Chau7's rendering pipeline is purpose-built for latency-sensitive terminal work:
 | **LRU-backed syntax-highlight cache** | Terminal-output highlighter uses `NSCache` (bounded LRU with cost-based eviction and an OS-pressure hook) instead of a dictionary with order-unspecified prefix eviction, so hot lines stay cached on busy streams |
 
 ## Tabs, Panes & Windows
+
+- **Render-pass-safe tab-bar geometry** — SwiftUI preference updates are coalesced onto the next main-loop turn before changing hit-test or recovery state, and the AppKit toolbar host uses intrinsic sizing plus constraints instead of deprecated item min/max sizing. Multi-window restoration therefore avoids undefined render-pass mutation and runtime clipping diagnostics.
 
 ### Tabs
 

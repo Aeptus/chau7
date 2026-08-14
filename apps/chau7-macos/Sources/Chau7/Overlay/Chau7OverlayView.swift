@@ -189,14 +189,10 @@ final class TabBarToolbarDelegate: NSObject, NSToolbarDelegate {
                 )
         }
 
-        // item.minSize/maxSize are the only reliable toolbar sizing API.
-        // Auto Layout constraints on the hosting view don't control toolbar space allocation.
-        // Use KVC to avoid deprecation warnings — Apple deprecated these in macOS 12
-        // but never shipped a replacement API (constraints don't control toolbar allocation).
-        item.setValue(NSValue(size: NSSize(width: minWidth, height: height)), forKey: "minSize")
-        item.setValue(NSValue(size: NSSize(width: maxWidth, height: height)), forKey: "maxSize")
-
         guard let view = item.view as? TabBarHostingView else { return }
+        // Modern NSToolbar sizing follows the custom view's intrinsic size and
+        // constraints. Writing deprecated minSize/maxSize through KVC only hid
+        // the compiler warning; AppKit still emitted clipping faults at runtime.
         view.desiredSize = NSSize(width: maxWidth, height: height)
 
         if view.translatesAutoresizingMaskIntoConstraints {
@@ -793,6 +789,7 @@ private struct ToolbarTabBarView: View {
     @State private var recoveryDebounce: DispatchWorkItem?
     @State private var groupDragCoordinator = TabStripDragCoordinator()
     @State private var tabBarScrollViewportFrame: CGRect = .zero
+    @State private var preferenceUpdates = SwiftUIPreferenceUpdateCoalescer()
 
     /// Tabs idle for 10+ minutes (empty when feature is off or no tabs are idle).
     /// Reads the setting directly to avoid subscribing to all FeatureSettings changes.
@@ -1144,23 +1141,29 @@ private struct ToolbarTabBarView: View {
                             .accessibilityHint(L("Opens a new terminal tab", "Opens a new terminal tab"))
                         }
                         .onPreferenceChange(TabWidthPreferenceKey.self) { widths in
-                            tabWidths = widths
-                            rebuildHitTestFrames(widths: widths, positions: tabMidXPositions)
+                            preferenceUpdates.schedule(.tabWidths) {
+                                tabWidths = widths
+                                rebuildHitTestFrames(widths: widths, positions: tabMidXPositions)
+                            }
                         }
                         .onPreferenceChange(TabMidXPreferenceKey.self) { positions in
-                            tabMidXPositions = positions
-                            rebuildHitTestFrames(widths: tabWidths, positions: positions)
+                            preferenceUpdates.schedule(.tabPositions) {
+                                tabMidXPositions = positions
+                                rebuildHitTestFrames(widths: tabWidths, positions: positions)
+                            }
                         }
                         .onPreferenceChange(BracketFramePreferenceKey.self) { frames in
-                            overlayModel.groupBracketHitTestFrames = frames.map { segmentID, value in
-                                (
-                                    segmentID: segmentID,
-                                    repoGroupID: value.repoGroupID,
-                                    firstTabID: value.firstTabID,
-                                    minX: value.frame.minX,
-                                    maxX: value.frame.maxX
-                                )
-                            }.sorted(by: { $0.minX < $1.minX })
+                            preferenceUpdates.schedule(.bracketFrames) {
+                                overlayModel.groupBracketHitTestFrames = frames.map { segmentID, value in
+                                    (
+                                        segmentID: segmentID,
+                                        repoGroupID: value.repoGroupID,
+                                        firstTabID: value.firstTabID,
+                                        minX: value.frame.minX,
+                                        maxX: value.frame.maxX
+                                    )
+                                }.sorted(by: { $0.minX < $1.minX })
+                            }
                         }
                         .background(
                             TabBarScrollViewResolver { scrollView in
@@ -1184,7 +1187,9 @@ private struct ToolbarTabBarView: View {
                         }
                     )
                     .onPreferenceChange(TabBarScrollViewportFrameKey.self) { frame in
-                        tabBarScrollViewportFrame = frame
+                        preferenceUpdates.schedule(.scrollViewport) {
+                            tabBarScrollViewportFrame = frame
+                        }
                     }
                     .onChange(of: overlayModel.selectedTabID) {
                         withAnimation(.easeInOut(duration: 0.25)) {
@@ -1217,20 +1222,23 @@ private struct ToolbarTabBarView: View {
             }
         )
         .onPreferenceChange(TabBarSizeKey.self) { size in
-            overlayModel.reportTabBarSize(size)
-            // Log tiny/zero rendered sizes immediately so disappearance can be diagnosed from logs.
-            let now = Date()
-            let expectedMinWidth = CGFloat(overlayModel.tabs.count) * 30
-            if size.width <= 0 || size.height <= 0 || size.width < 1 || size.height < 10 || size.width < expectedMinWidth, now.timeIntervalSince(lastTinySizeLogAt) > 1.0 {
-                lastTinySizeLogAt = now
-                Log
-                    .warn(
-                        "ToolbarTabBarView: suspicious tab bar size reported width=\(Int(size.width)) height=\(Int(size.height)), tabs=\(overlayModel.tabs.count), expectedMinWidth=\(Int(expectedMinWidth)), refreshToken=\(overlayModel.tabBarRefreshToken)"
-                    )
+            preferenceUpdates.schedule(.tabBarSize) {
+                overlayModel.reportTabBarSize(size)
+                let now = Date()
+                let expectedMinWidth = CGFloat(overlayModel.tabs.count) * 30
+                if size.width <= 0 || size.height <= 0 || size.width < 1 || size.height < 10 || size.width < expectedMinWidth, now.timeIntervalSince(lastTinySizeLogAt) > 1.0 {
+                    lastTinySizeLogAt = now
+                    Log
+                        .warn(
+                            "ToolbarTabBarView: suspicious tab bar size reported width=\(Int(size.width)) height=\(Int(size.height)), tabs=\(overlayModel.tabs.count), expectedMinWidth=\(Int(expectedMinWidth)), refreshToken=\(overlayModel.tabBarRefreshToken)"
+                        )
+                }
             }
         }
         .onPreferenceChange(TabBarFrameKey.self) { frame in
-            overlayModel.reportTabBarDropFrame(frame)
+            preferenceUpdates.schedule(.tabBarFrame) {
+                overlayModel.reportTabBarDropFrame(frame)
+            }
         }
         .onChange(of: overlayModel.tabs.count) {
             Log.trace("ToolbarTabBarView: tabs.count changed to \(overlayModel.tabs.count)")
@@ -1253,25 +1261,22 @@ private struct ToolbarTabBarView: View {
         // Auto-recovery: detect when rendered tab count doesn't match model
         // Report rendered count to model for watchdog monitoring
         .onPreferenceChange(RenderedTabCountKey.self) { renderedCount in
-            overlayModel.reportRenderedTabCount(renderedCount)
-            let expectedCount = overlayModel.tabs.count
-            // Only act if we rendered ZERO tabs but expected some (the critical bug case)
-            // During normal add/remove, renderedCount trails briefly but is never zero when tabs exist
-            if renderedCount == 0, expectedCount > 0 {
-                // Debounce to avoid triggering during animations/transitions
-                recoveryDebounce?.cancel()
-                let task = DispatchWorkItem { [weak overlayModel] in
-                    guard let model = overlayModel else { return }
-                    // Only refresh if model still has tabs
-                    // The refresh is idempotent, so false positives are harmless
-                    let currentExpected = model.tabs.count
-                    if currentExpected > 0 {
-                        Log.warn("TabBar auto-recovery (preference): rendered=0, expected=\(currentExpected), forcing refresh")
-                        model.refreshTabBar()
+            preferenceUpdates.schedule(.renderedTabCount) {
+                overlayModel.reportRenderedTabCount(renderedCount)
+                let expectedCount = overlayModel.tabs.count
+                if renderedCount == 0, expectedCount > 0 {
+                    recoveryDebounce?.cancel()
+                    let task = DispatchWorkItem { [weak overlayModel] in
+                        guard let model = overlayModel else { return }
+                        let currentExpected = model.tabs.count
+                        if currentExpected > 0 {
+                            Log.warn("TabBar auto-recovery (preference): rendered=0, expected=\(currentExpected), forcing refresh")
+                            model.refreshTabBar()
+                        }
                     }
+                    recoveryDebounce = task
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3, execute: task)
                 }
-                recoveryDebounce = task
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3, execute: task)
             }
         }
     }
