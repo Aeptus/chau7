@@ -266,7 +266,7 @@ final class MCPSessionTests: XCTestCase {
             name: "chau7_runtime_info",
             arguments: [:]
         )
-        XCTAssertEqual(runtimeInfo["observability_schema_version"] as? Int, 1)
+        XCTAssertEqual(runtimeInfo["observability_schema_version"] as? Int, 2)
 
         let runtimeEvents = try toolStructuredContent(
             session: session,
@@ -529,6 +529,15 @@ final class MCPSessionTests: XCTestCase {
             runtimeInfo["launch_time"] = "<launch_time>"
             runtimeInfo["process_id"] = "<process_id>"
             runtimeInfo["session_started_at"] = "<session_started_at>"
+            if var components = runtimeInfo["components"] as? [String: Any],
+               var app = components["app"] as? [String: Any] {
+                app["version"] = "<app_version>"
+                app["build_number"] = "<build_number>"
+                app["build_sha"] = "<build_sha>"
+                app["build_timestamp"] = "<build_timestamp>"
+                components["app"] = app
+                runtimeInfo["components"] = components
+            }
             snapshot["runtime_info"] = runtimeInfo
         }
         return snapshot
@@ -591,9 +600,18 @@ final class MCPSessionTests: XCTestCase {
                 "build_sha": "<build_sha>",
                 "build_timestamp": "<build_timestamp>",
                 "bundle_id": "<bundle_id>",
+                "components": [
+                    "app": [
+                        "build_number": "<build_number>",
+                        "build_sha": "<build_sha>",
+                        "build_timestamp": "<build_timestamp>",
+                        "status": "running",
+                        "version": "<app_version>"
+                    ]
+                ],
                 "launch_time": "<launch_time>",
                 "mcp_protocol_version": "2025-11-25",
-                "observability_schema_version": 1,
+                "observability_schema_version": 2,
                 "process_id": "<process_id>",
                 "session_started_at": "<session_started_at>"
             ],
