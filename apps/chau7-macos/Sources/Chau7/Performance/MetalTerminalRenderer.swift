@@ -170,6 +170,24 @@ final class MetalTerminalRenderer: NSObject {
     private(set) var glyphCacheMisses = 0
     private(set) var glyphLookupCount = 0
 
+    /// Estimated memory held by this renderer (per window, not per tab).
+    /// All inputs are O(1); used by the per-tab memory diagnostics.
+    struct MemoryFootprint {
+        let instanceBufferBytes: Int
+        let atlasTextureBytes: Int
+        let atlasContextBytes: Int
+        let glyphCacheEntries: Int
+    }
+
+    var memoryFootprint: MemoryFootprint {
+        MemoryFootprint(
+            instanceBufferBytes: instanceCapacity * MemoryLayout<CellInstance>.stride,
+            atlasTextureBytes: atlasWidth * atlasHeight * 4,
+            atlasContextBytes: atlasContext == nil ? 0 : atlasWidth * atlasHeight * 4,
+            glyphCacheEntries: glyphCache.count
+        )
+    }
+
     /// Diagnostic frame counter for throttled logging
     private var diagFrameCounter = 0
     private var lastCursorRowDiagnosticKey: String?
@@ -996,7 +1014,7 @@ final class MetalTerminalRenderer: NSObject {
     /// participate in a ligature run.
     private func tryLigature(
         cells: UnsafeBufferPointer<TerminalCell>,
-        clusters: ContiguousArray<UInt8>,
+        clusters: UnsafeBufferPointer<UInt8>,
         index: Int, count: Int, cols: Int,
         bold: Bool, italic: Bool
     ) -> LigatureInfo? {
@@ -1166,7 +1184,7 @@ final class MetalTerminalRenderer: NSObject {
 
     private func updateInstanceBuffer(
         cells: UnsafeBufferPointer<TerminalCell>,
-        clusters: ContiguousArray<UInt8>,
+        clusters: UnsafeBufferPointer<UInt8>,
         count: Int,
         rows: Int,
         cols: Int,
@@ -1458,7 +1476,7 @@ final class MetalTerminalRenderer: NSObject {
 
     private func logCursorRowMappingIfNeeded(
         cells: UnsafeBufferPointer<TerminalCell>,
-        clusters: ContiguousArray<UInt8>,
+        clusters: UnsafeBufferPointer<UInt8>,
         instances: UnsafeMutablePointer<CellInstance>,
         count: Int,
         cols: Int,
@@ -1552,7 +1570,7 @@ final class MetalTerminalRenderer: NSObject {
         return start ... end
     }
 
-    private static func diagnosticPreview(for cell: TerminalCell, clusters: ContiguousArray<UInt8>) -> String {
+    private static func diagnosticPreview(for cell: TerminalCell, clusters: UnsafeBufferPointer<UInt8>) -> String {
         if cell.clusterLen == 0 { return " " }
         if cell.continuation != 0 { return "" }
         let start = Int(cell.clusterStart)
@@ -1564,7 +1582,7 @@ final class MetalTerminalRenderer: NSObject {
         return String(decoding: bytes, as: UTF8.self)
     }
 
-    private static func diagnosticScalarLabel(for cell: TerminalCell, clusters: ContiguousArray<UInt8>) -> String {
+    private static func diagnosticScalarLabel(for cell: TerminalCell, clusters: UnsafeBufferPointer<UInt8>) -> String {
         if cell.clusterLen == 0 { return "SP" }
         if cell.continuation != 0 { return "CONT" }
         let start = Int(cell.clusterStart)
@@ -1690,14 +1708,20 @@ struct TerminalCell {
     /// Fragment shader samples `texColor.rgb` directly instead of tinting `fg`.
     static let colorGlyphFlag: UInt32 = 1 << 12
 
-    /// Byte offset into the owning `TerminalBuffer.clusters` array.
-    var clusterStart: UInt32
+    // Field order matters: the two SIMD4 members force 16-byte alignment, so
+    // they must come first. Declaring `clusterStart` before them (as this
+    // struct originally did) inserts 12 bytes of padding after it and pushes
+    // the stride from 48 to 64 — a 33% tax on every cell copy, triple-buffer
+    // allocation, and sync memcpy. CPU-only layout (the GPU consumes
+    // `CellInstance`, a separate type); guarded by TerminalCellLayoutTests.
     var foregroundColor: SIMD4<Float>
     var backgroundColor: SIMD4<Float>
     /// Bold=1, italic=2, underline=4, strikethrough=8, blink=16
     /// Cursor bits (set by renderer): cursor_present=32, cursor_style in bits 6-7
     /// Color-glyph bit 12 is set when this cell's atlas slot is a color bitmap.
     var flags: UInt32
+    /// Byte offset into the owning `TerminalBuffer.clusters` array.
+    var clusterStart: UInt32
     /// UTF-8 byte length of the grapheme cluster. 0 = blank cell.
     var clusterLen: UInt16
     /// 1 = narrow, 2 = wide; 0 on continuation cells.

@@ -70,6 +70,44 @@ final class RustTermBridgeParityTests: XCTestCase {
         XCTAssertGreaterThan(cell.foregroundColor.x + cell.foregroundColor.y + cell.foregroundColor.z, 0.1)
     }
 
+    func testLinearizedSRGBLUTMatchesClosedFormForAllChannelValues() {
+        for value in 0 ... 255 {
+            XCTAssertEqual(
+                RustTermBridge.linearizedSRGBLUT[value],
+                RustTermBridge.linearizedSRGBReference(Float(value) / 255.0),
+                "LUT must equal the closed-form WCAG linearization at u8 index \(value)"
+            )
+        }
+    }
+
+    func testContrastRescueMemoHandlesAlternatingColorPairs() {
+        // The one-entry memo must never leak a decision across different
+        // color pairs: rescued, not-rescued, rescued-again in one row.
+        var fixture = makeFixture(
+            cells: [
+                makeCell("a", fg: (0, 0, 0), bg: (30, 30, 30)),
+                makeCell("b", fg: (255, 255, 255), bg: (0, 0, 0)),
+                makeCell("c", fg: (0, 0, 0), bg: (30, 30, 30))
+            ]
+        )
+        let bridge = RustTermBridge()
+        let buffer = TripleBufferedTerminal(rows: 1, cols: 3)
+
+        sync(fixture: &fixture, rows: 1, cols: 3, bridge: bridge, buffer: buffer)
+
+        let first = buffer.getCell(row: 0, col: 0)
+        let second = buffer.getCell(row: 0, col: 1)
+        let third = buffer.getCell(row: 0, col: 2)
+        XCTAssertGreaterThanOrEqual(contrastRatio(first.foregroundColor, first.backgroundColor), 1.4)
+        XCTAssertEqual(second.foregroundColor, SIMD4(1, 1, 1, 1), "High-contrast cell must pass through unchanged")
+        XCTAssertGreaterThanOrEqual(
+            contrastRatio(third.foregroundColor, third.backgroundColor),
+            1.4,
+            "Memo eviction by the middle cell must not suppress the rescue"
+        )
+        XCTAssertEqual(first.foregroundColor, third.foregroundColor)
+    }
+
     // MARK: - Helpers
 
     /// A test fixture owning the cells array AND the packed UTF-8 cluster bytes

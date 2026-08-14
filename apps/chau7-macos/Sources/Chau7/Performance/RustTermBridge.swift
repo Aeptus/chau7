@@ -28,6 +28,33 @@ final class RustTermBridge {
     /// Key = viewport row (0-based), value = SIMD4 RGBA tint color.
     var rowTints: [Int: SIMD4<Float>] = [:]
 
+    /// One-entry memo for the contrast-rescue decision, keyed by the
+    /// post-inverse (fg, bg) u8 channels. Text runs share colors, so this
+    /// eliminates the luminance math for almost every glyph cell in a frame.
+    private var lastRescueKey: UInt64 = .max
+    private var lastRescueDecision = false
+
+    /// u8 → Float(0...1) conversion table: kills the six per-cell divides.
+    private static let unitFloatLUT: [Float] = (0 ... 255).map { Float($0) / 255.0 }
+
+    /// u8 channel → linearized sRGB. The exact per-cell `pow()`-based WCAG
+    /// formula, precomputed over the only 256 inputs it can ever see — the
+    /// dominant per-glyph-cell cost of the old conversion loop (6 `pow` calls
+    /// per glyph cell, ~19 syncs/s). Parity with the closed form is asserted
+    /// by RustTermBridgeParityTests.
+    static let linearizedSRGBLUT: [Float] = (0 ... 255).map { value -> Float in
+        linearizedSRGBReference(Float(value) / 255.0)
+    }
+
+    /// Closed-form linearization, kept only as the LUT's source of truth and
+    /// for the parity test.
+    static func linearizedSRGBReference(_ component: Float) -> Float {
+        if component <= 0.03928 {
+            return component / 12.92
+        }
+        return pow((component + 0.055) / 1.055, 2.4)
+    }
+
     // MARK: - Init
 
     init() {
@@ -80,12 +107,14 @@ final class RustTermBridge {
         updateBuf.resetClusters()
 
         for row in 0 ..< syncRows {
+            // Hoisted: the tint dictionary lookup used to run once per CELL.
+            let rowTint = rowTints.isEmpty ? nil : rowTints[row]
             for col in 0 ..< syncCols {
                 let idx = row * gridCols + col
                 let rustCell = cells[idx]
                 let metalCell = convertCell(
                     rustCell,
-                    row: row,
+                    rowTint: rowTint,
                     sourceClusters: clustersBase,
                     sourceClustersLen: clustersLen,
                     destBuffer: updateBuf
@@ -127,33 +156,24 @@ final class RustTermBridge {
     @inline(__always)
     private func convertCell(
         _ cell: RustCellData,
-        row: Int,
+        rowTint: SIMD4<Float>?,
         sourceClusters: UnsafeMutablePointer<UInt8>?,
         sourceClustersLen: Int,
         destBuffer: TripleBufferedTerminal.TerminalBuffer
     ) -> TerminalCell {
         let flags = cell.flags
 
-        // Convert u8 RGB → SIMD4<Float>
-        var fg = SIMD4<Float>(
-            Float(cell.fg_r) / 255.0,
-            Float(cell.fg_g) / 255.0,
-            Float(cell.fg_b) / 255.0,
-            1.0
-        )
-        var bg = SIMD4<Float>(
-            Float(cell.bg_r) / 255.0,
-            Float(cell.bg_g) / 255.0,
-            Float(cell.bg_b) / 255.0,
-            1.0
-        )
+        // Convert u8 RGB → SIMD4<Float> via LUT (no divides)
+        let lut = Self.unitFloatLUT
+        var fg = SIMD4<Float>(lut[Int(cell.fg_r)], lut[Int(cell.fg_g)], lut[Int(cell.fg_b)], 1.0)
+        var bg = SIMD4<Float>(lut[Int(cell.bg_r)], lut[Int(cell.bg_g)], lut[Int(cell.bg_b)], 1.0)
 
         // Handle inverse: swap fg/bg
         if flags & RustCellFlags.inverse != 0 {
             swap(&fg, &bg)
         }
 
-        if Self.shouldRescueForeground(cell: cell, fg: fg, bg: bg) {
+        if shouldRescueForegroundMemoized(cell: cell, flags: flags, fg: fg, bg: bg) {
             fg = readableForegroundFallback(against: bg)
         }
 
@@ -168,7 +188,7 @@ final class RustTermBridge {
         }
 
         // Blend dangerous-row tint if present
-        if let tint = rowTints[row] {
+        if let tint = rowTint {
             let alpha = tint.w
             bg = bg * (1.0 - alpha) + SIMD4(tint.x, tint.y, tint.z, 1.0) * alpha
         }
@@ -238,6 +258,39 @@ final class RustTermBridge {
         return contrastRatio(fg, bg) < minimumReadableContrast
     }
 
+    /// Same decision as `shouldRescueForeground` with a one-entry memo keyed
+    /// by the post-inverse u8 channels. Consecutive glyph cells almost always
+    /// share their color pair, so the luminance math runs once per run of
+    /// same-colored text instead of once per cell.
+    @inline(__always)
+    private func shouldRescueForegroundMemoized(
+        cell: RustCellData,
+        flags: UInt8,
+        fg: SIMD4<Float>,
+        bg: SIMD4<Float>
+    ) -> Bool {
+        guard cell.cluster_len > 0,
+              cell.continuation == 0,
+              flags & RustCellFlags.hidden == 0 else {
+            return false
+        }
+        let inverse = flags & RustCellFlags.inverse != 0
+        let fgKey = inverse
+            ? UInt64(cell.bg_r) << 16 | UInt64(cell.bg_g) << 8 | UInt64(cell.bg_b)
+            : UInt64(cell.fg_r) << 16 | UInt64(cell.fg_g) << 8 | UInt64(cell.fg_b)
+        let bgKey = inverse
+            ? UInt64(cell.fg_r) << 16 | UInt64(cell.fg_g) << 8 | UInt64(cell.fg_b)
+            : UInt64(cell.bg_r) << 16 | UInt64(cell.bg_g) << 8 | UInt64(cell.bg_b)
+        let key = fgKey << 24 | bgKey
+        if key == lastRescueKey {
+            return lastRescueDecision
+        }
+        let decision = Self.contrastRatio(fg, bg) < Self.minimumReadableContrast
+        lastRescueKey = key
+        lastRescueDecision = decision
+        return decision
+    }
+
     private func readableForegroundFallback(against bg: SIMD4<Float>) -> SIMD4<Float> {
         if Self.contrastRatio(defaultFg, bg) >= Self.minimumReadableContrast {
             return defaultFg
@@ -263,10 +316,10 @@ final class RustTermBridge {
         return 0.2126 * r + 0.7152 * g + 0.0722 * b
     }
 
+    /// LUT-backed linearization: the component always originates from a u8
+    /// channel (÷255), so indexing by the rounded 255-scaled value is exact.
     private static func linearizedSRGB(_ component: Float) -> Float {
-        if component <= 0.03928 {
-            return component / 12.92
-        }
-        return pow((component + 0.055) / 1.055, 2.4)
+        let index = Int((component * 255.0).rounded())
+        return linearizedSRGBLUT[min(max(index, 0), 255)]
     }
 }
