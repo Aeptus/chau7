@@ -18,17 +18,31 @@ struct URLSessionProviderStatusFetcher: ProviderStatusDataFetching {
     }
 
     func data(from url: URL) async throws -> Data {
+        let attribution = NetworkRequestAttribution(component: "provider_status", url: url)
+        let requestID = String(UUID().uuidString.prefix(8))
         var request = URLRequest(url: url)
         request.cachePolicy = .reloadRevalidatingCacheData
         request.timeoutInterval = 12
         request.setValue("application/json", forHTTPHeaderField: "Accept")
 
-        let (data, response) = try await session.data(for: request)
-        guard let response = response as? HTTPURLResponse,
-              (200 ..< 300).contains(response.statusCode) else {
-            throw ProviderStatusTransportError.invalidResponse
+        Log.trace("Network request started request_id=\(requestID) \(attribution.logFields)")
+        do {
+            let (data, response) = try await session.data(for: request)
+            guard let response = response as? HTTPURLResponse,
+                  (200 ..< 300).contains(response.statusCode) else {
+                let status = (response as? HTTPURLResponse)?.statusCode ?? -1
+                throw ProviderStatusTransportError.invalidResponse(status: status)
+            }
+            Log.trace(
+                "Network request completed request_id=\(requestID) \(attribution.logFields) status=\(response.statusCode)"
+            )
+            return data
+        } catch {
+            Log.warn(
+                "Network request failed request_id=\(requestID) \(attribution.logFields) error=\(String(describing: error))"
+            )
+            throw error
         }
-        return data
     }
 
     private static func makeSession() -> URLSession {
@@ -44,7 +58,7 @@ struct URLSessionProviderStatusFetcher: ProviderStatusDataFetching {
 }
 
 enum ProviderStatusTransportError: Error {
-    case invalidResponse
+    case invalidResponse(status: Int)
 }
 
 /// One official provider-status source and the adapter needed to decode it.
