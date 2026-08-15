@@ -2494,7 +2494,7 @@
   {
     "category": "SSH, Profiles & Remote",
     "feature": "Remote Push Approval Delivery",
-    "description": "Relay-backed APNs push registration and wakeups for new approvals and interactive prompts on the Chau7 Remote iPhone app",
+    "description": "Relay-backed APNs push registration and wakeups for new approvals and interactive prompts on the Chau7 Remote iPhone app, with relay encryption performed on a frame copy so the local push decoder retains the original JSON payload",
     "status": "Experimental",
     "differentiator": "Yes"
   },

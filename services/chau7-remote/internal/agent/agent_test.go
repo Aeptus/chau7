@@ -192,6 +192,53 @@ func TestRequiresEncryptedRelayFrame(t *testing.T) {
 	}
 }
 
+func TestEncryptRelayFramePreservesPlaintextInput(t *testing.T) {
+	crypto, err := newCryptoSession(
+		bytes.Repeat([]byte{0x11}, 32),
+		bytes.Repeat([]byte{0x22}, 16),
+		bytes.Repeat([]byte{0x33}, 16),
+	)
+	if err != nil {
+		t.Fatalf("new crypto session: %v", err)
+	}
+
+	payload := []byte(`{"prompts":[{"id":"prompt-1"}]}`)
+	frame := &protocol.Frame{
+		Version: 1,
+		Type:    protocol.TypeInteractivePromptList,
+		Seq:     42,
+		Payload: append([]byte(nil), payload...),
+	}
+
+	encrypted := encryptRelayFrame(frame, crypto)
+
+	if frame.Flags != 0 {
+		t.Fatalf("plaintext frame flags mutated to 0x%02x", frame.Flags)
+	}
+	if !bytes.Equal(frame.Payload, payload) {
+		t.Fatal("plaintext frame payload was mutated")
+	}
+	if encrypted == frame {
+		t.Fatal("expected a distinct encrypted frame")
+	}
+	if encrypted.Flags&protocol.FlagEncrypted == 0 {
+		t.Fatal("encrypted frame is missing encrypted flag")
+	}
+	if bytes.Equal(encrypted.Payload, payload) {
+		t.Fatal("encrypted payload unexpectedly matches plaintext")
+	}
+
+	nonce := makeNonce(crypto.sendNoncePrefix, encrypted.Seq)
+	header := encrypted.HeaderBytes(uint32(len(encrypted.Payload)))
+	decrypted, err := crypto.aead.Open(nil, nonce, encrypted.Payload, header)
+	if err != nil {
+		t.Fatalf("decrypt encrypted frame: %v", err)
+	}
+	if !bytes.Equal(decrypted, payload) {
+		t.Fatalf("decrypted payload = %q, want %q", decrypted, payload)
+	}
+}
+
 func TestUpdatePendingApprovalSyncsRelayState(t *testing.T) {
 	var got PendingStatePayload
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

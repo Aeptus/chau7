@@ -1084,14 +1084,21 @@ func (a *Agent) sendEncryptedToRelay(frame *protocol.Frame) {
 		a.sessionMu.Unlock()
 		return
 	}
-	nonce := makeNonce(crypto.sendNoncePrefix, frame.Seq)
-	payloadLen := uint32(len(frame.Payload) + crypto.aead.Overhead())
-	frame.Flags |= protocol.FlagEncrypted
-	header := frame.HeaderBytes(payloadLen)
-	ciphertext := crypto.aead.Seal(nil, nonce, frame.Payload, header)
-	frame.Payload = ciphertext
+	encryptedFrame := encryptRelayFrame(frame, crypto)
 	a.sessionMu.Unlock()
-	a.sendToRelay(frame)
+	a.sendToRelay(encryptedFrame)
+}
+
+// encryptRelayFrame returns an encrypted copy so callers can continue using
+// the original plaintext payload for local state and push processing.
+func encryptRelayFrame(frame *protocol.Frame, crypto *cryptoSession) *protocol.Frame {
+	encrypted := *frame
+	encrypted.Flags |= protocol.FlagEncrypted
+	payloadLen := uint32(len(frame.Payload) + crypto.aead.Overhead())
+	header := encrypted.HeaderBytes(payloadLen)
+	nonce := makeNonce(crypto.sendNoncePrefix, frame.Seq)
+	encrypted.Payload = crypto.aead.Seal(nil, nonce, frame.Payload, header)
+	return &encrypted
 }
 
 func makeNonce(prefix [4]byte, seq uint64) []byte {
