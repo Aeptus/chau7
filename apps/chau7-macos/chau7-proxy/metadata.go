@@ -105,22 +105,30 @@ func extractAnthropicResponse(body []byte) ResponseMetadata {
 // Reference: https://platform.openai.com/docs/api-reference/chat
 
 type openAIRequest struct {
-	Model     string `json:"model"`
-	Messages  []any  `json:"messages"`
-	MaxTokens int    `json:"max_tokens"`
+	Model           string          `json:"model"`
+	Messages        []any           `json:"messages"`
+	Input           json.RawMessage `json:"input"`
+	MaxTokens       int             `json:"max_tokens"`
+	MaxOutputTokens int             `json:"max_output_tokens"`
 }
 
 type openAIResponse struct {
-	Model   string         `json:"model"`
-	Usage   openAIUsage    `json:"usage"`
-	Choices []openAIChoice `json:"choices"`
+	Model    string          `json:"model"`
+	Usage    openAIUsage     `json:"usage"`
+	Choices  []openAIChoice  `json:"choices"`
+	Status   string          `json:"status"`
+	Response *openAIResponse `json:"response"`
 }
 
 type openAIUsage struct {
 	PromptTokens        int                      `json:"prompt_tokens"`
 	CompletionTokens    int                      `json:"completion_tokens"`
+	InputTokens         int                      `json:"input_tokens"`
+	OutputTokens        int                      `json:"output_tokens"`
 	PromptTokensDetails *openAIPromptDetails     `json:"prompt_tokens_details"`
 	CompletionDetails   *openAICompletionDetails `json:"completion_tokens_details"`
+	InputTokensDetails  *openAIPromptDetails     `json:"input_tokens_details"`
+	OutputTokensDetails *openAICompletionDetails `json:"output_tokens_details"`
 }
 
 type openAIPromptDetails struct {
@@ -140,10 +148,23 @@ func extractOpenAIRequest(body []byte) RequestMetadata {
 	if err := json.Unmarshal(body, &req); err != nil {
 		return RequestMetadata{}
 	}
+	messageCount := len(req.Messages)
+	if messageCount == 0 && len(req.Input) > 0 && string(req.Input) != "null" {
+		var inputs []any
+		if json.Unmarshal(req.Input, &inputs) == nil {
+			messageCount = len(inputs)
+		} else {
+			messageCount = 1
+		}
+	}
+	maxTokens := req.MaxTokens
+	if maxTokens == 0 {
+		maxTokens = req.MaxOutputTokens
+	}
 	return RequestMetadata{
 		Model:        req.Model,
-		MessageCount: len(req.Messages),
-		MaxTokens:    req.MaxTokens,
+		MessageCount: messageCount,
+		MaxTokens:    maxTokens,
 	}
 }
 
@@ -152,25 +173,79 @@ func extractOpenAIResponse(body []byte) ResponseMetadata {
 	if err := json.Unmarshal(body, &resp); err != nil {
 		return ResponseMetadata{}
 	}
+	return openAIResponseMetadata(resp.payload())
+}
 
+func (resp openAIResponse) payload() openAIResponse {
+	if resp.Response != nil {
+		return *resp.Response
+	}
+	return resp
+}
+
+func openAIResponseMetadata(resp openAIResponse) ResponseMetadata {
 	finishReason := ""
 	if len(resp.Choices) > 0 {
 		finishReason = resp.Choices[0].FinishReason
+	} else if resp.Status != "" {
+		finishReason = resp.Status
 	}
 
 	meta := ResponseMetadata{
 		Model:        resp.Model,
-		InputTokens:  resp.Usage.PromptTokens,
-		OutputTokens: resp.Usage.CompletionTokens,
+		InputTokens:  firstPositive(resp.Usage.InputTokens, resp.Usage.PromptTokens),
+		OutputTokens: firstPositive(resp.Usage.OutputTokens, resp.Usage.CompletionTokens),
 		FinishReason: finishReason,
 	}
-	if d := resp.Usage.PromptTokensDetails; d != nil {
+	if d := firstNonNil(resp.Usage.InputTokensDetails, resp.Usage.PromptTokensDetails); d != nil {
 		meta.CacheReadInputTokens = d.CachedTokens
 	}
-	if d := resp.Usage.CompletionDetails; d != nil {
+	if d := firstNonNil(resp.Usage.OutputTokensDetails, resp.Usage.CompletionDetails); d != nil {
 		meta.ReasoningOutputTokens = d.ReasoningTokens
 	}
 	return meta
+}
+
+func firstPositive(values ...int) int {
+	for _, value := range values {
+		if value > 0 {
+			return value
+		}
+	}
+	return 0
+}
+
+func firstNonNil[T any](values ...*T) *T {
+	for _, value := range values {
+		if value != nil {
+			return value
+		}
+	}
+	return nil
+}
+
+func mergeResponseMetadata(target *ResponseMetadata, update ResponseMetadata) {
+	if update.Model != "" {
+		target.Model = update.Model
+	}
+	if update.InputTokens > 0 {
+		target.InputTokens = update.InputTokens
+	}
+	if update.OutputTokens > 0 {
+		target.OutputTokens = update.OutputTokens
+	}
+	if update.CacheCreationInputTokens > 0 {
+		target.CacheCreationInputTokens = update.CacheCreationInputTokens
+	}
+	if update.CacheReadInputTokens > 0 {
+		target.CacheReadInputTokens = update.CacheReadInputTokens
+	}
+	if update.ReasoningOutputTokens > 0 {
+		target.ReasoningOutputTokens = update.ReasoningOutputTokens
+	}
+	if update.FinishReason != "" {
+		target.FinishReason = update.FinishReason
+	}
 }
 
 // Gemini request/response parsing
@@ -338,24 +413,7 @@ func ParseStreamingChunks(provider Provider, chunks []byte) ResponseMetadata {
 			if err := json.Unmarshal([]byte(data), &chunk); err != nil {
 				continue
 			}
-			if chunk.Model != "" {
-				result.Model = chunk.Model
-			}
-			if chunk.Usage.PromptTokens > 0 {
-				result.InputTokens = chunk.Usage.PromptTokens
-			}
-			if chunk.Usage.CompletionTokens > 0 {
-				result.OutputTokens = chunk.Usage.CompletionTokens
-			}
-			if d := chunk.Usage.PromptTokensDetails; d != nil && d.CachedTokens > 0 {
-				result.CacheReadInputTokens = d.CachedTokens
-			}
-			if d := chunk.Usage.CompletionDetails; d != nil && d.ReasoningTokens > 0 {
-				result.ReasoningOutputTokens = d.ReasoningTokens
-			}
-			if len(chunk.Choices) > 0 && chunk.Choices[0].FinishReason != "" {
-				result.FinishReason = chunk.Choices[0].FinishReason
-			}
+			mergeResponseMetadata(&result, openAIResponseMetadata(chunk.payload()))
 
 		case ProviderGemini:
 			// Gemini non-streaming only (streaming detected by path, not here).
