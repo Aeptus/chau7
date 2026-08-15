@@ -280,6 +280,40 @@ final class RemoteMenuKeyHeuristicsTests: XCTestCase {
     }
 }
 
+final class RemoteTabOrderingTests: XCTestCase {
+    func testAlphabeticalOrderIsIndependentOfActivityOrder() {
+        let tabs = [
+            tab(id: 3, title: "Zulu"),
+            tab(id: 1, title: "Alpha 10"),
+            tab(id: 2, title: "Alpha 2")
+        ]
+
+        XCTAssertEqual(
+            RemoteTabOrdering.alphabetically(tabs).map(\.tabID),
+            [2, 1, 3]
+        )
+        XCTAssertEqual(
+            RemoteTabOrdering.alphabetically(Array(tabs.reversed())).map(\.tabID),
+            [2, 1, 3]
+        )
+    }
+
+    func testDuplicateTitlesUseStableTabIDTieBreaker() {
+        let tabs = [tab(id: 9, title: "Build"), tab(id: 4, title: " build ")]
+
+        XCTAssertEqual(RemoteTabOrdering.alphabetically(tabs).map(\.tabID), [4, 9])
+    }
+
+    private func tab(id: UInt32, title: String) -> RemoteTab {
+        RemoteTab(
+            tabID: id,
+            title: title,
+            isActive: false,
+            isMCPControlled: false
+        )
+    }
+}
+
 @MainActor
 final class RemoteTransportTests: XCTestCase {
 

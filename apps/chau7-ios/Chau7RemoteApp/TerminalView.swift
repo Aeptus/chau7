@@ -277,16 +277,16 @@ struct TerminalView: View {
         let tabs: [RemoteTab]
     }
 
-    /// Tabs grouped by repo (projectName), keeping the Mac's tab order within
-    /// each group. Tabs without a repo collect under "Other", always last.
+    /// Tabs grouped by repo (projectName) and alphabetized within each group.
+    /// Tabs without a repo collect under "Other", always last.
     ///
     /// Groups are ordered by name rather than by first appearance in
     /// `client.tabs`. A SwiftUI `Menu` re-runs its content closure whenever the
     /// state it reads changes — including while presented — and activity
-    /// re-sends reorder `client.tabs`, so first-appearance ordering let a
-    /// single tab moving reshuffle every group under the user's finger. Sorting
-    /// by name makes group order a function of the repo set alone, so it is
-    /// stable across activity churn without needing to freeze the menu.
+    /// re-sends reorder `client.tabs`. Sorting both levels makes the rendered
+    /// identity sequence independent of that activity churn, so an open menu
+    /// keeps its scroll position while still reflecting real additions and
+    /// removals.
     private var repoTabGroups: [RepoTabGroup] {
         let fallback = "Other"
         var tabsByRepo: [String: [RemoteTab]] = [:]
@@ -300,7 +300,13 @@ struct TerminalView: View {
             if rhs == fallback { return true }
             return lhs.localizedCaseInsensitiveCompare(rhs) == .orderedAscending
         }
-        return order.map { RepoTabGroup(id: $0, title: $0, tabs: tabsByRepo[$0] ?? []) }
+        return order.map {
+            RepoTabGroup(
+                id: $0,
+                title: $0,
+                tabs: RemoteTabOrdering.alphabetically(tabsByRepo[$0] ?? [])
+            )
+        }
     }
 
     private func tabMenuButtons(for tabs: [RemoteTab]) -> some View {

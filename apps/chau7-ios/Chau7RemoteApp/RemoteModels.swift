@@ -25,6 +25,20 @@ typealias TabListPayload = RemoteTabListPayload
 typealias RemoteTab = RemoteTabDescriptor
 typealias TabSwitchPayload = RemoteTabSwitchPayload
 
+enum RemoteTabOrdering {
+    static func alphabetically(_ tabs: [RemoteTab]) -> [RemoteTab] {
+        tabs.sorted { lhs, rhs in
+            let lhsTitle = lhs.title.trimmingCharacters(in: .whitespacesAndNewlines)
+            let rhsTitle = rhs.title.trimmingCharacters(in: .whitespacesAndNewlines)
+            let comparison = lhsTitle.localizedStandardCompare(rhsTitle)
+            if comparison != .orderedSame {
+                return comparison == .orderedAscending
+            }
+            return lhs.tabID < rhs.tabID
+        }
+    }
+}
+
 // MARK: - Pairing (iOS-local)
 
 struct TrustedPairingIdentity: Codable, Equatable {

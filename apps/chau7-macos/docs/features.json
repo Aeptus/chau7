@@ -2585,7 +2585,7 @@
   {
     "category": "SSH, Profiles & Remote",
     "feature": "Repo-Grouped iPhone Tab Menu",
-    "description": "The Chau7 Remote tab dropdown groups tabs under their repo name as section titles, preserving the Mac's tab order across and within groups, with repo-less tabs under Other at the end",
+    "description": "The Chau7 Remote tab dropdown groups tabs under their repo name as section titles and alphabetizes each section with a stable tab-ID tie-breaker, preventing activity updates from reshuffling an open menu or resetting its scroll position; repo-less tabs remain under Other at the end",
     "status": "Experimental",
     "differentiator": "No"
   },
