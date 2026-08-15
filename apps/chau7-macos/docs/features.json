@@ -37,7 +37,7 @@
   {
     "category": "Scripting & Debugging",
     "feature": "Launch-Preserving App Log Rotation",
-    "description": "Chau7.log rotates its complete previous generation to Chau7.log.1 and retains a line-aligned recent tail in the active file, preserving launch and recovery evidence while keeping every retained record parseable",
+    "description": "Chau7.log retains five bounded archive generations plus a line-aligned active tail, omits high-frequency read-side terminal traces in favor of state changes, and records startup activity byte counts without terminal text, preserving deeper parseable audit history without unbounded storage or transcript leakage",
     "status": "Shipped",
     "differentiator": "Yes"
   },

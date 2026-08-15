@@ -866,9 +866,7 @@ final class RustTerminalFFI: TerminalBackend {
     }
 
     var scrollPosition: Double {
-        let pos = Self.functions?.scrollPosition(terminal) ?? 0.0
-        Log.trace("RustTerminalFFI[\(instanceId)]: scrollPosition = \(pos)")
-        return pos
+        Self.functions?.scrollPosition(terminal) ?? 0.0
     }
 
     func scrollTo(position: Double) {
@@ -1258,7 +1256,6 @@ final class RustTerminalFFI: TerminalBackend {
             return false
         }
         let enabled = isApplicationCursorModeFn(terminal)
-        Log.trace("RustTerminalFFI[\(instanceId)]: isApplicationCursorMode = \(enabled)")
         return enabled
     }
 
@@ -2032,7 +2029,7 @@ final class RustTerminalView: NSView {
     var eventDrain: TerminalEventDrain?
 
     /// Track startup bytes for debugging
-    var startupBytesLogged = 0
+    var hasLoggedStartupActivity = false
     var hasObservedInitialPTYActivity = false
     var recentMissingCmdClickPaths: [String: Date] = [:]
     let missingCmdClickWarningCooldown: TimeInterval = 5
@@ -2478,7 +2475,7 @@ final class RustTerminalView: NSView {
         }
         isTerminalStarted = true
         didEmitProcessTermination = false
-        startupBytesLogged = 0
+        hasLoggedStartupActivity = false
         hasObservedInitialPTYActivity = false
         isAwaitingInitialPTYOutput = true
 
@@ -3571,7 +3568,6 @@ final class RustTerminalView: NSView {
     func applyColorScheme(_ scheme: TerminalColorScheme) {
         let signature = scheme.signature
         guard appliedColorSchemeSignature != signature else {
-            Log.trace("RustTerminalView[\(viewId)]: applyColorScheme - Scheme already applied (signature=\(signature))")
             return
         }
         Log.trace("RustTerminalView[\(viewId)]: applyColorScheme - Applying new scheme (signature=\(signature))")

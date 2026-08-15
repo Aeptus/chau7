@@ -711,7 +711,7 @@ Chau7's rendering pipeline is purpose-built for latency-sensitive terminal work:
 
 - **Privacy-safe network attribution** — provider-status requests log a short correlation ID, component name, normalized host, and outcome while deliberately excluding URL paths, queries, fragments, credentials, and tokens. Redacted TLS diagnostics can therefore be correlated with an app-owned subsystem without expanding diagnostic data exposure.
 - **Independent component identity** — the app, bundled proxy, and Cloudflare relay expose distinct build/deployment identities. `chau7_runtime_info` includes the app plus identities actually observed from helper health checks, so rebuild verification cannot accidentally validate the wrong component.
-- **Launch-preserving log rotation** — `Chau7.log` rotates the complete previous file to `Chau7.log.1` and retains only complete recent lines in the active file. This keeps launch/recovery evidence available after a noisy runtime period and guarantees line-oriented diagnostic readers never start on a truncated record.
+- **Launch-preserving log rotation** — `Chau7.log` retains five bounded archive generations plus a line-aligned active tail. High-frequency read-side terminal traces are omitted in favor of state-change logs, and startup activity records byte counts rather than terminal text, preserving deeper parseable audit history without unbounded storage or transcript leakage.
 
 ### Scripting API
 

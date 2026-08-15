@@ -29,6 +29,7 @@ enum Log {
     private static var isConfigured = false
     private static var filePathValue = ""
     private static var writeCount = 0
+    private static let retainedArchiveCount = 5
     private static let traceThrottleLock = NSLock()
     private static var traceThrottleLastEmit: [String: CFAbsoluteTime] = [:]
     /// Bounds for `traceThrottleLastEmit`. Keys are per-terminal-instance
@@ -250,10 +251,20 @@ enum Log {
         // Keep the complete pre-rotation file for launch/recovery diagnostics.
         // The active log starts with a line-aligned recent tail so readers can
         // parse every record and one warning burst cannot erase all history.
-        let archiveURL = url.appendingPathExtension("1")
+        let archiveURLs = LogRetentionPolicy.archiveURLs(
+            for: url,
+            count: retainedArchiveCount
+        )
+        guard let archiveURL = archiveURLs.first else { return }
         do {
-            if FileManager.default.fileExists(atPath: archiveURL.path) {
-                try FileManager.default.removeItem(at: archiveURL)
+            for index in stride(from: archiveURLs.count - 1, through: 1, by: -1) {
+                let source = archiveURLs[index - 1]
+                let destination = archiveURLs[index]
+                guard FileManager.default.fileExists(atPath: source.path) else { continue }
+                if FileManager.default.fileExists(atPath: destination.path) {
+                    try FileManager.default.removeItem(at: destination)
+                }
+                try FileManager.default.moveItem(at: source, to: destination)
             }
             try FileManager.default.moveItem(at: url, to: archiveURL)
             guard FileManager.default.createFile(atPath: url.path, contents: tailData) else {

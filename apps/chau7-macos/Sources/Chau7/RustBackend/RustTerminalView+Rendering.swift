@@ -316,19 +316,9 @@ extension RustTerminalView {
                 updatePollingMode(reason: "firstPTYOutput")
             }
 
-            // Keep raw PTY startup previews out of the main log unless trace is enabled.
-            if startupBytesLogged < 2048 {
-                let bytesToLog = min(outputData.count, 2048 - startupBytesLogged)
-                let preview = outputData.prefix(bytesToLog)
-                let printable = preview.map { b -> Character in
-                    if b >= 32, b < 127 { return Character(UnicodeScalar(b)) }
-                    else if b == 10 { return "↵" }
-                    else if b == 13 { return "←" }
-                    else if b == 27 { return "⎋" }
-                    else { return "·" }
-                }
-                Log.trace("RustTerminalView[\(viewId)]: PTY startup output (\(outputData.count) bytes): \(String(printable))")
-                startupBytesLogged += bytesToLog
+            if !hasLoggedStartupActivity {
+                hasLoggedStartupActivity = true
+                Log.trace("RustTerminalView[\(viewId)]: PTY startup activity observed (firstChunkBytes=\(outputData.count))")
             }
 
             let extraction = extractInlineImages(from: outputData)

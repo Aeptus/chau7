@@ -1,6 +1,11 @@
 import Foundation
 
 public enum LogRetentionPolicy {
+    public static func archiveURLs(for logURL: URL, count: Int) -> [URL] {
+        guard count > 0 else { return [] }
+        return (1 ... count).map { logURL.appendingPathExtension(String($0)) }
+    }
+
     /// Returns at most `maximumBytes`, dropping a leading partial line when
     /// the suffix starts in the middle of a record.
     public static func lineAlignedTail(of data: Data, maximumBytes: Int) -> Data {

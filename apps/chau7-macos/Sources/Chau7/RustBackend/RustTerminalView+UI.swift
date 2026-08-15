@@ -78,9 +78,7 @@ extension RustTerminalView {
 
     /// Current scroll position (0.0 = bottom, 1.0 = top of history)
     var scrollPosition: Double {
-        let pos = rustTerminal?.scrollPosition ?? 0.0
-        Log.trace("RustTerminalView[\(viewId)]: scrollPosition = \(pos)")
-        return pos
+        rustTerminal?.scrollPosition ?? 0.0
     }
 
     /// Scroll to position
