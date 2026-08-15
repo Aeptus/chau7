@@ -708,6 +708,8 @@ Chau7's rendering pipeline is purpose-built for latency-sensitive terminal work:
 
 ## Scripting & Debugging
 
+- **Test-run log isolation** — XCTest processes route app logs and terminal captures to a process-scoped temporary Library/Logs tree by default, keeping expected fixture warnings out of the user's operational audit history while preserving explicit test-home and log-file overrides.
+
 - **Complete restore phase attribution** — per-tab restore telemetry names setup, lookup, command-block, focus, metadata, resume, repository-grouping, and startup-finalization costs, including completed phases on early returns, so launch stalls can be assigned before changing thread ownership.
 
 - **Privacy-safe network attribution** — provider-status requests log a short correlation ID, component name, normalized host, and outcome while deliberately excluding URL paths, queries, fragments, credentials, and tokens. Redacted TLS diagnostics can therefore be correlated with an app-owned subsystem without expanding diagnostic data exposure.

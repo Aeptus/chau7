@@ -26,6 +26,28 @@ final class RuntimeIsolationTests: XCTestCase {
         XCTAssertEqual(url.path, "/tmp/chau7-isolated-home/.chau7")
     }
 
+    func testLogsDirectoryUsesExplicitHomeRootEvenUnderXCTest() {
+        let url = RuntimeIsolation.logsDirectory(environment: [
+            "CHAU7_HOME_ROOT": "/tmp/chau7-isolated-home",
+            "XCTestBundlePath": "/tmp/Chau7Tests.xctest"
+        ])
+
+        XCTAssertEqual(url.path, "/tmp/chau7-isolated-home/Library/Logs")
+    }
+
+    func testLogsDirectoryDefaultsToProcessTemporaryDirectoryUnderXCTest() {
+        let url = RuntimeIsolation.logsDirectory(environment: [
+            "XCTestBundlePath": "/tmp/Chau7Tests.xctest"
+        ])
+
+        XCTAssertEqual(url.lastPathComponent, "Logs")
+        XCTAssertEqual(url.deletingLastPathComponent().lastPathComponent, "Library")
+        XCTAssertTrue(
+            url.path.contains("Chau7Tests-\(ProcessInfo.processInfo.processIdentifier)")
+        )
+        XCTAssertFalse(url.path.hasPrefix(NSHomeDirectory()))
+    }
+
     func testExpandTildeUsesOverrideRoot() {
         let path = RuntimeIsolation.expandTilde(
             in: "~/project",

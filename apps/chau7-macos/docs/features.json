@@ -1,5 +1,12 @@
 [
   {
+    "category": "Developer Experience",
+    "feature": "Test-Run Log Isolation",
+    "description": "XCTest processes default app logs and terminal captures to a process-scoped temporary Library/Logs tree so fixture output cannot contaminate operational audits, while explicit test-home and log-file overrides remain authoritative",
+    "status": "Shipped",
+    "differentiator": "No"
+  },
+  {
     "category": "API Analytics",
     "feature": "OpenAI Responses Usage Normalization",
     "description": "Codex request and response accounting recognizes Responses API input, max-output, usage, cache, reasoning, and nested SSE fields through the same normalized metadata path as Chat Completions so valid usage does not fall back to body-size estimates",
