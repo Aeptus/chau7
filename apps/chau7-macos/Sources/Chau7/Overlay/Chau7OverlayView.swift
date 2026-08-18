@@ -189,10 +189,26 @@ final class TabBarToolbarDelegate: NSObject, NSToolbarDelegate {
                 )
         }
 
+        // NSToolbarItem allocates space for a custom view from minSize/maxSize.
+        // Apple deprecated both in macOS 12 without shipping a replacement that
+        // works for custom views: Auto Layout constraints govern the hosting
+        // view's *internal* layout, not the item viewer's own allocation. They
+        // are set through KVC to keep the deprecation warning off the build
+        // while still calling the only API AppKit honours here.
+        //
+        // Relying on constraints alone (as this did between 691574be and now)
+        // survives the initial toolbar built in createOverlayWindow, then
+        // collapses to 0x0 on every recreateToolbar against a live window —
+        // the item viewer and the hosting view inside it both get an empty
+        // frame while intrinsicContentSize still reports the correct size.
+        // The user-visible symptom is a tab bar that vanishes and never comes
+        // back, because the watchdog's only remedy is the recreate that caused
+        // it. Set these before the view guard so the item is sized even when
+        // the view is missing or of an unexpected type.
+        item.setValue(NSValue(size: NSSize(width: minWidth, height: height)), forKey: "minSize")
+        item.setValue(NSValue(size: NSSize(width: maxWidth, height: height)), forKey: "maxSize")
+
         guard let view = item.view as? TabBarHostingView else { return }
-        // Modern NSToolbar sizing follows the custom view's intrinsic size and
-        // constraints. Writing deprecated minSize/maxSize through KVC only hid
-        // the compiler warning; AppKit still emitted clipping faults at runtime.
         view.desiredSize = NSSize(width: maxWidth, height: height)
 
         if view.translatesAutoresizingMaskIntoConstraints {

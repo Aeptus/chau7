@@ -497,7 +497,7 @@ Chau7's rendering pipeline is purpose-built for latency-sensitive terminal work:
 
 ## Tabs, Panes & Windows
 
-- **Render-pass-safe tab-bar geometry** — SwiftUI preference updates are coalesced onto the next main-loop turn before changing hit-test or recovery state, and the AppKit toolbar host uses intrinsic sizing plus constraints instead of deprecated item min/max sizing. Multi-window restoration therefore avoids undefined render-pass mutation and runtime clipping diagnostics.
+- **Render-pass-safe tab-bar geometry** — SwiftUI preference updates are coalesced onto the next main-loop turn before changing hit-test or recovery state, so multi-window restoration avoids undefined render-pass mutation. The toolbar item's own allocation still comes from `minSize`/`maxSize`: they are deprecated with no replacement that works for custom views, and constraints govern only the hosting view's internal layout, so dropping them collapses the item to 0x0 on every toolbar recreation even though `intrinsicContentSize` stays correct.
 
 ### Tabs
 

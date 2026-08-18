@@ -737,7 +737,7 @@
   {
     "category": "Terminal Core",
     "feature": "Fixed-Delay Startup Reveal",
-    "description": "Reveal restored windows after a short splash delay, recreate the native toolbar host on hidden-to-visible presentation, coalesce SwiftUI geometry updates outside the render pass, and size the AppKit host through intrinsic size and constraints so restored tab bars composite without undefined mutations or deprecated clipping behavior",
+    "description": "Reveal restored windows after a short splash delay, recreate the native toolbar host on hidden-to-visible presentation, coalesce SwiftUI geometry updates outside the render pass, and size the toolbar item through minSize/maxSize (the only allocation API AppKit honours for custom views) so restored tab bars composite without undefined mutations and survive toolbar recreation",
     "status": "Shipped",
     "differentiator": "Yes"
   },
