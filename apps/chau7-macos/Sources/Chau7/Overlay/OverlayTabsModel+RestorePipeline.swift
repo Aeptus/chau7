@@ -861,17 +861,11 @@ extension OverlayTabsModel {
                 )
             }
 
-            // Fallback path: pane state has no usable command. Two cases:
-            //   * provider set, cmd nil — autosave landed during the
-            //     synthetic-identity window (buildAIResumeCommand correctly
-            //     refused). Re-resolve a real session ID from the named
-            //     provider's transcripts.
-            //   * provider nil, cmd nil — autosave fired before ANY identity
-            //     corroboration (this is the wider hole behind the "no
-            //     resume command candidate" log line at startup). Scan BOTH
-            //     providers' transcripts for the saved directory and pick
-            //     whichever has a transcript closer to the saved activity
-            //     timestamp.
+            // Fallback path: pane state has no usable command but still has
+            // provider evidence. Autosave may have landed before a real session
+            // ID was attached; re-resolve it from that provider's transcripts.
+            // An all-nil identity remains intentionally ineligible because cwd
+            // alone cannot safely distinguish multiple tabs sharing a repo.
             if let resolved = Self.reResolveResumeCommand(
                 paneState: paneState,
                 claimedSessionIds: claimedSessionIds
@@ -990,11 +984,9 @@ extension OverlayTabsModel {
         }
         guard !directory.isEmpty else { return nil }
 
-        // Which providers to try. If autosave captured a provider, try only
-        // that one (the user's tab was definitively that tool). If autosave
-        // captured nothing (the entire identity trio was nil — fired during
-        // the window before any corroboration), try BOTH — pick whichever
-        // has a transcript closer to the saved activity time.
+        // If autosave captured a provider, try only that one: the pane was
+        // definitively that tool. A legacy session-only record can still try
+        // both providers and is constrained by the persisted session ID.
         let candidateProviders: [String]
         if let providerStr = paneState.aiProvider,
            let normalized = AIResumeParser.normalizeProviderName(providerStr) {

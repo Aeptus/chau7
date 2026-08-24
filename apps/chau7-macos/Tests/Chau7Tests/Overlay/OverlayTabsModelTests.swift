@@ -122,6 +122,44 @@ final class OverlayTabsModelTests: XCTestCase {
         try historyData.write(to: historyURL)
     }
 
+    private func createCodexRollout(
+        home: URL,
+        directory: String,
+        sessionID: String,
+        modifiedAt: Date
+    ) throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        let components = calendar.dateComponents([.year, .month, .day], from: modifiedAt)
+        let year = try XCTUnwrap(components.year)
+        let month = try XCTUnwrap(components.month)
+        let day = try XCTUnwrap(components.day)
+        let sessionsDirectory = home
+            .appendingPathComponent(".codex/sessions", isDirectory: true)
+            .appendingPathComponent(String(format: "%04d", year), isDirectory: true)
+            .appendingPathComponent(String(format: "%02d", month), isDirectory: true)
+            .appendingPathComponent(String(format: "%02d", day), isDirectory: true)
+        try FileManager.default.createDirectory(at: sessionsDirectory, withIntermediateDirectories: true)
+
+        let rolloutURL = sessionsDirectory.appendingPathComponent(
+            String(format: "rollout-%04d-%02d-%02dT09-22-42-\(sessionID).jsonl", year, month, day)
+        )
+        let payload: [String: Any] = [
+            "type": "session_meta",
+            "payload": [
+                "id": sessionID,
+                "cwd": URL(fileURLWithPath: directory).standardized.path
+            ]
+        ]
+        var data = try JSONSerialization.data(withJSONObject: payload)
+        data.append(Data("\n".utf8))
+        try data.write(to: rolloutURL)
+        try FileManager.default.setAttributes(
+            [.modificationDate: modifiedAt],
+            ofItemAtPath: rolloutURL.path
+        )
+    }
+
     private func makeSavedTabState(title: String, directory: String) -> SavedTabState {
         SavedTabState(
             customTitle: title,
@@ -2505,6 +2543,42 @@ final class OverlayTabsModelTests: XCTestCase {
 
             model.persistedRestoreFallbackStatesByTabID[tab.id] = exported
         }
+    }
+
+    func testExportTabStatesRecoversCodexSessionFromRolloutWhenLiveIdentityIsMissing() throws {
+        let home = try temporaryHomeDirectory()
+        setenv("CHAU7_HOME_ROOT", home.path, 1)
+        defer {
+            unsetenv("CHAU7_HOME_ROOT")
+            try? FileManager.default.removeItem(at: home)
+        }
+
+        let tab = try XCTUnwrap(model.tabs.first)
+        let session = try XCTUnwrap(tab.session)
+        let directory = makeTemporaryRepoRoot().path
+        let sessionID = UUID().uuidString.lowercased()
+        let lastActivityAt = Date()
+        session.currentDirectory = directory
+        session.restoreAIMetadata(
+            provider: "codex",
+            sessionId: nil,
+            lastOutputAt: lastActivityAt
+        )
+        try createCodexRollout(
+            home: home,
+            directory: directory,
+            sessionID: sessionID,
+            modifiedAt: lastActivityAt
+        )
+
+        XCTAssertNil(session.effectiveAISessionId, "The live observer has not attached the rollout yet")
+
+        let exported = try XCTUnwrap(model.exportTabStates().first)
+        let pane = try XCTUnwrap(exported.paneStates?.first)
+
+        XCTAssertEqual(pane.aiProvider, "codex")
+        XCTAssertEqual(pane.aiSessionId, sessionID)
+        XCTAssertEqual(pane.aiResumeCommand, "codex resume \(sessionID)")
     }
 
     func testSanitizeRestoredAIResumeOwnershipKeepsClaudeUUIDWithTranscript() throws {

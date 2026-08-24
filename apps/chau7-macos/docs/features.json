@@ -1,5 +1,12 @@
 [
   {
+    "category": "AI Integration",
+    "feature": "Crash-Safe Codex Resume Recovery",
+    "description": "Autosave resolves a known Codex pane's missing session ID from its existing rollout before publishing restore state, while restart preserves genuine provider-only evidence for provider-scoped recovery and still rejects duplicate foreign-project and all-nil identities",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
     "category": "Developer Experience",
     "feature": "Test-Run Log Isolation",
     "description": "XCTest processes default app logs and terminal captures to a process-scoped temporary Library/Logs tree so fixture output cannot contaminate operational audits, while explicit test-home and log-file overrides remain authoritative",

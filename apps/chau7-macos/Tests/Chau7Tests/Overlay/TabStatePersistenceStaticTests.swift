@@ -100,6 +100,46 @@ final class TabStatePersistenceStaticTests: XCTestCase {
         XCTAssertNil(sanitized[1].aiSessionId)
     }
 
+    func testSanitizePreservesProviderOnlyEvidenceForSafeRestoreResolution() {
+        let paneID = UUID().uuidString
+        let state = SavedTabState(
+            tabID: UUID().uuidString,
+            selectedTabID: nil,
+            customTitle: "Codex",
+            color: TabColor.blue.rawValue,
+            directory: "/tmp/toolhub-evolved",
+            selectedIndex: 0,
+            tokenOptOverride: nil,
+            scrollbackContent: nil,
+            aiResumeCommand: nil,
+            aiProvider: "codex",
+            aiSessionId: nil,
+            aiSessionIdSource: nil,
+            splitLayout: nil,
+            focusedPaneID: paneID,
+            paneStates: [
+                SavedTerminalPaneState(
+                    paneID: paneID,
+                    directory: "/tmp/toolhub-evolved",
+                    scrollbackContent: "Codex output",
+                    aiResumeCommand: nil,
+                    aiProvider: "codex",
+                    aiSessionId: nil,
+                    aiSessionIdSource: nil
+                )
+            ]
+        )
+
+        let sanitized = OverlayTabsModel.sanitizeRestoredAIResumeOwnership(states: [state])
+
+        XCTAssertEqual(sanitized.first?.aiProvider, "codex")
+        XCTAssertNil(sanitized.first?.aiSessionId)
+        XCTAssertNil(sanitized.first?.aiResumeCommand)
+        XCTAssertEqual(sanitized.first?.paneStates?.first?.aiProvider, "codex")
+        XCTAssertNil(sanitized.first?.paneStates?.first?.aiSessionId)
+        XCTAssertNil(sanitized.first?.paneStates?.first?.aiResumeCommand)
+    }
+
     func testSanitizeDropsClaudeSessionWithoutTranscript() throws {
         let home = try temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: home) }

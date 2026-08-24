@@ -1486,10 +1486,27 @@ final class OverlayTabsModel {
                 directory: dir,
                 fallbackRoot: tab.repoGroupID
             )
-            let persistedIdentity = persistedAISessionIdentity(
+            let scrollback = Self.captureScrollback(from: session, maxLines: maxLines)
+            var persistedIdentity = persistedAISessionIdentity(
                 from: session,
                 claimedSessions: claimedSessions
             )
+            if persistedIdentity.provider == "codex", persistedIdentity.sessionId == nil {
+                let claimedCodexSessionIDs = Set(claimedSessions.compactMap { claim in
+                    claim.provider == "codex" ? claim.sessionId : nil
+                })
+                _ = resolveResumeMetadata(
+                    for: session,
+                    directory: dir,
+                    outputHint: scrollback,
+                    providerHint: persistedIdentity.provider,
+                    claimedSessionIds: claimedCodexSessionIDs
+                )
+                persistedIdentity = persistedAISessionIdentity(
+                    from: session,
+                    claimedSessions: claimedSessions
+                )
+            }
             let fallbackPaneState = fallbackPaneStatesByID[paneID]
             let fallbackMetadata = fallbackPaneState.flatMap {
                 Self.resolveAIResumeMetadataFromSavedState(
@@ -1530,7 +1547,6 @@ final class OverlayTabsModel {
                 )
             }
 
-            let scrollback = Self.captureScrollback(from: session, maxLines: maxLines)
             paneStates.append(SavedTerminalPaneState(
                 paneID: paneID.uuidString,
                 directory: dir,

@@ -90,12 +90,13 @@ extension OverlayTabsModel {
         for session: TerminalSessionModel,
         directory: String,
         outputHint: String?,
+        providerHint: String? = nil,
         claimedSessionIds: Set<String> = [],
         applySessionMutations: Bool = true
     ) -> (provider: String, sessionId: String)? {
         let referenceDate = Self.normalizedResumeReferenceDate(session.lastOutputDate)
         let detectedApp = Self.detectAIAppName(fromOutput: outputHint)
-        let resumeAppName = session.aiDisplayAppName ?? detectedApp
+        let resumeAppName = session.aiDisplayAppName ?? detectedApp ?? providerHint
         let explicitProvider = Self.explicitResumeProvider(for: session)
         let explicitSessionId = Self.explicitResumeSessionId(for: session)
         let hasClaimedExplicitCodexSession = explicitProvider == "codex"
@@ -659,14 +660,15 @@ extension OverlayTabsModel {
 
         return states.map { state in
             let sanitizedPaneStates = state.paneStates?.map { paneState -> SavedTerminalPaneState in
+                let paneCandidates = restoredResumeCandidates(
+                    aiResumeCommand: paneState.aiResumeCommand,
+                    agentLaunchCommand: paneState.agentLaunchCommand,
+                    aiProvider: paneState.aiProvider,
+                    aiSessionId: paneState.aiSessionId,
+                    aiSessionIdSource: paneState.aiSessionIdSource
+                )
                 let sanitizedPane = sanitizeRestoredResumeCandidates(
-                    restoredResumeCandidates(
-                        aiResumeCommand: paneState.aiResumeCommand,
-                        agentLaunchCommand: paneState.agentLaunchCommand,
-                        aiProvider: paneState.aiProvider,
-                        aiSessionId: paneState.aiSessionId,
-                        aiSessionIdSource: paneState.aiSessionIdSource
-                    ),
+                    paneCandidates,
                     directory: paneState.directory,
                     referenceDate: [
                         paneState.lastInputAt,
@@ -678,6 +680,19 @@ extension OverlayTabsModel {
                     fileManager: fileManager,
                     environment: environment
                 )
+                // A normalized provider with no session/command is still useful:
+                // it lets the restore path scan exactly one provider's transcripts.
+                // Preserve it only when there was no complete candidate. If a full
+                // identity was rejected as dead or already claimed, keeping its
+                // provider would allow the rejected identity to be rediscovered.
+                let hadNoPersistedSessionIdentity = paneState.aiSessionId?
+                    .trimmingCharacters(in: .whitespacesAndNewlines).isEmpty != false
+                    && paneState.aiResumeCommand?
+                    .trimmingCharacters(in: .whitespacesAndNewlines).isEmpty != false
+                let providerOnlyFallback = paneCandidates.isEmpty && hadNoPersistedSessionIdentity
+                    ? normalizedAIProvider(from: paneState.aiProvider)
+                    : nil
+                let restoredProvider = sanitizedPane.provider ?? providerOnlyFallback
                 if let sessionId = sanitizedPane.sessionId, let provider = sanitizedPane.provider {
                     claimedSessions.insert(
                         AIResumeOwnership.ClaimedSession(provider: provider, sessionId: sessionId)
@@ -690,7 +705,7 @@ extension OverlayTabsModel {
                     scrollbackContent: paneState.scrollbackContent,
                     aiResumeCommand: sanitizedPane.command,
                     aiResumeDirectory: sanitizedPane.resumeDirectory,
-                    aiProvider: sanitizedPane.provider,
+                    aiProvider: restoredProvider,
                     aiSessionId: sanitizedPane.sessionId,
                     aiSessionIdSource: sanitizedPane.sessionIdSource,
                     lastOutputAt: paneState.lastOutputAt,
@@ -705,14 +720,15 @@ extension OverlayTabsModel {
                 )
             }
 
+            let topLevelCandidates = restoredResumeCandidates(
+                aiResumeCommand: state.aiResumeCommand,
+                agentLaunchCommand: state.agentLaunchCommand,
+                aiProvider: state.aiProvider,
+                aiSessionId: state.aiSessionId,
+                aiSessionIdSource: state.aiSessionIdSource
+            )
             let sanitizedTopLevel = sanitizeRestoredResumeCandidates(
-                restoredResumeCandidates(
-                    aiResumeCommand: state.aiResumeCommand,
-                    agentLaunchCommand: state.agentLaunchCommand,
-                    aiProvider: state.aiProvider,
-                    aiSessionId: state.aiSessionId,
-                    aiSessionIdSource: state.aiSessionIdSource
-                ),
+                topLevelCandidates,
                 directory: state.directory,
                 referenceDate: [
                     state.lastInputAt,
@@ -723,6 +739,15 @@ extension OverlayTabsModel {
                 fileManager: fileManager,
                 environment: environment
             )
+            let hadNoPersistedTopLevelSessionIdentity = state.aiSessionId?
+                .trimmingCharacters(in: .whitespacesAndNewlines).isEmpty != false
+                && state.aiResumeCommand?
+                .trimmingCharacters(in: .whitespacesAndNewlines).isEmpty != false
+            let topLevelProviderOnlyFallback = topLevelCandidates.isEmpty
+                && hadNoPersistedTopLevelSessionIdentity
+                ? normalizedAIProvider(from: state.aiProvider)
+                : nil
+            let restoredTopLevelProvider = sanitizedTopLevel.provider ?? topLevelProviderOnlyFallback
             if let sessionId = sanitizedTopLevel.sessionId, let provider = sanitizedTopLevel.provider {
                 claimedSessions.insert(
                     AIResumeOwnership.ClaimedSession(provider: provider, sessionId: sessionId)
@@ -739,7 +764,7 @@ extension OverlayTabsModel {
                 tokenOptOverride: state.tokenOptOverride,
                 scrollbackContent: state.scrollbackContent,
                 aiResumeCommand: sanitizedTopLevel.command,
-                aiProvider: sanitizedTopLevel.provider,
+                aiProvider: restoredTopLevelProvider,
                 aiSessionId: sanitizedTopLevel.sessionId,
                 aiSessionIdSource: sanitizedTopLevel.sessionIdSource,
                 splitLayout: state.splitLayout,
