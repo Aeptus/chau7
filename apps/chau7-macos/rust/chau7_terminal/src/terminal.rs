@@ -3427,13 +3427,24 @@ mod tests {
         let term = Chau7Terminal::new_with_env(5, 4, "", &[]).expect("Should create terminal");
         term.inject_output(b"docs/readme.md");
 
-        let (text, start_row, clicked_offset) = term
-            .logical_line_text(1, 2)
-            .expect("Expected wrapped logical line");
+        let cases = [
+            (0, 2, 2),
+            (1, 2, 7),
+            (2, 2, 12),
+            // Clicking terminal padding after the final wrapped fragment clamps
+            // to the end of the logical line instead of jumping to offset zero.
+            (2, 99, 14),
+        ];
 
-        assert_eq!(text, "docs/readme.md");
-        assert_eq!(start_row, 0);
-        assert_eq!(clicked_offset, 7);
+        for (row, column, expected_offset) in cases {
+            let (text, start_row, clicked_offset) = term
+                .logical_line_text(row, column)
+                .expect("Expected wrapped logical line");
+
+            assert_eq!(text, "docs/readme.md");
+            assert_eq!(start_row, 0);
+            assert_eq!(clicked_offset, expected_offset, "row={row} column={column}");
+        }
     }
 
     #[test]

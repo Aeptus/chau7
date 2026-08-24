@@ -382,7 +382,7 @@ Search & Find,Visual Match Highlighting,All matches highlighted across terminal 
 Command Safety,Dangerous Command Guard,"Intercepts rm -rf, dd, mkfs, and other destructive commands — confirms before execution",Shipped,Yes
 Command Safety,Custom Danger Patterns,Add your own regex patterns to the danger guard,Shipped,No
 Command Safety,Visual Danger Highlighting,Dangerous commands visually highlighted in output,Shipped,No
-Command Safety,Path Click Handler,"Cmd+click file paths and URLs — configurable action (browser, editor, Finder) with line:column support",Shipped,No
+Command Safety,Path Click Handler,"Cmd+click opens exact file paths immediately, searches missing bare filenames asynchronously within the enclosing repository only when the match is unique, refuses ambiguous results with visible feedback, and trims surplus trailing closing parentheses from URLs while preserving balanced URL parentheses; line:column and configurable browser/editor/Finder actions remain supported",Shipped,No
 Keyboard & Clipboard,Fully Customizable Keybindings,Remap any shortcut with interactive editor and conflict detection,Shipped,No
 Keyboard & Clipboard,Vim & Emacs Presets,One-click keybinding presets,Shipped,No
 Keyboard & Clipboard,Clipboard History,"Cmd+Shift+V — configurable clipboard history, default 50 entries (up to 1000), with LRU eviction, pinning, and quick paste",Shipped,No

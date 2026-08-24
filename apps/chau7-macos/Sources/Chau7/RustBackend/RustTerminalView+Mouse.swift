@@ -610,11 +610,6 @@ extension RustTerminalView {
         let gridColumn: Int
     }
 
-    struct URLMatch {
-        let url: String
-        let range: NSRange
-    }
-
     /// Handle Cmd+click on file paths or URLs
     func handleCmdClick(at point: NSPoint) -> Bool {
         // OSC 8 hyperlink check — takes priority over text-based URL matching
@@ -631,7 +626,7 @@ extension RustTerminalView {
         }
 
         guard let lineHit = getClickableLineHit(at: point) else { return false }
-        let urlMatches = findURLs(in: lineHit.text)
+        let urlMatches = PathClickHandler.findURLs(in: lineHit.text)
         let pathMatches = PathClickHandler.findPaths(in: lineHit.text)
         Log.debug(
             "RustTerminalView[\(viewId)]: Cmd+click - logical hit row=\(lineHit.gridRow) col=\(lineHit.gridColumn) index=\(lineHit.clickedUTF16Index) urls=\(urlMatches.count) paths=\(pathMatches.count)"
@@ -644,19 +639,34 @@ extension RustTerminalView {
         }
 
         if let pathMatch = PathClickHandler.findPath(in: lineHit.text, atUTF16Index: lineHit.clickedUTF16Index) {
-            let resolvedPath = PathClickHandler.resolvePath(pathMatch.path, relativeTo: currentDirectory)
-            guard FileManager.default.fileExists(atPath: resolvedPath) else {
-                logMissingCmdClickPath(resolvedPath)
-                return false
-            }
-
-            if FeatureSettings.shared.cmdClickOpensInternalEditor,
-               let callback = onFilePathClicked {
-                callback(resolvedPath, pathMatch.line, pathMatch.column)
-                Log.info("RustTerminalView[\(viewId)]: Cmd+click - opening in internal editor: \(resolvedPath)")
-            } else {
-                PathClickHandler.openPath(pathMatch, relativeTo: currentDirectory)
-                Log.info("RustTerminalView[\(viewId)]: Cmd+click - opened path \(pathMatch.path)")
+            PathClickHandler.resolvePathForClick(pathMatch.path, relativeTo: currentDirectory) { [weak self] result in
+                guard let self else { return }
+                switch result {
+                case .resolved(let resolvedPath, let usedRepositoryFallback):
+                    if FeatureSettings.shared.cmdClickOpensInternalEditor,
+                       let callback = onFilePathClicked {
+                        callback(resolvedPath, pathMatch.line, pathMatch.column)
+                        Log.info("RustTerminalView[\(viewId)]: Cmd+click - opening in internal editor: \(resolvedPath)")
+                    } else {
+                        PathClickHandler.openPath(pathMatch, resolvedPath: resolvedPath)
+                        Log.info("RustTerminalView[\(viewId)]: Cmd+click - opened path \(resolvedPath)")
+                    }
+                    if usedRepositoryFallback {
+                        Log.info(
+                            "RustTerminalView[\(viewId)]: Cmd+click - uniquely resolved bare filename in repository: \(resolvedPath)"
+                        )
+                    }
+                case .ambiguous(let candidates):
+                    Log.warn(
+                        "RustTerminalView[\(viewId)]: Cmd+click - ambiguous bare filename \(pathMatch.path); refusing to guess: \(candidates.joined(separator: ", "))"
+                    )
+                    showCmdClickFeedback(
+                        "Multiple files named \(pathMatch.path) were found. Nothing was opened; use a relative path to disambiguate."
+                    )
+                case .missing(let directPath):
+                    logMissingCmdClickPath(directPath)
+                    showCmdClickFeedback("File not found: \(pathMatch.path)")
+                }
             }
             return true
         }
@@ -678,6 +688,16 @@ extension RustTerminalView {
             )
         }
         return false
+    }
+
+    func showCmdClickFeedback(_ message: String) {
+        hideTipOverlay()
+        showTipOverlay(message: message)
+        guard let presentedOverlay = tipOverlayView else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 4) { [weak self, weak presentedOverlay] in
+            guard let self, tipOverlayView === presentedOverlay else { return }
+            hideTipOverlay()
+        }
     }
 
     func logMissingCmdClickPath(_ path: String) {
@@ -784,36 +804,6 @@ extension RustTerminalView {
         )
     }
 
-    func findURLs(in text: String) -> [URLMatch] {
-        var urls: [URLMatch] = []
-        let nsText = text as NSString
-        let range = NSRange(location: 0, length: nsText.length)
-        RegexPatterns.url.enumerateMatches(in: text, options: [], range: range) { match, _, _ in
-            guard let match = match else { return }
-            // Strip trailing prose punctuation. The regex's char class
-            // doesn't reject `.,;:!?` because those are valid inside URLs
-            // (e.g., `https://example.com/foo.json`), but they're commonly
-            // appended by sentence punctuation (`Click https://example.com.`)
-            // and shouldn't be carried into the click target.
-            let original = nsText.substring(with: match.range)
-            var trimmedLength = match.range.length
-            let trailingProse: Set<Character> = [".", ",", ";", ":", "!", "?"]
-            while trimmedLength > 0 {
-                let lastIdx = original.index(original.startIndex, offsetBy: trimmedLength - 1)
-                if trailingProse.contains(original[lastIdx]) {
-                    trimmedLength -= 1
-                } else {
-                    break
-                }
-            }
-            guard trimmedLength > 0 else { return }
-            let trimmedRange = NSRange(location: match.range.location, length: trimmedLength)
-            let trimmedURL = nsText.substring(with: trimmedRange)
-            urls.append(URLMatch(url: trimmedURL, range: trimmedRange))
-        }
-        return urls
-    }
-
     func handleMouseMove(at location: NSPoint, modifiers: NSEvent.ModifierFlags) {
         guard FeatureSettings.shared.isCmdClickPathsEnabled else { return }
         guard modifiers.contains(.command) else {
@@ -825,9 +815,8 @@ extension RustTerminalView {
             return
         }
         pathDetectionWorkItem?.cancel()
-        let work = DispatchWorkItem { [weak self] in
-            guard let self = self else { return }
-            let hasClickable = findURLs(in: lineHit.text).contains {
+        let work = DispatchWorkItem {
+            let hasClickable = PathClickHandler.findURLs(in: lineHit.text).contains {
                 NSLocationInRange(lineHit.clickedUTF16Index, $0.range)
             } || PathClickHandler.findPath(in: lineHit.text, atUTF16Index: lineHit.clickedUTF16Index) != nil
             DispatchQueue.main.async {

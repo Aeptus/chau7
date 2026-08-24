@@ -177,6 +177,27 @@ final class PathClickHandlerNormalizedURLTests: XCTestCase {
         )
     }
 
+    func testUnmatchedTrailingClosingParenthesisIsRemoved() {
+        XCTAssertEqual(
+            PathClickHandler.normalizedURLString("https://example.com/docs)"),
+            "https://example.com/docs"
+        )
+    }
+
+    func testBalancedTrailingClosingParenthesisIsPreserved() {
+        XCTAssertEqual(
+            PathClickHandler.normalizedURLString("https://example.com/docs_(v2)"),
+            "https://example.com/docs_(v2)"
+        )
+    }
+
+    func testBareURLStripsUnmatchedClosingParenthesisBeforeAddingScheme() {
+        XCTAssertEqual(
+            PathClickHandler.normalizedURLString("github.com/example/repo)"),
+            "https://github.com/example/repo"
+        )
+    }
+
     func testNormalizationProducesValidURL() {
         // Round-trip: NSWorkspace.open requires URL(string:) to accept the
         // normalized form. Confirm for every scheme-less shape.

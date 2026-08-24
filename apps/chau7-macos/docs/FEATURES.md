@@ -574,6 +574,8 @@ Chau7's rendering pipeline is purpose-built for latency-sensitive terminal work:
 ### Path & URL Handling
 
 - `Cmd+click` on file paths (line:column supported) and URLs.
+- Missing bare filenames are searched asynchronously within the enclosing repository and open only when exactly one match exists; ambiguous and missing results show feedback instead of guessing. Generated/dependency trees (`.git`, `.build`, `node_modules`) are excluded.
+- URL click targets discard surplus trailing `)` sentence punctuation while preserving balanced parentheses that belong to the URL.
 - Configurable action: browser (Safari, Chrome, Firefox, Edge, Brave, Arc), editor, or Finder.
 
 ### Keyboard & Clipboard

@@ -2683,7 +2683,7 @@
   {
     "category": "Command Safety",
     "feature": "Path Click Handler",
-    "description": "Cmd+click file paths and URLs — configurable action (browser, editor, Finder) with line:column support",
+    "description": "Cmd+click opens exact file paths immediately, searches missing bare filenames asynchronously within the enclosing repository only when the match is unique, refuses ambiguous results with visible feedback, and trims surplus trailing closing parentheses from URLs while preserving balanced URL parentheses; line:column and configurable browser/editor/Finder actions remain supported",
     "status": "Shipped",
     "differentiator": "No"
   },
