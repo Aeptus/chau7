@@ -47,6 +47,7 @@ enum AppSettings {
     static let logKeystrokesDefault = false
     static let keystrokeConsentPromptedKey = "diagnostics_keystroke_consent_prompted"
     static let keystrokeConsentPromptedDefault = false
+    static let diagnosticsForegroundMarkerKey = "diagnostics_foreground_session_open"
     static let hideSensitiveNotificationsKey = "hide_sensitive_notifications"
     static let hideSensitiveNotificationsDefault = true
     static let issueReportContactKey = "issue_report_contact"

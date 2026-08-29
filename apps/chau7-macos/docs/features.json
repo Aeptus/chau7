@@ -2626,6 +2626,13 @@
   },
   {
     "category": "SSH, Profiles & Remote",
+    "feature": "Durable iPhone Operational Diagnostics",
+    "description": "Sensitive input and keystroke capture has its own 2,000-entry ceiling with amortized batch trimming so it cannot evict most connection history, while a persisted foreground marker records unobserved launch endings without labeling them as confirmed crashes",
+    "status": "Experimental",
+    "differentiator": "No"
+  },
+  {
+    "category": "SSH, Profiles & Remote",
     "feature": "Crash-Resilient Mac/Helper Session Replay",
     "description": "When the Chau7 app reconnects to a helper that retained an encrypted iPhone session, the helper replays current session readiness so macOS republishes initial tabs and activity instead of leaving the phone indefinitely syncing",
     "status": "Experimental",

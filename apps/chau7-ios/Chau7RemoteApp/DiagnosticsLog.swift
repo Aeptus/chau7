@@ -70,6 +70,7 @@ final class DiagnosticsLog {
     private(set) var totalRecorded: UInt64 = 0
 
     private var nextID: UInt64 = 1
+    private var sensitiveEntryCount = 0
     private var saveTask: Task<Void, Never>?
     /// All persistence runs on this serial queue so writes can never reorder:
     /// a debounced autosave and a synchronous background flush are strictly
@@ -81,6 +82,11 @@ final class DiagnosticsLog {
     /// Hard cap on retained entries. Performance + keystroke logging is high
     /// volume, so the cap is generous but bounded to protect memory/disk.
     private static let maxEntries = 8000
+    /// Sensitive input capture gets a separate budget so it cannot evict most
+    /// connection/lifecycle evidence. Trim below the limit in one batch to
+    /// amortize the full JSONL rewrite required by non-prefix eviction.
+    private static let maxSensitiveEntries = 2000
+    private static let sensitiveTrimTarget = 1500
     /// How many leading entries are already on disk (incremental-append cursor).
     private var persistedEntryCount = 0
     /// Set when the ring trimmed (or state was reloaded/cleared) — the next
@@ -102,12 +108,22 @@ final class DiagnosticsLog {
 
     private init() {
         load()
+        let previousForegroundMarker = UserDefaults.standard.object(
+            forKey: AppSettings.diagnosticsForegroundMarkerKey
+        ) as? Bool
+        UserDefaults.standard.set(true, forKey: AppSettings.diagnosticsForegroundMarkerKey)
         record(.info, .lifecycle, "Diagnostics log initialized", [
             "retained": String(entries.count),
             "device": UIDevice.current.model,
             "os": UIDevice.current.systemVersion,
-            "app_version": RemoteClient.appVersion
+            "app_version": RemoteClient.appVersion,
+            "previous_foreground_end": previousForegroundMarker == nil
+                ? "unknown"
+                : (previousForegroundMarker == true ? "unobserved" : "backgrounded")
         ])
+        if previousForegroundMarker == true {
+            record(.warn, .lifecycle, "Previous launch ended without a background transition")
+        }
     }
 
     // MARK: - Settings
@@ -150,11 +166,10 @@ final class DiagnosticsLog {
         totalRecorded += 1
 
         entries.append(entry)
-        if entries.count > Self.maxEntries {
-            entries.removeFirst(entries.count - Self.maxEntries)
-            needsFullRewrite = true
-            persistedEntryCount = 0
+        if DiagnosticsRetentionPolicy.sensitiveCategories.contains(entry.category) {
+            sensitiveEntryCount += 1
         }
+        applyRetentionPolicy()
 
         mirrorToOSLog(entry)
         scheduleSave()
@@ -189,6 +204,14 @@ final class DiagnosticsLog {
         metadata["field"] = field
         metadata["chars"] = String(value.count)
         record(.debug, .keystroke, Self.describeKeystroke(value), metadata, force: true)
+    }
+
+    func markForegroundActive() {
+        UserDefaults.standard.set(true, forKey: AppSettings.diagnosticsForegroundMarkerKey)
+    }
+
+    func markBackgroundTransition() {
+        UserDefaults.standard.set(false, forKey: AppSettings.diagnosticsForegroundMarkerKey)
     }
 
     // MARK: - Performance
@@ -295,6 +318,7 @@ final class DiagnosticsLog {
     /// Drop all retained entries (and the on-disk copy).
     func clear() {
         entries.removeAll()
+        sensitiveEntryCount = 0
         persistedEntryCount = 0
         needsFullRewrite = false
         if let fileURL {
@@ -408,10 +432,19 @@ final class DiagnosticsLog {
             decodedLineCount += 1
             loaded.append(entry)
         }
-        if loaded.count > Self.maxEntries {
-            loaded.removeFirst(loaded.count - Self.maxEntries)
+        let removals = DiagnosticsRetentionPolicy.removalIndexes(
+            categories: loaded.map(\.category),
+            maxEntries: Self.maxEntries,
+            sensitiveLimit: Self.maxSensitiveEntries,
+            sensitiveTarget: Self.sensitiveTrimTarget
+        )
+        for index in removals.reversed() {
+            loaded.remove(at: index)
         }
         entries = loaded
+        sensitiveEntryCount = loaded.lazy.filter {
+            DiagnosticsRetentionPolicy.sensitiveCategories.contains($0.category)
+        }.count
         persistedEntryCount = loaded.count
         // When the file held more lines than the buffer keeps (trimmed on
         // load), the file and cursor disagree — rewrite once on the next save.
@@ -421,6 +454,26 @@ final class DiagnosticsLog {
     }
 
     // MARK: - Helpers
+
+    private func applyRetentionPolicy() {
+        guard entries.count > Self.maxEntries
+            || sensitiveEntryCount > Self.maxSensitiveEntries else { return }
+        let removals = DiagnosticsRetentionPolicy.removalIndexes(
+            categories: entries.map(\.category),
+            maxEntries: Self.maxEntries,
+            sensitiveLimit: Self.maxSensitiveEntries,
+            sensitiveTarget: Self.sensitiveTrimTarget
+        )
+        guard !removals.isEmpty else { return }
+        for index in removals.reversed() {
+            if DiagnosticsRetentionPolicy.sensitiveCategories.contains(entries[index].category) {
+                sensitiveEntryCount -= 1
+            }
+            entries.remove(at: index)
+        }
+        needsFullRewrite = true
+        persistedEntryCount = 0
+    }
 
     private func mirrorToOSLog(_ entry: Entry) {
         // Keystroke entries carry literal typed text (potentially secrets).

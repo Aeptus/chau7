@@ -382,6 +382,54 @@ final class RemoteConnectionStartPolicyTests: XCTestCase {
     }
 }
 
+final class DiagnosticsRetentionPolicyTests: XCTestCase {
+    func testSensitiveOverflowTrimsOnlyOldestSensitiveEntriesToTarget() {
+        let categories = [
+            "connection", "keystroke", "tab", "input",
+            "lifecycle", "keystroke", "input", "keystroke"
+        ]
+
+        let removals = DiagnosticsRetentionPolicy.removalIndexes(
+            categories: categories,
+            maxEntries: 20,
+            sensitiveLimit: 4,
+            sensitiveTarget: 2
+        )
+
+        XCTAssertEqual(Array(removals), [1, 3, 5])
+        XCTAssertEqual(
+            categories.indices.filter { !removals.contains($0) }.map { categories[$0] },
+            ["connection", "tab", "lifecycle", "input", "keystroke"]
+        )
+    }
+
+    func testGlobalCapRunsAfterSensitiveQuota() {
+        let categories = ["connection", "tab", "keystroke", "lifecycle", "ui", "network"]
+
+        let removals = DiagnosticsRetentionPolicy.removalIndexes(
+            categories: categories,
+            maxEntries: 3,
+            sensitiveLimit: 1,
+            sensitiveTarget: 1
+        )
+
+        XCTAssertEqual(Array(removals), [0, 1, 2])
+        XCTAssertEqual(
+            categories.indices.filter { !removals.contains($0) }.map { categories[$0] },
+            ["lifecycle", "ui", "network"]
+        )
+    }
+
+    func testInvalidLimitsFailClosedWithoutRemovingEntries() {
+        XCTAssertTrue(DiagnosticsRetentionPolicy.removalIndexes(
+            categories: ["keystroke"],
+            maxEntries: 8,
+            sensitiveLimit: 1,
+            sensitiveTarget: 2
+        ).isEmpty)
+    }
+}
+
 final class RemoteIssueReportComposerTests: XCTestCase {
     private let context = RemoteIssueReportContext(
         appVersion: "1.2.3 (45)",

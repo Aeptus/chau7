@@ -134,6 +134,48 @@ enum RemoteConnectionFailureClassifier {
     }
 }
 
+/// Protects operational evidence from high-volume, privacy-sensitive input
+/// capture. Sensitive entries trim in batches to amortize the required JSONL
+/// rewrite; the global cap is then enforced against the remaining timeline.
+enum DiagnosticsRetentionPolicy {
+    static let sensitiveCategories: Set<String> = ["input", "keystroke"]
+
+    static func removalIndexes(
+        categories: [String],
+        maxEntries: Int,
+        sensitiveLimit: Int,
+        sensitiveTarget: Int
+    ) -> IndexSet {
+        guard maxEntries >= 0,
+              sensitiveLimit >= 0,
+              sensitiveTarget >= 0,
+              sensitiveTarget <= sensitiveLimit else {
+            return IndexSet()
+        }
+
+        var removals = IndexSet()
+        let sensitiveIndexes = categories.indices.filter {
+            sensitiveCategories.contains(categories[$0])
+        }
+        if sensitiveIndexes.count > sensitiveLimit {
+            let trimCount = sensitiveIndexes.count - sensitiveTarget
+            for index in sensitiveIndexes.prefix(trimCount) {
+                removals.insert(index)
+            }
+        }
+
+        var remainingOverflow = categories.count - removals.count - maxEntries
+        if remainingOverflow > 0 {
+            for index in categories.indices where !removals.contains(index) {
+                removals.insert(index)
+                remainingOverflow -= 1
+                if remainingOverflow == 0 { break }
+            }
+        }
+        return removals
+    }
+}
+
 struct RemoteIssueReportContext: Equatable {
     let appVersion: String
     let osVersion: String

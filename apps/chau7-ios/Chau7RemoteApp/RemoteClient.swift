@@ -196,6 +196,7 @@ final class RemoteClient {
                 trigger: .transportFailure
             )
         }
+        _ = DiagnosticsLog.shared
     }
 
     // MARK: - Connection
@@ -297,6 +298,7 @@ final class RemoteClient {
         DiagnosticsLog.shared.info(.lifecycle, "Scene phase changed", ["phase": String(describing: scenePhase)])
         switch scenePhase {
         case .active:
+            DiagnosticsLog.shared.markForegroundActive()
             DiagnosticsLog.shared.capturePerformanceSnapshot(reason: "scene_active")
             backgroundKeepalive.end()
             currentAppState = .foreground
@@ -309,6 +311,7 @@ final class RemoteClient {
             }
             schedulePendingStateFetch(reason: "scene_active")
         case .background:
+            DiagnosticsLog.shared.markBackgroundTransition()
             backgroundKeepalive.begin()
             currentAppState = .background
             desiredStreamMode = .approvalsOnly
