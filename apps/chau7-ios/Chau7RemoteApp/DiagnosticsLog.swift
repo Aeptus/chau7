@@ -10,10 +10,10 @@ import os
 /// persisted to disk so it survives relaunches. The whole buffer can be
 /// exported as a single plain-text file for support and investigation.
 ///
-/// Privacy: everything stays on-device. Nothing here is uploaded; the log
-/// only leaves the device when the user explicitly taps Export and chooses a
-/// destination. Keystroke capture is gated behind a setting and a clear
-/// in-UI disclosure because it records the literal characters typed.
+/// Privacy: everything stays on-device unless the user explicitly exports it
+/// or opts to include a bounded excerpt in an issue report. Keystroke capture
+/// is gated behind a setting and a clear in-UI disclosure because it records
+/// the literal characters typed.
 @MainActor
 @Observable
 final class DiagnosticsLog {
@@ -257,6 +257,25 @@ final class DiagnosticsLog {
         return lines.joined(separator: "\n").appending("\n")
     }
 
+    /// A bounded, human-readable tail for an issue report. Keeping this much
+    /// smaller than the full 8,000-entry export avoids oversized submissions.
+    func reportExcerpt(maxEntries: Int = 500) -> String {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return entries.suffix(max(0, maxEntries)).map { entry in
+            var line = "\(formatter.string(from: entry.timestamp)) [\(entry.levelValue)] \(entry.category): \(entry.message)"
+            if !entry.metadata.isEmpty {
+                let metadata = entry.metadata
+                    .sorted { $0.key < $1.key }
+                    .map { "\($0.key)=\($0.value)" }
+                    .joined(separator: " ")
+                line += "  {\(metadata)}"
+            }
+            return line
+        }
+        .joined(separator: "\n")
+    }
+
     /// Write the export to a temporary file and return its URL (for ShareLink).
     func exportFile() -> URL? {
         let text = exportText()
@@ -290,7 +309,7 @@ final class DiagnosticsLog {
         saveTask?.cancel()
         saveTask = Task { @MainActor [weak self] in
             try? await Task.sleep(for: .seconds(2))
-            guard !Task.isCancelled, let self, let fileURL = self.fileURL else { return }
+            guard !Task.isCancelled, let self, self.fileURL != nil else { return }
             // Debounced autosave: encode on the main actor (Entry's Codable
             // conformance is main-isolated), then hand the finished bytes to the
             // serial queue so the 2-second tick never hitches the UI.

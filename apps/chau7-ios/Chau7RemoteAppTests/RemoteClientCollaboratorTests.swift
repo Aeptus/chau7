@@ -336,6 +336,47 @@ final class RemoteTabInventoryTests: XCTestCase {
     }
 }
 
+final class RemoteIssueReportComposerTests: XCTestCase {
+    private let context = RemoteIssueReportContext(
+        appVersion: "1.2.3 (45)",
+        osVersion: "20.0",
+        deviceModel: "iPhone",
+        connectionStatus: "Connected",
+        tabInventoryStatus: "Syncing…",
+        tabCount: 0
+    )
+
+    func testReportIncludesDescriptionContactAndEnvironment() {
+        let report = RemoteIssueReportComposer.markdown(
+            description: "  The tab list was empty.  ",
+            contact: "  octocat  ",
+            context: context,
+            diagnostics: nil
+        )
+
+        XCTAssertTrue(report.contains("The tab list was empty."))
+        XCTAssertTrue(report.contains("octocat"))
+        XCTAssertTrue(report.contains("- App version: 1.2.3 (45)"))
+        XCTAssertTrue(report.contains("- Remote tabs: Syncing…"))
+        XCTAssertTrue(report.contains("- Tab count: 0"))
+        XCTAssertFalse(report.contains("Recent diagnostics"))
+    }
+
+    func testDiagnosticsAreIncludedOnlyWhenProvided() {
+        let report = RemoteIssueReportComposer.markdown(
+            description: "Unexpected disconnect",
+            contact: "",
+            context: context,
+            diagnostics: "2026-08-29T06:01:09Z [info] connection: Session ready"
+        )
+
+        XCTAssertTrue(report.contains("Not provided"))
+        XCTAssertTrue(report.contains("## Recent diagnostics"))
+        XCTAssertTrue(report.contains("```text"))
+        XCTAssertTrue(report.contains("Session ready"))
+    }
+}
+
 @MainActor
 final class RemoteTransportTests: XCTestCase {
 

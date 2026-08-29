@@ -75,6 +75,52 @@ enum RemoteTabInventoryState: Equatable {
     }
 }
 
+struct RemoteIssueReportContext: Equatable {
+    let appVersion: String
+    let osVersion: String
+    let deviceModel: String
+    let connectionStatus: String
+    let tabInventoryStatus: String
+    let tabCount: Int
+}
+
+/// Pure Markdown composition for both direct submission and the share-sheet
+/// fallback. Diagnostics are absent unless the caller explicitly supplies an
+/// excerpt, keeping the default report free of terminal activity.
+enum RemoteIssueReportComposer {
+    static func markdown(
+        description: String,
+        contact: String,
+        context: RemoteIssueReportContext,
+        diagnostics: String?
+    ) -> String {
+        let trimmedDescription = description.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedContact = contact.trimmingCharacters(in: .whitespacesAndNewlines)
+        var sections = [
+            "# Chau7 Remote issue",
+            "## Description\n\n\(trimmedDescription)",
+            "## Contact\n\n\(trimmedContact.isEmpty ? "Not provided" : trimmedContact)",
+            """
+            ## Environment
+
+            - App version: \(context.appVersion)
+            - iOS: \(context.osVersion)
+            - Device: \(context.deviceModel)
+            - Connection: \(context.connectionStatus)
+            - Remote tabs: \(context.tabInventoryStatus)
+            - Tab count: \(context.tabCount)
+            """
+        ]
+
+        if let diagnostics = diagnostics?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !diagnostics.isEmpty {
+            sections.append("## Recent diagnostics\n\n```text\n\(diagnostics)\n```")
+        }
+
+        return sections.joined(separator: "\n\n") + "\n"
+    }
+}
+
 // MARK: - Pairing (iOS-local)
 
 struct TrustedPairingIdentity: Codable, Equatable {

@@ -49,6 +49,8 @@ enum AppSettings {
     static let keystrokeConsentPromptedDefault = false
     static let hideSensitiveNotificationsKey = "hide_sensitive_notifications"
     static let hideSensitiveNotificationsDefault = true
+    static let issueReportContactKey = "issue_report_contact"
+    static let issueReportSaveContactKey = "issue_report_save_contact"
 
     /// Reads the toggle honoring its `true` default (UserDefaults.bool returns
     /// false for an unset key, which would silently disable redaction).
@@ -227,10 +229,15 @@ struct SettingsView: View {
                     } label: {
                         Label("Diagnostics Log", systemImage: "doc.text.magnifyingglass")
                     }
+                    NavigationLink {
+                        IssueReportView(client: client)
+                    } label: {
+                        Label("Report an Issue", systemImage: "ladybug")
+                    }
                 } header: {
                     Text("Diagnostics")
                 } footer: {
-                    Text("Captures a verbose on-device log — including performance data and, when enabled, every keystroke typed in the app — for troubleshooting. Nothing leaves your device until you tap Export. Keystroke capture records the literal characters you type.")
+                    Text("Captures a verbose on-device log — including performance data and, when enabled, every keystroke typed in the app — for troubleshooting. Nothing leaves your device unless you export it or explicitly include recent diagnostics in an issue report. Keystroke capture records the literal characters you type.")
                 }
 
                 Section("About") {

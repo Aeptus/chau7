@@ -2619,6 +2619,13 @@
   },
   {
     "category": "SSH, Profiles & Remote",
+    "feature": "iPhone Issue Reporting",
+    "description": "Chau7 Remote submits private issues from Settings with a description, environment snapshot, optional remembered contact, exact Markdown preview, and share-sheet fallback; its bounded recent-diagnostics excerpt is off by default with an explicit keystroke privacy warning",
+    "status": "Experimental",
+    "differentiator": "No"
+  },
+  {
+    "category": "SSH, Profiles & Remote",
     "feature": "Remote iPhone Profiling Hooks",
     "description": "The iPhone app emits os.signpost intervals for frame processing, output append, and ANSI stripping so receive/render lag can be measured in Instruments",
     "status": "Experimental",
