@@ -314,6 +314,28 @@ final class RemoteTabOrderingTests: XCTestCase {
     }
 }
 
+final class RemoteTabInventoryTests: XCTestCase {
+    func testReorderOnlySnapshotDoesNotPublishReplacement() {
+        let current = [tab(id: 1, title: "Alpha"), tab(id: 2, title: "Beta")]
+        let incoming = Array(current.reversed())
+
+        XCTAssertNil(RemoteTabInventory.replacementIfChanged(current: current, incoming: incoming))
+    }
+
+    func testMetadataChangePublishesCanonicalReplacement() {
+        let current = [tab(id: 2, title: "Old"), tab(id: 1, title: "Alpha")]
+        let incoming = [tab(id: 2, title: "New"), tab(id: 1, title: "Alpha")]
+
+        let replacement = RemoteTabInventory.replacementIfChanged(current: current, incoming: incoming)
+        XCTAssertEqual(replacement?.map(\.tabID), [1, 2])
+        XCTAssertEqual(replacement?.last?.title, "New")
+    }
+
+    private func tab(id: UInt32, title: String) -> RemoteTab {
+        RemoteTab(tabID: id, title: title, isActive: false, isMCPControlled: false)
+    }
+}
+
 @MainActor
 final class RemoteTransportTests: XCTestCase {
 

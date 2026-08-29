@@ -75,4 +75,17 @@ extension RemoteClient {
             return status.displayText
         }
     }
+
+    var remoteTabsDisplayLabel: String {
+        switch tabInventoryState {
+        case .unavailable:
+            return "Unavailable"
+        case .syncing:
+            return "Syncing…"
+        case .ready where tabs.isEmpty:
+            return "None available"
+        case .ready:
+            return "\(tabs.count) available"
+        }
+    }
 }

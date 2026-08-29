@@ -2612,6 +2612,13 @@
   },
   {
     "category": "SSH, Profiles & Remote",
+    "feature": "Truthful and Stable iPhone Tab Inventory",
+    "description": "Chau7 Remote distinguishes encrypted-session readiness from tab-inventory readiness, shows syncing until the first live or cached inventory arrives, logs its source and count, and suppresses duplicate or reorder-only observable updates so shell activity cannot rebuild an open picker",
+    "status": "Experimental",
+    "differentiator": "No"
+  },
+  {
+    "category": "SSH, Profiles & Remote",
     "feature": "Remote iPhone Profiling Hooks",
     "description": "The iPhone app emits os.signpost intervals for frame processing, output append, and ANSI stripping so receive/render lag can be measured in Instruments",
     "status": "Experimental",

@@ -50,6 +50,7 @@ final class RemoteClient {
             ])
         }
     }
+    private(set) var tabInventoryState: RemoteTabInventoryState = .unavailable
     private(set) var isConnected = false {
         didSet {
             guard oldValue != isConnected else { return }
@@ -360,6 +361,7 @@ final class RemoteClient {
             reconnectBackoff.reset()
         }
         tabs = []
+        tabInventoryState = .unavailable
         outputStore.reset()
         terminalRenderer.reset()
         outputFlushTask?.cancel()
@@ -768,6 +770,9 @@ final class RemoteClient {
         case .sessionReady:
             isConnected = true
             status = .sessionReady
+            if tabInventoryState != .ready {
+                tabInventoryState = .syncing
+            }
             lastError = nil
             cancelHandshakeTasks()
             flushPendingURLActions()
@@ -865,25 +870,61 @@ final class RemoteClient {
 
     private func handleTabList(_ data: Data) {
         guard let msg: TabListPayload = decodePayload(data, as: TabListPayload.self, context: "handleTabList") else { return }
-        applyTabListPayload(msg)
+        applyTabListPayload(msg, source: "live")
         flushPendingURLActions()
     }
 
     private func handleCachedTabList(_ data: Data) {
         guard let msg: TabListPayload = decodePayload(data, as: TabListPayload.self, context: "handleCachedTabList") else { return }
-        applyTabListPayload(msg)
+        applyTabListPayload(msg, source: "cached")
     }
 
-    private func applyTabListPayload(_ msg: TabListPayload) {
-        tabs = msg.tabs
-        macCapabilities = Set(msg.capabilities ?? [])
-        activeTabID = msg.tabs.first(where: \.isActive)?.tabID ?? msg.tabs.first?.tabID ?? 0
+    private func applyTabListPayload(_ msg: TabListPayload, source: String) {
+        let previousVisibleTabIDs = Set(tabs.map(\.tabID))
         let visibleTabIDs = Set(msg.tabs.map(\.tabID))
-        outputStore.retainVisibleTabs(visibleTabIDs)
-        terminalRenderer.retainVisibleTabs(visibleTabIDs)
-        pendingInteractivePrompts.removeAll { !visibleTabIDs.contains($0.tabID) }
-        refreshVisibleOutput(prioritizeStrippedOutput: true)
-        terminalRenderer.setActiveTab(activeTabID)
+        let nextActiveTabID = msg.tabs.first(where: \.isActive)?.tabID ?? msg.tabs.first?.tabID ?? 0
+        let replacement = RemoteTabInventory.replacementIfChanged(current: tabs, incoming: msg.tabs)
+        let inventoryChanged = replacement != nil
+        let membershipChanged = previousVisibleTabIDs != visibleTabIDs
+        let activeTabChanged = activeTabID != nextActiveTabID
+        let wasAwaitingInventory = tabInventoryState != .ready
+
+        if let replacement {
+            tabs = replacement
+        }
+        let nextCapabilities = Set(msg.capabilities ?? [])
+        if macCapabilities != nextCapabilities {
+            macCapabilities = nextCapabilities
+        }
+        if activeTabChanged {
+            activeTabID = nextActiveTabID
+        }
+        if tabInventoryState != .ready {
+            tabInventoryState = .ready
+        }
+
+        let inventoryMetadata = [
+            "source": source,
+            "count": String(msg.tabs.count),
+            "changed": inventoryChanged ? "true" : "false",
+            "membership_changed": membershipChanged ? "true" : "false",
+            "active_changed": activeTabChanged ? "true" : "false"
+        ]
+        if wasAwaitingInventory || membershipChanged {
+            DiagnosticsLog.shared.info(.tab, "Remote tab inventory synchronized", inventoryMetadata)
+        } else {
+            DiagnosticsLog.shared.debug(.tab, "Remote tab inventory received", inventoryMetadata)
+        }
+
+        if membershipChanged {
+            outputStore.retainVisibleTabs(visibleTabIDs)
+            terminalRenderer.retainVisibleTabs(visibleTabIDs)
+            pendingInteractivePrompts.removeAll { !visibleTabIDs.contains($0.tabID) }
+        }
+        if membershipChanged || activeTabChanged {
+            refreshVisibleOutput(prioritizeStrippedOutput: true)
+            terminalRenderer.setActiveTab(activeTabID)
+        }
     }
 
     private func handleActivityState(_ data: Data) {
@@ -998,6 +1039,9 @@ final class RemoteClient {
 
         reconnectBackoff.reset()
         isConnected = true
+        if tabInventoryState != .ready {
+            tabInventoryState = .syncing
+        }
         cancelHandshakeTasks()
         let sessionID = CryptoUtils.randomBytes(count: 8).base64EncodedString()
         remoteSessionID = sessionID

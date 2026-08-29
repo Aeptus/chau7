@@ -211,7 +211,14 @@ struct TerminalView: View {
             Menu {
                 let groups = repoTabGroups
                 if groups.isEmpty {
-                    Text("No remote tabs available yet")
+                    switch client.tabInventoryState {
+                    case .syncing:
+                        Text("Syncing remote tabs…")
+                    case .ready:
+                        Text("No remote tabs available")
+                    case .unavailable:
+                        Text("Remote tabs unavailable")
+                    }
                 } else if groups.count == 1 {
                     // A single group's header (often just "Other") is noise —
                     // keep the flat list.
@@ -281,12 +288,10 @@ struct TerminalView: View {
     /// Tabs without a repo collect under "Other", always last.
     ///
     /// Groups are ordered by name rather than by first appearance in
-    /// `client.tabs`. A SwiftUI `Menu` re-runs its content closure whenever the
-    /// state it reads changes — including while presented — and activity
-    /// re-sends reorder `client.tabs`. Sorting both levels makes the rendered
-    /// identity sequence independent of that activity churn, so an open menu
-    /// keeps its scroll position while still reflecting real additions and
-    /// removals.
+    /// `client.tabs`. `RemoteClient` suppresses duplicate/reorder-only wire
+    /// snapshots; sorting both levels here gives the rendered menu a stable
+    /// identity sequence while still reflecting real metadata and membership
+    /// changes.
     private var repoTabGroups: [RepoTabGroup] {
         let fallback = "Other"
         var tabsByRepo: [String: [RemoteTab]] = [:]
@@ -634,7 +639,9 @@ struct TerminalView: View {
     }
 
     private var activeTabMenuLabel: String {
-        guard let activeTab else { return "No remote tabs" }
+        guard let activeTab else {
+            return client.tabInventoryState == .syncing ? "Syncing tabs…" : "No remote tabs"
+        }
         return activeTab.title
     }
 

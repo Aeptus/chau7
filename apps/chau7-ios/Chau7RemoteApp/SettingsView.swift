@@ -47,7 +47,6 @@ enum AppSettings {
     static let logKeystrokesDefault = false
     static let keystrokeConsentPromptedKey = "diagnostics_keystroke_consent_prompted"
     static let keystrokeConsentPromptedDefault = false
-
     static let hideSensitiveNotificationsKey = "hide_sensitive_notifications"
     static let hideSensitiveNotificationsDefault = true
 
@@ -188,6 +187,7 @@ struct SettingsView: View {
                             .accessibilityElement(children: .combine)
                             .accessibilityLabel("Connection status: \(client.connectionDisplayLabel)")
                         }
+                        LabeledContent("Remote Tabs", value: client.remoteTabsDisplayLabel)
 
                         if let macFingerprint = client.macKeyFingerprint {
                             LabeledContent("Mac Key") {

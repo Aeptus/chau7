@@ -39,6 +39,42 @@ enum RemoteTabOrdering {
     }
 }
 
+/// Normalizes tab-list snapshots before they enter observable UI state.
+/// Wire order is incidental (and can change with Mac activity), while tab ID
+/// and descriptor metadata are the semantic inventory presented by iOS.
+enum RemoteTabInventory {
+    static func canonicalized(_ tabs: [RemoteTab]) -> [RemoteTab] {
+        tabs.sorted { $0.tabID < $1.tabID }
+    }
+
+    /// Returns a canonical replacement only when the semantic inventory
+    /// changed. `nil` means the caller should preserve its existing array so
+    /// SwiftUI does not invalidate an open tab picker for a duplicate frame.
+    static func replacementIfChanged(
+        current: [RemoteTab],
+        incoming: [RemoteTab]
+    ) -> [RemoteTab]? {
+        let canonicalIncoming = canonicalized(incoming)
+        return canonicalized(current) == canonicalIncoming ? nil : canonicalIncoming
+    }
+}
+
+/// Readiness of the remote tab inventory, deliberately separate from the
+/// WebSocket/encryption connection status.
+enum RemoteTabInventoryState: Equatable {
+    case unavailable
+    case syncing
+    case ready
+
+    var displayText: String {
+        switch self {
+        case .unavailable: return "Unavailable"
+        case .syncing: return "Syncing…"
+        case .ready: return "Up to date"
+        }
+    }
+}
+
 // MARK: - Pairing (iOS-local)
 
 struct TrustedPairingIdentity: Codable, Equatable {
