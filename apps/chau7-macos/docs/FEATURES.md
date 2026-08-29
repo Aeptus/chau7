@@ -680,6 +680,7 @@ Chau7's rendering pipeline is purpose-built for latency-sensitive terminal work:
 
 ### Remote (Experimental)
 
+- **Classified helper diagnostics** — remote-helper stderr is sanitized and classified by message semantics: routine reconnect lifecycle is informational, the known disabled `MallocStackLogging` notice is suppressed, and unknown output or actual connection failures retain warning severity.
 - **Correlated transport status** — the helper reports its live relay WebSocket state independently from local IPC and encrypted phone-session readiness. Remote settings expose all three layers, and transition-only snapshots add tab inventory and stream mode to durable logs so an empty phone tab list can be attributed without reconstructing separate log systems.
 - Read-only remote terminal sharing with viewer approval flow.
 - Cloudflare Workers relay — no port forwarding required.

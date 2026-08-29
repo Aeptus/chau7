@@ -1,4 +1,5 @@
 Category,Feature,Description,Status,Differentiator
+Remote Access,Classified Remote Helper Diagnostics,Sanitizes helper stderr and distinguishes routine reconnect lifecycle from actionable connection failures while suppressing the known disabled MallocStackLogging notice,Shipped,No
 Remote Access,Correlated Remote Transport Diagnostics,"Reports helper IPC, relay WebSocket, encrypted phone-session, tab inventory, and stream state as separate UI status and one privacy-safe operational snapshot",Shipped,Yes
 AI Integration,Live AI Session Binding Validation,"Rejects stale provider hook mappings when a terminal tab is visibly owned by another AI provider, while retaining safe shell and same-provider rebinding",Shipped,Yes
 AI Integration,Crash-Safe Codex Resume Recovery,"Autosave resolves a known Codex pane's missing session ID from its existing rollout before publishing restore state, while restart preserves genuine provider-only evidence for provider-scoped recovery and still rejects duplicate foreign-project and all-nil identities",Shipped,Yes

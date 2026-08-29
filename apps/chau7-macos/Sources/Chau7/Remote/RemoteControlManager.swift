@@ -34,7 +34,19 @@ final class RemoteControlManager {
             },
             onStderrData: { [weak self] data in
                 guard let output = String(data: data, encoding: .utf8) else { return }
-                self?.logger.warning("Remote stderr: \(output, privacy: .public)")
+                for rawLine in output.split(whereSeparator: \.isNewline) {
+                    let line = EscapeSequenceSanitizer.sanitizeForLogging(String(rawLine))
+                    switch RemoteSidecarStderrPolicy.disposition(for: line) {
+                    case .suppress:
+                        continue
+                    case .info:
+                        self?.logger.info("Remote helper: \(line, privacy: .public)")
+                        Log.info("Remote helper: \(line)")
+                    case .warning:
+                        self?.logger.warning("Remote helper: \(line, privacy: .public)")
+                        Log.warn("Remote helper: \(line)")
+                    }
+                }
             },
             onExit: { [weak self] status in
                 self?.handleAgentExit(status: status)

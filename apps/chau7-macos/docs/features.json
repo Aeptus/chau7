@@ -1,6 +1,13 @@
 [
   {
     "category": "Remote Access",
+    "feature": "Classified Remote Helper Diagnostics",
+    "description": "Sanitizes helper stderr and distinguishes routine reconnect lifecycle from actionable connection failures while suppressing the known disabled MallocStackLogging notice",
+    "status": "Shipped",
+    "differentiator": "No"
+  },
+  {
+    "category": "Remote Access",
     "feature": "Correlated Remote Transport Diagnostics",
     "description": "Reports helper IPC, relay WebSocket, encrypted phone-session, tab inventory, and stream state as separate UI status and one privacy-safe operational snapshot",
     "status": "Shipped",
