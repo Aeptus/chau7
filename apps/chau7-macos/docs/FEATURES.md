@@ -738,6 +738,7 @@ Chau7's rendering pipeline is purpose-built for latency-sensitive terminal work:
 
 ### Debugging
 
+- **Semantic event log levels** — Claude session-start hooks are explicitly consumed after adoption, and deliberate non-user-facing/state-only notification adapter drops are trace-only after coalescing. Unsupported or novel ingress failures remain durable info diagnostics.
 - **Launch continuity marker** — after acquiring the single-instance lock, Chau7 records build and start time beside a running marker and clears it on normal AppKit termination. The next launch reports clean, abrupt, or unknown continuity without mislabeling force-quit or power loss as a confirmed crash.
 - Debug console (`Cmd+Option+L`) — scoped sidebar surfaces for Diagnostics, Runtime Inspector, Usage Monitor, and the full console, covering Health, Logs, Perf, Lag, State, Events, Report, Usage, Analytics, Repos, and Token Optimizer, with direct menu/palette/settings entry points, privacy-first issue reporting, aligned performance/usage analytics tables, and surface/tab routing kept in a dedicated model file.
 - Notification reliability dashboard — Debug Console health view summarizes recent completed, dropped, retried, rate-limited, and authoritative notification deliveries.

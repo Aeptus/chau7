@@ -117,10 +117,17 @@ final class NotificationManager {
         let now = Date()
         guard now.timeIntervalSince(lastDropFlush) >= Self.dropFlushInterval else { return }
         for (coalescedReason, count) in dropCounts.sorted(by: { $0.key < $1.key }) {
-            if count == 1 {
-                Log.info("Notification ingress dropped: \(coalescedReason)")
+            let message = if count == 1 {
+                "Notification ingress dropped: \(coalescedReason)"
             } else {
-                Log.info("Notification ingress dropped: \(coalescedReason) (\(count)x in last \(Int(Self.dropFlushInterval))s)")
+                "Notification ingress dropped: \(coalescedReason) " +
+                    "(\(count)x in last \(Int(Self.dropFlushInterval))s)"
+            }
+            switch NotificationDropLogPolicy.level(for: coalescedReason) {
+            case .trace:
+                Log.trace(message)
+            case .info:
+                Log.info(message)
             }
         }
         dropCounts.removeAll()

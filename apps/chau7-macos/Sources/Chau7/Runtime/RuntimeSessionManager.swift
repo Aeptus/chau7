@@ -402,6 +402,11 @@ final class RuntimeSessionManager {
                 data: ["message": event.message]
             )
 
+        case .sessionStart:
+            // Adoption already records the session-starting lifecycle event.
+            // The hook confirms that state but requires no second transition.
+            break
+
         default:
             Log.debug("RuntimeSessionManager: unhandled event type=\(event.type) session=\(session.id)")
         }

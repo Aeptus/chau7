@@ -1,6 +1,13 @@
 [
   {
     "category": "Observability",
+    "feature": "Semantic Provider Event Log Levels",
+    "description": "Consumes duplicate Claude session-start confirmation explicitly and keeps deliberate non-user-facing notification adapter drops at trace while preserving unexpected ingress diagnostics at info",
+    "status": "Shipped",
+    "differentiator": "No"
+  },
+  {
+    "category": "Observability",
     "feature": "macOS Launch Continuity Evidence",
     "description": "Persists a build-attributed running marker after single-instance acquisition and distinguishes clean, abrupt, and unknown prior exits without claiming an abrupt exit was necessarily a crash",
     "status": "Shipped",
