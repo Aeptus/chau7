@@ -28,7 +28,7 @@ struct Chau7RemoteApp: App {
                 }
                 .onAppear {
                     if client.pairingInfo != nil, !client.isConnected {
-                        client.connect()
+                        client.connectIfNeeded(trigger: .appAppear)
                     }
                 }
                 .onChange(of: scenePhase) { _, newPhase in

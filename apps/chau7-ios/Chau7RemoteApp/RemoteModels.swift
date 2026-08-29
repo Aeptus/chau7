@@ -75,6 +75,65 @@ enum RemoteTabInventoryState: Equatable {
     }
 }
 
+enum RemoteConnectionTrigger: String, Equatable {
+    case manual
+    case appAppear = "app_appear"
+    case sceneActive = "scene_active"
+    case pushWake = "push_wake"
+    case urlAction = "url_action"
+    case approvalDelivery = "approval_delivery"
+    case reconnect
+}
+
+enum RemoteDisconnectTrigger: String, Equatable {
+    case manual
+    case connectionRestart = "connection_restart"
+    case transportFailure = "transport_failure"
+    case handshakeTimeout = "handshake_timeout"
+    case backgroundExpiration = "background_expiration"
+}
+
+/// Pure ownership rules for connection attempts. Automatic callers coalesce
+/// behind any open transport, while an explicit manual retry may replace a
+/// wedged handshake. Only one delayed reconnect may exist at a time.
+enum RemoteConnectionStartPolicy {
+    static func shouldStartConnection(transportIsOpen: Bool, forceRestart: Bool) -> Bool {
+        forceRestart || !transportIsOpen
+    }
+
+    static func shouldScheduleReconnect(
+        hasScheduledReconnect: Bool,
+        shouldReconnect: Bool,
+        hasRemainingAttempts: Bool
+    ) -> Bool {
+        !hasScheduledReconnect && shouldReconnect && hasRemainingAttempts
+    }
+}
+
+enum RemoteConnectionFailureClassifier {
+    static func classify(_ reason: String?) -> String {
+        guard let reason = reason?.lowercased(), !reason.isEmpty else { return "unknown" }
+        if reason.contains("handshake_timeout") || reason.contains("timed out") || reason.contains("timeout") {
+            return "timeout"
+        }
+        if reason.contains("certificate") || reason.contains("tls") || reason.contains("ssl") {
+            return "transport_security"
+        }
+        if reason.contains("cancel") {
+            return "cancelled"
+        }
+        if reason.contains("network") && (reason.contains("unavailable") || reason.contains("offline")) {
+            return "network_unavailable"
+        }
+        if reason.contains("connection lost")
+            || reason.contains("connection reset")
+            || reason.contains("broken pipe") {
+            return "connection_lost"
+        }
+        return "other"
+    }
+}
+
 struct RemoteIssueReportContext: Equatable {
     let appVersion: String
     let osVersion: String

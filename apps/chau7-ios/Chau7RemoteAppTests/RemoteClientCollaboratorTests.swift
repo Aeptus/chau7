@@ -336,6 +336,52 @@ final class RemoteTabInventoryTests: XCTestCase {
     }
 }
 
+final class RemoteConnectionStartPolicyTests: XCTestCase {
+    func testAutomaticConnectionCoalescesBehindOpenTransport() {
+        XCTAssertFalse(RemoteConnectionStartPolicy.shouldStartConnection(
+            transportIsOpen: true,
+            forceRestart: false
+        ))
+        XCTAssertTrue(RemoteConnectionStartPolicy.shouldStartConnection(
+            transportIsOpen: false,
+            forceRestart: false
+        ))
+    }
+
+    func testManualConnectionMayRestartOpenTransport() {
+        XCTAssertTrue(RemoteConnectionStartPolicy.shouldStartConnection(
+            transportIsOpen: true,
+            forceRestart: true
+        ))
+    }
+
+    func testReconnectSchedulingIsSingleFlight() {
+        XCTAssertTrue(RemoteConnectionStartPolicy.shouldScheduleReconnect(
+            hasScheduledReconnect: false,
+            shouldReconnect: true,
+            hasRemainingAttempts: true
+        ))
+        XCTAssertFalse(RemoteConnectionStartPolicy.shouldScheduleReconnect(
+            hasScheduledReconnect: true,
+            shouldReconnect: true,
+            hasRemainingAttempts: true
+        ))
+        XCTAssertFalse(RemoteConnectionStartPolicy.shouldScheduleReconnect(
+            hasScheduledReconnect: false,
+            shouldReconnect: false,
+            hasRemainingAttempts: true
+        ))
+    }
+
+    func testFailureClassifierKeepsLogsBoundedAndNonSensitive() {
+        XCTAssertEqual(RemoteConnectionFailureClassifier.classify("handshake_timeout"), "timeout")
+        XCTAssertEqual(RemoteConnectionFailureClassifier.classify("The network is offline"), "network_unavailable")
+        XCTAssertEqual(RemoteConnectionFailureClassifier.classify("TLS certificate rejected"), "transport_security")
+        XCTAssertEqual(RemoteConnectionFailureClassifier.classify("private relay URL details"), "other")
+        XCTAssertEqual(RemoteConnectionFailureClassifier.classify(nil), "unknown")
+    }
+}
+
 final class RemoteIssueReportComposerTests: XCTestCase {
     private let context = RemoteIssueReportContext(
         appVersion: "1.2.3 (45)",

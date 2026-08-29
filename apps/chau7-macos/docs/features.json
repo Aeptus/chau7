@@ -2619,6 +2619,13 @@
   },
   {
     "category": "SSH, Profiles & Remote",
+    "feature": "Single-Flight iPhone Connection Recovery",
+    "description": "Launch, foreground, push, URL-action, and approval-delivery requests coalesce behind the active transport, only one delayed reconnect owns the next attempt, manual retries remain authoritative, and structured logs attribute each transition without retaining raw network errors",
+    "status": "Experimental",
+    "differentiator": "No"
+  },
+  {
+    "category": "SSH, Profiles & Remote",
     "feature": "Crash-Resilient Mac/Helper Session Replay",
     "description": "When the Chau7 app reconnects to a helper that retained an encrypted iPhone session, the helper replays current session readiness so macOS republishes initial tabs and activity instead of leaving the phone indefinitely syncing",
     "status": "Experimental",

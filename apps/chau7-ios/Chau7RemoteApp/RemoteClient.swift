@@ -191,7 +191,10 @@ final class RemoteClient {
             await self?.processIncomingMessage(data, generation: generation)
         }
         transport.onFailure = { [weak self] error in
-            self?.handleDisconnect(reason: error.localizedDescription)
+            self?.handleDisconnect(
+                reason: error.localizedDescription,
+                trigger: .transportFailure
+            )
         }
     }
 
@@ -199,18 +202,51 @@ final class RemoteClient {
 
     func connect() {
         guard let pairing = pairingInfo else { return }
-        connect(pairing: pairing)
+        startConnection(
+            pairing: pairing,
+            trigger: .manual,
+            forceRestart: true
+        )
     }
 
-    func connect(
+    func connectIfNeeded(trigger: RemoteConnectionTrigger) {
+        guard let pairing = pairingInfo else { return }
+        startConnection(
+            pairing: pairing,
+            trigger: trigger,
+            forceRestart: false
+        )
+    }
+
+    private func startConnection(
         pairing: PairingInfo,
         preserveApprovalsAndPrompts: Bool = false,
-        preserveReconnectAttempt: Bool = false
+        preserveReconnectAttempt: Bool = false,
+        trigger: RemoteConnectionTrigger,
+        forceRestart: Bool
     ) {
+        guard RemoteConnectionStartPolicy.shouldStartConnection(
+            transportIsOpen: transport.isOpen,
+            forceRestart: forceRestart
+        ) else {
+            DiagnosticsLog.shared.info(.connection, "Connection request coalesced", [
+                "trigger": trigger.rawValue,
+                "transport_generation": String(transport.generation),
+                "status": status.displayText
+            ])
+            return
+        }
+
+        DiagnosticsLog.shared.info(.connection, "Connection requested", [
+            "trigger": trigger.rawValue,
+            "force_restart": forceRestart ? "true" : "false",
+            "transport_generation": String(transport.generation)
+        ])
         disconnect(
             autoReconnect: false,
             preserveApprovalsAndPrompts: preserveApprovalsAndPrompts,
-            preserveReconnectAttempt: preserveReconnectAttempt
+            preserveReconnectAttempt: preserveReconnectAttempt,
+            trigger: .connectionRestart
         )
         pairingInfo = pairing
         lastError = nil
@@ -249,7 +285,10 @@ final class RemoteClient {
         emitTelemetry(
             type: .connectRequested,
             status: "connecting",
-            metadata: ["relay_host": pairing.relayURL]
+            metadata: [
+                "relay_host": pairing.relayURL,
+                "trigger": trigger.rawValue
+            ]
         )
         scheduleHandshake(for: transport.generation)
     }
@@ -263,7 +302,7 @@ final class RemoteClient {
             currentAppState = .foreground
             desiredStreamMode = .full
             if !transport.isOpen, pairingInfo != nil {
-                connect()
+                connectIfNeeded(trigger: .sceneActive)
             } else {
                 sendClientStateIfPossible()
                 requestActiveTabRefreshIfPossible()
@@ -329,7 +368,7 @@ final class RemoteClient {
         currentAppState = .background
         desiredStreamMode = .approvalsOnly
         if !transport.isOpen, pairingInfo != nil {
-            connect()
+            connectIfNeeded(trigger: .pushWake)
         } else {
             sendClientStateIfPossible()
         }
@@ -346,8 +385,16 @@ final class RemoteClient {
     func disconnect(
         autoReconnect: Bool = false,
         preserveApprovalsAndPrompts: Bool = false,
-        preserveReconnectAttempt: Bool = false
+        preserveReconnectAttempt: Bool = false,
+        trigger: RemoteDisconnectTrigger = .manual
     ) {
+        DiagnosticsLog.shared.info(.connection, "Connection teardown", [
+            "trigger": trigger.rawValue,
+            "auto_reconnect": autoReconnect ? "true" : "false",
+            "was_connected": isConnected ? "true" : "false",
+            "transport_open": transport.isOpen ? "true" : "false",
+            "transport_generation": String(transport.generation)
+        ])
         shouldReconnect = false
         reconnectTask?.cancel()
         reconnectTask = nil
@@ -541,7 +588,7 @@ final class RemoteClient {
         if !performURLAction(action) {
             pendingURLActions.append(action)
             if !transport.isOpen, pairingInfo != nil {
-                connect()
+                connectIfNeeded(trigger: .urlAction)
             }
         }
     }
@@ -574,18 +621,43 @@ final class RemoteClient {
         applyProcessedFrame(processed, signpostID: signpostID)
     }
 
-    private func handleDisconnect(reason: String? = nil) {
+    private func handleDisconnect(
+        reason: String? = nil,
+        trigger: RemoteDisconnectTrigger
+    ) {
+        let failureClass = RemoteConnectionFailureClassifier.classify(reason)
+        if reconnectTask != nil {
+            DiagnosticsLog.shared.info(.connection, "Duplicate disconnect coalesced", [
+                "trigger": trigger.rawValue,
+                "failure_class": failureClass,
+                "attempt": String(reconnectBackoff.attempt),
+                "transport_generation": String(transport.generation)
+            ])
+            return
+        }
+
         let wasConnected = isConnected
         cancelHandshakeTasks()
         isConnected = false
         status = .disconnected
         session.invalidateSession(clearHandshakeMaterial: false)
 
+        DiagnosticsLog.shared.info(.connection, "Connection interrupted", [
+            "trigger": trigger.rawValue,
+            "failure_class": failureClass,
+            "was_connected": wasConnected ? "true" : "false",
+            "transport_generation": String(transport.generation)
+        ])
+
         if wasConnected || reason != nil {
             emitTelemetry(type: .disconnected, status: "disconnected", message: reason)
         }
 
-        guard shouldReconnect, reconnectBackoff.hasRemainingAttempts else {
+        guard RemoteConnectionStartPolicy.shouldScheduleReconnect(
+            hasScheduledReconnect: reconnectTask != nil,
+            shouldReconnect: shouldReconnect,
+            hasRemainingAttempts: reconnectBackoff.hasRemainingAttempts
+        ) else {
             if !reconnectBackoff.hasRemainingAttempts {
                 lastError = "Reconnect limit reached (\(Self.maxReconnectAttempts) attempts)"
                 status = .connectionFailed
@@ -594,6 +666,13 @@ final class RemoteClient {
         }
         guard let delay = reconnectBackoff.nextDelay() else { return }
         status = .reconnecting(attempt: reconnectBackoff.attempt, max: Self.maxReconnectAttempts)
+        DiagnosticsLog.shared.info(.connection, "Reconnect scheduled", [
+            "trigger": trigger.rawValue,
+            "failure_class": failureClass,
+            "attempt": String(reconnectBackoff.attempt),
+            "delay_seconds": String(format: "%.0f", delay),
+            "transport_generation": String(transport.generation)
+        ])
         emitTelemetry(
             type: .reconnectScheduled,
             status: "scheduled",
@@ -606,11 +685,16 @@ final class RemoteClient {
 
         reconnectTask = Task { @MainActor [weak self] in
             try? await Task.sleep(for: .seconds(delay))
-            guard !Task.isCancelled, let self, let pairing = self.pairingInfo else { return }
-            self.connect(
+            guard let self else { return }
+            guard !Task.isCancelled else { return }
+            self.reconnectTask = nil
+            guard let pairing = self.pairingInfo else { return }
+            self.startConnection(
                 pairing: pairing,
                 preserveApprovalsAndPrompts: true,
-                preserveReconnectAttempt: true
+                preserveReconnectAttempt: true,
+                trigger: .reconnect,
+                forceRestart: true
             )
         }
     }
@@ -665,7 +749,10 @@ final class RemoteClient {
             // than a permanent failure. Route through the normal disconnect path
             // so the reconnect backoff retries instead of stranding the
             // connection until the user manually reconnects.
-            self.handleDisconnect(reason: "handshake_timeout")
+            self.handleDisconnect(
+                reason: "handshake_timeout",
+                trigger: .handshakeTimeout
+            )
         }
     }
 
@@ -1192,10 +1279,12 @@ final class RemoteClient {
         guard crypto != nil, transport.isOpen else {
             status = .reconnectingToSendApproval
             if let pairing = pairingInfo, !transport.isOpen {
-                connect(
+                startConnection(
                     pairing: pairing,
                     preserveApprovalsAndPrompts: true,
-                    preserveReconnectAttempt: true
+                    preserveReconnectAttempt: true,
+                    trigger: .approvalDelivery,
+                    forceRestart: false
                 )
             }
             return
@@ -1222,10 +1311,12 @@ final class RemoteClient {
                     self.lastError = "Approval response was not delivered. Chau7 will retry when the connection is ready."
                     self.status = .approvalQueued
                     if let pairing = self.pairingInfo, !self.transport.isOpen {
-                        self.connect(
+                        self.startConnection(
                             pairing: pairing,
                             preserveApprovalsAndPrompts: true,
-                            preserveReconnectAttempt: true
+                            preserveReconnectAttempt: true,
+                            trigger: .approvalDelivery,
+                            forceRestart: false
                         )
                     }
                 case .superseded:
@@ -1684,7 +1775,11 @@ final class RemoteClient {
         // reconnect (only genuinely new entries notify), and the old
         // wall-clock window could mute a legitimately new approval that
         // arrived while suspended.
-        disconnect(autoReconnect: false, preserveApprovalsAndPrompts: true)
+        disconnect(
+            autoReconnect: false,
+            preserveApprovalsAndPrompts: true,
+            trigger: .backgroundExpiration
+        )
         status = .backgroundSuspended
     }
 
