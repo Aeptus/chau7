@@ -413,7 +413,7 @@ func (a *Agent) ipcLoop(ctx context.Context) {
 		a.ipcMu.Lock()
 		a.ipcConn = conn
 		a.ipcMu.Unlock()
-		a.sendPairingInfo()
+		a.announceIPCConnection()
 		a.readIPC(ctx, conn)
 		a.ipcMu.Lock()
 		a.ipcConn = nil
@@ -425,6 +425,24 @@ func (a *Agent) ipcLoop(ctx context.Context) {
 			return
 		}
 	}
+}
+
+// announceIPCConnection publishes both durable pairing information and the
+// helper's current relay-session state. The helper can survive a Chau7 app
+// crash, so a newly reconnected IPC consumer must be caught up to an already
+// ready phone session; otherwise the Mac never sends its initial tab state.
+func (a *Agent) announceIPCConnection() {
+	a.sendPairingInfo()
+
+	a.sessionMu.Lock()
+	ready := a.sessionReady
+	a.sessionMu.Unlock()
+	status := "disconnected"
+	if ready {
+		status = "ready"
+	}
+	a.sendSessionStatus(status)
+	log.Printf("ipc connected: replayed session status %s", status)
 }
 
 func (a *Agent) readIPC(ctx context.Context, conn *net.UnixConn) {

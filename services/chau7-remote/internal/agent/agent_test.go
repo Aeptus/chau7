@@ -1,18 +1,104 @@
 package agent
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/chau7/chau7-remote/internal/protocol"
 )
+
+func TestAnnounceIPCConnectionReplaysExistingSessionStatus(t *testing.T) {
+	for _, tt := range []struct {
+		name         string
+		sessionReady bool
+		wantStatus   string
+	}{
+		{name: "ready session", sessionReady: true, wantStatus: "ready"},
+		{name: "disconnected session", sessionReady: false, wantStatus: "disconnected"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			socketPath := fmt.Sprintf("/tmp/ch7-ipc-%d.sock", time.Now().UnixNano())
+			t.Cleanup(func() { _ = os.Remove(socketPath) })
+			listener, err := net.ListenUnix("unix", &net.UnixAddr{
+				Name: socketPath,
+				Net:  "unix",
+			})
+			if err != nil {
+				t.Fatalf("listen unix: %v", err)
+			}
+			defer listener.Close()
+
+			accepted := make(chan *net.UnixConn, 1)
+			acceptErr := make(chan error, 1)
+			go func() {
+				conn, err := listener.AcceptUnix()
+				if err != nil {
+					acceptErr <- err
+					return
+				}
+				accepted <- conn
+			}()
+
+			client, err := net.DialUnix("unix", nil, listener.Addr().(*net.UnixAddr))
+			if err != nil {
+				t.Fatalf("dial unix: %v", err)
+			}
+			defer client.Close()
+
+			var server *net.UnixConn
+			select {
+			case server = <-accepted:
+			case err := <-acceptErr:
+				t.Fatalf("accept unix: %v", err)
+			case <-time.After(time.Second):
+				t.Fatal("timed out accepting unix connection")
+			}
+			defer server.Close()
+
+			a := &Agent{
+				state:        &State{DeviceID: "mac-device"},
+				ipcConn:      client,
+				sessionReady: tt.sessionReady,
+			}
+			a.announceIPCConnection()
+
+			reader := bufio.NewReader(server)
+			pairingFrame, err := readIPCFrame(reader)
+			if err != nil {
+				t.Fatalf("read pairing frame: %v", err)
+			}
+			if pairingFrame.Type != protocol.TypePairingInfo {
+				t.Fatalf("first frame type = 0x%02x, want pairing info", pairingFrame.Type)
+			}
+
+			statusFrame, err := readIPCFrame(reader)
+			if err != nil {
+				t.Fatalf("read session status frame: %v", err)
+			}
+			if statusFrame.Type != protocol.TypeSessionStatus {
+				t.Fatalf("second frame type = 0x%02x, want session status", statusFrame.Type)
+			}
+			var status SessionStatusPayload
+			if err := json.Unmarshal(statusFrame.Payload, &status); err != nil {
+				t.Fatalf("decode session status: %v", err)
+			}
+			if status.Status != tt.wantStatus {
+				t.Fatalf("session status = %q, want %q", status.Status, tt.wantStatus)
+			}
+		})
+	}
+}
 
 func TestIsPairRequestAuthorizedAcceptsValidPairingCode(t *testing.T) {
 	a := &Agent{
