@@ -133,6 +133,7 @@ private final class SettingsToolbarDelegate: NSObject, NSToolbarDelegate {
             switch ApplicationInstanceLock.shared.acquire() {
             case .acquired(let owner):
                 ownsApplicationInstance = true
+                LaunchContinuityTracker.shared.start()
                 Log.info("Application instance acquired pid=\(owner.pid) token=\(owner.launchToken.uuidString)")
             case .alreadyRunning(let owner):
                 Log.warn("Duplicate application launch refused owner_pid=\(owner?.pid.description ?? "unknown")")
