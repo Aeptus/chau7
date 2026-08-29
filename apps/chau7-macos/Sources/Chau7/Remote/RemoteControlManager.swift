@@ -11,6 +11,7 @@ final class RemoteControlManager {
     private(set) var isAgentRunning = false
     private(set) var isIPCConnected = false
     private(set) var activeRelayURL: String?
+    private(set) var relayStatus: String?
     private(set) var sessionStatus: String?
     private(set) var pairingInfo: RemotePairingInfo?
     private(set) var lastError: String?
@@ -49,6 +50,7 @@ final class RemoteControlManager {
     /// Last tab-list count emitted to the remote client, used to throttle
     /// the noisy "sent tab list with N tabs" log so it only fires on change.
     @ObservationIgnored private var lastSentTabListCount: Int?
+    @ObservationIgnored private var lastOperationalSnapshot: RemoteOperationalSnapshot?
     @ObservationIgnored private weak var overlayModel: OverlayTabsModel?
     /// The tab the remote (iOS) client is currently viewing. Unlike each
     /// window's `selectedTabID`, this is owned by the remote session and may
@@ -114,9 +116,11 @@ final class RemoteControlManager {
         ipc.onClientConnected = { [weak self] in
             self?.isIPCConnected = true
             self?.sendInitialState()
+            self?.logOperationalSnapshot(reason: "ipc_connected")
         }
         ipc.onClientDisconnected = { [weak self] in
             self?.isIPCConnected = false
+            self?.relayStatus = nil
             self?.sessionStatus = nil
             self?.connectedPairedDeviceID = nil
             self?.connectedClientAppState = .foreground
@@ -129,6 +133,7 @@ final class RemoteControlManager {
             self?.cancelPendingOutputFlush()
             self?.reconcilePromptRecheckTimer(hasPrompts: false)
             self?.refreshPairedDevices()
+            self?.logOperationalSnapshot(reason: "ipc_disconnected")
         }
         ipc.start()
         refreshPairedDevices()
@@ -289,9 +294,11 @@ final class RemoteControlManager {
             ))
             isAgentRunning = true
             activeRelayURL = relayURL
+            relayStatus = "connecting"
             lastError = nil
             logger.info("Remote agent started from \(binaryPath.path, privacy: .public)")
             refreshPairedDevices()
+            logOperationalSnapshot(reason: "agent_started")
         } catch {
             let errorMessage = "Failed to start remote agent: \(error.localizedDescription)"
             logger.error("\(errorMessage, privacy: .public)")
@@ -304,6 +311,8 @@ final class RemoteControlManager {
     /// state resets still apply after an unexpected exit, as they always did.
     private func handleAgentExit(status: Int32) {
         isAgentRunning = false
+        relayStatus = nil
+        logOperationalSnapshot(reason: "agent_exited")
         if status != 0 {
             let error = "Remote agent exited with status \(status)"
             logger.error("\(error, privacy: .public)")
@@ -318,12 +327,14 @@ final class RemoteControlManager {
         sidecar.stop()
         isAgentRunning = false
         activeRelayURL = nil
+        relayStatus = nil
         pairingInfo = nil
         sessionStatus = nil
         connectedPairedDeviceID = nil
         remoteActivity = nil
         interactivePrompts = []
         pendingProtectedInputs.removeAll()
+        logOperationalSnapshot(reason: "agent_stopped")
     }
 
     func restartAgentIfRunning() {
@@ -383,6 +394,11 @@ final class RemoteControlManager {
                 sendInitialState()
             }
             refreshPairedDevices()
+            logOperationalSnapshot(reason: "session_status")
+        case .relayStatus:
+            guard let status: RemoteRelayStatus = decodePayload(frame, as: RemoteRelayStatus.self, context: "relay status") else { return }
+            relayStatus = status.status
+            logOperationalSnapshot(reason: "relay_status")
         case .tabSwitch:
             handleTabSwitch(frame)
         case .input:
@@ -1225,6 +1241,7 @@ final class RemoteControlManager {
             if lastSentTabListCount != tabPayloads.count {
                 logger.info("Remote: sent tab list with \(tabPayloads.count, privacy: .public) tabs")
                 lastSentTabListCount = tabPayloads.count
+                logOperationalSnapshot(reason: "tab_inventory", tabCount: tabPayloads.count)
             } else {
                 logger.debug("Remote: resent tab list (\(tabPayloads.count, privacy: .public) tabs, unchanged)")
             }
@@ -1233,6 +1250,22 @@ final class RemoteControlManager {
         } catch {
             logger.warning("Failed to encode tab list: \(error.localizedDescription, privacy: .public)")
         }
+    }
+
+    private func logOperationalSnapshot(reason: String, tabCount: Int? = nil) {
+        let snapshot = RemoteOperationalSnapshot(
+            agent: isAgentRunning ? "running" : "stopped",
+            ipc: isIPCConnected ? "connected" : "disconnected",
+            relay: relayStatus ?? "unknown",
+            session: sessionStatus ?? "disconnected",
+            tabCount: tabCount ?? lastSentTabListCount ?? 0,
+            stream: connectedClientStreamMode.rawValue
+        )
+        guard snapshot != lastOperationalSnapshot else { return }
+        lastOperationalSnapshot = snapshot
+        let message = "Remote operational snapshot reason=\(reason) \(snapshot.summary)"
+        logger.info("\(message, privacy: .public)")
+        Log.info(message)
     }
 
     private func schedulePendingOutputFlush() {

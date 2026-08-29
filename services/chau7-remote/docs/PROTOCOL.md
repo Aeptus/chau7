@@ -133,6 +133,7 @@ Type codes (`u8`). The Swift enum `RemoteFrameType`
 - `0x41 SESSION_STATUS` (local IPC, JSON)
 - `0x42 REMOTE_TELEMETRY` (encrypted over relay, local IPC after relay client decrypts)
 - `0x43 CLIENT_STATE` (encrypted, JSON)
+- `0x44 RELAY_STATUS` (local IPC, JSON — helper-to-relay transport state and optional reconnect delay)
 - `0x50 APPROVAL_REQUEST` (encrypted, JSON)
 - `0x51 APPROVAL_RESPONSE` (encrypted, JSON)
 - `0x52 NOTIFICATION_EVENT` (encrypted, JSON)

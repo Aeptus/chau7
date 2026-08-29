@@ -123,6 +123,7 @@ public enum RemoteFrameType: UInt8, CaseIterable, Sendable {
     case sessionStatus = 0x41
     case remoteTelemetry = 0x42
     case clientState = 0x43
+    case relayStatus = 0x44
     case tabList = 0x10
     case tabSwitch = 0x11
     case activityState = 0x12

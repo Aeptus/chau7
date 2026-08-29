@@ -62,6 +62,12 @@ struct RemoteSettingsView: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text(remote.isAgentRunning ? L("status.running", "Running") : L("status.stopped", "Stopped"))
                     .fontWeight(.semibold)
+                Text(remote.isIPCConnected ? L("remote.ipc.connected", "IPC connected") : L("remote.ipc.disconnected", "IPC not connected"))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Text(String(format: L("remote.relayStatus", "Relay: %@"), remote.relayStatus ?? L("status.unknown", "Unknown")))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
                 if let error = remote.lastError, !error.isEmpty {
                     Text(error)
                         .font(.caption)
@@ -75,10 +81,6 @@ struct RemoteSettingsView: View {
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
-                } else {
-                    Text(remote.isIPCConnected ? L("remote.ipc.connected", "IPC connected") : L("remote.ipc.disconnected", "IPC not connected"))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
                 }
             }
         }

@@ -55,8 +55,10 @@ type Agent struct {
 	ipcMu   sync.Mutex
 	ipcConn *net.UnixConn
 
-	wsMu   sync.Mutex
-	wsConn *websocket.Conn
+	wsMu           sync.Mutex
+	wsConn         *websocket.Conn
+	relayStatus    string
+	relayRetryInMS int64
 
 	stateMu sync.Mutex // protects a.state reads/writes
 
@@ -132,6 +134,11 @@ type SessionStatusPayload struct {
 	Status           string `json:"status"`
 	PairedDeviceID   string `json:"paired_device_id,omitempty"`
 	PairedDeviceName string `json:"paired_device_name,omitempty"`
+}
+
+type RelayStatusPayload struct {
+	Status    string `json:"status"`
+	RetryInMS int64  `json:"retry_in_ms,omitempty"`
 }
 
 type RemoteClientStatePayload struct {
@@ -312,6 +319,7 @@ func NewAgent(socketPath, relayBaseURL, macName, statePath string) (*Agent, erro
 		statePath:    statePath,
 		state:        state,
 		sendSeq:      1,
+		relayStatus:  "connecting",
 		// Push-eligible until the app proves it is foreground: assuming
 		// "foreground" at startup meant an agent (re)start while the phone
 		// was locked in a pocket suppressed every push until the app next
@@ -433,6 +441,7 @@ func (a *Agent) ipcLoop(ctx context.Context) {
 // ready phone session; otherwise the Mac never sends its initial tab state.
 func (a *Agent) announceIPCConnection() {
 	a.sendPairingInfo()
+	a.sendRelayStatus()
 
 	a.sessionMu.Lock()
 	ready := a.sessionReady
@@ -442,7 +451,7 @@ func (a *Agent) announceIPCConnection() {
 		status = "ready"
 	}
 	a.sendSessionStatus(status)
-	log.Printf("ipc connected: replayed session status %s", status)
+	log.Printf("ipc connected: replayed relay and session status %s", status)
 }
 
 func (a *Agent) readIPC(ctx context.Context, conn *net.UnixConn) {
@@ -488,6 +497,7 @@ func (a *Agent) relayLoop(ctx context.Context) {
 		url := a.relayConnectURL()
 		conn, _, err := websocket.Dial(ctx, url, a.relayDialOptions())
 		if err != nil {
+			a.updateRelayStatus("reconnecting", backoff)
 			log.Printf("relay connect: %v (retry in %v)", err, backoff)
 			select {
 			case <-time.After(backoff):
@@ -501,6 +511,7 @@ func (a *Agent) relayLoop(ctx context.Context) {
 		a.wsMu.Lock()
 		a.wsConn = conn
 		a.wsMu.Unlock()
+		a.updateRelayStatus("connected", 0)
 		a.resetSession()
 		a.stateMu.Lock()
 		hasPaired := a.state.HasPairedDevices()
@@ -514,6 +525,7 @@ func (a *Agent) relayLoop(ctx context.Context) {
 		a.wsMu.Lock()
 		a.wsConn = nil
 		a.wsMu.Unlock()
+		a.updateRelayStatus("reconnecting", 2*time.Second)
 		a.resetSession()
 		a.sendSessionStatus("disconnected")
 		log.Printf("relay disconnected, reconnecting in %v", 2*time.Second)
@@ -1157,6 +1169,43 @@ func (a *Agent) sendSessionStatus(status string) {
 	a.sendToIPC(&protocol.Frame{
 		Version: 1,
 		Type:    protocol.TypeSessionStatus,
+		Seq:     a.nextSeq(),
+		Payload: payload,
+	})
+}
+
+func (a *Agent) updateRelayStatus(status string, retryIn time.Duration) {
+	a.wsMu.Lock()
+	a.relayStatus = status
+	a.relayRetryInMS = retryIn.Milliseconds()
+	a.wsMu.Unlock()
+	a.sendRelayStatus()
+}
+
+func (a *Agent) sendRelayStatus() {
+	a.wsMu.Lock()
+	status := a.relayStatus
+	retryInMS := a.relayRetryInMS
+	if status == "" {
+		if a.wsConn != nil {
+			status = "connected"
+		} else {
+			status = "disconnected"
+		}
+	}
+	a.wsMu.Unlock()
+
+	payload, err := json.Marshal(RelayStatusPayload{
+		Status:    status,
+		RetryInMS: retryInMS,
+	})
+	if err != nil {
+		log.Printf("relay status: marshal: %v", err)
+		return
+	}
+	a.sendToIPC(&protocol.Frame{
+		Version: 1,
+		Type:    protocol.TypeRelayStatus,
 		Seq:     a.nextSeq(),
 		Payload: payload,
 	})

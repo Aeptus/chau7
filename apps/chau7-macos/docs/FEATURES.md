@@ -680,6 +680,7 @@ Chau7's rendering pipeline is purpose-built for latency-sensitive terminal work:
 
 ### Remote (Experimental)
 
+- **Correlated transport status** — the helper reports its live relay WebSocket state independently from local IPC and encrypted phone-session readiness. Remote settings expose all three layers, and transition-only snapshots add tab inventory and stream mode to durable logs so an empty phone tab list can be attributed without reconstructing separate log systems.
 - Read-only remote terminal sharing with viewer approval flow.
 - Cloudflare Workers relay — no port forwarding required.
 - Session recording with timestamps and timeline scrubber.

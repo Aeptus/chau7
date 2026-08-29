@@ -82,12 +82,27 @@ func TestAnnounceIPCConnectionReplaysExistingSessionStatus(t *testing.T) {
 				t.Fatalf("first frame type = 0x%02x, want pairing info", pairingFrame.Type)
 			}
 
+			relayFrame, err := readIPCFrame(reader)
+			if err != nil {
+				t.Fatalf("read relay status frame: %v", err)
+			}
+			if relayFrame.Type != protocol.TypeRelayStatus {
+				t.Fatalf("second frame type = 0x%02x, want relay status", relayFrame.Type)
+			}
+			var relayStatus RelayStatusPayload
+			if err := json.Unmarshal(relayFrame.Payload, &relayStatus); err != nil {
+				t.Fatalf("decode relay status: %v", err)
+			}
+			if relayStatus.Status != "disconnected" {
+				t.Fatalf("relay status = %q, want disconnected", relayStatus.Status)
+			}
+
 			statusFrame, err := readIPCFrame(reader)
 			if err != nil {
 				t.Fatalf("read session status frame: %v", err)
 			}
 			if statusFrame.Type != protocol.TypeSessionStatus {
-				t.Fatalf("second frame type = 0x%02x, want session status", statusFrame.Type)
+				t.Fatalf("third frame type = 0x%02x, want session status", statusFrame.Type)
 			}
 			var status SessionStatusPayload
 			if err := json.Unmarshal(statusFrame.Payload, &status); err != nil {

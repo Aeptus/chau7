@@ -1,5 +1,12 @@
 [
   {
+    "category": "Remote Access",
+    "feature": "Correlated Remote Transport Diagnostics",
+    "description": "Reports helper IPC, relay WebSocket, encrypted phone-session, tab inventory, and stream state as separate UI status and one privacy-safe operational snapshot",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
     "category": "AI Integration",
     "feature": "Live AI Session Binding Validation",
     "description": "Rejects stale provider hook mappings when a terminal tab is visibly owned by another AI provider, while retaining safe shell and same-provider rebinding",

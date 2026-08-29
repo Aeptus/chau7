@@ -33,6 +33,7 @@ const (
 	TypeSessionStatus         = 0x41
 	TypeRemoteTelemetry       = 0x42
 	TypeClientState           = 0x43
+	TypeRelayStatus           = 0x44
 	TypeApprovalRequest       = 0x50
 	TypeApprovalResponse      = 0x51
 	TypeNotificationEvent     = 0x52
