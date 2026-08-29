@@ -133,6 +133,24 @@ final class TerminalControlService {
         onMain { self.routingRecordsLocked() }
     }
 
+    /// Returns whether a provider event's stamped tab target has been made
+    /// stale by the tab being reused for another currently-active AI tool.
+    func hasConflictingLiveAIIdentity(
+        tabID: UUID,
+        incomingProvider: String,
+        incomingSessionID: String?
+    ) -> Bool {
+        let records = routingRecords().filter { $0.tabID == tabID && $0.isDisplaySession }
+        if case .conflicting = AISessionBindingPolicy.classify(
+            incomingProvider: incomingProvider,
+            incomingSessionID: incomingSessionID,
+            records: records
+        ) {
+            return true
+        }
+        return false
+    }
+
     func resolveTab(for target: TabTarget, strictSession: Bool = false) -> OverlayTab? {
         onMain {
             guard let tabID = self.resolveTabIDLocked(for: target, strictSession: strictSession) else {

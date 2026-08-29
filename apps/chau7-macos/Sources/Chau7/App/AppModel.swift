@@ -1311,7 +1311,17 @@ final class AppModel {
     ) -> UUID? {
         let trimmed = stampedTabID.trimmingCharacters(in: .whitespacesAndNewlines)
         if let explicit = UUID(uuidString: trimmed) {
-            return explicit
+            if !TerminalControlService.shared.hasConflictingLiveAIIdentity(
+                tabID: explicit,
+                incomingProvider: "Claude",
+                incomingSessionID: sessionID
+            ) {
+                return explicit
+            }
+            Log.trace(
+                "Rejected stale Claude tab stamp tab=\(explicit) session=\(sessionID) " +
+                    "reason=live_tab_identity_conflict"
+            )
         }
         return exactClaudeTabID(sessionID: sessionID, directory: directory)
     }

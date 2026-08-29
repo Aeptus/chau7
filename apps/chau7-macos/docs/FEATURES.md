@@ -66,6 +66,7 @@ Detection methods:
 
 ### AI Features
 
+- **Live AI session binding validation** — provider hook events must agree with the AI provider currently displayed in their stamped terminal tab. A stale Claude mapping is quarantined when that tab is visibly running Codex, preventing obsolete CWD and lifecycle updates from mutating the live tab while preserving shell returns and same-provider restarts.
 - **Accurate terminal scan diagnostics** — dangerous-output timer lateness is labeled `scan_queue_delay` in warnings rather than implying that row scanning took that long. Structured lag compatibility is preserved, and actual visible-row refresh duration remains independently profiled.
 - **Mature latency warning signals** — every threshold-crossing terminal latency event remains in structured telemetry, while warning logs require a mature sample window and either sustained p95 degradation or a three-times-threshold event. Startup and isolated moderate outliers remain measurable without becoming operational noise.
 - **Expected event log severity** — routine multiline-paste interception remains auditable at info level, while idempotent attention-style cleanup for an already-closed tab is debug-only. Warning severity remains reserved for actual confirmation, blocking, homoglyph, and operational failure paths.

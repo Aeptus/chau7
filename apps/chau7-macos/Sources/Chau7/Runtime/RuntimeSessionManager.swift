@@ -521,13 +521,27 @@ final class RuntimeSessionManager {
         let normalizedClaudeSessionID = normalizeClaudeSessionID(event.sessionId)
 
         lock.lock()
-        if let normalizedClaudeSessionID,
-           let runtimeSessionID = claudeToRuntimeSession[normalizedClaudeSessionID],
-           let exactSession = sessions[runtimeSessionID] {
-            lock.unlock()
-            return exactSession
+        let exactSession = normalizedClaudeSessionID
+            .flatMap { claudeToRuntimeSession[$0] }
+            .flatMap { sessions[$0] }
+        lock.unlock()
+
+        if let normalizedClaudeSessionID, let exactSession {
+            if TerminalControlService.shared.hasConflictingLiveAIIdentity(
+                tabID: exactSession.tabID,
+                incomingProvider: "Claude",
+                incomingSessionID: normalizedClaudeSessionID
+            ) {
+                invalidateStaleClaudeBinding(
+                    session: exactSession,
+                    claudeSessionID: normalizedClaudeSessionID
+                )
+            } else {
+                return exactSession
+            }
         }
 
+        lock.lock()
         let candidateIDs = Array(cwdToSessions[event.cwd] ?? [])
         let candidates = candidateIDs.compactMap { sessions[$0] }
         let existingBindings = runtimeToClaudeSession
@@ -600,6 +614,27 @@ final class RuntimeSessionManager {
         claudeToRuntimeSession[claudeSessionID] = runtimeSessionID
         runtimeToClaudeSession[runtimeSessionID] = claudeSessionID
         lock.unlock()
+    }
+
+    private func invalidateStaleClaudeBinding(
+        session: RuntimeSession,
+        claudeSessionID: String
+    ) {
+        session.journal.append(
+            sessionID: session.id,
+            turnID: session.currentTurnID,
+            type: RuntimeEventType.sessionStopped.rawValue,
+            data: [
+                "reason": "live_tab_identity_conflict",
+                "external_session_id": claudeSessionID
+            ]
+        )
+        _ = session.transition(.tabClosed)
+        moveToStopped(session)
+        Log.warn(
+            "RuntimeSessionManager: invalidated stale Claude binding session=\(claudeSessionID) " +
+                "runtime=\(session.id) tab=\(session.tabID) reason=live_tab_identity_conflict"
+        )
     }
 
     private func normalizeClaudeSessionID(_ sessionID: String) -> String? {
@@ -753,6 +788,13 @@ final class RuntimeSessionManager {
     private func stampedClaudeTabID(from rawTabID: String) -> UUID? {
         let trimmed = rawTabID.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let tabID = UUID(uuidString: trimmed), tabExistsLocked(tabID) else {
+            return nil
+        }
+        guard !TerminalControlService.shared.hasConflictingLiveAIIdentity(
+            tabID: tabID,
+            incomingProvider: "Claude",
+            incomingSessionID: nil
+        ) else {
             return nil
         }
         return tabID
