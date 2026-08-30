@@ -98,6 +98,7 @@ AI Detection & Integration,Completed-Turn Tab Styling,"A finished Claude turn st
 MCP Server,Codex MCP Config Self-Healing,Codex MCP registration rewrites stale shell-wrapper commands and multi-line args arrays to direct chau7-mcp-bridge execution while preserving per-tool approval subsections such as tab_close,Shipped,Yes
 Terminal Core,Rust Terminal Backend,"Custom terminal emulator written in Rust with FFI bridge — fast, memory-safe, and correct",Shipped,Yes
 Terminal Core,Terminal Runtime Facts,Rust exposes alternate-screen state through FFI and debug snapshots so Swift can handle full-screen TUI surfaces without provider-specific heuristics,Shipped,Yes
+Terminal Core,TUI-Owned Arrow Navigation,"Shell history intercepts Up and Down only when the plain shell owns input, forwarding arrows to known terminal UIs and alternate-screen applications even when prompt metadata is stale",Shipped,Yes
 Terminal Core,Generic TUI Scroll Policy,"Pure Chau7Core policy routes scroll input to shell scrollback, mouse-aware TUI apps, or transcript history based on terminal runtime state",Shipped,Yes
 Terminal Core,Per-Tab Transcript Capture,Each terminal session keeps a bounded chunked PTY transcript ring with command-boundary backfill; capacity eviction drops old chunks instead of rebuilding the full retained transcript on the main thread,Shipped,Yes
 Terminal Core,TUI Transcript Overlay,Alternate-screen TUIs without normal scrollback can show recent transcript history on scroll-up while mouse-reporting TUIs keep receiving wheel events,Shipped,Yes

@@ -694,6 +694,13 @@
   },
   {
     "category": "Terminal Core",
+    "feature": "TUI-Owned Arrow Navigation",
+    "description": "Shell history intercepts Up and Down only when the plain shell owns input, forwarding arrows to known terminal UIs and alternate-screen applications even when prompt metadata is stale",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "Terminal Core",
     "feature": "Generic TUI Scroll Policy",
     "description": "Pure Chau7Core policy routes scroll input to shell scrollback, mouse-aware TUI apps, or transcript history based on terminal runtime state",
     "status": "Shipped",
