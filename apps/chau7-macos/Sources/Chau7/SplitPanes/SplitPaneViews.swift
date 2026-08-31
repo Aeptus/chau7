@@ -20,6 +20,9 @@ struct SplitPaneView: View {
         .environment(\.paneEnvironment, PaneEnvironment(
             canClosePane: controller.canClosePane,
             onFocus: { [weak controller] id in controller?.setFocusedPane(id) },
+            isCurrentFocusOwner: { [weak controller] id in
+                controller?.focusedPaneID == id
+            },
             onUpdateRatio: { splitID, newRatio in
                 controller.updateRatio(splitID: splitID, newRatio: newRatio)
             },
@@ -75,6 +78,7 @@ struct SplitNodeView: View {
                     tabIsInteractive: isInteractive
                 ),
                 onFocus: { env?.onFocus(p.id) },
+                rendererClaimIsCurrent: { env?.isCurrentFocusOwner(p.id) ?? false },
                 onClose: { env?.onClosePane(p.id) },
                 canClose: env?.canClosePane ?? false,
                 onFilePathClicked: env?.onFilePathClicked
@@ -200,6 +204,7 @@ struct TerminalPaneView: View {
     let renderPhase: TabRenderPhase
     let isInteractive: Bool
     let onFocus: () -> Void
+    let rendererClaimIsCurrent: () -> Bool
     let onClose: () -> Void
     let canClose: Bool
     var onFilePathClicked: ((String, Int?, Int?) -> Void)? // F03: Internal editor callback
@@ -210,6 +215,7 @@ struct TerminalPaneView: View {
             renderPhase: renderPhase,
             isInteractive: isInteractive,
             onFocus: onFocus,
+            rendererClaimIsCurrent: rendererClaimIsCurrent,
             onFilePathClicked: onFilePathClicked
         )
         .overlay(alignment: .topTrailing) {

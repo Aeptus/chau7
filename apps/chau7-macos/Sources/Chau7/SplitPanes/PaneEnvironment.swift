@@ -17,6 +17,11 @@ struct PaneEnvironment {
     /// or click on the pane body.
     let onFocus: (UUID) -> Void
 
+    /// Reads the controller's live focus rather than a SwiftUI-rendered copy.
+    /// Terminal representables use this to reject delayed Metal claims from
+    /// a pane that lost focus after its view update was scheduled.
+    let isCurrentFocusOwner: (UUID) -> Bool
+
     /// Called when the user drags a split divider, with the new ratio for
     /// the split node identified by `id`.
     let onUpdateRatio: (UUID, CGFloat) -> Void

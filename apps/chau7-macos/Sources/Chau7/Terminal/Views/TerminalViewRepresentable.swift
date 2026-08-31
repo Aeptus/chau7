@@ -141,6 +141,7 @@ struct TerminalViewRepresentable: NSViewRepresentable {
     var renderPhase: TabRenderPhase
     var isInteractive: Bool
     var onFocus: (() -> Void)?
+    var rendererClaimIsCurrent: (() -> Bool)?
     var onFilePathClicked: ((String, Int?, Int?) -> Void)?
     var settings = FeatureSettings.shared
 
@@ -431,7 +432,16 @@ struct TerminalViewRepresentable: NSViewRepresentable {
         let transition = context.coordinator.consumeRenderPhaseTransition(to: renderPhase)
         let keepsVisibleSurface = renderPhase.keepsVisibleSurface
         let allowsLivePresentation = renderPhase.allowsLivePresentation
-        nsView.applyRenderPhase(renderPhase, isInteractive: isInteractive, reason: "updateNSView")
+        let isAuthoritativeFocusOwner = rendererClaimIsCurrent?() ?? true
+        let ownsInteractivePresentation = MetalRendererClaimPolicy.shouldClaim(
+            isInteractive: isInteractive,
+            isAuthoritativeFocusOwner: isAuthoritativeFocusOwner
+        )
+        nsView.applyRenderPhase(
+            renderPhase,
+            isInteractive: ownsInteractivePresentation,
+            reason: "updateNSView"
+        )
         _ = Self.startTerminalIfReady(
             model: model,
             container: container,
@@ -457,7 +467,7 @@ struct TerminalViewRepresentable: NSViewRepresentable {
         // coordinator via invalidateRenderLifecycle. This prevents the
         // reconciliation from stealing the coordinator back to just-
         // deselected tabs during the handoff window.
-        if isInteractive,
+        if ownsInteractivePresentation,
            settings.useMetalRenderer,
            nsView.isTerminalStarted,
            !nsView.isMetalRenderingActive,
