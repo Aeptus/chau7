@@ -27,6 +27,7 @@ import {
 } from './apns.js';
 import { RateLimiter } from './ratelimit.js';
 import { parseToken, TOKEN_TTL_SECONDS } from './token.js';
+import { relayBackpressureAction } from './backpressure.js';
 
 interface PushRegistration {
   pairedDeviceId: string;
@@ -66,10 +67,6 @@ const SEEN_NONCES_KEY = 'seen_nonces';
 
 /** Reject relayed frames larger than this (matches the platform WS message limit). */
 const MAX_FRAME_BYTES = 1024 * 1024;
-/** Drop frames to a peer whose send buffer already exceeds this (slow receiver). */
-const BACKPRESSURE_SOFT_BYTES = 4 * 1024 * 1024;
-/** Close a peer whose send buffer is hopelessly backed up. */
-const BACKPRESSURE_HARD_BYTES = 16 * 1024 * 1024;
 /** Upper bound on retained nonces; bounded anyway by TTL + rate limits. */
 const MAX_SEEN_NONCES = 2000;
 
@@ -177,7 +174,8 @@ export class SessionDO {
     const peerRole: Role = role === 'mac' ? 'ios' : 'mac';
     for (const peer of this.state.getWebSockets(peerRole)) {
       const buffered = (peer as { bufferedAmount?: number }).bufferedAmount ?? 0;
-      if (buffered > BACKPRESSURE_HARD_BYTES) {
+      const backpressureAction = relayBackpressureAction(buffered, message);
+      if (backpressureAction === 'close') {
         // Receiver is hopelessly behind; shed it rather than grow memory.
         try {
           peer.close(1013, 'Receiver overloaded');
@@ -186,8 +184,9 @@ export class SessionDO {
         }
         continue;
       }
-      if (buffered > BACKPRESSURE_SOFT_BYTES) {
-        // Drop this frame; the encrypted transport above the relay recovers.
+      if (backpressureAction === 'drop-grid') {
+        // A full grid is replaceable state. Preserve ordered output/control
+        // frames and let the next coalesced grid catch the viewport up.
         continue;
       }
       try {

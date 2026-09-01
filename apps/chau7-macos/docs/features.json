@@ -2591,6 +2591,13 @@
   },
   {
     "category": "SSH, Profiles & Remote",
+    "feature": "Loss-Aware Relay Backpressure",
+    "description": "Relay soft pressure drops only replaceable terminal grids while preserving ordered output and control frames; the hard pressure limit closes the connection instead of allowing an unrecoverably incomplete encrypted stream",
+    "status": "Experimental",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "SSH, Profiles & Remote",
     "feature": "Selected-Tab Remote Streaming",
     "description": "macOS streams terminal output and snapshots only for the tab currently selected on iPhone; background tabs stay metadata/activity/approvals-only until switched to",
     "status": "Experimental",
