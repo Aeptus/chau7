@@ -7,6 +7,28 @@ import XCTest
 /// buffer, deep-link parsing, ANSI stripping).
 final class RemotePureUnitTests: XCTestCase {
 
+    // MARK: - RemoteTerminalStreamingPolicy
+
+    func testModernTerminalPresentationsUseExactlyOneWireRepresentation() {
+        XCTAssertTrue(RemoteTerminalStreamingPolicy.sendsOutputFrames(for: .text))
+        XCTAssertTrue(RemoteTerminalStreamingPolicy.sendsTextSnapshots(for: .text))
+        XCTAssertFalse(RemoteTerminalStreamingPolicy.sendsGridSnapshots(for: .text))
+
+        XCTAssertTrue(RemoteTerminalStreamingPolicy.sendsOutputFrames(for: .replay))
+        XCTAssertTrue(RemoteTerminalStreamingPolicy.sendsTextSnapshots(for: .replay))
+        XCTAssertFalse(RemoteTerminalStreamingPolicy.sendsGridSnapshots(for: .replay))
+
+        XCTAssertFalse(RemoteTerminalStreamingPolicy.sendsOutputFrames(for: .grid))
+        XCTAssertFalse(RemoteTerminalStreamingPolicy.sendsTextSnapshots(for: .grid))
+        XCTAssertTrue(RemoteTerminalStreamingPolicy.sendsGridSnapshots(for: .grid))
+    }
+
+    func testMissingPresentationPreservesLegacyDualStream() {
+        XCTAssertTrue(RemoteTerminalStreamingPolicy.sendsOutputFrames(for: nil))
+        XCTAssertTrue(RemoteTerminalStreamingPolicy.sendsTextSnapshots(for: nil))
+        XCTAssertTrue(RemoteTerminalStreamingPolicy.sendsGridSnapshots(for: nil))
+    }
+
     // MARK: - RemoteReconnectBackoff
 
     func testBackoffProducesExponentialDelaysThenExhausts() {

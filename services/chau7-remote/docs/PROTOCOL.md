@@ -323,12 +323,19 @@ shape: `RemoteClientStatePayload`
 {
   "app_state": "foreground|background",
   "stream_mode": "full|approvals_only",
+  "terminal_presentation": "text|replay|grid",
   "push_token": "hex",
   "push_topic": "bundle-id",
   "push_environment": "development|production",
   "notifications_authorized": true
 }
 ```
+
+`terminal_presentation` is optional for rolling compatibility. `text` sends a
+bounded ANSI snapshot followed by incremental output, `replay` sends the same
+wire representation for reconstruction by the client's terminal emulator, and
+`grid` sends coalesced full-grid snapshots. A missing value requests the legacy
+dual text-and-grid stream.
 
 ### APPROVAL_REQUEST
 

@@ -5,6 +5,8 @@ public enum RemoteOutputTuning {
     public static let maxIncomingFrameBytes = 65536
     public static let maxPendingBytesPerTab = 32768
     public static let flushInterval = Duration.milliseconds(33)
+    /// Full terminal grids are coalesced and capped at roughly 15 FPS.
+    public static let gridSnapshotInterval = Duration.milliseconds(67)
 
     public static func trimRetainedText(_ input: String) -> String {
         guard input.utf8.count > maxRetainedBytes else { return input }
@@ -17,6 +19,22 @@ public enum RemoteOutputTuning {
 
     public static func capIncomingFrame(_ data: Data) -> Data {
         Data(data.prefix(maxIncomingFrameBytes))
+    }
+}
+
+public enum RemoteTerminalStreamingPolicy {
+    /// Missing presentation means an older client. Preserve the historical
+    /// dual stream until that client upgrades.
+    public static func sendsOutputFrames(for presentation: RemoteTerminalPresentation?) -> Bool {
+        presentation != .grid
+    }
+
+    public static func sendsTextSnapshots(for presentation: RemoteTerminalPresentation?) -> Bool {
+        presentation != .grid
+    }
+
+    public static func sendsGridSnapshots(for presentation: RemoteTerminalPresentation?) -> Bool {
+        presentation == nil || presentation == .grid
     }
 }
 

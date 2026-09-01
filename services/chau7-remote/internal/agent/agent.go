@@ -144,6 +144,7 @@ type RelayStatusPayload struct {
 type RemoteClientStatePayload struct {
 	AppState                string `json:"app_state"`
 	StreamMode              string `json:"stream_mode"`
+	TerminalPresentation    string `json:"terminal_presentation,omitempty"`
 	PushToken               string `json:"push_token,omitempty"`
 	PushTopic               string `json:"push_topic,omitempty"`
 	PushEnvironment         string `json:"push_environment,omitempty"`

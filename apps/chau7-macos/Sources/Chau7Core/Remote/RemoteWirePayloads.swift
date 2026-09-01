@@ -148,6 +148,20 @@ public enum RemoteClientStreamMode: String, Codable, Equatable, Sendable {
     case approvalsOnly = "approvals_only"
 }
 
+/// The terminal representation the remote client wants the Mac to stream.
+///
+/// Optional on the wire for rolling compatibility: a Mac receiving client
+/// state from an older iOS build treats a missing value as the legacy behavior
+/// (text output plus server-rendered grid snapshots).
+public enum RemoteTerminalPresentation: String, Codable, Equatable, Sendable {
+    /// Plain text/ANSI output consumed directly by the client.
+    case text
+    /// Plain text/ANSI output replayed through the client's terminal emulator.
+    case replay
+    /// Server-rendered terminal grids. Only the newest grid matters.
+    case grid
+}
+
 public enum RemotePushEnvironment: String, Codable, Equatable, Sendable {
     case development
     case production
@@ -156,6 +170,7 @@ public enum RemotePushEnvironment: String, Codable, Equatable, Sendable {
 public struct RemoteClientStatePayload: Codable, Equatable, Sendable {
     public let appState: RemoteClientAppState
     public let streamMode: RemoteClientStreamMode
+    public let terminalPresentation: RemoteTerminalPresentation?
     public let pushToken: String?
     public let pushTopic: String?
     public let pushEnvironment: RemotePushEnvironment?
@@ -164,6 +179,7 @@ public struct RemoteClientStatePayload: Codable, Equatable, Sendable {
     public init(
         appState: RemoteClientAppState,
         streamMode: RemoteClientStreamMode,
+        terminalPresentation: RemoteTerminalPresentation? = nil,
         pushToken: String? = nil,
         pushTopic: String? = nil,
         pushEnvironment: RemotePushEnvironment? = nil,
@@ -171,6 +187,7 @@ public struct RemoteClientStatePayload: Codable, Equatable, Sendable {
     ) {
         self.appState = appState
         self.streamMode = streamMode
+        self.terminalPresentation = terminalPresentation
         self.pushToken = pushToken
         self.pushTopic = pushTopic
         self.pushEnvironment = pushEnvironment
@@ -180,6 +197,7 @@ public struct RemoteClientStatePayload: Codable, Equatable, Sendable {
     enum CodingKeys: String, CodingKey {
         case appState = "app_state"
         case streamMode = "stream_mode"
+        case terminalPresentation = "terminal_presentation"
         case pushToken = "push_token"
         case pushTopic = "push_topic"
         case pushEnvironment = "push_environment"

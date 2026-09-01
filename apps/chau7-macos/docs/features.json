@@ -2577,6 +2577,13 @@
   },
   {
     "category": "SSH, Profiles & Remote",
+    "feature": "Negotiated iPhone Terminal Representations",
+    "description": "iPhone clients select plain text, styled replay, or full-grid streaming; current clients receive one representation while older clients retain the compatible dual stream, and grid capture is coalesced to a latest-wins 15 FPS cadence",
+    "status": "Experimental",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "SSH, Profiles & Remote",
     "feature": "Selected-Tab Remote Streaming",
     "description": "macOS streams terminal output and snapshots only for the tab currently selected on iPhone; background tabs stay metadata/activity/approvals-only until switched to",
     "status": "Experimental",

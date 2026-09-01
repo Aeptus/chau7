@@ -84,6 +84,8 @@ final class RemoteControlManager {
     @ObservationIgnored private var connectedPairedDeviceID: String?
     @ObservationIgnored private var connectedClientAppState: RemoteClientAppState = .foreground
     @ObservationIgnored private var connectedClientStreamMode: RemoteClientStreamMode = .full
+    /// Nil means a pre-negotiation client and preserves the legacy dual stream.
+    @ObservationIgnored private var connectedTerminalPresentation: RemoteTerminalPresentation?
     @ObservationIgnored private var subscribedSessionIDs: Set<String> = []
     @ObservationIgnored private var activityRefreshWorkItem: DispatchWorkItem?
     /// Live only while interactive prompts are outstanding; keeps synthesized
@@ -94,6 +96,8 @@ final class RemoteControlManager {
     @ObservationIgnored private let structuredPrompts = StructuredPromptStore()
     @ObservationIgnored private var outputFlushTask: Task<Void, Never>?
     @ObservationIgnored private var pendingOutputByTabID = RemotePendingOutputBuffer<Data>()
+    @ObservationIgnored private var gridSnapshotFlushTask: Task<Void, Never>?
+    @ObservationIgnored private var pendingGridSnapshotTabID: UInt32?
 
     @ObservationIgnored private let ipc = RemoteIPCServer.shared
 
@@ -137,6 +141,7 @@ final class RemoteControlManager {
             self?.connectedPairedDeviceID = nil
             self?.connectedClientAppState = .foreground
             self?.connectedClientStreamMode = .full
+            self?.connectedTerminalPresentation = nil
             self?.remoteActivity = nil
             // Clear the remote viewer's selection so a reconnecting client
             // starts from the primary window's selected tab rather than
@@ -230,6 +235,12 @@ final class RemoteControlManager {
         guard isIPCConnected, connectedClientStreamMode == .full else { return }
         guard let tabID = tabRegistry.tabID(forSessionIdentifier: sessionIdentifier) else { return }
         guard tabID == selectedRemoteTabID() else { return }
+
+        if !RemoteTerminalStreamingPolicy.sendsOutputFrames(for: connectedTerminalPresentation) {
+            scheduleGridSnapshot(for: tabID)
+            return
+        }
+
         pendingOutputByTabID.append(data, to: tabID) { existing, chunk in
             existing.append(chunk)
         }
@@ -259,12 +270,24 @@ final class RemoteControlManager {
 
     func sendTextSnapshot(for tabID: UInt32) {
         guard connectedClientStreamMode == .full else { return }
-        guard let session = snapshotTargetTab(for: tabID)?.session,
-              let snapshot = session.captureRemoteSnapshot() else { return }
+        guard RemoteTerminalStreamingPolicy.sendsTextSnapshots(for: connectedTerminalPresentation) else { return }
+        guard let session = snapshotTargetTab(for: tabID)?.session else { return }
+        let snapshot: Data?
+        if connectedTerminalPresentation == .replay {
+            snapshot = session.captureStyledRemoteTailSnapshot(
+                maxLines: 5000,
+                maxBytes: RemoteOutputTuning.maxRetainedBytes
+            ) ?? session.captureRemoteSnapshot()
+        } else {
+            snapshot = session.captureRemoteSnapshot()
+        }
+        guard let snapshot else { return }
         sendFrame(type: .snapshot, tabID: tabID, payload: RemoteOutputTuning.capSnapshot(snapshot))
     }
 
     func sendGridSnapshot(for tabID: UInt32) {
+        guard connectedClientStreamMode == .full else { return }
+        guard RemoteTerminalStreamingPolicy.sendsGridSnapshots(for: connectedTerminalPresentation) else { return }
         guard let session = snapshotTargetTab(for: tabID)?.session,
               let snapshot = session.captureRemoteGridSnapshot() else { return }
         sendFrame(type: .terminalGridSnapshot, tabID: tabID, payload: snapshot)
@@ -593,9 +616,13 @@ final class RemoteControlManager {
         guard let payload: RemoteClientStatePayload = decodePayload(frame, as: RemoteClientStatePayload.self, context: "client state") else { return }
         connectedClientAppState = payload.appState
         let previousStreamMode = connectedClientStreamMode
+        let previousPresentation = connectedTerminalPresentation
         connectedClientStreamMode = payload.streamMode
+        connectedTerminalPresentation = payload.terminalPresentation
 
-        if previousStreamMode != payload.streamMode, payload.streamMode == .approvalsOnly {
+        if payload.streamMode == .approvalsOnly
+            || previousStreamMode != payload.streamMode
+            || previousPresentation != payload.terminalPresentation {
             cancelPendingOutputFlush()
         }
 
@@ -1271,7 +1298,7 @@ final class RemoteControlManager {
             relay: relayStatus ?? "unknown",
             session: sessionStatus ?? "disconnected",
             tabCount: tabCount ?? lastSentTabListCount ?? 0,
-            stream: connectedClientStreamMode.rawValue
+            stream: "\(connectedClientStreamMode.rawValue)/\(connectedTerminalPresentation?.rawValue ?? "legacy-dual")"
         )
         guard snapshot != lastOperationalSnapshot else { return }
         lastOperationalSnapshot = snapshot
@@ -1293,6 +1320,25 @@ final class RemoteControlManager {
         outputFlushTask?.cancel()
         outputFlushTask = nil
         pendingOutputByTabID.removeAll(keepingCapacity: true)
+        gridSnapshotFlushTask?.cancel()
+        gridSnapshotFlushTask = nil
+        pendingGridSnapshotTabID = nil
+    }
+
+    /// Grid invalidations are latest-wins: output bursts update this single
+    /// pending tab and one capped task captures the newest viewport state.
+    private func scheduleGridSnapshot(for tabID: UInt32) {
+        pendingGridSnapshotTabID = tabID
+        guard gridSnapshotFlushTask == nil else { return }
+        gridSnapshotFlushTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: RemoteOutputTuning.gridSnapshotInterval)
+            guard let self, !Task.isCancelled else { return }
+            gridSnapshotFlushTask = nil
+            guard let pendingTabID = pendingGridSnapshotTabID else { return }
+            pendingGridSnapshotTabID = nil
+            guard pendingTabID == selectedRemoteTabID() else { return }
+            sendGridSnapshot(for: pendingTabID)
+        }
     }
 
     private func flushPendingOutput() {
