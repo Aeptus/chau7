@@ -1,11 +1,12 @@
-/// Bridge to the Rust terminal emulator for grid-based rendering.
-///
-/// Wraps `Chau7Core`'s Rust FFI terminal, injecting output byte chunks
-/// and extracting cell grids (character, foreground/background color, flags)
-/// for rendering in `RemoteTerminalCanvasView`. Cell flags map to ANSI
-/// text attributes: bold, italic, underline, strikethrough, inverse, dim, hidden.
-import CoreText
 import Chau7Core
+
+// Bridge to the Rust terminal emulator for grid-based rendering.
+//
+// Wraps `Chau7Core`'s Rust FFI terminal, injecting output byte chunks
+// and extracting cell grids (character, foreground/background color, flags)
+// for rendering in `RemoteTerminalCanvasView`. Cell flags map to ANSI
+// text attributes: bold, italic, underline, strikethrough, inverse, dim, hidden.
+import CoreText
 import Foundation
 import UIKit
 
@@ -21,7 +22,7 @@ let rustCellFlagHidden: UInt8 = 1 << 6
 ///
 /// Cells reference UTF-8 grapheme clusters stored in
 /// `RemoteTerminalRenderState.clusters` via `(cluster_offset, cluster_len)`.
-struct RustCellData {
+struct RustCellData: Sendable {
     var cluster_offset: UInt32 = 0
     var fg_r: UInt8 = 255
     var fg_g: UInt8 = 255
@@ -51,7 +52,7 @@ struct RustGridSnapshot {
     var capacity: Int
 }
 
-struct RemoteTerminalRenderState {
+struct RemoteTerminalRenderState: Sendable {
     let cells: [RustCellData]
     /// Packed UTF-8 cluster bytes referenced by `cells[i].cluster_offset`. The
     /// renderer decodes a Swift `String` from a slice on demand.
@@ -64,7 +65,9 @@ struct RemoteTerminalRenderState {
     let scrollbackRows: Int
     let displayOffset: Int
 
-    var totalRows: Int { rows + scrollbackRows }
+    var totalRows: Int {
+        rows + scrollbackRows
+    }
 
     /// Decode a cell's grapheme cluster bytes as a String. Returns "" for blank
     /// cells, continuation cells, or out-of-range offsets.
@@ -130,36 +133,28 @@ enum RemoteTerminalFontMetrics {
 }
 
 @_silgen_name("chau7_terminal_create_headless")
-nonisolated
-private func chau7_terminal_create_headless(_ cols: UInt16, _ rows: UInt16) -> UnsafeMutableRawPointer?
+private nonisolated func chau7_terminal_create_headless(_ cols: UInt16, _ rows: UInt16) -> UnsafeMutableRawPointer?
 
 @_silgen_name("chau7_terminal_destroy")
-nonisolated
-private func chau7_terminal_destroy(_ term: UnsafeMutableRawPointer?)
+private nonisolated func chau7_terminal_destroy(_ term: UnsafeMutableRawPointer?)
 
 @_silgen_name("chau7_terminal_resize")
-nonisolated
-private func chau7_terminal_resize(_ term: UnsafeMutableRawPointer?, _ cols: UInt16, _ rows: UInt16)
+private nonisolated func chau7_terminal_resize(_ term: UnsafeMutableRawPointer?, _ cols: UInt16, _ rows: UInt16)
 
 @_silgen_name("chau7_terminal_get_grid")
-nonisolated
-private func chau7_terminal_get_grid(_ term: UnsafeMutableRawPointer?) -> UnsafeMutablePointer<RustGridSnapshot>?
+private nonisolated func chau7_terminal_get_grid(_ term: UnsafeMutableRawPointer?) -> UnsafeMutablePointer<RustGridSnapshot>?
 
 @_silgen_name("chau7_terminal_free_grid")
-nonisolated
-private func chau7_terminal_free_grid(_ grid: UnsafeMutablePointer<RustGridSnapshot>?)
+private nonisolated func chau7_terminal_free_grid(_ grid: UnsafeMutablePointer<RustGridSnapshot>?)
 
 @_silgen_name("chau7_terminal_inject_output")
-nonisolated
-private func chau7_terminal_inject_output(_ term: UnsafeMutableRawPointer?, _ data: UnsafePointer<UInt8>?, _ len: Int)
+private nonisolated func chau7_terminal_inject_output(_ term: UnsafeMutableRawPointer?, _ data: UnsafePointer<UInt8>?, _ len: Int)
 
 @_silgen_name("chau7_terminal_scroll_to")
-nonisolated
-private func chau7_terminal_scroll_to(_ term: UnsafeMutableRawPointer?, _ position: Double)
+private nonisolated func chau7_terminal_scroll_to(_ term: UnsafeMutableRawPointer?, _ position: Double)
 
 @_silgen_name("chau7_terminal_cursor_position")
-nonisolated
-private func chau7_terminal_cursor_position(_ term: UnsafeMutableRawPointer?, _ col: UnsafeMutablePointer<UInt16>?, _ row: UnsafeMutablePointer<UInt16>?)
+private nonisolated func chau7_terminal_cursor_position(_ term: UnsafeMutableRawPointer?, _ col: UnsafeMutablePointer<UInt16>?, _ row: UnsafeMutablePointer<UInt16>?)
 
 /// C signature of `chau7_terminal_set_colors` (see rust `ffi.rs`):
 /// `void set_colors(term, fg_r, fg_g, fg_b, bg_r, bg_g, bg_b,
@@ -183,8 +178,7 @@ private let chau7SetColorsFn: Chau7SetColorsFn? = {
     return unsafeBitCast(symbol, to: Chau7SetColorsFn.self)
 }()
 
-@MainActor
-final class RemoteRustTerminalPlayback {
+nonisolated final class RemoteRustTerminalPlayback {
     private var handle: UnsafeMutableRawPointer?
     private(set) var cols: Int
     private(set) var rows: Int

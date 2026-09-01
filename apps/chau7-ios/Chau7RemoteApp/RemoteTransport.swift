@@ -14,6 +14,9 @@ struct RemoteStreamingPerformanceSnapshot: Equatable {
     let averageGridDecodeMs: Double
     let averagePublishMs: Double
     let supersededGridFrames: Int
+    let outputRecoveryCount: Int
+    let maxSenderBatchMs: Double
+    let maxEstimatedCaptureToReceiveMs: Double
 }
 
 struct RemoteStreamingPerformanceWindow {
@@ -29,6 +32,9 @@ struct RemoteStreamingPerformanceWindow {
     private var publishMs = 0.0
     private var publishCount = 0
     private var supersededGridFrames = 0
+    private var outputRecoveryCount = 0
+    private var maxSenderBatchMs = 0.0
+    private var maxEstimatedCaptureToReceiveMs = 0.0
 
     init(startedAt: Date = Date()) {
         self.startedAt = startedAt
@@ -64,6 +70,15 @@ struct RemoteStreamingPerformanceWindow {
         publishCount += 1
     }
 
+    mutating func recordOutputTiming(senderBatchMs: Double, estimatedCaptureToReceiveMs: Double) {
+        maxSenderBatchMs = max(maxSenderBatchMs, senderBatchMs)
+        maxEstimatedCaptureToReceiveMs = max(maxEstimatedCaptureToReceiveMs, estimatedCaptureToReceiveMs)
+    }
+
+    mutating func recordOutputRecovery() {
+        outputRecoveryCount += 1
+    }
+
     mutating func takeSnapshotIfDue(now: Date = Date(), interval: TimeInterval = 5) -> RemoteStreamingPerformanceSnapshot? {
         guard frameCount > 0, now.timeIntervalSince(startedAt) >= interval else { return nil }
         let snapshot = RemoteStreamingPerformanceSnapshot(
@@ -75,7 +90,10 @@ struct RemoteStreamingPerformanceWindow {
             maxReceiveToApplyMs: maxReceiveToApplyMs,
             averageGridDecodeMs: gridDecodeCount == 0 ? 0 : gridDecodeMs / Double(gridDecodeCount),
             averagePublishMs: publishCount == 0 ? 0 : publishMs / Double(publishCount),
-            supersededGridFrames: supersededGridFrames
+            supersededGridFrames: supersededGridFrames,
+            outputRecoveryCount: outputRecoveryCount,
+            maxSenderBatchMs: maxSenderBatchMs,
+            maxEstimatedCaptureToReceiveMs: maxEstimatedCaptureToReceiveMs
         )
         self = RemoteStreamingPerformanceWindow(startedAt: now)
         return snapshot
@@ -87,9 +105,14 @@ struct RemoteInboundMessage: Sendable, Equatable {
     let generation: UInt64
     let receivedAt: Date
     let queueDepthAtEnqueue: Int
+    var suppressOutputApplication: Bool
 
     var isGridSnapshot: Bool {
         data.count > 1 && data[data.startIndex + 1] == RemoteFrameType.terminalGridSnapshot.rawValue
+    }
+
+    var isOutput: Bool {
+        data.count > 1 && data[data.startIndex + 1] == RemoteFrameType.output.rawValue
     }
 }
 
@@ -101,6 +124,7 @@ struct RemoteInboundMessageQueue {
     private(set) var messages: [RemoteInboundMessage] = []
     private(set) var bufferedBytes = 0
     private(set) var supersededGridFrames = 0
+    private(set) var outputRecoveryPending = false
     let maxBufferedBytes: Int
 
     init(maxBufferedBytes: Int = 2 * 1024 * 1024) {
@@ -114,6 +138,8 @@ struct RemoteInboundMessageQueue {
     mutating func enqueue(data: Data, generation: UInt64, receivedAt: Date = Date()) {
         let isGrid = data.count > 1
             && data[data.startIndex + 1] == RemoteFrameType.terminalGridSnapshot.rawValue
+        let isOutput = data.count > 1
+            && data[data.startIndex + 1] == RemoteFrameType.output.rawValue
         if isGrid {
             while let index = messages.firstIndex(where: \.isGridSnapshot) {
                 bufferedBytes -= messages.remove(at: index).data.count
@@ -125,7 +151,8 @@ struct RemoteInboundMessageQueue {
             data: data,
             generation: generation,
             receivedAt: receivedAt,
-            queueDepthAtEnqueue: messages.count + 1
+            queueDepthAtEnqueue: messages.count + 1,
+            suppressOutputApplication: outputRecoveryPending && isOutput
         )
         messages.append(message)
         bufferedBytes += data.count
@@ -137,6 +164,16 @@ struct RemoteInboundMessageQueue {
         {
             bufferedBytes -= messages.remove(at: gridIndex).data.count
             supersededGridFrames += 1
+        }
+
+        // Encrypted output must still be decrypted/admitted in sequence, but
+        // once ordered bytes exceed the budget it is faster and safer to skip
+        // their UI application and recover from one authoritative checkpoint.
+        if bufferedBytes > maxBufferedBytes, messages.contains(where: \.isOutput) {
+            outputRecoveryPending = true
+            for index in messages.indices where messages[index].isOutput {
+                messages[index].suppressOutputApplication = true
+            }
         }
     }
 
@@ -152,10 +189,17 @@ struct RemoteInboundMessageQueue {
         return supersededGridFrames
     }
 
+    mutating func takeOutputRecoverySignalIfDrained() -> Bool {
+        guard messages.isEmpty, outputRecoveryPending else { return false }
+        outputRecoveryPending = false
+        return true
+    }
+
     mutating func removeAll() {
         messages.removeAll(keepingCapacity: true)
         bufferedBytes = 0
         supersededGridFrames = 0
+        outputRecoveryPending = false
     }
 }
 
@@ -186,6 +230,7 @@ final class RemoteTransport {
     /// A receive failure for the current generation (stale-generation
     /// failures are swallowed — the socket they belonged to is gone).
     var onFailure: (@MainActor (Error) -> Void)?
+    var onOutputRecoveryNeeded: (@MainActor () -> Void)?
 
     var isOpen: Bool {
         webSocketTask != nil
@@ -291,6 +336,9 @@ final class RemoteTransport {
                 guard message.generation == self.generation else { return }
             }
             self.drainTask = nil
+            if self.inboundQueue.takeOutputRecoverySignalIfDrained() {
+                self.onOutputRecoveryNeeded?()
+            }
             // Actor reentrancy can enqueue a message between the final pop and
             // task teardown. Re-check so that message cannot become stranded.
             self.startDrainIfNeeded()

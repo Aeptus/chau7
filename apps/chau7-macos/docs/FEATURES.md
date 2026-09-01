@@ -681,6 +681,7 @@ Chau7's rendering pipeline is purpose-built for latency-sensitive terminal work:
 
 ### Remote (Experimental)
 
+- **Display-paced iPhone terminal rendering** — a serial actor ingests PTY bytes and extracts Rust grids off-main, while a one-shot 60/120 Hz display link publishes only the newest immutable frame; overloaded ordered output fast-forwards safely to a checkpoint and correlated metrics identify sender, queue, decode, and publication latency.
 - **Media-style terminal transport** — PTY bytes use a 4 ms binary micro-batch, snapshots act as keyframes for initial state and recovery, authenticated timing metadata measures sender/network latency, and a side-effect-free checkpoint request resynchronizes overloaded clients.
 - **Loss-aware relay backpressure** — relay soft pressure drops only replaceable terminal grids while preserving ordered output and control frames; the hard pressure limit closes the connection instead of allowing an unrecoverably incomplete encrypted stream.
 - **Responsive iPhone streaming pipeline** — socket receive and ordered frame application are decoupled, replaceable grids coalesce without breaking encrypted sequence order, visible text refreshes run on a bounded cadence, hidden renderer work is skipped, and rolling metrics expose where receive-to-publish latency accumulates.

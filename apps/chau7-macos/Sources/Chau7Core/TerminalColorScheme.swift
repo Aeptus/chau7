@@ -9,7 +9,7 @@ import Foundation
 /// macOS app and the iOS remote app. Platform-specific color conversions
 /// (`NSColor` on macOS, `UIColor` on iOS) are provided by extensions in the
 /// respective app targets.
-public struct TerminalColorScheme: Codable, Identifiable, Equatable {
+public struct TerminalColorScheme: Codable, Identifiable, Equatable, Sendable {
     public var id: String {
         name
     }

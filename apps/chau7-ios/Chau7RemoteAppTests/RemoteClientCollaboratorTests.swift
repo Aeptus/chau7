@@ -488,6 +488,8 @@ final class RemoteStreamingPerformanceWindowTests: XCTestCase {
         )
         window.recordGridDecode(durationMs: 6)
         window.recordPublish(durationMs: 2)
+        window.recordOutputTiming(senderBatchMs: 4, estimatedCaptureToReceiveMs: 35)
+        window.recordOutputRecovery()
 
         XCTAssertNil(window.takeSnapshotIfDue(now: start.addingTimeInterval(4)))
         let sample = window.takeSnapshotIfDue(now: start.addingTimeInterval(5))
@@ -500,6 +502,9 @@ final class RemoteStreamingPerformanceWindowTests: XCTestCase {
         XCTAssertEqual(sample?.averageGridDecodeMs, 6)
         XCTAssertEqual(sample?.averagePublishMs, 2)
         XCTAssertEqual(sample?.supersededGridFrames, 2)
+        XCTAssertEqual(sample?.outputRecoveryCount, 1)
+        XCTAssertEqual(sample?.maxSenderBatchMs, 4)
+        XCTAssertEqual(sample?.maxEstimatedCaptureToReceiveMs, 35)
     }
 }
 
@@ -532,6 +537,39 @@ final class RemoteTransportTests: XCTestCase {
         XCTAssertEqual(queue.messages.count, 1)
         XCTAssertFalse(queue.messages[0].isGridSnapshot)
         XCTAssertEqual(queue.takeSupersededGridCount(), 1)
+    }
+
+    func testInboundQueueFastForwardsOrderedOutputAndSignalsCheckpointAfterDrain() {
+        var queue = RemoteInboundMessageQueue(maxBufferedBytes: 80)
+        let output1 = RemoteFrame(
+            type: RemoteFrameType.output.rawValue,
+            tabID: 1,
+            seq: 1,
+            payload: Data(repeating: 1, count: 30)
+        ).encode()
+        let control = RemoteFrame(
+            type: RemoteFrameType.activityState.rawValue,
+            tabID: 1,
+            seq: 2,
+            payload: Data([2])
+        ).encode()
+        let output2 = RemoteFrame(
+            type: RemoteFrameType.output.rawValue,
+            tabID: 1,
+            seq: 3,
+            payload: Data(repeating: 3, count: 30)
+        ).encode()
+
+        for data in [output1, control, output2] {
+            queue.enqueue(data: data, generation: 1)
+        }
+
+        XCTAssertTrue(queue.outputRecoveryPending)
+        XCTAssertEqual(queue.messages.map(\.suppressOutputApplication), [true, false, true])
+        XCTAssertFalse(queue.takeOutputRecoverySignalIfDrained())
+        while queue.popFirst() != nil {}
+        XCTAssertTrue(queue.takeOutputRecoverySignalIfDrained())
+        XCTAssertFalse(queue.takeOutputRecoverySignalIfDrained())
     }
 
     func testSendWithoutSocketReturnsFalse() {

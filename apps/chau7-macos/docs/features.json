@@ -2605,6 +2605,13 @@
   },
   {
     "category": "SSH, Profiles & Remote",
+    "feature": "Display-Paced iPhone Terminal Rendering",
+    "description": "A serial actor ingests PTY bytes and extracts Rust grids off-main, while a one-shot 60/120 Hz display link publishes only the newest immutable frame; overloaded ordered output fast-forwards safely to a checkpoint and correlated metrics identify sender, queue, decode, and publication latency",
+    "status": "Experimental",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "SSH, Profiles & Remote",
     "feature": "Selected-Tab Remote Streaming",
     "description": "macOS streams terminal output and snapshots only for the tab currently selected on iPhone; background tabs stay metadata/activity/approvals-only until switched to",
     "status": "Experimental",

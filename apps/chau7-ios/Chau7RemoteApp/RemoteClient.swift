@@ -147,9 +147,6 @@ final class RemoteClient {
     private static let handshakeTimeoutSeconds = 12.0
     private static let repairFallbackAttempt = 3
     private static let pendingStateFetchMinimumInterval: TimeInterval = 1
-    /// Frames larger than this get decode/decrypt offloaded to a detached task;
-    /// smaller control frames are processed inline (detach overhead > work).
-    private static let frameOffloadThreshold = 8192
     static let appVersion =
         (Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String) ?? "1.1.0"
 
@@ -204,6 +201,17 @@ final class RemoteClient {
                 reason: error.localizedDescription,
                 trigger: .transportFailure
             )
+        }
+        transport.onOutputRecoveryNeeded = { [weak self] in
+            guard let self else { return }
+            self.streamingPerformance.recordOutputRecovery()
+            DiagnosticsLog.shared.info(.performance, "Remote output fast-forwarded to checkpoint", [
+                "tab_id": String(self.activeTabID),
+            ])
+            self.requestOutputCheckpointIfPossible()
+        }
+        terminalRenderer.onFramePublished = { [weak self] durationMs in
+            self?.streamingPerformance.recordPublish(durationMs: durationMs)
         }
         _ = DiagnosticsLog.shared
     }
@@ -633,7 +641,7 @@ final class RemoteClient {
 
     // MARK: - Receive Loop
 
-    /// Decode/decrypt (offloading large frames) and apply in the transport's
+    /// Decode/decrypt off-main and apply in the transport's
     /// ordered application drain. Socket receives continue independently.
     private func processIncomingMessage(
         _ message: RemoteInboundMessage,
@@ -655,16 +663,16 @@ final class RemoteClient {
             queueAgeMs,
             message.queueDepthAtEnqueue
         )
-        let processed: RemoteProcessedFrameResult
-        if data.count > Self.frameOffloadThreshold {
-            processed = await Task.detached(priority: .userInitiated) {
-                RemoteFrameProcessor.process(data, crypto: crypto)
-            }.value
-            guard transport.generation == generation else { return }
-        } else {
-            processed = RemoteFrameProcessor.process(data, crypto: crypto)
-        }
-        applyProcessedFrame(processed, signpostID: signpostID)
+        let processed = await Task.detached(priority: .userInitiated) {
+            RemoteFrameProcessor.process(data, crypto: crypto)
+        }.value
+        guard transport.generation == generation else { return }
+        applyProcessedFrame(
+            processed,
+            signpostID: signpostID,
+            receivedAt: message.receivedAt,
+            suppressOutputApplication: message.suppressOutputApplication
+        )
         let appliedAt = Date()
         let frameType: RemoteFrameType?
         if case let .success(frame, _) = processed {
@@ -827,7 +835,12 @@ final class RemoteClient {
 
     // MARK: - Frame Dispatch
 
-    private func applyProcessedFrame(_ processed: RemoteProcessedFrameResult, signpostID: OSSignpostID) {
+    private func applyProcessedFrame(
+        _ processed: RemoteProcessedFrameResult,
+        signpostID: OSSignpostID,
+        receivedAt: Date,
+        suppressOutputApplication: Bool
+    ) {
         switch processed {
         case let .decodeFailed(byteCount):
             os_signpost(
@@ -878,11 +891,21 @@ final class RemoteClient {
                 Int(frame.type),
                 payload.count
             )
-            handleProcessedFrame(frame, payload: payload)
+            handleProcessedFrame(
+                frame,
+                payload: payload,
+                receivedAt: receivedAt,
+                suppressOutputApplication: suppressOutputApplication
+            )
         }
     }
 
-    private func handleProcessedFrame(_ frame: RemoteFrame, payload: Data) {
+    private func handleProcessedFrame(
+        _ frame: RemoteFrame,
+        payload: Data,
+        receivedAt: Date,
+        suppressOutputApplication: Bool
+    ) {
         let frameType = RemoteFrameType(rawValue: frame.type)
         let isEncrypted = frame.flags & RemoteFrame.flagEncrypted != 0
 
@@ -933,7 +956,9 @@ final class RemoteClient {
         case .interactivePromptList: handleInteractivePromptList(payload)
         case .clientState:
             break
-        case .output: appendOutput(payload, tabID: frame.tabID)
+        case .output:
+            guard !suppressOutputApplication else { return }
+            appendOutput(payload, flags: frame.flags, tabID: frame.tabID, receivedAt: receivedAt)
         case .snapshot: storeSnapshot(payload, tabID: frame.tabID)
         case .terminalGridSnapshot:
             // A replay/text client never consumes server grids. Older Macs may
@@ -1116,8 +1141,25 @@ final class RemoteClient {
         currentAppState == .foreground && desiredStreamMode == .full
     }
 
-    private func appendOutput(_ data: Data, tabID: UInt32) {
+    private func appendOutput(_ payload: Data, flags: UInt8, tabID: UInt32, receivedAt: Date) {
         guard isStreamingTerminalOutput else { return }
+        let data: Data
+        if flags & RemoteFrame.flagOutputTiming != 0,
+           let timedChunk = RemoteTimedOutputChunk.decode(from: payload)
+        {
+            data = timedChunk.bytes
+            let receivedMicros = UInt64(max(0, receivedAt.timeIntervalSince1970 * 1_000_000))
+            streamingPerformance.recordOutputTiming(
+                senderBatchMs: Double(timedChunk.sentAtMicroseconds - timedChunk.firstCapturedAtMicroseconds) / 1000,
+                estimatedCaptureToReceiveMs: Double(
+                    receivedMicros > timedChunk.firstCapturedAtMicroseconds
+                        ? receivedMicros - timedChunk.firstCapturedAtMicroseconds
+                        : 0
+                ) / 1000
+            )
+        } else {
+            data = payload
+        }
         let signpostID = OSSignpostID(log: perfLog)
         os_signpost(
             .begin,
@@ -1128,15 +1170,20 @@ final class RemoteClient {
             data.count
         )
         let resolvedTabID = resolvedTabID(for: tabID)
-        outputStore.append(data, to: resolvedTabID)
         if desiredTerminalPresentation == .replay {
             terminalRenderer.appendOutput(data, for: resolvedTabID)
         }
 
-        if outputStore.pendingByteCount(for: resolvedTabID) >= RemoteOutputTuning.maxPendingBytesPerTab {
-            flushPendingOutput(for: resolvedTabID)
-        } else {
-            scheduleOutputFlush()
+        // Rich replay owns its bytes off-main. Maintain the String/ANSI path
+        // only while it is actually visible (or after renderer failure).
+        let plainTextNeedsOutput = desiredTerminalPresentation == .text || !terminalRenderer.isAvailable
+        if plainTextNeedsOutput {
+            outputStore.append(data, to: resolvedTabID)
+            if outputStore.pendingByteCount(for: resolvedTabID) >= RemoteOutputTuning.maxPendingBytesPerTab {
+                flushPendingOutput(for: resolvedTabID)
+            } else {
+                scheduleOutputFlush()
+            }
         }
         os_signpost(
             .end,
@@ -1145,7 +1192,7 @@ final class RemoteClient {
             signpostID: signpostID,
             "tab=%{public}u pending=%{public}d",
             resolvedTabID,
-            outputStore.pendingByteCount(for: resolvedTabID)
+            plainTextNeedsOutput ? outputStore.pendingByteCount(for: resolvedTabID) : 0
         )
     }
 
@@ -1877,6 +1924,7 @@ final class RemoteClient {
             appState: currentAppState,
             streamMode: desiredStreamMode,
             terminalPresentation: desiredTerminalPresentation,
+            supportsOutputTiming: true,
             pushToken: pushToken,
             pushTopic: Bundle.main.bundleIdentifier,
             pushEnvironment: currentPushEnvironment(),
@@ -1897,6 +1945,9 @@ final class RemoteClient {
             "avg_grid_decode_ms": String(format: "%.2f", sample.averageGridDecodeMs),
             "avg_publish_ms": String(format: "%.2f", sample.averagePublishMs),
             "superseded_grid_frames": String(sample.supersededGridFrames),
+            "output_recoveries": String(sample.outputRecoveryCount),
+            "max_sender_batch_ms": String(format: "%.2f", sample.maxSenderBatchMs),
+            "max_capture_to_receive_ms": String(format: "%.2f", sample.maxEstimatedCaptureToReceiveMs),
             "presentation": desiredTerminalPresentation.rawValue,
         ])
     }
@@ -1904,7 +1955,7 @@ final class RemoteClient {
     private func scheduleOutputFlush() {
         guard outputFlushTask == nil, outputStore.hasPendingOutput else { return }
         outputFlushTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(for: RemoteOutputTuning.flushInterval)
+            try? await Task.sleep(for: RemoteOutputTuning.plainTextPublishInterval)
             guard let self, !Task.isCancelled else { return }
             self.flushPendingOutput()
         }
@@ -1978,7 +2029,7 @@ final class RemoteClient {
         // waiting forever for a quiet 120 ms tail.
         guard strippedOutputRefreshTask == nil else { return }
         strippedOutputRefreshTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(for: .milliseconds(50))
+            try? await Task.sleep(for: RemoteOutputTuning.plainTextPublishInterval)
             guard let self, !Task.isCancelled else { return }
             let latestSourceText = self.outputText
             let signpostID = OSSignpostID(log: perfLog)
@@ -2007,6 +2058,18 @@ final class RemoteClient {
     private func requestActiveTabRefreshIfPossible() {
         guard crypto != nil, activeTabID != 0 else { return }
         sendJSON(TabSwitchPayload(tabID: activeTabID), type: .tabSwitch)
+    }
+
+    private func requestOutputCheckpointIfPossible() {
+        guard crypto != nil, activeTabID != 0 else { return }
+        if macCapabilities.contains(RemoteTabListPayload.checkpointRequestCapability) {
+            sendEncrypted(type: .checkpointRequest, tabID: activeTabID, payload: Data())
+        } else {
+            // Older Macs have no side-effect-free checkpoint frame. Their
+            // idempotent tab-switch path still returns an authoritative
+            // snapshot and keeps recovery compatible across versions.
+            requestActiveTabRefreshIfPossible()
+        }
     }
 
     private func decodePayload<T: Decodable>(_ data: Data, as type: T.Type, context: String) -> T? {
