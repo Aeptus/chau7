@@ -1,9 +1,9 @@
-/// Manages per-tab Rust terminal playback instances for the experimental grid renderer.
-///
-/// Maintains a `RemoteRustTerminalPlayback` per tab, replaying incoming bytes
-/// through the Rust terminal emulator to produce `RemoteTerminalRenderState`
-/// for the canvas view. Caches grid snapshots from the server for quick tab
-/// switching. Caps replay buffers at 400 KB per tab.
+// Manages per-tab Rust terminal playback instances for the experimental grid renderer.
+//
+// Maintains a `RemoteRustTerminalPlayback` per tab, replaying incoming bytes
+// through the Rust terminal emulator to produce `RemoteTerminalRenderState`
+// for the canvas view. Caches grid snapshots from the server for quick tab
+// switching. Caps replay buffers at 400 KB per tab.
 import Chau7Core
 import Foundation
 import Observation
@@ -82,8 +82,17 @@ final class RemoteTerminalRendererStore {
         refreshActiveState()
     }
 
-    func replaceSnapshot(for tabID: UInt32) {
+    /// Seed local terminal replay from the Mac's bounded ANSI snapshot. This
+    /// makes the replay representation self-sufficient: subsequent incremental
+    /// output can render a rich grid without parallel server-grid frames.
+    func replaceSnapshot(_ data: Data, for tabID: UInt32) {
+        let bounded = data.count > Self.maxReplayBytesPerTab
+            ? Data(data.suffix(Self.maxReplayBytesPerTab))
+            : data
+        replayByTabID[tabID] = bounded
+        playbacks[tabID] = nil
         guard tabID == activeTabID else { return }
+        ensurePlayback(for: tabID, forceRebuild: true)
         refreshActiveState()
     }
 
@@ -173,7 +182,8 @@ final class RemoteTerminalRendererStore {
         }
         if let directSnapshot = gridSnapshotByTabID[tabID],
            directSnapshot.cols == viewportCols,
-           directSnapshot.rows == viewportRows {
+           directSnapshot.rows == viewportRows
+        {
             return directSnapshot
         }
         return nil

@@ -681,6 +681,7 @@ Chau7's rendering pipeline is purpose-built for latency-sensitive terminal work:
 
 ### Remote (Experimental)
 
+- **Responsive iPhone streaming pipeline** — socket receive and ordered frame application are decoupled, replaceable grids coalesce without breaking encrypted sequence order, visible text refreshes run on a bounded cadence, hidden renderer work is skipped, and rolling metrics expose where receive-to-publish latency accumulates.
 - **Negotiated terminal representations** — iPhone clients select plain text, styled replay, or full-grid streaming; current clients receive one representation while older clients retain the compatible dual stream, and grid capture is coalesced to a latest-wins 15 FPS cadence.
 - **Classified helper diagnostics** — remote-helper stderr is sanitized and classified by message semantics: routine reconnect lifecycle is informational, the known disabled `MallocStackLogging` notice is suppressed, and unknown output or actual connection failures retain warning severity.
 - **Correlated transport status** — the helper reports its live relay WebSocket state independently from local IPC and encrypted phone-session readiness. Remote settings expose all three layers, and transition-only snapshots add tab inventory and stream mode to durable logs so an empty phone tab list can be attributed without reconstructing separate log systems.

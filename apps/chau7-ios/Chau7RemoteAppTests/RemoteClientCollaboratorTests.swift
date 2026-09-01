@@ -1,6 +1,6 @@
+import Chau7Core
 import CryptoKit
 import XCTest
-import Chau7Core
 
 /// First test bundle for the iOS app code, exercising the collaborators
 /// extracted from RemoteClient (C6/C7). The bundle compiles the collaborator
@@ -9,7 +9,6 @@ import Chau7Core
 /// in Chau7Core and is covered by the macOS package suite.
 @MainActor
 final class ApprovalCoordinatorTests: XCTestCase {
-
     func testQueueAndSendableLifecycle() {
         let coordinator = ApprovalCoordinator()
         coordinator.queue(requestID: "r1", approved: true)
@@ -65,7 +64,6 @@ final class ApprovalCoordinatorTests: XCTestCase {
 
 @MainActor
 final class RemoteSessionControllerTests: XCTestCase {
-
     private func makeControllers() -> (ios: RemoteSessionController, macKey: Curve25519.KeyAgreement.PrivateKey) {
         (RemoteSessionController(iosKey: Curve25519.KeyAgreement.PrivateKey()),
          Curve25519.KeyAgreement.PrivateKey())
@@ -139,7 +137,6 @@ final class RemoteSessionControllerTests: XCTestCase {
 }
 
 final class RemoteMenuKeyHeuristicsTests: XCTestCase {
-
     private func prompt(tabID: UInt32) -> RemoteInteractivePrompt {
         RemoteInteractivePrompt(
             id: "tab-\(tabID)-test",
@@ -149,7 +146,7 @@ final class RemoteMenuKeyHeuristicsTests: XCTestCase {
             prompt: "Which option?",
             options: [
                 RemoteInteractivePromptOption(id: "1", label: "Yes", response: "1"),
-                RemoteInteractivePromptOption(id: "2", label: "No", response: "2")
+                RemoteInteractivePromptOption(id: "2", label: "No", response: "2"),
             ],
             detectedAt: Date(timeIntervalSince1970: 0)
         )
@@ -189,7 +186,7 @@ final class RemoteMenuKeyHeuristicsTests: XCTestCase {
             (.running, false),
             (.idle, false),
             (.completed, false),
-            (.failed, false)
+            (.failed, false),
         ] {
             XCTAssertEqual(
                 RemoteMenuKeyHeuristics.activeTabNeedsMenuKeys(
@@ -285,7 +282,7 @@ final class RemoteTabOrderingTests: XCTestCase {
         let tabs = [
             tab(id: 3, title: "Zulu"),
             tab(id: 1, title: "Alpha 10"),
-            tab(id: 2, title: "Alpha 2")
+            tab(id: 2, title: "Alpha 2"),
         ]
 
         XCTAssertEqual(
@@ -386,7 +383,7 @@ final class DiagnosticsRetentionPolicyTests: XCTestCase {
     func testSensitiveOverflowTrimsOnlyOldestSensitiveEntriesToTarget() {
         let categories = [
             "connection", "keystroke", "tab", "input",
-            "lifecycle", "keystroke", "input", "keystroke"
+            "lifecycle", "keystroke", "input", "keystroke",
         ]
 
         let removals = DiagnosticsRetentionPolicy.removalIndexes(
@@ -471,8 +468,71 @@ final class RemoteIssueReportComposerTests: XCTestCase {
     }
 }
 
+final class RemoteStreamingPerformanceWindowTests: XCTestCase {
+    func testWindowAggregatesPipelineAndCoalescingMetrics() {
+        let start = Date(timeIntervalSince1970: 1000)
+        var window = RemoteStreamingPerformanceWindow(startedAt: start)
+        window.recordFrame(
+            type: .output,
+            bytes: 100,
+            queueAgeMs: 4,
+            receiveToApplyMs: 7,
+            supersededGrids: 2
+        )
+        window.recordFrame(
+            type: .terminalGridSnapshot,
+            bytes: 300,
+            queueAgeMs: 9,
+            receiveToApplyMs: 15,
+            supersededGrids: 0
+        )
+        window.recordGridDecode(durationMs: 6)
+        window.recordPublish(durationMs: 2)
+
+        XCTAssertNil(window.takeSnapshotIfDue(now: start.addingTimeInterval(4)))
+        let sample = window.takeSnapshotIfDue(now: start.addingTimeInterval(5))
+        XCTAssertEqual(sample?.frameCount, 2)
+        XCTAssertEqual(sample?.outputFrameCount, 1)
+        XCTAssertEqual(sample?.gridFrameCount, 1)
+        XCTAssertEqual(sample?.bytes, 400)
+        XCTAssertEqual(sample?.maxQueueAgeMs, 9)
+        XCTAssertEqual(sample?.maxReceiveToApplyMs, 15)
+        XCTAssertEqual(sample?.averageGridDecodeMs, 6)
+        XCTAssertEqual(sample?.averagePublishMs, 2)
+        XCTAssertEqual(sample?.supersededGridFrames, 2)
+    }
+}
+
 @MainActor
 final class RemoteTransportTests: XCTestCase {
+    func testInboundQueueCoalescesGridSnapshotsWithoutReorderingRetainedFrames() {
+        var queue = RemoteInboundMessageQueue()
+        let output1 = RemoteFrame(type: RemoteFrameType.output.rawValue, tabID: 1, seq: 1, payload: Data([1])).encode()
+        let grid1 = RemoteFrame(type: RemoteFrameType.terminalGridSnapshot.rawValue, tabID: 1, seq: 2, payload: Data([2])).encode()
+        let output2 = RemoteFrame(type: RemoteFrameType.output.rawValue, tabID: 1, seq: 3, payload: Data([3])).encode()
+        let grid2 = RemoteFrame(type: RemoteFrameType.terminalGridSnapshot.rawValue, tabID: 1, seq: 4, payload: Data([4])).encode()
+
+        for data in [output1, grid1, output2, grid2] {
+            queue.enqueue(data: data, generation: 7)
+        }
+
+        let retained = queue.messages.compactMap { try? RemoteFrame.decode(from: $0.data).seq }
+        XCTAssertEqual(retained, [1, 3, 4])
+        XCTAssertEqual(queue.takeSupersededGridCount(), 1)
+    }
+
+    func testInboundQueueShedsOnlyReplaceableGridStateAtByteLimit() {
+        var queue = RemoteInboundMessageQueue(maxBufferedBytes: 64)
+        let output = RemoteFrame(type: RemoteFrameType.output.rawValue, tabID: 1, seq: 1, payload: Data(repeating: 1, count: 30)).encode()
+        let grid = RemoteFrame(type: RemoteFrameType.terminalGridSnapshot.rawValue, tabID: 1, seq: 2, payload: Data(repeating: 2, count: 30)).encode()
+
+        queue.enqueue(data: output, generation: 1)
+        queue.enqueue(data: grid, generation: 1)
+
+        XCTAssertEqual(queue.messages.count, 1)
+        XCTAssertFalse(queue.messages[0].isGridSnapshot)
+        XCTAssertEqual(queue.takeSupersededGridCount(), 1)
+    }
 
     func testSendWithoutSocketReturnsFalse() {
         let transport = RemoteTransport()

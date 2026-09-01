@@ -109,6 +109,9 @@ struct SettingsView: View {
 
                 Section {
                     Toggle("Rich Terminal Renderer", isOn: $experimentalTerminalRenderer)
+                        .onChange(of: experimentalTerminalRenderer) { _, enabled in
+                            client.setRichTerminalRendererEnabled(enabled)
+                        }
                     Toggle("Show Raw ANSI Codes", isOn: $renderANSI)
                         .disabled(experimentalTerminalRenderer)
 
@@ -131,7 +134,7 @@ struct SettingsView: View {
                         }
                         Slider(
                             value: $terminalFontSize,
-                            in: AppSettings.terminalFontSizeMin...AppSettings.terminalFontSizeMax,
+                            in: AppSettings.terminalFontSizeMin ... AppSettings.terminalFontSizeMax,
                             step: 1
                         )
                         .accessibilityLabel("Terminal text size")
@@ -248,7 +251,9 @@ struct SettingsView: View {
             .navigationTitle("Settings")
             .onAppear { client.refreshNotificationAuthorization() }
             .onChange(of: scenePhase) { _, newPhase in
-                if newPhase == .active { client.refreshNotificationAuthorization() }
+                if newPhase == .active {
+                    client.refreshNotificationAuthorization()
+                }
             }
         }
     }

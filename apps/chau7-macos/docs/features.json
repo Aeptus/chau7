@@ -2584,6 +2584,13 @@
   },
   {
     "category": "SSH, Profiles & Remote",
+    "feature": "Responsive iPhone Streaming Pipeline",
+    "description": "Socket receive and ordered frame application are decoupled, replaceable grids coalesce without breaking encrypted sequence order, visible text refreshes run on a bounded cadence, hidden renderer work is skipped, and rolling metrics expose where receive-to-publish latency accumulates",
+    "status": "Experimental",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "SSH, Profiles & Remote",
     "feature": "Selected-Tab Remote Streaming",
     "description": "macOS streams terminal output and snapshots only for the tab currently selected on iPhone; background tabs stay metadata/activity/approvals-only until switched to",
     "status": "Experimental",
