@@ -145,6 +145,7 @@ type RemoteClientStatePayload struct {
 	AppState                string `json:"app_state"`
 	StreamMode              string `json:"stream_mode"`
 	TerminalPresentation    string `json:"terminal_presentation,omitempty"`
+	SupportsOutputTiming    bool   `json:"supports_output_timing,omitempty"`
 	PushToken               string `json:"push_token,omitempty"`
 	PushTopic               string `json:"push_topic,omitempty"`
 	PushEnvironment         string `json:"push_environment,omitempty"`
@@ -628,6 +629,7 @@ func (a *Agent) handleRelayFrame(frame *protocol.Frame) {
 		a.handleClientStateFrame(frame.Payload)
 		a.sendToIPC(frame)
 	case protocol.TypeTabSwitch, protocol.TypeInput, protocol.TypeKeyInput,
+		protocol.TypeCheckpointRequest,
 		protocol.TypeRemoteTelemetry, protocol.TypeApprovalResponse:
 		if requiresEncryptedRelayFrame(frame.Type) && !wasEncrypted {
 			return
@@ -659,6 +661,7 @@ func requiresEncryptedRelayFrame(frameType uint8) bool {
 		protocol.TypeTabSwitch,
 		protocol.TypeInput,
 		protocol.TypeKeyInput,
+		protocol.TypeCheckpointRequest,
 		protocol.TypeRemoteTelemetry,
 		protocol.TypeApprovalResponse:
 		return true

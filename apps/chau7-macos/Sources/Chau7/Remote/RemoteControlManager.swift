@@ -86,6 +86,7 @@ final class RemoteControlManager {
     @ObservationIgnored private var connectedClientStreamMode: RemoteClientStreamMode = .full
     /// Nil means a pre-negotiation client and preserves the legacy dual stream.
     @ObservationIgnored private var connectedTerminalPresentation: RemoteTerminalPresentation?
+    @ObservationIgnored private var connectedClientSupportsOutputTiming = false
     @ObservationIgnored private var subscribedSessionIDs: Set<String> = []
     @ObservationIgnored private var activityRefreshWorkItem: DispatchWorkItem?
     /// Live only while interactive prompts are outstanding; keeps synthesized
@@ -96,6 +97,7 @@ final class RemoteControlManager {
     @ObservationIgnored private let structuredPrompts = StructuredPromptStore()
     @ObservationIgnored private var outputFlushTask: Task<Void, Never>?
     @ObservationIgnored private var pendingOutputByTabID = RemotePendingOutputBuffer<Data>()
+    @ObservationIgnored private var pendingOutputFirstCaptureMicrosByTabID: [UInt32: UInt64] = [:]
     @ObservationIgnored private var gridSnapshotFlushTask: Task<Void, Never>?
     @ObservationIgnored private var pendingGridSnapshotTabID: UInt32?
 
@@ -142,6 +144,7 @@ final class RemoteControlManager {
             self?.connectedClientAppState = .foreground
             self?.connectedClientStreamMode = .full
             self?.connectedTerminalPresentation = nil
+            self?.connectedClientSupportsOutputTiming = false
             self?.remoteActivity = nil
             // Clear the remote viewer's selection so a reconnecting client
             // starts from the primary window's selected tab rather than
@@ -243,6 +246,9 @@ final class RemoteControlManager {
 
         pendingOutputByTabID.append(data, to: tabID) { existing, chunk in
             existing.append(chunk)
+        }
+        if pendingOutputFirstCaptureMicrosByTabID[tabID] == nil {
+            pendingOutputFirstCaptureMicrosByTabID[tabID] = Self.unixMicroseconds()
         }
 
         if pendingOutputByTabID[tabID]?.count ?? 0 >= RemoteOutputTuning.maxPendingBytesPerTab {
@@ -440,6 +446,8 @@ final class RemoteControlManager {
             handleInput(frame)
         case .keyInput:
             handleKeyInput(frame)
+        case .checkpointRequest:
+            sendSnapshot(for: frame.tabID)
         case .remoteTelemetry:
             handleRemoteTelemetry(frame)
         case .clientState:
@@ -619,6 +627,7 @@ final class RemoteControlManager {
         let previousPresentation = connectedTerminalPresentation
         connectedClientStreamMode = payload.streamMode
         connectedTerminalPresentation = payload.terminalPresentation
+        connectedClientSupportsOutputTiming = payload.supportsOutputTiming == true
 
         if payload.streamMode == .approvalsOnly
             || previousStreamMode != payload.streamMode
@@ -1272,7 +1281,10 @@ final class RemoteControlManager {
         do {
             let payload = try JSONEncoder().encode(RemoteTabListPayload(
                 tabs: tabPayloads,
-                capabilities: [RemoteTabListPayload.keyInputCapability]
+                capabilities: [
+                    RemoteTabListPayload.keyInputCapability,
+                    RemoteTabListPayload.checkpointRequestCapability
+                ]
             ))
             sendFrame(type: .tabList, tabID: RemoteTabRegistry.unscopedTabID, payload: payload)
             // Only log at .info on tab-count change; steady-state refreshes are
@@ -1310,7 +1322,7 @@ final class RemoteControlManager {
     private func schedulePendingOutputFlush() {
         guard outputFlushTask == nil, isIPCConnected, !pendingOutputByTabID.isEmpty else { return }
         outputFlushTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(for: RemoteOutputTuning.flushInterval)
+            try? await Task.sleep(for: RemoteOutputTuning.senderMicroBatchInterval)
             guard let self, !Task.isCancelled else { return }
             flushPendingOutput()
         }
@@ -1320,6 +1332,7 @@ final class RemoteControlManager {
         outputFlushTask?.cancel()
         outputFlushTask = nil
         pendingOutputByTabID.removeAll(keepingCapacity: true)
+        pendingOutputFirstCaptureMicrosByTabID.removeAll(keepingCapacity: true)
         gridSnapshotFlushTask?.cancel()
         gridSnapshotFlushTask = nil
         pendingGridSnapshotTabID = nil
@@ -1349,11 +1362,28 @@ final class RemoteControlManager {
         let selectedRemoteTabID = selectedRemoteTabID()
 
         for (tabID, payload) in pendingOutputByTabID.drainAll(sortedByTabID: true) {
+            let firstCapturedAt = pendingOutputFirstCaptureMicrosByTabID.removeValue(forKey: tabID)
             guard tabID == selectedRemoteTabID else { continue }
             let token = FeatureProfiler.shared.begin(.remoteOutput, bytes: payload.count)
-            sendFrame(type: .output, tabID: tabID, payload: payload)
+            if connectedClientSupportsOutputTiming, let firstCapturedAt {
+                let timedChunk = RemoteTimedOutputChunk(
+                    firstCapturedAtMicroseconds: firstCapturedAt,
+                    sentAtMicroseconds: Self.unixMicroseconds(),
+                    bytes: payload
+                )
+                sendFrame(
+                    type: .output,
+                    flags: RemoteFrame.flagOutputTiming,
+                    tabID: tabID,
+                    payload: timedChunk.encode()
+                )
+            } else {
+                sendFrame(type: .output, tabID: tabID, payload: payload)
+            }
             FeatureProfiler.shared.end(token)
-            sendGridSnapshot(for: tabID)
+            if RemoteTerminalStreamingPolicy.sendsGridCheckpointAfterOutput(for: connectedTerminalPresentation) {
+                sendGridSnapshot(for: tabID)
+            }
         }
     }
 
@@ -1414,10 +1444,10 @@ final class RemoteControlManager {
         return overlayModel?.selectedTabID
     }
 
-    private func sendFrame(type: RemoteFrameType, tabID: UInt32, payload: Data) {
+    private func sendFrame(type: RemoteFrameType, flags: UInt8 = 0, tabID: UInt32, payload: Data) {
         let frame = RemoteFrame(
             type: type.rawValue,
-            flags: 0,
+            flags: flags,
             reserved: 0,
             tabID: tabID,
             seq: nextSeq(),
@@ -1438,6 +1468,10 @@ final class RemoteControlManager {
     private func nextSeq() -> UInt64 {
         defer { seqCounter &+= 1 }
         return seqCounter
+    }
+
+    private static func unixMicroseconds(now: Date = Date()) -> UInt64 {
+        UInt64(max(0, now.timeIntervalSince1970 * 1_000_000))
     }
 
     private func decodePayload<T: Decodable>(_ frame: RemoteFrame, as type: T.Type, context: String) -> T? {

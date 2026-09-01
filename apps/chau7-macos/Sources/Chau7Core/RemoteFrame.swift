@@ -22,6 +22,7 @@ extension RemoteFrameError: LocalizedError {
 public struct RemoteFrame: Equatable, Sendable {
     public static let headerSize = 20
     public static let flagEncrypted: UInt8 = 0x01
+    public static let flagOutputTiming: UInt8 = 0x02
 
     public let version: UInt8
     public let type: UInt8
@@ -135,6 +136,7 @@ public enum RemoteFrameType: UInt8, CaseIterable, Sendable {
     case snapshot = 0x22
     case terminalGridSnapshot = 0x23
     case keyInput = 0x24
+    case checkpointRequest = 0x25
     case approvalRequest = 0x50
     case approvalResponse = 0x51
     case notificationEvent = 0x52

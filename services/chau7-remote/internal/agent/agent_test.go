@@ -270,6 +270,7 @@ func TestRequiresEncryptedRelayFrame(t *testing.T) {
 		protocol.TypeTabSwitch,
 		protocol.TypeInput,
 		protocol.TypeKeyInput,
+		protocol.TypeCheckpointRequest,
 		protocol.TypeRemoteTelemetry,
 		protocol.TypeApprovalResponse,
 	}

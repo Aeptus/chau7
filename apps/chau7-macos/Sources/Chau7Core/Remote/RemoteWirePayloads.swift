@@ -171,6 +171,7 @@ public struct RemoteClientStatePayload: Codable, Equatable, Sendable {
     public let appState: RemoteClientAppState
     public let streamMode: RemoteClientStreamMode
     public let terminalPresentation: RemoteTerminalPresentation?
+    public let supportsOutputTiming: Bool?
     public let pushToken: String?
     public let pushTopic: String?
     public let pushEnvironment: RemotePushEnvironment?
@@ -180,6 +181,7 @@ public struct RemoteClientStatePayload: Codable, Equatable, Sendable {
         appState: RemoteClientAppState,
         streamMode: RemoteClientStreamMode,
         terminalPresentation: RemoteTerminalPresentation? = nil,
+        supportsOutputTiming: Bool? = nil,
         pushToken: String? = nil,
         pushTopic: String? = nil,
         pushEnvironment: RemotePushEnvironment? = nil,
@@ -188,6 +190,7 @@ public struct RemoteClientStatePayload: Codable, Equatable, Sendable {
         self.appState = appState
         self.streamMode = streamMode
         self.terminalPresentation = terminalPresentation
+        self.supportsOutputTiming = supportsOutputTiming
         self.pushToken = pushToken
         self.pushTopic = pushTopic
         self.pushEnvironment = pushEnvironment
@@ -198,6 +201,7 @@ public struct RemoteClientStatePayload: Codable, Equatable, Sendable {
         case appState = "app_state"
         case streamMode = "stream_mode"
         case terminalPresentation = "terminal_presentation"
+        case supportsOutputTiming = "supports_output_timing"
         case pushToken = "push_token"
         case pushTopic = "push_topic"
         case pushEnvironment = "push_environment"
@@ -265,6 +269,7 @@ public struct RemoteTabListPayload: Codable, Equatable, Sendable {
     /// Advertised when the Mac can decode KEY_INPUT (0x24) frames. Clients
     /// without the capability keep sending escape text over INPUT.
     public static let keyInputCapability = "key_input"
+    public static let checkpointRequestCapability = "checkpoint_request"
 
     public let tabs: [RemoteTabDescriptor]
     /// Mac feature advertisement. Additive/optional: older Macs omit it and

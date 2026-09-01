@@ -2598,6 +2598,13 @@
   },
   {
     "category": "SSH, Profiles & Remote",
+    "feature": "Media-Style Remote Terminal Transport",
+    "description": "PTY bytes use a 4 ms binary micro-batch, snapshots act as keyframes for initial state and recovery, authenticated timing metadata measures sender/network latency, and a side-effect-free checkpoint request resynchronizes overloaded clients",
+    "status": "Experimental",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "SSH, Profiles & Remote",
     "feature": "Selected-Tab Remote Streaming",
     "description": "macOS streams terminal output and snapshots only for the tab currently selected on iPhone; background tabs stay metadata/activity/approvals-only until switched to",
     "status": "Experimental",

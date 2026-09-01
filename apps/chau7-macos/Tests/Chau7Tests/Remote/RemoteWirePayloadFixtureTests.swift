@@ -118,6 +118,7 @@ final class RemoteWirePayloadFixtureTests: XCTestCase {
         let json = #"{"app_state":"foreground","stream_mode":"full","notifications_authorized":false}"#
         let payload = try JSONDecoder().decode(RemoteClientStatePayload.self, from: Data(json.utf8))
         XCTAssertNil(payload.terminalPresentation)
+        XCTAssertNil(payload.supportsOutputTiming)
     }
 
     func testTabDescriptorDecodesWithoutMCPFlag() throws {
