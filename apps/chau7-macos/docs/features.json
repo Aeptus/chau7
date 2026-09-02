@@ -1,6 +1,13 @@
 [
   {
     "category": "AI Integration",
+    "feature": "Aethyme Pull-Request Activity Delivery",
+    "description": "Claims Aethyme's provider-neutral durable outbox and delivers metadata-only review prompts only to the exact subscribed Chau7 tab, AI session, repository, and idle input surface while busy targets retry and identity drift fails closed",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "AI Integration",
     "feature": "MAGI Multi-Agent Decision Protocol",
     "description": "CLI-first council mode that launches three isolated agents through Chau7 MCP, applies editable member personas, collects user-approved evidence, resolves majority/veto verdicts, and writes replay/share artifacts",
     "status": "Shipped",

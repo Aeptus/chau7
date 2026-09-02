@@ -10,6 +10,7 @@ This repository keeps public-facing documentation close to the code it describes
 - [`PRIVACY.md`](../PRIVACY.md): what data stays local, bug report data flow, sub-processors
 - [`scripts/README.md`](../scripts/README.md): build orchestration and CI script reference
 - [`quality-gates.md`](quality-gates.md): hook architecture, quality registry contract, cache policy, and failure reproduction
+- [`aethyme-pr-delivery.md`](aethyme-pr-delivery.md): durable Aethyme PR activity delivery to exact Chau7 agent sessions
 - [`apps/chau7-macos/README.md`](../apps/chau7-macos/README.md): macOS app build, run, packaging, and local verification
 - [`apps/chau7-macos/docs/ARCHITECTURE.md`](../apps/chau7-macos/docs/ARCHITECTURE.md): current macOS architecture overview
 - [`apps/chau7-macos/docs/FEATURES.md`](../apps/chau7-macos/docs/FEATURES.md): stable feature inventory

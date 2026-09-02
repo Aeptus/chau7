@@ -465,6 +465,44 @@ final class TerminalControlService {
         }
     }
 
+    /// Delivers an Aethyme-owned prompt only after atomically revalidating the
+    /// exact Chau7 tab, AI session, repository, and idle input surface. The
+    /// subscription target is the authority; this deliberately does not adopt
+    /// MCP control or search for a "similar" tab when identity has drifted.
+    func deliverAethymePrompt(
+        target: AethymeDeliveryTarget,
+        repositoryRoot: String,
+        prompt: String
+    ) -> AethymeDeliveryReadiness {
+        onMain {
+            guard let uuid = self.resolveControlPlaneTabIDLocked(target.tabID),
+                  let (_, session) = self.resolveTab(target.tabID) else {
+                return .retry(errorCode: "target_tab_missing")
+            }
+            let snapshot = AethymeDeliveryTabSnapshot(
+                tabID: target.tabID,
+                aiSessionID: session.effectiveAISessionId,
+                aiProvider: session.effectiveAIProvider,
+                repositoryRoot: session.repositoryModel?.rootPath,
+                status: session.effectiveStatus.rawValue,
+                isAtPrompt: session.effectiveIsAtPrompt,
+                hasPendingInput: !(self.mcpPendingInput[uuid] ?? "").isEmpty
+            )
+            let readiness = AethymeDeliveryReadinessPolicy.evaluate(
+                target: target,
+                tab: snapshot,
+                repositoryRoot: repositoryRoot
+            )
+            guard readiness == .ready else { return readiness }
+
+            session.sendOrQueueAutomationInput(prompt + "\n")
+            Log.info(
+                "Aethyme delivery accepted for tab \(target.tabID) session \(target.aiSessionID)"
+            )
+            return .ready
+        }
+    }
+
     func pendingApprovalSummaries() -> [[String: Any]] {
         approvalLock.lock()
         defer { approvalLock.unlock() }

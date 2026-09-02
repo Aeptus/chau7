@@ -303,6 +303,7 @@ private final class OverlayBlurView: NSVisualEffectView {
         _ = ClipboardHistoryManager.shared
         DebugConsoleController.shared.configure(appModel: model, overlayModel: overlayModel)
         BugReportWindowController.shared.configure(appModel: model, overlayModel: overlayModel)
+        AethymeDeliveryMonitor.shared.start()
     }
 
     private func finishLaunching() {
@@ -528,6 +529,7 @@ private final class OverlayBlurView: NSVisualEffectView {
     func applicationWillTerminate(_ notification: Notification) {
         multiWindowAutoSaveTimer?.cancel()
         multiWindowAutoSaveTimer = nil
+        AethymeDeliveryMonitor.shared.stop()
         saveAllWindowStates(reason: .termination)
         for host in overlayHosts {
             host.model.closeAllSessionsForTermination()
