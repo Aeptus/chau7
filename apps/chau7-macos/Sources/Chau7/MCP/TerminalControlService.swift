@@ -20,6 +20,10 @@ final class TerminalControlService {
     /// it); the Remote layer consumes it via `TabDirectoryProviding`.
     let registry = WindowModelRegistry()
     private var mcpTabIDs = MCPTabIDAllocator()
+    /// Partial input staged through MCP but not yet submitted. Delivery uses
+    /// this main-thread-confined state to avoid appending a prompt to an
+    /// agent's existing input line.
+    private var aethymePendingMCPInput: [UUID: String] = [:]
     private var routingIndex = TabRoutingIndex(records: [])
     private var routingIndexNeedsRebuild = true
     var activeOverlayModelProvider: (() -> OverlayTabsModel?)?
@@ -486,7 +490,7 @@ final class TerminalControlService {
                 repositoryRoot: session.repositoryModel?.rootPath,
                 status: session.effectiveStatus.rawValue,
                 isAtPrompt: session.effectiveIsAtPrompt,
-                hasPendingInput: !(self.mcpPendingInput[uuid] ?? "").isEmpty
+                hasPendingInput: self.aethymePendingMCPInput[uuid] != nil
             )
             let readiness = AethymeDeliveryReadinessPolicy.evaluate(
                 target: target,
@@ -1262,7 +1266,16 @@ final class TerminalControlService {
         // Same control-plane isolation as execInTab: do not wait inside input
         // bookkeeping or PTY writes under backpressure.
         let tabExists: Bool = onMain {
-            self.resolveTab(tabID) != nil
+            guard let uuid = self.resolveControlPlaneTabIDLocked(tabID),
+                  let (_, session) = self.resolveTab(tabID) else {
+                return false
+            }
+            self.aethymePendingMCPInput[uuid] = AethymePendingInputPolicy.nextFragment(
+                existing: self.aethymePendingMCPInput[uuid],
+                input: input,
+                isAtPrompt: session.effectiveIsAtPrompt
+            )
+            return true
         }
         guard tabExists else {
             return jsonError("Tab not found: \(tabID)")
@@ -1286,7 +1299,16 @@ final class TerminalControlService {
         }
 
         let tabExists: Bool = onMain {
-            self.resolveTab(tabID) != nil
+            guard let uuid = self.resolveControlPlaneTabIDLocked(tabID),
+                  self.resolveTab(tabID) != nil else {
+                return false
+            }
+            if keyPress.key == "enter" && keyPress.modifiers.isEmpty
+                || keyPress.key == "escape"
+                || ((keyPress.key == "c" || keyPress.key == "u") && keyPress.modifiers == [.control]) {
+                self.aethymePendingMCPInput[uuid] = nil
+            }
+            return true
         }
         guard tabExists else {
             return jsonError("Tab not found: \(tabID)")
@@ -1310,7 +1332,9 @@ final class TerminalControlService {
         }
 
         let initialState: AISubmitSnapshot? = onMain {
-            guard let (_, session) = self.resolveTab(tabID) else { return nil }
+            guard let uuid = self.resolveControlPlaneTabIDLocked(tabID),
+                  let (_, session) = self.resolveTab(tabID) else { return nil }
+            self.aethymePendingMCPInput[uuid] = nil
             return self.submitSnapshot(for: session)
         }
         guard let initialState else {
@@ -1389,6 +1413,7 @@ final class TerminalControlService {
 
             Log.info("MCP: closing tab \(tabID) force=\(force) context=\(context ?? "default")")
             model.closeTab(id: uuid, skipWarning: true)
+            self.aethymePendingMCPInput[uuid] = nil
             self.mcpTabIDs.release(tabID: uuid)
             return self.encodeAny(["ok": true])
         }
@@ -2405,7 +2430,9 @@ final class TerminalControlService {
     }
 
     private func pruneTabAliasesLocked() {
-        mcpTabIDs.prune(validTabIDs: Set(allTabs.map(\.id)))
+        let validTabIDs = Set(allTabs.map(\.id))
+        mcpTabIDs.prune(validTabIDs: validTabIDs)
+        aethymePendingMCPInput = aethymePendingMCPInput.filter { validTabIDs.contains($0.key) }
     }
 
     private func preferredModelEntry(from models: [(windowID: Int, model: OverlayTabsModel)]) -> (windowID: Int, model: OverlayTabsModel)? {

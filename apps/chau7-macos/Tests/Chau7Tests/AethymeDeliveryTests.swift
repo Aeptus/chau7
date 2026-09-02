@@ -133,6 +133,39 @@ final class AethymeDeliveryTests: XCTestCase {
         )
     }
 
+    func testPendingInputTracksOnlyTheUnsubmittedPromptFragment() {
+        XCTAssertEqual(
+            AethymePendingInputPolicy.nextFragment(
+                existing: nil,
+                input: "review ",
+                isAtPrompt: true
+            ),
+            "review "
+        )
+        XCTAssertEqual(
+            AethymePendingInputPolicy.nextFragment(
+                existing: "review ",
+                input: "this\nnext",
+                isAtPrompt: true
+            ),
+            "next"
+        )
+        XCTAssertNil(
+            AethymePendingInputPolicy.nextFragment(
+                existing: "review this",
+                input: "\r",
+                isAtPrompt: true
+            )
+        )
+        XCTAssertNil(
+            AethymePendingInputPolicy.nextFragment(
+                existing: "stale",
+                input: "interactive",
+                isAtPrompt: false
+            )
+        )
+    }
+
     private func snapshot(
         aiSessionID: String? = "codex-42",
         repositoryRoot: String? = "/tmp/project",

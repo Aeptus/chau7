@@ -2,7 +2,7 @@
   {
     "category": "AI Integration",
     "feature": "Aethyme Pull-Request Activity Delivery",
-    "description": "Claims Aethyme's provider-neutral durable outbox and delivers metadata-only review prompts only to the exact subscribed Chau7 tab, AI session, repository, and idle input surface while busy targets retry and identity drift fails closed",
+    "description": "Claims Aethyme's provider-neutral durable outbox and delivers metadata-only review prompts only to the exact subscribed Chau7 tab, AI session, repository, and idle input surface while independently tracked partial input defers delivery, busy targets retry, and identity drift fails closed",
     "status": "Shipped",
     "differentiator": "Yes"
   },
