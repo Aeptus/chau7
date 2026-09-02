@@ -361,6 +361,7 @@ private final class SettingsToolbarDelegate: NSObject, NSToolbarDelegate {
         _ = ClipboardHistoryManager.shared
         DebugConsoleController.shared.configure(appModel: model, overlayModel: overlayModel)
         BugReportWindowController.shared.configure(appModel: model, overlayModel: overlayModel)
+        AethymeDeliveryMonitor.shared.start()
     }
 
     private func finishLaunching() {
@@ -596,6 +597,7 @@ private final class SettingsToolbarDelegate: NSObject, NSToolbarDelegate {
         }
         multiWindowAutoSaveTimer?.cancel()
         multiWindowAutoSaveTimer = nil
+        AethymeDeliveryMonitor.shared.stop()
         saveAllWindowStates(reason: .termination)
         for host in overlayHosts {
             host.model.closeAllSessionsForTermination()
