@@ -2,6 +2,14 @@ import XCTest
 @testable import Chau7
 
 final class TerminalWorkProfilerTests: XCTestCase {
+    private final class Recorder: PerformanceTelemetryRecording {
+        var records: [(category: String, fields: [String: Any], date: Date)] = []
+
+        func record(category: String, fields: [String: Any], at date: Date) {
+            records.append((category, fields, date))
+        }
+    }
+
     func testAggregatesByOperationPhaseVisibilityAndCaller() {
         let profiler = TerminalWorkProfiler(logInterval: .infinity)
         let hiddenDrain = TerminalWorkContext(
@@ -73,5 +81,31 @@ final class TerminalWorkProfilerTests: XCTestCase {
         XCTAssertEqual(aggregate?.count, 1)
         XCTAssertEqual(aggregate?.bytes, 2048)
         XCTAssertEqual(aggregate?.mainThreadDurationMs, 0)
+    }
+
+    func testIntervalFlushWritesOneStructuredAggregateOutsideOperationalLog() throws {
+        var clock = Date(timeIntervalSince1970: 1_000)
+        let recorder = Recorder()
+        let profiler = TerminalWorkProfiler(
+            logInterval: 60,
+            now: { clock },
+            telemetry: recorder
+        )
+        let context = TerminalWorkContext(
+            renderPhase: "active",
+            visibility: "visible",
+            caller: "metal"
+        )
+        profiler.record(.getGrid, context: context, durationMs: 2, bytes: 100)
+        clock = clock.addingTimeInterval(60)
+        profiler.record(.getGrid, context: context, durationMs: 3, bytes: 200)
+
+        let record = try XCTUnwrap(recorder.records.first)
+        XCTAssertEqual(recorder.records.count, 1)
+        XCTAssertEqual(record.category, "terminal_work")
+        let entries = try XCTUnwrap(record.fields["entries"] as? [[String: Any]])
+        XCTAssertEqual(entries.count, 1)
+        XCTAssertEqual(entries[0]["count"] as? Int, 2)
+        XCTAssertEqual(entries[0]["bytes"] as? Int, 300)
     }
 }

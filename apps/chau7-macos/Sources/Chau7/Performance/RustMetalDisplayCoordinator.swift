@@ -12,10 +12,16 @@ import Foundation
 import MetalKit
 import Chau7Core
 
-/// Grid snapshot provider: reads the Rust grid and returns (snapshot pointer, free closure).
-/// The coordinator calls this each frame to get current grid state + cursor position.
-typealias RustGridProvider = () -> (
-    grid: UnsafeMutableRawPointer, // Points to RustGridSnapshot
+enum RustGridPayload {
+    case full(UnsafeMutablePointer<RustGridSnapshot>)
+    case delta(UnsafeMutablePointer<RustGridDeltaSnapshot>)
+}
+
+/// Grid provider keyed by the last generation consumed by this display. A
+/// generation of zero requests a complete viewport for cold start, resize,
+/// theme/tint changes, diagnostics, and renderer restoration.
+typealias RustGridProvider = (_ generation: UInt64) -> (
+    payload: RustGridPayload,
     cursor: (col: UInt16, row: UInt16),
     cursorVisible: Bool, // DECTCEM: false when app hides cursor (ESC[?25l)
     scrollbackRows: Int,
@@ -67,6 +73,7 @@ final class RustMetalDisplayCoordinator: NSObject {
     private var framePreparationState = MetalFramePreparationState()
     private var preparedFrame: PreparedFrame?
     private var forceFullRefreshForNextPreparation = true
+    private var lastPreparedRowTints: [Int: SIMD4<Float>] = [:]
     private var tripleBufferFootprintBytes = 0
     private var rows: Int
     private var cols: Int
@@ -391,12 +398,17 @@ final class RustMetalDisplayCoordinator: NSObject {
         let shouldForceFullRefresh = forceFullRefreshForNextPreparation
         forceFullRefreshForNextPreparation = false
         let rowTints = currentRowTints(for: terminalView)
+        let rowTintsChanged = rowTints != lastPreparedRowTints
+        lastPreparedRowTints = rowTints
         let captureDiagnostics = EnvVars.isEnabled(EnvVars.inputDiagnostics)
             || EnvVars.isEnabled(EnvVars.renderRowDiagnostics)
+        let requestedGeneration = shouldForceFullRefresh || rowTintsChanged || captureDiagnostics
+            ? 0
+            : existingBuffer.latestGeneration
 
         framePreparationQueue.async { [weak self] in
             guard let self else { return }
-            guard let snapshot = provider() else {
+            guard let snapshot = provider(requestedGeneration) else {
                 DispatchQueue.main.async { [weak self] in
                     self?.finishFramePreparation(ticket, frame: nil)
                 }
@@ -404,10 +416,17 @@ final class RustMetalDisplayCoordinator: NSObject {
             }
             defer { snapshot.free() }
 
-            let gridPtr = snapshot.grid.assumingMemoryBound(to: RustGridSnapshot.self)
-            let gridRows = Int(gridPtr.pointee.rows)
-            let gridCols = Int(gridPtr.pointee.cols)
-            guard gridRows > 0, gridCols > 0, gridPtr.pointee.cells != nil else {
+            let gridRows: Int
+            let gridCols: Int
+            switch snapshot.payload {
+            case let .full(grid):
+                gridRows = Int(grid.pointee.rows)
+                gridCols = Int(grid.pointee.cols)
+            case let .delta(delta):
+                gridRows = Int(delta.pointee.rows)
+                gridCols = Int(delta.pointee.cols)
+            }
+            guard gridRows > 0, gridCols > 0 else {
                 DispatchQueue.main.async { [weak self] in
                     self?.finishFramePreparation(ticket, frame: nil)
                 }
@@ -420,16 +439,23 @@ final class RustMetalDisplayCoordinator: NSObject {
             } else {
                 targetBuffer = TripleBufferedTerminal(rows: gridRows, cols: gridCols)
             }
-            if shouldForceFullRefresh {
-                targetBuffer.markFullRefresh()
-            }
-
             bridge.rowTints = rowTints
-            guard bridge.syncToTripleBuffer(
-                targetBuffer,
-                grid: gridPtr,
-                viewID: renderViewID
-            ) != nil else {
+            let syncResult: (rows: Int, cols: Int)?
+            switch snapshot.payload {
+            case let .full(grid):
+                syncResult = bridge.syncToTripleBuffer(
+                    targetBuffer,
+                    grid: grid,
+                    viewID: renderViewID
+                )
+            case let .delta(delta):
+                syncResult = bridge.syncDeltaToTripleBuffer(
+                    targetBuffer,
+                    delta: delta,
+                    viewID: renderViewID
+                )
+            }
+            guard syncResult != nil else {
                 DispatchQueue.main.async { [weak self] in
                     self?.finishFramePreparation(ticket, frame: nil)
                 }
@@ -437,10 +463,27 @@ final class RustMetalDisplayCoordinator: NSObject {
             }
 
             let diagnosticCells: [RustCellData]?
-            if captureDiagnostics, let cells = gridPtr.pointee.cells {
-                diagnosticCells = Array(
-                    UnsafeBufferPointer(start: cells, count: gridRows * gridCols)
-                )
+            if captureDiagnostics {
+                switch snapshot.payload {
+                case let .full(grid):
+                    if let cells = grid.pointee.cells {
+                        diagnosticCells = Array(
+                            UnsafeBufferPointer(start: cells, count: gridRows * gridCols)
+                        )
+                    } else {
+                        diagnosticCells = nil
+                    }
+                case let .delta(delta):
+                    if delta.pointee.full_refresh != 0,
+                       Int(delta.pointee.row_count) == gridRows,
+                       let cells = delta.pointee.cells {
+                        diagnosticCells = Array(
+                            UnsafeBufferPointer(start: cells, count: gridRows * gridCols)
+                        )
+                    } else {
+                        diagnosticCells = nil
+                    }
+                }
             } else {
                 diagnosticCells = nil
             }
@@ -769,6 +812,7 @@ final class RustMetalDisplayCoordinator: NSObject {
         framePreparationState.resetForNewBinding()
         preparedFrame = nil
         forceFullRefreshForNextPreparation = true
+        lastPreparedRowTints = [:]
         gridProvider = newView.makeGridProvider()
         terminalView = newView
         let handoffGeneration = handoffState.begin()
@@ -937,6 +981,49 @@ final class RustMetalDisplayCoordinator: NSObject {
         renderer.clearGlyphCache()
         requestFullFramePreparation()
     }
+
+    /// Drops large regenerable renderer allocations for a fully invisible
+    /// window. The latest triple buffer remains resident so restoring the
+    /// window never waits on disk or loses terminal/session state.
+    @discardableResult
+    func evictInactiveResources() -> Int {
+        let window = metalView.window
+        let isWindowInvisible = window.map {
+            !$0.isVisible || $0.isMiniaturized || !$0.occlusionState.contains(.visible)
+        } ?? true
+        let allocatedBytes = renderer.allocatedResourceBytes
+        guard TerminalMemoryBudgetPolicy.shouldEvictRenderer(
+            isWindowInvisible: isWindowInvisible,
+            allocatedBytes: allocatedBytes
+        ) else {
+            return 0
+        }
+
+        let releasedBytes = renderer.evictResources()
+        guard releasedBytes > 0 else { return 0 }
+        texturesAreVolatile = false
+        fontConfigured = false
+        lastFontConfigurationSignature = nil
+        forceFullRefreshForNextPreparation = true
+        Log.info("RustMetalDisplayCoordinator: evicted \(releasedBytes / (1_024 * 1_024))MB from invisible renderer")
+        return releasedBytes
+    }
+
+    /// Restores an evicted renderer and asks the off-main preparation path for
+    /// one authoritative full frame. Returning false deliberately defers this
+    /// draw rather than flashing an incomplete atlas or stale instance buffer.
+    private func restoreRendererResourcesIfNeeded() -> Bool {
+        guard renderer.resourcesAreEvicted else { return true }
+        guard renderer.restoreResourcesIfNeeded() else {
+            scheduleRetryDisplay(reason: .fontNotConfigured)
+            return false
+        }
+        fontConfigured = false
+        lastFontConfigurationSignature = nil
+        requestFullFramePreparation()
+        Log.info("RustMetalDisplayCoordinator: restored renderer resources; preparing authoritative frame")
+        return false
+    }
 }
 
 // MARK: - MTKViewDelegate
@@ -959,6 +1046,7 @@ extension RustMetalDisplayCoordinator: MTKViewDelegate {
             scheduleCircuitBreakerRetry()
             return
         }
+        guard restoreRendererResourcesIfNeeded() else { return }
         // Promote volatile GPU resources before any encode touches them —
         // a no-op flag check in the common case.
         markTexturesNonVolatileAndRebuildIfNeeded()

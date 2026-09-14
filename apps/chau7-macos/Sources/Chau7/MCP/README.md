@@ -32,6 +32,7 @@ Model Context Protocol server: exposes Chau7 tab control, output, and telemetry 
 - `chau7_timer_inventory` exposes Chau7-owned timer/display-link state for renderer and MCP server correlation
 - `chau7_state_snapshot` is the authoritative aggregated observer read: runtime identity, tabs, approvals, repo event summaries, active telemetry runs/sessions, timers, and latest sequence
 - `chau7_subscribe` / `chau7_unsubscribe` open one long-lived state feed per MCP connection using JSON-RPC notifications (`notifications/chau7.event`) with replay from a cursor
+- Initialized Unix-socket sessions have no server-side read-idle expiry; the connection ends when either peer closes it. Writes retain a bounded timeout so an unresponsive reader cannot hold a session thread forever.
 - snapshot and subscription payloads expose `observer_contract_version`, replay bounds, effective topics, and subscription health metadata for deterministic eval clients
 - subscriptions emit additive `heartbeat` notifications on topic `subscription-control` so clients can detect stalled links without polling fan-out
 - runtime orchestration remains app-internal for now and is no longer part of the public MCP tool surface

@@ -80,6 +80,24 @@ extension RustTerminalView {
         }
     }
 
+    func measuredGridDeltaSnapshot(
+        rust: any TerminalBackend,
+        since generation: UInt64,
+        caller: String
+    ) -> (snapshot: UnsafeMutablePointer<RustGridDeltaSnapshot>, free: () -> Void)? {
+        TerminalWorkProfiler.shared.measure(
+            .getGrid,
+            context: terminalWorkContext(caller: caller),
+            bytes: { result in
+                guard let snapshot = result?.snapshot.pointee else { return 0 }
+                let cells = Int(snapshot.row_count) * Int(snapshot.cols) * MemoryLayout<RustCellData>.stride
+                return cells + snapshot.clusters_len + Int(snapshot.row_count) * MemoryLayout<UInt16>.stride
+            }
+        ) {
+            rust.getGridDelta(since: generation)
+        }
+    }
+
     // MARK: - Polling Lifecycle
 
     func stopPollingLoop() {
@@ -475,7 +493,7 @@ extension RustTerminalView {
             return nil
         }
 
-        return { [weak self, weak rust] in
+        return { [weak self, weak rust] generation in
             guard let self, let rust else { return nil }
             let context = terminalWorkContext(caller: "metalGridProvider")
             guard TerminalGridSnapshotPolicy.allowsPresentationSnapshot(
@@ -488,9 +506,27 @@ extension RustTerminalView {
             // drain metadata reads; the returned Rust snapshot owns an
             // independent copy and remains valid after this lock is released.
             terminalPollAccessLock.lock()
+            if let (delta, freeDelta) = measuredGridDeltaSnapshot(
+                rust: rust,
+                since: generation,
+                caller: "metalGridProvider"
+            ) {
+                let cursor = rust.cursorPosition
+                let cursorVisible = delta.pointee.cursor_visible != 0
+                let scrollbackRows = Int(delta.pointee.scrollback_rows)
+                terminalPollAccessLock.unlock()
+                return (
+                    payload: .delta(delta),
+                    cursor: cursor,
+                    cursorVisible: cursorVisible,
+                    scrollbackRows: scrollbackRows,
+                    free: freeDelta
+                )
+            }
+
             guard let (grid, freeGrid) = measuredGridSnapshot(
                 rust: rust,
-                caller: "metalGridProvider"
+                caller: "metalGridProviderFallback"
             ) else {
                 terminalPollAccessLock.unlock()
                 return nil
@@ -499,10 +535,8 @@ extension RustTerminalView {
             let cursorVisible = grid.pointee.cursor_visible != 0
             let scrollbackRows = Int(grid.pointee.scrollback_rows)
             terminalPollAccessLock.unlock()
-            // grid is UnsafeMutablePointer<RustGridSnapshot>, cast to raw for the generic provider
-            let rawPtr = UnsafeMutableRawPointer(grid)
             return (
-                grid: rawPtr,
+                payload: .full(grid),
                 cursor: cursor,
                 cursorVisible: cursorVisible,
                 scrollbackRows: scrollbackRows,
@@ -547,6 +581,69 @@ extension RustTerminalView {
         if !force, now - lastSyncTime < minInterval {
             skippedSyncCount += 1
             return
+        }
+
+        // Preferred path: Rust already knows Alacritty's precise viewport
+        // damage. Apply those packed rows directly and avoid materializing or
+        // comparing a complete grid on every PTY chunk.
+        if let deltaResult = measuredGridDeltaSnapshot(
+            rust: rust,
+            since: force ? 0 : cpuGridGeneration,
+            caller: "cpuRenderer"
+        ) {
+            let delta = deltaResult.snapshot
+            let snapshot = delta.pointee
+            let gridCols = Int(snapshot.cols)
+            let gridRows = Int(snapshot.rows)
+            let cursor = rust.cursorPosition
+            let fullRefresh = snapshot.full_refresh != 0
+            let applied = gridView?.updateGridDelta(
+                cells: snapshot.cells,
+                rowIndices: snapshot.row_indices,
+                rowCount: Int(snapshot.row_count),
+                clusters: snapshot.clusters_utf8,
+                clustersLen: snapshot.clusters_len,
+                cols: gridCols,
+                rows: gridRows,
+                cursor: cursor,
+                fullRefresh: fullRefresh
+            ) ?? false
+
+            if applied, fullRefresh, let cells = snapshot.cells {
+                logCursorInputRowDiagnosticIfNeeded(
+                    cells: cells,
+                    cols: gridCols,
+                    rows: gridRows,
+                    cursor: cursor,
+                    source: "cpu-grid-delta-full"
+                )
+            }
+            deltaResult.free()
+
+            if applied {
+                cpuGridGeneration = snapshot.generation
+                cachedScrollbackRows = Int(snapshot.scrollback_rows)
+                gridView?.cursorVisible = snapshot.cursor_visible != 0
+                previousGrid = []
+                previousGridCols = gridCols
+                previousGridRows = gridRows
+                previousCursorCol = cursor.col
+                previousCursorRow = cursor.row
+                lastSyncTime = now
+                if fullRefresh {
+                    fullSyncCount += 1
+                } else {
+                    partialSyncCount += 1
+                }
+                hasRetainedFrameSourceReady = true
+                retainedFrameSourceVersion = retainedFrameContentVersion
+                updateInlineImagePositions()
+                return
+            }
+
+            // A malformed/mid-resize delta is recoverable: reset the consumer
+            // generation and take the established full-grid fallback below.
+            cpuGridGeneration = 0
         }
 
         guard let (grid, freeGrid) = measuredGridSnapshot(rust: rust, caller: "cpuRenderer") else {

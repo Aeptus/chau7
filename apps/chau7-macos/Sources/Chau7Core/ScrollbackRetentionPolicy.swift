@@ -18,12 +18,20 @@ public enum ScrollbackRetentionPolicy {
     /// summed ring estimates of warm tabs exceed this, the largest are
     /// flushed immediately instead of waiting out their idle timers.
     public static let defaultScrollbackBudgetBytes = 500 * 1024 * 1024
+    public static let defaultPerTabScrollbackBudgetBytes = TerminalMemoryBudgetPolicy.defaultPerTabScrollbackBytes
 
     public static func scrollbackBudgetBytes(overrideMB: Int?) -> Int {
         guard let overrideMB, overrideMB > 0 else {
             return defaultScrollbackBudgetBytes
         }
         return overrideMB * 1024 * 1024
+    }
+
+    public static func perTabScrollbackBudgetBytes(overrideMB: Int?) -> Int {
+        TerminalMemoryBudgetPolicy.normalizedBudgetBytes(
+            overrideMB: overrideMB,
+            defaultBytes: defaultPerTabScrollbackBudgetBytes
+        )
     }
 
     /// Caps the per-tab bookkeeping trackers (input lines, dangerous-command

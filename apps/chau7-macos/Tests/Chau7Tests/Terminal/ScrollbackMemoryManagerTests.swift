@@ -532,12 +532,32 @@ final class ScrollbackMemoryManagerTests: XCTestCase {
             )
         )
 
-        manager.enforceScrollbackBudget(budgetBytes: 100_000_000)
+        manager.enforceScrollbackBudget(budgetBytes: 100_000_000, perTabBudgetBytes: 500_000_000)
         XCTAssertEqual(flushed, ["large"], "Largest candidate flushes first; small stays once under budget")
 
         flushed.removeAll()
-        manager.enforceScrollbackBudget(budgetBytes: 500_000_000)
+        manager.enforceScrollbackBudget(budgetBytes: 500_000_000, perTabBudgetBytes: 500_000_000)
         XCTAssertTrue(flushed.isEmpty, "Under budget → nothing flushes")
+    }
+
+    func testPerTabScrollbackBudgetFlushesOversizedWarmCandidateUnderAggregateBudget() {
+        let manager = ScrollbackMemoryManager(cacheDirectory: tempDirectory)
+        var flushed = false
+        manager.registerBudgetFlushCandidate(
+            tabID: UUID(),
+            candidate: ScrollbackBudgetFlushCandidate(
+                viewId: "oversized",
+                estimatedRingBytes: { 65 * 1_024 * 1_024 },
+                requestFlush: { flushed = true }
+            )
+        )
+
+        manager.enforceScrollbackBudget(
+            budgetBytes: 500 * 1_024 * 1_024,
+            perTabBudgetBytes: 64 * 1_024 * 1_024
+        )
+
+        XCTAssertTrue(flushed, "A single warm tab must not consume most of the aggregate budget")
     }
 
     // MARK: - TUI compaction (Step 5): capture-if-safe, shrink-always, replay-never while protected

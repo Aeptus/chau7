@@ -2,6 +2,13 @@ import XCTest
 @testable import Chau7
 
 final class RenderPipelineProfilerTests: XCTestCase {
+    private final class Recorder: PerformanceTelemetryRecording {
+        var records: [(category: String, fields: [String: Any], date: Date)] = []
+
+        func record(category: String, fields: [String: Any], at date: Date) {
+            records.append((category, fields, date))
+        }
+    }
 
     func testSnapshotAggregatesRenderPipelineMetrics() {
         let profiler = RenderPipelineProfiler(flushInterval: 300)
@@ -121,5 +128,33 @@ final class RenderPipelineProfilerTests: XCTestCase {
         XCTAssertEqual(snapshot.liveViews[0].pollCount, 1)
         XCTAssertEqual(snapshot.liveViews[0].syncCallCount, 1)
         XCTAssertEqual(snapshot.liveViews[0].syncBytes, 2048)
+    }
+
+    func testIntervalFlushOmitsTabAndSessionIdentityFromPerformanceRecord() throws {
+        var clock = Date(timeIntervalSince1970: 1_000)
+        let recorder = Recorder()
+        let profiler = RenderPipelineProfiler(
+            flushInterval: 60,
+            now: { clock },
+            footprintBytes: { 123_456 },
+            telemetry: recorder
+        )
+        profiler.updateRenderLoopState(
+            viewID: 7,
+            active: true,
+            tabID: "private-tab",
+            sessionID: "private-session",
+            mode: "display_link",
+            reasons: "selected"
+        )
+        clock = clock.addingTimeInterval(60)
+        profiler.recordPoll(viewID: 7, changed: true)
+
+        let record = try XCTUnwrap(recorder.records.first)
+        XCTAssertEqual(record.category, "render_pipeline")
+        XCTAssertEqual(record.fields["physical_footprint_bytes"] as? UInt64, 123_456)
+        let liveViews = try XCTUnwrap(record.fields["live_views"] as? [[String: Any]])
+        XCTAssertNil(liveViews[0]["tab_id"])
+        XCTAssertNil(liveViews[0]["session_id"])
     }
 }

@@ -61,15 +61,18 @@ final class TerminalWorkProfiler {
     private let lock = NSLock()
     private let logInterval: TimeInterval
     private let now: () -> Date
+    private let telemetry: PerformanceTelemetryRecording
     private var lastLogAt: Date
     private var entries: [Key: Aggregate] = [:]
 
     init(
-        logInterval: TimeInterval = 30,
-        now: @escaping () -> Date = Date.init
+        logInterval: TimeInterval = 60,
+        now: @escaping () -> Date = Date.init,
+        telemetry: PerformanceTelemetryRecording = PerformanceTelemetryWriter.shared
     ) {
         self.logInterval = logInterval
         self.now = now
+        self.telemetry = telemetry
         self.lastLogAt = now()
     }
 
@@ -121,7 +124,7 @@ final class TerminalWorkProfiler {
         lock.unlock()
 
         if let snapshotToLog {
-            log(snapshotToLog)
+            emit(snapshotToLog)
         }
     }
 
@@ -138,27 +141,32 @@ final class TerminalWorkProfiler {
         lock.unlock()
     }
 
-    private func log(_ snapshot: Snapshot) {
+    private func emit(_ snapshot: Snapshot) {
         let sortedEntries = snapshot.entries.sorted { lhs, rhs in
             let lhsKey = "\(lhs.key.operation.rawValue):\(lhs.key.context.renderPhase):\(lhs.key.context.visibility):\(lhs.key.context.caller)"
             let rhsKey = "\(rhs.key.operation.rawValue):\(rhs.key.context.renderPhase):\(rhs.key.context.visibility):\(rhs.key.context.caller)"
             return lhsKey < rhsKey
         }
-        for (key, aggregate) in sortedEntries {
-            Log.info(
-                String(
-                    format: "Terminal work (30s): op=%@ phase=%@ visibility=%@ caller=%@ count=%d bytes=%d total=%.2fms main=%.2fms max=%.2fms",
-                    key.operation.rawValue,
-                    key.context.renderPhase,
-                    key.context.visibility,
-                    key.context.caller,
-                    aggregate.count,
-                    aggregate.bytes,
-                    aggregate.totalDurationMs,
-                    aggregate.mainThreadDurationMs,
-                    aggregate.maxDurationMs
-                )
-            )
+        let encodedEntries: [[String: Any]] = sortedEntries.map { key, aggregate in
+            [
+                "operation": key.operation.rawValue,
+                "phase": key.context.renderPhase,
+                "visibility": key.context.visibility,
+                "caller": key.context.caller,
+                "count": aggregate.count,
+                "bytes": aggregate.bytes,
+                "total_duration_ms": aggregate.totalDurationMs,
+                "main_thread_duration_ms": aggregate.mainThreadDurationMs,
+                "max_duration_ms": aggregate.maxDurationMs
+            ]
         }
+        telemetry.record(
+            category: "terminal_work",
+            fields: [
+                "interval_seconds": logInterval.isFinite ? logInterval : 0,
+                "entries": encodedEntries
+            ],
+            at: snapshot.asOf
+        )
     }
 }

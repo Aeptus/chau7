@@ -154,6 +154,13 @@
     "differentiator": "No"
   },
   {
+    "category": "Performance",
+    "feature": "Generation-Based Dirty-Row Rendering",
+    "description": "Retains Alacritty viewport damage as per-row generations and streams packed changed rows to independent Metal and CPU consumers, with rotating-buffer catch-up and authoritative full recovery on cold start, resize, and theme changes",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
     "category": "Scripting & Debugging",
     "feature": "Per-Tab Memory Attribution",
     "description": "An on-demand Debug Console Memory tab attributes resident bytes per pane across the Rust ring, session caches, CPU-fallback copies, and per-window Metal resources, with replay and tab-switch-to-first-paint latency instrumentation",
@@ -4870,5 +4877,26 @@
     "description": "A staged-feature-coverage gate runs scripts/check-feature-coverage.mjs to hard-fail when an MCP tool is registered in MCPSession.swift without a canonical inventory row in features.json; warns on documented-but-removed tools; deliberate bypass via CHAU7_SKIP_FEATURE_COVERAGE=1",
     "status": "Shipped",
     "differentiator": "No"
+  },
+  {
+    "category": "Performance",
+    "feature": "Hard Lossless Terminal Memory Budgets",
+    "description": "Warm non-TUI scrollback persists and verifies its full ANSI payload before shrinking above a 64 MB per-tab ceiling; regenerable search and line caches cap at 16 MB per pane, and fully invisible windows release renderer allocations while PTY state and the latest triple-buffered frame remain resident",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "Reliability",
+    "feature": "Stale Session Source Quarantine",
+    "description": "A foreign-directory AI event with stale tab ownership receives one exact-session reroute attempt; unresolved repeats are quarantined without repeated routing or warning spam and emit one bounded summary per minute until valid ownership clears the source",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "Performance",
+    "feature": "Bounded Performance Telemetry and Persistent MCP Sessions",
+    "description": "Identity-free terminal and render aggregates emit once per minute to a dedicated 8 MB JSONL log with one archive, successful MCP lifecycle chatter is trace-only, and initialized Unix-socket sessions remain open until peer close while writes keep a 30-second safety timeout",
+    "status": "Shipped",
+    "differentiator": "Yes"
   }
 ]

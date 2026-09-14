@@ -29,6 +29,10 @@ final class TerminalControlService {
     private var mcpPendingInput: [UUID: String] = [:]
     private var routingIndex = TabRoutingIndex(records: [])
     private var routingIndexNeedsRebuild = true
+    /// Main-thread-confined ownership failures from append-only AI hook
+    /// sources. Each source receives one exact-session reconciliation attempt;
+    /// unresolved repeats are quarantined and summarized once per minute.
+    private var staleDirectorySources = StaleSessionSourceQuarantine()
     var activeOverlayModelProvider: (() -> OverlayTabsModel?)?
 
     /// Hard ceiling — even if the user sets a higher value in settings.
@@ -344,12 +348,32 @@ final class TerminalControlService {
                     newDirectory: trimmed
                 )
                 guard !directoryIsForeign || (trustMatchingSessionForForeignDirectory && sessionMatches) else {
-                    Log.warn(
-                        "updateSessionDirectory: refusing foreign-cwd write tab=\(tabID) " +
-                            "session=\(sessionID ?? "nil") liveSession=\(session.lastAISessionId ?? "nil") " +
-                            "tabCwd=\(session.currentDirectory) eventCwd=\(trimmed)"
-                    )
+                    if let reroutedTabID = self.reconcileOrQuarantineDirectorySourceLocked(
+                        rejectedTabID: tabID,
+                        sessionID: sessionID,
+                        directory: trimmed,
+                        provider: provider,
+                        rejectedSession: session
+                    ) {
+                        return self.updateSessionDirectoryAcrossWindows(
+                            tabID: reroutedTabID,
+                            sessionID: sessionID,
+                            directory: trimmed,
+                            allowSessionIDAdoption: allowSessionIDAdoption,
+                            trustMatchingSessionForForeignDirectory: trustMatchingSessionForForeignDirectory,
+                            provider: provider,
+                            sessionIdentitySource: sessionIdentitySource
+                        )
+                    }
                     return false
+                }
+                if let key = self.staleDirectorySourceKey(
+                    tabID: tabID,
+                    sessionID: sessionID,
+                    provider: provider,
+                    session: session
+                ) {
+                    _ = self.staleDirectorySources.clear(key)
                 }
                 if directoryIsForeign {
                     Log.info(
@@ -421,6 +445,86 @@ final class TerminalControlService {
             newDirectory: newDirectory,
             tabCurrentDirectory: session.currentDirectory,
             tabGitRoot: session.gitRootPath
+        )
+    }
+
+    /// Returns a different exact-session tab only for the first confirmed
+    /// ownership failure. Subsequent calls for the same source do no routing
+    /// work and emit no per-event warning until the bounded summary interval.
+    private func reconcileOrQuarantineDirectorySourceLocked(
+        rejectedTabID: UUID,
+        sessionID: String?,
+        directory: String,
+        provider: String?,
+        rejectedSession: TerminalSessionModel
+    ) -> UUID? {
+        guard let key = staleDirectorySourceKey(
+            tabID: rejectedTabID,
+            sessionID: sessionID,
+            provider: provider,
+            session: rejectedSession
+        ) else {
+            Log.warn(
+                "updateSessionDirectory: refusing foreign-cwd write tab=\(rejectedTabID) " +
+                    "session=nil liveSession=\(rejectedSession.lastAISessionId ?? "nil") " +
+                    "tabCwd=\(rejectedSession.currentDirectory) eventCwd=\(directory)"
+            )
+            return nil
+        }
+
+        let decision = staleDirectorySources.recordOwnershipFailure(for: key)
+        switch decision {
+        case .reconcileAndReport:
+            let result = tabAttribution.resolve(
+                target: TabTarget(
+                    tool: key.provider,
+                    directory: directory,
+                    sessionID: key.sessionID
+                ),
+                policy: .requireSessionMatch
+            )
+            if case let .matched(resolvedTabID, _) = result,
+               resolvedTabID != rejectedTabID {
+                _ = staleDirectorySources.clear(key)
+                Log.info(
+                    "updateSessionDirectory: reconciled stale source from tab=\(rejectedTabID) " +
+                        "to exact session tab=\(resolvedTabID) session=\(key.sessionID)"
+                )
+                return resolvedTabID
+            }
+            Log.warn(
+                "updateSessionDirectory: quarantined stale source tab=\(rejectedTabID) " +
+                    "session=\(key.sessionID) liveSession=\(rejectedSession.lastAISessionId ?? "nil") " +
+                    "reason=foreign_cwd_ownership_mismatch"
+            )
+        case .suppress:
+            break
+        case let .reportSummary(suppressedCount):
+            Log.warn(
+                "updateSessionDirectory: stale source remains quarantined tab=\(rejectedTabID) " +
+                    "session=\(key.sessionID) suppressed=\(suppressedCount)"
+            )
+        }
+        return nil
+    }
+
+    private func staleDirectorySourceKey(
+        tabID: UUID,
+        sessionID: String?,
+        provider: String?,
+        session: TerminalSessionModel
+    ) -> StaleSessionSourceKey? {
+        guard let normalizedSessionID = TabRoutingIndex.normalizedSessionID(sessionID) else {
+            return nil
+        }
+        let resolvedProvider = provider
+            ?? session.lastAIProvider
+            ?? session.aiDisplayAppName
+            ?? "unknown"
+        return StaleSessionSourceKey(
+            tabID: tabID,
+            sessionID: normalizedSessionID,
+            provider: resolvedProvider
         )
     }
 

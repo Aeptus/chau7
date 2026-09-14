@@ -37,6 +37,10 @@ protocol TerminalBackend: ScrollbackMemoryRustFFI {
     // MARK: - Grid / Rows
 
     func getGrid() -> (snapshot: UnsafeMutablePointer<RustGridSnapshot>, free: () -> Void)?
+    /// Returns only viewport rows changed after `generation`. Passing zero
+    /// requests an authoritative full viewport. Nil means the loaded Rust
+    /// library predates incremental snapshots; callers must use `getGrid()`.
+    func getGridDelta(since generation: UInt64) -> (snapshot: UnsafeMutablePointer<RustGridDeltaSnapshot>, free: () -> Void)?
     func getLineText(row: Int) -> String?
     func getLogicalLineHit(row: Int, column: Int) -> RustTerminalFFI.LogicalLineHit?
     var cursorPosition: (col: UInt16, row: UInt16) { get }
@@ -139,6 +143,10 @@ struct TerminalMemoryStats {
 }
 
 extension TerminalBackend {
+    func getGridDelta(since _: UInt64) -> (snapshot: UnsafeMutablePointer<RustGridDeltaSnapshot>, free: () -> Void)? {
+        nil
+    }
+
     /// Default for backends (and test doubles) without debug-state support.
     func memoryStats() -> TerminalMemoryStats? {
         nil

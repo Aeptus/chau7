@@ -181,11 +181,23 @@ final class MetalTerminalRenderer: NSObject {
 
     var memoryFootprint: MemoryFootprint {
         MemoryFootprint(
-            instanceBufferBytes: instanceCapacity * MemoryLayout<CellInstance>.stride,
-            atlasTextureBytes: atlasWidth * atlasHeight * 4,
+            instanceBufferBytes: instanceBuffer?.length ?? 0,
+            atlasTextureBytes: glyphAtlas == nil ? 0 : atlasWidth * atlasHeight * 4,
             atlasContextBytes: atlasContext == nil ? 0 : atlasWidth * atlasHeight * 4,
             glyphCacheEntries: glyphCache.count
         )
+    }
+
+    var allocatedResourceBytes: Int {
+        (instanceBuffer?.length ?? 0)
+            + (uniformBuffer?.length ?? 0)
+            + (vertexBuffer?.length ?? 0)
+            + (glyphAtlas == nil ? 0 : atlasWidth * atlasHeight * 4)
+            + (atlasContext == nil ? 0 : atlasWidth * atlasHeight * 4)
+    }
+
+    var resourcesAreEvicted: Bool {
+        instanceBuffer == nil || uniformBuffer == nil || vertexBuffer == nil || atlasContext == nil
     }
 
     /// Diagnostic frame counter for throttled logging
@@ -1069,6 +1081,13 @@ final class MetalTerminalRenderer: NSObject {
         onCompleted: (() -> Void)? = nil
     ) -> Bool {
         let renderStartedAt = CFAbsoluteTimeGetCurrent()
+        guard instanceBuffer != nil,
+              uniformBuffer != nil,
+              vertexBuffer != nil,
+              atlasContext != nil,
+              glyphAtlas != nil else {
+            return false
+        }
         guard let commandBuffer = commandQueue.makeCommandBuffer() else { return false }
 
         // GPU in-flight gate: the instance/uniform buffers and the glyph atlas
@@ -1658,6 +1677,52 @@ final class MetalTerminalRenderer: NSObject {
         // undetected.
         let anyReclaimed = [atlasPrior, instancePrior, uniformPrior, vertexPrior].contains(.empty)
         return anyReclaimed ? .empty : atlasPrior
+    }
+
+    /// Releases the large per-window renderer allocation after AppKit has
+    /// confirmed the window is fully invisible. The caller retains the latest
+    /// triple-buffered terminal frame, so no terminal content is lost.
+    @discardableResult
+    func evictResources() -> Int {
+        guard allocatedResourceBytes > 0 else { return 0 }
+        guard inflightGate.wait(timeout: .now() + .milliseconds(100)) == .success else {
+            Log.warn("MetalRenderer: GPU frame still in flight; deferring inactive resource eviction")
+            return 0
+        }
+        defer { inflightGate.signal() }
+
+        let releasedBytes = allocatedResourceBytes
+        instanceBuffer = nil
+        uniformBuffer = nil
+        vertexBuffer = nil
+        glyphAtlas = nil
+        atlasContext = nil
+        instanceCapacity = 50_000
+        resetAtlas()
+        asciiGlyphCache = [GlyphInfo?](repeating: nil, count: 128 << 2)
+        rowHasBlinkingCells.removeAll(keepingCapacity: false)
+        blinkingRowCount = 0
+        hasBlinkingCells = false
+        lastCursorRenderState = nil
+        return releasedBytes
+    }
+
+    /// Recreates only the base buffers/context. Font configuration immediately
+    /// afterward repopulates the atlas before a frame can be encoded.
+    func restoreResourcesIfNeeded() -> Bool {
+        guard resourcesAreEvicted else { return true }
+        do {
+            try setupBuffers()
+            setupAtlasContext()
+            return instanceBuffer != nil && uniformBuffer != nil && vertexBuffer != nil && atlasContext != nil
+        } catch {
+            instanceBuffer = nil
+            uniformBuffer = nil
+            vertexBuffer = nil
+            atlasContext = nil
+            Log.error("MetalRenderer: Failed to restore evicted resources: \(error)")
+            return false
+        }
     }
 
     /// Rewrites the static unit-quad vertices (see `setupBuffers`).

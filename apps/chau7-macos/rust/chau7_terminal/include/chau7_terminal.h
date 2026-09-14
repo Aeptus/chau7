@@ -192,6 +192,30 @@ typedef struct GridSnapshot {
 } GridSnapshot;
 
 /*
+ Generation-based viewport delta. `cells` contains `row_count * cols`
+ entries packed in the order given by `row_indices`; cluster offsets refer
+ to this delta's `clusters_utf8` allocation.
+ */
+typedef struct GridDeltaSnapshot {
+    struct CellData *cells;
+    uint8_t *clusters_utf8;
+    uint16_t *row_indices;
+    size_t clusters_len;
+    size_t clusters_capacity;
+    size_t cells_capacity;
+    size_t row_indices_capacity;
+    uint64_t generation;
+    uint32_t scrollback_rows;
+    uint32_t display_offset;
+    uint32_t row_count;
+    uint16_t cols;
+    uint16_t rows;
+    uint8_t cursor_visible;
+    uint8_t full_refresh;
+    uint8_t _pad[6];
+} GridDeltaSnapshot;
+
+/*
  Pool statistics for debugging
  */
 typedef struct PoolStats {
@@ -500,12 +524,30 @@ void chau7_terminal_nudge_winsize(struct Chau7Terminal *term);
 struct GridSnapshot *chau7_terminal_get_grid(struct Chau7Terminal *term);
 
 /*
+ Get a generation-based dirty-row snapshot.
+
+ # Safety
+ - `term` must be a valid pointer
+ - the result must be freed with `chau7_terminal_free_grid_delta`
+ */
+struct GridDeltaSnapshot *chau7_terminal_get_grid_delta(struct Chau7Terminal *term,
+                                                        uint64_t consumer_generation);
+
+/*
  Free a grid snapshot
 
  # Safety
  - `grid` must be a valid pointer returned by `chau7_terminal_get_grid`
  */
 void chau7_terminal_free_grid(struct GridSnapshot *grid);
+
+/*
+ Free a generation-based dirty-row snapshot.
+
+ # Safety
+ - `grid` must be a valid pointer returned by `chau7_terminal_get_grid_delta`
+ */
+void chau7_terminal_free_grid_delta(struct GridDeltaSnapshot *grid);
 
 /*
  Get cell buffer pool statistics
@@ -1030,6 +1072,8 @@ uint32_t chau7_terminal_abi_version(void);
  Layout probes: Swift asserts its mirrored struct sizes match at load time.
  */
 size_t chau7_terminal_sizeof_grid_snapshot(void);
+
+size_t chau7_terminal_sizeof_grid_delta_snapshot(void);
 
 size_t chau7_terminal_sizeof_cell_data(void);
 

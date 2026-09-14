@@ -188,7 +188,7 @@ extension OverlayTabsModel {
             focusedSession.windowMetalCoordinator = coordinator
         } else if let coordinator = RustMetalDisplayCoordinator(
             terminalView: focusedRustView,
-            gridProvider: focusedRustView.makeGridProvider() ?? { nil }
+            gridProvider: focusedRustView.makeGridProvider() ?? { _ in nil }
         ) {
             sharedMetalCoordinator = coordinator
             coordinator.switchToView(focusedRustView, container: focusedContainer)

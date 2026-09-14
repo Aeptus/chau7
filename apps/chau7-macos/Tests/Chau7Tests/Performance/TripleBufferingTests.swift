@@ -14,9 +14,10 @@ final class TripleBufferingTests: XCTestCase {
         let tb = TripleBufferedTerminal(rows: 1, cols: 2)
         let update = tb.updateBuffer
 
-        update.resetClusters()
+        update.beginUpdate(generation: 1, fullRefresh: true)
         tb.setCell(row: 0, col: 0, cell("a", into: update))
         tb.setCell(row: 0, col: 1, cell("b", into: update))
+        update.finishUpdatedRow(0, generation: 1)
         tb.commitUpdate()
 
         XCTAssertEqual(tb.renderBuffer.clusterString(at: tb.getCell(row: 0, col: 0).clusterStart, length: tb.getCell(row: 0, col: 0).clusterLen), "a")
@@ -32,14 +33,15 @@ final class TripleBufferingTests: XCTestCase {
         let tb = TripleBufferedTerminal(rows: 1, cols: 1)
 
         let firstUpdate = tb.updateBuffer
-        firstUpdate.resetClusters()
+        firstUpdate.beginUpdate(generation: 1, fullRefresh: true)
         tb.setCell(row: 0, col: 0, cell("❤️", into: firstUpdate))
+        firstUpdate.finishUpdatedRow(0, generation: 1)
         tb.commitUpdate()
 
         let rendered = tb.getCell(row: 0, col: 0)
         // Simulate the next frame's bridge pass on the new update buffer.
         let secondUpdate = tb.updateBuffer
-        secondUpdate.resetClusters()
+        secondUpdate.beginUpdate(generation: 2, fullRefresh: false)
         _ = cell("XXXX", into: secondUpdate)
 
         XCTAssertEqual(
@@ -51,12 +53,14 @@ final class TripleBufferingTests: XCTestCase {
 
     func testSteadyStateSyncDoesNotGrowClusterCapacity() {
         let tb = TripleBufferedTerminal(rows: 2, cols: 4)
-        for _ in 0 ..< 50 {
+        for generation in 1 ... 50 {
             let update = tb.updateBuffer
-            update.resetClusters()
+            update.beginUpdate(generation: UInt64(generation), fullRefresh: true)
             for col in 0 ..< 4 {
                 tb.setCell(row: 0, col: col, cell("x", into: update))
             }
+            update.finishUpdatedRow(0, generation: UInt64(generation))
+            update.finishUpdatedRow(1, generation: UInt64(generation))
             tb.commitUpdate()
         }
         for buffer in [tb.updateBuffer, tb.renderBuffer, tb.displayBuffer] {
@@ -71,9 +75,9 @@ final class TripleBufferingTests: XCTestCase {
     func testDirtyRowsPropagateThroughCommitAndClearOnPresent() {
         let tb = TripleBufferedTerminal(rows: 3, cols: 1)
         let update = tb.updateBuffer
-        update.clearDirty()
-        update.resetClusters()
+        update.beginUpdate(generation: 1, fullRefresh: false)
         tb.setCell(row: 1, col: 0, cell("z", into: update))
+        update.finishUpdatedRow(1, generation: 1)
 
         XCTAssertEqual(update.dirtyRows, IndexSet(integer: 1), "setCell must mark only the changed row dirty")
         tb.commitUpdate()
@@ -83,39 +87,32 @@ final class TripleBufferingTests: XCTestCase {
         XCTAssertTrue(tb.displayBuffer.dirtyRows.contains(1), "Presented buffer is the former render buffer")
     }
 
-    /// Documents the 3-frame-stale diff baseline: the buffer serving as the
-    /// update buffer was last fully written two commits ago and only received
-    /// the previous frame's dirty rows via copyDirtyFrom — the intervening
-    /// frame's rows were applied to a DIFFERENT buffer. `cellsDiffer`
-    /// therefore reports a superset of truly-changed rows (safe: over-dirty,
-    /// never under-dirty), which inflates dirty-row metrics on mostly-static
-    /// screens. If a damage-generation ring ever fixes this, flip the
-    /// expectation below.
-    func testDiffBaselineIsStaleByDesignAndOverReportsDirtyRows() {
+    func testRowGenerationsKeepRotatingUpdateBufferCurrent() {
         let tb = TripleBufferedTerminal(rows: 2, cols: 1)
 
-        func sync(_ top: String, _ bottom: String) {
-            let update = tb.updateBuffer
-            update.resetClusters()
-            tb.setCell(row: 0, col: 0, cell(top, into: update))
-            tb.setCell(row: 1, col: 0, cell(bottom, into: update))
-            tb.commitUpdate()
-            tb.presentFrame()
-        }
-
-        sync("a", "b")
-        sync("a", "c") // row 1 changes
-        // Third frame: identical to the second. A perfect diff would report
-        // zero dirty rows; the stale baseline (buffer last saw frame 1)
-        // still reports row 1 as dirty.
-        let update = tb.updateBuffer
-        update.resetClusters()
+        var update = tb.updateBuffer
+        update.beginUpdate(generation: 1, fullRefresh: true)
         tb.setCell(row: 0, col: 0, cell("a", into: update))
-        tb.setCell(row: 1, col: 0, cell("c", into: update))
+        tb.setCell(row: 1, col: 0, cell("b", into: update))
+        update.finishUpdatedRow(0, generation: 1)
+        update.finishUpdatedRow(1, generation: 1)
+        tb.commitUpdate()
+        tb.presentFrame()
 
+        update = tb.updateBuffer
+        update.beginUpdate(generation: 2, fullRefresh: false)
+        tb.setCell(row: 1, col: 0, cell("c", into: update))
+        update.finishUpdatedRow(1, generation: 2)
+        tb.commitUpdate()
+        tb.presentFrame()
+
+        update = tb.updateBuffer
+        update.beginUpdate(generation: 2, fullRefresh: false)
+        XCTAssertTrue(update.dirtyRows.isEmpty)
+        _ = tb.commitUpdate()
         XCTAssertTrue(
-            update.dirtyRows.contains(1),
-            "Stale baseline over-reports: documents current behavior — see comment"
+            tb.dirtyRows.isEmpty,
+            "a target-buffer catch-up copy must not become a false renderer dirty row"
         )
     }
 
@@ -125,17 +122,19 @@ final class TripleBufferingTests: XCTestCase {
         // those rows dirty (the CLUSTER OFFSET INVARIANT).
         let tb = TripleBufferedTerminal(rows: 2, cols: 1)
 
-        func sync(_ top: String, _ bottom: String) {
+        func sync(_ top: String, _ bottom: String, generation: UInt64) {
             let update = tb.updateBuffer
-            update.resetClusters()
+            update.beginUpdate(generation: generation, fullRefresh: generation == 1)
             tb.setCell(row: 0, col: 0, cell(top, into: update))
             tb.setCell(row: 1, col: 0, cell(bottom, into: update))
+            update.finishUpdatedRow(0, generation: generation)
+            update.finishUpdatedRow(1, generation: generation)
             tb.commitUpdate()
             tb.presentFrame()
         }
 
-        sync("a", "b")
-        sync("💥", "b") // row 0 grows; row 1's offset shifts by 3 bytes
+        sync("a", "b", generation: 1)
+        sync("💥", "b", generation: 2)
 
         let bottom = tb.displayBuffer
         let bottomCell = bottom[1, 0]
@@ -144,5 +143,36 @@ final class TripleBufferingTests: XCTestCase {
             "b",
             "Shifted offsets must re-copy downstream rows against the new cluster bytes"
         )
+    }
+
+    func testLaggingRenderBufferCatchesUpRowsItMissed() {
+        let tb = TripleBufferedTerminal(rows: 3, cols: 1)
+
+        var update = tb.updateBuffer
+        update.beginUpdate(generation: 1, fullRefresh: true)
+        for row in 0 ..< 3 {
+            tb.setCell(row: row, col: 0, cell("a", into: update))
+            update.finishUpdatedRow(row, generation: 1)
+        }
+        tb.commitUpdate()
+        tb.presentFrame()
+
+        update = tb.updateBuffer
+        update.beginUpdate(generation: 2, fullRefresh: false)
+        tb.setCell(row: 0, col: 0, cell("b", into: update))
+        update.finishUpdatedRow(0, generation: 2)
+        tb.commitUpdate()
+        tb.presentFrame()
+
+        update = tb.updateBuffer
+        update.beginUpdate(generation: 3, fullRefresh: false)
+        tb.setCell(row: 2, col: 0, cell("c", into: update))
+        update.finishUpdatedRow(2, generation: 3)
+        let stats = tb.commitUpdate()
+        tb.presentFrame()
+
+        XCTAssertEqual(stats.dirtyRows, 2, "rotating target must catch up generation 2 and 3 rows")
+        XCTAssertEqual(tb.displayBuffer.clusterString(at: tb.displayBuffer[0, 0].clusterStart, length: tb.displayBuffer[0, 0].clusterLen), "b")
+        XCTAssertEqual(tb.displayBuffer.clusterString(at: tb.displayBuffer[2, 0].clusterStart, length: tb.displayBuffer[2, 0].clusterLen), "c")
     }
 }

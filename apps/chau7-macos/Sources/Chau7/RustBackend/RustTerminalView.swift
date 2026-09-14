@@ -169,6 +169,87 @@ final class RustGridView: NSView {
         updateCursor(cursor)
     }
 
+    /// Applies packed dirty rows from `RustGridDeltaSnapshot`, rebasing each
+    /// changed cell's grapheme offset into this view-owned cluster store.
+    @discardableResult
+    func updateGridDelta(
+        cells source: UnsafeMutablePointer<RustCellData>?,
+        rowIndices: UnsafeMutablePointer<UInt16>?,
+        rowCount: Int,
+        clusters: UnsafeMutablePointer<UInt8>?,
+        clustersLen: Int,
+        cols: Int,
+        rows: Int,
+        cursor: (col: UInt16, row: UInt16),
+        fullRefresh: Bool
+    ) -> Bool {
+        guard cols > 0, rows > 0, rowCount >= 0, rowCount <= rows else { return false }
+        if rowCount > 0, source == nil || rowIndices == nil { return false }
+        if fullRefresh, rowCount != rows { return false }
+
+        let dimensionsChanged = self.cols != cols || self.rows != rows || cells.count != cols * rows
+        guard !dimensionsChanged || fullRefresh else { return false }
+        if dimensionsChanged || fullRefresh {
+            self.cols = cols
+            self.rows = rows
+            cells = Array(repeating: RustCellData(), count: cols * rows)
+            clusterStorage = Data()
+        } else {
+            compactClusterStorageIfNeeded()
+        }
+
+        if let source, let rowIndices {
+            for packedRow in 0 ..< rowCount {
+                let row = Int(rowIndices[packedRow])
+                guard row >= 0, row < rows else { return false }
+                for col in 0 ..< cols {
+                    var cell = source[packedRow * cols + col]
+                    let length = Int(cell.cluster_len)
+                    if length > 0,
+                       let clusters,
+                       Int(cell.cluster_offset) + length <= clustersLen {
+                        let offset = clusterStorage.count
+                        clusterStorage.append(
+                            clusters.advanced(by: Int(cell.cluster_offset)),
+                            count: length
+                        )
+                        cell.cluster_offset = UInt32(offset)
+                    } else {
+                        cell.cluster_offset = 0
+                        cell.cluster_len = 0
+                    }
+                    cells[row * cols + col] = cell
+                }
+                setNeedsDisplay(rowRect(for: row))
+            }
+        }
+        if fullRefresh { needsDisplay = true }
+        updateCursor(cursor)
+        return true
+    }
+
+    private func compactClusterStorageIfNeeded() {
+        let liveBytes = cells.reduce(into: 0) { $0 += Int($1.cluster_len) }
+        guard clusterStorage.count > max(1 * 1_024 * 1_024, liveBytes * 3) else { return }
+        var compacted = Data(capacity: liveBytes)
+        for index in cells.indices {
+            var cell = cells[index]
+            let length = Int(cell.cluster_len)
+            guard length > 0 else { continue }
+            let start = Int(cell.cluster_offset)
+            guard start >= 0, start + length <= clusterStorage.count else {
+                cell.cluster_offset = 0
+                cell.cluster_len = 0
+                cells[index] = cell
+                continue
+            }
+            cell.cluster_offset = UInt32(compacted.count)
+            compacted.append(clusterStorage[start ..< start + length])
+            cells[index] = cell
+        }
+        clusterStorage = compacted
+    }
+
     /// Default-init helper for blank cells. Equivalent to `RustCellData()` but
     /// kept explicit for readability.
     /// Read a cell's grapheme cluster as a Swift String from the local store.
@@ -863,6 +944,23 @@ final class RustTerminalFFI: TerminalBackend {
             Log.traceThrottled("rust-terminal-grid-free", interval: 5.0, "RustTerminalFFI[?]: getGrid - Freeing grid snapshot")
             fns.freeGrid(rawGrid)
         })
+    }
+
+    func getGridDelta(since generation: UInt64) -> (snapshot: UnsafeMutablePointer<RustGridDeltaSnapshot>, free: () -> Void)? {
+        guard let fns = Self.functions,
+              let getDelta = fns.getGridDelta,
+              let freeDelta = fns.freeGridDelta,
+              let rawDelta = getDelta(terminal, generation) else {
+            return nil
+        }
+        let delta = rawDelta.assumingMemoryBound(to: RustGridDeltaSnapshot.self)
+        let snapshot = delta.pointee
+        Log.traceThrottled(
+            "rust-terminal-grid-delta-\(instanceId)",
+            interval: 5.0,
+            "RustTerminalFFI[\(instanceId)]: delta generation=\(snapshot.generation) rows=\(snapshot.row_count)/\(snapshot.rows) full=\(snapshot.full_refresh != 0)"
+        )
+        return (delta, { freeDelta(rawDelta) })
     }
 
     var scrollPosition: Double {
@@ -2008,6 +2106,7 @@ final class RustTerminalView: NSView {
                 previousGrid = []
                 previousGridCols = 0
                 previousGridRows = 0
+                cpuGridGeneration = 0
             }
         }
     }
@@ -2092,6 +2191,7 @@ final class RustTerminalView: NSView {
     var previousGridRows = 0
     var previousCursorCol: UInt16 = 0
     var previousCursorRow: UInt16 = 0
+    var cpuGridGeneration: UInt64 = 0
 
     /// Rate limiting for grid sync.
     var lastSyncTime: CFAbsoluteTime = 0
@@ -2134,6 +2234,10 @@ final class RustTerminalView: NSView {
     /// CPU usage and memory growth to 1+ GB with large scrollback buffers.
     var cachedBufferLines: [String]?
     var cachedBufferLinesVersion: UInt64 = 0
+    /// O(1) lower-bound estimate for the decoded line cache, based on the UTF-8
+    /// source payload. Used only to enforce a deterministic regenerable-cache
+    /// ceiling; the cache itself is never authoritative terminal state.
+    var cachedBufferLinesEstimatedBytes = 0
     /// Instance-scoped sync counter for cache invalidation.
     /// Unlike the static `syncCount`, this only increments when *this* tab syncs,
     /// preventing cross-tab spurious cache invalidation.
@@ -3068,6 +3172,7 @@ final class RustTerminalView: NSView {
             // getLineText pass when the tab is selected again.
             if !phase.allowsLivePresentation {
                 cachedBufferLines = nil
+                cachedBufferLinesEstimatedBytes = 0
             }
         }
     }
@@ -3589,12 +3694,14 @@ final class RustTerminalView: NSView {
         guard let data = getBufferAsData() else {
             cachedBufferLines = []
             cachedBufferLinesVersion = currentVersion
+            cachedBufferLinesEstimatedBytes = 0
             return []
         }
         let text = String(decoding: data, as: UTF8.self)
         let lines = text.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
         cachedBufferLines = lines
         cachedBufferLinesVersion = currentVersion
+        cachedBufferLinesEstimatedBytes = data.count
         return lines
     }
 

@@ -84,6 +84,7 @@ final class MemoryPressureResponder {
         // whole-process ceiling below. Rides this existing timer — no new
         // wakeup source.
         ScrollbackMemoryManager.shared.enforceScrollbackBudget()
+        TerminalMemoryReclaimer.shared.enforceRoutineBudgets()
 
         let used = reportedResidentBytes()
         guard used > 0 else { return }

@@ -1,6 +1,6 @@
 //! Performance optimization structures: adaptive polling, dirty tracking, output batching.
 
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Instant;
 
 use parking_lot::Mutex;
@@ -103,47 +103,125 @@ impl Default for AdaptivePoller {
 // Dirty row tracking
 // ============================================================================
 
-/// Tracks whether the grid needs a redraw. In production the tracker is only
-/// ever driven all-or-nothing (mark_all_dirty / clear), so this is a full-dirty
-/// flag plus the current row count; dirty_count() reports 0 or `rows`.
+/// Generation-based viewport damage tracker.
+///
+/// Every viewport row records the last generation in which it changed. A
+/// renderer asks for rows newer than its own generation, so multiple views of
+/// the same terminal can consume snapshots independently without one view
+/// clearing damage before another sees it.
 pub struct DirtyRowTracker {
-    /// Number of rows being tracked
-    rows: AtomicU64,
-    /// Whether all rows should be considered dirty
-    full_dirty: AtomicBool,
+    state: Mutex<DirtyRowState>,
+}
+
+#[derive(Debug)]
+struct DirtyRowState {
+    generation: u64,
+    row_generations: Vec<u64>,
+    force_full: bool,
+    reported_generation: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DirtyRowsSince {
+    pub generation: u64,
+    pub rows: Vec<usize>,
+    pub full_refresh: bool,
 }
 
 impl DirtyRowTracker {
     pub fn new(rows: usize) -> Self {
         Self {
-            rows: AtomicU64::new(rows as u64),
-            full_dirty: AtomicBool::new(true), // Start fully dirty
+            state: Mutex::new(DirtyRowState {
+                generation: 0,
+                row_generations: vec![0; rows],
+                force_full: true,
+                reported_generation: 0,
+            }),
         }
     }
 
-    /// Mark all rows as dirty
+    /// Request a full refresh on the next snapshot. Repeated invalidations
+    /// coalesce and do not create artificial generations.
     pub fn mark_all_dirty(&self) {
-        self.full_dirty.store(true, Ordering::Relaxed);
+        self.state.lock().force_full = true;
     }
 
-    /// Clear the dirty flag
+    /// Clear only the diagnostic dirty-count baseline. Consumer generations
+    /// are never cleared globally.
     pub fn clear(&self) {
-        self.full_dirty.store(false, Ordering::Relaxed);
+        let mut state = self.state.lock();
+        state.reported_generation = state.generation;
     }
 
-    /// Count of dirty rows (0 when clear, `rows` when fully dirty)
+    /// Count of rows changed since the diagnostic baseline.
     pub fn dirty_count(&self) -> usize {
-        if self.full_dirty.load(Ordering::Relaxed) {
-            self.rows.load(Ordering::Relaxed) as usize
-        } else {
-            0
+        let state = self.state.lock();
+        if state.force_full {
+            return state.row_generations.len();
         }
+        state
+            .row_generations
+            .iter()
+            .filter(|generation| **generation > state.reported_generation)
+            .count()
     }
 
     /// Update the tracked row count (e.g. on resize); forces a full redraw.
     pub fn set_rows(&self, rows: usize) {
-        self.rows.store(rows as u64, Ordering::Relaxed);
-        self.full_dirty.store(true, Ordering::Relaxed);
+        let mut state = self.state.lock();
+        if state.row_generations.len() != rows {
+            state.row_generations.resize(rows, 0);
+        }
+        state.force_full = true;
+    }
+
+    /// Merge Alacritty's damage accumulated since its last reset, then return
+    /// the rows required to advance `consumer_generation` to the current grid.
+    pub fn record_and_snapshot(
+        &self,
+        rows: usize,
+        damaged_rows: &[usize],
+        terminal_reported_full_damage: bool,
+        consumer_generation: u64,
+    ) -> DirtyRowsSince {
+        let mut state = self.state.lock();
+        if state.row_generations.len() != rows {
+            state.row_generations.resize(rows, 0);
+            state.force_full = true;
+        }
+
+        let needs_full = state.force_full || terminal_reported_full_damage;
+        let has_partial_damage = damaged_rows.iter().any(|row| *row < rows);
+        if needs_full || has_partial_damage {
+            state.generation = state.generation.wrapping_add(1).max(1);
+            let generation = state.generation;
+            if needs_full {
+                state.row_generations.fill(generation);
+            } else {
+                for row in damaged_rows.iter().copied().filter(|row| *row < rows) {
+                    state.row_generations[row] = generation;
+                }
+            }
+            state.force_full = false;
+        }
+
+        let generation = state.generation;
+        let consumer_is_invalid = consumer_generation == 0 || consumer_generation > generation;
+        let changed_rows: Vec<usize> = if consumer_is_invalid {
+            (0..rows).collect()
+        } else {
+            state
+                .row_generations
+                .iter()
+                .enumerate()
+                .filter_map(|(row, changed_at)| (*changed_at > consumer_generation).then_some(row))
+                .collect()
+        };
+        DirtyRowsSince {
+            generation,
+            full_refresh: changed_rows.len() == rows,
+            rows: changed_rows,
+        }
     }
 }
 
@@ -159,5 +237,37 @@ impl Default for DirtyRowTracker {
 
 // Output buffer with batching support.
 
-// (DirtyRowTracker is now a simple full-dirty flag + row count; its former
-// per-row bitmap tests were removed with the bitmap.)
+#[cfg(test)]
+mod dirty_row_tests {
+    use super::*;
+
+    #[test]
+    fn consumers_advance_independently_across_generations() {
+        let tracker = DirtyRowTracker::new(4);
+        let first = tracker.record_and_snapshot(4, &[], false, 0);
+        assert!(first.full_refresh);
+        assert_eq!(first.rows, vec![0, 1, 2, 3]);
+
+        let second = tracker.record_and_snapshot(4, &[2], false, first.generation);
+        assert_eq!(second.rows, vec![2]);
+        assert!(!second.full_refresh);
+
+        let lagging = tracker.record_and_snapshot(4, &[], false, first.generation);
+        assert_eq!(lagging.rows, vec![2]);
+        assert_eq!(lagging.generation, second.generation);
+    }
+
+    #[test]
+    fn resize_and_explicit_invalidation_force_full_refresh() {
+        let tracker = DirtyRowTracker::new(2);
+        let first = tracker.record_and_snapshot(2, &[], false, 0);
+        tracker.set_rows(3);
+        let resized = tracker.record_and_snapshot(3, &[], false, first.generation);
+        assert!(resized.full_refresh);
+        assert_eq!(resized.rows, vec![0, 1, 2]);
+
+        tracker.mark_all_dirty();
+        let invalidated = tracker.record_and_snapshot(3, &[], false, resized.generation);
+        assert!(invalidated.full_refresh);
+    }
+}

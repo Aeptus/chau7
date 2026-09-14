@@ -592,6 +592,51 @@ final class TerminalControlServiceTests: XCTestCase {
         XCTAssertEqual(session.currentDirectory, pinned)
     }
 
+    func testUpdateSessionDirectoryReconcilesStaleStampToExactSessionTabOnce() throws {
+        let staleRoot = try makeTempDirectoryTree(name: "stale-stamp")
+        let actualRoot = try makeTempDirectoryTree(name: "actual-session", subpaths: ["subdir"])
+        defer {
+            removeTempDirectory(staleRoot)
+            removeTempDirectory(actualRoot)
+        }
+
+        let staleTab = try XCTUnwrap(overlayModel.tabs.first)
+        let staleSession = try XCTUnwrap(staleTab.session)
+        staleSession.applyAgentIdentity(AgentIdentityRecord(
+            provider: "codex",
+            sessionId: "live-codex-session",
+            source: .explicit
+        ))
+        staleSession.updateCurrentDirectory(staleRoot)
+        staleSession.gitRootPath = staleRoot
+
+        let secondAppModel = AppModel()
+        let secondOverlayModel = OverlayTabsModel(appModel: secondAppModel, restoreState: false)
+        TerminalControlService.shared.register(secondOverlayModel)
+        defer { TerminalControlService.shared.unregister(secondOverlayModel) }
+        let actualTab = try XCTUnwrap(secondOverlayModel.tabs.first)
+        let actualSession = try XCTUnwrap(actualTab.session)
+        actualSession.applyAgentIdentity(AgentIdentityRecord(
+            provider: "claude",
+            sessionId: "exact-claude-session",
+            source: .explicit
+        ))
+        actualSession.updateCurrentDirectory(actualRoot)
+        actualSession.gitRootPath = actualRoot
+
+        let applied = TerminalControlService.shared.updateSessionDirectoryAcrossWindows(
+            tabID: staleTab.id,
+            sessionID: "exact-claude-session",
+            directory: "\(actualRoot)/subdir",
+            provider: "claude",
+            sessionIdentitySource: .explicit
+        )
+
+        XCTAssertTrue(applied)
+        XCTAssertEqual(staleSession.currentDirectory, staleRoot)
+        XCTAssertEqual(actualSession.currentDirectory, "\(actualRoot)/subdir")
+    }
+
     func testUpdateSessionDirectoryAdoptsNewSessionWhenDirectoryRelates() throws {
         // The stuck-binding case the user hit on Eval: a stale lastAISessionId
         // from a previous claude invocation was persisted. The user restarted

@@ -436,6 +436,9 @@ final class ScrollbackMemoryManager {
     func enforceScrollbackBudget(
         budgetBytes: Int = ScrollbackRetentionPolicy.scrollbackBudgetBytes(
             overrideMB: UserDefaults.standard.object(forKey: "terminal.scrollbackBudgetMB") as? Int
+        ),
+        perTabBudgetBytes: Int = ScrollbackRetentionPolicy.perTabScrollbackBudgetBytes(
+            overrideMB: UserDefaults.standard.object(forKey: "terminal.perTabScrollbackBudgetMB") as? Int
         )
     ) {
         stateLock.lock()
@@ -445,11 +448,27 @@ final class ScrollbackMemoryManager {
 
         let sized = candidates.map { (tabID: $0.key, candidate: $0.value, bytes: $0.value.estimatedRingBytes()) }
         var total = sized.reduce(0) { $0 + $1.bytes }
+        var requested = Set<UUID>()
+
+        // A single warm tab may otherwise consume most of the aggregate cap.
+        // Its callback persists the complete ANSI buffer before shrinking, so
+        // this limit is lossless and selected/live tabs remain protected.
+        for entry in sized.sorted(by: { $0.bytes > $1.bytes })
+            where TerminalMemoryBudgetPolicy.exceedsBudget(
+                bytes: entry.bytes,
+                budgetBytes: perTabBudgetBytes
+            ) {
+            entry.candidate.requestFlush()
+            requested.insert(entry.tabID)
+            total -= entry.bytes
+        }
+
         guard total > budgetBytes else { return }
 
         Log.info("ScrollbackMemoryManager: scrollback budget exceeded (\(total / (1024 * 1024))MB > \(budgetBytes / (1024 * 1024))MB) — flushing largest warm tabs")
         for entry in sized.sorted(by: { $0.bytes > $1.bytes }) {
             guard total > budgetBytes else { break }
+            guard !requested.contains(entry.tabID) else { continue }
             entry.candidate.requestFlush()
             total -= entry.bytes
         }

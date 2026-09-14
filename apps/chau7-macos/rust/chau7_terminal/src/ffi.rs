@@ -493,6 +493,28 @@ pub unsafe extern "C" fn chau7_terminal_get_grid(term: *mut Chau7Terminal) -> *m
     }
 }
 
+/// Get a generation-based dirty-row snapshot.
+///
+/// # Safety
+/// - `term` must be a valid pointer
+/// - the result must be freed with `chau7_terminal_free_grid_delta`
+#[unsafe(no_mangle)]
+#[must_use]
+pub unsafe extern "C" fn chau7_terminal_get_grid_delta(
+    term: *mut Chau7Terminal,
+    consumer_generation: u64,
+) -> *mut GridDeltaSnapshot {
+    unsafe {
+        if term.is_null() {
+            warn!("chau7_terminal_get_grid_delta: term is null");
+            return std::ptr::null_mut();
+        }
+        Box::into_raw(Box::new(
+            (&*term).get_grid_delta_snapshot(consumer_generation),
+        ))
+    }
+}
+
 /// Free a grid snapshot
 ///
 /// # Safety
@@ -529,6 +551,39 @@ pub unsafe extern "C" fn chau7_terminal_free_grid(grid: *mut GridSnapshot) {
             ));
         }
         trace!("chau7_terminal_free_grid: complete");
+    }
+}
+
+/// Free a generation-based dirty-row snapshot.
+///
+/// # Safety
+/// - `grid` must be a valid pointer returned by `chau7_terminal_get_grid_delta`
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn chau7_terminal_free_grid_delta(grid: *mut GridDeltaSnapshot) {
+    unsafe {
+        if grid.is_null() {
+            return;
+        }
+        let snapshot = Box::from_raw(grid);
+        let cell_count = snapshot.row_count as usize * snapshot.cols as usize;
+        if !snapshot.cells.is_null() {
+            let buffer = Vec::from_raw_parts(snapshot.cells, cell_count, snapshot.cells_capacity);
+            get_cell_buffer_pool().release(buffer);
+        }
+        if !snapshot.clusters_utf8.is_null() {
+            drop(Vec::from_raw_parts(
+                snapshot.clusters_utf8,
+                snapshot.clusters_len,
+                snapshot.clusters_capacity,
+            ));
+        }
+        if !snapshot.row_indices.is_null() {
+            drop(Vec::from_raw_parts(
+                snapshot.row_indices,
+                snapshot.row_count as usize,
+                snapshot.row_indices_capacity,
+            ));
+        }
     }
 }
 
@@ -2097,6 +2152,11 @@ pub extern "C" fn chau7_terminal_abi_version() -> u32 {
 #[unsafe(no_mangle)]
 pub extern "C" fn chau7_terminal_sizeof_grid_snapshot() -> usize {
     std::mem::size_of::<GridSnapshot>()
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn chau7_terminal_sizeof_grid_delta_snapshot() -> usize {
+    std::mem::size_of::<GridDeltaSnapshot>()
 }
 
 #[unsafe(no_mangle)]

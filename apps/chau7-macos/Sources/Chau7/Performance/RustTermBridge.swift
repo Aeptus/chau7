@@ -112,10 +112,9 @@ final class RustTermBridge {
         let syncRows = min(gridRows, buffer.rows)
         let syncCols = min(gridCols, buffer.cols)
 
-        // Rebuild the cluster bytes on the update buffer. Offsets in cells point
-        // into this buffer; we reset it each frame so stale ranges can't be read.
         let updateBuf = buffer.updateBuffer
-        updateBuf.resetClusters()
+        let generation = buffer.latestGeneration &+ 1
+        updateBuf.beginUpdate(generation: generation, fullRefresh: true)
 
         for row in 0 ..< syncRows {
             // Hoisted: the tint dictionary lookup used to run once per CELL.
@@ -132,6 +131,7 @@ final class RustTermBridge {
                 )
                 buffer.setCell(row: row, col: col, metalCell)
             }
+            updateBuf.finishUpdatedRow(row, generation: generation)
         }
 
         let commitStats = buffer.commitUpdate()
@@ -157,6 +157,84 @@ final class RustTermBridge {
             bytes: commitStats.bytesCopied
         )
         return mismatch ? nil : (rows: syncRows, cols: syncCols)
+    }
+
+    /// Applies a generation-based packed row delta. The Rust snapshot carries
+    /// authoritative dirty rows; no Swift-side full-grid comparison or copy is
+    /// performed. Rotating target buffers catch up by row generation during
+    /// `commitUpdate()`.
+    @discardableResult
+    func syncDeltaToTripleBuffer(
+        _ buffer: TripleBufferedTerminal,
+        delta: UnsafeMutablePointer<RustGridDeltaSnapshot>,
+        viewID: UInt64
+    ) -> (rows: Int, cols: Int)? {
+        let startedAt = CFAbsoluteTimeGetCurrent()
+        let snapshot = delta.pointee
+        let gridRows = Int(snapshot.rows)
+        let gridCols = Int(snapshot.cols)
+        let changedRowCount = Int(snapshot.row_count)
+        let fullRefresh = snapshot.full_refresh != 0
+        let mismatch = gridRows != buffer.rows || gridCols != buffer.cols
+
+        guard gridRows > 0, gridCols > 0,
+              changedRowCount >= 0, changedRowCount <= gridRows else {
+            return nil
+        }
+        if changedRowCount > 0 {
+            guard snapshot.cells != nil, snapshot.row_indices != nil else { return nil }
+        }
+        guard !fullRefresh || changedRowCount == gridRows else { return nil }
+        guard !mismatch else { return nil }
+
+        let updateBuf = buffer.updateBuffer
+        updateBuf.beginUpdate(
+            generation: snapshot.generation,
+            fullRefresh: fullRefresh
+        )
+
+        if let cells = snapshot.cells, let rowIndices = snapshot.row_indices {
+            for packedRow in 0 ..< changedRowCount {
+                let row = Int(rowIndices[packedRow])
+                guard row >= 0, row < gridRows else { return nil }
+                let rowTint = rowTints.isEmpty ? nil : rowTints[row]
+                for col in 0 ..< gridCols {
+                    let rustCell = cells[packedRow * gridCols + col]
+                    let metalCell = convertCell(
+                        rustCell,
+                        rowTint: rowTint,
+                        sourceClusters: snapshot.clusters_utf8,
+                        sourceClustersLen: snapshot.clusters_len,
+                        destBuffer: updateBuf
+                    )
+                    buffer.setCell(row: row, col: col, metalCell)
+                }
+                updateBuf.finishUpdatedRow(row, generation: snapshot.generation)
+            }
+        }
+
+        let commitStats = buffer.commitUpdate()
+        let bytesWritten = changedRowCount * gridCols * MemoryLayout<TerminalCell>.stride
+        RenderPipelineProfiler.shared.recordSync(
+            viewID: viewID,
+            rows: gridRows,
+            cols: gridCols,
+            syncedRows: changedRowCount,
+            syncedCols: gridCols,
+            mismatched: false,
+            bytesWritten: bytesWritten
+        )
+        FeatureProfiler.shared.record(
+            feature: .tripleBufferSync,
+            durationMs: (CFAbsoluteTimeGetCurrent() - startedAt) * 1000.0,
+            bytes: bytesWritten
+        )
+        FeatureProfiler.shared.record(
+            feature: .tripleBufferCommit,
+            durationMs: commitStats.durationMs,
+            bytes: commitStats.bytesCopied
+        )
+        return (rows: gridRows, cols: gridCols)
     }
 
     // MARK: - Cell Conversion

@@ -41,6 +41,8 @@ struct RustTerminalSymbolTable {
     // Use UnsafeMutableRawPointer since Swift structs aren't directly C-representable
     typealias GetGridFn = @convention(c) (OpaquePointer?) -> UnsafeMutableRawPointer?
     typealias FreeGridFn = @convention(c) (UnsafeMutableRawPointer?) -> Void
+    typealias GetGridDeltaFn = @convention(c) (OpaquePointer?, UInt64) -> UnsafeMutableRawPointer?
+    typealias FreeGridDeltaFn = @convention(c) (UnsafeMutableRawPointer?) -> Void
     typealias ScrollPositionFn = @convention(c) (OpaquePointer?) -> Double
     typealias ScrollToFn = @convention(c) (OpaquePointer?, Double) -> Void
     typealias ScrollLinesFn = @convention(c) (OpaquePointer?, Int32) -> Void
@@ -128,6 +130,8 @@ struct RustTerminalSymbolTable {
     let nudgeWinsize: NudgeWinsizeFn? // Optional - older libraries may not have this
     let getGrid: GetGridFn
     let freeGrid: FreeGridFn
+    let getGridDelta: GetGridDeltaFn?
+    let freeGridDelta: FreeGridDeltaFn?
     let scrollPosition: ScrollPositionFn
     let scrollTo: ScrollToFn
     let scrollLines: ScrollLinesFn
@@ -307,6 +311,7 @@ struct RustTerminalSymbolTable {
         // in Swift terms — e.g. CellData is size 18 / stride 20 vs C's 20.
         let layoutProbes: [(symbol: String, expected: Int, type: String)] = [
             ("chau7_terminal_sizeof_grid_snapshot", MemoryLayout<RustGridSnapshot>.stride, "GridSnapshot"),
+            ("chau7_terminal_sizeof_grid_delta_snapshot", MemoryLayout<RustGridDeltaSnapshot>.stride, "GridDeltaSnapshot"),
             ("chau7_terminal_sizeof_cell_data", MemoryLayout<RustCellData>.stride, "CellData"),
             ("chau7_terminal_sizeof_debug_state", MemoryLayout<RustDebugState>.stride, "DebugState"),
             ("chau7_terminal_sizeof_image_data", MemoryLayout<RustTerminalFFI.FFIImageData>.stride, "FFIImageData"),
@@ -393,6 +398,13 @@ struct RustTerminalSymbolTable {
         let pollEvents = optionalSymbol(
             "chau7_terminal_poll_events", as: PollEventsFn.self, in: handle,
             missingNote: "poll_events symbol not found (optional, falling back to grid-only poll)"
+        )
+        let getGridDelta = optionalSymbol(
+            "chau7_terminal_get_grid_delta", as: GetGridDeltaFn.self, in: handle,
+            missingNote: "incremental grid snapshots unavailable; falling back to full snapshots"
+        )
+        let freeGridDelta = optionalSymbol(
+            "chau7_terminal_free_grid_delta", as: FreeGridDeltaFn.self, in: handle
         )
         let createWithEnv = optionalSymbol(
             "chau7_terminal_create_with_env", as: CreateWithEnvFn.self, in: handle,
@@ -601,6 +613,8 @@ struct RustTerminalSymbolTable {
             nudgeWinsize: nudgeWinsize,
             getGrid: unsafeBitCast(getGridSym, to: GetGridFn.self),
             freeGrid: unsafeBitCast(freeGridSym, to: FreeGridFn.self),
+            getGridDelta: getGridDelta,
+            freeGridDelta: freeGridDelta,
             scrollPosition: unsafeBitCast(scrollPositionSym, to: ScrollPositionFn.self),
             scrollTo: unsafeBitCast(scrollToSym, to: ScrollToFn.self),
             scrollLines: unsafeBitCast(scrollLinesSym, to: ScrollLinesFn.self),

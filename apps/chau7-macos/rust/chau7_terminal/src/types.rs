@@ -120,6 +120,29 @@ pub struct GridSnapshot {
     pub capacity: usize,
 }
 
+/// Generation-based viewport delta. `cells` contains `row_count * cols`
+/// entries packed in the order given by `row_indices`; cluster offsets refer
+/// to this delta's `clusters_utf8` allocation.
+#[repr(C)]
+pub struct GridDeltaSnapshot {
+    pub cells: *mut CellData,
+    pub clusters_utf8: *mut u8,
+    pub row_indices: *mut u16,
+    pub clusters_len: usize,
+    pub clusters_capacity: usize,
+    pub cells_capacity: usize,
+    pub row_indices_capacity: usize,
+    pub generation: u64,
+    pub scrollback_rows: u32,
+    pub display_offset: u32,
+    pub row_count: u32,
+    pub cols: u16,
+    pub rows: u16,
+    pub cursor_visible: u8,
+    pub full_refresh: u8,
+    pub _pad: [u8; 6],
+}
+
 // ============================================================================
 // Debug state
 // ============================================================================

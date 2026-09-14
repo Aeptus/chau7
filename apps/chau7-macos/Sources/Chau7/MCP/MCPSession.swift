@@ -4,10 +4,6 @@ import Chau7Core
 /// Handles a single MCP client connection over a Unix domain socket.
 /// Implements the MCP JSON-RPC protocol for tool calls and resource reads.
 final class MCPSession {
-    /// Keep MCP connections open long enough for slower multi-step workflows
-    /// (reviews, eval harnesses, manual debugging) without forcing clients to
-    /// reconnect between tool calls.
-    private static let socketIdleTimeoutSeconds = 30 * 60
     /// Upper bound on a single JSON-RPC request line. Generous enough for large
     /// tool payloads (e.g. agent prompts) while preventing a client that streams
     /// bytes with no newline from growing the read buffer without limit (OOM).
@@ -102,7 +98,7 @@ final class MCPSession {
                 break readLoop
             case .readError(let readErrno):
                 if readErrno == EAGAIN || readErrno == EWOULDBLOCK || readErrno == ETIMEDOUT {
-                    Log.info("MCPSession: closing idle client after read timeout (fd=\(fd))")
+                    Log.debug("MCPSession: transient socket read unavailable (fd=\(fd))")
                 } else if readErrno != 0 {
                     Log.warn("MCPSession: read failed for fd=\(fd): \(String(cString: strerror(readErrno)))")
                 }
@@ -170,9 +166,11 @@ final class MCPSession {
     }
 
     private func configureSocketTimeouts() {
-        var timeout = timeval(tv_sec: Self.socketIdleTimeoutSeconds, tv_usec: 0)
+        // An initialized local MCP session remains valid while its Unix socket
+        // remains open. Do not impose a server-side read-idle timeout: the peer
+        // process closing the socket is the authoritative lifecycle signal.
+        var timeout = timeval(tv_sec: MCPConnectionLifetimePolicy.sendTimeoutSeconds, tv_usec: 0)
         withUnsafePointer(to: &timeout) { ptr in
-            _ = setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, ptr, socklen_t(MemoryLayout<timeval>.size))
             _ = setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, ptr, socklen_t(MemoryLayout<timeval>.size))
         }
     }
@@ -225,7 +223,7 @@ final class MCPSession {
                 clientVersion: clientInfo?["version"] as? String,
                 requestedProtocolVersion: requestedVersion
             )
-            Log.info("MCPSession: initialize attempt \(handshakeDiagnostic.logSummary)")
+            Log.trace("MCPSession: initialize attempt \(handshakeDiagnostic.logSummary)")
 
             guard let requestedVersion, !requestedVersion.isEmpty else {
                 handshakeDiagnostic.recordRejected(errorClass: .invalidParameters)
@@ -250,7 +248,7 @@ final class MCPSession {
             }
 
             handshakeDiagnostic.recordAccepted(negotiatedProtocolVersion: negotiatedVersion)
-            Log.info("MCPSession: initialize accepted \(handshakeDiagnostic.logSummary)")
+            Log.trace("MCPSession: initialize accepted \(handshakeDiagnostic.logSummary)")
             lifecycleState = .awaitingInitializedNotification
             return responseOrNil(
                 isNotification: isNotification,
@@ -271,7 +269,7 @@ final class MCPSession {
             if lifecycleState == .awaitingInitializedNotification {
                 lifecycleState = .ready
                 handshakeDiagnostic.recordReady()
-                Log.info("MCPSession: client ready \(handshakeDiagnostic.logSummary)")
+                Log.trace("MCPSession: client ready \(handshakeDiagnostic.logSummary)")
             } else {
                 Log.warn("MCPSession: received notifications/initialized in unexpected state \(lifecycleState)")
             }
