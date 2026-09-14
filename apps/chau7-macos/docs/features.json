@@ -750,8 +750,8 @@
   },
   {
     "category": "Tabs",
-    "feature": "Identity-Only Background Restore",
-    "description": "Deferred background tabs hydrate provider/session facts for routing and titles without activating live AI render state, restoring command blocks, or queuing resume input until selected",
+    "feature": "Lightweight Background Restore",
+    "description": "Deferred background tabs hydrate provider/session facts and queue validated recovery input without activating live AI render state, restoring command blocks, selecting the tab, or auto-submitting the command",
     "status": "Shipped",
     "differentiator": "Yes"
   },

@@ -177,7 +177,7 @@ Detection methods:
 - **Autosaved side-panel notes** — default text side panels attach to the tab-scoped `.chau7/sessions/<tab-id>/note.md` as soon as they open, auto-save edits, and flush dirty content silently on close. Regular files (non-auto-save) prompt to save / discard / cancel via a single dialog hosted on the split-pane controller, so the X button and ⌃⌘W share one decision path and "Don't Save" actually discards.
 - **Single Live Selected-Tab Surface** — selected tabs now render through one live surface only; the old snapshot/cursor handoff no longer stacks on top of the live terminal during tab switches.
 - **On-Demand Deferred Restore** — non-selected restored tabs stay deferred until the user selects them, instead of auto-restoring and mutating visible tabs immediately after launch.
-- **Identity-only background restore** — deferred background tabs hydrate provider/session facts for routing and titles without activating AI live-render state, restoring command blocks, or queuing resume input until selected.
+- **Lightweight background restore** — deferred background tabs hydrate provider/session facts and queue validated recovery input without activating AI live-render state, restoring command blocks, selecting the tab, or auto-submitting the command.
 - **Integrity-checked restore sidecar** — tab autosave also writes a split restore bundle with identity/layout/AI resume fields in a compact manifest and heavier scrollback/context data in SHA-256-verified sidecar files.
 
 ### Context Token Optimization (CTO)

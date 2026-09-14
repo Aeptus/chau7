@@ -31,7 +31,11 @@ extension OverlayTabsModel {
         }
 
         var schedulesResumePrefills: Bool {
-            self == .interactiveFull
+            // Resume input is terminal state, not presentation state. Queue it
+            // during identity hydration so every restored agent tab is ready
+            // before selection; the session delivers it once its shell prompt
+            // is safe without activating or rendering the background tab.
+            true
         }
     }
 
@@ -829,7 +833,8 @@ extension OverlayTabsModel {
         resolvedPaneStates: [UUID: SavedTerminalPaneState],
         focusedTerminalPaneID: UUID,
         targetTabID: UUID,
-        useResumeRetryScheduler: Bool
+        useResumeRetryScheduler: Bool,
+        allowAutoSubmit: Bool
     ) {
         // Gather session IDs already claimed by OTHER tabs' saved state so
         // the re-resolver never hands out the same `claude --resume <id>` to
@@ -934,7 +939,8 @@ extension OverlayTabsModel {
                     targetTabID: targetTabID,
                     restoreToken: restoreToken,
                     remainingAttempts: Self.resumeCommandMaxAttempts,
-                    delay: Self.resumeCommandDelaySeconds
+                    delay: Self.resumeCommandDelaySeconds,
+                    autoSubmit: allowAutoSubmit
                 )
             } else {
                 _ = enqueueResumePrefill(
@@ -943,7 +949,8 @@ extension OverlayTabsModel {
                     targetTabID: targetTabID,
                     restoreToken: restoreToken,
                     queuedReason: "selected_on_demand_queued",
-                    deliveredReason: "selected_on_demand_delivered"
+                    deliveredReason: "selected_on_demand_delivered",
+                    autoSubmit: allowAutoSubmit
                 )
             }
         }
@@ -1241,11 +1248,8 @@ extension OverlayTabsModel {
                 resolvedPaneStates: resolvedPaneStates,
                 focusedTerminalPaneID: focusedTerminalPaneID,
                 targetTabID: targetTabID,
-                useResumeRetryScheduler: useResumeRetryScheduler
-            )
-        } else {
-            Log.trace(
-                "restoreTabState: deferred resume scheduling for tab=\(targetTabID) profile=\(executionProfile.rawValue)"
+                useResumeRetryScheduler: useResumeRetryScheduler,
+                allowAutoSubmit: executionProfile == .interactiveFull
             )
         }
         recordPhase("resume", startedAt: phaseResumeStart)

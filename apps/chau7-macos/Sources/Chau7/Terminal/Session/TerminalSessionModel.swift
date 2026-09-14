@@ -1025,6 +1025,7 @@ final class TerminalSessionModel {
     @ObservationIgnored private var pendingPrefillRejectionReasonProvider: (() -> String?)?
     @ObservationIgnored private var pendingPrefillOnDelivered: (() -> Void)?
     @ObservationIgnored private var pendingPrefillOnRejected: ((String) -> Void)?
+    @ObservationIgnored private var pendingPrefillAutoSubmit = true
     /// Retry counter for pending prefill flush attempts.
     @ObservationIgnored private var pendingPrefillRetries = 0
     @ObservationIgnored private var restoreBootstrapExpectsResumePrefill = false
@@ -2773,16 +2774,34 @@ final class TerminalSessionModel {
     @discardableResult
     func prefillInput(
         _ text: String,
+        autoSubmit: Bool = true,
         rejectionReasonProvider: (() -> String?)? = nil,
         onDelivered: (() -> Void)? = nil,
         onRejected: ((String) -> Void)? = nil
     ) -> PrefillInputResult {
         guard !text.isEmpty else { return .rejected("empty_prefill") }
         trackAIResumeMetadata(from: text)
+
+        // Background identity hydration can deliver the resume line before
+        // selection. Interactive promotion then restores presentation state
+        // from the same payload. Treat that second, identical request as an
+        // acknowledged delivery instead of inserting the command twice.
+        if deliveredPrefillText == text {
+            suppressWaitingInputFallbackUntilNextUserCommand = true
+            markRestoreBootstrapReady(source: "resume_prefill_already_delivered")
+            Log.trace("Resume prefill already present; acknowledging without reinsertion: \(text.prefix(60))")
+            onDelivered?()
+            if autoSubmit {
+                scheduleRestorePrefillAutoSubmit(deliveredText: text)
+            }
+            return .delivered
+        }
+
         pendingPrefillInput = text
         pendingPrefillRejectionReasonProvider = rejectionReasonProvider
         pendingPrefillOnDelivered = onDelivered
         pendingPrefillOnRejected = onRejected
+        pendingPrefillAutoSubmit = autoSubmit
         pendingWaitingInputFallbackArmed = false
         pendingWaitingInputFallbackSawLiveOutput = false
         suppressWaitingInputFallbackUntilNextUserCommand = true
@@ -2803,6 +2822,7 @@ final class TerminalSessionModel {
             pendingPrefillRejectionReasonProvider = nil
             pendingPrefillOnDelivered = nil
             pendingPrefillOnRejected = nil
+            pendingPrefillAutoSubmit = true
             markRestoreBootstrapReady(source: "resume_prefill_rejected")
             Log.warn("Resume prefill rejected: \(rejectionReason) (\(text.prefix(60)))")
             onRejected?(rejectionReason)
@@ -2836,11 +2856,13 @@ final class TerminalSessionModel {
         if canPrefillInput() {
             let insertion = SnippetInsertion(text: text, placeholders: [], finalCursorOffset: text.count)
             let onDelivered = pendingPrefillOnDelivered
+            let shouldAutoSubmit = pendingPrefillAutoSubmit
             pendingPrefillInput = nil
             pendingPrefillRetries = 0
             pendingPrefillRejectionReasonProvider = nil
             pendingPrefillOnDelivered = nil
             pendingPrefillOnRejected = nil
+            pendingPrefillAutoSubmit = true
             deliveredSystemResumePrefillSinceLastUserCommand = true
             deliveredPrefillText = text
             deliveredPrefillAt = Date()
@@ -2851,7 +2873,9 @@ final class TerminalSessionModel {
             markRestoreBootstrapReady(source: "resume_prefill")
             Log.info("Resume command injected into terminal: \(text.prefix(60))")
             onDelivered?()
-            scheduleRestorePrefillAutoSubmit(deliveredText: text)
+            if shouldAutoSubmit {
+                scheduleRestorePrefillAutoSubmit(deliveredText: text)
+            }
             return .delivered
         }
 
