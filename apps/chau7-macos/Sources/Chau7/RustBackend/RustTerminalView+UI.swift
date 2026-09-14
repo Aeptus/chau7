@@ -408,8 +408,7 @@ extension RustTerminalView {
         Log.trace("RustTerminalView[\(viewId)]: installSnippetKeyMonitor - Installing snippet key monitor")
         keyDownMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard let self = self else { return event }
-            guard event.window === window else { return event }
-            guard isFirstResponderInTerminal() else { return event }
+            guard shouldRouteHardwareKeyEvent(event) else { return event }
 
             if handleSnippetKeyDown(event) {
                 return nil // Consume event
@@ -545,8 +544,7 @@ extension RustTerminalView {
         Log.trace("RustTerminalView[\(viewId)]: installHistoryKeyMonitor - Installing history key monitor")
         historyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard let self = self else { return event }
-            guard event.window === window else { return event }
-            guard isFirstResponderInTerminal() else { return event }
+            guard shouldRouteHardwareKeyEvent(event) else { return event }
             if handleHistoryKeyDown(event) {
                 return nil // Consume event
             }

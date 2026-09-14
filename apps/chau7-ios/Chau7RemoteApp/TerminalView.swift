@@ -376,14 +376,14 @@ struct TerminalView: View {
             }
         }
         .overlay(alignment: .bottomTrailing) {
-            if isAwayFromBottom {
+            if !experimentalTerminalRenderer, textAwayFromBottom {
                 jumpToLatestButton
                     .padding(.trailing, 14)
                     .padding(.bottom, 14)
                     .transition(.scale.combined(with: .opacity))
             }
         }
-        .animation(.easeInOut(duration: 0.2), value: isAwayFromBottom)
+        .animation(.easeInOut(duration: 0.2), value: textAwayFromBottom)
         .animation(.easeInOut(duration: 0.2), value: justSent)
     }
 
@@ -618,24 +618,7 @@ struct TerminalView: View {
     }
 
     private func jumpToLatest() {
-        if showsGridRenderer {
-            client.terminalRenderer.scrollActive(to: 0)
-        } else {
-            scrollToBottomToken += 1
-        }
-    }
-
-    private var showsGridRenderer: Bool {
-        experimentalTerminalRenderer
-            && client.terminalRenderer.isAvailable
-            && client.terminalRenderer.renderState != nil
-    }
-
-    private var isAwayFromBottom: Bool {
-        if showsGridRenderer {
-            return (client.terminalRenderer.renderState?.displayOffset ?? 0) > 0
-        }
-        return textAwayFromBottom
+        scrollToBottomToken += 1
     }
 
     private var activeTabMenuLabel: String {

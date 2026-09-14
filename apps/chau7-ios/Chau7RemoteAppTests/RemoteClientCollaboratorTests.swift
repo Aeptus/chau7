@@ -114,6 +114,7 @@ final class RemoteSessionControllerTests: XCTestCase {
         XCTAssertFalse(controller.isEstablished)
         XCTAssertNotNil(controller.macPublicKey, "mac key survives a re-handshake reset")
         XCTAssertNotEqual(controller.nonceIOS, firstNonce, "fresh iOS nonce minted")
+        XCTAssertNil(controller.nonceMac, "a fresh Mac HELLO must acknowledge the new epoch")
     }
 
     func testHelloEpochResetOrdersRehandshake() {
@@ -333,6 +334,100 @@ final class RemoteTabInventoryTests: XCTestCase {
     }
 }
 
+final class RemoteTabSelectionTests: XCTestCase {
+    func testKeepsPhoneSelectionWhenMacActiveTabChanges() {
+        let tabs = [tab(id: 1, isActive: true), tab(id: 2, isActive: false)]
+
+        XCTAssertEqual(
+            RemoteTabSelectionPolicy.resolvedActiveTabID(currentActiveTabID: 2, incoming: tabs),
+            2
+        )
+    }
+
+    func testInitialSelectionUsesMacActiveTab() {
+        let tabs = [tab(id: 1, isActive: false), tab(id: 2, isActive: true)]
+
+        XCTAssertEqual(
+            RemoteTabSelectionPolicy.resolvedActiveTabID(currentActiveTabID: 0, incoming: tabs),
+            2
+        )
+    }
+
+    func testMissingSelectionFallsBackToMacActiveThenFirstTab() {
+        XCTAssertEqual(
+            RemoteTabSelectionPolicy.resolvedActiveTabID(
+                currentActiveTabID: 9,
+                incoming: [tab(id: 3, isActive: false), tab(id: 4, isActive: true)]
+            ),
+            4
+        )
+        XCTAssertEqual(
+            RemoteTabSelectionPolicy.resolvedActiveTabID(
+                currentActiveTabID: 9,
+                incoming: [tab(id: 3, isActive: false)]
+            ),
+            3
+        )
+        XCTAssertEqual(
+            RemoteTabSelectionPolicy.resolvedActiveTabID(currentActiveTabID: 9, incoming: []),
+            0
+        )
+    }
+
+    private func tab(id: UInt32, isActive: Bool) -> RemoteTab {
+        RemoteTab(tabID: id, title: "Tab \(id)", isActive: isActive, isMCPControlled: false)
+    }
+}
+
+final class RemoteTerminalScrollPolicyTests: XCTestCase {
+    func testLayoutDrivenScrollCallbacksAreNeverForwarded() {
+        XCTAssertFalse(RemoteTerminalScrollPolicy.shouldForwardUserScroll(
+            isSynchronizing: false,
+            isTracking: false,
+            isDragging: false,
+            isDecelerating: false
+        ))
+        XCTAssertFalse(RemoteTerminalScrollPolicy.shouldForwardUserScroll(
+            isSynchronizing: true,
+            isTracking: true,
+            isDragging: true,
+            isDecelerating: true
+        ))
+    }
+
+    func testDirectAndDeceleratingUserScrollsAreForwarded() {
+        XCTAssertTrue(RemoteTerminalScrollPolicy.shouldForwardUserScroll(
+            isSynchronizing: false,
+            isTracking: true,
+            isDragging: false,
+            isDecelerating: false
+        ))
+        XCTAssertTrue(RemoteTerminalScrollPolicy.shouldForwardUserScroll(
+            isSynchronizing: false,
+            isTracking: false,
+            isDragging: false,
+            isDecelerating: true
+        ))
+    }
+
+    func testDisplayOffsetMeasuresRowsFromLiveBottom() {
+        XCTAssertEqual(RemoteTerminalScrollPolicy.displayOffset(
+            contentHeight: 1000,
+            viewportHeight: 400,
+            contentOffsetY: 600,
+            cellHeight: 20,
+            scrollbackRows: 100
+        ), 0)
+        XCTAssertEqual(RemoteTerminalScrollPolicy.displayOffset(
+            contentHeight: 1000,
+            viewportHeight: 400,
+            contentOffsetY: 400,
+            cellHeight: 20,
+            scrollbackRows: 100
+        ), 10)
+    }
+}
+
 final class RemoteConnectionStartPolicyTests: XCTestCase {
     func testAutomaticConnectionCoalescesBehindOpenTransport() {
         XCTAssertFalse(RemoteConnectionStartPolicy.shouldStartConnection(
@@ -469,11 +564,36 @@ final class RemoteIssueReportComposerTests: XCTestCase {
 }
 
 final class RemoteStreamingPerformanceWindowTests: XCTestCase {
+    func testFrameTraceMeasuresEveryRenderingBoundary() {
+        let trace = completedFrameTrace()
+        let latency = trace.latency
+
+        assertMilliseconds(latency.macCaptureToSendMs, equals: 4)
+        assertMilliseconds(latency.estimatedMacSendToIOSReceiveMs, equals: 10)
+        assertMilliseconds(latency.iosReceiveToApplyMs, equals: 2)
+        assertMilliseconds(latency.iosApplyToEngineMs, equals: 3)
+        assertMilliseconds(latency.engineToPublishMs, equals: 5)
+        assertMilliseconds(latency.publishToViewMs, equals: 2)
+        assertMilliseconds(latency.viewToDrawMs, equals: 4)
+        assertMilliseconds(latency.drawToNextVSyncMs, equals: 8)
+        assertMilliseconds(latency.estimatedMacCaptureToDrawMs, equals: 30)
+        assertMilliseconds(latency.estimatedMacCaptureToNextVSyncMs, equals: 38)
+        XCTAssertEqual(trace.identity.description, "7:42")
+    }
+
+    func testFrameTraceClampsNegativeCrossDeviceClockDelta() {
+        var trace = completedFrameTrace()
+        trace.nextVSyncAt = Date(timeIntervalSince1970: 999)
+
+        XCTAssertEqual(trace.latency.estimatedMacCaptureToNextVSyncMs, 0)
+    }
+
     func testWindowAggregatesPipelineAndCoalescingMetrics() {
         let start = Date(timeIntervalSince1970: 1000)
         var window = RemoteStreamingPerformanceWindow(startedAt: start)
         window.recordFrame(
             type: .output,
+            admission: .admitted,
             bytes: 100,
             queueAgeMs: 4,
             receiveToApplyMs: 7,
@@ -481,6 +601,7 @@ final class RemoteStreamingPerformanceWindowTests: XCTestCase {
         )
         window.recordFrame(
             type: .terminalGridSnapshot,
+            admission: .admitted,
             bytes: 300,
             queueAgeMs: 9,
             receiveToApplyMs: 15,
@@ -489,22 +610,118 @@ final class RemoteStreamingPerformanceWindowTests: XCTestCase {
         window.recordGridDecode(durationMs: 6)
         window.recordPublish(durationMs: 2)
         window.recordOutputTiming(senderBatchMs: 4, estimatedCaptureToReceiveMs: 35)
+        window.recordPresentation(completedFrameTrace())
         window.recordOutputRecovery()
 
         XCTAssertNil(window.takeSnapshotIfDue(now: start.addingTimeInterval(4)))
-        let sample = window.takeSnapshotIfDue(now: start.addingTimeInterval(5))
-        XCTAssertEqual(sample?.frameCount, 2)
-        XCTAssertEqual(sample?.outputFrameCount, 1)
-        XCTAssertEqual(sample?.gridFrameCount, 1)
-        XCTAssertEqual(sample?.bytes, 400)
-        XCTAssertEqual(sample?.maxQueueAgeMs, 9)
-        XCTAssertEqual(sample?.maxReceiveToApplyMs, 15)
-        XCTAssertEqual(sample?.averageGridDecodeMs, 6)
-        XCTAssertEqual(sample?.averagePublishMs, 2)
-        XCTAssertEqual(sample?.supersededGridFrames, 2)
-        XCTAssertEqual(sample?.outputRecoveryCount, 1)
-        XCTAssertEqual(sample?.maxSenderBatchMs, 4)
-        XCTAssertEqual(sample?.maxEstimatedCaptureToReceiveMs, 35)
+        guard let sample = window.takeSnapshotIfDue(now: start.addingTimeInterval(5)) else {
+            return XCTFail("Expected a due streaming snapshot")
+        }
+        XCTAssertEqual(sample.frameCount, 2)
+        XCTAssertEqual(sample.admittedFrameCount, 2)
+        XCTAssertEqual(sample.decodeFailureCount, 0)
+        XCTAssertEqual(sample.decryptFailureCount, 0)
+        XCTAssertEqual(sample.outputFrameCount, 1)
+        XCTAssertEqual(sample.gridFrameCount, 1)
+        XCTAssertEqual(sample.bytes, 400)
+        XCTAssertEqual(sample.maxQueueAgeMs, 9)
+        XCTAssertEqual(sample.maxReceiveToApplyMs, 15)
+        XCTAssertEqual(sample.averageGridDecodeMs, 6)
+        XCTAssertEqual(sample.averagePublishMs, 2)
+        XCTAssertEqual(sample.supersededGridFrames, 2)
+        XCTAssertEqual(sample.outputRecoveryCount, 1)
+        XCTAssertEqual(sample.maxSenderBatchMs, 4)
+        XCTAssertEqual(sample.maxEstimatedCaptureToReceiveMs, 35)
+        XCTAssertEqual(sample.presentedFrameCount, 1)
+        XCTAssertEqual(sample.maxEstimatedMacSendToIOSReceiveMs, 10, accuracy: 0.001)
+        XCTAssertEqual(sample.maxIOSReceiveToApplyMs, 2, accuracy: 0.001)
+        XCTAssertEqual(sample.maxIOSApplyToEngineMs, 3, accuracy: 0.001)
+        XCTAssertEqual(sample.maxEngineToPublishMs, 5, accuracy: 0.001)
+        XCTAssertEqual(sample.maxPublishToViewMs, 2, accuracy: 0.001)
+        XCTAssertEqual(sample.maxViewToDrawMs, 4, accuracy: 0.001)
+        XCTAssertEqual(sample.maxDrawToNextVSyncMs, 8, accuracy: 0.001)
+        XCTAssertEqual(sample.maxEstimatedMacCaptureToDrawMs, 30, accuracy: 0.01)
+        XCTAssertEqual(sample.maxEstimatedMacCaptureToNextVSyncMs, 38, accuracy: 0.01)
+        XCTAssertEqual(sample.lastPresentedTraceIdentity?.description, "7:42")
+        XCTAssertEqual(sample.lastPresentedBytes, 128)
+    }
+
+    func testWindowSeparatesAdmissionFailuresFromAcceptedFrameTypes() {
+        let start = Date(timeIntervalSince1970: 1000)
+        var window = RemoteStreamingPerformanceWindow(startedAt: start)
+        window.recordFrame(
+            type: .output,
+            admission: .decryptFailed,
+            bytes: 120,
+            queueAgeMs: 1,
+            receiveToApplyMs: 2,
+            supersededGrids: 0
+        )
+        window.recordFrame(
+            type: nil,
+            admission: .decodeFailed,
+            bytes: 5,
+            queueAgeMs: 1,
+            receiveToApplyMs: 2,
+            supersededGrids: 0
+        )
+        window.recordFrame(
+            type: .tabList,
+            admission: .admitted,
+            bytes: 80,
+            queueAgeMs: 1,
+            receiveToApplyMs: 2,
+            supersededGrids: 0
+        )
+        window.recordFrame(
+            type: .sessionReady,
+            admission: .admitted,
+            bytes: 40,
+            queueAgeMs: 1,
+            receiveToApplyMs: 2,
+            supersededGrids: 0
+        )
+
+        guard let sample = window.takeSnapshotIfDue(now: start.addingTimeInterval(5)) else {
+            return XCTFail("Expected a due streaming snapshot")
+        }
+        XCTAssertEqual(sample.frameCount, 4)
+        XCTAssertEqual(sample.admittedFrameCount, 2)
+        XCTAssertEqual(sample.decodeFailureCount, 1)
+        XCTAssertEqual(sample.decryptFailureCount, 1)
+        XCTAssertEqual(sample.outputFrameCount, 0, "rejected output is not admitted output")
+        XCTAssertEqual(sample.tabInventoryFrameCount, 1)
+        XCTAssertEqual(sample.sessionReadyFrameCount, 1)
+    }
+
+    private func completedFrameTrace() -> RemoteTerminalFrameTrace {
+        RemoteTerminalFrameTrace(
+            transportGeneration: 7,
+            sequence: 42,
+            tabID: 3,
+            bytes: 128,
+            macCapturedAtMicroseconds: 1_000_000_000,
+            macSentAtMicroseconds: 1_000_004_000,
+            iosReceivedAt: Date(timeIntervalSince1970: 1000.014),
+            iosAppliedAt: Date(timeIntervalSince1970: 1000.016),
+            engineAppliedAt: Date(timeIntervalSince1970: 1000.019),
+            statePublishedAt: Date(timeIntervalSince1970: 1000.024),
+            viewUpdatedAt: Date(timeIntervalSince1970: 1000.026),
+            canvasDrawnAt: Date(timeIntervalSince1970: 1000.030),
+            nextVSyncAt: Date(timeIntervalSince1970: 1000.038)
+        )
+    }
+
+    private func assertMilliseconds(
+        _ actual: Double?,
+        equals expected: Double,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        guard let actual else {
+            return XCTFail("Expected a latency value", file: file, line: line)
+        }
+        XCTAssertEqual(actual, expected, accuracy: 0.01, file: file, line: line)
     }
 }
 

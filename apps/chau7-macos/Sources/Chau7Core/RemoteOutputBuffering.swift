@@ -4,6 +4,9 @@ public enum RemoteOutputTuning {
     public static let maxRetainedBytes = 200_000
     public static let maxIncomingFrameBytes = 65536
     public static let maxPendingBytesPerTab = 16384
+    /// The PTY ingestion side coalesces tiny reads for at most half of a 120 Hz
+    /// display frame before handing them to the protocol sender.
+    public static let sourceMicroBatchIntervalSeconds: TimeInterval = 0.004
     /// Tiny sender-side batching amortizes IPC/WebSocket overhead without
     /// adding a perceptible terminal delay.
     public static let senderMicroBatchInterval = Duration.milliseconds(4)

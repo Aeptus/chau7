@@ -107,7 +107,7 @@
   {
     "category": "Performance",
     "feature": "Proactive Scrollback Reclamation",
-    "description": "Idle warm tabs flush scrollback to disk and shrink to a resident floor while TUI tabs compact capture-if-safe/shrink-always/replay-never-while-protected, with an aggregate budget backstop, instant tab-switch paint from RAM, and zero new repeating timers",
+    "description": "Idle warm tabs flush scrollback to disk and shrink to a resident floor while TUI tabs compact capture-if-safe/shrink-always/replay-never-while-protected; the immediately previous tab remains warm as a bounded MRU exception under pressure, with an aggregate budget backstop, instant back-switch paint from RAM, and zero new repeating timers",
     "status": "Shipped",
     "differentiator": "Yes"
   },
@@ -701,6 +701,13 @@
   },
   {
     "category": "Terminal Core",
+    "feature": "Foreground-Only Hardware Input",
+    "description": "Terminal key routing requires Chau7 to be active and the targeted key window to be on the active Space in addition to terminal first-responder ownership, preventing retained AppKit focus state from leaking typing into a background PTY",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "Terminal Core",
     "feature": "TUI-Owned Arrow Navigation",
     "description": "Shell history intercepts Up and Down only when the plain shell owns input, forwarding arrows to known terminal UIs and alternate-screen applications even when prompt metadata is stale",
     "status": "Shipped",
@@ -1066,7 +1073,7 @@
   {
     "category": "Performance",
     "feature": "Startup Metal Frame Handoff",
-    "description": "Forced selected-tab reveal timeouts keep the next real Metal visible-frame signal armed so startup restore records real frames instead of synthesizing 5s fallbacks",
+    "description": "Restored windows begin bounded identity and scrollback hydration as soon as they are visible; startup telemetry records only real Metal frames and never gates durable restore work or synthesizes presentation evidence",
     "status": "Shipped",
     "differentiator": "Yes"
   },
@@ -2284,7 +2291,7 @@
   {
     "category": "Split Panes",
     "feature": "Focused Terminal Renderer Ownership",
-    "description": "Terminal splits share one focused-pane interaction policy across SwiftUI construction and imperative refreshes: only the focused leaf owns keyboard input and the window-level Metal renderer, while visible siblings preserve their lifecycle and immediately resume the CPU fallback during renderer handoff; AppKit first-responder changes update pane focus directly, and delayed SwiftUI updates revalidate claims against the controller's live focused-pane ID",
+    "description": "Terminal splits share one focused-pane interaction policy across SwiftUI construction and imperative refreshes: only the focused leaf owns keyboard input and the window-level Metal renderer, while visible siblings preserve their lifecycle and immediately resume the CPU fallback; incoming panes keep their CPU frame until a generation-matched first GPU frame completes, stale completions are ignored, AppKit first-responder changes update pane focus directly, and delayed SwiftUI updates revalidate claims against the controller's live focused-pane ID",
     "status": "Shipped",
     "differentiator": "No"
   },
@@ -2598,6 +2605,13 @@
   },
   {
     "category": "SSH, Profiles & Remote",
+    "feature": "iPhone Remote Frame Admission Diagnostics",
+    "description": "Rolling streaming summaries separate raw receipt from admitted frames, count decode and decrypt failures, and classify admitted handshake, inventory, snapshot, output, and grid traffic so transport activity cannot masquerade as delivered terminal content",
+    "status": "Experimental",
+    "differentiator": "No"
+  },
+  {
+    "category": "SSH, Profiles & Remote",
     "feature": "Loss-Aware Relay Backpressure",
     "description": "Relay soft pressure drops only replaceable terminal grids while preserving ordered output and control frames; the hard pressure limit closes the connection instead of allowing an unrecoverably incomplete encrypted stream",
     "status": "Experimental",
@@ -2606,21 +2620,21 @@
   {
     "category": "SSH, Profiles & Remote",
     "feature": "Media-Style Remote Terminal Transport",
-    "description": "PTY bytes use a 4 ms binary micro-batch, snapshots act as keyframes for initial state and recovery, authenticated timing metadata measures sender/network latency, and a side-effect-free checkpoint request resynchronizes overloaded clients",
+    "description": "Both PTY read accumulation and protocol sending use bounded 4 ms micro-batches, keeping normal Mac-side handoff within one 120 Hz display frame; snapshots act as initial/recovery keyframes, timing metadata measures sender/network latency, and a side-effect-free checkpoint request resynchronizes overloaded clients",
     "status": "Experimental",
     "differentiator": "Yes"
   },
   {
     "category": "SSH, Profiles & Remote",
     "feature": "Display-Paced iPhone Terminal Rendering",
-    "description": "A serial actor ingests PTY bytes and extracts Rust grids off-main, while a one-shot 60/120 Hz display link publishes only the newest immutable frame; overloaded ordered output fast-forwards safely to a checkpoint and correlated metrics identify sender, queue, decode, and publication latency",
+    "description": "A serial actor ingests PTY bytes and extracts Rust grids off-main while a one-shot 60/120 Hz display link publishes only the newest immutable frame; layout callbacks cannot pin playback to stale scrollback, renderer observation stays isolated from tab/input chrome, overloaded ordered output fast-forwards safely to a checkpoint, and sequence-correlated diagnostics time every boundary through Core Graphics draw and the next compositor refresh opportunity without per-frame disk logging",
     "status": "Experimental",
     "differentiator": "Yes"
   },
   {
     "category": "SSH, Profiles & Remote",
     "feature": "Selected-Tab Remote Streaming",
-    "description": "macOS streams terminal output and snapshots only for the tab currently selected on iPhone; background tabs stay metadata/activity/approvals-only until switched to",
+    "description": "macOS streams terminal output and snapshots only for the tab explicitly selected on iPhone; the foreground phone's one subscribed terminal uses event-driven PTY draining even while its Mac view is hidden, without enabling local rendering or surrounding UI invalidation, while approvals-only mode releases the realtime drain and non-subscribed tabs remain low-power",
     "status": "Experimental",
     "differentiator": "Yes"
   },
@@ -2697,7 +2711,7 @@
   {
     "category": "SSH, Profiles & Remote",
     "feature": "Truthful and Stable iPhone Tab Inventory",
-    "description": "Chau7 Remote distinguishes encrypted-session readiness from tab-inventory readiness, shows syncing until the first live or cached inventory arrives, logs its source and count, and suppresses duplicate or reorder-only observable updates so shell activity cannot rebuild an open picker",
+    "description": "Chau7 Remote distinguishes encrypted-session readiness from tab-inventory readiness, shows syncing until the first live or cached inventory arrives, and suppresses duplicate or reorder-only observable updates; macOS gates inventory frames by semantic descriptor equality, never attaches a terminal keyframe to generic tab-model notifications, and resets the gate before reconnect inventory",
     "status": "Experimental",
     "differentiator": "No"
   },
@@ -2707,6 +2721,13 @@
     "description": "Launch, foreground, push, URL-action, and approval-delivery requests coalesce behind the active transport, only one delayed reconnect owns the next attempt, manual retries remain authoritative, and structured logs attribute each transition without retaining raw network errors",
     "status": "Experimental",
     "differentiator": "No"
+  },
+  {
+    "category": "SSH, Profiles & Remote",
+    "feature": "Peer-Confirmed iPhone Session Recovery",
+    "description": "A trusted iPhone HELLO can replace a stale helper crypto epoch after app relaunch without dropping cached terminal state; both peers stay provisional until an encrypted SESSION_READY round trip confirms the epoch, and application traffic remains queued until then",
+    "status": "Experimental",
+    "differentiator": "Yes"
   },
   {
     "category": "SSH, Profiles & Remote",

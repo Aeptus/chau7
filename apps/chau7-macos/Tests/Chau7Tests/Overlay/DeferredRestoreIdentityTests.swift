@@ -126,6 +126,28 @@ final class DeferredRestoreIdentityTests: XCTestCase {
         XCTAssertEqual(restoredModel.deferredRestoreTabOrder, [tabIDs[1], tabIDs[2]])
     }
 
+    func testSelectedDeferredRestoreDoesNotConsumeStateForMissingTab() {
+        let model = OverlayTabsModel(appModel: AppModel(), restoreState: false)
+        let missingTabID = UUID()
+        let state = makeSavedTabState(
+            tabID: missingTabID,
+            paneID: UUID(),
+            title: "Recovery",
+            directory: "/tmp/recovery",
+            aiProvider: "codex",
+            aiSessionId: "recovery-session",
+            aiResumeCommand: "codex resume recovery-session"
+        )
+        model.selectedTabID = missingTabID
+        model.deferredRestoreStatesByTabID[missingTabID] = state
+        model.deferredRestoreTabOrder = [missingTabID]
+
+        model.restoreSelectedDeferredTabIfNeeded(reason: "test_missing_tab")
+
+        XCTAssertEqual(model.deferredRestoreStatesByTabID[missingTabID]?.customTitle, "Recovery")
+        XCTAssertEqual(model.deferredRestoreTabOrder, [missingTabID])
+    }
+
     func testDeferredRestoreSchedulerPrioritizesNearestTabToSelection() {
         let tabIDs = (0 ..< 4).map { _ in UUID() }
         let paneIDs = (0 ..< 4).map { _ in UUID() }

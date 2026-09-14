@@ -1151,8 +1151,11 @@ final class TerminalSessionModel {
     @ObservationIgnored let outputProcessingQueue = DispatchQueue(label: "com.chau7.outputProcessing", qos: .userInitiated)
     @ObservationIgnored var pendingRemoteOutput = Data()
     @ObservationIgnored var remoteOutputFlushWorkItem: DispatchWorkItem?
-    @ObservationIgnored let remoteOutputFlushInterval: TimeInterval = 0.05
+    @ObservationIgnored let remoteOutputFlushInterval = RemoteOutputTuning.sourceMicroBatchIntervalSeconds
     @ObservationIgnored let remoteOutputMaxBufferBytes = 256 * 1024
+    /// Foreground remote viewing demand is retained at the session level so a
+    /// recreated terminal view immediately resumes event-driven PTY draining.
+    @ObservationIgnored private(set) var isRemoteRealtimeStreaming = false
     @ObservationIgnored var pendingRemoteOutputTranscript = ""
     @ObservationIgnored var remoteOutputTranscriptFlushWorkItem: DispatchWorkItem?
     @ObservationIgnored let remoteOutputTranscriptFlushInterval: TimeInterval = 0.12
@@ -1482,8 +1485,12 @@ final class TerminalSessionModel {
     }
 
     func attachRustTerminal(_ view: RustTerminalView) {
+        if let previousView = retainedRustTerminalView, previousView !== view {
+            previousView.setRemoteRealtimeDrainRequired(false)
+        }
         rustTerminalView = view
         retainedRustTerminalView = view // Keep strong reference to survive view recreation
+        view.setRemoteRealtimeDrainRequired(isRemoteRealtimeStreaming)
         view.currentDirectory = currentDirectory
         syncRustTerminalObservabilityScope()
         startLiveAgentTracking()
@@ -1617,6 +1624,11 @@ final class TerminalSessionModel {
 
         flushPendingTerminalActions()
         flushPendingPrefillInputIfReady()
+    }
+
+    func setRemoteRealtimeStreaming(_ active: Bool) {
+        isRemoteRealtimeStreaming = active
+        existingRustTerminalView?.setRemoteRealtimeDrainRequired(active)
     }
 
     func beginRestoreBootstrap(expectsResumePrefill: Bool) {

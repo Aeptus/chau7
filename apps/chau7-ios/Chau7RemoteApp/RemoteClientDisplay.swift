@@ -57,6 +57,8 @@ extension RemoteClient {
             return "Connecting…"
         case .waitingForMac:
             return "Waiting for your Mac…"
+        case .encrypted:
+            return "Confirming secure session…"
         case .reconnecting, .reconnectingToSendApproval:
             return "Reconnecting…"
         case .connectionFailed:

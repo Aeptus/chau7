@@ -62,6 +62,9 @@ final class RemoteControlManager {
     /// Last tab-list count emitted to the remote client, used to throttle
     /// the noisy "sent tab list with N tabs" log so it only fires on change.
     @ObservationIgnored private var lastSentTabListCount: Int?
+    /// Wire-level semantic gate. Terminal/model churn may notify this manager
+    /// frequently, but it must not make the iOS tab picker reload.
+    @ObservationIgnored private var tabInventoryEmissionGate = RemoteTabInventoryEmissionGate()
     @ObservationIgnored private var lastOperationalSnapshot: RemoteOperationalSnapshot?
     @ObservationIgnored private weak var overlayModel: OverlayTabsModel?
     /// The tab the remote (iOS) client is currently viewing. Unlike each
@@ -69,6 +72,9 @@ final class RemoteControlManager {
     /// point at a tab living in any window. `nil` falls back to the primary
     /// window's selection.
     @ObservationIgnored private var remoteSelectedTabUUID: UUID?
+    /// Session currently promoted to event-driven PTY draining for the phone.
+    /// Weak ownership avoids extending a removed tab's lifetime.
+    @ObservationIgnored private weak var remoteRealtimeDrainSession: TerminalSessionModel?
     @ObservationIgnored private var overlayTabsObserver: NSObjectProtocol?
 
     @ObservationIgnored private var tabRegistry = RemoteTabRegistry()
@@ -137,6 +143,7 @@ final class RemoteControlManager {
             self?.logOperationalSnapshot(reason: "ipc_connected")
         }
         ipc.onClientDisconnected = { [weak self] in
+            self?.clearRemoteRealtimeDrainSubscription()
             self?.isIPCConnected = false
             self?.relayStatus = nil
             self?.sessionStatus = nil
@@ -146,6 +153,8 @@ final class RemoteControlManager {
             self?.connectedTerminalPresentation = nil
             self?.connectedClientSupportsOutputTiming = false
             self?.remoteActivity = nil
+            self?.tabInventoryEmissionGate.reset()
+            self?.lastSentTabListCount = nil
             // Clear the remote viewer's selection so a reconnecting client
             // starts from the primary window's selected tab rather than
             // inheriting a stale (possibly background-window) selection.
@@ -201,6 +210,7 @@ final class RemoteControlManager {
                     return
                 }
                 sendTabList()
+                reconcileRemoteRealtimeDrainSubscription()
                 rebuildSessionStateSubscriptions()
                 scheduleRemoteActivityRefresh()
             }
@@ -208,15 +218,25 @@ final class RemoteControlManager {
 
         overlayModel.onTabsChanged = { [weak self] in
             self?.sendTabList()
-            self?.sendSelectedTabSnapshot()
+            self?.reconcileRemoteRealtimeDrainSubscription()
             self?.rebuildSessionStateSubscriptions()
             self?.scheduleRemoteActivityRefresh()
         }
 
         overlayModel.onSelectedTabIDChanged = { [weak self] in
-            self?.sendTabList()
-            self?.sendSelectedTabSnapshot()
-            self?.scheduleRemoteActivityRefresh()
+            guard let self else { return }
+            self.sendTabList()
+            // Before the phone has chosen a tab it follows Mac focus. Once it
+            // has an explicit remote selection, changing windows/tabs locally
+            // must neither replace the phone's content nor force a redundant
+            // full snapshot of the remotely viewed tab.
+            if RemoteTabSelectionPolicy.followsMacFocus(
+                hasExplicitRemoteSelection: self.remoteSelectedTabUUID != nil
+            ) {
+                self.sendSelectedTabSnapshot()
+            }
+            self.reconcileRemoteRealtimeDrainSubscription()
+            self.scheduleRemoteActivityRefresh()
         }
 
         rebuildSessionStateSubscriptions()
@@ -351,6 +371,7 @@ final class RemoteControlManager {
     /// The stale process reference is deliberately kept — `stopAgent()`'s
     /// state resets still apply after an unexpected exit, as they always did.
     private func handleAgentExit(status: Int32) {
+        clearRemoteRealtimeDrainSubscription()
         isAgentRunning = false
         relayStatus = nil
         logOperationalSnapshot(reason: "agent_exited")
@@ -362,6 +383,7 @@ final class RemoteControlManager {
     }
 
     func stopAgent() {
+        clearRemoteRealtimeDrainSubscription()
         guard sidecar.hasProcess else { return }
         cancelPendingOutputFlush()
         // The sidecar terminates the process BEFORE closing pipes (SIGPIPE).
@@ -433,6 +455,8 @@ final class RemoteControlManager {
             connectedPairedDeviceID = status.pairedDeviceID
             if status.status == "ready" {
                 sendInitialState()
+            } else {
+                clearRemoteRealtimeDrainSubscription()
             }
             refreshPairedDevices()
             logOperationalSnapshot(reason: "session_status")
@@ -474,15 +498,22 @@ final class RemoteControlManager {
     private func handleTabSwitch(_ frame: RemoteFrame) {
         guard let payload: RemoteTabSwitchPayload = decodePayload(frame, as: RemoteTabSwitchPayload.self, context: "tab switch") else { return }
         guard let uuid = tabRegistry.uuid(for: payload.tabID),
-              let located = locateTab(uuid: uuid) else {
+              locateTab(uuid: uuid) != nil else {
             sendError(code: "tab_unavailable", message: "That tab is no longer available for remote control.", tabID: payload.tabID)
             return
         }
-        // Track the remote viewer's selection independently of any window's
-        // own focus, then mirror it in the owning window so the Mac UI follows.
+        // The phone's viewing selection is a stream subscription, not Mac UI
+        // focus. Snapshot the background tab's last fully-drained state before
+        // promoting it; the event drain then emits only newer PTY bytes.
+        let selectionChanged = remoteSelectedTabUUID != uuid
         remoteSelectedTabUUID = uuid
-        located.model.selectTab(id: uuid)
+        if selectionChanged {
+            logger.info("Remote: subscribed terminal stream for tab \(payload.tabID, privacy: .public)")
+        } else {
+            logger.debug("Remote: refreshed terminal stream for tab \(payload.tabID, privacy: .public)")
+        }
         sendSnapshot(for: payload.tabID)
+        reconcileRemoteRealtimeDrainSubscription()
         sendTabList()
     }
 
@@ -638,6 +669,7 @@ final class RemoteControlManager {
         if payload.streamMode == .full {
             sendInitialState()
         } else {
+            clearRemoteRealtimeDrainSubscription()
             sendPendingApprovalRequests()
             sendInteractivePrompts(force: true)
         }
@@ -651,6 +683,7 @@ final class RemoteControlManager {
         }
         sendTabList()
         sendSelectedTabSnapshot()
+        reconcileRemoteRealtimeDrainSubscription()
         sendRemoteActivity(force: true)
         sendInteractivePrompts(force: true)
     }
@@ -1257,11 +1290,18 @@ final class RemoteControlManager {
     }
 
     private func sendTabList() {
-        guard connectedClientStreamMode == .full else { return }
+        // Never consume the semantic gate while IPC is down: doing so would
+        // suppress the first inventory after reconnect and leave iOS with an
+        // empty tab list until some unrelated model change occurred.
+        guard isIPCConnected, connectedClientStreamMode == .full else { return }
         // Enumerate every window's controllable tabs, not just the primary
         // window's — otherwise tabs in additional Mac windows never appear in
         // the iOS tab list.
         let controllableTabs = remoteControllableTabsAcrossWindows()
+        if let explicitSelection = remoteSelectedTabUUID,
+           !controllableTabs.contains(where: { $0.id == explicitSelection }) {
+            remoteSelectedTabUUID = nil
+        }
         let activeUUID = effectiveRemoteSelectedUUID
         let tabPayloads = tabRegistry.rebuild(
             with: controllableTabs.map { tab in
@@ -1277,27 +1317,29 @@ final class RemoteControlManager {
                 )
             }
         )
-
         do {
-            let payload = try JSONEncoder().encode(RemoteTabListPayload(
+            let tabList = RemoteTabListPayload(
                 tabs: tabPayloads,
                 capabilities: [
                     RemoteTabListPayload.keyInputCapability,
                     RemoteTabListPayload.checkpointRequestCapability
                 ]
-            ))
+            )
+            guard tabInventoryEmissionGate.shouldEmit(tabList) else {
+                logger.debug("Remote: suppressed unchanged tab inventory (\(tabPayloads.count, privacy: .public) tabs)")
+                return
+            }
+            let payload = try JSONEncoder().encode(tabList)
             sendFrame(type: .tabList, tabID: RemoteTabRegistry.unscopedTabID, payload: payload)
-            // Only log at .info on tab-count change; steady-state refreshes are
-            // ~1 per second and drown out every other chau7 log entry.
+            // Count changes remain useful at info level. Metadata-only changes
+            // use debug so routine title/branch updates stay quiet.
             if lastSentTabListCount != tabPayloads.count {
                 logger.info("Remote: sent tab list with \(tabPayloads.count, privacy: .public) tabs")
                 lastSentTabListCount = tabPayloads.count
                 logOperationalSnapshot(reason: "tab_inventory", tabCount: tabPayloads.count)
             } else {
-                logger.debug("Remote: resent tab list (\(tabPayloads.count, privacy: .public) tabs, unchanged)")
+                logger.debug("Remote: sent changed tab inventory (\(tabPayloads.count, privacy: .public) tabs)")
             }
-            sendRemoteActivity()
-            sendInteractivePrompts()
         } catch {
             logger.warning("Failed to encode tab list: \(error.localizedDescription, privacy: .public)")
         }
@@ -1390,6 +1432,35 @@ final class RemoteControlManager {
     private func selectedRemoteTabID() -> UInt32? {
         guard let uuid = effectiveRemoteSelectedUUID else { return nil }
         return tabRegistry.tabID(for: uuid)
+    }
+
+    /// Keep one and only one terminal on the low-latency drain path for a
+    /// foreground phone. This changes byte ingestion only; Mac selection and
+    /// local rendering remain untouched.
+    private func reconcileRemoteRealtimeDrainSubscription() {
+        let nextSession: TerminalSessionModel?
+        if isIPCConnected,
+           sessionStatus == "ready",
+           connectedClientStreamMode == .full,
+           let uuid = effectiveRemoteSelectedUUID {
+            nextSession = locateTab(uuid: uuid)?.tab.session
+        } else {
+            nextSession = nil
+        }
+
+        if remoteRealtimeDrainSession === nextSession {
+            nextSession?.setRemoteRealtimeStreaming(true)
+            return
+        }
+
+        remoteRealtimeDrainSession?.setRemoteRealtimeStreaming(false)
+        remoteRealtimeDrainSession = nextSession
+        nextSession?.setRemoteRealtimeStreaming(true)
+    }
+
+    private func clearRemoteRealtimeDrainSubscription() {
+        remoteRealtimeDrainSession?.setRemoteRealtimeStreaming(false)
+        remoteRealtimeDrainSession = nil
     }
 
     /// Every overlay window's model. Falls back to the configured primary

@@ -823,7 +823,9 @@ extension OverlayTabsModel {
             clearRenameState(shouldFocus: false)
         }
         previousTabIndex = oldIndex
-        previousLiveHierarchyTabID = nil
+        // Keep exactly one MRU terminal surface warm. This preserves an instant
+        // back-switch under memory pressure without pinning the whole tab set.
+        previousLiveHierarchyTabID = selectedTabID
         selectedTabID = id
         lastSelectionChangedAt = CFAbsoluteTimeGetCurrent()
 

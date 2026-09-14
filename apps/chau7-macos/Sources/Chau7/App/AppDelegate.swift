@@ -378,31 +378,24 @@ private final class SettingsToolbarDelegate: NSObject, NSToolbarDelegate {
                 showOverlayWindow(host, reason: "finishLaunching")
             }
             NSApp.activate(ignoringOtherApps: true)
+            // Window visibility is sufficient to begin bounded background
+            // identity/scrollback hydration. Do not gate durable restoration
+            // on a renderer callback: presentation telemetry may arrive late,
+            // but saved tab data must already be ready for an instant switch.
+            startDeferredRestoreSchedulingIfNeeded(reason: "windows_visible")
             DispatchQueue.main.asyncAfter(deadline: .now() + 8.0) { [weak self] in
                 guard let self else { return }
                 MainActor.assumeIsolated {
                     self.endLatencyCriticalScope(reason: "startup-restore")
                     StartupRestoreCoordinator.shared.end()
-                    // After end(), the coordinator's isActive flag is false and
-                    // any further `noteSelectedTabLiveFrame` calls become
-                    // no-ops. That means `completeStartupRestoreIfReady` —
-                    // which is what kicks the deferred-restore scheduler —
-                    // can no longer succeed. If a window's first selected-tab
-                    // live frame got missed during startup (e.g. rapid
-                    // didBecomeMain/didResignMain across multi-window launch),
-                    // background tabs would otherwise sit stuck until the
-                    // 30s watchdog. Kick the scheduler directly here as a
-                    // post-coordinator backstop; idempotent if already
-                    // draining.
-                    self.kickDeferredRestoreIfStuck(reason: "coordinator_ended")
+                    // Restoration starts as soon as windows are visible. This
+                    // timeout ends telemetry only; it never fabricates a live
+                    // frame and never controls whether saved data is hydrated.
                 }
             }
-            // Watchdog: even with the post-coordinator kick above, a regression
-            // could leave the scheduler chain itself broken (not just the
-            // completion gate). Arm a 30-second backstop as final insurance.
-            // Idempotent: if either the natural kickoff or the
-            // coordinator-ended kick ran, the scheduler is already draining
-            // and this is a no-op.
+            // Watchdog: a regression could still break the scheduler chain.
+            // Keep a 30-second idempotent backstop as final insurance; the
+            // normal windows-visible kickoff will already be draining.
             DispatchQueue.main.asyncAfter(deadline: .now() + 30.0) { [weak self] in
                 guard let self else { return }
                 MainActor.assumeIsolated {

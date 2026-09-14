@@ -1239,8 +1239,8 @@ final class OverlayTabsModelTests: XCTestCase {
     /// non-selected tab is held `.warm` (never `.hidden`/suspended) regardless
     /// of whether it hosts an AI session — the old "keep background AI tabs
     /// live, suspend the rest" gate was removed. Suspension of background tabs
-    /// is now driven solely by memory pressure, which demotes *every*
-    /// non-selected tab to `.hidden`.
+    /// is now driven by memory pressure. The immediately previous tab remains
+    /// warm as a bounded MRU exception so switching back is still instant.
     func testRenderSuspensionSuspendsBackgroundTabsOnlyUnderMemoryPressure() {
         let selectedTab = model.tabs[0]
         model.newTab()
@@ -1266,8 +1266,8 @@ final class OverlayTabsModelTests: XCTestCase {
             "Background shell tabs stay live without memory pressure"
         )
 
-        // Under memory pressure, all non-selected tabs demote to .hidden and
-        // suspend — AI status no longer exempts a tab.
+        // Under memory pressure, cold background tabs demote to .hidden. The
+        // immediately previous tab is the one bounded warm exception.
         MemoryPressureResponder.shared.memoryPressureOverrideForTesting = true
         model.invalidateRenderLifecycle(reason: "test_memory_pressure")
         drainMainQueue()
@@ -1276,9 +1276,9 @@ final class OverlayTabsModelTests: XCTestCase {
             model.suspendedTabIDs.contains(aiTab.id),
             "Background AI tabs suspend under memory pressure"
         )
-        XCTAssertTrue(
+        XCTAssertFalse(
             model.suspendedTabIDs.contains(shellTab.id),
-            "Background shell tabs suspend under memory pressure"
+            "The immediately previous tab stays warm for an instant back-switch"
         )
     }
 
@@ -1288,7 +1288,10 @@ final class OverlayTabsModelTests: XCTestCase {
     func testRenderSuspensionReactivatesBackgroundTabWhenMemoryPressureClears() {
         let selectedTab = model.tabs[0]
         model.newTab()
+        model.newTab()
 
+        // The last-created tab becomes the bounded warm MRU when we return to
+        // selectedTab. Exercise reclamation with the older cold tab.
         let backgroundTab = model.tabs[1]
         model.selectTab(id: selectedTab.id)
 

@@ -168,12 +168,12 @@ extension OverlayTabsModel {
     /// trips this: the SwiftUI terminal view's first paint fires the
     /// notification synchronously, but `OverlayTabsModel.init` for the
     /// second window runs after that paint (the notification has nowhere
-    /// to land), and the 5 s coordinator fallback then synthesizes one.
+    /// to land). Replaying the tracked real frame keeps telemetry complete
+    /// without manufacturing presentation evidence.
     ///
-    /// Called from `showOverlayWindow` immediately after `noteWindowVisible`
-    /// arms the fallback timer, so the catch-up runs *before* the timer
-    /// would otherwise fire. Idempotent — `noteStartupSelectedTabLiveFrame`
-    /// dedups on the coordinator side.
+    /// Called from `showOverlayWindow` immediately after `noteWindowVisible`.
+    /// Idempotent — `noteStartupSelectedTabLiveFrame` dedups on the
+    /// coordinator side.
     @discardableResult
     func replaySelectedTabLiveFrameIfAlreadyPresented(reason: String) -> Bool {
         guard StartupRestoreCoordinator.shared.isActive,

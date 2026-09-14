@@ -83,10 +83,15 @@ extension OverlayTabsModel {
     }
 
     func renderLifecycleDecision(for tab: OverlayTab) -> TabRenderLifecycleDecision {
-        renderLifecycleController.decision(
+        let decision = renderLifecycleController.decision(
             for: renderLifecycleDescriptor(for: tab),
             snapshot: renderLifecycleSnapshot()
         )
+        guard decision.phase == .hidden,
+              tab.id == previousLiveHierarchyTabID else {
+            return decision
+        }
+        return TabRenderLifecycleDecision(phase: .warm, isInteractive: false)
     }
 
     func renderPhase(for tab: OverlayTab) -> TabRenderPhase {
@@ -156,12 +161,8 @@ extension OverlayTabsModel {
         suspendedTabIDs.remove(selectedTabID)
         cancelSuspension(for: selectedTabID)
 
-        let snapshot = renderLifecycleSnapshot()
         for tab in tabs where tab.id != selectedTabID {
-            let decision = renderLifecycleController.decision(
-                for: renderLifecycleDescriptor(for: tab),
-                snapshot: snapshot
-            )
+            let decision = renderLifecycleDecision(for: tab)
             if decision.phase != .hidden {
                 cancelSuspension(for: tab.id)
                 let wasSuspended = suspendedTabIDs.remove(tab.id) != nil
@@ -185,10 +186,7 @@ extension OverlayTabsModel {
         guard !suspendedTabIDs.contains(id) else { return }
         guard suspendWorkItems[id] == nil else { return }
         guard let tab = tabs.first(where: { $0.id == id }) else { return }
-        let decision = renderLifecycleController.decision(
-            for: renderLifecycleDescriptor(for: tab),
-            snapshot: renderLifecycleSnapshot()
-        )
+        let decision = renderLifecycleDecision(for: tab)
 
         if decision.phase != .hidden {
             Log.trace(
@@ -203,10 +201,7 @@ extension OverlayTabsModel {
                 guard self.isRenderSuspensionEnabled else { return }
                 guard self.selectedTabID != id else { return }
                 guard let tab = self.tabs.first(where: { $0.id == id }) else { return }
-                let decision = self.renderLifecycleController.decision(
-                    for: self.renderLifecycleDescriptor(for: tab),
-                    snapshot: self.renderLifecycleSnapshot()
-                )
+                let decision = self.renderLifecycleDecision(for: tab)
                 guard decision.phase == .hidden else {
                     Log.info(
                         "renderSuspension: cancelled at deadline for tab \(id) because phase=\(decision.phase.rawValue) (\(self.tabRenderSuspensionSummary(tab)))"

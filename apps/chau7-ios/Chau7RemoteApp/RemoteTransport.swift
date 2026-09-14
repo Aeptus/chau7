@@ -4,10 +4,108 @@ import os
 
 private let log = Logger(subsystem: "ch7", category: "RemoteTransport")
 
+struct RemoteTerminalFrameIdentity: Equatable, Sendable, CustomStringConvertible {
+    let transportGeneration: UInt64
+    let sequence: UInt64
+
+    var description: String {
+        "\(transportGeneration):\(sequence)"
+    }
+}
+
+/// Sequence-correlated timestamps for one terminal-output frame. The macOS
+/// timestamps use wall time so they can cross the device boundary; every iOS
+/// timestamp is captured in-process as the same frame advances toward display.
+struct RemoteTerminalFrameTrace: Equatable, Sendable {
+    let transportGeneration: UInt64
+    let sequence: UInt64
+    let tabID: UInt32
+    let bytes: Int
+    let macCapturedAtMicroseconds: UInt64?
+    let macSentAtMicroseconds: UInt64?
+    let iosReceivedAt: Date
+    let iosAppliedAt: Date
+    var engineAppliedAt: Date?
+    var statePublishedAt: Date?
+    var viewUpdatedAt: Date?
+    var canvasDrawnAt: Date?
+    var nextVSyncAt: Date?
+
+    var identity: RemoteTerminalFrameIdentity {
+        RemoteTerminalFrameIdentity(
+            transportGeneration: transportGeneration,
+            sequence: sequence
+        )
+    }
+
+    var latency: RemoteTerminalFrameLatency {
+        RemoteTerminalFrameLatency(
+            macCaptureToSendMs: Self.milliseconds(
+                fromMicroseconds: macCapturedAtMicroseconds,
+                toMicroseconds: macSentAtMicroseconds
+            ),
+            estimatedMacSendToIOSReceiveMs: Self.milliseconds(
+                fromMicroseconds: macSentAtMicroseconds,
+                to: iosReceivedAt
+            ),
+            iosReceiveToApplyMs: Self.milliseconds(from: iosReceivedAt, to: iosAppliedAt),
+            iosApplyToEngineMs: Self.milliseconds(from: iosAppliedAt, to: engineAppliedAt),
+            engineToPublishMs: Self.milliseconds(from: engineAppliedAt, to: statePublishedAt),
+            publishToViewMs: Self.milliseconds(from: statePublishedAt, to: viewUpdatedAt),
+            viewToDrawMs: Self.milliseconds(from: viewUpdatedAt, to: canvasDrawnAt),
+            drawToNextVSyncMs: Self.milliseconds(from: canvasDrawnAt, to: nextVSyncAt),
+            estimatedMacCaptureToDrawMs: Self.milliseconds(
+                fromMicroseconds: macCapturedAtMicroseconds,
+                to: canvasDrawnAt
+            ),
+            estimatedMacCaptureToNextVSyncMs: Self.milliseconds(
+                fromMicroseconds: macCapturedAtMicroseconds,
+                to: nextVSyncAt
+            )
+        )
+    }
+
+    private static func milliseconds(from start: Date?, to end: Date?) -> Double? {
+        guard let start, let end else { return nil }
+        return max(0, end.timeIntervalSince(start) * 1000)
+    }
+
+    private static func milliseconds(fromMicroseconds start: UInt64?, toMicroseconds end: UInt64?) -> Double? {
+        guard let start, let end else { return nil }
+        return Double(end >= start ? end - start : 0) / 1000
+    }
+
+    private static func milliseconds(fromMicroseconds start: UInt64?, to end: Date?) -> Double? {
+        guard let start, let end else { return nil }
+        let endMicroseconds = UInt64(max(0, end.timeIntervalSince1970 * 1_000_000))
+        return Double(endMicroseconds >= start ? endMicroseconds - start : 0) / 1000
+    }
+}
+
+struct RemoteTerminalFrameLatency: Equatable, Sendable {
+    let macCaptureToSendMs: Double?
+    let estimatedMacSendToIOSReceiveMs: Double?
+    let iosReceiveToApplyMs: Double?
+    let iosApplyToEngineMs: Double?
+    let engineToPublishMs: Double?
+    let publishToViewMs: Double?
+    let viewToDrawMs: Double?
+    let drawToNextVSyncMs: Double?
+    let estimatedMacCaptureToDrawMs: Double?
+    let estimatedMacCaptureToNextVSyncMs: Double?
+}
+
 struct RemoteStreamingPerformanceSnapshot: Equatable {
     let frameCount: Int
+    let admittedFrameCount: Int
+    let decodeFailureCount: Int
+    let decryptFailureCount: Int
     let outputFrameCount: Int
     let gridFrameCount: Int
+    let helloFrameCount: Int
+    let sessionReadyFrameCount: Int
+    let tabInventoryFrameCount: Int
+    let snapshotFrameCount: Int
     let bytes: Int
     let maxQueueAgeMs: Double
     let maxReceiveToApplyMs: Double
@@ -17,13 +115,38 @@ struct RemoteStreamingPerformanceSnapshot: Equatable {
     let outputRecoveryCount: Int
     let maxSenderBatchMs: Double
     let maxEstimatedCaptureToReceiveMs: Double
+    let presentedFrameCount: Int
+    let maxEstimatedMacSendToIOSReceiveMs: Double
+    let maxIOSReceiveToApplyMs: Double
+    let maxIOSApplyToEngineMs: Double
+    let maxEngineToPublishMs: Double
+    let maxPublishToViewMs: Double
+    let maxViewToDrawMs: Double
+    let maxDrawToNextVSyncMs: Double
+    let maxEstimatedMacCaptureToDrawMs: Double
+    let maxEstimatedMacCaptureToNextVSyncMs: Double
+    let lastPresentedTraceIdentity: RemoteTerminalFrameIdentity?
+    let lastPresentedBytes: Int
+}
+
+enum RemoteFrameAdmission: Equatable {
+    case admitted
+    case decodeFailed
+    case decryptFailed
 }
 
 struct RemoteStreamingPerformanceWindow {
     private var startedAt: Date
     private var frameCount = 0
+    private var admittedFrameCount = 0
+    private var decodeFailureCount = 0
+    private var decryptFailureCount = 0
     private var outputFrameCount = 0
     private var gridFrameCount = 0
+    private var helloFrameCount = 0
+    private var sessionReadyFrameCount = 0
+    private var tabInventoryFrameCount = 0
+    private var snapshotFrameCount = 0
     private var bytes = 0
     private var maxQueueAgeMs = 0.0
     private var maxReceiveToApplyMs = 0.0
@@ -35,6 +158,18 @@ struct RemoteStreamingPerformanceWindow {
     private var outputRecoveryCount = 0
     private var maxSenderBatchMs = 0.0
     private var maxEstimatedCaptureToReceiveMs = 0.0
+    private var presentedFrameCount = 0
+    private var maxEstimatedMacSendToIOSReceiveMs = 0.0
+    private var maxIOSReceiveToApplyMs = 0.0
+    private var maxIOSApplyToEngineMs = 0.0
+    private var maxEngineToPublishMs = 0.0
+    private var maxPublishToViewMs = 0.0
+    private var maxViewToDrawMs = 0.0
+    private var maxDrawToNextVSyncMs = 0.0
+    private var maxEstimatedMacCaptureToDrawMs = 0.0
+    private var maxEstimatedMacCaptureToNextVSyncMs = 0.0
+    private var lastPresentedTraceIdentity: RemoteTerminalFrameIdentity?
+    private var lastPresentedBytes = 0
 
     init(startedAt: Date = Date()) {
         self.startedAt = startedAt
@@ -42,6 +177,7 @@ struct RemoteStreamingPerformanceWindow {
 
     mutating func recordFrame(
         type: RemoteFrameType?,
+        admission: RemoteFrameAdmission,
         bytes: Int,
         queueAgeMs: Double,
         receiveToApplyMs: Double,
@@ -52,11 +188,22 @@ struct RemoteStreamingPerformanceWindow {
         maxQueueAgeMs = max(maxQueueAgeMs, queueAgeMs)
         maxReceiveToApplyMs = max(maxReceiveToApplyMs, receiveToApplyMs)
         supersededGridFrames += supersededGrids
-        if type == .output {
-            outputFrameCount += 1
-        }
-        if type == .terminalGridSnapshot {
-            gridFrameCount += 1
+        switch admission {
+        case .admitted:
+            admittedFrameCount += 1
+            switch type {
+            case .output: outputFrameCount += 1
+            case .terminalGridSnapshot: gridFrameCount += 1
+            case .hello: helloFrameCount += 1
+            case .sessionReady: sessionReadyFrameCount += 1
+            case .tabList, .cachedTabList: tabInventoryFrameCount += 1
+            case .snapshot: snapshotFrameCount += 1
+            default: break
+            }
+        case .decodeFailed:
+            decodeFailureCount += 1
+        case .decryptFailed:
+            decryptFailureCount += 1
         }
     }
 
@@ -79,12 +226,44 @@ struct RemoteStreamingPerformanceWindow {
         outputRecoveryCount += 1
     }
 
+    mutating func recordPresentation(_ trace: RemoteTerminalFrameTrace) {
+        let latency = trace.latency
+        presentedFrameCount += 1
+        maxEstimatedMacSendToIOSReceiveMs = max(
+            maxEstimatedMacSendToIOSReceiveMs,
+            latency.estimatedMacSendToIOSReceiveMs ?? 0
+        )
+        maxIOSReceiveToApplyMs = max(maxIOSReceiveToApplyMs, latency.iosReceiveToApplyMs ?? 0)
+        maxIOSApplyToEngineMs = max(maxIOSApplyToEngineMs, latency.iosApplyToEngineMs ?? 0)
+        maxEngineToPublishMs = max(maxEngineToPublishMs, latency.engineToPublishMs ?? 0)
+        maxPublishToViewMs = max(maxPublishToViewMs, latency.publishToViewMs ?? 0)
+        maxViewToDrawMs = max(maxViewToDrawMs, latency.viewToDrawMs ?? 0)
+        maxDrawToNextVSyncMs = max(maxDrawToNextVSyncMs, latency.drawToNextVSyncMs ?? 0)
+        maxEstimatedMacCaptureToDrawMs = max(
+            maxEstimatedMacCaptureToDrawMs,
+            latency.estimatedMacCaptureToDrawMs ?? 0
+        )
+        maxEstimatedMacCaptureToNextVSyncMs = max(
+            maxEstimatedMacCaptureToNextVSyncMs,
+            latency.estimatedMacCaptureToNextVSyncMs ?? 0
+        )
+        lastPresentedTraceIdentity = trace.identity
+        lastPresentedBytes = trace.bytes
+    }
+
     mutating func takeSnapshotIfDue(now: Date = Date(), interval: TimeInterval = 5) -> RemoteStreamingPerformanceSnapshot? {
         guard frameCount > 0, now.timeIntervalSince(startedAt) >= interval else { return nil }
         let snapshot = RemoteStreamingPerformanceSnapshot(
             frameCount: frameCount,
+            admittedFrameCount: admittedFrameCount,
+            decodeFailureCount: decodeFailureCount,
+            decryptFailureCount: decryptFailureCount,
             outputFrameCount: outputFrameCount,
             gridFrameCount: gridFrameCount,
+            helloFrameCount: helloFrameCount,
+            sessionReadyFrameCount: sessionReadyFrameCount,
+            tabInventoryFrameCount: tabInventoryFrameCount,
+            snapshotFrameCount: snapshotFrameCount,
             bytes: bytes,
             maxQueueAgeMs: maxQueueAgeMs,
             maxReceiveToApplyMs: maxReceiveToApplyMs,
@@ -93,7 +272,19 @@ struct RemoteStreamingPerformanceWindow {
             supersededGridFrames: supersededGridFrames,
             outputRecoveryCount: outputRecoveryCount,
             maxSenderBatchMs: maxSenderBatchMs,
-            maxEstimatedCaptureToReceiveMs: maxEstimatedCaptureToReceiveMs
+            maxEstimatedCaptureToReceiveMs: maxEstimatedCaptureToReceiveMs,
+            presentedFrameCount: presentedFrameCount,
+            maxEstimatedMacSendToIOSReceiveMs: maxEstimatedMacSendToIOSReceiveMs,
+            maxIOSReceiveToApplyMs: maxIOSReceiveToApplyMs,
+            maxIOSApplyToEngineMs: maxIOSApplyToEngineMs,
+            maxEngineToPublishMs: maxEngineToPublishMs,
+            maxPublishToViewMs: maxPublishToViewMs,
+            maxViewToDrawMs: maxViewToDrawMs,
+            maxDrawToNextVSyncMs: maxDrawToNextVSyncMs,
+            maxEstimatedMacCaptureToDrawMs: maxEstimatedMacCaptureToDrawMs,
+            maxEstimatedMacCaptureToNextVSyncMs: maxEstimatedMacCaptureToNextVSyncMs,
+            lastPresentedTraceIdentity: lastPresentedTraceIdentity,
+            lastPresentedBytes: lastPresentedBytes
         )
         self = RemoteStreamingPerformanceWindow(startedAt: now)
         return snapshot

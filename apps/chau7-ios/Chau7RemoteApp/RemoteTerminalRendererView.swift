@@ -45,6 +45,7 @@ struct RemoteTerminalRendererView: View {
                     RemoteTerminalRendererRepresentable(
                         store: client.terminalRenderer,
                         renderState: renderState,
+                        frameTrace: client.terminalRenderer.publishedTrace,
                         availableSize: proxy.size,
                         colorScheme: colorScheme
                     )
@@ -64,23 +65,59 @@ struct RemoteTerminalRendererView: View {
         .onChange(of: client.activeTabID) { _, newTabID in
             client.terminalRenderer.setActiveTab(newTabID)
         }
+        .overlay(alignment: .bottomTrailing) {
+            if isAwayFromBottom {
+                Button {
+                    client.terminalRenderer.scrollActive(to: 0)
+                } label: {
+                    Image(systemName: "arrow.down")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .frame(width: 44, height: 44)
+                        .background(Color.accentColor, in: Circle())
+                        .shadow(radius: 4, y: 2)
+                }
+                .accessibilityLabel("Jump to latest output")
+                .padding(.trailing, 14)
+                .padding(.bottom, 14)
+                .transition(.scale.combined(with: .opacity))
+            }
+        }
+        .animation(.easeInOut(duration: 0.2), value: isAwayFromBottom)
+    }
+
+    private var isAwayFromBottom: Bool {
+        (client.terminalRenderer.renderState?.displayOffset ?? 0) > 0
     }
 }
 
 private struct RemoteTerminalRendererRepresentable: UIViewRepresentable {
     let store: RemoteTerminalRendererStore
     let renderState: RemoteTerminalRenderState?
+    let frameTrace: RemoteTerminalFrameTrace?
     let availableSize: CGSize
     let colorScheme: TerminalColorScheme
 
     func makeUIView(context: Context) -> RemoteTerminalViewportView {
         let view = RemoteTerminalViewportView()
-        view.update(store: store, renderState: renderState, availableSize: availableSize, colorScheme: colorScheme)
+        view.update(
+            store: store,
+            renderState: renderState,
+            frameTrace: frameTrace,
+            availableSize: availableSize,
+            colorScheme: colorScheme
+        )
         return view
     }
 
     func updateUIView(_ uiView: RemoteTerminalViewportView, context: Context) {
-        uiView.update(store: store, renderState: renderState, availableSize: availableSize, colorScheme: colorScheme)
+        uiView.update(
+            store: store,
+            renderState: renderState,
+            frameTrace: frameTrace,
+            availableSize: availableSize,
+            colorScheme: colorScheme
+        )
     }
 }
 
@@ -256,7 +293,13 @@ private final class RemoteTerminalViewportView: UIView, UIScrollViewDelegate {
         syncScrollPosition(force: false)
     }
 
-    func update(store: RemoteTerminalRendererStore, renderState: RemoteTerminalRenderState?, availableSize: CGSize, colorScheme: TerminalColorScheme) {
+    func update(
+        store: RemoteTerminalRendererStore,
+        renderState: RemoteTerminalRenderState?,
+        frameTrace: RemoteTerminalFrameTrace?,
+        availableSize: CGSize,
+        colorScheme: TerminalColorScheme
+    ) {
         self.store = store
         self.renderState = renderState
         self.availableSize = availableSize
@@ -264,18 +307,32 @@ private final class RemoteTerminalViewportView: UIView, UIScrollViewDelegate {
         if backgroundColor != bg { backgroundColor = bg }
         if canvasView.backgroundColor != bg { canvasView.backgroundColor = bg }
         canvasView.colorScheme = colorScheme
-        canvasView.renderState = renderState
+        var updatedTrace = frameTrace
+        updatedTrace?.viewUpdatedAt = Date()
+        canvasView.update(renderState: renderState, frameTrace: updatedTrace)
+        canvasView.onFrameDrawn = { [weak store] trace in
+            store?.recordCanvasDrawn(trace)
+        }
         recalculateViewport()
         syncScrollPosition(force: false)
     }
 
     func scrollViewDidScroll(_ scrollView: UIScrollView) {
-        guard !isSyncingScroll, let store, let renderState else { return }
-        let maxOffset = max(0, scrollView.contentSize.height - scrollView.bounds.height)
-        let distanceFromBottom = max(0, maxOffset - scrollView.contentOffset.y)
-        let desiredDisplayOffset = Int(round(distanceFromBottom / cellSize.height))
-        let clamped = min(max(desiredDisplayOffset, 0), renderState.scrollbackRows)
-        store.scrollActive(to: clamped)
+        guard let store, let renderState else { return }
+        guard RemoteTerminalScrollPolicy.shouldForwardUserScroll(
+            isSynchronizing: isSyncingScroll,
+            isTracking: scrollView.isTracking,
+            isDragging: scrollView.isDragging,
+            isDecelerating: scrollView.isDecelerating
+        ) else { return }
+        let displayOffset = RemoteTerminalScrollPolicy.displayOffset(
+            contentHeight: Double(scrollView.contentSize.height),
+            viewportHeight: Double(scrollView.bounds.height),
+            contentOffsetY: Double(scrollView.contentOffset.y),
+            cellHeight: Double(cellSize.height),
+            scrollbackRows: renderState.scrollbackRows
+        )
+        store.scrollActive(to: displayOffset)
     }
 
     private func recalculateViewport() {
@@ -294,6 +351,9 @@ private final class RemoteTerminalViewportView: UIView, UIScrollViewDelegate {
     }
 
     private func syncScrollPosition(force: Bool) {
+        isSyncingScroll = true
+        defer { isSyncingScroll = false }
+
         guard let renderState else {
             scrollContentView.frame = CGRect(origin: .zero, size: bounds.size)
             scrollView.contentSize = bounds.size
@@ -308,16 +368,24 @@ private final class RemoteTerminalViewportView: UIView, UIScrollViewDelegate {
         let targetOffsetY = max(0, maxOffset - CGFloat(renderState.displayOffset) * cellSize.height)
 
         if force || abs(scrollView.contentOffset.y - targetOffsetY) > (cellSize.height / 2) {
-            isSyncingScroll = true
             scrollView.setContentOffset(CGPoint(x: 0, y: targetOffsetY), animated: false)
-            isSyncingScroll = false
         }
     }
 }
 
 private final class RemoteTerminalCanvasView: UIView {
-    var renderState: RemoteTerminalRenderState? {
-        didSet { setNeedsDisplay() }
+    private var renderState: RemoteTerminalRenderState?
+    private var frameTrace: RemoteTerminalFrameTrace?
+    private var lastDrawnTraceIdentity: RemoteTerminalFrameIdentity?
+    var onFrameDrawn: ((RemoteTerminalFrameTrace) -> Void)?
+
+    func update(
+        renderState: RemoteTerminalRenderState?,
+        frameTrace: RemoteTerminalFrameTrace?
+    ) {
+        self.renderState = renderState
+        self.frameTrace = frameTrace
+        setNeedsDisplay()
     }
 
     var colorScheme: TerminalColorScheme = .default {
@@ -343,6 +411,7 @@ private final class RemoteTerminalCanvasView: UIView {
         }
 
         guard let context = UIGraphicsGetCurrentContext() else { return }
+        defer { acknowledgeDrawnFrame() }
         schemeBackground.setFill()
         context.fill(bounds)
         let backgroundColorKey = colorScheme.backgroundColorKey
@@ -431,6 +500,14 @@ private final class RemoteTerminalCanvasView: UIView {
                 }
             }
         }
+    }
+
+    private func acknowledgeDrawnFrame() {
+        guard var trace = frameTrace,
+              trace.identity != lastDrawnTraceIdentity else { return }
+        trace.canvasDrawnAt = Date()
+        lastDrawnTraceIdentity = trace.identity
+        onFrameDrawn?(trace)
     }
 
     private func fillBackgroundRun(context: CGContext, row: Int, startCol: Int, endCol: Int, colorKey: UInt32, skipColorKey: UInt32, y: CGFloat, cellW: CGFloat, cellH: CGFloat) {

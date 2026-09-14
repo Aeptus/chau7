@@ -111,6 +111,12 @@ final class RemoteClient {
     private var outputFlushTask: Task<Void, Never>?
     private var strippedOutputRefreshTask: Task<Void, Never>?
     private var remoteSessionID: String?
+    /// The tab for which this transport session has explicitly requested a
+    /// live stream. Reset on disconnect so every new session re-subscribes.
+    private var remoteSubscribedTabID: UInt32?
+    /// Diagnostic correlation for proving that admitted OUTPUT frames target
+    /// the same tab the phone is actually presenting.
+    private var lastReceivedOutputTabID: UInt32?
     private var telemetryBuffer = RemoteTelemetryBuffer(maxEvents: RemoteClient.maxBufferedTelemetryEvents)
     /// Per-event failed-send attempts (bounded retry for the drain-on-success path).
     private var telemetrySendAttempts: [String: Int] = [:]
@@ -212,6 +218,9 @@ final class RemoteClient {
         }
         terminalRenderer.onFramePublished = { [weak self] durationMs in
             self?.streamingPerformance.recordPublish(durationMs: durationMs)
+        }
+        terminalRenderer.onFramePresented = { [weak self] trace in
+            self?.streamingPerformance.recordPresentation(trace)
         }
         _ = DiagnosticsLog.shared
     }
@@ -449,6 +458,8 @@ final class RemoteClient {
         }
         tabs = []
         tabInventoryState = .unavailable
+        remoteSubscribedTabID = nil
+        lastReceivedOutputTabID = nil
         outputStore.reset()
         terminalRenderer.reset()
         outputFlushTask?.cancel()
@@ -542,7 +553,9 @@ final class RemoteClient {
         refreshVisibleOutput(prioritizeStrippedOutput: true)
         terminalRenderer.setActiveTab(tabID)
         emitTelemetry(type: .tabSwitched, tabID: tabID, tabTitle: tabTitle(for: tabID))
-        sendJSON(TabSwitchPayload(tabID: tabID), type: .tabSwitch)
+        if isConnected {
+            requestActiveTabRefreshIfPossible()
+        }
     }
 
     // MARK: - Approvals
@@ -670,18 +683,27 @@ final class RemoteClient {
         applyProcessedFrame(
             processed,
             signpostID: signpostID,
+            transportGeneration: generation,
             receivedAt: message.receivedAt,
             suppressOutputApplication: message.suppressOutputApplication
         )
         let appliedAt = Date()
         let frameType: RemoteFrameType?
-        if case let .success(frame, _) = processed {
+        let admission: RemoteFrameAdmission
+        switch processed {
+        case let .success(frame, _):
             frameType = RemoteFrameType(rawValue: frame.type)
-        } else {
+            admission = .admitted
+        case .decodeFailed:
             frameType = nil
+            admission = .decodeFailed
+        case let .decryptFailed(rawType):
+            frameType = RemoteFrameType(rawValue: rawType)
+            admission = .decryptFailed
         }
         streamingPerformance.recordFrame(
             type: frameType,
+            admission: admission,
             bytes: data.count,
             queueAgeMs: queueAgeMs,
             receiveToApplyMs: max(0, appliedAt.timeIntervalSince(message.receivedAt) * 1000),
@@ -838,6 +860,7 @@ final class RemoteClient {
     private func applyProcessedFrame(
         _ processed: RemoteProcessedFrameResult,
         signpostID: OSSignpostID,
+        transportGeneration: UInt64,
         receivedAt: Date,
         suppressOutputApplication: Bool
     ) {
@@ -876,9 +899,7 @@ final class RemoteClient {
             if case let .resetSession(reason) = session.noteDecryptFailure() {
                 log.warning("Replay guard ordered session reset: \(reason)")
                 session.resetForRehandshake()
-                isConnected = false
-                remoteSessionID = nil
-                sendHello()
+                beginHandshakeRecovery(reason: "decrypt_failure_threshold")
             }
             return
         case let .success(frame, payload):
@@ -894,6 +915,7 @@ final class RemoteClient {
             handleProcessedFrame(
                 frame,
                 payload: payload,
+                transportGeneration: transportGeneration,
                 receivedAt: receivedAt,
                 suppressOutputApplication: suppressOutputApplication
             )
@@ -903,6 +925,7 @@ final class RemoteClient {
     private func handleProcessedFrame(
         _ frame: RemoteFrame,
         payload: Data,
+        transportGeneration: UInt64,
         receivedAt: Date,
         suppressOutputApplication: Bool
     ) {
@@ -940,6 +963,17 @@ final class RemoteClient {
         case .pairAccept: handlePairAccept(payload)
         case .pairReject: handlePairReject(payload)
         case .sessionReady:
+            let wasConnected = isConnected
+            // SESSION_READY is the Mac's proof that it derived this epoch.
+            // Echo our confirmation even if the optimistic copy sent during
+            // local derivation was lost or rejected while the peer re-keyed.
+            if let remoteSessionID {
+                sendJSON(
+                    SessionReadyPayload(sessionID: remoteSessionID),
+                    type: .sessionReady,
+                    encrypt: true
+                )
+            }
             isConnected = true
             status = .sessionReady
             if tabInventoryState != .ready {
@@ -947,6 +981,16 @@ final class RemoteClient {
             }
             lastError = nil
             cancelHandshakeTasks()
+            if !wasConnected {
+                DiagnosticsLog.shared.info(.connection, "Secure session confirmed by Mac", [
+                    "transport_generation": String(transport.generation),
+                ])
+                emitTelemetry(type: .sessionEncrypted, status: "confirmed")
+                flushBufferedTelemetryEvents()
+                sendClientStateIfPossible()
+                flushPendingApprovalResponses()
+                requestActiveTabRefreshIfPossible()
+            }
             flushPendingURLActions()
             schedulePendingStateFetch(reason: "session_ready", force: true)
         case .tabList: handleTabList(payload)
@@ -958,7 +1002,14 @@ final class RemoteClient {
             break
         case .output:
             guard !suppressOutputApplication else { return }
-            appendOutput(payload, flags: frame.flags, tabID: frame.tabID, receivedAt: receivedAt)
+            appendOutput(
+                payload,
+                flags: frame.flags,
+                tabID: frame.tabID,
+                sequence: frame.seq,
+                transportGeneration: transportGeneration,
+                receivedAt: receivedAt
+            )
         case .snapshot: storeSnapshot(payload, tabID: frame.tabID)
         case .terminalGridSnapshot:
             // A replay/text client never consumes server grids. Older Macs may
@@ -989,9 +1040,7 @@ final class RemoteClient {
         if case let .resetSession(reason) = session.evaluateHello(macNonce: nonce) {
             log.warning("Replay guard ordered session reset: \(reason)")
             session.resetForRehandshake()
-            isConnected = false
-            remoteSessionID = nil
-            sendHello()
+            beginHandshakeRecovery(reason: "mac_hello_epoch_changed")
         }
         session.setMacNonce(nonce)
         establishSessionIfPossible()
@@ -1003,6 +1052,15 @@ final class RemoteClient {
             log.error("handlePairAccept: invalid macPub base64")
             return
         }
+        guard let expectedMacKey = pairingInfo.flatMap({ Data(base64Encoded: $0.macPub) }),
+              expectedMacKey == keyData else {
+            log.error("handlePairAccept: Mac public key does not match pairing identity")
+            DiagnosticsLog.shared.error(.connection, "Pair accept identity mismatch")
+            lastError = "The Mac identity changed. Scan a fresh pairing code before reconnecting."
+            status = .error
+            shouldReconnect = false
+            return
+        }
         guard session.adoptMacPublicKey(keyData) else {
             log.error("handlePairAccept: invalid public key")
             return
@@ -1010,15 +1068,16 @@ final class RemoteClient {
         session.markPairAcceptReceived()
         RemotePairingStore.saveMacPublicKey(keyData)
         persistTrustedIdentity(for: msg)
-        // If we fell back from trust-based reconnect to explicit pairing, any
-        // provisional session state must be discarded before re-deriving keys.
-        session.invalidateSession(clearHandshakeMaterial: false)
-        session.clearMacNonce()
-        session.mintIOSNonce()
-        isConnected = false
-        remoteSessionID = nil
-        sendHello()
+        // PAIR_ACCEPT authenticates the long-lived identity; HELLO nonces own
+        // the crypto epoch. Do not rotate an already-valid nonce here. The Mac
+        // sends HELLO alongside PAIR_ACCEPT and a changed HELLO performs the
+        // one authoritative re-key. This also makes PAIR_ACCEPT/HELLO robust
+        // if transport scheduling delivers them at either side of SESSION_READY.
+        DiagnosticsLog.shared.info(.connection, "Pairing identity accepted", [
+            "session_established": session.isEstablished ? "true" : "false",
+        ])
         establishSessionIfPossible()
+        ensureHandshakeRecoveryRunning()
     }
 
     private func handlePairReject(_ data: Data) {
@@ -1060,7 +1119,10 @@ final class RemoteClient {
     private func applyTabListPayload(_ msg: TabListPayload, source: String) {
         let previousVisibleTabIDs = Set(tabs.map(\.tabID))
         let visibleTabIDs = Set(msg.tabs.map(\.tabID))
-        let nextActiveTabID = msg.tabs.first(where: \.isActive)?.tabID ?? msg.tabs.first?.tabID ?? 0
+        let nextActiveTabID = RemoteTabSelectionPolicy.resolvedActiveTabID(
+            currentActiveTabID: activeTabID,
+            incoming: msg.tabs
+        )
         let replacement = RemoteTabInventory.replacementIfChanged(current: tabs, incoming: msg.tabs)
         let inventoryChanged = replacement != nil
         let membershipChanged = previousVisibleTabIDs != visibleTabIDs
@@ -1103,6 +1165,16 @@ final class RemoteClient {
             refreshVisibleOutput(prioritizeStrippedOutput: true)
             terminalRenderer.setActiveTab(activeTabID)
         }
+
+        // SESSION_READY can arrive before the first live inventory, when
+        // activeTabID is still zero. Establish the iPhone's stream selection
+        // as soon as that inventory resolves a real tab. This also repairs a
+        // reconnect after a cached inventory without coupling to Mac focus.
+        if activeTabID == 0 {
+            remoteSubscribedTabID = nil
+        } else if source == "live", remoteSubscribedTabID != activeTabID {
+            requestActiveTabRefreshIfPossible()
+        }
     }
 
     private func handleActivityState(_ data: Data) {
@@ -1141,16 +1213,31 @@ final class RemoteClient {
         currentAppState == .foreground && desiredStreamMode == .full
     }
 
-    private func appendOutput(_ payload: Data, flags: UInt8, tabID: UInt32, receivedAt: Date) {
+    private func appendOutput(
+        _ payload: Data,
+        flags: UInt8,
+        tabID: UInt32,
+        sequence: UInt64,
+        transportGeneration: UInt64,
+        receivedAt: Date
+    ) {
         guard isStreamingTerminalOutput else { return }
         let data: Data
+        let macCapturedAtMicroseconds: UInt64?
+        let macSentAtMicroseconds: UInt64?
         if flags & RemoteFrame.flagOutputTiming != 0,
            let timedChunk = RemoteTimedOutputChunk.decode(from: payload)
         {
             data = timedChunk.bytes
+            macCapturedAtMicroseconds = timedChunk.firstCapturedAtMicroseconds
+            macSentAtMicroseconds = timedChunk.sentAtMicroseconds
             let receivedMicros = UInt64(max(0, receivedAt.timeIntervalSince1970 * 1_000_000))
             streamingPerformance.recordOutputTiming(
-                senderBatchMs: Double(timedChunk.sentAtMicroseconds - timedChunk.firstCapturedAtMicroseconds) / 1000,
+                senderBatchMs: Double(
+                    timedChunk.sentAtMicroseconds >= timedChunk.firstCapturedAtMicroseconds
+                        ? timedChunk.sentAtMicroseconds - timedChunk.firstCapturedAtMicroseconds
+                        : 0
+                ) / 1000,
                 estimatedCaptureToReceiveMs: Double(
                     receivedMicros > timedChunk.firstCapturedAtMicroseconds
                         ? receivedMicros - timedChunk.firstCapturedAtMicroseconds
@@ -1159,6 +1246,8 @@ final class RemoteClient {
             )
         } else {
             data = payload
+            macCapturedAtMicroseconds = nil
+            macSentAtMicroseconds = nil
         }
         let signpostID = OSSignpostID(log: perfLog)
         os_signpost(
@@ -1170,8 +1259,22 @@ final class RemoteClient {
             data.count
         )
         let resolvedTabID = resolvedTabID(for: tabID)
+        lastReceivedOutputTabID = resolvedTabID
         if desiredTerminalPresentation == .replay {
-            terminalRenderer.appendOutput(data, for: resolvedTabID)
+            terminalRenderer.appendOutput(
+                data,
+                for: resolvedTabID,
+                trace: RemoteTerminalFrameTrace(
+                    transportGeneration: transportGeneration,
+                    sequence: sequence,
+                    tabID: resolvedTabID,
+                    bytes: data.count,
+                    macCapturedAtMicroseconds: macCapturedAtMicroseconds,
+                    macSentAtMicroseconds: macSentAtMicroseconds,
+                    iosReceivedAt: receivedAt,
+                    iosAppliedAt: Date()
+                )
+            )
         }
 
         // Rich replay owns its bytes off-main. Maintain the String/ANSI path
@@ -1246,20 +1349,42 @@ final class RemoteClient {
         }
 
         reconnectBackoff.reset()
-        isConnected = true
         if tabInventoryState != .ready {
             tabInventoryState = .syncing
         }
-        cancelHandshakeTasks()
         let sessionID = CryptoUtils.randomBytes(count: 8).base64EncodedString()
         remoteSessionID = sessionID
         sendJSON(SessionReadyPayload(sessionID: sessionID), type: .sessionReady, encrypt: true)
         status = .encrypted
-        emitTelemetry(type: .sessionEncrypted, status: "encrypted")
-        flushBufferedTelemetryEvents()
-        sendClientStateIfPossible()
-        flushPendingApprovalResponses()
-        schedulePendingStateFetch(reason: "session_encrypted", force: true)
+        DiagnosticsLog.shared.info(.connection, "Local crypto established; awaiting Mac confirmation", [
+            "transport_generation": String(transport.generation),
+        ])
+        ensureHandshakeRecoveryRunning()
+    }
+
+    /// Invalidate only the crypto epoch while preserving the socket, cached
+    /// tabs, approvals, and terminal state. Recovery must keep running until a
+    /// peer-authenticated SESSION_READY arrives; local key derivation alone is
+    /// not proof that the Mac adopted the same nonce pair.
+    private func beginHandshakeRecovery(reason: String) {
+        isConnected = false
+        remoteSessionID = nil
+        if tabInventoryState != .ready {
+            tabInventoryState = .syncing
+        }
+        status = .waitingForMac
+        DiagnosticsLog.shared.warn(.connection, "Secure session recovery started", [
+            "reason": reason,
+            "transport_generation": String(transport.generation),
+        ])
+        sendHello()
+        ensureHandshakeRecoveryRunning()
+    }
+
+    private func ensureHandshakeRecoveryRunning() {
+        guard transport.isOpen, !isConnected else { return }
+        guard handshakeRetryTask == nil || handshakeTimeoutTask == nil else { return }
+        scheduleHandshake(for: transport.generation)
     }
 
     // MARK: - Outgoing
@@ -1346,7 +1471,7 @@ final class RemoteClient {
     }
 
     private func performURLAction(_ action: RemoteActivityURLAction) -> Bool {
-        guard crypto != nil else { return false }
+        guard crypto != nil, isConnected else { return false }
 
         switch action {
         case let .open(tabID):
@@ -1376,7 +1501,7 @@ final class RemoteClient {
     }
 
     private func flushPendingURLActions() {
-        guard crypto != nil, !pendingURLActions.isEmpty else { return }
+        guard crypto != nil, isConnected, !pendingURLActions.isEmpty else { return }
 
         let queued = pendingURLActions
         pendingURLActions.removeAll(keepingCapacity: true)
@@ -1401,9 +1526,9 @@ final class RemoteClient {
     private func flushPendingApprovalResponses() {
         guard approvalCoordinator.hasQueuedResponses else { return }
 
-        guard crypto != nil, transport.isOpen else {
-            status = .reconnectingToSendApproval
+        guard crypto != nil, isConnected, transport.isOpen else {
             if let pairing = pairingInfo, !transport.isOpen {
+                status = .reconnectingToSendApproval
                 startConnection(
                     pairing: pairing,
                     preserveApprovalsAndPrompts: true,
@@ -1484,7 +1609,7 @@ final class RemoteClient {
     }
 
     private func canSendInput(to tabID: UInt32, allowUnlistedTab: Bool) -> Bool {
-        guard crypto != nil, transport.isOpen, tabID != 0 else { return false }
+        guard crypto != nil, isConnected, transport.isOpen, tabID != 0 else { return false }
         return allowUnlistedTab || tabs.contains(where: { $0.tabID == tabID })
     }
 
@@ -1919,7 +2044,7 @@ final class RemoteClient {
     }
 
     private func sendClientStateIfPossible() {
-        guard crypto != nil else { return }
+        guard crypto != nil, isConnected else { return }
         let payload = RemoteClientStatePayload(
             appState: currentAppState,
             streamMode: desiredStreamMode,
@@ -1937,8 +2062,15 @@ final class RemoteClient {
         guard let sample = streamingPerformance.takeSnapshotIfDue(now: now) else { return }
         DiagnosticsLog.shared.info(.performance, "Remote streaming window", [
             "frames": String(sample.frameCount),
+            "admitted_frames": String(sample.admittedFrameCount),
+            "decode_failures": String(sample.decodeFailureCount),
+            "decrypt_failures": String(sample.decryptFailureCount),
             "output_frames": String(sample.outputFrameCount),
             "grid_frames": String(sample.gridFrameCount),
+            "hello_frames": String(sample.helloFrameCount),
+            "session_ready_frames": String(sample.sessionReadyFrameCount),
+            "tab_inventory_frames": String(sample.tabInventoryFrameCount),
+            "snapshot_frames": String(sample.snapshotFrameCount),
             "bytes": String(sample.bytes),
             "max_queue_age_ms": String(format: "%.2f", sample.maxQueueAgeMs),
             "max_receive_to_apply_ms": String(format: "%.2f", sample.maxReceiveToApplyMs),
@@ -1947,7 +2079,33 @@ final class RemoteClient {
             "superseded_grid_frames": String(sample.supersededGridFrames),
             "output_recoveries": String(sample.outputRecoveryCount),
             "max_sender_batch_ms": String(format: "%.2f", sample.maxSenderBatchMs),
+            "max_mac_capture_to_send_ms": String(format: "%.2f", sample.maxSenderBatchMs),
             "max_capture_to_receive_ms": String(format: "%.2f", sample.maxEstimatedCaptureToReceiveMs),
+            "presented_frames": String(sample.presentedFrameCount),
+            "max_estimated_mac_send_to_ios_receive_ms": String(
+                format: "%.2f",
+                sample.maxEstimatedMacSendToIOSReceiveMs
+            ),
+            "max_ios_receive_to_apply_ms": String(format: "%.2f", sample.maxIOSReceiveToApplyMs),
+            "max_ios_apply_to_engine_ms": String(format: "%.2f", sample.maxIOSApplyToEngineMs),
+            "max_engine_to_publish_ms": String(format: "%.2f", sample.maxEngineToPublishMs),
+            "max_publish_to_view_ms": String(format: "%.2f", sample.maxPublishToViewMs),
+            "max_view_to_draw_ms": String(format: "%.2f", sample.maxViewToDrawMs),
+            "max_draw_to_next_vsync_ms": String(format: "%.2f", sample.maxDrawToNextVSyncMs),
+            "max_estimated_mac_capture_to_draw_ms": String(
+                format: "%.2f",
+                sample.maxEstimatedMacCaptureToDrawMs
+            ),
+            "max_estimated_mac_capture_to_next_vsync_ms": String(
+                format: "%.2f",
+                sample.maxEstimatedMacCaptureToNextVSyncMs
+            ),
+            "last_presented_frame": sample.lastPresentedTraceIdentity?.description ?? "none",
+            "last_presented_bytes": String(sample.lastPresentedBytes),
+            "active_tab_id": String(activeTabID),
+            "subscribed_tab_id": remoteSubscribedTabID.map(String.init) ?? "none",
+            "last_output_tab_id": lastReceivedOutputTabID.map(String.init) ?? "none",
+            "last_output_matches_active": lastReceivedOutputTabID == activeTabID ? "true" : "false",
             "presentation": desiredTerminalPresentation.rawValue,
         ])
     }
@@ -2055,13 +2213,25 @@ final class RemoteClient {
         }
     }
 
-    private func requestActiveTabRefreshIfPossible() {
-        guard crypto != nil, activeTabID != 0 else { return }
-        sendJSON(TabSwitchPayload(tabID: activeTabID), type: .tabSwitch)
+    @discardableResult
+    private func requestActiveTabRefreshIfPossible() -> Bool {
+        guard crypto != nil, isConnected, activeTabID != 0 else { return false }
+        guard let payload = try? RemoteJSON.encoder.encode(TabSwitchPayload(tabID: activeTabID)) else {
+            return false
+        }
+        guard sendEncrypted(type: .tabSwitch, tabID: 0, payload: payload) else {
+            return false
+        }
+        remoteSubscribedTabID = activeTabID
+        DiagnosticsLog.shared.debug(.tab, "Remote tab stream requested", [
+            "tab_id": String(activeTabID),
+            "transport_generation": String(transport.generation),
+        ])
+        return true
     }
 
     private func requestOutputCheckpointIfPossible() {
-        guard crypto != nil, activeTabID != 0 else { return }
+        guard crypto != nil, isConnected, activeTabID != 0 else { return }
         if macCapabilities.contains(RemoteTabListPayload.checkpointRequestCapability) {
             sendEncrypted(type: .checkpointRequest, tabID: activeTabID, payload: Data())
         } else {
@@ -2107,7 +2277,7 @@ final class RemoteClient {
     private static let maxTelemetrySendAttempts = 3
 
     private func enqueueOrSendTelemetryEvent(_ event: inout RemoteClientTelemetryEvent) {
-        guard crypto != nil else {
+        guard crypto != nil, isConnected else {
             telemetryBuffer.append(event)
             return
         }
@@ -2146,7 +2316,7 @@ final class RemoteClient {
     }
 
     private func flushBufferedTelemetryEvents() {
-        guard crypto != nil, !telemetryBuffer.isEmpty else { return }
+        guard crypto != nil, isConnected, !telemetryBuffer.isEmpty else { return }
         var pendingEvents = telemetryBuffer.drain()
         for index in pendingEvents.indices {
             enqueueOrSendTelemetryEvent(&pendingEvents[index])

@@ -1705,6 +1705,29 @@ final class TerminalSessionModelTests: XCTestCase {
         XCTAssertTrue(session.existingRustTerminalView === terminalView)
     }
 
+    func testRemoteRealtimeStreamingDemandAppliesToCurrentAndReplacementViews() {
+        let model = AppModel()
+        let session = TerminalSessionModel(appModel: model)
+        let firstView = RustTerminalView(frame: .zero)
+        session.attachRustTerminal(firstView)
+
+        session.setRemoteRealtimeStreaming(true)
+
+        XCTAssertTrue(session.isRemoteRealtimeStreaming)
+        XCTAssertTrue(firstView.requiresRemoteRealtimeDrain)
+
+        let replacementView = RustTerminalView(frame: .zero)
+        session.attachRustTerminal(replacementView)
+
+        XCTAssertFalse(firstView.requiresRemoteRealtimeDrain)
+        XCTAssertTrue(replacementView.requiresRemoteRealtimeDrain)
+
+        session.setRemoteRealtimeStreaming(false)
+
+        XCTAssertFalse(session.isRemoteRealtimeStreaming)
+        XCTAssertFalse(replacementView.requiresRemoteRealtimeDrain)
+    }
+
     func testProcessTerminationReleasesRetainedTerminalView() async {
         let model = AppModel()
         let session = TerminalSessionModel(appModel: model)

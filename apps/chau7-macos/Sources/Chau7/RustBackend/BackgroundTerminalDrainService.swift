@@ -37,7 +37,8 @@ enum BackgroundDrainDeliveryPolicy {
     }
 }
 
-/// Shared service that drains PTY buffers for background (non-interactive) terminal views.
+/// Shared service that drains PTY buffers for background (non-interactive) terminal views
+/// that are not the foreground phone's current stream subscription.
 /// Replaces per-tab drain threads with a single timer that polls all registered views
 /// non-blocking. This reduces 26 threads to 1 timer for 26 background tabs, and applies
 /// `BackgroundDrainBackoff` so dormant tabs are polled less often than active ones.

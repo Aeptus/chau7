@@ -522,15 +522,19 @@ extension RustTerminalView {
         // This ensures key input goes to Rust terminal even if a subview is first responder
         generalKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard let self = self else { return event }
-            guard event.window === window else { return event }
             let inTerminal = isFirstResponderInTerminal()
+            let shouldRoute = shouldRouteHardwareKeyEvent(event)
             if EnvVars.isEnabled(EnvVars.inputDiagnostics) {
                 let preview = (event.charactersIgnoringModifiers ?? "").prefix(6)
                 Log.info(
-                    "RustTerminalView[\(viewId)]: generalKeyMonitor seen keyCode=\(event.keyCode) chars='\(preview)' inTerminal=\(inTerminal) firstResponder=\(firstResponderDebugName())"
+                    "RustTerminalView[\(viewId)]: generalKeyMonitor seen keyCode=\(event.keyCode) " +
+                        "chars='\(preview)' eligible=\(shouldRoute) appActive=\(NSApp.isActive) " +
+                        "keyWindow=\(window?.isKeyWindow ?? false) " +
+                        "onActiveSpace=\(window?.isOnActiveSpace ?? false) " +
+                        "inTerminal=\(inTerminal) firstResponder=\(firstResponderDebugName())"
                 )
             }
-            guard inTerminal else { return event }
+            guard shouldRoute else { return event }
 
             if transcriptOverlayController?.isVisible == true {
                 hideTranscriptOverlay()

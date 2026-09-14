@@ -59,6 +59,35 @@ enum RemoteTabInventory {
     }
 }
 
+/// Keeps terminal layout updates from masquerading as user scroll input.
+/// `UIScrollView` may call its delegate when `contentSize` or a programmatic
+/// offset changes; forwarding those callbacks to the Rust terminal pins the
+/// renderer to old scrollback even though the user was following live output.
+enum RemoteTerminalScrollPolicy {
+    static func shouldForwardUserScroll(
+        isSynchronizing: Bool,
+        isTracking: Bool,
+        isDragging: Bool,
+        isDecelerating: Bool
+    ) -> Bool {
+        !isSynchronizing && (isTracking || isDragging || isDecelerating)
+    }
+
+    static func displayOffset(
+        contentHeight: Double,
+        viewportHeight: Double,
+        contentOffsetY: Double,
+        cellHeight: Double,
+        scrollbackRows: Int
+    ) -> Int {
+        guard cellHeight > 0, scrollbackRows > 0 else { return 0 }
+        let maximumContentOffset = max(0, contentHeight - viewportHeight)
+        let distanceFromBottom = max(0, maximumContentOffset - contentOffsetY)
+        let rowOffset = Int((distanceFromBottom / cellHeight).rounded())
+        return min(max(rowOffset, 0), scrollbackRows)
+    }
+}
+
 /// Readiness of the remote tab inventory, deliberately separate from the
 /// WebSocket/encryption connection status.
 enum RemoteTabInventoryState: Equatable {

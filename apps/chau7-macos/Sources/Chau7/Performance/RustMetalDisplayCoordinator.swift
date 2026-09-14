@@ -51,6 +51,9 @@ final class RustMetalDisplayCoordinator: NSObject {
     /// Set on tab switch, cleared by the first committed frame — the
     /// tab-switch-to-first-paint responsiveness metric.
     private var tabSwitchPaintStartedAt: CFAbsoluteTime?
+    /// Generation-gated two-phase handoff. The incoming pane continues to
+    /// display its CPU frame until the GPU completes the matching first frame.
+    private var handoffState = MetalRendererHandoffState()
 
     /// Combined renderer + triple-buffer memory attribution for this window's
     /// coordinator. O(1); consumed by TerminalMemoryReport.
@@ -548,6 +551,10 @@ final class RustMetalDisplayCoordinator: NSObject {
             setNeedsSync()
             return
         }
+        if newView === oldView, handoffState.isAwaitingFirstFrame {
+            forceAuthoritativeRefresh(reason: "switchToView-pending")
+            return
+        }
 
         // Responsiveness instrument: elapsed time from here to the first
         // committed Metal frame of the incoming view is the user-perceived
@@ -578,6 +585,7 @@ final class RustMetalDisplayCoordinator: NSObject {
         // 2. Swap grid provider + view reference
         gridProvider = newView.makeGridProvider()
         terminalView = newView
+        let handoffGeneration = handoffState.begin()
 
         // 3. Reparent Metal view into the new container
         metalView.removeFromSuperview()
@@ -585,7 +593,10 @@ final class RustMetalDisplayCoordinator: NSObject {
         metalView.frame = newGeometry.surfaceFrame
         container.addSubview(metalView, positioned: .above, relativeTo: newView)
         container.metalCoordinator = self
-        metalView.alphaValue = 1
+        // Keep the drawable live but transparent. Hiding/removing it prevents
+        // CAMetalLayer from vending a drawable; alpha zero lets the retained
+        // CPU frame remain visible while the first GPU frame is prepared.
+        metalView.alphaValue = 0
 
         // 4. Move HighlightView above Metal in the new container
         for subview in newView.subviews {
@@ -601,7 +612,7 @@ final class RustMetalDisplayCoordinator: NSObject {
         newView.onDisplaySyncNeeded = { [weak self] in
             self?.setNeedsSync()
         }
-        newView.isMetalRenderingActive = true
+        newView.prepareForSharedMetalRendererHandoff()
         newView.logInitialRenderSurfaceReportIfNeeded(reason: "metal-initial")
 
         // 6. Reconfigure font if the new view uses a different font/scale
@@ -626,7 +637,10 @@ final class RustMetalDisplayCoordinator: NSObject {
             self?.forceAuthoritativeRefresh(reason: "switchToView-deferred")
         }
 
-        Log.info("RustMetalDisplayCoordinator: switchToView → view \(newView.viewId) (\(newCols)x\(newRows))")
+        Log.info(
+            "RustMetalDisplayCoordinator: switchToView → view \(newView.viewId) " +
+            "(\(newCols)x\(newRows)) handoff=\(handoffGeneration)"
+        )
     }
 
     // MARK: - Blink
@@ -943,6 +957,7 @@ extension RustMetalDisplayCoordinator: MTKViewDelegate {
         // must map point-space coordinates. The Metal viewport itself targets
         // the full pixel-space drawable automatically.
         let presentedView = terminalView
+        let presentedGeneration = handoffState.generation
         let didCommit = renderer.render(
             buffer: sourceBuffer,
             rows: rows,
@@ -951,10 +966,29 @@ extension RustMetalDisplayCoordinator: MTKViewDelegate {
             fullRefresh: fullRefresh,
             to: drawable,
             viewportSize: view.bounds.size,
-            onCompleted: { [weak presentedView] in
-                presentedView?.noteDisplayFramePresented()
-                presentedView?.onDisplayFramePresented?()
-                presentedView?.onFramePresented?()
+            onCompleted: { [weak self, weak presentedView] in
+                DispatchQueue.main.async {
+                    guard let self,
+                          let presentedView,
+                          self.terminalView === presentedView,
+                          self.handoffState.owns(presentedGeneration)
+                    else {
+                        return
+                    }
+
+                    if self.handoffState.commitFirstFrame(generation: presentedGeneration) {
+                        presentedView.isMetalRenderingActive = true
+                        self.metalView.alphaValue = 1
+                        Log.info(
+                            "RustMetalDisplayCoordinator: committed handoff=\(presentedGeneration) " +
+                            "view=\(presentedView.viewId)"
+                        )
+                    }
+
+                    presentedView.noteDisplayFramePresented()
+                    presentedView.onDisplayFramePresented?()
+                    presentedView.onFramePresented?()
+                }
             }
         )
         guard didCommit else {

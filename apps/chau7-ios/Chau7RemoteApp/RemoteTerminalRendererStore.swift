@@ -12,6 +12,7 @@ import UIKit
 private struct RemoteTerminalEngineSnapshot: Sendable {
     let state: RemoteTerminalRenderState?
     let isAvailable: Bool
+    let frameTrace: RemoteTerminalFrameTrace?
 }
 
 private actor RemoteTerminalRenderEngine {
@@ -23,6 +24,7 @@ private actor RemoteTerminalRenderEngine {
     private var viewportRows = 0
     private var colorScheme: TerminalColorScheme
     private var isAvailable = true
+    private var unpresentedTraceByTabID: [UInt32: RemoteTerminalFrameTrace] = [:]
 
     init(colorScheme: TerminalColorScheme) {
         self.colorScheme = colorScheme
@@ -35,11 +37,13 @@ private actor RemoteTerminalRenderEngine {
         viewportRows = 0
         self.colorScheme = colorScheme
         isAvailable = true
+        unpresentedTraceByTabID.removeAll()
     }
 
     func retainVisibleTabs(_ visibleTabIDs: Set<UInt32>) {
         playbacks = playbacks.filter { visibleTabIDs.contains($0.key) }
         replayByTabID = replayByTabID.filter { visibleTabIDs.contains($0.key) }
+        unpresentedTraceByTabID = unpresentedTraceByTabID.filter { visibleTabIDs.contains($0.key) }
     }
 
     func applyColorScheme(_ scheme: TerminalColorScheme) {
@@ -64,11 +68,15 @@ private actor RemoteTerminalRenderEngine {
         playbacks[tabID] = nil
     }
 
-    func appendOutput(_ data: Data, for tabID: UInt32) {
+    func appendOutput(_ data: Data, for tabID: UInt32, trace: RemoteTerminalFrameTrace?) {
         let chunk = RemoteOutputTuning.capIncomingFrame(data)
         guard !chunk.isEmpty else { return }
         appendReplayChunk(chunk, to: tabID)
         playbacks[tabID]?.inject(chunk)
+        if var trace {
+            trace.engineAppliedAt = Date()
+            unpresentedTraceByTabID[tabID] = trace
+        }
     }
 
     func scroll(tabID: UInt32, to displayOffset: Int, scrollbackRows: Int) {
@@ -77,12 +85,18 @@ private actor RemoteTerminalRenderEngine {
     }
 
     func snapshot(for tabID: UInt32) -> RemoteTerminalEngineSnapshot {
+        let frameTrace = unpresentedTraceByTabID.removeValue(forKey: tabID)
         guard tabID != 0 else {
-            return RemoteTerminalEngineSnapshot(state: nil, isAvailable: isAvailable)
+            return RemoteTerminalEngineSnapshot(
+                state: nil,
+                isAvailable: isAvailable,
+                frameTrace: frameTrace
+            )
         }
         return RemoteTerminalEngineSnapshot(
             state: ensurePlayback(for: tabID)?.snapshot(),
-            isAvailable: isAvailable
+            isAvailable: isAvailable,
+            frameTrace: frameTrace
         )
     }
 
@@ -162,6 +176,8 @@ final class RemoteTerminalRendererStore {
     @ObservationIgnored private var renderRequestInFlight = false
     @ObservationIgnored private var renderDirty = false
     @ObservationIgnored private var generation: UInt64 = 0
+    @ObservationIgnored private var activeTabChangedAt = Date.distantPast
+    @ObservationIgnored private(set) var publishedTrace: RemoteTerminalFrameTrace?
     @ObservationIgnored private lazy var displayPacer: RemoteDisplayLinkPacer = {
         let pacer = RemoteDisplayLinkPacer()
         pacer.onFrame = { [weak self] in
@@ -170,7 +186,17 @@ final class RemoteTerminalRendererStore {
         return pacer
     }()
 
+    @ObservationIgnored private var pendingPresentationTrace: RemoteTerminalFrameTrace?
+    @ObservationIgnored private lazy var presentationPacer: RemoteDisplayLinkPacer = {
+        let pacer = RemoteDisplayLinkPacer()
+        pacer.onFrame = { [weak self] in
+            self?.acknowledgeNextVSync()
+        }
+        return pacer
+    }()
+
     @ObservationIgnored var onFramePublished: ((Double) -> Void)?
+    @ObservationIgnored var onFramePresented: ((RemoteTerminalFrameTrace) -> Void)?
 
     init() {
         let scheme = AppSettings.currentColorScheme
@@ -191,7 +217,10 @@ final class RemoteTerminalRendererStore {
         }
         gridSnapshotByTabID.removeAll()
         renderState = nil
+        publishedTrace = nil
+        pendingPresentationTrace = nil
         activeTabID = 0
+        activeTabChangedAt = Date()
         isAvailable = true
         renderDirty = false
         renderRequestInFlight = false
@@ -204,7 +233,9 @@ final class RemoteTerminalRendererStore {
         }
         if !visibleTabIDs.contains(activeTabID) {
             activeTabID = 0
+            activeTabChangedAt = Date()
             renderState = nil
+            publishedTrace = nil
         }
     }
 
@@ -224,7 +255,11 @@ final class RemoteTerminalRendererStore {
     }
 
     func setActiveTab(_ tabID: UInt32) {
+        if tabID != activeTabID {
+            activeTabChangedAt = Date()
+        }
         activeTabID = tabID
+        publishedTrace = nil
         markRenderDirty()
     }
 
@@ -243,11 +278,20 @@ final class RemoteTerminalRendererStore {
         }
     }
 
-    func appendOutput(_ data: Data, for tabID: UInt32) {
+    func appendOutput(_ data: Data, for tabID: UInt32, trace: RemoteTerminalFrameTrace? = nil) {
         guard !data.isEmpty else { return }
+        let visibleTrace = tabID == activeTabID ? trace : nil
         enqueueMutation(publishFor: tabID) { engine in
-            await engine.appendOutput(data, for: tabID)
+            await engine.appendOutput(data, for: tabID, trace: visibleTrace)
         }
+    }
+
+    /// Called after Core Graphics has rasterized the exact published frame.
+    /// The following display-link callback is the nearest public proxy for the
+    /// compositor presenting that rasterized frame on screen.
+    func recordCanvasDrawn(_ trace: RemoteTerminalFrameTrace) {
+        pendingPresentationTrace = trace
+        presentationPacer.requestFrame()
     }
 
     func scrollActive(to displayOffset: Int) {
@@ -296,6 +340,14 @@ final class RemoteTerminalRendererStore {
             self.renderRequestInFlight = false
             self.isAvailable = snapshot.isAvailable
             if tabID == self.activeTabID {
+                if var frameTrace = snapshot.frameTrace,
+                   frameTrace.iosAppliedAt >= self.activeTabChangedAt
+                {
+                    frameTrace.statePublishedAt = Date()
+                    self.publishedTrace = frameTrace
+                } else {
+                    self.publishedTrace = nil
+                }
                 self.renderState = snapshot.state ?? self.gridSnapshotByTabID[tabID]
             }
             let elapsed = startedAt.duration(to: .now)
@@ -306,5 +358,12 @@ final class RemoteTerminalRendererStore {
                 self.displayPacer.requestFrame()
             }
         }
+    }
+
+    private func acknowledgeNextVSync() {
+        guard var trace = pendingPresentationTrace else { return }
+        pendingPresentationTrace = nil
+        trace.nextVSyncAt = Date()
+        onFramePresented?(trace)
     }
 }

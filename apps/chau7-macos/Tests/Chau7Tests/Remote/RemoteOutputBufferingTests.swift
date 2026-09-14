@@ -2,6 +2,10 @@ import XCTest
 @testable import Chau7Core
 
 final class RemoteOutputBufferingTests: XCTestCase {
+    func testSourceBatchFitsWithinOneHighRefreshDisplayFrame() {
+        XCTAssertLessThan(RemoteOutputTuning.sourceMicroBatchIntervalSeconds, 1.0 / 120.0)
+    }
+
     func testTrimRetainedTextKeepsSuffixWithinByteLimit() {
         let oversized = String(repeating: "a", count: RemoteOutputTuning.maxRetainedBytes + 10)
 

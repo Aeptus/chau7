@@ -1951,6 +1951,18 @@ final class RustTerminalView: NSView {
         }
     }
 
+    /// True only while a foreground remote client is subscribed to this
+    /// terminal. It promotes PTY ingestion to the blocking event drain while
+    /// leaving local rendering, visibility, and interaction unchanged.
+    private(set) var requiresRemoteRealtimeDrain = false
+
+    func setRemoteRealtimeDrainRequired(_ required: Bool) {
+        guard requiresRemoteRealtimeDrain != required else { return }
+        requiresRemoteRealtimeDrain = required
+        Log.info("RustTerminalView[\(viewId)]: remote realtime drain -> \(required ? "enabled" : "disabled")")
+        updatePollingMode(reason: "remoteRealtimeDrain")
+    }
+
     override var isHidden: Bool {
         didSet {
             guard isHidden != oldValue else { return }
@@ -2893,6 +2905,7 @@ final class RustTerminalView: NSView {
                 isTerminalStarted: isTerminalStarted,
                 notifyUpdateChanges: notifyUpdateChanges,
                 isShellBootstrapPending: isShellBootstrapPending,
+                requiresRemoteRealtimeDrain: requiresRemoteRealtimeDrain,
                 allowsLivePresentation: currentRenderPhase.allowsLivePresentation,
                 isHidden: isHidden,
                 hasVisibleWindow: window?.isVisible ?? false,
@@ -3171,6 +3184,26 @@ final class RustTerminalView: NSView {
         }
     }
 
+    /// Keeps the incoming pane's CPU-backed frame authoritative until the
+    /// window-shared Metal surface has completed its first frame for this pane.
+    /// The pane remains interactive throughout the handoff.
+    func prepareForSharedMetalRendererHandoff() {
+        let preservedPhase = currentRenderPhase
+        let preservedInteractiveState = isInteractive
+        isMetalRenderingActive = false
+        applyRenderPhase(
+            preservedPhase,
+            isInteractive: preservedInteractiveState,
+            reason: "metalCoordinatorPrepareHandoff"
+        )
+
+        if preservedPhase.keepsVisibleSurface {
+            needsGridSync = true
+            syncGridToRenderer(force: true)
+            needsDisplay = true
+        }
+    }
+
     var isInteractiveForRendering: Bool {
         isInteractive
     }
@@ -3248,12 +3281,18 @@ final class RustTerminalView: NSView {
             // yet — the view is in .warm phase during startup restore. Mark
             // the grid dirty so the first pollAndSync() or authoritative
             // reveal after the phase transitions to .active picks it up.
-            // Fire onBufferChanged even in this path — the bootstrap settlement
-            // and visible-frame-ready notifications must still flow so the
-            // startup spinner can dismiss.
+            // An ordinary bootstrap still needs onBufferChanged so settlement
+            // and visible-frame-ready notifications can dismiss the spinner.
+            // A hidden remote subscription only needs its raw output callback.
             if result {
                 needsGridSync = true
-                onBufferChanged?()
+                // A remotely streamed hidden tab needs continuous PTY bytes,
+                // not local view invalidations. Suppressing this callback is
+                // what keeps terminal streaming independent from Mac chrome
+                // and tab-list refreshes.
+                if !requiresRemoteRealtimeDrain {
+                    onBufferChanged?()
+                }
             }
             return
         }

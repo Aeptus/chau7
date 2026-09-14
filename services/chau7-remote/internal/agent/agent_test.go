@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/chau7/chau7-remote/internal/protocol"
+	"golang.org/x/crypto/curve25519"
 )
 
 func TestAnnounceIPCConnectionReplaysExistingSessionStatus(t *testing.T) {
@@ -172,9 +173,11 @@ func TestValidatedIOSPublicKeyRejectsLowOrderPoint(t *testing.T) {
 	}
 }
 
-func TestHandlePairRequestResetsStaleSessionBeforeRepair(t *testing.T) {
+func TestHandlePairRequestChangesPeerAndWaitsForFreshIOSHello(t *testing.T) {
 	iosPub := base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{9}, 32))
 	macPub := base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{7}, 32))
+	macNonce := []byte{1, 2, 3, 4}
+	iosNonce := []byte{5, 6, 7, 8}
 
 	a := &Agent{
 		state: &State{
@@ -186,8 +189,8 @@ func TestHandlePairRequestResetsStaleSessionBeforeRepair(t *testing.T) {
 		macName:         "Test Mac",
 		statePath:       t.TempDir() + "/state.json",
 		crypto:          &cryptoSession{},
-		macNonce:        []byte{1, 2, 3, 4},
-		iosNonce:        []byte{5, 6, 7, 8},
+		macNonce:        append([]byte(nil), macNonce...),
+		iosNonce:        append([]byte(nil), iosNonce...),
 		currentIOSPub:   "stale-ios-pub",
 		currentPeerID:   "stale-peer",
 		currentPeerName: "Old Phone",
@@ -211,7 +214,7 @@ func TestHandlePairRequestResetsStaleSessionBeforeRepair(t *testing.T) {
 		t.Fatal("expected stale session crypto to be cleared before repair handshake")
 	}
 	if len(a.iosNonce) != 0 {
-		t.Fatal("expected stale iOS nonce to be cleared before repair handshake")
+		t.Fatal("changed pairing identity must wait for that peer's fresh iOS HELLO")
 	}
 	if a.sessionReady {
 		t.Fatal("expected sessionReady to be cleared for repair handshake")
@@ -225,9 +228,170 @@ func TestHandlePairRequestResetsStaleSessionBeforeRepair(t *testing.T) {
 	if a.currentPeerID == "" || a.currentPeerID == "stale-peer" {
 		t.Fatal("expected repaired session to replace stale peer identity")
 	}
-	if len(a.macNonce) == 0 {
-		t.Fatal("expected repair handshake to send a fresh Mac hello nonce")
+	if !bytes.Equal(a.macNonce, macNonce) {
+		t.Fatal("pairing identity repair must re-send rather than rotate the Mac nonce")
 	}
+}
+
+func TestHandleHelloRekeysStaleSessionForFreshIOSNonce(t *testing.T) {
+	a, oldNonce, macNonce := makeHandshakeTestAgent(t)
+	newNonce := bytes.Repeat([]byte{0xB2}, 16)
+	payload, err := json.Marshal(HelloPayload{
+		DeviceID: "mac-device",
+		Role:     "ios",
+		Nonce:    base64.StdEncoding.EncodeToString(newNonce),
+		PubKeyFP: a.state.PairedDevices[0].PublicKeyFingerprint,
+	})
+	if err != nil {
+		t.Fatalf("marshal hello: %v", err)
+	}
+
+	a.handleHello(payload)
+
+	if bytes.Equal(oldNonce, a.iosNonce) || !bytes.Equal(a.iosNonce, newNonce) {
+		t.Fatal("fresh iOS HELLO must replace the stale client nonce")
+	}
+	if !bytes.Equal(a.macNonce, macNonce) {
+		t.Fatal("in-place rekey must preserve the Mac nonce")
+	}
+	if a.crypto == nil {
+		t.Fatal("fresh iOS HELLO should establish the replacement crypto epoch")
+	}
+	if a.sessionReady {
+		t.Fatal("local key derivation must await encrypted iOS SESSION_READY confirmation")
+	}
+	if a.maxReceivedSeq != 0 {
+		t.Fatalf("replacement epoch must reset replay state, got %d", a.maxReceivedSeq)
+	}
+}
+
+func TestHandleHelloIsIdempotentForSameIOSNonce(t *testing.T) {
+	a, iosNonce, macNonce := makeHandshakeTestAgent(t)
+	originalCrypto := a.crypto
+	a.maxReceivedSeq = 42
+	payload, err := json.Marshal(HelloPayload{
+		DeviceID: "mac-device",
+		Role:     "ios",
+		Nonce:    base64.StdEncoding.EncodeToString(iosNonce),
+		PubKeyFP: a.state.PairedDevices[0].PublicKeyFingerprint,
+	})
+	if err != nil {
+		t.Fatalf("marshal hello: %v", err)
+	}
+
+	a.handleHello(payload)
+
+	if a.crypto != originalCrypto {
+		t.Fatal("duplicate HELLO must retain the active crypto instance")
+	}
+	if a.maxReceivedSeq != 42 {
+		t.Fatalf("duplicate HELLO must retain replay state, got %d", a.maxReceivedSeq)
+	}
+	if !bytes.Equal(a.macNonce, macNonce) {
+		t.Fatal("duplicate HELLO must re-send the same Mac nonce")
+	}
+}
+
+func TestHandleHelloCannotDisplaceTrustedPeerWithUnknownIdentity(t *testing.T) {
+	a, iosNonce, _ := makeHandshakeTestAgent(t)
+	originalCrypto := a.crypto
+	payload, err := json.Marshal(HelloPayload{
+		DeviceID: "mac-device",
+		Role:     "ios",
+		Nonce:    base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{0xCC}, 16)),
+		PubKeyFP: "unrecognized-fingerprint",
+	})
+	if err != nil {
+		t.Fatalf("marshal hello: %v", err)
+	}
+
+	a.handleHello(payload)
+
+	if a.crypto != originalCrypto || !bytes.Equal(a.iosNonce, iosNonce) {
+		t.Fatal("an unknown identity must not invalidate the trusted peer epoch")
+	}
+}
+
+func TestSessionReadyRequiresEncryptedIOSConfirmation(t *testing.T) {
+	a, _, _ := makeHandshakeTestAgent(t)
+	a.sessionReady = false
+	payload, err := json.Marshal(SessionReadyPayload{SessionID: "ios-session"})
+	if err != nil {
+		t.Fatalf("marshal session ready: %v", err)
+	}
+
+	a.handleRelayFrame(&protocol.Frame{
+		Version: 1,
+		Type:    protocol.TypeSessionReady,
+		Seq:     1,
+		Payload: payload,
+	})
+	if a.sessionReady {
+		t.Fatal("plaintext SESSION_READY must not confirm the crypto epoch")
+	}
+
+	iosCrypto := &cryptoSession{
+		aead:            a.crypto.aead,
+		sendNoncePrefix: a.crypto.recvNoncePrefix,
+		recvNoncePrefix: a.crypto.sendNoncePrefix,
+	}
+	encrypted := encryptRelayFrame(&protocol.Frame{
+		Version: 1,
+		Type:    protocol.TypeSessionReady,
+		Seq:     2,
+		Payload: payload,
+	}, iosCrypto)
+	a.handleRelayFrame(encrypted)
+	if !a.sessionReady {
+		t.Fatal("encrypted iOS SESSION_READY must confirm the crypto epoch")
+	}
+}
+
+func makeHandshakeTestAgent(t *testing.T) (*Agent, []byte, []byte) {
+	t.Helper()
+	macPrivate := bytes.Repeat([]byte{0x31}, 32)
+	macPublic, err := curve25519.X25519(macPrivate, curve25519.Basepoint)
+	if err != nil {
+		t.Fatalf("derive Mac public key: %v", err)
+	}
+	iosPrivate := bytes.Repeat([]byte{0x42}, 32)
+	iosPublic, err := curve25519.X25519(iosPrivate, curve25519.Basepoint)
+	if err != nil {
+		t.Fatalf("derive iOS public key: %v", err)
+	}
+	shared, err := curve25519.X25519(macPrivate, iosPublic)
+	if err != nil {
+		t.Fatalf("derive shared key: %v", err)
+	}
+	macNonce := bytes.Repeat([]byte{0xA1}, 16)
+	iosNonce := bytes.Repeat([]byte{0xB1}, 16)
+	crypto, err := newCryptoSession(shared, macNonce, iosNonce)
+	if err != nil {
+		t.Fatalf("create crypto session: %v", err)
+	}
+	iosPublicEncoded := base64.StdEncoding.EncodeToString(iosPublic)
+	device := PairedDevice{
+		ID:                   "ios-device",
+		Name:                 "Test iPhone",
+		IOSPublicKey:         iosPublicEncoded,
+		PublicKeyFingerprint: fingerprintBytes(iosPublic),
+	}
+	return &Agent{
+		state: &State{
+			DeviceID:      "mac-device",
+			MacPrivateKey: base64.StdEncoding.EncodeToString(macPrivate),
+			MacPublicKey:  base64.StdEncoding.EncodeToString(macPublic),
+			PairedDevices: []PairedDevice{device},
+		},
+		statePath:       t.TempDir() + "/state.json",
+		crypto:          crypto,
+		macNonce:        append([]byte(nil), macNonce...),
+		iosNonce:        append([]byte(nil), iosNonce...),
+		currentIOSPub:   iosPublicEncoded,
+		currentPeerID:   device.ID,
+		currentPeerName: device.Name,
+		sessionReady:    true,
+	}, iosNonce, macNonce
 }
 
 func TestRelayAPIBaseURLConvertsWebsocketSchemesForHTTPPosts(t *testing.T) {

@@ -558,14 +558,20 @@ func (a *Agent) handleIPCFrame(frame *protocol.Frame) {
 	switch frame.Type {
 	case protocol.TypeApprovalRequest:
 		a.updatePendingApproval(frame.Payload)
-		a.sendEncryptedToRelay(frame)
+		if a.isSessionReady() {
+			a.sendEncryptedToRelay(frame)
+		}
 		a.handleApprovalRequestForPush(frame.Payload)
 	case protocol.TypeInteractivePromptList:
 		a.replacePendingPrompts(frame.Payload)
-		a.sendEncryptedToRelay(frame)
+		if a.isSessionReady() {
+			a.sendEncryptedToRelay(frame)
+		}
 		a.handleInteractivePromptListForPush(frame.Payload)
 	case protocol.TypeNotificationEvent:
-		a.sendEncryptedToRelay(frame)
+		if a.isSessionReady() {
+			a.sendEncryptedToRelay(frame)
+		}
 		a.handleNotificationEventForPush(frame.Payload)
 	case protocol.TypeTabList, protocol.TypeOutput, protocol.TypeSnapshot,
 		protocol.TypeTerminalGridSnapshot,
@@ -579,13 +585,15 @@ func (a *Agent) handleIPCFrame(frame *protocol.Frame) {
 			a.sendToRelay(frame)
 		}
 	case protocol.TypePing:
-		a.sendEncryptedToRelay(&protocol.Frame{
-			Version: 1,
-			Type:    protocol.TypePong,
-			TabID:   frame.TabID,
-			Seq:     a.nextSeq(),
-			Payload: frame.Payload,
-		})
+		if a.isSessionReady() {
+			a.sendEncryptedToRelay(&protocol.Frame{
+				Version: 1,
+				Type:    protocol.TypePong,
+				TabID:   frame.TabID,
+				Seq:     a.nextSeq(),
+				Payload: frame.Payload,
+			})
+		}
 	default:
 		log.Printf("ipc: unhandled frame type 0x%02x", frame.Type)
 	}
@@ -615,6 +623,7 @@ func (a *Agent) handleRelayFrame(frame *protocol.Frame) {
 		a.sessionMu.Lock()
 		a.sessionReady = true
 		a.sessionMu.Unlock()
+		log.Printf("session ready: encrypted epoch confirmed by iOS")
 		a.sendToIPC(&protocol.Frame{
 			Version: 1,
 			Type:    protocol.TypeSessionReady,
@@ -719,9 +728,18 @@ func (a *Agent) handleClientStateFrame(payload []byte) {
 }
 
 func (a *Agent) shouldForwardLiveFrames() bool {
+	if !a.isSessionReady() {
+		return false
+	}
 	a.clientStateMu.Lock()
 	defer a.clientStateMu.Unlock()
 	return a.currentClientStreamMode != "approvals_only"
+}
+
+func (a *Agent) isSessionReady() bool {
+	a.sessionMu.Lock()
+	defer a.sessionMu.Unlock()
+	return a.crypto != nil && a.sessionReady
 }
 
 func (a *Agent) shouldNotifyClientViaPush() bool {
@@ -764,13 +782,24 @@ func (a *Agent) handlePairRequest(payload []byte) {
 		return
 	}
 
-	// A fallback re-pair must discard any provisional session state so the
-	// subsequent HELLO exchange derives fresh transport keys on both sides.
-	a.resetSession()
-
 	a.pairingMu.Lock()
 	a.pairingAttempts = 0
 	a.pairingMu.Unlock()
+
+	a.sessionMu.Lock()
+	peerKeyChanged := a.currentIOSPub != "" && a.currentIOSPub != request.IOSPub
+	if peerKeyChanged {
+		a.crypto = nil
+		a.iosNonce = nil
+		a.sessionReady = false
+		a.maxReceivedSeq = 0
+	}
+	a.sessionMu.Unlock()
+	if peerKeyChanged {
+		a.resetSessionEpochState()
+		a.sendSessionStatus("disconnected")
+		log.Printf("pair request: invalidated crypto for changed iOS identity")
+	}
 
 	a.stateMu.Lock()
 	device, err := a.state.UpsertPairedDevice(request.IOSName, request.IOSPub, time.Now())
@@ -802,8 +831,22 @@ func (a *Agent) handlePairRequest(payload []byte) {
 		Seq:     a.nextSeq(),
 		Payload: data,
 	})
-	if err := a.sendHello(); err != nil {
+	// Pairing authenticates long-lived identities; the HELLO nonce pair owns
+	// the crypto epoch. Re-send the current Mac nonce instead of rotating it on
+	// every fallback request, making retries idempotent and preserving any
+	// already-matching provisional session.
+	if err := a.sendCurrentHello(); err != nil {
 		log.Printf("pair request: send hello: %v", err)
+	}
+	if a.establishSession() {
+		a.sendSessionReadyToRelay()
+	} else {
+		a.sessionMu.Lock()
+		hasCrypto := a.crypto != nil
+		a.sessionMu.Unlock()
+		if hasCrypto {
+			a.sendSessionReadyToRelay()
+		}
 	}
 }
 
@@ -862,12 +905,60 @@ func (a *Agent) handleHello(payload []byte) {
 		a.stateMu.Unlock()
 		if device != nil {
 			a.setCurrentPeer(device)
+		} else {
+			a.sessionMu.Lock()
+			hasTrustedPeer := a.currentIOSPub != ""
+			a.sessionMu.Unlock()
+			if hasTrustedPeer {
+				log.Printf("hello: ignored unrecognized iOS identity while a trusted session is active")
+				return
+			}
 		}
 	}
+
 	a.sessionMu.Lock()
-	a.iosNonce = nonce
+	sameNonce := bytes.Equal(a.iosNonce, nonce)
+	hadCrypto := a.crypto != nil
+	if hadCrypto && !sameNonce {
+		// A newly launched iOS client owns a fresh nonce while the Mac relay
+		// socket can outlive the old app process. Retire that stale epoch but
+		// preserve the Mac nonce and paired identity; the changed iOS nonce is
+		// sufficient to derive a distinct key. Repeated HELLOs with the same
+		// nonce are idempotent and never reset sequence state.
+		a.crypto = nil
+		a.sessionReady = false
+		a.maxReceivedSeq = 0
+	}
+	a.iosNonce = append(a.iosNonce[:0], nonce...)
+	hasMacNonce := len(a.macNonce) != 0
 	a.sessionMu.Unlock()
-	a.establishSession()
+
+	if hadCrypto && !sameNonce {
+		a.resetSessionEpochState()
+		a.sendSessionStatus("disconnected")
+		log.Printf("session rekey: accepted fresh iOS HELLO nonce")
+	}
+
+	var helloErr error
+	if hasMacNonce {
+		helloErr = a.sendCurrentHello()
+	} else {
+		helloErr = a.sendHello()
+	}
+	if helloErr != nil {
+		log.Printf("hello: send Mac hello: %v", helloErr)
+		return
+	}
+
+	if hadCrypto && sameNonce {
+		// The peer may have missed SESSION_READY. Re-sending it is safe and
+		// lets a duplicate HELLO finish the same epoch without rotating keys.
+		a.sendSessionReadyToRelay()
+		return
+	}
+	if a.establishSession() {
+		a.sendSessionReadyToRelay()
+	}
 }
 
 func (a *Agent) sendHello() error {
@@ -875,6 +966,23 @@ func (a *Agent) sendHello() error {
 	if _, err := rand.Read(macNonce); err != nil {
 		return err
 	}
+	a.sessionMu.Lock()
+	a.macNonce = append(a.macNonce[:0], macNonce...)
+	a.sessionMu.Unlock()
+	return a.sendHelloWithNonce(macNonce)
+}
+
+func (a *Agent) sendCurrentHello() error {
+	a.sessionMu.Lock()
+	macNonce := append([]byte(nil), a.macNonce...)
+	a.sessionMu.Unlock()
+	if len(macNonce) == 0 {
+		return a.sendHello()
+	}
+	return a.sendHelloWithNonce(macNonce)
+}
+
+func (a *Agent) sendHelloWithNonce(macNonce []byte) error {
 	fp := fingerprint(a.state.MacPublicKey)
 	payload := HelloPayload{
 		DeviceID:   a.state.DeviceID,
@@ -887,10 +995,6 @@ func (a *Agent) sendHello() error {
 	if err != nil {
 		return fmt.Errorf("marshal hello: %w", err)
 	}
-
-	a.sessionMu.Lock()
-	a.macNonce = macNonce
-	a.sessionMu.Unlock()
 
 	a.sendToRelay(&protocol.Frame{
 		Version: 1,
@@ -923,33 +1027,33 @@ func isLowOrderPoint(key []byte) bool {
 	return false
 }
 
-func (a *Agent) establishSession() {
+func (a *Agent) establishSession() bool {
 	a.sessionMu.Lock()
 	if a.crypto != nil {
 		a.sessionMu.Unlock()
-		return
+		return false
 	}
 	if len(a.macNonce) == 0 || len(a.iosNonce) == 0 {
 		a.sessionMu.Unlock()
-		return
+		return false
 	}
 	iosPub, err := validatedIOSPublicKey(a.currentIOSPub)
 	if err != nil {
 		a.sessionMu.Unlock()
 		log.Printf("establish session: ios public key: %v", err)
-		return
+		return false
 	}
 	macPriv, err := a.state.MacPrivateKeyBytes()
 	if err != nil {
 		a.sessionMu.Unlock()
 		log.Printf("establish session: mac private key: %v", err)
-		return
+		return false
 	}
 	shared, err := curve25519.X25519(macPriv, iosPub)
 	if err != nil {
 		a.sessionMu.Unlock()
 		log.Printf("establish session: x25519: %v", err)
-		return
+		return false
 	}
 	// Verify the shared secret is not all zeros (low-order point attack).
 	allZero := true
@@ -962,16 +1066,18 @@ func (a *Agent) establishSession() {
 	if allZero {
 		a.sessionMu.Unlock()
 		log.Printf("establish session: all-zero shared secret (low-order iOS public key)")
-		return
+		return false
 	}
 	crypto, err := newCryptoSession(shared, a.macNonce, a.iosNonce)
 	if err != nil {
 		a.sessionMu.Unlock()
 		log.Printf("establish session: crypto: %v", err)
-		return
+		return false
 	}
 	a.crypto = crypto
-	a.sessionReady = true
+	// Ready means both peers confirmed this epoch. Key derivation alone is
+	// provisional until an encrypted iOS SESSION_READY is admitted.
+	a.sessionReady = false
 	peerID := a.currentPeerID
 	a.sessionMu.Unlock()
 	if peerID != "" {
@@ -984,7 +1090,16 @@ func (a *Agent) establishSession() {
 		}
 		a.stateMu.Unlock()
 	}
+	return true
+}
 
+func (a *Agent) sendSessionReadyToRelay() {
+	a.sessionMu.Lock()
+	hasCrypto := a.crypto != nil
+	a.sessionMu.Unlock()
+	if !hasCrypto {
+		return
+	}
 	sessionID := make([]byte, 8)
 	if _, err := rand.Read(sessionID); err != nil {
 		log.Fatalf("crypto/rand failed: %v", err)
@@ -1004,18 +1119,10 @@ func (a *Agent) establishSession() {
 		Payload: data,
 	}
 	a.sendEncryptedToRelay(frame)
-	a.sendToIPC(&protocol.Frame{
-		Version: 1,
-		Type:    protocol.TypeSessionReady,
-		Seq:     a.nextSeq(),
-		Payload: data,
-	})
-	a.sendSessionStatus("ready")
 }
 
 func (a *Agent) resetSession() {
 	a.sessionMu.Lock()
-	defer a.sessionMu.Unlock()
 	a.crypto = nil
 	a.macNonce = nil
 	a.iosNonce = nil
@@ -1024,7 +1131,15 @@ func (a *Agent) resetSession() {
 	a.currentPeerName = ""
 	a.sessionReady = false
 	a.maxReceivedSeq = 0
+	a.sessionMu.Unlock()
 
+	a.resetSessionEpochState()
+}
+
+// resetSessionEpochState invalidates state derived from one crypto epoch while
+// leaving relay/IPC transports and long-lived pairing identity untouched.
+// It is shared by full relay resets and in-place iOS rekeys.
+func (a *Agent) resetSessionEpochState() {
 	a.pendingStateMu.Lock()
 	a.sessionEpoch = newSessionEpoch()
 	a.stateVersion = 0
