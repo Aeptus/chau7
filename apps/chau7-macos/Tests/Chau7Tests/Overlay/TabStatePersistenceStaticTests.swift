@@ -163,6 +163,35 @@ final class TabStatePersistenceStaticTests: XCTestCase {
         XCTAssertNil(sanitized[0].aiResumeCommand)
     }
 
+    func testSanitizeRepairsCodexProviderForExactClaudeTranscript() throws {
+        let home = try temporaryDirectory()
+        let repoRoot = try temporaryDirectory()
+        defer {
+            try? FileManager.default.removeItem(at: home)
+            try? FileManager.default.removeItem(at: repoRoot)
+        }
+        let sessionID = "2e3688e0-668f-40e7-932a-caabfb415d4c"
+        try createClaudeTranscript(home: home, projectDirectory: repoRoot, sessionID: sessionID)
+        let states = [
+            makeTopLevelState(
+                tabID: UUID(),
+                directory: repoRoot.path,
+                aiProvider: "codex",
+                aiSessionId: sessionID,
+                aiResumeCommand: "codex resume \(sessionID)"
+            )
+        ]
+
+        let sanitized = OverlayTabsModel.sanitizeRestoredAIResumeOwnership(
+            states: states,
+            environment: ["CHAU7_HOME_ROOT": home.path]
+        )
+
+        XCTAssertEqual(sanitized[0].aiProvider, "claude")
+        XCTAssertEqual(sanitized[0].aiSessionId, sessionID)
+        XCTAssertEqual(sanitized[0].aiResumeCommand, "claude --resume \(sessionID)")
+    }
+
     func testRejectedClaudeIdentityWarnsOnceAcrossRepeatedSanitization() throws {
         let home = try temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: home) }
@@ -454,6 +483,7 @@ final class TabStatePersistenceStaticTests: XCTestCase {
 
     private func makeTopLevelState(
         tabID: UUID,
+        directory: String = "/tmp",
         aiProvider: String?,
         aiSessionId: String?,
         aiResumeCommand: String?
@@ -463,7 +493,7 @@ final class TabStatePersistenceStaticTests: XCTestCase {
             selectedTabID: nil,
             customTitle: "Tab",
             color: TabColor.blue.rawValue,
-            directory: "/tmp",
+            directory: directory,
             selectedIndex: nil,
             tokenOptOverride: nil,
             scrollbackContent: nil,

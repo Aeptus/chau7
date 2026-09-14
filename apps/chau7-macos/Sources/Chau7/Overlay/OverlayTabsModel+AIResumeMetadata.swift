@@ -4,6 +4,7 @@ import Foundation
 private enum RestoredResumeRejectionWarningGate {
     private static let lock = NSLock()
     private static var warnedIdentities = Set<String>()
+    private static var loggedRepairs = Set<String>()
 
     static func warnIfNeeded(provider: String, sessionId: String, directory: String) {
         let canonicalDirectory = URL(fileURLWithPath: directory).standardizedFileURL.path
@@ -20,9 +21,30 @@ private enum RestoredResumeRejectionWarningGate {
         )
     }
 
+    static func logRepairIfNeeded(
+        declaredProvider: String,
+        resolvedProvider: String,
+        sessionId: String,
+        directory: String
+    ) {
+        let canonicalDirectory = URL(fileURLWithPath: directory).standardizedFileURL.path
+        let identityKey = "\(declaredProvider)|\(resolvedProvider)|\(sessionId)|\(canonicalDirectory)"
+
+        lock.lock()
+        let shouldLog = loggedRepairs.insert(identityKey).inserted
+        lock.unlock()
+
+        guard shouldLog else { return }
+        Log.warn(
+            "AI resume metadata provider repaired declared=\(declaredProvider) " +
+                "resolved=\(resolvedProvider) session=\(sessionId.prefix(8)) dir=\(directory)"
+        )
+    }
+
     static func resetForTesting() {
         lock.lock()
         warnedIdentities.removeAll()
+        loggedRepairs.removeAll()
         lock.unlock()
     }
 }
@@ -342,11 +364,30 @@ extension OverlayTabsModel {
         from session: TerminalSessionModel,
         claimedSessions: Set<AIResumeOwnership.ClaimedSession> = []
     ) -> (provider: String?, sessionId: String?, sessionIdSource: AISessionIdentitySource?) {
-        let effectiveProvider = Self.normalizedAIProvider(from: session.effectiveAIProvider ?? session.lastAIProvider)
+        var effectiveProvider = Self.normalizedAIProvider(from: session.effectiveAIProvider ?? session.lastAIProvider)
         let effectiveSessionId = Self.normalizePersistedAISessionId(
             session.effectiveAISessionId,
             source: session.effectiveAISessionIdentitySource
         )
+        if let declaredProvider = effectiveProvider,
+           let effectiveSessionId,
+           let repairedProvider = Self.repairedRestoredProvider(
+               declaredProvider: declaredProvider,
+               sessionId: effectiveSessionId,
+               sessionIdSource: session.effectiveAISessionIdentitySource,
+               directory: session.currentDirectory,
+               referenceDate: Self.normalizedResumeReferenceDate(session.lastOutputDate),
+               fileManager: .default,
+               environment: ProcessInfo.processInfo.environment
+           ) {
+            RestoredResumeRejectionWarningGate.logRepairIfNeeded(
+                declaredProvider: declaredProvider,
+                resolvedProvider: repairedProvider,
+                sessionId: effectiveSessionId,
+                directory: session.currentDirectory
+            )
+            effectiveProvider = repairedProvider
+        }
         let sanitized = AIResumeOwnership.sanitizeForPersistence(
             provider: effectiveProvider,
             sessionId: effectiveSessionId,
@@ -460,9 +501,29 @@ extension OverlayTabsModel {
             sessionId: candidate.sessionId,
             claimedSessions: claimedSessions
         )
-        guard let provider = sanitized.provider,
+        guard let declaredProvider = sanitized.provider,
               let sessionId = sanitized.sessionId else {
             return nil
+        }
+
+        guard let provider = validatedRestoredProvider(
+            declaredProvider: declaredProvider,
+            sessionId: sessionId,
+            sessionIdSource: candidate.sessionIdSource,
+            directory: directory,
+            referenceDate: referenceDate,
+            fileManager: fileManager,
+            environment: environment
+        ) else {
+            return nil
+        }
+        if provider != declaredProvider {
+            let repairedOwnership = AIResumeOwnership.sanitizeForPersistence(
+                provider: provider,
+                sessionId: sessionId,
+                claimedSessions: claimedSessions
+            )
+            guard repairedOwnership.sessionId != nil else { return nil }
         }
 
         let resumeDirectory: String?
@@ -470,19 +531,6 @@ extension OverlayTabsModel {
             if candidate.sessionIdSource == .synthetic {
                 resumeDirectory = nil
             } else {
-                guard restoredClaudeTranscriptExists(
-                    sessionId: sessionId,
-                    directory: directory,
-                    fileManager: fileManager,
-                    environment: environment
-                ) else {
-                    RestoredResumeRejectionWarningGate.warnIfNeeded(
-                        provider: provider,
-                        sessionId: sessionId,
-                        directory: directory
-                    )
-                    return nil
-                }
                 resumeDirectory = ClaudeSessionResolver.restoreDirectory(
                     forSessionID: sessionId,
                     savedDirectory: directory,
@@ -490,22 +538,6 @@ extension OverlayTabsModel {
                     environment: environment
                 )
             }
-        } else if provider == "codex",
-                  codexSessionRequiresRolloutValidation(sessionId) {
-            guard restoredCodexRolloutExists(
-                sessionId: sessionId,
-                referenceDate: referenceDate,
-                fileManager: fileManager,
-                environment: environment
-            ) else {
-                RestoredResumeRejectionWarningGate.warnIfNeeded(
-                    provider: provider,
-                    sessionId: sessionId,
-                    directory: directory
-                )
-                return nil
-            }
-            resumeDirectory = nil
         } else {
             resumeDirectory = nil
         }
@@ -569,48 +601,115 @@ extension OverlayTabsModel {
         )
     }
 
-    private static func validateRestoredMetadata(
-        provider: String,
+    private static func validatedRestoredProvider(
+        declaredProvider: String,
         sessionId: String,
         sessionIdSource: AISessionIdentitySource?,
         directory: String,
         referenceDate: Date?,
         fileManager: FileManager,
         environment: [String: String]
-    ) -> Bool {
-        if provider == "codex" {
-            guard codexSessionRequiresRolloutValidation(sessionId) else { return true }
-            guard restoredCodexRolloutExists(
-                sessionId: sessionId,
-                referenceDate: referenceDate,
-                fileManager: fileManager,
-                environment: environment
-            ) else {
-                RestoredResumeRejectionWarningGate.warnIfNeeded(
-                    provider: provider,
+    ) -> String? {
+        let declaredProviderIsValid: Bool
+        if declaredProvider == "codex" {
+            declaredProviderIsValid = !codexSessionRequiresRolloutValidation(sessionId)
+                || restoredCodexRolloutExists(
                     sessionId: sessionId,
-                    directory: directory
+                    referenceDate: referenceDate,
+                    fileManager: fileManager,
+                    environment: environment
                 )
-                return false
-            }
-            return true
+        } else if declaredProvider == "claude" {
+            declaredProviderIsValid = sessionIdSource == .synthetic
+                || restoredClaudeTranscriptExists(
+                    sessionId: sessionId,
+                    directory: directory,
+                    fileManager: fileManager,
+                    environment: environment
+                )
+        } else {
+            declaredProviderIsValid = true
         }
-        guard provider == "claude" else { return true }
-        guard sessionIdSource != .synthetic else { return true }
-        guard restoredClaudeTranscriptExists(
+
+        if declaredProviderIsValid {
+            return declaredProvider
+        }
+
+        if let repairedProvider = repairedRestoredProvider(
+            declaredProvider: declaredProvider,
             sessionId: sessionId,
+            sessionIdSource: sessionIdSource,
             directory: directory,
+            referenceDate: referenceDate,
             fileManager: fileManager,
             environment: environment
-        ) else {
-            RestoredResumeRejectionWarningGate.warnIfNeeded(
-                provider: provider,
+        ) {
+            RestoredResumeRejectionWarningGate.logRepairIfNeeded(
+                declaredProvider: declaredProvider,
+                resolvedProvider: repairedProvider,
                 sessionId: sessionId,
                 directory: directory
             )
-            return false
+            return repairedProvider
         }
-        return true
+
+        RestoredResumeRejectionWarningGate.warnIfNeeded(
+            provider: declaredProvider,
+            sessionId: sessionId,
+            directory: directory
+        )
+        return nil
+    }
+
+    /// Repairs a provider/session mismatch only when the declared provider has no
+    /// matching artifact and the alternate provider has an exact, restorable one.
+    /// The session ID is never guessed or replaced.
+    private static func repairedRestoredProvider(
+        declaredProvider: String,
+        sessionId: String,
+        sessionIdSource: AISessionIdentitySource?,
+        directory: String,
+        referenceDate: Date?,
+        fileManager: FileManager,
+        environment: [String: String]
+    ) -> String? {
+        guard sessionIdSource != .synthetic else { return nil }
+
+        if declaredProvider == "codex",
+           codexSessionRequiresRolloutValidation(sessionId),
+           restoredClaudeTranscriptExists(
+               sessionId: sessionId,
+               directory: directory,
+               fileManager: fileManager,
+               environment: environment
+           ),
+           !restoredCodexRolloutExists(
+               sessionId: sessionId,
+               referenceDate: referenceDate,
+               fileManager: fileManager,
+               environment: environment
+           ) {
+            return "claude"
+        }
+
+        if declaredProvider == "claude",
+           !restoredClaudeTranscriptExists(
+               sessionId: sessionId,
+               directory: directory,
+               fileManager: fileManager,
+               environment: environment
+           ),
+           codexSessionRequiresRolloutValidation(sessionId),
+           restoredCodexRolloutExists(
+               sessionId: sessionId,
+               referenceDate: referenceDate,
+               fileManager: fileManager,
+               environment: environment
+           ) {
+            return "codex"
+        }
+
+        return nil
     }
 
     private static func codexSessionRequiresRolloutValidation(_ sessionId: String) -> Bool {
@@ -900,8 +999,8 @@ extension OverlayTabsModel {
             fallbackAISessionIdSource: fallbackAISessionIdSource
         )
         for candidate in candidates {
-            guard validateRestoredMetadata(
-                provider: candidate.provider,
+            guard let provider = validatedRestoredProvider(
+                declaredProvider: candidate.provider,
                 sessionId: candidate.sessionId,
                 sessionIdSource: candidate.sessionIdSource,
                 directory: paneState.directory,
@@ -917,7 +1016,7 @@ extension OverlayTabsModel {
                 continue
             }
             return (
-                provider: candidate.provider,
+                provider: provider,
                 sessionId: candidate.sessionId,
                 sessionIdSource: candidate.sessionIdSource
             )
@@ -1067,7 +1166,24 @@ extension OverlayTabsModel {
                 Log.info("resolveAIResumeMetadata: explicit sessionId=\(sessionId) already claimed by another tab, skipping")
                 return nil
             }
-            if provider == "codex",
+            let resolvedProvider = repairedRestoredProvider(
+                declaredProvider: provider,
+                sessionId: sessionId,
+                sessionIdSource: .explicit,
+                directory: directory,
+                referenceDate: referenceDate,
+                fileManager: fileManager,
+                environment: environment
+            ) ?? provider
+            if resolvedProvider != provider {
+                RestoredResumeRejectionWarningGate.logRepairIfNeeded(
+                    declaredProvider: provider,
+                    resolvedProvider: resolvedProvider,
+                    sessionId: sessionId,
+                    directory: directory
+                )
+            }
+            if resolvedProvider == "codex",
                codexSessionRequiresRolloutValidation(sessionId),
                !restoredCodexRolloutExists(
                    sessionId: sessionId,
@@ -1080,8 +1196,8 @@ extension OverlayTabsModel {
                 )
                 return nil
             }
-            Log.trace("resolveAIResumeMetadata: using explicit session metadata provider=\(provider), sessionId=\(sessionId)")
-            return (provider: provider, sessionId: sessionId)
+            Log.trace("resolveAIResumeMetadata: using explicit session metadata provider=\(resolvedProvider), sessionId=\(sessionId)")
+            return (provider: resolvedProvider, sessionId: sessionId)
         }
 
         guard !directory.isEmpty,

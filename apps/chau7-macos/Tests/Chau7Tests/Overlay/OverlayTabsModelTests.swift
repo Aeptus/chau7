@@ -2581,6 +2581,36 @@ final class OverlayTabsModelTests: XCTestCase {
         XCTAssertEqual(pane.aiResumeCommand, "codex resume \(sessionID)")
     }
 
+    func testExportTabStatesRepairsCodexProviderForExactClaudeTranscript() throws {
+        let home = try temporaryHomeDirectory()
+        setenv("CHAU7_HOME_ROOT", home.path, 1)
+        defer {
+            unsetenv("CHAU7_HOME_ROOT")
+            try? FileManager.default.removeItem(at: home)
+        }
+
+        let tab = try XCTUnwrap(model.tabs.first)
+        let session = try XCTUnwrap(tab.session)
+        let directory = makeTemporaryRepoRoot().path
+        let sessionID = "2e3688e0-668f-40e7-932a-caabfb415d4c"
+        try createClaudeTranscript(home: home, directory: directory, sessionID: sessionID)
+        session.currentDirectory = directory
+        session.restoreAIMetadata(
+            provider: "codex",
+            sessionId: sessionID,
+            lastOutputAt: Date()
+        )
+
+        let exported = try XCTUnwrap(model.exportTabStates().first)
+        let pane = try XCTUnwrap(exported.paneStates?.first)
+
+        XCTAssertEqual(pane.aiProvider, "claude")
+        XCTAssertEqual(pane.aiSessionId, sessionID)
+        XCTAssertEqual(pane.aiResumeCommand, "claude --resume \(sessionID)")
+        XCTAssertEqual(exported.aiProvider, "claude")
+        XCTAssertEqual(exported.aiSessionId, sessionID)
+    }
+
     func testSanitizeRestoredAIResumeOwnershipKeepsClaudeUUIDWithTranscript() throws {
         let home = try temporaryHomeDirectory()
         defer { try? FileManager.default.removeItem(at: home) }

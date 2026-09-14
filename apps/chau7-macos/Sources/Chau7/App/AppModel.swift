@@ -1153,7 +1153,9 @@ final class AppModel {
                 sessionID: event.sessionId.isEmpty ? nil : event.sessionId,
                 directory: directory,
                 allowSessionIDAdoption: allowSessionIDAdoption,
-                trustMatchingSessionForForeignDirectory: true
+                trustMatchingSessionForForeignDirectory: true,
+                provider: "claude",
+                sessionIdentitySource: .explicit
             )
         }
 
@@ -1217,7 +1219,9 @@ final class AppModel {
                 sessionID: session.id.isEmpty ? nil : session.id,
                 directory: directory,
                 allowSessionIDAdoption: allowSessionIDAdoption,
-                trustMatchingSessionForForeignDirectory: true
+                trustMatchingSessionForForeignDirectory: true,
+                provider: "claude",
+                sessionIdentitySource: .explicit
             )
         }
 

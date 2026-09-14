@@ -314,7 +314,9 @@ final class TerminalControlService {
         sessionID: String?,
         directory: String,
         allowSessionIDAdoption: Bool = true,
-        trustMatchingSessionForForeignDirectory: Bool = false
+        trustMatchingSessionForForeignDirectory: Bool = false,
+        provider: String? = nil,
+        sessionIdentitySource: AISessionIdentitySource? = nil
     ) -> Bool {
         let trimmed = directory.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return false }
@@ -356,30 +358,42 @@ final class TerminalControlService {
                     )
                 }
 
-                if let sessionID,
-                   let live = session.lastAISessionId,
-                   live != sessionID {
-                    guard allowSessionIDAdoption else {
-                        Log.warn(
-                            "updateSessionDirectory: refusing session adoption without restorable transcript tab=\(tabID) " +
-                                "previous=\(live) new=\(sessionID) tabCwd=\(session.currentDirectory) " +
-                                "tabGitRoot=\(session.gitRootPath ?? "nil") eventCwd=\(trimmed)"
-                        )
-                        if session.currentDirectory != trimmed {
-                            Log.trace(
-                                "updateSessionDirectory: applying related cwd despite refused session adoption tab=\(tabID) " +
-                                    "session=\(sessionID) oldCwd=\(session.currentDirectory) newCwd=\(trimmed)"
+                if let sessionID {
+                    let liveSessionID = session.lastAISessionId
+                    if liveSessionID != sessionID {
+                        guard allowSessionIDAdoption else {
+                            Log.warn(
+                                "updateSessionDirectory: refusing session adoption without restorable transcript tab=\(tabID) " +
+                                    "previous=\(liveSessionID ?? "nil") new=\(sessionID) tabCwd=\(session.currentDirectory) " +
+                                    "tabGitRoot=\(session.gitRootPath ?? "nil") eventCwd=\(trimmed)"
                             )
-                            session.updateCurrentDirectory(trimmed)
+                            if session.currentDirectory != trimmed {
+                                Log.trace(
+                                    "updateSessionDirectory: applying related cwd despite refused session adoption tab=\(tabID) " +
+                                        "session=\(sessionID) oldCwd=\(session.currentDirectory) newCwd=\(trimmed)"
+                                )
+                                session.updateCurrentDirectory(trimmed)
+                            }
+                            return true
                         }
-                        return true
+                        if let liveSessionID {
+                            Log.info(
+                                "updateSessionDirectory: adopting new session for tab=\(tabID) " +
+                                    "previous=\(liveSessionID) new=\(sessionID) tabCwd=\(session.currentDirectory) " +
+                                    "tabGitRoot=\(session.gitRootPath ?? "nil") eventCwd=\(trimmed)"
+                            )
+                        }
                     }
-                    Log.info(
-                        "updateSessionDirectory: adopting new session for tab=\(tabID) " +
-                            "previous=\(live) new=\(sessionID) tabCwd=\(session.currentDirectory) " +
-                            "tabGitRoot=\(session.gitRootPath ?? "nil") eventCwd=\(trimmed)"
-                    )
-                    session.lastAISessionId = sessionID
+
+                    if let normalizedProvider = provider.flatMap(AIResumeParser.normalizeProviderName) {
+                        session.applyAgentIdentity(AgentIdentityRecord(
+                            provider: normalizedProvider,
+                            sessionId: sessionID,
+                            source: sessionIdentitySource ?? session.lastAISessionIdentitySource ?? .explicit
+                        ))
+                    } else if liveSessionID != nil, liveSessionID != sessionID {
+                        session.lastAISessionId = sessionID
+                    }
                 }
                 guard session.currentDirectory != trimmed else { return true }
                 Log.trace(

@@ -545,6 +545,32 @@ final class TerminalControlServiceTests: XCTestCase {
         XCTAssertNotEqual(session.currentDirectory, originalCwd)
     }
 
+    func testUpdateSessionDirectoryRepairsProviderFromValidatedClaudeEvent() throws {
+        let root = try makeTempDirectoryTree(name: "provider-repair", subpaths: ["subdir"])
+        defer { removeTempDirectory(root) }
+        let tab = try XCTUnwrap(overlayModel.tabs.first)
+        let session = try XCTUnwrap(tab.session)
+        session.applyAgentIdentity(AgentIdentityRecord(
+            provider: "codex",
+            sessionId: "session-live",
+            source: .observed
+        ))
+        session.updateCurrentDirectory(root)
+
+        let applied = TerminalControlService.shared.updateSessionDirectoryAcrossWindows(
+            tabID: tab.id,
+            sessionID: "session-live",
+            directory: "\(root)/subdir",
+            provider: "claude",
+            sessionIdentitySource: .explicit
+        )
+
+        XCTAssertTrue(applied)
+        XCTAssertEqual(session.lastAIProvider, "claude")
+        XCTAssertEqual(session.lastAISessionId, "session-live")
+        XCTAssertEqual(session.lastAISessionIdentitySource, .explicit)
+    }
+
     func testUpdateSessionDirectorySkipsWhenSessionIsStale() throws {
         // The motivating bug: a tab hosting Claude session 'live' has its cwd
         // oscillated by stale events arriving from a previously-resumed Claude
