@@ -4,6 +4,7 @@ import Chau7Core
 struct IncidentBreadcrumb: Codable, Equatable {
     enum Kind: String, Codable {
         case appRecovery = "app_recovery"
+        case mainThreadHang = "main_thread_hang"
         case memoryPressure = "memory_pressure"
         case proxyRequestHighWater = "proxy_request_high_water"
         case restorePayload = "restore_payload"

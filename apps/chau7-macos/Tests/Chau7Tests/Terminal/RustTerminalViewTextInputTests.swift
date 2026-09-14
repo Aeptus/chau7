@@ -6,6 +6,13 @@ import Carbon.HIToolbox
 @MainActor
 final class RustTerminalViewTextInputTests: XCTestCase {
 
+    func testTerminalDoesNotAdvertiseMacOSServicesPasteboardTypes() {
+        let view = RustTerminalView(frame: .zero)
+
+        XCTAssertNil(view.validRequestor(forSendType: .string, returnType: nil))
+        XCTAssertNil(view.validRequestor(forSendType: nil, returnType: .string))
+    }
+
     func testShouldSuppressRawTextFallbackWhenInputContextHandled() {
         let view = RustTerminalView(frame: .zero)
 

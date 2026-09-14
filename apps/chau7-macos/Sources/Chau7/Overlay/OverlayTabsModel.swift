@@ -1487,29 +1487,13 @@ final class OverlayTabsModel {
                 fallbackRoot: tab.repoGroupID
             )
             let scrollback = Self.captureScrollback(from: session, maxLines: maxLines)
-            var persistedIdentity = persistedAISessionIdentity(
+            let persistedIdentity = persistedAISessionIdentity(
                 from: session,
                 claimedSessions: claimedSessions
             )
-            if persistedIdentity.provider == "codex", persistedIdentity.sessionId == nil {
-                let claimedCodexSessionIDs = Set(claimedSessions.compactMap { claim in
-                    claim.provider == "codex" ? claim.sessionId : nil
-                })
-                _ = resolveResumeMetadata(
-                    for: session,
-                    directory: dir,
-                    outputHint: scrollback,
-                    providerHint: persistedIdentity.provider,
-                    claimedSessionIds: claimedCodexSessionIDs
-                )
-                persistedIdentity = persistedAISessionIdentity(
-                    from: session,
-                    claimedSessions: claimedSessions
-                )
-            }
             let fallbackPaneState = fallbackPaneStatesByID[paneID]
             let fallbackMetadata = fallbackPaneState.flatMap {
-                Self.resolveAIResumeMetadataFromSavedState(
+                Self.resolveAIResumeMetadataForPersistenceSnapshot(
                     paneState: $0,
                     fallbackAIProvider: fallbackTabState?.aiProvider,
                     fallbackAISessionId: fallbackTabState?.aiSessionId,
@@ -1536,11 +1520,13 @@ final class OverlayTabsModel {
                 sessionId: effectiveSessionID,
                 sessionIdSource: effectiveSessionIDSource
             )
-            let resumeDirectory = Self.resolveRestoreDirectoryForMetadata(
-                provider: effectiveProvider,
-                sessionId: effectiveSessionID,
-                savedDirectory: dir
-            )
+            let resumeDirectory: String? = if effectiveSessionID != nil,
+                                              effectiveProvider == fallbackSanitized.provider,
+                                              effectiveSessionID == fallbackSanitized.sessionId {
+                fallbackPaneState?.aiResumeDirectory
+            } else {
+                nil
+            }
             if let sessionId = effectiveSessionID, let provider = effectiveProvider {
                 claimedSessions.insert(
                     AIResumeOwnership.ClaimedSession(provider: provider, sessionId: sessionId)

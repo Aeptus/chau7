@@ -18,6 +18,7 @@ typealias RustGridProvider = () -> (
     grid: UnsafeMutableRawPointer, // Points to RustGridSnapshot
     cursor: (col: UInt16, row: UInt16),
     cursorVisible: Bool, // DECTCEM: false when app hides cursor (ESC[?25l)
+    scrollbackRows: Int,
     free: () -> Void
 )?
 
@@ -32,6 +33,17 @@ final class RustMetalDisplayCoordinator: NSObject {
         let scaleFactor: CGFloat
     }
 
+    private struct PreparedFrame {
+        let ticket: MetalFramePreparationTicket
+        let buffer: TripleBufferedTerminal
+        let rows: Int
+        let cols: Int
+        let cursor: (col: UInt16, row: UInt16)
+        let cursorVisible: Bool
+        let scrollbackRows: Int
+        let diagnosticCells: [RustCellData]?
+    }
+
     // MARK: - Components
 
     private let bridge: RustTermBridge
@@ -39,13 +51,27 @@ final class RustMetalDisplayCoordinator: NSObject {
     private let renderer: MetalTerminalRenderer
     let metalView: OptimalMetalView
 
+    /// Rust snapshot acquisition and O(rows × cols) cell conversion live on
+    /// this serial queue. AppKit's `draw(in:)` only consumes an already-
+    /// prepared triple-buffer frame and submits it to Metal.
+    private let framePreparationQueue = DispatchQueue(
+        label: "com.chau7.metal-frame-preparation",
+        qos: .userInteractive
+    )
+
     // MARK: - State
 
     private weak var terminalView: RustTerminalView?
     private var gridProvider: RustGridProvider?
     private var renderRequests = TerminalRenderRequestCoalescer()
+    private var framePreparationState = MetalFramePreparationState()
+    private var preparedFrame: PreparedFrame?
+    private var forceFullRefreshForNextPreparation = true
+    private var tripleBufferFootprintBytes = 0
     private var rows: Int
     private var cols: Int
+    private var requestedRows: Int
+    private var requestedCols: Int
     private var fontConfigured = false
     private var lastFontConfigurationSignature: FontConfigurationSignature?
     /// Set on tab switch, cleared by the first committed frame — the
@@ -67,7 +93,10 @@ final class RustMetalDisplayCoordinator: NSObject {
     var memoryFootprint: MemoryFootprint {
         MemoryFootprint(
             rendererFootprint: renderer.memoryFootprint,
-            tripleBufferBytes: tripleBuffer.estimatedFootprintBytes,
+            // Cluster capacity changes on the preparation queue. Read the
+            // main-thread cache published with the last completed frame rather
+            // than racing the producer's mutable storage.
+            tripleBufferBytes: tripleBufferFootprintBytes,
             gridCols: cols,
             gridRows: rows
         )
@@ -76,8 +105,8 @@ final class RustMetalDisplayCoordinator: NSObject {
     private var lastLigaturesEnabled: Bool?
     private var lastCursorBlinkEnabled: Bool?
     private var pendingRetryDisplay = false
+    private var pendingCircuitBreakerRetry = false
     private var retryState = TerminalRenderRetryState()
-    private var didLogFirstGridDimensionMismatch = false
 
     // MARK: - Blink Timer
 
@@ -144,21 +173,25 @@ final class RustMetalDisplayCoordinator: NSObject {
         self.renderer = renderer
         self.rows = rows
         self.cols = cols
+        self.requestedRows = rows
+        self.requestedCols = cols
         self.bridge = RustTermBridge()
         self.tripleBuffer = TripleBufferedTerminal(rows: rows, cols: cols)
         self.metalView = OptimalMetalView(frame: .zero, device: device)
 
         super.init()
 
+        self.tripleBufferFootprintBytes = tripleBuffer.estimatedFootprintBytes
+
         // A GPU-failed frame already consumed its render request; without a
         // forced full-refresh redraw the view would strand on a stale frame
         // until the next PTY change.
         renderer.onCommandBufferError = { [weak self] in
-            guard let self else { return }
-            Log.warn("RustMetalDisplayCoordinator: GPU frame failed; forcing full-refresh redraw")
-            tripleBuffer.markFullRefresh()
-            requestSyncRender()
-            scheduleDisplay()
+            DispatchQueue.main.async {
+                guard let self else { return }
+                Log.warn("RustMetalDisplayCoordinator: GPU frame failed; forcing full-refresh redraw")
+                self.requestFullFramePreparation()
+            }
         }
 
         // Dragging the window between Retina and non-Retina displays changes
@@ -168,9 +201,7 @@ final class RustMetalDisplayCoordinator: NSObject {
             guard let self else { return }
             if configureFont() {
                 Log.info("RustMetalDisplayCoordinator: backing scale changed; reconfigured font and forcing full refresh")
-                tripleBuffer.markFullRefresh()
-                requestSyncRender()
-                scheduleDisplay()
+                requestFullFramePreparation()
             }
         }
 
@@ -186,7 +217,7 @@ final class RustMetalDisplayCoordinator: NSObject {
         configureFont()
 
         // Initialize bridge with current color scheme
-        bridge.colorSchemeChanged()
+        enqueueBridgeColorSchemeUpdate()
         syncRendererFeatureSettings()
 
         syncClearColor()
@@ -246,7 +277,7 @@ final class RustMetalDisplayCoordinator: NSObject {
         if renderer.ligaturesEnabled != ligaturesEnabled {
             renderer.ligaturesEnabled = ligaturesEnabled
             if lastLigaturesEnabled != nil {
-                tripleBuffer.markFullRefresh()
+                forceFullRefreshForNextPreparation = true
                 requestSyncRender()
                 needsRedraw = true
             }
@@ -296,11 +327,219 @@ final class RustMetalDisplayCoordinator: NSObject {
         // Record activity — this pauses cursor blink for 1 second after typing
         lastActivityTime = Date()
         renderer.cursorBlinkPhase = true // Show cursor immediately on activity
-        scheduleDisplay()
     }
 
     private func requestSyncRender() {
+        guard Thread.isMainThread else {
+            DispatchQueue.main.async { [weak self] in
+                self?.requestSyncRender()
+            }
+            return
+        }
         renderRequests.requestSync()
+        requestFramePreparation()
+    }
+
+    private func requestFullFramePreparation() {
+        forceFullRefreshForNextPreparation = true
+        requestSyncRender()
+    }
+
+    /// Starts at most one off-main snapshot/conversion job. Additional sync
+    /// requests set the pure preparation state's pending bit; after the
+    /// prepared frame is presented, exactly one latest-state follow-up starts.
+    private func requestFramePreparation() {
+        guard !TerminalRenderCircuitBreaker.shared.isOpen else {
+            scheduleCircuitBreakerRetry()
+            return
+        }
+        guard let ticket = framePreparationState.request() else { return }
+        launchFramePreparation(ticket)
+    }
+
+    /// A confirmed main-thread stall keeps the render request pending but
+    /// postpones CPU/GPU paint work. Once the independent monitor observes
+    /// progress again, one coalesced retry renders the newest frame.
+    private func scheduleCircuitBreakerRetry() {
+        guard !pendingCircuitBreakerRetry else { return }
+        pendingCircuitBreakerRetry = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
+            guard let self else { return }
+            pendingCircuitBreakerRetry = false
+            guard renderRequests.drawRequest() != nil else { return }
+            if TerminalRenderCircuitBreaker.shared.isOpen {
+                scheduleCircuitBreakerRetry()
+                return
+            }
+            if renderRequests.drawRequest()?.shouldSync == true {
+                requestFramePreparation()
+            }
+            scheduleDisplay()
+        }
+    }
+
+    private func launchFramePreparation(_ ticket: MetalFramePreparationTicket) {
+        guard let provider = gridProvider,
+              let terminalView else {
+            _ = framePreparationState.complete(ticket, succeeded: false)
+            schedulePreparationRetry()
+            return
+        }
+
+        let existingBuffer = tripleBuffer
+        let renderViewID = terminalView.viewId
+        let shouldForceFullRefresh = forceFullRefreshForNextPreparation
+        forceFullRefreshForNextPreparation = false
+        let rowTints = currentRowTints(for: terminalView)
+        let captureDiagnostics = EnvVars.isEnabled(EnvVars.inputDiagnostics)
+            || EnvVars.isEnabled(EnvVars.renderRowDiagnostics)
+
+        framePreparationQueue.async { [weak self] in
+            guard let self else { return }
+            guard let snapshot = provider() else {
+                DispatchQueue.main.async { [weak self] in
+                    self?.finishFramePreparation(ticket, frame: nil)
+                }
+                return
+            }
+            defer { snapshot.free() }
+
+            let gridPtr = snapshot.grid.assumingMemoryBound(to: RustGridSnapshot.self)
+            let gridRows = Int(gridPtr.pointee.rows)
+            let gridCols = Int(gridPtr.pointee.cols)
+            guard gridRows > 0, gridCols > 0, gridPtr.pointee.cells != nil else {
+                DispatchQueue.main.async { [weak self] in
+                    self?.finishFramePreparation(ticket, frame: nil)
+                }
+                return
+            }
+
+            let targetBuffer: TripleBufferedTerminal
+            if existingBuffer.rows == gridRows, existingBuffer.cols == gridCols {
+                targetBuffer = existingBuffer
+            } else {
+                targetBuffer = TripleBufferedTerminal(rows: gridRows, cols: gridCols)
+            }
+            if shouldForceFullRefresh {
+                targetBuffer.markFullRefresh()
+            }
+
+            bridge.rowTints = rowTints
+            guard bridge.syncToTripleBuffer(
+                targetBuffer,
+                grid: gridPtr,
+                viewID: renderViewID
+            ) != nil else {
+                DispatchQueue.main.async { [weak self] in
+                    self?.finishFramePreparation(ticket, frame: nil)
+                }
+                return
+            }
+
+            let diagnosticCells: [RustCellData]?
+            if captureDiagnostics, let cells = gridPtr.pointee.cells {
+                diagnosticCells = Array(
+                    UnsafeBufferPointer(start: cells, count: gridRows * gridCols)
+                )
+            } else {
+                diagnosticCells = nil
+            }
+
+            let frame = PreparedFrame(
+                ticket: ticket,
+                buffer: targetBuffer,
+                rows: gridRows,
+                cols: gridCols,
+                cursor: snapshot.cursor,
+                cursorVisible: snapshot.cursorVisible,
+                scrollbackRows: snapshot.scrollbackRows,
+                diagnosticCells: diagnosticCells
+            )
+            DispatchQueue.main.async { [weak self] in
+                self?.finishFramePreparation(ticket, frame: frame)
+            }
+        }
+    }
+
+    private func finishFramePreparation(
+        _ ticket: MetalFramePreparationTicket,
+        frame: PreparedFrame?
+    ) {
+        let completion = framePreparationState.complete(
+            ticket,
+            succeeded: frame != nil
+        )
+        guard completion == .publish, let frame else {
+            if ticket.bindingGeneration == framePreparationState.bindingGeneration {
+                schedulePreparationRetry()
+            }
+            return
+        }
+
+        preparedFrame = frame
+        tripleBuffer = frame.buffer
+        rows = frame.rows
+        cols = frame.cols
+        tripleBufferFootprintBytes = frame.buffer.estimatedFootprintBytes
+        terminalView?.cachedScrollbackRows = frame.scrollbackRows
+        if let cells = frame.diagnosticCells {
+            cells.withUnsafeBufferPointer { buffer in
+                guard let base = buffer.baseAddress else { return }
+                terminalView?.logCursorInputRowDiagnosticIfNeeded(
+                    cells: base,
+                    cols: frame.cols,
+                    rows: frame.rows,
+                    cursor: frame.cursor,
+                    source: "metal-grid"
+                )
+            }
+        }
+        scheduleDisplay()
+    }
+
+    private func schedulePreparationRetry() {
+        let decision = retryState.recordFailure(reason: .gridUnavailable)
+        guard !pendingRetryDisplay else { return }
+        pendingRetryDisplay = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + decision.delay) { [weak self] in
+            guard let self else { return }
+            pendingRetryDisplay = false
+            guard renderRequests.drawRequest()?.shouldSync == true else { return }
+            requestFramePreparation()
+        }
+    }
+
+    private func currentRowTints(for terminalView: RustTerminalView) -> [Int: SIMD4<Float>] {
+        guard let provider = terminalView.dangerousRowTintsProvider else { return [:] }
+        let yDisp = terminalView.renderTopVisibleRow
+        let viewRows = max(rows, terminalView.renderRows)
+        let absTints = provider(yDisp, yDisp + viewRows - 1)
+        var result: [Int: SIMD4<Float>] = [:]
+        result.reserveCapacity(absTints.count)
+        for (absRow, color) in absTints {
+            let viewportRow = absRow - yDisp
+            guard viewportRow >= 0, viewportRow < viewRows else { continue }
+            let converted = color.usingColorSpace(.sRGB) ?? color
+            result[viewportRow] = SIMD4(
+                Float(converted.redComponent),
+                Float(converted.greenComponent),
+                Float(converted.blueComponent),
+                Float(converted.alphaComponent)
+            )
+        }
+        return result
+    }
+
+    private func enqueueBridgeColorSchemeUpdate() {
+        let scheme = FeatureSettings.shared.currentColorScheme
+        let foreground = scheme.foreground
+        let background = scheme.background
+        framePreparationQueue.async { [bridge] in
+            bridge.setDefaultColors(
+                foregroundHex: foreground,
+                backgroundHex: background
+            )
+        }
     }
 
     private func requestPresentRender() {
@@ -369,14 +608,10 @@ final class RustMetalDisplayCoordinator: NSObject {
     }
 
     func forceAuthoritativeRefresh(reason: String) {
-        tripleBuffer.markFullRefresh()
-        requestSyncRender()
+        requestFullFramePreparation()
         lastActivityTime = Date()
         renderer.cursorBlinkPhase = true
         Log.trace("RustMetalDisplayCoordinator: forceAuthoritativeRefresh[\(reason)]")
-        // Force an immediate draw — bypasses vsync coalescing for tab switch
-        // and authoritative reveal paths where we need content NOW.
-        immediateDrawOnMain()
     }
 
     /// Marks the Metal view for redraw at the next display refresh.
@@ -412,71 +647,21 @@ final class RustMetalDisplayCoordinator: NSObject {
         }
     }
 
-    /// Forces an immediate synchronous draw. Use sparingly — only for paths
-    /// that need content visible on this frame (tab switch, authoritative reveal).
-    private func immediateDrawOnMain() {
-        if Thread.isMainThread {
-            metalView.draw()
-        } else {
-            DispatchQueue.main.async { [weak self] in
-                self?.metalView.draw()
-            }
-        }
-    }
-
     /// Called when the terminal is resized.
     func resize(rows: Int, cols: Int) {
-        guard rows != self.rows || cols != self.cols else { return }
-        self.rows = rows
-        self.cols = cols
-        tripleBuffer = TripleBufferedTerminal(rows: rows, cols: cols)
-        tripleBuffer.markFullRefresh()
-        requestSyncRender()
+        guard rows != requestedRows || cols != requestedCols else { return }
+        requestedRows = rows
+        requestedCols = cols
+        requestFullFramePreparation()
         Log.info("RustMetalDisplayCoordinator: Resized to \(cols)x\(rows)")
         terminalView?.logRenderSurfaceReport(reason: "metal-resize", force: true)
-        scheduleDisplay()
-    }
-
-    /// Aligns the triple buffer to the Rust grid before syncing cell data.
-    /// Layout can resize the Metal surface before Rust has produced a grid at
-    /// the new PTY dimensions; preflighting avoids a partial sync into a
-    /// wrong-sized buffer and keeps profiler mismatches for true races.
-    @discardableResult
-    private func rebuildTripleBufferForGridDimensionsIfNeeded(
-        rows newRows: Int,
-        cols newCols: Int,
-        reason: String
-    ) -> Bool {
-        guard newRows > 0, newCols > 0 else { return false }
-        guard tripleBuffer.rows != newRows || tripleBuffer.cols != newCols else { return false }
-
-        let previousRows = tripleBuffer.rows
-        let previousCols = tripleBuffer.cols
-        rows = newRows
-        cols = newCols
-        tripleBuffer = TripleBufferedTerminal(rows: newRows, cols: newCols)
-
-        if !didLogFirstGridDimensionMismatch {
-            didLogFirstGridDimensionMismatch = true
-            Log.info(
-                "RustMetalDisplayCoordinator: grid dimensions diverged before sync reason=\(reason) grid=\(newCols)x\(newRows) buffer=\(previousCols)x\(previousRows); rebuilt triple buffer"
-            )
-            terminalView?.logRenderSurfaceReport(reason: "grid-dimension-mismatch", force: true)
-        } else {
-            Log.debug(
-                "RustMetalDisplayCoordinator: rebuilt triple buffer for grid dimensions reason=\(reason) grid=\(newCols)x\(newRows) buffer=\(previousCols)x\(previousRows)"
-            )
-        }
-        return true
     }
 
     /// Called when the color scheme changes.
     func colorSchemeChanged() {
-        bridge.colorSchemeChanged()
+        enqueueBridgeColorSchemeUpdate()
         syncClearColor()
-        tripleBuffer.markFullRefresh()
-        requestSyncRender()
-        scheduleDisplay()
+        requestFullFramePreparation()
     }
 
     /// Syncs the Metal clear color to the terminal color scheme background.
@@ -511,9 +696,7 @@ final class RustMetalDisplayCoordinator: NSObject {
     /// double-resize with potentially divergent row/col counts.
     func fontChanged() {
         configureFont(force: true)
-        tripleBuffer.markFullRefresh()
-        requestSyncRender()
-        scheduleDisplay()
+        requestFullFramePreparation()
     }
 
     // MARK: - Shared Renderer Tab Switch
@@ -583,6 +766,9 @@ final class RustMetalDisplayCoordinator: NSObject {
         }
 
         // 2. Swap grid provider + view reference
+        framePreparationState.resetForNewBinding()
+        preparedFrame = nil
+        forceFullRefreshForNextPreparation = true
         gridProvider = newView.makeGridProvider()
         terminalView = newView
         let handoffGeneration = handoffState.begin()
@@ -621,7 +807,9 @@ final class RustMetalDisplayCoordinator: NSObject {
         // 7. Resize triple buffer if grid dimensions changed
         let newRows = newGeometry.canResizePTY ? newGeometry.rows : newView.renderRows
         let newCols = newGeometry.canResizePTY ? newGeometry.cols : newView.renderCols
-        if newRows > 1, newCols > 1, newRows != rows || newCols != cols {
+        if newRows > 1,
+           newCols > 1,
+           newRows != requestedRows || newCols != requestedCols {
             resize(rows: newRows, cols: newCols)
         }
 
@@ -639,7 +827,7 @@ final class RustMetalDisplayCoordinator: NSObject {
 
         Log.info(
             "RustMetalDisplayCoordinator: switchToView → view \(newView.viewId) " +
-            "(\(newCols)x\(newRows)) handoff=\(handoffGeneration)"
+                "(\(newCols)x\(newRows)) handoff=\(handoffGeneration)"
         )
     }
 
@@ -747,9 +935,7 @@ final class RustMetalDisplayCoordinator: NSObject {
         let prior = renderer.setAtlasPurgeableState(.nonVolatile)
         Log.info("RustMetalDisplayCoordinator: GPU resources promoted (prior=\(prior.rawValue)) — rebuilding atlas")
         renderer.clearGlyphCache()
-        tripleBuffer.markFullRefresh()
-        requestSyncRender()
-        scheduleDisplay()
+        requestFullFramePreparation()
     }
 }
 
@@ -769,6 +955,10 @@ extension RustMetalDisplayCoordinator: MTKViewDelegate {
 
     func draw(in view: MTKView) {
         Self.drawCallCount += 1
+        guard !TerminalRenderCircuitBreaker.shared.isOpen else {
+            scheduleCircuitBreakerRetry()
+            return
+        }
         // Promote volatile GPU resources before any encode touches them —
         // a no-op flag check in the common case.
         markTexturesNonVolatileAndRebuildIfNeeded()
@@ -806,84 +996,18 @@ extension RustMetalDisplayCoordinator: MTKViewDelegate {
         let token = FeatureProfiler.shared.begin(.metalRender, metadata: shouldSync ? "sync" : "present-only")
 
         if shouldSync {
-            // 1. Get grid snapshot from Rust via the provider closure
-            guard let snapshot = gridProvider?() else {
-                let now = CFAbsoluteTimeGetCurrent()
-                if now - Self.lastWarningLogTime > Self.warningCooldown {
-                    Log.debug("RustMetalDisplayCoordinator: draw skipped — gridProvider returned nil")
-                    Self.lastWarningLogTime = now
-                }
+            // Snapshot acquisition and cell conversion happen on the serial
+            // preparation queue. A sync draw never falls back to touching Rust
+            // or copying the terminal grid on AppKit's main thread.
+            guard let frame = preparedFrame else {
                 FeatureProfiler.shared.end(token)
-                scheduleRetryDisplay(reason: .gridUnavailable)
+                requestFramePreparation()
                 return
             }
-            defer { snapshot.free() }
-
-            // 2. Update dangerous row tints for bridge-level blending
-            if let provider = terminalView?.dangerousRowTintsProvider {
-                let yDisp = terminalView?.renderTopVisibleRow ?? 0
-                let viewRows = rows
-                let absTints = provider(yDisp, yDisp + viewRows - 1)
-                var simdTints: [Int: SIMD4<Float>] = [:]
-                for (absRow, color) in absTints {
-                    let vr = absRow - yDisp
-                    if vr >= 0, vr < viewRows {
-                        let c = color.usingColorSpace(.sRGB) ?? color
-                        simdTints[vr] = SIMD4(
-                            Float(c.redComponent),
-                            Float(c.greenComponent),
-                            Float(c.blueComponent),
-                            Float(c.alphaComponent)
-                        )
-                    }
-                }
-                bridge.rowTints = simdTints
-            } else {
-                bridge.rowTints = [:]
-            }
-            // 3. Convert grid pointer to typed pointer and sync to triple buffer.
-            let gridPtr = snapshot.grid.assumingMemoryBound(to: RustGridSnapshot.self)
-            let renderViewID = terminalView?.viewId ?? 0
-            if let cursorCells = gridPtr.pointee.cells {
-                terminalView?.logCursorInputRowDiagnosticIfNeeded(
-                    cells: UnsafePointer(cursorCells),
-                    cols: Int(gridPtr.pointee.cols),
-                    rows: Int(gridPtr.pointee.rows),
-                    cursor: snapshot.cursor,
-                    source: "metal-grid"
-                )
-            }
-            rebuildTripleBufferForGridDimensionsIfNeeded(
-                rows: Int(gridPtr.pointee.rows),
-                cols: Int(gridPtr.pointee.cols),
-                reason: "pre-sync"
-            )
-            if bridge.syncToTripleBuffer(tripleBuffer, grid: gridPtr, viewID: renderViewID) == nil {
-                let gs = gridPtr.pointee
-                let newRows = Int(gs.rows)
-                let newCols = Int(gs.cols)
-                if newRows > 0, newCols > 0 {
-                    let rebuildStartedAt = CFAbsoluteTimeGetCurrent()
-                    rebuildTripleBufferForGridDimensionsIfNeeded(
-                        rows: newRows,
-                        cols: newCols,
-                        reason: "bridge-mismatch"
-                    )
-                    bridge.syncToTripleBuffer(tripleBuffer, grid: gridPtr, viewID: renderViewID)
-                    FeatureProfiler.shared.recordMainThreadStallIfNeeded(
-                        operation: "RustMetalDisplayCoordinator.rebuildTripleBuffer",
-                        startedAt: rebuildStartedAt,
-                        thresholdMs: 120,
-                        metadata: "grid=\(newCols)x\(newRows)"
-                    )
-                }
-            }
-
-            // 4. Update cursor state
-            renderer.cursorRow = Int(snapshot.cursor.row)
-            renderer.cursorCol = Int(snapshot.cursor.col)
+            renderer.cursorRow = Int(frame.cursor.row)
+            renderer.cursorCol = Int(frame.cursor.col)
             renderer.cursorStyle = FeatureSettings.shared.cursorStyle
-            renderer.cursorVisible = snapshot.cursorVisible
+            renderer.cursorVisible = frame.cursorVisible
 
             let scheme = FeatureSettings.shared.currentColorScheme
             let cursorNSColor = scheme.nsColor(for: scheme.cursor)
@@ -981,7 +1105,7 @@ extension RustMetalDisplayCoordinator: MTKViewDelegate {
                         self.metalView.alphaValue = 1
                         Log.info(
                             "RustMetalDisplayCoordinator: committed handoff=\(presentedGeneration) " +
-                            "view=\(presentedView.viewId)"
+                                "view=\(presentedView.viewId)"
                         )
                     }
 
@@ -1014,12 +1138,18 @@ extension RustMetalDisplayCoordinator: MTKViewDelegate {
 
         // 7. Advance triple buffer only when we consumed fresh synced terminal state.
         if shouldSync {
+            let consumedTicket = preparedFrame?.ticket
             tripleBuffer.presentFrame()
+            preparedFrame = nil
             // Track how dirty this frame was. AI-tab log streams routinely
             // dirty every row, defeating dirty-tracking; the storm classifier
             // notices and the next setNeedsSync caps to ~15 fps.
             let dirtyCellCount = fullRefresh ? cellCount : dirtyRows.count * cols
             updateScrollStormState(dirtyCells: dirtyCellCount, frameCells: cellCount)
+            if let consumedTicket,
+               let followUp = framePreparationState.consume(consumedTicket) {
+                launchFramePreparation(followUp)
+            }
         }
 
         // Complete only the request generation consumed by this draw. If PTY

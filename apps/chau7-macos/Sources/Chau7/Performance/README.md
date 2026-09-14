@@ -16,6 +16,7 @@ attribute phantom subsystems.
 | File | Purpose |
 |------|---------|
 | `FeatureProfiler.swift` | Records per-feature timing metrics with os.signpost integration |
+| `MainThreadHangRecoveryController.swift` | Independent heartbeat supervision, safe external hang sampling, and terminal-paint circuit breaking |
 | `MemoryPressureCoordinator.swift` | Broadcasts pressure levels to registered `MemoryReclaimable` caches |
 | `MemoryPressureResponder.swift` | OS memory-pressure source + self-imposed footprint ceiling + scrollback budget hook |
 | `MetalTerminalRenderer.swift` | GPU-accelerated terminal renderer with dynamic glyph atlas and instanced drawing |
@@ -34,6 +35,7 @@ attribute phantom subsystems.
 - `MetalTerminalRenderer` — core GPU renderer with glyph atlas, cursor, and decoration drawing
 - `TripleBufferedTerminal` — lock-free triple buffer managing terminal cell state for GPU upload
 - `RustMetalDisplayCoordinator` — orchestrator connecting Rust bridge, buffers, and Metal view
+- `MainThreadHangRecoveryController` — detects a blocked AppKit event loop without asking it synchronously and preserves app-owned PTYs while diagnostics are captured
 
 ## Dependencies
 

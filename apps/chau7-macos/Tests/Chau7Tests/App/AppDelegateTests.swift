@@ -290,6 +290,7 @@ final class AppDelegateTests: XCTestCase {
             // persistence/restore); the other window is untouched.
             XCTAssertEqual(delegate.overlayHosts.count, 1)
             XCTAssertTrue(delegate.overlayHosts.first?.window === keepWindow)
+            delegate.windowStatePersistenceQueue.sync {}
         }
     }
 
@@ -306,6 +307,7 @@ final class AppDelegateTests: XCTestCase {
             // Closing the last window leaves no hosts; the status-bar summon
             // (showOverlay) creates a fresh one on demand.
             XCTAssertTrue(delegate.overlayHosts.isEmpty)
+            delegate.windowStatePersistenceQueue.sync {}
         }
     }
 }

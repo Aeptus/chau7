@@ -71,6 +71,25 @@ extension AppDelegate {
         lastSavedWindowStatesAt = Date()
         lastSavedWindowStatesSignature = currentWindowStateSignature()
 
+        let persist = DispatchWorkItem {
+            autoreleasepool {
+                Self.persistWindowStatesOnDurabilityQueue(allWindows, reason: reason)
+            }
+        }
+        if reason == .termination {
+            // The serial queue first drains every older autosave. Do not close
+            // the app-owned PTYs until the newest captured state is durable.
+            windowStatePersistenceQueue.sync(execute: persist)
+        } else {
+            windowStatePersistenceQueue.async(execute: persist)
+        }
+    }
+
+    private static func persistWindowStatesOnDurabilityQueue(
+        _ allWindows: [[SavedTabState]],
+        reason: TabStateSaveReason
+    ) {
+
         var legacyPayloadBytes = 0
         var multiWindowPayloadBytes = 0
 
@@ -157,6 +176,22 @@ extension AppDelegate {
         Log.trace("Saved \(allWindows.count) window(s) tab state [\(reason.rawValue)]")
     }
 
+    /// Clears every restore source on the same ordered durability lane used by
+    /// saves. This prevents a queued older autosave from resurrecting a window
+    /// after the user closes it.
+    func clearPersistedWindowState(waitForCompletion: Bool = false) {
+        let clear = DispatchWorkItem {
+            autoreleasepool {
+                OverlayTabsModel.clearPersistedWindowState()
+            }
+        }
+        if waitForCompletion {
+            windowStatePersistenceQueue.sync(execute: clear)
+        } else {
+            windowStatePersistenceQueue.async(execute: clear)
+        }
+    }
+
     /// Save all non-empty overlay windows' tab states atomically to UserDefaults and disk backups.
     /// Window 0 → legacy key, windows 1..N → additional entries in the
     /// multi-window key.
@@ -168,8 +203,7 @@ extension AppDelegate {
         }
         guard !allWindows.isEmpty else {
             if reason == .termination {
-                OverlayTabsModel.clearPersistedWindowState()
-                UserDefaults.standard.synchronize()
+                clearPersistedWindowState(waitForCompletion: true)
                 Log.trace("Cleared persisted window state [\(reason.rawValue)] because no visible windows remained")
             }
             return
@@ -177,7 +211,7 @@ extension AppDelegate {
         persistWindowStates(allWindows, reason: reason)
     }
 
-    private func recordRestorePayloadBreadcrumb(
+    private static func recordRestorePayloadBreadcrumb(
         _ allWindows: [[SavedTabState]],
         reason: TabStateSaveReason,
         legacyPayloadBytes: Int,

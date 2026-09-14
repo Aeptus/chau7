@@ -347,6 +347,49 @@ final class TabStatePersistenceStaticTests: XCTestCase {
         XCTAssertEqual(directory, repoRoot.path)
     }
 
+    func testPersistenceSnapshotPrefersPaneFieldsOverStaleCommand() {
+        let paneState = SavedTerminalPaneState(
+            paneID: UUID().uuidString,
+            directory: "/tmp/aethyme",
+            scrollbackContent: nil,
+            aiResumeCommand: "claude --resume stale-claude-session",
+            aiProvider: "codex",
+            aiSessionId: "live-codex-session",
+            aiSessionIdSource: .observed
+        )
+
+        let resolved = OverlayTabsModel.resolveAIResumeMetadataForPersistenceSnapshot(
+            paneState: paneState,
+            fallbackAIProvider: nil,
+            fallbackAISessionId: nil
+        )
+
+        XCTAssertEqual(resolved?.provider, "codex")
+        XCTAssertEqual(resolved?.sessionId, "live-codex-session")
+        XCTAssertEqual(resolved?.sessionIdSource, .observed)
+    }
+
+    func testPersistenceSnapshotFallsBackToSafeCommandWithoutDiskValidation() {
+        let paneState = SavedTerminalPaneState(
+            paneID: UUID().uuidString,
+            directory: "/path/that/does/not/exist",
+            scrollbackContent: nil,
+            aiResumeCommand: "claude --resume retained-session",
+            aiProvider: nil,
+            aiSessionId: nil
+        )
+
+        let resolved = OverlayTabsModel.resolveAIResumeMetadataForPersistenceSnapshot(
+            paneState: paneState,
+            fallbackAIProvider: nil,
+            fallbackAISessionId: nil
+        )
+
+        XCTAssertEqual(resolved?.provider, "claude")
+        XCTAssertEqual(resolved?.sessionId, "retained-session")
+        XCTAssertEqual(resolved?.sessionIdSource, .explicit)
+    }
+
     func testSanitizeDropsClaudeSessionFromForeignProject() throws {
         let home = try temporaryDirectory()
         let aethymeRoot = try temporaryDirectory()

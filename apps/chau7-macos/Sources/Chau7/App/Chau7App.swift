@@ -1,6 +1,7 @@
 import SwiftUI
 import AppKit
 import Darwin
+import Chau7Core
 
 @main
 struct Chau7App: App {
@@ -66,6 +67,16 @@ struct Chau7App: App {
 
     private static func handleCLIIfNeeded() -> Bool {
         let arguments = ProcessInfo.processInfo.arguments
+        if arguments.contains("--hang-watchdog") {
+            guard let command = MainThreadHangWatchdogCommand.parse(arguments: arguments) else {
+                let message = "Invalid --hang-watchdog invocation; refusing GUI startup.\n"
+                try? FileHandle.standardError.write(contentsOf: Data(message.utf8))
+                return true
+            }
+            MainThreadHangWatchdogRunner.run(command: command)
+            return true
+        }
+
         if arguments.contains("--telemetry-backfill-latency") {
             let report = TelemetryStore.shared.backfillCompletedRunLatencySamples()
             let stdout = FileHandle.standardOutput

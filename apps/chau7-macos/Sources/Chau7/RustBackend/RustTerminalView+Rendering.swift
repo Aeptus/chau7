@@ -483,14 +483,31 @@ extension RustTerminalView {
             ) else {
                 return nil
             }
-            guard let (grid, freeGrid) = measuredGridSnapshot(rust: rust, caller: "metalGridProvider") else { return nil }
-
+            // The Metal coordinator calls this closure on its preparation
+            // queue. Serialize snapshot acquisition with non-blocking poll and
+            // drain metadata reads; the returned Rust snapshot owns an
+            // independent copy and remains valid after this lock is released.
+            terminalPollAccessLock.lock()
+            guard let (grid, freeGrid) = measuredGridSnapshot(
+                rust: rust,
+                caller: "metalGridProvider"
+            ) else {
+                terminalPollAccessLock.unlock()
+                return nil
+            }
             let cursor = rust.cursorPosition
             let cursorVisible = grid.pointee.cursor_visible != 0
-            cachedScrollbackRows = Int(grid.pointee.scrollback_rows)
+            let scrollbackRows = Int(grid.pointee.scrollback_rows)
+            terminalPollAccessLock.unlock()
             // grid is UnsafeMutablePointer<RustGridSnapshot>, cast to raw for the generic provider
             let rawPtr = UnsafeMutableRawPointer(grid)
-            return (grid: rawPtr, cursor: cursor, cursorVisible: cursorVisible, free: freeGrid)
+            return (
+                grid: rawPtr,
+                cursor: cursor,
+                cursorVisible: cursorVisible,
+                scrollbackRows: scrollbackRows,
+                free: freeGrid
+            )
         }
     }
 

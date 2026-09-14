@@ -104,6 +104,14 @@ private final class SettingsToolbarDelegate: NSObject, NSToolbarDelegate {
     private var lastOverlayLifecycleReason = ""
     /// Centralized autosave timer — saves all windows atomically every 30s
     var multiWindowAutoSaveTimer: DispatchSourceTimer?
+    /// Serial durability lane for restore bundles, indexes, and backup files.
+    /// The main thread captures AppKit-owned state; encoding and filesystem I/O
+    /// happen here. A termination save synchronizes this queue before shells
+    /// are closed, preserving ordering with every earlier autosave.
+    let windowStatePersistenceQueue = DispatchQueue(
+        label: "com.chau7.window-state-persistence",
+        qos: .utility
+    )
     var lastSavedWindowStates: [[SavedTabState]] = []
     var lastSavedWindowStatesAt: Date?
     /// Cheap structural fingerprint of the live windows at the time
@@ -146,6 +154,7 @@ private final class SettingsToolbarDelegate: NSObject, NSToolbarDelegate {
                 return
             }
         }
+        MainThreadHangRecoveryController.shared.start()
         IncidentBreadcrumbStore.shared.reportPreviousCriticalMemoryPressureIfNeeded()
         didFinishLaunching = true
         Chau7ObservabilityService.shared.recordEvent(type: "app_launched", subsystem: "app_lifecycle")
@@ -638,6 +647,7 @@ private final class SettingsToolbarDelegate: NSObject, NSToolbarDelegate {
         }
         // Cleanup status bar controller
         StatusBarController.shared.cleanup()
+        MainThreadHangRecoveryController.shared.stop()
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
@@ -1054,7 +1064,7 @@ private final class SettingsToolbarDelegate: NSObject, NSToolbarDelegate {
         // they do NOT clear on empty (only `.termination` does), so when the last
         // window is gone wipe persisted state explicitly to avoid resurrecting it.
         if overlayHosts.isEmpty {
-            OverlayTabsModel.clearPersistedWindowState()
+            clearPersistedWindowState()
         } else {
             saveAllWindowStates(reason: .manual)
         }

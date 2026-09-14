@@ -37,14 +37,14 @@
   {
     "category": "AI Integration",
     "feature": "Live AI Session Binding Validation",
-    "description": "Rejects stale provider hook mappings when a terminal tab is visibly owned by another AI provider, while retaining safe shell and same-provider rebinding",
+    "description": "Rejects conflicting live providers in exact-session, stamped-tab, and directory attribution and prevents runtime conflict invalidation from falling through into re-adoption of the same tab, while retaining safe shell and same-provider rebinding",
     "status": "Shipped",
     "differentiator": "Yes"
   },
   {
     "category": "AI Integration",
     "feature": "Crash-Safe Codex Resume Recovery",
-    "description": "Autosave resolves a known Codex pane's missing session ID from its existing rollout before publishing restore state, while restart preserves genuine provider-only evidence for provider-scoped recovery and still rejects duplicate foreign-project and all-nil identities",
+    "description": "Autosave preserves a known Codex pane's in-memory identity including provider-only evidence, while restore performs provider-scoped rollout recovery and still rejects duplicate foreign-project and all-nil identities",
     "status": "Shipped",
     "differentiator": "Yes"
   },
@@ -59,6 +59,34 @@
     "category": "API Analytics",
     "feature": "OpenAI Responses Usage Normalization",
     "description": "Codex request and response accounting recognizes Responses API input, max-output, usage, cache, reasoning, and nested SSE fields through the same normalized metadata path as Chat Completions so valid usage does not fall back to body-size estimates",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "Performance",
+    "feature": "Ordered Off-Main Session Durability",
+    "description": "Captures AppKit-owned tab state briefly on main, then encodes indexes and writes restore bundles and backups on one ordered utility queue that termination drains before app-owned shells close",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "Terminal",
+    "feature": "Terminal Services Discovery Stalls",
+    "description": "Keeps explicit copy, paste, password AutoFill, and text input while declining macOS Services pasteboard requestor discovery, avoiding synchronous ShareKit extension scans during focus and menu validation",
+    "status": "Shipped",
+    "differentiator": "No"
+  },
+  {
+    "category": "Performance",
+    "feature": "Off-Main Terminal Frame Preparation",
+    "description": "Acquires Rust grids and cursor state, converts row tints, and synchronizes terminal cells on one user-interactive serial queue while AppKit presents only generation-owned completed frames and visual bursts coalesce without dropping authoritative PTY data",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "Observability",
+    "feature": "Independent Main-Thread Hang Supervision",
+    "description": "Observes a four-Hz atomic AppKit heartbeat from both a dedicated queue and a separate watchdog process, pauses only terminal paint after two seconds, captures one external five-second sample after four seconds, and never kills the app-owned shells",
     "status": "Shipped",
     "differentiator": "Yes"
   },
@@ -4265,14 +4293,14 @@
   {
     "category": "Restore",
     "feature": "Rejected Claude Resume Persistence Guard",
-    "description": "Autosave derives fallback resume commands only from provider and session metadata that passed transcript validation, so rejected raw Claude resume commands cannot reappear across later save cycles while valid Claude and Codex restores remain canonical",
+    "description": "Restore validation removes rejected Claude identities before they enter the in-memory fallback cache; later filesystem-free autosaves rebuild only canonical commands from that sanitized identity",
     "status": "Shipped",
     "differentiator": "Yes"
   },
   {
     "category": "Restore",
     "feature": "Claude Resume Rejection Warning Deduplication",
-    "description": "Missing-transcript warnings emit once per canonical Claude session and directory identity across duplicate candidate validation and repeated autosaves while distinct rejected identities remain visible",
+    "description": "Missing-transcript warnings emit once per canonical Claude session and directory identity across duplicate restore candidates while distinct rejected identities remain visible",
     "status": "Shipped",
     "differentiator": "No"
   },
@@ -4286,14 +4314,14 @@
   {
     "category": "Restore",
     "feature": "Codex Rollout-Validated Persistence",
-    "description": "UUID-shaped Codex session identities require a matching local rollout before autosave or restore trusts them; exact persisted IDs search the complete dated archive while directory-based guesses remain recency-bounded, preserving opaque legacy IDs and isolating resolver caches by sessions root",
+    "description": "UUID-shaped Codex identities are artifact-validated at observation and restore boundaries rather than during autosave; exact persisted IDs search the complete dated archive while directory-based guesses remain recency-bounded, preserving opaque legacy IDs and isolating resolver caches by sessions root",
     "status": "Shipped",
     "differentiator": "Yes"
   },
   {
     "category": "Restore",
     "feature": "Cross-Provider Resume Identity Repair",
-    "description": "Autosave and restore correct a stale Claude or Codex provider only when its exact session artifact is absent and the alternate provider has an exact artifact for the same session ID and repository, preserving the ID while rebuilding the canonical resume command and provider-scoped ownership",
+    "description": "Restore corrects a stale Claude or Codex provider only when its exact session artifact is absent and the alternate provider has an exact artifact for the same session ID and repository; autosave retains observed in-memory identity without filesystem scans",
     "status": "Shipped",
     "differentiator": "Yes"
   },

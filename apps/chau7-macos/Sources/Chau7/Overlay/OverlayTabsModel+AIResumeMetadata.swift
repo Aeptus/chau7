@@ -364,30 +364,11 @@ extension OverlayTabsModel {
         from session: TerminalSessionModel,
         claimedSessions: Set<AIResumeOwnership.ClaimedSession> = []
     ) -> (provider: String?, sessionId: String?, sessionIdSource: AISessionIdentitySource?) {
-        var effectiveProvider = Self.normalizedAIProvider(from: session.effectiveAIProvider ?? session.lastAIProvider)
+        let effectiveProvider = Self.normalizedAIProvider(from: session.effectiveAIProvider ?? session.lastAIProvider)
         let effectiveSessionId = Self.normalizePersistedAISessionId(
             session.effectiveAISessionId,
             source: session.effectiveAISessionIdentitySource
         )
-        if let declaredProvider = effectiveProvider,
-           let effectiveSessionId,
-           let repairedProvider = Self.repairedRestoredProvider(
-               declaredProvider: declaredProvider,
-               sessionId: effectiveSessionId,
-               sessionIdSource: session.effectiveAISessionIdentitySource,
-               directory: session.currentDirectory,
-               referenceDate: Self.normalizedResumeReferenceDate(session.lastOutputDate),
-               fileManager: .default,
-               environment: ProcessInfo.processInfo.environment
-           ) {
-            RestoredResumeRejectionWarningGate.logRepairIfNeeded(
-                declaredProvider: declaredProvider,
-                resolvedProvider: repairedProvider,
-                sessionId: effectiveSessionId,
-                directory: session.currentDirectory
-            )
-            effectiveProvider = repairedProvider
-        }
         let sanitized = AIResumeOwnership.sanitizeForPersistence(
             provider: effectiveProvider,
             sessionId: effectiveSessionId,
@@ -486,6 +467,41 @@ extension OverlayTabsModel {
             let key = "\(candidate.provider):\(candidate.sessionId)"
             return seen.insert(key).inserted
         }
+    }
+
+    /// Selects already-captured resume identity for an autosave without
+    /// touching provider transcript directories. Restore-time sanitization is
+    /// still authoritative and performs the expensive exact-artifact checks
+    /// once, during launch hydration. Pane fields precede command parsing so a
+    /// stale command can never override newer in-memory identity.
+    static func resolveAIResumeMetadataForPersistenceSnapshot(
+        paneState: SavedTerminalPaneState,
+        fallbackAIProvider: String?,
+        fallbackAISessionId: String?,
+        fallbackAISessionIdSource: AISessionIdentitySource? = nil
+    ) -> (provider: String, sessionId: String, sessionIdSource: AISessionIdentitySource?)? {
+        var candidates: [RestoredResumeCandidate] = []
+        appendFieldCandidate(
+            provider: paneState.aiProvider,
+            sessionId: paneState.aiSessionId,
+            source: paneState.aiSessionIdSource,
+            to: &candidates
+        )
+        appendFieldCandidate(
+            provider: fallbackAIProvider,
+            sessionId: fallbackAISessionId,
+            source: fallbackAISessionIdSource,
+            to: &candidates
+        )
+        appendCommandCandidate(paneState.aiResumeCommand, to: &candidates)
+        appendCommandCandidate(paneState.agentLaunchCommand, to: &candidates)
+
+        guard let candidate = candidates.first else { return nil }
+        return (
+            provider: candidate.provider,
+            sessionId: candidate.sessionId,
+            sessionIdSource: candidate.sessionIdSource
+        )
     }
 
     private static func sanitizeRestoredResumeCandidate(

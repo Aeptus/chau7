@@ -67,8 +67,19 @@ final class RustTermBridge {
     /// Call this when the color scheme changes.
     func colorSchemeChanged() {
         let scheme = FeatureSettings.shared.currentColorScheme
-        defaultFg = hexToSIMD(scheme.foreground)
-        defaultBg = hexToSIMD(scheme.background)
+        setDefaultColors(
+            foregroundHex: scheme.foreground,
+            backgroundHex: scheme.background
+        )
+    }
+
+    /// Queue-safe color update used by the off-main frame preparer. Callers
+    /// capture the scheme strings on main and apply them on the same serial
+    /// queue that performs grid conversion, so bridge state never races a
+    /// conversion in progress.
+    func setDefaultColors(foregroundHex: String, backgroundHex: String) {
+        defaultFg = hexToSIMD(foregroundHex)
+        defaultBg = hexToSIMD(backgroundHex)
     }
 
     // MARK: - Sync

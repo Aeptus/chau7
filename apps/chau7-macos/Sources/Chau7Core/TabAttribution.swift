@@ -116,11 +116,25 @@ public final class TabAttribution {
         }
         guard !matches.isEmpty else { return .noMatch }
 
+        // A provider hook can remain queued after a tab has been reused by a
+        // different AI CLI.  The old exact-session path treated the stale
+        // persisted session ID as stronger than the tab's live display
+        // identity, so a Claude event could repeatedly reclaim a Codex tab.
+        // Filter by the live display identity before choosing an exact match;
+        // an authoritative session ID must never override a conflicting live
+        // provider.
+        let providerCompatibleMatches = Self.providerCompatibleRecords(
+            matches,
+            incomingProvider: target.tool,
+            incomingSessionID: sessionID
+        )
+        guard !providerCompatibleMatches.isEmpty else { return .noMatch }
+
         let toolLabels = Self.normalizedToolLabels(for: target.tool)
-        let toolPool = matches.filter { record in
+        let toolPool = providerCompatibleMatches.filter { record in
             !Self.recordToolLabels(record).isDisjoint(with: toolLabels)
         }
-        let providerPool = toolPool.isEmpty ? matches : toolPool
+        let providerPool = toolPool.isEmpty ? providerCompatibleMatches : toolPool
 
         if let unique = Self.uniqueTabID(from: providerPool) {
             return .matched(unique, signal: .sessionMatchExact)
@@ -158,7 +172,12 @@ public final class TabAttribution {
             return .refused(reason: "bindUnboundByDirectory policy requires target.tool")
         }
 
-        let toolMatches = snapshot.filter { record in
+        let providerCompatibleSnapshot = Self.providerCompatibleRecords(
+            snapshot,
+            incomingProvider: target.tool,
+            incomingSessionID: target.sessionID
+        )
+        let toolMatches = providerCompatibleSnapshot.filter { record in
             !Self.recordToolLabels(record).isDisjoint(with: toolLabels)
         }
         guard !toolMatches.isEmpty else { return .noMatch }
@@ -280,6 +299,28 @@ public final class TabAttribution {
             }
         }
         return labels
+    }
+
+    /// Removes every record belonging to a tab whose current display session
+    /// is owned by another AI provider. Records are grouped per tab because a
+    /// routing snapshot may contain both display and persisted pane records;
+    /// the display identity is the authoritative conflict signal for all of
+    /// them.
+    private static func providerCompatibleRecords(
+        _ records: [TabRouteRecord],
+        incomingProvider: String,
+        incomingSessionID: String?
+    ) -> [TabRouteRecord] {
+        Dictionary(grouping: records, by: \.tabID).values.flatMap { tabRecords -> [TabRouteRecord] in
+            if case .conflicting = AISessionBindingPolicy.classify(
+                incomingProvider: incomingProvider,
+                incomingSessionID: incomingSessionID,
+                records: tabRecords
+            ) {
+                return []
+            }
+            return tabRecords
+        }
     }
 
     private static func recordsBestMatchingDirectory(

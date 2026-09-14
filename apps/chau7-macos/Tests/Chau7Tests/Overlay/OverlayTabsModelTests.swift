@@ -1016,7 +1016,12 @@ final class OverlayTabsModelTests: XCTestCase {
         XCTAssertTrue(newTab.hasInheritedRepoGroup)
 
         newTab.session?.gitRootPath = "/tmp/chau7-group-b"
-        drainMainQueue()
+        waitForCondition {
+            guard let movedTab = self.model.tabs.first(where: { $0.id == newTab.id }) else {
+                return false
+            }
+            return movedTab.repoGroupID == nil && !movedTab.hasInheritedRepoGroup
+        }
 
         let movedTab = try XCTUnwrap(model.tabs.first(where: { $0.id == newTab.id }))
         XCTAssertNil(movedTab.repoGroupID)
@@ -1142,7 +1147,12 @@ final class OverlayTabsModelTests: XCTestCase {
         XCTAssertTrue(newTab.hasInheritedRepoGroup)
 
         newTab.session?.gitRootPath = "/tmp/chau7-group-b"
-        drainMainQueue()
+        waitForCondition {
+            guard let movedTab = self.model.tabs.first(where: { $0.id == newTab.id }) else {
+                return false
+            }
+            return movedTab.repoGroupID == nil && !movedTab.hasInheritedRepoGroup
+        }
 
         let movedTab = try XCTUnwrap(model.tabs.first(where: { $0.id == newTab.id }))
         XCTAssertNil(movedTab.repoGroupID)
@@ -2515,7 +2525,7 @@ final class OverlayTabsModelTests: XCTestCase {
         XCTAssertNil(sanitized.first?.paneStates?.first?.aiSessionIdSource)
     }
 
-    func testExportTabStatesDoesNotReintroduceRejectedClaudeFallbackAcrossAutosaves() throws {
+    func testExportTabStatesTrustsAlreadySanitizedFallbackWithoutFilesystemRescan() throws {
         let tab = try XCTUnwrap(model.tabs.first)
         let (paneID, session) = try XCTUnwrap(tab.splitController.terminalSessions.first)
         let directory = makeTemporaryRepoRoot().path
@@ -2535,20 +2545,18 @@ final class OverlayTabsModelTests: XCTestCase {
             let exported = try XCTUnwrap(model.exportTabStates().first)
             let pane = try XCTUnwrap(exported.paneStates?.first)
 
-            XCTAssertNil(exported.aiProvider, "autosave \(cycle) must keep rejected provider cleared")
-            XCTAssertNil(exported.aiSessionId, "autosave \(cycle) must keep rejected identity cleared")
-            XCTAssertNil(exported.aiSessionIdSource, "autosave \(cycle) must keep rejected source cleared")
-            XCTAssertNil(exported.aiResumeCommand, "autosave \(cycle) must not revive the raw command")
-            XCTAssertNil(pane.aiProvider, "autosave \(cycle) must keep pane provider cleared")
-            XCTAssertNil(pane.aiSessionId, "autosave \(cycle) must keep pane identity cleared")
-            XCTAssertNil(pane.aiSessionIdSource, "autosave \(cycle) must keep pane source cleared")
-            XCTAssertNil(pane.aiResumeCommand, "autosave \(cycle) must keep pane command cleared")
+            XCTAssertEqual(exported.aiProvider, "claude", "autosave \(cycle) must preserve validated in-memory provider")
+            XCTAssertEqual(exported.aiSessionId, rejectedSessionID)
+            XCTAssertEqual(exported.aiResumeCommand, "claude --resume \(rejectedSessionID)")
+            XCTAssertEqual(pane.aiProvider, "claude")
+            XCTAssertEqual(pane.aiSessionId, rejectedSessionID)
+            XCTAssertEqual(pane.aiResumeCommand, "claude --resume \(rejectedSessionID)")
 
             model.persistedRestoreFallbackStatesByTabID[tab.id] = exported
         }
     }
 
-    func testExportTabStatesRecoversCodexSessionFromRolloutWhenLiveIdentityIsMissing() throws {
+    func testExportTabStatesPreservesCodexProviderWithoutScanningRolloutWhenLiveIdentityIsMissing() throws {
         let home = try temporaryHomeDirectory()
         setenv("CHAU7_HOME_ROOT", home.path, 1)
         defer {
@@ -2580,11 +2588,11 @@ final class OverlayTabsModelTests: XCTestCase {
         let pane = try XCTUnwrap(exported.paneStates?.first)
 
         XCTAssertEqual(pane.aiProvider, "codex")
-        XCTAssertEqual(pane.aiSessionId, sessionID)
-        XCTAssertEqual(pane.aiResumeCommand, "codex resume \(sessionID)")
+        XCTAssertNil(pane.aiSessionId)
+        XCTAssertNil(pane.aiResumeCommand)
     }
 
-    func testExportTabStatesRepairsCodexProviderForExactClaudeTranscript() throws {
+    func testExportTabStatesDefersConflictingProviderRepairUntilRestoreValidation() throws {
         let home = try temporaryHomeDirectory()
         setenv("CHAU7_HOME_ROOT", home.path, 1)
         defer {
@@ -2607,10 +2615,10 @@ final class OverlayTabsModelTests: XCTestCase {
         let exported = try XCTUnwrap(model.exportTabStates().first)
         let pane = try XCTUnwrap(exported.paneStates?.first)
 
-        XCTAssertEqual(pane.aiProvider, "claude")
+        XCTAssertEqual(pane.aiProvider, "codex")
         XCTAssertEqual(pane.aiSessionId, sessionID)
-        XCTAssertEqual(pane.aiResumeCommand, "claude --resume \(sessionID)")
-        XCTAssertEqual(exported.aiProvider, "claude")
+        XCTAssertEqual(pane.aiResumeCommand, "codex resume \(sessionID)")
+        XCTAssertEqual(exported.aiProvider, "codex")
         XCTAssertEqual(exported.aiSessionId, sessionID)
     }
 

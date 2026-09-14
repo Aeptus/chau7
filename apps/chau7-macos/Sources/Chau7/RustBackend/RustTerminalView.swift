@@ -3350,17 +3350,12 @@ final class RustTerminalView: NSView {
     }
 
     override func validRequestor(forSendType sendType: NSPasteboard.PasteboardType?, returnType: NSPasteboard.PasteboardType?) -> Any? {
-        if sendType == .string {
-            if let selection = getSelection(), !selection.isEmpty {
-                Log.trace("RustTerminalView[\(viewId)]: validRequestor sendType=string → self (has selection)")
-                return self
-            }
-        }
-        if returnType == .string {
-            Log.trace("RustTerminalView[\(viewId)]: validRequestor returnType=string → self")
-            return self
-        }
-        return super.validRequestor(forSendType: sendType, returnType: returnType)
+        // Do not advertise the terminal as a macOS Services send/receive
+        // endpoint. AppKit may synchronously discover every ShareKit and
+        // Services extension before it can answer this query, which has caused
+        // multi-second UI stalls under filesystem pressure. Explicit copy,
+        // paste, context-menu, and NSTextInputClient paths remain unchanged.
+        nil
     }
 
     @objc(writeSelectionToPasteboard:types:)

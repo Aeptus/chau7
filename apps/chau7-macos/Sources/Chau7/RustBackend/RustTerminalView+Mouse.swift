@@ -858,9 +858,8 @@ extension RustTerminalView {
         window?.makeFirstResponder(self)
 
         let menu = NSMenu(title: "Terminal")
-        // Prevent macOS from injecting system Services items (e.g. "Convert text to Chinese")
-        // into our context menu. The view's validRequestor(forSendType:returnType:) advertises
-        // text capabilities, which causes the Services subsystem to add unwanted entries.
+        // Keep plug-ins out of the explicit terminal menu as a second guard in
+        // addition to validRequestor returning nil for the Services subsystem.
         menu.allowsContextMenuPlugIns = false
         let canCopy = hasSelection
         let canPaste = NSPasteboard.general.string(forType: .string) != nil
