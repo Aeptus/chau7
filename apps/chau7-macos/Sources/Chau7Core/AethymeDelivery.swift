@@ -112,13 +112,15 @@ public enum AethymePendingInputPolicy {
         guard isAtPrompt else { return nil }
 
         let combined = (existing ?? "") + input
-        let fragment: Substring
-        if let lineBreak = combined.lastIndex(where: { $0 == "\n" || $0 == "\r" }) {
-            fragment = combined[combined.index(after: lineBreak)...]
+        let scalars = combined.unicodeScalars
+        let fragment: String
+        if let lineBreak = scalars.lastIndex(where: { $0 == "\n" || $0 == "\r" }) {
+            let fragmentStart = scalars.index(after: lineBreak)
+            fragment = String(scalars[fragmentStart...])
         } else {
-            fragment = combined[...]
+            fragment = combined
         }
-        return fragment.isEmpty ? nil : String(fragment)
+        return fragment.isEmpty ? nil : fragment
     }
 }
 
