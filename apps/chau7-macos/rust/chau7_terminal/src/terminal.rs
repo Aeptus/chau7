@@ -1522,6 +1522,14 @@ impl Chau7Terminal {
             (0u32, 0u16, 0u8, 1u8)
         } else if cell.c == '\u{0}' {
             (0u32, 0u16, 1u8, 0u8)
+        } else if cell.c.is_ascii() && cell.zerowidth().is_none() {
+            // ASCII cells are by far the common case in shell output. They
+            // are already NFC and have a one-byte UTF-8 representation, so
+            // avoid constructing a scratch String and walking the Unicode
+            // normalization iterator for every cell in every dirty row.
+            let offset = clusters.len() as u32;
+            clusters.push(cell.c as u8);
+            (offset, 1u16, if is_wide { 2u8 } else { 1u8 }, 0u8)
         } else {
             cluster_scratch.clear();
             cluster_scratch.push(cell.c);
