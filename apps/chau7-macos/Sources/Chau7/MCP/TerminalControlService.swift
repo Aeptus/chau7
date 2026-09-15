@@ -2676,10 +2676,11 @@ final class TerminalControlService {
 
     /// Everything after the last newline in `text` — the un-submitted fragment.
     private func trailingFragment(of text: String) -> String {
-        guard let idx = text.lastIndex(where: { $0 == "\n" || $0 == "\r" }) else {
-            return text
-        }
-        return String(text[text.index(after: idx)...])
+        AethymePendingInputPolicy.nextFragment(
+            existing: nil,
+            input: text,
+            isAtPrompt: true
+        ) ?? ""
     }
 
     /// Run an about-to-be-submitted command line through the MCP command filter

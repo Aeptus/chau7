@@ -103,6 +103,25 @@ public enum AethymeDeliveryReadinessPolicy {
     }
 }
 
+public enum AethymePendingInputPolicy {
+    public static func nextFragment(
+        existing: String?,
+        input: String,
+        isAtPrompt: Bool
+    ) -> String? {
+        guard isAtPrompt else { return nil }
+
+        let combined = (existing ?? "") + input
+        let fragment: Substring
+        if let lineBreak = combined.lastIndex(where: { $0 == "\n" || $0 == "\r" }) {
+            fragment = combined[combined.index(after: lineBreak)...]
+        } else {
+            fragment = combined[...]
+        }
+        return fragment.isEmpty ? nil : String(fragment)
+    }
+}
+
 public struct AethymePullRequestWatch: Codable, Sendable {
     public let id: Int64
     public let status: String
