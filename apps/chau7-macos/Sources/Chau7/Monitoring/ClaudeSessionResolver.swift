@@ -13,11 +13,40 @@ enum ClaudeSessionResolver {
         let timestamp: TimeInterval
     }
 
+    /// A cheap identity for the two Claude stores consulted during restore.
+    /// Autosave asks about many sessions in one pass; using the file metadata
+    /// as the cache generation lets us retain negative lookups without ever
+    /// hiding a newly-written history entry or transcript directory.
+    private struct FileFingerprint: Equatable {
+        let size: UInt64
+        let modificationDate: Date
+        let fileNumber: UInt64?
+    }
+
+    private struct MetadataCacheContext: Equatable {
+        let history: FileFingerprint?
+        let projects: FileFingerprint?
+    }
+
+    private struct MetadataCacheEntry {
+        let context: MetadataCacheContext
+        let candidate: Candidate?
+        let negativeCacheExpiry: Date?
+    }
+
+    private struct HistoryIndex {
+        let fingerprint: FileFingerprint
+        let entries: [String: HistoryEntry]
+    }
+
     private static let cacheLock = NSLock()
-    private static var metadataCache: [String: Candidate] = [:]
-    /// Bounds the cache: keys are distinct session IDs seen for the process
-    /// lifetime, so without a cap the map only ever grows.
+    private static var metadataCache: [String: MetadataCacheEntry] = [:]
+    private static var historyIndexCache: [String: HistoryIndex] = [:]
+    /// Bounds the caches: keys are distinct session IDs and history paths seen
+    /// for the process lifetime, so without a cap the maps only ever grow.
     private static let metadataCacheMaxEntries = 256
+    private static let historyIndexCacheMaxEntries = 4
+    private static let negativeMetadataCacheTTL: TimeInterval = 2
 
     static func metadata(
         forSessionID sessionId: String,
@@ -28,19 +57,36 @@ enum ClaudeSessionResolver {
         let normalizedSessionId = sessionId.trimmingCharacters(in: .whitespacesAndNewlines)
         guard AIResumeParser.isValidSessionId(normalizedSessionId) else { return nil }
 
+        let cacheContext: MetadataCacheContext?
         if transcriptPath == nil {
+            cacheContext = metadataCacheContext(fileManager: fileManager, environment: environment)
             cacheLock.lock()
-            if let cached = metadataCache[normalizedSessionId] {
-                cacheLock.unlock()
-                return cached
-            }
+            let cached = metadataCache[normalizedSessionId]
             cacheLock.unlock()
+            if let cached,
+               cached.context == cacheContext,
+               cached.candidate != nil || cached.negativeCacheExpiry.map({ $0 > Date() }) == true {
+                // A transcript can be removed without changing either store's
+                // directory metadata. Do not let a cached positive result turn
+                // that removal into a false restore candidate.
+                if let transcriptPath = cached.candidate?.transcriptPath,
+                   !fileManager.fileExists(atPath: transcriptPath) {
+                    cacheLock.lock()
+                    metadataCache.removeValue(forKey: normalizedSessionId)
+                    cacheLock.unlock()
+                } else {
+                    return cached.candidate
+                }
+            }
+        } else {
+            cacheContext = nil
         }
 
         let historyProject = latestHistoryProject(
             forSessionID: normalizedSessionId,
             fileManager: fileManager,
-            environment: environment
+            environment: environment,
+            fingerprint: cacheContext?.history
         )
         let historyTranscript = historyProject.flatMap {
             transcriptPathForProject(
@@ -68,19 +114,22 @@ enum ClaudeSessionResolver {
             projectDirectory: historyProject,
             transcriptPath: historyTranscript ?? eventTranscript ?? scannedTranscript
         )
-        guard candidate.projectDirectory != nil || candidate.transcriptPath != nil else {
-            return nil
-        }
 
-        if transcriptPath == nil {
+        if transcriptPath == nil, let cacheContext {
             cacheLock.lock()
             if metadataCache.count >= Self.metadataCacheMaxEntries {
                 metadataCache.removeAll(keepingCapacity: true)
             }
-            metadataCache[normalizedSessionId] = candidate
+            metadataCache[normalizedSessionId] = MetadataCacheEntry(
+                context: cacheContext,
+                candidate: candidate.projectDirectory != nil || candidate.transcriptPath != nil ? candidate : nil,
+                negativeCacheExpiry: candidate.projectDirectory != nil || candidate.transcriptPath != nil
+                    ? nil
+                    : Date().addingTimeInterval(Self.negativeMetadataCacheTTL)
+            )
             cacheLock.unlock()
         }
-        return candidate
+        return candidate.projectDirectory != nil || candidate.transcriptPath != nil ? candidate : nil
     }
 
     /// Reverse lookup: given a saved working directory, list every
@@ -200,29 +249,79 @@ enum ClaudeSessionResolver {
     static func clearCache() {
         cacheLock.lock()
         metadataCache.removeAll()
+        historyIndexCache.removeAll()
         cacheLock.unlock()
+    }
+
+    private static func metadataCacheContext(
+        fileManager: FileManager,
+        environment: [String: String]
+    ) -> MetadataCacheContext {
+        let historyURL = RuntimeIsolation.urlInHome(
+            ".claude/history.jsonl",
+            fileManager: fileManager,
+            environment: environment
+        )
+        let projectsURL = RuntimeIsolation.urlInHome(
+            ".claude/projects",
+            fileManager: fileManager,
+            environment: environment
+        )
+        return MetadataCacheContext(
+            history: fileFingerprint(at: historyURL.path, fileManager: fileManager),
+            projects: fileFingerprint(at: projectsURL.path, fileManager: fileManager)
+        )
+    }
+
+    private static func fileFingerprint(
+        at path: String,
+        fileManager: FileManager
+    ) -> FileFingerprint? {
+        guard let attributes = try? fileManager.attributesOfItem(atPath: path),
+              let size = (attributes[.size] as? NSNumber)?.uint64Value,
+              let modificationDate = attributes[.modificationDate] as? Date else {
+            return nil
+        }
+        return FileFingerprint(
+            size: size,
+            modificationDate: modificationDate,
+            fileNumber: (attributes[.systemFileNumber] as? NSNumber)?.uint64Value
+        )
     }
 
     private static func latestHistoryProject(
         forSessionID sessionId: String,
         fileManager: FileManager,
-        environment: [String: String]
+        environment: [String: String],
+        fingerprint suppliedFingerprint: FileFingerprint? = nil
     ) -> String? {
         let historyURL = RuntimeIsolation.urlInHome(
             ".claude/history.jsonl",
             fileManager: fileManager,
             environment: environment
         )
+        let fingerprint = suppliedFingerprint ?? fileFingerprint(
+            at: historyURL.path,
+            fileManager: fileManager
+        )
+        if let fingerprint {
+            cacheLock.lock()
+            if let cached = historyIndexCache[historyURL.path], cached.fingerprint == fingerprint {
+                let project = cached.entries[sessionId]?.project
+                cacheLock.unlock()
+                return project
+            }
+            cacheLock.unlock()
+        }
         guard let content = try? String(contentsOf: historyURL, encoding: .utf8) else {
             return nil
         }
 
-        var latest: HistoryEntry?
+        var entries: [String: HistoryEntry] = [:]
         for line in content.split(separator: "\n", omittingEmptySubsequences: true) {
-            guard line.contains(sessionId),
-                  let data = String(line).data(using: .utf8),
-                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                  json["sessionId"] as? String == sessionId,
+            let data = Data(line.utf8)
+            guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let historySessionId = json["sessionId"] as? String,
                   let project = (json["project"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines),
                   !project.isEmpty else {
                 continue
@@ -235,11 +334,22 @@ enum ClaudeSessionResolver {
             } else {
                 timestamp = 0
             }
-            if latest.map({ timestamp >= $0.timestamp }) ?? true {
-                latest = HistoryEntry(project: project, timestamp: timestamp)
+            if entries[historySessionId].map({ timestamp >= $0.timestamp }) ?? true {
+                entries[historySessionId] = HistoryEntry(project: project, timestamp: timestamp)
             }
         }
-        return latest?.project
+        if let fingerprint {
+            cacheLock.lock()
+            if historyIndexCache.count >= Self.historyIndexCacheMaxEntries {
+                historyIndexCache.removeAll(keepingCapacity: true)
+            }
+            historyIndexCache[historyURL.path] = HistoryIndex(
+                fingerprint: fingerprint,
+                entries: entries
+            )
+            cacheLock.unlock()
+        }
+        return entries[sessionId]?.project
     }
 
     private static func transcriptPathForProject(
