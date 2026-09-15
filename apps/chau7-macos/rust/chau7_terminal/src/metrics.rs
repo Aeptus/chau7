@@ -69,8 +69,11 @@ impl AdaptivePoller {
             // Moderately active: short timeout
             1
         } else if idle_streak > 100 {
-            // Very idle: can wait longer
-            16 // ~60fps
+            // Very idle: let the PTY reader wake us when data arrives. The
+            // caller's timeout is still an upper bound, so this does not add
+            // output latency; it removes the 60 Hz wake-up tax paid by
+            // dormant terminals.
+            200
         } else if idle_streak > 10 {
             // Somewhat idle
             8
@@ -269,5 +272,30 @@ mod dirty_row_tests {
         tracker.mark_all_dirty();
         let invalidated = tracker.record_and_snapshot(3, &[], false, resized.generation);
         assert!(invalidated.full_refresh);
+    }
+}
+
+#[cfg(test)]
+mod adaptive_poller_tests {
+    use super::*;
+
+    #[test]
+    fn very_idle_terminals_use_blocking_timeout() {
+        let poller = AdaptivePoller::new();
+        for _ in 0..=100 {
+            poller.record_idle();
+        }
+
+        assert_eq!(poller.suggested_timeout_ms(), 200);
+    }
+
+    #[test]
+    fn activity_keeps_timeout_short_before_decay() {
+        let poller = AdaptivePoller::new();
+        poller.record_activity(1_024);
+
+        assert_eq!(poller.suggested_timeout_ms(), 0);
+        poller.record_idle();
+        assert_eq!(poller.suggested_timeout_ms(), 0);
     }
 }
