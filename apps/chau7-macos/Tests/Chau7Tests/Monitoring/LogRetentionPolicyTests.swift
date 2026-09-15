@@ -13,7 +13,7 @@ final class LogRetentionPolicyTests: XCTestCase {
         XCTAssertTrue(LogRetentionPolicy.archiveURLs(for: logURL, count: 0).isEmpty)
     }
 
-    func testTailStartsAtCompleteLineAndStaysWithinBudget() throws {
+    func testTailStartsAtCompleteLineAndStaysWithinBudget() {
         let data = Data("alpha\nbeta\ngamma\ndelta\n".utf8)
         let retained = LogRetentionPolicy.lineAlignedTail(of: data, maximumBytes: 14)
 

@@ -25,8 +25,8 @@ final class PerformanceTelemetryWriterTests: XCTestCase {
 
         writer.record(
             category: "terminal_work",
-            fields: ["count": 3, "bytes": 4_096],
-            at: Date(timeIntervalSince1970: 1_000)
+            fields: ["count": 3, "bytes": 4096],
+            at: Date(timeIntervalSince1970: 1000)
         )
         writer.flush()
 
@@ -37,7 +37,7 @@ final class PerformanceTelemetryWriterTests: XCTestCase {
         XCTAssertEqual(object["category"] as? String, "terminal_work")
         let metrics = try XCTUnwrap(object["metrics"] as? [String: Any])
         XCTAssertEqual(metrics["count"] as? Int, 3)
-        XCTAssertEqual(metrics["bytes"] as? Int, 4_096)
+        XCTAssertEqual(metrics["bytes"] as? Int, 4096)
     }
 
     func testRotatesWholeJSONLLinesIntoOneArchive() throws {

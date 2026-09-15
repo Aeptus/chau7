@@ -84,7 +84,7 @@ final class TerminalWorkProfilerTests: XCTestCase {
     }
 
     func testIntervalFlushWritesOneStructuredAggregateOutsideOperationalLog() throws {
-        var clock = Date(timeIntervalSince1970: 1_000)
+        var clock = Date(timeIntervalSince1970: 1000)
         let recorder = Recorder()
         let profiler = TerminalWorkProfiler(
             logInterval: 60,

@@ -131,7 +131,7 @@ final class RenderPipelineProfilerTests: XCTestCase {
     }
 
     func testIntervalFlushOmitsTabAndSessionIdentityFromPerformanceRecord() throws {
-        var clock = Date(timeIntervalSince1970: 1_000)
+        var clock = Date(timeIntervalSince1970: 1000)
         let recorder = Recorder()
         let profiler = RenderPipelineProfiler(
             flushInterval: 60,
