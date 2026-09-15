@@ -166,6 +166,17 @@ final class AethymeDeliveryTests: XCTestCase {
         )
     }
 
+    func testPendingInputTreatsCRLFAsOneSubmittedLine() {
+        XCTAssertEqual(
+            AethymePendingInputPolicy.nextFragment(
+                existing: "first",
+                input: "\r\nsecond",
+                isAtPrompt: true
+            ),
+            "second"
+        )
+    }
+
     private func snapshot(
         aiSessionID: String? = "codex-42",
         repositoryRoot: String? = "/tmp/project",
