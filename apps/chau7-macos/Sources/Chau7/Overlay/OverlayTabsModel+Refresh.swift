@@ -188,7 +188,7 @@ extension OverlayTabsModel {
             focusedSession.windowMetalCoordinator = coordinator
         } else if let coordinator = RustMetalDisplayCoordinator(
             terminalView: focusedRustView,
-            gridProvider: focusedRustView.makeGridProvider() ?? { nil }
+            gridProvider: focusedRustView.makeGridProvider() ?? { _ in nil }
         ) {
             sharedMetalCoordinator = coordinator
             coordinator.switchToView(focusedRustView, container: focusedContainer)
@@ -200,7 +200,6 @@ extension OverlayTabsModel {
 
     func requestSelectedTabAuthoritativeReveal(reason: String) {
         dispatchPrecondition(condition: .onQueue(.main))
-        discardSettledRestorePreviews(reason: reason)
 
         guard let selectedTab,
               let session = selectedPresentationSession(for: selectedTab) else {
@@ -652,16 +651,20 @@ extension OverlayTabsModel {
         isFocused: Bool,
         decisionIsInteractive: Bool
     ) -> PaneRefreshPlan {
+        let isInteractive = PaneInteractionPolicy.isInteractive(
+            isFocused: isFocused,
+            tabIsInteractive: decisionIsInteractive
+        )
         if isFocused {
             return PaneRefreshPlan(
                 role: .focused,
-                isInteractive: decisionIsInteractive,
+                isInteractive: isInteractive,
                 applyRenderPhaseReason: "selectedTabInPlaceRefresh:focused"
             )
         }
         return PaneRefreshPlan(
             role: .secondary,
-            isInteractive: false,
+            isInteractive: isInteractive,
             applyRenderPhaseReason: "selectedTabInPlaceRefresh:secondary"
         )
     }

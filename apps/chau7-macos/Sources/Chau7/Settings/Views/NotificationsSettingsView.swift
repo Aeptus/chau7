@@ -7,12 +7,13 @@ import Chau7Core
 /// Top-level notification settings view with a simplified AI-first front door.
 /// Advanced trigger plumbing stays available, but no longer leads the screen.
 struct NotificationsSettingsView: View {
+    @Environment(\.settingsHighlightedAnchorID) private var highlightedAnchorID
     var model: AppModel
     @Bindable private var settings = FeatureSettings.shared
     @State private var selectedTab: NotificationTab = .overview
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: Chau7Style.Settings.pageSectionSpacing) {
             // Sub-navigation
             Picker("", selection: $selectedTab) {
                 ForEach(NotificationTab.allCases, id: \.self) { tab in
@@ -36,6 +37,28 @@ struct NotificationsSettingsView: View {
             case .history:
                 NotificationHistoryTabView()
             }
+        }
+        .onAppear {
+            selectTabForHighlightedAnchor()
+        }
+        .onChange(of: highlightedAnchorID) {
+            selectTabForHighlightedAnchor()
+        }
+    }
+
+    private func selectTabForHighlightedAnchor() {
+        guard let highlightedAnchorID else { return }
+        switch highlightedAnchorID {
+        case "notificationTriggers", "triggerActions":
+            selectedTab = .advanced
+        case "shellThresholds", "appThresholds":
+            selectedTab = .thresholds
+        case "eventMonitoring":
+            selectedTab = .monitoring
+        case "notificationStatus", "aiToolNotifications":
+            selectedTab = .overview
+        default:
+            break
         }
     }
 }
@@ -69,11 +92,10 @@ private struct OverviewTabView: View {
     let onOpenAdvanced: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: Chau7Style.Settings.pageSectionSpacing) {
             StatusPermissionsSection(model: model)
 
-            Divider()
-                .padding(.vertical, 4)
+            SettingsDivider()
 
             AINotificationOverviewSection(onOpenAdvanced: onOpenAdvanced)
         }
@@ -86,11 +108,10 @@ private struct AdvancedTriggersTabView: View {
     var model: AppModel
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: Chau7Style.Settings.pageSectionSpacing) {
             StatusPermissionsSection(model: model)
 
-            Divider()
-                .padding(.vertical, 4)
+            SettingsDivider()
 
             UnifiedTriggerSection()
         }
@@ -107,8 +128,12 @@ private struct StatusPermissionsSection: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            SettingsSectionHeader(L("settings.notifications.status", "Status & Permissions"), icon: "bell")
+        VStack(alignment: .leading, spacing: Chau7Style.Settings.looseControlSpacing) {
+            SettingsSectionHeader(
+                L("settings.notifications.status", "Status & Permissions"),
+                icon: "bell",
+                anchorID: "notificationStatus"
+            )
 
             SettingsInfoRow(
                 label: L("settings.notifications.status.label", "Status"),
@@ -176,8 +201,12 @@ private struct AINotificationOverviewSection: View {
     private let aiGroup = NotificationTriggerCatalog.aiCodingGroup
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            SettingsSectionHeader(L("settings.notifications.aiOverview", "AI Notification Essentials"), icon: "brain")
+        VStack(alignment: .leading, spacing: Chau7Style.Settings.looseControlSpacing) {
+            SettingsSectionHeader(
+                L("settings.notifications.aiOverview", "AI Notification Essentials"),
+                icon: "brain",
+                anchorID: "aiToolNotifications"
+            )
 
             Text(L("settings.notifications.aiOverview.description", "Choose the only things AI tools should interrupt you for by default."))
                 .font(.caption)
@@ -275,8 +304,8 @@ private struct AINotificationCard: View {
     let overrideCount: Int
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .top, spacing: 12) {
+        VStack(alignment: .leading, spacing: Chau7Style.Settings.inlineControlSpacing) {
+            HStack(alignment: .top, spacing: Chau7Style.Settings.looseControlSpacing) {
                 Toggle("", isOn: $isEnabled)
                     .toggleStyle(.switch)
                     .labelsHidden()
@@ -302,7 +331,7 @@ private struct AINotificationCard: View {
                 }
             }
 
-            HStack(spacing: 18) {
+            HStack(spacing: Chau7Style.Settings.looseControlSpacing) {
                 overviewToggle(
                     label: L("settings.notifications.primary.banner", "Banner"),
                     value: preference.showNotification,
@@ -347,7 +376,7 @@ private struct AINotificationCard: View {
                 .padding(.leading, 40)
             }
         }
-        .padding(14)
+        .padding(Chau7Style.Settings.cardPadding)
         .background(Color.primary.opacity(0.035))
         .cornerRadius(10)
     }
@@ -508,8 +537,11 @@ private struct UnifiedTriggerSection: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            SettingsSectionHeader(L("settings.notifications.triggers", "Notification Triggers"), icon: "line.3.horizontal.decrease.circle")
+        VStack(alignment: .leading, spacing: Chau7Style.Settings.looseControlSpacing) {
+            SettingsSectionHeader(
+                L("settings.notifications.triggers", "Notification Triggers"),
+                icon: "line.3.horizontal.decrease.circle"
+            )
 
             Text(L("settings.notifications.triggersDescription", "Enable triggers and configure what happens when they fire:"))
                 .font(.caption)
@@ -615,7 +647,7 @@ private struct UnifiedCategorySection: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             // Category header
-            HStack(spacing: 8) {
+            HStack(spacing: Chau7Style.Settings.inlineControlSpacing) {
                 Button(action: onToggleExpand) {
                     HStack(spacing: 6) {
                         Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
@@ -671,7 +703,7 @@ private struct UnifiedCategorySection: View {
 
             // Expanded content
             if isExpanded {
-                VStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .leading, spacing: Chau7Style.Settings.inlineControlSpacing) {
                     if enabledCount == 0 {
                         SettingsHint(
                             icon: "bell.slash",
@@ -680,7 +712,7 @@ private struct UnifiedCategorySection: View {
                                 "No triggers enabled in this category."
                             )
                         )
-                        .padding(.leading, 16)
+                        .padding(.leading, Chau7Style.Settings.nestedIndent)
                         .padding(.top, 4)
                     }
 
@@ -732,8 +764,8 @@ private struct UnifiedCategorySection: View {
                         }
                     }
                 }
-                .padding(.leading, 16)
-                .padding(.top, 8)
+                .padding(.leading, Chau7Style.Settings.nestedIndent)
+                .padding(.top, Chau7Style.Settings.separatorVerticalPadding)
             }
         }
     }
@@ -802,7 +834,7 @@ private struct UnifiedSourceSection: View {
                         )
                     }
                 }
-                .padding(.leading, 16)
+                .padding(.leading, Chau7Style.Settings.nestedIndent)
             }
         }
     }
@@ -832,7 +864,7 @@ private struct UnifiedTriggerRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             // Header row
-            HStack(spacing: 8) {
+            HStack(spacing: Chau7Style.Settings.inlineControlSpacing) {
                 // Enable/disable toggle
                 Toggle("", isOn: $isOn)
                     .toggleStyle(.checkbox)
@@ -899,7 +931,7 @@ private struct UnifiedTriggerRow: View {
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
-                        .padding(.horizontal, 28)
+                        .padding(.horizontal, Chau7Style.Settings.deepNestedIndent)
                         .padding(.vertical, 4)
                     } else {
                         ForEach(actions) { action in
@@ -922,11 +954,11 @@ private struct UnifiedTriggerRow: View {
                         .foregroundColor(.accentColor)
                     }
                     .buttonStyle(.plain)
-                    .padding(.horizontal, 28)
+                    .padding(.horizontal, Chau7Style.Settings.deepNestedIndent)
                     .padding(.bottom, 4)
                 }
                 .padding(.top, 4)
-                .padding(.leading, 20)
+                .padding(.leading, Chau7Style.Settings.nestedIndent)
                 .background(Color.secondary.opacity(0.03))
             }
         }
@@ -1015,7 +1047,7 @@ private struct GroupTriggerRow: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 8) {
+            HStack(spacing: Chau7Style.Settings.inlineControlSpacing) {
                 Toggle("", isOn: Binding(
                     get: { isOn },
                     set: { newValue in
@@ -1093,7 +1125,7 @@ private struct GroupTriggerRow: View {
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
-                        .padding(.horizontal, 28)
+                        .padding(.horizontal, Chau7Style.Settings.deepNestedIndent)
                         .padding(.vertical, 4)
                     } else {
                         ForEach(actions) { action in
@@ -1115,11 +1147,11 @@ private struct GroupTriggerRow: View {
                         .foregroundColor(.accentColor)
                     }
                     .buttonStyle(.plain)
-                    .padding(.horizontal, 28)
+                    .padding(.horizontal, Chau7Style.Settings.deepNestedIndent)
                     .padding(.bottom, 4)
                 }
                 .padding(.top, 4)
-                .padding(.leading, 20)
+                .padding(.leading, Chau7Style.Settings.nestedIndent)
                 .background(Color.secondary.opacity(0.03))
             }
         }
@@ -1182,7 +1214,7 @@ private struct PerSourceOverridesSection: View {
                         onToggleAction: onToggleAction
                     )
                 }
-                .padding(.leading, 16)
+                .padding(.leading, Chau7Style.Settings.nestedIndent)
             }
         }
     }
@@ -1251,7 +1283,7 @@ private struct OverrideSourceSection: View {
                         )
                     }
                 }
-                .padding(.leading, 16)
+                .padding(.leading, Chau7Style.Settings.nestedIndent)
             }
         }
     }
@@ -1281,7 +1313,7 @@ private struct OverrideTriggerRow: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 8) {
+            HStack(spacing: Chau7Style.Settings.inlineControlSpacing) {
                 Toggle("", isOn: $isOn)
                     .toggleStyle(.checkbox)
                     .labelsHidden()
@@ -1362,7 +1394,7 @@ private struct OverrideTriggerRow: View {
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
-                        .padding(.horizontal, 28)
+                        .padding(.horizontal, Chau7Style.Settings.deepNestedIndent)
                         .padding(.vertical, 4)
                     } else {
                         ForEach(actions) { action in
@@ -1384,11 +1416,11 @@ private struct OverrideTriggerRow: View {
                         .foregroundColor(.accentColor)
                     }
                     .buttonStyle(.plain)
-                    .padding(.horizontal, 28)
+                    .padding(.horizontal, Chau7Style.Settings.deepNestedIndent)
                     .padding(.bottom, 4)
                 }
                 .padding(.top, 4)
-                .padding(.leading, 20)
+                .padding(.leading, Chau7Style.Settings.nestedIndent)
                 .background(Color.secondary.opacity(0.03))
             }
         }
@@ -1401,7 +1433,7 @@ private struct EventDetectionThresholdsSection: View {
     @Bindable private var settings = FeatureSettings.shared
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: Chau7Style.Settings.looseControlSpacing) {
             SettingsSectionHeader(L("settings.notifications.thresholds", "Detection Thresholds"), icon: "slider.horizontal.3")
 
             Text(L("settings.notifications.thresholds.description", "Configure when shell and app events should trigger notifications."))
@@ -1418,8 +1450,9 @@ private struct EventDetectionThresholdsSection: View {
                         .font(.subheadline)
                         .fontWeight(.medium)
                 }
+                .settingsSearchAnchor("shellThresholds")
 
-                HStack(spacing: 16) {
+                HStack(spacing: Chau7Style.Settings.looseControlSpacing) {
                     VStack(alignment: .leading, spacing: 4) {
                         Text(L("settings.notifications.longRunningThreshold", "Long-Running (seconds)"))
                             .font(.caption)
@@ -1444,11 +1477,10 @@ private struct EventDetectionThresholdsSection: View {
                     )
                     .font(.caption)
                 }
-                .padding(.leading, 24)
+                .padding(.leading, Chau7Style.Settings.nestedIndent)
             }
 
-            Divider()
-                .padding(.vertical, 4)
+            SettingsDivider()
 
             // App Event Settings
             Group {
@@ -1459,8 +1491,9 @@ private struct EventDetectionThresholdsSection: View {
                         .font(.subheadline)
                         .fontWeight(.medium)
                 }
+                .settingsSearchAnchor("appThresholds")
 
-                HStack(spacing: 16) {
+                HStack(spacing: Chau7Style.Settings.looseControlSpacing) {
                     VStack(alignment: .leading, spacing: 4) {
                         Text(L("settings.notifications.inactivityThreshold", "Inactivity (minutes)"))
                             .font(.caption)
@@ -1491,10 +1524,10 @@ private struct EventDetectionThresholdsSection: View {
                             .foregroundStyle(.tertiary)
                     }
                 }
-                .padding(.leading, 24)
+                .padding(.leading, Chau7Style.Settings.nestedIndent)
 
                 // Tab notifications (can be noisy)
-                HStack(spacing: 16) {
+                HStack(spacing: Chau7Style.Settings.looseControlSpacing) {
                     Toggle(
                         L("settings.notifications.notifyTabOpen", "Tab Open"),
                         isOn: $settings.appEventConfig.nested(\.notifyOnTabOpen)
@@ -1507,7 +1540,7 @@ private struct EventDetectionThresholdsSection: View {
                     )
                     .font(.caption)
                 }
-                .padding(.leading, 24)
+                .padding(.leading, Chau7Style.Settings.nestedIndent)
             }
         }
     }
@@ -1519,7 +1552,7 @@ private struct EventMonitoringSection: View {
     @Bindable var model: AppModel
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: Chau7Style.Settings.looseControlSpacing) {
             SettingsSectionHeader(L("settings.notifications.eventMonitoring", "Event Monitoring"), icon: "waveform.path.ecg")
 
             SettingsToggle(
@@ -1559,12 +1592,11 @@ private struct BehaviorTabView: View {
     @Bindable private var settings = FeatureSettings.shared
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: Chau7Style.Settings.pageSectionSpacing) {
             // Rate Limiting
             RateLimitingSection()
 
-            Divider()
-                .padding(.vertical, 4)
+            SettingsDivider()
 
             // Default Conditions
             DefaultConditionsSection()
@@ -1578,7 +1610,7 @@ private struct RateLimitingSection: View {
     @Bindable private var settings = FeatureSettings.shared
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: Chau7Style.Settings.looseControlSpacing) {
             SettingsSectionHeader(L("settings.notifications.rateLimiting", "Rate Limiting"), icon: "gauge.with.dots.needle.33percent")
 
             Text(L("settings.notifications.rateLimiting.description", "Prevent notification spam from burst events. Applies per-trigger independently."))
@@ -1586,7 +1618,7 @@ private struct RateLimitingSection: View {
                 .foregroundStyle(.secondary)
                 .padding(.bottom, 4)
 
-            HStack(spacing: 24) {
+            HStack(spacing: Chau7Style.Settings.looseControlSpacing) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(L("settings.notifications.maxPerMinute", "Max per minute"))
                         .font(.caption)
@@ -1641,7 +1673,7 @@ private struct RateLimitingSection: View {
                         .foregroundStyle(.tertiary)
                 }
             }
-            .padding(.leading, 8)
+            .padding(.leading, Chau7Style.Settings.inlineControlSpacing)
         }
     }
 }
@@ -1659,7 +1691,7 @@ private struct DefaultConditionsSection: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: Chau7Style.Settings.looseControlSpacing) {
             SettingsSectionHeader(L("settings.notifications.conditions", "Trigger Conditions"), icon: "checklist")
 
             Text(L("settings.notifications.conditions.description", "Control when enabled triggers are allowed to fire. Conditions are evaluated before rate limiting."))
@@ -1783,7 +1815,7 @@ private struct ConditionRow: View {
                         .buttonStyle(.plain)
                     }
                 }
-                .padding(.leading, 24)
+                .padding(.leading, Chau7Style.Settings.nestedIndent)
                 .padding(.vertical, 4)
                 .padding(.bottom, 4)
             }
@@ -1807,7 +1839,7 @@ private struct NotificationHistoryTabView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: Chau7Style.Settings.looseControlSpacing) {
             SettingsSectionHeader(L("settings.notifications.history", "Notification History"), icon: "clock.arrow.circlepath")
 
             HStack {
@@ -1882,7 +1914,7 @@ private struct NotificationHistoryEntryRow: View {
     }
 
     var body: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: Chau7Style.Settings.inlineControlSpacing) {
             Text(timeString)
                 .font(.caption.monospaced())
                 .foregroundStyle(.secondary)

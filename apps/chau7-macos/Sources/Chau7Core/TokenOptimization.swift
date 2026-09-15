@@ -93,6 +93,36 @@ public func decisionReason(
     }
 }
 
+// MARK: - Real Binary Resolution
+
+/// Resolves the real binary for a shadowed command by scanning ordered PATH
+/// entries, skipping the CTO wrapper directory (which resolves back to the
+/// wrapper and would recurse). Pure — no filesystem or process environment —
+/// so the resolution order is unit-testable.
+///
+/// `pathEntries` MUST be the **shell's** launch PATH (the order a terminal
+/// sees), not the GUI app's minimal `PATH`. Resolving against the app PATH
+/// hardcoded the wrong binary into wrappers — e.g. `/usr/bin/python3` (Xcode)
+/// instead of the shell's Homebrew `python3` — so a wrapped command execed a
+/// different interpreter than the user's shell would. `isExecutable` probes an
+/// absolute candidate path (`FileManager.isExecutableFile` in production).
+/// Returns nil when no entry outside the wrapper dir holds the command, which
+/// is the signal to NOT install a wrapper (shadowing a name with no target
+/// fails with a branded exit 127).
+public func ctoResolveRealBinary(
+    command: String,
+    pathEntries: [String],
+    wrapperDirectory: String,
+    isExecutable: (String) -> Bool
+) -> String? {
+    for dir in pathEntries {
+        if dir.isEmpty || dir == wrapperDirectory { continue }
+        let candidate = "\(dir)/\(command)"
+        if isExecutable(candidate) { return candidate }
+    }
+    return nil
+}
+
 // MARK: - Decision Reason
 
 /// Runtime telemetry **resolution** reason for token-optimization decisions —
@@ -804,6 +834,8 @@ public struct TabTokenConsumption: Identifiable, Sendable {
     public let missingCostRunCount: Int
     public let totalInputTokens: Int
     public let totalCachedInputTokens: Int
+    public let totalCacheCreationInputTokens: Int
+    public let totalCacheReadInputTokens: Int
     public let totalOutputTokens: Int
     public let totalReasoningOutputTokens: Int
     public let totalCostUSD: Double
@@ -822,6 +854,8 @@ public struct TabTokenConsumption: Identifiable, Sendable {
         missingCostRunCount: Int = 0,
         totalInputTokens: Int,
         totalCachedInputTokens: Int = 0,
+        totalCacheCreationInputTokens: Int = 0,
+        totalCacheReadInputTokens: Int = 0,
         totalOutputTokens: Int,
         totalReasoningOutputTokens: Int = 0,
         totalCostUSD: Double,
@@ -834,6 +868,8 @@ public struct TabTokenConsumption: Identifiable, Sendable {
         self.missingCostRunCount = missingCostRunCount
         self.totalInputTokens = totalInputTokens
         self.totalCachedInputTokens = totalCachedInputTokens
+        self.totalCacheCreationInputTokens = totalCacheCreationInputTokens
+        self.totalCacheReadInputTokens = totalCacheReadInputTokens
         self.totalOutputTokens = totalOutputTokens
         self.totalReasoningOutputTokens = totalReasoningOutputTokens
         self.totalCostUSD = totalCostUSD
@@ -842,7 +878,15 @@ public struct TabTokenConsumption: Identifiable, Sendable {
     }
 
     public var totalBillableTokens: Int {
-        totalInputTokens + totalCachedInputTokens + totalOutputTokens + totalReasoningOutputTokens
+        totalInputTokens + effectiveCachedInputTokens + totalOutputTokens + totalReasoningOutputTokens
+    }
+
+    public var effectiveCachedInputTokens: Int {
+        max(totalCachedInputTokens, totalCacheCreationInputTokens + totalCacheReadInputTokens)
+    }
+
+    public var totalUncategorizedCachedInputTokens: Int {
+        max(0, totalCachedInputTokens - (totalCacheCreationInputTokens + totalCacheReadInputTokens))
     }
 }
 
@@ -854,6 +898,8 @@ public struct ProviderConsumptionStats: Identifiable, Sendable {
     public let missingCostRunCount: Int
     public let totalInputTokens: Int
     public let totalCachedInputTokens: Int
+    public let totalCacheCreationInputTokens: Int
+    public let totalCacheReadInputTokens: Int
     public let totalOutputTokens: Int
     public let totalReasoningOutputTokens: Int
     public let totalCostUSD: Double
@@ -868,6 +914,8 @@ public struct ProviderConsumptionStats: Identifiable, Sendable {
         missingCostRunCount: Int = 0,
         totalInputTokens: Int,
         totalCachedInputTokens: Int = 0,
+        totalCacheCreationInputTokens: Int = 0,
+        totalCacheReadInputTokens: Int = 0,
         totalOutputTokens: Int,
         totalReasoningOutputTokens: Int = 0,
         totalCostUSD: Double
@@ -878,13 +926,23 @@ public struct ProviderConsumptionStats: Identifiable, Sendable {
         self.missingCostRunCount = missingCostRunCount
         self.totalInputTokens = totalInputTokens
         self.totalCachedInputTokens = totalCachedInputTokens
+        self.totalCacheCreationInputTokens = totalCacheCreationInputTokens
+        self.totalCacheReadInputTokens = totalCacheReadInputTokens
         self.totalOutputTokens = totalOutputTokens
         self.totalReasoningOutputTokens = totalReasoningOutputTokens
         self.totalCostUSD = totalCostUSD
     }
 
     public var totalBillableTokens: Int {
-        totalInputTokens + totalCachedInputTokens + totalOutputTokens + totalReasoningOutputTokens
+        totalInputTokens + effectiveCachedInputTokens + totalOutputTokens + totalReasoningOutputTokens
+    }
+
+    public var effectiveCachedInputTokens: Int {
+        max(totalCachedInputTokens, totalCacheCreationInputTokens + totalCacheReadInputTokens)
+    }
+
+    public var totalUncategorizedCachedInputTokens: Int {
+        max(0, totalCachedInputTokens - (totalCacheCreationInputTokens + totalCacheReadInputTokens))
     }
 }
 
@@ -892,6 +950,25 @@ public struct ProviderConsumptionStats: Identifiable, Sendable {
 
 /// Maps shell command names to their optimizer subcommand equivalents.
 /// Commands in this map are routed through `chau7-optim` when active.
+///
+/// ## Scope: read-only inspection commands only
+///
+/// CTO deliberately shadows **only** commands whose job is to *read and
+/// report* — inspecting files, trees, and diffs — where summarizing the
+/// output is safe and idempotent.
+///
+/// Interpreters, runtimes, package managers, and build tools
+/// (`python`, `python3`, `pip`, `pytest`, `go`, `swift`, `cargo`, `npm`,
+/// `npx`, `pnpm`, `vitest`, `tsc`, `next`, `prisma`, `playwright`, `ruff`,
+/// `prettier`, `lint`, `format`, `docker`, `kubectl`, `gh`, `git`, `curl`,
+/// `wget`, `golangci-lint`) are intentionally **not** shadowed. Wrapping a
+/// command you *execute* means CTO owns its interpreter selection,
+/// environment, stdin, streaming, and exit codes — maximum correctness risk
+/// for minimum predictable token savings. Those wrappers were the source of
+/// the `python`/venv/exit-code failures agents hit; keeping the surface to
+/// read-only commands removes that entire class of bug.
+///
+/// Do not re-add execution commands here without revisiting that trade-off.
 public let ctoRewriteMap: [String: String] = [
     "cat": "read",
     "ls": "ls",
@@ -899,46 +976,104 @@ public let ctoRewriteMap: [String: String] = [
     "tree": "tree",
     "grep": "grep",
     "rg": "rg",
-    "git": "git",
     "diff": "diff",
-    "cargo": "cargo",
-    "curl": "curl",
-    "docker": "docker",
-    "kubectl": "kubectl",
-    "gh": "gh",
-    "pnpm": "pnpm",
-    "wget": "wget",
-    "npm": "npm",
-    "npx": "npx",
-    "vitest": "vitest",
-    "prisma": "prisma",
-    "tsc": "tsc",
-    "next": "next",
-    "lint": "lint",
-    "prettier": "prettier",
-    "format": "format",
-    "playwright": "playwright",
-    "ruff": "ruff",
-    "pytest": "pytest",
-    "pip": "pip",
-    "go": "go",
-    "golangci-lint": "golangci-lint",
-    "swift": "swift",
-    "python": "python",
-    "python3": "python",
     "sed": "read" // sed -n 'range p' file → chau7-optim read
 ]
 
-/// Commands that are exec-only (no optimizer subcommand mapping).
-public let execOnlyCommands: Set = ["head", "tail", "wc"]
+/// Commands that get a wrapper but have no optimizer subcommand mapping —
+/// the wrapper simply `exec`s the real binary when CTO is active.
+///
+/// ## Currently empty — and that's deliberate.
+///
+/// `head`, `tail`, and `wc` used to live here. Their wrappers did nothing
+/// useful: with no entry in `ctoRewriteMap`, the generated script `exec`s the
+/// real binary on *both* the inactive fast path and the active path, so the
+/// only effect of shadowing them was an extra `bash` fork+parse on every
+/// invocation for zero token savings (`head`/`tail` have no `chau7-optim`
+/// subcommand at all; `wc`'s output — a few integers — is already minimal, and
+/// it's overwhelmingly used as a pipe filter where the optimizer is bypassed
+/// anyway). They were removed from the wrapper surface so those names resolve
+/// straight to the real binary via PATH with no `cto_bin` shadow.
+///
+/// Keep this as a real (empty) extension point: a command that genuinely needs
+/// a wrapper but has no optimizer route can be added back here without
+/// re-plumbing `supportedCommands` or `checkInstallation`.
+public let execOnlyCommands: Set<String> = []
+
+// MARK: - Executable Commands (shadow a command that runs a real subprocess)
+
+/// How a wrapped **executable** command decides which invocations are safe to
+/// route through the optimizer. Executables (`git`/`cargo`/`swift`) differ from
+/// the read-only commands in `ctoRewriteMap`: the optimizer can't reimplement
+/// them, it *runs* the real command and filters its output — so mutating or
+/// interactive invocations must never reach it.
+public enum CTOExecGate: Sendable, Equatable {
+    /// Route to the optimizer only when the command's subcommand (the first
+    /// non-flag argument, e.g. `status` in `git status`) is in this set. Every
+    /// other subcommand — mutations (`git commit`), interactive, or unknown —
+    /// is exec'd directly, exactly once. This is what makes shadowing a
+    /// mutation-capable tool safe.
+    case subcommandAllowlist(Set<String>)
+    /// `curl`-specific: optimize only when no mutating HTTP method is present
+    /// (no `-X POST/PUT/DELETE/PATCH`, no `-d`/`--data`); anything that could
+    /// mutate server state is passed straight through. Guards against a
+    /// double-POST if the optimizer were ever re-run.
+    case curlSafeMethodsOnly
+}
+
+/// Policy for shadowing an executable command. Beyond the gate, executable
+/// wrappers always: resolve the real binary at **runtime** off the live PATH
+/// (honoring venv/nvm/rustup — the fix for the historical `python`/venv
+/// failures, never a path baked at setup), and pass through interactive
+/// invocations (`[ -t 0 ]`) so the optimizer's buffered capture can't swallow a
+/// prompt.
+public struct CTOExecPolicy: Sendable, Equatable {
+    public let gate: CTOExecGate
+    public init(gate: CTOExecGate) {
+        self.gate = gate
+    }
+}
+
+/// Executable commands CTO shadows, each gated so only idempotent, read-only
+/// invocations reach the optimizer. This is the deliberate, hardened re-entry
+/// of the high-token-savings tail (`cargo test`/`swift test`/`git diff`) that
+/// was cut when naive whole-command wrapping caused the `python`/venv/exit-code
+/// failures — see `ctoRewriteMap`'s note. Safety here rests on three
+/// guarantees baked into `generateExecutableWrapperScript`: runtime binary
+/// resolution, per-subcommand allowlisting, and single execution.
+///
+/// Rolled out in tiers. This is Tier 1 — deterministic, globally-resolved
+/// toolchains, and the token-heavy tail (`cargo test`, `swift test`, `curl`)
+/// the ROI analysis found. Every listed subcommand is idempotent (a re-run on
+/// optimizer fall-through is at worst wasteful, never a mutation).
+public let executableCommands: [String: CTOExecPolicy] = [
+    "git": CTOExecPolicy(gate: .subcommandAllowlist(["status", "diff", "log", "show"])),
+    "cargo": CTOExecPolicy(gate: .subcommandAllowlist(["build", "test", "check", "clippy", "nextest"])),
+    "swift": CTOExecPolicy(gate: .subcommandAllowlist(["build", "test"])),
+    "go": CTOExecPolicy(gate: .subcommandAllowlist(["build", "test", "vet"])),
+    "curl": CTOExecPolicy(gate: .curlSafeMethodsOnly)
+]
+
+/// Tier 2 — executables deliberately **not** wrapped yet. These resolve
+/// context-dependently (venv `python`, nvm `node`, project-local `.bin`), so
+/// even runtime PATH resolution can pick the wrong target; they are the exact
+/// class that broke before. Held until Tier 1 proves the runtime-resolution
+/// model in the field. Listed for intent, not installed.
+public let deferredExecutableCommands: Set = [
+    "python", "python3", "node", "npm", "npx", "pip", "pytest"
+]
 
 /// Commands that are commonly used as pipe filters (`cmd | grep pattern`).
 /// When stdin is piped (not a terminal), these wrappers skip the optimizer
 /// and exec the real binary directly — the output IS the data stream.
 public let pipeFilterCommands: Set = ["grep", "rg", "diff", "sed"]
 
-/// All commands that have wrapper scripts (optimizer-routed + exec-only).
-public let supportedCommands: [String] = (Array(ctoRewriteMap.keys) + Array(execOnlyCommands)).sorted()
+/// All commands that have wrapper scripts: read-only optimizer-routed commands
+/// (`ctoRewriteMap`), exec-only names (`execOnlyCommands`, currently none), and
+/// shadowed executables (`executableCommands`). Wrappers for commands absent
+/// from this list are removed by `pruneStaleWrappers()` on the next `setup()`.
+public let supportedCommands: [String] =
+    (Array(ctoRewriteMap.keys) + Array(execOnlyCommands) + Array(executableCommands.keys)).sorted()
 
 // MARK: - Wrapper Health
 

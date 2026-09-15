@@ -226,6 +226,10 @@ public enum ProviderLatencyAnalytics {
     public static func canonicalLatencySamples(
         _ samples: [ProviderLatencySample]
     ) -> [ProviderLatencySample] {
+        var inputOrderByID: [String: Int] = [:]
+        for (index, sample) in samples.enumerated() where inputOrderByID[sample.id] == nil {
+            inputOrderByID[sample.id] = index
+        }
         var preferredByRunKey: [String: ProviderLatencySample] = [:]
         var passthrough: [ProviderLatencySample] = []
 
@@ -273,7 +277,7 @@ public enum ProviderLatencyAnalytics {
             if lhs.timestamp != rhs.timestamp {
                 return lhs.timestamp < rhs.timestamp
             }
-            return lhs.id < rhs.id
+            return (inputOrderByID[lhs.id] ?? .max) < (inputOrderByID[rhs.id] ?? .max)
         }
     }
 

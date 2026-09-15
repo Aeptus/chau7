@@ -1,16 +1,218 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
+	"context"
+	"encoding/base64"
 	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
+
+func TestUpstreamClientDoesNotCapInferenceDuration(t *testing.T) {
+	client := newUpstreamHTTPClient()
+	if client.Timeout != 0 {
+		t.Fatalf("upstream client timeout = %s, want no total timeout", client.Timeout)
+	}
+}
+
+func TestProxyServerDoesNotCapStreamDuration(t *testing.T) {
+	server := newProxyHTTPServer("127.0.0.1:0", http.NewServeMux())
+	if server.WriteTimeout != 0 {
+		t.Fatalf("server write timeout = %s, want no total stream timeout", server.WriteTimeout)
+	}
+	if server.ReadTimeout != 30*time.Second {
+		t.Fatalf("server read timeout = %s, want 30s", server.ReadTimeout)
+	}
+}
+
+func TestProxyHandlerPropagatesClientCancellationUpstream(t *testing.T) {
+	upstreamStarted := make(chan struct{})
+	upstreamCancelled := make(chan struct{})
+
+	proxy, db, _ := setupTestProxy(t)
+	defer func() { _ = db.Close() }()
+	proxy.client.Transport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		close(upstreamStarted)
+		<-r.Context().Done()
+		close(upstreamCancelled)
+		return nil, r.Context().Err()
+	})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	req := httptest.NewRequest("POST", "/v1/messages", bytes.NewBufferString(`{"model":"claude-opus-5"}`)).WithContext(ctx)
+	req.Header.Set("anthropic-version", "2023-06-01")
+	recorder := httptest.NewRecorder()
+	proxyDone := make(chan struct{})
+	go func() {
+		proxy.ServeHTTP(recorder, req)
+		close(proxyDone)
+	}()
+
+	select {
+	case <-upstreamStarted:
+	case <-time.After(time.Second):
+		t.Fatal("proxy did not start the upstream request")
+	}
+	cancel()
+
+	select {
+	case <-upstreamCancelled:
+	case <-time.After(time.Second):
+		t.Fatal("upstream request was not cancelled with the client request")
+	}
+	select {
+	case <-proxyDone:
+	case <-time.After(time.Second):
+		t.Fatal("proxy handler did not return after cancellation")
+	}
+}
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(request *http.Request) (*http.Response, error) {
+	return f(request)
+}
+
+func TestBuildWebSocketUpgradeRequestPreservesSubscriptionAuth(t *testing.T) {
+	const projectPath = "/tmp/Codex Subscription/été"
+	projectToken := base64.RawURLEncoding.EncodeToString([]byte(projectPath))
+	req := httptest.NewRequest(
+		"GET",
+		projectCorrelationPathPrefix+projectToken+"/v1/responses?model=gpt-5",
+		nil,
+	)
+	req.Header.Set("Authorization", "Bearer opaque-chatgpt-access-token")
+	req.Header.Set("Connection", "Upgrade")
+	req.Header.Set("Upgrade", "websocket")
+	req.Header.Set("Sec-WebSocket-Key", "test-websocket-key")
+	req.Header.Set("Sec-WebSocket-Version", "13")
+
+	if err := applyPathCorrelation(req); err != nil {
+		t.Fatalf("apply correlation path: %v", err)
+	}
+	upstream, err := url.Parse(GetUpstreamURL(DetectProvider(req), req))
+	if err != nil {
+		t.Fatalf("parse upstream: %v", err)
+	}
+	raw, err := buildWebSocketUpgradeRequest(req, upstream)
+	if err != nil {
+		t.Fatalf("build upgrade request: %v", err)
+	}
+	forwarded, err := http.ReadRequest(bufio.NewReader(bytes.NewReader(raw)))
+	if err != nil {
+		t.Fatalf("parse forwarded request: %v", err)
+	}
+
+	if got, want := forwarded.Host, "chatgpt.com"; got != want {
+		t.Errorf("host = %q, want %q", got, want)
+	}
+	if got, want := forwarded.URL.RequestURI(), "/backend-api/codex/responses?model=gpt-5"; got != want {
+		t.Errorf("request URI = %q, want %q", got, want)
+	}
+	if got, want := forwarded.Header.Get("Authorization"), "Bearer opaque-chatgpt-access-token"; got != want {
+		t.Errorf("authorization = %q, want %q", got, want)
+	}
+	if !isWebSocketUpgrade(forwarded) {
+		t.Error("WebSocket negotiation headers were not preserved")
+	}
+	if got := forwarded.Header.Get(HeaderProject); got != "" {
+		t.Errorf("internal project header leaked upstream: %q", got)
+	}
+}
+
+func TestProxyHandler_StoresAnthropicProjectHeaderExactly(t *testing.T) {
+	const projectPath = "/tmp/Claude Project/été"
+	upstream := mockUpstream(t, func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get(HeaderProject); got != "" {
+			t.Errorf("internal project header leaked upstream: %q", got)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"model": "claude-sonnet-4",
+			"usage": map[string]int{"input_tokens": 1, "output_tokens": 1},
+		})
+	})
+	defer upstream.Close()
+
+	original := ProviderConfigs[ProviderAnthropic]
+	ProviderConfigs[ProviderAnthropic] = ProviderConfig{BaseURL: upstream.URL}
+	defer func() { ProviderConfigs[ProviderAnthropic] = original }()
+
+	proxy, db, _ := setupTestProxy(t)
+	defer func() { _ = db.Close() }()
+
+	req := httptest.NewRequest("POST", "/v1/messages", bytes.NewBufferString(`{"model":"claude-sonnet-4"}`))
+	req.Header.Set("anthropic-version", "2023-06-01")
+	req.Header.Set(HeaderProject, projectPath)
+	recorder := httptest.NewRecorder()
+	proxy.ServeHTTP(recorder, req)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("Anthropic call failed: %d: %s", recorder.Code, recorder.Body.String())
+	}
+	assertStoredProjectPath(t, db, ProviderAnthropic, projectPath)
+}
+
+func TestProxyHandler_StoresCodexPathProjectExactly(t *testing.T) {
+	const projectPath = "/tmp/Codex Project/été"
+	upstream := mockUpstream(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/responses" {
+			t.Errorf("internal correlation prefix was not stripped: %q", r.URL.Path)
+		}
+		if got := r.Header.Get(HeaderProject); got != "" {
+			t.Errorf("materialized project header leaked upstream: %q", got)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"model": "gpt-5",
+			"usage": map[string]int{"input_tokens": 1, "output_tokens": 1},
+		})
+	})
+	defer upstream.Close()
+
+	original := ProviderConfigs[ProviderOpenAI]
+	ProviderConfigs[ProviderOpenAI] = ProviderConfig{BaseURL: upstream.URL}
+	defer func() { ProviderConfigs[ProviderOpenAI] = original }()
+
+	proxy, db, _ := setupTestProxy(t)
+	defer func() { _ = db.Close() }()
+
+	projectToken := base64.RawURLEncoding.EncodeToString([]byte(projectPath))
+	path := projectCorrelationPathPrefix + projectToken + "/v1/responses"
+	req := httptest.NewRequest("POST", path, bytes.NewBufferString(`{"model":"gpt-5"}`))
+	req.Header.Set("Authorization", "Bearer sk-test")
+	recorder := httptest.NewRecorder()
+	proxy.ServeHTTP(recorder, req)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("OpenAI call failed: %d: %s", recorder.Code, recorder.Body.String())
+	}
+	assertStoredProjectPath(t, db, ProviderOpenAI, projectPath)
+}
+
+func assertStoredProjectPath(t *testing.T, db *Database, provider Provider, expected string) {
+	t.Helper()
+	var projectPath string
+	err := db.db.QueryRow(
+		"SELECT project_path FROM api_calls WHERE provider = ? ORDER BY id DESC LIMIT 1",
+		string(provider),
+	).Scan(&projectPath)
+	if err != nil {
+		t.Fatalf("read stored project path: %v", err)
+	}
+	if projectPath != expected {
+		t.Fatalf("stored project path = %q, want %q", projectPath, expected)
+	}
+}
 
 // mockUpstream creates a mock upstream server for testing
 func mockUpstream(t *testing.T, handler http.HandlerFunc) *httptest.Server {
@@ -341,6 +543,96 @@ func TestProxyHandler_StreamingResponse(t *testing.T) {
 	body := w.Body.String()
 	if !strings.Contains(body, "message_start") {
 		t.Error("Expected streaming chunks in response")
+	}
+}
+
+func TestProxyHandlerFlushesStreamingChunkBeforeUpstreamCompletes(t *testing.T) {
+	firstChunkWritten := make(chan struct{})
+	releaseUpstream := make(chan struct{})
+	var releaseOnce sync.Once
+	release := func() {
+		releaseOnce.Do(func() { close(releaseUpstream) })
+	}
+	defer release()
+
+	upstream := mockUpstream(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		_, _ = io.WriteString(w, "data: first\n\n")
+		w.(http.Flusher).Flush()
+		close(firstChunkWritten)
+		<-releaseUpstream
+		_, _ = io.WriteString(w, "data: second\n\n")
+		w.(http.Flusher).Flush()
+	})
+	defer upstream.Close()
+
+	originalConfig := ProviderConfigs[ProviderAnthropic]
+	ProviderConfigs[ProviderAnthropic] = ProviderConfig{BaseURL: upstream.URL}
+	defer func() { ProviderConfigs[ProviderAnthropic] = originalConfig }()
+
+	proxy, db, _ := setupTestProxy(t)
+	defer func() { _ = db.Close() }()
+	downstream := httptest.NewServer(proxy)
+	defer downstream.Close()
+
+	req, err := http.NewRequest("POST", downstream.URL+"/v1/messages",
+		bytes.NewBufferString(`{"model":"claude-opus-5","messages":[],"stream" : true}`))
+	if err != nil {
+		t.Fatalf("create request: %v", err)
+	}
+	req.Header.Set("anthropic-version", "2023-06-01")
+
+	type responseResult struct {
+		response *http.Response
+		err      error
+	}
+	responseReady := make(chan responseResult, 1)
+	go func() {
+		response, requestErr := http.DefaultClient.Do(req)
+		responseReady <- responseResult{response: response, err: requestErr}
+	}()
+
+	select {
+	case <-firstChunkWritten:
+	case <-time.After(time.Second):
+		t.Fatal("upstream did not write its first streaming chunk")
+	}
+
+	var response *http.Response
+	select {
+	case result := <-responseReady:
+		if result.err != nil {
+			t.Fatalf("request proxy stream: %v", result.err)
+		}
+		response = result.response
+	case <-time.After(time.Second):
+		t.Fatal("proxy did not flush response headers with the first streaming chunk")
+	}
+	defer func() { _ = response.Body.Close() }()
+
+	reader := bufio.NewReader(response.Body)
+	firstLine := make(chan string, 1)
+	go func() {
+		line, _ := reader.ReadString('\n')
+		firstLine <- line
+	}()
+	select {
+	case line := <-firstLine:
+		if line != "data: first\n" {
+			t.Fatalf("first streamed line = %q, want first chunk", line)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("first streaming chunk remained buffered until upstream completion")
+	}
+
+	release()
+	remainder, err := io.ReadAll(reader)
+	if err != nil {
+		t.Fatalf("read remainder of proxy stream: %v", err)
+	}
+	if !strings.Contains(string(remainder), "data: second\n") {
+		t.Fatalf("stream remainder = %q, want second chunk", remainder)
 	}
 }
 

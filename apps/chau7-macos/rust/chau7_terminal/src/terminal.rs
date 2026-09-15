@@ -10,9 +10,9 @@ use std::time::{Duration, Instant};
 use alacritty_terminal::event::Event;
 use alacritty_terminal::grid::Dimensions;
 use alacritty_terminal::index::{Column, Line, Point, Side};
-use alacritty_terminal::selection::{Selection, SelectionType};
+use alacritty_terminal::selection::{Selection, SelectionRange, SelectionType};
 use alacritty_terminal::term::cell::{Cell, Flags as CellFlags, LineLength};
-use alacritty_terminal::term::{Config as TermConfig, Term, TermMode};
+use alacritty_terminal::term::{Config as TermConfig, Term, TermDamage, TermMode};
 use alacritty_terminal::vte::ansi::{Color as AnsiColor, NamedColor, Processor};
 use crossbeam_channel::{Receiver, TryRecvError, bounded};
 use log::{debug, error, info, trace, warn};
@@ -27,8 +27,8 @@ use crate::pool::get_cell_buffer_pool;
 use crate::pty::{Chau7EventListener, PtyHandle, PtyMessage, SizeInfo};
 use crate::types::{
     CELL_FLAG_BOLD, CELL_FLAG_DIM, CELL_FLAG_HIDDEN, CELL_FLAG_INVERSE, CELL_FLAG_ITALIC,
-    CELL_FLAG_STRIKETHROUGH, CELL_FLAG_UNDERLINE, CellData, DebugState, GridSnapshot,
-    PerformanceMetrics, cell_flags_to_u8, underline_style,
+    CELL_FLAG_STRIKETHROUGH, CELL_FLAG_UNDERLINE, CellData, DebugState, GridDeltaSnapshot,
+    GridSnapshot, PerformanceMetrics, cell_flags_to_u8, underline_style,
 };
 
 /// Static counter for terminal IDs (for logging)
@@ -44,6 +44,39 @@ struct AnsiCellStyle {
     fg: (u8, u8, u8),
     bg: (u8, u8, u8),
     flags: u8,
+}
+
+/// Stable OSC-8 identifiers shared by full and incremental snapshots. IDs may
+/// not be rebuilt per frame: unchanged rows retained by a delta consumer still
+/// reference the IDs assigned by an earlier snapshot.
+struct HyperlinkRegistry {
+    urls: Vec<String>,
+    ids: HashMap<String, u16>,
+}
+
+impl HyperlinkRegistry {
+    fn new() -> Self {
+        Self {
+            urls: vec![String::new()],
+            ids: HashMap::new(),
+        }
+    }
+
+    fn id_for_uri(&mut self, uri: &str) -> u16 {
+        if let Some(id) = self.ids.get(uri) {
+            return *id;
+        }
+        // u16::MAX is reserved as a safe saturation point. A single terminal
+        // displaying 65k distinct live links is pathological; retaining the
+        // last valid ID is safer than wrapping to 0 ("no link").
+        if self.urls.len() >= u16::MAX as usize {
+            return u16::MAX;
+        }
+        let id = self.urls.len() as u16;
+        self.urls.push(uri.to_owned());
+        self.ids.insert(uri.to_owned(), id);
+        id
+    }
 }
 
 /// Period of the post-advance grid invariant check. Set to 16 so the cost
@@ -262,6 +295,11 @@ pub struct Chau7Terminal {
     pub(crate) bytes_sent: AtomicU64,
     /// Total PTY write errors
     pub(crate) write_errors: AtomicU64,
+    /// Last observed total line count (history + screen) of the PRIMARY grid.
+    /// The primary grid is unreachable while the alternate screen is active
+    /// (`Term` swaps it into a private field), so `debug_state` records it on
+    /// every non-alt observation and reuses it for memory estimates on alt.
+    pub(crate) last_primary_total_lines: AtomicU64,
     /// Theme colors for rendering (RwLock for read-heavy access pattern)
     pub(crate) theme_colors: RwLock<ThemeColors>,
     /// Raw output bytes from the last poll (for Swift onOutput callback - Issue #3 fix)
@@ -287,9 +325,9 @@ pub struct Chau7Terminal {
     pub(crate) pty_closed: AtomicBool,
 
     // Hyperlink support (OSC 8)
-    /// Map of link_id → URL for the most recent grid snapshot.
-    /// Index 0 is unused (link_id 0 = no link). Rebuilt each grid snapshot.
-    pub(crate) link_urls: Mutex<Vec<String>>,
+    /// Stable map of link_id → URL used by both full and delta snapshots.
+    /// Index 0 is unused (link_id 0 = no link).
+    hyperlinks: Mutex<HyperlinkRegistry>,
 
     // Clipboard support (OSC 52)
     /// Pending clipboard store request from the terminal (OSC 52 write)
@@ -389,6 +427,7 @@ impl Chau7Terminal {
             bytes_received: AtomicU64::new(0),
             bytes_sent: AtomicU64::new(0),
             write_errors: AtomicU64::new(0),
+            last_primary_total_lines: AtomicU64::new(0),
             theme_colors: RwLock::new(ThemeColors::default()),
             last_output: Mutex::new(Vec::new()),
             bell_pending,
@@ -399,7 +438,7 @@ impl Chau7Terminal {
             has_pending_cwd: AtomicBool::new(false),
             pending_exit_code: Mutex::new(None),
             pty_closed: AtomicBool::new(true),
-            link_urls: Mutex::new(vec![String::new()]),
+            hyperlinks: Mutex::new(HyperlinkRegistry::new()),
             pending_clipboard_store: Mutex::new(None),
             has_pending_clipboard_store: AtomicBool::new(false),
             pending_clipboard_load: Mutex::new(None),
@@ -670,6 +709,7 @@ impl Chau7Terminal {
             bytes_received: AtomicU64::new(0),
             bytes_sent: AtomicU64::new(0),
             write_errors: AtomicU64::new(0),
+            last_primary_total_lines: AtomicU64::new(0),
             theme_colors: RwLock::new(ThemeColors::default()),
             last_output: Mutex::new(Vec::new()),
             bell_pending,
@@ -681,7 +721,7 @@ impl Chau7Terminal {
             pending_exit_code: Mutex::new(None),
             pty_closed: AtomicBool::new(false),
             // Hyperlinks (OSC 8) — index 0 reserved for "no link"
-            link_urls: Mutex::new(vec![String::new()]),
+            hyperlinks: Mutex::new(HyperlinkRegistry::new()),
             // Clipboard (OSC 52)
             pending_clipboard_store: Mutex::new(None),
             has_pending_clipboard_store: AtomicBool::new(false),
@@ -721,6 +761,7 @@ impl Chau7Terminal {
         theme.rebuild_lut();
         // Mark grid dirty so it gets re-rendered with new colors
         self.grid_dirty.store(true, Ordering::Release);
+        self.dirty_rows.mark_all_dirty();
     }
 
     /// Check if PTY has echo disabled (e.g., during password prompts).
@@ -760,8 +801,8 @@ impl Chau7Terminal {
         if link_id == 0 {
             return None;
         }
-        let urls = self.link_urls.lock();
-        urls.get(link_id as usize).cloned()
+        let registry = self.hyperlinks.lock();
+        registry.urls.get(link_id as usize).cloned()
     }
 
     /// Takes pending clipboard store text (OSC 52 write).
@@ -1173,7 +1214,6 @@ impl Chau7Terminal {
             );
             if had_renderable_data {
                 self.grid_dirty.store(true, Ordering::Release);
-                self.dirty_rows.mark_all_dirty();
             } else {
                 trace!(
                     "[terminal-{}] poll: processed metadata-only terminal events",
@@ -1461,7 +1501,82 @@ impl Chau7Terminal {
         );
         self.process_pty_data(data);
         self.grid_dirty.store(true, Ordering::Release);
-        self.dirty_rows.mark_all_dirty();
+    }
+
+    /// Convert one Alacritty cell into the stable C representation shared by
+    /// full and incremental snapshots.
+    #[allow(clippy::too_many_arguments)]
+    fn snapshot_cell(
+        cell: &Cell,
+        point: Point,
+        selection_range: Option<&SelectionRange>,
+        theme: &ThemeColors,
+        hyperlinks: &mut HyperlinkRegistry,
+        clusters: &mut Vec<u8>,
+        cluster_scratch: &mut String,
+    ) -> CellData {
+        let is_spacer = cell.flags.contains(CellFlags::WIDE_CHAR_SPACER);
+        let is_wide = cell.flags.contains(CellFlags::WIDE_CHAR);
+
+        let (cluster_offset, cluster_len, width, continuation) = if is_spacer {
+            (0u32, 0u16, 0u8, 1u8)
+        } else if cell.c == '\u{0}' {
+            (0u32, 0u16, 1u8, 0u8)
+        } else {
+            cluster_scratch.clear();
+            cluster_scratch.push(cell.c);
+            if let Some(extras) = cell.zerowidth() {
+                for &ch in extras {
+                    cluster_scratch.push(ch);
+                }
+            }
+            debug_assert!(
+                clusters.len() <= u32::MAX as usize,
+                "clusters buffer exceeded u32::MAX bytes; cluster_offset would truncate"
+            );
+            let offset = clusters.len() as u32;
+            for ch in cluster_scratch.chars().nfc() {
+                let mut buf = [0u8; 4];
+                clusters.extend_from_slice(ch.encode_utf8(&mut buf).as_bytes());
+            }
+            let written = clusters.len() as u32 - offset;
+            debug_assert!(
+                written <= u16::MAX as u32,
+                "single grapheme cluster exceeded u16::MAX bytes"
+            );
+            (offset, written as u16, if is_wide { 2u8 } else { 1u8 }, 0u8)
+        };
+
+        let fg_color = Self::effective_cell_fg(cell);
+        let (mut fg_r, mut fg_g, mut fg_b) = color_to_rgb_with_theme(fg_color, true, theme);
+        let (mut bg_r, mut bg_g, mut bg_b) = color_to_rgb_with_theme(cell.bg, false, theme);
+        let flags = cell_flags_to_u8(cell.flags);
+        let link_id = cell
+            .hyperlink()
+            .map(|hyperlink| hyperlinks.id_for_uri(hyperlink.uri()))
+            .unwrap_or(0);
+
+        if selection_range.is_some_and(|range| range.contains(point)) {
+            std::mem::swap(&mut fg_r, &mut bg_r);
+            std::mem::swap(&mut fg_g, &mut bg_g);
+            std::mem::swap(&mut fg_b, &mut bg_b);
+        }
+
+        CellData {
+            cluster_offset,
+            fg_r,
+            fg_g,
+            fg_b,
+            bg_r,
+            bg_g,
+            bg_b,
+            cluster_len,
+            width,
+            continuation,
+            flags,
+            underline_style: underline_style(cell.flags),
+            link_id,
+        }
     }
 
     /// Create a snapshot of the current grid state
@@ -1479,16 +1594,7 @@ impl Chau7Terminal {
         // We hold the term lock only for grid iteration. Color conversion
         // uses the cloned theme (no lock). Hyperlink URI extraction must
         // happen here since it references grid cell data.
-        let (
-            mut cells,
-            mut clusters,
-            cols,
-            rows,
-            display_offset,
-            history_size,
-            link_url_vec,
-            cursor_visible,
-        ) = {
+        let (mut cells, mut clusters, cols, rows, display_offset, history_size, cursor_visible) = {
             let term = self.term.lock();
             let grid = term.grid();
 
@@ -1514,11 +1620,7 @@ impl Chau7Terminal {
             let mut clusters: Vec<u8> = Vec::with_capacity(total_cells);
             // Scratch buffer reused across cells to avoid per-cell allocation.
             let mut cluster_scratch = String::with_capacity(16);
-
-            // Hyperlink tracking: map URI → link_id for deduplication.
-            // Index 0 is reserved (no link). IDs start at 1.
-            let mut uri_to_id: HashMap<String, u16> = HashMap::new();
-            let mut link_url_vec: Vec<String> = vec![String::new()]; // index 0 = no link
+            let mut hyperlinks = self.hyperlinks.lock();
 
             // Iterate over the VIEWPORT, not the active screen.
             // Like Alacritty's display_iter(), we offset by -display_offset so that
@@ -1534,101 +1636,15 @@ impl Chau7Terminal {
                 for col_idx in 0..cols {
                     let point = Point::new(line, Column(col_idx));
                     let cell = &grid[point];
-
-                    let is_spacer = cell.flags.contains(CellFlags::WIDE_CHAR_SPACER);
-                    let is_wide = cell.flags.contains(CellFlags::WIDE_CHAR);
-
-                    // Build the cluster from the primary char + zero-width extras
-                    // (combining marks, VS16, ZWJ), then NFC-normalize so that NFD
-                    // input ("e\u{0301}") and NFC ("é") hash to the same atlas key.
-                    //
-                    // Spacer cells own no glyph — they're the right half of a wide
-                    // grapheme. Empty cluster (len=0) signals "paint background only".
-                    // NUL is also treated as blank.
-                    let (cluster_offset, cluster_len, width, continuation) = if is_spacer {
-                        (0u32, 0u16, 0u8, 1u8)
-                    } else if cell.c == '\u{0}' {
-                        (0u32, 0u16, 1u8, 0u8)
-                    } else {
-                        cluster_scratch.clear();
-                        cluster_scratch.push(cell.c);
-                        if let Some(extras) = cell.zerowidth() {
-                            for &ch in extras {
-                                cluster_scratch.push(ch);
-                            }
-                        }
-                        // `cluster_offset` is u32 in the FFI struct, so the cluster
-                        // buffer must stay below 4 GiB. A terminal grid producing
-                        // that much grapheme data in a single snapshot is unheard
-                        // of; the debug_assert catches a runaway producer in tests
-                        // without paying a release-build branch.
-                        debug_assert!(
-                            clusters.len() <= u32::MAX as usize,
-                            "clusters buffer exceeded u32::MAX bytes; cluster_offset would truncate"
-                        );
-                        let offset = clusters.len() as u32;
-                        // NFC normalization: streams the iterator straight into the buffer.
-                        for ch in cluster_scratch.chars().nfc() {
-                            let mut buf = [0u8; 4];
-                            clusters.extend_from_slice(ch.encode_utf8(&mut buf).as_bytes());
-                        }
-                        let written = clusters.len() as u32 - offset;
-                        // cluster_len is u16; a single grapheme above 65 KiB is
-                        // pathological but should still fail loudly in debug.
-                        debug_assert!(
-                            written <= u16::MAX as u32,
-                            "single grapheme cluster exceeded u16::MAX bytes"
-                        );
-                        let len = written as u16;
-                        let w = if is_wide { 2u8 } else { 1u8 };
-                        (offset, len, w, 0u8)
-                    };
-
-                    let fg_color = Self::effective_cell_fg(cell);
-
-                    let (mut fg_r, mut fg_g, mut fg_b) =
-                        color_to_rgb_with_theme(fg_color, true, &theme);
-                    let (mut bg_r, mut bg_g, mut bg_b) =
-                        color_to_rgb_with_theme(cell.bg, false, &theme);
-                    let flags = cell_flags_to_u8(cell.flags);
-
-                    // Extract hyperlink URL (OSC 8)
-                    let link_id = if let Some(hyperlink) = cell.hyperlink() {
-                        let uri = hyperlink.uri().to_string();
-                        *uri_to_id.entry(uri.clone()).or_insert_with(|| {
-                            let id = link_url_vec.len() as u16;
-                            link_url_vec.push(uri);
-                            id
-                        })
-                    } else {
-                        0
-                    };
-
-                    // Selection uses grid-absolute coordinates (Line value already
-                    // accounts for display_offset via the subtraction above).
-                    if let Some(ref range) = selection_range
-                        && range.contains(point)
-                    {
-                        std::mem::swap(&mut fg_r, &mut bg_r);
-                        std::mem::swap(&mut fg_g, &mut bg_g);
-                        std::mem::swap(&mut fg_b, &mut bg_b);
-                    }
-
-                    cells.push(CellData {
-                        cluster_offset,
-                        fg_r,
-                        fg_g,
-                        fg_b,
-                        bg_r,
-                        bg_g,
-                        bg_b,
-                        cluster_len,
-                        width,
-                        continuation,
-                        flags,
-                        underline_style: underline_style(cell.flags),
-                        link_id,
-                    });
+                    cells.push(Self::snapshot_cell(
+                        cell,
+                        point,
+                        selection_range.as_ref(),
+                        &theme,
+                        &mut hyperlinks,
+                        &mut clusters,
+                        &mut cluster_scratch,
+                    ));
                 }
             }
 
@@ -1640,21 +1656,10 @@ impl Chau7Terminal {
                 rows,
                 display_offset,
                 history_size,
-                link_url_vec,
                 cursor_visible,
             )
         };
         // ── Phase 2: Post-processing without any lock ───────────────
-
-        // Store link URLs for FFI retrieval
-        if link_url_vec.len() > 1 {
-            debug!(
-                "[terminal-{}] Grid snapshot has {} unique hyperlinks",
-                self.id,
-                link_url_vec.len() - 1
-            );
-        }
-        *self.link_urls.lock() = link_url_vec;
 
         // Convert to raw pointer - preserve Vec capacity for proper deallocation.
         // Do NOT use into_boxed_slice() — it shrinks the allocation, making
@@ -1714,6 +1719,156 @@ impl Chau7Terminal {
         }
     }
 
+    /// Create the smallest viewport snapshot needed to advance one consumer
+    /// from `consumer_generation` to the current terminal generation.
+    ///
+    /// Alacritty owns the authoritative damage ranges. We collapse them to
+    /// rows, persist each row's generation, and reset Alacritty's damage only
+    /// after recording it. A second split view with an older generation still
+    /// receives every row it missed.
+    #[must_use]
+    pub fn get_grid_delta_snapshot(&self, consumer_generation: u64) -> GridDeltaSnapshot {
+        let start = Instant::now();
+        let theme = self.theme_colors.read().clone();
+
+        let (
+            mut cells,
+            mut clusters,
+            mut row_indices,
+            cols,
+            rows,
+            display_offset,
+            history_size,
+            cursor_visible,
+            generation,
+            full_refresh,
+        ) = {
+            let mut term = self.term.lock();
+            let (terminal_full_damage, damaged_rows) = match term.damage() {
+                TermDamage::Full => (true, Vec::new()),
+                TermDamage::Partial(lines) => {
+                    let mut rows: Vec<usize> = lines.map(|damage| damage.line).collect();
+                    rows.sort_unstable();
+                    rows.dedup();
+                    (false, rows)
+                }
+            };
+            term.reset_damage();
+
+            let grid = term.grid();
+            let cols = grid.columns();
+            let rows = grid.screen_lines();
+            let display_offset = grid.display_offset();
+            let history_size = grid.history_size();
+            let cursor_visible = term.mode().contains(TermMode::SHOW_CURSOR);
+            let selection_range = term
+                .selection
+                .as_ref()
+                .and_then(|selection| selection.to_range(&*term));
+            let dirty = self.dirty_rows.record_and_snapshot(
+                rows,
+                &damaged_rows,
+                terminal_full_damage,
+                consumer_generation,
+            );
+
+            let changed_cell_count = dirty.rows.len() * cols;
+            let mut cells = get_cell_buffer_pool().acquire(changed_cell_count);
+            let mut clusters = Vec::with_capacity(changed_cell_count);
+            let mut row_indices = Vec::with_capacity(dirty.rows.len());
+            let mut cluster_scratch = String::with_capacity(16);
+            let mut hyperlinks = self.hyperlinks.lock();
+
+            for row in dirty.rows.iter().copied() {
+                row_indices.push(row as u16);
+                let line = Line(row as i32 - display_offset as i32);
+                for col in 0..cols {
+                    let point = Point::new(line, Column(col));
+                    cells.push(Self::snapshot_cell(
+                        &grid[point],
+                        point,
+                        selection_range.as_ref(),
+                        &theme,
+                        &mut hyperlinks,
+                        &mut clusters,
+                        &mut cluster_scratch,
+                    ));
+                }
+            }
+
+            (
+                cells,
+                clusters,
+                row_indices,
+                cols,
+                rows,
+                display_offset,
+                history_size,
+                cursor_visible,
+                dirty.generation,
+                dirty.full_refresh,
+            )
+        };
+
+        let cells_capacity = cells.capacity();
+        let cells_ptr = cells.as_mut_ptr();
+        std::mem::forget(cells);
+        let clusters_len = clusters.len();
+        let clusters_capacity = clusters.capacity();
+        let clusters_ptr = if clusters_capacity == 0 {
+            std::ptr::null_mut()
+        } else {
+            let pointer = clusters.as_mut_ptr();
+            std::mem::forget(clusters);
+            pointer
+        };
+        let row_count = row_indices.len();
+        let row_indices_capacity = row_indices.capacity();
+        let row_indices_ptr = row_indices.as_mut_ptr();
+        std::mem::forget(row_indices);
+
+        let snapshot_time_us = start.elapsed().as_micros() as u64;
+        self.metrics
+            .grid_snapshot_count
+            .fetch_add(1, Ordering::Relaxed);
+        self.metrics
+            .grid_snapshot_time_us
+            .fetch_add(snapshot_time_us, Ordering::Relaxed);
+        self.metrics
+            .max_grid_snapshot_time_us
+            .fetch_max(snapshot_time_us, Ordering::Relaxed);
+
+        trace!(
+            "[terminal-{}] Grid delta generation={} consumer={} rows={}/{} cells={} created in {}µs",
+            self.id,
+            generation,
+            consumer_generation,
+            row_count,
+            rows,
+            row_count * cols,
+            snapshot_time_us
+        );
+
+        GridDeltaSnapshot {
+            cells: cells_ptr,
+            clusters_utf8: clusters_ptr,
+            row_indices: row_indices_ptr,
+            clusters_len,
+            clusters_capacity,
+            cells_capacity,
+            row_indices_capacity,
+            generation,
+            scrollback_rows: history_size as u32,
+            display_offset: display_offset as u32,
+            row_count: row_count as u32,
+            cols: cols as u16,
+            rows: rows as u16,
+            cursor_visible: u8::from(cursor_visible),
+            full_refresh: u8::from(full_refresh),
+            _pad: [0; 6],
+        }
+    }
+
     /// Get current scroll position as a normalized value (0.0 = bottom, 1.0 = top of history)
     pub fn scroll_position(&self) -> f64 {
         let term = self.term.lock();
@@ -1757,6 +1912,7 @@ impl Chau7Terminal {
             self.id, current_offset, target_offset, target_offset
         );
         self.grid_dirty.store(true, Ordering::Release);
+        self.dirty_rows.mark_all_dirty();
     }
 
     /// Scroll by a number of lines (positive = up/back, negative = down/forward)
@@ -1765,6 +1921,7 @@ impl Chau7Terminal {
         let mut term = self.term.lock();
         term.scroll_display(alacritty_terminal::grid::Scroll::Delta(lines));
         self.grid_dirty.store(true, Ordering::Release);
+        self.dirty_rows.mark_all_dirty();
     }
 
     /// Get the currently selected text, if any
@@ -1785,6 +1942,7 @@ impl Chau7Terminal {
         let mut term = self.term.lock();
         term.selection = None;
         self.grid_dirty.store(true, Ordering::Release);
+        self.dirty_rows.mark_all_dirty();
     }
 
     /// Start a new selection at the given position
@@ -1807,6 +1965,7 @@ impl Chau7Terminal {
         let selection = Selection::new(ty, point, Side::Left);
         term.selection = Some(selection);
         self.grid_dirty.store(true, Ordering::Release);
+        self.dirty_rows.mark_all_dirty();
     }
 
     /// Update the current selection to extend to the given position
@@ -1821,6 +1980,7 @@ impl Chau7Terminal {
         if let Some(ref mut selection) = term.selection {
             selection.update(point, Side::Right);
             self.grid_dirty.store(true, Ordering::Release);
+            self.dirty_rows.mark_all_dirty();
         }
     }
 
@@ -1860,6 +2020,7 @@ impl Chau7Terminal {
 
         term.selection = Some(selection);
         self.grid_dirty.store(true, Ordering::Release);
+        self.dirty_rows.mark_all_dirty();
         debug!(
             "[terminal-{}] selection_all: selected from line {} to line {}",
             self.id, start_line, end_line
@@ -1896,18 +2057,35 @@ impl Chau7Terminal {
         let mut term = self.term.lock();
         term.grid_mut().clear_history();
         self.grid_dirty.store(true, Ordering::Release);
+        self.dirty_rows.mark_all_dirty();
         debug!("[terminal-{}] clear_scrollback: History cleared", self.id);
     }
 
-    /// Set the scrollback buffer size (number of lines)
+    /// Set the scrollback buffer size (number of lines).
+    ///
+    /// Routed through `Term::set_options` rather than
+    /// `grid_mut().update_history()`: `grid_mut()` returns the ACTIVE grid,
+    /// and while the alternate screen is on, the primary grid — the one that
+    /// actually owns scrollback history — is swapped into a private field.
+    /// The old direct call was therefore a silent no-op for alt-screen TUIs;
+    /// `set_options` contains the `ALT_SCREEN ? inactive_grid : grid` branch
+    /// that always targets the primary grid's history. Side effects verified
+    /// benign: the re-sent Title event is either ignored (ResetTitle) or
+    /// re-posts the current title, and the config we pass differs from the
+    /// creation-time `TermConfig::default()` only in `scrolling_history`.
     pub fn set_scrollback_size(&self, lines: usize) {
         info!(
             "[terminal-{}] set_scrollback_size: Setting scrollback to {} lines",
             self.id, lines
         );
         let mut term = self.term.lock();
-        term.grid_mut().update_history(lines);
+        let config = TermConfig {
+            scrolling_history: lines,
+            ..TermConfig::default()
+        };
+        term.set_options(config);
         self.grid_dirty.store(true, Ordering::Release);
+        self.dirty_rows.mark_all_dirty();
         debug!(
             "[terminal-{}] set_scrollback_size: Scrollback set to {} lines",
             self.id, lines
@@ -1935,14 +2113,36 @@ impl Chau7Terminal {
         let mut term = self.term.lock();
         let mut processor = self.processor.lock();
 
-        // Clear history ring and reset viewport (ANSI ESC[2J clears screen,
-        // ESC[H homes cursor). Using the processor ensures Alacritty's internal
-        // state stays consistent rather than poking the grid directly.
+        // Reset to a truly empty terminal before pouring the cache in. Order
+        // matters: Alacritty's ESC[2J scrolls the current viewport INTO
+        // history, so it must run before ESC[3J (clear saved lines) — the old
+        // clear_history-then-2J order left the stale on-screen rows sitting
+        // above the restored buffer. Using the processor keeps Alacritty's
+        // internal state consistent rather than poking the grid directly.
         term.grid_mut().clear_history();
-        processor.advance(&mut *term, b"\x1b[2J\x1b[H");
+        processor.advance(&mut *term, b"\x1b[2J\x1b[3J\x1b[H");
 
-        if !data.is_empty() {
-            processor.advance(&mut *term, data);
+        // The full-buffer export walks every viewport row, so rows below the
+        // cursor arrive as bare CRLF terminators (possibly followed by the
+        // exporter's final SGR reset). Feeding them advances the cursor one
+        // row per flush/reload cycle, compounding a blank line each time —
+        // trim them, keeping the last content row's own terminator.
+        const RESET: &[u8] = b"\x1b[0m";
+        let mut body = data;
+        let mut had_reset = false;
+        if body.ends_with(RESET) {
+            had_reset = true;
+            body = &body[..body.len() - RESET.len()];
+        }
+        while body.ends_with(b"\r\n\r\n") {
+            body = &body[..body.len() - 2];
+        }
+
+        if !body.is_empty() {
+            processor.advance(&mut *term, body);
+        }
+        if had_reset {
+            processor.advance(&mut *term, RESET);
         }
 
         self.grid_dirty.store(true, Ordering::Release);
@@ -2135,6 +2335,26 @@ impl Chau7Terminal {
         let bracketed_paste = mode.contains(TermMode::BRACKETED_PASTE);
         let alternate_screen = mode.contains(TermMode::ALT_SCREEN);
         let app_cursor = mode.contains(TermMode::APP_CURSOR);
+        let screen_lines = grid.screen_lines() as u64;
+        let active_total_lines = u64::from(history_size) + screen_lines;
+        if !alternate_screen {
+            self.last_primary_total_lines
+                .store(active_total_lines, Ordering::Relaxed);
+        }
+        // The inactive grid is private; on alt screen, use the primary grid's
+        // last observed size. The other grid (whichever is inactive) keeps no
+        // history of its own beyond one screen of rows.
+        let primary_total_lines = if alternate_screen {
+            self.last_primary_total_lines
+                .load(Ordering::Relaxed)
+                .max(screen_lines)
+        } else {
+            active_total_lines
+        };
+        let cell_bytes = std::mem::size_of::<alacritty_terminal::term::cell::Cell>() as u64;
+        let cols_estimate = u64::from(grid.columns() as u16);
+        let estimated_grid_bytes =
+            (primary_total_lines + screen_lines) * cols_estimate * cell_bytes;
         drop(term);
 
         let poll_count = self.metrics.poll_count.load(Ordering::Relaxed);
@@ -2175,6 +2395,7 @@ impl Chau7Terminal {
             idle_polls,
             avg_batch_size: bytes_batched.checked_div(batch_count).unwrap_or(0),
             dirty_row_count: self.dirty_rows.dirty_count() as u32,
+            estimated_grid_bytes,
         }
     }
 
@@ -2317,6 +2538,69 @@ impl Chau7Terminal {
             scanned_rows,
             history + screen_lines,
             wrapped_rows,
+            max_lines,
+            max_bytes
+        );
+        result
+    }
+
+    /// Plain-text twin of `tail_buffer_ansi_text` for detectors that only
+    /// need recent text (e.g. remote interactive-prompt scraping): bounded at
+    /// the source, no SGR, wrapped rows joined into logical lines. Avoids
+    /// flattening the entire ring (multi-MB) to inspect a screenful.
+    pub fn tail_buffer_text(&self, max_lines: usize, max_bytes: usize) -> String {
+        if max_lines == 0 || max_bytes == 0 {
+            return String::new();
+        }
+
+        let term = self.term.lock();
+        let grid = term.grid();
+        let screen_lines = grid.screen_lines() as i32;
+        let history = grid.history_size() as i32;
+
+        let mut tail: VecDeque<String> = VecDeque::new();
+        let mut tail_bytes = 0usize;
+        let first_row = -history;
+        let mut end_row = screen_lines - 1;
+        let mut scanned_rows = 0usize;
+
+        while end_row >= first_row {
+            let mut start_row = end_row;
+            while start_row > first_row && Self::grid_line_wraps(grid, Line(start_row - 1)) {
+                start_row -= 1;
+            }
+
+            let mut current_line = String::new();
+            for row in start_row..=end_row {
+                let (line_text, _wraps) = Self::grid_line_text(grid, Line(row));
+                current_line.push_str(&line_text);
+            }
+
+            scanned_rows += (end_row - start_row + 1) as usize;
+            Self::push_front_bounded_tail_line(
+                &mut tail,
+                &mut tail_bytes,
+                current_line,
+                max_lines,
+                max_bytes,
+            );
+
+            if tail.len() >= max_lines || tail_bytes >= max_bytes {
+                break;
+            }
+            if start_row <= first_row {
+                break;
+            }
+            end_row = start_row - 1;
+        }
+
+        let result: String = tail.into_iter().collect();
+        debug!(
+            "[terminal-{}] tail_buffer_text exported {} bytes after scanning {} of {} physical rows (max_lines={}, max_bytes={})",
+            self.id,
+            result.len(),
+            scanned_rows,
+            history + screen_lines,
             max_lines,
             max_bytes
         );
@@ -2548,7 +2832,10 @@ impl Chau7Terminal {
                 output.push_str("\x1b[0m");
                 *current_style = None;
             }
-            output.push('\n');
+            // CRLF, not bare LF: this export is re-injected through the VTE
+            // parser (no PTY line discipline), where `\n` moves down without
+            // returning to column 0 and staircases every following line.
+            output.push_str("\r\n");
         }
 
         wraps
@@ -3085,6 +3372,55 @@ mod tests {
     }
 
     #[test]
+    fn grid_delta_is_row_bounded_and_preserved_for_lagging_consumers() {
+        let term = Chau7Terminal::new_headless(8, 3).expect("headless terminal");
+
+        let first = term.get_grid_delta_snapshot(0);
+        assert_eq!(first.full_refresh, 1);
+        assert_eq!(first.row_count, first.rows as u32);
+        let first_generation = first.generation;
+        unsafe {
+            crate::ffi::chau7_terminal_free_grid_delta(Box::into_raw(Box::new(first)));
+        }
+
+        term.inject_output(b"X");
+        let second = term.get_grid_delta_snapshot(first_generation);
+        assert_eq!(second.full_refresh, 0);
+        assert!(second.row_count > 0);
+        assert!(second.row_count < second.rows as u32);
+        let rows = unsafe {
+            std::slice::from_raw_parts(second.row_indices, second.row_count as usize).to_vec()
+        };
+        assert!(rows.contains(&0));
+        let second_generation = second.generation;
+        unsafe {
+            crate::ffi::chau7_terminal_free_grid_delta(Box::into_raw(Box::new(second)));
+        }
+
+        let current = term.get_grid_delta_snapshot(second_generation);
+        // Alacritty intentionally keeps the cursor row in terminal damage, so
+        // an otherwise idle snapshot may contain that one row. It must remain
+        // bounded rather than falling back to the full viewport.
+        assert_eq!(current.full_refresh, 0);
+        assert!(current.row_count <= 1);
+        unsafe {
+            crate::ffi::chau7_terminal_free_grid_delta(Box::into_raw(Box::new(current)));
+        }
+
+        // Resetting Alacritty damage for the first consumer must not erase the
+        // retained row generation needed by a split view that is one frame late.
+        let lagging = term.get_grid_delta_snapshot(first_generation);
+        assert_eq!(lagging.full_refresh, 0);
+        let lagging_rows = unsafe {
+            std::slice::from_raw_parts(lagging.row_indices, lagging.row_count as usize).to_vec()
+        };
+        assert!(lagging_rows.contains(&0));
+        unsafe {
+            crate::ffi::chau7_terminal_free_grid_delta(Box::into_raw(Box::new(lagging)));
+        }
+    }
+
+    #[test]
     fn test_full_buffer_text_preserves_soft_wrapped_logical_lines() {
         let _ = env_logger::try_init();
 
@@ -3175,6 +3511,107 @@ mod tests {
     }
 
     #[test]
+    fn test_tail_buffer_ansi_text_round_trip_preserves_columns() {
+        let _ = env_logger::try_init();
+
+        // Regression for the restored-tab "staircase" corruption: the export is
+        // injected straight into the VTE parser (no PTY, so no ONLCR translating
+        // LF to CRLF). A bare `\n` moves the cursor down WITHOUT returning to
+        // column 0, so every replayed line inherits the previous line's end
+        // column and indentation shifts across the whole restored buffer.
+        let source = Chau7Terminal::new_with_env(40, 6, "", &[]).expect("Should create terminal");
+        source.inject_output(b"alpha\r\nbeta\r\n  indented\r\n");
+        let tail = source.tail_buffer_ansi_text(100, 65536);
+
+        let restored = Chau7Terminal::new_with_env(40, 6, "", &[]).expect("Should create terminal");
+        restored.inject_output(tail.as_bytes());
+
+        assert_eq!(restored.line_text(0).as_deref(), Some("alpha"));
+        assert_eq!(restored.line_text(1).as_deref(), Some("beta"));
+        assert_eq!(restored.line_text(2).as_deref(), Some("  indented"));
+    }
+
+    #[test]
+    fn test_full_buffer_ansi_text_replay_round_trip_preserves_columns() {
+        let _ = env_logger::try_init();
+
+        // The scrollback disk cache is captured with `full_buffer_ansi_text`
+        // and restored through `replay_buffer`, which injects straight into the
+        // VTE parser (no PTY line discipline, so no ONLCR expanding LF to
+        // CRLF). The export must be CRLF-terminated end to end or every
+        // restored line inherits the previous line's end column and the whole
+        // buffer staircases — including rows that scrolled into history.
+        let source = Chau7Terminal::new_with_env(40, 4, "", &[]).expect("Should create terminal");
+        source.inject_output(b"alpha\r\nbeta\r\n  indented\r\n\x1b[31mred\x1b[0m\r\ntail\r\n");
+        let export = source.full_buffer_ansi_text();
+
+        let restored = Chau7Terminal::new_with_env(40, 4, "", &[]).expect("Should create terminal");
+        restored.replay_buffer(export.as_bytes());
+
+        assert_eq!(restored.full_buffer_text(), source.full_buffer_text());
+        assert_eq!(
+            restored.line_text(0).as_deref(),
+            source.line_text(0).as_deref()
+        );
+    }
+
+    #[test]
+    fn test_set_scrollback_size_shrinks_primary_history_while_on_alt_screen() {
+        let _ = env_logger::try_init();
+
+        // Regression: `grid_mut().update_history()` targets the ACTIVE grid,
+        // so shrinking while a TUI held the alternate screen silently
+        // no-opped against the primary grid that owns all the history. The
+        // set_options routing must shrink the primary grid regardless.
+        let term = Chau7Terminal::new_with_env(20, 4, "", &[]).expect("Should create terminal");
+        let mut output = Vec::new();
+        for i in 0..200 {
+            output.extend_from_slice(format!("line {}\r\n", i).as_bytes());
+        }
+        term.inject_output(&output);
+        let before = term.debug_state().history_size;
+        assert!(
+            before > 50,
+            "history should have accumulated (got {})",
+            before
+        );
+
+        term.inject_output(b"\x1b[?1049h"); // enter alt screen
+        term.set_scrollback_size(50);
+        term.inject_output(b"\x1b[?1049l"); // leave alt screen
+
+        let after = term.debug_state().history_size;
+        assert!(
+            after <= 50,
+            "primary history must shrink while the alt screen was active (got {})",
+            after
+        );
+    }
+
+    #[test]
+    fn test_tail_buffer_text_returns_bounded_logical_line_suffix() {
+        let _ = env_logger::try_init();
+
+        let term = Chau7Terminal::new_with_env(40, 6, "", &[]).expect("Should create terminal");
+        term.inject_output(b"alpha\r\nbeta\r\n  indented\r\ndelta\r\n");
+
+        // Last 3 non-blank logical lines, plain text, LF-terminated.
+        assert_eq!(term.tail_buffer_text(3, 65536), "beta\n  indented\ndelta\n");
+
+        // Wrapped physical rows must join into one logical line.
+        let wrapped = Chau7Terminal::new_with_env(20, 6, "", &[]).expect("Should create terminal");
+        let long_line = "x".repeat(50);
+        wrapped.inject_output(format!("{}\r\n", long_line).as_bytes());
+        assert_eq!(
+            wrapped.tail_buffer_text(1, 65536),
+            format!("{}\n", long_line)
+        );
+
+        // Byte bound is respected.
+        assert!(term.tail_buffer_text(100, 8).len() <= 8);
+    }
+
+    #[test]
     fn test_tail_buffer_ansi_text_limits_bytes_on_char_boundary() {
         let _ = env_logger::try_init();
 
@@ -3199,13 +3636,24 @@ mod tests {
         let term = Chau7Terminal::new_with_env(5, 4, "", &[]).expect("Should create terminal");
         term.inject_output(b"docs/readme.md");
 
-        let (text, start_row, clicked_offset) = term
-            .logical_line_text(1, 2)
-            .expect("Expected wrapped logical line");
+        let cases = [
+            (0, 2, 2),
+            (1, 2, 7),
+            (2, 2, 12),
+            // Clicking terminal padding after the final wrapped fragment clamps
+            // to the end of the logical line instead of jumping to offset zero.
+            (2, 99, 14),
+        ];
 
-        assert_eq!(text, "docs/readme.md");
-        assert_eq!(start_row, 0);
-        assert_eq!(clicked_offset, 7);
+        for (row, column, expected_offset) in cases {
+            let (text, start_row, clicked_offset) = term
+                .logical_line_text(row, column)
+                .expect("Expected wrapped logical line");
+
+            assert_eq!(text, "docs/readme.md");
+            assert_eq!(start_row, 0);
+            assert_eq!(clicked_offset, expected_offset, "row={row} column={column}");
+        }
     }
 
     #[test]

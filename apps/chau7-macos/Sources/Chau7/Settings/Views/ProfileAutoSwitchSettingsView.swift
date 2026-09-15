@@ -12,8 +12,8 @@ struct ProfileAutoSwitchSettingsView: View {
     @State private var ruleToDelete: ProfileSwitchRule?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            SettingsSectionHeader(L("Profile Auto-Switching"))
+        VStack(alignment: .leading, spacing: Chau7Style.Settings.pageSectionSpacing) {
+            SettingsSectionHeader(L("Profile Auto-Switching"), anchorID: "profileAutoSwitch")
 
             SettingsToggle(
                 label: L("Enable automatic profile switching"),
@@ -38,7 +38,7 @@ struct ProfileAutoSwitchSettingsView: View {
                     .buttonStyle(.bordered)
                     .controlSize(.small)
                 }
-                .padding(8)
+                .padding(Chau7Style.Settings.inlineControlSpacing)
                 .background(Color.blue.opacity(0.1))
                 .cornerRadius(6)
             }
@@ -52,7 +52,7 @@ struct ProfileAutoSwitchSettingsView: View {
                 Text(L("No rules configured. Add a rule to automatically switch profiles."))
                     .font(.caption)
                     .foregroundColor(.secondary)
-                    .padding(.vertical, 8)
+                    .padding(.vertical, Chau7Style.Settings.separatorVerticalPadding)
             } else {
                 ForEach(switcher.rules.sortedByPriority()) { rule in
                     ruleRow(rule)
@@ -96,7 +96,7 @@ struct ProfileAutoSwitchSettingsView: View {
 
     private func ruleRow(_ rule: ProfileSwitchRule) -> some View {
         HStack {
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: Chau7Style.Spacing.xxxSmall) {
                 HStack {
                     Text(rule.name)
                         .fontWeight(.medium)
@@ -152,7 +152,7 @@ private struct RuleEditorSheet: View {
 
     @State private var name = ""
     @State private var isEnabled = true
-    @State private var triggerType: ProfileSwitchTrigger = .directory(path: "")
+    @State private var triggerKind: ProfileSwitchTriggerKind = .directory
     @State private var triggerValue = ""
     @State private var envKey = ""
     @State private var envValue = ""
@@ -160,23 +160,46 @@ private struct RuleEditorSheet: View {
     @State private var priority = 0
 
     var body: some View {
-        VStack(spacing: 16) {
+        VStack(alignment: .leading, spacing: Chau7Style.Settings.pageSectionSpacing) {
             Text(rule == nil ? "Add Rule" : "Edit Rule")
                 .font(.headline)
 
             TextField(L("Rule Name", "Rule Name"), text: $name)
                 .textFieldStyle(.roundedBorder)
 
-            // Trigger value
-            TextField(L("Trigger Value (path, hostname, etc.)", "Trigger Value (path, hostname, etc.)"), text: $triggerValue)
-                .textFieldStyle(.roundedBorder)
-                .font(.system(.body, design: .monospaced))
+            Picker(L("profileAutoSwitch.triggerType", "Trigger"), selection: $triggerKind) {
+                ForEach(ProfileSwitchTriggerKind.allCases) { kind in
+                    Text(kind.title).tag(kind)
+                }
+            }
+            .pickerStyle(.menu)
+
+            if triggerKind == .environmentVariable {
+                HStack(spacing: Chau7Style.Settings.inlineControlSpacing) {
+                    TextField(L("profileAutoSwitch.envKey", "Variable"), text: $envKey)
+                        .textFieldStyle(.roundedBorder)
+                        .font(.system(.body, design: .monospaced))
+                    TextField(L("profileAutoSwitch.envValue", "Value"), text: $envValue)
+                        .textFieldStyle(.roundedBorder)
+                        .font(.system(.body, design: .monospaced))
+                }
+            } else {
+                TextField(triggerKind.placeholder, text: $triggerValue)
+                    .textFieldStyle(.roundedBorder)
+                    .font(.system(.body, design: .monospaced))
+            }
+
+            SettingsDescription(triggerKind.help)
 
             // Profile picker
             Picker(L("Target Profile", "Target Profile"), selection: $profileName) {
                 ForEach(profiles) { profile in
                     Text(profile.name).tag(profile.name)
                 }
+            }
+
+            if profiles.isEmpty {
+                SettingsDescription(L("profileAutoSwitch.noProfiles", "Create a settings profile before adding an auto-switch rule."))
             }
 
             // Priority
@@ -189,10 +212,10 @@ private struct RuleEditorSheet: View {
                     .keyboardShortcut(.cancelAction)
                 Spacer()
                 Button(rule == nil ? "Add" : "Save") {
-                    let trigger = ProfileSwitchTrigger.directory(path: triggerValue)
+                    guard let trigger = buildTrigger() else { return }
                     let newRule = ProfileSwitchRule(
                         id: rule?.id ?? UUID(),
-                        name: name,
+                        name: trimmed(name),
                         isEnabled: isEnabled,
                         trigger: trigger,
                         profileName: profileName,
@@ -202,11 +225,11 @@ private struct RuleEditorSheet: View {
                     dismiss()
                 }
                 .keyboardShortcut(.defaultAction)
-                .disabled(name.isEmpty || triggerValue.isEmpty)
+                .disabled(!canSave)
             }
         }
-        .padding()
-        .frame(width: 400)
+        .padding(Chau7Style.Settings.contentPadding)
+        .frame(width: 460)
         .onAppear {
             if let rule = rule {
                 name = rule.name
@@ -214,18 +237,103 @@ private struct RuleEditorSheet: View {
                 profileName = rule.profileName
                 priority = rule.priority
                 switch rule.trigger {
-                case .directory(let path): triggerValue = path
-                case .gitRepository(let n): triggerValue = n
-                case .sshHost(let h): triggerValue = h
-                case .processRunning(let n): triggerValue = n
+                case .directory(let path):
+                    triggerKind = .directory
+                    triggerValue = path
+                case .gitRepository(let n):
+                    triggerKind = .gitRepository
+                    triggerValue = n
+                case .sshHost(let h):
+                    triggerKind = .sshHost
+                    triggerValue = h
+                case .processRunning(let n):
+                    triggerKind = .processRunning
+                    triggerValue = n
                 case .environmentVariable(let k, let v):
+                    triggerKind = .environmentVariable
                     envKey = k
                     envValue = v
-                    triggerValue = "\(k)=\(v)"
                 }
             } else {
                 profileName = profiles.first?.name ?? ""
             }
+        }
+    }
+
+    private var canSave: Bool {
+        !trimmed(name).isEmpty && !profileName.isEmpty && buildTrigger() != nil
+    }
+
+    private func buildTrigger() -> ProfileSwitchTrigger? {
+        switch triggerKind {
+        case .directory:
+            let value = trimmed(triggerValue)
+            return value.isEmpty ? nil : .directory(path: value)
+        case .gitRepository:
+            let value = trimmed(triggerValue)
+            return value.isEmpty ? nil : .gitRepository(name: value)
+        case .sshHost:
+            let value = trimmed(triggerValue)
+            return value.isEmpty ? nil : .sshHost(hostname: value)
+        case .processRunning:
+            let value = trimmed(triggerValue)
+            return value.isEmpty ? nil : .processRunning(name: value)
+        case .environmentVariable:
+            let key = trimmed(envKey)
+            let value = trimmed(envValue)
+            guard !key.isEmpty, !value.isEmpty else { return nil }
+            return .environmentVariable(key: key, value: value)
+        }
+    }
+
+    private func trimmed(_ value: String) -> String {
+        value.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+}
+
+private enum ProfileSwitchTriggerKind: String, CaseIterable, Identifiable {
+    case directory
+    case gitRepository
+    case sshHost
+    case processRunning
+    case environmentVariable
+
+    var id: String {
+        rawValue
+    }
+
+    var title: String {
+        switch self {
+        case .directory: L("profileAutoSwitch.trigger.directory", "Directory")
+        case .gitRepository: L("profileAutoSwitch.trigger.gitRepository", "Git Repository")
+        case .sshHost: L("profileAutoSwitch.trigger.sshHost", "SSH Host")
+        case .processRunning: L("profileAutoSwitch.trigger.process", "Process")
+        case .environmentVariable: L("profileAutoSwitch.trigger.environment", "Environment Variable")
+        }
+    }
+
+    var placeholder: String {
+        switch self {
+        case .directory: L("profileAutoSwitch.placeholder.directory", "Directory path or glob, e.g. ~/Work/**")
+        case .gitRepository: L("profileAutoSwitch.placeholder.gitRepository", "Repository folder name")
+        case .sshHost: L("profileAutoSwitch.placeholder.sshHost", "SSH hostname")
+        case .processRunning: L("profileAutoSwitch.placeholder.process", "Process name")
+        case .environmentVariable: ""
+        }
+    }
+
+    var help: String {
+        switch self {
+        case .directory:
+            L("profileAutoSwitch.help.directory", "Matches the terminal working directory. Supports * and ** wildcards.")
+        case .gitRepository:
+            L("profileAutoSwitch.help.gitRepository", "Matches the repository folder name from the current directory.")
+        case .sshHost:
+            L("profileAutoSwitch.help.sshHost", "Matches the active SSH host exactly, case-insensitively.")
+        case .processRunning:
+            L("profileAutoSwitch.help.process", "Matches when the named process is detected in the terminal context.")
+        case .environmentVariable:
+            L("profileAutoSwitch.help.environment", "Matches when the terminal environment contains the exact key/value pair.")
         }
     }
 }

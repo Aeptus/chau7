@@ -59,6 +59,10 @@ struct KeyBinding: Equatable {
             return eventKey == key
         }
     }
+
+    var shortcutSignature: String {
+        "\(key.lowercased())|\(modifiers.rawValue)"
+    }
 }
 
 /// Terminal actions that can be bound to keys
@@ -138,7 +142,7 @@ enum KeyAction: String, CaseIterable {
         case .copy: return "Copy"
         case .paste: return "Paste"
         case .selectAll: return "Select All"
-        case .clear: return "Clear Screen"
+        case .clear: return "Clear Scrollback"
         case .toggleSearch: return "Find"
         case .nextMatch: return "Find Next"
         case .previousMatch: return "Find Previous"
@@ -208,6 +212,12 @@ final class KeybindingsManager {
 
     private(set) var activeBindings: [KeyBinding] = []
     private var lastShortcutsGeneration = -1
+    private static let shippedDefaultShortcutSignatures = Set(
+        KeyboardShortcut.defaultShortcuts.map { shortcut in
+            let modifiers = KeyBinding.modifiers(from: shortcut.modifiers)
+            return "\(shortcut.key.lowercased())|\(modifiers.rawValue)"
+        }
+    )
 
     // MARK: - Initialization
 
@@ -235,10 +245,14 @@ final class KeybindingsManager {
     // MARK: - Event Handling
 
     /// Returns the action for the given event, or nil if no binding matches
-    func actionForEvent(_ event: NSEvent) -> KeyAction? {
+    func actionForEvent(_ event: NSEvent, suppressingShippedDefaultShortcuts: Bool = false) -> KeyAction? {
         refreshBindings()
         for binding in activeBindings {
             if binding.matches(event) {
+                if suppressingShippedDefaultShortcuts,
+                   Self.shippedDefaultShortcutSignatures.contains(binding.shortcutSignature) {
+                    return nil
+                }
                 return binding.action
             }
         }

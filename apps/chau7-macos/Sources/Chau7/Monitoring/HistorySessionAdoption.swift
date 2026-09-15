@@ -4,6 +4,11 @@ import Chau7Core
 /// A concrete AI session identity observed from a tool history monitor and ready
 /// to be adopted by the terminal tab that owns the matching cwd/session.
 struct HistorySessionAdoptionRequest: Equatable {
+    enum IdentityEvidence: Equatable {
+        case inferred
+        case authoritativeExactTab(validatedDirectory: String)
+    }
+
     enum Reason: String, Equatable {
         case historyEntry
         case stateChange
@@ -19,6 +24,7 @@ struct HistorySessionAdoptionRequest: Equatable {
     let observedAt: Date
     let state: HistorySessionState?
     let reason: Reason
+    let identityEvidence: IdentityEvidence
 
     init?(
         toolName: String,
@@ -27,7 +33,8 @@ struct HistorySessionAdoptionRequest: Equatable {
         tabID: UUID?,
         observedAt: Date,
         state: HistorySessionState?,
-        reason: Reason
+        reason: Reason,
+        identityEvidence: IdentityEvidence = .inferred
     ) {
         let trimmedTool = toolName.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedSessionId = sessionId.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -51,6 +58,7 @@ struct HistorySessionAdoptionRequest: Equatable {
         self.observedAt = observedAt
         self.state = state
         self.reason = reason
+        self.identityEvidence = identityEvidence
     }
 
     var canReplaceDifferentStoredSession: Bool {
@@ -59,6 +67,26 @@ struct HistorySessionAdoptionRequest: Equatable {
 
     var shouldMarkSessionInactive: Bool {
         state == .idle || state == .closed
+    }
+
+    var crossDirectoryReplacementDirectory: String? {
+        guard providerKey == "codex",
+              tabID != nil,
+              let directory,
+              case let .authoritativeExactTab(validatedDirectory) = identityEvidence else {
+            return nil
+        }
+        guard DirectoryPathMatcher.bidirectionalPrefixRank(
+            targetPath: directory,
+            candidatePath: validatedDirectory
+        ) != nil else {
+            return nil
+        }
+        return URL(fileURLWithPath: validatedDirectory).standardizedFileURL.path
+    }
+
+    var canReplaceAcrossDirectory: Bool {
+        crossDirectoryReplacementDirectory != nil
     }
 }
 

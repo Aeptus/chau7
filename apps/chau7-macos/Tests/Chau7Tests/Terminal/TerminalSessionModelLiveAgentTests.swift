@@ -116,4 +116,60 @@ final class TerminalSessionModelLiveAgentTests: XCTestCase {
             "setting to same value must not fire (didSet guards equality)"
         )
     }
+
+    // MARK: - terminal UI state protection
+
+    func testRestoredRunningClaudeProtectsTUIBeforeLiveProcessDetection() {
+        let session = TerminalSessionModel(appModel: AppModel())
+        session.restoreAIMetadata(
+            provider: "claude",
+            sessionId: "restored-claude",
+            lastStatus: .running
+        )
+        session.overrideLiveAgentNameForTesting(nil)
+
+        XCTAssertTrue(session.shouldProtectTerminalUIState)
+    }
+
+    func testAttachedRestoredTUIStaysProtectedAcrossLiveProcessDetectionFlicker() {
+        let session = TerminalSessionModel(appModel: AppModel())
+        session.restoreAIMetadata(
+            provider: "claude",
+            sessionId: "restored-claude",
+            lastStatus: .running
+        )
+        let view = RustTerminalView(frame: .zero)
+        session.attachRustTerminal(view)
+        view.hostsTUIApp = session.shouldProtectTerminalUIState
+
+        session.overrideLiveAgentNameForTesting("Claude")
+        XCTAssertTrue(view.hostsTUIApp)
+
+        session.overrideLiveAgentNameForTesting(nil)
+        XCTAssertTrue(
+            view.hostsTUIApp,
+            "A transient process-tree miss must not bypass restored running-TUI protection"
+        )
+    }
+
+    func testFinishedRestoredTUIAllowsScrollbackCompactionWhenNoLiveSignalRemains() {
+        let session = TerminalSessionModel(appModel: AppModel())
+        session.restoreAIMetadata(
+            provider: "codex",
+            sessionId: "restored-codex",
+            lastStatus: .done,
+            activateRestoredAppName: false
+        )
+        session.overrideLiveAgentNameForTesting(nil)
+
+        XCTAssertFalse(session.shouldProtectTerminalUIState)
+    }
+
+    func testNonTerminalAIToolDoesNotDisableScrollbackCompaction() {
+        let session = TerminalSessionModel(appModel: AppModel())
+        session.lastAIProvider = "cursor"
+        session.status = .running
+
+        XCTAssertFalse(session.shouldProtectTerminalUIState)
+    }
 }

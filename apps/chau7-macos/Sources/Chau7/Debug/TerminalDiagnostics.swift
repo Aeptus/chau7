@@ -91,6 +91,20 @@ enum TerminalDiagnostics {
         output += view.renderSurfaceReport().formatted(indent: "  ")
         output += "\n\n"
 
+        // 3b. Memory attribution for this view (per-tab table lives in the
+        // Debug Console's Memory tab; this is the single-view slice).
+        output += "[memory]\n"
+        if let stats = view.rustTerminal?.memoryStats() {
+            output += "  historyRows: \(stats.historyRows)\n"
+            output += "  estimatedRingBytes: \(TerminalMemoryReport.formatBytes(stats.estimatedGridBytes))\n"
+            output += "  bytesReceived: \(stats.bytesReceived)\n"
+        } else {
+            output += "  <rust memory stats unavailable>\n"
+        }
+        output += "  cpuFallbackBytes: \(TerminalMemoryReport.formatBytes(view.estimatedCPUFallbackBytes))\n"
+        output += "  cachedBufferLines: \(view.cachedBufferLines?.count ?? 0)\n"
+        output += "\n"
+
         // 4. Grid styled ANSI text
         output += "[grid — styled ANSI text follows; SGR sequences preserved]\n"
         if let data = view.getStyledBufferAsData(),

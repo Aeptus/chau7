@@ -5,7 +5,8 @@ import Chau7Core
 @MainActor
 final class NotificationHistoryTests: XCTestCase {
     func testHistoryTracksDeliveryLifecycle() throws {
-        let history = NotificationHistory(maxEntries: 10)
+        var outcomes: [NotificationDeliveryOutcome] = []
+        let history = NotificationHistory(maxEntries: 10) { outcomes.append($0) }
         let event = AIEvent(
             source: .runtime,
             type: "finished",
@@ -45,5 +46,13 @@ final class NotificationHistoryTests: XCTestCase {
         XCTAssertEqual(entry.semanticKind, "task_finished")
         XCTAssertTrue(entry.notes.contains("rawType:response_complete"))
         XCTAssertTrue(entry.notes.contains("notificationType:idle_prompt"))
+        XCTAssertEqual(outcomes.map(\.deliveryState), [
+            NotificationHistory.DeliveryState.ingested.rawValue,
+            NotificationHistory.DeliveryState.prepared.rawValue,
+            NotificationHistory.DeliveryState.actionsExecuted.rawValue,
+            NotificationHistory.DeliveryState.completed.rawValue
+        ])
+        XCTAssertEqual(outcomes.last?.didDispatchBanner, true)
+        XCTAssertEqual(outcomes.last?.didStyleTab, true)
     }
 }

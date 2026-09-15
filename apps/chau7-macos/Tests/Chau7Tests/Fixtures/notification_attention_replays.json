@@ -1,0 +1,76 @@
+[
+  {
+    "name": "codex enumerated feedback",
+    "events": [
+      {"source":"codex","raw_type":"agent-turn-complete","message":"Choose one:\n1. Adapter\n2. Direct\nReply with the number.","offset":0,"expected_kind":"waiting_for_input","expected_stage":"deliver","expected_style":"waiting"}
+    ]
+  },
+  {
+    "name": "codex direct terminal question",
+    "events": [
+      {"source":"codex","raw_type":"agent-turn-complete","message":"Tests pass.\n\nShould I apply this to the remaining workspaces?","offset":0,"expected_kind":"waiting_for_input","expected_stage":"deliver","expected_style":"waiting"}
+    ]
+  },
+  {
+    "name": "codex conversational question completes neutrally",
+    "events": [
+      {"source":"codex","raw_type":"agent-turn-complete","message":"The adapter now owns normalization.\n\nDoes that explanation make sense?","offset":0,"expected_kind":"task_finished","expected_stage":"deliver","expected_style":"success"}
+    ]
+  },
+  {
+    "name": "codex ordinary completion",
+    "events": [
+      {"source":"codex","raw_type":"agent-turn-complete","message":"Implemented and verified. All focused tests pass.","offset":0,"expected_kind":"task_finished","expected_stage":"deliver","expected_style":"success"}
+    ]
+  },
+  {
+    "name": "same-turn heuristic remains coalesced",
+    "events": [
+      {"source":"codex","raw_type":"agent-turn-complete","message":"Implemented and verified.","offset":0,"expected_kind":"task_finished","expected_stage":"deliver","expected_style":"success"},
+      {"source":"codex","raw_type":"agent-turn-complete","message":"Should I continue with the optional migration?","offset":1,"expected_kind":"waiting_for_input","expected_stage":"reconciliation_drop"}
+    ]
+  },
+  {
+    "name": "later Codex turn reopens without lifecycle event",
+    "events": [
+      {"source":"codex","raw_type":"agent-turn-complete","message":"Implemented and verified.","offset":0,"expected_kind":"task_finished","expected_stage":"deliver","expected_style":"success"},
+      {"source":"codex","raw_type":"agent-turn-complete","message":"Should I continue with the optional migration?","offset":11,"expected_kind":"waiting_for_input","expected_stage":"deliver","expected_style":"waiting"}
+    ]
+  },
+  {
+    "name": "codex approval request",
+    "events": [
+      {"source":"codex","raw_type":"approval_requested","message":"Command needs approval","offset":0,"expected_kind":"permission_required","expected_stage":"deliver","expected_style":"attention"}
+    ]
+  },
+  {
+    "name": "codex structured input request",
+    "events": [
+      {"source":"codex","raw_type":"user_input_requested","message":"Choose a deployment model","offset":0,"expected_kind":"waiting_for_input","expected_stage":"deliver","expected_style":"waiting"}
+    ]
+  },
+  {
+    "name": "claude idle prompt notification",
+    "events": [
+      {"source":"claude_code","raw_type":"notification","notification_type":"idle_prompt","message":"Claude is waiting for your input","offset":0,"expected_kind":"waiting_for_input","expected_stage":"deliver","expected_style":"waiting"}
+    ]
+  },
+  {
+    "name": "claude permission request",
+    "events": [
+      {"source":"claude_code","raw_type":"permission_request","message":"Permission required","offset":0,"expected_kind":"permission_required","expected_stage":"deliver","expected_style":"attention"}
+    ]
+  },
+  {
+    "name": "claude response failure",
+    "events": [
+      {"source":"claude_code","raw_type":"response_failed","message":"Turn failed","offset":0,"expected_kind":"task_failed","expected_stage":"deliver","expected_style":"error"}
+    ]
+  },
+  {
+    "name": "claude state-only completion is not delivered",
+    "events": [
+      {"source":"claude_code","raw_type":"response_complete","message":"Done","offset":0,"expected_stage":"ingress_drop"}
+    ]
+  }
+]

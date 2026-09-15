@@ -6,8 +6,9 @@ import (
 )
 
 const (
-	HeaderSize    = 20
-	FlagEncrypted = 0x01
+	HeaderSize       = 20
+	FlagEncrypted    = 0x01
+	FlagOutputTiming = 0x02
 )
 
 const (
@@ -26,12 +27,15 @@ const (
 	TypeInput                 = 0x21
 	TypeSnapshot              = 0x22
 	TypeTerminalGridSnapshot  = 0x23
+	TypeKeyInput              = 0x24
+	TypeCheckpointRequest     = 0x25
 	TypePing                  = 0x30
 	TypePong                  = 0x31
 	TypePairingInfo           = 0x40
 	TypeSessionStatus         = 0x41
 	TypeRemoteTelemetry       = 0x42
 	TypeClientState           = 0x43
+	TypeRelayStatus           = 0x44
 	TypeApprovalRequest       = 0x50
 	TypeApprovalResponse      = 0x51
 	TypeNotificationEvent     = 0x52

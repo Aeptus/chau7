@@ -7,9 +7,9 @@ struct ShellSettingsView: View {
     @Bindable private var settings = FeatureSettings.shared
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: Chau7Style.Settings.pageSectionSpacing) {
             // Shell Settings
-            SettingsSectionHeader(L("settings.terminal.shell", "Shell"), icon: "terminal")
+            SettingsSectionHeader(L("settings.terminal.shell", "Shell"), icon: "terminal", anchorID: "shellHeader")
 
             SettingsPicker(
                 label: L("settings.terminal.shell", "Shell"),
@@ -47,8 +47,7 @@ struct ShellSettingsView: View {
                 isOn: $settings.isLsColorsEnabled
             )
 
-            Divider()
-                .padding(.vertical, 8)
+            SettingsDivider()
 
             // Shell History
             SettingsSectionHeader(L("settings.terminal.shellHistory", "Shell History"), icon: "clock.arrow.circlepath")
@@ -63,8 +62,7 @@ struct ShellSettingsView: View {
                 width: 100
             )
 
-            Divider()
-                .padding(.vertical, 8)
+            SettingsDivider()
 
             // Cursor
             SettingsSectionHeader(L("settings.terminal.cursor", "Cursor"), icon: "cursorarrow")
@@ -77,7 +75,8 @@ struct ShellSettingsView: View {
                     (value: "block", label: L("settings.terminal.cursorBlock", "Block")),
                     (value: "underline", label: L("settings.terminal.cursorUnderline", "Underline")),
                     (value: "bar", label: L("settings.terminal.cursorBar", "Bar"))
-                ]
+                ],
+                anchorID: "cursor"
             )
 
             SettingsToggle(
@@ -86,8 +85,7 @@ struct ShellSettingsView: View {
                 isOn: $settings.cursorBlink
             )
 
-            Divider()
-                .padding(.vertical, 8)
+            SettingsDivider()
 
             // Bell
             SettingsSectionHeader(L("settings.terminal.bell", "Bell"), icon: "bell")
@@ -111,8 +109,7 @@ struct ShellSettingsView: View {
                 )
             }
 
-            Divider()
-                .padding(.vertical, 8)
+            SettingsDivider()
 
             // Reset Button
             SettingsButtonRow(buttons: [

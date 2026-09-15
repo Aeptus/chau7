@@ -20,6 +20,8 @@ final class TelemetryStore {
     private let queue = DispatchQueue(label: "com.chau7.telemetry.store")
     private let checkpointLogWalThresholdBytes: Int64 = 8 * 1024 * 1024
     private let checkpointLogRemainingFramesThreshold: Int32 = 1000
+    private let latencySamplesPrepareFailureLogInterval: TimeInterval = 60
+    private var lastLatencySamplesPrepareFailureLogAt = Date.distantPast
     private lazy var maintenance = TelemetryMaintenance(store: self)
 
     private static var dbPath: String {
@@ -61,6 +63,24 @@ final class TelemetryStore {
         let migrator = TelemetrySchemaMigrator(db: db)
         migrator.createTables()
         migrator.applyMigrations()
+    }
+
+    /// Test-only hook: close the live connection and reopen it at the
+    /// currently-resolved `dbPath`. The shared singleton pins its SQLite handle
+    /// to whichever home was active at first init; a test that overrides
+    /// `CHAU7_HOME_ROOT` to a temp home and then deletes it would otherwise
+    /// orphan that handle for every later test. Such tests bracket their
+    /// override with `reopenForTesting()` — once after pointing the store at
+    /// the temp home, once after restoring the real home and before deleting
+    /// the temp directory — so the process-wide connection is always valid.
+    func reopenForTesting() {
+        queue.sync {
+            if let db {
+                sqlite3_close(db)
+                self.db = nil
+            }
+            open()
+        }
     }
 
     // MARK: - Maintenance (forwarders — implementation in TelemetryMaintenance)
@@ -1270,6 +1290,8 @@ final class TelemetryStore {
                        SUM(CASE WHEN COALESCE(cost_state, 'missing') IN ('complete', 'estimated') AND cost_usd IS NOT NULL THEN 1 ELSE 0 END) AS priced_run_count,
                        SUM(CASE WHEN COALESCE(cost_state, 'missing') = 'missing' OR cost_usd IS NULL THEN 1 ELSE 0 END) AS missing_cost_run_count,
                        COALESCE(SUM(total_input_tokens),0) AS total_input_tokens,
+                       COALESCE(SUM(total_cache_creation_input_tokens),0) AS total_cache_creation_input_tokens,
+                       COALESCE(SUM(total_cache_read_input_tokens),0) AS total_cache_read_input_tokens,
                        COALESCE(SUM(total_cached_input_tokens),0) AS total_cached_input_tokens,
                        COALESCE(SUM(total_output_tokens),0) AS total_output_tokens,
                        COALESCE(SUM(total_reasoning_output_tokens),0) AS total_reasoning_output_tokens,
@@ -1291,6 +1313,8 @@ final class TelemetryStore {
                    tab_provider_rollup.priced_run_count,
                    tab_provider_rollup.missing_cost_run_count,
                    tab_provider_rollup.total_input_tokens,
+                   tab_provider_rollup.total_cache_creation_input_tokens,
+                   tab_provider_rollup.total_cache_read_input_tokens,
                    tab_provider_rollup.total_cached_input_tokens,
                    tab_provider_rollup.total_output_tokens,
                    tab_provider_rollup.total_reasoning_output_tokens,
@@ -1321,6 +1345,8 @@ final class TelemetryStore {
                 var missingCostRunCount = 0
                 var totalInputTokens = 0
                 var totalCachedInputTokens = 0
+                var totalCacheCreationInputTokens = 0
+                var totalCacheReadInputTokens = 0
                 var totalOutputTokens = 0
                 var totalReasoningOutputTokens = 0
                 var totalCostUSD = 0.0
@@ -1340,16 +1366,18 @@ final class TelemetryStore {
                 aggregate.pricedRunCount += Int(sqlite3_column_int64(stmt, 3))
                 aggregate.missingCostRunCount += Int(sqlite3_column_int64(stmt, 4))
                 aggregate.totalInputTokens += Int(sqlite3_column_int64(stmt, 5))
-                aggregate.totalCachedInputTokens += Int(sqlite3_column_int64(stmt, 6))
-                aggregate.totalOutputTokens += Int(sqlite3_column_int64(stmt, 7))
-                aggregate.totalReasoningOutputTokens += Int(sqlite3_column_int64(stmt, 8))
-                aggregate.totalCostUSD += sqlite3_column_double(stmt, 9)
+                aggregate.totalCacheCreationInputTokens += Int(sqlite3_column_int64(stmt, 6))
+                aggregate.totalCacheReadInputTokens += Int(sqlite3_column_int64(stmt, 7))
+                aggregate.totalCachedInputTokens += Int(sqlite3_column_int64(stmt, 8))
+                aggregate.totalOutputTokens += Int(sqlite3_column_int64(stmt, 9))
+                aggregate.totalReasoningOutputTokens += Int(sqlite3_column_int64(stmt, 10))
+                aggregate.totalCostUSD += sqlite3_column_double(stmt, 11)
 
-                let latestKey = colText(stmt, 10) ?? ""
+                let latestKey = colText(stmt, 12) ?? ""
                 if latestKey >= aggregate.latestKey {
                     aggregate.latestKey = latestKey
                     aggregate.lastProvider = AnalyticsProvider.key(for: rawProvider)
-                    aggregate.lastLocationPath = colText(stmt, 11)
+                    aggregate.lastLocationPath = colText(stmt, 13)
                 }
                 aggregated[tabID] = aggregate
             }
@@ -1361,6 +1389,8 @@ final class TelemetryStore {
                     missingCostRunCount: aggregate.missingCostRunCount,
                     totalInputTokens: aggregate.totalInputTokens,
                     totalCachedInputTokens: aggregate.totalCachedInputTokens,
+                    totalCacheCreationInputTokens: aggregate.totalCacheCreationInputTokens,
+                    totalCacheReadInputTokens: aggregate.totalCacheReadInputTokens,
                     totalOutputTokens: aggregate.totalOutputTokens,
                     totalReasoningOutputTokens: aggregate.totalReasoningOutputTokens,
                     totalCostUSD: aggregate.totalCostUSD,
@@ -1399,7 +1429,11 @@ final class TelemetryStore {
             sql += " ORDER BY observed_at ASC, ingest_seq ASC"
 
             var stmt: OpaquePointer?
-            guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return [] }
+            let prepareResult = sqlite3_prepare_v2(db, sql, -1, &stmt, nil)
+            guard prepareResult == SQLITE_OK else {
+                logLatencySamplesPrepareFailure(db: db, resultCode: prepareResult)
+                return []
+            }
             defer { sqlite3_finalize(stmt) }
 
             var bindIndex: Int32 = 1
@@ -1442,6 +1476,19 @@ final class TelemetryStore {
         }
     }
 
+    /// This query feeds several analytics surfaces, so a persistent schema
+    /// mismatch can otherwise generate a log line on every refresh. The store
+    /// queue serializes both the timestamp and SQLite handle access.
+    private func logLatencySamplesPrepareFailure(db: OpaquePointer, resultCode: Int32) {
+        let now = Date()
+        guard now.timeIntervalSince(lastLatencySamplesPrepareFailureLogAt) >= latencySamplesPrepareFailureLogInterval else {
+            return
+        }
+        lastLatencySamplesPrepareFailureLogAt = now
+        let detail = String(cString: sqlite3_errmsg(db))
+        Log.warn("TelemetryStore: failed to prepare provider latency query: rc=\(resultCode) detail=\(detail)")
+    }
+
     /// Token usage aggregated per provider, ordered by cost descending.
     func consumptionPerProvider(after: Date? = nil, providerFilterKey: String? = nil) -> [ProviderConsumptionStats] {
         queue.sync {
@@ -1451,6 +1498,8 @@ final class TelemetryStore {
                    SUM(CASE WHEN COALESCE(cost_state, 'missing') IN ('complete', 'estimated') AND cost_usd IS NOT NULL THEN 1 ELSE 0 END),
                    SUM(CASE WHEN COALESCE(cost_state, 'missing') = 'missing' OR cost_usd IS NULL THEN 1 ELSE 0 END),
                    COALESCE(SUM(total_input_tokens),0),
+                   COALESCE(SUM(total_cache_creation_input_tokens),0),
+                   COALESCE(SUM(total_cache_read_input_tokens),0),
                    COALESCE(SUM(total_cached_input_tokens),0),
                    COALESCE(SUM(total_output_tokens),0),
                    COALESCE(SUM(total_reasoning_output_tokens),0),
@@ -1486,10 +1535,12 @@ final class TelemetryStore {
                     pricedRunCount: (current?.pricedRunCount ?? 0) + Int(sqlite3_column_int64(stmt, 2)),
                     missingCostRunCount: (current?.missingCostRunCount ?? 0) + Int(sqlite3_column_int64(stmt, 3)),
                     totalInputTokens: (current?.totalInputTokens ?? 0) + Int(sqlite3_column_int64(stmt, 4)),
-                    totalCachedInputTokens: (current?.totalCachedInputTokens ?? 0) + Int(sqlite3_column_int64(stmt, 5)),
-                    totalOutputTokens: (current?.totalOutputTokens ?? 0) + Int(sqlite3_column_int64(stmt, 6)),
-                    totalReasoningOutputTokens: (current?.totalReasoningOutputTokens ?? 0) + Int(sqlite3_column_int64(stmt, 7)),
-                    totalCostUSD: (current?.totalCostUSD ?? 0) + sqlite3_column_double(stmt, 8)
+                    totalCachedInputTokens: (current?.totalCachedInputTokens ?? 0) + Int(sqlite3_column_int64(stmt, 7)),
+                    totalCacheCreationInputTokens: (current?.totalCacheCreationInputTokens ?? 0) + Int(sqlite3_column_int64(stmt, 5)),
+                    totalCacheReadInputTokens: (current?.totalCacheReadInputTokens ?? 0) + Int(sqlite3_column_int64(stmt, 6)),
+                    totalOutputTokens: (current?.totalOutputTokens ?? 0) + Int(sqlite3_column_int64(stmt, 8)),
+                    totalReasoningOutputTokens: (current?.totalReasoningOutputTokens ?? 0) + Int(sqlite3_column_int64(stmt, 9)),
+                    totalCostUSD: (current?.totalCostUSD ?? 0) + sqlite3_column_double(stmt, 10)
                 )
             }
             return aggregated.values.sorted { lhs, rhs in

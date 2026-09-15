@@ -55,8 +55,10 @@ type Agent struct {
 	ipcMu   sync.Mutex
 	ipcConn *net.UnixConn
 
-	wsMu   sync.Mutex
-	wsConn *websocket.Conn
+	wsMu           sync.Mutex
+	wsConn         *websocket.Conn
+	relayStatus    string
+	relayRetryInMS int64
 
 	stateMu sync.Mutex // protects a.state reads/writes
 
@@ -134,9 +136,16 @@ type SessionStatusPayload struct {
 	PairedDeviceName string `json:"paired_device_name,omitempty"`
 }
 
+type RelayStatusPayload struct {
+	Status    string `json:"status"`
+	RetryInMS int64  `json:"retry_in_ms,omitempty"`
+}
+
 type RemoteClientStatePayload struct {
 	AppState                string `json:"app_state"`
 	StreamMode              string `json:"stream_mode"`
+	TerminalPresentation    string `json:"terminal_presentation,omitempty"`
+	SupportsOutputTiming    bool   `json:"supports_output_timing,omitempty"`
 	PushToken               string `json:"push_token,omitempty"`
 	PushTopic               string `json:"push_topic,omitempty"`
 	PushEnvironment         string `json:"push_environment,omitempty"`
@@ -202,6 +211,9 @@ type RemoteInteractivePrompt struct {
 	Prompt           string                          `json:"prompt"`
 	Detail           string                          `json:"detail,omitempty"`
 	Options          []RemoteInteractivePromptOption `json:"options"`
+	// MultiSelect marks AskUserQuestion multi-select prompts (additive;
+	// absent/false for single-select and for older Macs).
+	MultiSelect bool `json:"multi_select,omitempty"`
 	// DetectedAt is Swift's Date wire encoding: seconds since 2001-01-01
 	// (timeIntervalSinceReferenceDate), a JSON number — not a string.
 	DetectedAt float64 `json:"detected_at"`
@@ -309,6 +321,7 @@ func NewAgent(socketPath, relayBaseURL, macName, statePath string) (*Agent, erro
 		statePath:    statePath,
 		state:        state,
 		sendSeq:      1,
+		relayStatus:  "connecting",
 		// Push-eligible until the app proves it is foreground: assuming
 		// "foreground" at startup meant an agent (re)start while the phone
 		// was locked in a pocket suppressed every push until the app next
@@ -410,7 +423,7 @@ func (a *Agent) ipcLoop(ctx context.Context) {
 		a.ipcMu.Lock()
 		a.ipcConn = conn
 		a.ipcMu.Unlock()
-		a.sendPairingInfo()
+		a.announceIPCConnection()
 		a.readIPC(ctx, conn)
 		a.ipcMu.Lock()
 		a.ipcConn = nil
@@ -422,6 +435,25 @@ func (a *Agent) ipcLoop(ctx context.Context) {
 			return
 		}
 	}
+}
+
+// announceIPCConnection publishes both durable pairing information and the
+// helper's current relay-session state. The helper can survive a Chau7 app
+// crash, so a newly reconnected IPC consumer must be caught up to an already
+// ready phone session; otherwise the Mac never sends its initial tab state.
+func (a *Agent) announceIPCConnection() {
+	a.sendPairingInfo()
+	a.sendRelayStatus()
+
+	a.sessionMu.Lock()
+	ready := a.sessionReady
+	a.sessionMu.Unlock()
+	status := "disconnected"
+	if ready {
+		status = "ready"
+	}
+	a.sendSessionStatus(status)
+	log.Printf("ipc connected: replayed relay and session status %s", status)
 }
 
 func (a *Agent) readIPC(ctx context.Context, conn *net.UnixConn) {
@@ -467,6 +499,7 @@ func (a *Agent) relayLoop(ctx context.Context) {
 		url := a.relayConnectURL()
 		conn, _, err := websocket.Dial(ctx, url, a.relayDialOptions())
 		if err != nil {
+			a.updateRelayStatus("reconnecting", backoff)
 			log.Printf("relay connect: %v (retry in %v)", err, backoff)
 			select {
 			case <-time.After(backoff):
@@ -480,6 +513,7 @@ func (a *Agent) relayLoop(ctx context.Context) {
 		a.wsMu.Lock()
 		a.wsConn = conn
 		a.wsMu.Unlock()
+		a.updateRelayStatus("connected", 0)
 		a.resetSession()
 		a.stateMu.Lock()
 		hasPaired := a.state.HasPairedDevices()
@@ -493,6 +527,7 @@ func (a *Agent) relayLoop(ctx context.Context) {
 		a.wsMu.Lock()
 		a.wsConn = nil
 		a.wsMu.Unlock()
+		a.updateRelayStatus("reconnecting", 2*time.Second)
 		a.resetSession()
 		a.sendSessionStatus("disconnected")
 		log.Printf("relay disconnected, reconnecting in %v", 2*time.Second)
@@ -523,14 +558,20 @@ func (a *Agent) handleIPCFrame(frame *protocol.Frame) {
 	switch frame.Type {
 	case protocol.TypeApprovalRequest:
 		a.updatePendingApproval(frame.Payload)
-		a.sendEncryptedToRelay(frame)
+		if a.isSessionReady() {
+			a.sendEncryptedToRelay(frame)
+		}
 		a.handleApprovalRequestForPush(frame.Payload)
 	case protocol.TypeInteractivePromptList:
 		a.replacePendingPrompts(frame.Payload)
-		a.sendEncryptedToRelay(frame)
+		if a.isSessionReady() {
+			a.sendEncryptedToRelay(frame)
+		}
 		a.handleInteractivePromptListForPush(frame.Payload)
 	case protocol.TypeNotificationEvent:
-		a.sendEncryptedToRelay(frame)
+		if a.isSessionReady() {
+			a.sendEncryptedToRelay(frame)
+		}
 		a.handleNotificationEventForPush(frame.Payload)
 	case protocol.TypeTabList, protocol.TypeOutput, protocol.TypeSnapshot,
 		protocol.TypeTerminalGridSnapshot,
@@ -544,13 +585,15 @@ func (a *Agent) handleIPCFrame(frame *protocol.Frame) {
 			a.sendToRelay(frame)
 		}
 	case protocol.TypePing:
-		a.sendEncryptedToRelay(&protocol.Frame{
-			Version: 1,
-			Type:    protocol.TypePong,
-			TabID:   frame.TabID,
-			Seq:     a.nextSeq(),
-			Payload: frame.Payload,
-		})
+		if a.isSessionReady() {
+			a.sendEncryptedToRelay(&protocol.Frame{
+				Version: 1,
+				Type:    protocol.TypePong,
+				TabID:   frame.TabID,
+				Seq:     a.nextSeq(),
+				Payload: frame.Payload,
+			})
+		}
 	default:
 		log.Printf("ipc: unhandled frame type 0x%02x", frame.Type)
 	}
@@ -580,6 +623,7 @@ func (a *Agent) handleRelayFrame(frame *protocol.Frame) {
 		a.sessionMu.Lock()
 		a.sessionReady = true
 		a.sessionMu.Unlock()
+		log.Printf("session ready: encrypted epoch confirmed by iOS")
 		a.sendToIPC(&protocol.Frame{
 			Version: 1,
 			Type:    protocol.TypeSessionReady,
@@ -593,8 +637,9 @@ func (a *Agent) handleRelayFrame(frame *protocol.Frame) {
 		}
 		a.handleClientStateFrame(frame.Payload)
 		a.sendToIPC(frame)
-	case protocol.TypeTabSwitch, protocol.TypeInput, protocol.TypeRemoteTelemetry,
-		protocol.TypeApprovalResponse:
+	case protocol.TypeTabSwitch, protocol.TypeInput, protocol.TypeKeyInput,
+		protocol.TypeCheckpointRequest,
+		protocol.TypeRemoteTelemetry, protocol.TypeApprovalResponse:
 		if requiresEncryptedRelayFrame(frame.Type) && !wasEncrypted {
 			return
 		}
@@ -624,6 +669,8 @@ func requiresEncryptedRelayFrame(frameType uint8) bool {
 		protocol.TypeClientState,
 		protocol.TypeTabSwitch,
 		protocol.TypeInput,
+		protocol.TypeKeyInput,
+		protocol.TypeCheckpointRequest,
 		protocol.TypeRemoteTelemetry,
 		protocol.TypeApprovalResponse:
 		return true
@@ -681,9 +728,18 @@ func (a *Agent) handleClientStateFrame(payload []byte) {
 }
 
 func (a *Agent) shouldForwardLiveFrames() bool {
+	if !a.isSessionReady() {
+		return false
+	}
 	a.clientStateMu.Lock()
 	defer a.clientStateMu.Unlock()
 	return a.currentClientStreamMode != "approvals_only"
+}
+
+func (a *Agent) isSessionReady() bool {
+	a.sessionMu.Lock()
+	defer a.sessionMu.Unlock()
+	return a.crypto != nil && a.sessionReady
 }
 
 func (a *Agent) shouldNotifyClientViaPush() bool {
@@ -726,13 +782,24 @@ func (a *Agent) handlePairRequest(payload []byte) {
 		return
 	}
 
-	// A fallback re-pair must discard any provisional session state so the
-	// subsequent HELLO exchange derives fresh transport keys on both sides.
-	a.resetSession()
-
 	a.pairingMu.Lock()
 	a.pairingAttempts = 0
 	a.pairingMu.Unlock()
+
+	a.sessionMu.Lock()
+	peerKeyChanged := a.currentIOSPub != "" && a.currentIOSPub != request.IOSPub
+	if peerKeyChanged {
+		a.crypto = nil
+		a.iosNonce = nil
+		a.sessionReady = false
+		a.maxReceivedSeq = 0
+	}
+	a.sessionMu.Unlock()
+	if peerKeyChanged {
+		a.resetSessionEpochState()
+		a.sendSessionStatus("disconnected")
+		log.Printf("pair request: invalidated crypto for changed iOS identity")
+	}
 
 	a.stateMu.Lock()
 	device, err := a.state.UpsertPairedDevice(request.IOSName, request.IOSPub, time.Now())
@@ -764,8 +831,22 @@ func (a *Agent) handlePairRequest(payload []byte) {
 		Seq:     a.nextSeq(),
 		Payload: data,
 	})
-	if err := a.sendHello(); err != nil {
+	// Pairing authenticates long-lived identities; the HELLO nonce pair owns
+	// the crypto epoch. Re-send the current Mac nonce instead of rotating it on
+	// every fallback request, making retries idempotent and preserving any
+	// already-matching provisional session.
+	if err := a.sendCurrentHello(); err != nil {
 		log.Printf("pair request: send hello: %v", err)
+	}
+	if a.establishSession() {
+		a.sendSessionReadyToRelay()
+	} else {
+		a.sessionMu.Lock()
+		hasCrypto := a.crypto != nil
+		a.sessionMu.Unlock()
+		if hasCrypto {
+			a.sendSessionReadyToRelay()
+		}
 	}
 }
 
@@ -824,12 +905,60 @@ func (a *Agent) handleHello(payload []byte) {
 		a.stateMu.Unlock()
 		if device != nil {
 			a.setCurrentPeer(device)
+		} else {
+			a.sessionMu.Lock()
+			hasTrustedPeer := a.currentIOSPub != ""
+			a.sessionMu.Unlock()
+			if hasTrustedPeer {
+				log.Printf("hello: ignored unrecognized iOS identity while a trusted session is active")
+				return
+			}
 		}
 	}
+
 	a.sessionMu.Lock()
-	a.iosNonce = nonce
+	sameNonce := bytes.Equal(a.iosNonce, nonce)
+	hadCrypto := a.crypto != nil
+	if hadCrypto && !sameNonce {
+		// A newly launched iOS client owns a fresh nonce while the Mac relay
+		// socket can outlive the old app process. Retire that stale epoch but
+		// preserve the Mac nonce and paired identity; the changed iOS nonce is
+		// sufficient to derive a distinct key. Repeated HELLOs with the same
+		// nonce are idempotent and never reset sequence state.
+		a.crypto = nil
+		a.sessionReady = false
+		a.maxReceivedSeq = 0
+	}
+	a.iosNonce = append(a.iosNonce[:0], nonce...)
+	hasMacNonce := len(a.macNonce) != 0
 	a.sessionMu.Unlock()
-	a.establishSession()
+
+	if hadCrypto && !sameNonce {
+		a.resetSessionEpochState()
+		a.sendSessionStatus("disconnected")
+		log.Printf("session rekey: accepted fresh iOS HELLO nonce")
+	}
+
+	var helloErr error
+	if hasMacNonce {
+		helloErr = a.sendCurrentHello()
+	} else {
+		helloErr = a.sendHello()
+	}
+	if helloErr != nil {
+		log.Printf("hello: send Mac hello: %v", helloErr)
+		return
+	}
+
+	if hadCrypto && sameNonce {
+		// The peer may have missed SESSION_READY. Re-sending it is safe and
+		// lets a duplicate HELLO finish the same epoch without rotating keys.
+		a.sendSessionReadyToRelay()
+		return
+	}
+	if a.establishSession() {
+		a.sendSessionReadyToRelay()
+	}
 }
 
 func (a *Agent) sendHello() error {
@@ -837,6 +966,23 @@ func (a *Agent) sendHello() error {
 	if _, err := rand.Read(macNonce); err != nil {
 		return err
 	}
+	a.sessionMu.Lock()
+	a.macNonce = append(a.macNonce[:0], macNonce...)
+	a.sessionMu.Unlock()
+	return a.sendHelloWithNonce(macNonce)
+}
+
+func (a *Agent) sendCurrentHello() error {
+	a.sessionMu.Lock()
+	macNonce := append([]byte(nil), a.macNonce...)
+	a.sessionMu.Unlock()
+	if len(macNonce) == 0 {
+		return a.sendHello()
+	}
+	return a.sendHelloWithNonce(macNonce)
+}
+
+func (a *Agent) sendHelloWithNonce(macNonce []byte) error {
 	fp := fingerprint(a.state.MacPublicKey)
 	payload := HelloPayload{
 		DeviceID:   a.state.DeviceID,
@@ -849,10 +995,6 @@ func (a *Agent) sendHello() error {
 	if err != nil {
 		return fmt.Errorf("marshal hello: %w", err)
 	}
-
-	a.sessionMu.Lock()
-	a.macNonce = macNonce
-	a.sessionMu.Unlock()
 
 	a.sendToRelay(&protocol.Frame{
 		Version: 1,
@@ -885,33 +1027,33 @@ func isLowOrderPoint(key []byte) bool {
 	return false
 }
 
-func (a *Agent) establishSession() {
+func (a *Agent) establishSession() bool {
 	a.sessionMu.Lock()
 	if a.crypto != nil {
 		a.sessionMu.Unlock()
-		return
+		return false
 	}
 	if len(a.macNonce) == 0 || len(a.iosNonce) == 0 {
 		a.sessionMu.Unlock()
-		return
+		return false
 	}
 	iosPub, err := validatedIOSPublicKey(a.currentIOSPub)
 	if err != nil {
 		a.sessionMu.Unlock()
 		log.Printf("establish session: ios public key: %v", err)
-		return
+		return false
 	}
 	macPriv, err := a.state.MacPrivateKeyBytes()
 	if err != nil {
 		a.sessionMu.Unlock()
 		log.Printf("establish session: mac private key: %v", err)
-		return
+		return false
 	}
 	shared, err := curve25519.X25519(macPriv, iosPub)
 	if err != nil {
 		a.sessionMu.Unlock()
 		log.Printf("establish session: x25519: %v", err)
-		return
+		return false
 	}
 	// Verify the shared secret is not all zeros (low-order point attack).
 	allZero := true
@@ -924,16 +1066,18 @@ func (a *Agent) establishSession() {
 	if allZero {
 		a.sessionMu.Unlock()
 		log.Printf("establish session: all-zero shared secret (low-order iOS public key)")
-		return
+		return false
 	}
 	crypto, err := newCryptoSession(shared, a.macNonce, a.iosNonce)
 	if err != nil {
 		a.sessionMu.Unlock()
 		log.Printf("establish session: crypto: %v", err)
-		return
+		return false
 	}
 	a.crypto = crypto
-	a.sessionReady = true
+	// Ready means both peers confirmed this epoch. Key derivation alone is
+	// provisional until an encrypted iOS SESSION_READY is admitted.
+	a.sessionReady = false
 	peerID := a.currentPeerID
 	a.sessionMu.Unlock()
 	if peerID != "" {
@@ -946,7 +1090,16 @@ func (a *Agent) establishSession() {
 		}
 		a.stateMu.Unlock()
 	}
+	return true
+}
 
+func (a *Agent) sendSessionReadyToRelay() {
+	a.sessionMu.Lock()
+	hasCrypto := a.crypto != nil
+	a.sessionMu.Unlock()
+	if !hasCrypto {
+		return
+	}
 	sessionID := make([]byte, 8)
 	if _, err := rand.Read(sessionID); err != nil {
 		log.Fatalf("crypto/rand failed: %v", err)
@@ -966,18 +1119,10 @@ func (a *Agent) establishSession() {
 		Payload: data,
 	}
 	a.sendEncryptedToRelay(frame)
-	a.sendToIPC(&protocol.Frame{
-		Version: 1,
-		Type:    protocol.TypeSessionReady,
-		Seq:     a.nextSeq(),
-		Payload: data,
-	})
-	a.sendSessionStatus("ready")
 }
 
 func (a *Agent) resetSession() {
 	a.sessionMu.Lock()
-	defer a.sessionMu.Unlock()
 	a.crypto = nil
 	a.macNonce = nil
 	a.iosNonce = nil
@@ -986,7 +1131,15 @@ func (a *Agent) resetSession() {
 	a.currentPeerName = ""
 	a.sessionReady = false
 	a.maxReceivedSeq = 0
+	a.sessionMu.Unlock()
 
+	a.resetSessionEpochState()
+}
+
+// resetSessionEpochState invalidates state derived from one crypto epoch while
+// leaving relay/IPC transports and long-lived pairing identity untouched.
+// It is shared by full relay resets and in-place iOS rekeys.
+func (a *Agent) resetSessionEpochState() {
 	a.pendingStateMu.Lock()
 	a.sessionEpoch = newSessionEpoch()
 	a.stateVersion = 0
@@ -1080,14 +1233,21 @@ func (a *Agent) sendEncryptedToRelay(frame *protocol.Frame) {
 		a.sessionMu.Unlock()
 		return
 	}
-	nonce := makeNonce(crypto.sendNoncePrefix, frame.Seq)
-	payloadLen := uint32(len(frame.Payload) + crypto.aead.Overhead())
-	frame.Flags |= protocol.FlagEncrypted
-	header := frame.HeaderBytes(payloadLen)
-	ciphertext := crypto.aead.Seal(nil, nonce, frame.Payload, header)
-	frame.Payload = ciphertext
+	encryptedFrame := encryptRelayFrame(frame, crypto)
 	a.sessionMu.Unlock()
-	a.sendToRelay(frame)
+	a.sendToRelay(encryptedFrame)
+}
+
+// encryptRelayFrame returns an encrypted copy so callers can continue using
+// the original plaintext payload for local state and push processing.
+func encryptRelayFrame(frame *protocol.Frame, crypto *cryptoSession) *protocol.Frame {
+	encrypted := *frame
+	encrypted.Flags |= protocol.FlagEncrypted
+	payloadLen := uint32(len(frame.Payload) + crypto.aead.Overhead())
+	header := encrypted.HeaderBytes(payloadLen)
+	nonce := makeNonce(crypto.sendNoncePrefix, frame.Seq)
+	encrypted.Payload = crypto.aead.Seal(nil, nonce, frame.Payload, header)
+	return &encrypted
 }
 
 func makeNonce(prefix [4]byte, seq uint64) []byte {
@@ -1128,6 +1288,43 @@ func (a *Agent) sendSessionStatus(status string) {
 	a.sendToIPC(&protocol.Frame{
 		Version: 1,
 		Type:    protocol.TypeSessionStatus,
+		Seq:     a.nextSeq(),
+		Payload: payload,
+	})
+}
+
+func (a *Agent) updateRelayStatus(status string, retryIn time.Duration) {
+	a.wsMu.Lock()
+	a.relayStatus = status
+	a.relayRetryInMS = retryIn.Milliseconds()
+	a.wsMu.Unlock()
+	a.sendRelayStatus()
+}
+
+func (a *Agent) sendRelayStatus() {
+	a.wsMu.Lock()
+	status := a.relayStatus
+	retryInMS := a.relayRetryInMS
+	if status == "" {
+		if a.wsConn != nil {
+			status = "connected"
+		} else {
+			status = "disconnected"
+		}
+	}
+	a.wsMu.Unlock()
+
+	payload, err := json.Marshal(RelayStatusPayload{
+		Status:    status,
+		RetryInMS: retryInMS,
+	})
+	if err != nil {
+		log.Printf("relay status: marshal: %v", err)
+		return
+	}
+	a.sendToIPC(&protocol.Frame{
+		Version: 1,
+		Type:    protocol.TypeRelayStatus,
 		Seq:     a.nextSeq(),
 		Payload: payload,
 	})

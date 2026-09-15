@@ -48,6 +48,41 @@ func isOpenAIPath(path string) bool {
 		strings.HasPrefix(path, "/responses")
 }
 
+// IsTokenBillableEndpoint reports whether a path returns model output that
+// costs tokens, and may therefore be estimated when a provider omits usage
+// from an otherwise successful response.
+//
+// Estimation used to run on every 200. That silently wrecked cost analytics:
+// /v1/models is a catalog listing with no model field and no usage, but Codex
+// polls it every few seconds and its ~360 KB body estimated to ~90k output
+// tokens per call — 99.8% of all recorded output tokens and most of the
+// reported spend.
+//
+// This is an allowlist rather than a denylist of known-free routes, so it fails
+// closed: an endpoint nobody has classified yet records no usage instead of
+// inventing some. Genuine completion endpoints report real usage anyway, so the
+// estimator only ever covered the fallback case.
+func IsTokenBillableEndpoint(provider Provider, path string) bool {
+	// Token counting prices nothing — it returns a count, not a completion.
+	if strings.HasSuffix(path, "/count_tokens") || strings.Contains(path, "countTokens") {
+		return false
+	}
+
+	switch provider {
+	case ProviderAnthropic:
+		return strings.HasPrefix(path, "/v1/messages") || strings.HasPrefix(path, "/v1/complete")
+	case ProviderOpenAI:
+		return isOpenAIPath(path)
+	case ProviderGemini:
+		// streamGenerateContent capitalizes the G, so one lowercase substring
+		// check silently misses every streaming call. Mirror DetectProvider.
+		return strings.Contains(path, "generateContent") ||
+			strings.Contains(path, "streamGenerateContent")
+	default:
+		return false
+	}
+}
+
 // DetectProvider determines which LLM provider the request is targeting
 // based on the request path and headers.
 //
@@ -120,8 +155,8 @@ func GetUpstreamURL(provider Provider, r *http.Request) string {
 	path := r.URL.Path
 
 	// Subscription-based Codex uses chatgpt.com, not api.openai.com.
-	// Detect by checking the Authorization header: OAuth tokens are JWTs
-	// ("Bearer eyJ..."), API keys start with "sk-".
+	// Detect by checking the Authorization header: API keys start with "sk-",
+	// while ChatGPT access tokens are opaque bearer tokens whose format may vary.
 	if provider == ProviderOpenAI && isSubscriptionAuth(r) {
 		// Rewrite /v1/<endpoint> → /backend-api/codex/<endpoint>
 		trimmed := strings.TrimPrefix(path, "/v1")
@@ -145,8 +180,8 @@ func GetUpstreamURL(provider Provider, r *http.Request) string {
 }
 
 // isSubscriptionAuth returns true if the request uses a ChatGPT subscription
-// OAuth token rather than an API key. OAuth tokens are JWTs (start with "eyJ"),
-// while API keys start with "sk-".
+// access token rather than an API key. API keys start with "sk-"; ChatGPT
+// access tokens are opaque and must not be classified by a JWT-only prefix.
 func isSubscriptionAuth(r *http.Request) bool {
 	auth := r.Header.Get("Authorization")
 	if auth == "" {
@@ -156,7 +191,8 @@ func isSubscriptionAuth(r *http.Request) bool {
 	if token == auth {
 		return false // no "Bearer " prefix
 	}
-	// API keys start with "sk-"; OAuth JWTs start with "eyJ" (base64 of '{"')
+	// API keys start with "sk-"; all other bearer-token formats use the
+	// subscription backend.
 	return !strings.HasPrefix(token, "sk-")
 }
 

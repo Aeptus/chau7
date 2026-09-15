@@ -6,7 +6,7 @@ struct MinimalModeSettingsView: View {
     @Bindable private var minimalMode = MinimalMode.shared
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: Chau7Style.Settings.pageSectionSpacing) {
             // Master Toggle
             SettingsSectionHeader(L("Minimal Mode"), icon: "rectangle.compress.vertical")
 
@@ -21,10 +21,11 @@ struct MinimalModeSettingsView: View {
             )
 
             // Keyboard shortcut hint
-            SettingsShortcutRow(label: L("Toggle Minimal Mode"), shortcut: "Cmd+Shift+M")
+            SettingsShortcutRow(label: L("Toggle Minimal Mode"), shortcut: "⌘⇧M")
 
-            Divider()
-                .padding(.vertical, 8)
+            SettingsStatusGrid(items: statusItems)
+
+            SettingsDivider()
 
             // Individual Element Toggles
             SettingsSectionHeader(L("Hidden Elements"), icon: "eye.slash")
@@ -61,40 +62,63 @@ struct MinimalModeSettingsView: View {
                 disabled: !minimalMode.isEnabled
             )
 
-            Divider()
-                .padding(.vertical, 8)
-
-            // Status Summary
-            SettingsSectionHeader(L("Status"), icon: "info.circle")
-
-            VStack(alignment: .leading, spacing: 6) {
-                statusRow(label: "Minimal Mode", active: minimalMode.isEnabled)
-                if minimalMode.isEnabled {
-                    statusRow(label: "Tab Bar", active: minimalMode.hideTabBar)
-                    statusRow(label: "Title Bar", active: minimalMode.hideTitleBar)
-                    statusRow(label: "Status Bar", active: minimalMode.hideStatusBar)
-                    statusRow(label: "Sidebar", active: minimalMode.hideSidebar)
-                }
-            }
-            .padding(12)
-            .background(Color(NSColor.controlBackgroundColor))
-            .cornerRadius(8)
+            SettingsDescription(
+                text: L("Minimal mode changes apply only while Minimal Mode is enabled.")
+            )
         }
     }
 
-    // MARK: - Status Row
+    private var statusItems: [SettingsStatusItem] {
+        [
+            SettingsStatusItem(
+                id: "minimalMode",
+                label: L("Minimal Mode"),
+                value: enabledDisabled(minimalMode.isEnabled),
+                systemImage: "rectangle.compress.vertical",
+                tone: enabledTone(minimalMode.isEnabled)
+            ),
+            hiddenElementItem(
+                id: "tabBar",
+                label: L("Tab Bar"),
+                isHidden: minimalMode.hideTabBar,
+                systemImage: "rectangle.topthird.inset.filled"
+            ),
+            hiddenElementItem(
+                id: "titleBar",
+                label: L("Title Bar"),
+                isHidden: minimalMode.hideTitleBar,
+                systemImage: "macwindow"
+            ),
+            hiddenElementItem(
+                id: "statusBar",
+                label: L("Status Bar"),
+                isHidden: minimalMode.hideStatusBar,
+                systemImage: "rectangle.bottomthird.inset.filled"
+            ),
+            hiddenElementItem(
+                id: "sidebar",
+                label: L("Sidebar"),
+                isHidden: minimalMode.hideSidebar,
+                systemImage: "sidebar.left"
+            )
+        ]
+    }
 
-    private func statusRow(label: String, active: Bool) -> some View {
-        HStack {
-            Circle()
-                .fill(active ? Color.green : Color.secondary.opacity(0.4))
-                .frame(width: 8, height: 8)
-            Text(label)
-                .font(.system(size: 12))
-            Spacer()
-            Text(active ? "Hidden" : "Visible")
-                .font(.system(size: 11))
-                .foregroundStyle(active ? .green : .secondary)
-        }
+    private func hiddenElementItem(id: String, label: String, isHidden: Bool, systemImage: String) -> SettingsStatusItem {
+        SettingsStatusItem(
+            id: id,
+            label: label,
+            value: isHidden ? L("status.hidden", "Hidden") : L("status.visible", "Visible"),
+            systemImage: systemImage,
+            tone: isHidden ? .enabled : .disabled
+        )
+    }
+
+    private func enabledDisabled(_ isEnabled: Bool) -> String {
+        isEnabled ? L("status.enabled", "Enabled") : L("status.disabled", "Disabled")
+    }
+
+    private func enabledTone(_ isEnabled: Bool) -> SettingsStatusTone {
+        isEnabled ? .enabled : .disabled
     }
 }

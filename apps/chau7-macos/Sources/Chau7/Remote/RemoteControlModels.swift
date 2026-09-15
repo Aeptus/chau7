@@ -78,6 +78,16 @@ struct RemoteSessionStatus: Codable, Equatable {
     }
 }
 
+struct RemoteRelayStatus: Codable, Equatable {
+    let status: String
+    let retryInMillis: Int?
+
+    enum CodingKeys: String, CodingKey {
+        case status
+        case retryInMillis = "retry_in_ms"
+    }
+}
+
 struct RemotePairedDevice: Identifiable, Equatable {
     let id: String
     let name: String

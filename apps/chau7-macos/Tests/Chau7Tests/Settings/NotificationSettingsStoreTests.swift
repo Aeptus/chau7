@@ -28,6 +28,15 @@ final class NotificationSettingsStoreTests: XCTestCase {
         XCTAssertEqual(store.settings.triggerActionBindings["claude_code.idle"], [])
         XCTAssertTrue(store.settings.pushTaskCompletionsToiOS, "push completions default on")
         XCTAssertTrue(store.settings.mutedRepos.isEmpty)
+
+        for key in ["claude_code.failed", "codex.failed"] {
+            let style = store.settings.triggerActionBindings[key]?.first { $0.actionType == .styleTab }
+            XCTAssertEqual(style?.config["autoClearSeconds"], "0", "\(key) should clear only when viewed")
+        }
+        for key in ["ai_coding.failed", "ai_coding.response_failed"] {
+            let style = store.settings.groupActionBindings[key]?.first { $0.actionType == .styleTab }
+            XCTAssertEqual(style?.config["autoClearSeconds"], "0", "\(key) should clear only when viewed")
+        }
     }
 
     func testMutationPersistsAndReloads() {
@@ -71,6 +80,41 @@ final class NotificationSettingsStoreTests: XCTestCase {
         XCTAssertEqual(migrated?.config["autoClearSeconds"], "0", "auto-clear default migrates to persist-until-open")
         XCTAssertTrue(defaults.bool(forKey: "notification.finished.greenDefault.v1"))
         XCTAssertTrue(defaults.bool(forKey: "notification.finished.persistUntilOpen.v1"))
+    }
+
+    func testOldDefaultFailureTimersMigrateToPersistUntilViewed() {
+        let oldErrorStyle = NotificationActionConfig(
+            actionType: .styleTab,
+            enabled: true,
+            config: ["style": "error", "autoClearSeconds": "60"]
+        )
+        defaults.set(
+            JSONOperations.encode(["claude_code.failed": [oldErrorStyle]], context: "old trigger error"),
+            forKey: NotificationSettingsStore.Keys.triggerActionBindings
+        )
+        defaults.set(
+            JSONOperations.encode(["ai_coding.failed": [oldErrorStyle]], context: "old group error"),
+            forKey: NotificationSettingsStore.Keys.groupActionBindings
+        )
+
+        let store = NotificationSettingsStore(defaults: defaults)
+        let triggerStyle = store.settings.triggerActionBindings["claude_code.failed"]?.first {
+            $0.actionType == .styleTab
+        }
+        let groupStyle = store.settings.groupActionBindings["ai_coding.failed"]?.first {
+            $0.actionType == .styleTab
+        }
+
+        XCTAssertEqual(triggerStyle?.config["autoClearSeconds"], "0")
+        XCTAssertEqual(groupStyle?.config["autoClearSeconds"], "0")
+        XCTAssertTrue(defaults.bool(forKey: "notification.error.persistUntilOpen.v1"))
+        XCTAssertTrue(defaults.bool(forKey: "notification.groupError.persistUntilOpen.v1"))
+
+        let reloaded = NotificationSettingsStore(defaults: defaults)
+        let reloadedStyle = reloaded.settings.groupActionBindings["ai_coding.failed"]?.first {
+            $0.actionType == .styleTab
+        }
+        XCTAssertEqual(reloadedStyle?.config["autoClearSeconds"], "0", "migration must persist before its flag gates reruns")
     }
 
     func testResetEqualsFreshInstall() {

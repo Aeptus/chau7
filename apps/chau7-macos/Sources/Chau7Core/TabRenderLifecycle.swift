@@ -19,6 +19,21 @@ public enum TabRenderPhase: String, Equatable, Sendable {
     }
 }
 
+/// Resolves tab-level input eligibility to one pane.
+///
+/// A visible split may render every leaf, but exactly one leaf may own input
+/// and the window-shared Metal renderer. Keeping this predicate in Chau7Core
+/// gives both SwiftUI construction and imperative refreshes one source of
+/// truth.
+public enum PaneInteractionPolicy {
+    public static func isInteractive(
+        isFocused: Bool,
+        tabIsInteractive: Bool
+    ) -> Bool {
+        isFocused && tabIsInteractive
+    }
+}
+
 public struct TabRenderLifecycleInput: Equatable, Sendable {
     public let isSelectedTab: Bool
     public let isInputPriorityWindow: Bool
@@ -91,6 +106,27 @@ public enum TabRenderLifecyclePolicy {
             return true
         }
         return previousPhase != .active && nextPhase == .active
+    }
+
+    public static func requiresTUIWinsizeNudge(
+        previousPhase: TabRenderPhase,
+        nextPhase: TabRenderPhase,
+        hostsTUIApp: Bool
+    ) -> Bool {
+        hostsTUIApp
+            && !previousPhase.keepsVisibleSurface
+            && nextPhase.keepsVisibleSurface
+    }
+
+    /// A restored session can be promoted before process-tree detection catches
+    /// up. If the TUI hint arrives after the view is already visible, the phase
+    /// transition above has already passed and cannot deliver the redraw nudge.
+    public static func requiresLateTUIWinsizeNudge(
+        previouslyHostedTUI: Bool,
+        hostsTUIApp: Bool,
+        phase: TabRenderPhase
+    ) -> Bool {
+        !previouslyHostedTUI && hostsTUIApp && phase.keepsVisibleSurface
     }
 
     public static func phase(for input: TabRenderLifecycleInput) -> TabRenderPhase {

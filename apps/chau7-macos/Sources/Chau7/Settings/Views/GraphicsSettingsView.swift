@@ -11,15 +11,9 @@ struct GraphicsSettingsView: View {
     @State private var renderTestFeedback: String?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: Chau7Style.Settings.pageSectionSpacing) {
             // Sixel Protocol
-            SettingsSectionHeader(L("Sixel Graphics Protocol"), icon: "photo")
-
-            SettingsDescription(
-                text: L(
-                    "Sixel is a bitmap graphics format that allows programs to display images directly in the terminal using DCS escape sequences. Widely supported by tools like libsixel and ImageMagick."
-                )
-            )
+            SettingsSectionHeader(L("Sixel Graphics Protocol"), icon: "photo", anchorID: "sixel")
 
             SettingsToggle(
                 label: L("Enable Sixel Protocol"),
@@ -30,17 +24,10 @@ struct GraphicsSettingsView: View {
                 bridge.saveSettings()
             }
 
-            Divider()
-                .padding(.vertical, 8)
+            SettingsDivider()
 
             // Kitty Graphics Protocol
-            SettingsSectionHeader(L("Kitty Graphics Protocol"), icon: "photo.artframe")
-
-            SettingsDescription(
-                text: L(
-                    "The Kitty graphics protocol provides a modern, efficient way to display images in the terminal using APC escape sequences. Supports PNG, JPEG, and raw pixel data with features like image placement and animation."
-                )
-            )
+            SettingsSectionHeader(L("Kitty Graphics Protocol"), icon: "photo.artframe", anchorID: "kittyGraphics")
 
             SettingsToggle(
                 label: L("Enable Kitty Graphics"),
@@ -51,76 +38,68 @@ struct GraphicsSettingsView: View {
                 bridge.saveSettings()
             }
 
-            SettingsSlider(
-                label: L("Image Cache Size"),
-                help: L("Maximum memory used to cache decoded Kitty images (64-1024 MB)"),
-                value: $cacheSliderValue,
-                range: 64 ... 1024,
-                step: 64,
-                format: "%.0f",
-                suffix: " MB",
-                width: 200,
-                disabled: !bridge.isKittyGraphicsEnabled
-            )
-            .onChange(of: cacheSliderValue) {
-                bridge.kittyCacheLimitMB = Int(cacheSliderValue)
-                bridge.saveSettings()
-            }
+            SettingsDivider()
 
-            Divider()
-                .padding(.vertical, 8)
+            SettingsAdvancedDisclosure {
+                SettingsSectionHeader(L("graphics.advanced.protocolNotes", "Protocol Notes"), icon: "info.circle")
 
-            // Info Section
-            SettingsSectionHeader(L("graphics.protocols.title", "Protocol Information"), icon: "info.circle")
-
-            VStack(alignment: .leading, spacing: 8) {
-                protocolInfoRow(
-                    name: L("graphics.protocol.iterm2", "iTerm2 (imgcat)"),
-                    statusText: L("graphics.status.alwaysEnabled", "Always enabled"),
-                    detail: L("graphics.protocol.iterm2.detail", "ESC ] 1337 ; File = ... BEL"),
-                    isEnabled: true
+                SettingsDescription(
+                    text: L(
+                        "Sixel is a bitmap graphics format that allows programs to display images directly in the terminal using DCS escape sequences. Widely supported by tools like libsixel and ImageMagick."
+                    )
                 )
-                protocolInfoRow(
-                    name: L("graphics.protocol.sixel", "Sixel"),
-                    statusText: bridge.isSixelEnabled
-                        ? L("status.enabled", "Enabled")
-                        : L("status.disabled", "Disabled"),
-                    detail: L("graphics.protocol.sixel.detail", "DCS P ... ST"),
-                    isEnabled: bridge.isSixelEnabled
+
+                SettingsDescription(
+                    text: L(
+                        "The Kitty graphics protocol provides a modern, efficient way to display images in the terminal using APC escape sequences. Supports PNG, JPEG, and raw pixel data with features like image placement and animation."
+                    )
                 )
-                protocolInfoRow(
-                    name: L("graphics.protocol.kitty", "Kitty Graphics"),
-                    statusText: bridge.isKittyGraphicsEnabled
-                        ? L("status.enabled", "Enabled")
-                        : L("status.disabled", "Disabled"),
-                    detail: L("graphics.protocol.kitty.detail", "APC G ... ST"),
-                    isEnabled: bridge.isKittyGraphicsEnabled
+
+                SettingsSlider(
+                    label: L("Image Cache Size"),
+                    help: L("Maximum memory used to cache decoded Kitty images (64-1024 MB)"),
+                    value: $cacheSliderValue,
+                    range: 64 ... 1024,
+                    step: 64,
+                    format: "%.0f",
+                    suffix: " MB",
+                    width: 200,
+                    disabled: !bridge.isKittyGraphicsEnabled
                 )
-            }
-            .padding(12)
-            .background(Color(NSColor.controlBackgroundColor))
-            .cornerRadius(8)
+                .onChange(of: cacheSliderValue) {
+                    bridge.kittyCacheLimitMB = Int(cacheSliderValue)
+                    bridge.saveSettings()
+                }
 
-            // Shortcut hints
-            SettingsHint(icon: "terminal", text: L("graphics.hint.sixel", "Test Sixel: convert image.png sixel:- (requires ImageMagick)"))
-            SettingsHint(icon: "terminal", text: L("graphics.hint.kitty", "Test Kitty: kitty +kitten icat image.png (requires Kitty tools)"))
+                SettingsDivider()
 
-            Divider()
-                .padding(.vertical, 8)
+                SettingsSectionHeader(L("graphics.protocols.title", "Protocol Information"), icon: "info.circle")
 
-            // Test Button
-            HStack(spacing: 12) {
-                SettingsButtonRow(buttons: [
-                    .init(title: L("graphics.button.renderTestImage", "Render Test Image"), icon: "photo.badge.checkmark", style: .bordered) {
-                        renderTestImage()
+                SettingsStatusGrid(items: protocolItems)
+
+                // Shortcut hints
+                VStack(alignment: .leading, spacing: Chau7Style.Spacing.xxxSmall) {
+                    SettingsHint(icon: "terminal", text: L("graphics.hint.sixel", "Test Sixel: convert image.png sixel:- (requires ImageMagick)"))
+                    SettingsHint(icon: "terminal", text: L("graphics.hint.kitty", "Test Kitty: kitty +kitten icat image.png (requires Kitty tools)"))
+                }
+
+                SettingsDivider()
+
+                // Test Button
+                VStack(alignment: .leading, spacing: Chau7Style.Settings.compactRowSpacing) {
+                    SettingsButtonRow(buttons: [
+                        .init(title: L("graphics.button.renderTestImage", "Render Test Image"), icon: "photo.badge.checkmark", style: .bordered) {
+                            renderTestImage()
+                        }
+                    ], alignment: .leading)
+
+                    if let feedback = renderTestFeedback {
+                        Text(feedback)
+                            .font(.caption)
+                            .foregroundStyle(.green)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .transition(.opacity)
                     }
-                ], alignment: .leading)
-
-                if let feedback = renderTestFeedback {
-                    Text(feedback)
-                        .font(.caption)
-                        .foregroundStyle(.green)
-                        .transition(.opacity)
                 }
             }
         }
@@ -129,24 +108,39 @@ struct GraphicsSettingsView: View {
         }
     }
 
-    // MARK: - Protocol Info Row
+    // MARK: - Protocol Summary
 
-    private func protocolInfoRow(name: String, statusText: String, detail: String, isEnabled: Bool) -> some View {
-        HStack {
-            Circle()
-                .fill(isEnabled ? Color.green : Color.secondary)
-                .frame(width: 8, height: 8)
-            Text(name)
-                .fontWeight(.medium)
-            Spacer()
-            Text(detail)
-                .font(.system(.caption, design: .monospaced))
-                .foregroundStyle(.secondary)
-            Text(statusText)
-                .font(.caption)
-                .foregroundStyle(isEnabled ? .green : .secondary)
-                .frame(width: 80, alignment: .trailing)
-        }
+    private var protocolItems: [SettingsStatusItem] {
+        [
+            SettingsStatusItem(
+                id: "iterm2",
+                label: L("graphics.protocol.iterm2", "iTerm2 (imgcat)"),
+                value: L("graphics.status.alwaysEnabled", "Always enabled"),
+                detail: L("graphics.protocol.iterm2.detail", "ESC ] 1337 ; File = ... BEL"),
+                systemImage: "photo",
+                tone: .enabled
+            ),
+            SettingsStatusItem(
+                id: "sixel",
+                label: L("graphics.protocol.sixel", "Sixel"),
+                value: bridge.isSixelEnabled
+                    ? L("status.enabled", "Enabled")
+                    : L("status.disabled", "Disabled"),
+                detail: L("graphics.protocol.sixel.detail", "DCS P ... ST"),
+                systemImage: "photo.on.rectangle",
+                tone: bridge.isSixelEnabled ? .enabled : .disabled
+            ),
+            SettingsStatusItem(
+                id: "kitty",
+                label: L("graphics.protocol.kitty", "Kitty Graphics"),
+                value: bridge.isKittyGraphicsEnabled
+                    ? L("status.enabled", "Enabled")
+                    : L("status.disabled", "Disabled"),
+                detail: L("graphics.protocol.kitty.detail", "APC G ... ST"),
+                systemImage: "photo.artframe",
+                tone: bridge.isKittyGraphicsEnabled ? .enabled : .disabled
+            )
+        ]
     }
 
     // MARK: - Test Image

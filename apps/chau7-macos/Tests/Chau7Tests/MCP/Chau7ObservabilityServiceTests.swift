@@ -16,7 +16,22 @@ final class Chau7ObservabilityServiceTests: XCTestCase {
         XCTAssertNotNil(payload["build_sha"] as? String)
         XCTAssertNotNil(payload["process_id"] as? Int)
         XCTAssertEqual(payload["mcp_protocol_version"] as? String, "2025-11-25")
-        XCTAssertEqual(payload["observability_schema_version"] as? Int, 1)
+        XCTAssertEqual(payload["observability_schema_version"] as? Int, 2)
+        let components = try XCTUnwrap(payload["components"] as? [String: Any])
+        XCTAssertNotNil(components["app"] as? [String: Any])
+    }
+
+    func testRuntimeInfoIncludesObservedComponentIdentity() async throws {
+        Chau7ObservabilityService.shared.updateComponentRuntimeInfo(
+            component: "proxy",
+            info: ["status": "ok", "build_sha": "proxy-123"]
+        )
+        await Task.yield()
+
+        let payload = try decodeObject(Chau7ObservabilityService.shared.runtimeInfoJSON())
+        let components = try XCTUnwrap(payload["components"] as? [String: Any])
+        let proxy = try XCTUnwrap(components["proxy"] as? [String: Any])
+        XCTAssertEqual(proxy["build_sha"] as? String, "proxy-123")
     }
 
     func testRuntimeEventsReturnLatestEventsWithControlPlaneTabIDs() throws {
@@ -69,6 +84,45 @@ final class Chau7ObservabilityServiceTests: XCTestCase {
         let detail = try XCTUnwrap(events[0]["detail"] as? [String: Any])
         XCTAssertEqual(detail["event_type"] as? String, "finished")
         XCTAssertEqual(detail["tool"] as? String, "Codex")
+    }
+
+    func testNotificationDeliveryOutcomeIsStructuredAndCorrelated() throws {
+        let eventID = UUID()
+        let nativeTabID = UUID()
+        Chau7ObservabilityService.shared.recordNotificationDeliveryOutcome(
+            NotificationDeliveryOutcome(
+                eventID: eventID,
+                source: AIEventSource.codex.rawValue,
+                eventType: "waiting_input",
+                rawType: "agent-turn-complete",
+                semanticKind: NotificationSemanticKind.waitingForInput.rawValue,
+                reliability: AIEventReliability.heuristic.rawValue,
+                producer: "codex_notify_hook",
+                deliveryState: "completed",
+                triggerID: "codex.waiting_input",
+                actionsExecuted: ["styleTab"],
+                resolvedTabID: nativeTabID.uuidString,
+                didStyleTab: true,
+                classificationConfidence: "high",
+                classificationEvidence: ["response_directive", "multiple_options"]
+            )
+        )
+
+        let payload = try decodeObject(
+            Chau7ObservabilityService.shared.runtimeEventsJSON(sinceMillis: nil, limit: 10)
+        )
+        let event = try XCTUnwrap((payload["events"] as? [[String: Any]])?.last)
+        XCTAssertEqual(event["type"] as? String, "notification_delivery")
+        XCTAssertEqual(
+            event["tab_id"] as? String,
+            TerminalControlService.shared.controlPlaneTabID(for: nativeTabID)
+        )
+        let detail = try XCTUnwrap(event["detail"] as? [String: Any])
+        XCTAssertEqual(detail["notification_event_id"] as? String, eventID.uuidString)
+        XCTAssertEqual(detail["delivery_state"] as? String, "completed")
+        XCTAssertEqual(detail["did_style_tab"] as? Bool, true)
+        XCTAssertEqual(detail["classification_confidence"] as? String, "high")
+        XCTAssertEqual(detail["actions_executed"] as? [String], ["styleTab"])
     }
 
     func testTimerInventoryIncludesActiveAndInactiveTimers() throws {

@@ -210,6 +210,7 @@ func TestMockupClient_Stats(t *testing.T) {
 	stats := client.Stats()
 	if stats == nil {
 		t.Fatal("Expected non-nil stats")
+		return
 	}
 
 	queued := stats["queued_events"].(int)
@@ -355,6 +356,7 @@ func TestNewMockupClient_AllowsHTTPSPathPrefix(t *testing.T) {
 	}
 	if client == nil {
 		t.Fatal("Expected client")
+		return
 	}
 	if client.baseURL != "https://api.example.com/mockup" {
 		t.Fatalf("Got baseURL %q", client.baseURL)

@@ -28,7 +28,17 @@ enum BackgroundDrainBackoff {
     }
 }
 
-/// Shared service that drains PTY buffers for background (non-interactive) terminal views.
+enum BackgroundDrainDeliveryPolicy {
+    static func shouldNotifyBufferChanged(
+        gridChanged: Bool,
+        allowsLivePresentation: Bool
+    ) -> Bool {
+        gridChanged && allowsLivePresentation
+    }
+}
+
+/// Shared service that drains PTY buffers for background (non-interactive) terminal views
+/// that are not the foreground phone's current stream subscription.
 /// Replaces per-tab drain threads with a single timer that polls all registered views
 /// non-blocking. This reduces 26 threads to 1 timer for 26 background tabs, and applies
 /// `BackgroundDrainBackoff` so dormant tabs are polled less often than active ones.
@@ -117,19 +127,27 @@ final class BackgroundTerminalDrainService {
             }
             idleStreakByView[viewID] = 0
             let gridChanged = flags.contains(.gridChanged)
-
-            // Release the lock before dispatching to main — holding it across
-            // main.sync would deadlock if a queued pollAndSync is waiting for
-            // the same lock on the main thread. Re-acquire on main to protect
-            // processTerminalStateAfterPollLocked from concurrent poll/activation.
+            let drainSnapshot = view.extractTerminalDrainSnapshotLocked(
+                rust: rust,
+                changed: gridChanged,
+                caller: "backgroundDrain"
+            )
             view.terminalPollAccessLock.unlock()
 
-            DispatchQueue.main.async { [weak view] in
-                guard let view, let rust = view.rustTerminal else { return }
-                view.terminalPollAccessLock.lock()
-                defer { view.terminalPollAccessLock.unlock() }
-                _ = view.processTerminalStateAfterPollLocked(rust: rust, changed: gridChanged)
-                if gridChanged {
+            DispatchQueue.main.async { [weak view, rust] in
+                guard let view,
+                      let currentRust = view.rustTerminal,
+                      currentRust === rust else { return }
+                view.noteInitialPTYActivity(flags)
+                _ = view.applyTerminalDrainSnapshot(
+                    drainSnapshot,
+                    rust: currentRust,
+                    backendLockHeld: false
+                )
+                if BackgroundDrainDeliveryPolicy.shouldNotifyBufferChanged(
+                    gridChanged: gridChanged,
+                    allowsLivePresentation: view.notifyUpdateChanges
+                ) {
                     view.onBufferChanged?()
                 }
             }

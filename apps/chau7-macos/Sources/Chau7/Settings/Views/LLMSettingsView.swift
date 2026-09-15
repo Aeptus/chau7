@@ -15,7 +15,7 @@ struct LLMSettingsView: View {
     @State private var isTesting = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: Chau7Style.Settings.pageSectionSpacing) {
             SettingsSectionHeader(L("LLM Provider"), icon: "brain")
 
             SettingsRow(
@@ -38,14 +38,16 @@ struct LLMSettingsView: View {
                     L("settings.llm.apiKey", "API Key"),
                     help: L("settings.llm.apiKey.help", "Stored securely in the macOS Keychain")
                 ) {
-                    HStack {
-                        SecureField("", text: $apiKeyInput)
-                            .textFieldStyle(.roundedBorder)
-                            .frame(maxWidth: 240)
-                        Button(L("Save", "Save")) {
-                            saveAPIKey()
+                    ViewThatFits(in: .horizontal) {
+                        HStack(spacing: Chau7Style.Settings.inlineControlSpacing) {
+                            apiKeyField
+                            saveAPIKeyButton
                         }
-                        .buttonStyle(.bordered)
+
+                        VStack(alignment: .leading, spacing: Chau7Style.Settings.inlineControlSpacing) {
+                            apiKeyField
+                            saveAPIKeyButton
+                        }
                     }
                 }
             }
@@ -78,22 +80,26 @@ struct LLMSettingsView: View {
             )
 
             // Test connection
-            HStack {
-                Button(isTesting ? L("Testing...", "Testing...") : L("Test Connection", "Test Connection")) {
-                    testConnection()
-                }
-                .buttonStyle(.bordered)
-                .disabled(isTesting)
+            VStack(alignment: .leading, spacing: Chau7Style.Settings.compactRowSpacing) {
+                SettingsButtonRow(buttons: [
+                    .init(
+                        title: isTesting ? L("Testing...", "Testing...") : L("Test Connection", "Test Connection"),
+                        icon: "network",
+                        isDisabled: isTesting
+                    ) {
+                        testConnection()
+                    }
+                ])
 
                 if let result = testResult {
                     Text(result)
                         .font(.caption)
                         .foregroundColor(result.starts(with: "OK") ? .green : .red)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
 
-            Divider()
-                .padding(.vertical, 8)
+            SettingsDivider()
 
             SettingsSectionHeader(L("Error Explanation"), icon: "exclamationmark.bubble")
 
@@ -110,6 +116,20 @@ struct LLMSettingsView: View {
     }
 
     // MARK: - Load/Save
+
+    private var apiKeyField: some View {
+        SecureField("", text: $apiKeyInput)
+            .textFieldStyle(.roundedBorder)
+            .frame(maxWidth: 240)
+    }
+
+    private var saveAPIKeyButton: some View {
+        Button(L("Save", "Save")) {
+            saveAPIKey()
+        }
+        .buttonStyle(.bordered)
+        .controlSize(.small)
+    }
 
     private func loadProviderSettings() {
         let service = LLMProviderConfig(provider: selectedProvider).keychainService

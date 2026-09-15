@@ -175,7 +175,7 @@ final class DangerousCommandGuard {
 
         // Multiline paste protection: flag pasted commands spanning multiple lines
         if trimmed.contains("\n") {
-            Log.warn("DangerousCommandGuard: multiline paste '\(trimmed.prefix(60))'")
+            Log.info("DangerousCommandGuard: multiline paste '\(trimmed.prefix(60))'")
             let reason = ConfirmationReason.multilinePaste
             return .needsConfirmation(command: trimmed, matchedPattern: reason.shortLabel, reason: reason)
         }

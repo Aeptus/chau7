@@ -59,6 +59,11 @@ public struct RemoteInteractivePrompt: Codable, Equatable, Sendable, Hashable, I
     /// (optional/additive; consumers fall back to local formatting).
     public let pushTitle: String?
     public let pushSubtitle: String?
+    /// Marks AskUserQuestion multi-select prompts: option responses toggle
+    /// (digit) and a separate Enter submits. Additive/optional with omitempty
+    /// parity — false normalizes to nil so the key is absent on the wire,
+    /// matching the Go mirror; older peers ignore or omit it.
+    public let isMultiSelect: Bool?
 
     public init(
         id: String,
@@ -73,7 +78,8 @@ public struct RemoteInteractivePrompt: Codable, Equatable, Sendable, Hashable, I
         options: [RemoteInteractivePromptOption],
         detectedAt: Date,
         pushTitle: String? = nil,
-        pushSubtitle: String? = nil
+        pushSubtitle: String? = nil,
+        isMultiSelect: Bool? = nil
     ) {
         self.id = id
         self.tabID = tabID
@@ -88,6 +94,7 @@ public struct RemoteInteractivePrompt: Codable, Equatable, Sendable, Hashable, I
         self.detectedAt = detectedAt
         self.pushTitle = pushTitle
         self.pushSubtitle = pushSubtitle
+        self.isMultiSelect = isMultiSelect == false ? nil : isMultiSelect
     }
 
     enum CodingKeys: String, CodingKey {
@@ -104,6 +111,7 @@ public struct RemoteInteractivePrompt: Codable, Equatable, Sendable, Hashable, I
         case detectedAt = "detected_at"
         case pushTitle = "push_title"
         case pushSubtitle = "push_subtitle"
+        case isMultiSelect = "multi_select"
     }
 }
 

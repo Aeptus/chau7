@@ -3,7 +3,7 @@ import Chau7Core
 
 // MARK: - Reusable Terminal Line Components (Code Optimization)
 
-// Consolidates duplicate line rendering logic from MainPanelView
+// Consolidates duplicate terminal line rendering logic across terminal-facing views.
 
 /// A single terminal line with optional normalization and styling
 struct TerminalLineView: View {

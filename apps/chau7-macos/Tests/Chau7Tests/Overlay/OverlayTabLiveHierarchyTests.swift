@@ -11,15 +11,6 @@ final class OverlayTabLiveHierarchyTests: XCTestCase {
         RunLoop.main.run(until: Date().addingTimeInterval(seconds))
     }
 
-    private func makeSnapshot(size: NSSize = NSSize(width: 80, height: 40)) -> NSImage {
-        let image = NSImage(size: size)
-        image.lockFocus()
-        NSColor.systemBlue.setFill()
-        NSBezierPath(rect: NSRect(origin: .zero, size: size)).fill()
-        image.unlockFocus()
-        return image
-    }
-
     override func setUp() {
         super.setUp()
         OverlayTabsModel.clearPersistedWindowState()
@@ -97,7 +88,7 @@ final class OverlayTabLiveHierarchyTests: XCTestCase {
         XCTAssertEqual(model.selectedSurfacePresentation.phase, .live)
     }
 
-    func testVisibleFrameReadyDiscardsRestorePreviewAndRecordsStartupLiveFrame() throws {
+    func testVisibleFrameReadyRecordsStartupLiveFrame() throws {
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 800, height: 600),
             styleMask: [.titled],
@@ -105,7 +96,6 @@ final class OverlayTabLiveHierarchyTests: XCTestCase {
             defer: false
         )
         model.overlayWindow = window
-        model.tabs[0].restorePreviewSnapshot = makeSnapshot()
 
         let session = try XCTUnwrap(model.tabs[0].session)
         let rustView = RustTerminalView(frame: NSRect(x: 0, y: 0, width: 800, height: 600))
@@ -127,7 +117,6 @@ final class OverlayTabLiveHierarchyTests: XCTestCase {
 
         model.noteStartupSelectedTabLiveFrameIfNeeded(reason: "visible_frame_ready")
         XCTAssertEqual(callbackCount, 1)
-        XCTAssertNil(model.tabs[0].restorePreviewSnapshot)
         XCTAssertTrue(
             StartupRestoreCoordinator.shared.hasSelectedTabLiveFrame(windowNumber: window.windowNumber)
         )
@@ -182,18 +171,6 @@ final class OverlayTabLiveHierarchyTests: XCTestCase {
         XCTAssertEqual(model.selectedSurfacePresentation.phase, .live)
     }
 
-    func testRequestSelectedTabAuthoritativeRevealDiscardsSettledRestorePreview() {
-        model.tabs[0].restorePreviewSnapshot = makeSnapshot()
-        model.tabs[0].session?.markRestoreBootstrapReady(source: "test")
-
-        model.requestSelectedTabAuthoritativeReveal(reason: "test_restore_preview_discard")
-
-        XCTAssertNil(
-            model.tabs[0].restorePreviewSnapshot,
-            "Restore previews should be discarded once bootstrap has settled, even though selected-tab reveal no longer presents snapshots"
-        )
-    }
-
     func testRequestSelectedTabAuthoritativeRevealTargetsFocusedDisplaySession() {
         model.splitCurrentTabHorizontally()
         let splitSessions = model.tabs[0].splitController.terminalSessions
@@ -201,7 +178,6 @@ final class OverlayTabLiveHierarchyTests: XCTestCase {
         let focusedSession = splitSessions[1].1
         model.tabs[0].splitController.setFocusedPane(focusedPaneID)
 
-        model.tabs[0].restorePreviewSnapshot = makeSnapshot()
         focusedSession.cancelVisibleFrameReadyHandoff()
         model.tabs[0].session?.cancelVisibleFrameReadyHandoff()
 
@@ -258,13 +234,4 @@ final class OverlayTabLiveHierarchyTests: XCTestCase {
         XCTAssertFalse(focusedSession.awaitingVisibleFrameReady)
     }
 
-    func testCaptureSnapshotSkipsHiddenFreshRetainedView() {
-        let rustView = RustTerminalView(frame: NSRect(x: 0, y: 0, width: 320, height: 160))
-        rustView.isHidden = true
-
-        XCTAssertNil(
-            OverlayTabsModel.captureSnapshotImage(from: rustView),
-            "A hidden terminal view without any rendered frame should not yield a retained snapshot"
-        )
-    }
 }

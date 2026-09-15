@@ -157,10 +157,16 @@ final class RemoteSessionController {
     }
 
     /// Replay-guard-ordered reset (agent re-handshake / stale key): drop the
-    /// session and mint a fresh iOS nonce, keeping the Mac key.
+    /// session and mint a fresh iOS nonce, keeping the Mac key. The peer nonce
+    /// is deliberately forgotten so the new key cannot be derived until the
+    /// Mac acknowledges this handshake with HELLO. Reusing the remembered
+    /// nonce immediately was able to create a locally "encrypted" session
+    /// that the Mac had never adopted.
     func resetForRehandshake() {
         crypto = nil
         seqCounter = 1
+        nonceMac = nil
+        replayGuard.reset()
         mintIOSNonce()
     }
 

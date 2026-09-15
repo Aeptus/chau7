@@ -38,8 +38,11 @@ final class TriggerVocabularyTests: XCTestCase {
     /// "<type>: <message>" fallback.
     func testVocabularyMatchesGoldenSnapshot() {
         let golden: [(type: String, title: String?, body: String?, style: String?)] = [
-            ("finished", "Finished", "Done.", "waiting"),
+            ("finished", "Finished", "Done.", "success"),
             ("failed", "Failed", "Check the logs.", "error"),
+            ("script_succeeded", "Script succeeded", "The shell script completed successfully.", "success"),
+            ("script_failed", "Script failed", "The shell script exited with an error.", "error"),
+            ("dev_server_started", "Dev server started", "The development server is ready.", "success"),
             ("tool_failed", "Tool failed", nil, "error"),
             ("response_failed", nil, nil, "error"),
             ("permission", "Permission needed", "Needs your permission to continue.", "attention"),
@@ -111,7 +114,7 @@ final class TriggerVocabularyTests: XCTestCase {
             XCTAssertEqual(action?.config["style"], entry.stylePreset, "style planner drift for \(entry.type)")
             if entry.stylePreset != nil {
                 XCTAssertEqual(action?.actionType, .styleTab)
-                XCTAssertEqual(action?.config["autoClearSeconds"], "30")
+                XCTAssertNil(action?.config["autoClearSeconds"])
             }
         }
         let unknownEvent = AIEvent(type: "mystery", tool: "Tool", message: "", ts: "2026-01-01T00:00:00Z")

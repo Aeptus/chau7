@@ -296,4 +296,15 @@ public enum StartupWindowPresentationPolicy {
         guard !isStartupRestoreActive else { return false }
         return isSelectedSurfaceLivePresentable
     }
+
+    /// A toolbar created while its window is ordered out may retain a valid
+    /// SwiftUI model but fail to composite its hosting view when presented.
+    /// Recover every hidden-to-visible transition, including the initial
+    /// presentation of restored windows; plain focus changes need no rebuild.
+    public static func shouldRecoverTabBarAfterPresentation(
+        wasHidden: Bool,
+        hasPresentedBefore _: Bool
+    ) -> Bool {
+        return wasHidden
+    }
 }

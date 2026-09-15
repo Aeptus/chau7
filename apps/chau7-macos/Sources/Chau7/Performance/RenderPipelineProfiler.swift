@@ -104,13 +104,25 @@ final class RenderPipelineProfiler {
     private let lock = NSLock()
     private var totals = Totals()
     private var liveViews: [UInt64: LiveViewState] = [:]
-    private var lastFlushAt = Date()
+    private var lastFlushAt: Date
     private let flushInterval: TimeInterval
+    private let now: () -> Date
+    private let footprintBytes: () -> UInt64
+    private let telemetry: PerformanceTelemetryRecording
     private var lastFlushFootprintBytes: UInt64 = 0
     private var peakFootprintBytes: UInt64 = 0
 
-    init(flushInterval: TimeInterval = 30) {
+    init(
+        flushInterval: TimeInterval = 60,
+        now: @escaping () -> Date = Date.init,
+        footprintBytes: @escaping () -> UInt64 = RenderPipelineProfiler.currentPhysFootprintBytes,
+        telemetry: PerformanceTelemetryRecording = PerformanceTelemetryWriter.shared
+    ) {
         self.flushInterval = flushInterval
+        self.now = now
+        self.footprintBytes = footprintBytes
+        self.telemetry = telemetry
+        self.lastFlushAt = now()
     }
 
     /// Reads the process's `phys_footprint` via `task_vm_info`. Returns 0 on
@@ -250,7 +262,7 @@ final class RenderPipelineProfiler {
     func snapshot() -> Snapshot {
         lock.lock()
         defer { lock.unlock() }
-        return buildSnapshot(asOf: Date())
+        return buildSnapshot(asOf: now())
     }
 
     /// Build a `Snapshot` from the current `totals` / `liveViews`. Caller
@@ -288,12 +300,14 @@ final class RenderPipelineProfiler {
         lock.lock()
         totals = Totals()
         liveViews.removeAll()
-        lastFlushAt = Date()
+        lastFlushAt = now()
+        lastFlushFootprintBytes = 0
+        peakFootprintBytes = 0
         lock.unlock()
     }
 
     private func recordMutation(_ mutation: (_ now: Date) -> Void) {
-        let now = Date()
+        let now = now()
         var snapshot: Snapshot?
         var memorySample: (current: UInt64, delta: Int64, peak: UInt64)?
 
@@ -301,7 +315,7 @@ final class RenderPipelineProfiler {
         mutation(now)
         if now.timeIntervalSince(lastFlushAt) >= flushInterval {
             snapshot = buildSnapshot(asOf: now)
-            let current = Self.currentPhysFootprintBytes()
+            let current = footprintBytes()
             let delta: Int64 = lastFlushFootprintBytes == 0
                 ? 0
                 : Int64(bitPattern: current) - Int64(bitPattern: lastFlushFootprintBytes)
@@ -337,58 +351,55 @@ final class RenderPipelineProfiler {
         } else {
             missRate = 0
         }
-        let syncMiB = Double(snapshot.syncBytes) / 1_048_576
-        let commitMiB = Double(snapshot.commitBytes) / 1_048_576
-        let summaryFormat =
-            "Render pipeline (30s): liveViews=%d ids=%@ polls=%d changed=%d draws=%d " +
-            "syncCalls=%d sync=%.1fMiB mismatches=%d commits=%d commit=%.1fMiB " +
-            "fullRefresh=%d maxDirtyRows=%d maxDirtyCells=%d maxFrameCells=%d " +
-            "maxInstanceBuffer=%.1fMiB saturatedFrames=%d glyphCache=%d ligatureCache=%d " +
-            "glyphLookups=%d missRate=%.1f%%"
-        let memorySuffix = memorySample.map { sample -> String in
-            let currentMB = Int(sample.current / 1_048_576)
-            let peakMB = Int(sample.peak / 1_048_576)
-            let deltaMB = sample.delta / 1_048_576
-            return String(format: " phys=%dMB peak=%dMB delta=%+dMB", currentMB, peakMB, deltaMB)
-        } ?? ""
-        Log.info(
-            String(
-                format: summaryFormat,
-                snapshot.activeLiveViewIDs.count,
-                snapshot.activeLiveViewIDs.map(String.init).joined(separator: ","),
-                snapshot.livePollCount,
-                snapshot.changedPollCount,
-                snapshot.drawCount,
-                snapshot.syncCallCount,
-                syncMiB,
-                snapshot.mismatchedSyncCount,
-                snapshot.commitCount,
-                commitMiB,
-                snapshot.fullRefreshCommits,
-                snapshot.maxDirtyRows,
-                snapshot.maxDirtyCells,
-                snapshot.maxFrameCells,
-                Double(snapshot.maxInstanceBufferBytes) / 1_048_576,
-                snapshot.saturatedInstanceFrames,
-                snapshot.maxGlyphCacheSize,
-                snapshot.maxLigatureCacheSize,
-                snapshot.glyphLookups,
-                missRate
-            ) + memorySuffix
-        )
-        if !snapshot.liveViews.isEmpty {
-            let detail = snapshot.liveViews.map { liveView in
-                let tab = liveView.tabID ?? "nil"
-                let session = liveView.sessionID ?? "nil"
-                let state = liveView.isActive ? "active" : "inactive"
-                return "view=\(liveView.viewID) state=\(state) tab=\(tab) session=\(session) mode=\(liveView.mode) reasons=\(liveView.reasons)"
-                    + " polls=\(liveView.pollCount)"
-                    + " changed=\(liveView.changedPollCount)"
-                    + " draws=\(liveView.drawCount)"
-                    + " syncCalls=\(liveView.syncCallCount)"
-                    + String(format: " sync=%.1fMiB", Double(liveView.syncBytes) / 1_048_576)
-            }.joined(separator: " | ")
-            Log.info("Render live views (30s): \(detail)")
+        let liveViewMetrics: [[String: Any]] = snapshot.liveViews.map { liveView in
+            [
+                "view_id": liveView.viewID,
+                "active": liveView.isActive,
+                "mode": liveView.mode,
+                "reasons": liveView.reasons,
+                "poll_count": liveView.pollCount,
+                "changed_poll_count": liveView.changedPollCount,
+                "draw_count": liveView.drawCount,
+                "sync_call_count": liveView.syncCallCount,
+                "sync_bytes": liveView.syncBytes
+            ]
+        }
+        var fields: [String: Any] = [
+            "interval_seconds": flushInterval.isFinite ? flushInterval : 0,
+            "active_live_view_count": snapshot.activeLiveViewIDs.count,
+            "live_poll_count": snapshot.livePollCount,
+            "changed_poll_count": snapshot.changedPollCount,
+            "draw_count": snapshot.drawCount,
+            "sync_call_count": snapshot.syncCallCount,
+            "sync_bytes": snapshot.syncBytes,
+            "mismatched_sync_count": snapshot.mismatchedSyncCount,
+            "commit_count": snapshot.commitCount,
+            "commit_bytes": snapshot.commitBytes,
+            "full_refresh_commits": snapshot.fullRefreshCommits,
+            "max_dirty_rows": snapshot.maxDirtyRows,
+            "max_dirty_cells": snapshot.maxDirtyCells,
+            "max_frame_cells": snapshot.maxFrameCells,
+            "max_instance_buffer_bytes": snapshot.maxInstanceBufferBytes,
+            "saturated_instance_frames": snapshot.saturatedInstanceFrames,
+            "max_glyph_cache_size": snapshot.maxGlyphCacheSize,
+            "max_ligature_cache_size": snapshot.maxLigatureCacheSize,
+            "glyph_lookups": snapshot.glyphLookups,
+            "glyph_misses": snapshot.glyphMisses,
+            "glyph_miss_rate_percent": missRate,
+            "live_views": liveViewMetrics
+        ]
+        if let memorySample {
+            fields["physical_footprint_bytes"] = memorySample.current
+            fields["physical_footprint_delta_bytes"] = memorySample.delta
+            fields["peak_physical_footprint_bytes"] = memorySample.peak
+        }
+        telemetry.record(category: "render_pipeline", fields: fields, at: snapshot.asOf)
+
+        if snapshot.mismatchedSyncCount > 0 || snapshot.saturatedInstanceFrames > 0 {
+            Log.warn(
+                "Render pipeline invariant warning: mismatchedSyncs=\(snapshot.mismatchedSyncCount) " +
+                    "saturatedFrames=\(snapshot.saturatedInstanceFrames)"
+            )
         }
     }
 

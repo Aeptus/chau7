@@ -17,10 +17,12 @@ Model Context Protocol server: exposes Chau7 tab control, output, and telemetry 
 ## Key Patterns
 
 - MCP tab limit: configurable (default 4, max 50) — `isMCPControlled` flag per tab
+- Existing user tabs remain read-only until `tab_request_control` receives an explicit local confirmation; `tab_release_control` revokes the process-local grant without closing the tab
 - `allModels` and `allTabs` search across all windows for cross-window operations
 - `repo_get_metadata` / `repo_set_metadata` / `repo_frequent_commands` for repo memory
 - `tab_list` and `tab_status` are the authoritative live discovery/control path for active AI tabs
-- `tab_status.can_accept_exec` / `exec_acceptance_mode` are the canonical launch signals for deterministic `tab_exec` submission
+- MCP `tab_status.can_accept_exec` / `exec_acceptance_mode` combine terminal readiness with MCP mutation authority, so they remain false for user tabs until control is granted
+- `terminal_can_accept_exec` / `terminal_ready_for_exec` preserve the underlying terminal-only facts when `mcp_control_required=true`
 - `tab_status.ready_for_exec` / `readiness_reason` remain the stricter prompt-ready signals for immediate non-queued execution
 - `tab_exec` can still be called during shell bootstrap or before the live terminal view attaches; Chau7 queues the command when needed
 - `tab_wait_ready` now waits for deterministic exec acceptance rather than stricter prompt-ready state
@@ -30,6 +32,7 @@ Model Context Protocol server: exposes Chau7 tab control, output, and telemetry 
 - `chau7_timer_inventory` exposes Chau7-owned timer/display-link state for renderer and MCP server correlation
 - `chau7_state_snapshot` is the authoritative aggregated observer read: runtime identity, tabs, approvals, repo event summaries, active telemetry runs/sessions, timers, and latest sequence
 - `chau7_subscribe` / `chau7_unsubscribe` open one long-lived state feed per MCP connection using JSON-RPC notifications (`notifications/chau7.event`) with replay from a cursor
+- Initialized Unix-socket sessions have no server-side read-idle expiry; the connection ends when either peer closes it. Writes retain a bounded timeout so an unresponsive reader cannot hold a session thread forever.
 - snapshot and subscription payloads expose `observer_contract_version`, replay bounds, effective topics, and subscription health metadata for deterministic eval clients
 - subscriptions emit additive `heartbeat` notifications on topic `subscription-control` so clients can detect stalled links without polling fan-out
 - runtime orchestration remains app-internal for now and is no longer part of the public MCP tool surface

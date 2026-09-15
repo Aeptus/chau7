@@ -3,11 +3,63 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
 )
+
+func TestDatabase_ProjectTimestampIndexIsRecreatedAndUsed(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "project-index.db")
+	db, err := NewDatabase(dbPath)
+	if err != nil {
+		t.Fatalf("create database: %v", err)
+	}
+	if _, err := db.db.Exec("DROP INDEX idx_api_calls_project_timestamp"); err != nil {
+		t.Fatalf("drop project index: %v", err)
+	}
+	if _, err := db.db.Exec("ALTER TABLE api_calls DROP COLUMN project_path"); err != nil {
+		t.Fatalf("remove legacy-missing project column fixture: %v", err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatalf("close database: %v", err)
+	}
+
+	db, err = NewDatabase(dbPath)
+	if err != nil {
+		t.Fatalf("reopen existing database: %v", err)
+	}
+	defer func() { _ = db.Close() }()
+
+	rows, err := db.db.Query(`
+		EXPLAIN QUERY PLAN
+		SELECT provider, COUNT(*), MAX(timestamp)
+		FROM api_calls
+		WHERE project_path = ? AND timestamp >= ?
+		GROUP BY provider
+	`, "/repo", "2026-01-01T00:00:00Z")
+	if err != nil {
+		t.Fatalf("explain repo aggregate: %v", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	var details []string
+	for rows.Next() {
+		var id, parent, unused int
+		var detail string
+		if err := rows.Scan(&id, &parent, &unused, &detail); err != nil {
+			t.Fatalf("scan query plan: %v", err)
+		}
+		details = append(details, detail)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("query plan rows: %v", err)
+	}
+	plan := strings.Join(details, " | ")
+	if !strings.Contains(plan, "idx_api_calls_project_timestamp") {
+		t.Fatalf("repo aggregate did not use project index: %s", plan)
+	}
+}
 
 func TestNewDatabase(t *testing.T) {
 	// Create temp directory for test
@@ -28,6 +80,14 @@ func TestNewDatabase(t *testing.T) {
 	// Verify we can ping it
 	if err := db.Ping(); err != nil {
 		t.Errorf("Database ping failed: %v", err)
+	}
+}
+
+func TestSQLiteDSNPreservesExistingQuery(t *testing.T) {
+	got := sqliteDSN("file:test.db?mode=rwc")
+	want := "file:test.db?mode=rwc&_pragma=busy_timeout(5000)"
+	if got != want {
+		t.Fatalf("sqliteDSN() = %q, want %q", got, want)
 	}
 }
 
@@ -360,16 +420,14 @@ func TestDatabase_ConcurrentWrites(t *testing.T) {
 	}
 	defer func() { _ = db.Close() }()
 
-	// Sequential writes with goroutines (more realistic)
-	// In practice, API calls don't happen at exactly the same microsecond
+	const writeCount = 10
 	var wg sync.WaitGroup
-	successCount := int32(0)
+	errors := make(chan error, writeCount)
 
-	for i := 0; i < 10; i++ {
+	for i := 0; i < writeCount; i++ {
 		wg.Add(1)
 		go func(idx int) {
 			defer wg.Done()
-			// Small stagger to simulate realistic write patterns
 			time.Sleep(time.Duration(idx) * time.Millisecond)
 
 			record := &APICallRecord{
@@ -380,13 +438,17 @@ func TestDatabase_ConcurrentWrites(t *testing.T) {
 				StatusCode: 200,
 				Timestamp:  time.Now().UTC(),
 			}
-			if err := db.InsertAPICall(record); err == nil {
-				atomic.AddInt32(&successCount, 1)
+			if err := db.InsertAPICall(record); err != nil {
+				errors <- err
 			}
 		}(i)
 	}
 
 	wg.Wait()
+	close(errors)
+	for err := range errors {
+		t.Errorf("concurrent insert: %v", err)
+	}
 
 	// Verify records were written
 	records, err := db.GetRecentCalls(20)
@@ -394,8 +456,7 @@ func TestDatabase_ConcurrentWrites(t *testing.T) {
 		t.Fatalf("Failed to get records: %v", err)
 	}
 
-	// With staggered writes, most or all should succeed
-	if len(records) < 8 {
-		t.Errorf("Expected at least 8 records from staggered concurrent writes, got %d", len(records))
+	if len(records) != writeCount {
+		t.Errorf("Expected %d concurrent records, got %d", writeCount, len(records))
 	}
 }

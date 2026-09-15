@@ -171,6 +171,17 @@ func TestExtractOpenAIRequest(t *testing.T) {
 			expectMsgs:  2,
 			expectMax:   1000,
 		},
+		{
+			name: "Responses API input",
+			body: `{
+				"model": "gpt-5-codex",
+				"input": [{"role": "user", "content": "Inspect this repository"}],
+				"max_output_tokens": 2000
+			}`,
+			expectModel: "gpt-5-codex",
+			expectMsgs:  1,
+			expectMax:   2000,
+		},
 	}
 
 	for _, tc := range tests {
@@ -258,6 +269,29 @@ func TestExtractOpenAIResponse(t *testing.T) {
 				t.Errorf("Expected finish_reason %q, got %q", tc.expectReason, meta.FinishReason)
 			}
 		})
+	}
+}
+
+func TestExtractOpenAIResponsesAPIUsage(t *testing.T) {
+	meta := ExtractResponseMetadata(ProviderOpenAI, []byte(`{
+		"model": "gpt-5-codex",
+		"status": "completed",
+		"usage": {
+			"input_tokens": 125,
+			"output_tokens": 47,
+			"input_tokens_details": {"cached_tokens": 80},
+			"output_tokens_details": {"reasoning_tokens": 19}
+		}
+	}`))
+
+	if meta.Model != "gpt-5-codex" || meta.InputTokens != 125 || meta.OutputTokens != 47 {
+		t.Fatalf("unexpected Responses API metadata: %+v", meta)
+	}
+	if meta.CacheReadInputTokens != 80 || meta.ReasoningOutputTokens != 19 {
+		t.Fatalf("unexpected Responses API detail tokens: %+v", meta)
+	}
+	if meta.FinishReason != "completed" {
+		t.Fatalf("expected completed status, got %q", meta.FinishReason)
 	}
 }
 
@@ -421,6 +455,14 @@ data: {"type":"message_stop"}
 			expectOutput: 75,
 		},
 		{
+			name:     "Anthropic SSE without optional space and with gateway-rewritten type",
+			provider: ProviderAnthropic,
+			chunks: "data:{\"message\":{\"model\":\"claude-sonnet-4\",\"usage\":{\"input_tokens\":31,\"cache_read_input_tokens\":7}}}\r\n" +
+				"data:{\"usage\":{\"output_tokens\":89}}\r\n",
+			expectInput:  31,
+			expectOutput: 89,
+		},
+		{
 			name:     "OpenAI streaming",
 			provider: ProviderOpenAI,
 			chunks: `data: {"id":"chatcmpl-1"}
@@ -430,6 +472,16 @@ data: [DONE]
 `,
 			expectInput:  10,
 			expectOutput: 20,
+		},
+		{
+			name:     "OpenAI Responses streaming completion envelope",
+			provider: ProviderOpenAI,
+			chunks: `event: response.completed
+data: {"type":"response.completed","response":{"model":"gpt-5-codex","status":"completed","usage":{"input_tokens":44,"output_tokens":12}}}
+
+`,
+			expectInput:  44,
+			expectOutput: 12,
 		},
 		{
 			name:         "Empty chunks",

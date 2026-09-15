@@ -80,6 +80,21 @@ final class UsageMonitor {
     @ObservationIgnored private var didSeedSnapshotCache = false
     /// Avoids redundant file I/O from ensureClaudeStatusLineInstalled on every refresh cycle.
     @ObservationIgnored private var claudeStatusLineInstalled = false
+    /// Incremental-tail cursor into the current Codex rollout file. With it,
+    /// an unchanged rollout costs one stat per tick instead of a full
+    /// multi-MB read + per-line JSON decode (the pre-2026-08 behavior).
+    @ObservationIgnored private var codexTailState: JSONLTailReader.State?
+    /// Parser tail carried between chunks (multi-line JSON object split
+    /// across incremental reads).
+    @ObservationIgnored private var codexParseCarry = ""
+    /// Cached rollout path so each tick scans only today's day-directory for
+    /// newer files instead of walking 14 day-directories.
+    @ObservationIgnored private var cachedCodexRolloutURL: URL?
+    @ObservationIgnored private var lastCodexFullWalkAt = Date.distantPast
+    /// Re-run the full day-directory walk at most this often while the cached
+    /// rollout is quiet — catches a new session that started in a previous
+    /// day's directory (e.g. across midnight).
+    @ObservationIgnored private static let codexFullWalkInterval: TimeInterval = 600
 
     private(set) var lastRefreshAt: Date?
     private(set) var lastErrorMessage: String?
@@ -426,22 +441,85 @@ final class UsageMonitor {
     }
 
     private func captureLatestCodexSnapshot() {
-        guard let latestRollout = latestCodexRolloutFile(),
-              let text = try? String(contentsOf: latestRollout, encoding: .utf8),
-              var snapshot = CodexRolloutParser.latestQuotaSnapshot(in: text, rawSourceRef: latestRollout.path) else {
-            return
+        guard let latestRollout = currentCodexRolloutFile() else { return }
+
+        if codexTailState?.path != latestRollout.path {
+            // New rollout file: fresh bounded-tail read, drop the old carry.
+            codexTailState = nil
+            codexParseCarry = ""
         }
 
-        snapshot = ProviderQuotaSnapshot(
-            provider: snapshot.provider,
-            capturedAt: snapshot.capturedAt,
-            source: snapshot.source,
-            planType: snapshot.planType,
-            credits: snapshot.credits,
-            rawSourceRef: latestRollout.path,
-            windows: snapshot.windows
-        )
+        // nil = unchanged since last tick — one stat, zero reads, no parsing.
+        guard let chunk = JSONLTailReader.readNewChunk(path: latestRollout.path, state: codexTailState) else {
+            return
+        }
+        codexTailState = chunk.newState
+
+        let text = codexParseCarry.isEmpty
+            ? chunk.completeLinesText
+            : codexParseCarry + "\n" + chunk.completeLinesText
+        let result = CodexRolloutParser.latestQuotaSnapshot(inChunk: text, rawSourceRef: latestRollout.path)
+        codexParseCarry = result.unconsumedTail.utf8.count > JSONLTailReader.maxCarryBytes
+            ? ""
+            : result.unconsumedTail
+
+        guard let snapshot = result.snapshot else { return }
         appendSnapshotIfNeeded(snapshot)
+    }
+
+    /// Cheap per-tick rollout selection: stat the cached file and scan only
+    /// today's `yyyy/MM/dd` directory for something newer. The full 14-day
+    /// walk (`latestCodexRolloutFile`) runs only on a cache miss or as a slow
+    /// periodic fallback.
+    private func currentCodexRolloutFile() -> URL? {
+        var bestURL: URL?
+        var bestDate = Date.distantPast
+
+        if let cached = cachedCodexRolloutURL,
+           let modifiedAt = (try? cached.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate {
+            bestURL = cached
+            bestDate = modifiedAt
+        }
+
+        let sessionsRoot = RuntimeIsolation.urlInHome(".codex/sessions")
+        let todayDirectory = Self.codexDayDirectory(root: sessionsRoot, for: Date())
+        if let files = try? fileManager.contentsOfDirectory(
+            at: todayDirectory,
+            includingPropertiesForKeys: [.contentModificationDateKey],
+            options: [.skipsHiddenFiles]
+        ) {
+            for file in files where file.pathExtension == "jsonl" {
+                let modifiedAt = (try? file.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? .distantPast
+                if modifiedAt > bestDate {
+                    bestDate = modifiedAt
+                    bestURL = file
+                }
+            }
+        }
+
+        let needsFullWalk = bestURL == nil
+            || Date().timeIntervalSince(lastCodexFullWalkAt) > Self.codexFullWalkInterval
+        if needsFullWalk {
+            lastCodexFullWalkAt = Date()
+            if let walked = latestCodexRolloutFile() {
+                let walkedDate = (try? walked.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? .distantPast
+                if walkedDate > bestDate {
+                    bestURL = walked
+                }
+            }
+        }
+
+        cachedCodexRolloutURL = bestURL
+        return bestURL
+    }
+
+    private static func codexDayDirectory(root: URL, for date: Date) -> URL {
+        let calendar = Calendar(identifier: .gregorian)
+        let components = calendar.dateComponents([.year, .month, .day], from: date)
+        return root
+            .appendingPathComponent(String(format: "%04d", components.year ?? 0), isDirectory: true)
+            .appendingPathComponent(String(format: "%02d", components.month ?? 0), isDirectory: true)
+            .appendingPathComponent(String(format: "%02d", components.day ?? 0), isDirectory: true)
     }
 
     private func loadLatencySamples(for timeRange: ProviderLatencyTimeRange) -> [ProviderLatencySample] {

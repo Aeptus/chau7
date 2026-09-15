@@ -140,6 +140,8 @@ struct TerminalViewRepresentable: NSViewRepresentable {
     var model: TerminalSessionModel
     var renderPhase: TabRenderPhase
     var isInteractive: Bool
+    var onFocus: (() -> Void)?
+    var rendererClaimIsCurrent: (() -> Bool)?
     var onFilePathClicked: ((String, Int?, Int?) -> Void)?
     var settings = FeatureSettings.shared
 
@@ -188,11 +190,24 @@ struct TerminalViewRepresentable: NSViewRepresentable {
     ) {
         guard !rustView.isTerminalStarted else { return }
 
-        let tip = PowerUserTips.randomFormattedTip()
-        let headerBox = terminalHeaderBox(cols: rustView.renderCols, message: tip)
-        rustView.startTerminal(initialOutput: headerBox)
-        rustView.appliedColorSchemeSignature = nil
-        rustView.applyColorScheme(FeatureSettings.shared.currentColorScheme)
+        // For a restored tab, inject the persisted (already ANSI/SGR-styled)
+        // scrollback tail so the saved screen renders immediately, and skip
+        // the tip banner — a power-user tip layered over restored history is
+        // odd. `startTerminal(initialOutput:)` UTF-8-injects the string
+        // through the VTE parser, reproducing the saved styling as-is. Consume
+        // the carrier so it fires exactly once. Fresh tabs (no pending
+        // scrollback) keep the tip banner.
+        let initialOutput: String?
+        if let savedScrollback = model.pendingRestoreScrollback,
+           !savedScrollback.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            initialOutput = RestoreScrollbackNormalizer.normalizeLineEndingsForParserInjection(savedScrollback)
+            model.pendingRestoreScrollback = nil
+        } else {
+            model.pendingRestoreScrollback = nil
+            let tip = PowerUserTips.randomFormattedTip()
+            initialOutput = terminalHeaderBox(cols: rustView.renderCols, message: tip)
+        }
+        rustView.startTerminal(initialOutput: initialOutput)
         model.attachRustTerminal(rustView)
 
         // Notify the window-level tabs model that a terminal started, so the
@@ -257,6 +272,7 @@ struct TerminalViewRepresentable: NSViewRepresentable {
             existingView.onFramePresented = { [weak model] in
                 model?.notifyVisibleFrameReadyIfNeeded()
             }
+            existingView.onFocus = onFocus
             existingView.onFilePathClicked = onFilePathClicked
             existingView.onScrollbackCleared = { [weak model] in
                 model?.resetRestorationScrollbackCache()
@@ -267,7 +283,7 @@ struct TerminalViewRepresentable: NSViewRepresentable {
             }
             existingView.tabIdentifier = model.tabIdentifier
             existingView.persistentTabID = model.ownerTabID?.uuidString
-            existingView.hostsTUIApp = model.liveAgentName != nil
+            existingView.hostsTUIApp = model.shouldProtectTerminalUIState
             existingView.isAtPrompt = { [weak model] in model?.isAtPrompt ?? false }
             existingView.liveEligibilityReasonForProfiling = liveEligibilitySummary()
             existingView.installHistoryKeyMonitor()
@@ -350,6 +366,7 @@ struct TerminalViewRepresentable: NSViewRepresentable {
         view.onFramePresented = { [weak model] in
             model?.notifyVisibleFrameReadyIfNeeded()
         }
+        view.onFocus = onFocus
         view.onScrollChanged = { [weak model] in
             model?.scheduleHighlightAfterScroll()
         }
@@ -362,7 +379,7 @@ struct TerminalViewRepresentable: NSViewRepresentable {
             model?.dangerousRowTints(top: top, bottom: bottom) ?? [:]
         }
         view.isAtPrompt = { [weak model] in model?.isAtPrompt ?? false }
-        view.hostsTUIApp = model.liveAgentName != nil
+        view.hostsTUIApp = model.shouldProtectTerminalUIState
         view.liveEligibilityReasonForProfiling = liveEligibilitySummary()
         view.installHistoryKeyMonitor()
 
@@ -410,11 +427,21 @@ struct TerminalViewRepresentable: NSViewRepresentable {
     func updateNSView(_ container: UnifiedTerminalContainerView, context: Context) {
         guard let nsView = container.rustTerminalView else { return }
         nsView.liveEligibilityReasonForProfiling = liveEligibilitySummary()
-        nsView.hostsTUIApp = model.liveAgentName != nil
+        nsView.hostsTUIApp = model.shouldProtectTerminalUIState
+        nsView.onFocus = onFocus
         let transition = context.coordinator.consumeRenderPhaseTransition(to: renderPhase)
         let keepsVisibleSurface = renderPhase.keepsVisibleSurface
         let allowsLivePresentation = renderPhase.allowsLivePresentation
-        nsView.applyRenderPhase(renderPhase, isInteractive: isInteractive, reason: "updateNSView")
+        let isAuthoritativeFocusOwner = rendererClaimIsCurrent?() ?? true
+        let ownsInteractivePresentation = MetalRendererClaimPolicy.shouldClaim(
+            isInteractive: isInteractive,
+            isAuthoritativeFocusOwner: isAuthoritativeFocusOwner
+        )
+        nsView.applyRenderPhase(
+            renderPhase,
+            isInteractive: ownsInteractivePresentation,
+            reason: "updateNSView"
+        )
         _ = Self.startTerminalIfReady(
             model: model,
             container: container,
@@ -440,7 +467,7 @@ struct TerminalViewRepresentable: NSViewRepresentable {
         // coordinator via invalidateRenderLifecycle. This prevents the
         // reconciliation from stealing the coordinator back to just-
         // deselected tabs during the handoff window.
-        if isInteractive,
+        if ownsInteractivePresentation,
            settings.useMetalRenderer,
            nsView.isTerminalStarted,
            !nsView.isMetalRenderingActive,
@@ -483,6 +510,7 @@ struct TerminalViewRepresentable: NSViewRepresentable {
         // background-drain path now so old selected tabs do not keep spinning
         // event drain work after a switch.
         nsView.applyRenderPhase(.hidden, isInteractive: false, reason: "dismantleNSView")
+        nsView.onFocus = nil
         nsView.isHidden = true
         nsView.updatePollingMode(reason: "dismantleNSView")
         container.ownerSession?.detachTerminalContainer(container, reason: "dismantleNSView")
@@ -490,6 +518,30 @@ struct TerminalViewRepresentable: NSViewRepresentable {
 
     private func terminalFont() -> NSFont {
         return TerminalFont.resolveFont(family: settings.fontFamily, size: model.fontSize)
+    }
+}
+
+enum RestoreScrollbackNormalizer {
+    /// Saved scrollback is injected straight into the VTE parser — there is no
+    /// PTY line discipline to expand LF to CRLF, and a bare LF only moves the
+    /// cursor down while keeping its column. Payloads persisted before the
+    /// capture emitted CRLF would therefore staircase every restored line.
+    /// Rewrite lone LFs as CRLF; already-CRLF content passes through unchanged.
+    /// Always end with CRLF: `ScrollbackRestoreFilter` strips the final line
+    /// terminator on save, and without one the shell prompt (or a trailing
+    /// lone CR) would overwrite the last restored line instead of starting on
+    /// a fresh one.
+    static func normalizeLineEndingsForParserInjection(_ text: String) -> String {
+        var normalized = text
+            .replacingOccurrences(of: "\r\n", with: "\n")
+            .replacingOccurrences(of: "\n", with: "\r\n")
+        if normalized.hasSuffix("\r") {
+            normalized.removeLast()
+        }
+        if !normalized.hasSuffix("\r\n") {
+            normalized += "\r\n"
+        }
+        return normalized
     }
 }
 

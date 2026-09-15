@@ -76,6 +76,43 @@ The grid renderer (`RemoteTerminalRendererStore` → `RemoteRustTerminalPlayback
 `RemoteTerminalCanvasView`) replays incoming bytes through the Rust terminal
 emulator and renders cell-by-cell with color, formatting, and cursor.
 
+#### Remote tab stream ownership
+
+The phone keeps one explicit high-rate terminal subscription. On the first
+inventory it starts from the Mac-active tab, then its selection is independent:
+changing tabs on either device no longer changes focus on the other. A reconnect
+re-subscribes the phone's still-valid selection as soon as live inventory is
+available. macOS promotes only that subscribed session from its adaptive
+1–8 second background poll to the same blocking, event-driven PTY drain used by
+a locally visible terminal. Its hidden Mac renderer stays disabled, so remote
+bytes do not invalidate the tab list or surrounding Mac UI. The promotion is
+released when iOS enters approvals-only background mode or disconnects. This
+single-subscription model bounds Mac CPU, relay traffic, and iPhone battery use
+while the per-tab replay cache keeps recently viewed content ready for fast
+switching.
+
+#### Streaming latency diagnostics
+
+Each timed output frame carries its macOS capture and send timestamps. iOS then
+keeps the encrypted frame sequence attached while recording receive, application,
+terminal-engine mutation, render-state publication, SwiftUI/UIView update, and
+Core Graphics draw completion. A one-shot display-link callback records the next
+refresh opportunity after drawing.
+
+`Remote streaming window` entries in the in-app diagnostics report five-second
+maximums for every boundary, plus `presented_frames` and
+`last_presented_frame` (`transport-generation:frame-sequence`). The macOS-to-iOS
+and end-to-end values are explicitly labeled `estimated` because they compare
+two devices' wall clocks. All iOS-only boundaries use the same device clock.
+The same entry includes the active, subscribed, and last-output tab IDs plus an
+explicit match flag, so a transport/render-selection mismatch is visible without
+logging terminal content.
+
+The final display-link value proves that the correlated frame was rasterized and
+reached the next compositor refresh opportunity. Public iOS APIs do not expose a
+physical-panel scanout acknowledgment, so it must not be described as guaranteed
+pixel scanout time.
+
 ### Approval Flow
 
 1. Mac sends `ApprovalRequestPayload` over relay

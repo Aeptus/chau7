@@ -12,6 +12,7 @@ export const CACHE_SCHEMA_VERSION = "quality-cache-v1";
 export const QUALITY_CACHE_DIR = ".aeptus-cache/quality";
 
 const ZERO_SHA_RE = /^0+$/;
+const SYSTEM_GIT_CANDIDATES = ["/usr/bin/git", "/opt/homebrew/bin/git", "/usr/local/bin/git"];
 const IGNORED_PATH_PATTERNS = [
   /^\.aeptus-cache\//,
   /^\.cache\//,
@@ -83,14 +84,22 @@ export const GENERATED_PATH_PATTERNS = [
   /(^|\/)zod\.generated\./,
 ];
 
+export function gitExecutable() {
+  if (process.env.AEPTUS_GIT_BIN) return process.env.AEPTUS_GIT_BIN;
+  for (const candidate of SYSTEM_GIT_CANDIDATES) {
+    if (fs.existsSync(candidate)) return candidate;
+  }
+  return "git";
+}
+
 export function repoRoot() {
-  return execFileSync("git", ["rev-parse", "--show-toplevel"], {
+  return execFileSync(gitExecutable(), ["rev-parse", "--show-toplevel"], {
     encoding: "utf8",
   }).trim();
 }
 
 export function runGit(args, options = {}) {
-  return execFileSync("git", args, {
+  return execFileSync(gitExecutable(), args, {
     cwd: options.cwd ?? repoRoot(),
     encoding: "utf8",
     stdio: options.stdio ?? ["ignore", "pipe", "pipe"],
@@ -132,7 +141,7 @@ export function filterQualityPaths(files) {
 }
 
 export function discoverStagedFiles(root = repoRoot()) {
-  const output = execFileSync("git", ["diff", "--cached", "--name-only", "--diff-filter=ACMR"], {
+  const output = execFileSync(gitExecutable(), ["diff", "--cached", "--name-only", "--diff-filter=ACMR"], {
     cwd: root,
     encoding: "utf8",
   });
@@ -245,10 +254,10 @@ export function resolveFallbackBase(root = repoRoot()) {
 
   for (const args of candidates) {
     try {
-      const value = execFileSync("git", args, { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
+      const value = execFileSync(gitExecutable(), args, { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
       if (!value) continue;
       if (args[1] === "--abbrev-ref") {
-        return execFileSync("git", ["rev-parse", "--verify", value], {
+        return execFileSync(gitExecutable(), ["rev-parse", "--verify", value], {
           cwd: root,
           encoding: "utf8",
           stdio: ["ignore", "pipe", "ignore"],
@@ -264,7 +273,7 @@ export function resolveFallbackBase(root = repoRoot()) {
 
 export function changedFilesBetween(base, head = "HEAD", root = repoRoot()) {
   if (!base || !head) return [];
-  const output = execFileSync("git", ["diff", "--name-only", "--diff-filter=ACMR", `${base}..${head}`], {
+  const output = execFileSync(gitExecutable(), ["diff", "--name-only", "--diff-filter=ACMR", `${base}..${head}`], {
     cwd: root,
     encoding: "utf8",
   });
@@ -272,7 +281,7 @@ export function changedFilesBetween(base, head = "HEAD", root = repoRoot()) {
 }
 
 export function mergeBase(left, right, root = repoRoot()) {
-  return execFileSync("git", ["merge-base", left, right], {
+  return execFileSync(gitExecutable(), ["merge-base", left, right], {
     cwd: root,
     encoding: "utf8",
     stdio: ["ignore", "pipe", "ignore"],
@@ -305,7 +314,7 @@ export function resolveChangedFilesFromPrepush(input, root = repoRoot()) {
 }
 
 export function isWorktreeDirty(root = repoRoot()) {
-  const output = execFileSync("git", ["status", "--porcelain"], {
+  const output = execFileSync(gitExecutable(), ["status", "--porcelain"], {
     cwd: root,
     encoding: "utf8",
   });

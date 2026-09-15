@@ -15,7 +15,14 @@ import SQLite3
 /// original private methods were.
 struct TelemetrySchemaMigrator {
     /// Current migration target. Bump this when adding new migrations.
-    static let currentSchemaVersion = 4
+    static let currentSchemaVersion = 5
+
+    private static let ingestSequenceTables = [
+        "runs",
+        "usage_evidence",
+        "remote_client_events",
+        "provider_latency_samples"
+    ]
 
     let db: OpaquePointer?
 
@@ -198,14 +205,22 @@ struct TelemetrySchemaMigrator {
         return Int(sqlite3_column_int(stmt, 0))
     }
 
-    func setSchemaVersion(_ version: Int) {
-        guard let db else { return }
+    @discardableResult
+    func setSchemaVersion(_ version: Int) -> Bool {
+        guard let db else { return false }
         let sql = "INSERT OR IGNORE INTO schema_version (version) VALUES (?)"
         var stmt: OpaquePointer?
-        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return }
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else {
+            Log.warn("TelemetryStore: failed to prepare schema version \(version): \(sqliteError(db))")
+            return false
+        }
         defer { sqlite3_finalize(stmt) }
         sqlite3_bind_int(stmt, 1, Int32(version))
-        sqlite3_step(stmt)
+        guard sqlite3_step(stmt) == SQLITE_DONE else {
+            Log.warn("TelemetryStore: failed to record schema version \(version): \(sqliteError(db))")
+            return false
+        }
+        return true
     }
 
     func applyMigrations() {
@@ -323,21 +338,51 @@ struct TelemetrySchemaMigrator {
             ensureColumn(table: "remote_client_events", name: "ingest_seq", definition: "INTEGER")
             setSchemaVersion(4)
         }
+
+        // Version 4 → 5: latency queries already use ingest_seq as their
+        // same-timestamp tiebreaker, so the fourth telemetry table must join
+        // the shared sequence. The v4 triggers embed the original three-table
+        // MAX expression; IF NOT EXISTS cannot update that SQL, so rebuild all
+        // four triggers atomically with the new column and version row.
+        if version < 5, !migrateToVersion5() {
+            Log.warn("TelemetryStore: telemetry schema v5 migration failed; retaining schema v4")
+            return
+        }
+
         ensureIngestSequenceInfrastructure()
     }
 
     /// Triggers assign ingest_seq at insert time from one shared counter
-    /// (MAX across the three tables), so no insert statement needs to know
+    /// (MAX across all sequenced tables), so no insert statement needs to know
     /// about the column. Idempotent (IF NOT EXISTS) and shared by fresh
     /// databases and migrated ones.
-    func ensureIngestSequenceInfrastructure() {
-        guard let db else { return }
-        for table in ["runs", "usage_evidence", "remote_client_events"] {
-            sqlite3_exec(
+    @discardableResult
+    func ensureIngestSequenceInfrastructure(rebuildTriggers: Bool = false) -> Bool {
+        guard let db else { return false }
+
+        let sharedSequenceQuery = Self.ingestSequenceTables.enumerated()
+            .map { index, table in
+                let prefix = index == 0 ? "" : "UNION ALL "
+                return "\(prefix)SELECT MAX(ingest_seq) AS seq FROM \(table)"
+            }
+            .joined(separator: "\n                        ")
+
+        for table in Self.ingestSequenceTables {
+            if rebuildTriggers,
+               sqlite3_exec(db, "DROP TRIGGER IF EXISTS trg_\(table)_ingest_seq", nil, nil, nil) != SQLITE_OK {
+                Log.warn("TelemetryStore: failed to drop ingest_seq trigger for \(table): \(sqliteError(db))")
+                return false
+            }
+
+            if sqlite3_exec(
                 db,
                 "CREATE INDEX IF NOT EXISTS idx_\(table)_ingest_seq ON \(table)(ingest_seq)",
                 nil, nil, nil
-            )
+            ) != SQLITE_OK {
+                Log.warn("TelemetryStore: failed to create ingest_seq index for \(table): \(sqliteError(db))")
+                return false
+            }
+
             let trigger = """
             CREATE TRIGGER IF NOT EXISTS trg_\(table)_ingest_seq
             AFTER INSERT ON \(table)
@@ -346,35 +391,75 @@ struct TelemetrySchemaMigrator {
                 UPDATE \(table)
                 SET ingest_seq = (
                     SELECT COALESCE(MAX(seq), 0) + 1 FROM (
-                        SELECT MAX(ingest_seq) AS seq FROM runs
-                        UNION ALL SELECT MAX(ingest_seq) FROM usage_evidence
-                        UNION ALL SELECT MAX(ingest_seq) FROM remote_client_events
+                        \(sharedSequenceQuery)
                     )
                 )
                 WHERE rowid = NEW.rowid;
             END
             """
             if sqlite3_exec(db, trigger, nil, nil, nil) != SQLITE_OK {
-                Log.warn("TelemetryStore: failed to create ingest_seq trigger for \(table)")
+                Log.warn("TelemetryStore: failed to create ingest_seq trigger for \(table): \(sqliteError(db))")
+                return false
             }
         }
+        return true
     }
 
-    func ensureColumn(table: String, name: String, definition: String) {
-        guard let db else { return }
+    @discardableResult
+    func ensureColumn(table: String, name: String, definition: String) -> Bool {
+        guard let db else { return false }
         var stmt: OpaquePointer?
-        guard sqlite3_prepare_v2(db, "PRAGMA table_info(\(table))", -1, &stmt, nil) == SQLITE_OK else { return }
+        guard sqlite3_prepare_v2(db, "PRAGMA table_info(\(table))", -1, &stmt, nil) == SQLITE_OK else {
+            Log.warn("TelemetryStore: failed to inspect column \(table).\(name): \(sqliteError(db))")
+            return false
+        }
         defer { sqlite3_finalize(stmt) }
 
         while sqlite3_step(stmt) == SQLITE_ROW {
             if let colName = sqlite3_column_text(stmt, 1), String(cString: colName) == name {
-                return
+                return true
             }
         }
 
         let sql = "ALTER TABLE \(table) ADD COLUMN \(name) \(definition)"
         if sqlite3_exec(db, sql, nil, nil, nil) != SQLITE_OK {
-            Log.warn("TelemetryStore: failed to add column \(table).\(name)")
+            Log.warn("TelemetryStore: failed to add column \(table).\(name): \(sqliteError(db))")
+            return false
         }
+        return true
+    }
+
+    private func migrateToVersion5() -> Bool {
+        guard let db else { return false }
+        guard sqlite3_exec(db, "BEGIN IMMEDIATE", nil, nil, nil) == SQLITE_OK else {
+            Log.warn("TelemetryStore: failed to begin telemetry schema v5 migration: \(sqliteError(db))")
+            return false
+        }
+
+        var committed = false
+        defer {
+            if !committed {
+                sqlite3_exec(db, "ROLLBACK", nil, nil, nil)
+            }
+        }
+
+        guard ensureColumn(
+            table: "provider_latency_samples",
+            name: "ingest_seq",
+            definition: "INTEGER"
+        ), ensureIngestSequenceInfrastructure(rebuildTriggers: true), setSchemaVersion(5) else {
+            return false
+        }
+
+        guard sqlite3_exec(db, "COMMIT", nil, nil, nil) == SQLITE_OK else {
+            Log.warn("TelemetryStore: failed to commit telemetry schema v5 migration: \(sqliteError(db))")
+            return false
+        }
+        committed = true
+        return true
+    }
+
+    private func sqliteError(_ db: OpaquePointer) -> String {
+        String(cString: sqlite3_errmsg(db))
     }
 }

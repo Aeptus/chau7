@@ -85,27 +85,6 @@ enum MCPCommandFilter {
         check(command, permissions: permissions, context: nil)
     }
 
-    /// Check raw terminal input (from tab_send_input). More conservative:
-    /// tries to extract a command if the input looks like one.
-    static func checkRawInput(_ input: String) -> MCPCommandVerdict {
-        let trimmed = input.trimmingCharacters(in: .whitespacesAndNewlines)
-        // If it's just control characters or short interactive input, allow
-        if trimmed.count <= 2 { return .allowed }
-        // If it doesn't end with newline, it's likely interactive (typing), allow
-        if !input.hasSuffix("\n"), !input.hasSuffix("\r") { return .allowed }
-        // Treat as a command
-        return check(trimmed)
-    }
-
-    /// Check raw terminal input with tab context for profile-aware filtering.
-    static func checkRawInput(_ input: String, context: MCPTabContext?) -> (verdict: MCPCommandVerdict, permissions: ResolvedPermissions) {
-        let trimmed = input.trimmingCharacters(in: .whitespacesAndNewlines)
-        let fallbackPermissions = resolvePermissions(for: context)
-        if trimmed.count <= 2 { return (.allowed, fallbackPermissions) }
-        if !input.hasSuffix("\n"), !input.hasSuffix("\r") { return (.allowed, fallbackPermissions) }
-        return check(trimmed, context: context)
-    }
-
     private static func check(_ command: String, permissions: ResolvedPermissions, context: MCPTabContext?) -> (verdict: MCPCommandVerdict, permissions: ResolvedPermissions) {
         if let verdict = selfProtectionVerdict(for: command, tabContext: context) {
             return (verdict, permissions)

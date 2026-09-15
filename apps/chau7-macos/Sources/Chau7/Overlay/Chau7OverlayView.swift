@@ -189,10 +189,22 @@ final class TabBarToolbarDelegate: NSObject, NSToolbarDelegate {
                 )
         }
 
-        // item.minSize/maxSize are the only reliable toolbar sizing API.
-        // Auto Layout constraints on the hosting view don't control toolbar space allocation.
-        // Use KVC to avoid deprecation warnings — Apple deprecated these in macOS 12
-        // but never shipped a replacement API (constraints don't control toolbar allocation).
+        // NSToolbarItem allocates space for a custom view from minSize/maxSize.
+        // Apple deprecated both in macOS 12 without shipping a replacement that
+        // works for custom views: Auto Layout constraints govern the hosting
+        // view's *internal* layout, not the item viewer's own allocation. They
+        // are set through KVC to keep the deprecation warning off the build
+        // while still calling the only API AppKit honours here.
+        //
+        // Relying on constraints alone (as this did between 691574be and now)
+        // survives the initial toolbar built in createOverlayWindow, then
+        // collapses to 0x0 on every recreateToolbar against a live window —
+        // the item viewer and the hosting view inside it both get an empty
+        // frame while intrinsicContentSize still reports the correct size.
+        // The user-visible symptom is a tab bar that vanishes and never comes
+        // back, because the watchdog's only remedy is the recreate that caused
+        // it. Set these before the view guard so the item is sized even when
+        // the view is missing or of an unexpected type.
         item.setValue(NSValue(size: NSSize(width: minWidth, height: height)), forKey: "minSize")
         item.setValue(NSValue(size: NSSize(width: maxWidth, height: height)), forKey: "maxSize")
 
@@ -744,12 +756,56 @@ private struct TabBarFrameKey: PreferenceKey {
     }
 }
 
+private struct TabBarScrollViewportFrameKey: PreferenceKey {
+    static var defaultValue: CGRect = .zero
+
+    static func reduce(value: inout CGRect, nextValue: () -> CGRect) {
+        let next = nextValue()
+        if !next.isEmpty {
+            value = next
+        }
+    }
+}
+
+private struct TabBarScrollViewResolver: NSViewRepresentable {
+    let onResolve: (NSScrollView?) -> Void
+
+    func makeNSView(context: Context) -> ResolverView {
+        let view = ResolverView()
+        view.onResolve = onResolve
+        return view
+    }
+
+    func updateNSView(_ nsView: ResolverView, context: Context) {
+        nsView.onResolve = onResolve
+    }
+
+    final class ResolverView: NSView {
+        var onResolve: ((NSScrollView?) -> Void)?
+
+        override func viewDidMoveToSuperview() {
+            super.viewDidMoveToSuperview()
+            resolveEnclosingScrollView()
+        }
+
+        func resolveEnclosingScrollView() {
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                onResolve?(enclosingScrollView)
+            }
+        }
+    }
+}
+
 /// SwiftUI view for the tab bar that goes in the unified toolbar
 private struct ToolbarTabBarView: View {
     var overlayModel: OverlayTabsModel
     @State private var draggingTabID: UUID?
     @State private var tabWidths: [UUID: CGFloat] = [:]
     @State private var recoveryDebounce: DispatchWorkItem?
+    @State private var groupDragCoordinator = TabStripDragCoordinator()
+    @State private var tabBarScrollViewportFrame: CGRect = .zero
+    @State private var preferenceUpdates = SwiftUIPreferenceUpdateCoalescer()
 
     /// Tabs idle for 10+ minutes (empty when feature is off or no tabs are idle).
     /// Reads the setting directly to avoid subscribing to all FeatureSettings changes.
@@ -816,13 +872,19 @@ private struct ToolbarTabBarView: View {
     // MARK: - Group Bracket Drag
 
     private func resetGroupDragState() {
+        groupDragCoordinator.cancel()
         draggingGroupSegmentID = nil
-        groupDragOffset = 0
+        draggedGroupTabIDs = []
         groupDragHomeRange = 0 ..< 0
         groupDragCurrentSlot = 0
     }
 
-    private func handleGroupDrag(groupID: String, segmentID: String, firstTabID: UUID, translation: CGSize) {
+    private func handleGroupDrag(
+        groupID: String,
+        segmentID: String,
+        firstTabID: UUID,
+        translation: CGSize
+    ) {
         overlayModel.dismissHoverCard()
         // Prevent dual drag: single-tab drag takes priority
         guard draggingTabID == nil else { return }
@@ -843,10 +905,38 @@ private struct ToolbarTabBarView: View {
             while end + 1 < snapshot.count, snapshot[end + 1].repoGroupID == groupID {
                 end += 1
             }
+            let homeRange = start ..< (end + 1)
+            let widths = snapshot.map { tabWidths[$0.id] ?? 100 }
+            let lastTab = snapshot[end]
+            guard let bracket = overlayModel.groupBracketHitTestFrames.first(where: { $0.segmentID == segmentID }),
+                  let lastMidX = tabMidXPositions[lastTab.id],
+                  groupDragCoordinator.begin(
+                      homeRange: homeRange,
+                      tabWidths: widths,
+                      spacing: tabSpacing,
+                      leadingAccessoryWidth: bracket.maxX - bracket.minX,
+                      groupFrame: CGRect(
+                          x: bracket.minX,
+                          y: tabBarScrollViewportFrame.minY,
+                          width: lastMidX + (tabWidths[lastTab.id] ?? 100) / 2 - bracket.minX,
+                          height: tabBarScrollViewportFrame.height
+                      ),
+                      viewportFrame: tabBarScrollViewportFrame,
+                      initialPointerTranslation: translation.width,
+                      onDestinationChange: { destination in
+                          groupDragCurrentSlot = destination
+                      },
+                      onCancellation: {
+                          resetGroupDragState()
+                      }
+                  ) else {
+                Log.warn("Group drag aborted: AppKit snapshot unavailable")
+                return
+            }
             draggingGroupSegmentID = segmentID
-            groupDragHomeRange = start ..< (end + 1)
+            draggedGroupTabIDs = Array(snapshot[homeRange]).map(\.id)
+            groupDragHomeRange = homeRange
             groupDragCurrentSlot = start
-            groupDragOffset = 0
             Log.info("Group drag started: \(URL(fileURLWithPath: groupID).lastPathComponent) range=\(start)..<\(end + 1)")
         }
 
@@ -859,27 +949,14 @@ private struct ToolbarTabBarView: View {
             return
         }
 
-        // Re-sync home range when tabs are inserted/removed before the group
-        // (mirrors the single-tab dragHomeIndex re-sync pattern)
-        if let liveFirst = snapshot[groupDragHomeRange].first,
-           let liveIndex = snapshot.firstIndex(where: { $0.id == liveFirst.id }),
-           liveIndex != groupDragHomeRange.lowerBound {
-            let delta = liveIndex - groupDragHomeRange.lowerBound
-            let newStart = groupDragHomeRange.lowerBound + delta
-            let newEnd = min(groupDragHomeRange.upperBound + delta, snapshot.count)
-            groupDragHomeRange = newStart ..< newEnd
-            groupDragCurrentSlot = max(0, min(groupDragCurrentSlot + delta, snapshot.count - groupDragHomeRange.count))
+        guard Array(snapshot[groupDragHomeRange]).map(\.id) == draggedGroupTabIDs else {
+            Log.warn("Group drag aborted: tab identity changed during transaction")
+            resetGroupDragState()
+            return
         }
 
-        groupDragOffset = translation.width
-
-        let widths = snapshot.map { tabWidths[$0.id] ?? 100 }
-        groupDragCurrentSlot = TabDragLayout.groupDestinationIndex(
-            for: translation.width,
-            homeRange: groupDragHomeRange,
-            tabWidths: widths,
-            spacing: tabSpacing
-        )
+        groupDragCurrentSlot = groupDragCoordinator.updatePointerTranslation(translation.width)
+            ?? groupDragCurrentSlot
     }
 
     private func handleGroupDragEnd(groupID: String, segmentID: String, dropScreenPoint: CGPoint) {
@@ -887,8 +964,9 @@ private struct ToolbarTabBarView: View {
             Log.trace("Group drag end ignored: draggingGroupSegmentID mismatch")
             return
         }
-        let from = groupDragHomeRange
-        let to = groupDragCurrentSlot
+        let transaction = groupDragCoordinator.finish()
+        let from = transaction?.homeRange ?? groupDragHomeRange
+        let to = transaction?.destinationIndex ?? groupDragCurrentSlot
         Log.info("Group drag end: \(URL(fileURLWithPath: groupID).lastPathComponent) from=\(from.lowerBound) to=\(to) dropPoint=(\(Int(dropScreenPoint.x)),\(Int(dropScreenPoint.y)))")
 
         // Try cross-window first
@@ -965,7 +1043,7 @@ private struct ToolbarTabBarView: View {
 
     /// Group bracket drag state
     @State private var draggingGroupSegmentID: String?
-    @State private var groupDragOffset: CGFloat = 0
+    @State private var draggedGroupTabIDs: [UUID] = []
     @State private var groupDragHomeRange: Range<Int> = 0 ..< 0
     @State private var groupDragCurrentSlot = 0
 
@@ -1018,7 +1096,7 @@ private struct ToolbarTabBarView: View {
                                         }
                                     )
                                     .gesture(
-                                        DragGesture(minimumDistance: 10)
+                                        DragGesture(minimumDistance: 10, coordinateSpace: .global)
                                             .onChanged { value in
                                                 handleGroupDrag(
                                                     groupID: groupID,
@@ -1035,8 +1113,7 @@ private struct ToolbarTabBarView: View {
                                                 )
                                             }
                                     )
-                                    .opacity(draggingGroupSegmentID == segmentID ? 0.5 : 1.0)
-                                    .offset(x: draggingGroupSegmentID == segmentID ? groupDragOffset : 0)
+                                    .opacity(draggingGroupSegmentID == segmentID ? 0 : 1)
 
                                     ForEach(Array(groupTabs.enumerated()), id: \.element.id) { idx, tab in
                                         let isFirst = idx == 0
@@ -1044,7 +1121,7 @@ private struct ToolbarTabBarView: View {
                                         tabView(for: tab, hideRepoPath: true)
                                             .background(Color.clear.preference(key: RenderedTabCountKey.self, value: 1))
                                             .fixedSize(horizontal: false, vertical: true)
-                                            .opacity(isTabInDraggedGroupRange(tab) ? 0.5 : 1.0)
+                                            .opacity(isTabInDraggedGroupRange(tab) ? 0 : 1)
                                             .overlay(alignment: .top) {
                                                 // Use a stroked path (not filled rect) to match
                                                 // the bracket's stroke rendering exactly.
@@ -1080,24 +1157,35 @@ private struct ToolbarTabBarView: View {
                             .accessibilityHint(L("Opens a new terminal tab", "Opens a new terminal tab"))
                         }
                         .onPreferenceChange(TabWidthPreferenceKey.self) { widths in
-                            tabWidths = widths
-                            rebuildHitTestFrames(widths: widths, positions: tabMidXPositions)
+                            preferenceUpdates.schedule(.tabWidths) {
+                                tabWidths = widths
+                                rebuildHitTestFrames(widths: widths, positions: tabMidXPositions)
+                            }
                         }
                         .onPreferenceChange(TabMidXPreferenceKey.self) { positions in
-                            tabMidXPositions = positions
-                            rebuildHitTestFrames(widths: tabWidths, positions: positions)
+                            preferenceUpdates.schedule(.tabPositions) {
+                                tabMidXPositions = positions
+                                rebuildHitTestFrames(widths: tabWidths, positions: positions)
+                            }
                         }
                         .onPreferenceChange(BracketFramePreferenceKey.self) { frames in
-                            overlayModel.groupBracketHitTestFrames = frames.map { segmentID, value in
-                                (
-                                    segmentID: segmentID,
-                                    repoGroupID: value.repoGroupID,
-                                    firstTabID: value.firstTabID,
-                                    minX: value.frame.minX,
-                                    maxX: value.frame.maxX
-                                )
-                            }.sorted(by: { $0.minX < $1.minX })
+                            preferenceUpdates.schedule(.bracketFrames) {
+                                overlayModel.groupBracketHitTestFrames = frames.map { segmentID, value in
+                                    (
+                                        segmentID: segmentID,
+                                        repoGroupID: value.repoGroupID,
+                                        firstTabID: value.firstTabID,
+                                        minX: value.frame.minX,
+                                        maxX: value.frame.maxX
+                                    )
+                                }.sorted(by: { $0.minX < $1.minX })
+                            }
                         }
+                        .background(
+                            TabBarScrollViewResolver { scrollView in
+                                groupDragCoordinator.attach(to: scrollView)
+                            }
+                        )
                         .padding(.horizontal, 8)
                         .padding(.vertical, 3)
                     }
@@ -1106,6 +1194,19 @@ private struct ToolbarTabBarView: View {
                     .id("tabbar-scroll-\(overlayModel.tabBarRefreshToken)")
                     // Hardening: ensure ScrollView content maintains minimum size
                     .fixedSize(horizontal: false, vertical: true)
+                    .background(
+                        GeometryReader { geometry in
+                            Color.clear.preference(
+                                key: TabBarScrollViewportFrameKey.self,
+                                value: geometry.frame(in: .global)
+                            )
+                        }
+                    )
+                    .onPreferenceChange(TabBarScrollViewportFrameKey.self) { frame in
+                        preferenceUpdates.schedule(.scrollViewport) {
+                            tabBarScrollViewportFrame = frame
+                        }
+                    }
                     .onChange(of: overlayModel.selectedTabID) {
                         withAnimation(.easeInOut(duration: 0.25)) {
                             proxy.scrollTo(overlayModel.selectedTabID, anchor: .center)
@@ -1137,20 +1238,23 @@ private struct ToolbarTabBarView: View {
             }
         )
         .onPreferenceChange(TabBarSizeKey.self) { size in
-            overlayModel.reportTabBarSize(size)
-            // Log tiny/zero rendered sizes immediately so disappearance can be diagnosed from logs.
-            let now = Date()
-            let expectedMinWidth = CGFloat(overlayModel.tabs.count) * 30
-            if size.width <= 0 || size.height <= 0 || size.width < 1 || size.height < 10 || size.width < expectedMinWidth, now.timeIntervalSince(lastTinySizeLogAt) > 1.0 {
-                lastTinySizeLogAt = now
-                Log
-                    .warn(
-                        "ToolbarTabBarView: suspicious tab bar size reported width=\(Int(size.width)) height=\(Int(size.height)), tabs=\(overlayModel.tabs.count), expectedMinWidth=\(Int(expectedMinWidth)), refreshToken=\(overlayModel.tabBarRefreshToken)"
-                    )
+            preferenceUpdates.schedule(.tabBarSize) {
+                overlayModel.reportTabBarSize(size)
+                let now = Date()
+                let expectedMinWidth = CGFloat(overlayModel.tabs.count) * 30
+                if size.width <= 0 || size.height <= 0 || size.width < 1 || size.height < 10 || size.width < expectedMinWidth, now.timeIntervalSince(lastTinySizeLogAt) > 1.0 {
+                    lastTinySizeLogAt = now
+                    Log
+                        .warn(
+                            "ToolbarTabBarView: suspicious tab bar size reported width=\(Int(size.width)) height=\(Int(size.height)), tabs=\(overlayModel.tabs.count), expectedMinWidth=\(Int(expectedMinWidth)), refreshToken=\(overlayModel.tabBarRefreshToken)"
+                        )
+                }
             }
         }
         .onPreferenceChange(TabBarFrameKey.self) { frame in
-            overlayModel.reportTabBarDropFrame(frame)
+            preferenceUpdates.schedule(.tabBarFrame) {
+                overlayModel.reportTabBarDropFrame(frame)
+            }
         }
         .onChange(of: overlayModel.tabs.count) {
             Log.trace("ToolbarTabBarView: tabs.count changed to \(overlayModel.tabs.count)")
@@ -1163,6 +1267,7 @@ private struct ToolbarTabBarView: View {
             }
         }
         .onDisappear {
+            resetGroupDragState()
             let now = Date()
             if now.timeIntervalSince(lastVisibilityLogAt) > 2.0 {
                 lastVisibilityLogAt = now
@@ -1172,25 +1277,22 @@ private struct ToolbarTabBarView: View {
         // Auto-recovery: detect when rendered tab count doesn't match model
         // Report rendered count to model for watchdog monitoring
         .onPreferenceChange(RenderedTabCountKey.self) { renderedCount in
-            overlayModel.reportRenderedTabCount(renderedCount)
-            let expectedCount = overlayModel.tabs.count
-            // Only act if we rendered ZERO tabs but expected some (the critical bug case)
-            // During normal add/remove, renderedCount trails briefly but is never zero when tabs exist
-            if renderedCount == 0, expectedCount > 0 {
-                // Debounce to avoid triggering during animations/transitions
-                recoveryDebounce?.cancel()
-                let task = DispatchWorkItem { [weak overlayModel] in
-                    guard let model = overlayModel else { return }
-                    // Only refresh if model still has tabs
-                    // The refresh is idempotent, so false positives are harmless
-                    let currentExpected = model.tabs.count
-                    if currentExpected > 0 {
-                        Log.warn("TabBar auto-recovery (preference): rendered=0, expected=\(currentExpected), forcing refresh")
-                        model.refreshTabBar()
+            preferenceUpdates.schedule(.renderedTabCount) {
+                overlayModel.reportRenderedTabCount(renderedCount)
+                let expectedCount = overlayModel.tabs.count
+                if renderedCount == 0, expectedCount > 0 {
+                    recoveryDebounce?.cancel()
+                    let task = DispatchWorkItem { [weak overlayModel] in
+                        guard let model = overlayModel else { return }
+                        let currentExpected = model.tabs.count
+                        if currentExpected > 0 {
+                            Log.warn("TabBar auto-recovery (preference): rendered=0, expected=\(currentExpected), forcing refresh")
+                            model.refreshTabBar()
+                        }
                     }
+                    recoveryDebounce = task
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3, execute: task)
                 }
-                recoveryDebounce = task
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3, execute: task)
             }
         }
     }
@@ -1312,7 +1414,7 @@ private struct ToolbarTabBarView: View {
     }
 
     /// Returns the visual X offset for a tab during a group bracket drag.
-    /// - Tabs in the dragged group: follow the cursor via `groupDragOffset`
+    /// - Tabs in the dragged group: stay in layout as the invisible placeholder
     /// - Tabs displaced by the group: shift by the group's total width
     /// - All others: no offset
     private func groupTabDragOffset(for tab: OverlayTab) -> CGFloat {
@@ -1321,32 +1423,7 @@ private struct ToolbarTabBarView: View {
 
         guard let i = overlayModel.tabs.firstIndex(where: { $0.id == tab.id }) else { return 0 }
 
-        // Tabs inside the dragged group follow the cursor
-        if groupDragHomeRange.contains(i) {
-            return groupDragOffset
-        }
-
-        // Total visual width of the group (members + internal spacings)
-        let groupWidth: CGFloat = groupDragHomeRange.reduce(0) { $0 + (tabWidths[overlayModel.tabs[$1].id] ?? 100) }
-            + CGFloat(max(0, groupDragHomeRange.count - 1)) * tabSpacing
-        let shift = groupWidth + tabSpacing
-
-        let homeStart = groupDragHomeRange.lowerBound
-        let homeEnd = groupDragHomeRange.upperBound // exclusive
-
-        if groupDragCurrentSlot > homeStart {
-            // Group dragging right: tabs between homeEnd and the new end shift left
-            let newEnd = groupDragCurrentSlot + groupDragHomeRange.count
-            if i >= homeEnd, i < newEnd {
-                return -shift
-            }
-        } else if groupDragCurrentSlot < homeStart {
-            // Group dragging left: tabs between new start and homeStart shift right
-            if i >= groupDragCurrentSlot, i < homeStart {
-                return shift
-            }
-        }
-        return 0
+        return groupDragCoordinator.displacement(forTabAt: i)
     }
 
     private func handleTabDrag(tab: OverlayTab, translation: CGSize) {
@@ -1564,11 +1641,17 @@ struct Chau7OverlayView: View {
     var overlayModel: OverlayTabsModel
     var appModel: AppModel
     var settings = FeatureSettings.shared
+    var providerStatusMonitor = ProviderStatusMonitor.shared
 
     var body: some View {
         // Tab bar is now in the unified toolbar (Safari-style)
         terminalStack
             .background(Color.clear)
+            .overlay {
+                if let snapshot = focusedProviderAlert {
+                    ProviderHealthBorder(snapshot: snapshot)
+                }
+            }
             .onAppear {
                 overlayModel.configureRenderSuspension(
                     enabled: appModel.isSuspendBackgroundRendering,
@@ -1587,6 +1670,17 @@ struct Chau7OverlayView: View {
                     delay: appModel.suspendRenderDelaySeconds
                 )
             }
+    }
+
+    private var focusedProviderAlert: ProviderHealthSnapshot? {
+        guard settings.showProviderHealthBorder,
+              overlayModel.overlayWindow?.isKeyWindow == true,
+              let provider = overlayModel
+                .selectedPresentationSession(for: overlayModel.selectedTab)?
+                .effectiveAIProvider else {
+            return nil
+        }
+        return providerStatusMonitor.activeSnapshot(for: provider)
     }
 
     private var terminalStack: some View {
@@ -1776,6 +1870,53 @@ struct Chau7OverlayView: View {
 
     private var reportIssueShortcutText: String {
         settings.shortcut(for: "reportIssue")?.displayString ?? "⌥⌘I"
+    }
+}
+
+private struct ProviderHealthBorder: View {
+    let snapshot: ProviderHealthSnapshot
+
+    private var color: Color {
+        switch snapshot.severity {
+        case .degraded:
+            return .orange
+        case .outage:
+            return .red
+        case .unknown, .operational:
+            return .clear
+        }
+    }
+
+    private var lineWidth: CGFloat {
+        snapshot.severity == .outage ? 2 : 1
+    }
+
+    private var accessibilityState: String {
+        switch snapshot.severity {
+        case .degraded:
+            return L("providerHealth.degraded", "degraded performance")
+        case .outage:
+            return L("providerHealth.outage", "service outage")
+        case .unknown:
+            return L("providerHealth.unknown", "status unavailable")
+        case .operational:
+            return L("providerHealth.operational", "operational")
+        }
+    }
+
+    var body: some View {
+        Rectangle()
+            .strokeBorder(color, lineWidth: lineWidth)
+            .ignoresSafeArea()
+            .allowsHitTesting(false)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(
+                String(
+                    format: L("providerHealth.accessibilityLabel", "%@ provider status"),
+                    AnalyticsProvider.displayName(for: snapshot.providerKey)
+                )
+            )
+            .accessibilityValue("\(accessibilityState). \(snapshot.summary)")
     }
 }
 

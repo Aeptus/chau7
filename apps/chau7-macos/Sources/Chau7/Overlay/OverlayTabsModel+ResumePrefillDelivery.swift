@@ -43,7 +43,8 @@ extension OverlayTabsModel {
         targetTabID: UUID,
         restoreToken: String,
         remainingAttempts: Int,
-        delay: TimeInterval = 0
+        delay: TimeInterval = 0,
+        autoSubmit: Bool = true
     ) {
         let paneID = intent.paneID
         guard remainingAttempts > 0 else {
@@ -68,7 +69,8 @@ extension OverlayTabsModel {
                     targetTabID: targetTabID,
                     restoreToken: restoreToken,
                     queuedReason: "retries_exhausted",
-                    deliveredReason: "prefilled_after_retries_exhausted"
+                    deliveredReason: "prefilled_after_retries_exhausted",
+                    autoSubmit: autoSubmit
                 )
                 if deliveredImmediately {
                     Log.info("restoreTabState: retries exhausted but delivered prefill immediately for tab=\(targetTabID) pane=\(paneID)")
@@ -123,7 +125,8 @@ extension OverlayTabsModel {
                             targetTabID: targetTabID,
                             restoreToken: restoreToken,
                             remainingAttempts: remainingAttempts - 1,
-                            delay: nextDelay
+                            delay: nextDelay,
+                            autoSubmit: autoSubmit
                         )
                         return
                     case .queueSessionPrefill:
@@ -147,7 +150,8 @@ extension OverlayTabsModel {
                             targetTabID: targetTabID,
                             restoreToken: restoreToken,
                             queuedReason: "waiting_for_view",
-                            deliveredReason: "prefilled_after_waiting_for_view"
+                            deliveredReason: "prefilled_after_waiting_for_view",
+                            autoSubmit: autoSubmit
                         )
                         Log.info("restoreTabState: no view for tab=\(targetTabID) pane=\(paneID), queued session-level prefill")
                         return
@@ -172,7 +176,8 @@ extension OverlayTabsModel {
                     targetTabID: targetTabID,
                     restoreToken: restoreToken,
                     remainingAttempts: remainingAttempts - 1,
-                    delay: nextDelay
+                    delay: nextDelay,
+                    autoSubmit: autoSubmit
                 )
                 return
             }
@@ -196,7 +201,8 @@ extension OverlayTabsModel {
                 targetTabID: targetTabID,
                 restoreToken: restoreToken,
                 queuedReason: "deferred_after_ready_check",
-                deliveredReason: "prefilled"
+                deliveredReason: "prefilled",
+                autoSubmit: autoSubmit
             )
         }
     }
@@ -440,11 +446,13 @@ extension OverlayTabsModel {
         targetTabID: UUID,
         restoreToken: String,
         queuedReason: String,
-        deliveredReason: String
+        deliveredReason: String,
+        autoSubmit: Bool = true
     ) -> Bool {
         let paneID = intent.paneID
         let prefillResult = session.prefillInput(
             intent.command,
+            autoSubmit: autoSubmit,
             rejectionReasonProvider: { [weak self, weak session] in
                 guard let self, let session else { return "session_unavailable_at_delivery" }
                 guard latestRestoreResumeTokenByPaneID[paneID] == restoreToken else {

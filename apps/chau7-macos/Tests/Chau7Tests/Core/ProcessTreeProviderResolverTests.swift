@@ -162,9 +162,10 @@ final class ProcessTreeProviderResolverTests: XCTestCase {
         )
     }
 
-    func testDeepestMatchWins() {
-        // If a tool launches a subprocess whose basename also appears in the registry,
-        // we prefer the deeper (leaf) match.
+    func testNearestMatchKeepsOuterControllingProvider() {
+        // If Claude launches Codex as a child tool, the tab still belongs to the
+        // outer Claude session. Persisting the child provider would pair a Claude
+        // session ID with Codex and make the tab unrestorable on relaunch.
         let snapshot = ProcessTreeProviderResolver.Snapshot(
             childrenOf: [
                 100: [200],
@@ -178,7 +179,7 @@ final class ProcessTreeProviderResolverTests: XCTestCase {
         )
         XCTAssertEqual(
             ProcessTreeProviderResolver.resolve(shellPid: 100, snapshot: snapshot),
-            "Codex"
+            "Claude"
         )
     }
 

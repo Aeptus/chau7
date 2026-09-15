@@ -9,20 +9,13 @@ struct RemoteSettingsView: View {
     @State private var relayURLDraft = FeatureSettings.shared.remoteRelayURL
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            // SSH Profiles first — most commonly used section
-            SSHProfilesSettingsView()
-
-            Divider()
-                .padding(.vertical, 8)
-
-            // Remote Control
+        VStack(alignment: .leading, spacing: Chau7Style.Settings.pageSectionSpacing) {
             SettingsSectionHeader(L("settings.remote.status", "Status"), icon: "antenna.radiowaves.left.and.right")
             statusRow
 
             SettingsSectionHeader(L("settings.remote.access", "Remote Access"), icon: "lock.shield")
             SettingsToggle(
-                label: L("settings.remote.enable", "Enable Remote Control"),
+                label: L("settings.remote.enable", "Enable Remote Access"),
                 help: L("settings.remote.enable.help", "Allow Chau7 to be controlled from the iOS app"),
                 isOn: $settings.isRemoteEnabled
             )
@@ -69,6 +62,12 @@ struct RemoteSettingsView: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text(remote.isAgentRunning ? L("status.running", "Running") : L("status.stopped", "Stopped"))
                     .fontWeight(.semibold)
+                Text(remote.isIPCConnected ? L("remote.ipc.connected", "IPC connected") : L("remote.ipc.disconnected", "IPC not connected"))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Text(String(format: L("remote.relayStatus", "Relay: %@"), remote.relayStatus ?? L("status.unknown", "Unknown")))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
                 if let error = remote.lastError, !error.isEmpty {
                     Text(error)
                         .font(.caption)
@@ -82,10 +81,6 @@ struct RemoteSettingsView: View {
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
-                } else {
-                    Text(remote.isIPCConnected ? L("remote.ipc.connected", "IPC connected") : L("remote.ipc.disconnected", "IPC not connected"))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
                 }
             }
         }
@@ -93,8 +88,8 @@ struct RemoteSettingsView: View {
 
     private var relaySettingsView: some View {
         SettingsRow(L("settings.remote.relayUrl", "Relay URL"), help: L("settings.remote.relayUrl.help", "WebSocket relay base URL")) {
-            VStack(alignment: .leading, spacing: 8) {
-                HStack(alignment: .center, spacing: 10) {
+            VStack(alignment: .leading, spacing: Chau7Style.Settings.inlineControlSpacing) {
+                HStack(alignment: .center, spacing: Chau7Style.Settings.inlineControlSpacing) {
                     TextField("", text: $relayURLDraft)
                         .textFieldStyle(.roundedBorder)
                         .frame(maxWidth: 360)
@@ -125,8 +120,8 @@ struct RemoteSettingsView: View {
         if let info = remote.pairingInfo {
             let payload = info.pairingJSONString()
             let prettyPayload = info.pairingJSONString(prettyPrinted: true)
-            HStack(alignment: .top, spacing: 16) {
-                VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .top, spacing: Chau7Style.Settings.looseControlSpacing) {
+                VStack(alignment: .leading, spacing: Chau7Style.Settings.inlineControlSpacing) {
                     Text(String(format: L("remote.deviceId", "Device ID: %@"), info.deviceID))
                         .font(.system(size: 12, design: .monospaced))
                     Text(String(format: L("remote.pairingCode", "Pairing Code: %@"), info.pairingCode))
@@ -145,30 +140,29 @@ struct RemoteSettingsView: View {
                                 .font(.system(size: 11, design: .monospaced))
                                 .textSelection(.enabled)
                                 .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding(10)
+                                .padding(Chau7Style.Settings.cardPadding)
                         }
                         .frame(minHeight: 120)
                         .background(Color.secondary.opacity(0.08))
                         .clipShape(RoundedRectangle(cornerRadius: 8))
                     }
 
-                    HStack(spacing: 12) {
-                        Button(L("Copy Pairing JSON", "Copy Pairing JSON")) {
+                    SettingsButtonRow(buttons: [
+                        .init(title: L("Copy Pairing JSON", "Copy Pairing JSON"), icon: "doc.on.doc") {
                             guard let payload else { return }
                             let pasteboard = NSPasteboard.general
                             pasteboard.clearContents()
                             pasteboard.setString(payload, forType: .string)
-                        }
-                        Button(L("Copy Pairing Code", "Copy Pairing Code")) {
+                        },
+                        .init(title: L("Copy Pairing Code", "Copy Pairing Code"), icon: "number.square") {
                             let pasteboard = NSPasteboard.general
                             pasteboard.clearContents()
                             pasteboard.setString(info.pairingCode, forType: .string)
-                        }
-                        Button(L("Regenerate", "Regenerate")) {
+                        },
+                        .init(title: L("Regenerate", "Regenerate"), icon: "arrow.clockwise") {
                             remote.regeneratePairing()
                         }
-                    }
-                    .buttonStyle(.bordered)
+                    ])
                 }
 
                 Spacer()
@@ -179,7 +173,7 @@ struct RemoteSettingsView: View {
                             .interpolation(.none)
                             .resizable()
                             .frame(width: 180, height: 180)
-                            .padding(10)
+                            .padding(Chau7Style.Settings.cardPadding)
                             .background(Color.white)
                             .clipShape(RoundedRectangle(cornerRadius: 10))
                             .overlay(
@@ -225,11 +219,11 @@ struct RemoteSettingsView: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
         } else {
-            VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: Chau7Style.Settings.looseControlSpacing) {
                 ForEach(remote.pairedDevices) { device in
-                    HStack(alignment: .top, spacing: 12) {
+                    HStack(alignment: .top, spacing: Chau7Style.Settings.looseControlSpacing) {
                         VStack(alignment: .leading, spacing: 4) {
-                            HStack(spacing: 8) {
+                            HStack(spacing: Chau7Style.Settings.inlineControlSpacing) {
                                 Text(device.name)
                                     .fontWeight(.semibold)
                                 Text(device.isConnected ? L("status.connected", "Connected") : L("status.notConnected", "Not Connected"))
@@ -273,12 +267,12 @@ struct RemoteSettingsView: View {
             if settings.isRemoteEnabled {
                 return "Relay URL changed. Apply to restart the remote agent and refresh pairing."
             }
-            return "Relay URL changed. Apply to save it. The new relay will be used the next time Remote Control is enabled."
+            return "Relay URL changed. Apply to save it. The new relay will be used the next time Remote Access is enabled."
         }
         if settings.isRemoteEnabled {
-            return "This relay URL is currently configured. Remote Control will start or reconnect against it automatically."
+            return "This relay URL is currently configured. Remote Access will start or reconnect against it automatically."
         }
-        return "This relay URL is saved but inactive until Remote Control is enabled."
+        return "This relay URL is saved but inactive until Remote Access is enabled."
     }
 
     private func applyRelayURL() {

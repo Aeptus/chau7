@@ -834,17 +834,63 @@ enum SwiftCommands {
     Other(Vec<OsString>),
 }
 
-fn main() -> Result<()> {
-    // Strip CTO wrapper dir from PATH to prevent infinite recursion.
-    // Without this, `Command::new("ls")` inside ls.rs would resolve to the
-    // CTO wrapper script, which calls chau7-optim again → infinite loop.
-    if let Ok(path) = std::env::var("PATH") {
-        if let Ok(home) = std::env::var("HOME") {
-            let cto_bin = format!("{}/.chau7/cto_bin", home);
-            let clean: Vec<&str> = path.split(':').filter(|p| *p != cto_bin).collect();
-            std::env::set_var("PATH", clean.join(":"));
-        }
+fn main() {
+    // A crash or internal error inside the optimizer must never suppress the
+    // user's command. The CTO wrapper treats exit codes 2 and 3 as "fall
+    // through to the real binary"; every other code is taken as "optimized
+    // successfully", so the real command is not run — and the wrapper's
+    // `2>/dev/null` hides the reason. Map both panics and Err returns to exit
+    // 3 so the wrapper re-execs the real binary instead. Safe because the
+    // shadowed commands are read-only and idempotent; deliberate
+    // `process::exit` codes from command handlers (which run *after* producing
+    // output) are unaffected and still propagate as-is.
+    std::panic::set_hook(Box::new(|info| {
+        eprintln!("chau7-optim: internal panic, falling through to real binary: {info}");
+        std::process::exit(3);
+    }));
+
+    if let Err(err) = run() {
+        eprintln!("chau7-optim: internal error, falling through to real binary: {err:#}");
+        std::process::exit(3);
     }
+}
+
+/// Remove the CTO wrapper dir (`~/.chau7/cto_bin`) from the process `PATH` so
+/// child processes the optimizer spawns resolve the real binary rather than the
+/// wrapper. Tolerant of a trailing slash on the PATH entry and of an unset
+/// `HOME` (falls back to `dirs::home_dir`) — a missed strip reintroduces the
+/// recursion loop for executable commands, so the match must not be brittle.
+fn strip_cto_wrapper_dir_from_path() {
+    let Ok(path) = std::env::var("PATH") else {
+        return;
+    };
+    let home = std::env::var("HOME")
+        .ok()
+        .map(std::path::PathBuf::from)
+        .or_else(dirs::home_dir);
+    let Some(home) = home else {
+        return;
+    };
+    let cto_bin = home.join(".chau7").join("cto_bin");
+    let target = cto_bin.to_string_lossy();
+    let target = target.trim_end_matches('/');
+    let clean: Vec<&str> = path
+        .split(':')
+        .filter(|entry| entry.trim_end_matches('/') != target)
+        .collect();
+    std::env::set_var("PATH", clean.join(":"));
+}
+
+fn run() -> Result<()> {
+    // Prevent infinite recursion: a child process the optimizer spawns
+    // (`Command::new("cargo")` in cargo_cmd.rs, `Command::new("ls")` in ls.rs,
+    // …) must resolve the REAL binary, not the `cto_bin` wrapper that re-invokes
+    // chau7-optim. Two layers, because a missed strip loops forever:
+    //   1. Remove the wrapper dir from PATH (below).
+    //   2. Set a sentinel the wrappers check — if they still get invoked, they
+    //      exec the real binary directly instead of calling us again.
+    strip_cto_wrapper_dir_from_path();
+    std::env::set_var("CHAU7_CTO_OPTIM_ACTIVE", "1");
 
     // Extract git global options before Clap parses (Clap can't handle `-C path` before subcommand)
     let raw_args: Vec<String> = std::env::args().collect();

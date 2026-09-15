@@ -120,6 +120,29 @@ pub struct GridSnapshot {
     pub capacity: usize,
 }
 
+/// Generation-based viewport delta. `cells` contains `row_count * cols`
+/// entries packed in the order given by `row_indices`; cluster offsets refer
+/// to this delta's `clusters_utf8` allocation.
+#[repr(C)]
+pub struct GridDeltaSnapshot {
+    pub cells: *mut CellData,
+    pub clusters_utf8: *mut u8,
+    pub row_indices: *mut u16,
+    pub clusters_len: usize,
+    pub clusters_capacity: usize,
+    pub cells_capacity: usize,
+    pub row_indices_capacity: usize,
+    pub generation: u64,
+    pub scrollback_rows: u32,
+    pub display_offset: u32,
+    pub row_count: u32,
+    pub cols: u16,
+    pub rows: u16,
+    pub cursor_visible: u8,
+    pub full_refresh: u8,
+    pub _pad: [u8; 6],
+}
+
 // ============================================================================
 // Debug state
 // ============================================================================
@@ -179,6 +202,12 @@ pub struct DebugState {
     pub avg_batch_size: u64,
     /// Dirty row count (for partial updates)
     pub dirty_row_count: u32,
+    /// Estimated resident bytes of grid cell storage (primary history +
+    /// screen + alternate screen), computed as rows × cols × sizeof(Cell).
+    /// An estimate: excludes per-cell extra storage (hyperlinks, zerowidth)
+    /// and allocator overhead. While the alternate screen is active the
+    /// primary grid is inaccessible, so its last observed size is used.
+    pub estimated_grid_bytes: u64,
 }
 
 // ============================================================================

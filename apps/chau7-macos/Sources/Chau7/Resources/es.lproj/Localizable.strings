@@ -41,8 +41,10 @@
 
 // MARK: - Settings Sections
 "settings.title" = "Configuración";
+"settings.advanced" = "Avanzado";
+"graphics.advanced.protocolNotes" = "Notas del protocolo";
 "settings.general" = "General";
-"settings.general.description" = "Preferencias y comportamiento de la aplicación";
+"settings.general.description" = "Inicio, idioma, directorio predeterminado y archivos de configuracion avanzados";
 "settings.appearance" = "Apariencia";
 "settings.appearance.description" = "Personalización visual y temas";
 "settings.terminal" = "Terminal";
@@ -57,7 +59,7 @@
 "settings.windows.description" = "Gestión y disposición de ventanas";
 "settings.ai" = "Integración IA";
 "settings.ai.description" = "Detección y tematización de CLI de IA";
-"settings.notifications" = "Notificaciones";
+"settings.notifications" = "Alertas";
 "settings.notifications.description" = "Preferencias de alertas y filtros de eventos";
 "settings.logs" = "Registros";
 "settings.logs.description" = "Supervisión de registros e historial";
@@ -781,7 +783,7 @@
 
 // Status
 "settings.general.status" = "Estado";
-"settings.general.status.notifications" = "Notificaciones";
+"settings.general.status.notifications" = "Alertas";
 "settings.general.status.eventMonitoring" = "Supervisión de eventos";
 "settings.general.status.historyMonitoring" = "Supervisión del historial";
 "settings.general.status.terminalMonitoring" = "Supervisión del terminal";
@@ -923,8 +925,8 @@
 "settings.terminal.bell.sound.subtle" = "Sutil";
 "settings.terminal.bell.visualBell" = "Señal visual";
 "settings.terminal.bell.visualBell.help" = "Hacer parpadear la pantalla en lugar de reproducir un sonido";
-"settings.terminal.dangerousCommands" = "Comandos peligrosos";
-"settings.terminal.dangerousCommands.enabled" = "Resaltar comandos peligrosos";
+"settings.terminal.dangerousCommands" = "Seguridad de comandos";
+"settings.terminal.dangerousCommands.enabled" = "Resaltar comandos riesgosos";
 "settings.terminal.dangerousCommands.enabled.help" = "Hacer que los comandos de riesgo destaquen en la salida del terminal";
 "settings.terminal.dangerousCommands.scope" = "Alcance del resaltado";
 "settings.terminal.dangerousCommands.scope.help" = "Elige dónde se resaltan los patrones de riesgo";
@@ -984,6 +986,13 @@
 "settings.tabs.lastCommandBadge.help" = "Mostrar el comando más reciente en el área de estado de la pestaña";
 "settings.tabs.aiProductIcons" = "Logos de productos IA";
 "settings.tabs.aiProductIcons.help" = "Mostrar logos de productos IA para los CLI de IA detectados en las pestañas";
+"settings.tabs.providerHealthBorder" = "Borde de estado del proveedor";
+"settings.tabs.providerHealthBorder.help" = "Mostrar un borde naranja fino si el proveedor presenta degradación y uno rojo si hay una interrupción en la pestaña de IA activa";
+"providerHealth.degraded" = "rendimiento degradado";
+"providerHealth.outage" = "interrupción del servicio";
+"providerHealth.unknown" = "estado no disponible";
+"providerHealth.operational" = "operativo";
+"providerHealth.accessibilityLabel" = "Estado del proveedor %@";
 
 // Keyboard Navigation Section
 "settings.tabs.keyboardNavigation" = "Navegación por teclado";
@@ -1666,8 +1675,8 @@
 "repo.section.branches" = "Ramas";
 
 // MARK: - MCP Settings
-"mcp.settings.newProfile" = "Nuevo perfil MCP";
-"mcp.settings.editProfile" = "Editar perfil MCP";
+"mcp.settings.newProfile" = "Nuevo perfil de agente";
+"mcp.settings.editProfile" = "Editar perfil de agente";
 "mcp.settings.trigger" = "Disparador";
 "mcp.settings.type" = "Tipo";
 "mcp.settings.permissionMode" = "Modo de permisos";
@@ -1866,6 +1875,7 @@
 
 "commandPalette.command.about" = "Acerca de Chau7";
 "commandPalette.command.actualSize" = "Tamaño real";
+"commandPalette.command.agentDashboard" = "Panel de agente";
 "commandPalette.command.appendSelectionToEditor" = "Agregar selección al editor";
 "commandPalette.command.clearScreen" = "Limpiar pantalla";
 "commandPalette.command.clearScrollback" = "Limpiar historial de desplazamiento";
@@ -1876,7 +1886,8 @@
 "commandPalette.command.copy" = "Copiar";
 "commandPalette.command.cut" = "Cortar";
 "commandPalette.command.debugConsole" = "Consola de depuración";
-"commandPalette.command.documentation" = "Documentación";
+"commandPalette.command.dataExplorer" = "Explorador de datos";
+"commandPalette.command.documentation" = "Ayuda de Chau7";
 "commandPalette.command.exportText" = "Exportar texto...";
 "commandPalette.command.find" = "Buscar...";
 "commandPalette.command.findNext" = "Buscar siguiente";
@@ -1892,15 +1903,21 @@
 "commandPalette.command.newTab" = "Nueva pestaña";
 "commandPalette.command.newWindow" = "Nueva ventana";
 "commandPalette.command.nextInputLine" = "Siguiente línea de entrada";
+"commandPalette.command.openDiffViewer" = "Abrir visor de diferencias";
+"commandPalette.command.openFilePreview" = "Abrir vista previa de archivo";
+"commandPalette.command.openLocation" = "Abrir ubicación...";
 "commandPalette.command.openTextEditor" = "Abrir editor de texto";
 "commandPalette.command.paste" = "Pegar";
 "commandPalette.command.pasteEscaped" = "Pegar con escape";
 "commandPalette.command.previousInputLine" = "Línea de entrada anterior";
 "commandPalette.command.print" = "Imprimir...";
+"commandPalette.command.refreshTabBar" = "Actualizar barra de pestañas";
 "commandPalette.command.reloadSnippets" = "Recargar fragmentos";
 "commandPalette.command.renameTab" = "Renombrar pestaña...";
 "commandPalette.command.reopenClosedTab" = "Reabrir pestaña cerrada";
-"commandPalette.command.reportIssue" = "Reportar un problema";
+"commandPalette.command.releaseNotes" = "Notas de la versión...";
+"commandPalette.command.reportIssue" = "Reportar un problema...";
+"commandPalette.command.repositoryPane" = "Panel de repositorio";
 "commandPalette.command.scrollToBottom" = "Ir al final";
 "commandPalette.command.scrollToTop" = "Ir al inicio";
 "commandPalette.command.selectAll" = "Seleccionar todo";
@@ -1914,14 +1931,17 @@
 "commandPalette.command.selectTab8" = "Seleccionar pestaña 8";
 "commandPalette.command.selectTab9" = "Seleccionar pestaña 9";
 "commandPalette.command.settings" = "Configuración...";
+"commandPalette.command.showChangedFiles" = "Mostrar archivos modificados";
 "commandPalette.command.showNextTab" = "Mostrar pestaña siguiente";
 "commandPalette.command.showPreviousTab" = "Mostrar pestaña anterior";
 "commandPalette.command.snippets" = "Fragmentos...";
-"commandPalette.command.splitHorizontal" = "División horizontal";
-"commandPalette.command.splitVertical" = "División vertical";
+"commandPalette.command.splitHorizontal" = "Dividir horizontalmente";
+"commandPalette.command.splitVertical" = "Dividir verticalmente";
 "commandPalette.command.sshConnections" = "Conexiones SSH...";
+"commandPalette.command.technologyLicenses" = "Tecnología, licencias y agradecimientos";
 "commandPalette.command.toggleFullScreen" = "Alternar pantalla completa";
 "commandPalette.command.useSelectionForFind" = "Usar selección para buscar";
+"commandPalette.command.welcome" = "Bienvenido a Chau7";
 "commandPalette.command.zoomIn" = "Acercar";
 "commandPalette.command.zoomOut" = "Alejar";
 
@@ -1981,13 +2001,17 @@
 "cto.savings.outputTokens" = "Tokens de salida";
 "cto.savings.refresh" = "Actualizar";
 "cto.savings.savedTokens" = "Tokens ahorrados";
-"cto.savings.totalCommands" = "Total de comandos";
+"cto.savings.commands" = "Comandos";
+"cto.savings.lifetimeSaved" = "Ahorro total";
+"cto.savings.noRecentActivity" = "Sin comandos optimizados en los últimos %d días.";
+"cto.savings.recentWindow" = "Últimos %d días";
 "cto.settings.commandLog" = "Comandos recientes del optimizador";
 "cto.settings.commands" = "Comandos optimizados";
-"cto.settings.ctoRuntime" = "Telemetría del runtime CTO";
+"cto.settings.ctoRuntime" = "Telemetría de ejecución";
 "cto.settings.howItWorks" = "Cómo funciona";
-"cto.settings.mode" = "Modo de optimización";
-"cto.settings.mode.help" = "Controla cuándo está activa la salida de comandos optimizada en tokens";
+"cto.settings.advanced" = "Avanzado";
+"cto.settings.mode" = "Modo de contexto";
+"cto.settings.mode.help" = "Controla cuándo está activa la salida de comandos optimizada para contexto";
 "cto.settings.mode.label" = "Modo";
 "cto.settings.optimizer" = "Optimizador";
 "cto.settings.perTab" = "Control por pestaña";
@@ -2247,8 +2271,8 @@
 "settings.ai.removeRule" = "Eliminar regla";
 "settings.aiDetection" = "Detección de IA";
 "settings.aiDetection.description" = "Detección de CLIs de IA, temas y proveedor de LLM";
-"settings.apiProxy" = "Proxy de API";
-"settings.apiProxy.description" = "Seguimiento de llamadas API y proxy de analítica";
+"settings.apiProxy" = "Seguimiento de API";
+"settings.apiProxy.description" = "Seguimiento de llamadas API y analítica";
 "settings.appearance.appearance" = "Apariencia";
 "settings.appearance.appearance.help" = "Elige apariencia clara, oscura o seguir la del sistema";
 "settings.appearance.clickableURLs" = "URLs clicables";
@@ -2297,9 +2321,9 @@
 "settings.configFile.repo.path" = "Ruta";
 "settings.configFile.title" = "Archivo de configuración";
 
-// MARK: - Settings: Dangerous Commands
+// MARK: - Settings: Command Safety
 
-"settings.dangerousCommands" = "Comandos peligrosos";
+"settings.dangerousCommands" = "Seguridad de comandos";
 "settings.dangerousCommands.description" = "Resaltar y proteger contra comandos riesgosos";
 "settings.dangerousGuard.allowList" = "Siempre permitidos";
 "settings.dangerousGuard.allowList.clearAll" = "Borrar todo";
@@ -2337,7 +2361,7 @@
 // MARK: - Settings: Display
 
 "settings.display" = "Pantalla";
-"settings.display.description" = "Resaltado de sintaxis, URLs, imágenes y disposición de ventana";
+"settings.display.description" = "Resaltado de sintaxis, URLs, imágenes y formato de salida";
 "settings.display.resetToDefaults" = "Restablecer pantalla a valores predeterminados";
 "settings.display.windowLayout" = "Ventana y disposición";
 
@@ -2390,15 +2414,17 @@
 
 // MARK: - Settings: Groups
 
-"settings.group.essentials" = "ESENCIALES";
-"settings.group.inputProductivity" = "ENTRADA Y PRODUCTIVIDAD";
-"settings.group.integrations" = "INTEGRACIONES";
-"settings.group.lookAndFeel" = "APARIENCIA";
-"settings.group.monitoring" = "MONITOREO";
+"settings.group.aiWorkflows" = "FLUJOS DE IA";
+"settings.group.appearance" = "APARIENCIA";
+"settings.group.automation" = "AUTOMATIZACIÓN";
+"settings.group.general" = "GENERAL";
+"settings.group.safetyPrivacy" = "SEGURIDAD Y PRIVACIDAD";
 "settings.group.terminal" = "TERMINAL";
 
 // MARK: - Settings: History
 
+"settings.history" = "Historial";
+"settings.history.description" = "Historial de comandos y retención de transcripciones";
 "settings.history.cancel" = "Cancelar";
 "settings.history.capacity" = "Capacidad";
 "settings.history.clearAll" = "Borrar todo el historial";
@@ -2453,8 +2479,8 @@
 "settings.hoverCard.sections.description" = "Elige qué secciones de información aparecen al pasar el cursor sobre una pestaña.";
 "settings.hoverCard.shellIntegration" = "Integración de shell";
 "settings.hoverCard.shellIntegration.help" = "Mostrar si la integración de shell está activa o si usa heurísticas";
-"settings.hoverCard.tokenOptimization" = "Optimización de tokens";
-"settings.hoverCard.tokenOptimization.help" = "Mostrar estado y control de CTO";
+"settings.hoverCard.tokenOptimization" = "Optimización de contexto";
+"settings.hoverCard.tokenOptimization.help" = "Mostrar estado y control de optimización de contexto";
 
 // MARK: - Settings: Input
 
@@ -2502,7 +2528,7 @@
 "settings.llm.provider" = "Proveedor";
 "settings.llm.provider.help" = "Elige el backend LLM para la explicación de errores y funciones de IA";
 
-// MARK: - Settings: Logs & History
+// MARK: - Settings: Diagnostics
 
 "settings.logs.activeSessions" = "Sesiones activas";
 "settings.logs.claudeHistoryPath" = "Ruta del historial de Claude";
@@ -2528,8 +2554,8 @@
 "settings.logs.staleSeconds" = "Segundos de obsolescencia";
 "settings.logs.staleSeconds.help" = "Segundos antes de marcar una sesión como cerrada";
 "settings.logs.terminalLogs" = "Registros de terminal";
-"settings.logsHistory" = "Registros e historial";
-"settings.logsHistory.description" = "Archivos de registro, seguimiento de sesiones e historial de comandos";
+"settings.logsHistory" = "Diagnósticos";
+"settings.logsHistory.description" = "Monitores de registros, rutas de diagnóstico y sesiones activas";
 
 // MARK: - Settings: MCP
 
@@ -2538,24 +2564,30 @@
 "settings.mcp.allowedCommands.help" = "Comandos que se ejecutan inmediatamente sin solicitar confirmación";
 "settings.mcp.appearance" = "Apariencia";
 "settings.mcp.approval" = "Requerir aprobación";
-"settings.mcp.approval.help" = "Mostrar un diálogo de confirmación antes de que MCP cree una nueva pestaña";
+"settings.mcp.approval.help" = "Mostrar un diálogo de confirmación antes de que un agente cree una nueva pestaña";
 "settings.mcp.blockedCommands" = "Comandos bloqueados";
 "settings.mcp.blockedCommands.help" = "Comandos que siempre se rechazan — nunca se ejecutan";
-"settings.mcp.enable" = "Activar MCP";
-"settings.mcp.enable.help" = "Permitir que los clientes MCP controlen las pestañas de Chau7 a través del socket local";
+"settings.mcp.enable" = "Activar control de agentes";
+"settings.mcp.enable.help" = "Permitir que los clientes de agente controlen las pestañas de Chau7 a través del socket local";
 "settings.mcp.general" = "General";
 "settings.mcp.indicator" = "Mostrar indicador en la pestaña";
-"settings.mcp.indicator.help" = "Mostrar un icono y fondo morado en las pestañas creadas por MCP";
+"settings.mcp.indicator.help" = "Mostrar un icono y fondo morado en las pestañas creadas por agentes";
 "settings.mcp.limits" = "Límites";
-"settings.mcp.maxTabs" = "Máximo de pestañas MCP";
-"settings.mcp.maxTabs.help" = "Número máximo de pestañas que un cliente MCP puede crear (1-50)";
+"settings.mcp.maxTabs" = "Máximo de pestañas de agentes";
+"settings.mcp.maxTabs.help" = "Número máximo de pestañas que un cliente de agente puede crear (1-50)";
 "settings.mcp.permissionMode" = "Modo de permisos";
-"settings.mcp.permissionMode.help" = "Controla cómo se filtran los comandos MCP";
+"settings.mcp.permissionMode.help" = "Controla cómo se filtran los comandos de agentes";
 "settings.mcp.permissions" = "Permisos de comandos";
-"settings.mcp.profiles" = "Perfiles de MCP";
+"settings.mcp.profiles" = "Perfiles de agentes";
 "settings.mcp.profiles.help" = "Los perfiles sobrescriben los permisos globales cuando su disparador coincide con el contexto de la pestaña actual.";
-"settings.mcpControl" = "Control MCP";
-"settings.mcpControl.description" = "Creación de pestañas de agente MCP, límites y aprobación";
+"settings.mcpControl" = "Control de agentes";
+"settings.mcpControl.description" = "Creación de pestañas de agente, límites y aprobación";
+"settings.search.mcpPermissions.description" = "Configurar aprobación de comandos de agentes y listas permitidas/bloqueadas";
+"settings.search.mcpPermissions.title" = "Permisos de agentes";
+"settings.search.mcpProfiles.description" = "Gestionar perfiles de permisos de agentes";
+"settings.search.mcpProfiles.title" = "Perfiles de agentes";
+"settings.search.mcpServer.description" = "Activar control de agentes y creación de pestañas";
+"settings.search.mcpServer.title" = "Servidor de agentes";
 
 // MARK: - Settings: Minimal Mode
 
@@ -2705,11 +2737,11 @@
 "settings.injection.priority.local" = "Archivo local (.chau7/injection.json)";
 "settings.injection.priority.specific" = "Regla específica desde Ajustes";
 "settings.injection.triggers" = "When to inject";
-"settings.promptInjection" = "Inyección de prompt";
-"settings.promptInjection.description" = "Inyectar contexto en solicitudes de IA por repositorio";
-"settings.search.promptInjection.description" = "Inyectar contexto personalizado en solicitudes de IA por repositorio";
+"settings.promptInjection" = "Contexto de IA";
+"settings.promptInjection.description" = "Añadir contexto de repositorio a solicitudes de IA";
+"settings.search.promptInjection.description" = "Añadir contexto personalizado a solicitudes de IA por repositorio";
 "settings.search.promptInjection.keywords" = "inyectar,prompt,contexto,prefijo,añadir,sistema,repositorio,repo,reglas";
-"settings.search.promptInjection.title" = "Inyección de prompt";
+"settings.search.promptInjection.title" = "Contexto de IA";
 "settings.remote.access" = "Acceso remoto";
 "settings.remote.agent" = "Agente remoto";
 "settings.remote.connectedDevice" = "Dispositivo conectado: %@";
@@ -2718,7 +2750,7 @@
 "settings.remote.devicePairedAt" = "Emparejado: %@";
 "settings.remote.devices" = "Dispositivos emparejados";
 "settings.remote.devices.empty" = "Aún no hay dispositivos emparejados.";
-"settings.remote.enable" = "Activar control remoto";
+"settings.remote.enable" = "Activar acceso remoto";
 "settings.remote.enable.help" = "Permitir que Chau7 sea controlado desde la app de iOS";
 "settings.remote.pairing" = "Emparejamiento";
 "settings.remote.relay" = "Relay";
@@ -2729,21 +2761,21 @@
 "settings.remote.revoke.confirm.message" = "Esto eliminará %@ y lo obligará a emparejarse de nuevo antes de poder reconectarse.";
 "settings.remote.revoke.confirm.title" = "¿Revocar emparejamiento?";
 "settings.remote.status" = "Estado";
-"settings.remoteControl" = "Control remoto";
-"settings.remoteControl.description" = "Acceso remoto, emparejamiento y perfiles SSH";
+"settings.remoteControl" = "Acceso remoto";
+"settings.remoteControl.description" = "Acceso de app remota, relay, emparejamiento y dispositivos";
 "settings.repositories" = "Repositorios";
 "settings.repositories.description" = "Gestionar descripciones, etiquetas y archivos favoritos de repositorios";
 "settings.repositories.recent" = "Repositorios recientes";
-"settings.scrollbackPerf" = "Historial y rendimiento";
-"settings.scrollbackPerf.description" = "Búfer de historial, renderizado y backend";
+"settings.scrollbackPerf" = "Rendimiento";
+"settings.scrollbackPerf.description" = "Renderizado, historial y límites de rendimiento";
 "settings.search.aiCustomDetection.description" = "Añadir reglas personalizadas de detección de CLI de IA";
 "settings.search.aiCustomDetection.title" = "Detección personalizada de IA";
 "settings.search.aiDetection.description" = "Detectar CLIs de IA automáticamente";
 "settings.search.aiDetection.title" = "Detección de CLI de IA";
-"settings.search.aiToolNotifications.description" = "Notificaciones de herramientas de programación con IA";
+"settings.search.aiToolNotifications.description" = "Alertas de herramientas de programación con IA";
 "settings.search.aiToolNotifications.title" = "Notificaciones de herramientas de IA";
 "settings.search.apiAnalytics.description" = "Rastrear llamadas API y uso de tokens";
-"settings.search.apiAnalytics.title" = "Analíticas de API";
+"settings.search.apiAnalytics.title" = "Seguimiento de API";
 "settings.search.appThresholds.description" = "Configurar umbrales de detección de eventos de la aplicación";
 "settings.search.appThresholds.title" = "Umbrales de eventos de la app";
 "settings.search.autoTabTheme.description" = "Colorear pestañas según el modelo de IA";
@@ -2766,23 +2798,24 @@
 "settings.search.configFile.title" = "Archivo de configuración";
 "settings.search.copyOnSelect.description" = "Copiar texto al seleccionarlo";
 "settings.search.copyOnSelect.title" = "Copiar al seleccionar";
-"settings.search.ctoMode.description" = "Controla cuándo está activa la salida optimizada de tokens";
-"settings.search.ctoMode.title" = "Modo de optimización";
-"settings.search.ctoPerTab.description" = "Anular ajustes de CTO por pestaña";
-"settings.search.ctoPerTab.title" = "CTO por pestaña";
+"settings.search.ctoMode.description" = "Controla cuándo está activa la optimización de contexto";
+"settings.search.ctoMode.title" = "Modo de contexto";
+"settings.search.debugConsole.description" = "Abrir la consola de diagnóstico en tiempo de ejecución de Chau7";
+"settings.search.ctoPerTab.description" = "Anular la optimización de contexto por pestaña";
+"settings.search.ctoPerTab.title" = "Optimización de contexto por pestaña";
 "settings.search.ctoPrefix.description" = "Texto de prefijo añadido a los comandos del terminal";
-"settings.search.ctoPrefix.title" = "Prefijo CTO";
+"settings.search.ctoPrefix.title" = "Prefijo de contexto";
 "settings.search.cursor.description" = "Apariencia del cursor del terminal";
 "settings.search.cursor.title" = "Estilo del cursor";
 "settings.search.cursorBlink.description" = "Animar el cursor con parpadeo";
 "settings.search.cursorBlink.title" = "Parpadeo del cursor";
 "settings.search.dangerousCommands.description" = "Resaltar comandos peligrosos en el terminal";
-"settings.search.dangerousCommands.title" = "Comandos peligrosos";
+"settings.search.dangerousCommands.title" = "Seguridad de comandos";
 "settings.search.defaultDir.description" = "Directorio inicial para nuevas pestañas del terminal";
 "settings.search.defaultDir.title" = "Directorio predeterminado";
 "settings.search.defaultZoom.description" = "Porcentaje de zoom predeterminado para nuevas pestañas";
 "settings.search.defaultZoom.title" = "Zoom predeterminado";
-"settings.search.eventMonitoring.description" = "Monitorear eventos de CLI de IA para notificaciones";
+"settings.search.eventMonitoring.description" = "Monitorear eventos de CLI de IA para alertas";
 "settings.search.eventMonitoring.title" = "Monitoreo de eventos";
 "settings.search.export.description" = "Exportar o importar ajustes como JSON";
 "settings.search.export.title" = "Exportar/Importar ajustes";
@@ -2818,9 +2851,9 @@
 "settings.search.mouseReporting.title" = "Reporte de ratón";
 "settings.search.newTabDirectory.description" = "Abrir nuevas pestañas en el directorio de la pestaña activa";
 "settings.search.newTabDirectory.title" = "Directorio de nueva pestaña";
-"settings.search.notificationStatus.description" = "Estado del permiso de notificaciones";
-"settings.search.notificationStatus.title" = "Estado de notificaciones";
-"settings.search.notificationTriggers.description" = "Activar disparadores y configurar acciones para notificaciones";
+"settings.search.notificationStatus.description" = "Estado del permiso de alertas del sistema";
+"settings.search.notificationStatus.title" = "Estado de alertas";
+"settings.search.notificationTriggers.description" = "Activar disparadores y configurar acciones de alerta";
 "settings.search.notificationTriggers.title" = "Disparadores de notificaciones";
 "settings.search.opacity.description" = "Transparencia de la ventana del terminal";
 "settings.search.opacity.title" = "Opacidad de la ventana";
@@ -2829,7 +2862,7 @@
 "settings.search.profileAutoSwitch.description" = "Cambiar automáticamente de perfil según reglas";
 "settings.search.profileAutoSwitch.title" = "Cambio automático de perfil";
 "settings.search.remote.description" = "Emparejar un iPhone y ver la salida del terminal de forma remota";
-"settings.search.remote.title" = "Control remoto";
+"settings.search.remote.title" = "Acceso remoto";
 "settings.search.scrollback.description" = "Líneas a mantener en el historial";
 "settings.search.scrollback.title" = "Líneas de historial";
 "settings.search.search.description" = "Búsqueda con reconocimiento de comandos";
@@ -2862,11 +2895,12 @@
 "settings.search.textEditor.title" = "Editor de texto";
 "settings.search.timestamps.description" = "Mostrar marcas de tiempo en las líneas del terminal";
 "settings.search.timestamps.title" = "Marcas de tiempo de líneas";
-"settings.search.triggerActions.description" = "Configurar qué sucede cuando se activan los disparadores de notificaciones";
+"settings.search.triggerActions.description" = "Configurar qué sucede cuando se activan los disparadores de alertas";
 "settings.search.triggerActions.title" = "Acciones de disparadores";
 "settings.search.urlHandler.description" = "Elegir qué navegador abre las URL";
 "settings.search.urlHandler.title" = "Gestor de URL";
 "settings.searchResultDetail" = "– %@";
+"settings.search.result.jumpHint" = "Mostrar el ajuste coincidente: %@";
 "settings.searchResults" = "Se encontraron %d ajustes coincidentes para \"%@\"";
 "settings.shell" = "Shell";
 "settings.shell.description" = "Shell, cursor y campana";
@@ -2874,10 +2908,12 @@
 "settings.snippetsTools" = "Fragmentos y herramientas";
 "settings.snippetsTools.description" = "Fragmentos, portapapeles, marcadores y búsqueda";
 "settings.ssh.actions" = "Acciones";
+"settings.sshProfiles" = "Perfiles SSH";
+"settings.sshProfiles.description" = "Importar, sincronizar y exportar perfiles de conexión SSH";
 "settings.ssh.entries" = "Entradas de configuración SSH";
 "settings.ssh.fileWatch" = "Vigilancia de archivos";
 "settings.ssh.sync" = "Sincronización de configuración SSH";
-"settings.tabs.allowCTOToggle" = "Permitir alternar CTO en la tarjeta emergente";
+"settings.tabs.allowCTOToggle" = "Permitir alternar optimización de contexto en la tarjeta emergente";
 "settings.tabs.alwaysWarnOnClose" = "Siempre avisar antes de cerrar pestaña";
 "settings.tabs.alwaysWarnOnClose.help" = "Mostrar un diálogo de confirmación antes de cerrar cualquier pestaña";
 "settings.tabs.customTitleOnly" = "Solo título personalizado";
@@ -2936,13 +2972,18 @@
 "settings.terminal.suspendBackgroundRendering" = "Suspender renderizado en segundo plano";
 "settings.terminal.suspendDelay" = "Retraso de suspensión (segundos)";
 "settings.terminal.suspendDelay.help" = "Segundos después de salir de una pestaña antes de pausar el renderizado. Valores más altos mantienen las pestañas receptivas por más tiempo.";
-"settings.tokenOptimization" = "Optimización de tokens (CTO)";
-"settings.tokenOptimization.description" = "Scripts de envoltura CTO, control por pestaña y prefijo";
+"settings.tokenOptimization" = "Optimización de contexto";
+"settings.tokenOptimization.description" = "Modo de optimización de contexto, control por pestaña y prefijo";
 "settings.windows.alwaysShowToolbar" = "Siempre mostrar la barra de herramientas en pantalla completa";
 "settings.windows.alwaysShowToolbar.help" = "Mantener la barra de herramientas visible cuando la ventana está en modo de pantalla completa";
+"settings.windows.appMode" = "Modo de ventana de la app";
 "settings.windows.enableSplitPanes" = "Activar paneles divididos";
 "settings.windows.enableSplitPanes.help" = "Permitir dividir el terminal en múltiples paneles dentro de una sola pestaña";
+"settings.windows.floatingWindow" = "Mantener ventanas sobre otras apps";
+"settings.windows.floatingWindow.help" = "Mantener las ventanas de terminal de Chau7 sobre las ventanas normales de otras apps.";
 "settings.windows.fullscreen" = "Pantalla completa";
+"settings.windows.menuBarOnlyMode" = "Modo solo barra de menús";
+"settings.windows.menuBarOnlyMode.help" = "Ejecutar Chau7 desde la barra de menús sin icono en el Dock. Tiene efecto después de reiniciar Chau7.";
 "settings.windows.navigatePanes" = "Navegar paneles";
 "settings.windows.overlayDescription" = "La ventana superpuesta recuerda su posición por escritorio y la restaura automáticamente.";
 "settings.windows.overlayWindow" = "Ventana superpuesta";

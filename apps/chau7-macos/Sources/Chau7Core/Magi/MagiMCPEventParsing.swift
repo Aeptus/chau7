@@ -2,55 +2,36 @@ import Foundation
 
 public enum MagiMCPEventParsing {
     public static func runtimeEventMessages(
-        from events: [[String: Any]],
+        from events: [MagiMCPRuntimeEvent],
         tabID: String,
         eventTypes: [String]
     ) -> [String] {
         let requestedTypes = Set(eventTypes.map { $0.lowercased() })
         return events.compactMap { event -> String? in
-            guard stringField(event["tab_id"]) == tabID else { return nil }
-            let detail = event["detail"] as? [String: Any] ?? [:]
-            let eventType = stringField(detail["event_type"]).isEmpty
-                ? stringField(event["type"])
-                : stringField(detail["event_type"])
+            guard event.tabID == tabID else { return nil }
+            let eventType = event.detail.eventType.isEmpty
+                ? event.type
+                : event.detail.eventType
             guard requestedTypes.contains(eventType.lowercased()) else { return nil }
-            let message = stringField(detail["message"])
+            let message = event.detail.message
                 .trimmingCharacters(in: .whitespacesAndNewlines)
             return message.isEmpty ? nil : message
         }
     }
 
-    public static func tabStatusIsIdleForRepair(_ status: [String: Any]) -> Bool {
-        if status["active_run"] is [String: Any] {
+    public static func tabStatusIsIdleForRepair(_ status: MagiMCPTabStatus) -> Bool {
+        if status.hasActiveRun {
             return false
         }
-        if boolField(status["can_accept_exec"]) || boolField(status["ready_for_exec"]) {
+        if status.canAcceptExec || status.readyForExec {
             return true
         }
-        if boolField(status["is_at_prompt"]) || boolField(status["raw_is_at_prompt"]) {
+        if status.isAtPrompt || status.rawIsAtPrompt {
             return true
         }
 
         let terminalStates = ["idle", "done", "exited"]
-        return ["status", "raw_status"].contains { key in
-            terminalStates.contains(stringField(status[key]).lowercased())
-        }
-    }
-
-    private static func stringField(_ value: Any?) -> String {
-        guard let value else { return "" }
-        if let string = value as? String { return string }
-        if let bool = value as? Bool { return String(bool) }
-        if let int = value as? Int { return String(int) }
-        return "\(value)"
-    }
-
-    private static func boolField(_ value: Any?) -> Bool {
-        if let bool = value as? Bool { return bool }
-        if let string = value as? String {
-            return ["true", "yes", "1"].contains(string.lowercased())
-        }
-        if let int = value as? Int { return int != 0 }
-        return false
+        return terminalStates.contains(status.status.lowercased())
+            || terminalStates.contains(status.rawStatus.lowercased())
     }
 }

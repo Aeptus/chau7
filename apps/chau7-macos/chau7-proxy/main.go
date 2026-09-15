@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"crypto/tls"
+	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
@@ -135,13 +136,7 @@ func main() {
 	mux.Handle("/", proxy)
 
 	// Create server
-	server := &http.Server{
-		Addr:         fmt.Sprintf("127.0.0.1:%d", config.Port),
-		Handler:      mux,
-		ReadTimeout:  30 * time.Second,
-		WriteTimeout: 5 * time.Minute, // Long timeout for streaming
-		IdleTimeout:  120 * time.Second,
-	}
+	server := newProxyHTTPServer(fmt.Sprintf("127.0.0.1:%d", config.Port), mux)
 
 	// Start HTTP server in goroutine
 	go func() {
@@ -162,17 +157,11 @@ func main() {
 		if err := ensureSelfSignedCert(config.TLSCertPath, config.TLSKeyPath); err != nil {
 			log.Printf("[WARN] Failed to generate TLS cert: %v (TLS listener disabled)", err)
 		} else {
-			tlsServer = &http.Server{
-				Addr:         fmt.Sprintf("127.0.0.1:%d", config.TLSPort),
-				Handler:      mux,
-				ReadTimeout:  30 * time.Second,
-				WriteTimeout: 5 * time.Minute,
-				IdleTimeout:  120 * time.Second,
-				// Disable HTTP/2 so that standard HTTP/1.1 WebSocket upgrade
-				// works. HTTP/2 uses a different mechanism (RFC 8441 Extended
-				// CONNECT) that our simple hijack-based tunneler doesn't support.
-				TLSNextProto: make(map[string]func(*http.Server, *tls.Conn, http.Handler)),
-			}
+			tlsServer = newProxyHTTPServer(fmt.Sprintf("127.0.0.1:%d", config.TLSPort), mux)
+			// Disable HTTP/2 so that standard HTTP/1.1 WebSocket upgrade
+			// works. HTTP/2 uses a different mechanism (RFC 8441 Extended
+			// CONNECT) that our simple hijack-based tunneler doesn't support.
+			tlsServer.TLSNextProto = make(map[string]func(*http.Server, *tls.Conn, http.Handler))
 
 			go func() {
 				log.Printf("[INFO] chau7-proxy TLS/WSS starting on %s", tlsServer.Addr)
@@ -207,7 +196,29 @@ func main() {
 	log.Println("[INFO] Server stopped")
 }
 
+// newProxyHTTPServer keeps protection around request reads and idle pooled
+// connections without imposing a total duration on active streamed responses.
+// Upstream lifetime is governed by each inbound request's context.
+func newProxyHTTPServer(address string, handler http.Handler) *http.Server {
+	return &http.Server{
+		Addr:         address,
+		Handler:      handler,
+		ReadTimeout:  30 * time.Second,
+		WriteTimeout: 0,
+		IdleTimeout:  120 * time.Second,
+	}
+}
+
 // handleHealth returns a health check handler
+// proxyCapabilities lists the wire features this build implements. The app
+// compares them against what its own binary expects, so a bundled proxy that
+// predates a protocol change is reported as a version skew at startup rather
+// than surfacing later as an unexplained error from the upstream provider.
+// Append here whenever a change requires both halves to agree.
+var proxyCapabilities = []string{
+	CapabilityProjectPathCorrelation,
+}
+
 func handleHealth(db *Database) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if err := db.Ping(); err != nil {
@@ -216,9 +227,21 @@ func handleHealth(db *Database) http.HandlerFunc {
 			return
 		}
 
+		body, err := json.Marshal(map[string]any{
+			"status":       "ok",
+			"component":    "chau7-proxy",
+			"build":        currentProxyBuildInfo(),
+			"capabilities": proxyCapabilities,
+		})
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			_, _ = w.Write([]byte(`{"status":"unhealthy","error":"capability encoding failed"}`))
+			return
+		}
+
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`{"status":"ok"}`))
+		_, _ = w.Write(body)
 	}
 }
 

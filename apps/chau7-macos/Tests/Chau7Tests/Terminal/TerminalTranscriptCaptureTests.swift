@@ -34,4 +34,25 @@ final class TerminalTranscriptCaptureTests: XCTestCase {
         XCTAssertEqual(String(decoding: capture.tailData(maxBytes: 100), as: UTF8.self), "efghijklmnop")
         XCTAssertEqual(String(decoding: capture.dataSinceBoundary(), as: UTF8.self), "ghijklmnop")
     }
+
+    func testRepeatedSmallAppendsKeepChunkMetadataBoundedAtCapacity() {
+        let capture = TerminalTranscriptCapture(maxBytes: 64)
+
+        for value in 0 ..< 10000 {
+            capture.append(Data([UInt8(value % 251)]))
+        }
+
+        XCTAssertEqual(capture.tailData(maxBytes: 1000).count, 64)
+        XCTAssertLessThanOrEqual(capture.allocatedChunkSlotCountForTesting, 128)
+    }
+
+    func testOversizedAppendRetainsOnlyNewestBytesAcrossChunkBoundary() {
+        let capture = TerminalTranscriptCapture(maxBytes: 8)
+        capture.append(Data("old".utf8))
+        capture.markCommandBoundary()
+        capture.append(Data("0123456789".utf8))
+
+        XCTAssertEqual(String(decoding: capture.tailData(maxBytes: 100), as: UTF8.self), "23456789")
+        XCTAssertEqual(String(decoding: capture.dataSinceBoundary(), as: UTF8.self), "23456789")
+    }
 }

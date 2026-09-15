@@ -67,11 +67,18 @@ final class Chau7ObservabilityService {
     private var changes: [ChangeRecord] = []
     private var timers: [String: TimerRecord] = [:]
     private var listeners: [UUID: ListenerRecord] = [:]
+    private var componentRuntimeInfo: [String: [String: Any]] = [:]
 
     private init() {}
 
     func runtimeInfoJSON() -> String {
         encode(payload: runtimeInfoPayload())
+    }
+
+    func updateComponentRuntimeInfo(component: String, info: [String: Any]) {
+        queue.async {
+            self.componentRuntimeInfo[component] = info
+        }
     }
 
     func runtimeEventsJSON(sinceMillis: Int64?, limit: Int) -> String {
@@ -370,6 +377,34 @@ final class Chau7ObservabilityService {
         )
     }
 
+    func recordNotificationDeliveryOutcome(_ outcome: NotificationDeliveryOutcome) {
+        recordEvent(
+            type: "notification_delivery",
+            subsystem: "notifications",
+            nativeTabID: outcome.resolvedTabID.flatMap(UUID.init(uuidString:)),
+            detail: ([
+                "notification_event_id": outcome.eventID.uuidString,
+                "source": outcome.source,
+                "event_type": outcome.eventType,
+                "raw_type": outcome.rawType as Any,
+                "semantic_kind": outcome.semanticKind as Any,
+                "reliability": outcome.reliability,
+                "producer": outcome.producer as Any,
+                "delivery_state": outcome.deliveryState,
+                "trigger_id": outcome.triggerID as Any,
+                "actions_executed": outcome.actionsExecuted,
+                "was_rate_limited": outcome.wasRateLimited,
+                "drop_reason": outcome.dropReason as Any,
+                "resolution_method": outcome.resolutionMethod as Any,
+                "did_dispatch_banner": outcome.didDispatchBanner,
+                "did_style_tab": outcome.didStyleTab,
+                "notes": outcome.notes,
+                "classification_confidence": outcome.classificationConfidence as Any,
+                "classification_evidence": outcome.classificationEvidence
+            ] as [String: Any]).compactMapValues { $0 }
+        )
+    }
+
     func registerTimer(
         id: String,
         kind: String,
@@ -530,12 +565,22 @@ final class Chau7ObservabilityService {
             changes.removeAll()
             timers.removeAll()
             listeners.removeAll()
+            componentRuntimeInfo.removeAll()
         }
     }
 
     func runtimeInfoPayload() -> [String: Any] {
         let info = Bundle.main.infoDictionary ?? [:]
         let launchTime = DateFormatters.iso8601.string(from: launchedAt)
+        let appComponent: [String: Any] = [
+            "status": "running",
+            "version": info["CFBundleShortVersionString"] as? String ?? "unknown",
+            "build_number": info["CFBundleVersion"] as? String ?? "unknown",
+            "build_sha": info["Chau7BuildGitSHA"] as? String ?? "unknown",
+            "build_timestamp": info["Chau7BuildTimestamp"] as? String ?? "unknown"
+        ]
+        var components = queue.sync { componentRuntimeInfo }
+        components["app"] = appComponent
         return [
             "app_version": info["CFBundleShortVersionString"] as? String ?? "unknown",
             "build_number": info["CFBundleVersion"] as? String ?? "unknown",
@@ -547,7 +592,8 @@ final class Chau7ObservabilityService {
             "launch_time": launchTime,
             "session_started_at": launchTime,
             "mcp_protocol_version": "2025-11-25",
-            "observability_schema_version": 1
+            "observability_schema_version": 2,
+            "components": components
         ]
     }
 

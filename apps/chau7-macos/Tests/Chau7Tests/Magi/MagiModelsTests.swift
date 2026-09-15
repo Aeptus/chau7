@@ -9,10 +9,17 @@ final class MagiModelsTests: XCTestCase {
         XCTAssertEqual(config.defaultReasoning, .max)
         XCTAssertEqual(config.fallbackStrategy, .duplicate)
         XCTAssertTrue(config.webAccessAllowed)
-        XCTAssertTrue(config.evidenceRequiresApproval)
+        XCTAssertEqual(config.evidencePolicy, .ask)
         XCTAssertTrue(config.deadlockExtraRoundEnabled)
         XCTAssertTrue(config.vetoBlocksVerdict)
         XCTAssertTrue(config.autoCloseAgentTabs)
+    }
+
+    func testEvidencePolicyContract() {
+        XCTAssertEqual(
+            MagiEvidenceApprovalPolicy.allCases.map(\.rawValue),
+            ["ask", "auto_deny", "preapproved"]
+        )
     }
 
     func testRunIDIsStableForInjectedInputs() throws {
@@ -48,7 +55,7 @@ final class MagiModelsTests: XCTestCase {
         XCTAssertEqual(MagiRoundKind.evidenceCollection.sharePolicy, .approvedEvidenceOnly)
     }
 
-    func testEvidenceRequestDefaultsToPendingApproval() {
+    func testEvidenceRequestDefaultsToRequested() {
         let request = MagiEvidenceRequest(
             id: "evidence-1",
             memberID: .balthasar,
@@ -58,10 +65,23 @@ final class MagiModelsTests: XCTestCase {
             requiredEvidence: ["test_status"]
         )
 
-        XCTAssertEqual(request.status, .pendingApproval)
+        XCTAssertEqual(request.status, .requested)
         XCTAssertEqual(request.memberID, .balthasar)
         XCTAssertEqual(request.requiredEvidence, ["test_status"])
-        XCTAssertEqual(MagiEvidenceRequestStatus.notActionable.rawValue, "not_actionable")
+        XCTAssertEqual(
+            MagiEvidenceRequestStatus.allCases.map(\.rawValue),
+            ["requested", "approved", "denied", "skipped", "failed", "fulfilled"]
+        )
+    }
+
+    func testEvidenceRequestStatusDecodesLegacyValues() throws {
+        let decoder = JSONDecoder()
+
+        let pending = try decoder.decode(MagiEvidenceRequestStatus.self, from: Data(#""pendingApproval""#.utf8))
+        let notActionable = try decoder.decode(MagiEvidenceRequestStatus.self, from: Data(#""not_actionable""#.utf8))
+
+        XCTAssertEqual(pending, .requested)
+        XCTAssertEqual(notActionable, .skipped)
     }
 
     func testEvidenceCollectorV1SetMatchesPhaseSixContract() {
@@ -126,11 +146,57 @@ final class MagiModelsTests: XCTestCase {
         XCTAssertEqual(verdict.vetoes, [veto])
     }
 
-    func testEngineeringMajorityUsesApproveRejectStyleVerdict() {
+    func testOnlyVoteRoundVetoesAreUsedForFinalResolution() {
+        let positionVeto = MagiVeto(
+            id: "round-1-melchior-veto",
+            memberID: .melchior,
+            reason: "Early objection"
+        )
+        let voteVeto = MagiVeto(
+            id: "round-4-casper-vote-veto",
+            memberID: .casper,
+            reason: "Final blocking objection"
+        )
+
+        XCTAssertEqual(
+            MagiVetoResolutionScope.finalResolutionVetoes(
+                positionRoundVetoes: [positionVeto],
+                voteRoundVetoes: []
+            ),
+            []
+        )
+        XCTAssertEqual(
+            MagiVetoResolutionScope.finalResolutionVetoes(
+                positionRoundVetoes: [positionVeto],
+                voteRoundVetoes: [voteVeto]
+            ),
+            [voteVeto]
+        )
+    }
+
+    func testEngineeringMajorityUsesCanonicalDecisionID() {
         let votes = [
-            MagiVote(id: "vote-1", memberID: .melchior, verdictKind: .approve, choice: "Merge after CI stays green.", confidence: 0.8, rationale: "The diff is contained."),
+            MagiVote(
+                id: "vote-1",
+                memberID: .melchior,
+                verdictKind: .approve,
+                decisionID: "merge_after_ci",
+                choice: "Merge after CI stays green.",
+                conditions: ["CI stays green"],
+                confidence: 0.8,
+                rationale: "The diff is contained."
+            ),
             MagiVote(id: "vote-2", memberID: .balthasar, verdictKind: .reject, choice: "Do not merge.", confidence: 0.7, rationale: "Rollback is unclear."),
-            MagiVote(id: "vote-3", memberID: .casper, verdictKind: .approve, choice: "Merge; the UX risk is acceptable.", confidence: 0.9, rationale: "The change is understandable.")
+            MagiVote(
+                id: "vote-3",
+                memberID: .casper,
+                verdictKind: .approve,
+                decisionID: "merge_after_ci",
+                choice: "Merge once CI is green.",
+                conditions: ["CI stays green"],
+                confidence: 0.9,
+                rationale: "The change is understandable."
+            )
         ]
 
         let verdict = MagiDecisionResolver.resolve(votes: votes, questionKind: .engineering)
@@ -141,10 +207,47 @@ final class MagiModelsTests: XCTestCase {
         XCTAssertEqual(verdict.confidence, 0.85, accuracy: 0.001)
     }
 
+    func testEngineeringVotesDoNotGroupByVerdictKindAlone() {
+        let votes = [
+            MagiVote(id: "vote-1", memberID: .melchior, verdictKind: .approve, choice: "Merge after CI stays green.", confidence: 0.8, rationale: "The diff is contained."),
+            MagiVote(id: "vote-2", memberID: .balthasar, verdictKind: .reject, choice: "Do not merge.", confidence: 0.7, rationale: "Rollback is unclear."),
+            MagiVote(id: "vote-3", memberID: .casper, verdictKind: .approve, choice: "Merge; the UX risk is acceptable.", confidence: 0.9, rationale: "The change is understandable.")
+        ]
+
+        let verdict = MagiDecisionResolver.resolve(votes: votes, questionKind: .engineering)
+
+        XCTAssertEqual(verdict.kind, .deadlock)
+        XCTAssertTrue(verdict.requiresAdditionalRound)
+        XCTAssertEqual(verdict.consensusScore, 1.0 / 3.0, accuracy: 0.001)
+    }
+
+    func testEngineeringVotesWithDifferentApproveDecisionIDsDoNotInventMajorityDecision() {
+        let votes = [
+            MagiVote(id: "vote-1", memberID: .melchior, verdictKind: .approve, decisionID: "merge_after_ci", choice: "Merge after CI.", confidence: 0.8, rationale: "Contained."),
+            MagiVote(
+                id: "vote-2",
+                memberID: .balthasar,
+                verdictKind: .approve,
+                decisionID: "merge_after_rollback_plan",
+                choice: "Merge after rollback plan.",
+                confidence: 0.7,
+                rationale: "Needs release safety."
+            ),
+            MagiVote(id: "vote-3", memberID: .casper, verdictKind: .reject, decisionID: "reject", choice: "Do not merge.", confidence: 0.9, rationale: "Too risky.")
+        ]
+
+        let verdict = MagiDecisionResolver.resolve(votes: votes, questionKind: .engineering)
+
+        XCTAssertEqual(verdict.kind, .deadlock)
+        XCTAssertNil(verdict.decision)
+        XCTAssertTrue(verdict.requiresAdditionalRound)
+        XCTAssertEqual(verdict.consensusScore, 1.0 / 3.0, accuracy: 0.001)
+    }
+
     func testEngineeringResolverInfersRejectFromLegacyVoteText() {
         let votes = [
             MagiVote(id: "vote-1", memberID: .melchior, choice: "Do not merge", confidence: 0.8, rationale: "Missing tests."),
-            MagiVote(id: "vote-2", memberID: .balthasar, choice: "REJECT", confidence: 0.7, rationale: "Operational risk."),
+            MagiVote(id: "vote-2", memberID: .balthasar, choice: "do not merge", confidence: 0.7, rationale: "Operational risk."),
             MagiVote(id: "vote-3", memberID: .casper, choice: "Merge", confidence: 0.9, rationale: "The direction is good.")
         ]
 
@@ -153,6 +256,166 @@ final class MagiModelsTests: XCTestCase {
         XCTAssertEqual(verdict.kind, .reject)
         XCTAssertEqual(verdict.consensusScore, 2.0 / 3.0, accuracy: 0.001)
         XCTAssertFalse(verdict.requiresAdditionalRound)
+    }
+
+    func testEngineeringVotesWithSameDecisionIDButDifferentConditionsDoNotGroup() {
+        let votes = [
+            MagiVote(id: "vote-1", memberID: .melchior, verdictKind: .approve, decisionID: "merge", choice: "Merge", conditions: ["CI stays green"], confidence: 0.8, rationale: "Contained."),
+            MagiVote(
+                id: "vote-2",
+                memberID: .balthasar,
+                verdictKind: .approve,
+                decisionID: "merge",
+                choice: "Merge",
+                conditions: ["Add rollback plan"],
+                confidence: 0.7,
+                rationale: "Needs a safer release."
+            ),
+            MagiVote(id: "vote-3", memberID: .casper, verdictKind: .reject, decisionID: "reject", choice: "Do not merge", confidence: 0.9, rationale: "Too risky.")
+        ]
+
+        let verdict = MagiDecisionResolver.resolve(votes: votes, questionKind: .engineering)
+
+        XCTAssertEqual(verdict.kind, .deadlock)
+        XCTAssertTrue(verdict.requiresAdditionalRound)
+    }
+
+    func testFinalVoteVetoPropagatesIntoBlockedVerdict() {
+        let voteRoundVeto = MagiVeto(
+            id: "round-4-balthasar-vote-veto",
+            memberID: .balthasar,
+            reason: "Release violates configured veto policy."
+        )
+        let votes = [
+            MagiVote(id: "vote-1", memberID: .melchior, verdictKind: .approve, decisionID: "ship", choice: "Ship", confidence: 0.8, rationale: "Good enough."),
+            MagiVote(id: "vote-2", memberID: .balthasar, verdictKind: .reject, decisionID: "reject", choice: "Reject", confidence: 0.9, rationale: "Blocked."),
+            MagiVote(id: "vote-3", memberID: .casper, verdictKind: .approve, decisionID: "ship", choice: "Ship", confidence: 0.8, rationale: "Useful.")
+        ]
+
+        let finalVetoes = MagiVetoResolutionScope.finalResolutionVetoes(
+            positionRoundVetoes: [],
+            voteRoundVetoes: [voteRoundVeto]
+        )
+        let verdict = MagiDecisionResolver.resolve(
+            votes: votes,
+            vetoes: finalVetoes,
+            questionKind: .engineering
+        )
+
+        XCTAssertEqual(verdict.kind, .blockedByVeto)
+        XCTAssertEqual(verdict.vetoes, [voteRoundVeto])
+        XCTAssertEqual(verdict.rationale, "A blocking veto was issued.")
+    }
+
+    func testEvidencePolicySkipsUnsupportedAndDisabledWebWithoutApproval() {
+        let request = MagiEvidenceRequest(
+            id: "request-1",
+            memberID: .melchior,
+            roundID: "round-2",
+            priority: .high,
+            reason: "Need facts.",
+            requiredEvidence: ["repo", "web"],
+            proposedCollectors: [
+                "local.git_status",
+                "web.query:Swift release notes",
+                "local.shell:printf legacy"
+            ]
+        )
+        let commands = MagiEvidenceCollectorPlanner.commands(for: request)
+
+        let review = MagiEvidencePolicyEvaluator.reviewCollectorCommands(
+            commands,
+            webAccessAllowed: false
+        )
+
+        XCTAssertEqual(review.actionable.map(\.collectorKind), [.localGitStatus])
+        XCTAssertEqual(review.skipReasons["request-1-collector-2"], "skipped: web disabled")
+        XCTAssertEqual(review.skipReasons["request-1-collector-3"], "skipped: unsupported collector")
+    }
+
+    func testEvidencePolicyMapsActionableRequestsToExplicitStates() {
+        XCTAssertEqual(
+            MagiEvidencePolicyEvaluator.requestStatus(
+                commandCount: 0,
+                actionableCount: 0,
+                policy: .ask
+            ),
+            .skipped
+        )
+        XCTAssertNil(
+            MagiEvidencePolicyEvaluator.requestStatus(
+                commandCount: 1,
+                actionableCount: 1,
+                policy: .ask
+            )
+        )
+        XCTAssertEqual(
+            MagiEvidencePolicyEvaluator.requestStatus(
+                commandCount: 1,
+                actionableCount: 1,
+                policy: .ask,
+                userApproved: true
+            ),
+            .approved
+        )
+        XCTAssertEqual(
+            MagiEvidencePolicyEvaluator.requestStatus(
+                commandCount: 1,
+                actionableCount: 1,
+                policy: .ask,
+                userApproved: false
+            ),
+            .denied
+        )
+        XCTAssertEqual(
+            MagiEvidencePolicyEvaluator.requestStatus(
+                commandCount: 1,
+                actionableCount: 1,
+                policy: .autoDeny
+            ),
+            .denied
+        )
+        XCTAssertEqual(
+            MagiEvidencePolicyEvaluator.requestStatus(
+                commandCount: 1,
+                actionableCount: 1,
+                policy: .preapproved
+            ),
+            .approved
+        )
+    }
+
+    func testQuestionKindInferenceExplainsEngineeringMode() {
+        let inference = MagiQuestionKind.inferWithReason(from: "Should we merge this pull request?")
+
+        XCTAssertEqual(inference.kind, .engineering)
+        XCTAssertTrue(inference.reason.contains("engineering decision signal"))
+    }
+
+    func testQuestionKindInferenceExplainsGenericMode() {
+        let inference = MagiQuestionKind.inferWithReason(from: "What is the best Final Fantasy?")
+
+        XCTAssertEqual(inference.kind, .generic)
+        XCTAssertEqual(inference.reason, "no engineering decision signals matched")
+    }
+
+    func testMagiVoteDecodesLegacyJSONWithoutCanonicalFields() throws {
+        let data = """
+        {
+          "id": "vote-1",
+          "memberID": "melchior",
+          "verdictKind": "APPROVE",
+          "choice": "Merge",
+          "confidence": 0.75,
+          "rationale": "Legacy artifact"
+        }
+        """.data(using: .utf8)!
+
+        let vote = try JSONDecoder().decode(MagiVote.self, from: data)
+
+        XCTAssertNil(vote.decisionID)
+        XCTAssertEqual(vote.conditions, [])
+        XCTAssertEqual(vote.choice, "Merge")
     }
 
     func testMajorityVoteSelectsWinningChoice() {
@@ -296,6 +559,7 @@ final class MagiModelsTests: XCTestCase {
         XCTAssertEqual(bundle.graphJSONPath, "/repo/.chau7/magi/runs/run-1/graph.json")
         XCTAssertEqual(bundle.replayJSONLPath, "/repo/.chau7/magi/runs/run-1/replay.jsonl")
         XCTAssertEqual(bundle.shareHTMLPath, "/repo/.chau7/magi/runs/run-1/share.html")
+        XCTAssertEqual(bundle.manifestJSONPath, "/repo/.chau7/magi/runs/run-1/manifest.json")
         XCTAssertEqual(bundle.technicalLogPath, "/repo/.chau7/magi/runs/run-1/technical.jsonl")
     }
 
@@ -310,7 +574,8 @@ final class MagiModelsTests: XCTestCase {
                 "transcript.jsonl",
                 "graph.json",
                 "replay.jsonl",
-                "share.html"
+                "share.html",
+                "manifest.json"
             ]
         )
         XCTAssertEqual(
@@ -321,7 +586,8 @@ final class MagiModelsTests: XCTestCase {
                 "/repo/.chau7/magi/runs/run-1/transcript.jsonl",
                 "/repo/.chau7/magi/runs/run-1/graph.json",
                 "/repo/.chau7/magi/runs/run-1/replay.jsonl",
-                "/repo/.chau7/magi/runs/run-1/share.html"
+                "/repo/.chau7/magi/runs/run-1/share.html",
+                "/repo/.chau7/magi/runs/run-1/manifest.json"
             ]
         )
     }

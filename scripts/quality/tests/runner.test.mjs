@@ -17,6 +17,18 @@ function makeRepo() {
   return root;
 }
 
+async function withDirtyWorktreeOverride(value, operation) {
+  const previous = process.env.AEPTUS_SKIP_DIRTY_WORKTREE_CONFIRM;
+  try {
+    if (value === undefined) delete process.env.AEPTUS_SKIP_DIRTY_WORKTREE_CONFIRM;
+    else process.env.AEPTUS_SKIP_DIRTY_WORKTREE_CONFIRM = value;
+    return await operation();
+  } finally {
+    if (previous === undefined) delete process.env.AEPTUS_SKIP_DIRTY_WORKTREE_CONFIRM;
+    else process.env.AEPTUS_SKIP_DIRTY_WORKTREE_CONFIRM = previous;
+  }
+}
+
 test("include filter runs only the requested gate", async () => {
   const summary = await runQuality(["--mode=staged", "--include=quality-registry-schema"], "");
   assert.equal(summary.ok, true);
@@ -61,7 +73,9 @@ test("runner result metadata exposes rerun commands", async () => {
 test("dirty worktree fails closed in non-interactive pre-push behavior", async () => {
   const root = makeRepo();
   fs.writeFileSync(path.join(root, "README.md"), "dirty\n");
-  const result = await checkDirtyWorktree(root, { interactive: false });
+  const result = await withDirtyWorktreeOverride(undefined, () =>
+    checkDirtyWorktree(root, { interactive: false }),
+  );
   assert.equal(result.status, "failed");
   assert.match(result.summary, /dirty worktree/);
 });
@@ -69,13 +83,29 @@ test("dirty worktree fails closed in non-interactive pre-push behavior", async (
 test("dirty worktree can be explicitly acknowledged by env", async () => {
   const root = makeRepo();
   fs.writeFileSync(path.join(root, "README.md"), "dirty\n");
-  const old = process.env.AEPTUS_SKIP_DIRTY_WORKTREE_CONFIRM;
+  const result = await withDirtyWorktreeOverride("1", () =>
+    checkDirtyWorktree(root, { interactive: false }),
+  );
+  assert.equal(result.status, "passed");
+});
+
+test("dirty worktree check ignores path git wrappers", async () => {
+  if (!fs.existsSync("/usr/bin/git")) return;
+  const root = makeRepo();
+  const bin = fs.mkdtempSync(path.join(os.tmpdir(), "chau7-quality-fake-git-"));
+  const fakeGit = path.join(bin, "git");
+  fs.writeFileSync(
+    fakeGit,
+    "#!/bin/sh\nif [ \"$1\" = \"status\" ]; then echo 'ok wrapped'; exit 0; fi\nexec /usr/bin/git \"$@\"\n",
+  );
+  fs.chmodSync(fakeGit, 0o755);
+
+  const oldPath = process.env.PATH;
   try {
-    process.env.AEPTUS_SKIP_DIRTY_WORKTREE_CONFIRM = "1";
+    process.env.PATH = `${bin}${path.delimiter}${oldPath}`;
     const result = await checkDirtyWorktree(root, { interactive: false });
     assert.equal(result.status, "passed");
   } finally {
-    if (old === undefined) delete process.env.AEPTUS_SKIP_DIRTY_WORKTREE_CONFIRM;
-    else process.env.AEPTUS_SKIP_DIRTY_WORKTREE_CONFIRM = old;
+    process.env.PATH = oldPath;
   }
 });

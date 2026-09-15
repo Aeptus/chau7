@@ -31,7 +31,11 @@ extension OverlayTabsModel {
         }
 
         var schedulesResumePrefills: Bool {
-            self == .interactiveFull
+            // Resume input is terminal state, not presentation state. Queue it
+            // during identity hydration so every restored agent tab is ready
+            // before selection; the session delivers it once its shell prompt
+            // is safe without activating or rendering the background tab.
+            true
         }
     }
 
@@ -63,7 +67,6 @@ extension OverlayTabsModel {
         total += stringPayloadBytes(state.knownRepoRoot)
         total += stringPayloadBytes(state.knownGitBranch)
         total += stringPayloadBytes(state.agentLaunchCommand)
-        total += state.previewSnapshotPNGData?.count ?? 0
         for pane in state.paneStates ?? [] {
             total += estimatedRestorePayloadBytes(for: pane)
         }
@@ -160,12 +163,22 @@ extension OverlayTabsModel {
     /// `AppDelegate.restoreAdditionalWindows` so both resolve the same source.
     static func bundleIsCurrentRestoreSource() -> Bool {
         let indexToken = UserDefaults.standard.string(forKey: SavedTabState.restoreIndexSaveTokenKey)
-        let bundleToken = TabRestoreBundleStore.loadEnvelope()?.saveToken
-        let isCurrent = RestoreSourceArbiter.bundleIsCurrent(bundleToken: bundleToken, indexToken: indexToken)
-        if !isCurrent {
-            Log.warn("restore: bundle save token \(bundleToken ?? "<none>") lags index token \(indexToken ?? "<none>"); preferring the fresher UserDefaults index")
+        let bundle = TabRestoreBundleStore.loadEnvelope()
+        let decision = RestoreSourceArbiter.decision(
+            bundleToken: bundle?.saveToken,
+            bundlePreviousIndexToken: bundle?.previousIndexSaveToken,
+            indexToken: indexToken
+        )
+        switch decision {
+        case .bundleCurrent:
+            return true
+        case .bundleAheadOfIndex:
+            Log.warn("restore: bundle save token \(bundle?.saveToken ?? "<none>") committed before index token \(indexToken ?? "<none>"); recovering the newer full bundle")
+            return true
+        case .indexCurrent:
+            Log.warn("restore: bundle save token \(bundle?.saveToken ?? "<none>") lags index token \(indexToken ?? "<none>"); preferring the fresher UserDefaults index")
+            return false
         }
-        return isCurrent
     }
 
     /// Decode from pre-decoded states (multi-window restore — avoids UserDefaults round-trip).
@@ -252,10 +265,6 @@ extension OverlayTabsModel {
             tab.color = TabColor(rawValue: state.color) ?? colors[i % colors.count]
             tab.stampOwnerTabID()
             controller.restoreAttachedSessionNoteIfNeeded()
-            if let preview = Self.restorePreviewImage(from: state.previewSnapshotPNGData) {
-                tab.restorePreviewSnapshot = preview
-                Log.info("Restore preview hydrated for tab=\(restoredTabID)")
-            }
 
             // Restore per-tab token optimization override
             if let overrideRaw = state.tokenOptOverride,
@@ -772,6 +781,18 @@ extension OverlayTabsModel {
             )
             resolvedPaneStates[paneID] = effectivePaneState
             paneStatesToRestore[paneID] = effectivePaneState
+
+            // Hand the persisted, already-styled scrollback tail to the
+            // session so `launchTerminal` can inject it once and the restored
+            // tab shows its saved content instantly (before the live process
+            // resumes). Skip empty/whitespace-only content so fresh-looking
+            // panes keep the normal launch banner. Runs for both the
+            // interactive (selected) and background/deferred restore profiles,
+            // since both reach this single metadata-apply site.
+            if let savedScrollback = effectivePaneState.scrollbackContent,
+               !savedScrollback.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                session.pendingRestoreScrollback = savedScrollback
+            }
         }
         return resolvedPaneStates
     }
@@ -812,7 +833,8 @@ extension OverlayTabsModel {
         resolvedPaneStates: [UUID: SavedTerminalPaneState],
         focusedTerminalPaneID: UUID,
         targetTabID: UUID,
-        useResumeRetryScheduler: Bool
+        useResumeRetryScheduler: Bool,
+        allowAutoSubmit: Bool
     ) {
         // Gather session IDs already claimed by OTHER tabs' saved state so
         // the re-resolver never hands out the same `claude --resume <id>` to
@@ -844,17 +866,11 @@ extension OverlayTabsModel {
                 )
             }
 
-            // Fallback path: pane state has no usable command. Two cases:
-            //   * provider set, cmd nil — autosave landed during the
-            //     synthetic-identity window (buildAIResumeCommand correctly
-            //     refused). Re-resolve a real session ID from the named
-            //     provider's transcripts.
-            //   * provider nil, cmd nil — autosave fired before ANY identity
-            //     corroboration (this is the wider hole behind the "no
-            //     resume command candidate" log line at startup). Scan BOTH
-            //     providers' transcripts for the saved directory and pick
-            //     whichever has a transcript closer to the saved activity
-            //     timestamp.
+            // Fallback path: pane state has no usable command but still has
+            // provider evidence. Autosave may have landed before a real session
+            // ID was attached; re-resolve it from that provider's transcripts.
+            // An all-nil identity remains intentionally ineligible because cwd
+            // alone cannot safely distinguish multiple tabs sharing a repo.
             if let resolved = Self.reResolveResumeCommand(
                 paneState: paneState,
                 claimedSessionIds: claimedSessionIds
@@ -923,7 +939,8 @@ extension OverlayTabsModel {
                     targetTabID: targetTabID,
                     restoreToken: restoreToken,
                     remainingAttempts: Self.resumeCommandMaxAttempts,
-                    delay: Self.resumeCommandDelaySeconds
+                    delay: Self.resumeCommandDelaySeconds,
+                    autoSubmit: allowAutoSubmit
                 )
             } else {
                 _ = enqueueResumePrefill(
@@ -932,7 +949,8 @@ extension OverlayTabsModel {
                     targetTabID: targetTabID,
                     restoreToken: restoreToken,
                     queuedReason: "selected_on_demand_queued",
-                    deliveredReason: "selected_on_demand_delivered"
+                    deliveredReason: "selected_on_demand_delivered",
+                    autoSubmit: allowAutoSubmit
                 )
             }
         }
@@ -973,11 +991,9 @@ extension OverlayTabsModel {
         }
         guard !directory.isEmpty else { return nil }
 
-        // Which providers to try. If autosave captured a provider, try only
-        // that one (the user's tab was definitively that tool). If autosave
-        // captured nothing (the entire identity trio was nil — fired during
-        // the window before any corroboration), try BOTH — pick whichever
-        // has a transcript closer to the saved activity time.
+        // If autosave captured a provider, try only that one: the pane was
+        // definitively that tool. A legacy session-only record can still try
+        // both providers and is constrained by the persisted session ID.
         let candidateProviders: [String]
         if let providerStr = paneState.aiProvider,
            let normalized = AIResumeParser.normalizeProviderName(providerStr) {
@@ -1168,17 +1184,23 @@ extension OverlayTabsModel {
                 Log.trace("restoreTabState: phase breakdown tab=\(targetTabID) total=\(totalMs)ms \(breakdown)")
             }
         }
+        recordPhase("setup", startedAt: restoreStartedAt)
+
+        let phaseLookupStart = CFAbsoluteTimeGetCurrent()
         guard let restoredTab = tabs.first(where: { $0.id == targetTabID }) else {
+            recordPhase("lookup", startedAt: phaseLookupStart)
             Log.warn("restoreTabState: tab no longer exists for id=\(targetTabID)")
             return
         }
         if executionProfile == .backgroundIdentityOnly,
            deferredRestoreStatesByTabID[targetTabID] == nil {
+            recordPhase("lookup", startedAt: phaseLookupStart)
             Log.trace(
                 "restoreTabState: skipped stale background identity restore for tab=\(targetTabID)"
             )
             return
         }
+        recordPhase("lookup", startedAt: phaseLookupStart)
 
         let phaseBlocksStart = CFAbsoluteTimeGetCurrent()
         if executionProfile.appliesCommandBlocks {
@@ -1186,8 +1208,10 @@ extension OverlayTabsModel {
         }
         recordPhase("blocks", startedAt: phaseBlocksStart)
 
+        let phaseFocusStart = CFAbsoluteTimeGetCurrent()
         let currentSessions = restoredTab.splitController.terminalSessions
         guard !currentSessions.isEmpty else {
+            recordPhase("focus", startedAt: phaseFocusStart)
             Log.warn("restoreTabState: tab \(targetTabID) has no terminal sessions")
             return
         }
@@ -1204,6 +1228,7 @@ extension OverlayTabsModel {
            restoredTab.splitController.root.paneType(for: focusedTerminalPaneID) == .terminal {
             restoredTab.splitController.setFocusedPane(focusedTerminalPaneID)
         }
+        recordPhase("focus", startedAt: phaseFocusStart)
 
         let phaseMetadataStart = CFAbsoluteTimeGetCurrent()
         let resolvedPaneStates = Self.resolveAndApplyPaneMetadata(
@@ -1223,11 +1248,8 @@ extension OverlayTabsModel {
                 resolvedPaneStates: resolvedPaneStates,
                 focusedTerminalPaneID: focusedTerminalPaneID,
                 targetTabID: targetTabID,
-                useResumeRetryScheduler: useResumeRetryScheduler
-            )
-        } else {
-            Log.trace(
-                "restoreTabState: deferred resume scheduling for tab=\(targetTabID) profile=\(executionProfile.rawValue)"
+                useResumeRetryScheduler: useResumeRetryScheduler,
+                allowAutoSubmit: executionProfile == .interactiveFull
             )
         }
         recordPhase("resume", startedAt: phaseResumeStart)
@@ -1238,10 +1260,13 @@ extension OverlayTabsModel {
         // without an onGitRootPathChanged callback. Re-wire here now that
         // the session is attached and any restored cwd / gitRoot will
         // re-fire the callback as `refreshGitStatus` resolves async.
+        let phaseGroupingStart = CFAbsoluteTimeGetCurrent()
         if FeatureSettings.shared.repoGroupingMode == .auto {
             setupRepoGroupingForTab(restoredTab)
         }
+        recordPhase("grouping", startedAt: phaseGroupingStart)
 
+        let phaseFinalizeStart = CFAbsoluteTimeGetCurrent()
         if startupRestoreActive,
            currentSessions.allSatisfy({ !$0.1.isRestoreBootstrapPending }) {
             let previousHadPendingWork = hasPendingStartupRestoreWork
@@ -1249,6 +1274,7 @@ extension OverlayTabsModel {
             updateSuspensionState()
             notifyStartupRestoreWorkIfDrained(previousHadPendingWork: previousHadPendingWork)
         }
+        recordPhase("finalize", startedAt: phaseFinalizeStart)
     }
 
     var selectedTab: OverlayTab? {

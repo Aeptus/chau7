@@ -1,12 +1,12 @@
 # Migration
 
-Profile import from Terminal.app and iTerm2, plus launch-at-login management.
+Profile import from Terminal.app and iTerm2, plus launch-at-login plist management.
 
 ## Files
 
 | File | Purpose |
 |------|---------|
-| `LaunchAtLoginManager.swift` | Manages macOS LaunchAgent plist for launch-at-login via launchctl |
+| `LaunchAtLoginManager.swift` | Installs/removes the macOS LaunchAgent plist for launch-at-login without loading it in the current session |
 | `TerminalMigrationWizard.swift` | Scans and imports profiles from Terminal.app and iTerm2 plist files |
 | `TerminalMigrationWizardView.swift` | Step-by-step wizard UI for selecting and importing detected profiles |
 

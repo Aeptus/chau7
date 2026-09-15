@@ -240,7 +240,7 @@ final class AppModel {
     /// via the active→idle bridge. 30-second cooldown prevents rapid re-firing.
     @ObservationIgnored private var sessionFinishedTimestamps: [String: Date] = [:]
 
-    /// Backward-compat computed accessors for MainPanelView / LogsSettingsView
+    /// Backward-compat computed accessors for legacy panel consumers and LogsSettingsView
     var codexHistoryEntries: [HistoryEntry] {
         toolHistoryEntries["codex"] ?? []
     }
@@ -461,6 +461,9 @@ final class AppModel {
     deinit {
         pendingClaudeWaitingInputFallbacks.values.forEach { $0.cancel() }
         claudeMonitorNotificationTask?.cancel()
+        stopTailer()
+        stopIdleMonitors()
+        stopTerminalMonitors()
         Log.warn("AppModel deinit — possible SwiftUI scene recreation (pid=\(ProcessInfo.processInfo.processIdentifier))")
     }
 
@@ -492,6 +495,11 @@ final class AppModel {
         startClaudeCodeMonitor()
         startAPICallObserver()
         startCleanupTimer()
+        if Bundle.main.bundleIdentifier != nil, !RuntimeIsolation.isIsolatedTestMode() {
+            Task { @MainActor in
+                ProviderStatusMonitor.shared.start()
+            }
+        }
         RuntimeSessionManager.shared.startCleanupTimer()
         // Runtime session events flow through the same spine funnel as every
         // other producer — the previous direct notify(for:) path made them
@@ -1118,6 +1126,14 @@ final class AppModel {
             directory: directory
         )
 
+        // Structured interactive prompts (AskUserQuestion): keep the remote
+        // prompt store in sync with the hook stream, post tab-attribution.
+        // Main-queue hop (not Task) so successive hook events reach the
+        // store in arrival order — PostToolUse must not overtake PreToolUse.
+        DispatchQueue.main.async {
+            RemoteControlManager.shared.ingestClaudeHookEvent(event, runtimeTabID: runtimeTabID)
+        }
+
         // Claude Code emits the session's authoritative cwd on every hook
         // event. Push it onto the bound tab's session so the tab's tracked
         // `currentDirectory` stays in sync even when the host shell's
@@ -1136,7 +1152,10 @@ final class AppModel {
                 tabID: runtimeTabID,
                 sessionID: event.sessionId.isEmpty ? nil : event.sessionId,
                 directory: directory,
-                allowSessionIDAdoption: allowSessionIDAdoption
+                allowSessionIDAdoption: allowSessionIDAdoption,
+                trustMatchingSessionForForeignDirectory: true,
+                provider: "claude",
+                sessionIdentitySource: .explicit
             )
         }
 
@@ -1199,7 +1218,10 @@ final class AppModel {
                 tabID: resolvedTabID,
                 sessionID: session.id.isEmpty ? nil : session.id,
                 directory: directory,
-                allowSessionIDAdoption: allowSessionIDAdoption
+                allowSessionIDAdoption: allowSessionIDAdoption,
+                trustMatchingSessionForForeignDirectory: true,
+                provider: "claude",
+                sessionIdentitySource: .explicit
             )
         }
 
@@ -1243,21 +1265,30 @@ final class AppModel {
                 directory: directory
             )
             let location = event.projectName == "Unknown" ? "Claude" : event.projectName
-            let fallbackEvent = AIEvent(
+            // Claude's `Stop` hook (response_complete) marks a *finished turn*,
+            // not "the agent is blocked on a question". Emitting it as
+            // `task_finished` resolves the tab to `.done` (green) and clears the
+            // orange waiting/attention style, instead of masking every finished
+            // turn as `waiting_input`. A turn that genuinely needs the user
+            // arrives as its own authoritative event — a `permission_request`
+            // /`notification` (idle_prompt) /`elicitation`, or the idle-threshold
+            // `sessionIdle` — which `cancelPendingClaude…` lets supersede this,
+            // so a real "waiting for your answer" still turns orange.
+            let finishedEvent = AIEvent(
                 source: .claudeCode,
-                type: "waiting_input",
+                type: "task_finished",
                 tool: "Claude",
                 title: event.title,
-                message: "Claude is waiting for your input in \(location)",
-                notificationType: "idle_prompt",
+                message: "Claude finished in \(location)",
+                notificationType: "task_finished",
                 ts: DateFormatters.iso8601.string(from: event.timestamp),
                 directory: directory,
                 tabID: tabID,
                 sessionID: sessionID,
-                producer: "claude_response_complete_fallback",
+                producer: "claude_response_complete_finished",
                 reliability: .fallback
             )
-            publishUnifiedEvent(fallbackEvent, notify: true)
+            publishUnifiedEvent(finishedEvent, notify: true)
         }
 
         pendingClaudeWaitingInputFallbacks[sessionID] = work
@@ -1284,7 +1315,17 @@ final class AppModel {
     ) -> UUID? {
         let trimmed = stampedTabID.trimmingCharacters(in: .whitespacesAndNewlines)
         if let explicit = UUID(uuidString: trimmed) {
-            return explicit
+            if !TerminalControlService.shared.hasConflictingLiveAIIdentity(
+                tabID: explicit,
+                incomingProvider: "Claude",
+                incomingSessionID: sessionID
+            ) {
+                return explicit
+            }
+            Log.trace(
+                "Rejected stale Claude tab stamp tab=\(explicit) session=\(sessionID) " +
+                    "reason=live_tab_identity_conflict"
+            )
         }
         return exactClaudeTabID(sessionID: sessionID, directory: directory)
     }
@@ -1426,7 +1467,8 @@ final class AppModel {
         tabID explicitTabID: UUID? = nil,
         observedAt: Date,
         state: HistorySessionState?,
-        reason: HistorySessionAdoptionRequest.Reason
+        reason: HistorySessionAdoptionRequest.Reason,
+        identityEvidence: HistorySessionAdoptionRequest.IdentityEvidence = .inferred
     ) -> Bool {
         let tabID = explicitTabID ?? resolveTabForSession(
             toolName: toolName,
@@ -1440,7 +1482,8 @@ final class AppModel {
             tabID: tabID,
             observedAt: observedAt,
             state: state,
-            reason: reason
+            reason: reason,
+            identityEvidence: identityEvidence
         ) else {
             return false
         }
@@ -1459,6 +1502,18 @@ final class AppModel {
 
         let directory = event.directory ?? historyEventDirectory(for: event.tool, sessionID: sessionID)
         let observedAt = DateFormatters.iso8601.date(from: event.ts) ?? Date()
+        let identityEvidence: HistorySessionAdoptionRequest.IdentityEvidence
+        if event.source == .codex,
+           event.producer == "codex_notify_hook",
+           event.reliability == .authoritative,
+           let metadata = CodexSessionResolver.metadata(
+               forSessionID: sessionID,
+               referenceDate: observedAt
+           ) {
+            identityEvidence = .authoritativeExactTab(validatedDirectory: metadata.cwd)
+        } else {
+            identityEvidence = .inferred
+        }
         return adoptHistorySessionIdentity(
             toolName: event.tool,
             sessionID: sessionID,
@@ -1466,7 +1521,8 @@ final class AppModel {
             tabID: event.tabID,
             observedAt: observedAt,
             state: nil,
-            reason: .historyEntry
+            reason: .historyEntry,
+            identityEvidence: identityEvidence
         )
     }
 
@@ -1634,6 +1690,12 @@ final class AppModel {
 
     @MainActor
     private func publishUnifiedEventOnMain(_ event: AIEvent, notify: Bool, envelope: EventEnvelope) {
+        // Identity adoption is tab/session state, not notification delivery.
+        // Run it before notification filtering so raw Claude lifecycle/tool
+        // events can stamp a Shell-labeled tab as Claude even when they are not
+        // user-facing notifications.
+        adoptUnifiedEventSessionIdentityIfNeeded(event)
+
         guard let acceptedEvent = notifications?.manager.processUnifiedEvent(
             event,
             deliveryRequested: notify
@@ -1647,7 +1709,6 @@ final class AppModel {
     @MainActor
     private func publishAcceptedUnifiedEventOnMain(_ acceptedEvent: EnrichedEvent, envelope: EventEnvelope) {
         let event = acceptedEvent.event
-        adoptUnifiedEventSessionIdentityIfNeeded(event)
         let surfaces = NotificationRoutingPolicy.surfaces(
             kind: acceptedEvent.kind,
             settings: NotificationSurfaceSettings(

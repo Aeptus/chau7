@@ -170,6 +170,36 @@ final class MetalTerminalRenderer: NSObject {
     private(set) var glyphCacheMisses = 0
     private(set) var glyphLookupCount = 0
 
+    /// Estimated memory held by this renderer (per window, not per tab).
+    /// All inputs are O(1); used by the per-tab memory diagnostics.
+    struct MemoryFootprint {
+        let instanceBufferBytes: Int
+        let atlasTextureBytes: Int
+        let atlasContextBytes: Int
+        let glyphCacheEntries: Int
+    }
+
+    var memoryFootprint: MemoryFootprint {
+        MemoryFootprint(
+            instanceBufferBytes: instanceBuffer?.length ?? 0,
+            atlasTextureBytes: glyphAtlas == nil ? 0 : atlasWidth * atlasHeight * 4,
+            atlasContextBytes: atlasContext == nil ? 0 : atlasWidth * atlasHeight * 4,
+            glyphCacheEntries: glyphCache.count
+        )
+    }
+
+    var allocatedResourceBytes: Int {
+        (instanceBuffer?.length ?? 0)
+            + (uniformBuffer?.length ?? 0)
+            + (vertexBuffer?.length ?? 0)
+            + (glyphAtlas == nil ? 0 : atlasWidth * atlasHeight * 4)
+            + (atlasContext == nil ? 0 : atlasWidth * atlasHeight * 4)
+    }
+
+    var resourcesAreEvicted: Bool {
+        instanceBuffer == nil || uniformBuffer == nil || vertexBuffer == nil || atlasContext == nil
+    }
+
     /// Diagnostic frame counter for throttled logging
     private var diagFrameCounter = 0
     private var lastCursorRowDiagnosticKey: String?
@@ -996,7 +1026,7 @@ final class MetalTerminalRenderer: NSObject {
     /// participate in a ligature run.
     private func tryLigature(
         cells: UnsafeBufferPointer<TerminalCell>,
-        clusters: ContiguousArray<UInt8>,
+        clusters: UnsafeBufferPointer<UInt8>,
         index: Int, count: Int, cols: Int,
         bold: Bool, italic: Bool
     ) -> LigatureInfo? {
@@ -1051,6 +1081,13 @@ final class MetalTerminalRenderer: NSObject {
         onCompleted: (() -> Void)? = nil
     ) -> Bool {
         let renderStartedAt = CFAbsoluteTimeGetCurrent()
+        guard instanceBuffer != nil,
+              uniformBuffer != nil,
+              vertexBuffer != nil,
+              atlasContext != nil,
+              glyphAtlas != nil else {
+            return false
+        }
         guard let commandBuffer = commandQueue.makeCommandBuffer() else { return false }
 
         // GPU in-flight gate: the instance/uniform buffers and the glyph atlas
@@ -1166,7 +1203,7 @@ final class MetalTerminalRenderer: NSObject {
 
     private func updateInstanceBuffer(
         cells: UnsafeBufferPointer<TerminalCell>,
-        clusters: ContiguousArray<UInt8>,
+        clusters: UnsafeBufferPointer<UInt8>,
         count: Int,
         rows: Int,
         cols: Int,
@@ -1458,7 +1495,7 @@ final class MetalTerminalRenderer: NSObject {
 
     private func logCursorRowMappingIfNeeded(
         cells: UnsafeBufferPointer<TerminalCell>,
-        clusters: ContiguousArray<UInt8>,
+        clusters: UnsafeBufferPointer<UInt8>,
         instances: UnsafeMutablePointer<CellInstance>,
         count: Int,
         cols: Int,
@@ -1552,7 +1589,7 @@ final class MetalTerminalRenderer: NSObject {
         return start ... end
     }
 
-    private static func diagnosticPreview(for cell: TerminalCell, clusters: ContiguousArray<UInt8>) -> String {
+    private static func diagnosticPreview(for cell: TerminalCell, clusters: UnsafeBufferPointer<UInt8>) -> String {
         if cell.clusterLen == 0 { return " " }
         if cell.continuation != 0 { return "" }
         let start = Int(cell.clusterStart)
@@ -1564,7 +1601,7 @@ final class MetalTerminalRenderer: NSObject {
         return String(decoding: bytes, as: UTF8.self)
     }
 
-    private static func diagnosticScalarLabel(for cell: TerminalCell, clusters: ContiguousArray<UInt8>) -> String {
+    private static func diagnosticScalarLabel(for cell: TerminalCell, clusters: UnsafeBufferPointer<UInt8>) -> String {
         if cell.clusterLen == 0 { return "SP" }
         if cell.continuation != 0 { return "CONT" }
         let start = Int(cell.clusterStart)
@@ -1630,15 +1667,62 @@ final class MetalTerminalRenderer: NSObject {
 
         // The vertex quad is written once at init and never rebuilt by the
         // draw path — if the OS reclaimed it, every instance would render
-        // garbage forever. Rewrite it in place.
-        if vertexPrior == .empty {
-            rewriteVertexQuad()
-        }
+        // garbage forever. Rewrite it unconditionally: the `.empty` prior
+        // state is unreliable when the purge raced an in-flight frame (see
+        // markTexturesNonVolatileAndRebuildIfNeeded), and the rewrite is four
+        // SIMD2 writes.
+        rewriteVertexQuad()
         // Report reclamation if ANY resource was emptied — checking only the
         // atlas left a reclaimed instance/uniform buffer rendering stale rows
         // undetected.
         let anyReclaimed = [atlasPrior, instancePrior, uniformPrior, vertexPrior].contains(.empty)
         return anyReclaimed ? .empty : atlasPrior
+    }
+
+    /// Releases the large per-window renderer allocation after AppKit has
+    /// confirmed the window is fully invisible. The caller retains the latest
+    /// triple-buffered terminal frame, so no terminal content is lost.
+    @discardableResult
+    func evictResources() -> Int {
+        guard allocatedResourceBytes > 0 else { return 0 }
+        guard inflightGate.wait(timeout: .now() + .milliseconds(100)) == .success else {
+            Log.warn("MetalRenderer: GPU frame still in flight; deferring inactive resource eviction")
+            return 0
+        }
+        defer { inflightGate.signal() }
+
+        let releasedBytes = allocatedResourceBytes
+        instanceBuffer = nil
+        uniformBuffer = nil
+        vertexBuffer = nil
+        glyphAtlas = nil
+        atlasContext = nil
+        instanceCapacity = 50_000
+        resetAtlas()
+        asciiGlyphCache = [GlyphInfo?](repeating: nil, count: 128 << 2)
+        rowHasBlinkingCells.removeAll(keepingCapacity: false)
+        blinkingRowCount = 0
+        hasBlinkingCells = false
+        lastCursorRenderState = nil
+        return releasedBytes
+    }
+
+    /// Recreates only the base buffers/context. Font configuration immediately
+    /// afterward repopulates the atlas before a frame can be encoded.
+    func restoreResourcesIfNeeded() -> Bool {
+        guard resourcesAreEvicted else { return true }
+        do {
+            try setupBuffers()
+            setupAtlasContext()
+            return instanceBuffer != nil && uniformBuffer != nil && vertexBuffer != nil && atlasContext != nil
+        } catch {
+            instanceBuffer = nil
+            uniformBuffer = nil
+            vertexBuffer = nil
+            atlasContext = nil
+            Log.error("MetalRenderer: Failed to restore evicted resources: \(error)")
+            return false
+        }
     }
 
     /// Rewrites the static unit-quad vertices (see `setupBuffers`).
@@ -1689,14 +1773,20 @@ struct TerminalCell {
     /// Fragment shader samples `texColor.rgb` directly instead of tinting `fg`.
     static let colorGlyphFlag: UInt32 = 1 << 12
 
-    /// Byte offset into the owning `TerminalBuffer.clusters` array.
-    var clusterStart: UInt32
+    // Field order matters: the two SIMD4 members force 16-byte alignment, so
+    // they must come first. Declaring `clusterStart` before them (as this
+    // struct originally did) inserts 12 bytes of padding after it and pushes
+    // the stride from 48 to 64 — a 33% tax on every cell copy, triple-buffer
+    // allocation, and sync memcpy. CPU-only layout (the GPU consumes
+    // `CellInstance`, a separate type); guarded by TerminalCellLayoutTests.
     var foregroundColor: SIMD4<Float>
     var backgroundColor: SIMD4<Float>
     /// Bold=1, italic=2, underline=4, strikethrough=8, blink=16
     /// Cursor bits (set by renderer): cursor_present=32, cursor_style in bits 6-7
     /// Color-glyph bit 12 is set when this cell's atlas slot is a color bitmap.
     var flags: UInt32
+    /// Byte offset into the owning `TerminalBuffer.clusters` array.
+    var clusterStart: UInt32
     /// UTF-8 byte length of the grapheme cluster. 0 = blank cell.
     var clusterLen: UInt16
     /// 1 = narrow, 2 = wide; 0 on continuation cells.

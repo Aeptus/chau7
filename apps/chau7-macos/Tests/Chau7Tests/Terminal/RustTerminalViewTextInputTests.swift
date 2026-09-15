@@ -6,6 +6,13 @@ import Carbon.HIToolbox
 @MainActor
 final class RustTerminalViewTextInputTests: XCTestCase {
 
+    func testTerminalDoesNotAdvertiseMacOSServicesPasteboardTypes() {
+        let view = RustTerminalView(frame: .zero)
+
+        XCTAssertNil(view.validRequestor(forSendType: .string, returnType: nil))
+        XCTAssertNil(view.validRequestor(forSendType: nil, returnType: .string))
+    }
+
     func testShouldSuppressRawTextFallbackWhenInputContextHandled() {
         let view = RustTerminalView(frame: .zero)
 
@@ -55,7 +62,7 @@ final class RustTerminalViewTextInputTests: XCTestCase {
         XCTAssertTrue(
             RustTerminalView.shouldKeepStartupPolling(
                 isTerminalStarted: true,
-                startupBytesLogged: 0,
+                hasObservedInitialPTYActivity: false,
                 awaitingInitialPTYOutput: true
             )
         )
@@ -65,7 +72,7 @@ final class RustTerminalViewTextInputTests: XCTestCase {
         XCTAssertFalse(
             RustTerminalView.shouldKeepStartupPolling(
                 isTerminalStarted: true,
-                startupBytesLogged: 1,
+                hasObservedInitialPTYActivity: true,
                 awaitingInitialPTYOutput: true
             )
         )
@@ -75,10 +82,16 @@ final class RustTerminalViewTextInputTests: XCTestCase {
         XCTAssertFalse(
             RustTerminalView.shouldKeepStartupPolling(
                 isTerminalStarted: true,
-                startupBytesLogged: 0,
+                hasObservedInitialPTYActivity: false,
                 awaitingInitialPTYOutput: false
             )
         )
+    }
+
+    func testMetadataOnlyPollCountsAsPTYStartupActivity() {
+        XCTAssertTrue(RustTerminalView.containsPTYActivity(.metadataChanged))
+        XCTAssertTrue(RustTerminalView.containsPTYActivity(.gridChanged))
+        XCTAssertFalse(RustTerminalView.containsPTYActivity([]))
     }
 
     func testShouldRefreshVisibleTerminalFromPumpOnlyForVisibleChangingTabs() {

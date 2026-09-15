@@ -19,10 +19,11 @@ struct RepositoriesSettingsView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: Chau7Style.Settings.pageSectionSpacing) {
             SettingsSectionHeader(
                 L("settings.repositories.title", "Repositories"),
-                icon: "folder.badge.gearshape"
+                icon: "folder.badge.gearshape",
+                anchorID: "repositoryMetadata"
             )
 
             Text(L(
@@ -43,7 +44,7 @@ struct RepositoriesSettingsView: View {
                     Text(L("settings.repositories.noMatches", "No repositories match your search."))
                         .foregroundStyle(.tertiary)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.vertical, 8)
+                        .padding(.vertical, Chau7Style.Settings.separatorVerticalPadding)
                 } else {
                     repoList
                 }
@@ -103,7 +104,7 @@ struct RepositoriesSettingsView: View {
             .foregroundStyle(.tertiary)
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 24)
+        .padding(.vertical, Chau7Style.Settings.contentPadding)
     }
 
     private var repoList: some View {
@@ -124,7 +125,7 @@ struct RepositoriesSettingsView: View {
     }
 
     private func repoRow(_ repo: RepoEntry) -> some View {
-        HStack(alignment: .top, spacing: 12) {
+        HStack(alignment: .top, spacing: Chau7Style.Settings.looseControlSpacing) {
             Image(systemName: "folder.fill")
                 .foregroundStyle(.blue)
                 .frame(width: 18)
@@ -189,8 +190,8 @@ struct RepositoriesSettingsView: View {
             .buttonStyle(.borderless)
             .help(L("settings.repositories.edit", "Edit metadata"))
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 10)
+        .padding(.horizontal, Chau7Style.Settings.looseControlSpacing)
+        .padding(.vertical, Chau7Style.Settings.inlineControlSpacing)
         .contentShape(Rectangle())
         .onTapGesture(count: 2) {
             editingRepo = repo
@@ -233,8 +234,8 @@ private struct RepositoryEditorSheet: View {
     @State private var favoritesText = ""
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            HStack(spacing: 8) {
+        VStack(alignment: .leading, spacing: Chau7Style.Settings.pageSectionSpacing) {
+            HStack(spacing: Chau7Style.Settings.inlineControlSpacing) {
                 Image(systemName: "folder.fill")
                     .foregroundStyle(.blue)
                 Text(repo.name)
@@ -282,7 +283,7 @@ private struct RepositoryEditorSheet: View {
                     .font(.system(.body, design: .monospaced))
                     .frame(minHeight: 100, maxHeight: 200)
                     .scrollContentBackground(.hidden)
-                    .padding(8)
+                    .padding(Chau7Style.Settings.inlineControlSpacing)
                     .background(Color(nsColor: .textBackgroundColor))
                     .clipShape(RoundedRectangle(cornerRadius: 6))
                     .overlay(
@@ -309,7 +310,7 @@ private struct RepositoryEditorSheet: View {
                 .keyboardShortcut(.defaultAction)
             }
         }
-        .padding(24)
+        .padding(Chau7Style.Settings.contentPadding)
         .frame(width: 520)
         .onAppear {
             descriptionText = repo.metadata.description ?? ""

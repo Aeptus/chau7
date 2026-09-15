@@ -5,32 +5,249 @@ import Chau7Core
 // MARK: - Settings Layout Constants
 
 enum SettingsLayout {
-    static let labelWidth: CGFloat = 220
-    static let controlSpacing: CGFloat = 16
+    static let labelWidth: CGFloat = Chau7Style.Settings.labelWidth
+    static let controlSpacing: CGFloat = Chau7Style.Settings.rowSpacing
+    static let compactRowSpacing: CGFloat = Chau7Style.Settings.compactRowSpacing
+    static let minimumControlWidth: CGFloat = Chau7Style.Control.minimumWidth
+    static let settingsWindowMinWidth: CGFloat = Chau7Style.Settings.windowMinWidth
+    static let settingsWindowMinHeight: CGFloat = Chau7Style.Settings.windowMinHeight
+    static let sidebarMinWidth: CGFloat = Chau7Style.Settings.sidebarMinWidth
+    static let sidebarIdealWidth: CGFloat = Chau7Style.Settings.sidebarIdealWidth
+    static let sidebarMaxWidth: CGFloat = Chau7Style.Settings.sidebarMaxWidth
+    static let detailMinWidth: CGFloat = Chau7Style.Settings.detailMinWidth
+    static let detailIdealWidth: CGFloat = Chau7Style.Settings.detailIdealWidth
+}
+
+// MARK: - Search Anchors
+
+private struct SettingsHighlightedAnchorIDKey: EnvironmentKey {
+    static let defaultValue: String? = nil
+}
+
+private struct SettingsCurrentSectionKey: EnvironmentKey {
+    static let defaultValue: SettingsSection? = nil
+}
+
+extension EnvironmentValues {
+    var settingsHighlightedAnchorID: String? {
+        get { self[SettingsHighlightedAnchorIDKey.self] }
+        set { self[SettingsHighlightedAnchorIDKey.self] = newValue }
+    }
+
+    var settingsCurrentSection: SettingsSection? {
+        get { self[SettingsCurrentSectionKey.self] }
+        set { self[SettingsCurrentSectionKey.self] = newValue }
+    }
+}
+
+private struct SettingsSearchAnchorModifier: ViewModifier {
+    @Environment(\.settingsHighlightedAnchorID) private var highlightedAnchorID
+    let anchorID: String?
+
+    private var isHighlighted: Bool {
+        guard let anchorID, let highlightedAnchorID else { return false }
+        return anchorID == highlightedAnchorID
+    }
+
+    func body(content: Content) -> some View {
+        if let anchorID {
+            content
+                .id(anchorID)
+                .background(
+                    RoundedRectangle(cornerRadius: Chau7Style.Radius.medium)
+                        .fill(Color.accentColor.opacity(isHighlighted ? 0.12 : 0))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: Chau7Style.Radius.medium)
+                        .stroke(Color.accentColor.opacity(isHighlighted ? 0.45 : 0), lineWidth: 1)
+                )
+                .animation(.easeInOut(duration: 0.18), value: isHighlighted)
+        } else {
+            content
+        }
+    }
+}
+
+extension View {
+    func settingsSearchAnchor(_ anchorID: String?) -> some View {
+        modifier(SettingsSearchAnchorModifier(anchorID: anchorID))
+    }
+}
+
+// MARK: - Settings Surface Structure
+
+struct SettingsDivider: View {
+    var body: some View {
+        Divider()
+            .padding(.vertical, Chau7Style.Settings.separatorVerticalPadding)
+            .accessibilityHidden(true)
+    }
+}
+
+func settingsAdvancedDisclosureShouldExpand(highlightedAnchorID: String?, searchAnchorIDs: Set<String>) -> Bool {
+    guard let highlightedAnchorID else { return false }
+    return searchAnchorIDs.contains(highlightedAnchorID)
+}
+
+struct SettingsAdvancedDisclosure<Content: View>: View {
+    @Environment(\.settingsHighlightedAnchorID) private var highlightedAnchorID
+
+    let title: String
+    let icon: String
+    let searchAnchorIDs: Set<String>
+    let content: () -> Content
+
+    @State private var isExpanded = false
+
+    init(
+        _ title: String = L("settings.advanced", "Advanced"),
+        icon: String = "slider.horizontal.3",
+        searchAnchorIDs: [String] = [],
+        @ViewBuilder content: @escaping () -> Content
+    ) {
+        self.title = title
+        self.icon = icon
+        self.searchAnchorIDs = Set(searchAnchorIDs)
+        self.content = content
+    }
+
+    var body: some View {
+        DisclosureGroup(isExpanded: $isExpanded) {
+            VStack(alignment: .leading, spacing: Chau7Style.Settings.pageSectionSpacing) {
+                content()
+            }
+            .padding(.top, Chau7Style.Settings.inlineControlSpacing)
+        } label: {
+            Label(title, systemImage: icon)
+                .font(.subheadline.weight(.semibold))
+        }
+        .onAppear(perform: expandIfHighlighted)
+        .onChange(of: highlightedAnchorID) {
+            expandIfHighlighted()
+        }
+    }
+
+    private func expandIfHighlighted() {
+        guard settingsAdvancedDisclosureShouldExpand(
+            highlightedAnchorID: highlightedAnchorID,
+            searchAnchorIDs: searchAnchorIDs
+        ) else {
+            return
+        }
+        withAnimation(.easeInOut(duration: 0.18)) {
+            isExpanded = true
+        }
+    }
+}
+
+// MARK: - Adaptive Settings Row Foundation
+
+private struct SettingsLabelBlock: View {
+    let label: String
+    let help: String?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Chau7Style.Spacing.xxxSmall) {
+            Text(label)
+                .font(.callout)
+                .fixedSize(horizontal: false, vertical: true)
+            if let help {
+                Text(help)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .accessibilityElement(children: .combine)
+    }
+}
+
+private struct SettingsAdaptiveRow<Content: View>: View {
+    @Environment(\.settingsCurrentSection) private var currentSection
+    let label: String
+    let help: String?
+    let anchorID: String?
+    let content: () -> Content
+
+    init(_ label: String, help: String? = nil, anchorID: String? = nil, @ViewBuilder content: @escaping () -> Content) {
+        self.label = label
+        self.help = help
+        self.anchorID = anchorID
+        self.content = content
+    }
+
+    var body: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(alignment: .top, spacing: SettingsLayout.controlSpacing) {
+                SettingsLabelBlock(label: label, help: help)
+                    .frame(width: SettingsLayout.labelWidth, alignment: .leading)
+                content()
+                    .controlSize(.small)
+                    .layoutPriority(1)
+                Spacer(minLength: 0)
+            }
+
+            VStack(alignment: .leading, spacing: SettingsLayout.compactRowSpacing) {
+                SettingsLabelBlock(label: label, help: help)
+                content()
+                    .controlSize(.small)
+                    .layoutPriority(1)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, Chau7Style.Settings.rowVerticalPadding)
+        .settingsSearchAnchor(resolvedAnchorID)
+    }
+
+    private var resolvedAnchorID: String? {
+        anchorID ?? FeatureSettings.searchAnchorID(forTitle: label, in: currentSection)
+    }
+}
+
+private extension View {
+    func settingsControlWidth(_ width: CGFloat) -> some View {
+        frame(
+            minWidth: min(SettingsLayout.minimumControlWidth, width),
+            idealWidth: width,
+            maxWidth: width
+        )
+    }
 }
 
 // MARK: - Settings Section Header
 
 struct SettingsSectionHeader: View {
+    @Environment(\.settingsCurrentSection) private var currentSection
     let title: String
     let icon: String?
+    let anchorID: String?
 
-    init(_ title: String, icon: String? = nil) {
+    init(_ title: String, icon: String? = nil, anchorID: String? = nil) {
         self.title = title
         self.icon = icon
+        self.anchorID = anchorID
     }
 
     var body: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: Chau7Style.Spacing.xSmall) {
             if let icon {
                 Image(systemName: icon)
                     .foregroundStyle(.secondary)
+                    .accessibilityHidden(true)
             }
             Text(title)
-                .font(.headline)
+                .font(.subheadline.weight(.semibold))
+                .fixedSize(horizontal: false, vertical: true)
         }
-        .padding(.top, 8)
-        .padding(.bottom, 4)
+        .padding(.top, Chau7Style.Settings.sectionTopPadding)
+        .padding(.bottom, Chau7Style.Settings.sectionBottomPadding)
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isHeader)
+        .settingsSearchAnchor(resolvedAnchorID)
+    }
+
+    private var resolvedAnchorID: String? {
+        anchorID ?? FeatureSettings.searchAnchorID(forTitle: title, in: currentSection)
     }
 }
 
@@ -39,31 +256,20 @@ struct SettingsSectionHeader: View {
 struct SettingsRow<Content: View>: View {
     let label: String
     let help: String?
+    let anchorID: String?
     let content: () -> Content
 
-    init(_ label: String, help: String? = nil, @ViewBuilder content: @escaping () -> Content) {
+    init(_ label: String, help: String? = nil, anchorID: String? = nil, @ViewBuilder content: @escaping () -> Content) {
         self.label = label
         self.help = help
+        self.anchorID = anchorID
         self.content = content
     }
 
     var body: some View {
-        HStack(alignment: .top, spacing: SettingsLayout.controlSpacing) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(label)
-                if let help {
-                    Text(help)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-            .frame(width: SettingsLayout.labelWidth, alignment: .leading)
-
+        SettingsAdaptiveRow(label, help: help, anchorID: anchorID) {
             content()
-
-            Spacer()
         }
-        .padding(.vertical, 4)
     }
 }
 
@@ -74,25 +280,15 @@ struct SettingsToggle: View {
     let help: String
     @Binding var isOn: Bool
     var disabled = false
+    var anchorID: String?
 
     var body: some View {
-        HStack(alignment: .top, spacing: SettingsLayout.controlSpacing) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(label)
-                Text(help)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            .frame(width: SettingsLayout.labelWidth, alignment: .leading)
-
+        SettingsAdaptiveRow(label, help: help, anchorID: anchorID) {
             Toggle("", isOn: $isOn)
                 .toggleStyle(.switch)
                 .labelsHidden()
                 .disabled(disabled)
-
-            Spacer()
         }
-        .padding(.vertical, 4)
         .accessibilityElement(children: .combine)
         .accessibilityLabel(label)
         .accessibilityHint(help)
@@ -113,32 +309,20 @@ struct SettingsSlider: View {
     var suffix = ""
     var width: CGFloat = 150
     var disabled = false
+    var anchorID: String?
 
     var body: some View {
-        HStack(alignment: .top, spacing: SettingsLayout.controlSpacing) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(label)
-                if let help {
-                    Text(help)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-            .frame(width: SettingsLayout.labelWidth, alignment: .leading)
-
-            HStack(spacing: 8) {
+        SettingsAdaptiveRow(label, help: help, anchorID: anchorID) {
+            HStack(spacing: Chau7Style.Spacing.small) {
                 Slider(value: $value, in: range, step: step)
-                    .frame(width: width)
+                    .settingsControlWidth(width)
                     .disabled(disabled)
                 Text(String(format: format, value) + suffix)
-                    .font(.system(.body, design: .monospaced))
+                    .font(.system(.callout, design: .monospaced))
                     .frame(width: 50, alignment: .trailing)
                     .foregroundStyle(disabled ? .secondary : .primary)
             }
-
-            Spacer()
         }
-        .padding(.vertical, 4)
         .accessibilityElement(children: .combine)
         .accessibilityLabel(label)
         .accessibilityHint(help ?? "")
@@ -165,29 +349,17 @@ struct SettingsStepper: View {
     let range: ClosedRange<Int>
     var suffix = ""
     var disabled = false
+    var anchorID: String?
 
     var body: some View {
-        HStack(alignment: .top, spacing: SettingsLayout.controlSpacing) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(label)
-                if let help {
-                    Text(help)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-            .frame(width: SettingsLayout.labelWidth, alignment: .leading)
-
+        SettingsAdaptiveRow(label, help: help, anchorID: anchorID) {
             Stepper(value: $value, in: range) {
                 Text(value.formatted() + suffix)
-                    .font(.system(.body, design: .monospaced))
+                    .font(.system(.callout, design: .monospaced))
                     .frame(width: 60, alignment: .trailing)
             }
             .disabled(disabled)
-
-            Spacer()
         }
-        .padding(.vertical, 4)
         .accessibilityElement(children: .combine)
         .accessibilityLabel(label)
         .accessibilityHint(help ?? "")
@@ -206,31 +378,19 @@ struct SettingsTextField: View {
     var monospaced = false
     var disabled = false
     var onSubmit: (() -> Void)?
+    var anchorID: String?
 
     var body: some View {
-        HStack(alignment: .top, spacing: SettingsLayout.controlSpacing) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(label)
-                if let help {
-                    Text(help)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-            .frame(width: SettingsLayout.labelWidth, alignment: .leading)
-
+        SettingsAdaptiveRow(label, help: help, anchorID: anchorID) {
             TextField(placeholder, text: $text)
                 .textFieldStyle(.roundedBorder)
-                .frame(width: width)
-                .font(monospaced ? .system(size: 12, design: .monospaced) : .body)
+                .settingsControlWidth(width)
+                .font(monospaced ? .system(size: 11, design: .monospaced) : .callout)
                 .disabled(disabled)
                 .onSubmit { onSubmit?() }
                 .accessibilityLabel(label)
                 .accessibilityHint(help ?? "")
-
-            Spacer()
         }
-        .padding(.vertical, 4)
     }
 }
 
@@ -247,45 +407,47 @@ struct SettingsDirectoryField: View {
     var buttonTitle = "Choose..."
     var buttonIcon: String? = "folder"
     var onSubmit: (() -> Void)?
+    var anchorID: String?
 
     var body: some View {
-        HStack(alignment: .top, spacing: SettingsLayout.controlSpacing) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(label)
-                if let help {
-                    Text(help)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
+        SettingsAdaptiveRow(label, help: help, anchorID: anchorID) {
+            ViewThatFits(in: .horizontal) {
+                directoryControls(axis: .horizontal)
+                directoryControls(axis: .vertical)
             }
-            .frame(width: SettingsLayout.labelWidth, alignment: .leading)
-
-            HStack(spacing: 8) {
-                TextField(placeholder, text: $text)
-                    .textFieldStyle(.roundedBorder)
-                    .frame(width: width)
-                    .font(monospaced ? .system(size: 12, design: .monospaced) : .body)
-                    .disabled(disabled)
-                    .onSubmit { onSubmit?() }
-                    .accessibilityLabel(label)
-                    .accessibilityHint(help ?? "")
-
-                Button(action: chooseDirectory) {
-                    if let buttonIcon {
-                        Label(buttonTitle, systemImage: buttonIcon)
-                    } else {
-                        Text(buttonTitle)
-                    }
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-                .disabled(disabled)
-                .accessibilityLabel(buttonTitle)
-            }
-
-            Spacer()
         }
-        .padding(.vertical, 4)
+    }
+
+    @ViewBuilder
+    private func directoryControls(axis: Axis.Set) -> some View {
+        let controls = Group {
+            TextField(placeholder, text: $text)
+                .textFieldStyle(.roundedBorder)
+                .settingsControlWidth(width)
+                .font(monospaced ? .system(size: 11, design: .monospaced) : .callout)
+                .disabled(disabled)
+                .onSubmit { onSubmit?() }
+                .accessibilityLabel(label)
+                .accessibilityHint(help ?? "")
+
+            Button(action: chooseDirectory) {
+                if let buttonIcon {
+                    Label(buttonTitle, systemImage: buttonIcon)
+                } else {
+                    Text(buttonTitle)
+                }
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+            .disabled(disabled)
+            .accessibilityLabel(buttonTitle)
+        }
+
+        if axis == .horizontal {
+            HStack(spacing: Chau7Style.Settings.inlineControlSpacing) { controls }
+        } else {
+            VStack(alignment: .leading, spacing: Chau7Style.Settings.inlineControlSpacing) { controls }
+        }
     }
 
     private func chooseDirectory() {
@@ -337,30 +499,18 @@ struct SettingsNumberField: View {
     var width: CGFloat = 100
     var disabled = false
     var onSubmit: (() -> Void)?
+    var anchorID: String?
 
     var body: some View {
-        HStack(alignment: .top, spacing: SettingsLayout.controlSpacing) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(label)
-                if let help {
-                    Text(help)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-            .frame(width: SettingsLayout.labelWidth, alignment: .leading)
-
+        SettingsAdaptiveRow(label, help: help, anchorID: anchorID) {
             TextField("", value: $value, format: .number)
                 .textFieldStyle(.roundedBorder)
-                .frame(width: width)
+                .settingsControlWidth(width)
                 .disabled(disabled)
                 .onSubmit { onSubmit?() }
                 .accessibilityLabel(label)
                 .accessibilityHint(help ?? "")
-
-            Spacer()
         }
-        .padding(.vertical, 4)
     }
 }
 
@@ -373,31 +523,19 @@ struct SettingsPicker<T: Hashable>: View {
     let options: [(value: T, label: String)]
     var width: CGFloat = 150
     var disabled = false
+    var anchorID: String?
 
     var body: some View {
-        HStack(alignment: .top, spacing: SettingsLayout.controlSpacing) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(label)
-                if let help {
-                    Text(help)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-            .frame(width: SettingsLayout.labelWidth, alignment: .leading)
-
+        SettingsAdaptiveRow(label, help: help, anchorID: anchorID) {
             Picker("", selection: $selection) {
                 ForEach(options, id: \.value) { option in
                     Text(option.label).tag(option.value)
                 }
             }
             .labelsHidden()
-            .frame(width: width)
+            .settingsControlWidth(width)
             .disabled(disabled)
-
-            Spacer()
         }
-        .padding(.vertical, 4)
         .accessibilityElement(children: .combine)
         .accessibilityLabel(label)
         .accessibilityHint(help ?? "")
@@ -412,22 +550,135 @@ struct SettingsInfoRow: View {
     let value: String
     var valueColor: Color = .primary
     var monospaced = false
+    var anchorID: String?
 
     var body: some View {
-        HStack(alignment: .top, spacing: SettingsLayout.controlSpacing) {
-            Text(label)
-                .frame(width: SettingsLayout.labelWidth, alignment: .leading)
-
+        SettingsAdaptiveRow(label, anchorID: anchorID) {
             Text(value)
-                .font(monospaced ? .system(.body, design: .monospaced) : .body)
+                .font(monospaced ? .system(.callout, design: .monospaced) : .callout)
                 .foregroundStyle(valueColor)
                 .textSelection(.enabled)
-
-            Spacer()
+                .fixedSize(horizontal: false, vertical: true)
         }
-        .padding(.vertical, 4)
         .accessibilityElement(children: .combine)
         .accessibilityLabel(String(format: L("accessibility.labelValue", "%@: %@"), label, value))
+    }
+}
+
+// MARK: - Settings Status Summary
+
+enum SettingsStatusTone {
+    case active
+    case paused
+    case enabled
+    case disabled
+    case neutral
+    case warning
+
+    var color: Color {
+        switch self {
+        case .active, .enabled:
+            return .green
+        case .paused, .disabled:
+            return .secondary
+        case .neutral:
+            return .accentColor
+        case .warning:
+            return .orange
+        }
+    }
+}
+
+struct SettingsStatusItem: Identifiable {
+    let id: String
+    let label: String
+    let value: String
+    var detail: String?
+    var systemImage: String
+    var tone: SettingsStatusTone
+
+    init(
+        id: String,
+        label: String,
+        value: String,
+        detail: String? = nil,
+        systemImage: String,
+        tone: SettingsStatusTone = .neutral
+    ) {
+        self.id = id
+        self.label = label
+        self.value = value
+        self.detail = detail
+        self.systemImage = systemImage
+        self.tone = tone
+    }
+}
+
+struct SettingsStatusGrid: View {
+    let items: [SettingsStatusItem]
+    var minimumColumnWidth: CGFloat = 165
+
+    private var columns: [GridItem] {
+        [
+            GridItem(
+                .adaptive(minimum: minimumColumnWidth),
+                spacing: Chau7Style.Settings.inlineControlSpacing,
+                alignment: .topLeading
+            )
+        ]
+    }
+
+    var body: some View {
+        LazyVGrid(columns: columns, alignment: .leading, spacing: Chau7Style.Settings.inlineControlSpacing) {
+            ForEach(items) { item in
+                statusCell(item)
+            }
+        }
+        .padding(Chau7Style.Settings.cardPadding)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color(NSColor.controlBackgroundColor))
+        .cornerRadius(Chau7Style.Radius.medium)
+    }
+
+    private func statusCell(_ item: SettingsStatusItem) -> some View {
+        HStack(alignment: .top, spacing: Chau7Style.Spacing.xSmall) {
+            Image(systemName: item.systemImage)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(item.tone.color)
+                .frame(width: 14, alignment: .center)
+                .accessibilityHidden(true)
+
+            VStack(alignment: .leading, spacing: Chau7Style.Spacing.xxxSmall) {
+                Text(item.label)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                HStack(alignment: .firstTextBaseline, spacing: Chau7Style.Spacing.xxSmall) {
+                    Circle()
+                        .fill(item.tone.color)
+                        .frame(width: 6, height: 6)
+                        .accessibilityHidden(true)
+                    Text(item.value)
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(item.tone.color)
+                        .textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                if let detail = item.detail, !detail.isEmpty {
+                    Text(detail)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(String(format: L("accessibility.labelValue", "%@: %@"), item.label, item.value))
+        .accessibilityHint(item.detail ?? "")
     }
 }
 
@@ -442,6 +693,9 @@ struct SettingsButtonRow: View {
         let title: String
         var icon: String?
         var style: ButtonType = .bordered
+        var role: ButtonRole?
+        var isDisabled = false
+        var accessibilityLabel: String?
         var action: () -> Void
 
         enum ButtonType {
@@ -450,20 +704,32 @@ struct SettingsButtonRow: View {
     }
 
     var body: some View {
-        HStack(spacing: 12) {
-            if alignment == .trailing {
-                Spacer()
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: Chau7Style.Settings.looseControlSpacing) {
+                if alignment == .trailing {
+                    Spacer(minLength: 0)
+                }
+
+                ForEach(buttons) { button in
+                    makeButton(button)
+                }
+
+                if alignment == .leading {
+                    Spacer(minLength: 0)
+                }
             }
 
-            ForEach(buttons) { button in
-                makeButton(button)
+            VStack(alignment: alignment, spacing: Chau7Style.Settings.inlineControlSpacing) {
+                ForEach(buttons) { button in
+                    makeButton(button)
+                }
             }
-
-            if alignment == .leading {
-                Spacer()
-            }
+            .frame(
+                maxWidth: .infinity,
+                alignment: alignment == .trailing ? .trailing : .leading
+            )
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, Chau7Style.Settings.rowVerticalPadding)
     }
 
     @ViewBuilder
@@ -478,16 +744,56 @@ struct SettingsButtonRow: View {
 
         switch button.style {
         case .bordered:
-            Button(action: button.action) { label }
+            Button(role: button.role, action: button.action) { label }
                 .buttonStyle(.bordered)
+                .controlSize(.small)
+                .disabled(button.isDisabled)
+                .accessibilityLabel(button.accessibilityLabel ?? button.title)
         case .borderedProminent:
-            Button(action: button.action) { label }
+            Button(role: button.role, action: button.action) { label }
                 .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+                .disabled(button.isDisabled)
+                .accessibilityLabel(button.accessibilityLabel ?? button.title)
         case .plain:
-            Button(action: button.action) { label }
+            Button(role: button.role, action: button.action) { label }
                 .buttonStyle(.plain)
                 .foregroundColor(.accentColor)
+                .controlSize(.small)
+                .disabled(button.isDisabled)
+                .accessibilityLabel(button.accessibilityLabel ?? button.title)
         }
+    }
+}
+
+// MARK: - Settings Empty State
+
+struct SettingsEmptyStateView: View {
+    let title: String
+    let message: String
+    let systemImage: String
+
+    var body: some View {
+        VStack(spacing: Chau7Style.Settings.inlineControlSpacing) {
+            Image(systemName: systemImage)
+                .font(.title2)
+                .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
+            Text(title)
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+            Text(message)
+                .font(.caption)
+                .foregroundStyle(.tertiary)
+                .multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: .infinity, alignment: .center)
+        .padding(.vertical, Chau7Style.Settings.contentPadding)
+        .padding(.horizontal, Chau7Style.Settings.contentPadding)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(title)
+        .accessibilityHint(message)
     }
 }
 
@@ -507,26 +813,41 @@ struct SettingsCard<Content: View>: View {
     }
 
     var body: some View {
-        HStack {
-            content()
+        ViewThatFits(in: .horizontal) {
+            HStack {
+                content()
 
-            Spacer()
+                Spacer(minLength: Chau7Style.Spacing.medium)
 
-            if let action = action, let label = actionLabel {
-                Button(action: action) {
-                    if let icon = actionIcon {
-                        Label(label, systemImage: icon)
-                    } else {
-                        Text(label)
-                    }
+                if let action = action, let label = actionLabel {
+                    cardButton(action: action, label: label)
                 }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.small)
+            }
+
+            VStack(alignment: .leading, spacing: Chau7Style.Settings.inlineControlSpacing) {
+                content()
+
+                if let action = action, let label = actionLabel {
+                    cardButton(action: action, label: label)
+                }
             }
         }
-        .padding(12)
+        .padding(Chau7Style.Settings.cardPadding)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color(NSColor.controlBackgroundColor))
-        .cornerRadius(8)
+        .cornerRadius(Chau7Style.Radius.medium)
+    }
+
+    private func cardButton(action: @escaping () -> Void, label: String) -> some View {
+        Button(action: action) {
+            if let icon = actionIcon {
+                Label(label, systemImage: icon)
+            } else {
+                Text(label)
+            }
+        }
+        .buttonStyle(.borderedProminent)
+        .controlSize(.small)
     }
 }
 
@@ -537,16 +858,21 @@ struct SettingsHint: View {
     let text: String
 
     var body: some View {
-        HStack(spacing: 6) {
+        HStack(alignment: .top, spacing: Chau7Style.Spacing.xSmall) {
             Image(systemName: icon)
                 .font(.system(size: 10))
                 .foregroundColor(.secondary)
+                .padding(.top, Chau7Style.Spacing.xxxSmall)
+                .accessibilityHidden(true)
             Text(text)
                 .font(.system(size: 11))
                 .foregroundColor(.secondary)
                 .textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
         }
-        .padding(.vertical, 2)
+        .padding(.vertical, Chau7Style.Spacing.xxxSmall)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(text)
     }
 }
 
@@ -565,10 +891,11 @@ struct SettingsDescription: View {
 
     var body: some View {
         Text(text)
-            .font(.caption)
+            .font(.caption2)
             .foregroundStyle(.secondary)
             .textSelection(.enabled)
-            .padding(.vertical, 2)
+            .fixedSize(horizontal: false, vertical: true)
+            .padding(.vertical, Chau7Style.Spacing.xxxSmall)
     }
 }
 
@@ -579,19 +906,23 @@ struct SettingsShortcutRow: View {
     let shortcut: String
 
     var body: some View {
-        HStack {
-            Text(label)
-                .foregroundStyle(.secondary)
-            Spacer()
-            Text(shortcut)
-                .font(.system(.caption, design: .monospaced))
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
-                .background(Color.secondary.opacity(0.1))
-                .cornerRadius(4)
-                .textSelection(.enabled)
+        ViewThatFits(in: .horizontal) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(label)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: Chau7Style.Spacing.medium)
+                shortcutBadge
+            }
+
+            VStack(alignment: .leading, spacing: Chau7Style.Spacing.xSmall) {
+                Text(label)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                shortcutBadge
+            }
         }
-        .padding(.vertical, 2)
+        .padding(.vertical, Chau7Style.Spacing.xxxSmall)
         .accessibilityElement(children: .combine)
         .accessibilityLabel(
             String(
@@ -600,6 +931,16 @@ struct SettingsShortcutRow: View {
                 shortcut
             )
         )
+    }
+
+    private var shortcutBadge: some View {
+        Text(shortcut)
+            .font(.system(.caption, design: .monospaced))
+            .padding(.horizontal, Chau7Style.Spacing.small)
+            .padding(.vertical, Chau7Style.Spacing.xxSmall)
+            .background(Color.secondary.opacity(0.1))
+            .cornerRadius(Chau7Style.Radius.xSmall)
+            .textSelection(.enabled)
     }
 }
 
@@ -611,23 +952,42 @@ struct SettingsDetectionRow: View {
     let color: Color
 
     var body: some View {
-        HStack {
-            Circle()
-                .fill(color)
-                .frame(width: 10, height: 10)
-                .accessibilityHidden(true)
-            Text(name)
-                .fontWeight(.medium)
-            Spacer()
-            Text(commands)
-                .font(.system(.caption, design: .monospaced))
-                .foregroundStyle(.secondary)
-                .textSelection(.enabled)
+        ViewThatFits(in: .horizontal) {
+            HStack(alignment: .firstTextBaseline) {
+                nameLabel
+                Spacer(minLength: Chau7Style.Spacing.medium)
+                commandsText
+            }
+
+            VStack(alignment: .leading, spacing: Chau7Style.Spacing.xxSmall) {
+                nameLabel
+                commandsText
+            }
         }
-        .padding(.vertical, 2)
+        .padding(.vertical, Chau7Style.Spacing.xxxSmall)
         .accessibilityElement(children: .combine)
         .accessibilityLabel(String(format: L("accessibility.aiDetection", "%@ AI detection"), name))
         .accessibilityHint(String(format: L("accessibility.commands", "Commands: %@"), commands))
+    }
+
+    private var nameLabel: some View {
+        HStack(spacing: Chau7Style.Spacing.xSmall) {
+            Circle()
+                .fill(color)
+                .frame(width: Chau7Style.Control.statusDot, height: Chau7Style.Control.statusDot)
+                .accessibilityHidden(true)
+            Text(name)
+                .fontWeight(.medium)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private var commandsText: some View {
+        Text(commands)
+            .font(.system(.caption, design: .monospaced))
+            .foregroundStyle(.secondary)
+            .textSelection(.enabled)
+            .fixedSize(horizontal: false, vertical: true)
     }
 }
 

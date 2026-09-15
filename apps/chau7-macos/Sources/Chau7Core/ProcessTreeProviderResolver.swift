@@ -76,33 +76,28 @@ public enum ProcessTreeProviderResolver {
         return parse(psArgsOutput: output)
     }
 
-    /// Walks descendants of `shellPid` (BFS) and returns the deepest match against
-    /// `AIToolRegistry.commandNameMap`. If `snapshot` is nil, captures one internally.
+    /// Walks descendants of `shellPid` (BFS) and returns the nearest match against
+    /// `AIToolRegistry.commandNameMap`. The nearest AI process is the agent that owns
+    /// the shell session; a deeper match may be a child tool launched by that agent.
+    /// If `snapshot` is nil, captures one internally.
     public static func resolve(shellPid: pid_t, snapshot: Snapshot? = nil) -> String? {
         guard shellPid > 0 else { return nil }
         guard let snapshot = snapshot ?? captureSnapshot() else { return nil }
 
-        var bestMatch: (depth: Int, name: String)?
         var queue: [(pid: pid_t, depth: Int)] = (snapshot.childrenOf[shellPid] ?? [])
             .map { ($0, 1) }
 
         while !queue.isEmpty {
             let (pid, depth) = queue.removeFirst()
             if let match = matchProcess(comm: snapshot.commOf[pid], args: snapshot.argsOf[pid]) {
-                if let current = bestMatch {
-                    if depth > current.depth {
-                        bestMatch = (depth, match)
-                    }
-                } else {
-                    bestMatch = (depth, match)
-                }
+                return match
             }
             if let grandchildren = snapshot.childrenOf[pid] {
                 queue.append(contentsOf: grandchildren.map { ($0, depth + 1) })
             }
         }
 
-        return bestMatch?.name
+        return nil
     }
 
     // MARK: - Snapshot building

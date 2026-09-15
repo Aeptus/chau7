@@ -96,9 +96,7 @@ public struct APICallEvent: Identifiable, Codable, Equatable, Sendable {
     }
 
     public var formattedTokens: String {
-        let formatter = NumberFormatter()
-        formatter.numberStyle = .decimal
-        return formatter.string(from: NSNumber(value: totalTokens)) ?? "\(totalTokens)"
+        CountFormat.abbreviated(totalBillableTokens)
     }
 
     public var formattedHour: String {

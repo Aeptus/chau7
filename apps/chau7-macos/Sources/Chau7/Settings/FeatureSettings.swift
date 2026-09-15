@@ -47,7 +47,7 @@ struct KeyboardShortcut: Codable, Identifiable, Equatable {
         KeyboardShortcut(action: "previousTab", key: "[", modifiers: ["cmd", "shift"]),
         KeyboardShortcut(action: "findPrevious", key: "g", modifiers: ["cmd", "shift"]),
         KeyboardShortcut(action: "clear", key: "k", modifiers: ["cmd", "opt"]),
-        KeyboardShortcut(action: "snippets", key: "s", modifiers: ["cmd", "opt"]),
+        KeyboardShortcut(action: "snippets", key: ";", modifiers: ["cmd"]),
         KeyboardShortcut(action: "renameTab", key: "r", modifiers: ["cmd", "opt"]),
         KeyboardShortcut(action: "debugConsole", key: "l", modifiers: ["cmd", "opt"]),
         KeyboardShortcut(action: "splitHorizontal", key: "d", modifiers: ["cmd"]),
@@ -191,7 +191,7 @@ struct NotificationSettings: Equatable {
             NotificationActionConfig(actionType: .dockBounce, enabled: true, config: ["critical": "false"]),
             NotificationActionConfig(actionType: .styleTab, enabled: true, config: [
                 "style": "error",
-                "autoClearSeconds": "60"
+                "autoClearSeconds": "0"
             ])
         ],
         "ai_coding.permission": [
@@ -243,7 +243,7 @@ struct NotificationSettings: Equatable {
             NotificationActionConfig(actionType: .dockBounce, enabled: true, config: ["critical": "false"]),
             NotificationActionConfig(actionType: .styleTab, enabled: true, config: [
                 "style": "error",
-                "autoClearSeconds": "60"
+                "autoClearSeconds": "0"
             ])
         ],
         "ai_coding.idle": []
@@ -1002,6 +1002,24 @@ final class FeatureSettings {
 
     // MARK: - iCloud Sync (NEW)
 
+    enum SettingsCloudSyncResult: Equatable {
+        case skippedInTests
+        case disabled
+        case exportFailed
+        case syncFailed
+        case synced
+    }
+
+    enum SettingsCloudRestoreResult: Equatable {
+        case skippedInTests
+        case disabled
+        case missing
+        case notNewer
+        case restored
+        case restoredLegacy
+        case invalid
+    }
+
     var iCloudSyncEnabled: Bool {
         didSet {
             UserDefaults.standard.set(iCloudSyncEnabled, forKey: Keys.iCloudSyncEnabled)
@@ -1088,6 +1106,12 @@ final class FeatureSettings {
     var showTabBroadcastIndicator: Bool {
         get { tabDisplayStore.showTabBroadcastIndicator }
         set { tabDisplayStore.showTabBroadcastIndicator = newValue }
+    }
+
+    /// Show provider service-health warnings around the focused AI tab.
+    var showProviderHealthBorder: Bool {
+        get { tabDisplayStore.showProviderHealthBorder }
+        set { tabDisplayStore.showProviderHealthBorder = newValue }
     }
 
     // MARK: - Hover Card Sections (forwarded to TabDisplaySettingsStore)
@@ -1448,6 +1472,11 @@ final class FeatureSettings {
         set { terminalBehaviorStore.isUsageQuotaWarningsEnabled = newValue }
     }
 
+    var regionalNumberFormat: RegionalNumberFormat {
+        get { terminalBehaviorStore.regionalNumberFormat }
+        set { terminalBehaviorStore.regionalNumberFormat = newValue }
+    }
+
     var bellEnabled: Bool {
         get { terminalBehaviorStore.bellEnabled }
         set { terminalBehaviorStore.bellEnabled = newValue }
@@ -1795,7 +1824,7 @@ final class FeatureSettings {
         static let apiAnalyticsPort = "analytics.api.port"
         static let apiAnalyticsLogPrompts = "analytics.api.logPrompts"
         static let apiAnalyticsIncludeOpenAI = "analytics.api.includeOpenAI"
-        // Token Optimization (CTO), MCP, and Remote Control live in
+        // Context Optimization, Agent Control (MCP), and Remote Access live in
         // MCPRemoteSettingsStore.Keys
         // Bug Report
         static let bugReportContactName = "bugReport.contactName"
@@ -1891,7 +1920,7 @@ final class FeatureSettings {
         self.apiAnalyticsLogPrompts = defaults.object(forKey: Keys.apiAnalyticsLogPrompts) as? Bool ?? false
         self.apiAnalyticsIncludeOpenAI = defaults.object(forKey: Keys.apiAnalyticsIncludeOpenAI) as? Bool ?? true
 
-        // Token Optimization, MCP, Remote Control, and CTO Integration live
+        // Context Optimization, Agent Control (MCP), and Remote Access live
         // in MCPRemoteSettingsStore (created at the top of this init).
 
         let integration = Self.integrationSettings(from: defaults)
@@ -2040,8 +2069,11 @@ final class FeatureSettings {
         var alwaysShowToolbarInFullscreen: Bool?
         var appTheme: String?
         var launchAtLogin: Bool?
+        var menuBarOnlyMode: Bool?
+        var windowFloating: Bool?
         var appLanguage: String?
         var windowOpacity: Double
+        var enableLigatures: Bool?
         var cursorStyle: String
         var cursorBlink: Bool
         var scrollbackLines: Int
@@ -2066,6 +2098,7 @@ final class FeatureSettings {
         var showTabCTOIndicator: Bool?
         var allowTabCTOToggle: Bool?
         var showTabBroadcastIndicator: Bool?
+        var showProviderHealthBorder: Bool? = nil
         // Hover Card
         var hoverCardShowDirectory: Bool?
         var hoverCardShowGitBranch: Bool?
@@ -2165,8 +2198,11 @@ final class FeatureSettings {
             alwaysShowToolbarInFullscreen: alwaysShowToolbarInFullscreen,
             appTheme: appTheme.rawValue,
             launchAtLogin: launchAtLogin,
+            menuBarOnlyMode: menuBarOnlyMode,
+            windowFloating: windowFloating,
             appLanguage: appLanguage.rawValue,
             windowOpacity: windowOpacity,
+            enableLigatures: enableLigatures,
             cursorStyle: cursorStyle,
             cursorBlink: cursorBlink,
             scrollbackLines: scrollbackLines,
@@ -2191,6 +2227,7 @@ final class FeatureSettings {
             showTabCTOIndicator: showTabCTOIndicator,
             allowTabCTOToggle: allowTabCTOToggle,
             showTabBroadcastIndicator: showTabBroadcastIndicator,
+            showProviderHealthBorder: showProviderHealthBorder,
             hoverCardShowDirectory: hoverCardShowDirectory,
             hoverCardShowGitBranch: hoverCardShowGitBranch,
             hoverCardShowShellIntegration: hoverCardShowShellIntegration,
@@ -2313,11 +2350,14 @@ final class FeatureSettings {
             appTheme = theme
         }
         launchAtLogin = imported.launchAtLogin ?? launchAtLogin
+        menuBarOnlyMode = imported.menuBarOnlyMode ?? menuBarOnlyMode
+        windowFloating = imported.windowFloating ?? windowFloating
         if let langRaw = imported.appLanguage,
            let lang = AppLanguage(rawValue: langRaw) {
             appLanguage = lang
         }
         windowOpacity = imported.windowOpacity
+        enableLigatures = imported.enableLigatures ?? enableLigatures
         cursorStyle = imported.cursorStyle
         cursorBlink = imported.cursorBlink
         scrollbackLines = imported.scrollbackLines
@@ -2357,6 +2397,7 @@ final class FeatureSettings {
         showTabCTOIndicator = imported.showTabCTOIndicator ?? true
         allowTabCTOToggle = imported.allowTabCTOToggle ?? true
         showTabBroadcastIndicator = imported.showTabBroadcastIndicator ?? true
+        showProviderHealthBorder = imported.showProviderHealthBorder ?? true
         if let v = imported.hoverCardShowDirectory { hoverCardShowDirectory = v }
         if let v = imported.hoverCardShowGitBranch { hoverCardShowGitBranch = v }
         if let v = imported.hoverCardShowShellIntegration { hoverCardShowShellIntegration = v }
@@ -2478,12 +2519,11 @@ final class FeatureSettings {
     func resetAppearanceToDefaults() {
         resetFontColorsToDefaults()
         resetDisplayToDefaults()
+        resetWindowsToDefaults()
     }
 
     func resetFontColorsToDefaults() {
         appearanceStore.resetToDefaults()
-        windowOpacity = 1.0
-        appTheme = .system
         enableLigatures = false
     }
 
@@ -2494,7 +2534,16 @@ final class FeatureSettings {
         isJSONPrettyPrintEnabled = false
         isLineTimestampsEnabled = false
         timestampFormat = "HH:mm:ss"
+    }
+
+    func resetWindowsToDefaults() {
+        appTheme = .system
+        menuBarOnlyMode = false
+        windowFloating = false
+        windowOpacity = 1.0
+        alwaysShowToolbarInFullscreen = false
         isSplitPanesEnabled = true
+        resetOverlayOffsets()
     }
 
     func resetTerminalToDefaults() {
@@ -2561,11 +2610,17 @@ final class FeatureSettings {
         UserDefaults.standard.set(date.timeIntervalSince1970, forKey: Self.lastSyncedSettingsExportedAtKey)
     }
 
-    private func pushSettingsToiCloud(_ data: Data, label: String) {
+    @discardableResult
+    private func pushSettingsToiCloud(_ data: Data, label: String) -> Bool {
         NSUbiquitousKeyValueStore.default.set(data, forKey: iCloudKey)
-        NSUbiquitousKeyValueStore.default.synchronize()
-        recordSyncedSettingsTimestamp(Date())
-        Log.info("Settings synced to iCloud (\(label))")
+        let synchronized = NSUbiquitousKeyValueStore.default.synchronize()
+        if synchronized {
+            recordSyncedSettingsTimestamp(Date())
+            Log.info("Settings synced to iCloud (\(label))")
+        } else {
+            Log.warn("Failed to synchronize settings to iCloud (\(label))")
+        }
+        return synchronized
     }
 
     func syncToiCloud() {
@@ -2579,7 +2634,7 @@ final class FeatureSettings {
         let workItem = DispatchWorkItem { [weak self] in
             guard let self = self, iCloudSyncEnabled else { return }
             guard let data = exportSettings() else { return }
-            pushSettingsToiCloud(data, label: "debounced")
+            _ = pushSettingsToiCloud(data, label: "debounced")
         }
 
         iCloudSyncWorkItem = workItem
@@ -2587,20 +2642,22 @@ final class FeatureSettings {
     }
 
     /// Force immediate sync without debouncing (e.g., on app quit)
-    func forceSyncToiCloud() {
-        guard !RuntimeIsolation.isIsolatedTestMode() else { return }
-        guard iCloudSyncEnabled else { return }
+    @discardableResult
+    func forceSyncToiCloud() -> SettingsCloudSyncResult {
+        guard !RuntimeIsolation.isIsolatedTestMode() else { return .skippedInTests }
+        guard iCloudSyncEnabled else { return .disabled }
         iCloudSyncWorkItem?.cancel()
-        guard let data = exportSettings() else { return }
-        pushSettingsToiCloud(data, label: "forced")
+        guard let data = exportSettings() else { return .exportFailed }
+        return pushSettingsToiCloud(data, label: "forced") ? .synced : .syncFailed
     }
 
-    func syncFromiCloud() {
-        guard !RuntimeIsolation.isIsolatedTestMode() else { return }
-        guard iCloudSyncEnabled else { return }
+    @discardableResult
+    func syncFromiCloud() -> SettingsCloudRestoreResult {
+        guard !RuntimeIsolation.isIsolatedTestMode() else { return .skippedInTests }
+        guard iCloudSyncEnabled else { return .disabled }
         guard let data = NSUbiquitousKeyValueStore.default.data(forKey: iCloudKey) else {
             Log.info("No iCloud settings found")
-            return
+            return .missing
         }
         // Freshness guard: whole-blob last-writer-wins with no comparison let
         // an old device's blob silently clobber newer local settings. Apply
@@ -2610,21 +2667,24 @@ final class FeatureSettings {
             let lastSynced = UserDefaults.standard.double(forKey: Self.lastSyncedSettingsExportedAtKey)
             if lastSynced > 0, incomingExportedAt.timeIntervalSince1970 <= lastSynced {
                 Log.info("Skipping iCloud settings import: incoming export is not newer than the last synced state")
-                return
+                return .notNewer
             }
             if importSettings(from: data) {
                 recordSyncedSettingsTimestamp(incomingExportedAt)
                 Log.info("Settings restored from iCloud")
+                return .restored
             } else {
                 Log.warn("Failed to restore settings from iCloud")
+                return .invalid
             }
-            return
         }
         // Pre-timestamp blob: keep legacy apply-always behavior.
         if importSettings(from: data) {
             Log.info("Settings restored from iCloud (legacy untimestamped blob)")
+            return .restoredLegacy
         } else {
             Log.warn("Failed to restore settings from iCloud")
+            return .invalid
         }
     }
 
@@ -2643,7 +2703,7 @@ final class FeatureSettings {
         guard !RuntimeIsolation.isIsolatedTestMode() else { return }
         guard iCloudSyncEnabled else { return }
         DispatchQueue.main.async { [weak self] in
-            self?.syncFromiCloud()
+            _ = self?.syncFromiCloud()
         }
     }
 }
@@ -2716,8 +2776,11 @@ extension FeatureSettings {
             alwaysShowTabBar: true,
             appTheme: "system",
             launchAtLogin: false,
+            menuBarOnlyMode: false,
+            windowFloating: false,
             appLanguage: "system",
             windowOpacity: 1.0,
+            enableLigatures: false,
             cursorStyle: "block",
             cursorBlink: true,
             scrollbackLines: 10000,

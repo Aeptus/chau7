@@ -10,6 +10,9 @@ public struct VisibleTerminalPollingContext: Equatable {
     public var isTerminalStarted: Bool
     public var notifyUpdateChanges: Bool
     public var isShellBootstrapPending: Bool
+    /// A remote viewer is actively subscribed to this terminal's byte stream.
+    /// This affects PTY draining only; it must not make the hidden Mac view render.
+    public var requiresRemoteRealtimeDrain: Bool
     public var allowsLivePresentation: Bool
     public var isHidden: Bool
     public var hasVisibleWindow: Bool
@@ -19,6 +22,7 @@ public struct VisibleTerminalPollingContext: Equatable {
         isTerminalStarted: Bool,
         notifyUpdateChanges: Bool,
         isShellBootstrapPending: Bool,
+        requiresRemoteRealtimeDrain: Bool = false,
         allowsLivePresentation: Bool,
         isHidden: Bool,
         hasVisibleWindow: Bool,
@@ -27,6 +31,7 @@ public struct VisibleTerminalPollingContext: Equatable {
         self.isTerminalStarted = isTerminalStarted
         self.notifyUpdateChanges = notifyUpdateChanges
         self.isShellBootstrapPending = isShellBootstrapPending
+        self.requiresRemoteRealtimeDrain = requiresRemoteRealtimeDrain
         self.allowsLivePresentation = allowsLivePresentation
         self.isHidden = isHidden
         self.hasVisibleWindow = hasVisibleWindow
@@ -36,12 +41,18 @@ public struct VisibleTerminalPollingContext: Equatable {
 
 public enum VisibleTerminalPollingPolicy {
     public static func mode(for context: VisibleTerminalPollingContext) -> VisibleTerminalPollingMode {
-        guard context.isTerminalStarted, context.notifyUpdateChanges else {
+        guard context.isTerminalStarted else {
             return .backgroundDrain
         }
         // Shell bootstrap needs active polling to detect first output quickly.
-        if context.isShellBootstrapPending {
+        // The terminal selected on a remote client needs the same event-driven
+        // PTY ingestion even when its local Mac surface is hidden. Rendering
+        // remains independently disabled by `notifyUpdateChanges`.
+        if context.isShellBootstrapPending || context.requiresRemoteRealtimeDrain {
             return .eventDrain
+        }
+        guard context.notifyUpdateChanges else {
+            return .backgroundDrain
         }
         guard context.allowsLivePresentation,
               !context.isHidden,

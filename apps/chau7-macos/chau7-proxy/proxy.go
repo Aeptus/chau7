@@ -24,6 +24,8 @@ type ProxyHandler struct {
 	mockup      *MockupClient      // v1.2
 	injector    *Injector
 	client      *http.Client
+	attribution *AttributionDiagnostics
+	tokenUsage  *TokenEstimateDiagnostics
 }
 
 // NewProxyHandler creates a new proxy handler
@@ -36,19 +38,33 @@ func NewProxyHandler(config *Config, db *Database, ipc *IPCNotifier, taskManager
 		baseline:    baseline,
 		mockup:      mockup,
 		injector:    injector,
-		client: &http.Client{
-			Timeout: 5 * time.Minute, // Long timeout for streaming responses
-			Transport: &http.Transport{
-				MaxIdleConns:        100,
-				MaxIdleConnsPerHost: 10,
-				IdleConnTimeout:     90 * time.Second,
-			},
+		attribution: &AttributionDiagnostics{},
+		tokenUsage:  &TokenEstimateDiagnostics{},
+		client:      newUpstreamHTTPClient(),
+	}
+}
+
+// newUpstreamHTTPClient deliberately has no total request timeout. Provider
+// inference can legitimately take longer than five minutes before headers or
+// while streaming a response. The inbound request context remains the owner of
+// cancellation, so disconnecting Claude still stops the upstream operation.
+func newUpstreamHTTPClient() *http.Client {
+	return &http.Client{
+		Transport: &http.Transport{
+			MaxIdleConns:        100,
+			MaxIdleConnsPerHost: 10,
+			IdleConnTimeout:     90 * time.Second,
 		},
 	}
 }
 
 // ServeHTTP handles incoming HTTP requests
 func (p *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if err := applyPathCorrelation(r); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
 	// WebSocket upgrade: tunnel bidirectionally instead of request-response proxy.
 	// Codex CLI uses WebSocket transport for the Responses API; stripping the
 	// Upgrade header forces a fallback to HTTPS POST which may fail auth checks
@@ -111,7 +127,7 @@ func (p *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Create upstream request
-	upstream, err := http.NewRequest(r.Method, upstreamURL, bytes.NewReader(bodyBytes))
+	upstream, err := http.NewRequestWithContext(r.Context(), r.Method, upstreamURL, bytes.NewReader(bodyBytes))
 	if err != nil {
 		p.logError(headers, provider, model, r.URL.Path, err.Error(), startTime)
 		http.Error(w, "Failed to create upstream request", http.StatusInternalServerError)
@@ -139,9 +155,18 @@ func (p *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var responseBuffer bytes.Buffer
 	fbr := &firstByteReader{reader: resp.Body, start: startTime}
 	tee := io.TeeReader(fbr, &responseBuffer)
+	isStreaming := IsStreamingRequest(provider, bodyBytes) ||
+		strings.HasPrefix(strings.ToLower(resp.Header.Get("Content-Type")), "text/event-stream")
 
-	// Copy response body to client
-	bytesWritten, err := io.Copy(w, tee)
+	// Copy response body to the client. Active SSE responses must flush every
+	// upstream read so provider events and keepalives reach the CLI immediately.
+	// Without this wrapper, net/http may buffer small chunks long enough for the
+	// provider client to declare an otherwise healthy stream stalled.
+	destination := io.Writer(w)
+	if isStreaming {
+		destination = streamingResponseWriter{response: w}
+	}
+	bytesWritten, err := io.Copy(destination, tee)
 	if err != nil {
 		log.Printf("[WARN] Error copying response: %v", err)
 	}
@@ -154,8 +179,6 @@ func (p *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	respBody := responseBuffer.Bytes()
 	var respMeta ResponseMetadata
 
-	// Check if this was a streaming response
-	isStreaming := IsStreamingRequest(provider, bodyBytes)
 	if isStreaming {
 		respMeta = ParseStreamingChunks(provider, respBody)
 	} else {
@@ -167,8 +190,14 @@ func (p *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		model = respMeta.Model
 	}
 
-	// Warn and estimate when metadata extraction fails on successful responses
-	if resp.StatusCode == 200 {
+	// Warn and estimate when metadata extraction fails on successful responses.
+	//
+	// Restricted to endpoints that actually bill for model output. A catalog
+	// listing has no model and no usage by definition, so warning about the
+	// absence was noise (97% of all log lines) and estimating from its body
+	// length was worse: it booked phantom tokens and cost against every poll.
+	usedTokenEstimate := false
+	if resp.StatusCode == 200 && IsTokenBillableEndpoint(provider, r.URL.Path) {
 		if model == "" {
 			log.Printf("[WARN] %s %s: model not extracted (streaming=%v, bodyLen=%d)",
 				provider, r.URL.Path, isStreaming, len(respBody))
@@ -182,11 +211,15 @@ func (p *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				estimatedOutput = estimatedOutput * 6 / 10
 			}
 			if estimatedInput > 0 || estimatedOutput > 0 {
-				log.Printf("[WARN] %s %s: no tokens extracted, using estimate in:~%d out:~%d (streaming=%v, reqLen=%d, respLen=%d)",
-					provider, r.URL.Path, estimatedInput, estimatedOutput, isStreaming, len(bodyBytes), len(respBody))
 				respMeta.InputTokens = estimatedInput
 				respMeta.OutputTokens = estimatedOutput
+				usedTokenEstimate = true
 			}
+		}
+		key := string(provider) + " " + r.URL.Path
+		if summary, shouldReport := p.tokenUsage.Observe(key, usedTokenEstimate, time.Now()); shouldReport {
+			log.Printf("[WARN] token usage extraction summary: provider=%s endpoint=%s total=%d estimated=%d estimated_pct=%.1f streaming=%v req_bytes=%d resp_bytes=%d",
+				provider, r.URL.Path, summary.Total, summary.Estimated, summary.EstimatedPercent(), isStreaming, len(bodyBytes), len(respBody))
 		}
 	}
 
@@ -265,7 +298,12 @@ func (p *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		callID, err = p.db.InsertAPICallWithTask(record, actualTaskID, headers.TabID, headers.Project)
 	}
 	if err != nil {
-		log.Printf("[WARN] Failed to log API call: %v", err)
+		// Reached only after the busy retries are exhausted, so this is a real
+		// dropped call: it will be missing from every analytics surface.
+		log.Printf("[WARN] Dropped API call record after retries (%s %s): %v",
+			provider, r.URL.Path, err)
+	} else {
+		p.recordAttribution(headers.Project)
 	}
 
 	// If this call was made during candidate grace period, track it for potential reassignment
@@ -309,6 +347,23 @@ func (p *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	_ = bytesWritten // Silence unused variable warning
 }
 
+// streamingResponseWriter preserves ordinary ResponseWriter semantics while
+// making each copied SSE chunk visible to the downstream client immediately.
+type streamingResponseWriter struct {
+	response http.ResponseWriter
+}
+
+func (w streamingResponseWriter) Write(chunk []byte) (int, error) {
+	written, err := w.response.Write(chunk)
+	if err != nil {
+		return written, err
+	}
+	if flusher, ok := w.response.(http.Flusher); ok {
+		flusher.Flush()
+	}
+	return written, nil
+}
+
 // logError logs an error and stores it in the database
 func (p *ProxyHandler) logError(headers *CorrelationHeaders, provider Provider, model, endpoint, errMsg string, startTime time.Time) {
 	log.Printf("[ERROR] %s %s: %s", provider, endpoint, errMsg)
@@ -326,6 +381,28 @@ func (p *ProxyHandler) logError(headers *CorrelationHeaders, provider Provider, 
 
 	if _, err := p.db.InsertAPICallWithTask(record, "", headers.TabID, headers.Project); err != nil {
 		log.Printf("[WARN] Failed to log error: %v", err)
+	} else {
+		p.recordAttribution(headers.Project)
+	}
+}
+
+func (p *ProxyHandler) recordAttribution(projectPath string) {
+	snapshot, shouldReport := p.attribution.Record(projectPath)
+	if !shouldReport {
+		return
+	}
+
+	message := fmt.Sprintf(
+		"proxy attribution: attributed=%d unattributed=%d total=%d ratio=%.1f%%",
+		snapshot.Attributed,
+		snapshot.Unattributed,
+		snapshot.Total,
+		snapshot.Ratio()*100,
+	)
+	if snapshot.Unattributed > 0 {
+		log.Printf("[WARN] %s", message)
+	} else {
+		log.Printf("[INFO] %s", message)
 	}
 }
 
@@ -444,6 +521,12 @@ func (p *ProxyHandler) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Bad upstream URL", http.StatusBadGateway)
 		return
 	}
+	upgradeRequest, err := buildWebSocketUpgradeRequest(r, upstreamParsed)
+	if err != nil {
+		log.Printf("[ERROR] WebSocket: failed to build upgrade request: %v", err)
+		http.Error(w, "Failed to build upgrade", http.StatusBadGateway)
+		return
+	}
 
 	host := upstreamParsed.Hostname()
 	port := upstreamParsed.Port()
@@ -464,27 +547,7 @@ func (p *ProxyHandler) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	}
 	defer func() { _ = tlsConn.Close() }()
 
-	// Build the upgrade request to send to upstream.
-	// Use the upstream path and forward all headers except X-Chau7-*.
-	path := upstreamParsed.Path
-	if upstreamParsed.RawQuery != "" {
-		path += "?" + upstreamParsed.RawQuery
-	}
-
-	var reqBuf bytes.Buffer
-	fmt.Fprintf(&reqBuf, "%s %s HTTP/1.1\r\n", r.Method, path)
-	fmt.Fprintf(&reqBuf, "Host: %s\r\n", host)
-	for key, values := range r.Header {
-		if IsCorrelationHeader(key) {
-			continue
-		}
-		for _, v := range values {
-			fmt.Fprintf(&reqBuf, "%s: %s\r\n", key, v)
-		}
-	}
-	reqBuf.WriteString("\r\n")
-
-	if _, err := tlsConn.Write(reqBuf.Bytes()); err != nil {
+	if _, err := tlsConn.Write(upgradeRequest); err != nil {
 		log.Printf("[ERROR] WebSocket: failed to write upgrade request: %v", err)
 		http.Error(w, "Failed to send upgrade", http.StatusBadGateway)
 		return
@@ -515,6 +578,32 @@ func (p *ProxyHandler) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		done <- struct{}{}
 	}()
 	<-done
+}
+
+// buildWebSocketUpgradeRequest retargets a client upgrade request to the
+// selected upstream while preserving authentication and WebSocket negotiation
+// headers. Chau7 correlation metadata is intentionally consumed locally.
+func buildWebSocketUpgradeRequest(r *http.Request, upstream *url.URL) ([]byte, error) {
+	request := r.Clone(r.Context())
+	request.URL = &url.URL{
+		Path:     upstream.Path,
+		RawPath:  upstream.RawPath,
+		RawQuery: upstream.RawQuery,
+	}
+	request.Host = upstream.Host
+	request.RequestURI = ""
+	request.Header = r.Header.Clone()
+	StripCorrelationHeaders(request.Header)
+	request.Body = nil
+	request.GetBody = nil
+	request.ContentLength = 0
+	request.TransferEncoding = nil
+
+	var buf bytes.Buffer
+	if err := request.Write(&buf); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
 }
 
 // firstByteReader wraps an io.Reader and records the timestamp of the first

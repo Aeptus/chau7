@@ -8,6 +8,11 @@ import Chau7Core
 final class MCPServerManager {
     static let shared = MCPServerManager()
 
+    /// Cap on simultaneously accepted client connections. The socket is
+    /// owner-only, so this only bounds a same-user process opening connections
+    /// in a loop (fd/thread/memory exhaustion), not a cross-user attacker.
+    private static let maxConcurrentClients = 32
+
     private var listener: UnixSocketListener?
     private var clientSockets: [Int32] = []
     private let socketPath: String
@@ -220,7 +225,7 @@ final class MCPServerManager {
             var content = try String(contentsOfFile: path, encoding: .utf8)
 
             if let command {
-                content = upsertCodexMCPSection(in: content, command: command)
+                content = CodexMCPConfigFormatter.upsertChau7Server(in: content, command: command)
             }
 
             if let notifyPath {
@@ -239,74 +244,6 @@ final class MCPServerManager {
         } catch {
             Log.error("MCPServer: failed to register with Codex: \(error)")
         }
-    }
-
-    /// Idempotently rewrites the `[mcp_servers.chau7]` section so `command`
-    /// matches the bundle's bridge path and `args` is empty. Both fields are
-    /// overwritten on every launch, not just inserted when missing — stale
-    /// values from old Chau7 builds or hand-edits (e.g. `args = ["-c", ...]`
-    /// from an early-development bridge that took flags) would otherwise
-    /// silently break the AI tool's bridge launch. Only inline `command =`
-    /// and `args =` assignments are recognised; multi-line array literals
-    /// for `args` are not currently rewritten.
-    private func upsertCodexMCPSection(in content: String, command: String) -> String {
-        if content.contains("[mcp_servers.chau7]") {
-            let lines = content.components(separatedBy: "\n")
-            var updated: [String] = []
-            var inChau7Section = false
-            var commandUpdated = false
-            var argsUpdated = false
-
-            func flushMissingFields() {
-                if !commandUpdated {
-                    updated.append("command = \"\(command)\"")
-                    commandUpdated = true
-                }
-                if !argsUpdated {
-                    updated.append("args = []")
-                    argsUpdated = true
-                }
-            }
-
-            for line in lines {
-                let trimmed = line.trimmingCharacters(in: .whitespaces)
-                if trimmed == "[mcp_servers.chau7]" {
-                    inChau7Section = true
-                    updated.append(line)
-                } else if inChau7Section, trimmed.hasPrefix("command ") || trimmed.hasPrefix("command=") {
-                    updated.append("command = \"\(command)\"")
-                    commandUpdated = true
-                } else if inChau7Section, trimmed.hasPrefix("args ") || trimmed.hasPrefix("args=") {
-                    updated.append("args = []")
-                    argsUpdated = true
-                } else if inChau7Section, trimmed.hasPrefix("[") {
-                    // Hit the next TOML section header — flush any missing
-                    // chau7 fields just before it.
-                    flushMissingFields()
-                    inChau7Section = false
-                    updated.append(line)
-                } else {
-                    updated.append(line)
-                }
-            }
-            if inChau7Section {
-                flushMissingFields()
-            }
-            return updated.joined(separator: "\n")
-        }
-
-        let section = """
-        \n[mcp_servers.chau7]
-        command = "\(command)"
-        args = []
-        """
-        var updated = content
-        if let range = updated.range(of: "\n[features]") {
-            updated.insert(contentsOf: section + "\n", at: range.lowerBound)
-        } else {
-            updated += section + "\n"
-        }
-        return updated
     }
 
     // MARK: - JSON Config Helpers
@@ -511,8 +448,17 @@ final class MCPServerManager {
             return
         }
 
+        if clientSockets.count >= Self.maxConcurrentClients {
+            Log.warn(
+                "MCPServer: refusing client fd=\(clientFD) — at max concurrent clients " +
+                    "(\(Self.maxConcurrentClients))"
+            )
+            close(clientFD)
+            return
+        }
+
         clientSockets.append(clientFD)
-        Log.info("MCPServer: client connected (fd=\(clientFD), active=\(clientSockets.count))")
+        Log.trace("MCPServer: client connected (fd=\(clientFD), active=\(clientSockets.count))")
 
         // Handle client on a dedicated queue
         let clientQueue = DispatchQueue(label: "com.chau7.mcp.client.\(clientFD)")
@@ -524,7 +470,7 @@ final class MCPServerManager {
 
             self?.queue.async { [weak self] in
                 self?.clientSockets.removeAll(where: { $0 == clientFD })
-                Log.info("MCPServer: client disconnected (fd=\(clientFD), active=\(self?.clientSockets.count ?? 0))")
+                Log.trace("MCPServer: client disconnected (fd=\(clientFD), active=\(self?.clientSockets.count ?? 0))")
             }
         }
     }

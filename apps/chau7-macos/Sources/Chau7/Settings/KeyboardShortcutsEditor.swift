@@ -61,7 +61,7 @@ struct KeyboardShortcutsEditorView: View {
                 }
                 .buttonStyle(.link)
             }
-            .padding()
+            .padding(Chau7Style.Settings.contentPadding)
 
             // Search
             HStack {
@@ -70,17 +70,17 @@ struct KeyboardShortcutsEditorView: View {
                 TextField(L("Search shortcuts...", "Search shortcuts..."), text: $searchText)
                     .textFieldStyle(.plain)
             }
-            .padding(8)
+            .padding(Chau7Style.Settings.inlineControlSpacing)
             .background(Color(NSColor.controlBackgroundColor))
-            .cornerRadius(8)
-            .padding(.horizontal)
+            .cornerRadius(Chau7Style.Radius.medium)
+            .padding(.horizontal, Chau7Style.Settings.contentPadding)
 
             Divider()
-                .padding(.top, 8)
+                .padding(.top, Chau7Style.Settings.separatorVerticalPadding)
 
             // Shortcut list
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 16) {
+                LazyVStack(alignment: .leading, spacing: Chau7Style.Settings.pageSectionSpacing) {
                     ForEach(groupedShortcuts, id: \.0) { group, shortcuts in
                         ShortcutGroupView(
                             title: group,
@@ -93,7 +93,7 @@ struct KeyboardShortcutsEditorView: View {
                         )
                     }
                 }
-                .padding()
+                .padding(Chau7Style.Settings.contentPadding)
             }
 
             // Footer
@@ -105,7 +105,7 @@ struct KeyboardShortcutsEditorView: View {
                     .foregroundColor(.secondary)
                 Spacer()
             }
-            .padding()
+            .padding(Chau7Style.Settings.contentPadding)
             .background(Color(NSColor.controlBackgroundColor))
         }
         .alert(L("shortcuts.conflict.title", "Shortcut Conflict"), isPresented: $showConflictAlert) {
@@ -140,7 +140,7 @@ private struct ShortcutGroupView: View {
     let onUpdate: (KeyboardShortcut) -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: Chau7Style.Settings.inlineControlSpacing) {
             Text(title)
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundColor(.secondary)
@@ -167,7 +167,7 @@ private struct ShortcutGroupView: View {
                 }
             }
             .background(Color(NSColor.controlBackgroundColor))
-            .cornerRadius(8)
+            .cornerRadius(Chau7Style.Radius.medium)
         }
     }
 }
@@ -186,7 +186,7 @@ private struct ShortcutRowView: View {
     @State private var recordedModifiers: [String] = []
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: Chau7Style.Settings.compactRowSpacing) {
             HStack {
                 Text(KeyboardShortcut.actionDisplayName(shortcut.action))
                     .font(.system(size: 13))
@@ -195,7 +195,7 @@ private struct ShortcutRowView: View {
 
                 if isEditing {
                     // Recording state
-                    HStack(spacing: 8) {
+                    HStack(spacing: Chau7Style.Settings.inlineControlSpacing) {
                         ShortcutRecorderView(
                             onRecord: { key, modifiers in
                                 recordedKey = key
@@ -251,8 +251,8 @@ private struct ShortcutRowView: View {
                 }
             }
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 10)
+        .padding(.horizontal, Chau7Style.Settings.looseControlSpacing)
+        .padding(.vertical, Chau7Style.Settings.inlineControlSpacing)
         .contentShape(Rectangle())
     }
 }

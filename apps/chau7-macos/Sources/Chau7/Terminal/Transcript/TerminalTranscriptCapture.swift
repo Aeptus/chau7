@@ -3,7 +3,9 @@ import Foundation
 final class TerminalTranscriptCapture: MemoryReclaimable {
     private let lock = NSLock()
     private let maxBytes: Int
-    private var buffer = Data()
+    private var chunks: [Data?] = []
+    private var headIndex = 0
+    private var byteCount = 0
     private var boundaryOffset = 0
 
     init(
@@ -24,17 +26,18 @@ final class TerminalTranscriptCapture: MemoryReclaimable {
     func reclaimMemory(_ level: MemoryPressureLevel) -> Int {
         lock.lock()
         defer { lock.unlock() }
-        let before = buffer.count
+        let before = byteCount
         guard before > 0 else { return 0 }
         switch level {
         case .warning:
             let keep = before / 2
             let removed = before - keep
-            buffer = Data(buffer.suffix(keep))
-            boundaryOffset = max(0, boundaryOffset - removed)
+            trimPrefixLocked(removed)
             return removed
         case .critical:
-            buffer = Data() // release storage, not just contents
+            chunks.removeAll(keepingCapacity: false)
+            headIndex = 0
+            byteCount = 0
             boundaryOffset = 0
             return before
         }
@@ -46,13 +49,14 @@ final class TerminalTranscriptCapture: MemoryReclaimable {
         lock.lock()
         defer { lock.unlock() }
 
-        buffer.append(data)
+        chunks.append(data)
+        byteCount += data.count
         trimIfNeededLocked()
     }
 
     func markCommandBoundary() {
         lock.lock()
-        boundaryOffset = buffer.count
+        boundaryOffset = byteCount
         lock.unlock()
     }
 
@@ -60,22 +64,23 @@ final class TerminalTranscriptCapture: MemoryReclaimable {
         lock.lock()
         defer { lock.unlock() }
 
-        guard boundaryOffset < buffer.count else { return Data() }
-        let start = buffer.index(buffer.startIndex, offsetBy: boundaryOffset)
-        return Data(buffer[start...])
+        guard boundaryOffset < byteCount else { return Data() }
+        return dataLocked(skipping: boundaryOffset)
     }
 
     func tailData(maxBytes requestedMaxBytes: Int) -> Data {
         lock.lock()
         defer { lock.unlock() }
 
-        let keep = max(1, min(requestedMaxBytes, buffer.count))
-        return Data(buffer.suffix(keep))
+        let keep = max(0, min(requestedMaxBytes, byteCount))
+        return dataLocked(skipping: byteCount - keep)
     }
 
     func reset() {
         lock.lock()
-        buffer.removeAll(keepingCapacity: true)
+        chunks.removeAll(keepingCapacity: true)
+        headIndex = 0
+        byteCount = 0
         boundaryOffset = 0
         lock.unlock()
     }
@@ -83,16 +88,71 @@ final class TerminalTranscriptCapture: MemoryReclaimable {
     var isEmpty: Bool {
         lock.lock()
         defer { lock.unlock() }
-        return buffer.isEmpty
+        return byteCount == 0
     }
 
     private func trimIfNeededLocked() {
-        guard buffer.count > maxBytes else { return }
+        guard byteCount > maxBytes else { return }
 
-        let overflow = buffer.count - maxBytes
-        buffer = Data(buffer.suffix(maxBytes))
-        boundaryOffset = max(0, boundaryOffset - overflow)
+        trimPrefixLocked(byteCount - maxBytes)
     }
+
+    private func trimPrefixLocked(_ requestedCount: Int) {
+        let removedCount = min(max(0, requestedCount), byteCount)
+        var remaining = removedCount
+
+        while remaining > 0, headIndex < chunks.count {
+            guard let chunk = chunks[headIndex] else {
+                headIndex += 1
+                continue
+            }
+            if remaining >= chunk.count {
+                remaining -= chunk.count
+                byteCount -= chunk.count
+                chunks[headIndex] = nil
+                headIndex += 1
+            } else {
+                chunks[headIndex] = Data(chunk.dropFirst(remaining))
+                byteCount -= remaining
+                remaining = 0
+            }
+        }
+
+        boundaryOffset = max(0, boundaryOffset - removedCount)
+        compactChunkSlotsIfNeeded()
+    }
+
+    private func compactChunkSlotsIfNeeded() {
+        guard headIndex > 0,
+              headIndex >= 64 || headIndex * 2 >= chunks.count else { return }
+        chunks.removeFirst(headIndex)
+        headIndex = 0
+    }
+
+    private func dataLocked(skipping requestedSkip: Int) -> Data {
+        var skip = min(max(0, requestedSkip), byteCount)
+        var result = Data()
+        result.reserveCapacity(byteCount - skip)
+
+        for index in headIndex ..< chunks.count {
+            guard let chunk = chunks[index] else { continue }
+            if skip >= chunk.count {
+                skip -= chunk.count
+                continue
+            }
+            result.append(contentsOf: chunk.dropFirst(skip))
+            skip = 0
+        }
+        return result
+    }
+
+    #if DEBUG
+    var allocatedChunkSlotCountForTesting: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return chunks.count
+    }
+    #endif
 
     private static func defaultMaxBytes() -> Int {
         if let raw = EnvVars.get(EnvVars.ptyLogMaxBytes),

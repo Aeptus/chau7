@@ -1,13 +1,13 @@
 import SwiftUI
 
-// MARK: - Scrollback & Performance Settings
+// MARK: - Performance Settings
 
 struct ScrollbackPerfSettingsView: View {
     @Bindable var model: AppModel
     @Bindable private var settings = FeatureSettings.shared
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: Chau7Style.Settings.pageSectionSpacing) {
             // Scrollback
             SettingsSectionHeader(L("settings.terminal.scrollback", "Scrollback"), icon: "scroll")
 
@@ -15,7 +15,8 @@ struct ScrollbackPerfSettingsView: View {
                 label: L("settings.terminal.bufferSize", "Buffer Size"),
                 help: L("settings.terminal.bufferSize.help", "Number of lines to keep in scrollback history (100-100,000)"),
                 value: $settings.scrollbackLines,
-                width: 100
+                width: 100,
+                anchorID: "scrollback"
             )
 
             SettingsToggle(
@@ -31,8 +32,7 @@ struct ScrollbackPerfSettingsView: View {
                 range: 0 ... 10000
             )
 
-            Divider()
-                .padding(.vertical, 8)
+            SettingsDivider()
 
             // Performance
             SettingsSectionHeader(L("settings.terminal.performance", "Performance"), icon: "gauge.with.dots.needle.33percent")
@@ -56,8 +56,7 @@ struct ScrollbackPerfSettingsView: View {
                 )
             }
 
-            Divider()
-                .padding(.vertical, 8)
+            SettingsDivider()
 
             // Rendering
             SettingsSectionHeader(L("settings.terminal.rendering", "Rendering"), icon: "cpu")
@@ -75,7 +74,7 @@ struct ScrollbackPerfSettingsView: View {
                 Text(L("settings.terminal.metalRenderer.info", "New tabs will use Metal GPU rendering for display."))
                     .font(.caption)
                     .foregroundColor(.secondary)
-                    .padding(.leading, 20)
+                    .padding(.leading, Chau7Style.Settings.nestedIndent)
             }
 
             SettingsPicker(
@@ -85,7 +84,8 @@ struct ScrollbackPerfSettingsView: View {
                     "Maximum refresh rate for the focused tab. Display Native follows your screen (up to 120 Hz on ProMotion). Lower caps trade a bit of scroll smoothness for battery life."
                 ),
                 selection: $settings.activePollingRateCap,
-                options: ActivePollingRateCap.allCases.map { (value: $0, label: $0.displayName) }
+                options: ActivePollingRateCap.allCases.map { (value: $0, label: $0.displayName) },
+                anchorID: "refreshCaps"
             )
 
             SettingsStepper(
@@ -99,8 +99,7 @@ struct ScrollbackPerfSettingsView: View {
                 suffix: " fps"
             )
 
-            Divider()
-                .padding(.vertical, 8)
+            SettingsDivider()
 
             // Reset Button
             SettingsButtonRow(buttons: [

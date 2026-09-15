@@ -2,6 +2,37 @@ import XCTest
 @testable import Chau7Core
 
 final class TabAttributionTests: XCTestCase {
+    func testExactSessionNeverOverridesConflictingLiveProviderAcrossEventBurst() {
+        let tabID = UUID()
+        let resolver = TabAttribution {
+            [
+                TabRouteRecord(
+                    tabID: tabID,
+                    provider: "claude",
+                    activeAppName: "Codex",
+                    sessionID: "stale-claude-session",
+                    isDisplaySession: true
+                )
+            ]
+        }
+        let target = TabTarget(
+            tool: "Claude",
+            directory: "/tmp/shared-repository",
+            sessionID: "stale-claude-session"
+        )
+
+        for _ in 0 ..< 1_000 {
+            XCTAssertEqual(
+                resolver.resolve(target: target, policy: .requireSessionMatch),
+                .noMatch
+            )
+            XCTAssertEqual(
+                resolver.resolve(target: target, policy: .bindUnboundByDirectory),
+                .noMatch
+            )
+        }
+    }
+
 
     // MARK: - trustStampedTabID
 

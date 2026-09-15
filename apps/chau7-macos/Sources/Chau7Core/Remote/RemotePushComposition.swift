@@ -32,7 +32,8 @@ public extension ApprovalRequestPayload {
                 currentDirectory: currentDirectory
             ),
             pushBody: headline,
-            spineSeq: spineSeq
+            spineSeq: spineSeq,
+            severity: severity
         )
     }
 
@@ -56,7 +57,33 @@ public extension ApprovalRequestPayload {
             pushTitle: pushTitle,
             pushSubtitle: pushSubtitle,
             pushBody: pushBody,
-            spineSeq: seq
+            spineSeq: seq,
+            severity: severity
+        )
+    }
+
+    /// Copy with the authoritative risk tier attached. Applied at the approval
+    /// send sites so `ApprovalSeverity.classify(...)` runs once on the Mac and
+    /// every surface renders the tier the Mac decided.
+    func withSeverity(_ severity: ApprovalSeverity) -> ApprovalRequestPayload {
+        ApprovalRequestPayload(
+            requestID: requestID,
+            command: command,
+            flaggedCommand: flaggedCommand,
+            timestamp: timestamp,
+            tabTitle: tabTitle,
+            toolName: toolName,
+            projectName: projectName,
+            branchName: branchName,
+            currentDirectory: currentDirectory,
+            recentCommand: recentCommand,
+            contextNote: contextNote,
+            sessionID: sessionID,
+            pushTitle: pushTitle,
+            pushSubtitle: pushSubtitle,
+            pushBody: pushBody,
+            spineSeq: spineSeq,
+            severity: severity.rawValue
         )
     }
 }
@@ -81,7 +108,12 @@ public extension RemoteInteractivePrompt {
                 projectName: projectName,
                 branchName: branchName,
                 currentDirectory: currentDirectory
-            )
+            ),
+            // Must be carried through: every prompt is composed via this
+            // method on its way to the wire, so dropping the flag here made
+            // multi-select AskUserQuestion cards indistinguishable from
+            // single-choice ones on the phone — the checkbox UI never armed.
+            isMultiSelect: isMultiSelect
         )
     }
 }

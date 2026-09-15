@@ -28,7 +28,7 @@ struct Chau7RemoteApp: App {
                 }
                 .onAppear {
                     if client.pairingInfo != nil, !client.isConnected {
-                        client.connect()
+                        client.connectIfNeeded(trigger: .appAppear)
                     }
                 }
                 .onChange(of: scenePhase) { _, newPhase in
@@ -198,7 +198,9 @@ struct RemoteRootView: View {
 
     var body: some View {
         TabView(selection: $selectedTab) {
-            TerminalView(client: client, isPairingPresented: $isPairingPresented)
+            TerminalView(client: client, isPairingPresented: $isPairingPresented) {
+                selectedTab = .settings
+            }
                 .tabItem { Label("Terminal", systemImage: "terminal") }
                 .tag(Tab.terminal)
 

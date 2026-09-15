@@ -9,6 +9,20 @@ extension RustTerminalView {
         KeyboardShortcuts.isReturnKeyCode(keyCode)
     }
 
+    /// A stored first responder is not enough to prove that this terminal
+    /// currently owns hardware input. AppKit can retain key-window and
+    /// responder state while the window is on another Space.
+    func shouldRouteHardwareKeyEvent(_ event: NSEvent) -> Bool {
+        guard let window else { return false }
+        return TerminalKeyboardInputPolicy.shouldRouteHardwareEvent(
+            isApplicationActive: NSApp.isActive,
+            isWindowKey: window.isKeyWindow,
+            isWindowOnActiveSpace: window.isOnActiveSpace,
+            eventTargetsWindow: event.window === window,
+            terminalOwnsFirstResponder: isFirstResponderInTerminal()
+        )
+    }
+
     func firstResponderDebugName() -> String {
         guard let responder = window?.firstResponder else { return "nil" }
         return String(describing: type(of: responder))
@@ -44,6 +58,16 @@ extension RustTerminalView {
     }
 
     override func keyDown(with event: NSEvent) {
+        guard shouldRouteHardwareKeyEvent(event) else {
+            if EnvVars.isEnabled(EnvVars.inputDiagnostics) {
+                Log.info(
+                    "RustTerminalView[\(viewId)]: keyDown ignored ineligible hardware event " +
+                        "(appActive=\(NSApp.isActive), keyWindow=\(window?.isKeyWindow ?? false), " +
+                        "onActiveSpace=\(window?.isOnActiveSpace ?? false))"
+                )
+            }
+            return
+        }
         guard let rust = rustTerminal else {
             Log.trace("RustTerminalView[\(viewId)]: keyDown - No Rust terminal")
             return

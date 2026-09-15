@@ -30,6 +30,7 @@ final class TerminalControlServiceTests: XCTestCase {
             TerminalControlService.shared.unregister(overlayModel)
         }
         TerminalControlService.shared.activeOverlayModelProvider = nil
+        TerminalControlService.shared.tabControlApprovalHandler = nil
         FeatureSettings.shared.mcpPermissionMode = savedPermissionMode
         FeatureSettings.shared.mcpRequiresApproval = savedRequiresApproval
         FeatureSettings.shared.mcpEnabled = savedMCPEnabled
@@ -91,6 +92,79 @@ final class TerminalControlServiceTests: XCTestCase {
         XCTAssertEqual(json["ready_for_exec"] as? Bool, true)
         XCTAssertEqual(json["readiness_reason"] as? String, "ready")
         XCTAssertEqual(json["has_terminal_view"] as? Bool, true)
+    }
+
+    func testMCPStatusDoesNotAdvertiseMutationReadinessForUserTab() throws {
+        let session = try XCTUnwrap(overlayModel.tabs.first?.session)
+        session.status = .running
+        session.isShellLoading = false
+        session.isAtPrompt = true
+        session.attachRustTerminal(RustTerminalView(frame: .zero))
+
+        let response = TerminalControlService.shared.mcpTabStatus(tabID: overlayModel.selectedTabID.uuidString)
+        let json = try XCTUnwrap(parseJSONObject(response))
+
+        XCTAssertEqual(json["is_mcp_controlled"] as? Bool, false)
+        XCTAssertEqual(json["mcp_mutation_allowed"] as? Bool, false)
+        XCTAssertEqual(json["mcp_control_required"] as? Bool, true)
+        XCTAssertEqual(json["terminal_can_accept_exec"] as? Bool, true)
+        XCTAssertEqual(json["terminal_ready_for_exec"] as? Bool, true)
+        XCTAssertEqual(json["can_accept_exec"] as? Bool, false)
+        XCTAssertEqual(json["ready_for_exec"] as? Bool, false)
+        XCTAssertEqual(json["readiness_reason"] as? String, "mcp_control_required")
+    }
+
+    func testRequestControlAdoptsExistingTabAfterUserConfirmation() throws {
+        let tabID = TerminalControlService.shared.controlPlaneTabID(for: overlayModel.selectedTabID)
+        TerminalControlService.shared.tabControlApprovalHandler = { message in
+            XCTAssertTrue(message.contains("All connected local MCP clients"))
+            return true
+        }
+
+        let response = TerminalControlService.shared.requestMCPControl(tabID: tabID)
+        let json = try XCTUnwrap(parseJSONObject(response))
+
+        XCTAssertEqual(json["ok"] as? Bool, true)
+        XCTAssertEqual(json["status"] as? String, "control_granted")
+        XCTAssertEqual(overlayModel.tabs.first?.isMCPControlled, true)
+        XCTAssertNil(TerminalControlService.shared.mcpControlScopeError(forTabID: tabID))
+    }
+
+    func testRequestControlDenialLeavesExistingTabReadOnly() throws {
+        let tabID = TerminalControlService.shared.controlPlaneTabID(for: overlayModel.selectedTabID)
+        TerminalControlService.shared.tabControlApprovalHandler = { _ in false }
+
+        let response = TerminalControlService.shared.requestMCPControl(tabID: tabID)
+        let json = try XCTUnwrap(parseJSONObject(response))
+
+        XCTAssertEqual(json["error"] as? String, "Tab control denied by user.")
+        XCTAssertEqual(overlayModel.tabs.first?.isMCPControlled, false)
+        XCTAssertNotNil(TerminalControlService.shared.mcpControlScopeError(forTabID: tabID))
+    }
+
+    func testReleaseControlRevokesMutationWithoutClosingTab() throws {
+        let tabID = TerminalControlService.shared.controlPlaneTabID(for: overlayModel.selectedTabID)
+        overlayModel.tabs[0].isMCPControlled = true
+
+        let response = TerminalControlService.shared.releaseMCPControl(tabID: tabID)
+        let json = try XCTUnwrap(parseJSONObject(response))
+
+        XCTAssertEqual(json["ok"] as? Bool, true)
+        XCTAssertEqual(json["status"] as? String, "control_released")
+        XCTAssertEqual(overlayModel.tabs.count, 1)
+        XCTAssertEqual(overlayModel.tabs.first?.isMCPControlled, false)
+        XCTAssertNotNil(TerminalControlService.shared.mcpControlScopeError(forTabID: tabID))
+    }
+
+    func testMCPWaitReadyFailsImmediatelyWhenControlIsRequired() throws {
+        let tabID = TerminalControlService.shared.controlPlaneTabID(for: overlayModel.selectedTabID)
+        let response = TerminalControlService.shared.waitForMCPControlledTabReady(tabID: tabID, timeoutMs: 30000)
+        let json = try XCTUnwrap(parseJSONObject(response))
+
+        XCTAssertEqual(json["can_accept_exec"] as? Bool, false)
+        XCTAssertEqual(json["ready_for_exec"] as? Bool, false)
+        XCTAssertEqual(json["timed_out"] as? Bool, false)
+        XCTAssertTrue((json["error"] as? String)?.contains("tab_request_control") == true)
     }
 
     func testWaitForTabReadyReturnsImmediateSnapshotWhenExecCanBeAccepted() throws {
@@ -471,6 +545,32 @@ final class TerminalControlServiceTests: XCTestCase {
         XCTAssertNotEqual(session.currentDirectory, originalCwd)
     }
 
+    func testUpdateSessionDirectoryRepairsProviderFromValidatedClaudeEvent() throws {
+        let root = try makeTempDirectoryTree(name: "provider-repair", subpaths: ["subdir"])
+        defer { removeTempDirectory(root) }
+        let tab = try XCTUnwrap(overlayModel.tabs.first)
+        let session = try XCTUnwrap(tab.session)
+        session.applyAgentIdentity(AgentIdentityRecord(
+            provider: "codex",
+            sessionId: "session-live",
+            source: .observed
+        ))
+        session.updateCurrentDirectory(root)
+
+        let applied = TerminalControlService.shared.updateSessionDirectoryAcrossWindows(
+            tabID: tab.id,
+            sessionID: "session-live",
+            directory: "\(root)/subdir",
+            provider: "claude",
+            sessionIdentitySource: .explicit
+        )
+
+        XCTAssertTrue(applied)
+        XCTAssertEqual(session.lastAIProvider, "claude")
+        XCTAssertEqual(session.lastAISessionId, "session-live")
+        XCTAssertEqual(session.lastAISessionIdentitySource, .explicit)
+    }
+
     func testUpdateSessionDirectorySkipsWhenSessionIsStale() throws {
         // The motivating bug: a tab hosting Claude session 'live' has its cwd
         // oscillated by stale events arriving from a previously-resumed Claude
@@ -490,6 +590,51 @@ final class TerminalControlServiceTests: XCTestCase {
 
         XCTAssertFalse(applied)
         XCTAssertEqual(session.currentDirectory, pinned)
+    }
+
+    func testUpdateSessionDirectoryReconcilesStaleStampToExactSessionTabOnce() throws {
+        let staleRoot = try makeTempDirectoryTree(name: "stale-stamp")
+        let actualRoot = try makeTempDirectoryTree(name: "actual-session", subpaths: ["subdir"])
+        defer {
+            removeTempDirectory(staleRoot)
+            removeTempDirectory(actualRoot)
+        }
+
+        let staleTab = try XCTUnwrap(overlayModel.tabs.first)
+        let staleSession = try XCTUnwrap(staleTab.session)
+        staleSession.applyAgentIdentity(AgentIdentityRecord(
+            provider: "codex",
+            sessionId: "live-codex-session",
+            source: .explicit
+        ))
+        staleSession.updateCurrentDirectory(staleRoot)
+        staleSession.gitRootPath = staleRoot
+
+        let secondAppModel = AppModel()
+        let secondOverlayModel = OverlayTabsModel(appModel: secondAppModel, restoreState: false)
+        TerminalControlService.shared.register(secondOverlayModel)
+        defer { TerminalControlService.shared.unregister(secondOverlayModel) }
+        let actualTab = try XCTUnwrap(secondOverlayModel.tabs.first)
+        let actualSession = try XCTUnwrap(actualTab.session)
+        actualSession.applyAgentIdentity(AgentIdentityRecord(
+            provider: "claude",
+            sessionId: "exact-claude-session",
+            source: .explicit
+        ))
+        actualSession.updateCurrentDirectory(actualRoot)
+        actualSession.gitRootPath = actualRoot
+
+        let applied = TerminalControlService.shared.updateSessionDirectoryAcrossWindows(
+            tabID: staleTab.id,
+            sessionID: "exact-claude-session",
+            directory: "\(actualRoot)/subdir",
+            provider: "claude",
+            sessionIdentitySource: .explicit
+        )
+
+        XCTAssertTrue(applied)
+        XCTAssertEqual(staleSession.currentDirectory, staleRoot)
+        XCTAssertEqual(actualSession.currentDirectory, "\(actualRoot)/subdir")
     }
 
     func testUpdateSessionDirectoryAdoptsNewSessionWhenDirectoryRelates() throws {
@@ -545,6 +690,34 @@ final class TerminalControlServiceTests: XCTestCase {
             root,
             "Foreign directory write must be refused even when session ids agree"
         )
+    }
+
+    func testUpdateSessionDirectoryTrustsLiveMatchingSessionAcrossRepos() throws {
+        // Claude can change its project/cwd inside the TUI. The host shell
+        // never emits OSC 7 for that move, so a live Claude hook/idle event
+        // with the same session id must be allowed to move the tab from the
+        // launch repo to the new repo.
+        let launchRoot = try makeTempDirectoryTree(name: "mockup")
+        let movedRoot = try makeTempDirectoryTree(name: "blybot")
+        defer {
+            removeTempDirectory(launchRoot)
+            removeTempDirectory(movedRoot)
+        }
+        let tab = try XCTUnwrap(overlayModel.tabs.first)
+        let session = try XCTUnwrap(tab.session)
+        session.lastAISessionId = "session-live"
+        session.updateCurrentDirectory(launchRoot)
+        session.gitRootPath = launchRoot
+
+        let applied = TerminalControlService.shared.updateSessionDirectoryAcrossWindows(
+            tabID: tab.id,
+            sessionID: "session-live",
+            directory: movedRoot,
+            trustMatchingSessionForForeignDirectory: true
+        )
+
+        XCTAssertTrue(applied)
+        XCTAssertEqual(session.currentDirectory, movedRoot)
     }
 
     func testUpdateSessionDirectoryAcceptsRelatedDirectory() throws {
@@ -630,6 +803,149 @@ final class TerminalControlServiceTests: XCTestCase {
             return nil
         }
         return json
+    }
+
+    // MARK: - Staged-input command filtering (raw-input boundary)
+
+    /// Set a hard block on `command` for the duration of `body`, restoring the
+    /// prior blocked list afterward. Deterministic regardless of allowlist state.
+    private func withBlockedCommand(_ command: String, _ body: () throws -> Void) rethrows {
+        let saved = FeatureSettings.shared.mcpBlockedCommands
+        FeatureSettings.shared.mcpBlockedCommands = [command]
+        defer { FeatureSettings.shared.mcpBlockedCommands = saved }
+        try body()
+    }
+
+    func testStagedInputWithoutNewlineThenEnterIsFiltered() throws {
+        let tab = try XCTUnwrap(overlayModel.tabs.first)
+        let session = try XCTUnwrap(tab.session)
+        session.isAtPrompt = true
+        let tabID = TerminalControlService.shared.controlPlaneTabID(for: tab.id)
+
+        try withBlockedCommand("rm") {
+            // Staging (no trailing newline) is accepted — interactive typing.
+            let staged = try XCTUnwrap(parseJSONObject(
+                TerminalControlService.shared.sendInput(tabID: tabID, input: "rm -rf important")
+            ))
+            XCTAssertEqual(staged["ok"] as? Bool, true)
+
+            // Submitting the staged line via Enter now runs it through the filter.
+            let submitted = try XCTUnwrap(parseJSONObject(
+                TerminalControlService.shared.pressKey(tabID: tabID, key: "enter", modifiers: [])
+            ))
+            XCTAssertTrue(
+                (submitted["error"] as? String ?? "").contains("blocked"),
+                "staged command must be blocked on Enter, got \(submitted)"
+            )
+        }
+    }
+
+    func testSendInputWithNewlineIsFilteredImmediately() throws {
+        let tab = try XCTUnwrap(overlayModel.tabs.first)
+        let session = try XCTUnwrap(tab.session)
+        session.isAtPrompt = true
+        let tabID = TerminalControlService.shared.controlPlaneTabID(for: tab.id)
+
+        try withBlockedCommand("rm") {
+            let result = try XCTUnwrap(parseJSONObject(
+                TerminalControlService.shared.sendInput(tabID: tabID, input: "rm -rf important\n")
+            ))
+            XCTAssertTrue((result["error"] as? String ?? "").contains("blocked"), "got \(result)")
+        }
+    }
+
+    func testStagedCommandSplitAcrossCallsIsFiltered() throws {
+        let tab = try XCTUnwrap(overlayModel.tabs.first)
+        let session = try XCTUnwrap(tab.session)
+        session.isAtPrompt = true
+        let tabID = TerminalControlService.shared.controlPlaneTabID(for: tab.id)
+
+        try withBlockedCommand("rm") {
+            _ = TerminalControlService.shared.sendInput(tabID: tabID, input: "rm ")
+            let result = try XCTUnwrap(parseJSONObject(
+                TerminalControlService.shared.sendInput(tabID: tabID, input: "-rf important\n")
+            ))
+            XCTAssertTrue((result["error"] as? String ?? "").contains("blocked"), "got \(result)")
+        }
+    }
+
+    func testSubmitPromptFiltersStagedCommand() throws {
+        let tab = try XCTUnwrap(overlayModel.tabs.first)
+        let session = try XCTUnwrap(tab.session)
+        session.isAtPrompt = true
+        let tabID = TerminalControlService.shared.controlPlaneTabID(for: tab.id)
+
+        try withBlockedCommand("rm") {
+            _ = TerminalControlService.shared.sendInput(tabID: tabID, input: "rm -rf important")
+            let result = try XCTUnwrap(parseJSONObject(
+                TerminalControlService.shared.submitPrompt(tabID: tabID)
+            ))
+            XCTAssertTrue((result["error"] as? String ?? "").contains("blocked"), "got \(result)")
+        }
+    }
+
+    func testInputNotAtPromptBypassesCommandFilter() throws {
+        let tab = try XCTUnwrap(overlayModel.tabs.first)
+        let session = try XCTUnwrap(tab.session)
+        session.isAtPrompt = false // a TUI / agent CLI is foregrounded
+        let tabID = TerminalControlService.shared.controlPlaneTabID(for: tab.id)
+
+        try withBlockedCommand("rm") {
+            let result = try XCTUnwrap(parseJSONObject(
+                TerminalControlService.shared.sendInput(tabID: tabID, input: "rm -rf important\n")
+            ))
+            XCTAssertEqual(
+                result["ok"] as? Bool,
+                true,
+                "off a shell prompt, input is interactive passthrough, got \(result)"
+            )
+        }
+    }
+
+    func testAllowedStagedCommandSubmitsWithoutFalsePositive() throws {
+        let tab = try XCTUnwrap(overlayModel.tabs.first)
+        let session = try XCTUnwrap(tab.session)
+        session.isAtPrompt = true
+        let tabID = TerminalControlService.shared.controlPlaneTabID(for: tab.id)
+
+        // .allowAll (default) + only "rm" blocked → "ls" flows through cleanly.
+        try withBlockedCommand("rm") {
+            _ = TerminalControlService.shared.sendInput(tabID: tabID, input: "ls -la")
+            let submitted = try XCTUnwrap(parseJSONObject(
+                TerminalControlService.shared.pressKey(tabID: tabID, key: "enter", modifiers: [])
+            ))
+            XCTAssertEqual(submitted["ok"] as? Bool, true, "got \(submitted)")
+        }
+    }
+
+    // MARK: - MCP-controlled tab scoping (mutating tools)
+
+    func testMutatingScopeRejectsUserOpenedTab() throws {
+        let tab = try XCTUnwrap(overlayModel.tabs.first)
+        let tabID = TerminalControlService.shared.controlPlaneTabID(for: tab.id)
+        // The default tab was opened by the user, not created via MCP.
+        let err = try XCTUnwrap(TerminalControlService.shared.mcpControlScopeError(forTabID: tabID))
+        let json = try XCTUnwrap(parseJSONObject(err))
+        XCTAssertTrue((json["error"] as? String ?? "").contains("not MCP-controlled"), "got \(json)")
+    }
+
+    func testMutatingScopeAllowsMCPCreatedTab() throws {
+        TerminalControlService.shared.activeOverlayModelProvider = { self.overlayModel }
+        let created = try XCTUnwrap(parseJSONObject(
+            TerminalControlService.shared.createTab(directory: nil, windowID: nil)
+        ))
+        let tabID = try XCTUnwrap(created["tab_id"] as? String)
+        XCTAssertNil(TerminalControlService.shared.mcpControlScopeError(forTabID: tabID))
+    }
+
+    // MARK: - jsonError escaping
+
+    func testErrorResponseEscapesControlCharacters() throws {
+        // A crafted tab id with a quote, backslash, and newline must still produce
+        // valid JSON (previously a "-only escape yielded malformed output).
+        let response = TerminalControlService.shared.tabStatus(tabID: "bogus\"\\\n_id")
+        let json = try XCTUnwrap(parseJSONObject(response), "error response must be valid JSON")
+        XCTAssertTrue((json["error"] as? String ?? "").contains("bogus"))
     }
 
     func testAgentLaunchCommandWithoutPRIsAgentCommandVerbatim() {

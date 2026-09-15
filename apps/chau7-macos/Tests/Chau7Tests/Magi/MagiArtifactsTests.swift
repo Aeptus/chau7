@@ -1,3 +1,4 @@
+import CryptoKit
 import XCTest
 @testable import Chau7Core
 
@@ -11,6 +12,7 @@ final class MagiArtifactsTests: XCTestCase {
         XCTAssertTrue(replay.contains(#""type":"vote""#))
         XCTAssertTrue(replay.contains(#""type":"verdict""#))
         XCTAssertTrue(replay.contains("Final Fantasy VI"))
+        XCTAssertTrue(replay.contains(#""rationale":"Majority reached.""#))
     }
 
     func testTerminalReplayRendersReadableTimelineFromRun() {
@@ -24,14 +26,16 @@ final class MagiArtifactsTests: XCTestCase {
         XCTAssertTrue(output.contains("[Round 1] Independent analysis"))
         XCTAssertTrue(output.contains("Melchior position: Final Fantasy VI"))
         XCTAssertTrue(output.contains("Casper vote: [SELECT] Final Fantasy VI"))
+        XCTAssertTrue(output.contains("Rationale: Best cast."))
         XCTAssertTrue(output.contains("Decision: Final Fantasy VI"))
+        XCTAssertTrue(output.contains("Rationale: Majority reached."))
     }
 
     func testTerminalReplayRendersLegacyJSONLWithoutRun() {
         let jsonl = """
         {"type":"position","member_id":"melchior","round_id":"round-1","recommendation":"Final Fantasy VI","summary":"Legacy line"}
         {"type":"vote","member_id":"casper","verdict_kind":"SELECT","choice":"Final Fantasy VI","rationale":"Legacy vote"}
-        {"type":"verdict","kind":"SELECT","decision":"Final Fantasy VI","consensus":"0.67","confidence":"0.85"}
+        {"type":"verdict","kind":"SELECT","decision":"Final Fantasy VI","consensus":"0.67","confidence":"0.85","rationale":"Legacy verdict"}
 
         """
 
@@ -39,8 +43,10 @@ final class MagiArtifactsTests: XCTestCase {
 
         XCTAssertTrue(output.contains("Melchior position: Final Fantasy VI"))
         XCTAssertTrue(output.contains("Casper vote: [SELECT] Final Fantasy VI"))
+        XCTAssertTrue(output.contains("Rationale: Legacy vote"))
         XCTAssertTrue(output.contains("Kind: SELECT"))
         XCTAssertTrue(output.contains("Decision: Final Fantasy VI"))
+        XCTAssertTrue(output.contains("Rationale: Legacy verdict"))
     }
 
     func testShareHTMLIsLocalOnlyAndEscapesRunText() {
@@ -78,6 +84,69 @@ final class MagiArtifactsTests: XCTestCase {
         for path in bundle.requiredPaths {
             XCTAssertTrue(FileManager.default.fileExists(atPath: path), path)
         }
+    }
+
+    func testArtifactStoreCheckpointWritesOnlyRunStateJSON() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("magi-checkpoint-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        var run = sampleRun()
+        run.status = .running
+        run.artifactBundle = MagiArtifactBundle(runID: run.id, rootDirectory: root.path)
+
+        let bundle = try MagiRunArtifactStore.writeCheckpoint(run: run)
+
+        XCTAssertTrue(FileManager.default.fileExists(atPath: bundle.decisionJSONPath))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: bundle.manifestJSONPath))
+        let generatedPaths = bundle.requiredPaths.filter { $0 != bundle.decisionJSONPath && $0 != bundle.manifestJSONPath }
+        for path in generatedPaths {
+            XCTAssertFalse(FileManager.default.fileExists(atPath: path), path)
+        }
+
+        let data = try Data(contentsOf: URL(fileURLWithPath: bundle.decisionJSONPath))
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let checkpoint = try decoder.decode(MagiRun.self, from: data)
+        XCTAssertEqual(checkpoint.id, run.id)
+        XCTAssertEqual(checkpoint.status, .running)
+
+        let manifestData = try Data(contentsOf: URL(fileURLWithPath: bundle.manifestJSONPath))
+        let manifest = try JSONDecoder().decode(MagiArtifactManifest.self, from: manifestData)
+        XCTAssertEqual(manifest.runID, run.id)
+        XCTAssertEqual(manifest.runStatus, .running)
+        XCTAssertEqual(manifest.artifactStatus, .partial)
+
+        let decisionEntry = try XCTUnwrap(manifest.files.first { $0.name == "decision.json" })
+        XCTAssertEqual(decisionEntry.status, .present)
+        XCTAssertEqual(decisionEntry.byteCount, data.count)
+        XCTAssertEqual(decisionEntry.sha256, sha256Hex(data))
+
+        let missingNames = Set(manifest.files.filter { $0.status == .missing }.map(\.name))
+        XCTAssertEqual(
+            missingNames,
+            ["decision.md", "transcript.jsonl", "graph.json", "replay.jsonl", "share.html"]
+        )
+    }
+
+    func testArtifactStoreFullWriteCompletesAfterCheckpoint() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("magi-checkpoint-full-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        var run = sampleRun()
+        run.status = .running
+        run.artifactBundle = MagiArtifactBundle(runID: run.id, rootDirectory: root.path)
+        _ = try MagiRunArtifactStore.writeCheckpoint(run: run)
+
+        run.status = .completed
+        let bundle = try MagiRunArtifactStore.write(run: run)
+
+        XCTAssertTrue(MagiRunArtifactStore.isComplete(bundle))
+        XCTAssertEqual(MagiRunArtifactStore.missingRequiredPaths(in: bundle), [])
+
+        let manifestData = try Data(contentsOf: URL(fileURLWithPath: bundle.manifestJSONPath))
+        let manifest = try JSONDecoder().decode(MagiArtifactManifest.self, from: manifestData)
+        XCTAssertEqual(manifest.artifactStatus, .complete)
+        XCTAssertTrue(manifest.files.allSatisfy { $0.status == .present })
     }
 
     func testFailedRunArtifactsIncludeFailureMetadata() {
@@ -195,5 +264,11 @@ final class MagiArtifactsTests: XCTestCase {
                 rationale: "Majority reached."
             )
         )
+    }
+
+    private func sha256Hex(_ data: Data) -> String {
+        SHA256.hash(data: data)
+            .map { String(format: "%02x", $0) }
+            .joined()
     }
 }

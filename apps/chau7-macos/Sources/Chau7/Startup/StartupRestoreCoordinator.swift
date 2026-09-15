@@ -4,21 +4,8 @@ import Chau7Core
 final class StartupRestoreCoordinator {
     static let shared = StartupRestoreCoordinator()
 
-    /// How long after `noteWindowVisible` we'll wait for the natural
-    /// `noteSelectedTabLiveFrame` before synthesizing one. Tuned shorter
-    /// than the t=8s `coordinator_ended` backstop in `AppDelegate.finishLaunching`
-    /// so a stuck window unblocks startup completion before the global
-    /// kick fires.
-    static let liveFrameSynthesisDelay: TimeInterval = 5.0
-
     private let lock = NSLock()
     private var tracker = StartupRestoreTracker()
-
-    /// Per-window pending fallback timers. When `noteWindowVisible` fires
-    /// for a window, an item is scheduled here; if `noteSelectedTabLiveFrame`
-    /// arrives naturally it cancels the item; otherwise the item synthesizes
-    /// the live-frame signal so completion can proceed.
-    private var liveFrameFallbackByWindow: [Int: DispatchWorkItem] = [:]
 
     private init() {}
 
@@ -182,24 +169,6 @@ final class StartupRestoreCoordinator {
         Log.info("Restore bootstrap settled: tab=\(tabID) pane=\(paneID) source=\(source)")
     }
 
-    func noteRestorePreviewShown(tabID: UUID, windowNumber: Int?, reason: String) {
-        lock.lock()
-        defer { lock.unlock() }
-        guard tracker.isActive else { return }
-        tracker.noteRestorePreviewShown()
-        let windowLabel = windowNumber.map(String.init) ?? "nil"
-        Log.info("Restore preview shown: tab=\(tabID) window=\(windowLabel) reason=\(reason)")
-    }
-
-    func noteRestorePreviewDiscarded(tabID: UUID, windowNumber: Int?, reason: String) {
-        lock.lock()
-        defer { lock.unlock() }
-        guard tracker.isActive else { return }
-        tracker.noteRestorePreviewDiscarded()
-        let windowLabel = windowNumber.map(String.init) ?? "nil"
-        Log.info("Restore preview discarded: tab=\(tabID) window=\(windowLabel) reason=\(reason)")
-    }
-
     func noteWindowVisible(windowNumber: Int, selectedTabID: UUID?) {
         lock.lock()
         tracker.noteWindowPrepared(windowNumber: windowNumber, at: Date())
@@ -211,7 +180,6 @@ final class StartupRestoreCoordinator {
         let tabLabel = selectedTabID?.uuidString ?? "nil"
         Log.info("Startup window visible: window=\(windowNumber) selectedTab=\(tabLabel)")
 
-        scheduleLiveFrameFallback(windowNumber: windowNumber)
     }
 
     func noteSelectedTabLiveFrame(windowNumber: Int, selectedTabID: UUID?, reason: String) {
@@ -220,10 +188,7 @@ final class StartupRestoreCoordinator {
         let elapsedMs: Int? = isActive
             ? tracker.noteSelectedTabLiveFrame(windowNumber: windowNumber, at: Date())
             : nil
-        let pending = liveFrameFallbackByWindow.removeValue(forKey: windowNumber)
         lock.unlock()
-
-        pending?.cancel()
 
         guard isActive, let elapsedMs else { return }
         let tabLabel = selectedTabID?.uuidString ?? "nil"
@@ -232,58 +197,4 @@ final class StartupRestoreCoordinator {
         )
     }
 
-    // MARK: - Live-frame synthesis fallback (P2)
-
-    /// Pure decision: should we synthesize a live-frame for the given
-    /// window? Yes only if startup-restore is still active AND no live
-    /// frame has been recorded for the window. Extracted as a static
-    /// helper so the rule is unit-testable without standing up a
-    /// coordinator instance + DispatchQueue timing.
-    static func shouldSynthesizeLiveFrameFallback(
-        isCoordinatorActive: Bool,
-        hasReportedLiveFrame: Bool
-    ) -> Bool {
-        guard isCoordinatorActive else { return false }
-        return !hasReportedLiveFrame
-    }
-
-    private func scheduleLiveFrameFallback(windowNumber: Int) {
-        let item = DispatchWorkItem { [weak self] in
-            self?.synthesizeLiveFrameIfStillMissing(windowNumber: windowNumber)
-        }
-        lock.lock()
-        liveFrameFallbackByWindow[windowNumber]?.cancel()
-        liveFrameFallbackByWindow[windowNumber] = item
-        lock.unlock()
-        DispatchQueue.main.asyncAfter(
-            deadline: .now() + Self.liveFrameSynthesisDelay,
-            execute: item
-        )
-    }
-
-    private func synthesizeLiveFrameIfStillMissing(windowNumber: Int) {
-        lock.lock()
-        liveFrameFallbackByWindow.removeValue(forKey: windowNumber)
-        let isActive = tracker.isActive
-        let alreadyReported = tracker.hasSelectedTabLiveFrame(windowNumber: windowNumber)
-        let shouldSynthesize = Self.shouldSynthesizeLiveFrameFallback(
-            isCoordinatorActive: isActive,
-            hasReportedLiveFrame: alreadyReported
-        )
-        let elapsedMs: Int? = shouldSynthesize
-            ? tracker.noteSelectedTabLiveFrame(windowNumber: windowNumber, at: Date())
-            : nil
-        lock.unlock()
-
-        guard shouldSynthesize, let elapsedMs else { return }
-        Log.warn(
-            """
-            Startup selected-tab live-frame synthesized: window=\(windowNumber) \
-            elapsed=\(elapsedMs)ms reason=fallback_\(Int(Self.liveFrameSynthesisDelay))s_no_live_frame. \
-            The natural noteSelectedTabLiveFrame callback never reached the coordinator — likely a \
-            missed didBecomeMain/didBecomeKey handoff during multi-window startup. \
-            Synthesizing so completeStartupRestoreIfReady can proceed.
-            """
-        )
-    }
 }

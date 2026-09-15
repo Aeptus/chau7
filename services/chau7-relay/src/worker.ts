@@ -15,10 +15,12 @@
  * requested, authenticated routes return 503.
  */
 import { SessionDO } from './session';
+import { APNSTokenBrokerDO } from './apns-token-broker';
 import { resolveAuthMode } from './auth.js';
 import { verifyToken } from './token.js';
+import { relayRuntimeInfo } from './runtime.js';
 
-export { SessionDO };
+export { APNSTokenBrokerDO, SessionDO };
 
 const LANDING_HTML = `<!DOCTYPE html>
 <html lang="en">
@@ -47,8 +49,10 @@ type Role = 'mac' | 'ios';
 
 interface Env {
   SESSION: DurableObjectNamespace;
+  APNS_TOKEN_BROKER: DurableObjectNamespace;
   RELAY_SECRET?: string;
   RELAY_ALLOW_UNAUTHENTICATED?: string;
+  CF_VERSION_METADATA?: { id?: string; tag?: string; timestamp?: string };
 }
 
 /** Logged at most once per isolate so an open-mode deployment is visible without spamming logs. */
@@ -128,6 +132,15 @@ export default {
         });
       }
       return methodNotAllowed('GET');
+    }
+
+    if (parts.length === 1 && parts[0] === 'runtime') {
+      if (request.method !== 'GET') {
+        return methodNotAllowed('GET');
+      }
+      return Response.json(relayRuntimeInfo(env.CF_VERSION_METADATA), {
+        headers: { 'Cache-Control': 'no-store' }
+      });
     }
 
     const action = parts[0];

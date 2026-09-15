@@ -126,12 +126,15 @@ Type codes (`u8`). The Swift enum `RemoteFrameType`
 - `0x21 INPUT` (encrypted, bytes)
 - `0x22 SNAPSHOT` (encrypted, bytes)
 - `0x23 TERMINAL_GRID_SNAPSHOT` (encrypted, bytes)
+- `0x24 KEY_INPUT` (encrypted, JSON — semantic key presses, iOS→Mac; forwarded opaquely by the agent)
+- `0x25 CHECKPOINT_REQUEST` (encrypted, empty payload — asks macOS for a fresh active-tab snapshot)
 - `0x30 PING` (encrypted, JSON)
 - `0x31 PONG` (encrypted, JSON)
 - `0x40 PAIRING_INFO` (local IPC, JSON)
 - `0x41 SESSION_STATUS` (local IPC, JSON)
 - `0x42 REMOTE_TELEMETRY` (encrypted over relay, local IPC after relay client decrypts)
 - `0x43 CLIENT_STATE` (encrypted, JSON)
+- `0x44 RELAY_STATUS` (local IPC, JSON — helper-to-relay transport state and optional reconnect delay)
 - `0x50 APPROVAL_REQUEST` (encrypted, JSON)
 - `0x51 APPROVAL_RESPONSE` (encrypted, JSON)
 - `0x52 NOTIFICATION_EVENT` (encrypted, JSON)
@@ -321,12 +324,19 @@ shape: `RemoteClientStatePayload`
 {
   "app_state": "foreground|background",
   "stream_mode": "full|approvals_only",
+  "terminal_presentation": "text|replay|grid",
   "push_token": "hex",
   "push_topic": "bundle-id",
   "push_environment": "development|production",
   "notifications_authorized": true
 }
 ```
+
+`terminal_presentation` is optional for rolling compatibility. `text` sends a
+bounded ANSI snapshot followed by incremental output, `replay` sends the same
+wire representation for reconstruction by the client's terminal emulator, and
+`grid` sends coalesced full-grid snapshots. A missing value requests the legacy
+dual text-and-grid stream.
 
 ### APPROVAL_REQUEST
 
@@ -390,7 +400,12 @@ failed) reach the phone. Canonical Swift shape:
 
 ### OUTPUT
 
-Raw PTY bytes.
+Raw PTY bytes. Current clients advertise `supports_output_timing: true` in
+`CLIENT_STATE`. For those clients the frame also carries flag `0x02`, and its
+payload starts with a 24-byte `CH7O` v1 timing header: magic (4 bytes),
+version/reserved (4 bytes), first-capture Unix microseconds (`u64le`), and send
+Unix microseconds (`u64le`). The remaining bytes are the original PTY output.
+Clients must continue accepting unwrapped OUTPUT frames from older senders.
 
 ### INPUT
 
@@ -405,6 +420,12 @@ Raw PTY bytes for the last N KB. Sent by macOS on iOS connect.
 Binary encoding of the current terminal grid (cells + attributes) for
 faithful remote rendering. See `RemoteTerminalGridSnapshot` in Chau7Core for
 the layout.
+
+### CHECKPOINT_REQUEST
+
+Empty payload. The iPhone sends this after intentionally fast-forwarding an
+overloaded output queue; macOS replies with a fresh SNAPSHOT without changing
+the locally focused tab.
 
 ### PING / PONG
 

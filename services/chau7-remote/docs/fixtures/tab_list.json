@@ -15,5 +15,6 @@
       "is_active": false,
       "is_mcp_controlled": true
     }
-  ]
+  ],
+  "capabilities": ["key_input"]
 }

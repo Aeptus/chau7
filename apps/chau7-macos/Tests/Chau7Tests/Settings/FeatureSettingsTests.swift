@@ -83,6 +83,19 @@ final class FeatureSettingsTests: XCTestCase {
         }
     }
 
+    func testDefaultOutcomeHighlightsPersistUntilViewed() {
+        let bindings = NotificationSettings.defaultGroupActionBindings
+        for key in ["ai_coding.finished", "ai_coding.failed", "ai_coding.response_failed"] {
+            let style = bindings[key]?.first(where: { $0.actionType == .styleTab })
+            XCTAssertNotNil(style, "Expected a style action for \(key)")
+            XCTAssertNotEqual(style?.config["autoClearSeconds"], "60")
+            XCTAssertTrue(
+                style?.config["autoClearSeconds"] == nil || style?.config["autoClearSeconds"] == "0",
+                "\(key) should clear on selection, not elapsed time"
+            )
+        }
+    }
+
     func testAgentGroupBindingBackfillSeedsMissingKeysWithDockBounce() {
         let result = NotificationSettingsStore.normalizedAgentGroupActionBindings([:])
         for key in ["ai_coding.finished", "ai_coding.permission", "ai_coding.waiting_input", "ai_coding.attention_required"] {

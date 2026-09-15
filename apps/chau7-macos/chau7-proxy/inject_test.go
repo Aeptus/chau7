@@ -185,6 +185,7 @@ func TestInjector_DefaultPosition(t *testing.T) {
 	rule := inj.MatchProject("/repo")
 	if rule == nil {
 		t.Fatal("expected match")
+		return
 	}
 	if rule.Position != PositionPrepend {
 		t.Errorf("default position should be prepend, got %s", rule.Position)
@@ -694,6 +695,7 @@ func TestInjector_DefaultTriggerIsEveryPrompt(t *testing.T) {
 	rule := inj.MatchProject("/my/repo")
 	if rule == nil {
 		t.Fatal("expected matching rule")
+		return
 	}
 	if len(rule.Triggers) != 1 || rule.Triggers[0] != TriggerEveryPrompt {
 		t.Fatalf("expected default every_prompt trigger, got %v", rule.Triggers)

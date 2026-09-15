@@ -7,26 +7,14 @@ struct DisplaySettingsView: View {
     @Bindable private var settings = FeatureSettings.shared
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            // Display Enhancements
-            SettingsSectionHeader(L("settings.appearance.displayEnhancements", "Display Enhancements"), icon: "eye")
+        VStack(alignment: .leading, spacing: Chau7Style.Settings.pageSectionSpacing) {
+            // Readability
+            SettingsSectionHeader(L("settings.display.readability", "Readability"), icon: "text.viewfinder")
 
             SettingsToggle(
                 label: L("settings.appearance.syntaxHighlighting", "Syntax Highlighting"),
                 help: L("settings.appearance.syntaxHighlighting.help", "Highlight code syntax in terminal output for better readability"),
                 isOn: $settings.isSyntaxHighlightEnabled
-            )
-
-            SettingsToggle(
-                label: L("settings.appearance.clickableURLs", "Clickable URLs"),
-                help: L("settings.appearance.clickableURLs.help", "Make URLs in terminal output clickable to open in browser"),
-                isOn: $settings.isClickableURLsEnabled
-            )
-
-            SettingsToggle(
-                label: L("settings.appearance.inlineImages", "Inline Images"),
-                help: L("settings.appearance.inlineImages.help", "Display images inline using iTerm2's imgcat protocol (use imgcat command)"),
-                isOn: $settings.isInlineImagesEnabled
             )
 
             SettingsToggle(
@@ -52,29 +40,24 @@ struct DisplaySettingsView: View {
                 )
             }
 
-            Divider()
-                .padding(.vertical, 8)
+            SettingsDivider()
 
-            // Window & Layout
-            SettingsSectionHeader(L("settings.display.windowLayout", "Window & Layout"), icon: "macwindow")
-
-            // Split Panes
-            SettingsSectionHeader(L("settings.windows.splitPanes", "Split Panes"), icon: "rectangle.split.2x1")
+            // Interactive Output
+            SettingsSectionHeader(L("settings.display.interactiveOutput", "Interactive Output"), icon: "cursorarrow.click.2")
 
             SettingsToggle(
-                label: L("settings.windows.enableSplitPanes", "Enable Split Panes"),
-                help: L("settings.windows.enableSplitPanes.help", "Allow splitting terminal into multiple panes within a single tab"),
-                isOn: $settings.isSplitPanesEnabled
+                label: L("settings.appearance.clickableURLs", "Clickable URLs"),
+                help: L("settings.appearance.clickableURLs.help", "Make URLs in terminal output clickable to open in browser"),
+                isOn: $settings.isClickableURLsEnabled
             )
 
-            if settings.isSplitPanesEnabled {
-                SettingsShortcutRow(label: L("settings.windows.splitHorizontal", "Split Horizontal"), shortcut: "⌘⌥H")
-                SettingsShortcutRow(label: L("settings.windows.splitVertical", "Split Vertical"), shortcut: "⌘⌥V")
-                SettingsShortcutRow(label: L("settings.windows.navigatePanes", "Navigate Panes"), shortcut: "⌘⌥Arrow")
-            }
+            SettingsToggle(
+                label: L("settings.appearance.inlineImages", "Inline Images"),
+                help: L("settings.appearance.inlineImages.help", "Display images inline using iTerm2's imgcat protocol (use imgcat command)"),
+                isOn: $settings.isInlineImagesEnabled
+            )
 
-            Divider()
-                .padding(.vertical, 8)
+            SettingsDivider()
 
             // Reset Button
             SettingsButtonRow(buttons: [

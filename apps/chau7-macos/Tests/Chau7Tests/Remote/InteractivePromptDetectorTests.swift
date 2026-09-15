@@ -21,8 +21,66 @@ final class InteractivePromptDetectorTests: XCTestCase {
         XCTAssertEqual(prompt.prompt, "Do you want to proceed?")
         XCTAssertEqual(prompt.options.map(\.id), ["1", "2"])
         XCTAssertEqual(prompt.options.map(\.label), ["Yes", "No"])
-        XCTAssertEqual(prompt.options.map(\.response), ["1\r", "2\r"])
+        // Cursor-marked: answered by moving the selection, not by typing the
+        // row number (Claude Code's permission menu ignores digits).
+        XCTAssertEqual(prompt.options.map(\.response), ["\r", "\u{1B}[B\r"])
+        XCTAssertEqual(prompt.selectedOptionIndex, 0)
         XCTAssertTrue(prompt.options[1].isDestructive)
+    }
+
+    func testClaudePermissionMenuWithAlwaysAllowRowNavigates() throws {
+        // The real three-option shape: option 2 grants standing permission and
+        // carries the whole command in its label.
+        let transcript = """
+        Bash command
+
+        git commit -m "wip"
+
+        This command requires approval
+
+        Do you want to proceed?
+        ❯ 1. Yes
+          2. Yes, and don't ask again for similar commands in /repo
+          3. No
+
+        Esc to cancel · Tab to amend · ctrl+e to explain
+        """
+
+        let prompt = try XCTUnwrap(InteractivePromptDetector.detect(in: transcript, toolName: "Claude"))
+        XCTAssertEqual(prompt.options.count, 3)
+        XCTAssertEqual(
+            prompt.options.map(\.response),
+            ["\r", "\u{1B}[B\r", "\u{1B}[B\u{1B}[B\r"]
+        )
+        XCTAssertEqual(prompt.selectedOptionIndex, 0)
+    }
+
+    func testNumberedMenuWithoutCursorKeepsDigitResponses() throws {
+        // No cursor glyph means no known selection to navigate from, so the
+        // digit responses stand. Guards the tools whose menus do act on digits.
+        let transcript = """
+        Do you want to proceed?
+        1. Yes
+        2. No
+        """
+
+        let prompt = try XCTUnwrap(InteractivePromptDetector.detect(in: transcript, toolName: "Claude"))
+        XCTAssertEqual(prompt.options.map(\.response), ["1\r", "2\r"])
+        XCTAssertNil(prompt.selectedOptionIndex)
+    }
+
+    func testKeywordMenuWithMultipleCursorRowsKeepsDigitResponses() throws {
+        // Two cursors is not a coherent selection reading; fall back to digits
+        // rather than navigating from a guessed row.
+        let transcript = """
+        Do you want to proceed?
+        ❯ 1. Yes
+        ❯ 2. No
+        """
+
+        let prompt = try XCTUnwrap(InteractivePromptDetector.detect(in: transcript, toolName: "Claude"))
+        XCTAssertEqual(prompt.options.map(\.response), ["1\r", "2\r"])
+        XCTAssertNil(prompt.selectedOptionIndex)
     }
 
     func testDetectsCodexOptionPrompt() throws {
@@ -37,6 +95,8 @@ final class InteractivePromptDetectorTests: XCTestCase {
         let prompt = try XCTUnwrap(InteractivePromptDetector.detect(in: transcript, toolName: "Codex"))
         XCTAssertEqual(prompt.prompt, "Do you want to continue?")
         XCTAssertEqual(prompt.options.map(\.label), ["Continue", "Cancel"])
+        // Codex renders this menu without a cursor glyph, so it keeps digits.
+        XCTAssertEqual(prompt.options.map(\.response), ["1\r", "2\r"])
     }
 
     func testDetectsCodexPromptWithoutQuestionMark() throws {
@@ -75,28 +135,25 @@ final class InteractivePromptDetectorTests: XCTestCase {
         XCTAssertEqual(prompt.options.map(\.label), ["Yes", "No"])
     }
 
-    func testFallbackDetectsFreeTextPromptForUnsupportedTool() throws {
+    func testFallbackIgnoresFreeTextQuestionWithoutYesNo() {
+        // A normal AI turn ending in a question is indistinguishable from a real
+        // prompt, so — without a y/n affordance — the fallback must not surface
+        // it. This is what stopped ordinary turns showing as phantom prompts.
         let transcript = """
         Redb needs your guidance for the next step.
         How should I proceed with the migration?
         """
 
-        let prompt = try XCTUnwrap(InteractivePromptDetector.fallbackInputRequest(in: transcript))
-        XCTAssertEqual(prompt.prompt, "How should I proceed with the migration?")
-        XCTAssertEqual(prompt.detail, "Redb needs your guidance for the next step.")
-        XCTAssertTrue(prompt.options.isEmpty)
+        XCTAssertNil(InteractivePromptDetector.fallbackInputRequest(in: transcript))
     }
 
-    func testFallbackPrefersColonTerminatedInputPrompt() throws {
+    func testFallbackIgnoresColonTerminatedInputPrompt() {
         let transcript = """
         Reviewing changeset...
         Provide additional context:
         """
 
-        let prompt = try XCTUnwrap(InteractivePromptDetector.fallbackInputRequest(in: transcript))
-        XCTAssertEqual(prompt.prompt, "Provide additional context:")
-        XCTAssertEqual(prompt.detail, "Reviewing changeset...")
-        XCTAssertTrue(prompt.options.isEmpty)
+        XCTAssertNil(InteractivePromptDetector.fallbackInputRequest(in: transcript))
     }
 
     // MARK: - Yes/No synthesis for un-numbered confirmations
@@ -122,11 +179,10 @@ final class InteractivePromptDetectorTests: XCTestCase {
         XCTAssertEqual(prompt.options.map(\.response), ["yes\r", "no\r"])
     }
 
-    func testFallbackWithoutYesNoHintHasNoOptions() throws {
-        let transcript = "Ready to proceed?"
-
-        let prompt = try XCTUnwrap(InteractivePromptDetector.fallbackInputRequest(in: transcript))
-        XCTAssertTrue(prompt.options.isEmpty, "a bare question must not guess a keystroke")
+    func testFallbackWithoutYesNoHintIsNotSurfaced() {
+        // A bare question can't be turned into real choices and mustn't guess a
+        // keystroke, so the fallback surfaces nothing at all.
+        XCTAssertNil(InteractivePromptDetector.fallbackInputRequest(in: "Ready to proceed?"))
     }
 
     func testSynthesizedYesNoOptionsDirectly() {
@@ -283,6 +339,200 @@ final class InteractivePromptDetectorTests: XCTestCase {
             InteractivePromptDetector.detect(in: hidden.joined(separator: "\n"), toolName: "claude"),
             "prompt beyond the 80-line window should be invisible to detect"
         )
+    }
+
+    // MARK: - Structural detection (no keyword)
+
+    func testStructuralNumberedMenuWithArbitraryQuestionDetected() throws {
+        // AskUserQuestion-style: the question matches no prompt keyword, so
+        // only the structural pass (cursor glyph + numbered rows) can see it.
+        let transcript = """
+        Which auth method should we use for the API?
+        ❯ 1. OAuth (Recommended)
+          2. JWT
+          3. Other
+        """
+
+        let prompt = try XCTUnwrap(InteractivePromptDetector.detect(in: transcript, toolName: "Claude"))
+        XCTAssertEqual(prompt.prompt, "Which auth method should we use for the API?")
+        XCTAssertEqual(prompt.options.map(\.id), ["1", "2", "3"])
+        XCTAssertEqual(prompt.options.map(\.label), ["OAuth (Recommended)", "JWT", "Other"])
+        XCTAssertEqual(
+            prompt.options.map(\.response),
+            ["\r", "\u{1B}[B\r", "\u{1B}[B\u{1B}[B\r"]
+        )
+        XCTAssertEqual(prompt.selectedOptionIndex, 0)
+    }
+
+    func testStructuralCursorOnSecondOptionRecordsIndex() throws {
+        let transcript = """
+        Which database migration strategy?
+          1. Expand and contract
+        ❯ 2. Blue-green
+        """
+
+        let prompt = try XCTUnwrap(InteractivePromptDetector.detect(in: transcript, toolName: "Claude"))
+        XCTAssertEqual(prompt.selectedOptionIndex, 1)
+    }
+
+    func testStructuralGlyphVariantsDetected() {
+        for glyph in ["›", "▸"] {
+            let transcript = """
+            Which formatting style for the export?
+            \(glyph) 1. Compact
+              2. Expanded
+            """
+            XCTAssertNotNil(
+                InteractivePromptDetector.detect(in: transcript, toolName: "Claude"),
+                "glyph \(glyph)"
+            )
+        }
+    }
+
+    func testStructuralToleratesTrailingMetaLines() {
+        let transcript = """
+        Which branch strategy fits this repo?
+        ❯ 1. Trunk-based
+          2. Git flow
+
+        Esc to cancel · Tab to amend · ctrl+e to explain
+        """
+
+        XCTAssertNotNil(InteractivePromptDetector.detect(in: transcript, toolName: "Claude"))
+    }
+
+    func testNumberedProseListWithoutGlyphNotDetected() {
+        let transcript = """
+        Here is my plan for the refactor:
+        1. Extract the parser
+        2. Add tests
+        3. Wire the callers
+        """
+
+        XCTAssertNil(InteractivePromptDetector.detect(in: transcript, toolName: "Claude"))
+    }
+
+    func testStarshipShellTranscriptNotDetected() {
+        // The ❯ shell prompt must not read as a menu: command + output rows
+        // don't align (nor form ≥2 cursor-free option rows under one cursor).
+        let transcript = """
+        ❯ git status
+        On branch main
+        nothing to commit, working tree clean
+        ❯ ls src
+        parser.swift
+        """
+
+        XCTAssertNil(InteractivePromptDetector.detect(in: transcript, toolName: "Claude"))
+    }
+
+    func testStructuralBlockNotAtTailNotDetected() {
+        let transcript = """
+        Which auth method should we use?
+        ❯ 1. OAuth
+          2. JWT
+        Compiling module A
+        Compiling module B
+        """
+
+        XCTAssertNil(InteractivePromptDetector.detect(in: transcript, toolName: "Claude"))
+    }
+
+    func testStructuralRequiresPromptLine() {
+        let transcript = """
+        ❯ 1. Yes
+          2. No
+        """
+
+        XCTAssertNil(InteractivePromptDetector.detect(in: transcript, toolName: "Claude"))
+    }
+
+    func testStructuralMultipleCursorRowsNotDetected() {
+        // Note the header avoids every keyword so only the structural pass
+        // runs — two cursor rows mean this isn't a coherent menu.
+        let transcript = """
+        Pick a variant for the build:
+        ❯ 1. First
+        ❯ 2. Second
+        """
+
+        XCTAssertNil(InteractivePromptDetector.detect(in: transcript, toolName: "Claude"))
+    }
+
+    func testKeywordPassWinsOverStructural() throws {
+        // Both passes match here; the keyword pass is the higher-confidence
+        // read of the prompt text, and it reports the cursor row too so a
+        // keyword-matched menu is navigated exactly like a structural one.
+        let transcript = """
+        Do you want to proceed?
+        ❯ 1. Yes
+          2. No
+        """
+
+        let prompt = try XCTUnwrap(InteractivePromptDetector.detect(in: transcript, toolName: "Claude"))
+        XCTAssertEqual(prompt.prompt, "Do you want to proceed?")
+        XCTAssertEqual(prompt.selectedOptionIndex, 0)
+    }
+
+    // MARK: - Structural detection: arrow-only menus
+
+    func testUnnumberedMenuSynthesizesNavigationResponses() throws {
+        let transcript = """
+        Select a model:
+          Default
+        ❯ Sonnet 4.5
+          Opus 4.8
+        """
+
+        let prompt = try XCTUnwrap(InteractivePromptDetector.detect(in: transcript, toolName: "Claude"))
+        XCTAssertEqual(prompt.prompt, "Select a model:")
+        XCTAssertEqual(prompt.options.map(\.id), ["opt-0", "opt-1", "opt-2"])
+        XCTAssertEqual(prompt.options.map(\.label), ["Default", "Sonnet 4.5", "Opus 4.8"])
+        XCTAssertEqual(prompt.options.map(\.response), ["\u{1B}[A\r", "\r", "\u{1B}[B\r"])
+        XCTAssertEqual(prompt.selectedOptionIndex, 1)
+    }
+
+    func testUnnumberedMenuRequiresMenuHeader() {
+        // Aligned short rows under a cursor row are too weak on their own
+        // (e.g. "❯ npm test" above indented result lines) — without a header
+        // that reads like a question or menu title, nothing is surfaced.
+        let transcript = """
+        Running the suite now.
+        ❯ npm test
+          PASS src/parser
+          PASS src/renderer
+        """
+
+        XCTAssertNil(InteractivePromptDetector.detect(in: transcript, toolName: "Claude"))
+    }
+
+    func testUnnumberedMenuMisalignedRowsNotDetected() {
+        let transcript = """
+        Select a target:
+        ❯ staging
+        production line with different indent
+        """
+
+        XCTAssertNil(InteractivePromptDetector.detect(in: transcript, toolName: "Claude"))
+    }
+
+    func testStructuralSignatureStableAcrossCursorMoves() throws {
+        let cursorOnFirst = """
+        Select a model:
+        ❯ Sonnet 4.5
+          Opus 4.8
+        """
+        let cursorOnSecond = """
+        Select a model:
+          Sonnet 4.5
+        ❯ Opus 4.8
+        """
+
+        let first = try XCTUnwrap(InteractivePromptDetector.detect(in: cursorOnFirst, toolName: "Claude"))
+        let second = try XCTUnwrap(InteractivePromptDetector.detect(in: cursorOnSecond, toolName: "Claude"))
+        XCTAssertEqual(first.signature, second.signature, "cursor moves must not mint a new prompt ID")
+        XCTAssertNotEqual(first.selectedOptionIndex, second.selectedOptionIndex)
+        XCTAssertNotEqual(first.options.map(\.response), second.options.map(\.response))
     }
 
     private let basicPrompt = """

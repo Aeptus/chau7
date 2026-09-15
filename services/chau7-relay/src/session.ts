@@ -27,6 +27,7 @@ import {
 } from './apns.js';
 import { RateLimiter } from './ratelimit.js';
 import { parseToken, TOKEN_TTL_SECONDS } from './token.js';
+import { relayBackpressureAction } from './backpressure.js';
 
 interface PushRegistration {
   pairedDeviceId: string;
@@ -54,6 +55,7 @@ interface PendingStatePayload {
 }
 
 interface Env {
+  APNS_TOKEN_BROKER: DurableObjectNamespace;
   APNS_TEAM_ID?: string;
   APNS_KEY_ID?: string;
   APNS_PRIVATE_KEY?: string;
@@ -65,10 +67,6 @@ const SEEN_NONCES_KEY = 'seen_nonces';
 
 /** Reject relayed frames larger than this (matches the platform WS message limit). */
 const MAX_FRAME_BYTES = 1024 * 1024;
-/** Drop frames to a peer whose send buffer already exceeds this (slow receiver). */
-const BACKPRESSURE_SOFT_BYTES = 4 * 1024 * 1024;
-/** Close a peer whose send buffer is hopelessly backed up. */
-const BACKPRESSURE_HARD_BYTES = 16 * 1024 * 1024;
 /** Upper bound on retained nonces; bounded anyway by TTL + rate limits. */
 const MAX_SEEN_NONCES = 2000;
 
@@ -78,12 +76,6 @@ export class SessionDO {
   private readonly state: DurableObjectState;
   private readonly env: Env;
   private readonly rateLimiter = new RateLimiter();
-  /// Cached APNs provider JWT — identical across all registrations in this DO,
-  /// valid up to 1h; refreshed at 50min to avoid TooManyProviderTokenUpdates.
-  private cachedAPNSToken?: { token: string; expiresAt: number };
-  /// Cached signing key so the P-256 import happens once per JWT refresh, not per notify.
-  private cachedSigningKey?: CryptoKey;
-
   constructor(state: DurableObjectState, env: Env) {
     this.state = state;
     this.env = env;
@@ -182,7 +174,8 @@ export class SessionDO {
     const peerRole: Role = role === 'mac' ? 'ios' : 'mac';
     for (const peer of this.state.getWebSockets(peerRole)) {
       const buffered = (peer as { bufferedAmount?: number }).bufferedAmount ?? 0;
-      if (buffered > BACKPRESSURE_HARD_BYTES) {
+      const backpressureAction = relayBackpressureAction(buffered, message);
+      if (backpressureAction === 'close') {
         // Receiver is hopelessly behind; shed it rather than grow memory.
         try {
           peer.close(1013, 'Receiver overloaded');
@@ -191,8 +184,9 @@ export class SessionDO {
         }
         continue;
       }
-      if (buffered > BACKPRESSURE_SOFT_BYTES) {
-        // Drop this frame; the encrypted transport above the relay recovers.
+      if (backpressureAction === 'drop-grid') {
+        // A full grid is replaceable state. Preserve ordered output/control
+        // frames and let the next coalesced grid catch the viewport up.
         continue;
       }
       try {
@@ -428,7 +422,13 @@ export class SessionDO {
       registration.pushEnvironment === 'production'
         ? 'https://api.push.apple.com'
         : 'https://api.sandbox.push.apple.com';
-    const authToken = await this.getAPNSToken(APNS_TEAM_ID, APNS_KEY_ID, APNS_PRIVATE_KEY);
+    let authToken: string;
+    try {
+      authToken = await this.getAPNSToken(APNS_TEAM_ID, APNS_KEY_ID);
+    } catch (error) {
+      console.warn(`APNs push deferred: provider token unavailable: ${String(error)}`);
+      return { status: 503, reason: 'apns_provider_token_unavailable' };
+    }
     const body = buildApnsPayload(payload);
 
     const headers: Record<string, string> = {
@@ -462,6 +462,9 @@ export class SessionDO {
         // APNs body unavailable; status alone is still logged below.
       }
       reason = parseApnsReason(text);
+      if (reason === 'TooManyProviderTokenUpdates') {
+        await this.reportProviderTokenRateLimit(APNS_TEAM_ID, APNS_KEY_ID);
+      }
       console.warn(
         `APNs push failed: status=${response.status} device=${registration.pairedDeviceId} reason=${reason ?? text}`
       );
@@ -469,64 +472,29 @@ export class SessionDO {
     return { status: response.status, reason };
   }
 
-  /// Returns a cached APNs provider JWT, minting a fresh one only when the
-  /// cache is empty or near expiry. The signing inputs (team/key) are identical
-  /// for every registration in this DO, so this collapses the per-registration,
-  /// per-notify ECDSA signing into one signature per ~50 minutes.
-  private async getAPNSToken(teamID: string, keyID: string, privateKey: string): Promise<string> {
-    const now = Date.now();
-    if (this.cachedAPNSToken && this.cachedAPNSToken.expiresAt > now) {
-      return this.cachedAPNSToken.token;
+  private async getAPNSToken(teamID: string, keyID: string): Promise<string> {
+    const brokerID = this.env.APNS_TOKEN_BROKER.idFromName(`${teamID}:${keyID}`);
+    const response = await this.env.APNS_TOKEN_BROKER.get(brokerID).fetch(
+      new Request('https://apns-token-broker/token', { method: 'POST' })
+    );
+    if (!response.ok) {
+      throw new Error(`broker_status_${response.status}`);
     }
-    const token = await this.createAPNSToken(teamID, keyID, privateKey);
-    this.cachedAPNSToken = { token, expiresAt: now + 50 * 60 * 1000 };
-    return token;
+    const payload = (await response.json()) as { token?: string };
+    if (!payload.token) {
+      throw new Error('broker_missing_token');
+    }
+    return payload.token;
   }
 
-  private async createAPNSToken(
-    teamID: string,
-    keyID: string,
-    privateKey: string
-  ): Promise<string> {
-    const header = this.base64url(JSON.stringify({ alg: 'ES256', kid: keyID, typ: 'JWT' }));
-    const claims = this.base64url(
-      JSON.stringify({ iss: teamID, iat: Math.floor(Date.now() / 1000) })
-    );
-    const signingInput = `${header}.${claims}`;
-    if (!this.cachedSigningKey) {
-      this.cachedSigningKey = await crypto.subtle.importKey(
-        'pkcs8',
-        this.pemToArrayBuffer(privateKey),
-        { name: 'ECDSA', namedCurve: 'P-256' },
-        false,
-        ['sign']
+  private async reportProviderTokenRateLimit(teamID: string, keyID: string): Promise<void> {
+    const brokerID = this.env.APNS_TOKEN_BROKER.idFromName(`${teamID}:${keyID}`);
+    try {
+      await this.env.APNS_TOKEN_BROKER.get(brokerID).fetch(
+        new Request('https://apns-token-broker/provider-update-rate-limited', { method: 'POST' })
       );
+    } catch (error) {
+      console.warn(`APNs provider-token backoff report failed: ${String(error)}`);
     }
-    const signature = await crypto.subtle.sign(
-      { name: 'ECDSA', hash: 'SHA-256' },
-      this.cachedSigningKey,
-      new TextEncoder().encode(signingInput)
-    );
-    return `${signingInput}.${this.base64url(signature)}`;
-  }
-
-  private pemToArrayBuffer(pem: string): ArrayBuffer {
-    const normalized = pem.replace(/\\n/g, '\n');
-    const base64 = normalized
-      .replace(/-----BEGIN PRIVATE KEY-----/g, '')
-      .replace(/-----END PRIVATE KEY-----/g, '')
-      .replace(/\s+/g, '');
-    const bytes = Uint8Array.from(atob(base64), (char) => char.charCodeAt(0));
-    return bytes.buffer;
-  }
-
-  private base64url(value: string | ArrayBuffer): string {
-    const bytes =
-      typeof value === 'string' ? new TextEncoder().encode(value) : new Uint8Array(value);
-    let binary = '';
-    for (const byte of bytes) {
-      binary += String.fromCharCode(byte);
-    }
-    return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
   }
 }

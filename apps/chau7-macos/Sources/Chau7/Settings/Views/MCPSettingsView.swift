@@ -10,38 +10,45 @@ struct MCPSettingsView: View {
     @State private var isAddingProfile = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: Chau7Style.Settings.pageSectionSpacing) {
             SettingsSectionHeader(L("settings.mcp.general", "General"), icon: "face.dashed")
 
             SettingsToggle(
-                label: L("settings.mcp.enable", "Enable MCP"),
-                help: L("settings.mcp.enable.help", "Allow MCP clients to control Chau7 tabs via the local socket"),
-                isOn: $settings.mcpEnabled
+                label: L("settings.mcp.enable", "Enable Agent Control"),
+                help: L("settings.mcp.enable.help", "Allow agent clients to control Chau7 tabs via the local socket"),
+                isOn: $settings.mcpEnabled,
+                anchorID: "mcpServer"
             )
 
             SettingsToggle(
                 label: L("settings.mcp.approval", "Require Approval"),
-                help: L("settings.mcp.approval.help", "Show a confirmation dialog before MCP creates a new tab"),
+                help: L("settings.mcp.approval.help", "Show a confirmation dialog before an agent creates a new tab"),
                 isOn: $settings.mcpRequiresApproval,
                 disabled: !settings.mcpEnabled
             )
 
-            SettingsSectionHeader(L("settings.mcp.limits", "Limits"), icon: "number.square")
+            SettingsAdvancedDisclosure {
+                SettingsSectionHeader(L("settings.mcp.limits", "Limits"), icon: "number.square")
 
-            SettingsRow(L("settings.mcp.maxTabs", "Max MCP Tabs"), help: L("settings.mcp.maxTabs.help", "Maximum number of tabs an MCP client can create (1-50)")) {
-                Stepper(value: $settings.mcpMaxTabs, in: 1 ... 50) {
-                    Text("\(settings.mcpMaxTabs)")
-                        .monospacedDigit()
-                        .frame(width: 30, alignment: .trailing)
+                SettingsRow(L("settings.mcp.maxTabs", "Max Agent Tabs"), help: L("settings.mcp.maxTabs.help", "Maximum number of tabs an agent client can create (1-50)")) {
+                    Stepper(value: $settings.mcpMaxTabs, in: 1 ... 50) {
+                        Text("\(settings.mcpMaxTabs)")
+                            .monospacedDigit()
+                            .frame(width: 30, alignment: .trailing)
+                    }
+                    .disabled(!settings.mcpEnabled)
                 }
-                .disabled(!settings.mcpEnabled)
             }
 
             // MARK: - Command Permissions
 
-            SettingsSectionHeader(L("settings.mcp.permissions", "Command Permissions"), icon: "lock.shield")
+            SettingsSectionHeader(
+                L("settings.mcp.permissions", "Command Permissions"),
+                icon: "lock.shield",
+                anchorID: "mcpPermissions"
+            )
 
-            SettingsRow(L("settings.mcp.permissionMode", "Permission Mode"), help: L("settings.mcp.permissionMode.help", "Controls how MCP commands are filtered")) {
+            SettingsRow(L("settings.mcp.permissionMode", "Permission Mode"), help: L("settings.mcp.permissionMode.help", "Controls how agent commands are filtered")) {
                 Picker("", selection: $settings.mcpPermissionMode) {
                     ForEach(MCPPermissionMode.allCases, id: \.self) { mode in
                         Text(mode.displayName).tag(mode)
@@ -94,13 +101,13 @@ struct MCPSettingsView: View {
 
             SettingsToggle(
                 label: L("settings.mcp.indicator", "Show Tab Indicator"),
-                help: L("settings.mcp.indicator.help", "Display a purple icon and background on MCP-created tabs"),
+                help: L("settings.mcp.indicator.help", "Display a purple icon and background on agent-created tabs"),
                 isOn: $settings.mcpShowTabIndicator
             )
 
-            // MARK: - MCP Profiles
+            // MARK: - Agent Profiles
 
-            SettingsSectionHeader(L("settings.mcp.profiles", "MCP Profiles"), icon: "person.crop.rectangle.stack")
+            SettingsSectionHeader(L("settings.mcp.profiles", "Agent Profiles"), icon: "person.crop.rectangle.stack")
 
             Text(L("settings.mcp.profiles.help", "Profiles override global permissions when their trigger matches the current tab context."))
                 .font(.caption)
@@ -269,8 +276,8 @@ private struct MCPProfileEditorView: View {
     private let triggerTypes = ["Directory", "Git Repository", "SSH Host", "Process", "Environment Variable"]
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text(profile == nil ? L("mcp.settings.newProfile", "New MCP Profile") : L("mcp.settings.editProfile", "Edit MCP Profile"))
+        VStack(alignment: .leading, spacing: Chau7Style.Settings.looseControlSpacing) {
+            Text(profile == nil ? L("mcp.settings.newProfile", "New Agent Profile") : L("mcp.settings.editProfile", "Edit Agent Profile"))
                 .font(.headline)
 
             TextField(L("placeholder.profileName", "Profile Name"), text: $name)
@@ -333,7 +340,7 @@ private struct MCPProfileEditorView: View {
                     .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty || triggerValue.trimmingCharacters(in: .whitespaces).isEmpty)
             }
         }
-        .padding(20)
+        .padding(Chau7Style.Settings.contentPadding)
         .frame(minWidth: 460)
         .onAppear {
             if let p = profile {

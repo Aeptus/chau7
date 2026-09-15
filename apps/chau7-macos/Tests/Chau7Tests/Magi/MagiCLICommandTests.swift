@@ -5,14 +5,47 @@ final class MagiCLICommandTests: XCTestCase {
     func testBareQuestionParsesAsAsk() {
         XCTAssertEqual(
             MagiCLICommandParser.parse(["What", "is", "the", "best", "Final", "Fantasy?"]),
-            .success(.ask(question: "What is the best Final Fantasy?"))
+            .success(.ask(question: "What is the best Final Fantasy?", mode: nil))
         )
     }
 
     func testAskCommandParsesQuestion() {
         XCTAssertEqual(
             MagiCLICommandParser.parse(["ask", "Should we merge this?"]),
-            .success(.ask(question: "Should we merge this?"))
+            .success(.ask(question: "Should we merge this?", mode: nil))
+        )
+    }
+
+    func testModeParsesForBareQuestion() {
+        XCTAssertEqual(
+            MagiCLICommandParser.parse(["--mode", "engineering", "Should", "we", "merge?"]),
+            .success(.ask(question: "Should we merge?", mode: .engineering))
+        )
+        XCTAssertEqual(
+            MagiCLICommandParser.parse(["What", "is", "best?", "--mode=generic"]),
+            .success(.ask(question: "What is best?", mode: .generic))
+        )
+    }
+
+    func testModeParsesForAskCommand() {
+        XCTAssertEqual(
+            MagiCLICommandParser.parse(["ask", "--mode", "engineering", "Should we deploy?"]),
+            .success(.ask(question: "Should we deploy?", mode: .engineering))
+        )
+    }
+
+    func testModeValidation() {
+        XCTAssertEqual(
+            MagiCLICommandParser.parse(["--mode"]),
+            .failure(.missingOptionValue("--mode"))
+        )
+        XCTAssertEqual(
+            MagiCLICommandParser.parse(["--mode", "cinematic", "Question"]),
+            .failure(.invalidMode("cinematic"))
+        )
+        XCTAssertEqual(
+            MagiCLICommandParser.parse(["doctor", "--mode", "engineering"]),
+            .failure(.unsupportedModeOption(command: "doctor"))
         )
     }
 
@@ -61,7 +94,9 @@ final class MagiCLICommandTests: XCTestCase {
         XCTAssertEqual(paths.globalPersonaDirectory, "/home/user/.chau7/magi/personas")
         XCTAssertEqual(paths.globalCouncilDirectory, "/home/user/.chau7/magi/councils")
         XCTAssertEqual(paths.personaPath(for: .melchior), "/home/user/.chau7/magi/personas/melchior.md")
+        XCTAssertEqual(paths.personaPath(fileName: "../custom.md", fallback: .melchior), "/home/user/.chau7/magi/personas/custom.md")
         XCTAssertEqual(paths.councilPath(for: "magi"), "/home/user/.chau7/magi/councils/magi.md")
+        XCTAssertEqual(paths.councilConfigPath(for: "magi"), "/home/user/.chau7/magi/councils/magi.toml")
     }
 
     func testPathsResolveArtifactsToRepositoryRootWhenInsideGitRepo() throws {

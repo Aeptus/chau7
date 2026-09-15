@@ -79,6 +79,25 @@ final class RustGridView: NSView {
     /// When true, Metal handles display — suppresses CPU draw() and setNeedsDisplay.
     var metalRenderingActive = false
 
+    /// Estimated resident bytes of the CPU-fallback grid copy (cells +
+    /// cluster bytes + overlay cells). O(1); used by TerminalMemoryReport.
+    var estimatedFootprintBytes: Int {
+        cells.count * MemoryLayout<RustCellData>.stride
+            + clusterStorage.count
+            + overlayCells.count * MemoryLayout<RustCellData>.stride
+    }
+
+    /// Drops the retained grid copies while Metal owns presentation. The next
+    /// CPU-path `updateGrid` repopulates from a full sync (existing cold-start
+    /// behavior when dimensions differ from the empty state).
+    func releaseGridStorage() {
+        cells = []
+        clusterStorage = Data()
+        overlayCells = [:]
+        cols = 0
+        rows = 0
+    }
+
     private var regularFont = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
     private var boldFont = NSFont.monospacedSystemFont(ofSize: 13, weight: .bold)
     private var italicFont = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
@@ -148,6 +167,87 @@ final class RustGridView: NSView {
         }
 
         updateCursor(cursor)
+    }
+
+    /// Applies packed dirty rows from `RustGridDeltaSnapshot`, rebasing each
+    /// changed cell's grapheme offset into this view-owned cluster store.
+    @discardableResult
+    func updateGridDelta(
+        cells source: UnsafeMutablePointer<RustCellData>?,
+        rowIndices: UnsafeMutablePointer<UInt16>?,
+        rowCount: Int,
+        clusters: UnsafeMutablePointer<UInt8>?,
+        clustersLen: Int,
+        cols: Int,
+        rows: Int,
+        cursor: (col: UInt16, row: UInt16),
+        fullRefresh: Bool
+    ) -> Bool {
+        guard cols > 0, rows > 0, rowCount >= 0, rowCount <= rows else { return false }
+        if rowCount > 0, source == nil || rowIndices == nil { return false }
+        if fullRefresh, rowCount != rows { return false }
+
+        let dimensionsChanged = self.cols != cols || self.rows != rows || cells.count != cols * rows
+        guard !dimensionsChanged || fullRefresh else { return false }
+        if dimensionsChanged || fullRefresh {
+            self.cols = cols
+            self.rows = rows
+            cells = Array(repeating: RustCellData(), count: cols * rows)
+            clusterStorage = Data()
+        } else {
+            compactClusterStorageIfNeeded()
+        }
+
+        if let source, let rowIndices {
+            for packedRow in 0 ..< rowCount {
+                let row = Int(rowIndices[packedRow])
+                guard row >= 0, row < rows else { return false }
+                for col in 0 ..< cols {
+                    var cell = source[packedRow * cols + col]
+                    let length = Int(cell.cluster_len)
+                    if length > 0,
+                       let clusters,
+                       Int(cell.cluster_offset) + length <= clustersLen {
+                        let offset = clusterStorage.count
+                        clusterStorage.append(
+                            clusters.advanced(by: Int(cell.cluster_offset)),
+                            count: length
+                        )
+                        cell.cluster_offset = UInt32(offset)
+                    } else {
+                        cell.cluster_offset = 0
+                        cell.cluster_len = 0
+                    }
+                    cells[row * cols + col] = cell
+                }
+                setNeedsDisplay(rowRect(for: row))
+            }
+        }
+        if fullRefresh { needsDisplay = true }
+        updateCursor(cursor)
+        return true
+    }
+
+    private func compactClusterStorageIfNeeded() {
+        let liveBytes = cells.reduce(into: 0) { $0 += Int($1.cluster_len) }
+        guard clusterStorage.count > max(1 * 1_024 * 1_024, liveBytes * 3) else { return }
+        var compacted = Data(capacity: liveBytes)
+        for index in cells.indices {
+            var cell = cells[index]
+            let length = Int(cell.cluster_len)
+            guard length > 0 else { continue }
+            let start = Int(cell.cluster_offset)
+            guard start >= 0, start + length <= clusterStorage.count else {
+                cell.cluster_offset = 0
+                cell.cluster_len = 0
+                cells[index] = cell
+                continue
+            }
+            cell.cluster_offset = UInt32(compacted.count)
+            compacted.append(clusterStorage[start ..< start + length])
+            cells[index] = cell
+        }
+        clusterStorage = compacted
     }
 
     /// Default-init helper for blank cells. Equivalent to `RustCellData()` but
@@ -432,38 +532,6 @@ final class RustGridView: NSView {
         let boldItalic = manager.convert(boldFont, toHaveTrait: .italicFontMask)
         boldItalicFont = boldItalic
         if !metalRenderingActive { needsDisplay = true }
-    }
-
-    func makeRetainedFrameImage() -> NSImage? {
-        let snapshotSize: NSSize
-        if bounds.width > 0, bounds.height > 0 {
-            snapshotSize = bounds.size
-        } else if cellSize.width > 0, cellSize.height > 0, cols > 0, rows > 0 {
-            snapshotSize = NSSize(
-                width: CGFloat(cols) * cellSize.width,
-                height: CGFloat(rows) * cellSize.height
-            )
-        } else {
-            return nil
-        }
-
-        let image = NSImage(size: snapshotSize)
-        image.lockFocus()
-        let previousMetalRenderingActive = metalRenderingActive
-        let previousFrame = frame
-        let previousBounds = bounds
-        metalRenderingActive = false
-        frame = NSRect(origin: .zero, size: snapshotSize)
-        bounds = NSRect(origin: .zero, size: snapshotSize)
-        defer {
-            bounds = previousBounds
-            frame = previousFrame
-            metalRenderingActive = previousMetalRenderingActive
-            image.unlockFocus()
-        }
-
-        draw(NSRect(origin: .zero, size: snapshotSize))
-        return image
     }
 
     private func fontForCell(_ flags: UInt8) -> NSFont {
@@ -878,10 +946,25 @@ final class RustTerminalFFI: TerminalBackend {
         })
     }
 
+    func getGridDelta(since generation: UInt64) -> (snapshot: UnsafeMutablePointer<RustGridDeltaSnapshot>, free: () -> Void)? {
+        guard let fns = Self.functions,
+              let getDelta = fns.getGridDelta,
+              let freeDelta = fns.freeGridDelta,
+              let rawDelta = getDelta(terminal, generation) else {
+            return nil
+        }
+        let delta = rawDelta.assumingMemoryBound(to: RustGridDeltaSnapshot.self)
+        let snapshot = delta.pointee
+        Log.traceThrottled(
+            "rust-terminal-grid-delta-\(instanceId)",
+            interval: 5.0,
+            "RustTerminalFFI[\(instanceId)]: delta generation=\(snapshot.generation) rows=\(snapshot.row_count)/\(snapshot.rows) full=\(snapshot.full_refresh != 0)"
+        )
+        return (delta, { freeDelta(rawDelta) })
+    }
+
     var scrollPosition: Double {
-        let pos = Self.functions?.scrollPosition(terminal) ?? 0.0
-        Log.trace("RustTerminalFFI[\(instanceId)]: scrollPosition = \(pos)")
-        return pos
+        Self.functions?.scrollPosition(terminal) ?? 0.0
     }
 
     func scrollTo(position: Double) {
@@ -1184,7 +1267,11 @@ final class RustTerminalFFI: TerminalBackend {
         // Free the output buffer (ptr is already mutable)
         freeOutputFn(ptr, len)
 
-        Log.trace("RustTerminalFFI[\(instanceId)]: getLastOutput - Retrieved \(len) bytes")
+        Log.traceThrottled(
+            "rust-terminal-last-output-\(instanceId)",
+            interval: 5.0,
+            "RustTerminalFFI[\(instanceId)]: getLastOutput - Retrieved \(len) bytes"
+        )
         return data
     }
 
@@ -1267,7 +1354,6 @@ final class RustTerminalFFI: TerminalBackend {
             return false
         }
         let enabled = isApplicationCursorModeFn(terminal)
-        Log.trace("RustTerminalFFI[\(instanceId)]: isApplicationCursorMode = \(enabled)")
         return enabled
     }
 
@@ -1313,6 +1399,9 @@ final class RustTerminalFFI: TerminalBackend {
         let idlePolls: UInt64
         let avgBatchSize: UInt64
         let dirtyRowCount: UInt32
+        /// Estimated resident bytes of Rust grid cell storage (history +
+        /// screen + alt screen). See DebugState in rust/chau7_terminal.
+        let estimatedGridBytes: UInt64
 
         var description: String {
             """
@@ -1327,6 +1416,7 @@ final class RustTerminalFFI: TerminalBackend {
               Perf: polls=\(pollCount), avgPoll=\(avgPollTimeUs)µs, maxPoll=\(maxPollTimeUs)µs
                     avgSnapshot=\(avgGridSnapshotTimeUs)µs, maxSnapshot=\(maxGridSnapshotTimeUs)µs
                     activity=\(activityPercent)%, idlePolls=\(idlePolls), avgBatch=\(avgBatchSize)B, dirtyRows=\(dirtyRowCount)
+              Memory: estimatedGridBytes=\(estimatedGridBytes)
             """
         }
     }
@@ -1373,11 +1463,23 @@ final class RustTerminalFFI: TerminalBackend {
             activityPercent: state.activity_percent,
             idlePolls: state.idle_polls,
             avgBatchSize: state.avg_batch_size,
-            dirtyRowCount: state.dirty_row_count
+            dirtyRowCount: state.dirty_row_count,
+            estimatedGridBytes: state.estimated_grid_bytes
         )
 
         Log.trace("RustTerminalFFI[\(instanceId)]: debugState retrieved:\n\(result.description)")
         return result
+    }
+
+    /// TerminalBackend.memoryStats — thin projection of `debugState()`.
+    func memoryStats() -> TerminalMemoryStats? {
+        guard let state = debugState() else { return nil }
+        return TerminalMemoryStats(
+            historyRows: Int(state.historySize),
+            estimatedGridBytes: Int(state.estimatedGridBytes),
+            bytesReceived: state.bytesReceived,
+            alternateScreenActive: state.alternateScreen != 0
+        )
     }
 
     /// Get the full terminal buffer text (visible + scrollback) for debugging.
@@ -1395,7 +1497,11 @@ final class RustTerminalFFI: TerminalBackend {
         defer { freeStringFn(ptr) }
 
         let text = String(cString: ptr)
-        Log.trace("RustTerminalFFI[\(instanceId)]: fullBufferText - \(text.count) characters")
+        Log.traceThrottled(
+            "rust-terminal-full-buffer-\(instanceId)",
+            interval: 5.0,
+            "RustTerminalFFI[\(instanceId)]: fullBufferText - \(text.count) characters"
+        )
         return text
     }
 
@@ -1414,7 +1520,11 @@ final class RustTerminalFFI: TerminalBackend {
         defer { freeStringFn(ptr) }
 
         let text = String(cString: ptr)
-        Log.trace("RustTerminalFFI[\(instanceId)]: fullBufferAnsiText - \(text.count) characters")
+        Log.traceThrottled(
+            "rust-terminal-full-buffer-ansi-\(instanceId)",
+            interval: 5.0,
+            "RustTerminalFFI[\(instanceId)]: fullBufferAnsiText - \(text.count) characters"
+        )
         return text
     }
 
@@ -1440,6 +1550,31 @@ final class RustTerminalFFI: TerminalBackend {
             "RustTerminalFFI[\(instanceId)]: tailBufferAnsiText - \(text.count) characters / \(text.utf8.count) bytes"
         )
         return text
+    }
+
+    /// Get a bounded plain-text tail of the terminal buffer (wrapped rows
+    /// joined into logical lines). Falls back to the ANSI tail with SGR/OSC
+    /// sequences stripped when the dylib predates the plain-text symbol —
+    /// never to a full-buffer flatten.
+    func tailBufferText(maxLines: Int, maxBytes: Int) -> String? {
+        guard maxLines > 0, maxBytes > 0 else {
+            return ""
+        }
+        if let getTailBufferTextFn = Self.functions?.getTailBufferText,
+           let freeStringFn = Self.functions?.freeString {
+            guard let ptr = getTailBufferTextFn(terminal, UInt(maxLines), UInt(maxBytes)) else {
+                Log.trace("RustTerminalFFI[\(instanceId)]: tailBufferText - No text returned")
+                return nil
+            }
+            defer { freeStringFn(ptr) }
+            return String(cString: ptr)
+        }
+
+        Log.trace("RustTerminalFFI[\(instanceId)]: tailBufferText - symbol missing; stripping ANSI tail")
+        guard let styled = tailBufferAnsiText(maxLines: maxLines, maxBytes: maxBytes) else {
+            return nil
+        }
+        return ANSITailStripper.strip(styled)
     }
 
     /// Reset performance metrics.
@@ -1676,6 +1811,23 @@ final class RustTerminalFFI: TerminalBackend {
     }
 }
 
+/// Minimal SGR/OSC stripper for the plain-tail fallback path. Unlike
+/// `EscapeSequenceSanitizer.sanitize` it never collapses runs of spaces or
+/// trims edges — interactive-prompt detection depends on the original column
+/// layout.
+enum ANSITailStripper {
+    private static let csiPattern = try? Regex(#"\x{1b}\[[0-9;?]*[@-~]"#)
+    private static let oscPattern = try? Regex(#"\x{1b}\][^\x{07}\x{1b}]*(?:\x{07}|\x{1b}\\)?"#)
+
+    static func strip(_ text: String) -> String {
+        guard let csiPattern, let oscPattern else { return text }
+        var result = text
+        result.replace(csiPattern, with: "")
+        result.replace(oscPattern, with: "")
+        return result
+    }
+}
+
 // MARK: - Rust Debug State Layout
 
 /// C-compatible layout matching Rust's DebugState struct.
@@ -1708,6 +1860,7 @@ struct RustDebugState {
     let idle_polls: UInt64
     let avg_batch_size: UInt64
     let dirty_row_count: UInt32
+    let estimated_grid_bytes: UInt64
 }
 
 // MARK: - RustTerminalView
@@ -1736,6 +1889,13 @@ final class RustTerminalView: NSView {
 
     /// Callback when user input is sent
     var onInput: ((String) -> Void)?
+
+    /// Callback when AppKit makes this pane the keyboard responder.
+    ///
+    /// This is the authoritative pane-focus signal: focus can arrive through
+    /// clicks, selection drags, or responder-chain navigation, not only a
+    /// SwiftUI tap gesture.
+    var onFocus: (() -> Void)?
 
     /// Callback before user-originated text is sent to the PTY.
     var shouldAcceptUserText: ((String) -> Bool)?
@@ -1852,7 +2012,7 @@ final class RustTerminalView: NSView {
 
     /// Cursor line highlight support
     weak var cursorLineView: TerminalCursorLineView?
-    let inputLineTracker = InputLineTracker(maxEntries: FeatureSettings.shared.scrollbackLines)
+    let inputLineTracker = InputLineTracker(maxEntries: ScrollbackRetentionPolicy.trackerEntryCap(configuredLines: FeatureSettings.shared.scrollbackLines))
     var highlightContextLines = false
     var highlightInputHistory = false
     var isCursorLineHighlightEnabled = false
@@ -1864,10 +2024,20 @@ final class RustTerminalView: NSView {
     /// Whether to enable mouse reporting to the PTY
     var allowMouseReporting = false
 
-    /// Set when the live process-tree resolver sees a known TUI app running
-    /// under this view's shell. Rust's alternate-screen flag is the generic
-    /// signal; this hint covers the detection window before the app flips modes.
-    var hostsTUIApp = false
+    /// Set when session identity says this view may host a terminal UI. This is
+    /// deliberately broader than live process detection: restored sessions can
+    /// be active before the process-tree poll catches up, and some current TUIs
+    /// use the normal screen buffer rather than advertising alternate-screen.
+    var hostsTUIApp = false {
+        didSet {
+            guard TabRenderLifecyclePolicy.requiresLateTUIWinsizeNudge(
+                previouslyHostedTUI: oldValue,
+                hostsTUIApp: hostsTUIApp,
+                phase: currentRenderPhase
+            ) else { return }
+            scheduleWinsizeNudge()
+        }
+    }
 
     /// Whether to notify of update changes (for suspended state)
     var notifyUpdateChanges = true {
@@ -1879,6 +2049,18 @@ final class RustTerminalView: NSView {
         }
     }
 
+    /// True only while a foreground remote client is subscribed to this
+    /// terminal. It promotes PTY ingestion to the blocking event drain while
+    /// leaving local rendering, visibility, and interaction unchanged.
+    private(set) var requiresRemoteRealtimeDrain = false
+
+    func setRemoteRealtimeDrainRequired(_ required: Bool) {
+        guard requiresRemoteRealtimeDrain != required else { return }
+        requiresRemoteRealtimeDrain = required
+        Log.info("RustTerminalView[\(viewId)]: remote realtime drain -> \(required ? "enabled" : "disabled")")
+        updatePollingMode(reason: "remoteRealtimeDrain")
+    }
+
     override var isHidden: Bool {
         didSet {
             guard isHidden != oldValue else { return }
@@ -1888,6 +2070,9 @@ final class RustTerminalView: NSView {
 
     /// Whether this view is registered for shared background PTY drain.
     let terminalPollAccessLock = NSLock()
+    let terminalWorkContextLock = NSLock()
+    var terminalWorkRenderPhase = TabRenderPhase.hidden.rawValue
+    var terminalWorkVisibility = "hidden"
     private var isLivePollingActive = false
     var livePollingActiveForProfiling: Bool {
         isLivePollingActive
@@ -1909,7 +2094,21 @@ final class RustTerminalView: NSView {
 
     /// When true, Metal handles display — skip CPU syncGridToRenderer() and cursor blink.
     var isMetalRenderingActive = false {
-        didSet { gridView?.metalRenderingActive = isMetalRenderingActive }
+        didSet {
+            gridView?.metalRenderingActive = isMetalRenderingActive
+            // Metal owns the pixels now: the CPU-fallback copies (RustGridView
+            // grid + the CPU sync path's diff baseline) go stale immediately
+            // and were retained forever across every warm tab (~5+ MB across
+            // a 50-tab session). A later Metal→CPU handoff repopulates them
+            // via the existing full-resync cold-start path.
+            if isMetalRenderingActive, !oldValue {
+                gridView?.releaseGridStorage()
+                previousGrid = []
+                previousGridCols = 0
+                previousGridRows = 0
+                cpuGridGeneration = 0
+            }
+        }
     }
 
     /// Overlay container for tips and inline images (non-interactive)
@@ -1941,7 +2140,8 @@ final class RustTerminalView: NSView {
     var eventDrain: TerminalEventDrain?
 
     /// Track startup bytes for debugging
-    var startupBytesLogged = 0
+    var hasLoggedStartupActivity = false
+    var hasObservedInitialPTYActivity = false
     var recentMissingCmdClickPaths: [String: Date] = [:]
     let missingCmdClickWarningCooldown: TimeInterval = 5
 
@@ -1991,6 +2191,7 @@ final class RustTerminalView: NSView {
     var previousGridRows = 0
     var previousCursorCol: UInt16 = 0
     var previousCursorRow: UInt16 = 0
+    var cpuGridGeneration: UInt64 = 0
 
     /// Rate limiting for grid sync.
     var lastSyncTime: CFAbsoluteTime = 0
@@ -2014,6 +2215,17 @@ final class RustTerminalView: NSView {
     var skippedSyncCount: UInt64 = 0
     var hasRetainedFrameSourceReady = false
 
+    /// One-shot warm-idle flush timer; see `updateWarmIdleFlushTimer`.
+    var warmIdleFlushWorkItem: DispatchWorkItem?
+
+    /// Estimated resident bytes of this view's CPU-side grid copies
+    /// (`previousGrid` diff baseline + the CPU-fallback `RustGridView`).
+    /// O(1); used by TerminalMemoryReport.
+    var estimatedCPUFallbackBytes: Int {
+        previousGrid.count * MemoryLayout<RustCellData>.stride
+            + (gridView?.estimatedFootprintBytes ?? 0)
+    }
+
     // MARK: - Buffer Line Cache (Performance fix for scrollback access)
 
     /// Cached buffer lines to avoid re-parsing the entire terminal buffer on every
@@ -2022,14 +2234,14 @@ final class RustTerminalView: NSView {
     /// CPU usage and memory growth to 1+ GB with large scrollback buffers.
     var cachedBufferLines: [String]?
     var cachedBufferLinesVersion: UInt64 = 0
+    /// O(1) lower-bound estimate for the decoded line cache, based on the UTF-8
+    /// source payload. Used only to enforce a deterministic regenerable-cache
+    /// ceiling; the cache itself is never authoritative terminal state.
+    var cachedBufferLinesEstimatedBytes = 0
     /// Instance-scoped sync counter for cache invalidation.
     /// Unlike the static `syncCount`, this only increments when *this* tab syncs,
     /// preventing cross-tab spurious cache invalidation.
     var instanceSyncCount: UInt64 = 0
-
-    var requiresForcedRetainedFrameSync: Bool {
-        !hasRetainedFrameSourceReady || retainedFrameSourceVersion < retainedFrameContentVersion
-    }
 
     /// Selection state
     var isSelecting = false
@@ -2379,7 +2591,8 @@ final class RustTerminalView: NSView {
         }
         isTerminalStarted = true
         didEmitProcessTermination = false
-        startupBytesLogged = 0
+        hasLoggedStartupActivity = false
+        hasObservedInitialPTYActivity = false
         isAwaitingInitialPTYOutput = true
 
         // Recalculate dimensions with the shared render geometry contract so
@@ -2432,9 +2645,17 @@ final class RustTerminalView: NSView {
         rustTerminal?.setImageProtocols(sixel: sixelEnabled, kitty: kittyEnabled, iterm2: iterm2Enabled)
         Log.info("RustTerminalView[\(viewId)]: Image protocols configured - iTerm2=\(iterm2Enabled), Sixel=\(sixelEnabled), Kitty=\(kittyEnabled)")
 
-        if let initialOutput, !initialOutput.isEmpty {
-            injectOutput(initialOutput)
-        }
+        TerminalStartupOrdering.applyPaletteThenReplay(
+            initialOutput: initialOutput,
+            applyPalette: { [self] in
+                // `applyColorScheme` may have run while this view had no Rust
+                // terminal yet. Reapply now that setColors can reach the
+                // renderer, before restored ANSI is parsed into the grid.
+                appliedColorSchemeSignature = nil
+                applyColorScheme(FeatureSettings.shared.currentColorScheme)
+            },
+            replay: { [self] in injectOutput($0) }
+        )
 
         // Force an initial grid sync on the next poll cycle.
         // Without this, the first poll finds poll()==false (no PTY data yet)
@@ -2450,7 +2671,7 @@ final class RustTerminalView: NSView {
         // Schedule a one-shot timeout: if no PTY output arrives within 5 seconds,
         // notify the UI so it can show a "shell initializing" indicator.
         let work = DispatchWorkItem { [weak self] in
-            guard let self, startupBytesLogged == 0 else { return }
+            guard let self, !hasObservedInitialPTYActivity else { return }
             Log.warn("RustTerminalView[\(viewId)]: No PTY output after 5s — shell may be hung")
             isAwaitingInitialPTYOutput = false
             shellStartupTimeoutWork = nil
@@ -2486,6 +2707,10 @@ final class RustTerminalView: NSView {
         // Set flag to prevent event drain callbacks from accessing deallocated view
         isBeingDeallocated = true
         shellStartupTimeoutWork?.cancel()
+        warmIdleFlushWorkItem?.cancel()
+        if let tabID = UUID(uuidString: tabIdentifier) {
+            ScrollbackMemoryManager.shared.unregisterBudgetFlushCandidate(tabID: tabID)
+        }
         winsizeNudgeWork.forEach { $0.cancel() }
         removeWindowNotificationObservers()
         stopPollingLoop()
@@ -2743,17 +2968,30 @@ final class RustTerminalView: NSView {
     private var isShellBootstrapPending: Bool {
         Self.shouldKeepStartupPolling(
             isTerminalStarted: isTerminalStarted,
-            startupBytesLogged: startupBytesLogged,
+            hasObservedInitialPTYActivity: hasObservedInitialPTYActivity,
             awaitingInitialPTYOutput: isAwaitingInitialPTYOutput
         )
     }
 
     static func shouldKeepStartupPolling(
         isTerminalStarted: Bool,
-        startupBytesLogged: Int,
+        hasObservedInitialPTYActivity: Bool,
         awaitingInitialPTYOutput: Bool
     ) -> Bool {
-        isTerminalStarted && startupBytesLogged == 0 && awaitingInitialPTYOutput
+        isTerminalStarted && !hasObservedInitialPTYActivity && awaitingInitialPTYOutput
+    }
+
+    static func containsPTYActivity(_ flags: TerminalPollEventFlags) -> Bool {
+        !flags.isEmpty
+    }
+
+    func noteInitialPTYActivity(_ flags: TerminalPollEventFlags) {
+        guard !hasObservedInitialPTYActivity, Self.containsPTYActivity(flags) else { return }
+        hasObservedInitialPTYActivity = true
+        isAwaitingInitialPTYOutput = false
+        shellStartupTimeoutWork?.cancel()
+        shellStartupTimeoutWork = nil
+        updatePollingMode(reason: "firstPTYActivity")
     }
 
     static func shouldRefreshVisibleTerminalFromPump(
@@ -2771,6 +3009,7 @@ final class RustTerminalView: NSView {
                 isTerminalStarted: isTerminalStarted,
                 notifyUpdateChanges: notifyUpdateChanges,
                 isShellBootstrapPending: isShellBootstrapPending,
+                requiresRemoteRealtimeDrain: requiresRemoteRealtimeDrain,
                 allowsLivePresentation: currentRenderPhase.allowsLivePresentation,
                 isHidden: isHidden,
                 hasVisibleWindow: window?.isVisible ?? false,
@@ -2843,6 +3082,7 @@ final class RustTerminalView: NSView {
     }
 
     func updatePollingMode(reason: String) {
+        refreshTerminalWorkProfileContext()
         let desiredMode = desiredPollingMode()
         let actualMode = actualPollingMode
         // Ensure background drain registration even when the polling mode
@@ -2908,25 +3148,164 @@ final class RustTerminalView: NSView {
 
         if previousPhase != phase {
             let resolvedTabID = UUID(uuidString: tabIdentifier)
+            let hostsLiveTUI = hostsTUIApp || (rustTerminal?.isAlternateScreenActive() ?? false)
             ScrollbackMemoryManager.shared.handlePhaseTransition(
                 viewId: String(viewId),
                 tabID: resolvedTabID,
                 rustFFI: rustTerminal,
                 from: previousPhase,
                 to: phase,
-                hostsTUIApp: hostsTUIApp || (rustTerminal?.isAlternateScreenActive() ?? false)
+                hostsTUIApp: hostsLiveTUI,
+                currentBytesReceived: rustTerminal?.memoryStats()?.bytesReceived
             )
-            TabGraphicsMemoryManager.shared.handlePhaseTransition(
-                tabID: resolvedTabID,
-                from: previousPhase,
-                to: phase
-            )
-            // .hidden demotion flushes the Rust scrollback ring to disk —
-            // keeping the Swift-side [String] duplicate of that exact buffer
-            // resident would defeat the entire reclamation.
-            if phase == .hidden {
-                cachedBufferLines = nil
+            updateWarmIdleFlushTimer(for: phase, tabID: resolvedTabID, hostsLiveTUI: hostsLiveTUI)
+            if TabRenderLifecyclePolicy.requiresTUIWinsizeNudge(
+                previousPhase: previousPhase,
+                nextPhase: phase,
+                hostsTUIApp: hostsLiveTUI
+            ) {
+                scheduleWinsizeNudge()
             }
+            // Any non-live phase drops the Swift-side [String] duplicate of
+            // the buffer (previously only `.hidden`, which is pressure-only —
+            // so warm tabs kept it forever). Regenerated lazily by the next
+            // getLineText pass when the tab is selected again.
+            if !phase.allowsLivePresentation {
+                cachedBufferLines = nil
+                cachedBufferLinesEstimatedBytes = 0
+            }
+        }
+    }
+
+    // MARK: - Warm idle flush (proactive scrollback reclamation)
+
+    /// One-shot idle timer armed when the tab enters `.warm`: after the tab
+    /// sits deselected AND its PTY stays quiet for the policy delay, the ring
+    /// is flushed to disk and shrunk to the viewport floor (screen stays
+    /// resident — tab switching still paints instantly). Cancelled on any
+    /// phase change. No repeating timers.
+    private func updateWarmIdleFlushTimer(for phase: TabRenderPhase, tabID: UUID?, hostsLiveTUI: Bool) {
+        warmIdleFlushWorkItem?.cancel()
+        warmIdleFlushWorkItem = nil
+        if let tabID {
+            ScrollbackMemoryManager.shared.unregisterBudgetFlushCandidate(tabID: tabID)
+        }
+        guard phase == .warm, let tabID else { return }
+
+        if !hostsLiveTUI {
+            registerAsBudgetFlushCandidate(tabID: tabID)
+        }
+        armWarmIdleFlush(tabID: tabID, hostsLiveTUI: hostsLiveTUI)
+    }
+
+    private func armWarmIdleFlush(tabID: UUID, hostsLiveTUI: Bool) {
+        let armedBytes = rustTerminal?.memoryStats()?.bytesReceived
+        let workItem = DispatchWorkItem { [weak self] in
+            self?.fireWarmIdleFlush(tabID: tabID, armedBytes: armedBytes, force: false)
+        }
+        warmIdleFlushWorkItem = workItem
+        let delay = hostsLiveTUI
+            ? ScrollbackRetentionPolicy.tuiIdleCompactDelay
+            : ScrollbackRetentionPolicy.warmIdleFlushDelay
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: workItem)
+    }
+
+    private func fireWarmIdleFlush(tabID: UUID, armedBytes: UInt64?, force: Bool) {
+        warmIdleFlushWorkItem = nil
+        guard currentRenderPhase == .warm else { return }
+        let stats = rustTerminal?.memoryStats()
+        let currentBytes = stats?.bytesReceived
+        let hostsLiveTUI = hostsTUIApp || (rustTerminal?.isAlternateScreenActive() ?? false)
+        if !force {
+            guard ScrollbackRetentionPolicy.shouldIdleFlush(
+                phase: currentRenderPhase,
+                bytesReceivedWhenArmed: armedBytes,
+                bytesReceivedNow: currentBytes
+            ) else {
+                // Still streaming (an agent working, a background build): re-arm
+                // and re-check after another idle window.
+                armWarmIdleFlush(tabID: tabID, hostsLiveTUI: hostsLiveTUI)
+                return
+            }
+        }
+        guard let rustTerminal else { return }
+        if hostsLiveTUI {
+            // The budget backstop only registers non-TUI candidates, so a
+            // forced fire never reaches a live TUI; belt-and-braces anyway.
+            guard !force else { return }
+            ScrollbackMemoryManager.shared.tuiIdleCompact(
+                viewId: String(viewId),
+                tabID: tabID,
+                rustFFI: rustTerminal,
+                isOnAlternateScreen: stats?.alternateScreenActive ?? rustTerminal.isAlternateScreenActive(),
+                bytesReceivedAtFlush: currentBytes
+            )
+        } else {
+            ScrollbackMemoryManager.shared.idleFlush(
+                viewId: String(viewId),
+                tabID: tabID,
+                rustFFI: rustTerminal,
+                hostsTUIApp: hostsLiveTUI,
+                bytesReceivedAtFlush: currentBytes
+            )
+        }
+    }
+
+    private func registerAsBudgetFlushCandidate(tabID: UUID) {
+        ScrollbackMemoryManager.shared.registerBudgetFlushCandidate(
+            tabID: tabID,
+            candidate: ScrollbackBudgetFlushCandidate(
+                viewId: String(viewId),
+                estimatedRingBytes: { [weak self] in
+                    self?.rustTerminal?.memoryStats()?.estimatedGridBytes ?? 0
+                },
+                requestFlush: { [weak self] in
+                    DispatchQueue.main.async {
+                        self?.fireWarmIdleFlush(tabID: tabID, armedBytes: nil, force: true)
+                    }
+                }
+            )
+        )
+    }
+
+    /// Releases the window-shared Metal surface without changing whether this
+    /// pane is semantically visible. A split sibling remains `.active` and
+    /// immediately resumes its CPU renderer after the GPU moves to the newly
+    /// focused pane.
+    func detachFromSharedMetalRendererForHandoff() {
+        let preservedPhase = currentRenderPhase
+        onDisplaySyncNeeded = nil
+        isMetalRenderingActive = false
+        applyRenderPhase(
+            preservedPhase,
+            isInteractive: false,
+            reason: "metalCoordinatorHandoff"
+        )
+
+        if preservedPhase.keepsVisibleSurface {
+            needsGridSync = true
+            syncGridToRenderer(force: true)
+            needsDisplay = true
+        }
+    }
+
+    /// Keeps the incoming pane's CPU-backed frame authoritative until the
+    /// window-shared Metal surface has completed its first frame for this pane.
+    /// The pane remains interactive throughout the handoff.
+    func prepareForSharedMetalRendererHandoff() {
+        let preservedPhase = currentRenderPhase
+        let preservedInteractiveState = isInteractive
+        isMetalRenderingActive = false
+        applyRenderPhase(
+            preservedPhase,
+            isInteractive: preservedInteractiveState,
+            reason: "metalCoordinatorPrepareHandoff"
+        )
+
+        if preservedPhase.keepsVisibleSurface {
+            needsGridSync = true
+            syncGridToRenderer(force: true)
+            needsDisplay = true
         }
     }
 
@@ -2979,7 +3358,7 @@ final class RustTerminalView: NSView {
 
     /// Called by `TerminalEventDrain` on the main thread when PTY data arrives.
     /// Processes terminal state and triggers rendering.
-    func handleEventDrainData(drainGridChanged: Bool) {
+    func handleEventDrainData(drainFlags: TerminalPollEventFlags) {
         guard !isBeingDeallocated else { return }
         guard let rust = rustTerminal else { return }
 
@@ -2988,23 +3367,37 @@ final class RustTerminalView: NSView {
         // event drain's blocking poll returned. This also processes pending
         // events (titles, clipboard, shell integration).
         let followUpFlags = rust.pollEvents(timeout: 0)
-        let result = processTerminalStateAfterPollLocked(
+        let activityFlags = drainFlags.union(followUpFlags)
+        let snapshot = extractTerminalDrainSnapshotLocked(
             rust: rust,
-            changed: drainGridChanged || followUpFlags.contains(.gridChanged)
+            changed: drainFlags.contains(.gridChanged) || followUpFlags.contains(.gridChanged),
+            caller: "eventDrain"
         )
         terminalPollAccessLock.unlock()
+        noteInitialPTYActivity(activityFlags)
+        let result = applyTerminalDrainSnapshot(
+            snapshot,
+            rust: rust,
+            backendLockHeld: false
+        )
 
         guard notifyUpdateChanges else {
             // Data was drained (prevents PTY blocking) but we can't render
             // yet — the view is in .warm phase during startup restore. Mark
             // the grid dirty so the first pollAndSync() or authoritative
             // reveal after the phase transitions to .active picks it up.
-            // Fire onBufferChanged even in this path — the bootstrap settlement
-            // and visible-frame-ready notifications must still flow so the
-            // startup spinner can dismiss.
+            // An ordinary bootstrap still needs onBufferChanged so settlement
+            // and visible-frame-ready notifications can dismiss the spinner.
+            // A hidden remote subscription only needs its raw output callback.
             if result {
                 needsGridSync = true
-                onBufferChanged?()
+                // A remotely streamed hidden tab needs continuous PTY bytes,
+                // not local view invalidations. Suppressing this callback is
+                // what keeps terminal streaming independent from Mac chrome
+                // and tab-list refreshes.
+                if !requiresRemoteRealtimeDrain {
+                    onBufferChanged?()
+                }
             }
             return
         }
@@ -3045,6 +3438,7 @@ final class RustTerminalView: NSView {
 
     override func becomeFirstResponder() -> Bool {
         Log.trace("RustTerminalView[\(viewId)]: becomeFirstResponder")
+        onFocus?()
         return true
     }
 
@@ -3061,17 +3455,12 @@ final class RustTerminalView: NSView {
     }
 
     override func validRequestor(forSendType sendType: NSPasteboard.PasteboardType?, returnType: NSPasteboard.PasteboardType?) -> Any? {
-        if sendType == .string {
-            if let selection = getSelection(), !selection.isEmpty {
-                Log.trace("RustTerminalView[\(viewId)]: validRequestor sendType=string → self (has selection)")
-                return self
-            }
-        }
-        if returnType == .string {
-            Log.trace("RustTerminalView[\(viewId)]: validRequestor returnType=string → self")
-            return self
-        }
-        return super.validRequestor(forSendType: sendType, returnType: returnType)
+        // Do not advertise the terminal as a macOS Services send/receive
+        // endpoint. AppKit may synchronously discover every ShareKit and
+        // Services extension before it can answer this query, which has caused
+        // multi-second UI stalls under filesystem pressure. Explicit copy,
+        // paste, context-menu, and NSTextInputClient paths remain unchanged.
+        nil
     }
 
     @objc(writeSelectionToPasteboard:types:)
@@ -3165,19 +3554,57 @@ final class RustTerminalView: NSView {
 
     /// Returns the full terminal buffer (screen + scrollback) as UTF-8 Data.
     func getBufferAsData() -> Data? {
-        guard let text = rustTerminal?.fullBufferText() else { return nil }
+        guard let rust = rustTerminal else { return nil }
+        let text = TerminalWorkProfiler.shared.measure(
+            .fullBufferCapture,
+            context: terminalWorkContext(caller: "sessionPlainSnapshot"),
+            bytes: { $0?.utf8.count ?? 0 }
+        ) {
+            rust.fullBufferText()
+        }
+        guard let text else { return nil }
         return text.data(using: .utf8)
     }
 
     /// Returns the full terminal buffer (screen + scrollback) as ANSI-styled UTF-8 Data.
     func getStyledBufferAsData() -> Data? {
-        guard let text = rustTerminal?.fullBufferAnsiText() else { return nil }
+        guard let rust = rustTerminal else { return nil }
+        let text = TerminalWorkProfiler.shared.measure(
+            .fullBufferCapture,
+            context: terminalWorkContext(caller: "sessionStyledSnapshot"),
+            bytes: { $0?.utf8.count ?? 0 }
+        ) {
+            rust.fullBufferAnsiText()
+        }
+        guard let text else { return nil }
+        return text.data(using: .utf8)
+    }
+
+    /// Returns a bounded plain-text terminal tail as UTF-8 Data.
+    func getTailBufferTextAsData(maxLines: Int, maxBytes: Int) -> Data? {
+        guard let rust = rustTerminal else { return nil }
+        let text = TerminalWorkProfiler.shared.measure(
+            .tailBufferCapture,
+            context: terminalWorkContext(caller: "remotePromptTail"),
+            bytes: { $0?.utf8.count ?? 0 }
+        ) {
+            rust.tailBufferText(maxLines: maxLines, maxBytes: maxBytes)
+        }
+        guard let text else { return nil }
         return text.data(using: .utf8)
     }
 
     /// Returns a bounded ANSI-styled terminal tail as UTF-8 Data.
     func getStyledTailBufferAsData(maxLines: Int, maxBytes: Int) -> Data? {
-        guard let text = rustTerminal?.tailBufferAnsiText(maxLines: maxLines, maxBytes: maxBytes) else {
+        guard let rust = rustTerminal else { return nil }
+        let text = TerminalWorkProfiler.shared.measure(
+            .tailBufferCapture,
+            context: terminalWorkContext(caller: "restorationTailSnapshot"),
+            bytes: { $0?.utf8.count ?? 0 }
+        ) {
+            rust.tailBufferAnsiText(maxLines: maxLines, maxBytes: maxBytes)
+        }
+        guard let text else {
             return nil
         }
         return text.data(using: .utf8)
@@ -3185,7 +3612,7 @@ final class RustTerminalView: NSView {
 
     func captureRemoteGridSnapshotPayload() -> Data? {
         guard let rust = rustTerminal,
-              let gridResult = rust.getGrid() else {
+              let gridResult = measuredGridSnapshot(rust: rust, caller: "remoteGridSnapshot") else {
             return nil
         }
         defer { gridResult.free() }
@@ -3267,12 +3694,14 @@ final class RustTerminalView: NSView {
         guard let data = getBufferAsData() else {
             cachedBufferLines = []
             cachedBufferLinesVersion = currentVersion
+            cachedBufferLinesEstimatedBytes = 0
             return []
         }
         let text = String(decoding: data, as: UTF8.self)
         let lines = text.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
         cachedBufferLines = lines
         cachedBufferLinesVersion = currentVersion
+        cachedBufferLinesEstimatedBytes = data.count
         return lines
     }
 
@@ -3280,7 +3709,6 @@ final class RustTerminalView: NSView {
     func applyColorScheme(_ scheme: TerminalColorScheme) {
         let signature = scheme.signature
         guard appliedColorSchemeSignature != signature else {
-            Log.trace("RustTerminalView[\(viewId)]: applyColorScheme - Scheme already applied (signature=\(signature))")
             return
         }
         Log.trace("RustTerminalView[\(viewId)]: applyColorScheme - Applying new scheme (signature=\(signature))")
@@ -3351,20 +3779,6 @@ final class RustTerminalView: NSView {
     func applyBellSettings(enabled: Bool, sound: String) {
         bellConfig = (enabled: enabled, sound: sound)
         Log.trace("RustTerminalView[\(viewId)]: applyBellSettings - enabled=\(enabled), sound=\(sound)")
-    }
-
-    func makeRetainedFrameImage(allowForcedSync: Bool = false) -> NSImage? {
-        guard rustTerminal != nil else {
-            return nil
-        }
-        if allowForcedSync {
-            syncGridToRenderer(force: true)
-            updateDangerousRowTints()
-        }
-        guard hasRetainedFrameSourceReady else {
-            return nil
-        }
-        return gridView?.makeRetainedFrameImage()
     }
 
 }

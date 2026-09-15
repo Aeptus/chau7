@@ -97,6 +97,48 @@ final class KeybindingsManagerTests: XCTestCase {
         XCTAssertNil(str, "Actions not in default shortcuts should return nil")
     }
 
+    func testActionForEventSuppressesShippedDefaultShortcutWhenRequested() {
+        let settings = FeatureSettings.shared
+        let savedShortcuts = settings.customShortcuts
+        settings.customShortcuts = KeyboardShortcut.defaultShortcuts
+        defer { settings.customShortcuts = savedShortcuts }
+
+        let manager = KeybindingsManager.shared
+        let pasteEvent = makeKeyEvent(
+            keyCode: 0x09,
+            modifiers: .command,
+            characters: "v"
+        )
+
+        XCTAssertEqual(manager.actionForEvent(pasteEvent), .paste)
+        XCTAssertNil(
+            manager.actionForEvent(pasteEvent, suppressingShippedDefaultShortcuts: true),
+            "The app-level monitor must not re-run menu-owned default shortcuts"
+        )
+    }
+
+    func testActionForEventStillAllowsCustomShortcutWhenSuppressingDefaults() {
+        let settings = FeatureSettings.shared
+        let savedShortcuts = settings.customShortcuts
+        settings.customShortcuts = [
+            KeyboardShortcut(action: "paste", key: "j", modifiers: ["ctrl"])
+        ]
+        defer { settings.customShortcuts = savedShortcuts }
+
+        let manager = KeybindingsManager.shared
+        let customPasteEvent = makeKeyEvent(
+            keyCode: 0x26,
+            modifiers: .control,
+            characters: "j"
+        )
+
+        XCTAssertEqual(
+            manager.actionForEvent(customPasteEvent, suppressingShippedDefaultShortcuts: true),
+            .paste,
+            "Non-default custom bindings still belong to the keybinding monitor"
+        )
+    }
+
     // MARK: - Available Presets
 
     func testAvailablePresetsContainsDefault() {

@@ -13,6 +13,43 @@ private final class OverlayBlurView: NSVisualEffectView {
     }
 }
 
+private extension NSToolbarItem.Identifier {
+    static let settingsProfileSelector = NSToolbarItem.Identifier("Chau7SettingsProfileSelector")
+}
+
+private final class SettingsToolbarDelegate: NSObject, NSToolbarDelegate {
+    private let overlayModel: OverlayTabsModel?
+
+    init(overlayModel: OverlayTabsModel?) {
+        self.overlayModel = overlayModel
+    }
+
+    func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
+        [.flexibleSpace, .settingsProfileSelector]
+    }
+
+    func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
+        [.flexibleSpace, .settingsProfileSelector, .flexibleSpace]
+    }
+
+    func toolbar(
+        _ toolbar: NSToolbar,
+        itemForItemIdentifier itemIdentifier: NSToolbarItem.Identifier,
+        willBeInsertedIntoToolbar flag: Bool
+    ) -> NSToolbarItem? {
+        guard itemIdentifier == .settingsProfileSelector else { return nil }
+
+        let item = NSToolbarItem(itemIdentifier: itemIdentifier)
+        let hostingView = NSHostingView(rootView: ProfileSelectorBar(overlayModel: overlayModel).localized())
+        hostingView.frame = NSRect(x: 0, y: 0, width: 220, height: Chau7Style.Control.compactTitlebarHeight)
+        item.view = hostingView
+        item.visibilityPriority = .high
+        item.label = L("settings.profileBar.toolbarLabel", "Settings Profile")
+        item.paletteLabel = item.label
+        return item
+    }
+}
+
 @MainActor final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     /// Direct reference for code that can't use NSApp.delegate as? AppDelegate
     /// (e.g., SwiftUI gesture handlers where the cast may fail due to @NSApplicationDelegateAdaptor wrapping).
@@ -36,6 +73,8 @@ private final class OverlayBlurView: NSVisualEffectView {
     private var appThemeObserver: Any?
     private var splashController: SplashWindowController?
     private var settingsWindow: NSWindow?
+    private var settingsToolbarDelegate: SettingsToolbarDelegate?
+    private let settingsNavigationModel = SettingsNavigationModel()
     private var isClosingTab = false // Flag to prevent windowShouldClose from hiding window during tab close
     private var nextOverlayWindowNumber = 1
     /// Tracks windows that were hidden via orderOut - used to trigger tab bar refresh only when needed
@@ -54,6 +93,7 @@ private final class OverlayBlurView: NSVisualEffectView {
     /// short enough that a genuine focus switch still demotes promptly.
     private let lifecycleDemotionDebounceSeconds: TimeInterval = 0.35
     private var selectedTabRevealCycleByWindow: [Int: Int] = [:]
+    private var ownsApplicationInstance = false
     private var didFinishLaunching = false
     private var didPerformInitialSetup = false
     private var didStartDeferredStartupWork = false
@@ -64,6 +104,14 @@ private final class OverlayBlurView: NSVisualEffectView {
     private var lastOverlayLifecycleReason = ""
     /// Centralized autosave timer — saves all windows atomically every 30s
     var multiWindowAutoSaveTimer: DispatchSourceTimer?
+    /// Serial durability lane for restore bundles, indexes, and backup files.
+    /// The main thread captures AppKit-owned state; encoding and filesystem I/O
+    /// happen here. A termination save synchronizes this queue before shells
+    /// are closed, preserving ordering with every earlier autosave.
+    let windowStatePersistenceQueue = DispatchQueue(
+        label: "com.chau7.window-state-persistence",
+        qos: .utility
+    )
     var lastSavedWindowStates: [[SavedTabState]] = []
     var lastSavedWindowStatesAt: Date?
     /// Cheap structural fingerprint of the live windows at the time
@@ -88,6 +136,25 @@ private final class OverlayBlurView: NSVisualEffectView {
     func applicationDidFinishLaunching(_ notification: Notification) {
         Self.shared = self
         Log.info("AppDelegate did finish launching.")
+
+        if !RuntimeIsolation.isIsolatedTestMode() {
+            switch ApplicationInstanceLock.shared.acquire() {
+            case .acquired(let owner):
+                ownsApplicationInstance = true
+                LaunchContinuityTracker.shared.start()
+                Log.info("Application instance acquired pid=\(owner.pid) token=\(owner.launchToken.uuidString)")
+            case .alreadyRunning(let owner):
+                Log.warn("Duplicate application launch refused owner_pid=\(owner?.pid.description ?? "unknown")")
+                ApplicationInstanceLock.shared.activateExistingApplication(owner: owner)
+                NSApp.terminate(nil)
+                return
+            case .failed(let lockErrno):
+                Log.error("Application instance lock failed errno=\(lockErrno); refusing unsafe startup")
+                NSApp.terminate(nil)
+                return
+            }
+        }
+        MainThreadHangRecoveryController.shared.start()
         IncidentBreadcrumbStore.shared.reportPreviousCriticalMemoryPressureIfNeeded()
         didFinishLaunching = true
         Chau7ObservabilityService.shared.recordEvent(type: "app_launched", subsystem: "app_lifecycle")
@@ -311,35 +378,33 @@ private final class OverlayBlurView: NSVisualEffectView {
         splashController?.dismiss { [weak self] in
             guard let self else { return }
             splashController = nil
-            for host in overlayHosts {
+            // Present in reverse: each show makes its window key, so the last
+            // one presented wins focus. Without this the HIGHEST-index window
+            // (e.g. a stray "Window 3" with one shell tab) landed on top of
+            // the primary window at every launch. Reversing keeps z-order
+            // stable and hands focus to the primary window (index 0).
+            for host in overlayHosts.reversed() {
                 showOverlayWindow(host, reason: "finishLaunching")
             }
             NSApp.activate(ignoringOtherApps: true)
+            // Window visibility is sufficient to begin bounded background
+            // identity/scrollback hydration. Do not gate durable restoration
+            // on a renderer callback: presentation telemetry may arrive late,
+            // but saved tab data must already be ready for an instant switch.
+            startDeferredRestoreSchedulingIfNeeded(reason: "windows_visible")
             DispatchQueue.main.asyncAfter(deadline: .now() + 8.0) { [weak self] in
                 guard let self else { return }
                 MainActor.assumeIsolated {
                     self.endLatencyCriticalScope(reason: "startup-restore")
                     StartupRestoreCoordinator.shared.end()
-                    // After end(), the coordinator's isActive flag is false and
-                    // any further `noteSelectedTabLiveFrame` calls become
-                    // no-ops. That means `completeStartupRestoreIfReady` —
-                    // which is what kicks the deferred-restore scheduler —
-                    // can no longer succeed. If a window's first selected-tab
-                    // live frame got missed during startup (e.g. rapid
-                    // didBecomeMain/didResignMain across multi-window launch),
-                    // background tabs would otherwise sit stuck until the
-                    // 30s watchdog. Kick the scheduler directly here as a
-                    // post-coordinator backstop; idempotent if already
-                    // draining.
-                    self.kickDeferredRestoreIfStuck(reason: "coordinator_ended")
+                    // Restoration starts as soon as windows are visible. This
+                    // timeout ends telemetry only; it never fabricates a live
+                    // frame and never controls whether saved data is hydrated.
                 }
             }
-            // Watchdog: even with the post-coordinator kick above, a regression
-            // could leave the scheduler chain itself broken (not just the
-            // completion gate). Arm a 30-second backstop as final insurance.
-            // Idempotent: if either the natural kickoff or the
-            // coordinator-ended kick ran, the scheduler is already draining
-            // and this is a no-op.
+            // Watchdog: a regression could still break the scheduler chain.
+            // Keep a 30-second idempotent backstop as final insurance; the
+            // normal windows-visible kickoff will already be draining.
             DispatchQueue.main.asyncAfter(deadline: .now() + 30.0) { [weak self] in
                 guard let self else { return }
                 MainActor.assumeIsolated {
@@ -527,6 +592,11 @@ private final class OverlayBlurView: NSVisualEffectView {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        guard RuntimeIsolation.isIsolatedTestMode() || ownsApplicationInstance else { return }
+        defer {
+            ApplicationInstanceLock.shared.release()
+            ownsApplicationInstance = false
+        }
         multiWindowAutoSaveTimer?.cancel()
         multiWindowAutoSaveTimer = nil
         AethymeDeliveryMonitor.shared.stop()
@@ -577,6 +647,7 @@ private final class OverlayBlurView: NSVisualEffectView {
         }
         // Cleanup status bar controller
         StatusBarController.shared.cleanup()
+        MainThreadHangRecoveryController.shared.stop()
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
@@ -597,12 +668,14 @@ private final class OverlayBlurView: NSVisualEffectView {
         }
     }
 
-    func showSettings() {
+    func showSettings(section: SettingsSection? = nil, anchorID: String? = nil) {
+        settingsNavigationModel.show(section: section, anchorID: anchorID)
+
         // If settings window already exists, bring it to front
         if let existing = settingsWindow, existing.isVisible {
             existing.makeKeyAndOrderFront(nil)
             NSApp.activate(ignoringOtherApps: true)
-            Log.info("Settings window brought to front.")
+            Log.info("Settings window brought to front. section=\(settingsNavigationModel.selection.rawValue) anchor=\(settingsNavigationModel.anchorID ?? "none")")
             return
         }
 
@@ -619,7 +692,11 @@ private final class OverlayBlurView: NSVisualEffectView {
         // makes SwiftUI ScrollViews feel page-chunked. NSHostingController
         // bridges the event routing through AppKit's view-controller machinery
         // so SwiftUI gets continuous scroll deltas.
-        let settingsView = SettingsWindowView(model: model, overlayModel: overlayModel)
+        let settingsView = SettingsWindowView(
+            model: model,
+            overlayModel: overlayModel,
+            navigation: settingsNavigationModel
+        )
         let hostingController = NSHostingController(rootView: settingsView.localized())
 
         let window = NSWindow(
@@ -628,10 +705,29 @@ private final class OverlayBlurView: NSVisualEffectView {
             backing: .buffered,
             defer: false
         )
-        window.minSize = NSSize(width: 820, height: 650)
-        window.contentMinSize = NSSize(width: 820, height: 650)
+        let settingsMinimumSize = NSSize(
+            width: SettingsLayout.settingsWindowMinWidth,
+            height: SettingsLayout.settingsWindowMinHeight
+        )
+        window.minSize = settingsMinimumSize
+        window.contentMinSize = settingsMinimumSize
 
         window.title = L("window.settings.title", "Chau7 Settings")
+        window.titleVisibility = .hidden
+        if #available(macOS 11.0, *) {
+            window.toolbarStyle = .unifiedCompact
+            window.titlebarSeparatorStyle = .line
+        }
+        let toolbarDelegate = SettingsToolbarDelegate(overlayModel: overlayModel)
+        let toolbar = NSToolbar(identifier: NSToolbar.Identifier("Chau7SettingsToolbar"))
+        toolbar.displayMode = .iconOnly
+        toolbar.sizeMode = .small
+        toolbar.allowsUserCustomization = false
+        toolbar.autosavesConfiguration = false
+        toolbar.delegate = toolbarDelegate
+        window.toolbar = toolbar
+        settingsToolbarDelegate = toolbarDelegate
+
         window.contentViewController = hostingController
         // setContentSize after assigning the controller, because the controller's
         // preferredContentSize would otherwise override our 860x680 default with
@@ -644,7 +740,7 @@ private final class OverlayBlurView: NSVisualEffectView {
         NSApp.activate(ignoringOtherApps: true)
 
         settingsWindow = window
-        Log.info("Settings window created and shown.")
+        Log.info("Settings window created and shown. section=\(settingsNavigationModel.selection.rawValue) anchor=\(settingsNavigationModel.anchorID ?? "none")")
     }
 
     func newOverlayWindow() {
@@ -686,19 +782,11 @@ private final class OverlayBlurView: NSVisualEffectView {
             Log.trace("Close window: no key window.")
             return
         }
-        // If it's an overlay window, hide it instead of closing
-        if overlayHosts.contains(where: { $0.window == window }) {
-            if let host = overlayHosts.first(where: { $0.window == window }) {
-                host.model.noteTabBarVisibilityChanged(isVisible: false)
-            }
-            hiddenWindowNumbers.insert(window.windowNumber)
-            logOverlayWindowLifecycle(reason: "closeWindow-orderOut", window: window)
-            window.orderOut(nil)
-            Log.info("Overlay window hidden via Close Window.")
-        } else {
-            window.close()
-            Log.info("Window closed.")
-        }
+        // Overlay windows tear down their host + shells first; non-overlay windows
+        // (e.g. Settings) just close. tearDownOverlayHost is a no-op for non-overlay.
+        tearDownOverlayHost(for: window)
+        window.close()
+        Log.info("Window closed.")
     }
 
     func printTerminal() {
@@ -937,24 +1025,64 @@ private final class OverlayBlurView: NSVisualEffectView {
         logOverlayDiagnostics(reason: "setup", window: window)
     }
 
+    /// Fully tear down an overlay window on a user-initiated close: gracefully close
+    /// its shells, drop its host from `overlayHosts` (otherwise append-only, which is
+    /// why "closed" windows used to linger — hidden, still persisted, and restored on
+    /// next launch), and persist the pruned state so it does not come back.
+    ///
+    /// Chau7 has no privileged "main" window: every overlay window is fully closeable,
+    /// and the status-bar summon (`showOverlay`) recreates one when none remain.
+    /// Returns `false` for non-overlay windows so callers can fall back to default
+    /// handling. Must run on the main thread (same queue as the autosave timer).
+    @discardableResult
+    func tearDownOverlayHost(for window: NSWindow) -> Bool {
+        guard let index = overlayHosts.firstIndex(where: { $0.window == window }) else {
+            return false
+        }
+        let host = overlayHosts[index]
+        logOverlayWindowLifecycle(reason: "tearDownOverlayHost", window: window)
+
+        // Graceful shell teardown — same path as closing a tab.
+        host.model.closeAllSessionsForWindowClose()
+        // Registry cleanup — the service's designed "unregister when a window closes".
+        TerminalControlService.shared.unregister(host.model)
+
+        // Per-window bookkeeping (mirrors windowWillClose / hide-path cleanup).
+        hiddenWindowNumbers.remove(window.windowNumber)
+        clearSelectedTabRevealCycle(for: window.windowNumber)
+        pendingLifecycleDemotionsByWindow.removeValue(forKey: window.windowNumber)?.cancel()
+
+        // Break the append-only invariant on purpose: remove the host.
+        overlayHosts.remove(at: index)
+        if activeOverlayModel === host.model {
+            activeOverlayModel = overlayHosts.first?.model
+        }
+        // Re-wire move callbacks / window titles now that indices shifted.
+        wireTabMoveCallbacks()
+
+        // Persist the pruned set. `.manual`/`.autosave` only prune non-empty payloads;
+        // they do NOT clear on empty (only `.termination` does), so when the last
+        // window is gone wipe persisted state explicitly to avoid resurrecting it.
+        if overlayHosts.isEmpty {
+            clearPersistedWindowState()
+        } else {
+            saveAllWindowStates(reason: .manual)
+        }
+        return true
+    }
+
     func windowShouldClose(_ sender: NSWindow) -> Bool {
         Log.info("windowShouldClose called for window: \(sender.title), isClosingTab=\(isClosingTab)")
         if overlayHosts.contains(where: { $0.window == sender }) {
             if isClosingTab {
-                // Don't hide window - we're just closing a tab, not the window
+                // Don't close the window - we're just closing a tab, not the window
                 Log.info("windowShouldClose: ignoring - tab close in progress")
                 return false
             }
-            Log.info("windowShouldClose: hiding overlay window instead of closing")
-            hiddenWindowNumbers.insert(sender.windowNumber)
-            if let host = overlayHosts.first(where: { $0.window == sender }) {
-                host.model.noteTabBarVisibilityChanged(isVisible: false)
-            }
-            clearSelectedTabRevealCycle(for: sender.windowNumber)
+            Log.info("windowShouldClose: tearing down overlay window")
             refreshLowLatencyActivity()
-            logOverlayWindowLifecycle(reason: "windowShouldClose-orderOut", window: sender)
-            sender.orderOut(nil)
-            return false
+            tearDownOverlayHost(for: sender)
+            return true // host removed & shells closed; let AppKit finish the close
         }
         Log.info("windowShouldClose: allowing window to close")
         return true
@@ -979,18 +1107,25 @@ private final class OverlayBlurView: NSVisualEffectView {
             activeOverlayModel = host.model
             host.model.focusSelected()
 
-            // Only refresh the tab bar if this window was previously hidden.
-            // This prevents unnecessary refreshes on every focus change (e.g., Command-Tab).
-            // The NSHostingView in the toolbar can become "stale" after hide/show cycles.
+            // Recover the tab bar after every hidden-to-visible transition,
+            // including the first presentation of a restored window. Restored
+            // toolbars are created while ordered out behind the splash, so their
+            // NSHostingView can already be stale before it is ever shown.
             let wasHidden = hiddenWindowNumbers.remove(window.windowNumber) != nil
             let wasShownBefore = shownWindowNumbers.contains(window.windowNumber)
             if !wasShownBefore {
                 shownWindowNumbers.insert(window.windowNumber)
             }
-            if wasHidden, wasShownBefore {
+            if StartupWindowPresentationPolicy.shouldRecoverTabBarAfterPresentation(
+                wasHidden: wasHidden,
+                hasPresentedBefore: wasShownBefore
+            ) {
                 host.model.noteTabBarVisibilityChanged(isVisible: true)
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                    Log.info("Proactive tab bar refresh after window show")
+                    Log.info(
+                        "Proactive tab bar refresh after window presentation " +
+                            "(firstPresentation=\(!wasShownBefore))"
+                    )
                     TabBarToolbarDelegate.shared.recreateToolbar(for: window)
                     TabBarToolbarDelegate.shared.updateToolbarItemSizing(for: window)
                 }
@@ -1342,11 +1477,12 @@ private final class OverlayBlurView: NSVisualEffectView {
 
         tabsModel.overlayWindow = window
         tabsModel.onCloseLastTab = { [weak self, weak window] in
-            guard let window else { return }
-            self?.hiddenWindowNumbers.insert(window.windowNumber)
-            tabsModel.noteTabBarVisibilityChanged(isVisible: false)
-            self?.logOverlayWindowLifecycle(reason: "onCloseLastTab-orderOut", window: window)
-            window.orderOut(nil)
+            guard let self, let window else { return }
+            // Closing the last tab closes the window for real (no privileged main
+            // window). closeTab injected a fresh tab before firing this; it is torn
+            // down gracefully with the rest.
+            tearDownOverlayHost(for: window)
+            window.close()
         }
         Log.info("Overlay window created.")
         return window
@@ -1635,6 +1771,10 @@ private final class OverlayBlurView: NSVisualEffectView {
             )
         }
 
+        if isOverlayWindow, eventMatchesMenuShortcut(event) {
+            return event
+        }
+
         if isOverlayWindow {
             let tabSwitchMode = FeatureSettings.shared.tabSwitchShortcutMode
             if tabSwitchMode.allowsCommandNumber,
@@ -1669,10 +1809,11 @@ private final class OverlayBlurView: NSVisualEffectView {
         }
 
         if isOverlayWindow {
-            if eventMatchesMenuShortcut(event) {
-                return event
-            }
-            if let action = KeybindingsManager.shared.actionForEvent(event) {
+            if !isTextInputFocused(in: window),
+               let action = KeybindingsManager.shared.actionForEvent(
+                   event,
+                   suppressingShippedDefaultShortcuts: true
+               ) {
                 if action == .closeTab {
                     closeTabFromShortcut()
                 } else {

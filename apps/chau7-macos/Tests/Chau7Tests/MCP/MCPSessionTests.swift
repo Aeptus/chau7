@@ -67,6 +67,9 @@ final class MCPSessionTests: XCTestCase {
         let runtimeInfo = try XCTUnwrap(tools.first(where: { ($0["name"] as? String) == "chau7_runtime_info" }))
         XCTAssertTrue((runtimeInfo["description"] as? String)?.contains("build and process identity") == true)
 
+        let sessionInfo = try XCTUnwrap(tools.first(where: { ($0["name"] as? String) == "chau7_mcp_session_info" }))
+        XCTAssertTrue((sessionInfo["description"] as? String)?.contains("startup diagnostics") == true)
+
         let runtimeEvents = try XCTUnwrap(tools.first(where: { ($0["name"] as? String) == "chau7_runtime_events" }))
         XCTAssertTrue((runtimeEvents["description"] as? String)?.contains("observability events") == true)
 
@@ -96,6 +99,10 @@ final class MCPSessionTests: XCTestCase {
         let tabWaitReady = try XCTUnwrap(tools.first(where: { ($0["name"] as? String) == "tab_wait_ready" }))
         XCTAssertTrue((tabWaitReady["description"] as? String)?.contains("can_accept_exec=true") == true)
 
+        let requestControl = try XCTUnwrap(tools.first(where: { ($0["name"] as? String) == "tab_request_control" }))
+        XCTAssertTrue((requestControl["description"] as? String)?.contains("local confirmation") == true)
+        XCTAssertNotNil(tools.first(where: { ($0["name"] as? String) == "tab_release_control" }))
+
         let repoEvents = try XCTUnwrap(tools.first(where: { ($0["name"] as? String) == "repo_get_events" }))
         let repoEventsSchema = try XCTUnwrap(repoEvents["inputSchema"] as? [String: Any])
         let repoEventsProperties = try XCTUnwrap(repoEventsSchema["properties"] as? [String: Any])
@@ -104,6 +111,50 @@ final class MCPSessionTests: XCTestCase {
         XCTAssertNotNil(repoEventsProperties["truncate_messages"])
 
         XCTAssertFalse(tools.contains(where: { (($0["name"] as? String) ?? "").hasPrefix("runtime_") }))
+    }
+
+    func testInitializeNegotiatesCodexProtocolVersion() throws {
+        let response = try XCTUnwrap(
+            MCPSession(fd: -1).handleRequestObject([
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "initialize",
+                "params": ["protocolVersion": "2025-06-18"]
+            ])
+        )
+
+        let result = try XCTUnwrap(response["result"] as? [String: Any])
+        XCTAssertEqual(result["protocolVersion"] as? String, "2025-06-18")
+    }
+
+    func testMCPSessionInfoReportsNegotiatedClientHandshake() throws {
+        let session = MCPSession(fd: -1)
+        _ = session.handleRequestObject([
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": [
+                "protocolVersion": "2025-06-18",
+                "clientInfo": ["name": "codex", "version": "0.146.0"]
+            ]
+        ])
+        _ = session.handleRequestObject([
+            "jsonrpc": "2.0",
+            "method": "notifications/initialized"
+        ])
+
+        let content = try toolStructuredContent(
+            session: session,
+            name: "chau7_mcp_session_info",
+            arguments: [:]
+        )
+        XCTAssertEqual(content["server_name"] as? String, "chau7")
+        XCTAssertEqual(content["client_name"] as? String, "codex")
+        XCTAssertEqual(content["client_version"] as? String, "0.146.0")
+        XCTAssertEqual(content["negotiated_protocol_version"] as? String, "2025-06-18")
+        XCTAssertEqual(content["startup_status"] as? String, "ready")
+        XCTAssertEqual(content["error_class"] as? String, "none")
+        XCTAssertTrue((content["resolved_command_path"] as? String)?.hasSuffix("/.chau7/bin/chau7-mcp-bridge") == true)
     }
 
     func testInitializeRejectsUnsupportedProtocolVersions() throws {
@@ -119,7 +170,7 @@ final class MCPSessionTests: XCTestCase {
         let error = try XCTUnwrap(response["error"] as? [String: Any])
         XCTAssertEqual(error["code"] as? Int, -32602)
         let data = try XCTUnwrap(error["data"] as? [String: Any])
-        XCTAssertEqual(data["supported"] as? [String], ["2025-11-25", "2024-11-05"])
+        XCTAssertEqual(data["supported"] as? [String], ["2025-11-25", "2025-06-18", "2024-11-05"])
     }
 
     func testUnknownToolReturnsProtocolError() throws {
@@ -215,7 +266,7 @@ final class MCPSessionTests: XCTestCase {
             name: "chau7_runtime_info",
             arguments: [:]
         )
-        XCTAssertEqual(runtimeInfo["observability_schema_version"] as? Int, 1)
+        XCTAssertEqual(runtimeInfo["observability_schema_version"] as? Int, 2)
 
         let runtimeEvents = try toolStructuredContent(
             session: session,
@@ -478,6 +529,15 @@ final class MCPSessionTests: XCTestCase {
             runtimeInfo["launch_time"] = "<launch_time>"
             runtimeInfo["process_id"] = "<process_id>"
             runtimeInfo["session_started_at"] = "<session_started_at>"
+            if var components = runtimeInfo["components"] as? [String: Any],
+               var app = components["app"] as? [String: Any] {
+                app["version"] = "<app_version>"
+                app["build_number"] = "<build_number>"
+                app["build_sha"] = "<build_sha>"
+                app["build_timestamp"] = "<build_timestamp>"
+                components["app"] = app
+                runtimeInfo["components"] = components
+            }
             snapshot["runtime_info"] = runtimeInfo
         }
         return snapshot
@@ -540,9 +600,18 @@ final class MCPSessionTests: XCTestCase {
                 "build_sha": "<build_sha>",
                 "build_timestamp": "<build_timestamp>",
                 "bundle_id": "<bundle_id>",
+                "components": [
+                    "app": [
+                        "build_number": "<build_number>",
+                        "build_sha": "<build_sha>",
+                        "build_timestamp": "<build_timestamp>",
+                        "status": "running",
+                        "version": "<app_version>"
+                    ]
+                ],
                 "launch_time": "<launch_time>",
                 "mcp_protocol_version": "2025-11-25",
-                "observability_schema_version": 1,
+                "observability_schema_version": 2,
                 "process_id": "<process_id>",
                 "session_started_at": "<session_started_at>"
             ],

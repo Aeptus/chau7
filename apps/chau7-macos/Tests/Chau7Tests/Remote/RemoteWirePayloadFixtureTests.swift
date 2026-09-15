@@ -114,9 +114,36 @@ final class RemoteWirePayloadFixtureTests: XCTestCase {
         XCTAssertEqual(payload.requestID, "r")
     }
 
+    func testClientStateDecodesWithoutTerminalPresentation() throws {
+        let json = #"{"app_state":"foreground","stream_mode":"full","notifications_authorized":false}"#
+        let payload = try JSONDecoder().decode(RemoteClientStatePayload.self, from: Data(json.utf8))
+        XCTAssertNil(payload.terminalPresentation)
+        XCTAssertNil(payload.supportsOutputTiming)
+    }
+
     func testTabDescriptorDecodesWithoutMCPFlag() throws {
         let json = #"{"tab_id":1,"title":"t","is_active":true}"#
         let tab = try JSONDecoder().decode(RemoteTabDescriptor.self, from: Data(json.utf8))
         XCTAssertFalse(tab.isMCPControlled)
+    }
+
+    func testKeyInputFixture() throws {
+        try assertRoundTrip(RemoteKeyInputPayload.self, fixture: "key_input.json")
+    }
+
+    func testTabListDecodesWithoutCapabilities() throws {
+        // Payloads from older Macs omit `capabilities` — clients must read nil.
+        let json = #"{"tabs":[{"tab_id":1,"title":"t","is_active":true}]}"#
+        let payload = try JSONDecoder().decode(RemoteTabListPayload.self, from: Data(json.utf8))
+        XCTAssertNil(payload.capabilities)
+    }
+
+    func testKeyInputModifiersOmittedWhenEmpty() throws {
+        // omitempty parity with the Go convention: [] encodes as absent.
+        let payload = RemoteKeyInputPayload(keys: [.init(key: "enter", modifiers: [])])
+        let encoded = try JSONEncoder().encode(payload)
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+        let keys = try XCTUnwrap(object["keys"] as? [[String: Any]])
+        XCTAssertNil(keys.first?["modifiers"])
     }
 }

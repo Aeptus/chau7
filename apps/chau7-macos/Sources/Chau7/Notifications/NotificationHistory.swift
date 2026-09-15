@@ -44,9 +44,14 @@ final class NotificationHistory {
     private var entriesByID: [UUID: Entry] = [:]
     private var order: [UUID] = []
     private let maxEntries: Int
+    private let outcomeSink: ((NotificationDeliveryOutcome) -> Void)?
 
-    init(maxEntries: Int = 100) {
+    init(
+        maxEntries: Int = 100,
+        outcomeSink: ((NotificationDeliveryOutcome) -> Void)? = nil
+    ) {
         self.maxEntries = maxEntries
+        self.outcomeSink = outcomeSink
     }
 
     func begin(
@@ -179,6 +184,7 @@ final class NotificationHistory {
             order.append(entry.id)
         }
         entriesByID[entry.id] = entry
+        outcomeSink?(deliveryOutcome(from: entry))
     }
 
     private func update(_ eventID: UUID, mutate: (inout Entry) -> Void) {
@@ -187,5 +193,33 @@ final class NotificationHistory {
         }
         mutate(&entry)
         entriesByID[eventID] = entry
+        outcomeSink?(deliveryOutcome(from: entry))
+    }
+
+    private func deliveryOutcome(from entry: Entry) -> NotificationDeliveryOutcome {
+        let assessment = entry.source == AIEventSource.codex.rawValue
+            ? CodexFeedbackProposalClassifier.assess(in: entry.message)
+            : nil
+        return NotificationDeliveryOutcome(
+            eventID: entry.id,
+            source: entry.source,
+            eventType: entry.type,
+            rawType: entry.rawType,
+            semanticKind: entry.semanticKind,
+            reliability: entry.reliability,
+            producer: entry.producer,
+            deliveryState: entry.deliveryState,
+            triggerID: entry.triggerId,
+            actionsExecuted: entry.actionsExecuted,
+            wasRateLimited: entry.wasRateLimited,
+            dropReason: entry.dropReason,
+            resolutionMethod: entry.resolutionMethod,
+            resolvedTabID: entry.resolvedTabID,
+            didDispatchBanner: entry.didDispatchBanner,
+            didStyleTab: entry.didStyleTab,
+            notes: entry.notes,
+            classificationConfidence: assessment.map { String(describing: $0.confidence) },
+            classificationEvidence: assessment?.evidence ?? []
+        )
     }
 }

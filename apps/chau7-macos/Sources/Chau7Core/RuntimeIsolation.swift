@@ -63,7 +63,16 @@ public enum RuntimeIsolation {
         fileManager: FileManager = .default,
         environment: [String: String] = ProcessInfo.processInfo.environment
     ) -> URL {
-        libraryDirectory(fileManager: fileManager, environment: environment)
+        if normalizedHomeRoot(from: environment) == nil,
+           isXCTestProcess(environment: environment) {
+            return fileManager.temporaryDirectory
+                .appendingPathComponent(
+                    "Chau7Tests-\(ProcessInfo.processInfo.processIdentifier)",
+                    isDirectory: true
+                )
+                .appendingPathComponent("Library/Logs", isDirectory: true)
+        }
+        return libraryDirectory(fileManager: fileManager, environment: environment)
             .appendingPathComponent("Logs", isDirectory: true)
     }
 
@@ -122,5 +131,14 @@ public enum RuntimeIsolation {
         let raw = environment[homeRootKey]?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         guard !raw.isEmpty else { return nil }
         return URL(fileURLWithPath: raw).standardizedFileURL
+    }
+
+    private static func isXCTestProcess(environment: [String: String]) -> Bool {
+        if environment["XCTestConfigurationFilePath"] != nil
+            || environment["XCTestBundlePath"] != nil {
+            return true
+        }
+        return NSClassFromString("XCTestCase") != nil
+            || NSClassFromString("XCTest.XCTestCase") != nil
     }
 }

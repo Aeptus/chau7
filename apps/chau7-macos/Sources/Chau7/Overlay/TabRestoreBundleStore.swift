@@ -101,13 +101,18 @@ struct TabRestoreBundleEnvelope: Codable, Equatable {
     /// even though unchanged-content saves skip rewriting the sidecars.
     /// Optional: manifests written before this field decode as nil.
     let saveToken: String?
+    /// Index token observed before this bundle was committed. When it matches
+    /// the still-published index token, this bundle is one transaction ahead
+    /// and save publication was interrupted between the two stores.
+    let previousIndexSaveToken: String?
 
     init(
         savedAt: Date,
         reason: TabStateSaveReason,
         sourceFingerprint: String,
         windows: [[TabRestoreManifest]],
-        saveToken: String? = nil
+        saveToken: String? = nil,
+        previousIndexSaveToken: String? = nil
     ) {
         self.schemaVersion = 1
         self.savedAt = savedAt
@@ -115,18 +120,25 @@ struct TabRestoreBundleEnvelope: Codable, Equatable {
         self.sourceFingerprint = sourceFingerprint
         self.windows = windows
         self.saveToken = saveToken
+        self.previousIndexSaveToken = previousIndexSaveToken
     }
 
     /// Copy carrying a refreshed save token + timestamp; used when an
     /// unchanged-content save skips rewriting sidecars but must still mark
     /// the bundle as belonging to the latest save cycle.
-    init(refreshing existing: TabRestoreBundleEnvelope, savedAt: Date, saveToken: String?) {
+    init(
+        refreshing existing: TabRestoreBundleEnvelope,
+        savedAt: Date,
+        saveToken: String?,
+        previousIndexSaveToken: String?
+    ) {
         self.schemaVersion = existing.schemaVersion
         self.savedAt = savedAt
         self.reason = existing.reason
         self.sourceFingerprint = existing.sourceFingerprint
         self.windows = existing.windows
         self.saveToken = saveToken
+        self.previousIndexSaveToken = previousIndexSaveToken
     }
 }
 
@@ -148,6 +160,7 @@ enum TabRestoreBundleStore {
         reason: TabStateSaveReason,
         sourceData: Data?,
         saveToken: String? = nil,
+        previousIndexSaveToken: String? = nil,
         rootURL: URL = defaultRootURL(),
         fileManager: FileManager = .default,
         now: Date = Date()
@@ -165,8 +178,14 @@ enum TabRestoreBundleStore {
             // Content unchanged — skip the sidecar rewrite, but stamp the new
             // save token onto the manifest so the freshness arbiter knows this
             // bundle still belongs to the latest save cycle.
-            if let saveToken, existing.saveToken != saveToken {
-                let refreshed = TabRestoreBundleEnvelope(refreshing: existing, savedAt: now, saveToken: saveToken)
+            if let saveToken,
+               existing.saveToken != saveToken || existing.previousIndexSaveToken != previousIndexSaveToken {
+                let refreshed = TabRestoreBundleEnvelope(
+                    refreshing: existing,
+                    savedAt: now,
+                    saveToken: saveToken,
+                    previousIndexSaveToken: previousIndexSaveToken
+                )
                 try writeJSON(refreshed, to: currentURL.appendingPathComponent(manifestFileName))
                 return refreshed
             }
@@ -186,7 +205,8 @@ enum TabRestoreBundleStore {
                 bundleRootURL: tempURL,
                 fileManager: fileManager,
                 now: now,
-                saveToken: saveToken
+                saveToken: saveToken,
+                previousIndexSaveToken: previousIndexSaveToken
             )
             try writeJSON(envelope, to: tempURL.appendingPathComponent(manifestFileName))
 
@@ -258,7 +278,8 @@ enum TabRestoreBundleStore {
         bundleRootURL: URL,
         fileManager: FileManager,
         now: Date,
-        saveToken: String? = nil
+        saveToken: String? = nil,
+        previousIndexSaveToken: String? = nil
     ) throws -> TabRestoreBundleEnvelope {
         let windows = try windowStates.enumerated().map { windowIndex, states in
             try states.enumerated().map { tabIndex, state in
@@ -276,7 +297,8 @@ enum TabRestoreBundleStore {
             reason: reason,
             sourceFingerprint: sourceFingerprint,
             windows: windows,
-            saveToken: saveToken
+            saveToken: saveToken,
+            previousIndexSaveToken: previousIndexSaveToken
         )
     }
 

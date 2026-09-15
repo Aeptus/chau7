@@ -108,7 +108,7 @@ public enum MagiPromptBuilder {
         - confidence is a number from 0 to 1.
         - evidence_requests is an array of objects with priority, reason, required_evidence, proposed_collectors.
         - proposed_collectors may include local.git_status, local.git_diff, local.repo_search:<query>, local.file_read:<path>, local.command:<command>, or web.query:<query>.
-        - veto is null unless your persona veto policy requires a blocking veto; if present use reason, scope, blocks_verdict.
+        - veto must be null in this round. Blocking vetoes are accepted only in the final vote round; mention early blocking concerns in summary.
 
         JSON shape example:
         {
@@ -146,7 +146,7 @@ public enum MagiPromptBuilder {
             lines.append("Confidence: \(String(format: "%.2f", position.confidence))")
             lines.append("Summary: \(position.summary)")
             if let veto = position.veto {
-                lines.append("Veto: \(veto.reason)")
+                lines.append("Position-round veto note, non-blocking unless restated in final vote: \(veto.reason)")
             }
             if !position.evidenceRequests.isEmpty {
                 lines.append("Evidence requested:")
@@ -225,7 +225,7 @@ public enum MagiPromptBuilder {
         \(formatEvidence(evidencePackets))
 
         Treat approved facts as shared deliberation material. Mention them in your rationale when they changed or strengthened your vote.
-        Cast your final vote. Majority is enough. A veto blocks the verdict only when your persona veto policy requires it.
+        Cast your final vote. Majority is enough. Only a veto emitted in this final vote can block the verdict, and only when your persona veto policy requires it.
         Verdict mode: \(questionKind.rawValue).
         \(questionKind.promptInstruction)
 
@@ -235,20 +235,24 @@ public enum MagiPromptBuilder {
         - End marker name: \(markers.end)
         - The begin marker and end marker must be printed as standalone lines in your final answer.
         - Do not merely describe the marker names. Do not use Markdown fences around the final JSON block.
-        - JSON keys: member, round, verdict, vote, confidence, rationale, veto.
+        - JSON keys: member, round, verdict, decision_id, choice, conditions, confidence, rationale, veto.
         - member must be "\(member.id.rawValue)".
         - round must be \(roundNumber(from: roundID)).
         - verdict must be one of: \(verdictKinds).
-        - vote is the final answer you vote for.
+        - decision_id is a lowercase stable id for the exact decision you vote for. For engineering votes, use the same decision_id only when the actionable decision and material conditions are the same.
+        - choice is the human-readable final answer you vote for.
+        - conditions is an array of material conditions; use [] when unconditional or not applicable.
         - confidence is a number from 0 to 1.
-        - veto is null unless you issue a blocking veto; if present use reason, scope, blocks_verdict.
+        - veto is null unless you issue a blocking final-vote veto; if present use reason, scope, blocks_verdict.
 
         JSON shape example:
         {
           "member": "\(member.id.rawValue)",
           "round": \(roundNumber(from: roundID)),
           "verdict": "\(questionKind.voteVerdictKinds[0].rawValue)",
-          "vote": "your final answer",
+          "decision_id": "canonical_decision_id",
+          "choice": "your final answer",
+          "conditions": [],
           "confidence": 0.82,
           "rationale": "short rationale",
           "veto": null
@@ -288,7 +292,7 @@ public enum MagiPromptBuilder {
         Current vetoes:
         \(vetoLines)
 
-        No majority was reached. Reconsider once and cast a final vote.
+        No majority was reached. Reconsider once and cast a final vote. Only vetoes emitted in vote rounds can block final resolution.
         Verdict mode: \(questionKind.rawValue).
         \(questionKind.promptInstruction)
 
@@ -298,10 +302,13 @@ public enum MagiPromptBuilder {
         - End marker name: \(markers.end)
         - The begin marker and end marker must be printed as standalone lines in your final answer.
         - Do not merely describe the marker names. Do not use Markdown fences around the final JSON block.
-        - JSON keys: member, round, verdict, vote, confidence, rationale, veto.
+        - JSON keys: member, round, verdict, decision_id, choice, conditions, confidence, rationale, veto.
         - member must be "\(member.id.rawValue)".
         - round must be \(roundNumber(from: roundID)).
         - verdict must be one of: \(verdictKinds).
+        - decision_id is a lowercase stable id for the exact decision you vote for; do not use the verdict label alone as the decision id.
+        - choice is the human-readable final answer you vote for.
+        - conditions is an array of material conditions; use [] when unconditional or not applicable.
         """
     }
 
@@ -595,7 +602,9 @@ public enum MagiTranscriptParser {
                 id: "\(roundID)-\(memberID.rawValue)-vote",
                 memberID: memberID,
                 verdictKind: payload.verdictKind,
+                decisionID: payload.decisionID,
                 choice: payload.vote,
+                conditions: payload.conditions,
                 confidence: payload.confidence,
                 rationale: payload.rationale,
                 rawOutput: output
@@ -765,7 +774,9 @@ private struct VotePayload: Decodable {
     var member: String
     var round: Int
     var verdictKind: MagiVerdictKind?
+    var decisionID: String?
     var vote: String
+    var conditions: [String]
     var confidence: Double
     var rationale: String
     var veto: VetoPayload?
@@ -776,8 +787,11 @@ private struct VotePayload: Decodable {
         case verdict
         case verdictKind = "verdict_kind"
         case kind
+        case decisionID = "decision_id"
+        case decisionIDCamel = "decisionId"
         case vote
         case choice
+        case conditions
         case confidence
         case rationale
         case veto
@@ -802,8 +816,11 @@ private struct VotePayload: Decodable {
         } else {
             self.verdictKind = nil
         }
+        self.decisionID = try container.decodeIfPresent(String.self, forKey: .decisionID)
+            ?? container.decodeIfPresent(String.self, forKey: .decisionIDCamel)
         self.vote = try container.decodeIfPresent(String.self, forKey: .vote)
             ?? container.decode(String.self, forKey: .choice)
+        self.conditions = try decodeStringList(container, forKey: .conditions)
         self.confidence = try container.decodeIfPresent(Double.self, forKey: .confidence) ?? 0
         self.rationale = try container.decodeIfPresent(String.self, forKey: .rationale) ?? ""
         self.veto = try container.decodeIfPresent(VetoPayload.self, forKey: .veto)
@@ -907,6 +924,48 @@ public struct MagiCollectorCommand: Codable, Equatable, Sendable, Identifiable {
 
     public var usesWeb: Bool {
         collectorKind == .webQuery
+    }
+}
+
+public struct MagiCollectorExecutionResult: Equatable, Sendable {
+    public var output: String
+    public var exitStatus: Int
+
+    public init(output: String, exitStatus: Int) {
+        self.output = output
+        self.exitStatus = exitStatus
+    }
+}
+
+public enum MagiCollectorOutputParser {
+    public static func parse(output: String, sentinel: String) -> MagiCollectorExecutionResult? {
+        var body: [String] = []
+        var exitStatus: Int?
+        let sentinelPrefix = "\(sentinel):"
+
+        for line in output.components(separatedBy: .newlines) {
+            let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmed.hasPrefix(sentinelPrefix) {
+                let rawStatus = String(trimmed.dropFirst(sentinelPrefix.count))
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                if let parsedStatus = Int(rawStatus) {
+                    exitStatus = parsedStatus
+                }
+                continue
+            }
+
+            if !line.contains(sentinel) {
+                body.append(line)
+            }
+        }
+
+        guard let exitStatus else { return nil }
+        return MagiCollectorExecutionResult(
+            output: body
+                .joined(separator: "\n")
+                .trimmingCharacters(in: .whitespacesAndNewlines),
+            exitStatus: exitStatus
+        )
     }
 }
 

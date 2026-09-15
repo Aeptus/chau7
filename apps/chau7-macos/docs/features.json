@@ -2,21 +2,434 @@
   {
     "category": "AI Integration",
     "feature": "Aethyme Pull-Request Activity Delivery",
-    "description": "Claims Aethyme's provider-neutral durable outbox and delivers metadata-only review prompts only to the exact subscribed Chau7 tab, AI session, repository, and idle input surface while independently tracked partial input defers delivery, busy targets retry, and identity drift fails closed",
+    "description": "Claims Aethyme's provider-neutral durable outbox and delivers metadata-only review prompts only to the exact subscribed Chau7 tab, AI session, repository, and idle input surface while the command-filtering buffer retains partial MCP fragments until submit or cancel, busy targets retry, and identity drift fails closed",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "Observability",
+    "feature": "Semantic Provider Event Log Levels",
+    "description": "Consumes duplicate Claude session-start confirmation explicitly and keeps deliberate non-user-facing notification adapter drops at trace while preserving unexpected ingress diagnostics at info",
+    "status": "Shipped",
+    "differentiator": "No"
+  },
+  {
+    "category": "Observability",
+    "feature": "macOS Launch Continuity Evidence",
+    "description": "Persists a build-attributed running marker after single-instance acquisition and distinguishes clean, abrupt, and unknown prior exits without claiming an abrupt exit was necessarily a crash",
+    "status": "Shipped",
+    "differentiator": "No"
+  },
+  {
+    "category": "Remote Access",
+    "feature": "Classified Remote Helper Diagnostics",
+    "description": "Sanitizes helper stderr and distinguishes routine reconnect lifecycle from actionable connection failures while suppressing the known disabled MallocStackLogging notice",
+    "status": "Shipped",
+    "differentiator": "No"
+  },
+  {
+    "category": "Remote Access",
+    "feature": "Correlated Remote Transport Diagnostics",
+    "description": "Reports helper IPC, relay WebSocket, encrypted phone-session, tab inventory, and stream state as separate UI status and one privacy-safe operational snapshot",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "AI Integration",
+    "feature": "Live AI Session Binding Validation",
+    "description": "Rejects conflicting live providers in exact-session, stamped-tab, and directory attribution and prevents runtime conflict invalidation from falling through into re-adoption of the same tab, while retaining safe shell and same-provider rebinding",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "AI Integration",
+    "feature": "Crash-Safe Codex Resume Recovery",
+    "description": "Autosave preserves a known Codex pane's in-memory identity including provider-only evidence, while restore performs provider-scoped rollout recovery and still rejects duplicate foreign-project and all-nil identities",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "Developer Experience",
+    "feature": "Test-Run Log Isolation",
+    "description": "XCTest processes default app logs and terminal captures to a process-scoped temporary Library/Logs tree so fixture output cannot contaminate operational audits, while explicit test-home and log-file overrides remain authoritative",
+    "status": "Shipped",
+    "differentiator": "No"
+  },
+  {
+    "category": "API Analytics",
+    "feature": "OpenAI Responses Usage Normalization",
+    "description": "Codex request and response accounting recognizes Responses API input, max-output, usage, cache, reasoning, and nested SSE fields through the same normalized metadata path as Chat Completions so valid usage does not fall back to body-size estimates",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "Performance",
+    "feature": "Ordered Off-Main Session Durability",
+    "description": "Captures AppKit-owned tab state briefly on main, then encodes indexes and writes restore bundles and backups on one ordered utility queue that termination drains before app-owned shells close",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "Terminal",
+    "feature": "Terminal Services Discovery Stalls",
+    "description": "Keeps explicit copy, paste, password AutoFill, and text input while declining macOS Services pasteboard requestor discovery, avoiding synchronous ShareKit extension scans during focus and menu validation",
+    "status": "Shipped",
+    "differentiator": "No"
+  },
+  {
+    "category": "Performance",
+    "feature": "Off-Main Terminal Frame Preparation",
+    "description": "Acquires Rust grids and cursor state, converts row tints, and synchronizes terminal cells on one user-interactive serial queue while AppKit presents only generation-owned completed frames and visual bursts coalesce without dropping authoritative PTY data",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "Observability",
+    "feature": "Independent Main-Thread Hang Supervision",
+    "description": "Observes a four-Hz atomic AppKit heartbeat from both a dedicated queue and a separate watchdog process, pauses only terminal paint after two seconds, captures one external five-second sample after four seconds, and never kills the app-owned shells",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "Performance",
+    "feature": "Bounded and Classified Scrollback Cache I/O",
+    "description": "Per-tab scrollback queues share one serial operation lane so concurrent demotions cannot multiply capture and compression peaks; atomic verified writes classify capacity, permission, corruption, and generic I/O failures, and failed caching never permits ring shrinkage",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "Scripting & Debugging",
+    "feature": "Complete Restore Phase Attribution",
+    "description": "Per-tab restore telemetry names setup, lookup, command-block, focus, metadata, resume, repository-grouping, and startup-finalization costs, including completed phases on early returns, so launch stalls can be assigned before changing thread ownership",
+    "status": "Shipped",
+    "differentiator": "No"
+  },
+  {
+    "category": "Performance",
+    "feature": "Accurate Terminal Scan Diagnostics",
+    "description": "Dangerous-output timer lateness is logged as scan_queue_delay while retaining the compatible structured scan category, so main-queue congestion is no longer mistaken for row-scan execution time and actual refresh work remains separately profiled",
+    "status": "Shipped",
+    "differentiator": "No"
+  },
+  {
+    "category": "Scripting & Debugging",
+    "feature": "Privacy-Safe Network Attribution",
+    "description": "Provider-status requests log a short correlation ID, owning component, normalized host, and outcome while excluding URL paths, queries, fragments, credentials, and tokens so redacted TLS diagnostics remain attributable without exposing request data",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "Scripting & Debugging",
+    "feature": "Independent Component Runtime Identity",
+    "description": "Relay runtime responses expose Cloudflare deployment metadata, proxy health exposes helper build identity and capabilities, and chau7_runtime_info reports identities observed for each component so verification cannot mistake an app rebuild for a relay or proxy deployment",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "Scripting & Debugging",
+    "feature": "Launch-Preserving App Log Rotation",
+    "description": "Chau7.log retains five bounded archive generations plus a line-aligned active tail, omits high-frequency read-side terminal traces in favor of state changes, and records startup activity byte counts without terminal text, preserving deeper parseable audit history without unbounded storage or transcript leakage",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "Performance",
+    "feature": "Proactive Scrollback Reclamation",
+    "description": "Idle warm tabs flush scrollback to disk and shrink to a resident floor while TUI tabs compact capture-if-safe/shrink-always/replay-never-while-protected; the immediately previous tab remains warm as a bounded MRU exception under pressure, with an aggregate budget backstop, instant back-switch paint from RAM, and zero new repeating timers",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "Performance",
+    "feature": "Checksummed Scrollback Disk Cache",
+    "description": "Scrollback cache payloads embed content kind, uncompressed size, and CRC32 for exact-size decode and checksum verification with atomic writes, CRLF/SGR-preserving captures, and flush-time records that defer replay while a TUI is live",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "Performance",
+    "feature": "Compact Render Sync Path",
+    "description": "48-byte terminal cells, table-driven WCAG contrast rescue with a per-run memo, and per-buffer owned cluster storage keep the full-grid Metal sync loop allocation-free and materially cheaper per cell",
+    "status": "Shipped",
+    "differentiator": "No"
+  },
+  {
+    "category": "Performance",
+    "feature": "Generation-Based Dirty-Row Rendering",
+    "description": "Retains Alacritty viewport damage as per-row generations and streams packed changed rows to independent Metal and CPU consumers, with rotating-buffer catch-up and authoritative full recovery on cold start, resize, and theme changes",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "Scripting & Debugging",
+    "feature": "Per-Tab Memory Attribution",
+    "description": "An on-demand Debug Console Memory tab attributes resident bytes per pane across the Rust ring, session caches, CPU-fallback copies, and per-window Metal resources, with replay and tab-switch-to-first-paint latency instrumentation",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "Developer Experience",
+    "feature": "Audited Cloudflare Worker Toolchain",
+    "description": "Issues and Relay Workers pin compatible Wrangler and Workers-types releases that pass dependency audits, tests, typechecks, and dry-run builds",
+    "status": "Shipped",
+    "differentiator": "No"
+  },
+  {
+    "category": "Developer Experience",
+    "feature": "Deterministic Monitor Lifecycle Tests",
+    "description": "Process-resource timer tests inject immediate snapshots so lifecycle coverage is independent of OS process-enumeration latency under full-suite load",
+    "status": "Shipped",
+    "differentiator": "No"
+  },
+  {
+    "category": "API Analytics",
+    "feature": "Reliable Concurrent Proxy Persistence",
+    "description": "SQLite busy handling applies to every pooled proxy connection so overlapping API-call writes persist without lock-loss gaps",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "Developer Experience",
+    "feature": "Cross-Language Validator Conformance",
+    "description": "Complete-tree Swift formatting and lint plus Go static analysis enforce explicit optional flattening and terminating test-fixture guards",
+    "status": "Shipped",
+    "differentiator": "No"
+  },
+  {
+    "category": "Developer Experience",
+    "feature": "Isolated Quality-Runner Environment Tests",
+    "description": "Quality-runner regressions scope and restore process-wide environment overrides so acknowledged dirty worktrees cannot invert fail-closed policy tests",
+    "status": "Shipped",
+    "differentiator": "No"
+  },
+  {
+    "category": "Tabs, Panes & Windows",
+    "feature": "Deterministic Tab-Group Drag Transactions",
+    "description": "Repository-group drags move one layer-backed AppKit snapshot at native display cadence over an invisible stable SwiftUI placeholder, with label-plus-tabs geometry and attached-view coverage for scrolling, completion, stale identity, and teardown",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "Quality",
+    "feature": "Replay-Based Notification Attention Regression Suite",
+    "description": "Versioned Codex and Claude fixtures replay provider payloads through canonical adaptation, turn reconciliation, and style planning to lock down missed-input and false-positive completion cases",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "Scripting & Debugging",
+    "feature": "Structured Notification Delivery Outcomes",
+    "description": "Every notification-ledger transition emits a correlated runtime event with semantic and raw type, routing, trigger, actions, banner and style results, suppression state, and Codex prose confidence evidence",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "AI Integration",
+    "feature": "Canonical Completion Highlight Fallback",
+    "description": "Producer-specific completion aliases without a direct presentation row resolve through canonical finished semantics so low-confidence Codex prose and normalized completions retain a non-interactive success highlight",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "AI Integration",
+    "feature": "Confidence-Tiered Codex Feedback Classification",
+    "description": "Completed-turn prose produces high, medium, or low confidence with explicit evidence so enumerated choices and direct terminal questions request attention while conversational questions retain completion semantics",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "AI Integration",
+    "feature": "Optional Codex App Server Interaction Ingestion",
+    "description": "An opt-in transport can normalize request-user-input, approval, and resolved JSON-RPC messages into the existing authoritative Codex attention path with shared prompt parsing and overlapping-request tracking",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "AI Integration",
+    "feature": "Fresh Codex Rollout Discovery Retries",
+    "description": "Global rollout-index misses refresh on later lookup so asynchronous feedback monitoring can attach when Codex creates a session file after the first discovery attempt",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "Scripting & Debugging",
+    "feature": "Codex Feedback Monitor Health",
+    "description": "The debug console exposes rollout discovery and exhaustion plus active rollout name, observed-line count, structured-record count, and unresolved prompt count for each Codex tab",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "AI Integration",
+    "feature": "Turn-Aware Notification Reconciliation",
+    "description": "A short terminal coalescing window rejects lagging same-turn heuristics while later interactive observations reopen a new turn for providers such as Codex that omit explicit start lifecycle events",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "AI Integration",
+    "feature": "DND-Independent Tab Attention",
+    "description": "Focus modes suppress intrusive notification channels while retaining configured or default tab styling, without re-enabling rules the user explicitly disabled",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "AI Integration",
+    "feature": "Canonical Notification Semantic Precedence",
+    "description": "Provider-native event types remain audit provenance while the canonical adapter trigger owns downstream behavior, preventing reclassified Codex feedback requests from reverting to finished semantics during tab-attention delivery",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "Telemetry",
+    "feature": "Mature Latency Warning Signals",
+    "description": "Every threshold-crossing terminal latency event remains in structured telemetry, while warning logs require at least twenty samples plus sustained p95 degradation or a single event at three times the threshold",
+    "status": "Shipped",
+    "differentiator": "No"
+  },
+  {
+    "category": "Scripting & Debugging",
+    "feature": "Expected Event Log Severity",
+    "description": "Routine multiline-paste interception remains auditable at info level and idempotent style cleanup for an already-closed tab is debug-only, while actual dangerous-command and operational failure paths retain warning or error severity",
+    "status": "Shipped",
+    "differentiator": "No"
+  },
+  {
+    "category": "AI Detection & Integration",
+    "feature": "Provider Status Outage Backoff",
+    "description": "Application-wide provider polling collapses all-provider transport outages into one classified summary and exponentially backs off from one to fifteen minutes, while successful or partial rounds reset the outage state and preserve fresh observations",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "Terminal Core",
+    "feature": "PTY Startup Activity Detection",
+    "description": "Shell startup readiness counts rendered grid changes and metadata-only PTY events such as OSC-7 across event, background, and synchronous drain paths, preventing responsive shells from being mislabeled as hung when control sequences precede raw output capture",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "AI Integration",
+    "feature": "Approval Timeout Isolation",
+    "description": "Runtime approval timers are bound to the exact approval request that created them, so late callbacks cannot expire newer requests and repeated distinct unanswered approvals fail only their owning turns rather than poisoning the whole session",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "Terminal Core",
+    "feature": "Owned Terminal Shutdown Escalation",
+    "description": "Every graceful-close escalation revalidates the shell PID plus kernel start time, direct app parent, and non-zombie state before signaling, so PID reuse, reparenting, reaped shells, and permission failures cannot fall through to an unrelated direct-PID kill",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "Architecture",
+    "feature": "Single-Instance and Socket Ownership",
+    "description": "Chau7 acquires a process-lifetime lock before restoring tabs, redirects duplicate launches to the existing process, and removes Unix socket paths only while the stopping listener still owns their filesystem identity",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "AI Integration",
+    "feature": "Chau7CLI Repo Skills Support",
+    "description": "chau7-cli skills --scope repo validates .chau7/skills/<skill-id> sources, installs and syncs them into repo-local .claude/skills/<skill-id> and .codex/skills/<skill-id> targets, resolves relative skill paths from the command working directory, and keeps repo install state under the repo .chau7 directory",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "AI Integration",
+    "feature": "Chau7CLI Skills Commands",
+    "description": "chau7-cli skills provides list, doctor, install, update, uninstall, validate, diff, and sync commands over built-in Agent Skills, using shared Chau7Core validation, install inspection, planning, and installer logic for Claude and Codex user targets, with all reporting invalid source directories instead of silently skipping them",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "AI Integration",
+    "feature": "Chau7CLI Local Installer",
+    "description": "Scripts/install-chau7-cli.sh builds the SwiftPM chau7-cli product and installs both chau7-cli and a chau7 wrapper into ~/.local/bin by default, enabling the documented chau7 skills command surface without a conflicting lowercase SwiftPM product",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "AI Integration",
+    "feature": "Chau7 Built-In Agent Skills",
+    "description": "Chau7 ships chau7-magi and chau7-mcp Agent Skills under Resources/Skills, covering MAGI usage, CLI invocation, verdicts, artifacts, replay/share, council-output integrity, direct-answer versus council decisions, safe Chau7 MCP orchestration, diagnostics, permission boundaries, and the rule to never kill Chau7 itself",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "AI Integration",
+    "feature": "Chau7 Skills Installer",
+    "description": "Chau7Core installs managed Agent Skills by validating the canonical source, building the install plan, staging a copied skill, injecting .chau7-skill.json, validating the staged directory, verifying existing managed manifests match the requested target, backing up replaced targets, swapping the provider install directory with rollback on replacement failure, and returning a structured final state without mutating the source skill",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "AI Integration",
+    "feature": "Chau7 Skills Install Planner",
+    "description": "Chau7Core computes pure Agent Skills install plans from source validation, provider availability, target presence, managed manifests, source hashes, and installed file hashes, covering missing/install, installed/no-op, stale/update, modified/refuse, unmanaged conflict/refuse, invalid source/refuse, and unsupported provider/refuse outcomes",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "AI Integration",
+    "feature": "Chau7 Skills Manifest Hashing",
+    "description": "Chau7Core deterministically hashes managed Agent Skill files, excludes Chau7 and Finder metadata, and builds manifest data with source and target metadata, aggregate source hashes, and per-file hashes for install/update/drift detection",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "AI Integration",
+    "feature": "Chau7 Skills Provider Targets",
+    "description": "Chau7Core resolves Claude and Codex user/repo Agent Skills install targets and conservatively detects provider availability from provider roots, provider CLIs on PATH, or explicit user provider requests, with the CLI treating --provider as the explicit override",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "AI Integration",
+    "feature": "Chau7 Agent Skills Validator",
+    "description": "Chau7Core validates the shared Agent Skills folder contract, including SKILL.md YAML frontmatter, required name and description fields, lowercase kebab-case names, folder/name matching, and optional scripts, references, and assets directories while allowing unknown provider-specific frontmatter",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "AI Integration",
+    "feature": "Chau7 Skills Model Foundation",
+    "description": "Chau7Core defines pure Agent Skills management models for skill IDs and sources, providers, user/repo scopes, install targets, lifecycle states, file hashes, Chau7 management manifests, install plans, and validation issues without introducing a competing skill package format",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "AI Detection & Integration",
+    "feature": "Menu Bar Command Center",
+    "description": "The macOS status item summarizes live AI sessions across all overlay windows, prioritizes approval-required, waiting-input, and stuck sessions, opens the exact terminal pane, exposes pinned snippets as Insert actions with clipboard fallback, and deep-links Monitoring and Snippets settings",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "AI Detection & Integration",
+    "feature": "Provider Service-Health Borders",
+    "description": "One application-wide monitor polls the official Anthropic, OpenAI, GitHub, and Google Cloud status feeds, normalizes provider-specific payloads, and outlines the focused AI tab window in orange for degraded service or red for an outage, with five-minute freshness expiry and a Tabs setting",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "AI Detection & Integration",
+    "feature": "Claude Cross-Repo CWD Tracking",
+    "description": "Claude hook and idle events carry the authoritative cwd when Claude changes project inside its TUI; matching live Claude sessions can move a Chau7 tab across repo roots so path display, snippet context, and automatic repo grouping follow the real project while stale or mismatched foreign-cwd events remain blocked",
     "status": "Shipped",
     "differentiator": "Yes"
   },
   {
     "category": "AI Integration",
     "feature": "MAGI Multi-Agent Decision Protocol",
-    "description": "CLI-first council mode that launches three isolated agents through Chau7 MCP, applies editable member personas, collects user-approved evidence, resolves majority/veto verdicts, and writes replay/share artifacts",
+    "description": "CLI-first council mode that launches three isolated agents through Chau7 MCP, applies editable member personas, applies explicit ask/auto-deny/preapproved evidence policy, resolves majority/final-vote-veto verdicts using canonical decision IDs plus material conditions, and writes replay/share artifacts",
     "status": "Shipped",
     "differentiator": "Yes"
   },
   {
     "category": "AI Integration",
     "feature": "MAGI Command Surface",
-    "description": "SwiftPM executable supporting magi/MAGI direct questions, ask, doctor, config, replay, and local share generation with Chau7 MCP orchestration",
+    "description": "SwiftPM executable supporting magi/MAGI direct questions, explicit --mode engineering|generic selection, ask, doctor, config, replay, and local share generation with Chau7 MCP orchestration, with the CLI entrypoint split into focused parser, home TUI, config panel, first-run wizard, doctor, and replay/share command modules",
     "status": "Shipped",
     "differentiator": "Yes"
   },
@@ -30,14 +443,14 @@
   {
     "category": "AI Integration",
     "feature": "MAGI Production Artifacts",
-    "description": "Run checkpoints, failure categories, interrupted status, denied-evidence counts, complete required artifact bundles, and failure metadata in replay/share outputs make partial MAGI runs inspectable",
+    "description": "Running stages write lightweight decision JSON plus manifest checkpoints with artifact status and SHA-256 hashes, while terminal states write complete required artifact bundles with failure categories, interrupted status, denied-evidence counts, replay/share failure metadata, and replay rationales",
     "status": "Shipped",
     "differentiator": "Yes"
   },
   {
     "category": "AI Integration",
     "feature": "MAGI Hardened CLI Runtime",
-    "description": "Missing Chau7/MCP, provider launch failures, agent timeouts, malformed structured output, denied evidence, veto/deadlock outcomes, interrupts, and partial artifact replay paths produce clean statuses and local logs",
+    "description": "Missing Chau7/MCP, provider launch failures, agent timeouts, malformed structured output, denied evidence, veto/deadlock outcomes, interrupts, and partial artifact replay paths produce clean statuses and local logs, with orchestration split across focused round, capture, evidence, checkpoint, terminal rendering, and typed MCP-boundary DTO components",
     "status": "Shipped",
     "differentiator": "Yes"
   },
@@ -50,15 +463,15 @@
   },
   {
     "category": "AI Integration",
-    "feature": "MAGI Resilient Launch Verification",
-    "description": "Launch checks accept raw running status and responsive provider output when the effective tab status lags, without treating echoed prompt text as proof of a running agent",
+    "feature": "MAGI MCP Launch Contract",
+    "description": "MAGI trusts the structured agent_launch prompt_input_visible, prompt_submitted, and agent_running fields instead of duplicating provider readiness heuristics in the CLI, failing clearly when the launch contract is incomplete",
     "status": "Shipped",
     "differentiator": "Yes"
   },
   {
     "category": "AI Integration",
     "feature": "MAGI Prompt Injection Readiness",
-    "description": "agent_launch waits for a recognizable provider input surface in the live tab buffer before typing, and launch verification does not treat provider-level PTY logs as proof that a specific tab received the prompt",
+    "description": "agent_launch waits for a recognizable provider input surface in the live tab buffer before typing, then reports structured prompt verification fields that MAGI consumes as the launch contract",
     "status": "Shipped",
     "differentiator": "Yes"
   },
@@ -72,14 +485,14 @@
   {
     "category": "AI Integration",
     "feature": "MAGI Event-Backed Result Capture",
-    "description": "MAGI polls Chau7 tab-scoped AI completion events alongside PTY output so completed council responses can be parsed from agent turn notifications when scrollback misses the final structured block",
+    "description": "MAGI polls Chau7 tab-scoped AI completion events before PTY output and collects pending council members as soon as each finishes, so one slow member no longer blocks completed responses from the other tabs",
     "status": "Shipped",
     "differentiator": "Yes"
   },
   {
     "category": "AI Integration",
     "feature": "MAGI Bounded Structured Repair",
-    "description": "Structured-output repair ignores stale prior completion events, sends only the relevant transcript excerpt to the repair prompt, and accepts model list fields returned as either strings or arrays",
+    "description": "Structured-output repair ignores stale prior completion events, uses small PTY tails during normal progress, escalates to full stable output only for parse, repair, or failure paths, sends only the relevant transcript excerpt to the repair prompt, and waits for idle/stable output before repairing echoed prompt markers or partial blocks",
     "status": "Shipped",
     "differentiator": "Yes"
   },
@@ -93,14 +506,21 @@
   {
     "category": "AI Integration",
     "feature": "MAGI Home TUI",
-    "description": "Running magi/MAGI without arguments opens an interactive terminal home screen with progressive boot output, ASCII art, colored member panels after boot, boot-status lines ending on the selected council, an ask prompt, help, doctor access, and --config navigation",
+    "description": "Running magi/MAGI without arguments opens an interactive terminal home screen with progressive boot output, ASCII art, colored member panels after boot, boot-status lines ending on the selected council, an ask prompt that returns after each run, help, doctor access, and --config navigation",
     "status": "Shipped",
     "differentiator": "Yes"
   },
   {
     "category": "AI Integration",
     "feature": "MAGI Config Panel",
-    "description": "--config opens an editable terminal panel for member provider/class settings, global evidence/web/deadlock/veto switches, provider checks, and persona file checks",
+    "description": "--config opens an editable terminal panel for member provider/class/model settings, resolved launch commands, supported provider reasoning flags, global evidence policy/web/deadlock/veto switches, provider checks, and persona file checks",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "AI Integration",
+    "feature": "MAGI Council Configuration Split",
+    "description": "Global ~/.chau7/magi/config.toml stores runtime policy and the selected council, while ~/.chau7/magi/councils/<council-id>.toml stores member provider/class/model bindings, persona-file mapping, weights, display name, and majority threshold with legacy global member sections still accepted for migration",
     "status": "Shipped",
     "differentiator": "Yes"
   },
@@ -121,21 +541,21 @@
   {
     "category": "AI Integration",
     "feature": "MAGI Evidence Collector Cleanup",
-    "description": "Approved collectors run in temporary Chau7 tabs that close after output capture, and evidence requests without explicit collectors do not silently fall back to repo status",
+    "description": "Approved collectors run in temporary Chau7 tabs that close through immediate cleanup defers, nonzero collector exits create failed evidence packets, and disabled-web, unsupported, or missing collectors are skipped before approval prompts instead of silently falling back to repo status",
     "status": "Shipped",
     "differentiator": "Yes"
   },
   {
     "category": "AI Integration",
     "feature": "MAGI Deliberation Transcript",
-    "description": "Live magi ask output renders the council as staged debate, frames fact gathering as approved deliberation material, and records vague uncollectible requests as not_actionable",
+    "description": "Live magi ask output renders the council as staged debate, frames fact gathering as approved deliberation material, and records vague uncollectible requests as skipped",
     "status": "Shipped",
     "differentiator": "Yes"
   },
   {
     "category": "AI Integration",
     "feature": "MAGI Run Presentation",
-    "description": "magi ask uses ANSI color when available, member accents, compact collector status markers, a single high-speed in-place processing line while waiting, and full wrapped public phase results instead of clipped rationale previews",
+    "description": "magi ask uses ANSI color when available, member accents, compact collector status markers, a single high-speed in-place processing line while waiting, light phase member-status lines, inferred mode explanations, and a final verdict summary with decision, confidence, rationale, member votes, vetoes, and artifact path",
     "status": "Shipped",
     "differentiator": "Yes"
   },
@@ -155,6 +575,27 @@
   },
   {
     "category": "API Analytics",
+    "feature": "Transparent Long-Running Provider Streams",
+    "description": "The local analytics proxy no longer imposes a five-minute total or write deadline on active LLM requests and flushes every SSE chunk immediately so provider events and keepalives reach the CLI without buffering; provider calls live until the originating client cancels, while request-read and idle-connection protections remain bounded",
+    "status": "Shipped",
+    "differentiator": "No"
+  },
+  {
+    "category": "API Analytics",
+    "feature": "Deterministic Latency-Sample Reads",
+    "description": "Equal-timestamp provider latency samples retain their monotonic ingestion order through canonicalization, while throttled SQLite preparation diagnostics expose schema and query failures without flooding logs",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "API Analytics",
+    "feature": "Versioned Latency-Sample Sequencing",
+    "description": "Telemetry schema v5 gives provider latency samples the same shared monotonic ingest sequence as runs, usage evidence, and remote events, atomically replacing v4 trigger definitions so upgraded and fresh databases behave identically",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "API Analytics",
     "feature": "Echo-Only Input Latency",
     "description": "Per-session input latency measures keystroke-to-echo responsiveness only; command submission (Enter) is excluded for every session so a slow command's runtime is never miscounted as UI lag",
     "status": "Shipped",
@@ -163,14 +604,56 @@
   {
     "category": "API Analytics",
     "feature": "Configurable Telemetry Retention",
-    "description": "AI run history and full transcripts in runs.db are pruned at launch to a user-set window (default 30 days, 0 = keep forever, set in Settings > Logs & History), cascading to turns/tool_calls/latency samples and reclaiming disk with a full VACUUM",
+    "description": "AI run history and full transcripts in runs.db are pruned at launch to a user-set window (default 30 days, 0 = keep forever, set in Settings > History), cascading to turns/tool_calls/latency samples and reclaiming disk with a full VACUUM",
     "status": "Shipped",
     "differentiator": "Yes"
+  },
+  {
+    "category": "API Analytics",
+    "feature": "Durable Call Recording Under Lock Contention",
+    "description": "API call writes that lose SQLite's WAL write lock are retried with backoff instead of being discarded, so a checkpoint on a large analytics database cannot silently erase calls from dashboards; constraint and disk errors still fail fast and an exhausted retry budget logs an explicit dropped-record warning",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "API Analytics",
+    "feature": "Billable-Endpoint Token Accounting",
+    "description": "Token and cost estimation runs only for endpoints that return model output; Anthropic SSE parsing accepts spec-valid whitespace and gateway-rewritten event types, while fallback estimates emit bounded five-minute extraction summaries instead of per-request warnings; catalog and unrecognized routes remain unrecorded rather than estimated",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "API Analytics",
+    "feature": "Proxy Version-Skew Detection",
+    "description": "chau7-proxy advertises its wire capabilities on /health and the app verifies them at startup, naming an out-of-date bundled binary with its rebuild command instead of letting the mismatch surface as an unexplained upstream provider error; a proxy predating capability advertisement reads as missing all of them, and an unreachable proxy is never reported as a mismatch",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "API Analytics",
+    "feature": "Freshly Built Bundled Proxy",
+    "description": "The macOS app build compiles chau7-proxy instead of copying whatever artifact was last left in build/darwin, so the bundled binary always understands the correlation path its paired Codex wrapper emits and cannot silently ship a stale protocol half",
+    "status": "Shipped",
+    "differentiator": "No"
   },
   {
     "category": "Monitoring",
     "feature": "Bounded AI Event Queues",
     "description": "Append-only hook event logs (claude-events.jsonl, .ai-events.log) are compacted to their most recent slice at monitor start before tailing, so the transient queues can't grow unbounded; durable history stays in the telemetry database",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "Monitoring",
+    "feature": "Event-Driven Missing-File Recovery",
+    "description": "File monitors and JSONL tailers use bounded exponential retries for short replacement windows, then use canonical parent watches plus one event-scoped delayed handoff attempt for rapid nested recreation without permanent polling or leaked subscriptions",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "Monitoring",
+    "feature": "Owner-Scoped File Watch Disposal",
+    "description": "Text-editor pane disposal cancels file watches and pending autosave work even when models remain retained, invalidates late load completions, and app/history-monitor destruction explicitly stops owned tailers and timers",
     "status": "Shipped",
     "differentiator": "Yes"
   },
@@ -224,6 +707,20 @@
     "differentiator": "Yes"
   },
   {
+    "category": "AI Detection & Integration",
+    "feature": "Completed-Turn Tab Styling",
+    "description": "A finished Claude turn styles its tab with the green success preset (non-persistent, retained until the tab is viewed) rather than the orange waiting style, and the PTY wait/approval heuristic matches only the trailing output region so a reply that merely contains a trigger word no longer flips a completed turn to waiting-for-input",
+    "status": "Shipped",
+    "differentiator": "No"
+  },
+  {
+    "category": "MCP Server",
+    "feature": "Codex MCP Config Self-Healing",
+    "description": "Codex MCP registration rewrites stale shell-wrapper commands and multi-line args arrays to direct chau7-mcp-bridge execution while preserving per-tool approval subsections such as tab_close",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
     "category": "Terminal Core",
     "feature": "Rust Terminal Backend",
     "description": "Custom terminal emulator written in Rust with FFI bridge — fast, memory-safe, and correct",
@@ -239,6 +736,20 @@
   },
   {
     "category": "Terminal Core",
+    "feature": "Foreground-Only Hardware Input",
+    "description": "Terminal key routing requires Chau7 to be active and the targeted key window to be on the active Space in addition to terminal first-responder ownership, preventing retained AppKit focus state from leaking typing into a background PTY",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "Terminal Core",
+    "feature": "TUI-Owned Arrow Navigation",
+    "description": "Shell history intercepts Up and Down only when the plain shell owns input, forwarding arrows to known terminal UIs and alternate-screen applications even when prompt metadata is stale",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "Terminal Core",
     "feature": "Generic TUI Scroll Policy",
     "description": "Pure Chau7Core policy routes scroll input to shell scrollback, mouse-aware TUI apps, or transcript history based on terminal runtime state",
     "status": "Shipped",
@@ -247,7 +758,7 @@
   {
     "category": "Terminal Core",
     "feature": "Per-Tab Transcript Capture",
-    "description": "Each terminal session keeps a bounded PTY transcript ring with command-boundary backfill so late AI detection can seed accurate session logs",
+    "description": "Each terminal session keeps a bounded chunked PTY transcript ring with command-boundary backfill; capacity eviction drops old chunks instead of rebuilding the full retained transcript on the main thread",
     "status": "Shipped",
     "differentiator": "Yes"
   },
@@ -274,8 +785,8 @@
   },
   {
     "category": "Tabs",
-    "feature": "Identity-Only Background Restore",
-    "description": "Deferred background tabs hydrate provider/session facts for routing and titles without activating live AI render state, restoring command blocks, or queuing resume input until selected",
+    "feature": "Lightweight Background Restore",
+    "description": "Deferred background tabs hydrate provider/session facts and queue validated recovery input without activating live AI render state, restoring command blocks, selecting the tab, or auto-submitting the command",
     "status": "Shipped",
     "differentiator": "Yes"
   },
@@ -324,9 +835,16 @@
   {
     "category": "Terminal Core",
     "feature": "Fixed-Delay Startup Reveal",
-    "description": "Reveal restored windows after a short splash delay instead of waiting for the full restore queue to drain",
+    "description": "Reveal restored windows after a short splash delay, recreate the native toolbar host on hidden-to-visible presentation, coalesce SwiftUI geometry updates outside the render pass, and size the toolbar item through minSize/maxSize (the only allocation API AppKit honours for custom views) so restored tab bars composite without undefined mutations and survive toolbar recreation",
     "status": "Shipped",
     "differentiator": "Yes"
+  },
+  {
+    "category": "Terminal Core",
+    "feature": "Overlay Windows Close For Real",
+    "description": "Closing a secondary overlay window (red-X, Cmd+Shift+W, or closing its last tab) tears down its shells gracefully and removes its host from the append-only overlayHosts instead of only hiding it via orderOut, so a closed window no longer lingers with a live shell to be re-persisted and restored on next launch. No privileged main window: closing the last window clears persisted window state and the status-bar summon recreates one on demand.",
+    "status": "Shipped",
+    "differentiator": "No"
   },
   {
     "category": "Terminal Core",
@@ -337,10 +855,52 @@
   },
   {
     "category": "Terminal Core",
+    "feature": "Palette-Before-Replay Restore",
+    "description": "Terminal startup installs the selected 16-color palette in Rust before persisted ANSI scrollback is replayed through the VTE parser, preventing named colors from degrading to grayscale across autosaves",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "Terminal Core",
+    "feature": "Crash-Consistent Restore Publication",
+    "description": "Autosave commits the full bundle before publishing the stripped index and writes the index token last; bundle lineage recovers an interrupted one-transaction-newer bundle without allowing unrelated stale bundles to win",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "Tab Management",
+    "feature": "Tab Group Drag Edge Autoscroll",
+    "description": "Holding a repository-group drag near either horizontal edge continuously scrolls an overflowing tab bar and carries the applied distance into reorder hit-testing so groups can reach the true first or last slot",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "Terminal Core",
     "feature": "Emoji-Aware Glyph Coloring",
     "description": "Metal renders default or explicit emoji presentation including achromatic FE0F symbols with embedded color while keeping terminal UI symbols and box drawing tintable by ANSI foreground color",
     "status": "Shipped",
     "differentiator": "Yes"
+  },
+  {
+    "category": "Terminal Core",
+    "feature": "Low-Contrast Glyph Rescue",
+    "description": "Metal keeps glyph-bearing cells readable when resolved foreground and background colors are nearly indistinguishable, while preserving hidden text and wide-cell continuation behavior",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "Performance",
+    "feature": "Repository Stats Snapshot Cache",
+    "description": "Shared repository models refresh analytics on a dedicated utility queue with a 30-second TTL, coalesce overlapping requests, retain stale values during refresh or failure, and preserve invalidations that race an in-flight query",
+    "status": "Shipped",
+    "differentiator": "No"
+  },
+  {
+    "category": "Performance",
+    "feature": "Database-Free Tab Hover Cards",
+    "description": "Hover-card view rendering consumes only in-memory active-run and cached repository snapshots; completed-run and tool-summary SQLite reads run on a utility queue and generation-check publication when the pointer changes tabs",
+    "status": "Shipped",
+    "differentiator": "No"
   },
   {
     "category": "Performance",
@@ -548,7 +1108,7 @@
   {
     "category": "Performance",
     "feature": "Startup Metal Frame Handoff",
-    "description": "Forced selected-tab reveal timeouts keep the next real Metal visible-frame signal armed so startup restore records real frames instead of synthesizing 5s fallbacks",
+    "description": "Restored windows begin bounded identity and scrollback hydration as soon as they are visible; startup telemetry records only real Metal frames and never gates durable restore work or synthesizes presentation evidence",
     "status": "Shipped",
     "differentiator": "Yes"
   },
@@ -632,7 +1192,14 @@
   {
     "category": "AI Detection",
     "feature": "Live Process-Tree Identity",
-    "description": "Tab label and logo are derived live from the shell's process tree so a tab restored as Codex flips to Claude within ~1.5s when that's what's actually running",
+    "description": "Tab label and logo are derived live from the shell's process tree; the nearest AI descendant owns the terminal so nested child agents cannot replace their outer agent's persisted provider, while a tab restored as Codex still flips to Claude within ~1.5s when that's what's actually running",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "AI Detection",
+    "feature": "Pre-Notification AI Identity Adoption",
+    "description": "Validated Claude hook and idle events atomically hydrate the tab's provider, session ID, and identity source before notification filtering, so they can fix both Shell-labeled tabs and stale cross-provider tuples immediately while staying out of user-facing notification history",
     "status": "Shipped",
     "differentiator": "Yes"
   },
@@ -710,6 +1277,13 @@
     "category": "AI Integration",
     "feature": "Provider Adapter Notification Layer",
     "description": "Provider-specific events are translated into one shared semantic notification model before settings, history, styling, and delivery run",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "AI Integration",
+    "feature": "Codex Feedback Prompt Detection",
+    "description": "Active Codex sessions tail rollout request_user_input calls as authoritative waiting-input events and clear them on matching results with bounded catch-up, asynchronous lookup retries, call-id deduplication, and failed-tool debounce; explicit choice endings remain a heuristic fallback instead of false completions",
     "status": "Shipped",
     "differentiator": "Yes"
   },
@@ -918,6 +1492,13 @@
   },
   {
     "category": "Notifications",
+    "feature": "Shell Script Outcome Attention",
+    "description": "Authoritative shell exit statuses notify and highlight conservative package scripts, executable script files, and build/test runners green on success or red on failure; listening dev servers emit green readiness while heuristic exits and intentional server shutdowns stay quiet",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "Notifications",
     "feature": "Dock Bounce On Agent Events",
     "description": "Default agent finished/approval/feedback notifications bounce the Dock icon - informational (single bounce) for completion, critical (bounces until focused) for approval and feedback",
     "status": "Shipped",
@@ -1003,7 +1584,21 @@
   {
     "category": "API Analytics",
     "feature": "Dashboard Cache Token Split",
-    "description": "Agent dashboard cards track cache creation and cache read tokens separately instead of collapsing all cached usage into reads",
+    "description": "Agent dashboard, Usage Monitor, Debug Console analytics, and API analytics keep cache creation and cache read tokens separate instead of collapsing all cached usage into one ambiguous token count",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "API Analytics",
+    "feature": "Async Usage Analytics Loading",
+    "description": "Usage dashboards coalesce overlapping refreshes, run proxy analytics database reads off the main thread, and show model-level proxy cost rows",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "API Analytics",
+    "feature": "Regional Usage Number Formatting",
+    "description": "Usage dashboards and cost displays use a configurable regional number format - French by default, with European and US choices independent of app language",
     "status": "Shipped",
     "differentiator": "Yes"
   },
@@ -1072,6 +1667,48 @@
   },
   {
     "category": "AI Integration",
+    "feature": "CTO Tiered Wrapper Surface",
+    "description": "CTO shadows read-only inspection commands (cat, ls, find, tree, grep, rg, diff, sed) plus a hardened tier of executables (git, cargo, swift, go, curl) on PATH; interpreters and package managers (python, node, npm) remain deferred, and the former no-op exec-only wrappers (head, tail, wc) were removed. Wrappers install only when the real binary resolves and unsupported wrappers are pruned on setup",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "AI Integration",
+    "feature": "CTO Hardened Executable Optimization",
+    "description": "CTO optimizes the high-savings command tail (git/cargo/swift/go/curl) via wrappers that resolve the real binary at runtime from the live PATH (honoring venv/nvm/rustup, never a path baked at setup), gate on a per-command read-only subcommand allowlist so mutations (git commit, cargo publish) and interactive/piped invocations pass straight through with a single exec (the optimizer can never double-run a side-effecting command), and are protected from recursion by a CHAU7_CTO_OPTIM_ACTIVE sentinel plus a hardened cto_bin PATH strip in chau7-optim",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "AI Integration",
+    "feature": "CTO Wrapper PATH Precedence",
+    "description": "The zsh/bash/fish shell integration re-asserts the CTO wrapper dir at the front of PATH after the user's rc files run (e.g. brew shellenv), so Homebrew-installed commands (git, go, rg) are actually shadowed instead of silently escaping optimization",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "AI Integration",
+    "feature": "CTO Recent-Window Savings",
+    "description": "The token-savings panel reports a rolling 7-day window (average savings and response time) alongside a lifetime tokens-saved total so current performance is not masked by the cumulative all-time average, and per-session command activity is derived from the command log independently of the optimizer binary",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "AI Integration",
+    "feature": "CTO Wrapper Install Diagnostics",
+    "description": "CTO setup logs an installed/skipped wrapper summary with the skipped-command list so a missing real binary is visible in logs rather than surfacing only as a runtime failure; real-binary PATH resolution (including the junction that it scans the login-shell PATH, not the app's) and the wrapper exit-code fall-through contract are locked by unit and integration tests",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "AI Integration",
+    "feature": "CTO Fail-Safe Optimizer Fall-Through",
+    "description": "An internal chau7-optim error or panic exits 3 (the wrapper's fall-through code) so the real binary still runs and the reason prints to stderr, instead of the wrapper mistaking the failure for optimized output and suppressing the command. Deliberate handler exit codes that follow real output (grep/diff no-match/differ) are preserved",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "AI Integration",
     "feature": "CTO Shared Read Pipeline",
     "description": "File-backed reads and stdin-backed reads share one tested filtering, truncation, non-empty-output preservation, and line-number formatting path to prevent parser drift",
     "status": "Shipped",
@@ -1121,8 +1758,8 @@
   },
   {
     "category": "MCP Server",
-    "feature": "MCP Protocol v2024-11-05",
-    "description": "Full MCP protocol compliance with tools and resources capabilities",
+    "feature": "MCP Protocol Version Negotiation",
+    "description": "Negotiates finalized MCP revisions 2025-11-25, 2025-06-18, and 2024-11-05, echoing supported client revisions exactly while rejecting unknown versions",
     "status": "Shipped",
     "differentiator": "Yes"
   },
@@ -1205,6 +1842,20 @@
   },
   {
     "category": "MCP Tools — Tab Management",
+    "feature": "tab_request_control",
+    "description": "Request control of an existing user-opened tab — always requires an explicit Chau7-owned local confirmation before MCP terminal mutations are enabled",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "MCP Tools — Tab Management",
+    "feature": "tab_release_control",
+    "description": "Revoke MCP control of a tab without closing it and clear any staged MCP input",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "MCP Tools — Tab Management",
     "feature": "tab_exec",
     "description": "Execute a shell command in a tab — auto-queues when shell/bootstrap state still needs to settle so launchers can submit deterministically without waiting for prompt-ready rendering",
     "status": "Shipped",
@@ -1213,14 +1864,14 @@
   {
     "category": "MCP Tools — Tab Management",
     "feature": "tab_status",
-    "description": "Detailed live tab status: process state, child processes (PID/CPU/RSS), active telemetry run, git branch, ai_provider, ai_session_id, deterministic exec-acceptance fields via can_accept_exec/exec_acceptance_mode, and stricter prompt-ready fields via ready_for_exec/readiness_reason",
+    "description": "Detailed live tab status: process state, child processes (PID/CPU/RSS), active telemetry run, AI identity, and authorization-aware exec/prompt readiness; user tabs expose mcp_control_required plus underlying terminal-only readiness until control is granted",
     "status": "Shipped",
     "differentiator": "Yes"
   },
   {
     "category": "MCP Tools — Tab Management",
     "feature": "tab_wait_ready",
-    "description": "Wait until tab_exec will be accepted (can_accept_exec=true) and return the last observed status snapshot on success or timeout",
+    "description": "Wait until tab_exec will be accepted (can_accept_exec=true); fail immediately with mcp_control_required for unauthorized user tabs, otherwise return the last status snapshot on success or timeout",
     "status": "Shipped",
     "differentiator": "Yes"
   },
@@ -1366,6 +2017,13 @@
   },
   {
     "category": "MCP Tools — Observability",
+    "feature": "chau7_mcp_session_info",
+    "description": "Get non-secret diagnostics for the current MCP connection: client/server identity, resolved bridge and socket paths, requested and negotiated protocol revisions, startup status, and stable error class",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "MCP Tools — Observability",
     "feature": "chau7_runtime_events",
     "description": "Get recent Chau7 observability events with stable sequence ids. Includes app lifecycle markers and unified non-app AI events with optional tab/session/run/repo scoping",
     "status": "Shipped",
@@ -1492,6 +2150,27 @@
   },
   {
     "category": "API Analytics",
+    "feature": "Reliable Repository Attribution",
+    "description": "Claude custom headers and a proxy-only encoded Codex path preserve the exact repository on newly stored calls; the proxy strips internal metadata upstream, reports the new-call attribution ratio, and installs a project/timestamp index without guessing historical attribution",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "API Analytics",
+    "feature": "Subscription-Safe Codex Proxy Routing",
+    "description": "A shell-scoped wrapper uses Codex's supported openai_base_url configuration while preserving its built-in ChatGPT-authenticated provider, scopes and combines CA trust for the Codex process, and falls back to direct Codex when proxy trust is unavailable; HTTPS and WebSocket forwarding preserve ChatGPT authorization while consuming private correlation metadata locally",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "API Analytics",
+    "feature": "Claude Gateway Header Compatibility",
+    "description": "Chau7 appends correlation headers after user shell configuration without replacing existing Anthropic gateway headers, enables MCP tool search only when no user preference exists, and leaves subscription credentials untouched",
+    "status": "Shipped",
+    "differentiator": "No"
+  },
+  {
+    "category": "API Analytics",
     "feature": "Token Counting & Cost Calculation",
     "description": "Count input/output tokens per call and calculate aggregate cost",
     "status": "Shipped",
@@ -1538,6 +2217,13 @@
     "description": "Per-repository stats (commands, success rate, AI runs, tokens, cost, providers, top tools) in Debug Console Repos tab, Data Explorer, and hover card",
     "status": "Shipped",
     "differentiator": "Yes"
+  },
+  {
+    "category": "API Analytics",
+    "feature": "Indexed Repository Proxy Summaries",
+    "description": "One project-indexed aggregate returns repository proxy totals, providers, and last-call time under one database lock; missing repositories skip hourly aggregation and populated summaries reuse the same connection",
+    "status": "Shipped",
+    "differentiator": "No"
   },
   {
     "category": "API Analytics",
@@ -1634,6 +2320,20 @@
     "category": "Split Panes",
     "feature": "Horizontal Split",
     "description": "Cmd+D — split side-by-side with draggable dividers",
+    "status": "Shipped",
+    "differentiator": "No"
+  },
+  {
+    "category": "Split Panes",
+    "feature": "Focused Terminal Renderer Ownership",
+    "description": "Terminal splits share one focused-pane interaction policy across SwiftUI construction and imperative refreshes: only the focused leaf owns keyboard input and the window-level Metal renderer, while visible siblings preserve their lifecycle and immediately resume the CPU fallback; incoming panes keep their CPU frame until a generation-matched first GPU frame completes, stale completions are ignored, AppKit first-responder changes update pane focus directly, and delayed SwiftUI updates revalidate claims against the controller's live focused-pane ID",
+    "status": "Shipped",
+    "differentiator": "No"
+  },
+  {
+    "category": "Split Panes",
+    "feature": "Explicit Terminal Pane Closing",
+    "description": "Headerless terminal panes expose the shared accessible pane-close control whenever a sibling can survive; pane command enablement counts every leaf kind instead of only terminals, and centralized split/close operations log tab, pane, direction, before/after counts, and resulting focus",
     "status": "Shipped",
     "differentiator": "No"
   },
@@ -1906,7 +2606,7 @@
   {
     "category": "SSH, Profiles & Remote",
     "feature": "Remote Push Approval Delivery",
-    "description": "Relay-backed APNs push registration and wakeups for new approvals and interactive prompts on the Chau7 Remote iPhone app",
+    "description": "Relay-backed APNs push registration and wakeups for new approvals and interactive prompts on the Chau7 Remote iPhone app, with relay encryption performed on a frame copy so the local push decoder retains the original JSON payload",
     "status": "Experimental",
     "differentiator": "Yes"
   },
@@ -1926,10 +2626,164 @@
   },
   {
     "category": "SSH, Profiles & Remote",
-    "feature": "Selected-Tab Remote Streaming",
-    "description": "macOS streams terminal output and snapshots only for the tab currently selected on iPhone; background tabs stay metadata/activity/approvals-only until switched to",
+    "feature": "Negotiated iPhone Terminal Representations",
+    "description": "iPhone clients select plain text, styled replay, or full-grid streaming; current clients receive one representation while older clients retain the compatible dual stream, and grid capture is coalesced to a latest-wins 15 FPS cadence",
     "status": "Experimental",
     "differentiator": "Yes"
+  },
+  {
+    "category": "SSH, Profiles & Remote",
+    "feature": "Responsive iPhone Streaming Pipeline",
+    "description": "Socket receive and ordered frame application are decoupled, replaceable grids coalesce without breaking encrypted sequence order, visible text refreshes run on a bounded cadence, hidden renderer work is skipped, and rolling metrics expose where receive-to-publish latency accumulates",
+    "status": "Experimental",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "SSH, Profiles & Remote",
+    "feature": "iPhone Remote Frame Admission Diagnostics",
+    "description": "Rolling streaming summaries separate raw receipt from admitted frames, count decode and decrypt failures, and classify admitted handshake, inventory, snapshot, output, and grid traffic so transport activity cannot masquerade as delivered terminal content",
+    "status": "Experimental",
+    "differentiator": "No"
+  },
+  {
+    "category": "SSH, Profiles & Remote",
+    "feature": "Loss-Aware Relay Backpressure",
+    "description": "Relay soft pressure drops only replaceable terminal grids while preserving ordered output and control frames; the hard pressure limit closes the connection instead of allowing an unrecoverably incomplete encrypted stream",
+    "status": "Experimental",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "SSH, Profiles & Remote",
+    "feature": "Media-Style Remote Terminal Transport",
+    "description": "Both PTY read accumulation and protocol sending use bounded 4 ms micro-batches, keeping normal Mac-side handoff within one 120 Hz display frame; snapshots act as initial/recovery keyframes, timing metadata measures sender/network latency, and a side-effect-free checkpoint request resynchronizes overloaded clients",
+    "status": "Experimental",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "SSH, Profiles & Remote",
+    "feature": "Display-Paced iPhone Terminal Rendering",
+    "description": "A serial actor ingests PTY bytes and extracts Rust grids off-main while a one-shot 60/120 Hz display link publishes only the newest immutable frame; layout callbacks cannot pin playback to stale scrollback, renderer observation stays isolated from tab/input chrome, overloaded ordered output fast-forwards safely to a checkpoint, and sequence-correlated diagnostics time every boundary through Core Graphics draw and the next compositor refresh opportunity without per-frame disk logging",
+    "status": "Experimental",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "SSH, Profiles & Remote",
+    "feature": "Selected-Tab Remote Streaming",
+    "description": "macOS streams terminal output and snapshots only for the tab explicitly selected on iPhone; the foreground phone's one subscribed terminal uses event-driven PTY draining even while its Mac view is hidden, without enabling local rendering or surrounding UI invalidation, while approvals-only mode releases the realtime drain and non-subscribed tabs remain low-power",
+    "status": "Experimental",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "SSH, Profiles & Remote",
+    "feature": "Remote Menu Key Driving",
+    "description": "Chau7 Remote's terminal key bar includes Return and Shift-Tab, auto-surfaces when the active tab has a pending prompt or waiting-input/approval activity, and digit sends answering a pending menu drop their trailing Enter to avoid double-acting on the next screen",
+    "status": "Experimental",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "SSH, Profiles & Remote",
+    "feature": "Structural Prompt Detection",
+    "description": "Selection menus are detected by shape — cursor-glyph-marked (❯ › ▸) option rows at the snapshot tail — instead of only prompt keywords, so agent-authored questions like AskUserQuestion surface as iPhone prompt cards, with arrow-only menus answered via synthesized arrow-navigation responses",
+    "status": "Experimental",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "SSH, Profiles & Remote",
+    "feature": "Menu Waiting-Status Gating",
+    "description": "A cursor-marked menu row (❯ 1.) flips the session to waiting-for-input so keyword-less selection menus get scanned for prompt cards, and a 1-second recheck while cards are live keeps arrow-navigation responses tracking the on-screen menu cursor",
+    "status": "Experimental",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "SSH, Profiles & Remote",
+    "feature": "Structured AskUserQuestion Prompts",
+    "description": "Claude Code hook events carry AskUserQuestion's exact question and option labels (PreToolUse tool_input, 16 KB-capped), producing authoritative iPhone prompt cards that bypass status gating, suppress the scraped duplicate, answer with a bare digit, and clear on PostToolUse when answered from any surface",
+    "status": "Experimental",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "SSH, Profiles & Remote",
+    "feature": "Semantic Remote Key Presses",
+    "description": "The KEY_INPUT frame (0x24) carries enter/escape/arrows/control combos as named keys resolved by the Mac's terminal key encoder (DECCKM-correct), advertised via a tab-list capability with automatic escape-text fallback against older Macs",
+    "status": "Experimental",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "SSH, Profiles & Remote",
+    "feature": "Remote Menu Interaction Refinements",
+    "description": "Waiting patterns match ANSI-stripped output, ExitPlanMode plan reviews drive waiting status structurally, multi-select AskUserQuestion cards toggle live in the terminal with a separate submit (multi_select wire flag mirrored in the Go agent), and arrow-navigation prompt responses ride KEY_INPUT when supported",
+    "status": "Experimental",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "SSH, Profiles & Remote",
+    "feature": "Reliable Remote Input Delivery",
+    "description": "Remote submit Enters use a dedicated non-cancellable work-item pool, submitted phone sends replace the input line (^U first) instead of appending to pending prefills or stale drafts, and unconfirmed resume prefills surface on the iPhone as Run/Clear cards that retire once the line runs, is replaced, or is discarded",
+    "status": "Experimental",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "SSH, Profiles & Remote",
+    "feature": "iPhone Control Key Row Layout",
+    "description": "The terminal control keys render as one in-flow row above the input bar with the keyboard up or down (no keyboard-accessory overlay), and the keyboard button authoritatively hides or shows the row, dismissing auto-surfaced rows per waiting episode",
+    "status": "Experimental",
+    "differentiator": "No"
+  },
+  {
+    "category": "SSH, Profiles & Remote",
+    "feature": "Remote Sends Always Submit",
+    "description": "Codex submits press the Enter key instead of a raw LF (0x0A parses as Ctrl-J in current Codex TUIs and never submits), and the iOS Send action always carries the submit terminator — the Append Newline toggle is removed",
+    "status": "Experimental",
+    "differentiator": "No"
+  },
+  {
+    "category": "SSH, Profiles & Remote",
+    "feature": "Repo-Grouped iPhone Tab Menu",
+    "description": "The Chau7 Remote tab dropdown groups tabs under their repo name as section titles and alphabetizes each section with a stable tab-ID tie-breaker, preventing activity updates from reshuffling an open menu or resetting its scroll position; repo-less tabs remain under Other at the end",
+    "status": "Experimental",
+    "differentiator": "No"
+  },
+  {
+    "category": "SSH, Profiles & Remote",
+    "feature": "Truthful and Stable iPhone Tab Inventory",
+    "description": "Chau7 Remote distinguishes encrypted-session readiness from tab-inventory readiness, shows syncing until the first live or cached inventory arrives, and suppresses duplicate or reorder-only observable updates; macOS gates inventory frames by semantic descriptor equality, never attaches a terminal keyframe to generic tab-model notifications, and resets the gate before reconnect inventory",
+    "status": "Experimental",
+    "differentiator": "No"
+  },
+  {
+    "category": "SSH, Profiles & Remote",
+    "feature": "Single-Flight iPhone Connection Recovery",
+    "description": "Launch, foreground, push, URL-action, and approval-delivery requests coalesce behind the active transport, only one delayed reconnect owns the next attempt, manual retries remain authoritative, and structured logs attribute each transition without retaining raw network errors",
+    "status": "Experimental",
+    "differentiator": "No"
+  },
+  {
+    "category": "SSH, Profiles & Remote",
+    "feature": "Peer-Confirmed iPhone Session Recovery",
+    "description": "A trusted iPhone HELLO can replace a stale helper crypto epoch after app relaunch without dropping cached terminal state; both peers stay provisional until an encrypted SESSION_READY round trip confirms the epoch, and application traffic remains queued until then",
+    "status": "Experimental",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "SSH, Profiles & Remote",
+    "feature": "Durable iPhone Operational Diagnostics",
+    "description": "Sensitive input and keystroke capture has its own 2,000-entry ceiling with amortized batch trimming so it cannot evict most connection history, while a persisted foreground marker records unobserved launch endings without labeling them as confirmed crashes",
+    "status": "Experimental",
+    "differentiator": "No"
+  },
+  {
+    "category": "SSH, Profiles & Remote",
+    "feature": "Crash-Resilient Mac/Helper Session Replay",
+    "description": "When the Chau7 app reconnects to a helper that retained an encrypted iPhone session, the helper replays current session readiness so macOS republishes initial tabs and activity instead of leaving the phone indefinitely syncing",
+    "status": "Experimental",
+    "differentiator": "No"
+  },
+  {
+    "category": "SSH, Profiles & Remote",
+    "feature": "iPhone Issue Reporting",
+    "description": "Chau7 Remote submits private issues from Settings with a description, environment snapshot, optional remembered contact, exact Markdown preview, and share-sheet fallback; its bounded recent-diagnostics excerpt is off by default with an explicit keystroke privacy warning",
+    "status": "Experimental",
+    "differentiator": "No"
   },
   {
     "category": "SSH, Profiles & Remote",
@@ -2004,7 +2858,7 @@
   {
     "category": "Command Safety",
     "feature": "Path Click Handler",
-    "description": "Cmd+click file paths and URLs — configurable action (browser, editor, Finder) with line:column support",
+    "description": "Cmd+click opens exact file paths immediately, searches missing bare filenames asynchronously within the enclosing repository only when the match is unique, refuses ambiguous results with visible feedback, and trims surplus trailing closing parentheses from URLs while preserving balanced URL parentheses; line:column and configurable browser/editor/Finder actions remain supported",
     "status": "Shipped",
     "differentiator": "No"
   },
@@ -2123,14 +2977,14 @@
   {
     "category": "Notifications",
     "feature": "Auto Tab Styling",
-    "description": "Tabs change color on events — auto-clear after configurable timeout, clear persistent approval styling immediately on approval resolution, and style all tabs affected by a file conflict",
+    "description": "Tabs change color on events, keep shipped outcome styles until the tab is viewed, support explicit user-configured auto-clear timeouts, clear persistent approval styling immediately on approval resolution, and style all tabs affected by a file conflict",
     "status": "Shipped",
     "differentiator": "No"
   },
   {
     "category": "Notifications",
-    "feature": "Persistent Completion Tab Highlight",
-    "description": "The green \"finished\" tab highlight persists until you open the tab instead of auto-clearing after ~30s; opening the tab clears its non-persistent highlight, matching permission highlights that stay until resolved",
+    "feature": "Persistent Outcome Tab Highlights",
+    "description": "Green completion and dev-server-ready highlights plus red failure highlights persist until you open the tab instead of auto-clearing after a timeout; opening the tab clears those non-persistent highlights while permission highlights stay until resolved",
     "status": "Shipped",
     "differentiator": "Yes"
   },
@@ -2305,14 +3159,14 @@
   {
     "category": "Settings",
     "feature": "Comprehensive Settings UI",
-    "description": "Tabbed interface with fuzzy search across 100+ settings",
+    "description": "Settings UI with fuzzy search coverage for every routed settings pane, including app and window chrome, display rendering, tabs, performance, keyboard, AI detection, Agent Control, Context Optimization, AI Context, API Tracking, History, Diagnostics, command safety, repository metadata, hover card, and About support/diagnostics surfaces; search results scroll to and highlight stable row or section anchors",
     "status": "Shipped",
     "differentiator": "No"
   },
   {
     "category": "Settings",
     "feature": "Settings Profiles",
-    "description": "Save, load, export, and import named configurations",
+    "description": "Save, load, export, import, and automatically switch the live runtime profile by directory/glob, repository name, SSH host, process name, or environment variable",
     "status": "Shipped",
     "differentiator": "No"
   },
@@ -2332,8 +3186,29 @@
   },
   {
     "category": "Settings",
+    "feature": "Launch At Login",
+    "description": "Installs or removes the user LaunchAgent plist for the next macOS login without loading it in the current session, so toggling the setting does not relaunch Chau7 immediately",
+    "status": "Shipped",
+    "differentiator": "No"
+  },
+  {
+    "category": "Settings",
+    "feature": "Responsive Settings Shell",
+    "description": "Settings open on a Start Here dashboard for launch, profile, Agent Control, Remote Access, Alerts, permission, and path health; every routed page starts with a compact shared status strip for enabled/disabled state, health, active values, counts, paths, and warnings; panes are organized into goal-oriented groups (General, Appearance, Terminal, AI Workflows, Automation, Safety & Privacy); General stays focused on startup, language, default directory, and advanced config-file loading; Sync & Backup stays focused on export/import, iCloud sync, and recovery reset with profile automation under Advanced; Debug Console lives in Diagnostics; overloaded panes are split by task with separate Remote Access, SSH Profiles, History, and Diagnostics entries; Context Optimization keeps runtime/debug detail under Advanced; Advanced disclosures collapse protocol internals, raw diagnostic paths, proxy details, Agent Control limits, and runtime/debug surfaces while search can still reveal targeted rows; the sidebar, actionable search results, section copy, and form controls stay usable while resizing, with search matches scrolling to and highlighting stable row or section anchors through adaptive rows, bounded window dimensions, wrapping text for longer localized labels and accessibility descriptions, a compact native titlebar profile selector that defaults to Default Settings and owns profile load/save actions, tighter shared golden-ratio SwiftUI style tokens, small-control row defaults, shared nested indentation, compact reusable status summaries with top-left aligned grid cells for consistent icon gutters and text starts, and aligned action rows, empty states, and secondary lists across pages",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "Settings",
+    "feature": "Appearance Settings Organization",
+    "description": "Appearance settings are organized by visible surface: Windows owns app theme, opacity, floating, fullscreen, overlay, and split-pane controls; Tabs and Hover Card split long control lists into task-focused sections; Font & Colors stays focused on terminal text and palettes; Display stays focused on output readability and interactivity; page summaries and search metadata point to the new control locations",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "Settings",
     "feature": "iCloud Sync",
-    "description": "Optional iCloud sync of settings across devices",
+    "description": "Optional iCloud sync of settings across devices, with freshness guards, immediate manual sync, visible sync/restore/import/export status feedback, and confirmation for destructive restore/import/reset paths",
     "status": "Shipped",
     "differentiator": "No"
   },
@@ -2529,7 +3404,7 @@
   {
     "category": "Debugging",
     "feature": "Debug Console",
-    "description": "Cmd+Option+L — live log viewer with 10 tabs: State, Token Optimizer, Events, Lag, Perf, Logs, Report, Analytics, Health, Repos",
+    "description": "Cmd+Option+L — scoped sidebar surfaces for Diagnostics, Runtime Inspector, Usage Monitor, and the full console, covering Health, Logs, Perf, Lag, State, Events, Report, Usage, Analytics, Repos, and Token Optimizer, with direct menu/palette/settings entry points, privacy-first issue reporting, aligned performance/usage analytics tables, and surface/tab routing kept in a dedicated model file",
     "status": "Shipped",
     "differentiator": "No"
   },
@@ -2578,7 +3453,14 @@
   {
     "category": "Command Palette",
     "feature": "Command Palette",
-    "description": "Cmd+Option+P for fuzzy-searchable command palette (VS Code style)",
+    "description": "Cmd+Option+P opens a fuzzy-searchable command palette that mirrors the main menu command surface, including Open Location, Data Explorer, pane tools, diagnostics, release notes, acknowledgments, tab recovery, and issue reporting with current shortcuts",
+    "status": "Shipped",
+    "differentiator": "No"
+  },
+  {
+    "category": "Command Palette",
+    "feature": "App Menu Command Surface",
+    "description": "The macOS menu bar exposes Chau7-native About, Open Location, Help, release notes, acknowledgments, scoped diagnostics surfaces, active-window tab selection, and guarded tab/pane/terminal commands that disable when their target state is unavailable",
     "status": "Shipped",
     "differentiator": "No"
   },
@@ -2809,7 +3691,7 @@
   {
     "category": "Terminal",
     "feature": "Keyboard Shortcut Standardization",
-    "description": "All Chau7-specific shortcuts use Cmd+Option; tab selection internationalized (Cmd+1-9)",
+    "description": "Chau7-specific shortcuts avoid standard macOS conflicts where possible, tab selection is internationalized with Cmd+1-9, Actual Size uses Cmd+0, Snippets uses Cmd+; for a single-key command that does not collide with Export Text, and shipped menu shortcuts stay on the macOS menu/responder-chain path before custom overlay keybindings run so default actions dispatch once while non-default custom keybindings still work",
     "status": "Shipped",
     "differentiator": "No"
   },
@@ -3346,6 +4228,20 @@
     "differentiator": "Yes"
   },
   {
+    "category": "Performance",
+    "feature": "Terminal Background-Work Profiling",
+    "description": "Backend output reads, grid snapshots, cursor-mode checks, persistence captures, and terminal-state processing are aggregated by render phase, visibility, and caller with byte counts plus total, main-thread, and maximum duration",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "Performance",
+    "feature": "Off-Main Background Terminal Snapshots",
+    "description": "Shared background drains extract cursor state, output bytes, shell events, and lifecycle facts under the terminal poll lock on a utility queue; AppKit receives an immutable snapshot while drain-only tabs skip presentation grids and callbacks",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
     "category": "MCP Server",
     "feature": "PTY Log Output Flush",
     "description": "Active AI PTY log is flushed before tab_output reads it",
@@ -3403,6 +4299,55 @@
   },
   {
     "category": "Restore",
+    "feature": "Rejected Claude Resume Persistence Guard",
+    "description": "Restore validation removes rejected Claude identities before they enter the in-memory fallback cache; later filesystem-free autosaves rebuild only canonical commands from that sanitized identity",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "Restore",
+    "feature": "Claude Resume Rejection Warning Deduplication",
+    "description": "Missing-transcript warnings emit once per canonical Claude session and directory identity across duplicate restore candidates while distinct rejected identities remain visible",
+    "status": "Shipped",
+    "differentiator": "No"
+  },
+  {
+    "category": "Restore",
+    "feature": "Corroborated Codex Resume Identity",
+    "description": "Exact-tab authoritative Codex notify events can replace a stale restored identity across a moved checkout only when a local rollout validates the session and directory and no other live pane owns it",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "Restore",
+    "feature": "Codex Rollout-Validated Persistence",
+    "description": "UUID-shaped Codex identities are artifact-validated at observation and restore boundaries rather than during autosave; exact persisted IDs search the complete dated archive while directory-based guesses remain recency-bounded, preserving opaque legacy IDs and isolating resolver caches by sessions root",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "Restore",
+    "feature": "Cross-Provider Resume Identity Repair",
+    "description": "Restore corrects a stale Claude or Codex provider only when its exact session artifact is absent and the alternate provider has an exact artifact for the same session ID and repository; autosave retains observed in-memory identity without filesystem scans",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "Restore",
+    "feature": "Precise Resume-Injection Diagnostics",
+    "description": "Restore logs distinguish inserting a resume command into the terminal from the provider accepting or running it, preventing prefill delivery from being mistaken for a successful session resume",
+    "status": "Shipped",
+    "differentiator": "No"
+  },
+  {
+    "category": "Terminal Core",
+    "feature": "Lossless Live-TUI Suspension",
+    "description": "Memory-pressure demotion uses live or canonical restored-session identity to keep a Claude/Codex TUI's uncached scrollback ring resident instead of shrinking it to the hidden 50-line floor, transient process-tree misses cannot clear protection while lifecycle evidence remains active, and both dormant-to-visible transitions and late TUI identification send a coalesced SIGWINCH redraw",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "Restore",
     "feature": "Resume Restore Delivery Ledger",
     "description": "Pane-owned resume restore records scheduled, queued, delivered, rejected, and superseded outcomes per pane so stale retries stay diagnosable",
     "status": "Shipped",
@@ -3439,7 +4384,7 @@
   {
     "category": "Notifications",
     "feature": "Tab Highlight Coverage",
-    "description": "All user-facing AI events (permission, waiting_input, finished, failed, idle, tool_failed, response_failed, elicitation) trigger tab border/color highlights with 30s auto-clear",
+    "description": "All user-facing AI events (permission, waiting_input, finished, failed, idle, tool_failed, response_failed, elicitation) trigger tab border/color highlights; shipped outcome styles clear when viewed and explicit user-configured timers remain available",
     "status": "Shipped",
     "differentiator": "Yes"
   },
@@ -3908,7 +4853,7 @@
   {
     "category": "Remote & Collaboration",
     "feature": "Relay Hibernation Backpressure & Rate-Limit",
-    "description": "Relay rebuilt on Hibernatable WebSockets with per-device rate limiting, body/frame size caps, sanitized pending-state WebSocket backpressure, and reason-based APNs registration removal",
+    "description": "Relay rebuilt on Hibernatable WebSockets with per-device rate limiting, body/frame size caps, sanitized pending-state WebSocket backpressure, reason-based APNs registration removal, and one persisted APNs provider-token broker per signing key",
     "status": "Shipped",
     "differentiator": "Yes"
   },
@@ -3921,9 +4866,37 @@
   },
   {
     "category": "Developer Experience",
+    "feature": "MAGI Orchestration Regression Coverage",
+    "description": "Fake-MCP and CLI-runtime tests pin pending-member collection, echoed-marker repair avoidance, engineering decision identity grouping, final-vote veto propagation, evidence policy states, collector failure cleanup, stale artifact replay/share fallback, and provider command construction",
+    "status": "Shipped",
+    "differentiator": "No"
+  },
+  {
+    "category": "Developer Experience",
     "feature": "MCP Tool Documentation Coverage Gate",
     "description": "A staged-feature-coverage gate runs scripts/check-feature-coverage.mjs to hard-fail when an MCP tool is registered in MCPSession.swift without a canonical inventory row in features.json; warns on documented-but-removed tools; deliberate bypass via CHAU7_SKIP_FEATURE_COVERAGE=1",
     "status": "Shipped",
     "differentiator": "No"
+  },
+  {
+    "category": "Performance",
+    "feature": "Hard Lossless Terminal Memory Budgets",
+    "description": "Warm non-TUI scrollback persists and verifies its full ANSI payload before shrinking above a 64 MB per-tab ceiling; regenerable search and line caches cap at 16 MB per pane, and fully invisible windows release renderer allocations while PTY state and the latest triple-buffered frame remain resident",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "Reliability",
+    "feature": "Stale Session Source Quarantine",
+    "description": "A foreign-directory AI event with stale tab ownership receives one exact-session reroute attempt; unresolved repeats are quarantined without repeated routing or warning spam and emit one bounded summary per minute until valid ownership clears the source",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "Performance",
+    "feature": "Bounded Performance Telemetry and Persistent MCP Sessions",
+    "description": "Identity-free terminal and render aggregates emit once per minute to a dedicated 8 MB JSONL log with one archive, successful MCP lifecycle chatter is trace-only, and initialized Unix-socket sessions remain open until peer close while writes keep a 30-second safety timeout",
+    "status": "Shipped",
+    "differentiator": "Yes"
   }
 ]

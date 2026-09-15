@@ -1,9 +1,10 @@
 import Chau7Core
 import Foundation
 
-/// Owns the MCP + remote control + CTO integration domain: MCP server
-/// enablement/limits/permissions/profiles, remote relay configuration, token
-/// optimization mode, and CTO prefix/tab overrides.
+/// Owns the Agent Control (MCP) + remote control + Context Optimization
+/// integration domain: MCP server enablement/limits/permissions/profiles,
+/// remote relay configuration, context optimization mode, and CTO prefix/tab
+/// overrides.
 ///
 /// Extracted from `FeatureSettings` (which forwards) following the
 /// store-behind-facade pattern of the other settings domains. The one-time
@@ -13,7 +14,7 @@ import Foundation
 final class MCPRemoteSettingsStore {
 
     enum Keys {
-        /// Token Optimization (CTO)
+        /// Context Optimization
         static let tokenOptimizationMode = "cto.mode"
         // MCP
         static let mcpEnabled = "mcp.enabled"
@@ -24,7 +25,7 @@ final class MCPRemoteSettingsStore {
         static let mcpAllowedCommands = "mcp.allowedCommands"
         static let mcpBlockedCommands = "mcp.blockedCommands"
         static let mcpProfiles = "mcp.profiles"
-        // Remote Control
+        // Remote Access
         static let remoteEnabled = "remote.enabled"
         static let remoteRelayURL = "remote.relayURL"
         // CTO Integration
@@ -35,7 +36,7 @@ final class MCPRemoteSettingsStore {
 
     @ObservationIgnored private let defaults: UserDefaults
 
-    // MARK: - Token Optimization (CTO) Settings
+    // MARK: - Context Optimization Settings
 
     var tokenOptimizationMode: TokenOptimizationMode {
         didSet {
@@ -82,7 +83,7 @@ final class MCPRemoteSettingsStore {
         }
     }
 
-    // MARK: - Remote Control Settings
+    // MARK: - Remote Access Settings
 
     var isRemoteEnabled: Bool {
         didSet {
@@ -145,7 +146,7 @@ final class MCPRemoteSettingsStore {
             defaults.set(true, forKey: "cto.migrated.v1")
         }
 
-        // Token Optimization (default: off)
+        // Context Optimization (default: off)
         if let modeRaw = defaults.string(forKey: Keys.tokenOptimizationMode),
            let mode = TokenOptimizationMode(rawValue: modeRaw) {
             self.tokenOptimizationMode = mode
@@ -169,7 +170,7 @@ final class MCPRemoteSettingsStore {
         let profileData = defaults.data(forKey: Keys.mcpProfiles)
         self.mcpProfiles = Persist.decodeLogged([MCPProfile].self, from: profileData, context: "mcp.profiles") ?? []
 
-        // Remote Control (default: disabled)
+        // Remote Access (default: disabled)
         self.isRemoteEnabled = defaults.object(forKey: Keys.remoteEnabled) as? Bool ?? false
         self.remoteRelayURL = defaults.string(forKey: Keys.remoteRelayURL) ?? "wss://relay.chau7.sh/connect"
 

@@ -14,6 +14,22 @@ The default council is named `magi` and contains three members:
 
 The feature is CLI-first and should work through both `magi` and `MAGI`.
 
+Primary command forms:
+
+```text
+magi
+magi "question"
+magi --mode engineering "question"
+magi --mode generic "question"
+magi ask "question"
+magi doctor
+magi config
+magi replay <run-id>
+magi share <run-id>
+```
+
+When `--mode` is omitted, MAGI infers `engineering` or `generic` from the question and prints the deterministic reason for that inference.
+
 ## Goals
 
 - Use real Chau7 shell sessions through MCP.
@@ -76,9 +92,17 @@ The default policy is:
 ```text
 fallback = duplicate
 web = true
-evidence_requires_approval = true
+evidence_policy = ask
 deadlock_extra_round = true
 veto_blocks = true
+```
+
+Evidence policy is explicit:
+
+```text
+ask         # prompt before each actionable collector
+auto_deny   # record actionable requests as denied
+preapproved # run actionable collectors without another MAGI prompt
 ```
 
 ## Protocol
@@ -93,12 +117,12 @@ Each run follows this sequence:
 5. MAGI collects completed Round 1 outputs.
 6. Round 2: MAGI shares completed outputs and asks for critique.
 7. MAGI collects critiques and any evidence requests.
-8. If evidence was requested, ask the user for approval.
+8. If evidence was requested, apply the configured evidence policy.
 9. Run approved collectors through Chau7/MCP.
 10. Round 3: MAGI packages approved evidence.
 11. Round 4: final vote.
 12. If deadlocked, run one extra round.
-13. Resolve majority unless a blocking veto exists.
+13. Resolve majority unless a final-vote blocking veto exists.
 14. Save artifacts.
 ```
 
@@ -168,7 +192,14 @@ Evidence is a structured request, not informal chat.
 }
 ```
 
-Every evidence request must be approved by the user before collectors run.
+Every actionable evidence request must pass the configured policy before collectors run.
+`evidence_policy` controls how approval is applied:
+
+```text
+ask         # the interactive default; MAGI prompts before each actionable collector
+auto_deny   # actionable requests are marked denied without prompting
+preapproved # actionable requests are approved by configuration without prompting
+```
 
 Initial collectors should stay small:
 
@@ -181,15 +212,15 @@ local.command:<command>
 web.query:<query>
 ```
 
-All evidence collection requires explicit user approval in MAGI V1, even if an older config sets `evidence_requires_approval = false`.
+Legacy `evidence_requires_approval = true` migrates to `ask`. Legacy `evidence_requires_approval = false` migrates to `preapproved`.
 
 `local.command` is executed only through Chau7/MCP `tab_exec`, so existing MCP command permissions, prompts, and remote approval flows still apply. Fixed local collectors are also run through Chau7/MCP collector tabs.
 
-`web.query` is allowed when `web_access_allowed = true`, requires the same user approval as local evidence, and is recorded in packet metadata with the query, web-access flag, and collection status. If web access is disabled, MAGI records a skipped evidence packet instead of making a network request.
+`web.query` is allowed when `web_access_allowed = true`, follows the same evidence policy as local evidence, and is recorded in packet metadata with the query, web-access flag, and collection status. If web access is disabled, MAGI records a skipped evidence packet instead of making a network request.
 
 ## Verdicts
 
-Majority decides by default. All members have equal weight. A single deadlock triggers one extra deliberation round. A persona-defined veto blocks the normal majority verdict.
+Majority decides by default. All members have equal weight. A single deadlock triggers one extra deliberation round. A persona-defined veto blocks the normal majority verdict only when emitted in the final vote or extra deliberation vote round.
 
 Default verdict states:
 
@@ -206,7 +237,7 @@ RANK
 NO_CONSENSUS
 ```
 
-Generic questions can use `SELECT`, `RANK`, and `NO_CONSENSUS`. Engineering questions can use approve/reject-style verdicts.
+Generic questions can use `SELECT`, `RANK`, and `NO_CONSENSUS`. Engineering questions can use approve/reject-style verdicts. The mode can be forced with `--mode engineering` or `--mode generic`.
 
 For engineering questions, final vote blocks must set `verdict` to one of:
 
@@ -220,7 +251,24 @@ ESCALATE
 
 For generic questions, final vote blocks must set `verdict` to `SELECT` or `RANK`.
 
-If no majority is reached, MAGI returns `DEADLOCK` and runs one extra deliberation round when `deadlock_extra_round_enabled = true`. If no majority is reached after that extra round, MAGI returns `NO_CONSENSUS`. If any persona issues a blocking veto and `veto_blocks_verdict = true`, MAGI returns `BLOCKED_BY_VETO`.
+Final vote blocks use canonical decision fields:
+
+```json
+{
+  "verdict": "APPROVE",
+  "decision_id": "merge_after_ci",
+  "choice": "Merge once CI is green.",
+  "conditions": ["CI stays green"],
+  "confidence": 0.82,
+  "rationale": "The change is contained."
+}
+```
+
+Engineering majorities are grouped by canonical decision identity, not by verdict label alone. `decision_id`, material `conditions`, and verdict kind must match to form a majority.
+
+If no majority is reached, MAGI returns `DEADLOCK` and runs one extra deliberation round when `deadlock_extra_round_enabled = true`. If no majority is reached after that extra round, MAGI returns `NO_CONSENSUS`. If any persona issues a final-vote blocking veto and `veto_blocks_verdict = true`, MAGI returns `BLOCKED_BY_VETO`. Position-round veto fields are preserved as deliberation notes but do not block unless restated in a vote round.
+
+The terminal keeps live deliberation compact: phase title, member status lines, and one animated processing line. The completed verdict prints kind, decision, confidence, rationale, member votes, vetoes, and the artifact path.
 
 ## Artifacts
 
@@ -245,9 +293,14 @@ transcript.jsonl
 graph.json
 replay.jsonl
 share.html
+manifest.json
 ```
 
-`magi replay <run-id>` reads `decision.json` and `replay.jsonl` from the repository artifact directory first, then the global artifact directory, and renders the run timeline in the terminal. If `decision.json` is unavailable, it falls back to the replay JSONL lines.
+`manifest.json` records the run status, bundle status, and per-file status, byte count, and SHA-256 for the rendered artifact files.
+
+During running stages, MAGI checkpoints only the current run state to `decision.json` and the lightweight artifact status to `manifest.json`. It does not regenerate `decision.md`, `transcript.jsonl`, `graph.json`, `replay.jsonl`, or `share.html` on every checkpoint. Completed, failed, and interrupted terminal states write the complete artifact bundle.
+
+`magi replay <run-id>` reads `decision.json` and `replay.jsonl` from the repository artifact directory first, then the global artifact directory, and renders the run timeline, verdict rationale, and vote rationales in the terminal. If `decision.json` is unavailable, it falls back to the replay JSONL lines.
 
 `magi share <run-id>` reads `decision.json` using the same lookup order and generates or refreshes local `share.html`. If only a preexisting `share.html` is available, it reports that file. V1 never uploads hosted share artifacts.
 
@@ -263,9 +316,9 @@ The protocol is production-ready when:
 - three real Chau7 tabs spawn through MCP.
 - Round 1 isolation is preserved.
 - controlled sharing is used for later rounds.
-- vetoes block final verdicts.
+- final-vote vetoes block final verdicts.
 - deadlocks can trigger one extra round.
-- evidence approval is enforced.
+- evidence policy is enforced.
 - artifacts are complete.
 - replay and local share output work.
 - failure states are explicit and recoverable.

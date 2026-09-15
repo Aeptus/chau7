@@ -157,9 +157,6 @@ final class TerminalSessionModel {
     /// when `gitRootPath` async refresh hasn't completed yet).
     @ObservationIgnored var onCurrentDirectoryChanged: ((String) -> Void)?
 
-    /// Last rendered terminal snapshot used for snapshot-backed tab switching.
-    @ObservationIgnored var lastRenderedSnapshot: NSImage?
-
     // MARK: - Session state model
 
     //
@@ -244,6 +241,11 @@ final class TerminalSessionModel {
     @ObservationIgnored var onGitRootPathChanged: ((String?) -> Void)?
     @ObservationIgnored var onRestoreBootstrapPhaseChanged: ((RestoreBootstrapPhase) -> Void)?
 
+    /// Styled scrollback tail persisted from the previous session; injected
+    /// once at terminal launch so a restored tab shows its saved content
+    /// immediately, then cleared. Nil for fresh (non-restored) tabs.
+    @ObservationIgnored var pendingRestoreScrollback: String?
+
     var gitRootPath: String? {
         didSet {
             cachedRepoName = Self.repoName(from: gitRootPath)
@@ -293,7 +295,7 @@ final class TerminalSessionModel {
             // Propagate the live TUI hint to the view. Rust's alternate-screen
             // flag remains the generic source of truth; this closes the short
             // window before a newly detected agent flips terminal modes.
-            activeRustTerminalView?.hostsTUIApp = liveAgentName != nil
+            activeRustTerminalView?.hostsTUIApp = shouldProtectTerminalUIState
             onSessionStateChanged?()
             postRuntimeReadinessChange(source: "live_agent")
             NotificationCenter.default.post(
@@ -306,6 +308,7 @@ final class TerminalSessionModel {
                     PromptInjectionInjector.onAIToolDetected(session: self)
                 }
             }
+            refreshCodexFeedbackMonitorIfNeeded()
         }
     }
 
@@ -585,17 +588,30 @@ final class TerminalSessionModel {
         lastOutputAt = backdated
     }
 
-    var lastAIProvider: String?
+    var lastAIProvider: String? {
+        didSet {
+            if lastAIProvider != oldValue {
+                refreshCodexFeedbackMonitorIfNeeded()
+            }
+        }
+    }
     var lastAISessionId: String? {
         didSet {
             syncRustTerminalObservabilityScope()
             if lastAISessionId != oldValue {
                 TerminalControlService.shared.invalidateRoutingIndex(reason: "ai_session_id")
+                refreshCodexFeedbackMonitorIfNeeded()
             }
         }
     }
 
-    var lastAISessionIdentitySource: AISessionIdentitySource?
+    var lastAISessionIdentitySource: AISessionIdentitySource? {
+        didSet {
+            if lastAISessionIdentitySource != oldValue {
+                refreshCodexFeedbackMonitorIfNeeded()
+            }
+        }
+    }
 
     /// Point-in-time snapshot of the identity trio. Mutate via
     /// `applyAgentIdentity(_:)` so the three fields stay coherent.
@@ -1009,6 +1025,7 @@ final class TerminalSessionModel {
     @ObservationIgnored private var pendingPrefillRejectionReasonProvider: (() -> String?)?
     @ObservationIgnored private var pendingPrefillOnDelivered: (() -> Void)?
     @ObservationIgnored private var pendingPrefillOnRejected: ((String) -> Void)?
+    @ObservationIgnored private var pendingPrefillAutoSubmit = true
     /// Retry counter for pending prefill flush attempts.
     @ObservationIgnored private var pendingPrefillRetries = 0
     @ObservationIgnored private var restoreBootstrapExpectsResumePrefill = false
@@ -1034,6 +1051,13 @@ final class TerminalSessionModel {
     /// text input and synthesized key presses, then flushes on view attachment.
     @ObservationIgnored private var pendingTerminalActions: [PendingTerminalAction] = []
     @ObservationIgnored private var pendingAutomationSubmitWorkItem: DispatchWorkItem?
+    /// Remote (iOS) submit Enters, scheduled independently of
+    /// `pendingAutomationSubmitWorkItem`: each phone send is an explicit user
+    /// action whose Enter must never be cancelled by restore-prefill
+    /// auto-submits, MCP automation, or another rapid phone send reusing a
+    /// shared slot — that cancellation is how remote text ended up printed
+    /// but never executed.
+    @ObservationIgnored private var pendingRemoteSubmitWorkItems: [UUID: DispatchWorkItem] = [:]
     @ObservationIgnored private var pendingInteractivePromptRevealWorkItem: DispatchWorkItem?
     @ObservationIgnored private var lastAutomationInputAt: Date?
     @ObservationIgnored private var settingsObservers: [NSObjectProtocol] = []
@@ -1067,11 +1091,26 @@ final class TerminalSessionModel {
     @ObservationIgnored var pendingAITimingInputAt: Date?
     @ObservationIgnored var pendingAITimingInputChars = 0
     @ObservationIgnored var pendingAIRoundTripCompleted = false
+    @ObservationIgnored var codexFeedbackMonitor: CodexFeedbackMonitor?
+    @ObservationIgnored var codexFeedbackMonitorSessionID: String?
+    @ObservationIgnored var codexFeedbackLookupGeneration: UInt64 = 0
+    @ObservationIgnored var codexFeedbackLookupRetryWorkItem: DispatchWorkItem?
+    @ObservationIgnored var codexAppServerInteractionTracker = CodexAppServerInteractionTracker()
+    @ObservationIgnored let codexFeedbackLookupQueue = DispatchQueue(
+        label: "com.chau7.codex-feedback-lookup",
+        qos: .utility
+    )
     @ObservationIgnored var pendingWaitingInputFallbackArmed = false
     @ObservationIgnored var pendingWaitingInputFallbackSawLiveOutput = false
     @ObservationIgnored var suppressWaitingInputFallbackUntilNextUserCommand = false
     @ObservationIgnored var didLogRestoreSuppressionOnce = false
     @ObservationIgnored var deliveredSystemResumePrefillSinceLastUserCommand = false
+    /// The restore prefill currently sitting on the shell line awaiting an
+    /// explicit Enter, surfaced to the remote client as a Run/Clear card.
+    /// Cleared when any input line executes (the line ran or was replaced)
+    /// and when a remote submitted send kills the line.
+    @ObservationIgnored private(set) var deliveredPrefillText: String?
+    @ObservationIgnored private(set) var deliveredPrefillAt: Date?
     @ObservationIgnored var outputLatencySampleCount = 0
     @ObservationIgnored var outputLatencyTotalMs: Double = 0
     @ObservationIgnored let inputLagLogThresholdMs: Double = 60
@@ -1113,8 +1152,11 @@ final class TerminalSessionModel {
     @ObservationIgnored let outputProcessingQueue = DispatchQueue(label: "com.chau7.outputProcessing", qos: .userInitiated)
     @ObservationIgnored var pendingRemoteOutput = Data()
     @ObservationIgnored var remoteOutputFlushWorkItem: DispatchWorkItem?
-    @ObservationIgnored let remoteOutputFlushInterval: TimeInterval = 0.05
+    @ObservationIgnored let remoteOutputFlushInterval = RemoteOutputTuning.sourceMicroBatchIntervalSeconds
     @ObservationIgnored let remoteOutputMaxBufferBytes = 256 * 1024
+    /// Foreground remote viewing demand is retained at the session level so a
+    /// recreated terminal view immediately resumes event-driven PTY draining.
+    @ObservationIgnored private(set) var isRemoteRealtimeStreaming = false
     @ObservationIgnored var pendingRemoteOutputTranscript = ""
     @ObservationIgnored var remoteOutputTranscriptFlushWorkItem: DispatchWorkItem?
     @ObservationIgnored let remoteOutputTranscriptFlushInterval: TimeInterval = 0.12
@@ -1149,8 +1191,8 @@ final class TerminalSessionModel {
     @ObservationIgnored private var sigtermSentAt: Date?
     @ObservationIgnored private var forcedTerminationWorkItem: DispatchWorkItem?
     @ObservationIgnored var lastBestEffortOutputSheddingLogAt: Date?
-    @ObservationIgnored let dangerousCommandTracker = DangerousCommandLineTracker(maxEntries: FeatureSettings.shared.scrollbackLines)
-    @ObservationIgnored let userInputTracker = UserInputTracker(maxEntries: FeatureSettings.shared.scrollbackLines)
+    @ObservationIgnored let dangerousCommandTracker = DangerousCommandLineTracker(maxEntries: ScrollbackRetentionPolicy.trackerEntryCap(configuredLines: FeatureSettings.shared.scrollbackLines))
+    @ObservationIgnored let userInputTracker = UserInputTracker(maxEntries: ScrollbackRetentionPolicy.trackerEntryCap(configuredLines: FeatureSettings.shared.scrollbackLines))
     @ObservationIgnored var currentCommandBlockID: UUID?
     @ObservationIgnored var bufferRowProvider: (() -> Int?)?
     @ObservationIgnored var dangerousOutputHighlightWorkItem: DispatchWorkItem?
@@ -1258,9 +1300,25 @@ final class TerminalSessionModel {
 
     private func setupDevServerMonitor() {
         devServerMonitor.onDevServerChanged = { [weak self] serverInfo in
-            self?.devServer = serverInfo
+            guard let self else { return }
+            devServer = serverInfo
             if let serverInfo {
                 Log.info("Dev server detected: \(serverInfo.name)\(serverInfo.port.map { " on port \($0)" } ?? " (port pending)")")
+                let endpoint = serverInfo.url
+                    ?? serverInfo.port.map { "http://localhost:\($0)" }
+                    ?? "a local port"
+                appModel?.recordEvent(
+                    source: .shell,
+                    type: "dev_server_started",
+                    tool: serverInfo.name,
+                    message: "\(serverInfo.name) is ready at \(endpoint)",
+                    notify: true,
+                    directory: currentDirectory,
+                    tabID: ownerTabID,
+                    sessionID: nil,
+                    producer: "dev_server_monitor",
+                    reliability: .authoritative
+                )
             } else {
                 Log.info("Dev server stopped")
             }
@@ -1278,6 +1336,7 @@ final class TerminalSessionModel {
         aiLogSession?.close()
         devServerMonitor.stop()
         processResourceMonitor.stop()
+        stopCodexFeedbackMonitoring()
         cancelAllPendingWorkItems()
     }
 
@@ -1296,9 +1355,12 @@ final class TerminalSessionModel {
         outputLatencyFallbackWorkItem?.cancel()
         scrollHighlightWorkItem?.cancel()
         pendingAutomationSubmitWorkItem?.cancel()
+        pendingRemoteSubmitWorkItems.values.forEach { $0.cancel() }
+        pendingRemoteSubmitWorkItems.removeAll()
         dangerousOutputHighlightWorkItem?.cancel()
         remoteOutputFlushWorkItem?.cancel()
         remoteOutputTranscriptFlushWorkItem?.cancel()
+        codexFeedbackLookupRetryWorkItem?.cancel()
     }
 
     // Process monitoring methods moved to TerminalSessionModel+ProcessMonitor.swift
@@ -1424,8 +1486,12 @@ final class TerminalSessionModel {
     }
 
     func attachRustTerminal(_ view: RustTerminalView) {
+        if let previousView = retainedRustTerminalView, previousView !== view {
+            previousView.setRemoteRealtimeDrainRequired(false)
+        }
         rustTerminalView = view
         retainedRustTerminalView = view // Keep strong reference to survive view recreation
+        view.setRemoteRealtimeDrainRequired(isRemoteRealtimeStreaming)
         view.currentDirectory = currentDirectory
         syncRustTerminalObservabilityScope()
         startLiveAgentTracking()
@@ -1559,6 +1625,11 @@ final class TerminalSessionModel {
 
         flushPendingTerminalActions()
         flushPendingPrefillInputIfReady()
+    }
+
+    func setRemoteRealtimeStreaming(_ active: Bool) {
+        isRemoteRealtimeStreaming = active
+        existingRustTerminalView?.setRemoteRealtimeDrainRequired(active)
     }
 
     func beginRestoreBootstrap(expectsResumePrefill: Bool) {
@@ -1858,6 +1929,7 @@ final class TerminalSessionModel {
         stopIdleTimer()
         detachRepositoryBranchObserver()
         searchUpdateWorkItem?.cancel()
+        stopCodexFeedbackMonitoring()
 
         // Capture telemetry buffer before sending exit — the view may detach
         // before handleProcessTermination fires, losing the buffer snapshot.
@@ -1884,6 +1956,7 @@ final class TerminalSessionModel {
 
     func closeSessionForTermination() {
         let shellPID = activeRustTerminalView?.shellPid ?? 0
+        let shellIdentity = Self.currentShellProcessSnapshot(of: shellPID)?.identity
         terminationStateQueue.sync {
             closeSessionRequested = true
             closeSessionRequestedAt = Date()
@@ -1903,20 +1976,22 @@ final class TerminalSessionModel {
         shutdownActiveTerminalRendering()
         activeRustTerminalView?.onProcessTerminated = nil
         stopIdleTimer()
+        stopCodexFeedbackMonitoring()
         finishAILogging(exitCode: nil, mode: .appTermination)
 
         // Same flag-leak defense as `closeSession`. App termination races
         // the regular tab-close path and shouldn't trust it ran.
         releaseCTOFlagOnClose()
 
-        guard shellPID > 0 else { return }
+        guard shellPID > 0, let shellIdentity,
+              isLiveOwnedShellProcess(expectedIdentity: shellIdentity) else { return }
 
         // Kill the entire process group immediately. SIGKILL is the only
         // signal that reliably terminates deep process trees (Codex with
         // MCP servers, npm chains) without waiting for graceful shutdown.
         Log.warn("App termination: SIGKILL to shell process group (pid=\(shellPID), session='\(title)')")
         let descendants = captureDescendantPIDs(of: shellPID)
-        sendTerminationSignal(SIGKILL, toShellPID: shellPID)
+        sendTerminationSignal(SIGKILL, expectedIdentity: shellIdentity)
         killEscapedDescendants(descendants, shellPID: shellPID)
     }
 
@@ -1985,7 +2060,9 @@ final class TerminalSessionModel {
 
     private func scheduleForcedTerminationIfNeeded() {
         let shellPID = existingRustTerminalView?.shellPid ?? 0
-        guard shellPID > 0 else { return }
+        guard shellPID > 0,
+              let shellIdentity = Self.currentShellProcessSnapshot(of: shellPID)?.identity,
+              isLiveOwnedShellProcess(expectedIdentity: shellIdentity) else { return }
 
         // AI tools (Claude Code, Codex) need longer to flush buffers and clean up
         // WebSocket connections on exit. Plain shells exit in <100ms.
@@ -1993,21 +2070,21 @@ final class TerminalSessionModel {
 
         forcedTerminationWorkItem?.cancel()
         let work = DispatchWorkItem { [weak self] in
-            self?.forceTerminateShellProcessGroupIfNeeded(expectedPID: shellPID)
+            self?.forceTerminateShellProcessGroupIfNeeded(expectedIdentity: shellIdentity)
         }
         forcedTerminationWorkItem = work
         DispatchQueue.main.asyncAfter(deadline: .now() + graceDelay, execute: work)
     }
 
-    private func forceTerminateShellProcessGroupIfNeeded(expectedPID: pid_t) {
+    private func forceTerminateShellProcessGroupIfNeeded(expectedIdentity: ShellProcessIdentity) {
         var shouldForce = false
         terminationStateQueue.sync {
             shouldForce = closeSessionRequested && !didHandleProcessTermination
         }
         guard shouldForce else { return }
 
-        let currentPID = existingRustTerminalView?.shellPid ?? 0
-        guard currentPID == expectedPID, currentPID > 0 else { return }
+        guard isLiveOwnedShellProcess(expectedIdentity: expectedIdentity) else { return }
+        let currentPID = expectedIdentity.pid
 
         // Stage 1: SIGINT — gives the process a chance to handle Ctrl+C gracefully
         terminationStateQueue.sync {
@@ -2016,7 +2093,7 @@ final class TerminalSessionModel {
             }
         }
         Log.warn("Force-terminating shell process group for session '\(title)' (pid=\(currentPID))")
-        sendTerminationSignalToTree(SIGINT, shellPID: currentPID)
+        sendTerminationSignalToTree(SIGINT, expectedIdentity: expectedIdentity)
 
         // Stage 1b (AI sessions only): re-send SIGINT after 0.6s. Modern AI
         // TUIs (Codex, Claude Code) implement a "Press Ctrl+C again to exit"
@@ -2028,7 +2105,7 @@ final class TerminalSessionModel {
         let isAISession = activeAppName != nil
         if isAISession {
             let secondSigint = DispatchWorkItem { [weak self] in
-                self?.repeatSIGINTForAITUIIfNeeded(expectedPID: expectedPID)
+                self?.repeatSIGINTForAITUIIfNeeded(expectedIdentity: expectedIdentity)
             }
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.6, execute: secondSigint)
         }
@@ -2036,62 +2113,61 @@ final class TerminalSessionModel {
         // Stage 2: SIGTERM after 2s — standard termination request
         let sigtermDelay: TimeInterval = isAISession ? 2.0 : 0.5
         let sigterm = DispatchWorkItem { [weak self] in
-            self?.escalateToSIGTERM(expectedPID: expectedPID)
+            self?.escalateToSIGTERM(expectedIdentity: expectedIdentity)
         }
         forcedTerminationWorkItem = sigterm
         DispatchQueue.main.asyncAfter(deadline: .now() + sigtermDelay, execute: sigterm)
     }
 
-    private func repeatSIGINTForAITUIIfNeeded(expectedPID: pid_t) {
+    private func repeatSIGINTForAITUIIfNeeded(expectedIdentity: ShellProcessIdentity) {
         var shouldForce = false
         terminationStateQueue.sync {
             shouldForce = closeSessionRequested && !didHandleProcessTermination
         }
         guard shouldForce else { return }
 
-        let currentPID = existingRustTerminalView?.shellPid ?? 0
-        guard currentPID == expectedPID, currentPID > 0 else { return }
+        guard isLiveOwnedShellProcess(expectedIdentity: expectedIdentity) else { return }
 
         terminationStateQueue.sync {
             secondSigintSentAt = Date()
         }
-        sendTerminationSignalToTree(SIGINT, shellPID: currentPID)
+        sendTerminationSignalToTree(SIGINT, expectedIdentity: expectedIdentity)
     }
 
-    private func escalateToSIGTERM(expectedPID: pid_t) {
+    private func escalateToSIGTERM(expectedIdentity: ShellProcessIdentity) {
         var shouldForce = false
         terminationStateQueue.sync {
             shouldForce = closeSessionRequested && !didHandleProcessTermination
         }
         guard shouldForce else { return }
 
-        let currentPID = existingRustTerminalView?.shellPid ?? 0
-        guard currentPID == expectedPID, currentPID > 0 else { return }
+        guard isLiveOwnedShellProcess(expectedIdentity: expectedIdentity) else { return }
+        let currentPID = expectedIdentity.pid
 
         terminationStateQueue.sync {
             sigtermSentAt = Date()
         }
         let diagnostics = terminationDiagnosticsSummary(stage: "sigterm", shellPID: currentPID)
         Log.warn("Shell process group survived SIGINT; sending SIGTERM (pid=\(currentPID)) \(diagnostics)")
-        sendTerminationSignalToTree(SIGTERM, shellPID: currentPID)
+        sendTerminationSignalToTree(SIGTERM, expectedIdentity: expectedIdentity)
 
         // Stage 3: SIGKILL after 3s more — unconditional kill
         let hardKill = DispatchWorkItem { [weak self] in
-            self?.forceKillShellProcessGroupIfNeeded(expectedPID: expectedPID)
+            self?.forceKillShellProcessGroupIfNeeded(expectedIdentity: expectedIdentity)
         }
         forcedTerminationWorkItem = hardKill
         DispatchQueue.main.asyncAfter(deadline: .now() + 3.0, execute: hardKill)
     }
 
-    private func forceKillShellProcessGroupIfNeeded(expectedPID: pid_t) {
+    private func forceKillShellProcessGroupIfNeeded(expectedIdentity: ShellProcessIdentity) {
         var shouldForce = false
         terminationStateQueue.sync {
             shouldForce = closeSessionRequested && !didHandleProcessTermination
         }
         guard shouldForce else { return }
 
-        let currentPID = existingRustTerminalView?.shellPid ?? 0
-        guard currentPID == expectedPID, currentPID > 0 else { return }
+        guard isLiveOwnedShellProcess(expectedIdentity: expectedIdentity) else { return }
+        let currentPID = expectedIdentity.pid
 
         // Capture process tree once — used for both diagnostics and descendant kill
         let descendants = captureDescendantPIDs(of: currentPID)
@@ -2099,7 +2175,7 @@ final class TerminalSessionModel {
             stage: "sigkill", shellPID: currentPID, preCapturedDescendants: descendants
         )
         Log.error("Shell process group still alive after SIGINT+SIGTERM; sending SIGKILL (pid=\(currentPID)) \(diagnostics)")
-        sendTerminationSignal(SIGKILL, toShellPID: currentPID)
+        sendTerminationSignal(SIGKILL, expectedIdentity: expectedIdentity)
 
         // Kill escaped descendants individually (processes in child process groups
         // that the group SIGKILL above cannot reach).
@@ -2227,7 +2303,7 @@ final class TerminalSessionModel {
         // Reversed: BFS order is parents-first, so reversed gives leaf-first.
         // Killing leaves first prevents init reparenting from invalidating ppid checks.
         for desc in descendants.reversed() {
-            guard let livePPID = Self.currentParentPID(of: desc.pid) else {
+            guard let livePPID = Self.currentShellProcessSnapshot(of: desc.pid)?.parentPID else {
                 skipped += 1 // Process already exited — nothing to kill
                 continue
             }
@@ -2255,26 +2331,72 @@ final class TerminalSessionModel {
     /// Returns the current parent PID of a live process via sysctl, or nil if the
     /// process no longer exists. Used to validate a PID hasn't been recycled before
     /// sending SIGKILL.
-    private static func currentParentPID(of pid: pid_t) -> pid_t? {
+    struct ShellProcessIdentity: Equatable {
+        let pid: pid_t
+        let startedAtSeconds: Int64
+        let startedAtMicroseconds: Int32
+    }
+
+    struct ShellProcessSnapshot: Equatable {
+        let identity: ShellProcessIdentity
+        let parentPID: pid_t
+        let isZombie: Bool
+    }
+
+    static func shouldSignalShellProcess(
+        expectedIdentity: ShellProcessIdentity,
+        snapshot: ShellProcessSnapshot?,
+        appPID: pid_t
+    ) -> Bool {
+        guard let snapshot else { return false }
+        return snapshot.identity == expectedIdentity
+            && snapshot.parentPID == appPID
+            && !snapshot.isZombie
+    }
+
+    private func isLiveOwnedShellProcess(expectedIdentity: ShellProcessIdentity) -> Bool {
+        let currentPID = existingRustTerminalView?.shellPid ?? expectedIdentity.pid
+        guard currentPID == expectedIdentity.pid else { return false }
+        return Self.shouldSignalShellProcess(
+            expectedIdentity: expectedIdentity,
+            snapshot: Self.currentShellProcessSnapshot(of: currentPID),
+            appPID: ProcessInfo.processInfo.processIdentifier
+        )
+    }
+
+    private static func currentShellProcessSnapshot(of pid: pid_t) -> ShellProcessSnapshot? {
+        guard pid > 0 else { return nil }
         var info = kinfo_proc()
         var size = MemoryLayout<kinfo_proc>.size
         var mib: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_PID, pid]
         guard sysctl(&mib, 4, &info, &size, nil, 0) == 0, size > 0 else {
             return nil
         }
-        return info.kp_eproc.e_ppid
+        return ShellProcessSnapshot(
+            identity: ShellProcessIdentity(
+                pid: pid,
+                startedAtSeconds: Int64(info.kp_proc.p_starttime.tv_sec),
+                startedAtMicroseconds: Int32(info.kp_proc.p_starttime.tv_usec)
+            ),
+            parentPID: info.kp_eproc.e_ppid,
+            isZombie: info.kp_proc.p_stat == SZOMB
+        )
     }
 
-    private func sendTerminationSignal(_ signal: Int32, toShellPID shellPID: pid_t) {
+    @discardableResult
+    private func sendTerminationSignal(_ signal: Int32, expectedIdentity: ShellProcessIdentity) -> Bool {
+        guard isLiveOwnedShellProcess(expectedIdentity: expectedIdentity) else { return false }
+        let shellPID = expectedIdentity.pid
         if Darwin.kill(-shellPID, signal) == 0 {
-            return
+            return true
         }
-        if errno == ESRCH {
-            _ = Darwin.kill(shellPID, signal)
-        } else {
-            Log.warn("Failed to send signal \(signal) to process group \(shellPID): errno=\(errno)")
-            _ = Darwin.kill(shellPID, signal)
+        let groupErrno = errno
+        guard groupErrno == ESRCH else {
+            Log.warn("Failed to send signal \(signal) to process group \(shellPID): errno=\(groupErrno)")
+            return false
         }
+        guard isLiveOwnedShellProcess(expectedIdentity: expectedIdentity) else { return false }
+        return Darwin.kill(shellPID, signal) == 0
     }
 
     /// Sends `signal` to the shell's process group plus every distinct child
@@ -2288,8 +2410,9 @@ final class TerminalSessionModel {
     /// the processes that actually needed to flush. Stage 3 SIGKILL doesn't
     /// need this — `killEscapedDescendants` already kills each descendant
     /// individually.
-    private func sendTerminationSignalToTree(_ signal: Int32, shellPID: pid_t) {
-        sendTerminationSignal(signal, toShellPID: shellPID)
+    private func sendTerminationSignalToTree(_ signal: Int32, expectedIdentity: ShellProcessIdentity) {
+        guard sendTerminationSignal(signal, expectedIdentity: expectedIdentity) else { return }
+        let shellPID = expectedIdentity.pid
 
         let descendants = captureDescendantPIDs(of: shellPID)
         let pgids = Self.distinctDescendantPGIDsToSignal(
@@ -2436,6 +2559,68 @@ final class TerminalSessionModel {
         )
     }
 
+    /// Remote (iOS) keyboard input. The body and the submit terminator must
+    /// be separate PTY writes: a single chunk of "text\r" reads as a paste to
+    /// TUI composers (Claude Code, Codex) and lands in the input field
+    /// without submitting. Deliver the body, then submit provider-aware after
+    /// a short delay — an Enter keypress for most tools, a delayed raw
+    /// newline for Codex — exactly like typed-then-Enter input.
+    func sendRemoteSubmittedInput(_ text: String) {
+        let provider = aiDisplayAppName ?? activeAppName ?? effectiveAIProvider
+        let plan = AIAutomationStrategy.remoteInputPlan(for: text, provider: provider)
+        if plan.submitMode != .none {
+            // The old single-chunk path set this via the trailing terminator in
+            // sendRawInput; keep command-based AI detection primed for the
+            // submit that now arrives as a separate write.
+            commandPendingDetection = true
+        }
+        if plan.clearLineFirst {
+            // ^U (kill-line) as its own PTY write: a submitted phone send
+            // replaces whatever sits on the line — a restore prefill awaiting
+            // confirmation, or a stale draft — instead of concatenating onto
+            // it. No-op on an empty line; ignored by TUI selection menus.
+            sendRawInput("\u{15}")
+            clearDeliveredPrefillTracking()
+        } else if plan.insertText.contains("\u{15}") || plan.insertText.contains("\u{03}") {
+            // A raw ^U (prefill card's Clear) or ^C from the key bar discards
+            // the line without executing anything, so no input-line hook will
+            // fire — retire the prefill card here.
+            clearDeliveredPrefillTracking()
+        }
+        if !plan.insertText.isEmpty {
+            switch plan.insertMode {
+            case .rawText:
+                sendRawInput(plan.insertText)
+            case .pasteText:
+                sendPastedInput(plan.insertText)
+            }
+        }
+        scheduleRemoteSubmit(mode: plan.submitMode, delayMs: plan.submitDelayMs)
+    }
+
+    /// Called from the ShellIntegration input-line handler too: any executed
+    /// line means the prefill either ran or was replaced.
+    func clearDeliveredPrefillTracking() {
+        deliveredPrefillText = nil
+        deliveredPrefillAt = nil
+    }
+
+    /// Remote submits use their own work-item pool: no mutual cancellation
+    /// (two rapid phone sends each get their Enter) and no interference from
+    /// the automation slot shared by restore prefill and MCP submits.
+    private func scheduleRemoteSubmit(mode: AIAutomationSubmitMode, delayMs: Int) {
+        guard mode != .none else { return }
+        let id = UUID()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            pendingRemoteSubmitWorkItems.removeValue(forKey: id)
+            performAutomationSubmit(mode: mode)
+        }
+        pendingRemoteSubmitWorkItems[id] = work
+        let deadline = DispatchTime.now() + .milliseconds(max(0, delayMs))
+        DispatchQueue.main.asyncAfter(deadline: deadline, execute: work)
+    }
+
     func submitAutomationPrompt() {
         let provider = aiDisplayAppName ?? activeAppName ?? effectiveAIProvider
         let ageMs = lastAutomationInputAt.map { max(0, Int(Date().timeIntervalSince($0) * 1000)) }
@@ -2508,6 +2693,15 @@ final class TerminalSessionModel {
         }
     }
 
+    /// Whether an AI CLI is actually running in this pane's process tree.
+    /// Internal for the remote prefill card: restored metadata sets
+    /// activeAppName/aiDisplayAppName BEFORE the resume command executes, so
+    /// those cannot distinguish "resume pending" from "resume running" — the
+    /// process tree can.
+    var isAIToolRunningInProcessTree: Bool {
+        hasRunningAIToolInActiveProcessTree()
+    }
+
     private func hasRunningAIToolInActiveProcessTree() -> Bool {
         let shellPID = activeRustTerminalView?.shellPid ?? 0
         guard shellPID > 0 else { return false }
@@ -2515,8 +2709,8 @@ final class TerminalSessionModel {
     }
 
     /// Auto-submits a restore prefill when safe. Provider-specific submit
-    /// strategy matters here: Codex's TUI is more reliable with a delayed raw
-    /// newline after automated text insertion than with an immediate Enter key.
+    /// strategy matters here: Codex's TUI needs a short delay after automated
+    /// text insertion, but still receives a real Enter key rather than raw LF.
     private func scheduleRestorePrefillAutoSubmit(deliveredText: String) {
         guard FeatureSettings.shared.autoSubmitRestorePrefill else { return }
 
@@ -2580,16 +2774,34 @@ final class TerminalSessionModel {
     @discardableResult
     func prefillInput(
         _ text: String,
+        autoSubmit: Bool = true,
         rejectionReasonProvider: (() -> String?)? = nil,
         onDelivered: (() -> Void)? = nil,
         onRejected: ((String) -> Void)? = nil
     ) -> PrefillInputResult {
         guard !text.isEmpty else { return .rejected("empty_prefill") }
         trackAIResumeMetadata(from: text)
+
+        // Background identity hydration can deliver the resume line before
+        // selection. Interactive promotion then restores presentation state
+        // from the same payload. Treat that second, identical request as an
+        // acknowledged delivery instead of inserting the command twice.
+        if deliveredPrefillText == text {
+            suppressWaitingInputFallbackUntilNextUserCommand = true
+            markRestoreBootstrapReady(source: "resume_prefill_already_delivered")
+            Log.trace("Resume prefill already present; acknowledging without reinsertion: \(text.prefix(60))")
+            onDelivered?()
+            if autoSubmit {
+                scheduleRestorePrefillAutoSubmit(deliveredText: text)
+            }
+            return .delivered
+        }
+
         pendingPrefillInput = text
         pendingPrefillRejectionReasonProvider = rejectionReasonProvider
         pendingPrefillOnDelivered = onDelivered
         pendingPrefillOnRejected = onRejected
+        pendingPrefillAutoSubmit = autoSubmit
         pendingWaitingInputFallbackArmed = false
         pendingWaitingInputFallbackSawLiveOutput = false
         suppressWaitingInputFallbackUntilNextUserCommand = true
@@ -2610,6 +2822,7 @@ final class TerminalSessionModel {
             pendingPrefillRejectionReasonProvider = nil
             pendingPrefillOnDelivered = nil
             pendingPrefillOnRejected = nil
+            pendingPrefillAutoSubmit = true
             markRestoreBootstrapReady(source: "resume_prefill_rejected")
             Log.warn("Resume prefill rejected: \(rejectionReason) (\(text.prefix(60)))")
             onRejected?(rejectionReason)
@@ -2643,20 +2856,26 @@ final class TerminalSessionModel {
         if canPrefillInput() {
             let insertion = SnippetInsertion(text: text, placeholders: [], finalCursorOffset: text.count)
             let onDelivered = pendingPrefillOnDelivered
+            let shouldAutoSubmit = pendingPrefillAutoSubmit
             pendingPrefillInput = nil
             pendingPrefillRetries = 0
             pendingPrefillRejectionReasonProvider = nil
             pendingPrefillOnDelivered = nil
             pendingPrefillOnRejected = nil
+            pendingPrefillAutoSubmit = true
             deliveredSystemResumePrefillSinceLastUserCommand = true
+            deliveredPrefillText = text
+            deliveredPrefillAt = Date()
             suppressWaitingInputFallbackUntilNextUserCommand = true
             pendingWaitingInputFallbackArmed = false
             pendingWaitingInputFallbackSawLiveOutput = false
             activeTerminalView?.insertSnippet(insertion)
             markRestoreBootstrapReady(source: "resume_prefill")
-            Log.info("Resume prefill delivered: \(text.prefix(60))")
+            Log.info("Resume command injected into terminal: \(text.prefix(60))")
             onDelivered?()
-            scheduleRestorePrefillAutoSubmit(deliveredText: text)
+            if shouldAutoSubmit {
+                scheduleRestorePrefillAutoSubmit(deliveredText: text)
+            }
             return .delivered
         }
 

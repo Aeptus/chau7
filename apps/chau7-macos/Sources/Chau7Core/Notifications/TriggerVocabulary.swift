@@ -57,7 +57,10 @@ public enum TriggerVocabulary {
             semanticKind: .taskFinished,
             title: ("aiEvent.title.finished", "Finished"),
             body: ("aiEvent.body.finished", "Done."),
-            stylePreset: "waiting"
+            // A completed turn is a success, not a "waiting" prompt: use the
+            // green success preset (non-persistent, retained until viewed)
+            // rather than the orange waiting style.
+            stylePreset: "success"
         ),
         Entry(
             type: "failed",
@@ -65,6 +68,27 @@ public enum TriggerVocabulary {
             title: ("aiEvent.title.failed", "Failed"),
             body: ("aiEvent.body.failed", "Check the logs."),
             stylePreset: "error"
+        ),
+        Entry(
+            type: "script_succeeded",
+            semanticKind: .taskFinished,
+            title: ("aiEvent.title.scriptSucceeded", "Script succeeded"),
+            body: ("aiEvent.body.scriptSucceeded", "The shell script completed successfully."),
+            stylePreset: "success"
+        ),
+        Entry(
+            type: "script_failed",
+            semanticKind: .taskFailed,
+            title: ("aiEvent.title.scriptFailed", "Script failed"),
+            body: ("aiEvent.body.scriptFailed", "The shell script exited with an error."),
+            stylePreset: "error"
+        ),
+        Entry(
+            type: "dev_server_started",
+            semanticKind: .informational,
+            title: ("aiEvent.title.devServerStarted", "Dev server started"),
+            body: ("aiEvent.body.devServerStarted", "The development server is ready."),
+            stylePreset: "success"
         ),
         Entry(
             type: "tool_failed",

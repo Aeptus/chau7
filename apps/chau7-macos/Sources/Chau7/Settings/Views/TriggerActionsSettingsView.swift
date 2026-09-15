@@ -27,7 +27,7 @@ struct ActionRow: View {
     }
 
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: Chau7Style.Settings.looseControlSpacing) {
             // Toggle
             Toggle("", isOn: Binding(
                 get: { action.enabled },
@@ -75,7 +75,7 @@ struct ActionRow: View {
             .buttonStyle(.plain)
             .foregroundColor(.red.opacity(0.8))
         }
-        .padding(.horizontal, 28)
+        .padding(.horizontal, Chau7Style.Settings.deepNestedIndent)
         .padding(.vertical, 6)
     }
 
@@ -165,21 +165,21 @@ struct ActionPickerSheet: View {
                 }
                 .buttonStyle(.plain)
             }
-            .padding()
+            .padding(Chau7Style.Settings.contentPadding)
 
             // Search
             TextField(L("settings.notifications.searchActions", "Search actions..."), text: $searchText)
                 .textFieldStyle(.roundedBorder)
-                .padding(.horizontal)
-                .padding(.bottom, 8)
+                .padding(.horizontal, Chau7Style.Settings.contentPadding)
+                .padding(.bottom, Chau7Style.Settings.separatorVerticalPadding)
 
             Divider()
 
             // Action list
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 16) {
+                LazyVStack(alignment: .leading, spacing: Chau7Style.Settings.pageSectionSpacing) {
                     ForEach(filteredCategories, id: \.category) { category, actions in
-                        VStack(alignment: .leading, spacing: 8) {
+                        VStack(alignment: .leading, spacing: Chau7Style.Settings.inlineControlSpacing) {
                             HStack {
                                 Image(systemName: category.icon)
                                     .foregroundStyle(.secondary)
@@ -187,7 +187,7 @@ struct ActionPickerSheet: View {
                                     .font(.subheadline)
                                     .fontWeight(.semibold)
                             }
-                            .padding(.horizontal)
+                            .padding(.horizontal, Chau7Style.Settings.contentPadding)
 
                             ForEach(actions) { actionInfo in
                                 ActionPickerRow(actionInfo: actionInfo) {
@@ -198,7 +198,7 @@ struct ActionPickerSheet: View {
                         }
                     }
                 }
-                .padding(.vertical)
+                .padding(.vertical, Chau7Style.Settings.pageSectionSpacing)
             }
         }
         .frame(width: 500, height: 600)
@@ -211,7 +211,7 @@ private struct ActionPickerRow: View {
 
     var body: some View {
         Button(action: onSelect) {
-            HStack(spacing: 12) {
+            HStack(spacing: Chau7Style.Settings.looseControlSpacing) {
                 Image(systemName: actionInfo.icon)
                     .font(.title3)
                     .foregroundStyle(.primary)
@@ -239,14 +239,14 @@ private struct ActionPickerRow: View {
                 Image(systemName: "plus.circle")
                     .foregroundColor(.accentColor)
             }
-            .padding(.horizontal)
-            .padding(.vertical, 8)
+            .padding(.horizontal, Chau7Style.Settings.contentPadding)
+            .padding(.vertical, Chau7Style.Settings.separatorVerticalPadding)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .background(Color.secondary.opacity(0.05))
         .cornerRadius(6)
-        .padding(.horizontal)
+        .padding(.horizontal, Chau7Style.Settings.contentPadding)
     }
 }
 
@@ -282,25 +282,24 @@ struct ActionConfigSheet: View {
                 }
                 .buttonStyle(.plain)
             }
-            .padding()
+            .padding(Chau7Style.Settings.contentPadding)
 
             Divider()
 
             // Config fields
             ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
+                VStack(alignment: .leading, spacing: Chau7Style.Settings.pageSectionSpacing) {
                     // Enabled toggle
                     Toggle(L("settings.notifications.actionEnabled", "Action Enabled"), isOn: $isEnabled)
-                        .padding(.horizontal)
+                        .padding(.horizontal, Chau7Style.Settings.contentPadding)
 
                     if let info = actionInfo {
                         Text(L(info.descriptionKey, info.descriptionFallback))
                             .font(.caption)
                             .foregroundStyle(.secondary)
-                            .padding(.horizontal)
+                            .padding(.horizontal, Chau7Style.Settings.contentPadding)
 
-                        Divider()
-                            .padding(.vertical, 8)
+                        SettingsDivider()
 
                         ForEach(info.configFields) { field in
                             ConfigFieldView(
@@ -316,11 +315,11 @@ struct ActionConfigSheet: View {
                             Text(L("settings.notifications.noConfigNeeded", "This action requires no additional configuration."))
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
-                                .padding(.horizontal)
+                                .padding(.horizontal, Chau7Style.Settings.contentPadding)
                         }
                     }
                 }
-                .padding(.vertical)
+                .padding(.vertical, Chau7Style.Settings.pageSectionSpacing)
             }
 
             Divider()
@@ -340,7 +339,7 @@ struct ActionConfigSheet: View {
                 .keyboardShortcut(.defaultAction)
                 .buttonStyle(.borderedProminent)
             }
-            .padding()
+            .padding(Chau7Style.Settings.contentPadding)
         }
         .frame(width: 450, height: 500)
         .onAppear {
@@ -409,7 +408,7 @@ struct ConfigFieldView: View {
                             Text(placeholder)
                                 .foregroundStyle(.secondary.opacity(0.5))
                                 .padding(.horizontal, 4)
-                                .padding(.vertical, 8)
+                                .padding(.vertical, Chau7Style.Settings.separatorVerticalPadding)
                                 .allowsHitTesting(false)
                         }
                     }
@@ -465,7 +464,7 @@ struct ConfigFieldView: View {
                 }
             }
         }
-        .padding(.horizontal)
+        .padding(.horizontal, Chau7Style.Settings.contentPadding)
     }
 
     private func selectFile() {

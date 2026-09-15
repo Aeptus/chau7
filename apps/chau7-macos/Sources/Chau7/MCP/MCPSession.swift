@@ -4,11 +4,10 @@ import Chau7Core
 /// Handles a single MCP client connection over a Unix domain socket.
 /// Implements the MCP JSON-RPC protocol for tool calls and resource reads.
 final class MCPSession {
-    /// Keep MCP connections open long enough for slower multi-step workflows
-    /// (reviews, eval harnesses, manual debugging) without forcing clients to
-    /// reconnect between tool calls.
-    private static let socketIdleTimeoutSeconds = 30 * 60
-    private static let supportedProtocolVersions = ["2025-11-25", "2024-11-05"]
+    /// Upper bound on a single JSON-RPC request line. Generous enough for large
+    /// tool payloads (e.g. agent prompts) while preventing a client that streams
+    /// bytes with no newline from growing the read buffer without limit (OOM).
+    private static let maxRequestLineBytes = 8 * 1024 * 1024
     private static let toolRateLimiterQueue = DispatchQueue(label: "com.chau7.mcp.tool-rate-limiter")
     private static var toolRateLimiter = MCPToolRateLimiter()
 
@@ -22,6 +21,7 @@ final class MCPSession {
     private let subscriptionStateQueue = DispatchQueue(label: "com.chau7.mcp.session.subscription-state")
     private let notificationSink: (([String: Any]) -> Void)?
     private var liveNotificationWriter: (([String: Any]) -> Void)?
+    private var handshakeDiagnostic = MCPHandshakeDiagnostic()
 
     private struct SubscriptionState {
         let id: String
@@ -92,45 +92,85 @@ final class MCPSession {
             writeJSON(to: writeStream, json: payload, mirrorToNotificationSink: true)
         }
 
-        while true {
-            var line: UnsafeMutablePointer<CChar>?
-            var lineCap = 0
-            errno = 0
-            let bytesRead = getline(&line, &lineCap, readStream)
-            guard bytesRead > 0, let line else {
-                if errno == EINTR {
+        readLoop: while true {
+            switch readBoundedLine(from: readStream, maxBytes: Self.maxRequestLineBytes) {
+            case .endOfStream:
+                break readLoop
+            case .readError(let readErrno):
+                if readErrno == EAGAIN || readErrno == EWOULDBLOCK || readErrno == ETIMEDOUT {
+                    Log.debug("MCPSession: transient socket read unavailable (fd=\(fd))")
+                } else if readErrno != 0 {
+                    Log.warn("MCPSession: read failed for fd=\(fd): \(String(cString: strerror(readErrno)))")
+                }
+                break readLoop
+            case .tooLarge:
+                // A single request line exceeded the cap. We have consumed a
+                // partial line and cannot realign to the next JSON boundary, so
+                // report and close rather than risk interpreting garbage.
+                Log.warn("MCPSession: request line exceeded \(Self.maxRequestLineBytes) bytes (fd=\(fd)); closing")
+                writeError(to: writeStream, id: nil, code: -32700, message: "Request too large")
+                break readLoop
+            case .line(let rawLine):
+                let lineStr = rawLine.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !lineStr.isEmpty else { continue }
+
+                // Parse JSON-RPC request
+                guard let data = lineStr.data(using: .utf8),
+                      let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+                else {
+                    writeError(to: writeStream, id: nil, code: -32700, message: "Parse error")
                     continue
                 }
-                if errno == EAGAIN || errno == EWOULDBLOCK || errno == ETIMEDOUT {
-                    Log.info("MCPSession: closing idle client after read timeout (fd=\(fd))")
-                } else if errno != 0 {
-                    Log.warn("MCPSession: read failed for fd=\(fd): \(String(cString: strerror(errno)))")
+
+                if let response = handleRequestObject(json) {
+                    writeJSON(to: writeStream, json: response)
                 }
-                break
-            }
-            defer { free(line) }
-
-            let lineStr = String(cString: line).trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !lineStr.isEmpty else { continue }
-
-            // Parse JSON-RPC request
-            guard let data = lineStr.data(using: .utf8),
-                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
-            else {
-                writeError(to: writeStream, id: nil, code: -32700, message: "Parse error")
-                continue
-            }
-
-            if let response = handleRequestObject(json) {
-                writeJSON(to: writeStream, json: response)
             }
         }
     }
 
+    private enum ReadLineResult {
+        case line(String)
+        case endOfStream
+        case tooLarge
+        case readError(Int32)
+    }
+
+    /// Read one newline-delimited line from `stream`, bounding the accumulated
+    /// bytes at `maxBytes`. Unlike `getline`, this never grows an unbounded
+    /// buffer for a client that streams without a newline — it stops at the cap.
+    /// The trailing `\n` is consumed but not included in the returned string.
+    private func readBoundedLine(from stream: UnsafeMutablePointer<FILE>, maxBytes: Int) -> ReadLineResult {
+        var bytes: [UInt8] = []
+        while true {
+            errno = 0
+            let c = fgetc(stream)
+            if c == EOF {
+                if errno == EINTR { continue }
+                if errno != 0 { return .readError(errno) }
+                // Clean end of stream: surface any final unterminated line.
+                return bytes.isEmpty ? .endOfStream : .line(decodeUTF8(bytes))
+            }
+            if c == 0x0A { // '\n'
+                return .line(decodeUTF8(bytes))
+            }
+            if bytes.count >= maxBytes {
+                return .tooLarge
+            }
+            bytes.append(UInt8(truncatingIfNeeded: c))
+        }
+    }
+
+    private func decodeUTF8(_ bytes: [UInt8]) -> String {
+        String(decoding: bytes, as: UTF8.self)
+    }
+
     private func configureSocketTimeouts() {
-        var timeout = timeval(tv_sec: Self.socketIdleTimeoutSeconds, tv_usec: 0)
+        // An initialized local MCP session remains valid while its Unix socket
+        // remains open. Do not impose a server-side read-idle timeout: the peer
+        // process closing the socket is the authoritative lifecycle signal.
+        var timeout = timeval(tv_sec: MCPConnectionLifetimePolicy.sendTimeoutSeconds, tv_usec: 0)
         withUnsafePointer(to: &timeout) { ptr in
-            _ = setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, ptr, socklen_t(MemoryLayout<timeval>.size))
             _ = setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, ptr, socklen_t(MemoryLayout<timeval>.size))
         }
     }
@@ -176,24 +216,39 @@ final class MCPSession {
                     response: buildError(id: id, code: -32600, message: "Session is already initialized")
                 )
             }
-            guard let requestedVersion = params["protocolVersion"] as? String, !requestedVersion.isEmpty else {
+            let clientInfo = params["clientInfo"] as? [String: Any]
+            let requestedVersion = params["protocolVersion"] as? String
+            handshakeDiagnostic.recordAttempt(
+                clientName: clientInfo?["name"] as? String,
+                clientVersion: clientInfo?["version"] as? String,
+                requestedProtocolVersion: requestedVersion
+            )
+            Log.trace("MCPSession: initialize attempt \(handshakeDiagnostic.logSummary)")
+
+            guard let requestedVersion, !requestedVersion.isEmpty else {
+                handshakeDiagnostic.recordRejected(errorClass: .invalidParameters)
+                Log.warn("MCPSession: initialize rejected \(handshakeDiagnostic.logSummary)")
                 return responseOrNil(
                     isNotification: isNotification,
                     response: buildError(id: id, code: -32602, message: "Invalid params: protocolVersion is required")
                 )
             }
             guard let negotiatedVersion = negotiateProtocolVersion(requestedVersion) else {
+                handshakeDiagnostic.recordRejected(errorClass: .unsupportedProtocolVersion)
+                Log.warn("MCPSession: initialize rejected \(handshakeDiagnostic.logSummary)")
                 return responseOrNil(
                     isNotification: isNotification,
                     response: buildError(
                         id: id,
                         code: -32602,
                         message: "Unsupported protocol version: \(requestedVersion)",
-                        data: ["supported": Self.supportedProtocolVersions]
+                        data: ["supported": MCPProtocolCompatibility.supportedVersions]
                     )
                 )
             }
 
+            handshakeDiagnostic.recordAccepted(negotiatedProtocolVersion: negotiatedVersion)
+            Log.trace("MCPSession: initialize accepted \(handshakeDiagnostic.logSummary)")
             lifecycleState = .awaitingInitializedNotification
             return responseOrNil(
                 isNotification: isNotification,
@@ -204,8 +259,8 @@ final class MCPSession {
                         "resources": ["subscribe": false, "listChanged": false]
                     ],
                     "serverInfo": [
-                        "name": "chau7",
-                        "version": "1.1.0"
+                        "name": MCPProtocolCompatibility.serverName,
+                        "version": MCPProtocolCompatibility.serverVersion
                     ]
                 ])
             )
@@ -213,6 +268,8 @@ final class MCPSession {
         case "notifications/initialized":
             if lifecycleState == .awaitingInitializedNotification {
                 lifecycleState = .ready
+                handshakeDiagnostic.recordReady()
+                Log.trace("MCPSession: client ready \(handshakeDiagnostic.logSummary)")
             } else {
                 Log.warn("MCPSession: received notifications/initialized in unexpected state \(lifecycleState)")
             }
@@ -416,6 +473,11 @@ final class MCPSession {
                 "inputSchema": ["type": "object", "properties": [:]]
             ],
             [
+                "name": "chau7_mcp_session_info",
+                "description": "Get non-secret MCP startup diagnostics for this connection: client/server identity, bridge and socket paths, negotiated protocol, startup status, and error class.",
+                "inputSchema": ["type": "object", "properties": [:]]
+            ],
+            [
                 "name": "chau7_runtime_events",
                 "description": "Get recent Chau7 observability events for lifecycle correlation. Returns app-owned events plus unified non-app AI events with stable ids, timestamps, subsystem, and optional tab/session/run scoping.",
                 "inputSchema": [
@@ -491,6 +553,28 @@ final class MCPSession {
                 ]
             ],
             [
+                "name": "tab_request_control",
+                "description": "Request user-confirmed MCP control of an existing user-opened tab. Chau7 always shows a local confirmation. A granted control session lasts until tab_release_control, tab closure, or Chau7 quits.",
+                "inputSchema": [
+                    "type": "object",
+                    "properties": [
+                        "tab_id": ["type": "string", "description": "Existing tab ID from tab_list"]
+                    ],
+                    "required": ["tab_id"]
+                ]
+            ],
+            [
+                "name": "tab_release_control",
+                "description": "Release MCP control of a tab without closing it. Subsequent mutating tab tools will be rejected until control is granted again.",
+                "inputSchema": [
+                    "type": "object",
+                    "properties": [
+                        "tab_id": ["type": "string", "description": "MCP-controlled tab ID"]
+                    ],
+                    "required": ["tab_id"]
+                ]
+            ],
+            [
                 "name": "tab_exec",
                 "description": [
                     "Execute a shell command in a tab — use this to launch an AI agent (e.g. claude, codex) or run any command.",
@@ -511,7 +595,8 @@ final class MCPSession {
                 "description": [
                     "Get detailed live status of a tab: process state, working directory, active app, AI provider/session metadata,",
                     "exec-acceptance fields (`can_accept_exec` / `exec_acceptance_mode`), prompt-ready fields (`ready_for_exec` / `readiness_reason`),",
-                    "child processes, and active telemetry run."
+                    "MCP authorization fields (`mcp_mutation_allowed` / `mcp_control_required`), child processes, and active telemetry run.",
+                    "For user-opened tabs, action readiness remains false until tab_request_control is granted."
                 ].joined(separator: " "),
                 "inputSchema": [
                     "type": "object",
@@ -791,6 +876,16 @@ final class MCPSession {
         case "chau7_runtime_info":
             return classifyToolResponse(Chau7ObservabilityService.shared.runtimeInfoJSON())
 
+        case "chau7_mcp_session_info":
+            return .toolResult(
+                toolSuccessResult(
+                    payload: handshakeDiagnostic.payload(
+                        bridgeCommandPath: RuntimeIsolation.pathInHome(".chau7/bin/chau7-mcp-bridge"),
+                        socketPath: RuntimeIsolation.pathInHome(".chau7/mcp.sock")
+                    )
+                )
+            )
+
         case "chau7_runtime_events":
             let sinceMillis = arguments["since_millis"] as? Int64
                 ?? (arguments["since_millis"] as? Int).map(Int64.init)
@@ -814,9 +909,40 @@ final class MCPSession {
             return unsubscribeFromChau7State(arguments: arguments)
 
         // Control plane — the case label always equals the tool name and
-        // controlPlane.call forwards it, so dispatch all tab_* tools uniformly.
-        case "tab_list", "tab_create", "tab_exec", "tab_status", "tab_wait_ready",
-             "tab_send_input", "tab_press_key", "tab_submit_prompt", "tab_close", "tab_output":
+        // controlPlane.call forwards it, so dispatch tab_* tools uniformly.
+        // Read-only + tab_create carry no user-tab-hijack risk.
+        case "tab_list", "tab_create", "tab_output":
+            return classifyToolResponse(controlPlane.call(name: name, arguments: arguments))
+
+        case "tab_status":
+            guard let tabID = arguments["tab_id"] as? String else {
+                return .protocolError(code: -32602, message: "Invalid params: tab_id is required")
+            }
+            return classifyToolResponse(controlService.mcpTabStatus(tabID: tabID))
+
+        case "tab_wait_ready":
+            guard let tabID = arguments["tab_id"] as? String else {
+                return .protocolError(code: -32602, message: "Invalid params: tab_id is required")
+            }
+            return classifyToolResponse(controlService.waitForMCPControlledTabReady(
+                tabID: tabID,
+                timeoutMs: arguments["timeout_ms"] as? Int ?? 30000
+            ))
+
+        // This is the only mutating operation intentionally allowed on a
+        // user-owned tab: it cannot touch the PTY and always requires a local
+        // Chau7 confirmation before changing the control capability.
+        case "tab_request_control":
+            return classifyToolResponse(controlPlane.call(name: name, arguments: arguments))
+
+        // Mutating tab tools: MCP may only drive tabs it created. Reject attempts
+        // to exec/inject/close the user's own (non-MCP) tabs before dispatching,
+        // so a raw tab UUID can't reach a terminal the user opened themselves.
+        case "tab_exec", "tab_send_input", "tab_press_key", "tab_submit_prompt", "tab_close", "tab_release_control":
+            if let tabID = arguments["tab_id"] as? String,
+               let scopeError = controlService.mcpControlScopeError(forTabID: tabID) {
+                return classifyToolResponse(scopeError)
+            }
             return classifyToolResponse(controlPlane.call(name: name, arguments: arguments))
 
         case "agent_launch":
@@ -873,7 +999,8 @@ final class MCPSession {
             guard let repoPath = arguments["repo_path"] as? String else {
                 return .protocolError(code: -32602, message: "Invalid params: repo_path is required")
             }
-            let limit = min(arguments["limit"] as? Int ?? 20, 50)
+            // Cap enforced at the source in repoGetEvents (repoEventsMaxLimit).
+            let limit = arguments["limit"] as? Int ?? 20
             return classifyToolResponse(controlService.repoGetEvents(
                 repoPath: repoPath,
                 limit: limit,
@@ -996,7 +1123,7 @@ final class MCPSession {
     }
 
     private func negotiateProtocolVersion(_ requestedVersion: String) -> String? {
-        Self.supportedProtocolVersions.contains(requestedVersion) ? requestedVersion : nil
+        MCPProtocolCompatibility.negotiate(requestedVersion: requestedVersion)
     }
 
     private func validate(arguments: [String: Any], against definition: [String: Any], toolName: String) -> String? {

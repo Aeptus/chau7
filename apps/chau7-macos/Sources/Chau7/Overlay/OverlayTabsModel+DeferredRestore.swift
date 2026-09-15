@@ -131,11 +131,14 @@ extension OverlayTabsModel {
         reason: String,
         executeSynchronouslyWhenPossible: Bool = false
     ) {
-        guard let deferredState = deferredRestoreStatesByTabID.removeValue(forKey: selectedTabID) else { return }
+        // Transactional consume: keep the only full saved payload parked until
+        // a matching live tab exists and restore has accepted the work. A stale
+        // selection ID must never destroy recovery data.
+        guard let deferredState = deferredRestoreStatesByTabID[selectedTabID],
+              let tab = tabs.first(where: { $0.id == selectedTabID }) else {
+            return
+        }
         let previousHadPendingWork = hasPendingStartupRestoreWork
-        deferredRestoreTabOrder.removeAll { $0 == selectedTabID }
-        hasStartedDeferredRestore = !deferredRestoreTabOrder.isEmpty
-        guard let tab = tabs.first(where: { $0.id == selectedTabID }) else { return }
         Log.info("Deferred restore: prioritizing selected tab=\(selectedTabID) [\(reason)]")
         restoreTabState(
             for: tab,
@@ -144,6 +147,9 @@ extension OverlayTabsModel {
             useResumeRetryScheduler: false,
             executeSynchronouslyWhenPossible: executeSynchronouslyWhenPossible
         )
+        deferredRestoreStatesByTabID.removeValue(forKey: selectedTabID)
+        deferredRestoreTabOrder.removeAll { $0 == selectedTabID }
+        hasStartedDeferredRestore = !deferredRestoreTabOrder.isEmpty
         notifyStartupRestoreWorkIfDrained(previousHadPendingWork: previousHadPendingWork)
     }
 }

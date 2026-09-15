@@ -73,6 +73,7 @@ func TestBaselineEstimator_EstimateBaseline(t *testing.T) {
 
 			if result == nil {
 				t.Fatal("Expected non-nil baseline estimate")
+				return
 			}
 
 			if result.Method != tt.expectMethod {

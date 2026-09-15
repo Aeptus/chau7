@@ -25,6 +25,7 @@ final class TerminalBehaviorStore {
         static let usageMonitoringEnabled = "usage.monitoring.enabled"
         static let claudeStatusLineQuotaCaptureEnabled = "usage.claude.statusLine.enabled"
         static let usageQuotaWarningsEnabled = "usage.quotaWarnings.enabled"
+        static let regionalNumberFormat = "usage.regionalNumberFormat"
         static let bellEnabled = "terminal.bellEnabled"
         static let bellSound = "terminal.bellSound"
         static let bellVisual = "terminal.bellVisual"
@@ -382,6 +383,20 @@ final class TerminalBehaviorStore {
         }
     }
 
+    var regionalNumberFormat: RegionalNumberFormat {
+        get {
+            guard let raw = defaults.string(forKey: Keys.regionalNumberFormat),
+                  let format = RegionalNumberFormat(rawValue: raw) else {
+                return .french
+            }
+            return format
+        }
+        set {
+            defaults.set(newValue.rawValue, forKey: Keys.regionalNumberFormat)
+            NotificationCenter.default.post(name: .usageMonitoringSettingsChanged, object: nil)
+        }
+    }
+
     var bellEnabled: Bool {
         didSet { defaults.set(bellEnabled, forKey: Keys.bellEnabled) }
     }
@@ -543,6 +558,7 @@ final class TerminalBehaviorStore {
             Keys.runtimeEventJournalCapacity, Keys.runtimeOutputChunkLimit,
             Keys.runtimeCostThresholdsUSD, Keys.usageMonitoringEnabled,
             Keys.claudeStatusLineQuotaCaptureEnabled, Keys.usageQuotaWarningsEnabled,
+            Keys.regionalNumberFormat,
             Keys.bellEnabled, Keys.bellSound, Keys.bellVisual,
             Keys.bellRateLimitSeconds, Keys.dangerousCommandHighlightEnabled,
             Keys.dangerousCommandHighlightScope, Keys.dangerousCommandPatterns,

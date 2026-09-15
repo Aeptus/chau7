@@ -13,9 +13,12 @@ final class TabStatePersistenceStaticTests: XCTestCase {
     override func setUp() {
         super.setUp()
         ClaudeSessionResolver.clearCache()
+        OverlayTabsModel.resetRestoredResumeRejectionWarningsForTesting()
     }
 
     override func tearDown() {
+        Log.sink = nil
+        OverlayTabsModel.resetRestoredResumeRejectionWarningsForTesting()
         ClaudeSessionResolver.clearCache()
         super.tearDown()
     }
@@ -97,6 +100,46 @@ final class TabStatePersistenceStaticTests: XCTestCase {
         XCTAssertNil(sanitized[1].aiSessionId)
     }
 
+    func testSanitizePreservesProviderOnlyEvidenceForSafeRestoreResolution() {
+        let paneID = UUID().uuidString
+        let state = SavedTabState(
+            tabID: UUID().uuidString,
+            selectedTabID: nil,
+            customTitle: "Codex",
+            color: TabColor.blue.rawValue,
+            directory: "/tmp/toolhub-evolved",
+            selectedIndex: 0,
+            tokenOptOverride: nil,
+            scrollbackContent: nil,
+            aiResumeCommand: nil,
+            aiProvider: "codex",
+            aiSessionId: nil,
+            aiSessionIdSource: nil,
+            splitLayout: nil,
+            focusedPaneID: paneID,
+            paneStates: [
+                SavedTerminalPaneState(
+                    paneID: paneID,
+                    directory: "/tmp/toolhub-evolved",
+                    scrollbackContent: "Codex output",
+                    aiResumeCommand: nil,
+                    aiProvider: "codex",
+                    aiSessionId: nil,
+                    aiSessionIdSource: nil
+                )
+            ]
+        )
+
+        let sanitized = OverlayTabsModel.sanitizeRestoredAIResumeOwnership(states: [state])
+
+        XCTAssertEqual(sanitized.first?.aiProvider, "codex")
+        XCTAssertNil(sanitized.first?.aiSessionId)
+        XCTAssertNil(sanitized.first?.aiResumeCommand)
+        XCTAssertEqual(sanitized.first?.paneStates?.first?.aiProvider, "codex")
+        XCTAssertNil(sanitized.first?.paneStates?.first?.aiSessionId)
+        XCTAssertNil(sanitized.first?.paneStates?.first?.aiResumeCommand)
+    }
+
     func testSanitizeDropsClaudeSessionWithoutTranscript() throws {
         let home = try temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: home) }
@@ -118,6 +161,76 @@ final class TabStatePersistenceStaticTests: XCTestCase {
         XCTAssertNil(sanitized[0].aiProvider)
         XCTAssertNil(sanitized[0].aiSessionId)
         XCTAssertNil(sanitized[0].aiResumeCommand)
+    }
+
+    func testSanitizeRepairsCodexProviderForExactClaudeTranscript() throws {
+        let home = try temporaryDirectory()
+        let repoRoot = try temporaryDirectory()
+        defer {
+            try? FileManager.default.removeItem(at: home)
+            try? FileManager.default.removeItem(at: repoRoot)
+        }
+        let sessionID = "2e3688e0-668f-40e7-932a-caabfb415d4c"
+        try createClaudeTranscript(home: home, projectDirectory: repoRoot, sessionID: sessionID)
+        let states = [
+            makeTopLevelState(
+                tabID: UUID(),
+                directory: repoRoot.path,
+                aiProvider: "codex",
+                aiSessionId: sessionID,
+                aiResumeCommand: "codex resume \(sessionID)"
+            )
+        ]
+
+        let sanitized = OverlayTabsModel.sanitizeRestoredAIResumeOwnership(
+            states: states,
+            environment: ["CHAU7_HOME_ROOT": home.path]
+        )
+
+        XCTAssertEqual(sanitized[0].aiProvider, "claude")
+        XCTAssertEqual(sanitized[0].aiSessionId, sessionID)
+        XCTAssertEqual(sanitized[0].aiResumeCommand, "claude --resume \(sessionID)")
+    }
+
+    func testRejectedClaudeIdentityWarnsOnceAcrossRepeatedSanitization() throws {
+        let home = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let firstSessionID = UUID().uuidString.lowercased()
+        let secondSessionID = UUID().uuidString.lowercased()
+        var rejectionWarnings: [String] = []
+        Log.sink = { line in
+            if line.contains("dropping unrestorable Claude metadata") {
+                rejectionWarnings.append(line)
+            }
+        }
+
+        let firstState = makeTopLevelState(
+            tabID: UUID(),
+            aiProvider: "claude",
+            aiSessionId: firstSessionID,
+            aiResumeCommand: "claude --resume \(firstSessionID)"
+        )
+        for _ in 0 ..< 3 {
+            _ = OverlayTabsModel.sanitizeRestoredAIResumeOwnership(
+                states: [firstState],
+                environment: ["CHAU7_HOME_ROOT": home.path]
+            )
+        }
+
+        XCTAssertEqual(rejectionWarnings.count, 1)
+
+        let secondState = makeTopLevelState(
+            tabID: UUID(),
+            aiProvider: "claude",
+            aiSessionId: secondSessionID,
+            aiResumeCommand: "claude --resume \(secondSessionID)"
+        )
+        _ = OverlayTabsModel.sanitizeRestoredAIResumeOwnership(
+            states: [secondState],
+            environment: ["CHAU7_HOME_ROOT": home.path]
+        )
+
+        XCTAssertEqual(rejectionWarnings.count, 2, "distinct rejected identities should warn independently")
     }
 
     func testSanitizeFallsBackToClaudeAgentLaunchCommandWhenSavedSessionIsDead() throws {
@@ -232,6 +345,49 @@ final class TabStatePersistenceStaticTests: XCTestCase {
         )
 
         XCTAssertEqual(directory, repoRoot.path)
+    }
+
+    func testPersistenceSnapshotPrefersPaneFieldsOverStaleCommand() {
+        let paneState = SavedTerminalPaneState(
+            paneID: UUID().uuidString,
+            directory: "/tmp/aethyme",
+            scrollbackContent: nil,
+            aiResumeCommand: "claude --resume stale-claude-session",
+            aiProvider: "codex",
+            aiSessionId: "live-codex-session",
+            aiSessionIdSource: .observed
+        )
+
+        let resolved = OverlayTabsModel.resolveAIResumeMetadataForPersistenceSnapshot(
+            paneState: paneState,
+            fallbackAIProvider: nil,
+            fallbackAISessionId: nil
+        )
+
+        XCTAssertEqual(resolved?.provider, "codex")
+        XCTAssertEqual(resolved?.sessionId, "live-codex-session")
+        XCTAssertEqual(resolved?.sessionIdSource, .observed)
+    }
+
+    func testPersistenceSnapshotFallsBackToSafeCommandWithoutDiskValidation() {
+        let paneState = SavedTerminalPaneState(
+            paneID: UUID().uuidString,
+            directory: "/path/that/does/not/exist",
+            scrollbackContent: nil,
+            aiResumeCommand: "claude --resume retained-session",
+            aiProvider: nil,
+            aiSessionId: nil
+        )
+
+        let resolved = OverlayTabsModel.resolveAIResumeMetadataForPersistenceSnapshot(
+            paneState: paneState,
+            fallbackAIProvider: nil,
+            fallbackAISessionId: nil
+        )
+
+        XCTAssertEqual(resolved?.provider, "claude")
+        XCTAssertEqual(resolved?.sessionId, "retained-session")
+        XCTAssertEqual(resolved?.sessionIdSource, .explicit)
     }
 
     func testSanitizeDropsClaudeSessionFromForeignProject() throws {
@@ -370,6 +526,7 @@ final class TabStatePersistenceStaticTests: XCTestCase {
 
     private func makeTopLevelState(
         tabID: UUID,
+        directory: String = "/tmp",
         aiProvider: String?,
         aiSessionId: String?,
         aiResumeCommand: String?
@@ -379,7 +536,7 @@ final class TabStatePersistenceStaticTests: XCTestCase {
             selectedTabID: nil,
             customTitle: "Tab",
             color: TabColor.blue.rawValue,
-            directory: "/tmp",
+            directory: directory,
             selectedIndex: nil,
             tokenOptOverride: nil,
             scrollbackContent: nil,

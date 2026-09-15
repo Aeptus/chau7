@@ -403,6 +403,9 @@ final class CommandPaletteProvider {
             PaletteCommand(title: L("commandPalette.command.newTab", "New Tab"), shortcut: "⌘T", category: .file, icon: "plus.square") {
                 delegate.newTab()
             },
+            PaletteCommand(title: L("commandPalette.command.openLocation", "Open Location..."), shortcut: nil, category: .file, icon: "folder.badge.plus") {
+                delegate.openLocation()
+            },
             PaletteCommand(title: L("commandPalette.command.closeTab", "Close Tab"), shortcut: "⌘W", category: .file, icon: "xmark.square") {
                 delegate.closeTab()
             },
@@ -467,6 +470,9 @@ final class CommandPaletteProvider {
             PaletteCommand(title: L("commandPalette.command.toggleFullScreen", "Toggle Full Screen"), shortcut: "⌃⌘F", category: .view, icon: "arrow.up.left.and.arrow.down.right") {
                 delegate.toggleFullScreen()
             },
+            PaletteCommand(title: L("commandPalette.command.dataExplorer", "Data Explorer"), shortcut: "⇧⌘D", category: .view, icon: "tablecells") {
+                DataExplorerWindow.shared.show()
+            },
             PaletteCommand(title: L("commandPalette.command.zoomIn", "Zoom In"), shortcut: "⌘=", category: .view, icon: "plus.magnifyingglass") {
                 delegate.zoomIn()
             },
@@ -481,13 +487,25 @@ final class CommandPaletteProvider {
             PaletteCommand(title: L("commandPalette.command.openTextEditor", "Open Text Editor"), shortcut: "⌥⌘E", category: .terminal, icon: "doc.text") {
                 delegate.openTextEditorPane()
             },
-            PaletteCommand(title: L("commandPalette.command.appendSelectionToEditor", "Append Selection to Editor"), shortcut: "⇧⌘E", category: .terminal, icon: "text.append") {
+            PaletteCommand(title: L("commandPalette.command.openFilePreview", "Open File Preview"), shortcut: "⌥⌘O", category: .terminal, icon: "doc.viewfinder") {
+                delegate.openFilePreviewPane()
+            },
+            PaletteCommand(title: L("commandPalette.command.openDiffViewer", "Open Diff Viewer"), shortcut: "⇧⌥⌘D", category: .terminal, icon: "doc.text.magnifyingglass") {
+                delegate.openDiffViewerPane()
+            },
+            PaletteCommand(title: L("commandPalette.command.repositoryPane", "Repository Pane"), shortcut: "⌥⌘B", category: .terminal, icon: "folder.badge.gearshape") {
+                delegate.openRepositoryPane()
+            },
+            PaletteCommand(title: L("commandPalette.command.appendSelectionToEditor", "Append Selection to Editor"), shortcut: "⇧⌥⌘E", category: .terminal, icon: "text.append") {
                 delegate.appendSelectionToEditor()
             },
-            PaletteCommand(title: L("commandPalette.command.splitHorizontal", "Split Horizontal"), shortcut: "⌘D", category: .terminal, icon: "rectangle.split.1x2") {
+            PaletteCommand(title: L("commandPalette.command.agentDashboard", "Agent Dashboard"), shortcut: "⌃⌘G", category: .terminal, icon: "rectangle.3.group") {
+                delegate.toggleDashboard()
+            },
+            PaletteCommand(title: L("commandPalette.command.splitHorizontal", "Split Horizontally"), shortcut: "⌘D", category: .terminal, icon: "rectangle.split.1x2") {
                 delegate.splitHorizontally()
             },
-            PaletteCommand(title: L("commandPalette.command.splitVertical", "Split Vertical"), shortcut: "⇧⌘D", category: .terminal, icon: "rectangle.split.2x1") {
+            PaletteCommand(title: L("commandPalette.command.splitVertical", "Split Vertically"), shortcut: "⌥⌘D", category: .terminal, icon: "rectangle.split.2x1") {
                 delegate.splitVertically()
             },
             PaletteCommand(title: L("commandPalette.command.closePane", "Close Pane"), shortcut: "⌃⌘W", category: .terminal, icon: "xmark.rectangle") {
@@ -502,7 +520,7 @@ final class CommandPaletteProvider {
             PaletteCommand(title: L("commandPalette.command.clearScreen", "Clear Screen"), shortcut: "⌘K", category: .terminal, icon: "clear") {
                 delegate.clearScreen()
             },
-            PaletteCommand(title: L("commandPalette.command.clearScrollback", "Clear Scrollback"), shortcut: "⇧⌘K", category: .terminal, icon: "clear.fill") {
+            PaletteCommand(title: L("commandPalette.command.clearScrollback", "Clear Scrollback"), shortcut: "⌥⌘K", category: .terminal, icon: "clear.fill") {
                 delegate.clearScrollback()
             },
             PaletteCommand(
@@ -525,6 +543,9 @@ final class CommandPaletteProvider {
             PaletteCommand(title: L("commandPalette.command.nextInputLine", "Next Input Line"), shortcut: "⌘↓", category: .terminal, icon: "arrow.down.to.line") {
                 delegate.scrollToNextInputLine()
             },
+            PaletteCommand(title: L("commandPalette.command.showChangedFiles", "Show Changed Files"), shortcut: "⌥⌘G", category: .terminal, icon: "doc.text.image") {
+                delegate.showChangedFiles()
+            },
 
             // Tab commands
             PaletteCommand(title: L("commandPalette.command.showNextTab", "Show Next Tab"), shortcut: "⇧⌘]", category: .tabs, icon: "arrow.right.square") {
@@ -539,11 +560,14 @@ final class CommandPaletteProvider {
             PaletteCommand(title: L("commandPalette.command.moveTabLeft", "Move Tab Left"), shortcut: "⇧⌥⌘[", category: .tabs, icon: "arrow.left.to.line") {
                 delegate.moveTabLeft()
             },
-            PaletteCommand(title: L("commandPalette.command.renameTab", "Rename Tab..."), shortcut: "⇧⌘R", category: .tabs, icon: "pencil") {
+            PaletteCommand(title: L("commandPalette.command.renameTab", "Rename Tab..."), shortcut: "⌥⌘R", category: .tabs, icon: "pencil") {
                 delegate.beginRenameTab()
             },
             PaletteCommand(title: L("commandPalette.command.forceRefreshTab", "Force Refresh Tab"), shortcut: nil, category: .tabs, icon: "arrow.clockwise") {
                 delegate.forceRefreshTab()
+            },
+            PaletteCommand(title: L("commandPalette.command.refreshTabBar", "Refresh Tab Bar"), shortcut: "⇧⌥⌘R", category: .tabs, icon: "arrow.clockwise.circle") {
+                delegate.refreshTabBar()
             },
             PaletteCommand(title: L("commandPalette.command.selectTab1", "Select Tab 1"), shortcut: "⌘1", category: .tabs, icon: "1.circle") {
                 delegate.selectTab(number: 1)
@@ -577,8 +601,17 @@ final class CommandPaletteProvider {
             PaletteCommand(title: L("commandPalette.command.settings", "Settings..."), shortcut: "⌘,", category: .window, icon: "gear") {
                 delegate.showSettings()
             },
-            PaletteCommand(title: L("commandPalette.command.debugConsole", "Debug Console"), shortcut: "⇧⌘L", category: .window, icon: "terminal") {
-                DebugConsoleController.shared.toggle()
+            PaletteCommand(title: L("debug.surface.diagnostics.title", "Diagnostics"), shortcut: nil, category: .window, icon: "stethoscope") {
+                DebugConsoleController.shared.show(surface: .diagnostics)
+            },
+            PaletteCommand(title: L("debug.surface.usage.title", "Usage Monitor"), shortcut: nil, category: .window, icon: "chart.line.uptrend.xyaxis") {
+                DebugConsoleController.shared.show(surface: .usageMonitor)
+            },
+            PaletteCommand(title: L("debug.surface.runtime.title", "Runtime Inspector"), shortcut: nil, category: .window, icon: "scope") {
+                DebugConsoleController.shared.show(surface: .runtimeInspector)
+            },
+            PaletteCommand(title: L("commandPalette.command.debugConsole", "Debug Console"), shortcut: "⌥⌘L", category: .window, icon: "terminal") {
+                DebugConsoleController.shared.toggle(surface: .all)
             },
             PaletteCommand(title: L("commandPalette.command.sshConnections", "SSH Connections..."), shortcut: "⇧⌘O", category: .window, icon: "server.rack") {
                 delegate.showSSHManager()
@@ -588,13 +621,22 @@ final class CommandPaletteProvider {
             },
 
             // Help commands
+            PaletteCommand(title: L("commandPalette.command.welcome", "Welcome to Chau7"), shortcut: nil, category: .help, icon: "sparkles") {
+                delegate.showWelcomeFromMenu()
+            },
             PaletteCommand(title: L("commandPalette.command.about", "About Chau7"), shortcut: nil, category: .help, icon: "info.circle") {
                 delegate.showAbout()
             },
-            PaletteCommand(title: L("commandPalette.command.documentation", "Documentation"), shortcut: nil, category: .help, icon: "book") {
+            PaletteCommand(title: L("commandPalette.command.documentation", "Chau7 Help"), shortcut: nil, category: .help, icon: "book") {
                 delegate.showHelp()
             },
-            PaletteCommand(title: L("commandPalette.command.reportIssue", "Report Issue"), shortcut: nil, category: .help, icon: "exclamationmark.bubble") {
+            PaletteCommand(title: L("commandPalette.command.releaseNotes", "Release Notes..."), shortcut: nil, category: .help, icon: "newspaper") {
+                delegate.showReleaseNotes()
+            },
+            PaletteCommand(title: L("commandPalette.command.technologyLicenses", "Technology, Licenses & Acknowledgments"), shortcut: nil, category: .help, icon: "shippingbox") {
+                delegate.showTechnologyLicenses()
+            },
+            PaletteCommand(title: L("commandPalette.command.reportIssue", "Report Issue..."), shortcut: "⌥⌘I", category: .help, icon: "exclamationmark.bubble") {
                 delegate.reportIssue()
             }
         ]

@@ -180,25 +180,23 @@ public struct TaskStatusIndicator: View {
     let candidate: TaskCandidate?
 
     public var body: some View {
-        Group {
-            if let candidate = candidate {
-                // Pending candidate
-                Circle()
-                    .fill(Color.orange)
-                    .frame(width: 8, height: 8)
-                    .overlay(
-                        Circle()
-                            .stroke(Color.orange.opacity(0.5), lineWidth: 2)
-                            .scaleEffect(1.5)
-                    )
-                    .help(String(format: L("task.candidate.help", "New task: %@"), candidate.suggestedName))
-            } else if let task = task, task.state == .active {
-                // Active task
-                Circle()
-                    .fill(Color.accentColor)
-                    .frame(width: 8, height: 8)
-                    .help(String(format: L("task.active.help", "Task: %@"), task.name))
-            }
+        if let candidate = candidate {
+            // Pending candidate
+            Circle()
+                .fill(Color.orange)
+                .frame(width: 8, height: 8)
+                .overlay(
+                    Circle()
+                        .stroke(Color.orange.opacity(0.5), lineWidth: 2)
+                        .scaleEffect(1.5)
+                )
+                .help(String(format: L("task.candidate.help", "New task: %@"), candidate.suggestedName))
+        } else if let task = task, task.state == .active {
+            // Active task
+            Circle()
+                .fill(Color.accentColor)
+                .frame(width: 8, height: 8)
+                .help(String(format: L("task.active.help", "Task: %@"), task.name))
         }
     }
 }

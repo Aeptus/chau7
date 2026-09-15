@@ -118,10 +118,16 @@ final class TelemetryQueryServiceTests: XCTestCase {
         """.write(to: historyPath, atomically: true, encoding: .utf8)
 
         setenv("CHAU7_HOME_ROOT", homeRoot.path, 1)
+        // Point the shared telemetry store at the temp home so this test's runs
+        // stay isolated, and — critically — restore it to the real home before
+        // the temp directory is deleted, so the pinned singleton connection is
+        // never left dangling for later tests (see reopenForTesting docs).
+        TelemetryStore.shared.reopenForTesting()
         defer {
-            unsetenv("CHAU7_HOME_ROOT")
-            try? FileManager.default.removeItem(at: homeRoot)
             TelemetryRecorder.shared.runEnded(tabID: tabID, exitStatus: 0)
+            unsetenv("CHAU7_HOME_ROOT")
+            TelemetryStore.shared.reopenForTesting()
+            try? FileManager.default.removeItem(at: homeRoot)
         }
 
         TelemetryRecorder.shared.runStarted(

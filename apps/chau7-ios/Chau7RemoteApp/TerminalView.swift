@@ -7,22 +7,30 @@ import SwiftUI
 struct TerminalView: View {
     var client: RemoteClient
     @Binding var isPairingPresented: Bool
+    /// Opens the connection settings tab; invoked on a long-press of the
+    /// connection status symbol in the tabs bar.
+    var onOpenConnectionSettings: () -> Void = {}
 
     @AppStorage(AppSettings.holdToSendKey) private var holdToSend = AppSettings.holdToSendDefault
-    @AppStorage(AppSettings.appendNewlineKey) private var appendNewline = AppSettings.appendNewlineDefault
     @AppStorage(AppSettings.renderANSIKey) private var renderANSI = AppSettings.renderANSIDefault
     @AppStorage(AppSettings.experimentalTerminalRendererKey)
     private var experimentalTerminalRenderer = AppSettings.experimentalTerminalRendererDefault
     @AppStorage(AppSettings.showKeyboardBarKey) private var showKeyboardBar = AppSettings.showKeyboardBarDefault
     @AppStorage(AppSettings.terminalFontSizeKey) private var terminalFontSize = AppSettings.terminalFontSizeDefault
+    @AppStorage(AppSettings.colorSchemeNameKey) private var colorSchemeName = AppSettings.colorSchemeNameDefault
 
     @State private var inputText = ""
+    /// The user hid an auto-surfaced key row for the current waiting episode.
+    /// Reset when the active tab's need signal rises again, so the row
+    /// re-appears for the NEXT menu without permanently re-pinning itself.
+    @State private var autoKeysDismissed = false
     @State private var sendCount = 0
     @State private var justSent = false
     @State private var pendingProtectedSend: ProtectedRemoteSend?
     @State private var textAwayFromBottom = false
     @State private var scrollToBottomToken = 0
     @State private var isErrorExpanded = false
+    @FocusState private var inputFocused: Bool
 
     var body: some View {
         NavigationStack {
@@ -34,14 +42,6 @@ struct TerminalView: View {
                 }
             }
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .principal) {
-                    connectionStatusHeader
-                }
-                ToolbarItem(placement: .topBarTrailing) {
-                    connectButton
-                }
-            }
         }
         .alert("Protected Remote Action", isPresented: protectedSendBinding) {
             Button("Cancel", role: .cancel) {
@@ -56,7 +56,7 @@ struct TerminalView: View {
                     text: pendingProtectedSend.text,
                     flaggedAction: pendingProtectedSend.flaggedAction
                 )
-                if client.sendInput(pendingProtectedSend.text, appendNewline: appendNewline) {
+                if client.sendInput(pendingProtectedSend.text, appendNewline: true) {
                     inputText = ""
                     markSent()
                     self.pendingProtectedSend = nil
@@ -75,30 +75,71 @@ struct TerminalView: View {
             statusBar
             tabsBar
             outputView
-            if showsKeyboardBar {
-                keyboardBar
+            // One in-flow key row, keyboard up or down. It deliberately does
+            // NOT use a keyboard-accessory toolbar: the system accessory
+            // rendered over the input bar and fought keyboard avoidance,
+            // while an in-flow row always sits cleanly above the input.
+            if showsPinnedControlKeys {
+                controlKeyRow
             }
             inputBar
+        }
+        // The row also appears without a user gesture (auto-surface when the
+        // active tab waits on a menu), so animate on the resolved value rather
+        // than relying on the toggle button's withAnimation.
+        .animation(.easeInOut(duration: 0.15), value: showsPinnedControlKeys)
+        .onChange(of: client.activeTabNeedsMenuKeys) { _, needed in
+            if needed { autoKeysDismissed = false }
         }
     }
 
     // MARK: - Status
 
-    /// Live connection status shown in the navigation bar in place of the app
-    /// name (a coloured dot + a human-readable phase label).
-    private var connectionStatusHeader: some View {
-        HStack(spacing: 6) {
-            Circle()
-                .fill(client.connectionPhase.color)
-                .frame(width: 8, height: 8)
-                .accessibilityHidden(true)
-            Text(client.connectionDisplayLabel)
-                .font(.subheadline.weight(.semibold))
-                .lineLimit(1)
-                .truncationMode(.tail)
+    /// Compact, tappable connection indicator that sits at the start of the
+    /// tabs bar. Tap toggles connect/disconnect; long-press opens connection
+    /// settings. Replaces the old full-width status header + connect button.
+    private var connectionStatusSymbol: some View {
+        ConnectionStatusSymbol(phase: client.connectionPhase)
+            .frame(width: 34, height: 34)
+            .contentShape(Rectangle())
+            .onTapGesture { toggleConnection() }
+            .onLongPressGesture { onOpenConnectionSettings() }
+            .disabled(!canToggleConnection)
+            .accessibilityLabel(connectionAccessibilityLabel)
+            .accessibilityHint("Touch and hold to open connection settings.")
+            .accessibilityAddTraits(.isButton)
+    }
+
+    /// Whether the symbol tap can do anything right now. Mirrors the old
+    /// connect button guard: never attempt connect without pairing info.
+    private var canToggleConnection: Bool {
+        switch client.connectionPhase {
+        case .connected, .connecting:
+            return true
+        case .disconnected, .warning:
+            return client.pairingInfo != nil
         }
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("Connection status: \(client.connectionDisplayLabel)")
+    }
+
+    private func toggleConnection() {
+        switch client.connectionPhase {
+        case .connected, .connecting:
+            client.disconnect()
+        case .disconnected, .warning:
+            guard client.pairingInfo != nil else { return }
+            client.connect()
+        }
+    }
+
+    private var connectionAccessibilityLabel: String {
+        switch client.connectionPhase {
+        case .connected:
+            return "Connected. Double-tap to disconnect."
+        case .connecting:
+            return "Connecting. Double-tap to stop."
+        case .warning, .disconnected:
+            return "Disconnected. Double-tap to connect."
+        }
     }
 
     /// Only surfaces when there's a connection error to report — the live status
@@ -161,39 +202,34 @@ struct TerminalView: View {
         }
     }
 
-    private var connectButton: some View {
-        Button(client.isConnected ? "Disconnect" : "Connect") {
-            if client.isConnected {
-                client.disconnect()
-            } else {
-                client.connect()
-            }
-        }
-        .disabled(client.pairingInfo == nil && !client.isConnected)
-    }
-
     // MARK: - Tabs
 
     private var tabsBar: some View {
         HStack(spacing: 10) {
+            connectionStatusSymbol
+
             Menu {
-                if client.tabs.isEmpty {
-                    Text("No remote tabs available yet")
+                let groups = repoTabGroups
+                if groups.isEmpty {
+                    switch client.tabInventoryState {
+                    case .syncing:
+                        Text("Syncing remote tabs…")
+                    case .ready:
+                        Text("No remote tabs available")
+                    case .unavailable:
+                        Text("Remote tabs unavailable")
+                    }
+                } else if groups.count == 1 {
+                    // A single group's header (often just "Other") is noise —
+                    // keep the flat list.
+                    tabMenuButtons(for: groups[0].tabs)
                 } else {
-                    ForEach(client.tabs) { tab in
-                        Button {
-                            DiagnosticsLog.shared.info(.tab, "Selected remote tab", [
-                                "tab_id": String(tab.tabID),
-                                "title": tab.title
-                            ])
-                            client.switchTab(tab.tabID)
-                        } label: {
-                            Label {
-                                Text(tabMenuTitle(for: tab))
-                                    .lineLimit(1)
-                            } icon: {
-                                tabMenuIcon(for: tab)
-                            }
+                    // Repo names render as section titles — the system menu
+                    // styles them smaller and secondary, visually distinct
+                    // from the tab entries beneath them.
+                    ForEach(groups) { group in
+                        Section(group.title) {
+                            tabMenuButtons(for: group.tabs)
                         }
                     }
                 }
@@ -242,6 +278,61 @@ struct TerminalView: View {
         .background(Color(UIColor.systemBackground))
     }
 
+    private struct RepoTabGroup: Identifiable {
+        let id: String
+        let title: String
+        let tabs: [RemoteTab]
+    }
+
+    /// Tabs grouped by repo (projectName) and alphabetized within each group.
+    /// Tabs without a repo collect under "Other", always last.
+    ///
+    /// Groups are ordered by name rather than by first appearance in
+    /// `client.tabs`. `RemoteClient` suppresses duplicate/reorder-only wire
+    /// snapshots; sorting both levels here gives the rendered menu a stable
+    /// identity sequence while still reflecting real metadata and membership
+    /// changes.
+    private var repoTabGroups: [RepoTabGroup] {
+        let fallback = "Other"
+        var tabsByRepo: [String: [RemoteTab]] = [:]
+        for tab in client.tabs {
+            let name = tab.projectName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            tabsByRepo[name.isEmpty ? fallback : name, default: []].append(tab)
+        }
+        let order = tabsByRepo.keys.sorted { lhs, rhs in
+            // "Other" is a catch-all, not a repo — it sorts last regardless.
+            if lhs == fallback { return false }
+            if rhs == fallback { return true }
+            return lhs.localizedCaseInsensitiveCompare(rhs) == .orderedAscending
+        }
+        return order.map {
+            RepoTabGroup(
+                id: $0,
+                title: $0,
+                tabs: RemoteTabOrdering.alphabetically(tabsByRepo[$0] ?? [])
+            )
+        }
+    }
+
+    private func tabMenuButtons(for tabs: [RemoteTab]) -> some View {
+        ForEach(tabs) { tab in
+            Button {
+                DiagnosticsLog.shared.info(.tab, "Selected remote tab", [
+                    "tab_id": String(tab.tabID),
+                    "title": tab.title
+                ])
+                client.switchTab(tab.tabID)
+            } label: {
+                Label {
+                    Text(tabMenuTitle(for: tab))
+                        .lineLimit(1)
+                } icon: {
+                    tabMenuIcon(for: tab)
+                }
+            }
+        }
+    }
+
     @ViewBuilder
     private func tabMenuIcon(for tab: RemoteTab) -> some View {
         if tab.tabID == client.activeTabID {
@@ -271,6 +362,7 @@ struct TerminalView: View {
                 RemoteTerminalTextView(
                     text: renderANSI ? client.outputText : client.strippedOutputText,
                     fontSize: CGFloat(terminalFontSize),
+                    colorScheme: AppSettings.colorScheme(named: colorSchemeName),
                     isAwayFromBottom: $textAwayFromBottom,
                     scrollToBottomToken: scrollToBottomToken
                 )
@@ -284,14 +376,14 @@ struct TerminalView: View {
             }
         }
         .overlay(alignment: .bottomTrailing) {
-            if isAwayFromBottom {
+            if !experimentalTerminalRenderer, textAwayFromBottom {
                 jumpToLatestButton
                     .padding(.trailing, 14)
                     .padding(.bottom, 14)
                     .transition(.scale.combined(with: .opacity))
             }
         }
-        .animation(.easeInOut(duration: 0.2), value: isAwayFromBottom)
+        .animation(.easeInOut(duration: 0.2), value: textAwayFromBottom)
         .animation(.easeInOut(duration: 0.2), value: justSent)
     }
 
@@ -317,30 +409,52 @@ struct TerminalView: View {
             .accessibilityHidden(true)
     }
 
-    // MARK: - Keyboard Bar
+    // MARK: - Control Keys
 
-    private var showsKeyboardBar: Bool {
-        showKeyboardBar && client.canSendInput
+    /// The pinned fixed row shows when the user opted in via the toggle OR the
+    /// active tab is waiting on a menu/input (auto-surface — the signal only
+    /// ever adds visibility), AND the keyboard is down — otherwise the
+    /// accessory bar covers typing.
+    /// Visible when pinned by the user OR auto-surfaced because the active
+    /// tab waits on a menu (unless the user dismissed it for this episode).
+    /// The keyboard button is authoritative: it always toggles this off/on.
+    private var showsPinnedControlKeys: Bool {
+        controlKeyRowRequested && client.canSendInput
     }
 
-    private var keyboardBar: some View {
+    private var controlKeyRowRequested: Bool {
+        showKeyboardBar || (client.activeTabNeedsMenuKeys && !autoKeysDismissed)
+    }
+
+    /// Horizontally scrolling row of terminal control keys, shown as one
+    /// in-flow row above the input bar. The `maxWidth: .infinity` lets the
+    /// ScrollView span the
+    /// full width when hosted inside `ToolbarItemGroup(placement: .keyboard)`,
+    /// which otherwise collapses it to its intrinsic (content) width.
+    private var controlKeyRow: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 0) {
-                TermKey("esc", labelText: "Escape", send: "\u{1B}", client: client)
-                TermKey("tab", labelText: "Tab", send: "\t", client: client)
-                TermKey("^C", labelText: "Control C", send: "\u{03}", client: client)
-                TermKey("^D", labelText: "Control D", send: "\u{04}", client: client)
-                TermKey("^Z", labelText: "Control Z", send: "\u{1A}", client: client)
-                TermKey("^L", labelText: "Control L", send: "\u{0C}", client: client)
+                TermKey("esc", labelText: "Escape", send: "\u{1B}", semantic: .init(key: "escape"), client: client)
+                // Bare CR with no body takes the Mac's `.enterKey` submit path
+                // with zero delay — it behaves like a real Enter keypress, which
+                // is what TUI selection menus need to confirm a highlighted row.
+                TermKey("\u{23CE}", labelText: "Return", send: "\r", semantic: .init(key: "enter"), client: client)
+                TermKey("tab", labelText: "Tab", send: "\t", semantic: .init(key: "tab"), client: client)
+                TermKey("\u{21E7}\u{21E5}", labelText: "Shift Tab", send: "\u{1B}[Z", semantic: .init(key: "tab", modifiers: ["shift"]), client: client)
+                TermKey("^C", labelText: "Control C", send: "\u{03}", semantic: .init(key: "c", modifiers: ["control"]), client: client)
+                TermKey("^D", labelText: "Control D", send: "\u{04}", semantic: .init(key: "d", modifiers: ["control"]), client: client)
+                TermKey("^Z", labelText: "Control Z", send: "\u{1A}", semantic: .init(key: "z", modifiers: ["control"]), client: client)
+                TermKey("^L", labelText: "Control L", send: "\u{0C}", semantic: .init(key: "l", modifiers: ["control"]), client: client)
                 Divider().frame(height: 24).padding(.horizontal, 4)
-                TermKey("\u{2191}", labelText: "Up arrow", send: "\u{1B}[A", client: client)
-                TermKey("\u{2193}", labelText: "Down arrow", send: "\u{1B}[B", client: client)
-                TermKey("\u{2190}", labelText: "Left arrow", send: "\u{1B}[D", client: client)
-                TermKey("\u{2192}", labelText: "Right arrow", send: "\u{1B}[C", client: client)
+                TermKey("\u{2191}", labelText: "Up arrow", send: "\u{1B}[A", semantic: .init(key: "up"), client: client)
+                TermKey("\u{2193}", labelText: "Down arrow", send: "\u{1B}[B", semantic: .init(key: "down"), client: client)
+                TermKey("\u{2190}", labelText: "Left arrow", send: "\u{1B}[D", semantic: .init(key: "left"), client: client)
+                TermKey("\u{2192}", labelText: "Right arrow", send: "\u{1B}[C", semantic: .init(key: "right"), client: client)
             }
             .padding(.horizontal, 8)
             .padding(.vertical, 4)
         }
+        .frame(maxWidth: .infinity)
         .background(Color(UIColor.tertiarySystemBackground))
     }
 
@@ -349,20 +463,21 @@ struct TerminalView: View {
     private var inputBar: some View {
         HStack(spacing: 8) {
             Button {
-                withAnimation(.easeInOut(duration: 0.15)) { showKeyboardBar.toggle() }
+                withAnimation(.easeInOut(duration: 0.15)) { toggleControlKeyRow() }
             } label: {
-                Image(systemName: showKeyboardBar ? "keyboard.chevron.compact.down" : "keyboard")
+                Image(systemName: controlKeyRowRequested ? "keyboard.chevron.compact.down" : "keyboard")
                     .font(.title3)
                     .frame(width: 32, height: 32)
             }
             .disabled(!client.canSendInput)
-            .accessibilityLabel(showKeyboardBar ? "Hide control keys" : "Show control keys")
+            .accessibilityLabel(controlKeyRowRequested ? "Hide control keys" : "Show control keys")
 
             TextField("Input", text: $inputText, axis: .vertical)
                 .font(.system(.body, design: .monospaced))
                 .lineLimit(1...4)
                 .textFieldStyle(.roundedBorder)
                 .submitLabel(.send)
+                .focused($inputFocused)
                 .onSubmit { if !holdToSend { submitInput(trigger: "submit_label") } }
                 .onChange(of: inputText) { oldValue, newValue in
                     handleInputChange(from: oldValue, to: newValue)
@@ -373,6 +488,18 @@ struct TerminalView: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
         .background(Color(UIColor.secondarySystemBackground))
+    }
+
+    /// Hide always wins over any reason the row is visible: hiding an
+    /// auto-surfaced row dismisses it for this waiting episode (it returns
+    /// for the next menu); hiding a pinned row unpins it. Showing pins it.
+    private func toggleControlKeyRow() {
+        if controlKeyRowRequested {
+            showKeyboardBar = false
+            autoKeysDismissed = true
+        } else {
+            showKeyboardBar = true
+        }
     }
 
     @ViewBuilder
@@ -449,7 +576,26 @@ struct TerminalView: View {
             return
         }
 
-        guard client.sendInput(text, appendNewline: appendNewline) else {
+        // A digit answering an on-screen selection menu acts on the keypress
+        // itself; the terminator would arrive as a separate delayed Enter and
+        // land on whatever the TUI renders next. Drop it for those sends.
+        let suppressTerminator = RemoteMenuKeyHeuristics.shouldSuppressSubmitTerminator(
+            text: text,
+            hasPendingPromptForActiveTab: client.pendingInteractivePrompts
+                .contains { $0.tabID == client.activeTabID }
+        )
+        if suppressTerminator {
+            DiagnosticsLog.shared.info(.input, "Submit terminator suppressed for menu digit", [
+                "trigger": trigger,
+                "tab_id": String(client.activeTabID)
+            ])
+        }
+
+        // Send always submits. The old "Append Newline" toggle could silently
+        // turn every send into an inert text drop (body lands in the
+        // composer, nothing executes) — a footgun, not a feature. The only
+        // terminator suppression left is the deliberate menu-digit case.
+        guard client.sendInput(text, appendNewline: !suppressTerminator) else {
             DiagnosticsLog.shared.error(.input, "Submit blocked", [
                 "trigger": trigger,
                 "reason": client.lastError ?? "unknown"
@@ -472,28 +618,13 @@ struct TerminalView: View {
     }
 
     private func jumpToLatest() {
-        if showsGridRenderer {
-            client.terminalRenderer.scrollActive(to: 0)
-        } else {
-            scrollToBottomToken += 1
-        }
-    }
-
-    private var showsGridRenderer: Bool {
-        experimentalTerminalRenderer
-            && client.terminalRenderer.isAvailable
-            && client.terminalRenderer.renderState != nil
-    }
-
-    private var isAwayFromBottom: Bool {
-        if showsGridRenderer {
-            return (client.terminalRenderer.renderState?.displayOffset ?? 0) > 0
-        }
-        return textAwayFromBottom
+        scrollToBottomToken += 1
     }
 
     private var activeTabMenuLabel: String {
-        guard let activeTab else { return "No remote tabs" }
+        guard let activeTab else {
+            return client.tabInventoryState == .syncing ? "Syncing tabs…" : "No remote tabs"
+        }
         return activeTab.title
     }
 
@@ -665,13 +796,26 @@ struct TermKey: View {
     let label: String
     let accessibilityName: String
     let sequence: String
+    /// Semantic identity of the key (TerminalKeyPress vocabulary). When set
+    /// and the Mac advertises key_input, the press goes over the KEY_INPUT
+    /// frame so the Mac's encoder resolves application-cursor mode and
+    /// control combos; otherwise the raw `sequence` rides .input as before,
+    /// which works against every Mac.
+    let semanticKey: RemoteKeyInputPayload.Key?
     let client: RemoteClient
     @State private var tapCount = 0
 
-    init(_ label: String, labelText: String, send sequence: String, client: RemoteClient) {
+    init(
+        _ label: String,
+        labelText: String,
+        send sequence: String,
+        semantic semanticKey: RemoteKeyInputPayload.Key? = nil,
+        client: RemoteClient
+    ) {
         self.label = label
         self.accessibilityName = labelText
         self.sequence = sequence
+        self.semanticKey = semanticKey
         self.client = client
     }
 
@@ -679,7 +823,12 @@ struct TermKey: View {
         Button {
             tapCount += 1
             DiagnosticsLog.shared.keystroke(label, field: "key_bar", extra: ["op": "control_key"])
-            let sent = client.sendInput(sequence, appendNewline: false)
+            let sent: Bool
+            if let semanticKey, client.supportsKeyInput {
+                sent = client.sendKeyInput([semanticKey])
+            } else {
+                sent = client.sendInput(sequence, appendNewline: false)
+            }
             if !sent {
                 DiagnosticsLog.shared.error(.input, "Control key blocked", [
                     "key": label,
@@ -707,4 +856,58 @@ private struct ProtectedRemoteSend: Identifiable {
     let text: String
     let flaggedAction: String
     let message: String
+}
+
+// MARK: - Connection Status Symbol
+
+/// Compact connection indicator with three visual states driven by
+/// `RemoteClient.ConnectionPhase`:
+/// - `.connected` → green check
+/// - `.connecting` → three orange bouncing dots
+/// - `.warning` / `.disconnected` → red cross
+private struct ConnectionStatusSymbol: View {
+    let phase: RemoteClient.ConnectionPhase
+
+    var body: some View {
+        switch phase {
+        case .connected:
+            Image(systemName: "checkmark.circle.fill")
+                .font(.headline)
+                .foregroundStyle(.green)
+        case .connecting:
+            BouncingDots()
+        case .warning, .disconnected:
+            Image(systemName: "xmark.circle.fill")
+                .font(.headline)
+                .foregroundStyle(.red)
+        }
+    }
+}
+
+/// Three small orange dots that bounce vertically in sequence, phased by index,
+/// to signal an in-progress connection. Sized to fit a toolbar/line height.
+private struct BouncingDots: View {
+    @State private var animating = false
+
+    private let dotSize: CGFloat = 5
+    private let bounce: CGFloat = 4
+
+    var body: some View {
+        HStack(spacing: 3) {
+            ForEach(0..<3, id: \.self) { index in
+                Circle()
+                    .fill(.orange)
+                    .frame(width: dotSize, height: dotSize)
+                    .offset(y: animating ? -bounce : bounce)
+                    .animation(
+                        .easeInOut(duration: 0.4)
+                            .repeatForever(autoreverses: true)
+                            .delay(Double(index) * 0.15),
+                        value: animating
+                    )
+            }
+        }
+        .onAppear { animating = true }
+        .accessibilityHidden(true)
+    }
 }

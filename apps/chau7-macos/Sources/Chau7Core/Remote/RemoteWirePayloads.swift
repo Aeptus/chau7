@@ -148,6 +148,20 @@ public enum RemoteClientStreamMode: String, Codable, Equatable, Sendable {
     case approvalsOnly = "approvals_only"
 }
 
+/// The terminal representation the remote client wants the Mac to stream.
+///
+/// Optional on the wire for rolling compatibility: a Mac receiving client
+/// state from an older iOS build treats a missing value as the legacy behavior
+/// (text output plus server-rendered grid snapshots).
+public enum RemoteTerminalPresentation: String, Codable, Equatable, Sendable {
+    /// Plain text/ANSI output consumed directly by the client.
+    case text
+    /// Plain text/ANSI output replayed through the client's terminal emulator.
+    case replay
+    /// Server-rendered terminal grids. Only the newest grid matters.
+    case grid
+}
+
 public enum RemotePushEnvironment: String, Codable, Equatable, Sendable {
     case development
     case production
@@ -156,6 +170,8 @@ public enum RemotePushEnvironment: String, Codable, Equatable, Sendable {
 public struct RemoteClientStatePayload: Codable, Equatable, Sendable {
     public let appState: RemoteClientAppState
     public let streamMode: RemoteClientStreamMode
+    public let terminalPresentation: RemoteTerminalPresentation?
+    public let supportsOutputTiming: Bool?
     public let pushToken: String?
     public let pushTopic: String?
     public let pushEnvironment: RemotePushEnvironment?
@@ -164,6 +180,8 @@ public struct RemoteClientStatePayload: Codable, Equatable, Sendable {
     public init(
         appState: RemoteClientAppState,
         streamMode: RemoteClientStreamMode,
+        terminalPresentation: RemoteTerminalPresentation? = nil,
+        supportsOutputTiming: Bool? = nil,
         pushToken: String? = nil,
         pushTopic: String? = nil,
         pushEnvironment: RemotePushEnvironment? = nil,
@@ -171,6 +189,8 @@ public struct RemoteClientStatePayload: Codable, Equatable, Sendable {
     ) {
         self.appState = appState
         self.streamMode = streamMode
+        self.terminalPresentation = terminalPresentation
+        self.supportsOutputTiming = supportsOutputTiming
         self.pushToken = pushToken
         self.pushTopic = pushTopic
         self.pushEnvironment = pushEnvironment
@@ -180,6 +200,8 @@ public struct RemoteClientStatePayload: Codable, Equatable, Sendable {
     enum CodingKeys: String, CodingKey {
         case appState = "app_state"
         case streamMode = "stream_mode"
+        case terminalPresentation = "terminal_presentation"
+        case supportsOutputTiming = "supports_output_timing"
         case pushToken = "push_token"
         case pushTopic = "push_topic"
         case pushEnvironment = "push_environment"
@@ -244,10 +266,69 @@ public struct RemoteTabDescriptor: Codable, Equatable, Identifiable, Sendable {
 }
 
 public struct RemoteTabListPayload: Codable, Equatable, Sendable {
-    public let tabs: [RemoteTabDescriptor]
+    /// Advertised when the Mac can decode KEY_INPUT (0x24) frames. Clients
+    /// without the capability keep sending escape text over INPUT.
+    public static let keyInputCapability = "key_input"
+    public static let checkpointRequestCapability = "checkpoint_request"
 
-    public init(tabs: [RemoteTabDescriptor]) {
+    public let tabs: [RemoteTabDescriptor]
+    /// Mac feature advertisement. Additive/optional: older Macs omit it and
+    /// older clients ignore it. Normalized so an empty list is never encoded.
+    public let capabilities: [String]?
+
+    public init(tabs: [RemoteTabDescriptor], capabilities: [String]? = nil) {
         self.tabs = tabs
+        self.capabilities = capabilities?.isEmpty == true ? nil : capabilities
+    }
+}
+
+// MARK: - Key Input
+
+/// Semantic key presses from the remote client (frame 0x24). Key names and
+/// modifiers use the `TerminalKeyPress` vocabulary ("enter", "escape", "up",
+/// "down", single characters with "control"/"shift"/"option"), so the Mac
+/// encodes DECCKM application-cursor mode and control combos exactly like
+/// locally-typed keys — which raw escape text over INPUT cannot. Receivers
+/// cap processing at `maxKeys`.
+public struct RemoteKeyInputPayload: Codable, Equatable, Sendable {
+    public struct Key: Codable, Equatable, Sendable {
+        public let key: String
+        public let modifiers: [String]?
+
+        public init(key: String, modifiers: [String]? = nil) {
+            self.key = key
+            self.modifiers = modifiers?.isEmpty == true ? nil : modifiers
+        }
+
+        enum CodingKeys: String, CodingKey {
+            case key
+            case modifiers
+        }
+
+        public init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            self.key = try container.decode(String.self, forKey: .key)
+            // Lenient + omitempty parity: absent and [] both mean unmodified.
+            let decoded = try container.decodeIfPresent([String].self, forKey: .modifiers)
+            self.modifiers = decoded?.isEmpty == true ? nil : decoded
+        }
+
+        public func encode(to encoder: Encoder) throws {
+            var container = encoder.container(keyedBy: CodingKeys.self)
+            try container.encode(key, forKey: .key)
+            if let modifiers, !modifiers.isEmpty {
+                try container.encode(modifiers, forKey: .modifiers)
+            }
+        }
+    }
+
+    /// Runaway bound: no legitimate menu interaction needs more presses.
+    public static let maxKeys = 32
+
+    public let keys: [Key]
+
+    public init(keys: [Key]) {
+        self.keys = keys
     }
 }
 
@@ -291,6 +372,11 @@ public struct ApprovalRequestPayload: Codable, Equatable, Sendable {
     /// of its own epoch-scoped counter. Old Macs omit it; the agent falls
     /// back to the internal counter.
     public let spineSeq: UInt64?
+    /// Authoritative risk tier (`ApprovalSeverity` raw value) classified on the
+    /// Mac at emit time. Optional/additive: old Macs omit it and consumers fall
+    /// back to `ApprovalSeverity.classify(...)`; stored raw so an unknown future
+    /// tier degrades to the fallback instead of failing decode.
+    public let severity: String?
 
     public init(
         requestID: String,
@@ -308,7 +394,8 @@ public struct ApprovalRequestPayload: Codable, Equatable, Sendable {
         pushTitle: String? = nil,
         pushSubtitle: String? = nil,
         pushBody: String? = nil,
-        spineSeq: UInt64? = nil
+        spineSeq: UInt64? = nil,
+        severity: String? = nil
     ) {
         self.requestID = requestID
         self.command = command
@@ -326,6 +413,7 @@ public struct ApprovalRequestPayload: Codable, Equatable, Sendable {
         self.pushSubtitle = pushSubtitle
         self.pushBody = pushBody
         self.spineSeq = spineSeq
+        self.severity = severity
     }
 
     enum CodingKeys: String, CodingKey {
@@ -345,6 +433,7 @@ public struct ApprovalRequestPayload: Codable, Equatable, Sendable {
         case pushSubtitle = "push_subtitle"
         case pushBody = "push_body"
         case spineSeq = "spine_seq"
+        case severity
     }
 
     public init(from decoder: Decoder) throws {
@@ -367,6 +456,7 @@ public struct ApprovalRequestPayload: Codable, Equatable, Sendable {
         self.pushSubtitle = try container.decodeIfPresent(String.self, forKey: .pushSubtitle)
         self.pushBody = try container.decodeIfPresent(String.self, forKey: .pushBody)
         self.spineSeq = try container.decodeIfPresent(UInt64.self, forKey: .spineSeq)
+        self.severity = try container.decodeIfPresent(String.self, forKey: .severity)
     }
 }
 

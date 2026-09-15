@@ -2,45 +2,23 @@ import SwiftUI
 
 // MARK: - Logs Settings
 
+struct HistorySettingsPageView: View {
+    var body: some View {
+        VStack(alignment: .leading, spacing: Chau7Style.Settings.pageSectionSpacing) {
+            TelemetryRetentionSettingsView()
+
+            SettingsDivider()
+
+            HistorySettingsView()
+        }
+    }
+}
+
 struct LogsSettingsView: View {
     @Bindable var model: AppModel
-    @Bindable private var settings = FeatureSettings.shared
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            // Persistent History (most important — at top)
-            HistorySettingsView()
-
-            Divider()
-                .padding(.vertical, 8)
-
-            // AI Telemetry & Transcripts
-            SettingsSectionHeader(
-                L("settings.logs.telemetry", "AI Telemetry & Transcripts"),
-                icon: "chart.bar.doc.horizontal"
-            )
-
-            SettingsStepper(
-                label: L("settings.logs.telemetryRetention", "Keep Transcripts For"),
-                help: L(
-                    "settings.logs.telemetryRetention.help",
-                    "Days of AI run history and full transcripts to keep for the usage and cost dashboards. Older runs are deleted at launch and the database is compacted. Set to 0 to keep everything forever."
-                ),
-                value: $settings.telemetryRetentionDays,
-                range: 0 ... 365,
-                suffix: settings.telemetryRetentionDays == 0 ? "" : " days"
-            )
-
-            if settings.telemetryRetentionDays == 0 {
-                Text(L("settings.logs.telemetryRetention.forever", "Keeping all telemetry forever — the database will grow without bound."))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .padding(.leading, 4)
-            }
-
-            Divider()
-                .padding(.vertical, 8)
-
+        VStack(alignment: .leading, spacing: Chau7Style.Settings.pageSectionSpacing) {
             // History Logs
             SettingsSectionHeader(L("settings.logs.historyLogs", "History Logs"), icon: "clock.arrow.circlepath")
 
@@ -53,55 +31,56 @@ struct LogsSettingsView: View {
                 model.applyIdleMonitoringState()
             }
 
-            SettingsTextField(
-                label: L("settings.logs.idleSeconds", "Idle Seconds"),
-                help: L("settings.logs.idleSeconds.help", "Seconds of inactivity before sending idle notification"),
-                placeholder: "300",
-                text: $model.idleSecondsText,
-                width: 80,
-                onSubmit: { model.restartIdleMonitors() }
-            )
+            SettingsAdvancedDisclosure {
+                SettingsTextField(
+                    label: L("settings.logs.idleSeconds", "Idle Seconds"),
+                    help: L("settings.logs.idleSeconds.help", "Seconds of inactivity before sending idle notification"),
+                    placeholder: "300",
+                    text: $model.idleSecondsText,
+                    width: 80,
+                    onSubmit: { model.restartIdleMonitors() }
+                )
 
-            SettingsTextField(
-                label: L("settings.logs.staleSeconds", "Stale Seconds"),
-                help: L("settings.logs.staleSeconds.help", "Seconds before marking a session as closed"),
-                placeholder: "3600",
-                text: $model.staleSecondsText,
-                width: 80,
-                onSubmit: { model.restartIdleMonitors() }
-            )
+                SettingsTextField(
+                    label: L("settings.logs.staleSeconds", "Stale Seconds"),
+                    help: L("settings.logs.staleSeconds.help", "Seconds before marking a session as closed"),
+                    placeholder: "3600",
+                    text: $model.staleSecondsText,
+                    width: 80,
+                    onSubmit: { model.restartIdleMonitors() }
+                )
 
-            SettingsTextField(
-                label: L("settings.logs.codexHistoryPath", "Codex History Path"),
-                help: L("settings.logs.codexHistoryPath.help", "Path to the OpenAI Codex history file"),
-                placeholder: "~/.codex/history.jsonl",
-                text: $model.codexHistoryPath,
-                width: 300,
-                monospaced: true,
-                onSubmit: { model.restartIdleMonitors() }
-            )
+                SettingsTextField(
+                    label: L("settings.logs.codexHistoryPath", "Codex History Path"),
+                    help: L("settings.logs.codexHistoryPath.help", "Path to the OpenAI Codex history file"),
+                    placeholder: "~/.codex/history.jsonl",
+                    text: $model.codexHistoryPath,
+                    width: 300,
+                    monospaced: true,
+                    onSubmit: { model.restartIdleMonitors() }
+                )
 
-            SettingsTextField(
-                label: L("settings.logs.claudeHistoryPath", "Claude History Path"),
-                help: L("settings.logs.claudeHistoryPath.help", "Path to the Claude Code history file"),
-                placeholder: "~/.claude/history.jsonl",
-                text: $model.claudeHistoryPath,
-                width: 300,
-                monospaced: true,
-                onSubmit: { model.restartIdleMonitors() }
-            )
+                SettingsTextField(
+                    label: L("settings.logs.claudeHistoryPath", "Claude History Path"),
+                    help: L("settings.logs.claudeHistoryPath.help", "Path to the Claude Code history file"),
+                    placeholder: "~/.claude/history.jsonl",
+                    text: $model.claudeHistoryPath,
+                    width: 300,
+                    monospaced: true,
+                    onSubmit: { model.restartIdleMonitors() }
+                )
 
-            SettingsButtonRow(buttons: [
-                .init(title: L("settings.logs.restartMonitors", "Restart Monitors"), icon: "arrow.clockwise") {
-                    model.restartIdleMonitors()
-                },
-                .init(title: L("settings.logs.clearHistory", "Clear History"), icon: "trash") {
-                    model.clearHistory()
-                }
-            ])
+                SettingsButtonRow(buttons: [
+                    .init(title: L("settings.logs.restartMonitors", "Restart Monitors"), icon: "arrow.clockwise") {
+                        model.restartIdleMonitors()
+                    },
+                    .init(title: L("settings.logs.clearHistory", "Clear History"), icon: "trash") {
+                        model.clearHistory()
+                    }
+                ])
+            }
 
-            Divider()
-                .padding(.vertical, 8)
+            SettingsDivider()
 
             // Terminal Logs
             SettingsSectionHeader(L("settings.logs.terminalLogs", "Terminal Logs"), icon: "doc.text")
@@ -130,40 +109,41 @@ struct LogsSettingsView: View {
                 isOn: $model.isTerminalAnsi
             )
 
-            SettingsTextField(
-                label: L("settings.logs.codexTerminalLog", "Codex Terminal Log"),
-                help: L("settings.logs.codexTerminalLog.help", "Path to the Codex PTY wrapper log file"),
-                placeholder: "~/Library/Logs/Chau7/codex-pty.log",
-                text: $model.codexTerminalPath,
-                width: 300,
-                monospaced: true,
-                onSubmit: { model.restartTerminalMonitors() }
-            )
+            SettingsAdvancedDisclosure {
+                SettingsTextField(
+                    label: L("settings.logs.codexTerminalLog", "Codex Terminal Log"),
+                    help: L("settings.logs.codexTerminalLog.help", "Path to the Codex PTY wrapper log file"),
+                    placeholder: "~/Library/Logs/Chau7/codex-pty.log",
+                    text: $model.codexTerminalPath,
+                    width: 300,
+                    monospaced: true,
+                    onSubmit: { model.restartTerminalMonitors() }
+                )
 
-            SettingsTextField(
-                label: L("settings.logs.claudeTerminalLog", "Claude Terminal Log"),
-                help: L("settings.logs.claudeTerminalLog.help", "Path to the Claude PTY wrapper log file"),
-                placeholder: "~/Library/Logs/Chau7/claude-pty.log",
-                text: $model.claudeTerminalPath,
-                width: 300,
-                monospaced: true,
-                onSubmit: { model.restartTerminalMonitors() }
-            )
+                SettingsTextField(
+                    label: L("settings.logs.claudeTerminalLog", "Claude Terminal Log"),
+                    help: L("settings.logs.claudeTerminalLog.help", "Path to the Claude PTY wrapper log file"),
+                    placeholder: "~/Library/Logs/Chau7/claude-pty.log",
+                    text: $model.claudeTerminalPath,
+                    width: 300,
+                    monospaced: true,
+                    onSubmit: { model.restartTerminalMonitors() }
+                )
 
-            SettingsButtonRow(buttons: [
-                .init(title: L("settings.logs.restartMonitors", "Restart Monitors"), icon: "arrow.clockwise") {
-                    model.restartTerminalMonitors()
-                },
-                .init(title: L("settings.logs.reloadLastLines", "Reload Last Lines"), icon: "arrow.clockwise.circle") {
-                    model.reloadTerminalPrefill()
-                },
-                .init(title: L("settings.logs.clearLogs", "Clear Logs"), icon: "trash") {
-                    model.clearTerminalLogs()
-                }
-            ])
+                SettingsButtonRow(buttons: [
+                    .init(title: L("settings.logs.restartMonitors", "Restart Monitors"), icon: "arrow.clockwise") {
+                        model.restartTerminalMonitors()
+                    },
+                    .init(title: L("settings.logs.reloadLastLines", "Reload Last Lines"), icon: "arrow.clockwise.circle") {
+                        model.reloadTerminalPrefill()
+                    },
+                    .init(title: L("settings.logs.clearLogs", "Clear Logs"), icon: "trash") {
+                        model.clearTerminalLogs()
+                    }
+                ])
+            }
 
-            Divider()
-                .padding(.vertical, 8)
+            SettingsDivider()
 
             // Sessions
             SettingsSectionHeader(L("settings.logs.activeSessions", "Active Sessions"), icon: "person.2")
@@ -194,6 +174,54 @@ struct LogsSettingsView: View {
                 }
             }
 
+            SettingsDivider()
+
+            SettingsSectionHeader(L("settings.general.actions", "Actions"), icon: "wrench.and.screwdriver")
+
+            SettingsButtonRow(buttons: [
+                .init(title: L("debug.surface.diagnostics.title", "Diagnostics"), icon: "stethoscope") {
+                    DebugConsoleController.shared.show(surface: .diagnostics)
+                },
+                .init(title: L("debug.surface.usage.title", "Usage Monitor"), icon: "chart.line.uptrend.xyaxis") {
+                    DebugConsoleController.shared.show(surface: .usageMonitor)
+                },
+                .init(title: L("debug.surface.runtime.title", "Runtime Inspector"), icon: "scope") {
+                    DebugConsoleController.shared.show(surface: .runtimeInspector)
+                }
+            ])
+            .settingsSearchAnchor("debugConsole")
+        }
+    }
+}
+
+private struct TelemetryRetentionSettingsView: View {
+    @Bindable private var settings = FeatureSettings.shared
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Chau7Style.Settings.inlineControlSpacing) {
+            SettingsSectionHeader(
+                L("settings.logs.telemetry", "AI Telemetry & Transcripts"),
+                icon: "chart.bar.doc.horizontal"
+            )
+
+            SettingsStepper(
+                label: L("settings.logs.telemetryRetention", "Keep Transcripts For"),
+                help: L(
+                    "settings.logs.telemetryRetention.help",
+                    "Days of AI run history and full transcripts to keep for the usage and cost dashboards. Older runs are deleted at launch and the database is compacted. Set to 0 to keep everything forever."
+                ),
+                value: $settings.telemetryRetentionDays,
+                range: 0 ... 365,
+                suffix: settings.telemetryRetentionDays == 0 ? "" : " days",
+                anchorID: "telemetryRetention"
+            )
+
+            if settings.telemetryRetentionDays == 0 {
+                Text(L("settings.logs.telemetryRetention.forever", "Keeping all telemetry forever — the database will grow without bound."))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .padding(.leading, 4)
+            }
         }
     }
 }

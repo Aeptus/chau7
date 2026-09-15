@@ -101,11 +101,26 @@ public enum ClaudeCodeHookConfiguration {
                 "sessionId": payload.get("session_id", ""),
                 "transcriptPath": payload.get("transcript_path", ""),
                 "toolName": payload.get("tool_name", ""),
+                "toolUseID": payload.get("tool_use_id", ""),
                 "message": payload.get("message") or payload.get("prompt") or "",
                 "cwd": payload.get("cwd", ""),
                 "tabID": tab_id,
                 "timestamp": iso_now(),
             }
+
+            # Structured interactive prompts: AskUserQuestion / ExitPlanMode
+            # carry their full question + options in tool_input, which lets
+            # Chau7 surface exact prompt cards on the phone without scraping
+            # the TUI. Allowlisted tools only, and size-capped: an oversized
+            # payload is omitted entirely, never truncated mid-JSON.
+            if hook == "PreToolUse" and payload.get("tool_name", "") in ("AskUserQuestion", "ExitPlanMode"):
+                tool_input = payload.get("tool_input")
+                if tool_input is not None:
+                    try:
+                        if len(json.dumps(tool_input, ensure_ascii=True)) <= 16384:
+                            event["toolInput"] = tool_input
+                    except Exception:
+                        pass
 
             os.makedirs(os.path.dirname(os.path.expanduser(EVENTS_FILE)), exist_ok=True)
             with open(os.path.expanduser(EVENTS_FILE), "a", encoding="utf-8") as f:

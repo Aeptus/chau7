@@ -20,7 +20,10 @@ set -e
 APP_NAME="chau7-proxy"
 VERSION="${VERSION:-dev}"
 BUILD_DIR="build"
-LDFLAGS="-s -w -X main.Version=${VERSION}"
+PROXY_REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
+BUILD_SHA="${BUILD_SHA:-$(git -C "${PROXY_REPO_ROOT}" rev-parse --short=12 HEAD 2>/dev/null || echo unknown)}"
+BUILD_TIMESTAMP="${BUILD_TIMESTAMP:-$(date -u +"%Y-%m-%dT%H:%M:%SZ")}"
+LDFLAGS="-s -w -X main.Version=${VERSION} -X main.BuildSHA=${BUILD_SHA} -X main.BuildTimestamp=${BUILD_TIMESTAMP}"
 
 # Colors for output
 RED='\033[0;31m'

@@ -310,6 +310,7 @@ final class SplitPaneControllerTests: XCTestCase {
     func testInitialStateHasSingleTerminal() {
         XCTAssertEqual(controller.root.allPaneIDs.count, 1)
         XCTAssertEqual(controller.root.allTerminalIDs.count, 1)
+        XCTAssertFalse(controller.canClosePane)
     }
 
     func testInitialFocusMatchesRootTerminal() {
@@ -361,6 +362,10 @@ final class SplitPaneControllerTests: XCTestCase {
 
         XCTAssertEqual(controller.root.allPaneIDs.count, 2)
         XCTAssertTrue(controller.hasTextEditor)
+        XCTAssertTrue(
+            controller.canClosePane,
+            "A terminal/editor split must enable pane actions even with only one terminal"
+        )
     }
 
     func testSplitWithTextEditorFocusesEditor() {
@@ -439,6 +444,7 @@ final class SplitPaneControllerTests: XCTestCase {
         XCTAssertEqual(controller.root.allPaneIDs.count, 1)
         // Focus should move to the sibling (the original pane)
         XCTAssertEqual(controller.focusedPaneID, originalID)
+        XCTAssertFalse(controller.canClosePane)
     }
 
     func testCloseSpecificPane() {

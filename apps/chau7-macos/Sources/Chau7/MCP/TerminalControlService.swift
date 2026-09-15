@@ -20,16 +20,27 @@ final class TerminalControlService {
     /// it); the Remote layer consumes it via `TabDirectoryProviding`.
     let registry = WindowModelRegistry()
     private var mcpTabIDs = MCPTabIDAllocator()
-    /// Partial input staged through MCP but not yet submitted. Delivery uses
-    /// this main-thread-confined state to avoid appending a prompt to an
-    /// agent's existing input line.
-    private var aethymePendingMCPInput: [UUID: String] = [:]
+
+    /// Per-tab buffer of shell-prompt input MCP has staged via `tab_send_input`
+    /// but not yet submitted. Command filtering runs when the buffer is submitted
+    /// (a newline, or Enter via `tab_press_key` / `tab_submit_prompt`), so a
+    /// command staged without a trailing newline cannot be executed unchecked.
+    /// Main-thread-confined, exactly like `mcpTabIDs`.
+    private var mcpPendingInput: [UUID: String] = [:]
     private var routingIndex = TabRoutingIndex(records: [])
     private var routingIndexNeedsRebuild = true
+    /// Main-thread-confined ownership failures from append-only AI hook
+    /// sources. Each source receives one exact-session reconciliation attempt;
+    /// unresolved repeats are quarantined and summarized once per minute.
+    private var staleDirectorySources = StaleSessionSourceQuarantine()
     var activeOverlayModelProvider: (() -> OverlayTabsModel?)?
 
     /// Hard ceiling — even if the user sets a higher value in settings.
     private static let absoluteMaxTabs = 50
+
+    /// Shared cap for `repo_get_events` across all transports (MCP tool +
+    /// scripting socket), matching the documented MCP contract (max 50).
+    static let repoEventsMaxLimit = 50
 
     /// Maximum output size returned by tab_output (512 KB).
     private static let maxOutputBytes = 512 * 1024
@@ -72,6 +83,10 @@ final class TerminalControlService {
     /// abstraction instead of dereferencing RemoteControlManager.shared.
     /// Nil (tests, pre-composition) skips remote forwarding.
     var approvalForwarder: MCPApprovalForwarding?
+
+    /// Test seam for the synchronous, user-visible tab-adoption confirmation.
+    /// Production leaves this nil and uses the Chau7-owned NSAlert.
+    var tabControlApprovalHandler: ((String) -> Bool)?
 
     /// Register an overlay model. Call from AppDelegate for every new window.
     func register(_ model: OverlayTabsModel) {
@@ -122,6 +137,24 @@ final class TerminalControlService {
         onMain { self.routingRecordsLocked() }
     }
 
+    /// Returns whether a provider event's stamped tab target has been made
+    /// stale by the tab being reused for another currently-active AI tool.
+    func hasConflictingLiveAIIdentity(
+        tabID: UUID,
+        incomingProvider: String,
+        incomingSessionID: String?
+    ) -> Bool {
+        let records = routingRecords().filter { $0.tabID == tabID && $0.isDisplaySession }
+        if case .conflicting = AISessionBindingPolicy.classify(
+            incomingProvider: incomingProvider,
+            incomingSessionID: incomingSessionID,
+            records: records
+        ) {
+            return true
+        }
+        return false
+    }
+
     func resolveTab(for target: TabTarget, strictSession: Bool = false) -> OverlayTab? {
         onMain {
             guard let tabID = self.resolveTabIDLocked(for: target, strictSession: strictSession) else {
@@ -166,7 +199,24 @@ final class TerminalControlService {
                 return false
             }
 
-            return session.adoptAIHistorySession(request)
+            let replacementDirectory = request.crossDirectoryReplacementDirectory
+            let shouldReplaceDirectory = replacementDirectory != nil
+                && self.historyAdoptionDirectoryRank(
+                    session: session,
+                    directory: request.directory
+                ) == nil
+            var changed = session.adoptAIHistorySession(request)
+            if shouldReplaceDirectory,
+               let replacementDirectory,
+               session.currentDirectory != replacementDirectory {
+                let previousDirectory = session.currentDirectory
+                session.currentDirectory = replacementDirectory
+                changed = true
+                Log.info(
+                    "History adoption migrated directory tab=\(tab.id) from=\(previousDirectory) to=\(replacementDirectory) session=\(request.sessionId.prefix(8))"
+                )
+            }
+            return changed
         }
     }
 
@@ -267,7 +317,10 @@ final class TerminalControlService {
         tabID: UUID,
         sessionID: String?,
         directory: String,
-        allowSessionIDAdoption: Bool = true
+        allowSessionIDAdoption: Bool = true,
+        trustMatchingSessionForForeignDirectory: Bool = false,
+        provider: String? = nil,
+        sessionIdentitySource: AISessionIdentitySource? = nil
     ) -> Bool {
         let trimmed = directory.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return false }
@@ -279,51 +332,92 @@ final class TerminalControlService {
 
                 // Two-axis decision matrix (row = session, col = directory):
                 //                     dir related   dir foreign
-                //   session matches   accept        refuse  (stale binding,
-                //                                              foreign cwd)
+                //   session matches   accept        refuse by default
                 //   session differs   accept+adopt  refuse  (foreign event for
                 //                                              another tab)
                 // i.e. accept iff directory is related; on accept, adopt the
                 // new sessionID when it differs from the tab's live binding
                 // only if the event source has validated that the replacement
-                // identity is restorable.
-                let directoryIsRelated = !self.shouldRefuseCwdWriteAsForeign(
+                // identity is restorable. Live hook/idle callers may opt in
+                // to trusting a matching sessionID for cross-repo moves
+                // inside the same AI TUI; persisted/stale callers keep the
+                // default refusal.
+                let sessionMatches = sessionID.map { session.lastAISessionId == $0 } ?? false
+                let directoryIsForeign = self.shouldRefuseCwdWriteAsForeign(
                     session: session,
                     newDirectory: trimmed
                 )
-                guard directoryIsRelated else {
-                    Log.warn(
-                        "updateSessionDirectory: refusing foreign-cwd write tab=\(tabID) " +
-                            "session=\(sessionID ?? "nil") liveSession=\(session.lastAISessionId ?? "nil") " +
-                            "tabCwd=\(session.currentDirectory) eventCwd=\(trimmed)"
-                    )
+                guard !directoryIsForeign || (trustMatchingSessionForForeignDirectory && sessionMatches) else {
+                    if let reroutedTabID = self.reconcileOrQuarantineDirectorySourceLocked(
+                        rejectedTabID: tabID,
+                        sessionID: sessionID,
+                        directory: trimmed,
+                        provider: provider,
+                        rejectedSession: session
+                    ) {
+                        return self.updateSessionDirectoryAcrossWindows(
+                            tabID: reroutedTabID,
+                            sessionID: sessionID,
+                            directory: trimmed,
+                            allowSessionIDAdoption: allowSessionIDAdoption,
+                            trustMatchingSessionForForeignDirectory: trustMatchingSessionForForeignDirectory,
+                            provider: provider,
+                            sessionIdentitySource: sessionIdentitySource
+                        )
+                    }
                     return false
                 }
-
-                if let sessionID,
-                   let live = session.lastAISessionId,
-                   live != sessionID {
-                    guard allowSessionIDAdoption else {
-                        Log.warn(
-                            "updateSessionDirectory: refusing session adoption without restorable transcript tab=\(tabID) " +
-                                "previous=\(live) new=\(sessionID) tabCwd=\(session.currentDirectory) " +
-                                "tabGitRoot=\(session.gitRootPath ?? "nil") eventCwd=\(trimmed)"
-                        )
-                        if session.currentDirectory != trimmed {
-                            Log.trace(
-                                "updateSessionDirectory: applying related cwd despite refused session adoption tab=\(tabID) " +
-                                    "session=\(sessionID) oldCwd=\(session.currentDirectory) newCwd=\(trimmed)"
-                            )
-                            session.updateCurrentDirectory(trimmed)
-                        }
-                        return true
-                    }
+                if let key = self.staleDirectorySourceKey(
+                    tabID: tabID,
+                    sessionID: sessionID,
+                    provider: provider,
+                    session: session
+                ) {
+                    _ = self.staleDirectorySources.clear(key)
+                }
+                if directoryIsForeign {
                     Log.info(
-                        "updateSessionDirectory: adopting new session for tab=\(tabID) " +
-                            "previous=\(live) new=\(sessionID) tabCwd=\(session.currentDirectory) " +
-                            "tabGitRoot=\(session.gitRootPath ?? "nil") eventCwd=\(trimmed)"
+                        "updateSessionDirectory: trusting matching live session across repos tab=\(tabID) " +
+                            "session=\(sessionID ?? "nil") oldCwd=\(session.currentDirectory) newCwd=\(trimmed)"
                     )
-                    session.lastAISessionId = sessionID
+                }
+
+                if let sessionID {
+                    let liveSessionID = session.lastAISessionId
+                    if liveSessionID != sessionID {
+                        guard allowSessionIDAdoption else {
+                            Log.warn(
+                                "updateSessionDirectory: refusing session adoption without restorable transcript tab=\(tabID) " +
+                                    "previous=\(liveSessionID ?? "nil") new=\(sessionID) tabCwd=\(session.currentDirectory) " +
+                                    "tabGitRoot=\(session.gitRootPath ?? "nil") eventCwd=\(trimmed)"
+                            )
+                            if session.currentDirectory != trimmed {
+                                Log.trace(
+                                    "updateSessionDirectory: applying related cwd despite refused session adoption tab=\(tabID) " +
+                                        "session=\(sessionID) oldCwd=\(session.currentDirectory) newCwd=\(trimmed)"
+                                )
+                                session.updateCurrentDirectory(trimmed)
+                            }
+                            return true
+                        }
+                        if let liveSessionID {
+                            Log.info(
+                                "updateSessionDirectory: adopting new session for tab=\(tabID) " +
+                                    "previous=\(liveSessionID) new=\(sessionID) tabCwd=\(session.currentDirectory) " +
+                                    "tabGitRoot=\(session.gitRootPath ?? "nil") eventCwd=\(trimmed)"
+                            )
+                        }
+                    }
+
+                    if let normalizedProvider = provider.flatMap(AIResumeParser.normalizeProviderName) {
+                        session.applyAgentIdentity(AgentIdentityRecord(
+                            provider: normalizedProvider,
+                            sessionId: sessionID,
+                            source: sessionIdentitySource ?? session.lastAISessionIdentitySource ?? .explicit
+                        ))
+                    } else if liveSessionID != nil, liveSessionID != sessionID {
+                        session.lastAISessionId = sessionID
+                    }
                 }
                 guard session.currentDirectory != trimmed else { return true }
                 Log.trace(
@@ -354,6 +448,86 @@ final class TerminalControlService {
         )
     }
 
+    /// Returns a different exact-session tab only for the first confirmed
+    /// ownership failure. Subsequent calls for the same source do no routing
+    /// work and emit no per-event warning until the bounded summary interval.
+    private func reconcileOrQuarantineDirectorySourceLocked(
+        rejectedTabID: UUID,
+        sessionID: String?,
+        directory: String,
+        provider: String?,
+        rejectedSession: TerminalSessionModel
+    ) -> UUID? {
+        guard let key = staleDirectorySourceKey(
+            tabID: rejectedTabID,
+            sessionID: sessionID,
+            provider: provider,
+            session: rejectedSession
+        ) else {
+            Log.warn(
+                "updateSessionDirectory: refusing foreign-cwd write tab=\(rejectedTabID) " +
+                    "session=nil liveSession=\(rejectedSession.lastAISessionId ?? "nil") " +
+                    "tabCwd=\(rejectedSession.currentDirectory) eventCwd=\(directory)"
+            )
+            return nil
+        }
+
+        let decision = staleDirectorySources.recordOwnershipFailure(for: key)
+        switch decision {
+        case .reconcileAndReport:
+            let result = tabAttribution.resolve(
+                target: TabTarget(
+                    tool: key.provider,
+                    directory: directory,
+                    sessionID: key.sessionID
+                ),
+                policy: .requireSessionMatch
+            )
+            if case let .matched(resolvedTabID, _) = result,
+               resolvedTabID != rejectedTabID {
+                _ = staleDirectorySources.clear(key)
+                Log.info(
+                    "updateSessionDirectory: reconciled stale source from tab=\(rejectedTabID) " +
+                        "to exact session tab=\(resolvedTabID) session=\(key.sessionID)"
+                )
+                return resolvedTabID
+            }
+            Log.warn(
+                "updateSessionDirectory: quarantined stale source tab=\(rejectedTabID) " +
+                    "session=\(key.sessionID) liveSession=\(rejectedSession.lastAISessionId ?? "nil") " +
+                    "reason=foreign_cwd_ownership_mismatch"
+            )
+        case .suppress:
+            break
+        case let .reportSummary(suppressedCount):
+            Log.warn(
+                "updateSessionDirectory: stale source remains quarantined tab=\(rejectedTabID) " +
+                    "session=\(key.sessionID) suppressed=\(suppressedCount)"
+            )
+        }
+        return nil
+    }
+
+    private func staleDirectorySourceKey(
+        tabID: UUID,
+        sessionID: String?,
+        provider: String?,
+        session: TerminalSessionModel
+    ) -> StaleSessionSourceKey? {
+        guard let normalizedSessionID = TabRoutingIndex.normalizedSessionID(sessionID) else {
+            return nil
+        }
+        let resolvedProvider = provider
+            ?? session.lastAIProvider
+            ?? session.aiDisplayAppName
+            ?? "unknown"
+        return StaleSessionSourceKey(
+            tabID: tabID,
+            sessionID: normalizedSessionID,
+            provider: resolvedProvider
+        )
+    }
+
     @discardableResult
     func clearPersistentNotificationStyleAcrossWindows(tabID: UUID) -> Bool {
         onMain {
@@ -368,7 +542,7 @@ final class TerminalControlService {
             if tabExistsInModel {
                 Log.debug("clearPersistentStyle: tabID \(tabID) exists but no persistent style to clear")
             } else {
-                Log.warn("clearPersistentStyle: tabID \(tabID) not found across windows")
+                Log.debug("clearPersistentStyle: tabID \(tabID) already absent across windows")
             }
             return false
         }
@@ -490,7 +664,7 @@ final class TerminalControlService {
                 repositoryRoot: session.repositoryModel?.rootPath,
                 status: session.effectiveStatus.rawValue,
                 isAtPrompt: session.effectiveIsAtPrompt,
-                hasPendingInput: self.aethymePendingMCPInput[uuid] != nil
+                hasPendingInput: !(self.mcpPendingInput[uuid] ?? "").isEmpty
             )
             let readiness = AethymeDeliveryReadinessPolicy.evaluate(
                 target: target,
@@ -632,6 +806,14 @@ final class TerminalControlService {
             return err
         }
 
+        // exec sends `command + "\n"` directly (already filtered above); drop any
+        // partially-staged tab_send_input buffer so it can't prepend to it.
+        onMain {
+            if let uuid = self.resolveControlPlaneTabIDLocked(tabID) {
+                self.mcpPendingInput[uuid] = nil
+            }
+        }
+
         // Validate tab existence and prompt state synchronously on main, but
         // send the actual input asynchronously. The control plane should not
         // wait inside input bookkeeping or PTY writes under backpressure.
@@ -693,44 +875,52 @@ final class TerminalControlService {
             guard let (tab, session) = self.resolveTab(tabID) else {
                 return self.jsonError("Tab not found: \(tabID)")
             }
+            return self.encodeAny(self.tabStatusPayload(tab: tab, session: session, enforceMCPControl: false))
+        }
+    }
 
-            var result: [String: Any] = self.tabSummary(tab)
-            self.addExecutionReadinessFields(to: &result, session: session)
-
-            // Add process group info
-            if let pg = session.processGroup {
-                result["processes"] = pg.children.map { proc in
-                    [
-                        "pid": proc.pid,
-                        "name": proc.name,
-                        "cpu_percent": proc.cpuPercent,
-                        "rss_bytes": proc.rssBytes
-                    ] as [String: Any]
-                }
+    /// MCP projection of tab status. Terminal readiness and caller authority
+    /// are intentionally combined here because the public MCP contract says
+    /// `can_accept_exec=true` means an MCP `tab_exec` call will be accepted.
+    /// Internal runtime/scripting callers keep using `tabStatus`, where the
+    /// fields describe terminal readiness independent of MCP ownership.
+    func mcpTabStatus(tabID: String) -> String {
+        onMain {
+            guard let (tab, session) = self.resolveTab(tabID) else {
+                return self.jsonError("Tab not found: \(tabID)")
             }
-
-            // Look up active telemetry run using the session's tabIdentifier
-            // (which is what TelemetryRecorder uses — NOT the OverlayTab UUID)
-            if let run = TelemetryRecorder.shared.activeRunForTab(session.tabIdentifier) {
-                result["active_run"] = [
-                    "run_id": run.id,
-                    "provider": run.provider,
-                    "started_at": TelemetryStore.isoString(from: run.startedAt),
-                    "session_id": run.sessionID as Any,
-                    "duration_so_far_ms": Int(Date().timeIntervalSince(run.startedAt) * 1000)
-                ] as [String: Any]
-            }
-
-            return self.encodeAny(result)
+            return self.encodeAny(self.tabStatusPayload(tab: tab, session: session, enforceMCPControl: true))
         }
     }
 
     func waitForTabReady(tabID: String, timeoutMs: Int = 30000) -> String {
+        waitForTabReady(tabID: tabID, timeoutMs: timeoutMs, enforceMCPControl: false)
+    }
+
+    func waitForMCPControlledTabReady(tabID: String, timeoutMs: Int = 30000) -> String {
+        waitForTabReady(tabID: tabID, timeoutMs: timeoutMs, enforceMCPControl: true)
+    }
+
+    private func waitForTabReady(tabID: String, timeoutMs: Int, enforceMCPControl: Bool) -> String {
         let boundedTimeoutMs = max(0, min(timeoutMs, 120_000))
         let start = Date()
 
-        guard var lastSnapshot = onMain({ self.tabReadinessSnapshot(tabID: tabID) }) else {
+        guard var lastSnapshot = onMain({
+            self.tabReadinessSnapshot(tabID: tabID, enforceMCPControl: enforceMCPControl)
+        }) else {
             return jsonError("Tab not found: \(tabID)")
+        }
+
+        if lastSnapshot["mcp_control_required"] as? Bool == true {
+            return encodeAny([
+                "error": "Tab \(tabID) requires explicit MCP control. Call tab_request_control first.",
+                "tab_id": tabID,
+                "can_accept_exec": false,
+                "ready_for_exec": false,
+                "timed_out": false,
+                "waited_ms": 0,
+                "status": lastSnapshot
+            ])
         }
 
         if lastSnapshot["can_accept_exec"] as? Bool == true {
@@ -755,10 +945,24 @@ final class TerminalControlService {
             let interval = min(0.5, 0.1 + elapsed * 0.1)
             Thread.sleep(forTimeInterval: min(interval, max(0.01, deadline.timeIntervalSinceNow)))
 
-            guard let snapshot = onMain({ self.tabReadinessSnapshot(tabID: tabID) }) else {
+            guard let snapshot = onMain({
+                self.tabReadinessSnapshot(tabID: tabID, enforceMCPControl: enforceMCPControl)
+            }) else {
                 return jsonError("Tab not found: \(tabID)")
             }
             lastSnapshot = snapshot
+
+            if snapshot["mcp_control_required"] as? Bool == true {
+                return encodeAny([
+                    "error": "MCP control of tab \(tabID) was released while waiting.",
+                    "tab_id": tabID,
+                    "can_accept_exec": false,
+                    "ready_for_exec": false,
+                    "timed_out": false,
+                    "waited_ms": Int(Date().timeIntervalSince(start) * 1000),
+                    "status": snapshot
+                ])
+            }
 
             if snapshot["can_accept_exec"] as? Bool == true {
                 let waitedMs = Int(Date().timeIntervalSince(start) * 1000)
@@ -1256,29 +1460,37 @@ final class TerminalControlService {
     }
 
     func sendInput(tabID: String, input: String) -> String {
-        let context = onMain { self.gatherTabContext(tabID) }
-        let (verdict, permissions) = MCPCommandFilter.checkRawInput(input, context: context)
-        if let err = enforceVerdict(verdict, permissions: permissions, fullInput: input, context: "tab \(tabID)") {
-            return err
+        guard let target = inputTargetState(tabID: tabID) else {
+            return jsonError("Tab not found: \(tabID)")
         }
 
-        // Validate tab existence synchronously, send input asynchronously.
-        // Same control-plane isolation as execInTab: do not wait inside input
-        // bookkeeping or PTY writes under backpressure.
-        let tabExists: Bool = onMain {
-            guard let uuid = self.resolveControlPlaneTabIDLocked(tabID),
-                  let (_, session) = self.resolveTab(tabID) else {
-                return false
+        // Off a shell prompt (a TUI / agent CLI is foregrounded) newlines are not
+        // shell submissions, so keep the raw-passthrough behavior interactive
+        // programs rely on — and drop any stale staged buffer for the tab.
+        guard target.atPrompt else {
+            onMain { self.mcpPendingInput[target.uuid] = nil }
+            DispatchQueue.main.async {
+                guard let (_, session) = self.resolveTab(tabID) else { return }
+                session.sendOrQueueInput(input)
             }
-            self.aethymePendingMCPInput[uuid] = AethymePendingInputPolicy.nextFragment(
-                existing: self.aethymePendingMCPInput[uuid],
-                input: input,
-                isAtPrompt: session.effectiveIsAtPrompt
-            )
-            return true
+            Log.info("MCP: send_input to \(tabID) (\(input.count) chars, not at prompt)")
+            return encodeAny(["ok": true])
         }
-        guard tabExists else {
-            return jsonError("Tab not found: \(tabID)")
+
+        // At a prompt: fold the input into the staged buffer and check every
+        // newline-terminated command line BEFORE any of it reaches the PTY. Chars
+        // already staged (no newline) were sent verbatim in a prior call and are
+        // on the line but un-submitted; only the newline executes them, so a
+        // blocked line means we withhold this write and the Enter never lands.
+        let combined = onMain { (self.mcpPendingInput[target.uuid] ?? "") + input }
+        for line in completeLines(in: combined) {
+            if let err = filterSubmittedLine(line, tabID: tabID) {
+                return err
+            }
+        }
+        onMain {
+            let fragment = self.trailingFragment(of: combined)
+            self.mcpPendingInput[target.uuid] = fragment.isEmpty ? nil : fragment
         }
 
         DispatchQueue.main.async {
@@ -1298,20 +1510,25 @@ final class TerminalControlService {
             return jsonError(error.localizedDescription)
         }
 
-        let tabExists: Bool = onMain {
-            guard let uuid = self.resolveControlPlaneTabIDLocked(tabID),
-                  self.resolveTab(tabID) != nil else {
-                return false
-            }
-            if keyPress.key == "enter" && keyPress.modifiers.isEmpty
-                || keyPress.key == "escape"
-                || ((keyPress.key == "c" || keyPress.key == "u") && keyPress.modifiers == [.control]) {
-                self.aethymePendingMCPInput[uuid] = nil
-            }
-            return true
-        }
-        guard tabExists else {
+        guard let target = inputTargetState(tabID: tabID) else {
             return jsonError("Tab not found: \(tabID)")
+        }
+
+        // A key press is the other way MCP submits a staged command line. At a
+        // prompt, an unmodified Enter executes whatever was staged via
+        // tab_send_input, so filter that buffer before the Enter lands; a line
+        // kill (Ctrl+C / Ctrl+U / Escape) discards the staged buffer to match.
+        if target.atPrompt {
+            if keyPress.key == "enter", keyPress.modifiers.isEmpty {
+                let pending = onMain { self.mcpPendingInput[target.uuid] ?? "" }
+                if let err = filterSubmittedLine(pending, tabID: tabID) {
+                    return err
+                }
+                onMain { self.mcpPendingInput[target.uuid] = nil }
+            } else if keyPress.key == "escape"
+                || ((keyPress.key == "c" || keyPress.key == "u") && keyPress.modifiers == [.control]) {
+                onMain { self.mcpPendingInput[target.uuid] = nil }
+            }
         }
 
         DispatchQueue.main.async {
@@ -1332,13 +1549,21 @@ final class TerminalControlService {
         }
 
         let initialState: AISubmitSnapshot? = onMain {
-            guard let uuid = self.resolveControlPlaneTabIDLocked(tabID),
-                  let (_, session) = self.resolveTab(tabID) else { return nil }
-            self.aethymePendingMCPInput[uuid] = nil
+            guard let (_, session) = self.resolveTab(tabID) else { return nil }
             return self.submitSnapshot(for: session)
         }
         guard let initialState else {
             return jsonError("Tab not found: \(tabID)")
+        }
+
+        // Submitting at a shell prompt executes the staged command line, so run
+        // it through the filter first and withhold the Enter if it is blocked.
+        if let target = inputTargetState(tabID: tabID), target.atPrompt {
+            let pending = onMain { self.mcpPendingInput[target.uuid] ?? "" }
+            if let err = filterSubmittedLine(pending, tabID: tabID) {
+                return err
+            }
+            onMain { self.mcpPendingInput[target.uuid] = nil }
         }
 
         DispatchQueue.main.async {
@@ -1413,8 +1638,8 @@ final class TerminalControlService {
 
             Log.info("MCP: closing tab \(tabID) force=\(force) context=\(context ?? "default")")
             model.closeTab(id: uuid, skipWarning: true)
-            self.aethymePendingMCPInput[uuid] = nil
             self.mcpTabIDs.release(tabID: uuid)
+            self.mcpPendingInput[uuid] = nil
             return self.encodeAny(["ok": true])
         }
     }
@@ -1994,9 +2219,14 @@ final class TerminalControlService {
             return false
         }
 
+        if storedSessionId != request.sessionId,
+           historySessionIsClaimedByAnotherPane(request.sessionId, excluding: session) {
+            return false
+        }
+
         if directoryRank == nil {
-            guard request.tabID != nil,
-                  storedSessionId == nil else {
+            guard request.canReplaceAcrossDirectory
+                || (request.tabID != nil && storedSessionId == nil) else {
                 return false
             }
         }
@@ -2018,6 +2248,20 @@ final class TerminalControlService {
             return existingProvider == request.providerKey
         case nil:
             return existingProvider == request.providerKey
+        }
+    }
+
+    private func historySessionIsClaimedByAnotherPane(
+        _ sessionId: String,
+        excluding excludedSession: TerminalSessionModel
+    ) -> Bool {
+        allModels.contains { _, model in
+            model.tabs.contains { tab in
+                tab.splitController.terminalSessions.contains { _, session in
+                    session !== excludedSession
+                        && session.normalizedStoredAISessionId() == sessionId
+                }
+            }
         }
     }
 
@@ -2177,6 +2421,9 @@ final class TerminalControlService {
         sessionID: String? = nil,
         truncateMessages: Bool = true
     ) -> String {
+        // Clamp at the source so every transport (MCP tool + scripting socket)
+        // shares one cap instead of each caller applying its own divergent limit.
+        let limit = max(1, min(limit, Self.repoEventsMaxLimit))
         // Check the per-repo event buffer in AppModel (populated on event ingestion)
         let events: [AIEvent]
         if let appModel = allModels.first?.model.appModel {
@@ -2297,6 +2544,167 @@ final class TerminalControlService {
         return nil
     }
 
+    /// Guard for external MCP clients calling *mutating* tab tools (exec, input,
+    /// key press, submit, close). Returns an error JSON string when `tabID`
+    /// either does not resolve or is a tab the user opened (not MCP-controlled),
+    /// and nil when the tab is MCP-controlled and the tool may proceed.
+    ///
+    /// This limits the MCP surface to tabs it created (via `tab_create` /
+    /// `agent_launch`) so a connected agent cannot drive keystrokes into, or
+    /// close, the user's own terminals via a raw tab UUID. Read-only tools and
+    /// in-app callers (Agent Dashboard, scripting socket) deliberately bypass it.
+    func mcpControlScopeError(forTabID tabID: String) -> String? {
+        onMain {
+            guard let (tab, _) = self.resolveTab(tabID) else {
+                return self.jsonError("Tab not found: \(tabID)")
+            }
+            guard tab.isMCPControlled else {
+                return self.jsonError(
+                    "Tab \(tabID) is not MCP-controlled; MCP can only drive tabs it created " +
+                        "via tab_create or agent_launch, or tabs the user grants via tab_request_control."
+                )
+            }
+            return nil
+        }
+    }
+
+    /// Ask the user to grant MCP control over an existing tab. The grant uses
+    /// the same process-local `isMCPControlled` capability as MCP-created tabs:
+    /// it lasts until release, tab closure, or app termination and is visible
+    /// through the tab's MCP indicator. It is deliberately never silent,
+    /// regardless of the separate "approve tab creation" setting.
+    func requestMCPControl(tabID: String) -> String {
+        onMain {
+            guard FeatureSettings.shared.mcpEnabled else {
+                return self.jsonError("MCP is disabled in settings.")
+            }
+            guard let uuid = self.resolveControlPlaneTabIDLocked(tabID),
+                  let model = self.modelForTab(uuid),
+                  let index = model.tabs.firstIndex(where: { $0.id == uuid }),
+                  let session = model.tabs[index].displaySession ?? model.tabs[index].session else {
+                return self.jsonError("Tab not found: \(tabID)")
+            }
+
+            if model.tabs[index].isMCPControlled {
+                return self.encodeAny([
+                    "ok": true,
+                    "tab_id": tabID,
+                    "is_mcp_controlled": true,
+                    "status": "already_controlled"
+                ])
+            }
+
+            let maxTabs = min(FeatureSettings.shared.mcpMaxTabs, Self.absoluteMaxTabs)
+            let controlledCount = model.tabs.filter(\.isMCPControlled).count
+            guard controlledCount < maxTabs else {
+                return self.jsonError("MCP tab limit reached (\(maxTabs)). Release or close an MCP-controlled tab first.")
+            }
+
+            let message = "An MCP client wants to control the existing tab “\(model.tabs[index].displayTitle)” " +
+                "in \(session.currentDirectory).\n\nAll connected local MCP clients will be able to send commands and key presses, " +
+                "and close this tab, until control is released, the tab closes, or Chau7 quits."
+            let approved = self.tabControlApprovalHandler?(message) ?? self.requestApproval(message: message)
+            guard approved else {
+                Log.info("MCP: control request denied for \(tabID)")
+                return self.jsonError("Tab control denied by user.")
+            }
+
+            model.tabs[index].isMCPControlled = true
+            Log.info("MCP: user granted control of existing tab \(tabID)")
+            Chau7ObservabilityService.shared.recordEvent(
+                type: "tab_control_granted",
+                subsystem: "mcp_approvals",
+                tabID: uuid.uuidString,
+                detail: ["control_plane_tab_id": tabID]
+            )
+            return self.encodeAny([
+                "ok": true,
+                "tab_id": tabID,
+                "is_mcp_controlled": true,
+                "status": "control_granted"
+            ])
+        }
+    }
+
+    /// Revoke MCP mutation authority without closing the user's tab.
+    func releaseMCPControl(tabID: String) -> String {
+        onMain {
+            guard let uuid = self.resolveControlPlaneTabIDLocked(tabID),
+                  let model = self.modelForTab(uuid),
+                  let index = model.tabs.firstIndex(where: { $0.id == uuid }) else {
+                return self.jsonError("Tab not found: \(tabID)")
+            }
+            guard model.tabs[index].isMCPControlled else {
+                return self.jsonError("Tab \(tabID) is not MCP-controlled.")
+            }
+
+            model.tabs[index].isMCPControlled = false
+            self.mcpPendingInput[uuid] = nil
+            Log.info("MCP: control released for \(tabID)")
+            Chau7ObservabilityService.shared.recordEvent(
+                type: "tab_control_released",
+                subsystem: "mcp_approvals",
+                tabID: uuid.uuidString,
+                detail: ["control_plane_tab_id": tabID]
+            )
+            return self.encodeAny([
+                "ok": true,
+                "tab_id": tabID,
+                "is_mcp_controlled": false,
+                "status": "control_released"
+            ])
+        }
+    }
+
+    // MARK: - Staged-input command filtering
+
+    /// Newline-terminated segments of `text` (the submitted command lines). The
+    /// trailing un-terminated fragment is excluded — it is still being typed.
+    private func completeLines(in text: String) -> [String] {
+        var segments: [String] = []
+        var current = ""
+        for ch in text {
+            if ch == "\n" || ch == "\r" {
+                segments.append(current)
+                current = ""
+            } else {
+                current.append(ch)
+            }
+        }
+        return segments
+    }
+
+    /// Everything after the last newline in `text` — the un-submitted fragment.
+    private func trailingFragment(of text: String) -> String {
+        AethymePendingInputPolicy.nextFragment(
+            existing: nil,
+            input: text,
+            isAtPrompt: true
+        ) ?? ""
+    }
+
+    /// Run an about-to-be-submitted command line through the MCP command filter
+    /// (allow/deny + Protect-Chau7 self-protection + approval). Returns an error
+    /// string to hand back to the client when the command must not run, or nil
+    /// when it may proceed. Runs off the main thread so `enforceVerdict` can drive
+    /// the approval modal exactly as `execInTab` does.
+    private func filterSubmittedLine(_ line: String, tabID: String) -> String? {
+        let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        let context = onMain { self.gatherTabContext(tabID) }
+        let (verdict, permissions) = MCPCommandFilter.check(trimmed, context: context)
+        return enforceVerdict(verdict, permissions: permissions, fullInput: trimmed, context: "tab \(tabID)")
+    }
+
+    /// Resolve the native UUID and shell-prompt state for a tab in one main hop.
+    private func inputTargetState(tabID: String) -> (uuid: UUID, atPrompt: Bool)? {
+        onMain {
+            guard let uuid = self.resolveControlPlaneTabIDLocked(tabID),
+                  let (_, session) = self.resolveTab(tabID) else { return nil }
+            return (uuid, session.effectiveIsAtPrompt)
+        }
+    }
+
     private func tabSummary(_ tab: OverlayTab) -> [String: Any] {
         let session = tab.displaySession ?? tab.session
         var result: [String: Any] = [
@@ -2353,22 +2761,79 @@ final class TerminalControlService {
         )
     }
 
-    private func addExecutionReadinessFields(to result: inout [String: Any], session: TerminalSessionModel?) {
+    private func addExecutionReadinessFields(
+        to result: inout [String: Any],
+        session: TerminalSessionModel?,
+        mcpControlAllowed: Bool? = nil
+    ) {
         let readiness = tabExecutionReadiness(for: session)
         result["shell_loading"] = session?.isShellLoading ?? true
         result["has_terminal_view"] = session?.existingRustTerminalView != nil
+        result["mcp_mutation_allowed"] = mcpControlAllowed ?? true
+        result["mcp_control_required"] = mcpControlAllowed == false
+
+        if mcpControlAllowed == false {
+            // Preserve the underlying terminal facts for diagnostics while
+            // keeping the public action fields truthful for this MCP caller.
+            result["terminal_can_accept_exec"] = readiness.canAcceptExec
+            result["terminal_ready_for_exec"] = readiness.isReady
+            result["can_accept_exec"] = false
+            result["exec_acceptance_mode"] = TabExecutionReadiness.AcceptanceMode.blocked.rawValue
+            result["ready_for_exec"] = false
+            result["readiness_reason"] = "mcp_control_required"
+            return
+        }
         result["can_accept_exec"] = readiness.canAcceptExec
         result["exec_acceptance_mode"] = readiness.acceptanceMode.rawValue
         result["ready_for_exec"] = readiness.isReady
         result["readiness_reason"] = readiness.reason.rawValue
     }
 
-    private func tabReadinessSnapshot(tabID: String) -> [String: Any]? {
+    private func tabReadinessSnapshot(tabID: String, enforceMCPControl: Bool = false) -> [String: Any]? {
         guard let (tab, session) = resolveTab(tabID) else {
             return nil
         }
         var result = tabSummary(tab)
-        addExecutionReadinessFields(to: &result, session: session)
+        addExecutionReadinessFields(
+            to: &result,
+            session: session,
+            mcpControlAllowed: enforceMCPControl ? tab.isMCPControlled : nil
+        )
+        return result
+    }
+
+    private func tabStatusPayload(
+        tab: OverlayTab,
+        session: TerminalSessionModel,
+        enforceMCPControl: Bool
+    ) -> [String: Any] {
+        var result = tabSummary(tab)
+        addExecutionReadinessFields(
+            to: &result,
+            session: session,
+            mcpControlAllowed: enforceMCPControl ? tab.isMCPControlled : nil
+        )
+
+        if let pg = session.processGroup {
+            result["processes"] = pg.children.map { proc in
+                [
+                    "pid": proc.pid,
+                    "name": proc.name,
+                    "cpu_percent": proc.cpuPercent,
+                    "rss_bytes": proc.rssBytes
+                ] as [String: Any]
+            }
+        }
+
+        if let run = TelemetryRecorder.shared.activeRunForTab(session.tabIdentifier) {
+            result["active_run"] = [
+                "run_id": run.id,
+                "provider": run.provider,
+                "started_at": TelemetryStore.isoString(from: run.startedAt),
+                "session_id": run.sessionID as Any,
+                "duration_so_far_ms": Int(Date().timeIntervalSince(run.startedAt) * 1000)
+            ] as [String: Any]
+        }
         return result
     }
 
@@ -2432,7 +2897,8 @@ final class TerminalControlService {
     private func pruneTabAliasesLocked() {
         let validTabIDs = Set(allTabs.map(\.id))
         mcpTabIDs.prune(validTabIDs: validTabIDs)
-        aethymePendingMCPInput = aethymePendingMCPInput.filter { validTabIDs.contains($0.key) }
+        // Drop staged input for tabs that no longer exist.
+        mcpPendingInput = mcpPendingInput.filter { validTabIDs.contains($0.key) }
     }
 
     private func preferredModelEntry(from models: [(windowID: Int, model: OverlayTabsModel)]) -> (windowID: Int, model: OverlayTabsModel)? {
@@ -2525,7 +2991,9 @@ final class TerminalControlService {
             recentCommand: nil,
             contextNote: contextNote,
             sessionID: nil
-        ).withComposedPushText()
+        ).withComposedPushText().withSeverity(
+            ApprovalSeverity.classify(command: command, flaggedCommand: flaggedCommand, reason: reason)
+        )
         onMainActor {
             self.approvalForwarder?.sendApprovalRequest(requestID: requestID, payload: payload)
         }
@@ -2646,7 +3114,11 @@ final class TerminalControlService {
     }
 
     private func jsonError(_ message: String) -> String {
-        "{\"error\":\"\(message.replacingOccurrences(of: "\"", with: "\\\""))\"}"
+        // Build via JSONSerialization so backslashes and control characters in
+        // caller-influenced text (tab IDs, command strings) are escaped properly
+        // — a hand-rolled `"`-only escape produced malformed JSON that
+        // `classifyToolResponse` would then misread as a non-error string.
+        encodeAny(["error": message])
     }
 
     private func encodeAny(_ value: Any) -> String {

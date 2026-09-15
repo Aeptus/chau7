@@ -48,6 +48,8 @@ final class MagiProtocolTests: XCTestCase {
         XCTAssertTrue(prompt.contains("Request evidence only when a concrete external fact could change your position."))
         XCTAssertTrue(prompt.contains("For subjective preference questions, usually leave evidence_requests empty"))
         XCTAssertTrue(prompt.contains("Every evidence request must include at least one concrete proposed_collector."))
+        XCTAssertTrue(prompt.contains("veto must be null in this round"))
+        XCTAssertTrue(prompt.contains("Blocking vetoes are accepted only in the final vote round"))
         XCTAssertFalse(prompt.contains("local.git_diff_stat"))
         XCTAssertFalse(prompt.contains("local.shell"))
 
@@ -58,6 +60,23 @@ final class MagiProtocolTests: XCTestCase {
             stage: .position
         )
         XCTAssertEqual(MagiTranscriptParser.blockCandidates(in: prompt, markers: markers), [])
+    }
+
+    func testBlockCandidatesIgnoreInlineEchoedMarkersAndPartialBlocks() {
+        let markers = MagiProtocolMarkers(
+            runID: "run-1",
+            roundID: "round-1",
+            memberID: .melchior,
+            stage: .position
+        )
+        let output = """
+        The prompt said begin marker name: \(markers.begin)
+        \(markers.begin)
+        {
+          "member": "melchior"
+        """
+
+        XCTAssertEqual(MagiTranscriptParser.blockCandidates(in: output, markers: markers), [])
     }
 
     func testParsePositionUsesLatestValidMarkedJSONBlock() throws {
@@ -140,31 +159,31 @@ final class MagiProtocolTests: XCTestCase {
     }
 
     func testRuntimeEventExtractorReadsChau7AIEventPayloads() {
-        let events: [[String: Any]] = [
-            [
-                "type": "ai_event",
-                "tab_id": "tab_1",
-                "detail": [
-                    "event_type": "agent-turn-complete",
-                    "message": "wrong tab"
-                ]
-            ],
-            [
-                "type": "ai_event",
-                "tab_id": "tab_2",
-                "detail": [
-                    "event_type": "tool_called",
-                    "message": "wrong event type"
-                ]
-            ],
-            [
-                "type": "ai_event",
-                "tab_id": "tab_2",
-                "detail": [
-                    "event_type": "agent-turn-complete",
-                    "message": "MAGI_RUN_1_ROUND_1_MELCHIOR_POSITION_BEGIN"
-                ]
-            ]
+        let events = [
+            MagiMCPRuntimeEvent(
+                type: "ai_event",
+                tabID: "tab_1",
+                detail: MagiMCPRuntimeEventDetail(
+                    eventType: "agent-turn-complete",
+                    message: "wrong tab"
+                )
+            ),
+            MagiMCPRuntimeEvent(
+                type: "ai_event",
+                tabID: "tab_2",
+                detail: MagiMCPRuntimeEventDetail(
+                    eventType: "tool_called",
+                    message: "wrong event type"
+                )
+            ),
+            MagiMCPRuntimeEvent(
+                type: "ai_event",
+                tabID: "tab_2",
+                detail: MagiMCPRuntimeEventDetail(
+                    eventType: "agent-turn-complete",
+                    message: "MAGI_RUN_1_ROUND_1_MELCHIOR_POSITION_BEGIN"
+                )
+            )
         ]
 
         let messages = MagiMCPEventParsing.runtimeEventMessages(
@@ -177,14 +196,12 @@ final class MagiProtocolTests: XCTestCase {
     }
 
     func testRuntimeEventExtractorFallsBackToTopLevelEventType() {
-        let events: [[String: Any]] = [
-            [
-                "type": "finished",
-                "tab_id": "tab_2",
-                "detail": [
-                    "message": "done"
-                ]
-            ]
+        let events = [
+            MagiMCPRuntimeEvent(
+                type: "finished",
+                tabID: "tab_2",
+                detail: MagiMCPRuntimeEventDetail(message: "done")
+            )
         ]
 
         let messages = MagiMCPEventParsing.runtimeEventMessages(
@@ -197,22 +214,137 @@ final class MagiProtocolTests: XCTestCase {
     }
 
     func testTabStatusIdleForRepairUsesPromptReadinessButNotActiveRuns() {
-        XCTAssertTrue(MagiMCPEventParsing.tabStatusIsIdleForRepair([
-            "status": "running",
-            "can_accept_exec": true
-        ]))
-        XCTAssertTrue(MagiMCPEventParsing.tabStatusIsIdleForRepair([
-            "status": "done",
-            "is_at_prompt": false
-        ]))
-        XCTAssertFalse(MagiMCPEventParsing.tabStatusIsIdleForRepair([
-            "active_run": ["run_id": "run-1"],
-            "can_accept_exec": true
-        ]))
-        XCTAssertFalse(MagiMCPEventParsing.tabStatusIsIdleForRepair([
-            "status": "approvalRequired",
-            "can_accept_exec": false
-        ]))
+        XCTAssertTrue(MagiMCPEventParsing.tabStatusIsIdleForRepair(MagiMCPTabStatus(
+            status: "running",
+            canAcceptExec: true
+        )))
+        XCTAssertTrue(MagiMCPEventParsing.tabStatusIsIdleForRepair(MagiMCPTabStatus(
+            status: "done",
+            isAtPrompt: false
+        )))
+        XCTAssertFalse(MagiMCPEventParsing.tabStatusIsIdleForRepair(MagiMCPTabStatus(
+            activeRun: .object(["run_id": .string("run-1")]),
+            canAcceptExec: true
+        )))
+        XCTAssertFalse(MagiMCPEventParsing.tabStatusIsIdleForRepair(MagiMCPTabStatus(
+            status: "approvalRequired",
+            canAcceptExec: false
+        )))
+    }
+
+    func testMCPDTOsDecodeFlexibleLaunchAndStatusFields() throws {
+        let launchJSON = """
+        {
+          "agents": [
+            {
+              "tab_id": "tab_7",
+              "status": "launched",
+              "prompt": "sent",
+              "prompt_input_visible": "true",
+              "prompt_submitted": 1,
+              "agent_running": true
+            }
+          ]
+        }
+        """
+        let launch = try JSONDecoder().decode(MagiMCPAgentLaunchResponse.self, from: Data(launchJSON.utf8))
+        XCTAssertEqual(launch.agents.first?.tabID, "tab_7")
+        XCTAssertEqual(launch.agents.first?.promptInputVisible, true)
+        XCTAssertEqual(launch.agents.first?.promptSubmitted, true)
+        XCTAssertEqual(launch.agents.first?.agentRunning, true)
+
+        let statusJSON = """
+        {
+          "status": "done",
+          "can_accept_exec": "yes",
+          "is_at_prompt": 0,
+          "active_run": null
+        }
+        """
+        let status = try JSONDecoder().decode(MagiMCPTabStatus.self, from: Data(statusJSON.utf8))
+        XCTAssertEqual(status.status, "done")
+        XCTAssertTrue(status.canAcceptExec)
+        XCTAssertFalse(status.isAtPrompt)
+        XCTAssertFalse(status.hasActiveRun)
+    }
+
+    func testAgentLaunchContractAcceptsStructuredSentPrompt() {
+        let assessment = MagiAgentLaunchContract.assess(
+            MagiMCPAgentLaunchAgent(
+                tabID: "tab_7",
+                status: "launched",
+                promptStatus: "sent",
+                promptInputVisible: true,
+                promptSubmitted: true,
+                agentRunning: true
+            ),
+            tabID: "tab_7"
+        )
+
+        XCTAssertTrue(assessment.accepted)
+        XCTAssertNil(assessment.failureReason)
+        XCTAssertTrue(assessment.promptVerificationFieldsComplete)
+        XCTAssertEqual(assessment.promptInputVisibleLogValue, "true")
+    }
+
+    func testAgentLaunchContractAcceptsRunningSubmittedUnverifiedPrompt() {
+        let assessment = MagiAgentLaunchContract.assess(
+            MagiMCPAgentLaunchAgent(
+                tabID: "tab_7",
+                status: "launched",
+                promptStatus: "sent_unverified",
+                promptInputVisible: false,
+                promptSubmitted: true,
+                agentRunning: true
+            ),
+            tabID: "tab_7"
+        )
+
+        XCTAssertTrue(assessment.accepted)
+        XCTAssertNil(assessment.failureReason)
+    }
+
+    func testAgentLaunchContractRejectsIncompletePromptVerificationFields() {
+        let assessment = MagiAgentLaunchContract.assess(
+            MagiMCPAgentLaunchAgent(
+                tabID: "tab_7",
+                status: "launched",
+                promptStatus: "sent",
+                promptInputVisible: nil,
+                promptSubmitted: nil,
+                agentRunning: nil
+            ),
+            tabID: "tab_7"
+        )
+
+        XCTAssertFalse(assessment.accepted)
+        XCTAssertEqual(
+            assessment.failureReason,
+            "agent_launch response for tab_7 did not include complete prompt verification fields"
+        )
+        XCTAssertFalse(assessment.promptVerificationFieldsComplete)
+        XCTAssertEqual(assessment.promptSubmittedLogValue, "missing")
+    }
+
+    func testAgentLaunchContractUsesMCPPromptFailureReason() {
+        let assessment = MagiAgentLaunchContract.assess(
+            MagiMCPAgentLaunchAgent(
+                tabID: "tab_7",
+                status: "launched",
+                promptStatus: "submitted_not_running",
+                promptInputVisible: true,
+                promptSubmitted: true,
+                agentRunning: false,
+                error: "prompt was submitted, but the tab did not report a running agent"
+            ),
+            tabID: "tab_7"
+        )
+
+        XCTAssertFalse(assessment.accepted)
+        XCTAssertEqual(
+            assessment.failureReason,
+            "prompt was submitted, but the tab did not report a running agent"
+        )
     }
 
     func testParseCritiquesAndEvidenceRequests() throws {
@@ -322,7 +454,9 @@ final class MagiProtocolTests: XCTestCase {
           "member": "balthasar",
           "round": 4,
           "verdict": "REJECT",
-          "vote": "Do not merge",
+          "decision_id": "do_not_merge",
+          "choice": "Do not merge",
+          "conditions": ["Missing rollback plan"],
           "confidence": 0.9,
           "rationale": "The risk is not reversible.",
           "veto": {
@@ -343,6 +477,8 @@ final class MagiProtocolTests: XCTestCase {
 
         XCTAssertEqual(result.vote.choice, "Do not merge")
         XCTAssertEqual(result.vote.verdictKind, .reject)
+        XCTAssertEqual(result.vote.decisionID, "do_not_merge")
+        XCTAssertEqual(result.vote.conditions, ["Missing rollback plan"])
         XCTAssertEqual(result.vote.rawOutput, output)
         XCTAssertEqual(result.veto?.memberID, .balthasar)
         XCTAssertEqual(result.veto?.blocksVerdict, true)
@@ -399,7 +535,9 @@ final class MagiProtocolTests: XCTestCase {
         XCTAssertTrue(prompt.contains("Verdict mode: engineering."))
         XCTAssertTrue(prompt.contains("verdict must be one of: APPROVE, REJECT, CONDITIONAL, NEED_EVIDENCE, ESCALATE"))
         XCTAssertTrue(prompt.contains(#""verdict": "APPROVE""#))
-        XCTAssertTrue(prompt.contains("JSON keys: member, round, verdict, vote, confidence, rationale, veto."))
+        XCTAssertTrue(prompt.contains("JSON keys: member, round, verdict, decision_id, choice, conditions, confidence, rationale, veto."))
+        XCTAssertTrue(prompt.contains("use the same decision_id only when the actionable decision and material conditions are the same"))
+        XCTAssertTrue(prompt.contains("Only a veto emitted in this final vote can block the verdict"))
         XCTAssertTrue(prompt.contains("Approved fact-gathering packets entered into deliberation:"))
         XCTAssertTrue(prompt.contains("Treat approved facts as shared deliberation material."))
     }
@@ -644,5 +782,33 @@ final class MagiProtocolTests: XCTestCase {
         XCTAssertEqual(command?.collectorKind, .unsupported)
         XCTAssertEqual(command?.payload, "local.shell:printf no")
         XCTAssertEqual(command?.requiresMCPCommandPermission, false)
+    }
+
+    func testCollectorOutputParserExtractsExitStatusAndStripsSentinel() throws {
+        let output = """
+        first line
+        MAGI_COLLECTOR_DONE_1:0
+        """
+
+        let result = try XCTUnwrap(
+            MagiCollectorOutputParser.parse(output: output, sentinel: "MAGI_COLLECTOR_DONE_1")
+        )
+
+        XCTAssertEqual(result.exitStatus, 0)
+        XCTAssertEqual(result.output, "first line")
+    }
+
+    func testCollectorOutputParserKeepsFailedOutputAndExitStatus() throws {
+        let output = """
+        permission denied
+        MAGI_COLLECTOR_DONE_2:13
+        """
+
+        let result = try XCTUnwrap(
+            MagiCollectorOutputParser.parse(output: output, sentinel: "MAGI_COLLECTOR_DONE_2")
+        )
+
+        XCTAssertEqual(result.exitStatus, 13)
+        XCTAssertEqual(result.output, "permission denied")
     }
 }

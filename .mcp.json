@@ -1,8 +1,0 @@
-{
-  "mcpServers": {
-    "chau7": {
-      "command": "sh",
-      "args": ["-c", "$HOME/.chau7/bin/chau7-mcp-bridge"]
-    }
-  }
-}

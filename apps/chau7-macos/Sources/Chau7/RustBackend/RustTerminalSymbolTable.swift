@@ -41,6 +41,8 @@ struct RustTerminalSymbolTable {
     // Use UnsafeMutableRawPointer since Swift structs aren't directly C-representable
     typealias GetGridFn = @convention(c) (OpaquePointer?) -> UnsafeMutableRawPointer?
     typealias FreeGridFn = @convention(c) (UnsafeMutableRawPointer?) -> Void
+    typealias GetGridDeltaFn = @convention(c) (OpaquePointer?, UInt64) -> UnsafeMutableRawPointer?
+    typealias FreeGridDeltaFn = @convention(c) (UnsafeMutableRawPointer?) -> Void
     typealias ScrollPositionFn = @convention(c) (OpaquePointer?) -> Double
     typealias ScrollToFn = @convention(c) (OpaquePointer?, Double) -> Void
     typealias ScrollLinesFn = @convention(c) (OpaquePointer?, Int32) -> Void
@@ -84,6 +86,7 @@ struct RustTerminalSymbolTable {
     typealias GetFullBufferTextFn = @convention(c) (OpaquePointer?) -> UnsafeMutablePointer<CChar>?
     typealias GetFullBufferAnsiTextFn = @convention(c) (OpaquePointer?) -> UnsafeMutablePointer<CChar>?
     typealias GetTailBufferAnsiTextFn = @convention(c) (OpaquePointer?, UInt, UInt) -> UnsafeMutablePointer<CChar>?
+    typealias GetTailBufferTextFn = @convention(c) (OpaquePointer?, UInt, UInt) -> UnsafeMutablePointer<CChar>?
     typealias ResetMetricsFn = @convention(c) (OpaquePointer?) -> Void
     // Terminal event functions (title, exit, PTY closed)
     typealias GetPendingTitleFn = @convention(c) (OpaquePointer?) -> UnsafeMutablePointer<CChar>?
@@ -127,6 +130,8 @@ struct RustTerminalSymbolTable {
     let nudgeWinsize: NudgeWinsizeFn? // Optional - older libraries may not have this
     let getGrid: GetGridFn
     let freeGrid: FreeGridFn
+    let getGridDelta: GetGridDeltaFn?
+    let freeGridDelta: FreeGridDeltaFn?
     let scrollPosition: ScrollPositionFn
     let scrollTo: ScrollToFn
     let scrollLines: ScrollLinesFn
@@ -169,6 +174,7 @@ struct RustTerminalSymbolTable {
     let getFullBufferText: GetFullBufferTextFn? // Optional - for debugging
     let getFullBufferAnsiText: GetFullBufferAnsiTextFn? // Optional - for styled restoration
     let getTailBufferAnsiText: GetTailBufferAnsiTextFn? // Optional - for bounded styled restoration
+    let getTailBufferText: GetTailBufferTextFn? // Optional - bounded plain-text tail (prompt scraping)
     let resetMetrics: ResetMetricsFn? // Optional - for performance analysis
     // Terminal event functions (title, exit, PTY closed)
     let getPendingTitle: GetPendingTitleFn? // Optional - for terminal title updates
@@ -199,7 +205,7 @@ struct RustTerminalSymbolTable {
 
     /// ABI version this build of the Swift mirrors was written against.
     /// Must match `CHAU7_TERMINAL_ABI_VERSION` in rust/chau7_terminal/src/ffi.rs.
-    static let expectedABIVersion: UInt32 = 1
+    static let expectedABIVersion: UInt32 = 2
 
     /// A successfully loaded dylib: the bound symbol table plus the dlopen
     /// handle (kept alive for the process lifetime — closing it would
@@ -305,6 +311,7 @@ struct RustTerminalSymbolTable {
         // in Swift terms — e.g. CellData is size 18 / stride 20 vs C's 20.
         let layoutProbes: [(symbol: String, expected: Int, type: String)] = [
             ("chau7_terminal_sizeof_grid_snapshot", MemoryLayout<RustGridSnapshot>.stride, "GridSnapshot"),
+            ("chau7_terminal_sizeof_grid_delta_snapshot", MemoryLayout<RustGridDeltaSnapshot>.stride, "GridDeltaSnapshot"),
             ("chau7_terminal_sizeof_cell_data", MemoryLayout<RustCellData>.stride, "CellData"),
             ("chau7_terminal_sizeof_debug_state", MemoryLayout<RustDebugState>.stride, "DebugState"),
             ("chau7_terminal_sizeof_image_data", MemoryLayout<RustTerminalFFI.FFIImageData>.stride, "FFIImageData"),
@@ -391,6 +398,13 @@ struct RustTerminalSymbolTable {
         let pollEvents = optionalSymbol(
             "chau7_terminal_poll_events", as: PollEventsFn.self, in: handle,
             missingNote: "poll_events symbol not found (optional, falling back to grid-only poll)"
+        )
+        let getGridDelta = optionalSymbol(
+            "chau7_terminal_get_grid_delta", as: GetGridDeltaFn.self, in: handle,
+            missingNote: "incremental grid snapshots unavailable; falling back to full snapshots"
+        )
+        let freeGridDelta = optionalSymbol(
+            "chau7_terminal_free_grid_delta", as: FreeGridDeltaFn.self, in: handle
         )
         let createWithEnv = optionalSymbol(
             "chau7_terminal_create_with_env", as: CreateWithEnvFn.self, in: handle,
@@ -508,6 +522,10 @@ struct RustTerminalSymbolTable {
             "chau7_terminal_get_tail_buffer_ansi_text", as: GetTailBufferAnsiTextFn.self, in: handle,
             missingNote: "get_tail_buffer_ansi_text symbol not found (optional)"
         )
+        let getTailBufferText = optionalSymbol(
+            "chau7_terminal_get_tail_buffer_text", as: GetTailBufferTextFn.self, in: handle,
+            missingNote: "get_tail_buffer_text symbol not found (optional)"
+        )
         let resetMetrics = optionalSymbol(
             "chau7_terminal_reset_metrics", as: ResetMetricsFn.self, in: handle,
             missingNote: "reset_metrics symbol not found (optional)"
@@ -595,6 +613,8 @@ struct RustTerminalSymbolTable {
             nudgeWinsize: nudgeWinsize,
             getGrid: unsafeBitCast(getGridSym, to: GetGridFn.self),
             freeGrid: unsafeBitCast(freeGridSym, to: FreeGridFn.self),
+            getGridDelta: getGridDelta,
+            freeGridDelta: freeGridDelta,
             scrollPosition: unsafeBitCast(scrollPositionSym, to: ScrollPositionFn.self),
             scrollTo: unsafeBitCast(scrollToSym, to: ScrollToFn.self),
             scrollLines: unsafeBitCast(scrollLinesSym, to: ScrollLinesFn.self),
@@ -627,6 +647,7 @@ struct RustTerminalSymbolTable {
             getFullBufferText: getFullBufferText,
             getFullBufferAnsiText: getFullBufferAnsiText,
             getTailBufferAnsiText: getTailBufferAnsiText,
+            getTailBufferText: getTailBufferText,
             resetMetrics: resetMetrics,
             getPendingTitle: getPendingTitle,
             getPendingCwd: getPendingCwd,

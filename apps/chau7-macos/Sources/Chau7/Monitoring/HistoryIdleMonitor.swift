@@ -79,6 +79,11 @@ final class HistoryIdleMonitor {
         Log.trace("Idle monitor stop. path=\(fileURL.path)")
     }
 
+    deinit {
+        tailer?.stop()
+        timer?.cancel()
+    }
+
     private func record(entry: HistoryEntry) {
         queue.async {
             guard !self.isStopped else { return }

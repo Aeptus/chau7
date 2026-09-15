@@ -107,17 +107,34 @@ final class ShellEventDetector {
             )
         }
 
-        // Emit command_finished or command_failed
-        if exitCodeValue != 0 {
-            emitEvent(
-                type: "command_failed",
-                message: "Exit \(exitCodeValue): \(commandDesc)"
-            )
-        } else if config.notifyOnAllCommandCompletion {
-            emitEvent(
-                type: "command_finished",
-                message: commandDesc
-            )
+        switch ShellCommandOutcomePolicy.completionDisposition(commandLine: command, exitCode: exitCode) {
+        case .scriptSucceeded:
+            emitEvent(type: "script_succeeded", message: "Completed: \(commandDesc)")
+
+        case .scriptFailed:
+            emitEvent(type: "script_failed", message: "Exit \(exitCodeValue): \(commandDesc)")
+
+        case .devServerFailed:
+            emitEvent(type: "script_failed", message: "Dev server exited \(exitCodeValue): \(commandDesc)")
+
+        case .suppress:
+            // Missing heuristic statuses and normal dev-server shutdowns do
+            // not establish a user-facing outcome.
+            break
+
+        case .ordinary:
+            // Preserve the existing opt-in generic command behavior.
+            if exitCodeValue != 0 {
+                emitEvent(
+                    type: "command_failed",
+                    message: "Exit \(exitCodeValue): \(commandDesc)"
+                )
+            } else if config.notifyOnAllCommandCompletion {
+                emitEvent(
+                    type: "command_finished",
+                    message: commandDesc
+                )
+            }
         }
 
         // Emit process_ended

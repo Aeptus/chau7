@@ -99,6 +99,42 @@ final class VisibleTerminalPollingPolicyTests: XCTestCase {
         )
     }
 
+    func testRemoteSelectedHiddenTabUsesEventDrainWithoutEnablingPresentation() {
+        XCTAssertEqual(
+            VisibleTerminalPollingPolicy.mode(
+                for: VisibleTerminalPollingContext(
+                    isTerminalStarted: true,
+                    notifyUpdateChanges: false,
+                    isShellBootstrapPending: false,
+                    requiresRemoteRealtimeDrain: true,
+                    allowsLivePresentation: false,
+                    isHidden: true,
+                    hasVisibleWindow: false,
+                    isWindowMiniaturized: false
+                )
+            ),
+            .eventDrain
+        )
+    }
+
+    func testRemoteDemandDoesNotPollAnUnstartedTerminal() {
+        XCTAssertEqual(
+            VisibleTerminalPollingPolicy.mode(
+                for: VisibleTerminalPollingContext(
+                    isTerminalStarted: false,
+                    notifyUpdateChanges: false,
+                    isShellBootstrapPending: false,
+                    requiresRemoteRealtimeDrain: true,
+                    allowsLivePresentation: false,
+                    isHidden: true,
+                    hasVisibleWindow: false,
+                    isWindowMiniaturized: false
+                )
+            ),
+            .backgroundDrain
+        )
+    }
+
     func testHiddenOrInactiveCasesUseBackgroundDrain() {
         XCTAssertEqual(
             VisibleTerminalPollingPolicy.mode(

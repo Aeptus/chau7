@@ -8,6 +8,23 @@ struct SearchableSetting: Identifiable {
     let title: String
     let keywords: [String]
     let description: String
+    let anchorID: String
+
+    init(
+        id: String,
+        section: SettingsSection,
+        title: String,
+        keywords: [String],
+        description: String,
+        anchorID: String? = nil
+    ) {
+        self.id = id
+        self.section = section
+        self.title = title
+        self.keywords = keywords
+        self.description = description
+        self.anchorID = anchorID ?? id
+    }
 
     func matches(_ query: String) -> Bool {
         let lowercased = query.lowercased()
@@ -24,15 +41,22 @@ private func localizedKeywords(_ key: String, _ defaultValue: String) -> [String
         .filter { !$0.isEmpty }
 }
 
+private func normalizedSearchTitle(_ title: String) -> String {
+    title
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+        .lowercased()
+        .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+}
+
 // MARK: - Settings Section Groups
 
 enum SettingsSectionGroup: String, CaseIterable, Identifiable {
-    case essentials
-    case lookAndFeel
+    case general
+    case appearance
     case terminal
-    case inputProductivity
-    case integrations
-    case monitoring
+    case aiWorkflows
+    case automation
+    case safetyPrivacy
 
     var id: String {
         rawValue
@@ -40,23 +64,23 @@ enum SettingsSectionGroup: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .essentials: return L("settings.group.essentials", "ESSENTIALS")
-        case .lookAndFeel: return L("settings.group.lookAndFeel", "LOOK & FEEL")
+        case .general: return L("settings.group.general", "GENERAL")
+        case .appearance: return L("settings.group.appearance", "APPEARANCE")
         case .terminal: return L("settings.group.terminal", "TERMINAL")
-        case .inputProductivity: return L("settings.group.inputProductivity", "INPUT & PRODUCTIVITY")
-        case .integrations: return L("settings.group.integrations", "INTEGRATIONS")
-        case .monitoring: return L("settings.group.monitoring", "MONITORING")
+        case .aiWorkflows: return L("settings.group.aiWorkflows", "AI WORKFLOWS")
+        case .automation: return L("settings.group.automation", "AUTOMATION")
+        case .safetyPrivacy: return L("settings.group.safetyPrivacy", "SAFETY & PRIVACY")
         }
     }
 
     var sections: [SettingsSection] {
         switch self {
-        case .essentials: return [.general, .profilesBackup, .about]
-        case .lookAndFeel: return [.fontColors, .display, .tabs, .hoverCard, .repositories, .minimalMode]
-        case .terminal: return [.shell, .scrollbackPerf, .dangerousCommands, .graphics]
-        case .inputProductivity: return [.keyboardMouse, .snippetsTools, .editor]
-        case .integrations: return [.aiDetection, .tokenOptimization, .mcpControl, .remoteControl, .apiProxy, .promptInjection]
-        case .monitoring: return [.notifications, .logsHistory]
+        case .general: return [.startHere, .general, .profilesBackup, .about]
+        case .appearance: return [.windows, .tabs, .hoverCard, .fontColors, .display, .minimalMode]
+        case .terminal: return [.shell, .scrollbackPerf, .graphics, .keyboardMouse]
+        case .aiWorkflows: return [.aiDetection, .mcpControl, .promptInjection, .tokenOptimization]
+        case .automation: return [.snippetsTools, .editor, .repositories, .apiProxy, .remoteControl, .sshProfiles]
+        case .safetyPrivacy: return [.dangerousCommands, .notifications, .history, .logsHistory]
         }
     }
 }
@@ -64,13 +88,15 @@ enum SettingsSectionGroup: String, CaseIterable, Identifiable {
 // MARK: - Settings Sections
 
 enum SettingsSection: String, CaseIterable, Identifiable {
+    case startHere
     // Essentials
     case general
     case profilesBackup
     case about
-    // Look & Feel
+    // Appearance
     case fontColors
     case display
+    case windows
     case tabs
     case hoverCard
     case repositories
@@ -83,17 +109,19 @@ enum SettingsSection: String, CaseIterable, Identifiable {
     case keyboardMouse
     case snippetsTools
     case editor
-    /// Look & Feel (additional)
+    /// Appearance (additional)
     case minimalMode
     // Integrations
     case aiDetection
     case tokenOptimization
     case mcpControl
     case remoteControl
+    case sshProfiles
     case apiProxy
     case promptInjection
     // Monitoring
     case notifications
+    case history
     case logsHistory
 
     var id: String {
@@ -102,40 +130,46 @@ enum SettingsSection: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
+        case .startHere: return L("settings.startHere", "Start Here")
         case .general: return L("settings.general", "General")
         case .profilesBackup: return L("settings.profilesBackup", "Sync & Backup")
         case .about: return L("settings.about", "About")
         case .fontColors: return L("settings.fontColors", "Font & Colors")
         case .display: return L("settings.display", "Display")
+        case .windows: return L("settings.windows", "Windows")
         case .tabs: return L("settings.tabs", "Tabs")
         case .hoverCard: return L("settings.hoverCard", "Hover Card")
         case .repositories: return L("settings.repositories", "Repositories")
         case .shell: return L("settings.shell", "Shell")
-        case .scrollbackPerf: return L("settings.scrollbackPerf", "Scrollback & Performance")
-        case .dangerousCommands: return L("settings.dangerousCommands", "Dangerous Commands")
+        case .scrollbackPerf: return L("settings.scrollbackPerf", "Performance")
+        case .dangerousCommands: return L("settings.dangerousCommands", "Command Safety")
         case .graphics: return L("settings.graphics", "Graphics")
         case .keyboardMouse: return L("settings.keyboardMouse", "Keyboard & Mouse")
         case .snippetsTools: return L("settings.snippetsTools", "Snippets & Tools")
         case .editor: return L("settings.editor", "Text Editor")
         case .minimalMode: return L("settings.minimalMode", "Minimal Mode")
         case .aiDetection: return L("settings.aiDetection", "AI Detection")
-        case .tokenOptimization: return L("settings.tokenOptimization", "Token Optimization (CTO)")
-        case .mcpControl: return L("settings.mcpControl", "MCP Control")
-        case .remoteControl: return L("settings.remoteControl", "Remote Control")
-        case .apiProxy: return L("settings.apiProxy", "API Proxy")
-        case .promptInjection: return L("settings.promptInjection", "Prompt Injection")
-        case .notifications: return L("settings.notifications", "Notifications")
-        case .logsHistory: return L("settings.logsHistory", "Logs & History")
+        case .tokenOptimization: return L("settings.tokenOptimization", "Context Optimization")
+        case .mcpControl: return L("settings.mcpControl", "Agent Control")
+        case .remoteControl: return L("settings.remoteControl", "Remote Access")
+        case .sshProfiles: return L("settings.sshProfiles", "SSH Profiles")
+        case .apiProxy: return L("settings.apiProxy", "API Tracking")
+        case .promptInjection: return L("settings.promptInjection", "AI Context")
+        case .notifications: return L("settings.notifications", "Alerts")
+        case .history: return L("settings.history", "History")
+        case .logsHistory: return L("settings.logsHistory", "Diagnostics")
         }
     }
 
     var systemImage: String {
         switch self {
+        case .startHere: return "checklist"
         case .general: return "gearshape"
         case .profilesBackup: return "arrow.triangle.2.circlepath"
         case .about: return "info.circle"
         case .fontColors: return "paintbrush"
         case .display: return "eye"
+        case .windows: return "macwindow"
         case .tabs: return "rectangle.stack"
         case .hoverCard: return "text.bubble"
         case .repositories: return "folder.badge.gearshape"
@@ -151,25 +185,29 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .tokenOptimization: return "bolt.horizontal.circle"
         case .mcpControl: return "face.dashed"
         case .remoteControl: return "antenna.radiowaves.left.and.right"
+        case .sshProfiles: return "network"
         case .apiProxy: return "network"
         case .promptInjection: return "text.insert"
         case .notifications: return "bell.badge"
+        case .history: return "clock.arrow.circlepath"
         case .logsHistory: return "doc.text.magnifyingglass"
         }
     }
 
     var description: String {
         switch self {
-        case .general: return L("settings.general.description", "Startup, language, and config file")
+        case .startHere: return L("settings.startHere.description", "Current setup, permissions, and service status")
+        case .general: return L("settings.general.description", "Startup, language, default directory, and advanced config files")
         case .profilesBackup: return L("settings.profilesBackup.description", "Profile auto-switch, iCloud sync, and settings backup")
-        case .about: return L("settings.about.description", "Version information and links")
-        case .fontColors: return L("settings.fontColors.description", "Font, color scheme, opacity, and ligatures")
-        case .display: return L("settings.display.description", "Syntax highlighting, URLs, images, and window layout")
+        case .about: return L("settings.about.summaryDescription", "Version, support links, diagnostics, and acknowledgments")
+        case .fontColors: return L("settings.fontColors.description", "Terminal font, color scheme, zoom, and ligatures")
+        case .display: return L("settings.display.description", "Syntax highlighting, URLs, images, and output formatting")
+        case .windows: return L("settings.windows.description", "App theme, opacity, window behavior, and layout")
         case .tabs: return L("settings.tabs.description", "Tab behavior and appearance")
         case .hoverCard: return L("settings.hoverCard.description", "Choose which sections appear in the tab hover card")
         case .repositories: return L("settings.repositories.description", "Manage repo descriptions, labels, and favorite files")
         case .shell: return L("settings.shell.description", "Shell, cursor, and bell")
-        case .scrollbackPerf: return L("settings.scrollbackPerf.description", "Scrollback buffer, rendering, and backend")
+        case .scrollbackPerf: return L("settings.scrollbackPerf.description", "Rendering, scrollback, and performance limits")
         case .dangerousCommands: return L("settings.dangerousCommands.description", "Highlight and guard risky commands")
         case .graphics: return L("settings.graphics.description", "Sixel and Kitty graphics protocols")
         case .keyboardMouse: return L("settings.keyboardMouse.description", "Keyboard shortcuts and mouse behavior")
@@ -177,30 +215,32 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .editor: return L("settings.editor.description", "Built-in text editor font, indentation, and display")
         case .minimalMode: return L("settings.minimalMode.description", "Hide tab bar, title bar, and status elements")
         case .aiDetection: return L("settings.aiDetection.description", "AI CLI detection, theming, and LLM provider")
-        case .tokenOptimization: return L("settings.tokenOptimization.description", "CTO wrapper scripts, per-tab control, and prefix")
-        case .mcpControl: return L("settings.mcpControl.description", "MCP agent tab creation, limits, and approval")
-        case .remoteControl: return L("settings.remoteControl.description", "Remote access, pairing, and SSH profiles")
-        case .apiProxy: return L("settings.apiProxy.description", "API call tracking and analytics proxy")
-        case .promptInjection: return L("settings.promptInjection.description", "Inject context into AI requests per repository")
+        case .tokenOptimization: return L("settings.tokenOptimization.description", "Context optimization mode, per-tab control, and prefix")
+        case .mcpControl: return L("settings.mcpControl.description", "Agent tab creation, limits, and approval")
+        case .remoteControl: return L("settings.remoteControl.description", "Remote app access, relay, pairing, and devices")
+        case .sshProfiles: return L("settings.sshProfiles.description", "Import, sync, and export SSH connection profiles")
+        case .apiProxy: return L("settings.apiProxy.description", "API call tracking and analytics")
+        case .promptInjection: return L("settings.promptInjection.description", "Add repository context to AI requests")
         case .notifications: return L("settings.notifications.description", "Alert preferences and event filters")
-        case .logsHistory: return L("settings.logsHistory.description", "Log files, session tracking, and command history")
+        case .history: return L("settings.history.description", "Command history and transcript retention")
+        case .logsHistory: return L("settings.logsHistory.description", "Log monitors, diagnostic paths, and active sessions")
         }
     }
 
     var group: SettingsSectionGroup {
         switch self {
-        case .general, .profilesBackup, .about:
-            return .essentials
-        case .fontColors, .display, .tabs, .hoverCard, .repositories, .minimalMode:
-            return .lookAndFeel
-        case .shell, .scrollbackPerf, .dangerousCommands, .graphics:
+        case .startHere, .general, .profilesBackup, .about:
+            return .general
+        case .fontColors, .display, .windows, .tabs, .minimalMode, .hoverCard:
+            return .appearance
+        case .shell, .scrollbackPerf, .graphics, .keyboardMouse:
             return .terminal
-        case .keyboardMouse, .snippetsTools, .editor:
-            return .inputProductivity
-        case .aiDetection, .tokenOptimization, .mcpControl, .remoteControl, .apiProxy, .promptInjection:
-            return .integrations
-        case .notifications, .logsHistory:
-            return .monitoring
+        case .aiDetection, .mcpControl, .promptInjection, .tokenOptimization:
+            return .aiWorkflows
+        case .snippetsTools, .editor, .repositories, .apiProxy, .remoteControl, .sshProfiles:
+            return .automation
+        case .dangerousCommands, .notifications, .history, .logsHistory:
+            return .safetyPrivacy
         }
     }
 }
@@ -209,6 +249,18 @@ enum SettingsSection: String, CaseIterable, Identifiable {
 
 extension FeatureSettings {
     static let searchableSettings: [SearchableSetting] = [
+        // Start Here
+        SearchableSetting(
+            id: "startHereStatus",
+            section: .startHere,
+            title: L("settings.search.startHere.title", "Start Here Status"),
+            keywords: localizedKeywords(
+                "settings.search.startHere.keywords",
+                "status,start here,overview,setup,health,permissions,profile,mcp,remote,logs"
+            ),
+            description: L("settings.search.startHere.description", "Review launch, profile, permissions, Agent Control, remote access, alerts, and log paths")
+        ),
+
         // General
         SearchableSetting(
             id: "language",
@@ -282,6 +334,56 @@ extension FeatureSettings {
             ),
             description: L("settings.search.export.description", "Export or import settings as JSON")
         ),
+        SearchableSetting(
+            id: "resetSettings",
+            section: .profilesBackup,
+            title: L("settings.general.reset.all", "Reset All Settings to Defaults"),
+            keywords: localizedKeywords(
+                "settings.search.resetSettings.keywords",
+                "reset,defaults,recovery,restore,clear,settings"
+            ),
+            description: L("settings.search.resetSettings.description", "Reset Chau7 settings after exporting a backup if needed")
+        ),
+        SearchableSetting(
+            id: "about",
+            section: .about,
+            title: L("settings.search.about.title", "About Chau7"),
+            keywords: localizedKeywords(
+                "settings.search.about.keywords",
+                "about,version,license,logs,system,credits"
+            ),
+            description: L("settings.search.about.description", "View app version, system information, links, and application logs")
+        ),
+        SearchableSetting(
+            id: "aboutSupportInfo",
+            section: .about,
+            title: L("settings.about.copySupportInfo", "Copy Support Info"),
+            keywords: localizedKeywords(
+                "settings.search.aboutSupportInfo.keywords",
+                "support,copy,issue,bug,report,github,help"
+            ),
+            description: L("settings.search.aboutSupportInfo.description", "Copy build, system, and log details for support")
+        ),
+        SearchableSetting(
+            id: "aboutDiagnostics",
+            section: .about,
+            title: L("settings.about.diagnostics", "Diagnostics"),
+            keywords: localizedKeywords(
+                "settings.search.aboutDiagnostics.keywords",
+                "diagnostics,version,build,bundle,macos,architecture,log,debug"
+            ),
+            description: L("settings.search.aboutDiagnostics.description", "Review build, system, and log details")
+        ),
+        SearchableSetting(
+            id: "aboutAcknowledgments",
+            section: .about,
+            title: L("settings.about.acknowledgments", "Acknowledgments"),
+            keywords: localizedKeywords(
+                "settings.search.aboutAcknowledgments.keywords",
+                "license,licenses,acknowledgments,credits,agpl,open source"
+            ),
+            description: L("settings.search.aboutAcknowledgments.description", "Open licenses, credits, and acknowledgments")
+        ),
 
         // Font & Colors
         SearchableSetting(
@@ -326,13 +428,23 @@ extension FeatureSettings {
         ),
         SearchableSetting(
             id: "opacity",
-            section: .fontColors,
+            section: .windows,
             title: L("settings.search.opacity.title", "Window Opacity"),
             keywords: localizedKeywords(
                 "settings.search.opacity.keywords",
                 "transparency,translucent,see-through,alpha"
             ),
             description: L("settings.search.opacity.description", "Terminal window transparency")
+        ),
+        SearchableSetting(
+            id: "appTheme",
+            section: .windows,
+            title: L("settings.search.appTheme.title", "App Theme"),
+            keywords: localizedKeywords(
+                "settings.search.appTheme.keywords",
+                "theme,system,light,dark,appearance"
+            ),
+            description: L("settings.search.appTheme.description", "Choose the Chau7 interface theme")
         ),
 
         // Display
@@ -347,6 +459,36 @@ extension FeatureSettings {
             description: L("settings.search.syntaxHighlight.description", "Highlight code syntax in output")
         ),
         SearchableSetting(
+            id: "clickableURLs",
+            section: .display,
+            title: L("settings.search.clickableURLs.title", "Clickable URLs"),
+            keywords: localizedKeywords(
+                "settings.search.clickableURLs.keywords",
+                "url,link,browser,open,click"
+            ),
+            description: L("settings.search.clickableURLs.description", "Make terminal URLs clickable")
+        ),
+        SearchableSetting(
+            id: "inlineImages",
+            section: .display,
+            title: L("settings.search.inlineImages.title", "Inline Images"),
+            keywords: localizedKeywords(
+                "settings.search.inlineImages.keywords",
+                "image,imgcat,preview,inline"
+            ),
+            description: L("settings.search.inlineImages.description", "Display inline terminal images")
+        ),
+        SearchableSetting(
+            id: "prettyPrintJSON",
+            section: .display,
+            title: L("settings.search.prettyPrintJSON.title", "Pretty Print JSON"),
+            keywords: localizedKeywords(
+                "settings.search.prettyPrintJSON.keywords",
+                "json,format,pretty,indent"
+            ),
+            description: L("settings.search.prettyPrintJSON.description", "Format JSON output for readability")
+        ),
+        SearchableSetting(
             id: "timestamps",
             section: .display,
             title: L("settings.search.timestamps.title", "Line Timestamps"),
@@ -356,9 +498,51 @@ extension FeatureSettings {
             ),
             description: L("settings.search.timestamps.description", "Show timestamps for terminal lines")
         ),
+
+        // Windows
+        SearchableSetting(
+            id: "menuBarOnlyMode",
+            section: .windows,
+            title: L("settings.search.menuBarOnlyMode.title", "Menu Bar Only Mode"),
+            keywords: localizedKeywords(
+                "settings.search.menuBarOnlyMode.keywords",
+                "menu bar,dock,accessory,hide app,launcher"
+            ),
+            description: L("settings.search.menuBarOnlyMode.description", "Run Chau7 from the menu bar without a Dock icon")
+        ),
+        SearchableSetting(
+            id: "windowFloating",
+            section: .windows,
+            title: L("settings.search.windowFloating.title", "Floating Window"),
+            keywords: localizedKeywords(
+                "settings.search.windowFloating.keywords",
+                "float,always on top,above,window"
+            ),
+            description: L("settings.search.windowFloating.description", "Keep terminal windows above other apps")
+        ),
+        SearchableSetting(
+            id: "overlayWindow",
+            section: .windows,
+            title: L("settings.search.overlayWindow.title", "Overlay Window"),
+            keywords: localizedKeywords(
+                "settings.search.overlayWindow.keywords",
+                "overlay,show,position,workspace,reset"
+            ),
+            description: L("settings.search.overlayWindow.description", "Show or reset the remembered overlay window position")
+        ),
+        SearchableSetting(
+            id: "fullscreenToolbar",
+            section: .windows,
+            title: L("settings.search.fullscreenToolbar.title", "Fullscreen Toolbar"),
+            keywords: localizedKeywords(
+                "settings.search.fullscreenToolbar.keywords",
+                "fullscreen,toolbar,titlebar,window"
+            ),
+            description: L("settings.search.fullscreenToolbar.description", "Keep the toolbar visible in fullscreen")
+        ),
         SearchableSetting(
             id: "splitPanes",
-            section: .display,
+            section: .windows,
             title: L("settings.search.splitPanes.title", "Split Panes"),
             keywords: localizedKeywords(
                 "settings.search.splitPanes.keywords",
@@ -368,6 +552,16 @@ extension FeatureSettings {
         ),
 
         // Tabs
+        SearchableSetting(
+            id: "newTabPosition",
+            section: .tabs,
+            title: L("settings.search.newTabPosition.title", "New Tab Position"),
+            keywords: localizedKeywords(
+                "settings.search.newTabPosition.keywords",
+                "new,tab,position,after,current,end"
+            ),
+            description: L("settings.search.newTabPosition.description", "Choose where new tabs are inserted")
+        ),
         SearchableSetting(
             id: "lastTabClose",
             section: .tabs,
@@ -379,6 +573,16 @@ extension FeatureSettings {
             description: L("settings.search.lastTabClose.description", "What happens when closing the last tab")
         ),
         SearchableSetting(
+            id: "tabCloseWarnings",
+            section: .tabs,
+            title: L("settings.search.tabCloseWarnings.title", "Tab Close Warnings"),
+            keywords: localizedKeywords(
+                "settings.search.tabCloseWarnings.keywords",
+                "warn,warning,close,running process,confirm"
+            ),
+            description: L("settings.search.tabCloseWarnings.description", "Confirm before closing tabs or running processes")
+        ),
+        SearchableSetting(
             id: "newTabDirectory",
             section: .tabs,
             title: L("settings.search.newTabDirectory.title", "New Tab Directory"),
@@ -387,6 +591,36 @@ extension FeatureSettings {
                 "current,working,directory,folder,inherit"
             ),
             description: L("settings.search.newTabDirectory.description", "Open new tabs in the active tab's directory")
+        ),
+        SearchableSetting(
+            id: "tabDisplay",
+            section: .tabs,
+            title: L("settings.search.tabDisplay.title", "Tab Display"),
+            keywords: localizedKeywords(
+                "settings.search.tabDisplay.keywords",
+                "tab,icons,path,git,cto,broadcast,custom title,indicator"
+            ),
+            description: L("settings.search.tabDisplay.description", "Choose which tab indicators are visible")
+        ),
+        SearchableSetting(
+            id: "repoGrouping",
+            section: .tabs,
+            title: L("settings.search.repoGrouping.title", "Repo Grouping"),
+            keywords: localizedKeywords(
+                "settings.search.repoGrouping.keywords",
+                "repo,repository,group,git,tabs"
+            ),
+            description: L("settings.search.repoGrouping.description", "Group tabs by repository")
+        ),
+        SearchableSetting(
+            id: "tabSwitchShortcut",
+            section: .tabs,
+            title: L("settings.search.tabSwitchShortcut.title", "Switch-to-Tab Keys"),
+            keywords: localizedKeywords(
+                "settings.search.tabSwitchShortcut.keywords",
+                "switch,tab,command number,function key,f1,f12,shortcut"
+            ),
+            description: L("settings.search.tabSwitchShortcut.description", "Choose keyboard shortcuts for jumping to tabs")
         ),
 
         // Shell
@@ -451,7 +685,7 @@ extension FeatureSettings {
             description: L("settings.search.bell.description", "Terminal bell sound")
         ),
 
-        // Scrollback & Performance
+        // Performance
         SearchableSetting(
             id: "scrollback",
             section: .scrollbackPerf,
@@ -463,21 +697,41 @@ extension FeatureSettings {
             description: L("settings.search.scrollback.description", "Lines to keep in scrollback")
         ),
         SearchableSetting(
-            id: "terminalBackend",
+            id: "smartScroll",
             section: .scrollbackPerf,
-            title: L("settings.search.terminalBackend.title", "Terminal Backend"),
+            title: L("settings.search.smartScroll.title", "Smart Scroll"),
             keywords: localizedKeywords(
-                "settings.search.terminalBackend.keywords",
-                "rust,metal,gpu,renderer"
+                "settings.search.smartScroll.keywords",
+                "smart,scroll,autoscroll,position,preserve"
             ),
-            description: L("settings.search.terminalBackend.description", "Choose terminal rendering backend")
+            description: L("settings.search.smartScroll.description", "Preserve scroll position while output continues")
+        ),
+        SearchableSetting(
+            id: "restoredScrollback",
+            section: .scrollbackPerf,
+            title: L("settings.search.restoredScrollback.title", "Restored Scrollback"),
+            keywords: localizedKeywords(
+                "settings.search.restoredScrollback.keywords",
+                "restore,recover,scrollback,lines,tabs"
+            ),
+            description: L("settings.search.restoredScrollback.description", "Limit how much scrollback is restored for recovered tabs")
+        ),
+        SearchableSetting(
+            id: "refreshCaps",
+            section: .scrollbackPerf,
+            title: L("settings.search.refreshCaps.title", "Refresh Caps"),
+            keywords: localizedKeywords(
+                "settings.search.refreshCaps.keywords",
+                "refresh,fps,rate,cap,battery,performance"
+            ),
+            description: L("settings.search.refreshCaps.description", "Limit active and background terminal refresh rates")
         ),
 
-        // Dangerous Commands
+        // Command Safety
         SearchableSetting(
             id: "dangerousCommands",
             section: .dangerousCommands,
-            title: L("settings.search.dangerousCommands.title", "Dangerous Commands"),
+            title: L("settings.search.dangerousCommands.title", "Command Safety"),
             keywords: localizedKeywords(
                 "settings.search.dangerousCommands.keywords",
                 "dangerous,risky,destructive,rm,force,highlight,safety"
@@ -567,6 +821,16 @@ extension FeatureSettings {
                 "multi,tabs,send,input"
             ),
             description: L("settings.search.broadcast.description", "Send input to all tabs")
+        ),
+        SearchableSetting(
+            id: "keybindingPreset",
+            section: .keyboardMouse,
+            title: L("settings.search.keybindingPreset.title", "Keybinding Preset"),
+            keywords: localizedKeywords(
+                "settings.search.keybindingPreset.keywords",
+                "preset,vim,emacs,default,keybinding,shortcut"
+            ),
+            description: L("settings.search.keybindingPreset.description", "Choose a built-in keyboard shortcut preset")
         ),
 
         // Snippets & Tools
@@ -662,22 +926,32 @@ extension FeatureSettings {
             ),
             description: L("settings.search.llmProvider.description", "Configure LLM provider and API keys")
         ),
+        SearchableSetting(
+            id: "errorExplanation",
+            section: .aiDetection,
+            title: L("settings.search.errorExplanation.title", "Error Explanation"),
+            keywords: localizedKeywords(
+                "settings.search.errorExplanation.keywords",
+                "error,explain,llm,ai,diagnose"
+            ),
+            description: L("settings.search.errorExplanation.description", "Use an LLM to explain terminal errors")
+        ),
 
-        // Token Optimization (CTO)
+        // Context Optimization
         SearchableSetting(
             id: "ctoMode",
             section: .tokenOptimization,
-            title: L("settings.search.ctoMode.title", "Optimization Mode"),
+            title: L("settings.search.ctoMode.title", "Context Mode"),
             keywords: localizedKeywords(
                 "settings.search.ctoMode.keywords",
                 "cto,token,optimization,mode,wrapper,all,ai,manual"
             ),
-            description: L("settings.search.ctoMode.description", "Controls when token-optimized output is active")
+            description: L("settings.search.ctoMode.description", "Controls when context optimization is active")
         ),
         SearchableSetting(
             id: "ctoPrefix",
             section: .tokenOptimization,
-            title: L("settings.search.ctoPrefix.title", "CTO Prefix"),
+            title: L("settings.search.ctoPrefix.title", "Context Prefix"),
             keywords: localizedKeywords(
                 "settings.search.ctoPrefix.keywords",
                 "cto,prefix,prepend,tab,override,integration"
@@ -687,28 +961,62 @@ extension FeatureSettings {
         SearchableSetting(
             id: "ctoPerTab",
             section: .tokenOptimization,
-            title: L("settings.search.ctoPerTab.title", "Per-Tab CTO"),
+            title: L("settings.search.ctoPerTab.title", "Per-Tab Context Optimization"),
             keywords: localizedKeywords(
                 "settings.search.ctoPerTab.keywords",
                 "tab,override,force,enable,disable,bolt"
             ),
-            description: L("settings.search.ctoPerTab.description", "Override CTO settings per tab")
+            description: L("settings.search.ctoPerTab.description", "Override context optimization per tab")
         ),
 
-        // Remote Control
+        // Agent Control
+        SearchableSetting(
+            id: "mcpServer",
+            section: .mcpControl,
+            title: L("settings.search.mcpServer.title", "Agent Server"),
+            keywords: localizedKeywords(
+                "settings.search.mcpServer.keywords",
+                "mcp,server,remote,agent,tabs,automation"
+            ),
+            description: L("settings.search.mcpServer.description", "Enable agent control and tab creation")
+        ),
+        SearchableSetting(
+            id: "mcpPermissions",
+            section: .mcpControl,
+            title: L("settings.search.mcpPermissions.title", "Agent Permissions"),
+            keywords: localizedKeywords(
+                "settings.search.mcpPermissions.keywords",
+                "permission,approval,allow,block,command,profile"
+            ),
+            description: L("settings.search.mcpPermissions.description", "Configure agent command approval and allow/block lists")
+        ),
+        SearchableSetting(
+            id: "mcpProfiles",
+            section: .mcpControl,
+            title: L("settings.search.mcpProfiles.title", "Agent Profiles"),
+            keywords: localizedKeywords(
+                "settings.search.mcpProfiles.keywords",
+                "profile,project,permissions,mcp"
+            ),
+            description: L("settings.search.mcpProfiles.description", "Manage agent permission profiles")
+        ),
+
+        // Remote Access
         SearchableSetting(
             id: "remote",
             section: .remoteControl,
-            title: L("settings.search.remote.title", "Remote Control"),
+            title: L("settings.search.remote.title", "Remote Access"),
             keywords: localizedKeywords(
                 "settings.search.remote.keywords",
                 "remote,ios,relay,pairing,qr"
             ),
             description: L("settings.search.remote.description", "Pair an iPhone and view terminal output remotely")
         ),
+
+        // SSH Profiles
         SearchableSetting(
             id: "sshProfiles",
-            section: .remoteControl,
+            section: .sshProfiles,
             title: L("settings.search.sshProfiles.title", "SSH Profiles"),
             keywords: localizedKeywords(
                 "settings.search.sshProfiles.keywords",
@@ -717,11 +1025,11 @@ extension FeatureSettings {
             description: L("settings.search.sshProfiles.description", "Manage SSH config entries and connections")
         ),
 
-        // API Proxy
+        // API Tracking
         SearchableSetting(
             id: "apiAnalytics",
             section: .apiProxy,
-            title: L("settings.search.apiAnalytics.title", "API Analytics"),
+            title: L("settings.search.apiAnalytics.title", "API Tracking"),
             keywords: localizedKeywords(
                 "settings.search.apiAnalytics.keywords",
                 "api,proxy,analytics,cost,token,tracking"
@@ -729,28 +1037,28 @@ extension FeatureSettings {
             description: L("settings.search.apiAnalytics.description", "Track API calls and token usage")
         ),
 
-        // Prompt Injection
+        // AI Context
         SearchableSetting(
             id: "promptInjection",
             section: .promptInjection,
-            title: L("settings.search.promptInjection.title", "Prompt Injection"),
+            title: L("settings.search.promptInjection.title", "AI Context"),
             keywords: localizedKeywords(
                 "settings.search.promptInjection.keywords",
                 "inject,prompt,context,prefix,prepend,append,system,repository,repo,rules"
             ),
-            description: L("settings.search.promptInjection.description", "Inject custom context into AI requests per repository")
+            description: L("settings.search.promptInjection.description", "Add custom context to AI requests per repository")
         ),
 
-        // Notifications
+        // Alerts
         SearchableSetting(
             id: "notificationStatus",
             section: .notifications,
-            title: L("settings.search.notificationStatus.title", "Notification Status"),
+            title: L("settings.search.notificationStatus.title", "Alert Status"),
             keywords: localizedKeywords(
                 "settings.search.notificationStatus.keywords",
                 "permission,alert,system,status"
             ),
-            description: L("settings.search.notificationStatus.description", "Notification permission status")
+            description: L("settings.search.notificationStatus.description", "System alert permission status")
         ),
         SearchableSetting(
             id: "notificationTriggers",
@@ -760,7 +1068,7 @@ extension FeatureSettings {
                 "settings.search.notificationTriggers.keywords",
                 "filter,event,type,toggle,task,complete,failed,trigger,enable,disable"
             ),
-            description: L("settings.search.notificationTriggers.description", "Enable triggers and configure actions for notifications")
+            description: L("settings.search.notificationTriggers.description", "Enable triggers and configure alert actions")
         ),
         SearchableSetting(
             id: "triggerActions",
@@ -770,7 +1078,8 @@ extension FeatureSettings {
                 "settings.search.triggerActions.keywords",
                 "action,webhook,slack,discord,script,sound,docker,notification,play,run"
             ),
-            description: L("settings.search.triggerActions.description", "Configure what happens when notification triggers fire")
+            description: L("settings.search.triggerActions.description", "Configure what happens when alert triggers fire"),
+            anchorID: "notificationTriggers"
         ),
         SearchableSetting(
             id: "shellThresholds",
@@ -800,7 +1109,7 @@ extension FeatureSettings {
                 "settings.search.aiToolNotifications.keywords",
                 "claude,codex,cursor,windsurf,copilot,aider,cline,continue,ai"
             ),
-            description: L("settings.search.aiToolNotifications.description", "Notifications from AI coding tools")
+            description: L("settings.search.aiToolNotifications.description", "Alerts from AI coding tools")
         ),
         SearchableSetting(
             id: "eventMonitoring",
@@ -810,13 +1119,13 @@ extension FeatureSettings {
                 "settings.search.eventMonitoring.keywords",
                 "monitor,watch,ai,events,log,tailer,restart"
             ),
-            description: L("settings.search.eventMonitoring.description", "Monitor AI CLI events for notifications")
+            description: L("settings.search.eventMonitoring.description", "Monitor AI CLI events for alerts")
         ),
 
-        // Logs & History
+        // History
         SearchableSetting(
             id: "persistentHistory",
-            section: .logsHistory,
+            section: .history,
             title: L("settings.search.persistentHistory.title", "Persistent History"),
             keywords: localizedKeywords(
                 "settings.search.persistentHistory.keywords",
@@ -824,8 +1133,50 @@ extension FeatureSettings {
             ),
             description: L("settings.search.persistentHistory.description", "Save command history across sessions")
         ),
+        SearchableSetting(
+            id: "telemetryRetention",
+            section: .history,
+            title: L("settings.search.telemetryRetention.title", "Telemetry Retention"),
+            keywords: localizedKeywords(
+                "settings.search.telemetryRetention.keywords",
+                "telemetry,transcripts,history,retention,days,storage"
+            ),
+            description: L("settings.search.telemetryRetention.description", "Control how long AI transcripts are kept")
+        ),
 
-        // New sections and missing settings
+        // Diagnostics
+        SearchableSetting(
+            id: "historyLogs",
+            section: .logsHistory,
+            title: L("settings.search.historyLogs.title", "History Logs"),
+            keywords: localizedKeywords(
+                "settings.search.historyLogs.keywords",
+                "codex,claude,history,path,idle,stale,monitor"
+            ),
+            description: L("settings.search.historyLogs.description", "Configure AI history log monitoring")
+        ),
+        SearchableSetting(
+            id: "terminalLogs",
+            section: .logsHistory,
+            title: L("settings.search.terminalLogs.title", "Terminal Logs"),
+            keywords: localizedKeywords(
+                "settings.search.terminalLogs.keywords",
+                "terminal,log,path,ansi,normalize,prefill,monitor"
+            ),
+            description: L("settings.search.terminalLogs.description", "Configure PTY terminal log monitoring")
+        ),
+        SearchableSetting(
+            id: "debugConsole",
+            section: .logsHistory,
+            title: L("debug.surface.diagnostics.title", "Diagnostics"),
+            keywords: localizedKeywords(
+                "settings.search.debugConsole.keywords",
+                "debug,console,diagnostics,logs,troubleshooting,state,events,runtime,usage,cost,quota"
+            ),
+            description: L("settings.search.debugConsole.description", "Open Chau7 diagnostics, runtime inspection, and usage monitor surfaces")
+        ),
+
+        // Additional searchable controls
         SearchableSetting(
             id: "ligatures",
             section: .fontColors,
@@ -853,6 +1204,26 @@ extension FeatureSettings {
             title: L("settings.search.groupIdleTabs.title", "Group Idle Tabs"),
             keywords: localizedKeywords("settings.search.groupIdleTabs.keywords", "idle,tabs,group,dropdown,declutter,threshold,minutes"),
             description: L("settings.search.groupIdleTabs.description", "Collect idle tabs in a dropdown chip (configurable threshold)")
+        ),
+        SearchableSetting(
+            id: "hoverCardSections",
+            section: .hoverCard,
+            title: L("settings.search.hoverCardSections.title", "Hover Card Sections"),
+            keywords: localizedKeywords(
+                "settings.search.hoverCardSections.keywords",
+                "hover,card,preview,sections,directory,git,processes,notifications"
+            ),
+            description: L("settings.search.hoverCardSections.description", "Choose which information appears in tab hover cards")
+        ),
+        SearchableSetting(
+            id: "repositoryMetadata",
+            section: .repositories,
+            title: L("settings.search.repositoryMetadata.title", "Repository Metadata"),
+            keywords: localizedKeywords(
+                "settings.search.repositoryMetadata.keywords",
+                "repository,repo,metadata,description,labels,favorite files"
+            ),
+            description: L("settings.search.repositoryMetadata.description", "Manage repository descriptions, labels, and favorite files")
         ),
         SearchableSetting(
             id: "clickToPosition",
@@ -903,6 +1274,14 @@ extension FeatureSettings {
     static func sectionsMatching(query: String) -> Set<SettingsSection> {
         guard !query.isEmpty else { return [] }
         return Set(searchableSettings.filter { $0.matches(query) }.map { $0.section })
+    }
+
+    static func searchAnchorID(forTitle title: String, in section: SettingsSection?) -> String? {
+        let normalizedTitle = normalizedSearchTitle(title)
+        return searchableSettings.first { setting in
+            (section == nil || setting.section == section) &&
+                normalizedSearchTitle(setting.title) == normalizedTitle
+        }?.anchorID
     }
 }
 

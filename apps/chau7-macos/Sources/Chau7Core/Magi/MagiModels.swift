@@ -68,6 +68,16 @@ public enum MagiFallbackStrategy: String, Codable, CaseIterable, Identifiable, S
     }
 }
 
+public enum MagiEvidenceApprovalPolicy: String, Codable, CaseIterable, Identifiable, Sendable {
+    case ask
+    case autoDeny = "auto_deny"
+    case preapproved
+
+    public var id: String {
+        rawValue
+    }
+}
+
 // MARK: - Configuration
 
 public struct MagiMemberConfiguration: Codable, Equatable, Sendable {
@@ -97,7 +107,7 @@ public struct MagiConfig: Codable, Equatable, Sendable {
     public var defaultReasoning: MagiReasoningLevel
     public var fallbackStrategy: MagiFallbackStrategy
     public var webAccessAllowed: Bool
-    public var evidenceRequiresApproval: Bool
+    public var evidencePolicy: MagiEvidenceApprovalPolicy
     public var deadlockExtraRoundEnabled: Bool
     public var vetoBlocksVerdict: Bool
     public var autoCloseAgentTabs: Bool
@@ -109,7 +119,7 @@ public struct MagiConfig: Codable, Equatable, Sendable {
         defaultReasoning: MagiReasoningLevel = .max,
         fallbackStrategy: MagiFallbackStrategy = .duplicate,
         webAccessAllowed: Bool = true,
-        evidenceRequiresApproval: Bool = true,
+        evidencePolicy: MagiEvidenceApprovalPolicy = .ask,
         deadlockExtraRoundEnabled: Bool = true,
         vetoBlocksVerdict: Bool = true,
         autoCloseAgentTabs: Bool = true,
@@ -120,7 +130,7 @@ public struct MagiConfig: Codable, Equatable, Sendable {
         self.defaultReasoning = defaultReasoning
         self.fallbackStrategy = fallbackStrategy
         self.webAccessAllowed = webAccessAllowed
-        self.evidenceRequiresApproval = evidenceRequiresApproval
+        self.evidencePolicy = evidencePolicy
         self.deadlockExtraRoundEnabled = deadlockExtraRoundEnabled
         self.vetoBlocksVerdict = vetoBlocksVerdict
         self.autoCloseAgentTabs = autoCloseAgentTabs
@@ -161,6 +171,7 @@ public struct MagiMember: Codable, Equatable, Sendable, Identifiable {
     public var provider: String
     public var modelClass: MagiModelClass
     public var reasoning: MagiReasoningLevel
+    public var modelName: String?
     public var weight: Double
 
     public init(
@@ -169,6 +180,7 @@ public struct MagiMember: Codable, Equatable, Sendable, Identifiable {
         provider: String,
         modelClass: MagiModelClass = .balanced,
         reasoning: MagiReasoningLevel = .max,
+        modelName: String? = nil,
         weight: Double = 1.0
     ) {
         self.id = id
@@ -176,6 +188,7 @@ public struct MagiMember: Codable, Equatable, Sendable, Identifiable {
         self.provider = provider
         self.modelClass = modelClass
         self.reasoning = reasoning
+        self.modelName = modelName
         self.weight = max(0, weight)
     }
 }
@@ -217,6 +230,7 @@ public struct MagiCouncil: Codable, Equatable, Sendable, Identifiable {
                 provider: config.provider,
                 modelClass: config.modelClass,
                 reasoning: config.reasoning,
+                modelName: config.modelName,
                 weight: 1.0
             )
         }
@@ -308,11 +322,37 @@ public enum MagiEvidencePriority: String, Codable, CaseIterable, Sendable {
 }
 
 public enum MagiEvidenceRequestStatus: String, Codable, CaseIterable, Sendable {
-    case pendingApproval
+    case requested
     case approved
     case denied
+    case skipped
+    case failed
     case fulfilled
-    case notActionable = "not_actionable"
+
+    public init(from decoder: Decoder) throws {
+        let rawValue = try decoder.singleValueContainer().decode(String.self)
+        switch rawValue {
+        case "pendingApproval", "pending_approval":
+            self = .requested
+        case "notActionable", "not_actionable":
+            self = .skipped
+        default:
+            guard let status = MagiEvidenceRequestStatus(rawValue: rawValue) else {
+                throw DecodingError.dataCorrupted(
+                    .init(
+                        codingPath: decoder.codingPath,
+                        debugDescription: "Unknown MAGI evidence request status: \(rawValue)"
+                    )
+                )
+            }
+            self = status
+        }
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(rawValue)
+    }
 }
 
 public struct MagiEvidenceRequest: Codable, Equatable, Sendable, Identifiable {
@@ -333,7 +373,7 @@ public struct MagiEvidenceRequest: Codable, Equatable, Sendable, Identifiable {
         reason: String,
         requiredEvidence: [String],
         proposedCollectors: [String] = [],
-        status: MagiEvidenceRequestStatus = .pendingApproval
+        status: MagiEvidenceRequestStatus = .requested
     ) {
         self.id = id
         self.memberID = memberID
@@ -418,6 +458,15 @@ public struct MagiVeto: Codable, Equatable, Sendable, Identifiable {
     }
 }
 
+public enum MagiVetoResolutionScope {
+    public static func finalResolutionVetoes(
+        positionRoundVetoes _: [MagiVeto],
+        voteRoundVetoes: [MagiVeto]
+    ) -> [MagiVeto] {
+        voteRoundVetoes
+    }
+}
+
 public struct MagiPosition: Codable, Equatable, Sendable, Identifiable {
     public var id: String
     public var memberID: MagiMemberID
@@ -489,7 +538,9 @@ public struct MagiVote: Codable, Equatable, Sendable, Identifiable {
     public var id: String
     public var memberID: MagiMemberID
     public var verdictKind: MagiVerdictKind?
+    public var decisionID: String?
     public var choice: String
+    public var conditions: [String]
     public var confidence: Double
     public var rationale: String
     public var rawOutput: String?
@@ -498,7 +549,9 @@ public struct MagiVote: Codable, Equatable, Sendable, Identifiable {
         id: String,
         memberID: MagiMemberID,
         verdictKind: MagiVerdictKind? = nil,
+        decisionID: String? = nil,
         choice: String,
+        conditions: [String] = [],
         confidence: Double,
         rationale: String,
         rawOutput: String? = nil
@@ -506,7 +559,9 @@ public struct MagiVote: Codable, Equatable, Sendable, Identifiable {
         self.id = id
         self.memberID = memberID
         self.verdictKind = verdictKind
+        self.decisionID = decisionID
         self.choice = choice
+        self.conditions = conditions
         self.confidence = min(1, max(0, confidence))
         self.rationale = rationale
         self.rawOutput = rawOutput
@@ -514,6 +569,55 @@ public struct MagiVote: Codable, Equatable, Sendable, Identifiable {
 
     public var normalizedChoice: String {
         choice.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case memberID
+        case verdictKind
+        case decisionID
+        case choice
+        case conditions
+        case confidence
+        case rationale
+        case rawOutput
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.id = try container.decode(String.self, forKey: .id)
+        self.memberID = try container.decode(MagiMemberID.self, forKey: .memberID)
+        self.verdictKind = try container.decodeIfPresent(MagiVerdictKind.self, forKey: .verdictKind)
+        self.decisionID = try container.decodeIfPresent(String.self, forKey: .decisionID)
+        self.choice = try container.decode(String.self, forKey: .choice)
+        self.conditions = Self.decodeConditions(container)
+        self.confidence = try min(1, max(0, container.decodeIfPresent(Double.self, forKey: .confidence) ?? 0))
+        self.rationale = try container.decodeIfPresent(String.self, forKey: .rationale) ?? ""
+        self.rawOutput = try container.decodeIfPresent(String.self, forKey: .rawOutput)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(memberID, forKey: .memberID)
+        try container.encodeIfPresent(verdictKind, forKey: .verdictKind)
+        try container.encodeIfPresent(decisionID, forKey: .decisionID)
+        try container.encode(choice, forKey: .choice)
+        try container.encode(conditions, forKey: .conditions)
+        try container.encode(confidence, forKey: .confidence)
+        try container.encode(rationale, forKey: .rationale)
+        try container.encodeIfPresent(rawOutput, forKey: .rawOutput)
+    }
+
+    private static func decodeConditions(_ container: KeyedDecodingContainer<CodingKeys>) -> [String] {
+        if let conditions = try? container.decodeIfPresent([String].self, forKey: .conditions) {
+            return conditions
+        }
+        if let condition = try? container.decodeIfPresent(String.self, forKey: .conditions) {
+            let trimmed = condition.trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed.isEmpty ? [] : [trimmed]
+        }
+        return []
     }
 }
 
@@ -648,6 +752,10 @@ public enum MagiQuestionKind: String, Codable, CaseIterable, Identifiable, Senda
     }
 
     public static func infer(from question: String) -> MagiQuestionKind {
+        inferWithReason(from: question).kind
+    }
+
+    public static func inferWithReason(from question: String) -> MagiQuestionKindInference {
         let normalized = question
             .lowercased()
             .replacingOccurrences(of: "_", with: " ")
@@ -664,8 +772,11 @@ public enum MagiQuestionKind: String, Codable, CaseIterable, Identifiable, Senda
             "production",
             "security"
         ]
-        if hardEngineeringDecisionSignals.contains(where: { normalized.contains($0) }) {
-            return .engineering
+        if let signal = hardEngineeringDecisionSignals.first(where: { normalized.contains($0) }) {
+            return MagiQuestionKindInference(
+                kind: .engineering,
+                reason: "matched engineering decision signal: \(signal.trimmingCharacters(in: .whitespaces))"
+            )
         }
 
         let engineeringSignals = [
@@ -699,12 +810,29 @@ public enum MagiQuestionKind: String, Codable, CaseIterable, Identifiable, Senda
             "ready"
         ]
 
-        if engineeringSignals.contains(where: { normalized.contains($0) }),
-           approvalSignals.contains(where: { normalized.contains($0) }) {
-            return .engineering
+        let engineeringSignal = engineeringSignals.first { normalized.contains($0) }
+        let approvalSignal = approvalSignals.first { normalized.contains($0) }
+        if let engineeringSignal, let approvalSignal {
+            return MagiQuestionKindInference(
+                kind: .engineering,
+                reason: "matched engineering signal: \(engineeringSignal) and decision signal: \(approvalSignal)"
+            )
         }
 
-        return .generic
+        return MagiQuestionKindInference(
+            kind: .generic,
+            reason: "no engineering decision signals matched"
+        )
+    }
+}
+
+public struct MagiQuestionKindInference: Equatable, Sendable {
+    public var kind: MagiQuestionKind
+    public var reason: String
+
+    public init(kind: MagiQuestionKind, reason: String) {
+        self.kind = kind
+        self.reason = reason
     }
 }
 
@@ -849,8 +977,11 @@ public enum MagiDecisionResolver {
                 ? vote.verdictKind
                 : MagiVerdictKind.inferApprovalStyle(from: choice)
             guard let kind else { return nil }
+            guard let decisionKey = engineeringDecisionKey(for: vote, kind: kind, choice: choice) else {
+                return nil
+            }
             return ResolvedVote(
-                key: kind.rawValue,
+                key: decisionKey,
                 kind: kind,
                 decision: choice.isEmpty ? kind.rawValue : choice,
                 vote: vote
@@ -864,6 +995,36 @@ public enum MagiDecisionResolver {
                 vote: vote
             )
         }
+    }
+
+    private static func engineeringDecisionKey(
+        for vote: MagiVote,
+        kind: MagiVerdictKind,
+        choice: String
+    ) -> String? {
+        let rawDecision = vote.decisionID?.trimmingCharacters(in: .whitespacesAndNewlines)
+            ?? choice.trimmingCharacters(in: .whitespacesAndNewlines)
+        let decision = normalizedKeyText(rawDecision)
+        guard !decision.isEmpty else { return nil }
+
+        let verdictOnly = normalizedKeyText(kind.rawValue)
+        guard decision != verdictOnly else { return nil }
+
+        let conditions = vote.conditions
+            .map(normalizedKeyText)
+            .filter { !$0.isEmpty }
+            .sorted()
+            .joined(separator: "|")
+        return "\(kind.rawValue):\(decision):\(conditions)"
+    }
+
+    private static func normalizedKeyText(_ value: String) -> String {
+        let normalizedScalars = value.lowercased().unicodeScalars.map { scalar -> String in
+            CharacterSet.alphanumerics.contains(scalar) ? String(scalar) : " "
+        }.joined()
+        return normalizedScalars
+            .split(whereSeparator: \.isWhitespace)
+            .joined(separator: " ")
     }
 }
 
@@ -907,6 +1068,61 @@ public struct MagiDecisionGraph: Codable, Equatable, Sendable {
     }
 }
 
+public enum MagiArtifactBundleStatus: String, Codable, CaseIterable, Sendable {
+    case partial
+    case complete
+}
+
+public enum MagiArtifactFileStatus: String, Codable, CaseIterable, Sendable {
+    case present
+    case missing
+    case unreadable
+}
+
+public struct MagiArtifactManifest: Codable, Equatable, Sendable {
+    public struct File: Codable, Equatable, Sendable {
+        public var name: String
+        public var path: String
+        public var status: MagiArtifactFileStatus
+        public var byteCount: Int?
+        public var sha256: String?
+        public var error: String?
+
+        public init(
+            name: String,
+            path: String,
+            status: MagiArtifactFileStatus,
+            byteCount: Int? = nil,
+            sha256: String? = nil,
+            error: String? = nil
+        ) {
+            self.name = name
+            self.path = path
+            self.status = status
+            self.byteCount = byteCount
+            self.sha256 = sha256
+            self.error = error
+        }
+    }
+
+    public var runID: String
+    public var runStatus: MagiRunStatus
+    public var artifactStatus: MagiArtifactBundleStatus
+    public var files: [File]
+
+    public init(
+        runID: String,
+        runStatus: MagiRunStatus,
+        artifactStatus: MagiArtifactBundleStatus,
+        files: [File]
+    ) {
+        self.runID = runID
+        self.runStatus = runStatus
+        self.artifactStatus = artifactStatus
+        self.files = files
+    }
+}
+
 public struct MagiArtifactBundle: Codable, Equatable, Sendable {
     public static let requiredFileNames = [
         "decision.md",
@@ -914,7 +1130,8 @@ public struct MagiArtifactBundle: Codable, Equatable, Sendable {
         "transcript.jsonl",
         "graph.json",
         "replay.jsonl",
-        "share.html"
+        "share.html",
+        "manifest.json"
     ]
 
     public var runID: String
@@ -925,6 +1142,10 @@ public struct MagiArtifactBundle: Codable, Equatable, Sendable {
     public var graphJSONPath: String
     public var replayJSONLPath: String
     public var shareHTMLPath: String
+    public var manifestJSONPath: String {
+        "\(rootDirectory)/manifest.json"
+    }
+
     public var technicalLogPath: String {
         "\(rootDirectory)/technical.jsonl"
     }
@@ -942,6 +1163,18 @@ public struct MagiArtifactBundle: Codable, Equatable, Sendable {
     }
 
     public var requiredPaths: [String] {
+        [
+            decisionMarkdownPath,
+            decisionJSONPath,
+            transcriptJSONLPath,
+            graphJSONPath,
+            replayJSONLPath,
+            shareHTMLPath,
+            manifestJSONPath
+        ]
+    }
+
+    public var payloadPaths: [String] {
         [
             decisionMarkdownPath,
             decisionJSONPath,

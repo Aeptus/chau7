@@ -1,0 +1,50 @@
+{
+  "_comment": [
+    "Wire contract between the Codex shell wrapper (Swift, ShellLaunchConfigurator)",
+    "and the analytics proxy (Go, correlation_path.go).",
+    "",
+    "Codex cannot send custom request headers, so its project is carried inside the",
+    "request path instead: the wrapper prepends `prefix` + base64url(projectPath) to",
+    "the proxy base URL, and the proxy strips that segment back off before provider",
+    "detection and upstream forwarding.",
+    "",
+    "Both sides' tests read THIS file rather than restating the encoding, because the",
+    "two halves are individually testable and only wrong when paired -- a green Swift",
+    "suite and a green Go suite are not evidence that they agree. `healthCapability`",
+    "is what the proxy advertises on /health so the app can detect a stale bundled",
+    "binary at startup instead of discovering it as a provider 404."
+  ],
+  "prefix": "/_chau7/project/",
+  "encoding": "base64url-unpadded",
+  "healthCapability": "project-path-correlation",
+  "cases": [
+    {
+      "name": "canonical project path",
+      "projectPath": "/Users/tester/project",
+      "token": "L1VzZXJzL3Rlc3Rlci9wcm9qZWN0",
+      "requestPath": "/_chau7/project/L1VzZXJzL3Rlc3Rlci9wcm9qZWN0/v1/responses",
+      "forwardedPath": "/v1/responses"
+    },
+    {
+      "name": "url-safe alphabet: standard base64 would emit + and /",
+      "projectPath": "/Users/tester/éa~",
+      "token": "L1VzZXJzL3Rlc3Rlci_DqWF-",
+      "requestPath": "/_chau7/project/L1VzZXJzL3Rlc3Rlci_DqWF-/v1/responses",
+      "forwardedPath": "/v1/responses"
+    },
+    {
+      "name": "padding stripped",
+      "projectPath": "/a",
+      "token": "L2E",
+      "requestPath": "/_chau7/project/L2E/v1/responses",
+      "forwardedPath": "/v1/responses"
+    },
+    {
+      "name": "non-ascii utf-8",
+      "projectPath": "/Users/tester/prôjet",
+      "token": "L1VzZXJzL3Rlc3Rlci9wcsO0amV0",
+      "requestPath": "/_chau7/project/L1VzZXJzL3Rlc3Rlci9wcsO0amV0/v1/chat/completions",
+      "forwardedPath": "/v1/chat/completions"
+    }
+  ]
+}

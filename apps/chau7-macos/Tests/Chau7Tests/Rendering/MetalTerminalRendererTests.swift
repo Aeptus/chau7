@@ -148,6 +148,22 @@ final class MetalTerminalRendererTests: XCTestCase {
         XCTAssertFalse(info.isColor)
     }
 
+    func testEvictedRendererResourcesRestoreForAuthoritativeRedraw() throws {
+        let renderer = try makeRenderer()
+        XCTAssertGreaterThan(renderer.allocatedResourceBytes, 0)
+
+        let releasedBytes = renderer.evictResources()
+
+        XCTAssertGreaterThan(releasedBytes, 0)
+        XCTAssertTrue(renderer.resourcesAreEvicted)
+        XCTAssertEqual(renderer.allocatedResourceBytes, 0)
+        XCTAssertTrue(renderer.restoreResourcesIfNeeded())
+        XCTAssertFalse(renderer.resourcesAreEvicted)
+
+        renderer.setFont(nsFont: .monospacedSystemFont(ofSize: 13, weight: .regular))
+        XCTAssertGreaterThan(renderer.allocatedResourceBytes, 0)
+    }
+
     private func makeRenderer() throws -> MetalTerminalRenderer {
         guard let device = MTLCreateSystemDefaultDevice() else {
             throw XCTSkip("Metal is not available on this system")

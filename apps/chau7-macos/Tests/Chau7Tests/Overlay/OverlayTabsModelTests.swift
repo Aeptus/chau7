@@ -122,6 +122,44 @@ final class OverlayTabsModelTests: XCTestCase {
         try historyData.write(to: historyURL)
     }
 
+    private func createCodexRollout(
+        home: URL,
+        directory: String,
+        sessionID: String,
+        modifiedAt: Date
+    ) throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        let components = calendar.dateComponents([.year, .month, .day], from: modifiedAt)
+        let year = try XCTUnwrap(components.year)
+        let month = try XCTUnwrap(components.month)
+        let day = try XCTUnwrap(components.day)
+        let sessionsDirectory = home
+            .appendingPathComponent(".codex/sessions", isDirectory: true)
+            .appendingPathComponent(String(format: "%04d", year), isDirectory: true)
+            .appendingPathComponent(String(format: "%02d", month), isDirectory: true)
+            .appendingPathComponent(String(format: "%02d", day), isDirectory: true)
+        try FileManager.default.createDirectory(at: sessionsDirectory, withIntermediateDirectories: true)
+
+        let rolloutURL = sessionsDirectory.appendingPathComponent(
+            String(format: "rollout-%04d-%02d-%02dT09-22-42-\(sessionID).jsonl", year, month, day)
+        )
+        let payload: [String: Any] = [
+            "type": "session_meta",
+            "payload": [
+                "id": sessionID,
+                "cwd": URL(fileURLWithPath: directory).standardized.path
+            ]
+        ]
+        var data = try JSONSerialization.data(withJSONObject: payload)
+        data.append(Data("\n".utf8))
+        try data.write(to: rolloutURL)
+        try FileManager.default.setAttributes(
+            [.modificationDate: modifiedAt],
+            ofItemAtPath: rolloutURL.path
+        )
+    }
+
     private func makeSavedTabState(title: String, directory: String) -> SavedTabState {
         SavedTabState(
             customTitle: title,
@@ -978,7 +1016,12 @@ final class OverlayTabsModelTests: XCTestCase {
         XCTAssertTrue(newTab.hasInheritedRepoGroup)
 
         newTab.session?.gitRootPath = "/tmp/chau7-group-b"
-        drainMainQueue()
+        waitForCondition {
+            guard let movedTab = self.model.tabs.first(where: { $0.id == newTab.id }) else {
+                return false
+            }
+            return movedTab.repoGroupID == nil && !movedTab.hasInheritedRepoGroup
+        }
 
         let movedTab = try XCTUnwrap(model.tabs.first(where: { $0.id == newTab.id }))
         XCTAssertNil(movedTab.repoGroupID)
@@ -1104,7 +1147,12 @@ final class OverlayTabsModelTests: XCTestCase {
         XCTAssertTrue(newTab.hasInheritedRepoGroup)
 
         newTab.session?.gitRootPath = "/tmp/chau7-group-b"
-        drainMainQueue()
+        waitForCondition {
+            guard let movedTab = self.model.tabs.first(where: { $0.id == newTab.id }) else {
+                return false
+            }
+            return movedTab.repoGroupID == nil && !movedTab.hasInheritedRepoGroup
+        }
 
         let movedTab = try XCTUnwrap(model.tabs.first(where: { $0.id == newTab.id }))
         XCTAssertNil(movedTab.repoGroupID)
@@ -1201,8 +1249,8 @@ final class OverlayTabsModelTests: XCTestCase {
     /// non-selected tab is held `.warm` (never `.hidden`/suspended) regardless
     /// of whether it hosts an AI session — the old "keep background AI tabs
     /// live, suspend the rest" gate was removed. Suspension of background tabs
-    /// is now driven solely by memory pressure, which demotes *every*
-    /// non-selected tab to `.hidden`.
+    /// is now driven by memory pressure. The immediately previous tab remains
+    /// warm as a bounded MRU exception so switching back is still instant.
     func testRenderSuspensionSuspendsBackgroundTabsOnlyUnderMemoryPressure() {
         let selectedTab = model.tabs[0]
         model.newTab()
@@ -1228,8 +1276,8 @@ final class OverlayTabsModelTests: XCTestCase {
             "Background shell tabs stay live without memory pressure"
         )
 
-        // Under memory pressure, all non-selected tabs demote to .hidden and
-        // suspend — AI status no longer exempts a tab.
+        // Under memory pressure, cold background tabs demote to .hidden. The
+        // immediately previous tab is the one bounded warm exception.
         MemoryPressureResponder.shared.memoryPressureOverrideForTesting = true
         model.invalidateRenderLifecycle(reason: "test_memory_pressure")
         drainMainQueue()
@@ -1238,9 +1286,9 @@ final class OverlayTabsModelTests: XCTestCase {
             model.suspendedTabIDs.contains(aiTab.id),
             "Background AI tabs suspend under memory pressure"
         )
-        XCTAssertTrue(
+        XCTAssertFalse(
             model.suspendedTabIDs.contains(shellTab.id),
-            "Background shell tabs suspend under memory pressure"
+            "The immediately previous tab stays warm for an instant back-switch"
         )
     }
 
@@ -1250,7 +1298,10 @@ final class OverlayTabsModelTests: XCTestCase {
     func testRenderSuspensionReactivatesBackgroundTabWhenMemoryPressureClears() {
         let selectedTab = model.tabs[0]
         model.newTab()
+        model.newTab()
 
+        // The last-created tab becomes the bounded warm MRU when we return to
+        // selectedTab. Exercise reclamation with the older cold tab.
         let backgroundTab = model.tabs[1]
         model.selectTab(id: selectedTab.id)
 
@@ -2251,7 +2302,10 @@ final class OverlayTabsModelTests: XCTestCase {
     }
 
     func testSanitizeRestoredAIResumeOwnershipDropsDuplicateSessionIDs() {
-        let duplicateSessionID = "019d25d0-d0bd-7501-99ba-1f937c17b29b"
+        // This fixture tests ownership deduplication, not modern Codex rollout
+        // validation. Keep it opaque so those two independent policies do not
+        // make the test depend on a synthetic ~/.codex rollout file.
+        let duplicateSessionID = "duplicate-session-001"
         let states = [
             SavedTabState(
                 tabID: UUID().uuidString,
@@ -2379,7 +2433,9 @@ final class OverlayTabsModelTests: XCTestCase {
     }
 
     func testSanitizeRestoredAIResumeOwnershipUsesAgentLaunchResumeCommandWhenResumeCommandMissing() {
-        let sessionID = "019e0bd8-1367-7e53-97a5-3977e8d37c8a"
+        // Opaque legacy ID keeps this test focused on candidate precedence;
+        // UUID-shaped modern IDs are covered by CodexRestoreValidationTests.
+        let sessionID = "agent-launch-session-001"
         let paneID = UUID().uuidString
         let states = [
             SavedTabState(
@@ -2467,6 +2523,103 @@ final class OverlayTabsModelTests: XCTestCase {
         XCTAssertNil(sanitized.first?.paneStates?.first?.aiSessionId)
         XCTAssertNil(sanitized.first?.paneStates?.first?.aiResumeCommand)
         XCTAssertNil(sanitized.first?.paneStates?.first?.aiSessionIdSource)
+    }
+
+    func testExportTabStatesTrustsAlreadySanitizedFallbackWithoutFilesystemRescan() throws {
+        let tab = try XCTUnwrap(model.tabs.first)
+        let (paneID, session) = try XCTUnwrap(tab.splitController.terminalSessions.first)
+        let directory = makeTemporaryRepoRoot().path
+        let rejectedSessionID = UUID().uuidString.lowercased()
+        session.currentDirectory = directory
+        model.persistedRestoreFallbackStatesByTabID[tab.id] = makeSavedTabState(
+            tabID: tab.id,
+            paneID: paneID,
+            title: "Rejected Claude Restore",
+            directory: directory,
+            aiProvider: "claude",
+            aiSessionId: rejectedSessionID,
+            aiResumeCommand: "claude --resume \(rejectedSessionID)"
+        )
+
+        for cycle in 1 ... 3 {
+            let exported = try XCTUnwrap(model.exportTabStates().first)
+            let pane = try XCTUnwrap(exported.paneStates?.first)
+
+            XCTAssertEqual(exported.aiProvider, "claude", "autosave \(cycle) must preserve validated in-memory provider")
+            XCTAssertEqual(exported.aiSessionId, rejectedSessionID)
+            XCTAssertEqual(exported.aiResumeCommand, "claude --resume \(rejectedSessionID)")
+            XCTAssertEqual(pane.aiProvider, "claude")
+            XCTAssertEqual(pane.aiSessionId, rejectedSessionID)
+            XCTAssertEqual(pane.aiResumeCommand, "claude --resume \(rejectedSessionID)")
+
+            model.persistedRestoreFallbackStatesByTabID[tab.id] = exported
+        }
+    }
+
+    func testExportTabStatesPreservesCodexProviderWithoutScanningRolloutWhenLiveIdentityIsMissing() throws {
+        let home = try temporaryHomeDirectory()
+        setenv("CHAU7_HOME_ROOT", home.path, 1)
+        defer {
+            unsetenv("CHAU7_HOME_ROOT")
+            try? FileManager.default.removeItem(at: home)
+        }
+
+        let tab = try XCTUnwrap(model.tabs.first)
+        let session = try XCTUnwrap(tab.session)
+        let directory = makeTemporaryRepoRoot().path
+        let sessionID = UUID().uuidString.lowercased()
+        let lastActivityAt = Date()
+        session.currentDirectory = directory
+        session.restoreAIMetadata(
+            provider: "codex",
+            sessionId: nil,
+            lastOutputAt: lastActivityAt
+        )
+        try createCodexRollout(
+            home: home,
+            directory: directory,
+            sessionID: sessionID,
+            modifiedAt: lastActivityAt
+        )
+
+        XCTAssertNil(session.effectiveAISessionId, "The live observer has not attached the rollout yet")
+
+        let exported = try XCTUnwrap(model.exportTabStates().first)
+        let pane = try XCTUnwrap(exported.paneStates?.first)
+
+        XCTAssertEqual(pane.aiProvider, "codex")
+        XCTAssertNil(pane.aiSessionId)
+        XCTAssertNil(pane.aiResumeCommand)
+    }
+
+    func testExportTabStatesDefersConflictingProviderRepairUntilRestoreValidation() throws {
+        let home = try temporaryHomeDirectory()
+        setenv("CHAU7_HOME_ROOT", home.path, 1)
+        defer {
+            unsetenv("CHAU7_HOME_ROOT")
+            try? FileManager.default.removeItem(at: home)
+        }
+
+        let tab = try XCTUnwrap(model.tabs.first)
+        let session = try XCTUnwrap(tab.session)
+        let directory = makeTemporaryRepoRoot().path
+        let sessionID = "2e3688e0-668f-40e7-932a-caabfb415d4c"
+        try createClaudeTranscript(home: home, directory: directory, sessionID: sessionID)
+        session.currentDirectory = directory
+        session.restoreAIMetadata(
+            provider: "codex",
+            sessionId: sessionID,
+            lastOutputAt: Date()
+        )
+
+        let exported = try XCTUnwrap(model.exportTabStates().first)
+        let pane = try XCTUnwrap(exported.paneStates?.first)
+
+        XCTAssertEqual(pane.aiProvider, "codex")
+        XCTAssertEqual(pane.aiSessionId, sessionID)
+        XCTAssertEqual(pane.aiResumeCommand, "codex resume \(sessionID)")
+        XCTAssertEqual(exported.aiProvider, "codex")
+        XCTAssertEqual(exported.aiSessionId, sessionID)
     }
 
     func testSanitizeRestoredAIResumeOwnershipKeepsClaudeUUIDWithTranscript() throws {

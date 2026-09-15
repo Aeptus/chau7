@@ -31,9 +31,23 @@ final class TripleBufferedTerminal {
     /// `clusters` each frame; the renderer reads from them in lockstep.
     final class TerminalBuffer {
         let cells: UnsafeMutableBufferPointer<TerminalCell>
-        var clusters: ContiguousArray<UInt8>
+        /// Packed UTF-8 cluster bytes, manually managed. The previous
+        /// `ContiguousArray` was assigned across buffers by reference in
+        /// `copyFrom`/`copyDirtyFrom` (a COW share), so the very next
+        /// `resetClusters()` mutated shared storage and forced a fresh heap
+        /// allocation every sync (~10-20 KB alloc/free at ~19 Hz). Owned
+        /// storage + memcpy keeps steady-state syncs allocation-free.
+        private var clusterStorage: UnsafeMutablePointer<UInt8>
+        private(set) var clusterCount = 0
+        private(set) var clusterCapacity: Int
         let rows: Int
         let cols: Int
+
+        /// Monotonic Rust grid generation represented by this buffer. Row
+        /// generations let a rotating target catch up even when it missed one
+        /// or more deltas while another buffer was on screen.
+        private(set) var generation: UInt64 = 0
+        private var rowGenerations: [UInt64]
 
         /// Dirty rows that need re-rendering
         var dirtyRows: IndexSet = []
@@ -49,29 +63,128 @@ final class TripleBufferedTerminal {
             let ptr = UnsafeMutablePointer<TerminalCell>.allocate(capacity: count)
             ptr.initialize(repeating: TerminalCell(), count: count)
             self.cells = UnsafeMutableBufferPointer(start: ptr, count: count)
-            // Reserve enough for ASCII-dense terminals (~1 byte/cell). Vec doubles
-            // when emoji push past the reservation.
-            self.clusters = ContiguousArray<UInt8>()
-            clusters.reserveCapacity(count)
+            self.rowGenerations = Array(repeating: 0, count: rows)
+            // Enough for ASCII-dense terminals (~1 byte/cell); grows
+            // geometrically when emoji push past it.
+            self.clusterCapacity = max(count, 64)
+            self.clusterStorage = UnsafeMutablePointer<UInt8>.allocate(capacity: clusterCapacity)
         }
 
         deinit {
             cells.baseAddress?.deinitialize(count: cells.count)
             cells.baseAddress?.deallocate()
+            clusterStorage.deallocate()
+        }
+
+        /// Read-only view of the live cluster bytes. Valid until the next
+        /// `resetClusters`/`appendCluster`/`copy*From` on THIS buffer — the
+        /// renderer reads the render buffer while the bridge writes the
+        /// update buffer, so the two never alias.
+        var clusters: UnsafeBufferPointer<UInt8> {
+            UnsafeBufferPointer(start: clusterStorage, count: clusterCount)
         }
 
         /// Reset the cluster buffer for a new frame. Called by the bridge before
-        /// writing cells; clears bytes but keeps the allocation.
+        /// writing cells; clears the count but keeps the allocation.
         func resetClusters() {
-            clusters.removeAll(keepingCapacity: true)
+            clusterCount = 0
+        }
+
+        /// Prepares the producer buffer for one Rust snapshot. Full snapshots
+        /// replace all cluster storage; deltas retain unchanged rows and append
+        /// only clusters referenced by changed rows.
+        func beginUpdate(generation: UInt64, fullRefresh: Bool) {
+            dirtyRows.removeAll()
+            self.generation = generation
+            fullRefreshNeeded = fullRefresh
+            if fullRefresh {
+                resetClusters()
+                rowGenerations = Array(repeating: 0, count: rows)
+            } else {
+                compactClustersIfNeeded()
+            }
+        }
+
+        func finishUpdatedRow(_ row: Int, generation: UInt64) {
+            guard row >= 0, row < rows else { return }
+            rowGenerations[row] = generation
+            dirtyRows.insert(row)
         }
 
         /// Append a UTF-8 cluster, returning the start offset.
-        @inlinable
+        @inline(__always)
         func appendCluster(_ bytes: UnsafeBufferPointer<UInt8>) -> UInt32 {
-            let offset = UInt32(clusters.count)
-            clusters.append(contentsOf: bytes)
-            return offset
+            let offset = clusterCount
+            guard let base = bytes.baseAddress, !bytes.isEmpty else {
+                return UInt32(offset)
+            }
+            ensureClusterCapacity(clusterCount + bytes.count)
+            clusterStorage.advanced(by: offset).update(from: base, count: bytes.count)
+            clusterCount += bytes.count
+            return UInt32(offset)
+        }
+
+        private func ensureClusterCapacity(_ needed: Int) {
+            guard needed > clusterCapacity else { return }
+            var newCapacity = max(clusterCapacity * 2, 64)
+            while newCapacity < needed {
+                newCapacity *= 2
+            }
+            let newStorage = UnsafeMutablePointer<UInt8>.allocate(capacity: newCapacity)
+            newStorage.update(from: clusterStorage, count: clusterCount)
+            clusterStorage.deallocate()
+            clusterStorage = newStorage
+            clusterCapacity = newCapacity
+        }
+
+        /// Incremental row updates leave unreachable historical cluster bytes
+        /// behind. Repack live clusters before storage grows beyond its bounded
+        /// working set; cell offsets are rewritten atomically on the producer
+        /// buffer and the allocation shrinks with the live content.
+        private func compactClustersIfNeeded() {
+            let softLimit = 1 * 1_024 * 1_024
+            let hardCapacity = 4 * 1_024 * 1_024
+            let liveBytes = cells.reduce(into: 0) { total, cell in
+                total += Int(cell.clusterLen)
+            }
+            guard clusterCount > max(softLimit, liveBytes * 3)
+                    || clusterCapacity > max(hardCapacity, liveBytes * 4) else {
+                return
+            }
+
+            let newCapacity = max(64, liveBytes + max(liveBytes / 2, 64))
+            let newStorage = UnsafeMutablePointer<UInt8>.allocate(capacity: newCapacity)
+            var nextOffset = 0
+            for index in cells.indices {
+                var cell = cells[index]
+                let length = Int(cell.clusterLen)
+                guard length > 0 else { continue }
+                let oldOffset = Int(cell.clusterStart)
+                guard oldOffset >= 0, oldOffset + length <= clusterCount else {
+                    cell.clusterStart = 0
+                    cell.clusterLen = 0
+                    cells[index] = cell
+                    continue
+                }
+                newStorage.advanced(by: nextOffset).update(
+                    from: clusterStorage.advanced(by: oldOffset),
+                    count: length
+                )
+                cell.clusterStart = UInt32(nextOffset)
+                cells[index] = cell
+                nextOffset += length
+            }
+            clusterStorage.deallocate()
+            clusterStorage = newStorage
+            clusterCount = nextOffset
+            clusterCapacity = newCapacity
+        }
+
+        /// Replace this buffer's cluster bytes with a copy of another buffer's.
+        fileprivate func copyClustersFrom(_ other: TerminalBuffer) {
+            ensureClusterCapacity(other.clusterCount)
+            clusterStorage.update(from: other.clusterStorage, count: other.clusterCount)
+            clusterCount = other.clusterCount
         }
 
         /// Returns the UTF-8 cluster bytes for a cell as a copied `Data` — safe to
@@ -81,11 +194,8 @@ final class TripleBufferedTerminal {
             guard length > 0 else { return Data() }
             let start = Int(offset)
             let end = start + Int(length)
-            guard end <= clusters.count else { return Data() }
-            return clusters.withUnsafeBufferPointer { buf in
-                guard let base = buf.baseAddress else { return Data() }
-                return Data(bytes: base.advanced(by: start), count: Int(length))
-            }
+            guard end <= clusterCount else { return Data() }
+            return Data(bytes: clusterStorage.advanced(by: start), count: Int(length))
         }
 
         /// Build a Swift `String` from a cell's cluster bytes. Returns `""` for blanks.
@@ -93,12 +203,9 @@ final class TripleBufferedTerminal {
             guard length > 0 else { return "" }
             let start = Int(offset)
             let end = start + Int(length)
-            guard end <= clusters.count else { return "" }
-            return clusters.withUnsafeBufferPointer { buf in
-                guard let base = buf.baseAddress else { return "" }
-                let slice = UnsafeBufferPointer(start: base.advanced(by: start), count: Int(length))
-                return String(decoding: slice, as: UTF8.self)
-            }
+            guard end <= clusterCount else { return "" }
+            let slice = UnsafeBufferPointer(start: clusterStorage.advanced(by: start), count: Int(length))
+            return String(decoding: slice, as: UTF8.self)
         }
 
         /// Marks a row as dirty
@@ -132,19 +239,6 @@ final class TripleBufferedTerminal {
             }
         }
 
-        /// CLUSTER OFFSET INVARIANT
-        ///
-        /// The bridge rewrites `clusters` from scratch every frame, appending
-        /// bytes in column-major scan order. So for two frames with identical
-        /// content, identical cells will produce identical offsets. If any
-        /// earlier cell on the same scan path changes byte-length (e.g. an
-        /// ASCII char becomes an emoji), every downstream cell's offset shifts,
-        /// and `clusterStart` differs — which `cellsDiffer` picks up below,
-        /// marking those rows dirty so `copyDirtyFrom` re-copies them against
-        /// the new wholesale `clusters` array. This is the self-healing
-        /// property `copyDirtyFrom` relies on; do not weaken `cellsDiffer` to
-        /// ignore `clusterStart` without first replacing the diff with a
-        /// content-hash key.
         private static func cellsDiffer(_ lhs: TerminalCell, _ rhs: TerminalCell) -> Bool {
             lhs.clusterStart != rhs.clusterStart ||
                 lhs.clusterLen != rhs.clusterLen ||
@@ -159,36 +253,59 @@ final class TripleBufferedTerminal {
         func copyFrom(_ other: TerminalBuffer) {
             guard other.rows == rows, other.cols == cols else { return }
             memcpy(cells.baseAddress!, other.cells.baseAddress!, cells.count * MemoryLayout<TerminalCell>.stride)
-            clusters = other.clusters
+            copyClustersFrom(other)
             dirtyRows = other.dirtyRows
             fullRefreshNeeded = other.fullRefreshNeeded
+            generation = other.generation
+            rowGenerations = other.rowGenerations
         }
 
-        /// Copies only dirty rows from another buffer.
-        ///
-        /// Cluster bytes are replaced wholesale (not per-row). See the CLUSTER
-        /// OFFSET INVARIANT on `cellsDiffer`: any byte-length change earlier in
-        /// the scan shifts every downstream cell's `clusterStart`, which marks
-        /// those cells dirty, so all live offsets in the partially-copied cells
-        /// remain valid against the new `clusters` array.
-        func copyDirtyFrom(_ other: TerminalBuffer) {
-            guard other.rows == rows, other.cols == cols else { return }
+        /// Copies every row newer than this rotating target. Cluster offsets
+        /// are target-local, so each copied grapheme is appended and remapped
+        /// rather than borrowing the source buffer's offset.
+        func copyDirtyFrom(_ other: TerminalBuffer) -> (rows: Int, fullRefresh: Bool) {
+            guard other.rows == rows, other.cols == cols else { return (0, false) }
 
             if other.fullRefreshNeeded {
                 copyFrom(other)
-                return
+                return (rows, true)
             }
 
-            for row in other.dirtyRows {
-                let startIndex = row * cols
-                memcpy(
-                    cells.baseAddress!.advanced(by: startIndex),
-                    other.cells.baseAddress!.advanced(by: startIndex),
-                    cols * MemoryLayout<TerminalCell>.stride
-                )
+            compactClustersIfNeeded()
+            var copiedRows = IndexSet()
+            for row in 0 ..< rows where other.rowGenerations[row] > rowGenerations[row] {
+                copyRow(row, from: other)
+                rowGenerations[row] = other.rowGenerations[row]
+                copiedRows.insert(row)
             }
-            clusters = other.clusters
-            dirtyRows.formUnion(other.dirtyRows)
+            generation = max(generation, other.generation)
+            dirtyRows.formUnion(copiedRows)
+            return (copiedRows.count, false)
+        }
+
+        private func copyRow(_ row: Int, from other: TerminalBuffer) {
+            let startIndex = row * cols
+            for col in 0 ..< cols {
+                let index = startIndex + col
+                var cell = other.cells[index]
+                let length = Int(cell.clusterLen)
+                if length > 0 {
+                    let sourceOffset = Int(cell.clusterStart)
+                    if sourceOffset >= 0, sourceOffset + length <= other.clusterCount {
+                        let bytes = UnsafeBufferPointer(
+                            start: other.clusterStorage.advanced(by: sourceOffset),
+                            count: length
+                        )
+                        cell.clusterStart = appendCluster(bytes)
+                    } else {
+                        cell.clusterStart = 0
+                        cell.clusterLen = 0
+                    }
+                } else {
+                    cell.clusterStart = 0
+                }
+                cells[index] = cell
+            }
         }
     }
 
@@ -235,6 +352,20 @@ final class TripleBufferedTerminal {
         buffers[updateIndex.load(ordering: .acquiring)]
     }
 
+    var latestGeneration: UInt64 {
+        updateBuffer.generation
+    }
+
+    /// Estimated resident bytes across the three buffers (cells + cluster
+    /// storage capacity). O(1); used by the per-tab memory diagnostics.
+    var estimatedFootprintBytes: Int {
+        buffers.reduce(0) { total, buffer in
+            total
+                + buffer.cells.count * MemoryLayout<TerminalCell>.stride
+                + buffer.clusterCapacity
+        }
+    }
+
     /// Commits the current update buffer and swaps it with the render buffer.
     /// The old render buffer becomes available for the next update.
     @discardableResult
@@ -243,12 +374,10 @@ final class TripleBufferedTerminal {
         let current = updateIndex.load(ordering: .relaxed)
         let render = renderIndex.load(ordering: .relaxed)
         let sourceBuffer = buffers[current]
-        let copiedRows = sourceBuffer.fullRefreshNeeded ? rows : sourceBuffer.dirtyRows.count
+        let copyResult = buffers[render].copyDirtyFrom(sourceBuffer)
+        let copiedRows = copyResult.rows
         let copiedCells = copiedRows * cols
         let copiedBytes = copiedCells * MemoryLayout<TerminalCell>.stride
-
-        // Copy dirty regions to render buffer
-        buffers[render].copyDirtyFrom(sourceBuffer)
 
         // Swap update and render indices
         updateIndex.store(render, ordering: .releasing)
@@ -264,7 +393,7 @@ final class TripleBufferedTerminal {
             dirtyRows: copiedRows,
             dirtyCells: copiedCells,
             bytesCopied: copiedBytes,
-            fullRefresh: sourceBuffer.fullRefreshNeeded,
+            fullRefresh: copyResult.fullRefresh,
             durationMs: durationMs
         )
         RenderPipelineProfiler.shared.recordCommit(
@@ -344,6 +473,7 @@ final class TripleBufferedTerminal {
                 buffer.cells[i] = defaultCell
             }
             buffer.resetClusters()
+            buffer.beginUpdate(generation: 0, fullRefresh: true)
             buffer.fullRefreshNeeded = true
         }
     }
@@ -364,100 +494,5 @@ final class TripleBufferedTerminal {
             dirtyRowCount: dirtyRows.count,
             needsFullRefresh: needsFullRefresh
         )
-    }
-}
-
-// MARK: - Dirty Region Tracker
-
-/// Tracks dirty regions at sub-row granularity for minimal GPU uploads.
-struct DirtyRegionTracker {
-    /// Minimum unit of dirtiness (in cells)
-    let cellsPerChunk: Int
-
-    /// Dirty chunks per row
-    private var dirtyChunks: [[Bool]]
-
-    let rows: Int
-    let cols: Int
-    let chunksPerRow: Int
-
-    init(rows: Int, cols: Int, cellsPerChunk: Int = 16) {
-        self.rows = rows
-        self.cols = cols
-        self.cellsPerChunk = cellsPerChunk
-        self.chunksPerRow = (cols + cellsPerChunk - 1) / cellsPerChunk
-
-        self.dirtyChunks = Array(repeating: Array(repeating: false, count: chunksPerRow), count: rows)
-    }
-
-    /// Marks a cell as dirty
-    mutating func markDirty(row: Int, col: Int) {
-        guard row >= 0, row < rows, col >= 0, col < cols else { return }
-        let chunk = col / cellsPerChunk
-        dirtyChunks[row][chunk] = true
-    }
-
-    /// Marks a range of cells as dirty
-    mutating func markDirty(row: Int, cols range: Range<Int>) {
-        guard row >= 0, row < rows else { return }
-        let startChunk = max(0, range.lowerBound / cellsPerChunk)
-        let endChunk = min(chunksPerRow - 1, (range.upperBound - 1) / cellsPerChunk)
-        for chunk in startChunk ... endChunk {
-            dirtyChunks[row][chunk] = true
-        }
-    }
-
-    /// Marks an entire row as dirty
-    mutating func markDirtyRow(_ row: Int) {
-        guard row >= 0, row < rows else { return }
-        for chunk in 0 ..< chunksPerRow {
-            dirtyChunks[row][chunk] = true
-        }
-    }
-
-    /// Gets dirty ranges for a row
-    func dirtyRanges(forRow row: Int) -> [Range<Int>] {
-        guard row >= 0, row < rows else { return [] }
-
-        var ranges: [Range<Int>] = []
-        var rangeStart: Int?
-
-        for chunk in 0 ..< chunksPerRow {
-            if dirtyChunks[row][chunk] {
-                if rangeStart == nil {
-                    rangeStart = chunk * cellsPerChunk
-                }
-            } else if let start = rangeStart {
-                ranges.append(start ..< (chunk * cellsPerChunk))
-                rangeStart = nil
-            }
-        }
-
-        if let start = rangeStart {
-            ranges.append(start ..< cols)
-        }
-
-        return ranges
-    }
-
-    /// Returns all dirty row indices
-    var dirtyRowIndices: [Int] {
-        (0 ..< rows).filter { row in
-            dirtyChunks[row].contains(true)
-        }
-    }
-
-    /// Clears all dirty flags
-    mutating func clear() {
-        for row in 0 ..< rows {
-            for chunk in 0 ..< chunksPerRow {
-                dirtyChunks[row][chunk] = false
-            }
-        }
-    }
-
-    /// Total number of dirty chunks
-    var dirtyChunkCount: Int {
-        dirtyChunks.reduce(0) { $0 + $1.filter { $0 }.count }
     }
 }

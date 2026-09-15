@@ -57,6 +57,8 @@ extension RemoteClient {
             return "Connecting…"
         case .waitingForMac:
             return "Waiting for your Mac…"
+        case .encrypted:
+            return "Confirming secure session…"
         case .reconnecting, .reconnectingToSendApproval:
             return "Reconnecting…"
         case .connectionFailed:
@@ -73,6 +75,19 @@ extension RemoteClient {
             return "Connection error"
         default:
             return status.displayText
+        }
+    }
+
+    var remoteTabsDisplayLabel: String {
+        switch tabInventoryState {
+        case .unavailable:
+            return "Unavailable"
+        case .syncing:
+            return "Syncing…"
+        case .ready where tabs.isEmpty:
+            return "None available"
+        case .ready:
+            return "\(tabs.count) available"
         }
     }
 }

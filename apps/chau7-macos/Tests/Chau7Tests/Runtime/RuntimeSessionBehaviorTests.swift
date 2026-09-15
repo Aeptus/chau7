@@ -118,7 +118,7 @@ final class RuntimeSessionBehaviorTests: XCTestCase {
         XCTAssertEqual(failureEvents.first?.data["reason"], "approval_timeout")
     }
 
-    func testRepeatedApprovalTimeoutsMarkSessionFailed() {
+    func testRepeatedDistinctApprovalTimeoutsDoNotPoisonSession() {
         let session = RuntimeSession(
             tabID: UUID(),
             backend: ClaudeCodeBackend(),
@@ -133,15 +133,41 @@ final class RuntimeSessionBehaviorTests: XCTestCase {
             session.handleApprovalTimeout()
         }
 
-        XCTAssertEqual(session.state, .failed)
+        XCTAssertEqual(session.state, .ready)
         XCTAssertNil(session.pendingApproval)
         XCTAssertNil(session.currentTurnID)
 
         let events = session.journal.events(after: 0, limit: 100).events
         let sessionErrors = events.filter { $0.type == RuntimeEventType.sessionError.rawValue }
-        XCTAssertEqual(sessionErrors.count, 1)
-        XCTAssertEqual(sessionErrors.first?.data["reason"], "approval_timeout_stuck")
-        XCTAssertEqual(sessionErrors.first?.data["approval_timeout_count"], "3")
+        let turnFailures = events.filter { $0.type == RuntimeEventType.turnFailed.rawValue }
+        XCTAssertTrue(sessionErrors.isEmpty)
+        XCTAssertEqual(turnFailures.count, 3)
+    }
+
+    func testStaleApprovalTimeoutCannotExpireNewRequest() throws {
+        let session = RuntimeSession(
+            tabID: UUID(),
+            backend: ClaudeCodeBackend(),
+            config: SessionConfig(directory: "/tmp/runtime-approval-race", provider: "claude")
+        )
+
+        session.transition(.backendReady)
+        XCTAssertNotNil(session.startTurn(prompt: "First"))
+        let first = try XCTUnwrap(session.requestApproval(tool: "Read", description: "First approval"))
+        XCTAssertTrue(session.resolveApproval(id: first.id, approved: true, resolvedBy: "test"))
+        XCTAssertNotNil(session.completeTurn(summary: "done", terminalOutput: nil))
+
+        XCTAssertNotNil(session.startTurn(prompt: "Second"))
+        let second = try XCTUnwrap(session.requestApproval(tool: "Write", description: "Second approval"))
+
+        session.handleApprovalTimeout(approvalID: first.id)
+
+        XCTAssertEqual(session.state, .awaitingApproval)
+        XCTAssertEqual(session.pendingApproval?.id, second.id)
+
+        session.handleApprovalTimeout(approvalID: second.id)
+        XCTAssertEqual(session.state, .ready)
+        XCTAssertNil(session.pendingApproval)
     }
 
     func testCompleteTurnAccumulatesLiveUsageAndEstimatedCost() throws {

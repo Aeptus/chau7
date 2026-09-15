@@ -35,6 +35,7 @@ applies WebSocket backpressure (dropping/closing slow receivers).
 | Method | Path | Role | Scope |
 |--------|------|------|-------|
 | GET | `/` | — | — (landing page) |
+| GET | `/runtime` | — | — (deployment identity) |
 | WS | `/connect/:deviceId?role=mac\|ios` | mac/ios | connect |
 | POST | `/push/register/:deviceId` | mac | push |
 | POST | `/push/notify/:deviceId` | mac | push |
@@ -47,6 +48,7 @@ applies WebSocket backpressure (dropping/closing slow receivers).
 |------|---------|
 | `src/worker.ts` | Cloudflare Worker entry point — routing and scoped auth |
 | `src/session.ts` | `SessionDO` Durable Object — hibernatable WebSocket relay, replay defense, rate limiting, push, APNs |
+| `src/apns-token-broker.ts` | One globally addressed provider-token owner per Apple signing key |
 | `src/auth.js` | Relay secret validation + fail-closed auth-mode resolver |
 | `src/token.js` | Scoped single-use token mint/parse/verify |
 | `src/validation.js` | Body size limits, safe JSON parsing, payload sanitizers |

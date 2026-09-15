@@ -32,7 +32,7 @@ final class NotificationManager {
     /// Rate limiter — prevents notification spam from burst events
     let rateLimiter = NotificationRateLimiter()
     /// Audit trail of fired (and rate-limited) notifications
-    let history = NotificationHistory()
+    let history: NotificationHistory
 
     /// Wire the host the manager will consult for tab title / repo name
     /// / active-tab / routing answers. Calling with `nil` clears the
@@ -61,6 +61,9 @@ final class NotificationManager {
 
     init(executor: NotificationActionExecutor) {
         self.executor = executor
+        self.history = NotificationHistory { outcome in
+            Chau7ObservabilityService.shared.recordNotificationDeliveryOutcome(outcome)
+        }
         guard !isIsolatedTestMode else {
             self.useNativeNotifications = false
             return
@@ -114,10 +117,17 @@ final class NotificationManager {
         let now = Date()
         guard now.timeIntervalSince(lastDropFlush) >= Self.dropFlushInterval else { return }
         for (coalescedReason, count) in dropCounts.sorted(by: { $0.key < $1.key }) {
-            if count == 1 {
-                Log.info("Notification ingress dropped: \(coalescedReason)")
+            let message = if count == 1 {
+                "Notification ingress dropped: \(coalescedReason)"
             } else {
-                Log.info("Notification ingress dropped: \(coalescedReason) (\(count)x in last \(Int(Self.dropFlushInterval))s)")
+                "Notification ingress dropped: \(coalescedReason) " +
+                    "(\(count)x in last \(Int(Self.dropFlushInterval))s)"
+            }
+            switch NotificationDropLogPolicy.level(for: coalescedReason) {
+            case .trace:
+                Log.trace(message)
+            case .info:
+                Log.info(message)
             }
         }
         dropCounts.removeAll()
@@ -581,11 +591,7 @@ final class NotificationManager {
     }
 
     private func clearResolvedInteractiveAttentionIfNeeded(for event: AIEvent) {
-        let semanticKind = NotificationSemanticMapping.kind(
-            rawType: event.rawType,
-            notificationType: event.notificationType,
-            canonicalType: event.type
-        )
+        let semanticKind = event.notificationSemanticKind
         guard NotificationDeliverySemantics.shouldClearPersistentAttentionStyle(
             event: event,
             semanticKind: semanticKind
@@ -640,11 +646,7 @@ final class NotificationManager {
     }
 
     private func assertInteractiveAttentionIfNeeded(for event: AIEvent) {
-        let semanticKind = NotificationSemanticMapping.kind(
-            rawType: event.rawType,
-            notificationType: event.notificationType,
-            canonicalType: event.type
-        )
+        let semanticKind = event.notificationSemanticKind
         let attentionKind = TabAttentionKind.fromNotificationSemantic(semanticKind)
         guard attentionKind.isInteractive else { return }
         guard let tabID = event.tabID else {

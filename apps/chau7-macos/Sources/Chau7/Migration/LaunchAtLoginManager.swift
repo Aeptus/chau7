@@ -1,42 +1,44 @@
 import Foundation
-import Darwin
 import Chau7Core
 
 enum LaunchAtLoginManager {
     private static let label = Bundle.main.bundleIdentifier ?? "com.chau7"
 
-    private static var agentURL: URL {
-        RuntimeIsolation.homeDirectory()
+    private static func agentURL(environment: [String: String]) -> URL {
+        RuntimeIsolation.homeDirectory(environment: environment)
             .appendingPathComponent("Library/LaunchAgents")
             .appendingPathComponent("\(label).plist")
     }
 
-    static func isEnabled() -> Bool {
-        guard !RuntimeIsolation.isIsolatedTestMode() else { return false }
-        if isJobLoaded() {
-            return true
-        }
-        return FileManager.default.fileExists(atPath: agentURL.path)
+    static func isEnabled(
+        environment: [String: String] = ProcessInfo.processInfo.environment
+    ) -> Bool {
+        guard !RuntimeIsolation.isIsolatedTestMode(environment: environment) else { return false }
+        return FileManager.default.fileExists(atPath: agentURL(environment: environment).path)
     }
 
-    static func setEnabled(_ enabled: Bool) {
-        guard !RuntimeIsolation.isIsolatedTestMode() else {
+    static func setEnabled(
+        _ enabled: Bool,
+        environment: [String: String] = ProcessInfo.processInfo.environment
+    ) {
+        guard !RuntimeIsolation.isIsolatedTestMode(environment: environment) else {
             Log.info("LaunchAtLogin: ignored in isolated test mode.")
             return
         }
         if enabled {
-            install()
+            install(environment: environment)
         } else {
-            uninstall()
+            uninstall(environment: environment)
         }
     }
 
-    private static func install() {
+    private static func install(environment: [String: String]) {
         guard let executablePath = Bundle.main.executableURL?.path else {
             Log.error("LaunchAtLogin: missing executable path.")
             return
         }
 
+        let agentURL = agentURL(environment: environment)
         let agentDir = agentURL.deletingLastPathComponent()
         guard FileOperations.createDirectory(at: agentDir) else {
             Log.error("LaunchAtLogin: failed to create \(agentDir.path).")
@@ -58,19 +60,11 @@ enum LaunchAtLoginManager {
             return
         }
 
-        let domain = launchDomain
-        _ = runLaunchctl(["bootout", domain, agentURL.path], logOutput: false)
-        if !runLaunchctl(["bootstrap", domain, agentURL.path]) {
-            _ = runLaunchctl(["load", "-w", agentURL.path])
-        }
-        Log.info("LaunchAtLogin: enabled.")
+        Log.info("LaunchAtLogin: enabled for next login.")
     }
 
-    private static func uninstall() {
-        let domain = launchDomain
-        _ = runLaunchctl(["bootout", domain, agentURL.path], logOutput: false)
-        _ = runLaunchctl(["unload", "-w", agentURL.path], logOutput: false)
-
+    private static func uninstall(environment: [String: String]) {
+        let agentURL = agentURL(environment: environment)
         if FileManager.default.fileExists(atPath: agentURL.path) {
             do {
                 try FileManager.default.removeItem(at: agentURL)
@@ -79,41 +73,5 @@ enum LaunchAtLoginManager {
             }
         }
         Log.info("LaunchAtLogin: disabled.")
-    }
-
-    private static var launchDomain: String {
-        "gui/\(getuid())"
-    }
-
-    private static func isJobLoaded() -> Bool {
-        runLaunchctl(["print", "\(launchDomain)/\(label)"], logOutput: false)
-    }
-
-    @discardableResult
-    private static func runLaunchctl(_ arguments: [String], logOutput: Bool = true) -> Bool {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/bin/launchctl")
-        process.arguments = arguments
-
-        let pipe = Pipe()
-        process.standardOutput = pipe
-        process.standardError = pipe
-
-        do {
-            try process.run()
-            process.waitUntilExit()
-        } catch {
-            if logOutput {
-                Log.warn("LaunchAtLogin: launchctl failed: \(error.localizedDescription)")
-            }
-            return false
-        }
-
-        if logOutput, let output = String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8),
-           !output.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            Log.trace("LaunchAtLogin: launchctl output: \(output.trimmingCharacters(in: .whitespacesAndNewlines))")
-        }
-
-        return process.terminationStatus == 0
     }
 }

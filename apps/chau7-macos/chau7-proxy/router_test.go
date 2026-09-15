@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/base64"
 	"net/http/httptest"
 	"testing"
 )
@@ -194,6 +195,43 @@ func TestGetUpstreamURL(t *testing.T) {
 				t.Errorf("Expected URL %s, got %s", tc.expectedURL, url)
 			}
 		})
+	}
+}
+
+func TestGetUpstreamURL_CodexSubscriptionCorrelationRoute(t *testing.T) {
+	const projectPath = "/tmp/Codex Subscription/été"
+	token := base64.RawURLEncoding.EncodeToString([]byte(projectPath))
+	req := httptest.NewRequest(
+		"GET",
+		projectCorrelationPathPrefix+token+"/v1/responses?model=gpt-5",
+		nil,
+	)
+	req.Header.Set("Authorization", "Bearer opaque-chatgpt-access-token")
+
+	if err := applyPathCorrelation(req); err != nil {
+		t.Fatalf("apply correlation path: %v", err)
+	}
+	if got := req.Header.Get(HeaderProject); got != projectPath {
+		t.Fatalf("project header = %q, want %q", got, projectPath)
+	}
+	if got := req.URL.Path; got != "/v1/responses" {
+		t.Fatalf("stripped path = %q, want /v1/responses", got)
+	}
+	provider := DetectProvider(req)
+	if provider != ProviderOpenAI {
+		t.Fatalf("provider = %q, want %q", provider, ProviderOpenAI)
+	}
+	if got, want := GetUpstreamURL(provider, req), "https://chatgpt.com/backend-api/codex/responses?model=gpt-5"; got != want {
+		t.Fatalf("upstream URL = %q, want %q", got, want)
+	}
+}
+
+func TestGetUpstreamURL_CodexAPIKeyStaysOnOpenAIAPI(t *testing.T) {
+	req := httptest.NewRequest("POST", "/v1/responses", nil)
+	req.Header.Set("Authorization", "Bearer sk-test")
+
+	if got, want := GetUpstreamURL(ProviderOpenAI, req), "https://api.openai.com/v1/responses"; got != want {
+		t.Fatalf("upstream URL = %q, want %q", got, want)
 	}
 }
 

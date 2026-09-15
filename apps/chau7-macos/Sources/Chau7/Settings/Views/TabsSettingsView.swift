@@ -6,9 +6,9 @@ struct TabsSettingsView: View {
     @Bindable private var settings = FeatureSettings.shared
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            // Behavior
-            SettingsSectionHeader(L("settings.tabs.behavior", "Behavior"), icon: "rectangle.stack.badge.plus")
+        VStack(alignment: .leading, spacing: Chau7Style.Settings.pageSectionSpacing) {
+            // Opening & Closing
+            SettingsSectionHeader(L("settings.tabs.openingClosing", "Opening & Closing"), icon: "rectangle.stack.badge.plus")
 
             SettingsPicker(
                 label: L("settings.tabs.newTabPosition", "New Tab Position"),
@@ -23,7 +23,8 @@ struct TabsSettingsView: View {
             SettingsToggle(
                 label: L("settings.tabs.newTabsUseCurrentDirectory", "New Tabs Use Current Directory"),
                 help: L("settings.tabs.newTabsUseCurrentDirectory.help", "Open new tabs in the active tab's folder (the first tab still uses Default Directory)"),
-                isOn: $settings.newTabsUseCurrentDirectory
+                isOn: $settings.newTabsUseCurrentDirectory,
+                anchorID: "newTabDirectory"
             )
 
             SettingsPicker(
@@ -36,7 +37,8 @@ struct TabsSettingsView: View {
             SettingsToggle(
                 label: L("settings.tabs.warnOnCloseWithProcess", "Warn When Closing Tab with Running Process"),
                 help: L("settings.tabs.warnOnCloseWithProcess.help", "Show a confirmation dialog before closing a tab that has a running process"),
-                isOn: $settings.warnOnCloseWithRunningProcess
+                isOn: $settings.warnOnCloseWithRunningProcess,
+                anchorID: "tabCloseWarnings"
             )
 
             SettingsToggle(
@@ -44,6 +46,11 @@ struct TabsSettingsView: View {
                 help: L("settings.tabs.alwaysWarnOnClose.help", "Show a confirmation dialog before closing any tab"),
                 isOn: $settings.alwaysWarnOnTabClose
             )
+
+            SettingsDivider()
+
+            // Organization
+            SettingsSectionHeader(L("settings.tabs.organization", "Organization"), icon: "rectangle.3.group")
 
             SettingsToggle(
                 label: L("settings.tabs.alwaysShowTabBar", "Always Show Tab Bar"),
@@ -54,7 +61,8 @@ struct TabsSettingsView: View {
             SettingsToggle(
                 label: L("settings.tabs.groupIdleTabs", "Group Idle Tabs in Dropdown"),
                 help: L("settings.tabs.groupIdleTabs.help", "Collect idle tabs into a dropdown at the start of the tab bar to reduce clutter"),
-                isOn: $settings.groupIdleTabs
+                isOn: $settings.groupIdleTabs,
+                anchorID: "groupIdleTabs"
             )
 
             if settings.groupIdleTabs {
@@ -74,11 +82,10 @@ struct TabsSettingsView: View {
                 options: RepoGroupingMode.allCases.map { (value: $0, label: $0.displayName) }
             )
 
-            Divider()
-                .padding(.vertical, 8)
+            SettingsDivider()
 
-            // Tab Display
-            SettingsSectionHeader(L("settings.tabs.display", "Tab Display"), icon: "eye")
+            // Tab Bar Contents
+            SettingsSectionHeader(L("settings.tabs.tabBarContents", "Tab Bar Contents"), icon: "eye")
 
             SettingsToggle(
                 label: L("settings.tabs.customTitleOnly", "Custom Title Only"),
@@ -108,7 +115,7 @@ struct TabsSettingsView: View {
             .disabled(settings.customTitleOnly)
 
             SettingsToggle(
-                label: L("settings.tabs.allowCTOToggle", "Allow CTO Toggle in Hover Card"),
+                label: L("settings.tabs.allowCTOToggle", "Allow Context Optimization Toggle in Hover Card"),
                 help: L(
                     "settings.tabs.allowCTOToggle.help",
                     "Show a toggle button in the tab hover card to control per-tab token optimization override."
@@ -124,17 +131,16 @@ struct TabsSettingsView: View {
             )
             .disabled(settings.customTitleOnly)
 
-            Divider()
-                .padding(.vertical, 8)
-
-            // Appearance
-            SettingsSectionHeader(L("settings.tabs.appearance", "Appearance"), icon: "paintpalette")
-
             SettingsToggle(
                 label: L("settings.tabs.lastCommandBadge", "Last Command Badge"),
                 help: L("settings.tabs.lastCommandBadge.help", "Show the most recent command in the tab status area"),
                 isOn: $settings.isLastCommandBadgeEnabled
             )
+
+            SettingsDivider()
+
+            // Styling
+            SettingsSectionHeader(L("settings.tabs.styling", "Styling"), icon: "paintpalette")
 
             SettingsToggle(
                 label: L("settings.tabs.aiProductIcons", "AI Product Logos"),
@@ -142,8 +148,16 @@ struct TabsSettingsView: View {
                 isOn: $settings.isAutoTabThemeEnabled
             )
 
-            Divider()
-                .padding(.vertical, 8)
+            SettingsToggle(
+                label: L("settings.tabs.providerHealthBorder", "Provider Service Health Border"),
+                help: L(
+                    "settings.tabs.providerHealthBorder.help",
+                    "Show a thin orange border for provider degradation and a red border for outages on the focused AI tab"
+                ),
+                isOn: $settings.showProviderHealthBorder
+            )
+
+            SettingsDivider()
 
             // Keyboard
             SettingsSectionHeader(L("settings.tabs.keyboardNavigation", "Keyboard Navigation"), icon: "keyboard")
@@ -168,8 +182,7 @@ struct TabsSettingsView: View {
             )
             SettingsShortcutRow(label: L("settings.tabs.renameTab", "Rename Tab"), shortcut: "⌘⌥R")
 
-            Divider()
-                .padding(.vertical, 8)
+            SettingsDivider()
 
             // Reset Button
             SettingsButtonRow(buttons: [

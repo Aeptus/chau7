@@ -8,8 +8,6 @@ enum AppSettings {
     // Hold-to-send is the documented default: it guards against accidental sends
     // to a live terminal that may be driving an AI agent.
     static let holdToSendDefault = true
-    static let appendNewlineKey = "append_newline"
-    static let appendNewlineDefault = true
     static let renderANSIKey = "render_ansi"
     static let renderANSIDefault = false
     static let experimentalTerminalRendererKey = "experimental_terminal_renderer"
@@ -24,6 +22,21 @@ enum AppSettings {
     static let terminalFontSizeMax = 22.0
     static let hasCompletedOnboardingKey = "has_completed_onboarding"
 
+    // Terminal color scheme. Mirrors the macOS preset-only customization: the
+    // preference stores a preset name, resolved to a shared `TerminalColorScheme`.
+    static let colorSchemeNameKey = "terminal.colorSchemeName"
+    static let colorSchemeNameDefault = TerminalColorScheme.default.name
+
+    /// Resolves a preset name to its scheme, falling back to the default.
+    static func colorScheme(named name: String) -> TerminalColorScheme {
+        TerminalColorScheme.allPresets.first { $0.name == name } ?? .default
+    }
+
+    /// The scheme for the currently stored `colorSchemeName` preference.
+    static var currentColorScheme: TerminalColorScheme {
+        colorScheme(named: UserDefaults.standard.string(forKey: colorSchemeNameKey) ?? colorSchemeNameDefault)
+    }
+
     // Diagnostics
     static let verboseLoggingKey = "diagnostics_verbose"
     static let verboseLoggingDefault = true
@@ -34,9 +47,11 @@ enum AppSettings {
     static let logKeystrokesDefault = false
     static let keystrokeConsentPromptedKey = "diagnostics_keystroke_consent_prompted"
     static let keystrokeConsentPromptedDefault = false
-
+    static let diagnosticsForegroundMarkerKey = "diagnostics_foreground_session_open"
     static let hideSensitiveNotificationsKey = "hide_sensitive_notifications"
     static let hideSensitiveNotificationsDefault = true
+    static let issueReportContactKey = "issue_report_contact"
+    static let issueReportSaveContactKey = "issue_report_save_contact"
 
     /// Reads the toggle honoring its `true` default (UserDefaults.bool returns
     /// false for an unset key, which would silently disable redaction).
@@ -51,12 +66,12 @@ struct SettingsView: View {
     @Binding var isPairingPresented: Bool
 
     @AppStorage(AppSettings.holdToSendKey) private var holdToSend = AppSettings.holdToSendDefault
-    @AppStorage(AppSettings.appendNewlineKey) private var appendNewline = AppSettings.appendNewlineDefault
     @AppStorage(AppSettings.renderANSIKey) private var renderANSI = AppSettings.renderANSIDefault
     @AppStorage(AppSettings.experimentalTerminalRendererKey)
     private var experimentalTerminalRenderer = AppSettings.experimentalTerminalRendererDefault
     @AppStorage(AppSettings.showKeyboardBarKey) private var showKeyboardBar = AppSettings.showKeyboardBarDefault
     @AppStorage(AppSettings.terminalFontSizeKey) private var terminalFontSize = AppSettings.terminalFontSizeDefault
+    @AppStorage(AppSettings.colorSchemeNameKey) private var colorSchemeName = AppSettings.colorSchemeNameDefault
     @AppStorage(AppSettings.verboseLoggingKey) private var verboseLogging = AppSettings.verboseLoggingDefault
     @AppStorage(AppSettings.logKeystrokesKey) private var logKeystrokes = AppSettings.logKeystrokesDefault
     @AppStorage(AppSettings.hideSensitiveNotificationsKey)
@@ -85,18 +100,29 @@ struct SettingsView: View {
 
                 Section {
                     Toggle("Hold to Send", isOn: $holdToSend)
-                    Toggle("Append Newline", isOn: $appendNewline)
                     Toggle("Show Control Keys", isOn: $showKeyboardBar)
                 } header: {
                     Text("Input")
                 } footer: {
-                    Text("Hold to Send requires a long press before input is forwarded, guarding against accidental sends. Control Keys shows the esc / tab / ^C row above the input field.")
+                    Text("Hold to Send requires a long press before input is forwarded, guarding against accidental sends. Control Keys shows the esc / tab / ^C row above the input field. Send always submits; use the control keys for raw key presses.")
                 }
 
                 Section {
                     Toggle("Rich Terminal Renderer", isOn: $experimentalTerminalRenderer)
+                        .onChange(of: experimentalTerminalRenderer) { _, enabled in
+                            client.setRichTerminalRendererEnabled(enabled)
+                        }
                     Toggle("Show Raw ANSI Codes", isOn: $renderANSI)
                         .disabled(experimentalTerminalRenderer)
+
+                    Picker("Color Scheme", selection: $colorSchemeName) {
+                        ForEach(TerminalColorScheme.allPresets) { scheme in
+                            Text(scheme.name).tag(scheme.name)
+                        }
+                    }
+                    .onChange(of: colorSchemeName) { _, newName in
+                        client.terminalRenderer.applyColorScheme(AppSettings.colorScheme(named: newName))
+                    }
 
                     VStack(alignment: .leading, spacing: 6) {
                         HStack {
@@ -108,7 +134,7 @@ struct SettingsView: View {
                         }
                         Slider(
                             value: $terminalFontSize,
-                            in: AppSettings.terminalFontSizeMin...AppSettings.terminalFontSizeMax,
+                            in: AppSettings.terminalFontSizeMin ... AppSettings.terminalFontSizeMax,
                             step: 1
                         )
                         .accessibilityLabel("Terminal text size")
@@ -167,6 +193,7 @@ struct SettingsView: View {
                             .accessibilityElement(children: .combine)
                             .accessibilityLabel("Connection status: \(client.connectionDisplayLabel)")
                         }
+                        LabeledContent("Remote Tabs", value: client.remoteTabsDisplayLabel)
 
                         if let macFingerprint = client.macKeyFingerprint {
                             LabeledContent("Mac Key") {
@@ -206,10 +233,15 @@ struct SettingsView: View {
                     } label: {
                         Label("Diagnostics Log", systemImage: "doc.text.magnifyingglass")
                     }
+                    NavigationLink {
+                        IssueReportView(client: client)
+                    } label: {
+                        Label("Report an Issue", systemImage: "ladybug")
+                    }
                 } header: {
                     Text("Diagnostics")
                 } footer: {
-                    Text("Captures a verbose on-device log — including performance data and, when enabled, every keystroke typed in the app — for troubleshooting. Nothing leaves your device until you tap Export. Keystroke capture records the literal characters you type.")
+                    Text("Captures a verbose on-device log — including performance data and, when enabled, every keystroke typed in the app — for troubleshooting. Nothing leaves your device unless you export it or explicitly include recent diagnostics in an issue report. Keystroke capture records the literal characters you type.")
                 }
 
                 Section("About") {
@@ -219,7 +251,9 @@ struct SettingsView: View {
             .navigationTitle("Settings")
             .onAppear { client.refreshNotificationAuthorization() }
             .onChange(of: scenePhase) { _, newPhase in
-                if newPhase == .active { client.refreshNotificationAuthorization() }
+                if newPhase == .active {
+                    client.refreshNotificationAuthorization()
+                }
             }
         }
     }

@@ -11,6 +11,7 @@ final class RemoteControlManager {
     private(set) var isAgentRunning = false
     private(set) var isIPCConnected = false
     private(set) var activeRelayURL: String?
+    private(set) var relayStatus: String?
     private(set) var sessionStatus: String?
     private(set) var pairingInfo: RemotePairingInfo?
     private(set) var lastError: String?
@@ -33,7 +34,19 @@ final class RemoteControlManager {
             },
             onStderrData: { [weak self] data in
                 guard let output = String(data: data, encoding: .utf8) else { return }
-                self?.logger.warning("Remote stderr: \(output, privacy: .public)")
+                for rawLine in output.split(whereSeparator: \.isNewline) {
+                    let line = EscapeSequenceSanitizer.sanitizeForLogging(String(rawLine))
+                    switch RemoteSidecarStderrPolicy.disposition(for: line) {
+                    case .suppress:
+                        continue
+                    case .info:
+                        self?.logger.info("Remote helper: \(line, privacy: .public)")
+                        Log.info("Remote helper: \(line)")
+                    case .warning:
+                        self?.logger.warning("Remote helper: \(line, privacy: .public)")
+                        Log.warn("Remote helper: \(line)")
+                    }
+                }
             },
             onExit: { [weak self] status in
                 self?.handleAgentExit(status: status)
@@ -49,12 +62,19 @@ final class RemoteControlManager {
     /// Last tab-list count emitted to the remote client, used to throttle
     /// the noisy "sent tab list with N tabs" log so it only fires on change.
     @ObservationIgnored private var lastSentTabListCount: Int?
+    /// Wire-level semantic gate. Terminal/model churn may notify this manager
+    /// frequently, but it must not make the iOS tab picker reload.
+    @ObservationIgnored private var tabInventoryEmissionGate = RemoteTabInventoryEmissionGate()
+    @ObservationIgnored private var lastOperationalSnapshot: RemoteOperationalSnapshot?
     @ObservationIgnored private weak var overlayModel: OverlayTabsModel?
     /// The tab the remote (iOS) client is currently viewing. Unlike each
     /// window's `selectedTabID`, this is owned by the remote session and may
     /// point at a tab living in any window. `nil` falls back to the primary
     /// window's selection.
     @ObservationIgnored private var remoteSelectedTabUUID: UUID?
+    /// Session currently promoted to event-driven PTY draining for the phone.
+    /// Weak ownership avoids extending a removed tab's lifetime.
+    @ObservationIgnored private weak var remoteRealtimeDrainSession: TerminalSessionModel?
     @ObservationIgnored private var overlayTabsObserver: NSObjectProtocol?
 
     @ObservationIgnored private var tabRegistry = RemoteTabRegistry()
@@ -70,10 +90,22 @@ final class RemoteControlManager {
     @ObservationIgnored private var connectedPairedDeviceID: String?
     @ObservationIgnored private var connectedClientAppState: RemoteClientAppState = .foreground
     @ObservationIgnored private var connectedClientStreamMode: RemoteClientStreamMode = .full
+    /// Nil means a pre-negotiation client and preserves the legacy dual stream.
+    @ObservationIgnored private var connectedTerminalPresentation: RemoteTerminalPresentation?
+    @ObservationIgnored private var connectedClientSupportsOutputTiming = false
     @ObservationIgnored private var subscribedSessionIDs: Set<String> = []
     @ObservationIgnored private var activityRefreshWorkItem: DispatchWorkItem?
+    /// Live only while interactive prompts are outstanding; keeps synthesized
+    /// arrow-navigation responses tracking the on-screen menu cursor.
+    @ObservationIgnored private var promptRecheckTimer: Timer?
+    /// Hook-sourced interactive questions (AskUserQuestion), fed from
+    /// AppModel's Claude hook funnel via `ingestClaudeHookEvent`.
+    @ObservationIgnored private let structuredPrompts = StructuredPromptStore()
     @ObservationIgnored private var outputFlushTask: Task<Void, Never>?
     @ObservationIgnored private var pendingOutputByTabID = RemotePendingOutputBuffer<Data>()
+    @ObservationIgnored private var pendingOutputFirstCaptureMicrosByTabID: [UInt32: UInt64] = [:]
+    @ObservationIgnored private var gridSnapshotFlushTask: Task<Void, Never>?
+    @ObservationIgnored private var pendingGridSnapshotTabID: UInt32?
 
     @ObservationIgnored private let ipc = RemoteIPCServer.shared
 
@@ -108,20 +140,29 @@ final class RemoteControlManager {
         ipc.onClientConnected = { [weak self] in
             self?.isIPCConnected = true
             self?.sendInitialState()
+            self?.logOperationalSnapshot(reason: "ipc_connected")
         }
         ipc.onClientDisconnected = { [weak self] in
+            self?.clearRemoteRealtimeDrainSubscription()
             self?.isIPCConnected = false
+            self?.relayStatus = nil
             self?.sessionStatus = nil
             self?.connectedPairedDeviceID = nil
             self?.connectedClientAppState = .foreground
             self?.connectedClientStreamMode = .full
+            self?.connectedTerminalPresentation = nil
+            self?.connectedClientSupportsOutputTiming = false
             self?.remoteActivity = nil
+            self?.tabInventoryEmissionGate.reset()
+            self?.lastSentTabListCount = nil
             // Clear the remote viewer's selection so a reconnecting client
             // starts from the primary window's selected tab rather than
             // inheriting a stale (possibly background-window) selection.
             self?.remoteSelectedTabUUID = nil
             self?.cancelPendingOutputFlush()
+            self?.reconcilePromptRecheckTimer(hasPrompts: false)
             self?.refreshPairedDevices()
+            self?.logOperationalSnapshot(reason: "ipc_disconnected")
         }
         ipc.start()
         refreshPairedDevices()
@@ -169,6 +210,7 @@ final class RemoteControlManager {
                     return
                 }
                 sendTabList()
+                reconcileRemoteRealtimeDrainSubscription()
                 rebuildSessionStateSubscriptions()
                 scheduleRemoteActivityRefresh()
             }
@@ -176,26 +218,57 @@ final class RemoteControlManager {
 
         overlayModel.onTabsChanged = { [weak self] in
             self?.sendTabList()
-            self?.sendSelectedTabSnapshot()
+            self?.reconcileRemoteRealtimeDrainSubscription()
             self?.rebuildSessionStateSubscriptions()
             self?.scheduleRemoteActivityRefresh()
         }
 
         overlayModel.onSelectedTabIDChanged = { [weak self] in
-            self?.sendTabList()
-            self?.sendSelectedTabSnapshot()
-            self?.scheduleRemoteActivityRefresh()
+            guard let self else { return }
+            self.sendTabList()
+            // Before the phone has chosen a tab it follows Mac focus. Once it
+            // has an explicit remote selection, changing windows/tabs locally
+            // must neither replace the phone's content nor force a redundant
+            // full snapshot of the remotely viewed tab.
+            if RemoteTabSelectionPolicy.followsMacFocus(
+                hasExplicitRemoteSelection: self.remoteSelectedTabUUID != nil
+            ) {
+                self.sendSelectedTabSnapshot()
+            }
+            self.reconcileRemoteRealtimeDrainSubscription()
+            self.scheduleRemoteActivityRefresh()
         }
 
         rebuildSessionStateSubscriptions()
+
+        // Restore the agent to match the persisted enabled state. The
+        // `.remoteEnabledChanged` observer above only fires on a *toggle*, so
+        // without this an app relaunch leaves remote enabled-in-settings but
+        // agent-not-running — the relay bridge stays down until the user flips
+        // it off and on, which is why a fresh launch shows no live content on
+        // the phone even though local notifications still fire. `startAgent()`
+        // is idempotent (its `!isAgentRunning` guard) and stamps
+        // `CHAU7_PARENT_PID`, so this cleanly supersedes any orphaned agent.
+        if FeatureSettings.shared.isRemoteEnabled {
+            startAgent()
+        }
     }
 
     func recordOutput(_ data: Data, sessionIdentifier: String) {
         guard isIPCConnected, connectedClientStreamMode == .full else { return }
         guard let tabID = tabRegistry.tabID(forSessionIdentifier: sessionIdentifier) else { return }
         guard tabID == selectedRemoteTabID() else { return }
+
+        if !RemoteTerminalStreamingPolicy.sendsOutputFrames(for: connectedTerminalPresentation) {
+            scheduleGridSnapshot(for: tabID)
+            return
+        }
+
         pendingOutputByTabID.append(data, to: tabID) { existing, chunk in
             existing.append(chunk)
+        }
+        if pendingOutputFirstCaptureMicrosByTabID[tabID] == nil {
+            pendingOutputFirstCaptureMicrosByTabID[tabID] = Self.unixMicroseconds()
         }
 
         if pendingOutputByTabID[tabID]?.count ?? 0 >= RemoteOutputTuning.maxPendingBytesPerTab {
@@ -223,12 +296,24 @@ final class RemoteControlManager {
 
     func sendTextSnapshot(for tabID: UInt32) {
         guard connectedClientStreamMode == .full else { return }
-        guard let session = snapshotTargetTab(for: tabID)?.session,
-              let snapshot = session.captureRemoteSnapshot() else { return }
+        guard RemoteTerminalStreamingPolicy.sendsTextSnapshots(for: connectedTerminalPresentation) else { return }
+        guard let session = snapshotTargetTab(for: tabID)?.session else { return }
+        let snapshot: Data?
+        if connectedTerminalPresentation == .replay {
+            snapshot = session.captureStyledRemoteTailSnapshot(
+                maxLines: 5000,
+                maxBytes: RemoteOutputTuning.maxRetainedBytes
+            ) ?? session.captureRemoteSnapshot()
+        } else {
+            snapshot = session.captureRemoteSnapshot()
+        }
+        guard let snapshot else { return }
         sendFrame(type: .snapshot, tabID: tabID, payload: RemoteOutputTuning.capSnapshot(snapshot))
     }
 
     func sendGridSnapshot(for tabID: UInt32) {
+        guard connectedClientStreamMode == .full else { return }
+        guard RemoteTerminalStreamingPolicy.sendsGridSnapshots(for: connectedTerminalPresentation) else { return }
         guard let session = snapshotTargetTab(for: tabID)?.session,
               let snapshot = session.captureRemoteGridSnapshot() else { return }
         sendFrame(type: .terminalGridSnapshot, tabID: tabID, payload: snapshot)
@@ -270,9 +355,11 @@ final class RemoteControlManager {
             ))
             isAgentRunning = true
             activeRelayURL = relayURL
+            relayStatus = "connecting"
             lastError = nil
             logger.info("Remote agent started from \(binaryPath.path, privacy: .public)")
             refreshPairedDevices()
+            logOperationalSnapshot(reason: "agent_started")
         } catch {
             let errorMessage = "Failed to start remote agent: \(error.localizedDescription)"
             logger.error("\(errorMessage, privacy: .public)")
@@ -284,7 +371,10 @@ final class RemoteControlManager {
     /// The stale process reference is deliberately kept — `stopAgent()`'s
     /// state resets still apply after an unexpected exit, as they always did.
     private func handleAgentExit(status: Int32) {
+        clearRemoteRealtimeDrainSubscription()
         isAgentRunning = false
+        relayStatus = nil
+        logOperationalSnapshot(reason: "agent_exited")
         if status != 0 {
             let error = "Remote agent exited with status \(status)"
             logger.error("\(error, privacy: .public)")
@@ -293,18 +383,21 @@ final class RemoteControlManager {
     }
 
     func stopAgent() {
+        clearRemoteRealtimeDrainSubscription()
         guard sidecar.hasProcess else { return }
         cancelPendingOutputFlush()
         // The sidecar terminates the process BEFORE closing pipes (SIGPIPE).
         sidecar.stop()
         isAgentRunning = false
         activeRelayURL = nil
+        relayStatus = nil
         pairingInfo = nil
         sessionStatus = nil
         connectedPairedDeviceID = nil
         remoteActivity = nil
         interactivePrompts = []
         pendingProtectedInputs.removeAll()
+        logOperationalSnapshot(reason: "agent_stopped")
     }
 
     func restartAgentIfRunning() {
@@ -362,12 +455,23 @@ final class RemoteControlManager {
             connectedPairedDeviceID = status.pairedDeviceID
             if status.status == "ready" {
                 sendInitialState()
+            } else {
+                clearRemoteRealtimeDrainSubscription()
             }
             refreshPairedDevices()
+            logOperationalSnapshot(reason: "session_status")
+        case .relayStatus:
+            guard let status: RemoteRelayStatus = decodePayload(frame, as: RemoteRelayStatus.self, context: "relay status") else { return }
+            relayStatus = status.status
+            logOperationalSnapshot(reason: "relay_status")
         case .tabSwitch:
             handleTabSwitch(frame)
         case .input:
             handleInput(frame)
+        case .keyInput:
+            handleKeyInput(frame)
+        case .checkpointRequest:
+            sendSnapshot(for: frame.tabID)
         case .remoteTelemetry:
             handleRemoteTelemetry(frame)
         case .clientState:
@@ -394,15 +498,22 @@ final class RemoteControlManager {
     private func handleTabSwitch(_ frame: RemoteFrame) {
         guard let payload: RemoteTabSwitchPayload = decodePayload(frame, as: RemoteTabSwitchPayload.self, context: "tab switch") else { return }
         guard let uuid = tabRegistry.uuid(for: payload.tabID),
-              let located = locateTab(uuid: uuid) else {
+              locateTab(uuid: uuid) != nil else {
             sendError(code: "tab_unavailable", message: "That tab is no longer available for remote control.", tabID: payload.tabID)
             return
         }
-        // Track the remote viewer's selection independently of any window's
-        // own focus, then mirror it in the owning window so the Mac UI follows.
+        // The phone's viewing selection is a stream subscription, not Mac UI
+        // focus. Snapshot the background tab's last fully-drained state before
+        // promoting it; the event drain then emits only newer PTY bytes.
+        let selectionChanged = remoteSelectedTabUUID != uuid
         remoteSelectedTabUUID = uuid
-        located.model.selectTab(id: uuid)
+        if selectionChanged {
+            logger.info("Remote: subscribed terminal stream for tab \(payload.tabID, privacy: .public)")
+        } else {
+            logger.debug("Remote: refreshed terminal stream for tab \(payload.tabID, privacy: .public)")
+        }
         sendSnapshot(for: payload.tabID)
+        reconcileRemoteRealtimeDrainSubscription()
         sendTabList()
     }
 
@@ -427,13 +538,58 @@ final class RemoteControlManager {
             return
         }
 
-        // Older iOS builds append LF as the submit byte; terminals submit on
-        // CR. Translate a trailing LF so remote sends actually submit instead
-        // of stacking a line break in the TUI's input field.
-        if text.hasSuffix("\n"), !text.hasSuffix("\r\n") {
-            session.sendInput(String(text.dropLast()) + "\r")
-        } else {
-            session.sendInput(text)
+        // Body and submit terminator must be separate PTY writes — a single
+        // "text\r" (or "\n") chunk reads as a paste to TUI composers and
+        // sits in the input field unsubmitted. Any trailing terminator
+        // (including legacy iOS builds' LF) becomes a provider-aware delayed
+        // submit inside sendRemoteSubmittedInput.
+        session.sendRemoteSubmittedInput(text)
+    }
+
+    /// Semantic key presses (KEY_INPUT, 0x24). Routed through the terminal
+    /// view's key encoder via sendKeyPress, so DECCKM application-cursor mode
+    /// and control combos encode exactly like locally-typed keys. No
+    /// protected-action gate: keys cannot spell commands, and digits/Enter
+    /// were already sendable as INPUT text. Unknown key names are logged and
+    /// skipped so an older Mac degrades per-key rather than dropping the
+    /// whole sequence.
+    private func handleKeyInput(_ frame: RemoteFrame) {
+        guard let payload = try? JSONDecoder().decode(RemoteKeyInputPayload.self, from: frame.payload) else {
+            sendError(code: "invalid_key_input", message: "Remote key input must be valid JSON.", tabID: frame.tabID)
+            return
+        }
+        guard let (session, _) = resolveInputTarget(for: frame.tabID) else {
+            sendError(code: "tab_unavailable", message: "That tab cannot receive remote input right now.", tabID: frame.tabID)
+            return
+        }
+
+        // ^C / ^U discard the line without executing anything, so no
+        // input-line hook fires — retire any advertised prefill card here.
+        // (Enter retires it through the input-line hook when the line runs.)
+        let discardsLine = payload.keys.contains { key in
+            (key.modifiers ?? []).contains("control") && ["c", "u"].contains(key.key.lowercased())
+        }
+        if discardsLine {
+            session.clearDeliveredPrefillTracking()
+        }
+
+        var accumulatedDelayMs = 0
+        for step in AIAutomationStrategy.keyInputSchedule(for: payload.keys) {
+            let keyPress: TerminalKeyPress
+            do {
+                keyPress = try TerminalKeyPress(key: step.key.key, modifiers: step.key.modifiers ?? [])
+            } catch {
+                logger.warning("Remote: skipping unsupported key input '\(step.key.key, privacy: .public)': \(error.localizedDescription, privacy: .public)")
+                continue
+            }
+            accumulatedDelayMs += step.delayMs
+            if accumulatedDelayMs == 0 {
+                session.sendKeyPress(keyPress)
+            } else {
+                DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(accumulatedDelayMs)) { [weak session] in
+                    session?.sendKeyPress(keyPress)
+                }
+            }
         }
     }
 
@@ -473,7 +629,7 @@ final class RemoteControlManager {
         if let protectedInput = pendingProtectedInputs.removeValue(forKey: response.requestID) {
             if response.approved,
                let session = session(for: protectedInput.tabID) {
-                session.sendInput(protectedInput.text)
+                session.sendRemoteSubmittedInput(protectedInput.text)
                 logger.info("Remote: protected action approved for tab \(protectedInput.tabID, privacy: .public)")
             } else {
                 logger.info("Remote: protected action denied for tab \(protectedInput.tabID, privacy: .public)")
@@ -499,15 +655,21 @@ final class RemoteControlManager {
         guard let payload: RemoteClientStatePayload = decodePayload(frame, as: RemoteClientStatePayload.self, context: "client state") else { return }
         connectedClientAppState = payload.appState
         let previousStreamMode = connectedClientStreamMode
+        let previousPresentation = connectedTerminalPresentation
         connectedClientStreamMode = payload.streamMode
+        connectedTerminalPresentation = payload.terminalPresentation
+        connectedClientSupportsOutputTiming = payload.supportsOutputTiming == true
 
-        if previousStreamMode != payload.streamMode, payload.streamMode == .approvalsOnly {
+        if payload.streamMode == .approvalsOnly
+            || previousStreamMode != payload.streamMode
+            || previousPresentation != payload.terminalPresentation {
             cancelPendingOutputFlush()
         }
 
         if payload.streamMode == .full {
             sendInitialState()
         } else {
+            clearRemoteRealtimeDrainSubscription()
             sendPendingApprovalRequests()
             sendInteractivePrompts(force: true)
         }
@@ -521,6 +683,7 @@ final class RemoteControlManager {
         }
         sendTabList()
         sendSelectedTabSnapshot()
+        reconcileRemoteRealtimeDrainSubscription()
         sendRemoteActivity(force: true)
         sendInteractivePrompts(force: true)
     }
@@ -572,6 +735,94 @@ final class RemoteControlManager {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.15, execute: workItem)
     }
 
+    /// Feed of Claude Code hook events for the structured prompt store,
+    /// called by AppModel after tab attribution. PreToolUse of
+    /// AskUserQuestion opens an entry; the tool's completion, the turn's
+    /// end, or the session's end closes it. A phone answer needs no special
+    /// casing: the resulting PostToolUse clears the entry within ~1s (and
+    /// iOS removes the card optimistically on tap).
+    func ingestClaudeHookEvent(_ event: ClaudeCodeEvent, runtimeTabID: UUID?) {
+        let changed: Bool
+        switch event.type {
+        case .toolStart:
+            guard let runtimeTabID else { return }
+            changed = structuredPrompts.applyToolStart(
+                toolName: event.toolName,
+                toolInputJSON: event.toolInputJSON,
+                toolUseID: event.toolUseID,
+                runtimeTabID: runtimeTabID,
+                sessionID: event.sessionId
+            )
+        case .toolComplete, .toolFailed:
+            changed = structuredPrompts.applyToolEnd(
+                toolName: event.toolName,
+                sessionID: event.sessionId
+            )
+        case .responseComplete, .responseFailed, .sessionEnd:
+            changed = structuredPrompts.applySessionTerminal(sessionID: event.sessionId)
+        default:
+            return
+        }
+        if changed {
+            scheduleRemoteActivityRefresh()
+        }
+    }
+
+    /// Whether any live prompt answers by moving a selection cursor. Those
+    /// responses are relative to where the cursor sits, so they go stale when
+    /// it moves on the Mac and need the recheck below. Absolute responses —
+    /// digits, y/n, the restore card's bare Enter and ^U — never do, and a
+    /// card like the restore prefill can sit unanswered for hours, so arming
+    /// the timer for those would pin the Mac at 1 Hz indefinitely for nothing.
+    private func hasCursorRelativePrompt(_ prompts: [RemoteInteractivePrompt]) -> Bool {
+        prompts.contains { prompt in
+            prompt.options.contains { option in
+                option.response.contains("\u{1B}[A") || option.response.contains("\u{1B}[B")
+            }
+        }
+    }
+
+    /// While a cursor-driven prompt card is live, its arrow-navigation
+    /// responses go stale the moment someone moves the cursor on the Mac — and
+    /// a cursor-only redraw fires no session-state change. A 1s recheck
+    /// rebuilds the prompt list (diffed in sendInteractivePrompts, so nothing
+    /// is re-sent unless content actually changed) and keeps the phone's
+    /// responses tracking the on-screen cursor.
+    private func reconcilePromptRecheckTimer(hasPrompts: Bool) {
+        guard hasPrompts, isIPCConnected else {
+            promptRecheckTimer?.invalidate()
+            promptRecheckTimer = nil
+            return
+        }
+        guard promptRecheckTimer == nil else { return }
+        promptRecheckTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.scheduleRemoteActivityRefresh()
+            }
+        }
+    }
+
+    /// One bounded tail scrape per session per refresh burst. The affordance
+    /// check and the prompt-card builder both read through this, so a refresh
+    /// costs at most one ~64 KB tail capture per waiting pane instead of two
+    /// full-ring flattens (multi-MB each with a 10k-line scrollback).
+    private var promptScrapeMemo: [String: (text: String, capturedAt: CFAbsoluteTime)] = [:]
+    private static let promptScrapeMemoTTL: CFAbsoluteTime = 0.5
+
+    private func scrapedPromptTail(for session: TerminalSessionModel) -> String? {
+        let now = CFAbsoluteTimeGetCurrent()
+        if let cached = promptScrapeMemo[session.tabIdentifier],
+           now - cached.capturedAt < Self.promptScrapeMemoTTL {
+            return cached.text.isEmpty ? nil : cached.text
+        }
+        if promptScrapeMemo.count > 64 {
+            promptScrapeMemo = promptScrapeMemo.filter { now - $0.value.capturedAt < Self.promptScrapeMemoTTL }
+        }
+        let text = session.captureRemoteTailSnapshot()
+        promptScrapeMemo[session.tabIdentifier] = (text ?? "", now)
+        return text
+    }
+
     private func sendRemoteActivity(force: Bool = false) {
         let nextActivity = currentRemoteActivity()
         let activityChanged = force || nextActivity != remoteActivity
@@ -608,7 +859,13 @@ final class RemoteControlManager {
                 recentCommand: context.recentCommand,
                 contextNote: context.contextNote,
                 sessionID: context.sessionID
-            ).withComposedPushText().withSpineSeq(spineSeqProvider?())
+            ).withComposedPushText().withSpineSeq(spineSeqProvider?()).withSeverity(
+                ApprovalSeverity.classify(
+                    command: context.command,
+                    flaggedCommand: context.flaggedCommand,
+                    reason: context.contextNote
+                )
+            )
             // Security-adjacent flow: a dropped approval frame must be visible.
             guard let data = Persist.encodeLogged(payload, context: "remote.approvalRequest") else { continue }
             sendFrame(type: .approvalRequest, tabID: RemoteTabRegistry.unscopedTabID, payload: data)
@@ -617,6 +874,7 @@ final class RemoteControlManager {
 
     private func sendInteractivePrompts(force: Bool = false) {
         let nextPrompts = currentInteractivePrompts()
+        defer { reconcilePromptRecheckTimer(hasPrompts: hasCursorRelativePrompt(nextPrompts)) }
         guard force || nextPrompts != interactivePrompts else { return }
 
         interactivePrompts = nextPrompts
@@ -679,26 +937,44 @@ final class RemoteControlManager {
                 let resolvedStatus: RemoteActivityStatus?
                 let detail: String?
 
-                switch session.effectiveStatus {
-                case .approvalRequired:
-                    resolvedStatus = .approvalRequired
-                    detail = session.effectiveIsAtPrompt ? "Approval required at prompt" : "Approval required"
-                case .waitingForInput:
+                // A hook-reported structured question outranks the scraped
+                // status (except approval, which projects higher anyway): the
+                // session is definitively blocked on user input even when the
+                // output patterns never flipped effectiveStatus. Deliberately
+                // does NOT touch session.status — the override is local to the
+                // remote projection so notification/attention subsystems are
+                // unaffected.
+                if structuredPrompts.entry(forRuntimeTabID: tab.id) != nil,
+                   session.effectiveStatus != .approvalRequired {
                     resolvedStatus = .waitingInput
                     detail = session.effectiveIsAtPrompt ? "Waiting at prompt" : nil
-                case .running:
-                    resolvedStatus = .running
-                    detail = nil
-                case .stuck:
-                    resolvedStatus = .running
-                    detail = "No output for a while"
-                case .done, .idle, .exited:
-                    if let outcome = recentCompletionStatus(for: session, tab: tab, now: now) {
-                        resolvedStatus = outcome.status
-                        detail = outcome.detail
-                    } else {
-                        resolvedStatus = nil
+                } else {
+                    switch session.effectiveStatus {
+                    case .approvalRequired:
+                        resolvedStatus = .approvalRequired
+                        detail = session.effectiveIsAtPrompt ? "Approval required at prompt" : "Approval required"
+                    case .waitingForInput where sessionShowsRealPromptAffordance(session, toolName: toolName):
+                        resolvedStatus = .waitingInput
+                        detail = session.effectiveIsAtPrompt ? "Waiting at prompt" : nil
+                    case .running:
+                        resolvedStatus = .running
                         detail = nil
+                    case .stuck:
+                        resolvedStatus = .running
+                        detail = "No output for a while"
+                    // An uncorroborated waitingForInput is the status detector
+                    // reacting to a generic token ("proceed?", "continue?") in
+                    // ordinary AI prose rather than a real prompt — treat it like an
+                    // ended turn so the phone doesn't show a phantom "waiting for your
+                    // input" indicator with no prompt behind it.
+                    case .waitingForInput, .done, .idle, .exited:
+                        if let outcome = recentCompletionStatus(for: session, tab: tab, now: now) {
+                            resolvedStatus = outcome.status
+                            detail = outcome.detail
+                        } else {
+                            resolvedStatus = nil
+                            detail = nil
+                        }
                     }
                 }
 
@@ -727,23 +1003,90 @@ final class RemoteControlManager {
         return RemoteActivityProjection.project(from: candidates)
     }
 
+    /// Whether a `.waitingForInput` session genuinely shows a prompt affordance
+    /// — a numbered menu or an explicit yes/no — versus the status detector
+    /// having flipped on a generic token ("proceed?", "continue?") buried in
+    /// ordinary AI prose. Uses the exact detection the interactive-prompt
+    /// surface uses, so the phone's "waiting" indicator and the prompt card
+    /// always agree. Only called for sessions already in `.waitingForInput`, so
+    /// the snapshot capture stays off the hot path.
+    private func sessionShowsRealPromptAffordance(_ session: TerminalSessionModel, toolName: String) -> Bool {
+        guard let text = scrapedPromptTail(for: session) else {
+            return false
+        }
+        return InteractivePromptDetector.detect(in: text, toolName: toolName) != nil
+            || InteractivePromptDetector.fallbackInputRequest(in: text) != nil
+    }
+
     private func currentInteractivePrompts() -> [RemoteInteractivePrompt] {
         remoteControllableTabsAcrossWindows().flatMap { tab -> [RemoteInteractivePrompt] in
             guard let tabID = tabRegistry.tabID(for: tab.id) else {
                 return []
             }
 
+            // A restored tab holding an unconfirmed resume prefill is
+            // invisible from the phone — sends concatenate onto it and
+            // nothing warns the user. Surface it as a Run/Clear card: Run is
+            // a bare Enter (executes the line as-is, never clears first),
+            // Clear is ^U. Cleared automatically once any input line runs.
+            if let prefillCard = pendingPrefillPrompt(for: tab, tabID: tabID) {
+                return [prefillCard]
+            }
+
+            // A hook-sourced structured question is authoritative for its tab:
+            // exact text and options straight from the tool call, no status
+            // gate (the scrape's waiting-status patterns can miss a menu
+            // render), and it suppresses the scraped prompt for the same tab
+            // so one menu can't surface as two differently-identified cards.
+            // Options-less entries (ExitPlanMode: labels aren't in
+            // tool_input) fall through — they drive the activity projection
+            // while the scrape supplies the card with the real menu.
+            if let structured = structuredPrompts.entry(forRuntimeTabID: tab.id),
+               !structured.options.isEmpty {
+                let session = tab.splitController.terminalSessions.first?.1
+                return [RemoteInteractivePrompt(
+                    id: "tab-\(tabID)-hook-\(structured.signature)",
+                    tabID: tabID,
+                    tabTitle: activityTabTitle(for: tab),
+                    toolName: "Claude",
+                    projectName: session.flatMap { activityProjectName(for: $0) },
+                    branchName: session.flatMap { activityBranchName(for: $0) },
+                    currentDirectory: session.flatMap { activityCurrentDirectory(for: $0) },
+                    prompt: structured.prompt,
+                    detail: structured.detail,
+                    options: structured.options,
+                    detectedAt: structured.createdAt,
+                    isMultiSelect: structured.isMultiSelect
+                ).withComposedPushText()]
+            }
+
             return tab.splitController.terminalSessions.compactMap { paneID, session in
-                guard session.effectiveStatus == .waitingForInput else { return nil }
+                // Both statuses mean the same thing here: the session is
+                // blocked on the user. The status is only a cheap pre-filter
+                // that keeps snapshot capture off the hot path — the detector
+                // below is the arbiter — so admitting a second status costs a
+                // wasted scrape at worst, never a phantom card. Excluding
+                // .approvalRequired hid precisely the prompts most worth
+                // answering from the phone: a tool's permission gate is
+                // classified approvalRequired, not waitingForInput, so it
+                // reached the phone as a status badge with nothing to tap.
+                guard session.effectiveStatus == .waitingForInput
+                    || session.effectiveStatus == .approvalRequired else { return nil }
 
                 let toolName = activityToolName(for: session, tab: tab)
-                guard let snapshot = session.captureRemoteSnapshot(),
-                      let text = String(data: snapshot, encoding: .utf8) else {
+                guard let text = scrapedPromptTail(for: session) else {
                     return nil
                 }
 
+                // Only surface a real decision: a numbered menu or a synthesized
+                // yes/no. An options-less match is a normal AI turn that merely
+                // ends in a question — not something to render as an interactive
+                // prompt on the phone. (The fallback already declines to produce
+                // options without a y/n affordance; this guards the boundary so a
+                // future detector change can't leak optionless prompts.)
                 guard let detected = InteractivePromptDetector.detect(in: text, toolName: toolName)
-                    ?? InteractivePromptDetector.fallbackInputRequest(in: text) else {
+                    ?? InteractivePromptDetector.fallbackInputRequest(in: text),
+                    !detected.options.isEmpty else {
                     return nil
                 }
 
@@ -762,6 +1105,41 @@ final class RemoteControlManager {
                 ).withComposedPushText()
             }
         }
+    }
+
+    /// Card for a delivered-but-unconfirmed restore prefill (e.g.
+    /// `claude --resume <id>` placed on the shell line awaiting Enter). Only
+    /// while no AI tool is running in the pane — once the resume executes,
+    /// provider detection retires the card even before the input-line hook
+    /// clears the tracking.
+    private func pendingPrefillPrompt(for tab: OverlayTab, tabID: UInt32) -> RemoteInteractivePrompt? {
+        for (paneID, session) in tab.splitController.terminalSessions {
+            // Gate on the PROCESS TREE, not activeAppName/aiDisplayAppName:
+            // restore metadata sets those to the provider name at prefill
+            // delivery — before anything executes — which would suppress the
+            // card in exactly the restored-tab scenario it exists for.
+            guard let prefillText = session.deliveredPrefillText,
+                  !session.isAIToolRunningInProcessTree else {
+                continue
+            }
+            return RemoteInteractivePrompt(
+                id: "tab-\(tabID)-prefill-\(paneID.uuidString.lowercased())",
+                tabID: tabID,
+                tabTitle: activityTabTitle(for: tab),
+                toolName: activityToolName(for: session, tab: tab),
+                projectName: activityProjectName(for: session),
+                branchName: activityBranchName(for: session),
+                currentDirectory: activityCurrentDirectory(for: session),
+                prompt: "Resume command ready to run",
+                detail: prefillText,
+                options: [
+                    RemoteInteractivePromptOption(id: "run", label: "Run it", response: "\r"),
+                    RemoteInteractivePromptOption(id: "clear", label: "Clear the line", response: "\u{15}")
+                ],
+                detectedAt: session.deliveredPrefillAt ?? Date(timeIntervalSince1970: 0)
+            ).withComposedPushText()
+        }
+        return nil
     }
 
     private func activityTabTitle(for tab: OverlayTab) -> String {
@@ -912,11 +1290,18 @@ final class RemoteControlManager {
     }
 
     private func sendTabList() {
-        guard connectedClientStreamMode == .full else { return }
+        // Never consume the semantic gate while IPC is down: doing so would
+        // suppress the first inventory after reconnect and leave iOS with an
+        // empty tab list until some unrelated model change occurred.
+        guard isIPCConnected, connectedClientStreamMode == .full else { return }
         // Enumerate every window's controllable tabs, not just the primary
         // window's — otherwise tabs in additional Mac windows never appear in
         // the iOS tab list.
         let controllableTabs = remoteControllableTabsAcrossWindows()
+        if let explicitSelection = remoteSelectedTabUUID,
+           !controllableTabs.contains(where: { $0.id == explicitSelection }) {
+            remoteSelectedTabUUID = nil
+        }
         let activeUUID = effectiveRemoteSelectedUUID
         let tabPayloads = tabRegistry.rebuild(
             with: controllableTabs.map { tab in
@@ -932,29 +1317,54 @@ final class RemoteControlManager {
                 )
             }
         )
-
         do {
-            let payload = try JSONEncoder().encode(RemoteTabListPayload(tabs: tabPayloads))
+            let tabList = RemoteTabListPayload(
+                tabs: tabPayloads,
+                capabilities: [
+                    RemoteTabListPayload.keyInputCapability,
+                    RemoteTabListPayload.checkpointRequestCapability
+                ]
+            )
+            guard tabInventoryEmissionGate.shouldEmit(tabList) else {
+                logger.debug("Remote: suppressed unchanged tab inventory (\(tabPayloads.count, privacy: .public) tabs)")
+                return
+            }
+            let payload = try JSONEncoder().encode(tabList)
             sendFrame(type: .tabList, tabID: RemoteTabRegistry.unscopedTabID, payload: payload)
-            // Only log at .info on tab-count change; steady-state refreshes are
-            // ~1 per second and drown out every other chau7 log entry.
+            // Count changes remain useful at info level. Metadata-only changes
+            // use debug so routine title/branch updates stay quiet.
             if lastSentTabListCount != tabPayloads.count {
                 logger.info("Remote: sent tab list with \(tabPayloads.count, privacy: .public) tabs")
                 lastSentTabListCount = tabPayloads.count
+                logOperationalSnapshot(reason: "tab_inventory", tabCount: tabPayloads.count)
             } else {
-                logger.debug("Remote: resent tab list (\(tabPayloads.count, privacy: .public) tabs, unchanged)")
+                logger.debug("Remote: sent changed tab inventory (\(tabPayloads.count, privacy: .public) tabs)")
             }
-            sendRemoteActivity()
-            sendInteractivePrompts()
         } catch {
             logger.warning("Failed to encode tab list: \(error.localizedDescription, privacy: .public)")
         }
     }
 
+    private func logOperationalSnapshot(reason: String, tabCount: Int? = nil) {
+        let snapshot = RemoteOperationalSnapshot(
+            agent: isAgentRunning ? "running" : "stopped",
+            ipc: isIPCConnected ? "connected" : "disconnected",
+            relay: relayStatus ?? "unknown",
+            session: sessionStatus ?? "disconnected",
+            tabCount: tabCount ?? lastSentTabListCount ?? 0,
+            stream: "\(connectedClientStreamMode.rawValue)/\(connectedTerminalPresentation?.rawValue ?? "legacy-dual")"
+        )
+        guard snapshot != lastOperationalSnapshot else { return }
+        lastOperationalSnapshot = snapshot
+        let message = "Remote operational snapshot reason=\(reason) \(snapshot.summary)"
+        logger.info("\(message, privacy: .public)")
+        Log.info(message)
+    }
+
     private func schedulePendingOutputFlush() {
         guard outputFlushTask == nil, isIPCConnected, !pendingOutputByTabID.isEmpty else { return }
         outputFlushTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(for: RemoteOutputTuning.flushInterval)
+            try? await Task.sleep(for: RemoteOutputTuning.senderMicroBatchInterval)
             guard let self, !Task.isCancelled else { return }
             flushPendingOutput()
         }
@@ -964,6 +1374,26 @@ final class RemoteControlManager {
         outputFlushTask?.cancel()
         outputFlushTask = nil
         pendingOutputByTabID.removeAll(keepingCapacity: true)
+        pendingOutputFirstCaptureMicrosByTabID.removeAll(keepingCapacity: true)
+        gridSnapshotFlushTask?.cancel()
+        gridSnapshotFlushTask = nil
+        pendingGridSnapshotTabID = nil
+    }
+
+    /// Grid invalidations are latest-wins: output bursts update this single
+    /// pending tab and one capped task captures the newest viewport state.
+    private func scheduleGridSnapshot(for tabID: UInt32) {
+        pendingGridSnapshotTabID = tabID
+        guard gridSnapshotFlushTask == nil else { return }
+        gridSnapshotFlushTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: RemoteOutputTuning.gridSnapshotInterval)
+            guard let self, !Task.isCancelled else { return }
+            gridSnapshotFlushTask = nil
+            guard let pendingTabID = pendingGridSnapshotTabID else { return }
+            pendingGridSnapshotTabID = nil
+            guard pendingTabID == selectedRemoteTabID() else { return }
+            sendGridSnapshot(for: pendingTabID)
+        }
     }
 
     private func flushPendingOutput() {
@@ -974,17 +1404,63 @@ final class RemoteControlManager {
         let selectedRemoteTabID = selectedRemoteTabID()
 
         for (tabID, payload) in pendingOutputByTabID.drainAll(sortedByTabID: true) {
+            let firstCapturedAt = pendingOutputFirstCaptureMicrosByTabID.removeValue(forKey: tabID)
             guard tabID == selectedRemoteTabID else { continue }
             let token = FeatureProfiler.shared.begin(.remoteOutput, bytes: payload.count)
-            sendFrame(type: .output, tabID: tabID, payload: payload)
+            if connectedClientSupportsOutputTiming, let firstCapturedAt {
+                let timedChunk = RemoteTimedOutputChunk(
+                    firstCapturedAtMicroseconds: firstCapturedAt,
+                    sentAtMicroseconds: Self.unixMicroseconds(),
+                    bytes: payload
+                )
+                sendFrame(
+                    type: .output,
+                    flags: RemoteFrame.flagOutputTiming,
+                    tabID: tabID,
+                    payload: timedChunk.encode()
+                )
+            } else {
+                sendFrame(type: .output, tabID: tabID, payload: payload)
+            }
             FeatureProfiler.shared.end(token)
-            sendGridSnapshot(for: tabID)
+            if RemoteTerminalStreamingPolicy.sendsGridCheckpointAfterOutput(for: connectedTerminalPresentation) {
+                sendGridSnapshot(for: tabID)
+            }
         }
     }
 
     private func selectedRemoteTabID() -> UInt32? {
         guard let uuid = effectiveRemoteSelectedUUID else { return nil }
         return tabRegistry.tabID(for: uuid)
+    }
+
+    /// Keep one and only one terminal on the low-latency drain path for a
+    /// foreground phone. This changes byte ingestion only; Mac selection and
+    /// local rendering remain untouched.
+    private func reconcileRemoteRealtimeDrainSubscription() {
+        let nextSession: TerminalSessionModel?
+        if isIPCConnected,
+           sessionStatus == "ready",
+           connectedClientStreamMode == .full,
+           let uuid = effectiveRemoteSelectedUUID {
+            nextSession = locateTab(uuid: uuid)?.tab.session
+        } else {
+            nextSession = nil
+        }
+
+        if remoteRealtimeDrainSession === nextSession {
+            nextSession?.setRemoteRealtimeStreaming(true)
+            return
+        }
+
+        remoteRealtimeDrainSession?.setRemoteRealtimeStreaming(false)
+        remoteRealtimeDrainSession = nextSession
+        nextSession?.setRemoteRealtimeStreaming(true)
+    }
+
+    private func clearRemoteRealtimeDrainSubscription() {
+        remoteRealtimeDrainSession?.setRemoteRealtimeStreaming(false)
+        remoteRealtimeDrainSession = nil
     }
 
     /// Every overlay window's model. Falls back to the configured primary
@@ -1039,10 +1515,10 @@ final class RemoteControlManager {
         return overlayModel?.selectedTabID
     }
 
-    private func sendFrame(type: RemoteFrameType, tabID: UInt32, payload: Data) {
+    private func sendFrame(type: RemoteFrameType, flags: UInt8 = 0, tabID: UInt32, payload: Data) {
         let frame = RemoteFrame(
             type: type.rawValue,
-            flags: 0,
+            flags: flags,
             reserved: 0,
             tabID: tabID,
             seq: nextSeq(),
@@ -1063,6 +1539,10 @@ final class RemoteControlManager {
     private func nextSeq() -> UInt64 {
         defer { seqCounter &+= 1 }
         return seqCounter
+    }
+
+    private static func unixMicroseconds(now: Date = Date()) -> UInt64 {
+        UInt64(max(0, now.timeIntervalSince1970 * 1_000_000))
     }
 
     private func decodePayload<T: Decodable>(_ frame: RemoteFrame, as type: T.Type, context: String) -> T? {
@@ -1223,7 +1703,12 @@ final class RemoteControlManager {
             recentCommand: approvalContext?.recentCommand,
             contextNote: approvalContext?.contextNote,
             sessionID: approvalContext?.sessionID
-        ).withComposedPushText()
+        ).withComposedPushText().withSeverity(
+            ApprovalSeverity.classify(
+                command: text.trimmingCharacters(in: .whitespacesAndNewlines),
+                flaggedCommand: flaggedCommand
+            )
+        )
 
         sendApprovalRequest(requestID: requestID, payload: payload)
         logger.warning("Remote: queued protected action approval for tab \(tabID, privacy: .public) (\(sessionTitle, privacy: .public))")

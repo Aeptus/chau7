@@ -1,14 +1,15 @@
 import Foundation
 
-/// Event-driven PTY drain for the active (selected) terminal.
+/// Event-driven PTY drain for a locally active or remotely viewed terminal.
 ///
 /// Replaces the free-running CVDisplayLink with a blocking-poll loop:
 /// - Calls `rust.pollEvents(timeout:)` which blocks until PTY data arrives or timeout
 /// - On data: dispatches metadata processing and, when needed, rendering to main
 /// - On timeout: loops silently (near-zero CPU)
 ///
-/// One instance may be active per live presentation surface. Background tabs
-/// use `BackgroundTerminalDrainService` instead.
+/// One instance may be active per live presentation surface, plus at most one
+/// hidden terminal selected by the foreground remote client. Other background
+/// tabs use `BackgroundTerminalDrainService` instead.
 final class TerminalEventDrain {
 
     /// Interval (ms) for the blocking poll. The thread sleeps in the kernel
@@ -112,7 +113,7 @@ final class TerminalEventDrain {
         Log.trace("TerminalEventDrain[\(viewId)]: cancelled, exiting")
     }
 
-    /// Dispatches `view.handleEventDrainData(drainGridChanged:)` to the main queue if no
+    /// Dispatches `view.handleEventDrainData(drainFlags:)` to the main queue if no
     /// previous dispatch is still in flight; otherwise drops this wake.
     /// Pure coalescence — see `coalesceLock` doc for the rationale.
     private func dispatchHandlerIfNotInFlight(view: RustTerminalView, flags: TerminalPollEventFlags) {
@@ -137,7 +138,7 @@ final class TerminalEventDrain {
                 finishHandler(view: nil)
                 return
             }
-            view.handleEventDrainData(drainGridChanged: flags.contains(.gridChanged))
+            view.handleEventDrainData(drainFlags: flags)
             finishHandler(view: view)
         }
     }

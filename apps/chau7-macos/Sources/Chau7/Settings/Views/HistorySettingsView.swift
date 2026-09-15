@@ -19,7 +19,7 @@ struct HistorySettingsView: View {
     @State private var persistentHistoryEnabled: Bool = UserDefaults.standard.object(forKey: "feature.persistentHistory") as? Bool ?? true
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: Chau7Style.Settings.pageSectionSpacing) {
             // Persistent History Toggle
             SettingsSectionHeader(
                 L("settings.history.persistent", "Persistent History"),
@@ -38,8 +38,7 @@ struct HistorySettingsView: View {
                     }
             }
 
-            Divider()
-                .padding(.vertical, 8)
+            SettingsDivider()
 
             // Capacity
             SettingsSectionHeader(
@@ -72,8 +71,7 @@ struct HistorySettingsView: View {
                 }
             }
 
-            Divider()
-                .padding(.vertical, 8)
+            SettingsDivider()
 
             // Statistics
             SettingsSectionHeader(
@@ -98,8 +96,7 @@ struct HistorySettingsView: View {
                     .padding(.leading, 4)
             }
 
-            Divider()
-                .padding(.vertical, 8)
+            SettingsDivider()
 
             // Import / Export
             SettingsSectionHeader(
@@ -107,17 +104,14 @@ struct HistorySettingsView: View {
                 icon: "arrow.left.arrow.right"
             )
 
-            HStack(spacing: 12) {
-                Button(L("settings.history.export", "Export History...")) {
+            SettingsButtonRow(buttons: [
+                .init(title: L("settings.history.export", "Export History..."), icon: "square.and.arrow.up") {
                     exportHistory()
-                }
-                .buttonStyle(.bordered)
-
-                Button(L("settings.history.import", "Import History...")) {
+                },
+                .init(title: L("settings.history.import", "Import History..."), icon: "square.and.arrow.down") {
                     importHistory()
                 }
-                .buttonStyle(.bordered)
-            }
+            ])
 
             if let err = importError {
                 Text(err)
@@ -125,8 +119,7 @@ struct HistorySettingsView: View {
                     .foregroundStyle(.red)
             }
 
-            Divider()
-                .padding(.vertical, 8)
+            SettingsDivider()
 
             // Danger Zone
             SettingsSectionHeader(
@@ -134,19 +127,18 @@ struct HistorySettingsView: View {
                 icon: "trash"
             )
 
-            HStack(spacing: 12) {
-                Button(L("settings.history.clearOlder", "Clear Older Than...")) {
+            SettingsButtonRow(buttons: [
+                .init(title: L("settings.history.clearOlder", "Clear Older Than..."), icon: "clock.arrow.circlepath") {
                     showClearOlderConfirmation = true
-                }
-                .buttonStyle(.bordered)
-
-                Button(role: .destructive) {
+                },
+                .init(
+                    title: L("settings.history.clearAll", "Clear All History"),
+                    icon: "trash",
+                    role: .destructive
+                ) {
                     showClearConfirmation = true
-                } label: {
-                    Text(L("settings.history.clearAll", "Clear All History"))
                 }
-                .buttonStyle(.bordered)
-            }
+            ])
 
             // Clear older than confirmation
             .alert(

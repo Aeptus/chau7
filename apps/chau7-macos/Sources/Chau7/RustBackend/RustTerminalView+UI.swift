@@ -78,9 +78,7 @@ extension RustTerminalView {
 
     /// Current scroll position (0.0 = bottom, 1.0 = top of history)
     var scrollPosition: Double {
-        let pos = rustTerminal?.scrollPosition ?? 0.0
-        Log.trace("RustTerminalView[\(viewId)]: scrollPosition = \(pos)")
-        return pos
+        rustTerminal?.scrollPosition ?? 0.0
     }
 
     /// Scroll to position
@@ -410,8 +408,7 @@ extension RustTerminalView {
         Log.trace("RustTerminalView[\(viewId)]: installSnippetKeyMonitor - Installing snippet key monitor")
         keyDownMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard let self = self else { return event }
-            guard event.window === window else { return event }
-            guard isFirstResponderInTerminal() else { return event }
+            guard shouldRouteHardwareKeyEvent(event) else { return event }
 
             if handleSnippetKeyDown(event) {
                 return nil // Consume event
@@ -547,8 +544,7 @@ extension RustTerminalView {
         Log.trace("RustTerminalView[\(viewId)]: installHistoryKeyMonitor - Installing history key monitor")
         historyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard let self = self else { return event }
-            guard event.window === window else { return event }
-            guard isFirstResponderInTerminal() else { return event }
+            guard shouldRouteHardwareKeyEvent(event) else { return event }
             if handleHistoryKeyDown(event) {
                 return nil // Consume event
             }
@@ -572,8 +568,24 @@ extension RustTerminalView {
         let isDown = keyCode == UInt16(kVK_DownArrow)
         guard isUp || isDown else { return false }
 
-        // Only intercept at shell prompt - let programs like vim/less handle arrows
-        guard isAtPrompt?() == true else { return false }
+        // Only intercept when the shell itself owns input. OSC 133 prompt
+        // markers can remain stale while a child TUI (for example Claude's
+        // /permissions dialog) is active, so TUI state must take precedence.
+        let atPrompt = isAtPrompt?() == true
+        let alternateScreenActive = rustTerminal?.isAlternateScreenActive() ?? false
+        guard TerminalHistoryNavigationPolicy.shouldInterceptArrowKey(
+            isAtPrompt: atPrompt,
+            hostsTUIApp: hostsTUIApp,
+            isAlternateScreenActive: alternateScreenActive
+        ) else {
+            if atPrompt, hostsTUIApp || alternateScreenActive {
+                Log.trace(
+                    "RustTerminalView[\(viewId)]: handleHistoryKeyDown - Forwarding arrow to active TUI " +
+                        "(hostsTUI=\(hostsTUIApp), alternateScreen=\(alternateScreenActive))"
+                )
+            }
+            return false
+        }
 
         let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
         let hasOption = modifiers.contains(.option)

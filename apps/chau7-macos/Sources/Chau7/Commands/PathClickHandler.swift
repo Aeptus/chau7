@@ -13,6 +13,21 @@ enum PathClickHandler {
         let range: NSRange
     }
 
+    struct URLMatch {
+        let url: String
+        let range: NSRange
+    }
+
+    enum PathResolutionResult: Equatable {
+        case resolved(path: String, usedRepositoryFallback: Bool)
+        case ambiguous([String])
+        case missing(directPath: String)
+    }
+
+    private static let ignoredRepositoryDirectoryNames: Set = [
+        ".git", ".build", "node_modules"
+    ]
+
     static func findPath(in text: String, atUTF16Index index: Int) -> PathMatch? {
         findPaths(in: text).first { NSLocationInRange(index, $0.range) }
     }
@@ -47,6 +62,27 @@ enum PathClickHandler {
         return matches
     }
 
+    static func findURLs(in text: String) -> [URLMatch] {
+        var matches: [URLMatch] = []
+        let nsText = text as NSString
+        let range = NSRange(location: 0, length: nsText.length)
+
+        RegexPatterns.url.enumerateMatches(in: text, options: [], range: range) { match, _, _ in
+            guard let match else { return }
+            let original = nsText.substring(with: match.range)
+            let trimmed = TerminalClickResolution.trimmedURLToken(original)
+            let trimmedLength = (trimmed as NSString).length
+            guard trimmedLength > 0 else { return }
+
+            matches.append(URLMatch(
+                url: trimmed,
+                range: NSRange(location: match.range.location, length: trimmedLength)
+            ))
+        }
+
+        return matches
+    }
+
     /// Resolves a path (relative, ~, or absolute) to an absolute path
     static func resolvePath(_ path: String, relativeTo workingDir: String) -> String {
         var fullPath = path
@@ -60,8 +96,87 @@ enum PathClickHandler {
         return fullPath
     }
 
+    /// Resolves a terminal path without guessing. Exact paths win. A missing
+    /// bare filename is searched under the enclosing repository on a utility
+    /// queue, and is accepted only when exactly one file has that name.
+    static func resolvePathForClick(
+        _ path: String,
+        relativeTo workingDir: String,
+        completion: @escaping (PathResolutionResult) -> Void
+    ) {
+        let directPath = resolvePath(path, relativeTo: workingDir)
+        if FileManager.default.fileExists(atPath: directPath) {
+            completion(.resolved(path: directPath, usedRepositoryFallback: false))
+            return
+        }
+
+        guard URL(fileURLWithPath: path).lastPathComponent == path,
+              let repositoryRoot = MagiRepositoryLocator.repositoryRoot(startingAt: workingDir) else {
+            completion(.missing(directPath: directPath))
+            return
+        }
+
+        DispatchQueue.global(qos: .userInitiated).async {
+            let matches = repositoryMatches(named: path, under: repositoryRoot)
+            let fallback = TerminalClickResolution.repositoryFallback(from: matches)
+            DispatchQueue.main.async {
+                switch fallback {
+                case .noMatch:
+                    completion(.missing(directPath: directPath))
+                case .unique(let resolvedPath):
+                    completion(.resolved(path: resolvedPath, usedRepositoryFallback: true))
+                case .ambiguous(let candidates):
+                    completion(.ambiguous(candidates))
+                }
+            }
+        }
+    }
+
+    static func repositoryMatches(
+        named filename: String,
+        under repositoryRoot: String,
+        fileManager: FileManager = .default
+    ) -> [String] {
+        let rootURL = URL(fileURLWithPath: repositoryRoot, isDirectory: true)
+        let keys: [URLResourceKey] = [.isDirectoryKey, .isRegularFileKey]
+        guard let enumerator = fileManager.enumerator(
+            at: rootURL,
+            includingPropertiesForKeys: keys,
+            options: [.skipsPackageDescendants],
+            errorHandler: { url, error in
+                Log.trace("PathClickHandler: repository search skipped \(url.path): \(error.localizedDescription)")
+                return true
+            }
+        ) else {
+            return []
+        }
+
+        var matches: [String] = []
+        for case let url as URL in enumerator {
+            let values = try? url.resourceValues(forKeys: Set(keys))
+            if values?.isDirectory == true {
+                if ignoredRepositoryDirectoryNames.contains(url.lastPathComponent) {
+                    enumerator.skipDescendants()
+                }
+                continue
+            }
+
+            guard values?.isRegularFile == true,
+                  url.lastPathComponent == filename else {
+                continue
+            }
+            matches.append(url.standardizedFileURL.path)
+        }
+        return matches
+    }
+
     static func openPath(_ match: PathMatch, relativeTo workingDir: String) {
         let fullPath = resolvePath(match.path, relativeTo: workingDir)
+
+        openPath(match, resolvedPath: fullPath)
+    }
+
+    static func openPath(_ match: PathMatch, resolvedPath fullPath: String) {
 
         // Check if file exists
         guard FileManager.default.fileExists(atPath: fullPath) else {
@@ -154,8 +269,9 @@ enum PathClickHandler {
     /// for unit testing the scheme-prepend behaviour without standing up
     /// `NSWorkspace`.
     static func normalizedURLString(_ urlString: String) -> String {
-        if urlString.contains("://") { return urlString }
-        return "https://" + urlString
+        let trimmed = TerminalClickResolution.trimmedURLToken(urlString)
+        if trimmed.contains("://") { return trimmed }
+        return "https://" + trimmed
     }
 
     private static func findExecutable(_ name: String) -> String? {

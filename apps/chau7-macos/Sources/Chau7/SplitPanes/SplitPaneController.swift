@@ -430,11 +430,19 @@ final class TextEditorModel: Identifiable {
     @ObservationIgnored
     private var fileMonitor: FileMonitor?
     @ObservationIgnored
+    private let fileWatchRegistry: FileSystemWatchRegistry
+    @ObservationIgnored
     private var loadedContentHash: String?
     @ObservationIgnored
     private var isApplyingExternalReload = false
     @ObservationIgnored
+    private var isDisposed = false
+    @ObservationIgnored
     var untitledSaveHandler: ((TextEditorModel) -> Bool)?
+
+    init(fileWatchRegistry: FileSystemWatchRegistry = .shared) {
+        self.fileWatchRegistry = fileWatchRegistry
+    }
 
     /// The file name for display
     var fileName: String {
@@ -458,6 +466,7 @@ final class TextEditorModel: Identifiable {
     ///   - path: Absolute path to the file
     ///   - scrollToLine: Optional line number to scroll to after loading (1-based)
     func loadFile(at path: String, scrollToLine line: Int? = nil) {
+        guard !isDisposed else { return }
         // Create a unique token for this load operation
         let token = UUID()
         loadingToken = token
@@ -661,10 +670,19 @@ final class TextEditorModel: Identifiable {
     }
 
     deinit {
-        stopWatchingCurrentFile()
+        dispose()
         // Autosave + runbook work items are owned by their respective
         // helpers (`autoSaver`, `runbook`) and cancelled in their own
         // deinits when the model drops the last reference.
+    }
+
+    func dispose() {
+        isDisposed = true
+        loadingToken = nil
+        isLoading = false
+        autoSaver.cancelPendingSave()
+        autoSaver.cancelStatusClear()
+        stopWatchingCurrentFile()
     }
 
     private func scheduleAutoSaveIfNeeded() {
@@ -676,9 +694,12 @@ final class TextEditorModel: Identifiable {
     }
 
     private func startWatchingCurrentFile() {
-        guard let path = filePath, !path.isEmpty else { return }
+        guard !isDisposed, let path = filePath, !path.isEmpty else { return }
         stopWatchingCurrentFile()
-        fileMonitor = FileMonitor(url: URL(fileURLWithPath: path)) { [weak self] in
+        fileMonitor = FileMonitor(
+            url: URL(fileURLWithPath: path),
+            watchRegistry: fileWatchRegistry
+        ) { [weak self] in
             DispatchQueue.main.async {
                 self?.handleExternalFileChange()
             }
@@ -1216,6 +1237,11 @@ final class SplitPaneController {
         root.terminalSessionPairs
     }
 
+    /// Whether closing one pane can preserve a valid sibling tree.
+    var canClosePane: Bool {
+        root.allPaneIDs.count > 1
+    }
+
     /// Exports the current split layout for persistence.
     func exportLayout() -> SavedSplitNode {
         root.savedRepresentation
@@ -1343,8 +1369,7 @@ final class SplitPaneController {
         let newID = UUID()
         let newNode = SplitNode.leaf(TerminalPane(id: newID, session: newSession))
 
-        root = splitNode(root, targetID: focusedPaneID, direction: direction, newNode: newNode)
-        focusedPaneID = newID
+        installSplit(newNode, direction: direction, operation: "terminal")
     }
 
     /// Splits the focused pane with a text editor
@@ -1358,8 +1383,7 @@ final class SplitPaneController {
         let newID = UUID()
         let newNode = SplitNode.leaf(TextEditorPane(id: newID, editor: editor))
 
-        root = splitNode(root, targetID: focusedPaneID, direction: direction, newNode: newNode)
-        focusedPaneID = newID
+        installSplit(newNode, direction: direction, operation: "textEditor")
     }
 
     /// Toggles the text editor pane: closes if one exists, opens if not.
@@ -1391,8 +1415,7 @@ final class SplitPaneController {
         let newID = UUID()
         let newNode = SplitNode.leaf(FilePreviewPane(id: newID, preview: preview))
 
-        root = splitNode(root, targetID: focusedPaneID, direction: direction, newNode: newNode)
-        focusedPaneID = newID
+        installSplit(newNode, direction: direction, operation: "filePreview")
     }
 
     /// Toggles the file preview pane: closes if one exists, opens if not.
@@ -1422,8 +1445,7 @@ final class SplitPaneController {
         let newID = UUID()
         let newNode = SplitNode.leaf(DiffViewerPane(id: newID, diff: diff))
 
-        root = splitNode(root, targetID: focusedPaneID, direction: direction, newNode: newNode)
-        focusedPaneID = newID
+        installSplit(newNode, direction: direction, operation: "diffViewer")
     }
 
     /// Opens a diff in the existing diff viewer, or creates a new split if none exists
@@ -1445,8 +1467,7 @@ final class SplitPaneController {
         let newID = UUID()
         let newNode = SplitNode.leaf(RepositoryPane(id: newID, repo: repo))
 
-        root = splitNode(root, targetID: focusedPaneID, direction: direction, newNode: newNode)
-        focusedPaneID = newID
+        installSplit(newNode, direction: direction, operation: "repository")
     }
 
     /// Toggles the repository pane: closes if one exists, opens if not.
@@ -1466,6 +1487,30 @@ final class SplitPaneController {
         } else {
             splitWithRepositoryPane(direction: .horizontal, directory: directory)
         }
+    }
+
+    private func installSplit(
+        _ newNode: SplitNode,
+        direction: SplitDirection,
+        operation: String
+    ) {
+        let targetID = focusedPaneID
+        let paneCountBefore = root.allPaneIDs.count
+        root = splitNode(
+            root,
+            targetID: targetID,
+            direction: direction,
+            newNode: newNode
+        )
+        focusedPaneID = newNode.id
+        Log.info(
+            """
+            SplitPaneController.split: tab=\(ownerTabID?.uuidString ?? "unassigned") \
+            kind=\(operation) direction=\(direction.rawValue) target=\(targetID) \
+            newPane=\(newNode.id) panesBefore=\(paneCountBefore) \
+            panesAfter=\(root.allPaneIDs.count) focused=\(focusedPaneID)
+            """
+        )
     }
 
     private func splitNode(_ node: SplitNode, targetID: UUID, direction: SplitDirection, newNode: SplitNode) -> SplitNode {
@@ -1507,8 +1552,28 @@ final class SplitPaneController {
     /// This is the single source of truth for close-time save decisions; the
     /// per-view close button and the ⌃⌘W menu both flow through here.
     func closePane(id: UUID) {
-        // Don't close if it's the only pane
-        guard root.allPaneIDs.count > 1 else { return }
+        let paneIDsBefore = root.allPaneIDs
+        guard paneIDsBefore.contains(id) else {
+            Log.warn(
+                "SplitPaneController.close: rejected unknown pane tab=\(ownerTabID?.uuidString ?? "unassigned") pane=\(id) panes=\(paneIDsBefore)"
+            )
+            return
+        }
+        guard canClosePane else {
+            Log.info(
+                "SplitPaneController.close: ignored only pane tab=\(ownerTabID?.uuidString ?? "unassigned") pane=\(id)"
+            )
+            return
+        }
+
+        let paneType = root.paneType(for: id)?.rawValue ?? "unknown"
+        Log.info(
+            """
+            SplitPaneController.close: requested tab=\(ownerTabID?.uuidString ?? "unassigned") \
+            pane=\(id) kind=\(paneType) focused=\(focusedPaneID) \
+            paneCount=\(paneIDsBefore.count)
+            """
+        )
 
         if let editor = root.findEditor(id: id), editor.isDirty {
             if editor.isAutoSaveEnabled {
@@ -1519,7 +1584,12 @@ final class SplitPaneController {
                 }
             } else {
                 let confirmer = PaneCloseConfirmer(dialogs: dialogs)
-                if confirmer.confirmCloseDirty(editor) == .abort { return }
+                if confirmer.confirmCloseDirty(editor) == .abort {
+                    Log.info(
+                        "SplitPaneController.close: cancelled tab=\(ownerTabID?.uuidString ?? "unassigned") pane=\(id)"
+                    )
+                    return
+                }
             }
         }
 
@@ -1532,6 +1602,17 @@ final class SplitPaneController {
                     focusedPaneID = newFocus
                 }
             }
+            Log.info(
+                """
+                SplitPaneController.close: completed tab=\(ownerTabID?.uuidString ?? "unassigned") \
+                pane=\(id) panesBefore=\(paneIDsBefore.count) \
+                panesAfter=\(root.allPaneIDs.count) focused=\(focusedPaneID)
+                """
+            )
+        } else {
+            Log.error(
+                "SplitPaneController.close: removal produced empty tree tab=\(ownerTabID?.uuidString ?? "unassigned") pane=\(id)"
+            )
         }
     }
 

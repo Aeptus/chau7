@@ -22,29 +22,35 @@ enum CodexSessionResolver {
 
     static func metadata(
         forSessionID sessionId: String,
-        referenceDate: Date? = nil
+        referenceDate: Date? = nil,
+        fileManager: FileManager = .default,
+        environment: [String: String] = ProcessInfo.processInfo.environment
     ) -> Candidate? {
         let normalizedSessionId = sessionId.trimmingCharacters(in: .whitespacesAndNewlines)
         guard AIResumeParser.isValidSessionId(normalizedSessionId) else { return nil }
 
+        let sessionsDir = RuntimeIsolation.urlInHome(
+            ".codex/sessions",
+            fileManager: fileManager,
+            environment: environment
+        )
+        let cacheKey = "\(sessionsDir.standardizedFileURL.path)|\(normalizedSessionId)"
+
         cacheLock.lock()
-        if let cached = metadataCache[normalizedSessionId] {
+        if let cached = metadataCache[cacheKey] {
             cacheLock.unlock()
             return cached
         }
         cacheLock.unlock()
 
-        let fm = FileManager.default
-        let sessionsDir = RuntimeIsolation.urlInHome(".codex/sessions", fileManager: fm)
-
         let candidateDirs = prioritizedDayDirectories(
             in: sessionsDir,
             referenceDate: referenceDate,
-            fileManager: fm
+            fileManager: fileManager
         )
 
         for dayDir in candidateDirs {
-            guard let files = try? fm.contentsOfDirectory(atPath: dayDir.path) else { continue }
+            guard let files = try? fileManager.contentsOfDirectory(atPath: dayDir.path) else { continue }
             let matchingFiles = files
                 .filter { $0.hasSuffix(".jsonl") && $0.contains(normalizedSessionId) }
                 .sorted()
@@ -59,7 +65,7 @@ enum CodexSessionResolver {
                 guard metadata.sessionId == normalizedSessionId else { continue }
 
                 let touchedAt = (
-                    try? fm.attributesOfItem(atPath: fileURL.path)[.modificationDate] as? Date
+                    try? fileManager.attributesOfItem(atPath: fileURL.path)[.modificationDate] as? Date
                 ) ?? referenceDate ?? Date.distantPast
                 let candidate = Candidate(
                     sessionId: metadata.sessionId,
@@ -71,7 +77,7 @@ enum CodexSessionResolver {
                 if metadataCache.count >= Self.metadataCacheMaxEntries {
                     metadataCache.removeAll(keepingCapacity: true)
                 }
-                metadataCache[normalizedSessionId] = candidate
+                metadataCache[cacheKey] = candidate
                 cacheLock.unlock()
                 return candidate
             }
@@ -194,7 +200,10 @@ enum CodexSessionResolver {
             }
         }
 
-        for url in recentDayDirectories(in: sessionsDir, fileManager: fileManager, limit: 14) {
+        // Exact session-ID lookup must not inherit the recency window used by
+        // directory-based discovery. A persisted UUID is unambiguous and may
+        // legitimately point to a rollout older than two weeks.
+        for url in allDayDirectories(in: sessionsDir, fileManager: fileManager) {
             append(url)
         }
 
@@ -217,10 +226,9 @@ enum CodexSessionResolver {
             .appendingPathComponent(String(format: "%02d", day))
     }
 
-    private static func recentDayDirectories(
+    private static func allDayDirectories(
         in sessionsDir: URL,
-        fileManager: FileManager,
-        limit: Int
+        fileManager: FileManager
     ) -> [URL] {
         let isDateComponent = { (name: String) in
             !name.isEmpty && name.allSatisfy(\.isNumber)
@@ -239,9 +247,6 @@ enum CodexSessionResolver {
                 guard let days = try? fileManager.contentsOfDirectory(atPath: monthURL.path) else { continue }
                 for day in days.filter(isDateComponent).sorted().reversed() {
                     dayDirs.append(monthURL.appendingPathComponent(day))
-                    if dayDirs.count >= limit {
-                        return dayDirs
-                    }
                 }
             }
         }

@@ -40,10 +40,15 @@ final class TerminalBackendTests: XCTestCase {
 /// Minimal in-memory `TerminalBackend` double. Records the mutating calls a
 /// test might assert on and returns inert defaults for everything else. It
 /// never allocates FFI/unsafe resources, so it is safe to use freely.
-private final class FakeTerminalBackend: TerminalBackend {
+final class FakeTerminalBackend: TerminalBackend {
     private(set) var sentText: [String] = []
     private(set) var sentBytes: [[UInt8]] = []
     private(set) var lastResize: (cols: UInt16, rows: UInt16)?
+    var nextOutput: Data?
+    var applicationCursorMode = false
+    var backendReadDelay: TimeInterval = 0
+    private(set) var lastOutputReadOnMainThread: Bool?
+    private(set) var cursorModeReadOnMainThread: Bool?
 
     // MARK: PTY Input
 
@@ -131,7 +136,12 @@ private final class FakeTerminalBackend: TerminalBackend {
 
     func clearScrollback() {}
     func getLastOutput() -> Data? {
-        nil
+        lastOutputReadOnMainThread = Thread.isMainThread
+        if backendReadDelay > 0 {
+            Thread.sleep(forTimeInterval: backendReadDelay)
+        }
+        defer { nextOutput = nil }
+        return nextOutput
     }
 
     // MARK: Modes
@@ -153,7 +163,11 @@ private final class FakeTerminalBackend: TerminalBackend {
     }
 
     func isApplicationCursorMode() -> Bool {
-        false
+        cursorModeReadOnMainThread = Thread.isMainThread
+        if backendReadDelay > 0 {
+            Thread.sleep(forTimeInterval: backendReadDelay)
+        }
+        return applicationCursorMode
     }
 
     // MARK: Process

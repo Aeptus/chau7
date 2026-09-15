@@ -10,6 +10,7 @@ let package = Package(
     ],
     products: [
         .executable(name: "Chau7", targets: ["Chau7"]),
+        .executable(name: "chau7-cli", targets: ["Chau7CLI"]),
         .executable(name: "magi", targets: ["MagiCLI"]),
         .library(name: "Chau7Core", targets: ["Chau7Core"])
     ],
@@ -106,12 +107,22 @@ let package = Package(
             ],
             path: "Sources/MagiCLI"
         ),
+        // Chau7 command-line interface
+        .executableTarget(
+            name: "Chau7CLI",
+            dependencies: [
+                "Chau7Core"
+            ],
+            path: "Sources/Chau7CLI"
+        ),
         // Test target
         .testTarget(
             name: "Chau7Tests",
             dependencies: [
                 "Chau7Core",
                 "Chau7",
+                "Chau7CLI",
+                "MagiCLI",
                 .product(name: "Atomics", package: "swift-atomics")
             ],
             path: "Tests/Chau7Tests",
@@ -132,6 +143,9 @@ let package = Package(
                 "Snippets/README.md",
                 "Terminal/README.md",
                 "Utilities/README.md",
+            ],
+            resources: [
+                .process("Fixtures")
             ]
         )
     ]

@@ -18,6 +18,16 @@ final class ControlPlaneService {
                 directory: arguments["directory"] as? String,
                 windowID: arguments["window_id"] as? Int
             )
+        case "tab_request_control":
+            guard let tabID = arguments["tab_id"] as? String else {
+                return jsonError("tab_id is required")
+            }
+            return terminalControl.requestMCPControl(tabID: tabID)
+        case "tab_release_control":
+            guard let tabID = arguments["tab_id"] as? String else {
+                return jsonError("tab_id is required")
+            }
+            return terminalControl.releaseMCPControl(tabID: tabID)
         case "tab_exec":
             guard let tabID = arguments["tab_id"] as? String,
                   let command = arguments["command"] as? String else {
@@ -76,7 +86,8 @@ final class ControlPlaneService {
                   !repoPath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
                 return jsonError("repo_path is required")
             }
-            let limit = max(1, min(arguments["limit"] as? Int ?? 25, 200))
+            // Cap enforced at the source in repoGetEvents (repoEventsMaxLimit).
+            let limit = arguments["limit"] as? Int ?? 25
             return terminalControl.repoGetEvents(
                 repoPath: repoPath,
                 limit: limit,

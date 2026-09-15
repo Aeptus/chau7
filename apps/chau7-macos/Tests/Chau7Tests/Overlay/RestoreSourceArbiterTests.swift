@@ -10,6 +10,28 @@ final class RestoreSourceArbiterTests: XCTestCase {
         XCTAssertFalse(RestoreSourceArbiter.bundleIsCurrent(bundleToken: "t1", indexToken: "t2"))
     }
 
+    func testBundleWhoseParentMatchesIndexWinsInterruptedPublication() {
+        XCTAssertEqual(
+            RestoreSourceArbiter.decision(
+                bundleToken: "t2",
+                bundlePreviousIndexToken: "t1",
+                indexToken: "t1"
+            ),
+            .bundleAheadOfIndex
+        )
+    }
+
+    func testUnrelatedBundleLineageDoesNotHideNewerIndex() {
+        XCTAssertEqual(
+            RestoreSourceArbiter.decision(
+                bundleToken: "t1",
+                bundlePreviousIndexToken: "t0",
+                indexToken: "t2"
+            ),
+            .indexCurrent
+        )
+    }
+
     func testTokenlessBundleAgainstTokenedIndexPrefersIndex() {
         // The bundle predates the latest save cycle (or predates tokens
         // entirely while the index has saved since) — it missed a save.

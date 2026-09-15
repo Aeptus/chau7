@@ -240,11 +240,17 @@ final class RuntimeSessionManager {
     /// Called from `ClaudeCodeMonitor.onEvent` to drive session state transitions.
     /// If no session matches, adopts the tab as a passive session.
     func handleClaudeEvent(_ event: ClaudeCodeEvent) {
-        var session = resolveSession(for: event)
-
-        // Adopt unknown Claude Code sessions as passive
-        if session == nil, !event.cwd.isEmpty {
-            session = tryAdoptFromEvent(event)
+        let session: RuntimeSession?
+        switch resolveSession(for: event) {
+        case let .matched(resolved):
+            session = resolved
+        case .unbound:
+            // Adoption is permitted only for a genuinely unbound event. A
+            // rejected live-provider conflict is terminal for this event and
+            // must not fall through to directory/stamped-tab adoption.
+            session = event.cwd.isEmpty ? nil : tryAdoptFromEvent(event)
+        case .rejectedLiveProviderConflict:
+            return
         }
 
         guard let session else { return }
@@ -402,6 +408,11 @@ final class RuntimeSessionManager {
                 data: ["message": event.message]
             )
 
+        case .sessionStart:
+            // Adoption already records the session-starting lifecycle event.
+            // The hook confirms that state but requires no second transition.
+            break
+
         default:
             Log.debug("RuntimeSessionManager: unhandled event type=\(event.type) session=\(session.id)")
         }
@@ -517,17 +528,39 @@ final class RuntimeSessionManager {
 
     // MARK: - Adoption
 
-    private func resolveSession(for event: ClaudeCodeEvent) -> RuntimeSession? {
+    private enum ClaudeEventSessionResolution {
+        case matched(RuntimeSession)
+        case unbound
+        case rejectedLiveProviderConflict
+    }
+
+    private func resolveSession(for event: ClaudeCodeEvent) -> ClaudeEventSessionResolution {
         let normalizedClaudeSessionID = normalizeClaudeSessionID(event.sessionId)
+        var rejectedConflictingBinding = false
 
         lock.lock()
-        if let normalizedClaudeSessionID,
-           let runtimeSessionID = claudeToRuntimeSession[normalizedClaudeSessionID],
-           let exactSession = sessions[runtimeSessionID] {
-            lock.unlock()
-            return exactSession
+        let exactSession = normalizedClaudeSessionID
+            .flatMap { claudeToRuntimeSession[$0] }
+            .flatMap { sessions[$0] }
+        lock.unlock()
+
+        if let normalizedClaudeSessionID, let exactSession {
+            if TerminalControlService.shared.hasConflictingLiveAIIdentity(
+                tabID: exactSession.tabID,
+                incomingProvider: "Claude",
+                incomingSessionID: normalizedClaudeSessionID
+            ) {
+                invalidateStaleClaudeBinding(
+                    session: exactSession,
+                    claudeSessionID: normalizedClaudeSessionID
+                )
+                rejectedConflictingBinding = true
+            } else {
+                return .matched(exactSession)
+            }
         }
 
+        lock.lock()
         let candidateIDs = Array(cwdToSessions[event.cwd] ?? [])
         let candidates = candidateIDs.compactMap { sessions[$0] }
         let existingBindings = runtimeToClaudeSession
@@ -549,12 +582,20 @@ final class RuntimeSessionManager {
                 Log.info(
                     "RuntimeSessionManager: resolved Claude session \(normalizedClaudeSessionID) via exact tab \(exactTabID)"
                 )
-                return exactSession
+                return .matched(exactSession)
             }
         }
 
+        // Once an exact binding was rejected because its tab now visibly
+        // belongs to another provider, this event may only move to another
+        // exact session match. It must never be guessed back onto the rejected
+        // tab by cwd or a stale CHAU7_TAB_ID stamp.
+        if rejectedConflictingBinding {
+            return .rejectedLiveProviderConflict
+        }
+
         let claudeCandidates = candidates.filter { $0.backend.name == "claude" }
-        guard !claudeCandidates.isEmpty else { return nil }
+        guard !claudeCandidates.isEmpty else { return .unbound }
 
         let eligibleCandidates = claudeCandidates.filter { candidate in
             guard let normalizedClaudeSessionID else {
@@ -578,17 +619,17 @@ final class RuntimeSessionManager {
                     "RuntimeSessionManager: refusing ambiguous Claude binding without session ID for cwd=\(event.cwd) candidates=[\(runtimeSessionIDs)]"
                 )
             }
-            return nil
+            return .unbound
         }
 
         let chosen = chosenPool.first
-        guard let chosen else { return nil }
+        guard let chosen else { return .unbound }
 
         if let normalizedClaudeSessionID {
             associateClaudeSessionID(normalizedClaudeSessionID, withRuntimeSessionID: chosen.id)
         }
 
-        return chosen
+        return .matched(chosen)
     }
 
     private func associateClaudeSessionID(_ claudeSessionID: String, withRuntimeSessionID runtimeSessionID: String) {
@@ -600,6 +641,27 @@ final class RuntimeSessionManager {
         claudeToRuntimeSession[claudeSessionID] = runtimeSessionID
         runtimeToClaudeSession[runtimeSessionID] = claudeSessionID
         lock.unlock()
+    }
+
+    private func invalidateStaleClaudeBinding(
+        session: RuntimeSession,
+        claudeSessionID: String
+    ) {
+        session.journal.append(
+            sessionID: session.id,
+            turnID: session.currentTurnID,
+            type: RuntimeEventType.sessionStopped.rawValue,
+            data: [
+                "reason": "live_tab_identity_conflict",
+                "external_session_id": claudeSessionID
+            ]
+        )
+        _ = session.transition(.tabClosed)
+        moveToStopped(session)
+        Log.warn(
+            "RuntimeSessionManager: invalidated stale Claude binding session=\(claudeSessionID) " +
+                "runtime=\(session.id) tab=\(session.tabID) reason=live_tab_identity_conflict"
+        )
     }
 
     private func normalizeClaudeSessionID(_ sessionID: String) -> String? {
@@ -755,6 +817,13 @@ final class RuntimeSessionManager {
         guard let tabID = UUID(uuidString: trimmed), tabExistsLocked(tabID) else {
             return nil
         }
+        guard !TerminalControlService.shared.hasConflictingLiveAIIdentity(
+            tabID: tabID,
+            incomingProvider: "Claude",
+            incomingSessionID: nil
+        ) else {
+            return nil
+        }
         return tabID
     }
 
@@ -884,7 +953,9 @@ final class RuntimeSessionManager {
         let controlService = TerminalControlService.shared
         let result = controlService.tabOutput(
             tabID: session.tabID.uuidString,
-            lines: max(FeatureSettings.shared.scrollbackLines, 5000),
+            // Bounded pty_log read: a 100k scrollback setting must not balloon
+            // this transient capture; 5000 lines is ample agent context.
+            lines: ScrollbackRetentionPolicy.trackerEntryCap(configuredLines: max(FeatureSettings.shared.scrollbackLines, 5000)),
             source: "pty_log"
         )
         guard let data = result.data(using: .utf8),

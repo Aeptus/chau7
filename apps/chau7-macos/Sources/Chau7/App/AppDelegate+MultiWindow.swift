@@ -71,6 +71,25 @@ extension AppDelegate {
         lastSavedWindowStatesAt = Date()
         lastSavedWindowStatesSignature = currentWindowStateSignature()
 
+        let persist = DispatchWorkItem {
+            autoreleasepool {
+                Self.persistWindowStatesOnDurabilityQueue(allWindows, reason: reason)
+            }
+        }
+        if reason == .termination {
+            // The serial queue first drains every older autosave. Do not close
+            // the app-owned PTYs until the newest captured state is durable.
+            windowStatePersistenceQueue.sync(execute: persist)
+        } else {
+            windowStatePersistenceQueue.async(execute: persist)
+        }
+    }
+
+    private static func persistWindowStatesOnDurabilityQueue(
+        _ allWindows: [[SavedTabState]],
+        reason: TabStateSaveReason
+    ) {
+
         var legacyPayloadBytes = 0
         var multiWindowPayloadBytes = 0
 
@@ -85,40 +104,60 @@ extension AppDelegate {
         // motivated moving the heavy payloads out.
         let indexWindows = allWindows.map { window in window.map(\.strippedForRestoreIndex) }
 
-        // One token per save cycle, stamped on the index AND the bundle
-        // manifest. At restore, token equality tells whether the bundle still
-        // reflects the latest save (see RestoreSourceArbiter) — a bundle that
-        // silently failed to write for hours must not beat a fresh index.
+        // One token per save cycle, stamped on the bundle first and published
+        // to the index only after the full bundle is durable. The bundle also
+        // records the previous index token so restore can recover it if the
+        // process exits between those two commits.
         let saveToken = UUID().uuidString
-        var indexWriteSucceeded = false
-
-        if let firstWindow = indexWindows.first,
-           let data = Persist.encodeLogged(firstWindow, context: "window0.tabState") {
-            legacyPayloadBytes = data.count
-            UserDefaults.standard.set(data, forKey: SavedTabState.userDefaultsKey)
-            indexWriteSucceeded = true
+        let previousIndexSaveToken = UserDefaults.standard.string(
+            forKey: SavedTabState.restoreIndexSaveTokenKey
+        )
+        let legacyPayload = indexWindows.first.flatMap {
+            Persist.encodeLogged($0, context: "window0.tabState")
         }
+        let multiWindowPayload: Data?
+        let multiWindowPayloadIsReady: Bool
         if indexWindows.count > 1 {
             let multiState = SavedMultiWindowState(windows: indexWindows)
-            if let data = Persist.encodeLogged(multiState, context: "multiWindow.tabState") {
-                multiWindowPayloadBytes = data.count
-                UserDefaults.standard.set(data, forKey: SavedMultiWindowState.userDefaultsKey)
-            }
+            multiWindowPayload = Persist.encodeLogged(multiState, context: "multiWindow.tabState")
+            multiWindowPayloadIsReady = multiWindowPayload != nil
         } else {
-            UserDefaults.standard.removeObject(forKey: SavedMultiWindowState.userDefaultsKey)
+            multiWindowPayload = nil
+            multiWindowPayloadIsReady = true
         }
-        if indexWriteSucceeded {
-            UserDefaults.standard.set(saveToken, forKey: SavedTabState.restoreIndexSaveTokenKey)
-        }
+
         do {
-            // sourceData nil → the bundle fingerprints from the full state (incl.
-            // scrollback) so sidecars re-flush when only scrollback changes.
-            _ = try TabRestoreBundleStore.persistCurrentBundle(
-                windowStates: allWindows,
-                reason: reason,
-                sourceData: nil,
-                saveToken: indexWriteSucceeded ? saveToken : nil
+            let result = try RestoreSaveTransaction.commit(
+                indexPayloadIsReady: legacyPayload != nil && multiWindowPayloadIsReady,
+                persistBundle: {
+                    // sourceData nil → fingerprint the full state (including
+                    // scrollback), so sidecars refresh on history-only changes.
+                    try TabRestoreBundleStore.persistCurrentBundle(
+                        windowStates: allWindows,
+                        reason: reason,
+                        sourceData: nil,
+                        saveToken: saveToken,
+                        previousIndexSaveToken: previousIndexSaveToken
+                    ) != nil
+                },
+                publishIndexPayload: {
+                    guard let legacyPayload else { return }
+                    legacyPayloadBytes = legacyPayload.count
+                    UserDefaults.standard.set(legacyPayload, forKey: SavedTabState.userDefaultsKey)
+                    if indexWindows.count > 1, let multiWindowPayload {
+                        multiWindowPayloadBytes = multiWindowPayload.count
+                        UserDefaults.standard.set(multiWindowPayload, forKey: SavedMultiWindowState.userDefaultsKey)
+                    } else {
+                        UserDefaults.standard.removeObject(forKey: SavedMultiWindowState.userDefaultsKey)
+                    }
+                },
+                publishIndexToken: {
+                    UserDefaults.standard.set(saveToken, forKey: SavedTabState.restoreIndexSaveTokenKey)
+                }
             )
+            if result == .bundleOnly {
+                Log.warn("Saved full restore bundle [\(reason.rawValue)] but kept the previous index because index encoding failed")
+            }
         } catch {
             Log.warn("Failed to persist split tab restore bundle [\(reason.rawValue)]: \(error)")
         }
@@ -137,6 +176,22 @@ extension AppDelegate {
         Log.trace("Saved \(allWindows.count) window(s) tab state [\(reason.rawValue)]")
     }
 
+    /// Clears every restore source on the same ordered durability lane used by
+    /// saves. This prevents a queued older autosave from resurrecting a window
+    /// after the user closes it.
+    func clearPersistedWindowState(waitForCompletion: Bool = false) {
+        let clear = DispatchWorkItem {
+            autoreleasepool {
+                OverlayTabsModel.clearPersistedWindowState()
+            }
+        }
+        if waitForCompletion {
+            windowStatePersistenceQueue.sync(execute: clear)
+        } else {
+            windowStatePersistenceQueue.async(execute: clear)
+        }
+    }
+
     /// Save all non-empty overlay windows' tab states atomically to UserDefaults and disk backups.
     /// Window 0 → legacy key, windows 1..N → additional entries in the
     /// multi-window key.
@@ -148,8 +203,7 @@ extension AppDelegate {
         }
         guard !allWindows.isEmpty else {
             if reason == .termination {
-                OverlayTabsModel.clearPersistedWindowState()
-                UserDefaults.standard.synchronize()
+                clearPersistedWindowState(waitForCompletion: true)
                 Log.trace("Cleared persisted window state [\(reason.rawValue)] because no visible windows remained")
             }
             return
@@ -157,7 +211,7 @@ extension AppDelegate {
         persistWindowStates(allWindows, reason: reason)
     }
 
-    private func recordRestorePayloadBreadcrumb(
+    private static func recordRestorePayloadBreadcrumb(
         _ allWindows: [[SavedTabState]],
         reason: TabStateSaveReason,
         legacyPayloadBytes: Int,

@@ -5,25 +5,28 @@ import Chau7Core
 /// Provides controls for enabling/disabling config file loading,
 /// viewing the config path, creating defaults, and reloading.
 struct ConfigFileSettingsView: View {
+    var showsTitle = true
     @Bindable private var watcher = ConfigFileWatcher.shared
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: Chau7Style.Settings.pageSectionSpacing) {
             // Header
-            SettingsSectionHeader(L("settings.configFile.title", "Config File"), icon: "doc.text")
+            if showsTitle {
+                SettingsSectionHeader(L("settings.configFile.title", "Config File"), icon: "doc.text")
+            }
 
             SettingsToggle(
                 label: L("settings.configFile.enabled", "Load Config Files"),
                 help: L("settings.configFile.enabled.help", "Load settings from ~/.chau7/config.toml and per-repo .chau7/config.toml"),
-                isOn: $watcher.isEnabled
+                isOn: $watcher.isEnabled,
+                anchorID: "configFile"
             )
 
             SettingsDescription(
                 text: L("settings.configFile.description", "Config files use a TOML-like format. Per-repo configs override global settings.")
             )
 
-            Divider()
-                .padding(.vertical, 8)
+            SettingsDivider()
 
             // Global Config Path
             SettingsSectionHeader(L("settings.configFile.global", "Global Config"), icon: "folder")
@@ -46,7 +49,7 @@ struct ConfigFileSettingsView: View {
 
             // Error display
             if let error = watcher.lastError {
-                HStack(alignment: .top, spacing: 8) {
+                HStack(alignment: .top, spacing: Chau7Style.Settings.inlineControlSpacing) {
                     Image(systemName: "exclamationmark.triangle.fill")
                         .foregroundColor(.orange)
                         .font(.system(size: 12))
@@ -54,52 +57,37 @@ struct ConfigFileSettingsView: View {
                         .font(.caption)
                         .foregroundColor(.red)
                 }
-                .padding(8)
+                .padding(Chau7Style.Settings.inlineControlSpacing)
                 .background(Color.red.opacity(0.1))
                 .cornerRadius(6)
             }
 
             // Action buttons
-            HStack(spacing: 12) {
-                Button {
+            SettingsButtonRow(buttons: [
+                .init(
+                    title: L("settings.configFile.createDefault", "Create Default Config"),
+                    icon: "doc.badge.plus"
+                ) {
                     watcher.createDefaultConfig()
                     watcher.loadGlobalConfig()
-                } label: {
-                    Label(
-                        L("settings.configFile.createDefault", "Create Default Config"),
-                        systemImage: "doc.badge.plus"
-                    )
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-
-                Button {
+                },
+                .init(
+                    title: L("settings.configFile.openInEditor", "Open in Editor"),
+                    icon: "pencil",
+                    isDisabled: watcher.globalConfig == nil
+                ) {
                     openConfigInEditor()
-                } label: {
-                    Label(
-                        L("settings.configFile.openInEditor", "Open in Editor"),
-                        systemImage: "pencil"
-                    )
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-                .disabled(watcher.globalConfig == nil)
-
-                Button {
+                },
+                .init(
+                    title: L("settings.configFile.reload", "Reload Now"),
+                    icon: "arrow.clockwise"
+                ) {
                     watcher.loadGlobalConfig()
                     watcher.applyConfig()
-                } label: {
-                    Label(
-                        L("settings.configFile.reload", "Reload Now"),
-                        systemImage: "arrow.clockwise"
-                    )
                 }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-            }
+            ])
 
-            Divider()
-                .padding(.vertical, 8)
+            SettingsDivider()
 
             // Repo Config Info
             SettingsSectionHeader(L("settings.configFile.repo", "Per-Repo Config"), icon: "folder.badge.gearshape")
@@ -130,34 +118,25 @@ struct ConfigFileSettingsView: View {
                 }
             }
 
-            HStack(spacing: 12) {
-                Button {
+            SettingsButtonRow(buttons: [
+                .init(
+                    title: L("settings.configFile.repo.create", "Create Per-Repo Config"),
+                    icon: "doc.badge.plus",
+                    isDisabled: watcher.repoConfigDirectory == nil
+                ) {
                     if let dir = watcher.repoConfigDirectory {
                         watcher.createRepoConfig(directory: dir)
                         watcher.loadRepoConfig(directory: dir)
                     }
-                } label: {
-                    Label(
-                        L("settings.configFile.repo.create", "Create Per-Repo Config"),
-                        systemImage: "doc.badge.plus"
-                    )
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-                .disabled(watcher.repoConfigDirectory == nil)
-
-                Button {
+                },
+                .init(
+                    title: L("settings.configFile.openInEditor", "Open in Editor"),
+                    icon: "pencil",
+                    isDisabled: watcher.repoConfig == nil
+                ) {
                     openRepoConfigInEditor()
-                } label: {
-                    Label(
-                        L("settings.configFile.openInEditor", "Open in Editor"),
-                        systemImage: "pencil"
-                    )
                 }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-                .disabled(watcher.repoConfig == nil)
-            }
+            ])
         }
     }
 

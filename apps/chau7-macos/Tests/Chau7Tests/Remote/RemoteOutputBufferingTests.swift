@@ -2,6 +2,10 @@ import XCTest
 @testable import Chau7Core
 
 final class RemoteOutputBufferingTests: XCTestCase {
+    func testSourceBatchFitsWithinOneHighRefreshDisplayFrame() {
+        XCTAssertLessThan(RemoteOutputTuning.sourceMicroBatchIntervalSeconds, 1.0 / 120.0)
+    }
+
     func testTrimRetainedTextKeepsSuffixWithinByteLimit() {
         let oversized = String(repeating: "a", count: RemoteOutputTuning.maxRetainedBytes + 10)
 
@@ -40,5 +44,25 @@ final class RemoteOutputBufferingTests: XCTestCase {
 
         XCTAssertNil(buffer[1])
         XCTAssertEqual(buffer[2], "two")
+    }
+
+    func testTimedOutputChunkRoundTripsBinaryPTYBytesAndTiming() {
+        let chunk = RemoteTimedOutputChunk(
+            firstCapturedAtMicroseconds: 1000,
+            sentAtMicroseconds: 1004,
+            bytes: Data([0x00, 0x1B, 0xFF])
+        )
+
+        XCTAssertEqual(RemoteTimedOutputChunk.decode(from: chunk.encode()), chunk)
+    }
+
+    func testTimedOutputChunkRejectsMalformedOrBackwardsTiming() {
+        XCTAssertNil(RemoteTimedOutputChunk.decode(from: Data("plain output".utf8)))
+        let backwards = RemoteTimedOutputChunk(
+            firstCapturedAtMicroseconds: 2,
+            sentAtMicroseconds: 1,
+            bytes: Data([1])
+        )
+        XCTAssertNil(RemoteTimedOutputChunk.decode(from: backwards.encode()))
     }
 }

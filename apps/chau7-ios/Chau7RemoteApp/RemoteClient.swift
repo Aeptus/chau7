@@ -1,9 +1,9 @@
-import Foundation
-import SwiftUI
-import CryptoKit
-import UIKit
 import Chau7Core
+import CryptoKit
+import Foundation
 import os
+import SwiftUI
+import UIKit
 
 private let log = Logger(subsystem: "ch7", category: "RemoteClient")
 private let perfLog = OSLog(subsystem: "ch7", category: .pointsOfInterest)
@@ -15,8 +15,7 @@ private enum RemoteProcessedFrameResult: Sendable {
 }
 
 private enum RemoteFrameProcessor {
-    nonisolated
-    static func process(_ data: Data, crypto: RemoteCryptoSession?) -> RemoteProcessedFrameResult {
+    nonisolated static func process(_ data: Data, crypto: RemoteCryptoSession?) -> RemoteProcessedFrameResult {
         guard let frame = try? RemoteFrame.decode(from: data) else {
             return .decodeFailed(data.count)
         }
@@ -46,30 +45,37 @@ final class RemoteClient {
             guard oldValue.map(\.tabID) != tabs.map(\.tabID) else { return }
             DiagnosticsLog.shared.info(.tab, "Tab list updated", [
                 "count": String(tabs.count),
-                "active_tab": String(activeTabID)
+                "active_tab": String(activeTabID),
             ])
         }
     }
+
+    private(set) var tabInventoryState: RemoteTabInventoryState = .unavailable
     private(set) var isConnected = false {
         didSet {
             guard oldValue != isConnected else { return }
             DiagnosticsLog.shared.info(.connection, "Connection state changed", [
-                "connected": isConnected ? "true" : "false"
+                "connected": isConnected ? "true" : "false",
             ])
         }
     }
+
     private(set) var status: RemoteConnectionStatus = .disconnected {
         didSet {
             guard oldValue != status else { return }
             DiagnosticsLog.shared.info(.connection, "Status changed", ["status": status.displayText])
         }
     }
+
     var activeTabID: UInt32 = 0
     var lastError: String?
     var pendingApprovals: [ApprovalRequest] = []
     var pendingInteractivePrompts: [RemoteInteractivePrompt] = []
     var approvalHistory: [ApprovalHistoryEntry] = []
     private(set) var liveActivityState: RemoteActivityState?
+    /// Features the connected Mac advertised in its tab list. Empty against
+    /// older Macs — senders must fall back (e.g. escape text over .input).
+    private(set) var macCapabilities: Set<String> = []
 
     // MARK: - Pairing (persisted in Keychain)
 
@@ -91,7 +97,10 @@ final class RemoteClient {
     /// Single merge authority for approvals/prompts across the WS and REST
     /// channels (NF-1 fix: stale snapshots can no longer clobber live state).
     @ObservationIgnored private var pendingReconciler = PendingStateReconciler()
-    private var crypto: RemoteCryptoSession? { session.crypto }
+    private var crypto: RemoteCryptoSession? {
+        session.crypto
+    }
+
     private let deviceName = UIDevice.current.name
     private var reconnectBackoff = RemoteReconnectBackoff()
     private var reconnectTask: Task<Void, Never>?
@@ -102,14 +111,24 @@ final class RemoteClient {
     private var outputFlushTask: Task<Void, Never>?
     private var strippedOutputRefreshTask: Task<Void, Never>?
     private var remoteSessionID: String?
+    /// The tab for which this transport session has explicitly requested a
+    /// live stream. Reset on disconnect so every new session re-subscribes.
+    private var remoteSubscribedTabID: UInt32?
+    /// Diagnostic correlation for proving that admitted OUTPUT frames target
+    /// the same tab the phone is actually presenting.
+    private var lastReceivedOutputTabID: UInt32?
     private var telemetryBuffer = RemoteTelemetryBuffer(maxEvents: RemoteClient.maxBufferedTelemetryEvents)
     /// Per-event failed-send attempts (bounded retry for the drain-on-success path).
     private var telemetrySendAttempts: [String: Int] = [:]
     private var pendingURLActions: [RemoteActivityURLAction] = []
     private var currentAppState: RemoteClientAppState = .foreground
     private var desiredStreamMode: RemoteClientStreamMode = .full
+    private var desiredTerminalPresentation: RemoteTerminalPresentation =
+        (UserDefaults.standard.object(forKey: AppSettings.experimentalTerminalRendererKey) as? Bool
+            ?? AppSettings.experimentalTerminalRendererDefault) ? .replay : .text
     private var pushToken: String?
     private(set) var notificationsAuthorized = false
+    private var streamingPerformance = RemoteStreamingPerformanceWindow()
     private let backgroundKeepalive = BackgroundKeepalive(name: "ch7.remote.approvals")
     /// IDs (approval request IDs / prompt IDs) already delivered to the user
     /// as a remote push — local notifications for exactly these are skipped.
@@ -117,12 +136,12 @@ final class RemoteClient {
     /// timing-dependent and could mute unrelated notifications.
     private var pushDeliveredIDs: [String] = []
     private static let pushDeliveredIDCap = 128
-    /// Interactive prompts the user just answered or dismissed, keyed by prompt
-    /// id → when it was suppressed. The Mac keeps re-pushing a prompt until its
-    /// terminal actually advances, so without this the just-handled prompt
-    /// reappears on the next authoritative list. Suppression is dropped once the
-    /// Mac stops listing the prompt (the tab cleared) or after a safety timeout.
-    private var suppressedPromptIDs: [String: Date] = [:]
+    /// Interactive prompts the user just answered or dismissed. The Mac keeps
+    /// re-pushing a prompt until its terminal actually advances, so without this
+    /// the just-handled prompt reappears on the next authoritative list.
+    /// Suppression is dropped once the Mac stops listing the prompt — i.e. the
+    /// underlying state changed — so a genuinely new occurrence still surfaces.
+    private var suppressedPromptIDs: Set<String> = []
     private var pendingStateFetchTask: Task<Void, Never>?
     private var lastPendingStateFetchAt: Date?
     let terminalRenderer = RemoteTerminalRendererStore()
@@ -134,18 +153,22 @@ final class RemoteClient {
     private static let handshakeTimeoutSeconds = 12.0
     private static let repairFallbackAttempt = 3
     private static let pendingStateFetchMinimumInterval: TimeInterval = 1
-    /// How long a just-answered/dismissed prompt stays hidden if the Mac keeps
-    /// listing it (i.e. the terminal never advanced). After this the prompt is
-    /// shown again so a still-pending action isn't lost forever.
-    private static let promptSuppressionMaxAge: TimeInterval = 20
-    /// Frames larger than this get decode/decrypt offloaded to a detached task;
-    /// smaller control frames are processed inline (detach overhead > work).
-    private static let frameOffloadThreshold = 8192
     static let appVersion =
         (Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String) ?? "1.1.0"
 
     var canSendInput: Bool {
         canSendInput(to: activeTabID)
+    }
+
+    /// The active tab is showing a selection menu or waiting for input, so the
+    /// terminal view should surface the control keys (arrows/Return/esc)
+    /// without requiring the user to have pinned them.
+    var activeTabNeedsMenuKeys: Bool {
+        RemoteMenuKeyHeuristics.activeTabNeedsMenuKeys(
+            prompts: pendingInteractivePrompts,
+            activity: liveActivityState,
+            activeTabID: activeTabID
+        )
     }
 
     /// SHA-256 fingerprint of this device's public key, for out-of-band
@@ -176,30 +199,101 @@ final class RemoteClient {
         // `.task` (structured, cancelled with the scene) instead of an
         // unstructured Task cancelled from a deinit that a static singleton
         // never runs.
-        transport.onMessage = { [weak self] data, generation in
-            await self?.processIncomingMessage(data, generation: generation)
+        transport.onMessage = { [weak self] message, supersededGrids in
+            await self?.processIncomingMessage(message, supersededGrids: supersededGrids)
         }
         transport.onFailure = { [weak self] error in
-            self?.handleDisconnect(reason: error.localizedDescription)
+            self?.handleDisconnect(
+                reason: error.localizedDescription,
+                trigger: .transportFailure
+            )
         }
+        transport.onOutputRecoveryNeeded = { [weak self] in
+            guard let self else { return }
+            self.streamingPerformance.recordOutputRecovery()
+            DiagnosticsLog.shared.info(.performance, "Remote output fast-forwarded to checkpoint", [
+                "tab_id": String(self.activeTabID),
+            ])
+            self.requestOutputCheckpointIfPossible()
+        }
+        terminalRenderer.onFramePublished = { [weak self] durationMs in
+            self?.streamingPerformance.recordPublish(durationMs: durationMs)
+        }
+        terminalRenderer.onFramePresented = { [weak self] trace in
+            self?.streamingPerformance.recordPresentation(trace)
+        }
+        _ = DiagnosticsLog.shared
     }
 
     // MARK: - Connection
 
     func connect() {
         guard let pairing = pairingInfo else { return }
-        connect(pairing: pairing)
+        startConnection(
+            pairing: pairing,
+            trigger: .manual,
+            forceRestart: true
+        )
     }
 
-    func connect(
+    func connectIfNeeded(trigger: RemoteConnectionTrigger) {
+        guard let pairing = pairingInfo else { return }
+        startConnection(
+            pairing: pairing,
+            trigger: trigger,
+            forceRestart: false
+        )
+    }
+
+    func setRichTerminalRendererEnabled(_ enabled: Bool) {
+        let presentation: RemoteTerminalPresentation = enabled ? .replay : .text
+        guard presentation != desiredTerminalPresentation else { return }
+        desiredTerminalPresentation = presentation
+
+        if enabled {
+            if let snapshot = outputText.data(using: .utf8), !snapshot.isEmpty {
+                terminalRenderer.replaceSnapshot(snapshot, for: activeTabID)
+            }
+        } else {
+            terminalRenderer.reset()
+            scheduleStrippedOutputRefresh(immediate: true)
+        }
+
+        DiagnosticsLog.shared.info(.render, "Terminal presentation changed", [
+            "presentation": presentation.rawValue,
+        ])
+        sendClientStateIfPossible()
+    }
+
+    private func startConnection(
         pairing: PairingInfo,
         preserveApprovalsAndPrompts: Bool = false,
-        preserveReconnectAttempt: Bool = false
+        preserveReconnectAttempt: Bool = false,
+        trigger: RemoteConnectionTrigger,
+        forceRestart: Bool
     ) {
+        guard RemoteConnectionStartPolicy.shouldStartConnection(
+            transportIsOpen: transport.isOpen,
+            forceRestart: forceRestart
+        ) else {
+            DiagnosticsLog.shared.info(.connection, "Connection request coalesced", [
+                "trigger": trigger.rawValue,
+                "transport_generation": String(transport.generation),
+                "status": status.displayText,
+            ])
+            return
+        }
+
+        DiagnosticsLog.shared.info(.connection, "Connection requested", [
+            "trigger": trigger.rawValue,
+            "force_restart": forceRestart ? "true" : "false",
+            "transport_generation": String(transport.generation),
+        ])
         disconnect(
             autoReconnect: false,
             preserveApprovalsAndPrompts: preserveApprovalsAndPrompts,
-            preserveReconnectAttempt: preserveReconnectAttempt
+            preserveReconnectAttempt: preserveReconnectAttempt,
+            trigger: .connectionRestart
         )
         pairingInfo = pairing
         lastError = nil
@@ -238,7 +332,10 @@ final class RemoteClient {
         emitTelemetry(
             type: .connectRequested,
             status: "connecting",
-            metadata: ["relay_host": pairing.relayURL]
+            metadata: [
+                "relay_host": pairing.relayURL,
+                "trigger": trigger.rawValue,
+            ]
         )
         scheduleHandshake(for: transport.generation)
     }
@@ -247,18 +344,20 @@ final class RemoteClient {
         DiagnosticsLog.shared.info(.lifecycle, "Scene phase changed", ["phase": String(describing: scenePhase)])
         switch scenePhase {
         case .active:
+            DiagnosticsLog.shared.markForegroundActive()
             DiagnosticsLog.shared.capturePerformanceSnapshot(reason: "scene_active")
             backgroundKeepalive.end()
             currentAppState = .foreground
             desiredStreamMode = .full
             if !transport.isOpen, pairingInfo != nil {
-                connect()
+                connectIfNeeded(trigger: .sceneActive)
             } else {
                 sendClientStateIfPossible()
                 requestActiveTabRefreshIfPossible()
             }
             schedulePendingStateFetch(reason: "scene_active")
         case .background:
+            DiagnosticsLog.shared.markBackgroundTransition()
             backgroundKeepalive.begin()
             currentAppState = .background
             desiredStreamMode = .approvalsOnly
@@ -318,7 +417,7 @@ final class RemoteClient {
         currentAppState = .background
         desiredStreamMode = .approvalsOnly
         if !transport.isOpen, pairingInfo != nil {
-            connect()
+            connectIfNeeded(trigger: .pushWake)
         } else {
             sendClientStateIfPossible()
         }
@@ -335,8 +434,16 @@ final class RemoteClient {
     func disconnect(
         autoReconnect: Bool = false,
         preserveApprovalsAndPrompts: Bool = false,
-        preserveReconnectAttempt: Bool = false
+        preserveReconnectAttempt: Bool = false,
+        trigger: RemoteDisconnectTrigger = .manual
     ) {
+        DiagnosticsLog.shared.info(.connection, "Connection teardown", [
+            "trigger": trigger.rawValue,
+            "auto_reconnect": autoReconnect ? "true" : "false",
+            "was_connected": isConnected ? "true" : "false",
+            "transport_open": transport.isOpen ? "true" : "false",
+            "transport_generation": String(transport.generation),
+        ])
         shouldReconnect = false
         reconnectTask?.cancel()
         reconnectTask = nil
@@ -350,6 +457,9 @@ final class RemoteClient {
             reconnectBackoff.reset()
         }
         tabs = []
+        tabInventoryState = .unavailable
+        remoteSubscribedTabID = nil
+        lastReceivedOutputTabID = nil
         outputStore.reset()
         terminalRenderer.reset()
         outputFlushTask?.cancel()
@@ -360,6 +470,9 @@ final class RemoteClient {
         // next session — connect() calls disconnect() first, so wiping here
         // routinely lost pre-session events on flaky connects (NF-9).
         liveActivityState = nil
+        // The next session may be a different (older) Mac: never carry a
+        // capability advertisement across connections.
+        macCapabilities = []
         outputText = ""
         strippedOutputText = ""
         if !preserveApprovalsAndPrompts {
@@ -387,13 +500,62 @@ final class RemoteClient {
         sendInput(text, appendNewline: appendNewline, to: activeTabID)
     }
 
+    /// Whether keys should go over the semantic KEY_INPUT frame. False
+    /// against older Macs (no advertisement) — callers fall back to today's
+    /// escape text over .input, which works against every Mac.
+    var supportsKeyInput: Bool {
+        macCapabilities.contains(RemoteTabListPayload.keyInputCapability)
+    }
+
+    /// Send semantic key presses to the active tab over KEY_INPUT. The Mac
+    /// encodes them through the terminal view's key encoder, so application
+    /// cursor mode and control combos behave like locally-typed keys.
+    @discardableResult
+    func sendKeyInput(_ keys: [RemoteKeyInputPayload.Key]) -> Bool {
+        sendKeyInput(keys, to: activeTabID)
+    }
+
+    @discardableResult
+    func sendKeyInput(
+        _ keys: [RemoteKeyInputPayload.Key],
+        to tabID: UInt32,
+        allowUnlistedTab: Bool = false
+    ) -> Bool {
+        guard !keys.isEmpty, supportsKeyInput,
+              canSendInput(to: tabID, allowUnlistedTab: allowUnlistedTab)
+        else {
+            return false
+        }
+        guard let data = try? RemoteJSON.encoder.encode(RemoteKeyInputPayload(keys: keys)) else {
+            return false
+        }
+        guard sendEncrypted(type: .keyInput, tabID: tabID, payload: data) else {
+            reportBlockedInput(
+                "Key input could not be encrypted for the current remote session.",
+                reason: "encrypt_failed",
+                tabID: tabID
+            )
+            return false
+        }
+        if lastError != nil {
+            lastError = nil
+        }
+        DiagnosticsLog.shared.debug(.input, "Key input forwarded to relay", [
+            "tab_id": String(tabID),
+            "keys": String(keys.count),
+        ])
+        return true
+    }
+
     func switchTab(_ tabID: UInt32) {
         activeTabID = tabID
         flushPendingOutput(for: tabID)
         refreshVisibleOutput(prioritizeStrippedOutput: true)
         terminalRenderer.setActiveTab(tabID)
         emitTelemetry(type: .tabSwitched, tabID: tabID, tabTitle: tabTitle(for: tabID))
-        sendJSON(TabSwitchPayload(tabID: tabID), type: .tabSwitch)
+        if isConnected {
+            requestActiveTabRefreshIfPossible()
+        }
     }
 
     // MARK: - Approvals
@@ -426,6 +588,39 @@ final class RemoteClient {
         return true
     }
 
+    /// Toggle one option of a multi-select prompt: sends the digit (which
+    /// toggles the row in the TUI) WITHOUT the submit terminator and without
+    /// completing the card — the user submits separately when done.
+    @discardableResult
+    func toggleInteractivePromptOption(promptID: String, optionID: String) -> Bool {
+        guard let prompt = pendingInteractivePrompts.first(where: { $0.id == promptID }),
+              let option = prompt.options.first(where: { $0.id == optionID })
+        else {
+            return false
+        }
+        var toggle = option.response
+        while toggle.hasSuffix("\r") || toggle.hasSuffix("\n") {
+            toggle.removeLast()
+        }
+        guard !toggle.isEmpty else { return false }
+        return sendInput(toggle, appendNewline: false, to: prompt.tabID, allowUnlistedTab: true)
+    }
+
+    /// Submit a multi-select prompt after toggling: a bare Enter confirms the
+    /// current TUI selection, then the card completes.
+    @discardableResult
+    func submitInteractivePrompt(promptID: String) -> Bool {
+        guard let promptIndex = pendingInteractivePrompts.firstIndex(where: { $0.id == promptID }) else {
+            return false
+        }
+        let prompt = pendingInteractivePrompts[promptIndex]
+        guard sendInput("\r", appendNewline: false, to: prompt.tabID, allowUnlistedTab: true) else {
+            return false
+        }
+        completeInteractivePrompt(at: promptIndex, id: prompt.id)
+        return true
+    }
+
     @discardableResult
     func respondToInteractivePrompt(promptID: String, customText: String) -> Bool {
         guard let promptIndex = pendingInteractivePrompts.firstIndex(where: { $0.id == promptID }) else {
@@ -452,17 +647,23 @@ final class RemoteClient {
         if !performURLAction(action) {
             pendingURLActions.append(action)
             if !transport.isOpen, pairingInfo != nil {
-                connect()
+                connectIfNeeded(trigger: .urlAction)
             }
         }
     }
 
     // MARK: - Receive Loop
 
-    /// Per-message handler for the transport's receive pump: decode/decrypt
-    /// (offloading large frames to a detached task) and apply. The transport
-    /// awaits this before issuing the next receive, preserving strict FIFO.
-    private func processIncomingMessage(_ data: Data, generation: UInt64) async {
+    /// Decode/decrypt off-main and apply in the transport's
+    /// ordered application drain. Socket receives continue independently.
+    private func processIncomingMessage(
+        _ message: RemoteInboundMessage,
+        supersededGrids: Int
+    ) async {
+        let data = message.data
+        let generation = message.generation
+        let processStartedAt = Date()
+        let queueAgeMs = max(0, processStartedAt.timeIntervalSince(message.receivedAt) * 1000)
         let crypto = self.crypto
         let signpostID = OSSignpostID(log: perfLog)
         os_signpost(
@@ -470,33 +671,84 @@ final class RemoteClient {
             log: perfLog,
             name: "RemoteFrameProcess",
             signpostID: signpostID,
-            "bytes=%{public}d",
-            data.count
+            "bytes=%{public}d queue_ms=%{public}.2f depth=%{public}d",
+            data.count,
+            queueAgeMs,
+            message.queueDepthAtEnqueue
         )
-        let processed: RemoteProcessedFrameResult
-        if data.count > Self.frameOffloadThreshold {
-            processed = await Task.detached(priority: .userInitiated) {
-                RemoteFrameProcessor.process(data, crypto: crypto)
-            }.value
-            guard transport.generation == generation else { return }
-        } else {
-            processed = RemoteFrameProcessor.process(data, crypto: crypto)
+        let processed = await Task.detached(priority: .userInitiated) {
+            RemoteFrameProcessor.process(data, crypto: crypto)
+        }.value
+        guard transport.generation == generation else { return }
+        applyProcessedFrame(
+            processed,
+            signpostID: signpostID,
+            transportGeneration: generation,
+            receivedAt: message.receivedAt,
+            suppressOutputApplication: message.suppressOutputApplication
+        )
+        let appliedAt = Date()
+        let frameType: RemoteFrameType?
+        let admission: RemoteFrameAdmission
+        switch processed {
+        case let .success(frame, _):
+            frameType = RemoteFrameType(rawValue: frame.type)
+            admission = .admitted
+        case .decodeFailed:
+            frameType = nil
+            admission = .decodeFailed
+        case let .decryptFailed(rawType):
+            frameType = RemoteFrameType(rawValue: rawType)
+            admission = .decryptFailed
         }
-        applyProcessedFrame(processed, signpostID: signpostID)
+        streamingPerformance.recordFrame(
+            type: frameType,
+            admission: admission,
+            bytes: data.count,
+            queueAgeMs: queueAgeMs,
+            receiveToApplyMs: max(0, appliedAt.timeIntervalSince(message.receivedAt) * 1000),
+            supersededGrids: supersededGrids
+        )
+        emitStreamingPerformanceIfDue(now: appliedAt)
     }
 
-    private func handleDisconnect(reason: String? = nil) {
+    private func handleDisconnect(
+        reason: String? = nil,
+        trigger: RemoteDisconnectTrigger
+    ) {
+        let failureClass = RemoteConnectionFailureClassifier.classify(reason)
+        if reconnectTask != nil {
+            DiagnosticsLog.shared.info(.connection, "Duplicate disconnect coalesced", [
+                "trigger": trigger.rawValue,
+                "failure_class": failureClass,
+                "attempt": String(reconnectBackoff.attempt),
+                "transport_generation": String(transport.generation),
+            ])
+            return
+        }
+
         let wasConnected = isConnected
         cancelHandshakeTasks()
         isConnected = false
         status = .disconnected
         session.invalidateSession(clearHandshakeMaterial: false)
 
+        DiagnosticsLog.shared.info(.connection, "Connection interrupted", [
+            "trigger": trigger.rawValue,
+            "failure_class": failureClass,
+            "was_connected": wasConnected ? "true" : "false",
+            "transport_generation": String(transport.generation),
+        ])
+
         if wasConnected || reason != nil {
             emitTelemetry(type: .disconnected, status: "disconnected", message: reason)
         }
 
-        guard shouldReconnect, reconnectBackoff.hasRemainingAttempts else {
+        guard RemoteConnectionStartPolicy.shouldScheduleReconnect(
+            hasScheduledReconnect: reconnectTask != nil,
+            shouldReconnect: shouldReconnect,
+            hasRemainingAttempts: reconnectBackoff.hasRemainingAttempts
+        ) else {
             if !reconnectBackoff.hasRemainingAttempts {
                 lastError = "Reconnect limit reached (\(Self.maxReconnectAttempts) attempts)"
                 status = .connectionFailed
@@ -505,23 +757,35 @@ final class RemoteClient {
         }
         guard let delay = reconnectBackoff.nextDelay() else { return }
         status = .reconnecting(attempt: reconnectBackoff.attempt, max: Self.maxReconnectAttempts)
+        DiagnosticsLog.shared.info(.connection, "Reconnect scheduled", [
+            "trigger": trigger.rawValue,
+            "failure_class": failureClass,
+            "attempt": String(reconnectBackoff.attempt),
+            "delay_seconds": String(format: "%.0f", delay),
+            "transport_generation": String(transport.generation),
+        ])
         emitTelemetry(
             type: .reconnectScheduled,
             status: "scheduled",
             message: reason,
             metadata: [
                 "attempt": String(reconnectBackoff.attempt),
-                "delay_seconds": String(format: "%.0f", delay)
+                "delay_seconds": String(format: "%.0f", delay),
             ]
         )
 
         reconnectTask = Task { @MainActor [weak self] in
             try? await Task.sleep(for: .seconds(delay))
-            guard !Task.isCancelled, let self, let pairing = self.pairingInfo else { return }
-            self.connect(
+            guard let self else { return }
+            guard !Task.isCancelled else { return }
+            self.reconnectTask = nil
+            guard let pairing = self.pairingInfo else { return }
+            self.startConnection(
                 pairing: pairing,
                 preserveApprovalsAndPrompts: true,
-                preserveReconnectAttempt: true
+                preserveReconnectAttempt: true,
+                trigger: .reconnect,
+                forceRestart: true
             )
         }
     }
@@ -543,7 +807,8 @@ final class RemoteClient {
 
                 self.sendHello()
                 if let pairing = self.pairingInfo,
-                   self.shouldSendPairRequest(for: pairing, attempt: attempt) {
+                   self.shouldSendPairRequest(for: pairing, attempt: attempt)
+                {
                     self.sendPairRequest(recordTelemetry: attempt == 0)
                 }
 
@@ -576,7 +841,10 @@ final class RemoteClient {
             // than a permanent failure. Route through the normal disconnect path
             // so the reconnect backoff retries instead of stranding the
             // connection until the user manually reconnects.
-            self.handleDisconnect(reason: "handshake_timeout")
+            self.handleDisconnect(
+                reason: "handshake_timeout",
+                trigger: .handshakeTimeout
+            )
         }
     }
 
@@ -589,9 +857,15 @@ final class RemoteClient {
 
     // MARK: - Frame Dispatch
 
-    private func applyProcessedFrame(_ processed: RemoteProcessedFrameResult, signpostID: OSSignpostID) {
+    private func applyProcessedFrame(
+        _ processed: RemoteProcessedFrameResult,
+        signpostID: OSSignpostID,
+        transportGeneration: UInt64,
+        receivedAt: Date,
+        suppressOutputApplication: Bool
+    ) {
         switch processed {
-        case .decodeFailed(let byteCount):
+        case let .decodeFailed(byteCount):
             os_signpost(
                 .end,
                 log: perfLog,
@@ -607,7 +881,7 @@ final class RemoteClient {
                 metadata: ["frame_bytes": String(byteCount)]
             )
             return
-        case .decryptFailed(let frameType):
+        case let .decryptFailed(frameType):
             os_signpost(
                 .end,
                 log: perfLog,
@@ -625,12 +899,10 @@ final class RemoteClient {
             if case let .resetSession(reason) = session.noteDecryptFailure() {
                 log.warning("Replay guard ordered session reset: \(reason)")
                 session.resetForRehandshake()
-                isConnected = false
-                remoteSessionID = nil
-                sendHello()
+                beginHandshakeRecovery(reason: "decrypt_failure_threshold")
             }
             return
-        case .success(let frame, let payload):
+        case let .success(frame, payload):
             os_signpost(
                 .end,
                 log: perfLog,
@@ -640,11 +912,23 @@ final class RemoteClient {
                 Int(frame.type),
                 payload.count
             )
-            handleProcessedFrame(frame, payload: payload)
+            handleProcessedFrame(
+                frame,
+                payload: payload,
+                transportGeneration: transportGeneration,
+                receivedAt: receivedAt,
+                suppressOutputApplication: suppressOutputApplication
+            )
         }
     }
 
-    private func handleProcessedFrame(_ frame: RemoteFrame, payload: Data) {
+    private func handleProcessedFrame(
+        _ frame: RemoteFrame,
+        payload: Data,
+        transportGeneration: UInt64,
+        receivedAt: Date,
+        suppressOutputApplication: Bool
+    ) {
         let frameType = RemoteFrameType(rawValue: frame.type)
         let isEncrypted = frame.flags & RemoteFrame.flagEncrypted != 0
 
@@ -675,30 +959,67 @@ final class RemoteClient {
         }
 
         switch frameType {
-        case .hello:           handleHello(payload)
-        case .pairAccept:      handlePairAccept(payload)
-        case .pairReject:      handlePairReject(payload)
+        case .hello: handleHello(payload)
+        case .pairAccept: handlePairAccept(payload)
+        case .pairReject: handlePairReject(payload)
         case .sessionReady:
+            let wasConnected = isConnected
+            // SESSION_READY is the Mac's proof that it derived this epoch.
+            // Echo our confirmation even if the optimistic copy sent during
+            // local derivation was lost or rejected while the peer re-keyed.
+            if let remoteSessionID {
+                sendJSON(
+                    SessionReadyPayload(sessionID: remoteSessionID),
+                    type: .sessionReady,
+                    encrypt: true
+                )
+            }
             isConnected = true
             status = .sessionReady
+            if tabInventoryState != .ready {
+                tabInventoryState = .syncing
+            }
             lastError = nil
             cancelHandshakeTasks()
+            if !wasConnected {
+                DiagnosticsLog.shared.info(.connection, "Secure session confirmed by Mac", [
+                    "transport_generation": String(transport.generation),
+                ])
+                emitTelemetry(type: .sessionEncrypted, status: "confirmed")
+                flushBufferedTelemetryEvents()
+                sendClientStateIfPossible()
+                flushPendingApprovalResponses()
+                requestActiveTabRefreshIfPossible()
+            }
             flushPendingURLActions()
             schedulePendingStateFetch(reason: "session_ready", force: true)
-        case .tabList:         handleTabList(payload)
-        case .cachedTabList:   handleCachedTabList(payload)
-        case .activityState:   handleActivityState(payload)
+        case .tabList: handleTabList(payload)
+        case .cachedTabList: handleCachedTabList(payload)
+        case .activityState: handleActivityState(payload)
         case .activityCleared: clearActivityState()
         case .interactivePromptList: handleInteractivePromptList(payload)
         case .clientState:
             break
-        case .output:          appendOutput(payload, tabID: frame.tabID)
-        case .snapshot:        storeSnapshot(payload, tabID: frame.tabID)
+        case .output:
+            guard !suppressOutputApplication else { return }
+            appendOutput(
+                payload,
+                flags: frame.flags,
+                tabID: frame.tabID,
+                sequence: frame.seq,
+                transportGeneration: transportGeneration,
+                receivedAt: receivedAt
+            )
+        case .snapshot: storeSnapshot(payload, tabID: frame.tabID)
         case .terminalGridSnapshot:
+            // A replay/text client never consumes server grids. Older Macs may
+            // still send them, so discard after authenticated frame admission
+            // without allocating a full RustCellData array.
+            guard desiredTerminalPresentation == .grid else { return }
             storeGridSnapshot(payload, tabID: frame.tabID)
         case .approvalRequest: handleApprovalRequest(payload)
-        case .ping:            sendEncrypted(type: .pong, tabID: frame.tabID, payload: payload)
-        case .error:           handleError(payload)
+        case .ping: sendEncrypted(type: .pong, tabID: frame.tabID, payload: payload)
+        case .error: handleError(payload)
         default:
             log.warning("Unhandled frame type: 0x\(String(frame.type, radix: 16))")
         }
@@ -719,9 +1040,7 @@ final class RemoteClient {
         if case let .resetSession(reason) = session.evaluateHello(macNonce: nonce) {
             log.warning("Replay guard ordered session reset: \(reason)")
             session.resetForRehandshake()
-            isConnected = false
-            remoteSessionID = nil
-            sendHello()
+            beginHandshakeRecovery(reason: "mac_hello_epoch_changed")
         }
         session.setMacNonce(nonce)
         establishSessionIfPossible()
@@ -733,6 +1052,15 @@ final class RemoteClient {
             log.error("handlePairAccept: invalid macPub base64")
             return
         }
+        guard let expectedMacKey = pairingInfo.flatMap({ Data(base64Encoded: $0.macPub) }),
+              expectedMacKey == keyData else {
+            log.error("handlePairAccept: Mac public key does not match pairing identity")
+            DiagnosticsLog.shared.error(.connection, "Pair accept identity mismatch")
+            lastError = "The Mac identity changed. Scan a fresh pairing code before reconnecting."
+            status = .error
+            shouldReconnect = false
+            return
+        }
         guard session.adoptMacPublicKey(keyData) else {
             log.error("handlePairAccept: invalid public key")
             return
@@ -740,15 +1068,16 @@ final class RemoteClient {
         session.markPairAcceptReceived()
         RemotePairingStore.saveMacPublicKey(keyData)
         persistTrustedIdentity(for: msg)
-        // If we fell back from trust-based reconnect to explicit pairing, any
-        // provisional session state must be discarded before re-deriving keys.
-        session.invalidateSession(clearHandshakeMaterial: false)
-        session.clearMacNonce()
-        session.mintIOSNonce()
-        isConnected = false
-        remoteSessionID = nil
-        sendHello()
+        // PAIR_ACCEPT authenticates the long-lived identity; HELLO nonces own
+        // the crypto epoch. Do not rotate an already-valid nonce here. The Mac
+        // sends HELLO alongside PAIR_ACCEPT and a changed HELLO performs the
+        // one authoritative re-key. This also makes PAIR_ACCEPT/HELLO robust
+        // if transport scheduling delivers them at either side of SESSION_READY.
+        DiagnosticsLog.shared.info(.connection, "Pairing identity accepted", [
+            "session_established": session.isEstablished ? "true" : "false",
+        ])
         establishSessionIfPossible()
+        ensureHandshakeRecoveryRunning()
     }
 
     private func handlePairReject(_ data: Data) {
@@ -778,24 +1107,74 @@ final class RemoteClient {
 
     private func handleTabList(_ data: Data) {
         guard let msg: TabListPayload = decodePayload(data, as: TabListPayload.self, context: "handleTabList") else { return }
-        applyTabListPayload(msg)
+        applyTabListPayload(msg, source: "live")
         flushPendingURLActions()
     }
 
     private func handleCachedTabList(_ data: Data) {
         guard let msg: TabListPayload = decodePayload(data, as: TabListPayload.self, context: "handleCachedTabList") else { return }
-        applyTabListPayload(msg)
+        applyTabListPayload(msg, source: "cached")
     }
 
-    private func applyTabListPayload(_ msg: TabListPayload) {
-        tabs = msg.tabs
-        activeTabID = msg.tabs.first(where: \.isActive)?.tabID ?? msg.tabs.first?.tabID ?? 0
+    private func applyTabListPayload(_ msg: TabListPayload, source: String) {
+        let previousVisibleTabIDs = Set(tabs.map(\.tabID))
         let visibleTabIDs = Set(msg.tabs.map(\.tabID))
-        outputStore.retainVisibleTabs(visibleTabIDs)
-        terminalRenderer.retainVisibleTabs(visibleTabIDs)
-        pendingInteractivePrompts.removeAll { !visibleTabIDs.contains($0.tabID) }
-        refreshVisibleOutput(prioritizeStrippedOutput: true)
-        terminalRenderer.setActiveTab(activeTabID)
+        let nextActiveTabID = RemoteTabSelectionPolicy.resolvedActiveTabID(
+            currentActiveTabID: activeTabID,
+            incoming: msg.tabs
+        )
+        let replacement = RemoteTabInventory.replacementIfChanged(current: tabs, incoming: msg.tabs)
+        let inventoryChanged = replacement != nil
+        let membershipChanged = previousVisibleTabIDs != visibleTabIDs
+        let activeTabChanged = activeTabID != nextActiveTabID
+        let wasAwaitingInventory = tabInventoryState != .ready
+
+        if let replacement {
+            tabs = replacement
+        }
+        let nextCapabilities = Set(msg.capabilities ?? [])
+        if macCapabilities != nextCapabilities {
+            macCapabilities = nextCapabilities
+        }
+        if activeTabChanged {
+            activeTabID = nextActiveTabID
+        }
+        if tabInventoryState != .ready {
+            tabInventoryState = .ready
+        }
+
+        let inventoryMetadata = [
+            "source": source,
+            "count": String(msg.tabs.count),
+            "changed": inventoryChanged ? "true" : "false",
+            "membership_changed": membershipChanged ? "true" : "false",
+            "active_changed": activeTabChanged ? "true" : "false",
+        ]
+        if wasAwaitingInventory || membershipChanged {
+            DiagnosticsLog.shared.info(.tab, "Remote tab inventory synchronized", inventoryMetadata)
+        } else {
+            DiagnosticsLog.shared.debug(.tab, "Remote tab inventory received", inventoryMetadata)
+        }
+
+        if membershipChanged {
+            outputStore.retainVisibleTabs(visibleTabIDs)
+            terminalRenderer.retainVisibleTabs(visibleTabIDs)
+            pendingInteractivePrompts.removeAll { !visibleTabIDs.contains($0.tabID) }
+        }
+        if membershipChanged || activeTabChanged {
+            refreshVisibleOutput(prioritizeStrippedOutput: true)
+            terminalRenderer.setActiveTab(activeTabID)
+        }
+
+        // SESSION_READY can arrive before the first live inventory, when
+        // activeTabID is still zero. Establish the iPhone's stream selection
+        // as soon as that inventory resolves a real tab. This also repairs a
+        // reconnect after a cached inventory without coupling to Mac focus.
+        if activeTabID == 0 {
+            remoteSubscribedTabID = nil
+        } else if source == "live", remoteSubscribedTabID != activeTabID {
+            requestActiveTabRefreshIfPossible()
+        }
     }
 
     private func handleActivityState(_ data: Data) {
@@ -834,8 +1213,42 @@ final class RemoteClient {
         currentAppState == .foreground && desiredStreamMode == .full
     }
 
-    private func appendOutput(_ data: Data, tabID: UInt32) {
+    private func appendOutput(
+        _ payload: Data,
+        flags: UInt8,
+        tabID: UInt32,
+        sequence: UInt64,
+        transportGeneration: UInt64,
+        receivedAt: Date
+    ) {
         guard isStreamingTerminalOutput else { return }
+        let data: Data
+        let macCapturedAtMicroseconds: UInt64?
+        let macSentAtMicroseconds: UInt64?
+        if flags & RemoteFrame.flagOutputTiming != 0,
+           let timedChunk = RemoteTimedOutputChunk.decode(from: payload)
+        {
+            data = timedChunk.bytes
+            macCapturedAtMicroseconds = timedChunk.firstCapturedAtMicroseconds
+            macSentAtMicroseconds = timedChunk.sentAtMicroseconds
+            let receivedMicros = UInt64(max(0, receivedAt.timeIntervalSince1970 * 1_000_000))
+            streamingPerformance.recordOutputTiming(
+                senderBatchMs: Double(
+                    timedChunk.sentAtMicroseconds >= timedChunk.firstCapturedAtMicroseconds
+                        ? timedChunk.sentAtMicroseconds - timedChunk.firstCapturedAtMicroseconds
+                        : 0
+                ) / 1000,
+                estimatedCaptureToReceiveMs: Double(
+                    receivedMicros > timedChunk.firstCapturedAtMicroseconds
+                        ? receivedMicros - timedChunk.firstCapturedAtMicroseconds
+                        : 0
+                ) / 1000
+            )
+        } else {
+            data = payload
+            macCapturedAtMicroseconds = nil
+            macSentAtMicroseconds = nil
+        }
         let signpostID = OSSignpostID(log: perfLog)
         os_signpost(
             .begin,
@@ -846,13 +1259,34 @@ final class RemoteClient {
             data.count
         )
         let resolvedTabID = resolvedTabID(for: tabID)
-        outputStore.append(data, to: resolvedTabID)
-        terminalRenderer.appendOutput(data, for: resolvedTabID)
+        lastReceivedOutputTabID = resolvedTabID
+        if desiredTerminalPresentation == .replay {
+            terminalRenderer.appendOutput(
+                data,
+                for: resolvedTabID,
+                trace: RemoteTerminalFrameTrace(
+                    transportGeneration: transportGeneration,
+                    sequence: sequence,
+                    tabID: resolvedTabID,
+                    bytes: data.count,
+                    macCapturedAtMicroseconds: macCapturedAtMicroseconds,
+                    macSentAtMicroseconds: macSentAtMicroseconds,
+                    iosReceivedAt: receivedAt,
+                    iosAppliedAt: Date()
+                )
+            )
+        }
 
-        if outputStore.pendingByteCount(for: resolvedTabID) >= RemoteOutputTuning.maxPendingBytesPerTab {
-            flushPendingOutput(for: resolvedTabID)
-        } else {
-            scheduleOutputFlush()
+        // Rich replay owns its bytes off-main. Maintain the String/ANSI path
+        // only while it is actually visible (or after renderer failure).
+        let plainTextNeedsOutput = desiredTerminalPresentation == .text || !terminalRenderer.isAvailable
+        if plainTextNeedsOutput {
+            outputStore.append(data, to: resolvedTabID)
+            if outputStore.pendingByteCount(for: resolvedTabID) >= RemoteOutputTuning.maxPendingBytesPerTab {
+                flushPendingOutput(for: resolvedTabID)
+            } else {
+                scheduleOutputFlush()
+            }
         }
         os_signpost(
             .end,
@@ -861,7 +1295,7 @@ final class RemoteClient {
             signpostID: signpostID,
             "tab=%{public}u pending=%{public}d",
             resolvedTabID,
-            outputStore.pendingByteCount(for: resolvedTabID)
+            plainTextNeedsOutput ? outputStore.pendingByteCount(for: resolvedTabID) : 0
         )
     }
 
@@ -869,7 +1303,9 @@ final class RemoteClient {
         guard isStreamingTerminalOutput else { return }
         let resolvedTabID = resolvedTabID(for: tabID)
         outputStore.replaceSnapshot(data, for: resolvedTabID)
-        terminalRenderer.replaceSnapshot(for: resolvedTabID)
+        if desiredTerminalPresentation == .replay {
+            terminalRenderer.replaceSnapshot(data, for: resolvedTabID)
+        }
         if resolvedTabID == activeTabID || activeTabID == 0 {
             refreshVisibleOutput(prioritizeStrippedOutput: true)
         }
@@ -878,9 +1314,13 @@ final class RemoteClient {
     private func storeGridSnapshot(_ data: Data, tabID: UInt32) {
         guard isStreamingTerminalOutput else { return }
         let resolvedTabID = resolvedTabID(for: tabID)
+        let decodeStartedAt = Date()
         guard let renderState = RemoteTerminalRenderStateDecoder.decodeGridSnapshot(data) else {
             return
         }
+        streamingPerformance.recordGridDecode(
+            durationMs: Date().timeIntervalSince(decodeStartedAt) * 1000
+        )
         terminalRenderer.replaceGridSnapshot(renderState, for: resolvedTabID)
     }
 
@@ -901,7 +1341,7 @@ final class RemoteClient {
         switch session.establishIfPossible() {
         case .notReady:
             return
-        case .failed(let message):
+        case let .failed(message):
             lastError = message
             return
         case .established:
@@ -909,17 +1349,42 @@ final class RemoteClient {
         }
 
         reconnectBackoff.reset()
-        isConnected = true
-        cancelHandshakeTasks()
+        if tabInventoryState != .ready {
+            tabInventoryState = .syncing
+        }
         let sessionID = CryptoUtils.randomBytes(count: 8).base64EncodedString()
         remoteSessionID = sessionID
         sendJSON(SessionReadyPayload(sessionID: sessionID), type: .sessionReady, encrypt: true)
         status = .encrypted
-        emitTelemetry(type: .sessionEncrypted, status: "encrypted")
-        flushBufferedTelemetryEvents()
-        sendClientStateIfPossible()
-        flushPendingApprovalResponses()
-        schedulePendingStateFetch(reason: "session_encrypted", force: true)
+        DiagnosticsLog.shared.info(.connection, "Local crypto established; awaiting Mac confirmation", [
+            "transport_generation": String(transport.generation),
+        ])
+        ensureHandshakeRecoveryRunning()
+    }
+
+    /// Invalidate only the crypto epoch while preserving the socket, cached
+    /// tabs, approvals, and terminal state. Recovery must keep running until a
+    /// peer-authenticated SESSION_READY arrives; local key derivation alone is
+    /// not proof that the Mac adopted the same nonce pair.
+    private func beginHandshakeRecovery(reason: String) {
+        isConnected = false
+        remoteSessionID = nil
+        if tabInventoryState != .ready {
+            tabInventoryState = .syncing
+        }
+        status = .waitingForMac
+        DiagnosticsLog.shared.warn(.connection, "Secure session recovery started", [
+            "reason": reason,
+            "transport_generation": String(transport.generation),
+        ])
+        sendHello()
+        ensureHandshakeRecoveryRunning()
+    }
+
+    private func ensureHandshakeRecoveryRunning() {
+        guard transport.isOpen, !isConnected else { return }
+        guard handshakeRetryTask == nil || handshakeTimeoutTask == nil else { return }
+        scheduleHandshake(for: transport.generation)
     }
 
     // MARK: - Outgoing
@@ -1006,33 +1471,37 @@ final class RemoteClient {
     }
 
     private func performURLAction(_ action: RemoteActivityURLAction) -> Bool {
-        guard crypto != nil else { return false }
+        guard crypto != nil, isConnected else { return false }
 
         switch action {
-        case .open(let tabID):
+        case let .open(tabID):
             if let tabID {
                 guard tabs.contains(where: { $0.tabID == tabID }) else { return false }
                 switchTab(tabID)
             }
             return true
-        case .switchTab(let tabID):
+        case let .switchTab(tabID):
             guard tabs.contains(where: { $0.tabID == tabID }) else { return false }
             switchTab(tabID)
             return true
-        case .approve(let requestID, let tabID), .deny(let requestID, let tabID):
+        case let .approve(requestID, tabID), let .deny(requestID, tabID):
             if let tabID {
                 guard tabs.contains(where: { $0.tabID == tabID }) else { return false }
                 switchTab(tabID)
             }
             guard pendingApprovals.contains(where: { $0.requestID == requestID }) else { return false }
-            let approved = if case .approve = action { true } else { false }
+            let approved = if case .approve = action {
+                true
+            } else {
+                false
+            }
             respondToApproval(requestID: requestID, approved: approved)
             return true
         }
     }
 
     private func flushPendingURLActions() {
-        guard crypto != nil, !pendingURLActions.isEmpty else { return }
+        guard crypto != nil, isConnected, !pendingURLActions.isEmpty else { return }
 
         let queued = pendingURLActions
         pendingURLActions.removeAll(keepingCapacity: true)
@@ -1057,13 +1526,15 @@ final class RemoteClient {
     private func flushPendingApprovalResponses() {
         guard approvalCoordinator.hasQueuedResponses else { return }
 
-        guard crypto != nil, transport.isOpen else {
-            status = .reconnectingToSendApproval
+        guard crypto != nil, isConnected, transport.isOpen else {
             if let pairing = pairingInfo, !transport.isOpen {
-                connect(
+                status = .reconnectingToSendApproval
+                startConnection(
                     pairing: pairing,
                     preserveApprovalsAndPrompts: true,
-                    preserveReconnectAttempt: true
+                    preserveReconnectAttempt: true,
+                    trigger: .approvalDelivery,
+                    forceRestart: false
                 )
             }
             return
@@ -1080,20 +1551,22 @@ final class RemoteClient {
             sendApprovalResponse(requestID: requestID, approved: approved) { [weak self] success in
                 guard let self else { return }
                 switch self.approvalCoordinator.resolveSend(requestID: requestID, approved: approved, success: success) {
-                case .completed(let approved):
+                case let .completed(approved):
                     self.completeApprovalResponse(requestID: requestID, approved: approved)
                     if !self.approvalCoordinator.hasQueuedResponses {
                         self.backgroundKeepalive.end()
                     }
-                case .requeue(let approved):
+                case let .requeue(approved):
                     self.updateApprovalResponseState(requestID: requestID) { _ in .queued(approved) }
                     self.lastError = "Approval response was not delivered. Chau7 will retry when the connection is ready."
                     self.status = .approvalQueued
                     if let pairing = self.pairingInfo, !self.transport.isOpen {
-                        self.connect(
+                        self.startConnection(
                             pairing: pairing,
                             preserveApprovalsAndPrompts: true,
-                            preserveReconnectAttempt: true
+                            preserveReconnectAttempt: true,
+                            trigger: .approvalDelivery,
+                            forceRestart: false
                         )
                     }
                 case .superseded:
@@ -1136,7 +1609,7 @@ final class RemoteClient {
     }
 
     private func canSendInput(to tabID: UInt32, allowUnlistedTab: Bool) -> Bool {
-        guard crypto != nil, transport.isOpen, tabID != 0 else { return false }
+        guard crypto != nil, isConnected, transport.isOpen, tabID != 0 else { return false }
         return allowUnlistedTab || tabs.contains(where: { $0.tabID == tabID })
     }
 
@@ -1146,6 +1619,18 @@ final class RemoteClient {
             .replacingOccurrences(of: "\r\n", with: "\n")
             .replacingOccurrences(of: "\n", with: "\r")
         guard !normalizedResponse.isEmpty else { return false }
+
+        // Arrow-navigation responses (unnumbered menus) ride KEY_INPUT when
+        // the Mac supports it: the semantic keys get application-cursor-mode
+        // handling that raw CSI text cannot. Anything that isn't pure
+        // navigation — digits, y/n tokens, free text — stays on the text
+        // path, as does everything when the capability (or the send) fails.
+        if supportsKeyInput,
+           let keys = RemoteMenuKeyHeuristics.semanticKeys(forNavigationResponse: normalizedResponse),
+           sendKeyInput(keys, to: tabID, allowUnlistedTab: true)
+        {
+            return true
+        }
 
         if normalizedResponse.hasSuffix("\r") {
             let body = String(normalizedResponse.dropLast())
@@ -1182,7 +1667,9 @@ final class RemoteClient {
         // terminal. LF (0x0A) makes TUI composers (Claude Code, Codex) insert
         // a line break inside the input field instead of submitting, so the
         // text visibly arrived but never left the field.
-        if appendNewline { data.append(0x0D) }
+        if appendNewline {
+            data.append(0x0D)
+        }
         guard sendEncrypted(type: .input, tabID: tabID, payload: data) else {
             reportBlockedInput(
                 "Input could not be encrypted for the current remote session.",
@@ -1193,11 +1680,13 @@ final class RemoteClient {
         }
         // A successful send clears any stale block message so the UI banner
         // does not linger after recovery.
-        if lastError != nil { lastError = nil }
+        if lastError != nil {
+            lastError = nil
+        }
         DiagnosticsLog.shared.debug(.input, "Input forwarded to relay", [
             "tab_id": String(tabID),
             "bytes": String(data.count),
-            "newline": appendNewline ? "true" : "false"
+            "newline": appendNewline ? "true" : "false",
         ])
         return true
     }
@@ -1212,7 +1701,8 @@ final class RemoteClient {
 
     private func hasStoredTrust(for pairing: PairingInfo) -> Bool {
         guard let storedKey = RemotePairingStore.loadMacPublicKey(),
-              let trustedIdentity = RemotePairingStore.loadTrustedIdentity() else {
+              let trustedIdentity = RemotePairingStore.loadTrustedIdentity()
+        else {
             return false
         }
         let currentIOSPub = session.iosKey.publicKey.rawRepresentation.base64EncodedString()
@@ -1270,7 +1760,10 @@ final class RemoteClient {
         let outputChanged = visibleOutput != outputText
         outputText = visibleOutput
 
-        if prioritizeStrippedOutput || outputChanged {
+        let plainTextIsVisible = desiredTerminalPresentation == .text
+            || !terminalRenderer.isAvailable
+            || terminalRenderer.renderState == nil
+        if plainTextIsVisible, prioritizeStrippedOutput || outputChanged {
             scheduleStrippedOutputRefresh(immediate: prioritizeStrippedOutput)
         }
     }
@@ -1281,7 +1774,7 @@ final class RemoteClient {
             "reason": reason,
             "tab_id": String(tabID ?? activeTabID),
             "is_connected": isConnected ? "true" : "false",
-            "status": status.displayText
+            "status": status.displayText,
         ])
         emitTelemetry(
             type: .sendFailed,
@@ -1303,7 +1796,8 @@ final class RemoteClient {
                 return
             }
             if let lastPendingStateFetchAt,
-               Date().timeIntervalSince(lastPendingStateFetchAt) < Self.pendingStateFetchMinimumInterval {
+               Date().timeIntervalSince(lastPendingStateFetchAt) < Self.pendingStateFetchMinimumInterval
+            {
                 return
             }
         }
@@ -1453,6 +1947,12 @@ final class RemoteClient {
             contextNote: payload.contextNote,
             sessionID: payload.sessionID,
             timestamp: Self.parseRemoteTimestamp(payload.timestamp),
+            severity: payload.severity.flatMap(ApprovalSeverity.init(rawValue:))
+                ?? ApprovalSeverity.classify(
+                    command: payload.command,
+                    flaggedCommand: payload.flaggedCommand,
+                    reason: payload.contextNote
+                ),
             responseState: responseState
         )
     }
@@ -1460,19 +1960,20 @@ final class RemoteClient {
     /// Project the reconciler's authoritative prompt list into the UI,
     /// applying the answered-prompt suppression overlay on top.
     private func syncPrompts(with changes: PendingStateReconciler.PromptChanges) {
-        let now = Date()
         let nextPromptIDs = Set(changes.prompts.map(\.id))
 
-        // Drop suppression once the Mac stops listing the prompt (the terminal
-        // advanced, so the tab cleared) or after the safety timeout, so a
-        // genuinely-still-pending prompt resurfaces instead of vanishing.
-        suppressedPromptIDs = suppressedPromptIDs.filter { id, suppressedAt in
-            nextPromptIDs.contains(id) && now.timeIntervalSince(suppressedAt) < Self.promptSuppressionMaxAge
-        }
+        // Drop suppression once the Mac stops listing the prompt: the terminal
+        // advanced, so a later prompt with the same id is a new occurrence and
+        // must surface. Deliberately no time-based expiry — the Mac re-pushes an
+        // unchanged prompt indefinitely, and some cards are backed by state that
+        // never self-clears (a restored tab's unrun resume prefill persists until
+        // the line is actually run). Expiring on a timer turned "dismiss" into a
+        // recurring nag for exactly those, with nothing new to tell the user.
+        suppressedPromptIDs.formIntersection(nextPromptIDs)
 
         // Hide prompts the user just answered/dismissed; the Mac re-pushes them
         // until its terminal catches up, which is what made them "come back".
-        let visiblePrompts = changes.prompts.filter { suppressedPromptIDs[$0.id] == nil }
+        let visiblePrompts = changes.prompts.filter { !suppressedPromptIDs.contains($0.id) }
 
         let previousPromptIDs = Set(pendingInteractivePrompts.map(\.id))
         let visiblePromptIDs = Set(visiblePrompts.map(\.id))
@@ -1500,13 +2001,15 @@ final class RemoteClient {
         pendingInteractivePrompts.remove(at: index)
         _ = pendingReconciler.applyLocalPromptCompletion(promptID: id)
         clearPushDeliveredID(id)
-        suppressedPromptIDs[id] = Date()
+        suppressedPromptIDs.insert(id)
         RemoteNotificationScheduler.removeInteractivePromptNotifications(promptIDs: [id])
     }
 
     /// Dismiss a detected prompt from the phone without sending anything to the
-    /// terminal. It resurfaces if the Mac still lists it after the safety
-    /// timeout, or sooner if the tab briefly clears and the prompt recurs.
+    /// terminal. It stays dismissed for as long as the Mac keeps listing that
+    /// same prompt, and resurfaces only if the tab clears and the prompt recurs
+    /// — a new occurrence, not the one that was waved off. The tab's own
+    /// waiting/approval status still shows the session is blocked.
     func dismissInteractivePrompt(promptID: String) {
         guard let index = pendingInteractivePrompts.firstIndex(where: { $0.id == promptID }) else { return }
         completeInteractivePrompt(at: index, id: promptID)
@@ -1514,9 +2017,9 @@ final class RemoteClient {
 
     private func currentPushEnvironment() -> RemotePushEnvironment? {
         #if DEBUG
-        .development
+            .development
         #else
-        .production
+            .production
         #endif
     }
 
@@ -1532,15 +2035,21 @@ final class RemoteClient {
         // reconnect (only genuinely new entries notify), and the old
         // wall-clock window could mute a legitimately new approval that
         // arrived while suspended.
-        disconnect(autoReconnect: false, preserveApprovalsAndPrompts: true)
+        disconnect(
+            autoReconnect: false,
+            preserveApprovalsAndPrompts: true,
+            trigger: .backgroundExpiration
+        )
         status = .backgroundSuspended
     }
 
     private func sendClientStateIfPossible() {
-        guard crypto != nil else { return }
+        guard crypto != nil, isConnected else { return }
         let payload = RemoteClientStatePayload(
             appState: currentAppState,
             streamMode: desiredStreamMode,
+            terminalPresentation: desiredTerminalPresentation,
+            supportsOutputTiming: true,
             pushToken: pushToken,
             pushTopic: Bundle.main.bundleIdentifier,
             pushEnvironment: currentPushEnvironment(),
@@ -1549,10 +2058,62 @@ final class RemoteClient {
         sendJSON(payload, type: .clientState, encrypt: true)
     }
 
+    private func emitStreamingPerformanceIfDue(now: Date) {
+        guard let sample = streamingPerformance.takeSnapshotIfDue(now: now) else { return }
+        DiagnosticsLog.shared.info(.performance, "Remote streaming window", [
+            "frames": String(sample.frameCount),
+            "admitted_frames": String(sample.admittedFrameCount),
+            "decode_failures": String(sample.decodeFailureCount),
+            "decrypt_failures": String(sample.decryptFailureCount),
+            "output_frames": String(sample.outputFrameCount),
+            "grid_frames": String(sample.gridFrameCount),
+            "hello_frames": String(sample.helloFrameCount),
+            "session_ready_frames": String(sample.sessionReadyFrameCount),
+            "tab_inventory_frames": String(sample.tabInventoryFrameCount),
+            "snapshot_frames": String(sample.snapshotFrameCount),
+            "bytes": String(sample.bytes),
+            "max_queue_age_ms": String(format: "%.2f", sample.maxQueueAgeMs),
+            "max_receive_to_apply_ms": String(format: "%.2f", sample.maxReceiveToApplyMs),
+            "avg_grid_decode_ms": String(format: "%.2f", sample.averageGridDecodeMs),
+            "avg_publish_ms": String(format: "%.2f", sample.averagePublishMs),
+            "superseded_grid_frames": String(sample.supersededGridFrames),
+            "output_recoveries": String(sample.outputRecoveryCount),
+            "max_sender_batch_ms": String(format: "%.2f", sample.maxSenderBatchMs),
+            "max_mac_capture_to_send_ms": String(format: "%.2f", sample.maxSenderBatchMs),
+            "max_capture_to_receive_ms": String(format: "%.2f", sample.maxEstimatedCaptureToReceiveMs),
+            "presented_frames": String(sample.presentedFrameCount),
+            "max_estimated_mac_send_to_ios_receive_ms": String(
+                format: "%.2f",
+                sample.maxEstimatedMacSendToIOSReceiveMs
+            ),
+            "max_ios_receive_to_apply_ms": String(format: "%.2f", sample.maxIOSReceiveToApplyMs),
+            "max_ios_apply_to_engine_ms": String(format: "%.2f", sample.maxIOSApplyToEngineMs),
+            "max_engine_to_publish_ms": String(format: "%.2f", sample.maxEngineToPublishMs),
+            "max_publish_to_view_ms": String(format: "%.2f", sample.maxPublishToViewMs),
+            "max_view_to_draw_ms": String(format: "%.2f", sample.maxViewToDrawMs),
+            "max_draw_to_next_vsync_ms": String(format: "%.2f", sample.maxDrawToNextVSyncMs),
+            "max_estimated_mac_capture_to_draw_ms": String(
+                format: "%.2f",
+                sample.maxEstimatedMacCaptureToDrawMs
+            ),
+            "max_estimated_mac_capture_to_next_vsync_ms": String(
+                format: "%.2f",
+                sample.maxEstimatedMacCaptureToNextVSyncMs
+            ),
+            "last_presented_frame": sample.lastPresentedTraceIdentity?.description ?? "none",
+            "last_presented_bytes": String(sample.lastPresentedBytes),
+            "active_tab_id": String(activeTabID),
+            "subscribed_tab_id": remoteSubscribedTabID.map(String.init) ?? "none",
+            "last_output_tab_id": lastReceivedOutputTabID.map(String.init) ?? "none",
+            "last_output_matches_active": lastReceivedOutputTabID == activeTabID ? "true" : "false",
+            "presentation": desiredTerminalPresentation.rawValue,
+        ])
+    }
+
     private func scheduleOutputFlush() {
         guard outputFlushTask == nil, outputStore.hasPendingOutput else { return }
         outputFlushTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(for: RemoteOutputTuning.flushInterval)
+            try? await Task.sleep(for: RemoteOutputTuning.plainTextPublishInterval)
             guard let self, !Task.isCancelled else { return }
             self.flushPendingOutput()
         }
@@ -1577,6 +2138,7 @@ final class RemoteClient {
             guard outputStore.hasPendingOutput else { return }
         }
 
+        let publishStartedAt = Date()
         let updatedTabIDs = outputStore.flushPendingOutput(for: tabID)
 
         if tabID == nil, outputStore.hasPendingOutput {
@@ -1586,19 +2148,25 @@ final class RemoteClient {
         if tabID == activeTabID || (tabID == nil && activeTabID == 0) || updatedTabIDs.contains(activeTabID) {
             refreshVisibleOutput()
         }
+        streamingPerformance.recordPublish(
+            durationMs: Date().timeIntervalSince(publishStartedAt) * 1000
+        )
     }
 
     private func scheduleStrippedOutputRefresh(immediate: Bool) {
-        strippedOutputRefreshTask?.cancel()
-
+        if immediate || outputText.utf8.count <= 4096 {
+            strippedOutputRefreshTask?.cancel()
+            strippedOutputRefreshTask = nil
+        }
         let sourceText = outputText
         guard !sourceText.isEmpty else {
+            strippedOutputRefreshTask?.cancel()
             strippedOutputText = ""
             strippedOutputRefreshTask = nil
             return
         }
 
-        if immediate || sourceText.utf8.count <= 4_096 {
+        if immediate || sourceText.utf8.count <= 4096 {
             let signpostID = OSSignpostID(log: perfLog)
             os_signpost(.begin, log: perfLog, name: "ANSIStrip", signpostID: signpostID)
             strippedOutputText = ANSIStripper.strip(sourceText)
@@ -1614,35 +2182,64 @@ final class RemoteClient {
             return
         }
 
-        strippedOutputRefreshTask = Task(priority: .utility) { [weak self, sourceText] in
-            try? await Task.sleep(for: .milliseconds(120))
-            guard !Task.isCancelled else { return }
+        // Coalesce to a bounded cadence without restarting the delay for every
+        // chunk. Continuous streams therefore keep publishing instead of
+        // waiting forever for a quiet 120 ms tail.
+        guard strippedOutputRefreshTask == nil else { return }
+        strippedOutputRefreshTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: RemoteOutputTuning.plainTextPublishInterval)
+            guard let self, !Task.isCancelled else { return }
+            let latestSourceText = self.outputText
             let signpostID = OSSignpostID(log: perfLog)
             os_signpost(.begin, log: perfLog, name: "ANSIStrip", signpostID: signpostID)
-            let stripped = ANSIStripper.strip(sourceText)
-            await MainActor.run {
-                guard let self, !Task.isCancelled else { return }
-                os_signpost(
-                    .end,
-                    log: perfLog,
-                    name: "ANSIStrip",
-                    signpostID: signpostID,
-                    "bytes=%{public}d",
-                    sourceText.utf8.count
-                )
-                self.strippedOutputRefreshTask = nil
-                guard self.outputText == sourceText else {
-                    self.scheduleStrippedOutputRefresh(immediate: false)
-                    return
-                }
+            let stripped = await Task.detached(priority: .utility) {
+                ANSIStripper.strip(latestSourceText)
+            }.value
+            guard !Task.isCancelled else { return }
+            os_signpost(
+                .end,
+                log: perfLog,
+                name: "ANSIStrip",
+                signpostID: signpostID,
+                "bytes=%{public}d",
+                latestSourceText.utf8.count
+            )
+            self.strippedOutputRefreshTask = nil
+            if self.outputText == latestSourceText {
                 self.strippedOutputText = stripped
+            } else {
+                self.scheduleStrippedOutputRefresh(immediate: false)
             }
         }
     }
 
-    private func requestActiveTabRefreshIfPossible() {
-        guard crypto != nil, activeTabID != 0 else { return }
-        sendJSON(TabSwitchPayload(tabID: activeTabID), type: .tabSwitch)
+    @discardableResult
+    private func requestActiveTabRefreshIfPossible() -> Bool {
+        guard crypto != nil, isConnected, activeTabID != 0 else { return false }
+        guard let payload = try? RemoteJSON.encoder.encode(TabSwitchPayload(tabID: activeTabID)) else {
+            return false
+        }
+        guard sendEncrypted(type: .tabSwitch, tabID: 0, payload: payload) else {
+            return false
+        }
+        remoteSubscribedTabID = activeTabID
+        DiagnosticsLog.shared.debug(.tab, "Remote tab stream requested", [
+            "tab_id": String(activeTabID),
+            "transport_generation": String(transport.generation),
+        ])
+        return true
+    }
+
+    private func requestOutputCheckpointIfPossible() {
+        guard crypto != nil, isConnected, activeTabID != 0 else { return }
+        if macCapabilities.contains(RemoteTabListPayload.checkpointRequestCapability) {
+            sendEncrypted(type: .checkpointRequest, tabID: activeTabID, payload: Data())
+        } else {
+            // Older Macs have no side-effect-free checkpoint frame. Their
+            // idempotent tab-switch path still returns an authoritative
+            // snapshot and keeps recovery compatible across versions.
+            requestActiveTabRefreshIfPossible()
+        }
     }
 
     private func decodePayload<T: Decodable>(_ data: Data, as type: T.Type, context: String) -> T? {
@@ -1680,7 +2277,7 @@ final class RemoteClient {
     private static let maxTelemetrySendAttempts = 3
 
     private func enqueueOrSendTelemetryEvent(_ event: inout RemoteClientTelemetryEvent) {
-        guard crypto != nil else {
+        guard crypto != nil, isConnected else {
             telemetryBuffer.append(event)
             return
         }
@@ -1719,7 +2316,7 @@ final class RemoteClient {
     }
 
     private func flushBufferedTelemetryEvents() {
-        guard crypto != nil, !telemetryBuffer.isEmpty else { return }
+        guard crypto != nil, isConnected, !telemetryBuffer.isEmpty else { return }
         var pendingEvents = telemetryBuffer.drain()
         for index in pendingEvents.indices {
             enqueueOrSendTelemetryEvent(&pendingEvents[index])

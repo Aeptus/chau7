@@ -2,6 +2,97 @@ import XCTest
 @testable import Chau7Core
 
 final class TabDragLayoutTests: XCTestCase {
+    func testGroupWidthIncludesLeadingAccessoryAndInternalSpacing() {
+        XCTAssertEqual(
+            TabDragLayout.groupWidth(
+                homeRange: 1 ..< 3,
+                tabWidths: [60, 80, 120, 90],
+                spacing: 8,
+                leadingAccessoryWidth: 40
+            ),
+            256
+        )
+    }
+
+    func testGroupWidthRejectsInvalidGeometry() {
+        XCTAssertNil(
+            TabDragLayout.groupWidth(
+                homeRange: 1 ..< 3,
+                tabWidths: [60, 0, 120],
+                spacing: 8,
+                leadingAccessoryWidth: 40
+            )
+        )
+    }
+
+    func testEdgeAutoScrollIsInactiveInViewportCenter() {
+        XCTAssertEqual(
+            TabDragLayout.edgeAutoScrollDelta(
+                pointer: CGPoint(x: 150, y: 15),
+                viewport: CGRect(x: 0, y: 0, width: 300, height: 30)
+            ),
+            0
+        )
+    }
+
+    func testEdgeAutoScrollDirectionAndSpeedFollowEdgePenetration() {
+        let viewport = CGRect(x: 100, y: 20, width: 400, height: 30)
+        let nearLeft = TabDragLayout.edgeAutoScrollDelta(
+            pointer: CGPoint(x: 135, y: 35),
+            viewport: viewport
+        )
+        let outsideLeft = TabDragLayout.edgeAutoScrollDelta(
+            pointer: CGPoint(x: 80, y: 35),
+            viewport: viewport
+        )
+        let nearRight = TabDragLayout.edgeAutoScrollDelta(
+            pointer: CGPoint(x: 465, y: 35),
+            viewport: viewport
+        )
+        let outsideRight = TabDragLayout.edgeAutoScrollDelta(
+            pointer: CGPoint(x: 520, y: 35),
+            viewport: viewport
+        )
+
+        XCTAssertLessThan(nearLeft, 0)
+        XCTAssertEqual(outsideLeft, -22)
+        XCTAssertGreaterThan(nearRight, 0)
+        XCTAssertEqual(outsideRight, 22)
+        XCTAssertLessThan(abs(nearLeft), abs(outsideLeft))
+        XCTAssertLessThan(abs(nearRight), abs(outsideRight))
+    }
+
+    func testEdgeAutoScrollRequiresPointerNearTabBarVertically() {
+        XCTAssertEqual(
+            TabDragLayout.edgeAutoScrollDelta(
+                pointer: CGPoint(x: 295, y: 100),
+                viewport: CGRect(x: 0, y: 0, width: 300, height: 30)
+            ),
+            0
+        )
+    }
+
+    func testAutoScrollDeltaClampsAtBothContentBounds() {
+        XCTAssertEqual(
+            TabDragLayout.clampedAutoScrollDelta(
+                requestedDelta: -20,
+                currentOrigin: 5,
+                contentWidth: 800,
+                viewportWidth: 300
+            ),
+            -5
+        )
+        XCTAssertEqual(
+            TabDragLayout.clampedAutoScrollDelta(
+                requestedDelta: 30,
+                currentOrigin: 490,
+                contentWidth: 800,
+                viewportWidth: 300
+            ),
+            10
+        )
+    }
+
     func testDestinationIndexWaitsForCenterCrossingWithEqualWidths() {
         let widths: [CGFloat] = [100, 100, 100]
 

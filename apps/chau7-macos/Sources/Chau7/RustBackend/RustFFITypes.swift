@@ -52,6 +52,34 @@ struct RustGridSnapshot {
     var capacity: Int // Must match Rust's usize (8 bytes on 64-bit)
 }
 
+/// C-compatible incremental grid snapshot matching Rust's
+/// `GridDeltaSnapshot`. Cells are packed row-by-row for the viewport rows in
+/// `row_indices`; they are not a full `rows * cols` matrix unless
+/// `full_refresh` is set.
+struct RustGridDeltaSnapshot {
+    var cells: UnsafeMutablePointer<RustCellData>?
+    var clusters_utf8: UnsafeMutablePointer<UInt8>?
+    var row_indices: UnsafeMutablePointer<UInt16>?
+    var clusters_len: Int
+    var clusters_capacity: Int
+    var cells_capacity: Int
+    var row_indices_capacity: Int
+    var generation: UInt64
+    var scrollback_rows: UInt32
+    var display_offset: UInt32
+    var row_count: UInt32
+    var cols: UInt16
+    var rows: UInt16
+    var cursor_visible: UInt8
+    var full_refresh: UInt8
+    var _pad0: UInt8
+    var _pad1: UInt8
+    var _pad2: UInt8
+    var _pad3: UInt8
+    var _pad4: UInt8
+    var _pad5: UInt8
+}
+
 extension RustCellData {
     /// Read this cell's grapheme cluster as a Swift String. Returns "" for blank cells
     /// (cluster_len == 0) and for continuation cells. The buffer must outlive this call.

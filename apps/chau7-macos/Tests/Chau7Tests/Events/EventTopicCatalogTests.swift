@@ -49,7 +49,7 @@ final class EventTopicCatalogTests: XCTestCase {
     func testKnownStructuralTypesAreDeclared() {
         // Types recorded by direct observability callers today.
         let structuralTypes = [
-            "ai_event", "app_launched", "approval_resolved", "approval_waiting",
+            "ai_event", "notification_delivery", "app_launched", "approval_resolved", "approval_waiting",
             "build_activated", "file_conflict", "finished", "tab_closed",
             "tab_created", "tab_opened", "telemetry_run_completed",
             "telemetry_run_started", "telemetry_run_updated", "waiting_input",

@@ -63,6 +63,16 @@ enum ShellLaunchConfigurator {
             try fishConfigContents(fallbackHome: fallbackHome, fallbackXDGConfigHome: fallbackXDGConfigHome)
                 .write(toFile: fishDir + "/config.fish", atomically: true, encoding: .utf8)
 
+            let wrapperDir = integrationDir + "/bin"
+            try FileManager.default.createDirectory(atPath: wrapperDir, withIntermediateDirectories: true)
+            let codexWrapperPath = wrapperDir + "/codex"
+            try codexProxyWrapperContents()
+                .write(toFile: codexWrapperPath, atomically: true, encoding: .utf8)
+            try FileManager.default.setAttributes(
+                [.posixPermissions: 0o755],
+                ofItemAtPath: codexWrapperPath
+            )
+
             Log.info("Created shell integration files at \(integrationDir)")
             return true
         } catch {
@@ -112,6 +122,18 @@ enum ShellLaunchConfigurator {
           _codex_node_bin="${_codex_node_path%/*}"
           [ -n "$_codex_node_bin" ] && [ -x "$_codex_node_bin/codex" ] && path=($_codex_node_bin $path)
         fi
+        # Keep the CTO wrapper dir at the FRONT of PATH after the user's rc
+        # files. `brew shellenv` (and similar) prepend their own dirs above,
+        # which would otherwise push cto_bin behind Homebrew and leave
+        # Homebrew-installed commands (git/go/rg…) unshadowed. Only re-prepend
+        # when Chau7 already placed cto_bin on PATH (i.e. CTO is enabled);
+        # `typeset -U path` below drops the now-duplicate later entry.
+        _chau7_cto_bin="$CHAU7_USER_HOME/.chau7/cto_bin"
+        [[ ${path[(Ie)$_chau7_cto_bin]} -gt 0 ]] && path=("$_chau7_cto_bin" $path)
+        unset _chau7_cto_bin
+        if [ -n "$CHAU7_CODEX_PROXY_WRAPPER_DIR" ] && [ -x "$CHAU7_CODEX_PROXY_WRAPPER_DIR/codex" ]; then
+          path=("$CHAU7_CODEX_PROXY_WRAPPER_DIR" $path)
+        fi
         typeset -U path
         export PATH="${(j/:/)path}"
         unset _codex_image_bin _codex_node_path _codex_node_bin
@@ -156,11 +178,32 @@ enum ShellLaunchConfigurator {
           chpwd_functions+=smartoverlay_precmd
         fi
         smartoverlay_precmd
-        # Chau7 CLI header injection for Claude Code
+        # Chau7 proxy attribution for Claude Code and Codex
+        if [ "$CHAU7_PROXY_CORRELATION_ENABLED" = "1" ] && [ "${CHAU7_ANTHROPIC_HEADERS_CAPTURED:-0}" != "1" ]; then
+          export CHAU7_ANTHROPIC_CUSTOM_HEADERS_BASE="${ANTHROPIC_CUSTOM_HEADERS:-}"
+          export CHAU7_ANTHROPIC_HEADERS_CAPTURED=1
+        fi
         chau7_update_project() {
           local git_root=$(git rev-parse --show-toplevel 2>/dev/null)
           export CHAU7_PROJECT="${git_root:-$PWD}"
-          export ANTHROPIC_EXTRA_HEADERS="X-Chau7-Session:${CHAU7_SESSION_ID:-},X-Chau7-Tab:${CHAU7_TAB_ID:-},X-Chau7-Project:${CHAU7_PROJECT:-}"
+          if [ "$CHAU7_PROXY_CORRELATION_ENABLED" = "1" ]; then
+            local chau7_headers="X-Chau7-Session: ${CHAU7_SESSION_ID:-}
+        X-Chau7-Tab: ${CHAU7_TAB_ID:-}
+        X-Chau7-Project: ${CHAU7_PROJECT:-}"
+            if [ -n "$CHAU7_ANTHROPIC_CUSTOM_HEADERS_BASE" ]; then
+              export ANTHROPIC_CUSTOM_HEADERS="$CHAU7_ANTHROPIC_CUSTOM_HEADERS_BASE
+        $chau7_headers"
+            else
+              export ANTHROPIC_CUSTOM_HEADERS="$chau7_headers"
+            fi
+            if [ -z "${ENABLE_TOOL_SEARCH+x}" ]; then
+              export ENABLE_TOOL_SEARCH=true
+            fi
+          fi
+          if [ -n "$CHAU7_OPENAI_PROXY_BASE_URL" ]; then
+            local project_token=$(printf '%s' "$CHAU7_PROJECT" | base64 | tr '+/' '-_' | tr -d '=\n')
+            export OPENAI_BASE_URL="$CHAU7_OPENAI_PROXY_BASE_URL/_chau7/project/$project_token/v1"
+          fi
         }
         chau7_update_project
         if command -v add-zsh-hook >/dev/null 2>&1; then
@@ -182,6 +225,25 @@ enum ShellLaunchConfigurator {
         export CHAU7_USER_HOME="${CHAU7_USER_HOME:-${HOME:-\(fallbackHome)}}"
         [ -f "$CHAU7_USER_HOME/.bashrc" ] && source "$CHAU7_USER_HOME/.bashrc"
         [ -f "$CHAU7_USER_HOME/.bash_profile" ] && source "$CHAU7_USER_HOME/.bash_profile"
+        # Keep the CTO wrapper dir at the FRONT of PATH after the user's rc
+        # files (see the zsh integration for the rationale). Only re-prepend
+        # when Chau7 already placed cto_bin on PATH (i.e. CTO is enabled).
+        _chau7_cto_bin="$CHAU7_USER_HOME/.chau7/cto_bin"
+        case ":$PATH:" in
+          *":$_chau7_cto_bin:"*)
+            PATH=":$PATH:"
+            PATH="${PATH//:$_chau7_cto_bin:/:}"
+            PATH="${PATH#:}"; PATH="${PATH%:}"
+            export PATH="$_chau7_cto_bin:$PATH"
+            ;;
+        esac
+        unset _chau7_cto_bin
+        if [ -n "$CHAU7_CODEX_PROXY_WRAPPER_DIR" ] && [ -x "$CHAU7_CODEX_PROXY_WRAPPER_DIR/codex" ]; then
+          PATH=":$PATH:"
+          PATH="${PATH//:$CHAU7_CODEX_PROXY_WRAPPER_DIR:/:}"
+          PATH="${PATH#:}"; PATH="${PATH%:}"
+          export PATH="$CHAU7_CODEX_PROXY_WRAPPER_DIR:$PATH"
+        fi
         # Per-tab isolated command history (mirrors the zsh integration). Keyed off
         # the stable CHAU7_TAB_ID so each tab keeps its own history across restore.
         if [ -n "$CHAU7_TAB_ID" ]; then
@@ -213,11 +275,32 @@ enum ShellLaunchConfigurator {
           printf '\\e]9;chau7;exit=%s\\a' "$code"
         }
         PROMPT_COMMAND="smartoverlay_precmd${PROMPT_COMMAND:+;$PROMPT_COMMAND}"
-        # Chau7 CLI header injection for Claude Code
+        # Chau7 proxy attribution for Claude Code and Codex
+        if [ "$CHAU7_PROXY_CORRELATION_ENABLED" = "1" ] && [ "${CHAU7_ANTHROPIC_HEADERS_CAPTURED:-0}" != "1" ]; then
+          export CHAU7_ANTHROPIC_CUSTOM_HEADERS_BASE="${ANTHROPIC_CUSTOM_HEADERS:-}"
+          export CHAU7_ANTHROPIC_HEADERS_CAPTURED=1
+        fi
         chau7_update_project() {
           local git_root=$(git rev-parse --show-toplevel 2>/dev/null)
           export CHAU7_PROJECT="${git_root:-$PWD}"
-          export ANTHROPIC_EXTRA_HEADERS="X-Chau7-Session:${CHAU7_SESSION_ID:-},X-Chau7-Tab:${CHAU7_TAB_ID:-},X-Chau7-Project:${CHAU7_PROJECT:-}"
+          if [ "$CHAU7_PROXY_CORRELATION_ENABLED" = "1" ]; then
+            local chau7_headers="X-Chau7-Session: ${CHAU7_SESSION_ID:-}
+        X-Chau7-Tab: ${CHAU7_TAB_ID:-}
+        X-Chau7-Project: ${CHAU7_PROJECT:-}"
+            if [ -n "$CHAU7_ANTHROPIC_CUSTOM_HEADERS_BASE" ]; then
+              export ANTHROPIC_CUSTOM_HEADERS="$CHAU7_ANTHROPIC_CUSTOM_HEADERS_BASE
+        $chau7_headers"
+            else
+              export ANTHROPIC_CUSTOM_HEADERS="$chau7_headers"
+            fi
+            if [ -z "${ENABLE_TOOL_SEARCH+x}" ]; then
+              export ENABLE_TOOL_SEARCH=true
+            fi
+          fi
+          if [ -n "$CHAU7_OPENAI_PROXY_BASE_URL" ]; then
+            local project_token=$(printf '%s' "$CHAU7_PROJECT" | base64 | tr '+/' '-_' | tr -d '=\n')
+            export OPENAI_BASE_URL="$CHAU7_OPENAI_PROXY_BASE_URL/_chau7/project/$project_token/v1"
+          fi
         }
         chau7_update_project
         # Update on directory change via PROMPT_COMMAND
@@ -254,6 +337,17 @@ enum ShellLaunchConfigurator {
         if test -f "$CHAU7_USER_XDG_CONFIG_HOME/fish/config.fish"
           source "$CHAU7_USER_XDG_CONFIG_HOME/fish/config.fish"
         end
+        # Keep the CTO wrapper dir at the FRONT of PATH after the user's rc
+        # files (see the zsh integration for the rationale). Only re-prepend
+        # when Chau7 already placed cto_bin on PATH (i.e. CTO is enabled).
+        set -l _chau7_cto_bin "$CHAU7_USER_HOME/.chau7/cto_bin"
+        if contains -- "$_chau7_cto_bin" $PATH
+          set -gx PATH "$_chau7_cto_bin" (string match -v -- "$_chau7_cto_bin" $PATH)
+        end
+        set -e _chau7_cto_bin
+        if test -n "$CHAU7_CODEX_PROXY_WRAPPER_DIR"; and test -x "$CHAU7_CODEX_PROXY_WRAPPER_DIR/codex"
+          set -gx PATH "$CHAU7_CODEX_PROXY_WRAPPER_DIR" (string match -v -- "$CHAU7_CODEX_PROXY_WRAPPER_DIR" $PATH)
+        end
         # Per-tab isolated command history (mirrors zsh/bash). fish keys history by
         # session name; derive a stable per-tab name from CHAU7_TAB_ID (hyphens are
         # not valid in a fish history session name, so swap them for underscores).
@@ -289,7 +383,11 @@ enum ShellLaunchConfigurator {
             end
           end
         end
-        # Chau7 CLI header injection for Claude Code
+        # Chau7 proxy attribution for Claude Code and Codex
+        if test "$CHAU7_PROXY_CORRELATION_ENABLED" = "1"; and not set -q CHAU7_ANTHROPIC_HEADERS_CAPTURED
+          set -gx CHAU7_ANTHROPIC_CUSTOM_HEADERS_BASE "$ANTHROPIC_CUSTOM_HEADERS"
+          set -gx CHAU7_ANTHROPIC_HEADERS_CAPTURED 1
+        end
         function chau7_update_project --on-variable PWD
           set -l git_root (git rev-parse --show-toplevel 2>/dev/null)
           if test -n "$git_root"
@@ -297,7 +395,24 @@ enum ShellLaunchConfigurator {
           else
             set -gx CHAU7_PROJECT $PWD
           end
-          set -gx ANTHROPIC_EXTRA_HEADERS "X-Chau7-Session:$CHAU7_SESSION_ID,X-Chau7-Tab:$CHAU7_TAB_ID,X-Chau7-Project:$CHAU7_PROJECT"
+          if test "$CHAU7_PROXY_CORRELATION_ENABLED" = "1"
+            set -l chau7_headers "X-Chau7-Session: $CHAU7_SESSION_ID
+        X-Chau7-Tab: $CHAU7_TAB_ID
+        X-Chau7-Project: $CHAU7_PROJECT"
+            if test -n "$CHAU7_ANTHROPIC_CUSTOM_HEADERS_BASE"
+              set -gx ANTHROPIC_CUSTOM_HEADERS "$CHAU7_ANTHROPIC_CUSTOM_HEADERS_BASE
+        $chau7_headers"
+            else
+              set -gx ANTHROPIC_CUSTOM_HEADERS "$chau7_headers"
+            end
+            if not set -q ENABLE_TOOL_SEARCH
+              set -gx ENABLE_TOOL_SEARCH true
+            end
+          end
+          if test -n "$CHAU7_OPENAI_PROXY_BASE_URL"
+            set -l project_token (printf '%s' "$CHAU7_PROJECT" | base64 | tr '+/' '-_' | tr -d '=\n')
+            set -gx OPENAI_BASE_URL "$CHAU7_OPENAI_PROXY_BASE_URL/_chau7/project/$project_token/v1"
+          end
         end
         # Initialize on startup
         chau7_update_project
@@ -311,6 +426,82 @@ enum ShellLaunchConfigurator {
           eval "$CHAU7_STARTUP_CMD"
         end
         """
+    }
+
+    /// Wrapper for Codex because current Codex releases support the
+    /// `openai_base_url` configuration key, not an `OPENAI_BASE_URL`
+    /// environment variable. The wrapper keeps the built-in OpenAI provider,
+    /// so ChatGPT subscription authentication remains owned by Codex.
+    static func codexProxyWrapperContents() -> String {
+        #"""
+        #!/bin/sh
+
+        wrapper_dir=$(CDPATH= cd -- "$(dirname -- "$0")" 2>/dev/null && pwd -P)
+        original_path=$PATH
+        clean_path=
+        real_codex=
+        old_ifs=$IFS
+        IFS=:
+        for path_entry in $original_path; do
+          [ -n "$path_entry" ] || path_entry=.
+          canonical_entry=$(CDPATH= cd -- "$path_entry" 2>/dev/null && pwd -P)
+          [ "$canonical_entry" = "$wrapper_dir" ] && continue
+          if [ -z "$clean_path" ]; then
+            clean_path=$path_entry
+          else
+            clean_path=$clean_path:$path_entry
+          fi
+          if [ -z "$real_codex" ] && [ -x "$path_entry/codex" ]; then
+            real_codex=$path_entry/codex
+          fi
+        done
+        IFS=$old_ifs
+
+        if [ -z "$real_codex" ]; then
+          echo "chau7: could not find the real Codex executable" >&2
+          exit 127
+        fi
+        export PATH=$clean_path
+
+        if [ -z "$CHAU7_OPENAI_PROXY_BASE_URL" ]; then
+          exec "$real_codex" "$@"
+        fi
+
+        local_ca=$CHAU7_CODEX_CA_CERTIFICATE
+        if [ -z "$local_ca" ] || [ ! -r "$local_ca" ]; then
+          echo "chau7: proxy certificate unavailable; starting Codex without analytics" >&2
+          exec "$real_codex" "$@"
+        fi
+
+        existing_ca=${CODEX_CA_CERTIFICATE:-${SSL_CERT_FILE:-}}
+        if [ -n "$existing_ca" ] && [ "$existing_ca" != "$local_ca" ] && [ -r "$existing_ca" ]; then
+          ca_dir=${wrapper_dir%/bin}/codex-ca
+          safe_tab=$(printf '%s' "${CHAU7_TAB_ID:-session}" | tr -cd 'A-Za-z0-9._-')
+          [ -n "$safe_tab" ] || safe_tab=session
+          combined_ca=$ca_dir/$safe_tab.pem
+          combined_ca_tmp=$combined_ca.$$
+          umask 077
+          if mkdir -p "$ca_dir" && cat "$existing_ca" "$local_ca" > "$combined_ca_tmp" && mv "$combined_ca_tmp" "$combined_ca"; then
+            export CODEX_CA_CERTIFICATE=$combined_ca
+          else
+            rm -f "$combined_ca_tmp"
+            echo "chau7: could not prepare Codex CA bundle; starting without analytics" >&2
+            exec "$real_codex" "$@"
+          fi
+        else
+          export CODEX_CA_CERTIFICATE=$local_ca
+        fi
+
+        project_dir=$PWD
+        if command -v git >/dev/null 2>&1; then
+          git_root=$(git rev-parse --show-toplevel 2>/dev/null || true)
+          [ -n "$git_root" ] && project_dir=$git_root
+        fi
+        project_token=$(printf '%s' "$project_dir" | base64 | tr '+/' '-_' | tr -d '=\n')
+        proxy_base=$CHAU7_OPENAI_PROXY_BASE_URL/_chau7/project/$project_token/v1
+
+        exec "$real_codex" -c "openai_base_url=\"$proxy_base\"" "$@"
+        """#
     }
 
     // MARK: - Shell Path Resolution
@@ -437,6 +628,55 @@ enum ShellLaunchConfigurator {
     struct APIAnalyticsProxyContext {
         var port: Int
         var includeOpenAI: Bool
+        var tlsCertificatePath: String
+
+        init(
+            port: Int,
+            includeOpenAI: Bool,
+            tlsCertificatePath: String = ShellLaunchConfigurator.defaultProxyTLSCertificatePath
+        ) {
+            self.port = port
+            self.includeOpenAI = includeOpenAI
+            self.tlsCertificatePath = tlsCertificatePath
+        }
+    }
+
+    static var defaultProxyTLSCertificatePath: String {
+        RuntimeIsolation.appSupportDirectory(named: "Chau7")
+            .appendingPathComponent("Proxy", isDirectory: true)
+            .appendingPathComponent("proxy-cert.pem")
+            .path
+    }
+
+    static func anthropicCorrelationHeaders(sessionID: String, tabID: String, projectDirectory: String) -> String {
+        [
+            "X-Chau7-Session: \(sessionID)",
+            "X-Chau7-Tab: \(tabID)",
+            "X-Chau7-Project: \(projectDirectory)"
+        ].joined(separator: "\n")
+    }
+
+    static func mergedAnthropicCorrelationHeaders(
+        existing: String?,
+        sessionID: String,
+        tabID: String,
+        projectDirectory: String
+    ) -> String {
+        let correlation = anthropicCorrelationHeaders(
+            sessionID: sessionID,
+            tabID: tabID,
+            projectDirectory: projectDirectory
+        )
+        let existing = existing?.trimmingCharacters(in: .newlines) ?? ""
+        return existing.isEmpty ? correlation : "\(existing)\n\(correlation)"
+    }
+
+    static func proxyProjectPath(_ projectDirectory: String) -> String {
+        let token = Data(projectDirectory.utf8).base64EncodedString()
+            .replacingOccurrences(of: "+", with: "-")
+            .replacingOccurrences(of: "/", with: "_")
+            .replacingOccurrences(of: "=", with: "")
+        return "/_chau7/project/\(token)"
     }
 
     /// Everything the launch environment depends on, gathered by the caller so
@@ -534,12 +774,31 @@ enum ShellLaunchConfigurator {
 
             // Claude Code / Anthropic SDK (HTTP — no WebSocket needed)
             dict["ANTHROPIC_BASE_URL"] = proxyBase
+            let inheritedAnthropicHeaders = current["ANTHROPIC_CUSTOM_HEADERS"]
+            if inputs.integrationDir == nil {
+                dict["ANTHROPIC_CUSTOM_HEADERS"] = mergedAnthropicCorrelationHeaders(
+                    existing: inheritedAnthropicHeaders,
+                    sessionID: inputs.proxyCorrelationSessionID,
+                    tabID: inputs.tabID,
+                    projectDirectory: inputs.projectDirectory
+                )
+            } else if let inheritedAnthropicHeaders, !inheritedAnthropicHeaders.isEmpty {
+                // The shell wrapper captures this value after sourcing the
+                // user's rc file, then appends Chau7's dynamic repo headers.
+                dict["ANTHROPIC_CUSTOM_HEADERS"] = inheritedAnthropicHeaders
+            }
+            dict["CHAU7_PROXY_CORRELATION_ENABLED"] = "1"
 
             if analytics.includeOpenAI {
-                // Codex CLI / OpenAI SDK — routed through the TLS port so that
-                // subscription-based Codex can do its native WSS upgrade through
-                // the proxy. The self-signed cert is trusted via the login keychain.
-                dict["OPENAI_BASE_URL"] = "\(tlsBase)/v1"
+                // OpenAI-compatible SDKs continue to receive their conventional
+                // environment override. Codex itself is routed by the shell
+                // wrapper through its supported `openai_base_url` config key.
+                dict["CHAU7_OPENAI_PROXY_BASE_URL"] = tlsBase
+                dict["OPENAI_BASE_URL"] = "\(tlsBase)\(proxyProjectPath(inputs.projectDirectory))/v1"
+                if let integrationDir = inputs.integrationDir {
+                    dict["CHAU7_CODEX_PROXY_WRAPPER_DIR"] = integrationDir + "/bin"
+                    dict["CHAU7_CODEX_CA_CERTIFICATE"] = analytics.tlsCertificatePath
+                }
             }
 
             // Gemini CLI / Google GenAI SDK (HTTP — no WebSocket needed)

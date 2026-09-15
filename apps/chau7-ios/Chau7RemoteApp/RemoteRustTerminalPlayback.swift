@@ -1,11 +1,12 @@
-/// Bridge to the Rust terminal emulator for grid-based rendering.
-///
-/// Wraps `Chau7Core`'s Rust FFI terminal, injecting output byte chunks
-/// and extracting cell grids (character, foreground/background color, flags)
-/// for rendering in `RemoteTerminalCanvasView`. Cell flags map to ANSI
-/// text attributes: bold, italic, underline, strikethrough, inverse, dim, hidden.
-import CoreText
 import Chau7Core
+
+// Bridge to the Rust terminal emulator for grid-based rendering.
+//
+// Wraps `Chau7Core`'s Rust FFI terminal, injecting output byte chunks
+// and extracting cell grids (character, foreground/background color, flags)
+// for rendering in `RemoteTerminalCanvasView`. Cell flags map to ANSI
+// text attributes: bold, italic, underline, strikethrough, inverse, dim, hidden.
+import CoreText
 import Foundation
 import UIKit
 
@@ -21,7 +22,7 @@ let rustCellFlagHidden: UInt8 = 1 << 6
 ///
 /// Cells reference UTF-8 grapheme clusters stored in
 /// `RemoteTerminalRenderState.clusters` via `(cluster_offset, cluster_len)`.
-struct RustCellData {
+struct RustCellData: Sendable {
     var cluster_offset: UInt32 = 0
     var fg_r: UInt8 = 255
     var fg_g: UInt8 = 255
@@ -51,7 +52,7 @@ struct RustGridSnapshot {
     var capacity: Int
 }
 
-struct RemoteTerminalRenderState {
+struct RemoteTerminalRenderState: Sendable {
     let cells: [RustCellData]
     /// Packed UTF-8 cluster bytes referenced by `cells[i].cluster_offset`. The
     /// renderer decodes a Swift `String` from a slice on demand.
@@ -64,7 +65,9 @@ struct RemoteTerminalRenderState {
     let scrollbackRows: Int
     let displayOffset: Int
 
-    var totalRows: Int { rows + scrollbackRows }
+    var totalRows: Int {
+        rows + scrollbackRows
+    }
 
     /// Decode a cell's grapheme cluster bytes as a String. Returns "" for blank
     /// cells, continuation cells, or out-of-range offsets.
@@ -130,49 +133,84 @@ enum RemoteTerminalFontMetrics {
 }
 
 @_silgen_name("chau7_terminal_create_headless")
-nonisolated
-private func chau7_terminal_create_headless(_ cols: UInt16, _ rows: UInt16) -> UnsafeMutableRawPointer?
+private nonisolated func chau7_terminal_create_headless(_ cols: UInt16, _ rows: UInt16) -> UnsafeMutableRawPointer?
 
 @_silgen_name("chau7_terminal_destroy")
-nonisolated
-private func chau7_terminal_destroy(_ term: UnsafeMutableRawPointer?)
+private nonisolated func chau7_terminal_destroy(_ term: UnsafeMutableRawPointer?)
 
 @_silgen_name("chau7_terminal_resize")
-nonisolated
-private func chau7_terminal_resize(_ term: UnsafeMutableRawPointer?, _ cols: UInt16, _ rows: UInt16)
+private nonisolated func chau7_terminal_resize(_ term: UnsafeMutableRawPointer?, _ cols: UInt16, _ rows: UInt16)
 
 @_silgen_name("chau7_terminal_get_grid")
-nonisolated
-private func chau7_terminal_get_grid(_ term: UnsafeMutableRawPointer?) -> UnsafeMutablePointer<RustGridSnapshot>?
+private nonisolated func chau7_terminal_get_grid(_ term: UnsafeMutableRawPointer?) -> UnsafeMutablePointer<RustGridSnapshot>?
 
 @_silgen_name("chau7_terminal_free_grid")
-nonisolated
-private func chau7_terminal_free_grid(_ grid: UnsafeMutablePointer<RustGridSnapshot>?)
+private nonisolated func chau7_terminal_free_grid(_ grid: UnsafeMutablePointer<RustGridSnapshot>?)
 
 @_silgen_name("chau7_terminal_inject_output")
-nonisolated
-private func chau7_terminal_inject_output(_ term: UnsafeMutableRawPointer?, _ data: UnsafePointer<UInt8>?, _ len: Int)
+private nonisolated func chau7_terminal_inject_output(_ term: UnsafeMutableRawPointer?, _ data: UnsafePointer<UInt8>?, _ len: Int)
 
 @_silgen_name("chau7_terminal_scroll_to")
-nonisolated
-private func chau7_terminal_scroll_to(_ term: UnsafeMutableRawPointer?, _ position: Double)
+private nonisolated func chau7_terminal_scroll_to(_ term: UnsafeMutableRawPointer?, _ position: Double)
 
 @_silgen_name("chau7_terminal_cursor_position")
-nonisolated
-private func chau7_terminal_cursor_position(_ term: UnsafeMutableRawPointer?, _ col: UnsafeMutablePointer<UInt16>?, _ row: UnsafeMutablePointer<UInt16>?)
+private nonisolated func chau7_terminal_cursor_position(_ term: UnsafeMutableRawPointer?, _ col: UnsafeMutablePointer<UInt16>?, _ row: UnsafeMutablePointer<UInt16>?)
 
-@MainActor
-final class RemoteRustTerminalPlayback {
+/// C signature of `chau7_terminal_set_colors` (see rust `ffi.rs`):
+/// `void set_colors(term, fg_r, fg_g, fg_b, bg_r, bg_g, bg_b,
+///                  cursor_r, cursor_g, cursor_b, const uint8_t *palette)`
+/// where `palette` points at 48 bytes (16 RGB triplets).
+private typealias Chau7SetColorsFn = @convention(c) (
+    UnsafeMutableRawPointer?,
+    UInt8, UInt8, UInt8,
+    UInt8, UInt8, UInt8,
+    UInt8, UInt8, UInt8,
+    UnsafePointer<UInt8>?
+) -> Void
+
+/// Resolved lazily via `dlsym` rather than `@_silgen_name` so an older bundled
+/// dylib that predates `chau7_terminal_set_colors` still links and launches;
+/// the playback simply keeps the Rust default palette in that case.
+private let chau7SetColorsFn: Chau7SetColorsFn? = {
+    // RTLD_DEFAULT searches all loaded images for the symbol.
+    let rtldDefault = UnsafeMutableRawPointer(bitPattern: -2)
+    guard let symbol = dlsym(rtldDefault, "chau7_terminal_set_colors") else { return nil }
+    return unsafeBitCast(symbol, to: Chau7SetColorsFn.self)
+}()
+
+nonisolated final class RemoteRustTerminalPlayback {
     private var handle: UnsafeMutableRawPointer?
     private(set) var cols: Int
     private(set) var rows: Int
 
-    init?(cols: Int, rows: Int) {
+    init?(cols: Int, rows: Int, colorScheme: TerminalColorScheme = .default) {
         guard cols > 0, rows > 0 else { return nil }
         guard let handle = chau7_terminal_create_headless(UInt16(cols), UInt16(rows)) else { return nil }
         self.handle = handle
         self.cols = cols
         self.rows = rows
+        // Push the scheme immediately so default cells render on the scheme's
+        // background/foreground instead of the Rust white-on-black default.
+        applyColorScheme(colorScheme)
+    }
+
+    /// Pushes a color scheme into the Rust terminal so its grid snapshots carry
+    /// the scheme's foreground/background/cursor and 16-color ANSI palette.
+    /// No-op on dylibs that predate `chau7_terminal_set_colors`.
+    func applyColorScheme(_ scheme: TerminalColorScheme) {
+        guard let setColors = chau7SetColorsFn, let handle else { return }
+        let fg = scheme.foregroundRGB888
+        let bg = scheme.backgroundRGB888
+        let cursor = scheme.cursorRGB888
+        scheme.paletteBytes.withUnsafeBufferPointer { buffer in
+            setColors(
+                handle,
+                fg.0, fg.1, fg.2,
+                bg.0, bg.1, bg.2,
+                cursor.0, cursor.1, cursor.2,
+                buffer.baseAddress
+            )
+        }
     }
 
     deinit {

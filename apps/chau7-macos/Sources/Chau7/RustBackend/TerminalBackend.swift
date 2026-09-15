@@ -37,6 +37,10 @@ protocol TerminalBackend: ScrollbackMemoryRustFFI {
     // MARK: - Grid / Rows
 
     func getGrid() -> (snapshot: UnsafeMutablePointer<RustGridSnapshot>, free: () -> Void)?
+    /// Returns only viewport rows changed after `generation`. Passing zero
+    /// requests an authoritative full viewport. Nil means the loaded Rust
+    /// library predates incremental snapshots; callers must use `getGrid()`.
+    func getGridDelta(since generation: UInt64) -> (snapshot: UnsafeMutablePointer<RustGridDeltaSnapshot>, free: () -> Void)?
     func getLineText(row: Int) -> String?
     func getLogicalLineHit(row: Int, column: Int) -> RustTerminalFFI.LogicalLineHit?
     var cursorPosition: (col: UInt16, row: UInt16) { get }
@@ -91,6 +95,9 @@ protocol TerminalBackend: ScrollbackMemoryRustFFI {
     // MARK: - Buffer Capture
 
     func tailBufferAnsiText(maxLines: Int, maxBytes: Int) -> String?
+    /// Bounded plain-text tail (wrapped rows joined into logical lines).
+    /// Never flattens the full ring; see the default below for old backends.
+    func tailBufferText(maxLines: Int, maxBytes: Int) -> String?
     func fullBufferText() -> String?
     func fullBufferAnsiText() -> String?
 
@@ -115,4 +122,39 @@ protocol TerminalBackend: ScrollbackMemoryRustFFI {
 
     func getPendingImages() -> [(protocol: UInt8, data: Data, anchorRow: Int32, anchorCol: UInt16)]?
     func setImageProtocols(sixel: Bool, kitty: Bool, iterm2: Bool)
+
+    // MARK: - Memory / Activity Stats
+
+    /// Compact memory + activity stats derived from the Rust debug state.
+    /// Nil when the debug-state FFI is unavailable. Cheap (single FFI call,
+    /// O(1) on the Rust side); consumed by TerminalMemoryReport and the
+    /// idle-flush activity gate.
+    func memoryStats() -> TerminalMemoryStats?
+}
+
+/// See `TerminalBackend.memoryStats()`.
+struct TerminalMemoryStats {
+    let historyRows: Int
+    /// Estimated resident bytes of Rust grid cell storage (history + screen +
+    /// alt screen); see DebugState.estimated_grid_bytes in rust/chau7_terminal.
+    let estimatedGridBytes: Int
+    let bytesReceived: UInt64
+    let alternateScreenActive: Bool
+}
+
+extension TerminalBackend {
+    func getGridDelta(since _: UInt64) -> (snapshot: UnsafeMutablePointer<RustGridDeltaSnapshot>, free: () -> Void)? {
+        nil
+    }
+
+    /// Default for backends (and test doubles) without debug-state support.
+    func memoryStats() -> TerminalMemoryStats? {
+        nil
+    }
+
+    /// Default for backends without a native plain-text tail: strip the SGR
+    /// styling out of the ANSI tail. Still bounded — never a full flatten.
+    func tailBufferText(maxLines: Int, maxBytes: Int) -> String? {
+        tailBufferAnsiText(maxLines: maxLines, maxBytes: maxBytes).map(ANSITailStripper.strip)
+    }
 }

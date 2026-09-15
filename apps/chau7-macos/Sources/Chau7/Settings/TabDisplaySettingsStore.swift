@@ -29,6 +29,7 @@ final class TabDisplaySettingsStore {
         static let showTabCTOIndicator = "tabs.display.showCTOIndicator"
         static let allowTabCTOToggle = "tabs.display.allowCTOToggle"
         static let showTabBroadcastIndicator = "tabs.display.showBroadcastIndicator"
+        static let showProviderHealthBorder = "tabs.display.showProviderHealthBorder"
         static let customTitleOnly = "tabs.display.customTitleOnly"
         // Hover Card Sections
         static let hoverCardShowDirectory = "hoverCard.showDirectory"
@@ -136,6 +137,12 @@ final class TabDisplaySettingsStore {
         didSet { defaults.set(showTabBroadcastIndicator, forKey: Keys.showTabBroadcastIndicator) }
     }
 
+    /// Show a warning border when the selected AI provider reports degraded
+    /// performance or an outage on its official status feed.
+    var showProviderHealthBorder: Bool {
+        didSet { defaults.set(showProviderHealthBorder, forKey: Keys.showProviderHealthBorder) }
+    }
+
     /// When enabled, only the custom title is shown (hides all other tab elements
     /// except the close button). Has no effect on tabs without a custom title.
     var customTitleOnly: Bool {
@@ -228,6 +235,7 @@ final class TabDisplaySettingsStore {
         self.showTabCTOIndicator = defaults.object(forKey: Keys.showTabCTOIndicator) as? Bool ?? true
         self.allowTabCTOToggle = defaults.object(forKey: Keys.allowTabCTOToggle) as? Bool ?? true
         self.showTabBroadcastIndicator = defaults.object(forKey: Keys.showTabBroadcastIndicator) as? Bool ?? true
+        self.showProviderHealthBorder = defaults.object(forKey: Keys.showProviderHealthBorder) as? Bool ?? true
         // Hover Card Sections (defaults: all visible)
         self.hoverCardShowDirectory = defaults.object(forKey: Keys.hoverCardShowDirectory) as? Bool ?? true
         self.hoverCardShowGitBranch = defaults.object(forKey: Keys.hoverCardShowGitBranch) as? Bool ?? true
@@ -255,7 +263,8 @@ final class TabDisplaySettingsStore {
             Keys.idleTabThresholdMinutes, Keys.tabSwitchShortcutMode,
             Keys.showTabIcons, Keys.showTabPath, Keys.showTabGitIndicator,
             Keys.showTabCTOIndicator, Keys.allowTabCTOToggle,
-            Keys.showTabBroadcastIndicator, Keys.customTitleOnly,
+            Keys.showTabBroadcastIndicator, Keys.showProviderHealthBorder,
+            Keys.customTitleOnly,
             Keys.hoverCardShowDirectory, Keys.hoverCardShowGitBranch,
             Keys.hoverCardShowShellIntegration, Keys.hoverCardShowDevServer,
             Keys.hoverCardShowLastCommand, Keys.hoverCardShowAISession,
@@ -283,6 +292,7 @@ final class TabDisplaySettingsStore {
         showTabCTOIndicator = fresh.showTabCTOIndicator
         allowTabCTOToggle = fresh.allowTabCTOToggle
         showTabBroadcastIndicator = fresh.showTabBroadcastIndicator
+        showProviderHealthBorder = fresh.showProviderHealthBorder
         customTitleOnly = fresh.customTitleOnly
         hoverCardShowDirectory = fresh.hoverCardShowDirectory
         hoverCardShowGitBranch = fresh.hoverCardShowGitBranch

@@ -251,4 +251,32 @@ final class StartupRestorePolicyTests: XCTestCase {
         )
     }
 
+    func testWindowPresentationPolicyRecoversFirstPresentationFromHiddenState() {
+        XCTAssertTrue(
+            StartupWindowPresentationPolicy.shouldRecoverTabBarAfterPresentation(
+                wasHidden: true,
+                hasPresentedBefore: false
+            ),
+            "Restored windows are created hidden; their first presentation must refresh the toolbar host"
+        )
+    }
+
+    func testWindowPresentationPolicyRecoversRepeatedPresentationFromHiddenState() {
+        XCTAssertTrue(
+            StartupWindowPresentationPolicy.shouldRecoverTabBarAfterPresentation(
+                wasHidden: true,
+                hasPresentedBefore: true
+            )
+        )
+    }
+
+    func testWindowPresentationPolicyLeavesFocusOnlyTransitionsAlone() {
+        XCTAssertFalse(
+            StartupWindowPresentationPolicy.shouldRecoverTabBarAfterPresentation(
+                wasHidden: false,
+                hasPresentedBefore: true
+            )
+        )
+    }
+
 }

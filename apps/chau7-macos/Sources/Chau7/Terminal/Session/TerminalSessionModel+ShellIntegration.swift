@@ -226,9 +226,13 @@ extension TerminalSessionModel {
                     recordDangerousOutputIfNeeded()
                 }
 
-                // AI waiting detection
+                // AI waiting detection. Prefer the ANSI-stripped text so
+                // patterns match style-independently — a themed menu row like
+                // "❯ 1." can carry SGR codes between the glyph and the digits
+                // that make raw-text matching miss. Falls back to raw output
+                // under memory pressure, when sanitization is shed.
                 if let outputText {
-                    maybeDetectAIWaitingForInput(outputText)
+                    maybeDetectAIWaitingForInput(sanitizedOutputText ?? outputText)
                 }
 
                 // Dev server detection
@@ -328,32 +332,53 @@ extension TerminalSessionModel {
             "Ready for your input",
             "Enter your",
             "Type your",
-            "waiting for your input"
+            "waiting for your input",
+            // Cursor-marked first menu row: flips waiting status for
+            // keyword-less selection menus (AskUserQuestion) so the
+            // structural prompt detector gets consulted. Menus always open
+            // with option 1 selected. Best-effort on raw PTY text — matches
+            // whole-row-styled and unstyled renders; a styled glyph split
+            // from the digits by SGR codes won't match.
+            "❯ 1.",
+            "❯ 1)"
         ]
 
-        let lowercased = text.lowercased()
+        // A genuine prompt/permission request sits at the END of the buffer.
+        // The same words appearing mid-output — an agent printing "Proceed?"
+        // or "[y/N]" inside a normal reply, or ending a message with a
+        // question — are false positives, so match only the trailing region
+        // rather than anywhere in the chunk.
+        let trailing = String(
+            text.trimmingCharacters(in: .whitespacesAndNewlines).suffix(280)
+        ).lowercased()
         let loweredApprovalPatterns = approvalPatterns.map { $0.lowercased() }
         let loweredWaitingPatterns = waitingPatterns.map { $0.lowercased() }
         let isApprovalRequired: Bool
-        if let rustMatch = RustPatternMatcher.waitPatterns.containsAny(haystack: lowercased, patterns: loweredApprovalPatterns) {
+        if let rustMatch = RustPatternMatcher.approvalPatterns.containsAny(haystack: trailing, patterns: loweredApprovalPatterns) {
             isApprovalRequired = rustMatch
         } else {
             isApprovalRequired = approvalPatterns.contains { pattern in
-                lowercased.contains(pattern.lowercased())
+                trailing.contains(pattern.lowercased())
             }
         }
         let isWaiting: Bool
-        if let rustMatch = RustPatternMatcher.waitPatterns.containsAny(haystack: lowercased, patterns: loweredWaitingPatterns) {
+        if let rustMatch = RustPatternMatcher.waitPatterns.containsAny(haystack: trailing, patterns: loweredWaitingPatterns) {
             isWaiting = rustMatch
         } else {
             isWaiting = waitingPatterns.contains { pattern in
-                lowercased.contains(pattern.lowercased())
+                trailing.contains(pattern.lowercased())
             }
         }
 
         if isApprovalRequired || isWaiting {
             DispatchQueue.main.async { [weak self] in
                 guard let self, status == .running || status == .stuck else { return }
+                // The local status reflects what's on screen (a prompt) even
+                // for providers with authoritative notifications — this is
+                // deliberate and does not drive tab styling. The *notification*
+                // is what would falsely flag a finished turn as "waiting", and
+                // that is already suppressed for authoritative providers inside
+                // `emitTerminalDetectedAttentionIfNeeded`.
                 let detectedStatus: CommandStatus = isApprovalRequired ? .approvalRequired : .waitingForInput
                 status = detectedStatus
                 Log.trace("AI agent blocked detected status=\(status.rawValue)")
@@ -1337,6 +1362,9 @@ extension TerminalSessionModel {
     }
 
     func handleInputLine(_ line: String) {
+        // An executed input line means any delivered restore prefill either
+        // ran or was replaced — stop advertising it to the remote client.
+        clearDeliveredPrefillTracking()
         // Sanitize input to remove escape sequences that contaminate history/logs
         let sanitized = EscapeSequenceSanitizer.sanitize(line)
         let rawTrimmed = sanitized.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1880,6 +1908,7 @@ extension TerminalSessionModel {
             dangerousOutputHighlightLastRun = Date()
             maybeLogLatencySpike(
                 kind: "scan",
+                warningMetric: "scan_queue_delay",
                 elapsedMs: congestionMs,
                 averageMs: scanLagAverageMs,
                 samples: scanLagSamples,

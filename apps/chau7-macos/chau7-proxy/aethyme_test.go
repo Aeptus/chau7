@@ -251,6 +251,7 @@ func TestNewAethymeClient_AllowsHTTPSPathPrefix(t *testing.T) {
 	}
 	if client == nil {
 		t.Fatal("Expected client")
+		return
 	}
 	if client.baseURL != "https://api.example.com/aethyme" {
 		t.Fatalf("Got baseURL %q", client.baseURL)

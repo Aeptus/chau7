@@ -63,6 +63,14 @@ struct ClaudeCodeEvent: Identifiable, Equatable {
     /// monitor to avoid misattribution.
     let tabID: String
     let timestamp: Date
+    /// Hook-provided tool_use_id (empty on older Claude versions and on
+    /// events written by an older helper script). Correlates PreToolUse
+    /// with its PostToolUse for structured-prompt lifecycle.
+    let toolUseID: String
+    /// Serialized tool_input, captured only for allowlisted interactive
+    /// tools (AskUserQuestion, ExitPlanMode) and size-capped by the hook.
+    /// nil for every other event and for old JSONL lines.
+    let toolInputJSON: String?
 
     /// Project name extracted from cwd
     var projectName: String {
@@ -87,7 +95,9 @@ struct ClaudeCodeEvent: Identifiable, Equatable {
         notificationType: String? = nil,
         cwd: String,
         tabID: String = "",
-        timestamp: Date
+        timestamp: Date,
+        toolUseID: String = "",
+        toolInputJSON: String? = nil
     ) {
         self.type = type
         self.hook = hook
@@ -100,6 +110,8 @@ struct ClaudeCodeEvent: Identifiable, Equatable {
         self.cwd = cwd
         self.tabID = tabID
         self.timestamp = timestamp
+        self.toolUseID = toolUseID
+        self.toolInputJSON = toolInputJSON
     }
 }
 
@@ -134,6 +146,18 @@ enum ClaudeCodeEventParser {
         let cwd = json["cwd"] as? String ?? ""
         let tabID = (json["tabID"] as? String) ?? (json["tab_id"] as? String) ?? ""
         let timestampStr = json["timestamp"] as? String ?? ""
+        let toolUseID = json["toolUseID"] as? String ?? ""
+
+        // The hook emits tool_input as a nested JSON object; carry it as a
+        // serialized string so the (Equatable) event stays value-typed and
+        // downstream parsing is explicit. Unparseable input reads as absent.
+        var toolInputJSON: String?
+        if let toolInput = json["toolInput"],
+           JSONSerialization.isValidJSONObject(toolInput),
+           let data = try? JSONSerialization.data(withJSONObject: toolInput),
+           let serialized = String(data: data, encoding: .utf8) {
+            toolInputJSON = serialized
+        }
 
         // Parse timestamp
         let timestamp = DateFormatters.iso8601.date(from: timestampStr) ?? Date()
@@ -149,7 +173,9 @@ enum ClaudeCodeEventParser {
             notificationType: notificationType,
             cwd: cwd,
             tabID: tabID,
-            timestamp: timestamp
+            timestamp: timestamp,
+            toolUseID: toolUseID,
+            toolInputJSON: toolInputJSON
         )
     }
 }

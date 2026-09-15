@@ -70,10 +70,19 @@ final class ShellLaunchConfiguratorTests: XCTestCase {
         // Per-tab isolated history keyed off CHAU7_TAB_ID
         XCTAssertTrue(contents.contains("export HISTFILE=\"$CHAU7_USER_HOME/.chau7/history/${CHAU7_TAB_ID}.zsh_history\""))
         XCTAssertTrue(contents.contains("setopt NO_PROMPT_CR"))
+        // CTO wrapper dir re-asserted at the FRONT of PATH after user rc files
+        XCTAssertTrue(contents.contains(#"[[ ${path[(Ie)$_chau7_cto_bin]} -gt 0 ]] && path=("$_chau7_cto_bin" $path)"#))
         // OSC 7 cwd + OSC 9 exit-status integration hooks
         XCTAssertTrue(contents.contains("chau7_emit_exit_status"))
         XCTAssertTrue(contents.contains("smartoverlay_precmd"))
         XCTAssertTrue(contents.contains(#"print -Pn "\e]7;file://$HOSTNAME$PWD\a""#))
+        XCTAssertTrue(contents.contains("ANTHROPIC_CUSTOM_HEADERS"))
+        XCTAssertFalse(contents.contains("ANTHROPIC_EXTRA_HEADERS"))
+        XCTAssertTrue(contents.contains("X-Chau7-Session: ${CHAU7_SESSION_ID:-}\nX-Chau7-Tab: ${CHAU7_TAB_ID:-}\nX-Chau7-Project: ${CHAU7_PROJECT:-}"))
+        XCTAssertTrue(contents.contains("CHAU7_ANTHROPIC_CUSTOM_HEADERS_BASE"))
+        XCTAssertTrue(contents.contains("export ENABLE_TOOL_SEARCH=true"))
+        XCTAssertTrue(contents.contains("CHAU7_OPENAI_PROXY_BASE_URL/_chau7/project/$project_token/v1"))
+        XCTAssertTrue(contents.contains("CHAU7_CODEX_PROXY_WRAPPER_DIR/codex"))
         // Startup command runs last
         XCTAssertTrue(contents.hasSuffix("if [ -n \"$CHAU7_STARTUP_CMD\" ]; then\n  eval \"$CHAU7_STARTUP_CMD\"\nfi"))
     }
@@ -99,9 +108,17 @@ final class ShellLaunchConfiguratorTests: XCTestCase {
         XCTAssertTrue(contents.contains("[ -f \"$CHAU7_USER_HOME/.bash_profile\" ] && source \"$CHAU7_USER_HOME/.bash_profile\""))
         // Per-tab isolated history keyed off CHAU7_TAB_ID
         XCTAssertTrue(contents.contains("export HISTFILE=\"$CHAU7_USER_HOME/.chau7/history/${CHAU7_TAB_ID}.bash_history\""))
+        // CTO wrapper dir re-asserted at the FRONT of PATH after user rc files
+        XCTAssertTrue(contents.contains("export PATH=\"$_chau7_cto_bin:$PATH\""))
         // Integration hooks are chained through PROMPT_COMMAND
         XCTAssertTrue(contents.contains("PROMPT_COMMAND=\"smartoverlay_precmd${PROMPT_COMMAND:+;$PROMPT_COMMAND}\""))
         XCTAssertTrue(contents.contains("PROMPT_COMMAND=\"chau7_emit_exit_status${PROMPT_COMMAND:+;$PROMPT_COMMAND}\""))
+        XCTAssertTrue(contents.contains("ANTHROPIC_CUSTOM_HEADERS"))
+        XCTAssertTrue(contents.contains("X-Chau7-Session: ${CHAU7_SESSION_ID:-}\nX-Chau7-Tab: ${CHAU7_TAB_ID:-}\nX-Chau7-Project: ${CHAU7_PROJECT:-}"))
+        XCTAssertTrue(contents.contains("CHAU7_ANTHROPIC_CUSTOM_HEADERS_BASE"))
+        XCTAssertTrue(contents.contains("export ENABLE_TOOL_SEARCH=true"))
+        XCTAssertTrue(contents.contains("CHAU7_OPENAI_PROXY_BASE_URL/_chau7/project/$project_token/v1"))
+        XCTAssertTrue(contents.contains("CHAU7_CODEX_PROXY_WRAPPER_DIR/codex"))
         // Startup command runs last
         XCTAssertTrue(contents.hasSuffix("if [ -n \"$CHAU7_STARTUP_CMD\" ]; then\n  eval \"$CHAU7_STARTUP_CMD\"\nfi"))
     }
@@ -120,9 +137,17 @@ final class ShellLaunchConfiguratorTests: XCTestCase {
         XCTAssertTrue(contents.contains("source \"$CHAU7_USER_XDG_CONFIG_HOME/fish/config.fish\""))
         // Per-tab isolated history via fish_history session name (hyphens swapped)
         XCTAssertTrue(contents.contains("set -gx fish_history (string replace -a -- - _ \"chau7_$CHAU7_TAB_ID\")"))
+        // CTO wrapper dir re-asserted at the FRONT of PATH after user rc files
+        XCTAssertTrue(contents.contains("set -gx PATH \"$_chau7_cto_bin\" (string match -v -- \"$_chau7_cto_bin\" $PATH)"))
         // Integration hooks fire on prompt and PWD changes
         XCTAssertTrue(contents.contains("function smartoverlay_precmd --on-event fish_prompt --on-variable PWD"))
         XCTAssertTrue(contents.contains("function chau7_update_project --on-variable PWD"))
+        XCTAssertTrue(contents.contains("ANTHROPIC_CUSTOM_HEADERS"))
+        XCTAssertTrue(contents.contains("X-Chau7-Session: $CHAU7_SESSION_ID\nX-Chau7-Tab: $CHAU7_TAB_ID\nX-Chau7-Project: $CHAU7_PROJECT"))
+        XCTAssertTrue(contents.contains("CHAU7_ANTHROPIC_CUSTOM_HEADERS_BASE"))
+        XCTAssertTrue(contents.contains("set -gx ENABLE_TOOL_SEARCH true"))
+        XCTAssertTrue(contents.contains("CHAU7_OPENAI_PROXY_BASE_URL/_chau7/project/$project_token/v1"))
+        XCTAssertTrue(contents.contains("CHAU7_CODEX_PROXY_WRAPPER_DIR/codex"))
         // Startup command runs last
         XCTAssertTrue(contents.hasSuffix("if test -n \"$CHAU7_STARTUP_CMD\"\n  eval \"$CHAU7_STARTUP_CMD\"\nend"))
     }
@@ -148,6 +173,7 @@ final class ShellLaunchConfiguratorTests: XCTestCase {
             contentsOfFile: baseDir.path + "/.config/fish/config.fish",
             encoding: .utf8
         )
+        let codexWrapper = try String(contentsOfFile: baseDir.path + "/bin/codex", encoding: .utf8)
 
         XCTAssertEqual(
             zshrc,
@@ -160,6 +186,115 @@ final class ShellLaunchConfiguratorTests: XCTestCase {
                 fallbackHome: "/Users/tester",
                 fallbackXDGConfigHome: "/Users/tester/.config"
             )
+        )
+        XCTAssertEqual(codexWrapper, ShellLaunchConfigurator.codexProxyWrapperContents())
+        XCTAssertTrue(FileManager.default.isExecutableFile(atPath: baseDir.path + "/bin/codex"))
+    }
+
+    func testCodexProxyWrapperUsesSupportedConfigAndCombinesCABundles() throws {
+        let baseDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("codex-proxy-wrapper-tests-\(UUID().uuidString)")
+        let integrationDir = baseDir.appendingPathComponent("integration")
+        let fakeBinDir = baseDir.appendingPathComponent("real-bin")
+        try FileManager.default.createDirectory(at: integrationDir, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: fakeBinDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: baseDir) }
+
+        XCTAssertTrue(ShellLaunchConfigurator.writeShellIntegrationFiles(to: integrationDir.path))
+        let captureArgs = baseDir.appendingPathComponent("args.txt")
+        let captureCA = baseDir.appendingPathComponent("ca-path.txt")
+        let capturePATH = baseDir.appendingPathComponent("path.txt")
+        try """
+        #!/bin/sh
+        printf '%s\\n' "$@" > "$CHAU7_CAPTURE_ARGS"
+        printf '%s\\n' "$CODEX_CA_CERTIFICATE" > "$CHAU7_CAPTURE_CA"
+        printf '%s\\n' "$PATH" > "$CHAU7_CAPTURE_PATH"
+        """.write(to: fakeBinDir.appendingPathComponent("codex"), atomically: true, encoding: .utf8)
+        try """
+        #!/bin/sh
+        printf '%s\\n' "$CHAU7_TEST_GIT_ROOT"
+        """.write(to: fakeBinDir.appendingPathComponent("git"), atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes(
+            [.posixPermissions: 0o755],
+            ofItemAtPath: fakeBinDir.appendingPathComponent("codex").path
+        )
+        try FileManager.default.setAttributes(
+            [.posixPermissions: 0o755],
+            ofItemAtPath: fakeBinDir.appendingPathComponent("git").path
+        )
+
+        let userCA = baseDir.appendingPathComponent("user-ca.pem")
+        let localCA = baseDir.appendingPathComponent("local-ca.pem")
+        try "USER CA\n".write(to: userCA, atomically: true, encoding: .utf8)
+        try "LOCAL CA\n".write(to: localCA, atomically: true, encoding: .utf8)
+
+        let wrapper = integrationDir.appendingPathComponent("bin/codex")
+        let process = Process()
+        process.executableURL = wrapper
+        process.arguments = ["exec", "--json"]
+        process.currentDirectoryURL = baseDir
+        process.environment = [
+            "PATH": "\(integrationDir.path)/bin:\(fakeBinDir.path):/usr/bin:/bin",
+            "CHAU7_OPENAI_PROXY_BASE_URL": "https://127.0.0.1:8900",
+            "CHAU7_CODEX_CA_CERTIFICATE": localCA.path,
+            "CHAU7_TAB_ID": "tab-123",
+            "CHAU7_CAPTURE_ARGS": captureArgs.path,
+            "CHAU7_CAPTURE_CA": captureCA.path,
+            "CHAU7_CAPTURE_PATH": capturePATH.path,
+            "CHAU7_TEST_GIT_ROOT": "/repo/Codex Project",
+            "CODEX_CA_CERTIFICATE": userCA.path
+        ]
+        try process.run()
+        process.waitUntilExit()
+        XCTAssertEqual(process.terminationStatus, 0)
+
+        let expectedBase = "https://127.0.0.1:8900\(ShellLaunchConfigurator.proxyProjectPath("/repo/Codex Project"))/v1"
+        XCTAssertEqual(
+            try String(contentsOf: captureArgs, encoding: .utf8).split(separator: "\n").map(String.init),
+            ["-c", "openai_base_url=\"\(expectedBase)\"", "exec", "--json"]
+        )
+        let combinedCAPath = try String(contentsOf: captureCA, encoding: .utf8)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        XCTAssertEqual(try String(contentsOfFile: combinedCAPath, encoding: .utf8), "USER CA\nLOCAL CA\n")
+        let childPATH = try String(contentsOf: capturePATH, encoding: .utf8)
+        XCTAssertFalse(childPATH.contains(integrationDir.appendingPathComponent("bin").path))
+    }
+
+    func testCodexProxyWrapperFallsBackToDirectCodexWhenCertificateIsMissing() throws {
+        let baseDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("codex-proxy-fallback-tests-\(UUID().uuidString)")
+        let integrationDir = baseDir.appendingPathComponent("integration")
+        let fakeBinDir = baseDir.appendingPathComponent("real-bin")
+        try FileManager.default.createDirectory(at: integrationDir, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: fakeBinDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: baseDir) }
+
+        XCTAssertTrue(ShellLaunchConfigurator.writeShellIntegrationFiles(to: integrationDir.path))
+        let captureArgs = baseDir.appendingPathComponent("args.txt")
+        try """
+        #!/bin/sh
+        printf '%s\\n' "$@" > "$CHAU7_CAPTURE_ARGS"
+        """.write(to: fakeBinDir.appendingPathComponent("codex"), atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes(
+            [.posixPermissions: 0o755],
+            ofItemAtPath: fakeBinDir.appendingPathComponent("codex").path
+        )
+
+        let process = Process()
+        process.executableURL = integrationDir.appendingPathComponent("bin/codex")
+        process.arguments = ["login", "status"]
+        process.environment = [
+            "PATH": "\(integrationDir.path)/bin:\(fakeBinDir.path):/usr/bin:/bin",
+            "CHAU7_OPENAI_PROXY_BASE_URL": "https://127.0.0.1:8900",
+            "CHAU7_CODEX_CA_CERTIFICATE": baseDir.appendingPathComponent("missing.pem").path,
+            "CHAU7_CAPTURE_ARGS": captureArgs.path
+        ]
+        try process.run()
+        process.waitUntilExit()
+        XCTAssertEqual(process.terminationStatus, 0)
+        XCTAssertEqual(
+            try String(contentsOf: captureArgs, encoding: .utf8).split(separator: "\n").map(String.init),
+            ["login", "status"]
         )
     }
 
@@ -291,22 +426,127 @@ final class ShellLaunchConfiguratorTests: XCTestCase {
 
     func testLaunchEnvironmentInjectsAPIAnalyticsProxyEndpoints() {
         let withOpenAI = launchEnvironment(makeInputs(
-            apiAnalytics: ShellLaunchConfigurator.APIAnalyticsProxyContext(port: 8899, includeOpenAI: true)
+            integrationDir: "/integration",
+            apiAnalytics: ShellLaunchConfigurator.APIAnalyticsProxyContext(
+                port: 8899,
+                includeOpenAI: true,
+                tlsCertificatePath: "/proxy/proxy-cert.pem"
+            )
         ))
         XCTAssertEqual(withOpenAI["ANTHROPIC_BASE_URL"], "http://127.0.0.1:8899")
-        XCTAssertEqual(withOpenAI["OPENAI_BASE_URL"], "https://127.0.0.1:8900/v1")
+        XCTAssertNil(withOpenAI["ANTHROPIC_CUSTOM_HEADERS"])
+        XCTAssertEqual(withOpenAI["CHAU7_PROXY_CORRELATION_ENABLED"], "1")
+        XCTAssertEqual(withOpenAI["CHAU7_OPENAI_PROXY_BASE_URL"], "https://127.0.0.1:8900")
+        XCTAssertEqual(withOpenAI["CHAU7_CODEX_PROXY_WRAPPER_DIR"], "/integration/bin")
+        XCTAssertEqual(withOpenAI["CHAU7_CODEX_CA_CERTIFICATE"], "/proxy/proxy-cert.pem")
+        XCTAssertEqual(
+            withOpenAI["OPENAI_BASE_URL"],
+            "https://127.0.0.1:8900/_chau7/project/L1VzZXJzL3Rlc3Rlci9wcm9qZWN0/v1"
+        )
         XCTAssertEqual(withOpenAI["GOOGLE_GEMINI_BASE_URL"], "http://127.0.0.1:8899")
 
         let withoutOpenAI = launchEnvironment(makeInputs(
             apiAnalytics: ShellLaunchConfigurator.APIAnalyticsProxyContext(port: 8899, includeOpenAI: false)
         ))
         XCTAssertEqual(withoutOpenAI["ANTHROPIC_BASE_URL"], "http://127.0.0.1:8899")
+        XCTAssertEqual(
+            withoutOpenAI["ANTHROPIC_CUSTOM_HEADERS"],
+            "X-Chau7-Session: session-123\nX-Chau7-Tab: tab-456\nX-Chau7-Project: /Users/tester/project"
+        )
         XCTAssertNil(withoutOpenAI["OPENAI_BASE_URL"])
+        XCTAssertNil(withoutOpenAI["CHAU7_OPENAI_PROXY_BASE_URL"])
+        XCTAssertNil(withoutOpenAI["CHAU7_CODEX_PROXY_WRAPPER_DIR"])
+        XCTAssertNil(withoutOpenAI["CHAU7_CODEX_CA_CERTIFICATE"])
 
         let disabled = launchEnvironment(makeInputs(apiAnalytics: nil))
         XCTAssertNil(disabled["ANTHROPIC_BASE_URL"])
+        XCTAssertNil(disabled["ANTHROPIC_CUSTOM_HEADERS"])
+        XCTAssertNil(disabled["CHAU7_PROXY_CORRELATION_ENABLED"])
         XCTAssertNil(disabled["OPENAI_BASE_URL"])
         XCTAssertNil(disabled["GOOGLE_GEMINI_BASE_URL"])
+    }
+
+    func testLaunchEnvironmentPreservesInheritedAnthropicHeadersForShellMerge() {
+        let env = launchEnvironment(makeInputs(
+            processEnvironment: [
+                "HOME": "/Users/tester",
+                "ANTHROPIC_CUSTOM_HEADERS": "X-Organization: example\nX-Gateway: enabled"
+            ],
+            integrationDir: "/integration",
+            apiAnalytics: ShellLaunchConfigurator.APIAnalyticsProxyContext(port: 8899, includeOpenAI: false)
+        ))
+
+        XCTAssertEqual(
+            env["ANTHROPIC_CUSTOM_HEADERS"],
+            "X-Organization: example\nX-Gateway: enabled"
+        )
+    }
+
+    func testMergedAnthropicCorrelationHeadersPreservesExistingValues() {
+        XCTAssertEqual(
+            ShellLaunchConfigurator.mergedAnthropicCorrelationHeaders(
+                existing: "X-Organization: example\n",
+                sessionID: "session-123",
+                tabID: "tab-456",
+                projectDirectory: "/repo"
+            ),
+            "X-Organization: example\nX-Chau7-Session: session-123\nX-Chau7-Tab: tab-456\nX-Chau7-Project: /repo"
+        )
+    }
+
+    func testBashIntegrationMergesClaudeHeadersAndRespectsToolSearchPreference() throws {
+        let baseDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("claude-header-merge-tests-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: baseDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: baseDir) }
+        try """
+        export ANTHROPIC_CUSTOM_HEADERS='X-Organization: example'
+        export ENABLE_TOOL_SEARCH=false
+        """.write(to: baseDir.appendingPathComponent(".bashrc"), atomically: true, encoding: .utf8)
+        let integration = baseDir.appendingPathComponent("integration")
+        try FileManager.default.createDirectory(at: integration, withIntermediateDirectories: true)
+        XCTAssertTrue(ShellLaunchConfigurator.writeShellIntegrationFiles(
+            to: integration.path,
+            environment: ["HOME": baseDir.path]
+        ))
+
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/bash")
+        process.arguments = [
+            "--noprofile",
+            "--norc",
+            "-c",
+            "source \"\(integration.path)/.bashrc\"; printf '\\nHEADERS_START\\n%s\\nHEADERS_END\\nTOOL=%s\\n' \"$ANTHROPIC_CUSTOM_HEADERS\" \"$ENABLE_TOOL_SEARCH\""
+        ]
+        process.currentDirectoryURL = baseDir
+        process.environment = [
+            "HOME": baseDir.path,
+            "CHAU7_USER_HOME": baseDir.path,
+            "CHAU7_PROXY_CORRELATION_ENABLED": "1",
+            "CHAU7_SESSION_ID": "session-123",
+            "CHAU7_TAB_ID": "tab-456",
+            "PATH": "/usr/bin:/bin"
+        ]
+        let outputPipe = Pipe()
+        process.standardOutput = outputPipe
+        try process.run()
+        process.waitUntilExit()
+        XCTAssertEqual(process.terminationStatus, 0)
+        let output = String(decoding: outputPipe.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+        let headerBlock = try XCTUnwrap(
+            output.components(separatedBy: "HEADERS_START\n").last?
+                .components(separatedBy: "\nHEADERS_END").first
+        )
+        let expectedHeaderPrefix =
+            "X-Organization: example\nX-Chau7-Session: session-123\nX-Chau7-Tab: tab-456\nX-Chau7-Project: "
+        XCTAssertTrue(headerBlock.hasPrefix(expectedHeaderPrefix))
+        let reportedProject = String(headerBlock.dropFirst(expectedHeaderPrefix.count))
+        XCTAssertEqual(
+            URL(fileURLWithPath: reportedProject).lastPathComponent,
+            baseDir.lastPathComponent
+        )
+        XCTAssertTrue(FileManager.default.fileExists(atPath: reportedProject))
+        XCTAssertTrue(output.contains("TOOL=false"), "An explicit user preference must win")
     }
 
     // MARK: - Shell Arguments

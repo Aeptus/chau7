@@ -28,3 +28,38 @@ Command Token Optimization (CTO) -- intercepts CLI output to reduce token usage 
 
 - **Uses:** Chau7Core (TokenOptimizationMode, TabTokenOptOverride, RuntimeIsolation, Log)
 - **Used by:** Terminal/Session (flag lifecycle), Settings (mode picker), Overlay (bolt icon)
+
+## Migration note: retire the `chau7_optim` fork, vendor upstream rtk
+
+`chau7-optim` is a hard fork of [rtk](https://github.com/rtk-ai/rtk) (~23k lines,
+relicensed AGPL). Upstream is now fast-moving (v0.43+, multi-agent) while the fork
+is a stale snapshot with only ~4 files of real Chau7 divergence
+(`main.rs`, `tracking.rs`, `gain.rs`, `discover.rs`). The plan is to **keep CTO's
+delivery layer** (PATH-shadow + per-tab + AI-detection — none of which rtk's
+per-agent `rtk init` hook provides) and **swap the engine to vendored stock rtk**,
+deleting the fork.
+
+**De-risked empirically** against rtk 0.43.0 — CTO's wrapper contract survives
+nearly as-is:
+
+| Case | rtk exit | Wrapper action | OK |
+|------|----------|----------------|----|
+| optimized | `0` | `exit 0` | ✅ |
+| `grep` no-match / `diff` differ | `1` | `exit 1` (real semantics) | ✅ |
+| bad flag / parse error | `2` | falls through to real binary | ✅ (unchanged) |
+| skip | *never emitted* | `exit 3` branch is dead code | ✅ |
+| piped stdin | `0` | bypassed by `[ ! -t 0 ]` anyway | ✅ |
+
+**Remaining work (no blockers):**
+1. **Per-session gain → Swift.** `--session-id` is fork-only. `CTOSessionActivity`
+   / `aggregateSessionActivity` (in `CTOManager`) already move per-session
+   *activity* off the binary by reading `command.log`. Per-session *token totals*
+   need either global-only stock-rtk stats or an upstreamed `--session-id`.
+2. **Silence rtk's one-time "run `rtk init -g`" stderr nag** (env/flag or wrapper).
+3. **Config, not code:** point at `rtk` + its DB (`~/.local/share/rtk/`) vs
+   `chau7-optim` + `~/.chau7/`.
+4. **Vendor** the stock rtk binary in the bundle; drop the `rust/chau7_optim` crate.
+
+Gain JSON schema already matches (the fork inherited it), so `CTOGainStats` /
+`DailyGainEntry` decode stock rtk's `gain --format json` unchanged. License is
+fine: Apache-2.0 → AGPL is a permitted one-way combine.

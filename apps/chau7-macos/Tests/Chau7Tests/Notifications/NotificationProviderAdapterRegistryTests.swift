@@ -24,6 +24,51 @@ final class NotificationProviderAdapterRegistryTests: XCTestCase {
         XCTAssertEqual(enriched.kind, .taskFinished)
     }
 
+    /// The Claude turn-complete fallback emits `task_finished` (instead of the
+    /// old `waiting_input`). It must canonicalize to `.taskFinished` — which
+    /// resolves to `.done`/green and clears the orange waiting style — and must
+    /// NOT be dropped like the raw `response_complete` state event.
+    func testClaudeTaskFinishedResolvesToTaskFinished() {
+        let event = AIEvent(
+            source: .claudeCode,
+            type: "task_finished",
+            rawType: "task_finished",
+            tool: "Claude",
+            message: "Claude finished in Repo",
+            ts: "2026-07-17T00:00:00Z",
+            sessionID: "claude-session-1",
+            producer: "claude_response_complete_finished",
+            reliability: .fallback
+        )
+
+        let decision = NotificationProviderAdapterRegistry.adapt(event)
+        guard case let .emit(enriched) = decision else {
+            return XCTFail("Claude task_finished must be emitted, not dropped")
+        }
+        XCTAssertEqual(enriched.kind, .taskFinished)
+        XCTAssertEqual(enriched.event.type, "finished")
+    }
+
+    /// Regression guard: raw `response_complete` stays a dropped state-only
+    /// event (the Notification hook owns delivery) — only the synthesized
+    /// `task_finished` fallback surfaces the finished turn.
+    func testClaudeResponseCompleteStillDropped() {
+        let event = AIEvent(
+            source: .claudeCode,
+            type: "response_complete",
+            rawType: "response_complete",
+            tool: "Claude",
+            message: "done",
+            ts: "2026-07-17T00:00:00Z",
+            sessionID: "claude-session-2",
+            producer: "claude_monitor",
+            reliability: .authoritative
+        )
+        if case .emit = NotificationProviderAdapterRegistry.adapt(event) {
+            XCTFail("raw response_complete should remain dropped")
+        }
+    }
+
     func testChatGPTProviderCanonicalizesThroughGenericAdapter() {
         let event = AIEvent(
             source: .chatgpt,
@@ -419,6 +464,36 @@ final class NotificationProviderAdapterRegistryTests: XCTestCase {
         XCTAssertEqual(enriched.event.reliability, .authoritative)
     }
 
+    func testCodexAgentTurnCompleteWithExplicitChoicesCanonicalizesToWaitingInput() {
+        let event = AIEvent(
+            source: .codex,
+            type: "agent-turn-complete",
+            rawType: "agent-turn-complete",
+            tool: "Codex",
+            title: "Codex finished",
+            message: """
+            Recommended grouping:
+            - #1 cache correctness
+            - #2 webhook observability
+            Tell me `all` or the numbers you want addressed.
+            """,
+            ts: "2026-04-02T00:00:00Z",
+            tabID: UUID(uuidString: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA"),
+            producer: "codex_notify_hook",
+            reliability: .authoritative
+        )
+
+        let decision = NotificationProviderAdapterRegistry.adapt(event)
+        guard case let .emit(enriched) = decision else {
+            return XCTFail("Expected Codex choice ending to emit waiting input")
+        }
+
+        XCTAssertEqual(enriched.event.type, "waiting_input")
+        XCTAssertEqual(enriched.event.rawType, "agent-turn-complete")
+        XCTAssertEqual(enriched.kind, .waitingForInput)
+        XCTAssertEqual(enriched.event.reliability, .heuristic)
+    }
+
     func testCodexApprovalRequestedCanonicalizesToPermission() {
         let event = AIEvent(
             source: .codex,
@@ -587,6 +662,37 @@ final class NotificationProviderAdapterRegistryTests: XCTestCase {
         XCTAssertEqual(enriched.event.type, "command_failed")
         XCTAssertEqual(enriched.event.rawType, "command_failed")
         XCTAssertEqual(enriched.kind, .taskFailed)
+    }
+
+    func testShellScriptOutcomeKindsAreCanonical() {
+        let success = AIEvent(
+            source: .shell,
+            type: "script_succeeded",
+            tool: "Shell",
+            message: "Completed: swift test",
+            ts: "2026-04-01T00:00:00Z",
+            directory: "/tmp/test",
+            reliability: .authoritative
+        )
+        let server = AIEvent(
+            source: .shell,
+            type: "dev_server_started",
+            tool: "Vite",
+            message: "Vite is ready at http://localhost:5173",
+            ts: "2026-04-01T00:00:00Z",
+            directory: "/tmp/test",
+            reliability: .authoritative
+        )
+
+        guard case let .emit(successEvent) = NotificationProviderAdapterRegistry.adapt(success),
+              case let .emit(serverEvent) = NotificationProviderAdapterRegistry.adapt(server) else {
+            return XCTFail("Expected canonical shell events")
+        }
+
+        XCTAssertEqual(successEvent.event.type, "script_succeeded")
+        XCTAssertEqual(successEvent.kind, .taskFinished)
+        XCTAssertEqual(serverEvent.event.type, "dev_server_started")
+        XCTAssertEqual(serverEvent.kind, .informational)
     }
 
     func testAppUpdateAvailablePreservesTriggerTypeAndCanonicalizes() {

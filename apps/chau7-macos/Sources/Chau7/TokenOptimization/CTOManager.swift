@@ -19,12 +19,18 @@ import Chau7Core
 ///
 /// ## Supported Commands
 ///
-/// Optimizer-routed: `cat`, `ls`, `find`, `tree`, `grep`, `rg`, `git`, `diff`,
-///                   `cargo`, `curl`, `docker`, `kubectl`, `gh`, `pnpm`, `wget`,
-///                   `npm`, `npx`, `vitest`, `prisma`, `tsc`, `next`, `lint`,
-///                   `prettier`, `format`, `playwright`, `ruff`, `pytest`, `pip`,
-///                   `go`, `golangci-lint`
-/// Exec-only (no optimizer subcommand): `head`, `tail`, `wc`
+/// Scoped to read-only inspection commands (see `ctoRewriteMap`):
+/// Optimizer-routed: `cat`, `ls`, `find`, `tree`, `grep`, `rg`, `diff`, `sed`.
+/// There are currently no exec-only wrappers — `head`/`tail`/`wc` were removed
+/// because a wrapper with no optimizer route just `exec`s the real binary,
+/// adding a `bash` fork per call for zero savings (see `execOnlyCommands`).
+///
+/// Wrappers are installed **only for commands whose real binary is present**
+/// on the app's PATH at setup time. A wrapper is never installed for a
+/// command that doesn't resolve to a real binary — otherwise it would shadow
+/// the bare name and fail with exit 127 instead of the shell's own
+/// "command not found". Wrappers for commands no longer supported (or whose
+/// binary has since disappeared) are pruned on each `setup()`.
 final class CTOManager {
 
     static let shared = CTOManager()
@@ -124,9 +130,30 @@ final class CTOManager {
             )
         }
 
-        for command in supportedCommands {
-            installWrapper(for: command)
+        // Prune wrappers that are no longer supported or whose binary has
+        // gone missing — including any left over from a build that shadowed
+        // interpreters/runtimes. Without this, a stale `python` wrapper from a
+        // previous install keeps poisoning PATH after an upgrade.
+        pruneStaleWrappers()
+
+        var skipped: [String] = []
+        for command in supportedCommands where !installWrapper(for: command) {
+            skipped.append(command)
         }
+        // Visibility for the class of bug where a supported command has no real
+        // binary on the shell PATH — the exact condition that made a `python`
+        // wrapper fail with exit 127. These are now skipped (not shadowed), so
+        // this is an INFO, not an error: a command may be legitimately absent
+        // (e.g. `rg`/`tree` not installed). The skipped list makes "why isn't
+        // <cmd> optimized" answerable from the logs instead of guesswork.
+        LogEnhanced.info(
+            .cto, "CTO wrapper install summary",
+            metadata: [
+                "installed": "\(supportedCommands.count - skipped.count)",
+                "skipped": "\(skipped.count)",
+                "skippedCommands": skipped.sorted().joined(separator: ",")
+            ]
+        )
 
         // Auto-install bundled helper binaries
         if let bundlePath = Bundle.main.url(forResource: "chau7-md", withExtension: nil) {
@@ -304,9 +331,29 @@ final class CTOManager {
     // MARK: - Wrapper Scripts
 
     /// Installs a wrapper script for the given command.
-    private func installWrapper(for command: String) {
+    ///
+    /// No-op when the command has no real binary on the app's PATH: shadowing
+    /// a name with no target would fail with a branded exit 127 instead of the
+    /// shell's own "command not found", breaking the command even while CTO is
+    /// inactive (the fast-path guard runs before the active-session check).
+    /// Any pre-existing wrapper for such a command is removed so an upgrade
+    /// heals a previously-poisoned name. Returns `true` when a wrapper was
+    /// installed, `false` when the command was skipped (no real binary) or the
+    /// write failed — the caller aggregates these for the setup summary.
+    @discardableResult
+    private func installWrapper(for command: String) -> Bool {
         let wrapperPath = wrapperBinDir.appendingPathComponent(command)
-        let realBin = resolveRealBinary(for: command)
+
+        guard let realBin = resolveRealBinary(for: command) else {
+            if FileManager.default.fileExists(atPath: wrapperPath.path) {
+                try? FileManager.default.removeItem(at: wrapperPath)
+                Log.info("CTOManager: removed wrapper for \(command) — no real binary on PATH")
+            } else {
+                Log.trace("CTOManager: skipping wrapper for \(command) — no real binary on PATH")
+            }
+            return false
+        }
+
         let script = generateWrapperScript(for: command, realBin: realBin)
 
         do {
@@ -315,32 +362,75 @@ final class CTOManager {
                 [.posixPermissions: 0o755],
                 ofItemAtPath: wrapperPath.path
             )
-            Log.trace("CTOManager: installed wrapper for \(command) → \(realBin ?? "dynamic")")
+            Log.trace("CTOManager: installed wrapper for \(command) → \(realBin)")
+            return true
         } catch {
             Log.error("CTOManager: failed to install wrapper for \(command): \(error)")
+            return false
+        }
+    }
+
+    /// Removes any wrapper in `cto_bin` that isn't a currently-supported
+    /// command. Runs at the start of `setup()` so wrappers dropped from
+    /// `supportedCommands` between builds — e.g. the interpreter/runtime
+    /// wrappers that shadowed `python`/`git`/`npm` — don't linger on PATH.
+    /// Wrappers for supported commands whose binary has since disappeared are
+    /// handled by `installWrapper` (which removes them), not here.
+    private func pruneStaleWrappers() {
+        let fm = FileManager.default
+        guard let contents = try? fm.contentsOfDirectory(atPath: wrapperBinDir.path) else { return }
+        let supported = Set(supportedCommands)
+        var removed = 0
+        for file in contents where !supported.contains(file) {
+            do {
+                try fm.removeItem(atPath: wrapperBinDir.appendingPathComponent(file).path)
+                removed += 1
+            } catch {
+                Log.error("CTOManager: failed to prune stale wrapper \(file): \(error)")
+            }
+        }
+        if removed > 0 {
+            LogEnhanced.info(.cto, "CTO pruned unsupported wrappers", metadata: ["removed": "\(removed)"])
         }
     }
 
     /// Resolves the real binary path for a command by searching PATH (skipping cto_bin).
     /// Called once at wrapper-generation time so the path can be hardcoded into the script.
-    private func resolveRealBinary(for command: String) -> String? {
-        let fm = FileManager.default
-        let wrapperDir = wrapperBinDir.path
-        let pathEnv = ProcessInfo.processInfo.environment["PATH"] ?? "/usr/bin:/bin:/usr/sbin:/sbin"
-
-        for dir in pathEnv.split(separator: ":") {
-            let dirStr = String(dir)
-            if dirStr == wrapperDir { continue }
-            let candidate = "\(dirStr)/\(command)"
-            if fm.isExecutableFile(atPath: candidate) {
-                return candidate
-            }
-        }
-        return nil
+    ///
+    /// Resolves against `ShellLaunchEnvironment.preferredPATH()` — the exact
+    /// PATH terminals launch with (Homebrew/volta/cargo/`~/bin` ahead of the
+    /// system dirs) — **not** the GUI app's own `PATH`. A Finder/launchd-
+    /// launched app inherits only the minimal `/usr/bin:/bin:…`, so resolving
+    /// against it hardcoded the wrong binary: `python3` → `/usr/bin/python3`
+    /// (Xcode 3.9) while the shell's `python3` is Homebrew's 3.14, with
+    /// different site-packages. Using the launch PATH makes the hardcoded fast
+    /// path match what the command would resolve to when run in the terminal.
+    /// `pathProvider` and `isExecutable` are injectable so a test can verify the
+    /// resolution junction — that this reads the login-shell PATH, not the app's
+    /// — without the filesystem or the real `~/.chau7`. Production uses the
+    /// defaults: `ShellLaunchEnvironment.preferredPATH()` and a real exec probe.
+    func resolveRealBinary(
+        for command: String,
+        pathProvider: () -> String = { ShellLaunchEnvironment.preferredPATH() },
+        isExecutable: (String) -> Bool = { FileManager.default.isExecutableFile(atPath: $0) }
+    ) -> String? {
+        let entries = pathProvider().split(separator: ":").map(String.init)
+        return ctoResolveRealBinary(
+            command: command,
+            pathEntries: entries,
+            wrapperDirectory: wrapperBinDir.path,
+            isExecutable: isExecutable
+        )
     }
 
     /// Generates the shell wrapper script for a command.
     private func generateWrapperScript(for command: String, realBin: String?) -> String {
+        if let policy = executableCommands[command] {
+            // Executables ignore the setup-time `realBin` (resolved at runtime
+            // instead); the caller still uses it as an install-guard so a
+            // bare name with no target is never shadowed.
+            return generateExecutableWrapperScript(for: command, policy: policy)
+        }
         if command == "cat" {
             return generateCatWrapperScript(realBin: realBin)
         }
@@ -348,6 +438,122 @@ final class CTOManager {
             return generateSedWrapperScript(realBin: realBin)
         }
         return generateGenericWrapperScript(for: command, realBin: realBin)
+    }
+
+    /// Wrapper for an **executable** command (one the optimizer runs as a real
+    /// subprocess, e.g. `git`/`cargo`), hardened for the three hazards that
+    /// forced the read-only retreat:
+    ///
+    /// 1. **Runtime resolution** — the real binary is resolved from the live
+    ///    `$PATH` (minus `cto_bin`) at invocation, never baked at setup, so an
+    ///    activated venv / rustup override / nvm shim is honored. This is the
+    ///    fix for the historical `python`/venv failures.
+    /// 2. **Subcommand allowlist** — only the idempotent, read-only subcommands
+    ///    in `policy.gate` reach the optimizer; mutations (`git commit`),
+    ///    interactive, and unknown invocations fall straight to a single
+    ///    `exec` of the real binary, so the optimizer can never double-run a
+    ///    side-effecting command.
+    /// 3. **Interactive bypass** — a TTY stdin caller execs the real binary
+    ///    directly, so the optimizer's buffered capture never swallows a pager
+    ///    or prompt; optimization applies only to non-interactive (agent)
+    ///    callers, which is exactly the target.
+    ///
+    /// Because only idempotent reads route to the optimizer, the existing
+    /// exit-2/3 fall-through remains safe (re-running `git log` is harmless) —
+    /// the single-execution guarantee comes from the allowlist, not the exit
+    /// code.
+    ///
+    /// Internal (not private) so the safety contract can be asserted in tests.
+    func generateExecutableWrapperScript(for command: String, policy: CTOExecPolicy) -> String {
+        let optimizerBlock = """
+        _CHAU7_OPTIM="$HOME/.chau7/bin/chau7-optim"
+                if [ -x "$_CHAU7_OPTIM" ]; then
+                    "$_CHAU7_OPTIM" \(command) "$@" 2>/dev/null
+                    _rc=$?
+                    if [ $_rc -ne 2 ] && [ $_rc -ne 3 ]; then
+                        [ -n "$CHAU7_CTO_LOG" ] && echo "$(date +%s)|$CHAU7_CTO_SESSION|\(command)|$_rc|optimized" >>"$CHAU7_CTO_LOG"
+                        exit $_rc
+                    fi
+                    [ -n "$CHAU7_CTO_LOG" ] && echo "$(date +%s)|$CHAU7_CTO_SESSION|\(command)|$_rc|fallthrough" >>"$CHAU7_CTO_LOG"
+                fi
+        """
+
+        let gatedBlock: String
+        switch policy.gate {
+        case let .subcommandAllowlist(subs):
+            let pattern = subs.sorted().joined(separator: "|")
+            gatedBlock = """
+            # Subcommand gate: only idempotent reads route to the optimizer.
+            # Everything else (mutations, unknown, global-flag-prefixed) falls
+            # through to the single exec below.
+            case "${1:-}" in
+                \(pattern))
+                    \(optimizerBlock)
+                    ;;
+            esac
+            """
+        case .curlSafeMethodsOnly:
+            gatedBlock = """
+            # Method gate: only non-mutating curl routes to the optimizer.
+            _cto_safe=1
+            for _a in "$@"; do
+                case "$_a" in
+                    -X|--request|-d|--data|--data-*|-F|--form|-T|--upload-file) _cto_safe=0; break ;;
+                esac
+            done
+            if [ "$_cto_safe" = 1 ]; then
+                \(optimizerBlock)
+            fi
+            """
+        }
+
+        return """
+        #!/bin/bash
+        # CTO wrapper for \(command) (executable) — generated by Chau7
+
+        # Runtime real-binary resolution (skip cto_bin) — honors venv/nvm/rustup,
+        # never a path baked at setup.
+        _CTO_WRAPPER_DIR="$HOME/.chau7/cto_bin"
+        _CTO_REAL=""
+        _OLD_IFS="$IFS"; IFS=':'
+        for _dir in $PATH; do
+            [ "$_dir" = "$_CTO_WRAPPER_DIR" ] && continue
+            if [ -x "$_dir/\(command)" ]; then _CTO_REAL="$_dir/\(command)"; break; fi
+        done
+        IFS="$_OLD_IFS"
+        if [ -z "$_CTO_REAL" ]; then
+            echo "chau7: could not find real \(command) binary" >&2
+            exit 127
+        fi
+
+        # Recursion backstop: if the optimizer itself spawned this command,
+        # exec the real binary directly (don't re-enter the optimizer). Belt to
+        # the optimizer's own PATH strip.
+        if [ -n "$CHAU7_CTO_OPTIM_ACTIVE" ]; then
+            exec "$_CTO_REAL" "$@"
+        fi
+
+        # Fast path: CTO inactive → exec the runtime-resolved real binary.
+        if [ -z "$CHAU7_CTO_SESSION" ] || [ ! -f "$HOME/.chau7/cto_active/$CHAU7_CTO_SESSION" ]; then
+            exec "$_CTO_REAL" "$@"
+        fi
+
+        # Escape hatch.
+        case " $CHAU7_CTO_EXCLUDE " in *" \(command) "*)
+            exec "$_CTO_REAL" "$@"
+        ;; esac
+
+        # Interactive caller (TTY stdin) → run native so pagers/prompts work;
+        # optimize only for non-interactive (agent/piped) callers.
+        if [ -t 0 ]; then
+            exec "$_CTO_REAL" "$@"
+        fi
+
+        \(gatedBlock)
+
+        # Passthrough / optimizer-fallthrough → exec the real binary exactly once.
+        exec "$_CTO_REAL" "$@"
+        """
     }
 
     /// Generic wrapper with hardcoded real binary path for near-zero passthrough overhead.
@@ -741,7 +947,7 @@ final class CTOManager {
             let path = wrapperBinDir.appendingPathComponent(command).path
             let exists = fm.fileExists(atPath: path)
             let executable = exists && fm.isExecutableFile(atPath: path)
-            let hasRoute = ctoRewriteMap[command] != nil
+            let hasRoute = ctoRewriteMap[command] != nil || executableCommands[command] != nil
             return WrapperHealth(
                 command: command,
                 isInstalled: exists,
@@ -766,6 +972,13 @@ final class CTOManager {
         let outputTokens: Int
         let savedTokens: Int
         let savingsPct: Double
+        /// Optimizer wall-clock time for the day, in milliseconds. Summed by
+        /// `aggregateDailyStats` so a windowed view reports a real average
+        /// latency instead of `0` — the whole point of a "recent" window is to
+        /// exclude the retired build-tool era whose multi-second `cargo`/`swift`
+        /// runs dominate the all-time average.
+        let totalTimeMs: Int
+        let avgTimeMs: Int
 
         enum CodingKeys: String, CodingKey {
             case date
@@ -774,6 +987,43 @@ final class CTOManager {
             case outputTokens = "output_tokens"
             case savedTokens = "saved_tokens"
             case savingsPct = "savings_pct"
+            case totalTimeMs = "total_time_ms"
+            case avgTimeMs = "avg_time_ms"
+        }
+
+        init(
+            date: String,
+            commands: Int,
+            inputTokens: Int,
+            outputTokens: Int,
+            savedTokens: Int,
+            savingsPct: Double,
+            totalTimeMs: Int = 0,
+            avgTimeMs: Int = 0
+        ) {
+            self.date = date
+            self.commands = commands
+            self.inputTokens = inputTokens
+            self.outputTokens = outputTokens
+            self.savedTokens = savedTokens
+            self.savingsPct = savingsPct
+            self.totalTimeMs = totalTimeMs
+            self.avgTimeMs = avgTimeMs
+        }
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            self.date = try container.decode(String.self, forKey: .date)
+            self.commands = try container.decode(Int.self, forKey: .commands)
+            self.inputTokens = try container.decode(Int.self, forKey: .inputTokens)
+            self.outputTokens = try container.decode(Int.self, forKey: .outputTokens)
+            self.savedTokens = try container.decode(Int.self, forKey: .savedTokens)
+            self.savingsPct = try container.decode(Double.self, forKey: .savingsPct)
+            // Tolerate older optimizer builds that predate per-day timing: a
+            // missing field must not fail the whole daily decode (which would
+            // also drop `.summary` and blank the settings panel).
+            self.totalTimeMs = try container.decodeIfPresent(Int.self, forKey: .totalTimeMs) ?? 0
+            self.avgTimeMs = try container.decodeIfPresent(Int.self, forKey: .avgTimeMs) ?? 0
         }
     }
 
@@ -866,7 +1116,14 @@ final class CTOManager {
         let totalInput = filtered.reduce(0) { $0 + $1.inputTokens }
         let totalOutput = filtered.reduce(0) { $0 + $1.outputTokens }
         let totalSaved = filtered.reduce(0) { $0 + $1.savedTokens }
+        let totalTime = filtered.reduce(0) { $0 + $1.totalTimeMs }
         let avgPct = totalInput > 0 ? (Double(totalSaved) / Double(totalInput)) * 100 : 0
+        // Weight the average by command count across the window rather than
+        // averaging the per-day averages, so a busy day counts more than a
+        // one-command day.
+        let avgTime = totalCommands > 0
+            ? Int((Double(totalTime) / Double(totalCommands)).rounded())
+            : 0
 
         return CTOGainStats(
             commands: totalCommands,
@@ -874,8 +1131,8 @@ final class CTOManager {
             outputTokens: totalOutput,
             savedTokens: totalSaved,
             savingsPct: avgPct,
-            totalTimeMs: 0,
-            avgTimeMs: 0
+            totalTimeMs: totalTime,
+            avgTimeMs: avgTime
         )
     }
 
@@ -931,6 +1188,94 @@ final class CTOManager {
         guard !meaningful.isEmpty else { return nil }
         let optimized = meaningful.filter { $0.outcome == "optimized" }.count
         return (Double(optimized) / Double(meaningful.count)) * 100
+    }
+
+    // MARK: - Per-Session Activity (optimizer-independent)
+
+    /// Per-session command activity derived purely from `command.log` — the
+    /// file CTO's own wrappers write (`ts|session|cmd|rc|outcome`).
+    ///
+    /// ## Why this exists / migration seam
+    ///
+    /// `fetchGainStatsForSession(_:)` gets per-session token gain by shelling
+    /// out to `chau7-optim gain --session-id`, but `--session-id` and the
+    /// `session_id` tracking column are a **fork-only** addition — upstream rtk
+    /// has no session concept. To retire the `chau7_optim` fork and vendor
+    /// stock rtk, per-session attribution has to stop depending on the binary.
+    ///
+    /// This reader depends only on a source CTO owns end-to-end, so it survives
+    /// the swap. The split it forces is deliberate:
+    /// - per-session **activity** (counts, outcomes, optimized rate, recency) →
+    ///   here, Swift-side, works against any optimizer;
+    /// - per-session **token totals** → still need the optimizer DB. With stock
+    ///   rtk that means global-only token stats, or upstreaming a `--session-id`
+    ///   patch. See `TokenOptimization/README.md` (Migration note).
+    struct CTOSessionActivity: Identifiable, Equatable, Sendable {
+        let sessionID: String
+        let totalCommands: Int
+        let optimizedCount: Int
+        let skippedCount: Int
+        let fallthroughCount: Int
+        let errorCount: Int
+        let firstSeen: Date
+        let lastActive: Date
+        var id: String {
+            sessionID
+        }
+
+        /// Optimized share of *meaningful* commands (intentional skips excluded),
+        /// matching `commandSuccessRate()`'s denominator. Nil when every command
+        /// was a skip — no meaningful sample to rate.
+        var optimizedRatePercent: Double? {
+            let meaningful = totalCommands - skippedCount
+            guard meaningful > 0 else { return nil }
+            return (Double(optimizedCount) / Double(meaningful)) * 100
+        }
+    }
+
+    /// Groups command-log entries into per-session activity, most-recently-active
+    /// first. Pure over its input, so it is testable without the filesystem
+    /// (mirrors `aggregateDailyStats`).
+    static func aggregateSessionActivity(_ entries: [CommandLogEntry]) -> [CTOSessionActivity] {
+        var bySession: [String: [CommandLogEntry]] = [:]
+        for entry in entries {
+            bySession[entry.sessionID, default: []].append(entry)
+        }
+        return bySession.compactMap { sessionID, group -> CTOSessionActivity? in
+            guard let firstSeen = group.map(\.timestamp).min(),
+                  let lastActive = group.map(\.timestamp).max()
+            else { return nil }
+            var optimized = 0, skipped = 0, fellThrough = 0, errored = 0
+            for entry in group {
+                switch entry.outcome {
+                case "optimized": optimized += 1
+                case "skipped": skipped += 1
+                case "fallthrough": fellThrough += 1
+                default: errored += 1
+                }
+            }
+            return CTOSessionActivity(
+                sessionID: sessionID,
+                totalCommands: group.count,
+                optimizedCount: optimized,
+                skippedCount: skipped,
+                fallthroughCount: fellThrough,
+                errorCount: errored,
+                firstSeen: firstSeen,
+                lastActive: lastActive
+            )
+        }
+        .sorted { $0.lastActive > $1.lastActive }
+    }
+
+    /// Per-session activity for every session in the recent command log.
+    func sessionActivity(limit: Int = 5000) -> [CTOSessionActivity] {
+        Self.aggregateSessionActivity(readCommandLog(limit: limit))
+    }
+
+    /// Per-session activity for one session, or nil if it has no logged commands.
+    func sessionActivity(sessionID: String, limit: Int = 5000) -> CTOSessionActivity? {
+        sessionActivity(limit: limit).first { $0.sessionID == sessionID }
     }
 
     /// Truncates the command log if it exceeds 1 MB. Called during setup().

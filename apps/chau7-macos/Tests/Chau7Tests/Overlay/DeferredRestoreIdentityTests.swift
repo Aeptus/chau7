@@ -98,6 +98,67 @@ final class DeferredRestoreIdentityTests: XCTestCase {
         XCTAssertEqual(deferredSession.activeAppName, "Codex")
     }
 
+    func testDeferredRestorePrefillsBackgroundAgentBeforeSelectionWithoutDuplicateOnPromotion() throws {
+        let originalAutoSubmit = FeatureSettings.shared.autoSubmitRestorePrefill
+        FeatureSettings.shared.autoSubmitRestorePrefill = true
+        defer { FeatureSettings.shared.autoSubmitRestorePrefill = originalAutoSubmit }
+        let directory = FileManager.default.temporaryDirectory.standardized.path
+        let selectedTabID = UUID()
+        let selectedPaneID = UUID()
+        let deferredTabID = UUID()
+        let deferredPaneID = UUID()
+        let resumeCommand = "codex resume deferred-session"
+        let states = [
+            makeSavedTabState(
+                tabID: selectedTabID,
+                paneID: selectedPaneID,
+                title: "Selected shell",
+                directory: directory,
+                aiProvider: nil,
+                aiSessionId: nil,
+                aiResumeCommand: nil,
+                selectedTabIDMarker: selectedTabID
+            ),
+            makeSavedTabState(
+                tabID: deferredTabID,
+                paneID: deferredPaneID,
+                title: "Deferred agent",
+                directory: directory,
+                aiProvider: "codex",
+                aiSessionId: "deferred-session",
+                aiResumeCommand: resumeCommand
+            )
+        ]
+        let restoredModel = OverlayTabsModel(appModel: AppModel(), restoreState: false, restoringStates: states)
+        let deferredSession = try XCTUnwrap(
+            restoredModel.tabs.first(where: { $0.id == deferredTabID })?.session
+        )
+        let terminalView = RustTerminalView(frame: .zero)
+        var capturedInputs: [String] = []
+        terminalView.onInput = { capturedInputs.append($0) }
+        deferredSession.attachRustTerminal(terminalView)
+        deferredSession.isShellLoading = false
+        deferredSession.isAtPrompt = true
+        deferredSession.status = .idle
+
+        XCTAssertTrue(restoredModel.restoreOneDeferredTabIfNeeded(reason: "test_background_prefill"))
+        drainDeferredRestoreIdentityQueue()
+        RunLoop.main.run(until: Date().addingTimeInterval(0.3))
+
+        XCTAssertEqual(capturedInputs, [resumeCommand], "Background restore must prefill without launching the agent")
+        XCTAssertEqual(restoredModel.selectedTabID, selectedTabID)
+        XCTAssertNil(deferredSession.activeAppName)
+        XCTAssertNotNil(restoredModel.deferredRestoreStatesByTabID[deferredTabID])
+
+        FeatureSettings.shared.autoSubmitRestorePrefill = false
+        restoredModel.selectTab(id: deferredTabID)
+        drainDeferredRestoreIdentityQueue()
+
+        XCTAssertEqual(capturedInputs, [resumeCommand], "Interactive promotion must not insert the prefilled command twice")
+        XCTAssertNil(restoredModel.deferredRestoreStatesByTabID[deferredTabID])
+        XCTAssertEqual(deferredSession.activeAppName, "Codex")
+    }
+
     func testDeferredRestoreSchedulerWaitsAfterRecentSelection() {
         let tabIDs = (0 ..< 3).map { _ in UUID() }
         let paneIDs = (0 ..< 3).map { _ in UUID() }
@@ -124,6 +185,28 @@ final class DeferredRestoreIdentityTests: XCTestCase {
             XCTFail("Expected background identity restore to wait after a recent selection")
         }
         XCTAssertEqual(restoredModel.deferredRestoreTabOrder, [tabIDs[1], tabIDs[2]])
+    }
+
+    func testSelectedDeferredRestoreDoesNotConsumeStateForMissingTab() {
+        let model = OverlayTabsModel(appModel: AppModel(), restoreState: false)
+        let missingTabID = UUID()
+        let state = makeSavedTabState(
+            tabID: missingTabID,
+            paneID: UUID(),
+            title: "Recovery",
+            directory: "/tmp/recovery",
+            aiProvider: "codex",
+            aiSessionId: "recovery-session",
+            aiResumeCommand: "codex resume recovery-session"
+        )
+        model.selectedTabID = missingTabID
+        model.deferredRestoreStatesByTabID[missingTabID] = state
+        model.deferredRestoreTabOrder = [missingTabID]
+
+        model.restoreSelectedDeferredTabIfNeeded(reason: "test_missing_tab")
+
+        XCTAssertEqual(model.deferredRestoreStatesByTabID[missingTabID]?.customTitle, "Recovery")
+        XCTAssertEqual(model.deferredRestoreTabOrder, [missingTabID])
     }
 
     func testDeferredRestoreSchedulerPrioritizesNearestTabToSelection() {
