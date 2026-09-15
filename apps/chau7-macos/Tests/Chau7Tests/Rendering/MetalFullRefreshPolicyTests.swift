@@ -28,8 +28,8 @@ final class MetalFullRefreshPolicyTests: XCTestCase {
         )
     }
 
-    func testForcesFullRefreshForVisibleNoninteractiveView() {
-        XCTAssertTrue(
+    func testKeepsIncrementalPathForVisibleNoninteractiveView() {
+        XCTAssertFalse(
             MetalFullRefreshPolicy.shouldForceFullRefresh(
                 rowCount: 79,
                 dirtyRowCount: 2,
