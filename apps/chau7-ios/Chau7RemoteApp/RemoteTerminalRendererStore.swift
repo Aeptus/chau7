@@ -208,7 +208,11 @@ final class RemoteTerminalRendererStore {
         generation &+= 1
         let currentGeneration = generation
         let predecessor = mutationTail
-        let scheme = colorScheme
+        // A remote inventory may temporarily adopt the Mac's custom palette.
+        // Disconnecting must return to the iPhone preference so a later
+        // connection (or the text fallback) never inherits stale remote state.
+        let scheme = AppSettings.currentColorScheme
+        colorScheme = scheme
         mutationTail = Task { @MainActor [weak self, engine] in
             _ = await predecessor?.result
             await engine.reset(colorScheme: scheme)

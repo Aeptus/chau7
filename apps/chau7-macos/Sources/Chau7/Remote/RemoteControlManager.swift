@@ -117,6 +117,7 @@ final class RemoteControlManager {
 
     @ObservationIgnored private var remoteEnabledObserver: NSObjectProtocol?
     @ObservationIgnored private var remoteRelayURLObserver: NSObjectProtocol?
+    @ObservationIgnored private var terminalColorsObserver: NSObjectProtocol?
 
     private init() {}
 
@@ -125,6 +126,9 @@ final class RemoteControlManager {
             NotificationCenter.default.removeObserver(observer)
         }
         if let observer = remoteRelayURLObserver {
+            NotificationCenter.default.removeObserver(observer)
+        }
+        if let observer = terminalColorsObserver {
             NotificationCenter.default.removeObserver(observer)
         }
         if let observer = overlayTabsObserver {
@@ -189,6 +193,20 @@ final class RemoteControlManager {
         ) { [weak self] _ in
             Task { @MainActor [weak self] in
                 self?.applyRelayConfigurationChange()
+            }
+        }
+
+        // A color-scheme change is a real inventory change for remote peers:
+        // the tab list carries the authoritative Mac palette. Re-emit it
+        // immediately so an iPhone already connected does not keep drawing
+        // with the previous scheme until some unrelated tab event occurs.
+        terminalColorsObserver = NotificationCenter.default.addObserver(
+            forName: .terminalColorsChanged,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.sendTabList()
             }
         }
 
@@ -447,6 +465,13 @@ final class RemoteControlManager {
         case .pairingInfo:
             handlePairingInfo(frame)
         case .sessionReady:
+            // The Go helper remains connected while an iOS WebSocket session
+            // is torn down and re-established. Its semantic inventory gate is
+            // therefore session-scoped rather than IPC-connection-scoped;
+            // reset it before replaying initial state or the phone can stay in
+            // "Syncing tabs" until a manual tab switch forces a resend.
+            tabInventoryEmissionGate.reset()
+            lastSentTabListCount = nil
             isIPCConnected = true
             sendInitialState()
         case .sessionStatus:
@@ -1323,7 +1348,8 @@ final class RemoteControlManager {
                 capabilities: [
                     RemoteTabListPayload.keyInputCapability,
                     RemoteTabListPayload.checkpointRequestCapability
-                ]
+                ],
+                terminalColorScheme: FeatureSettings.shared.currentColorScheme
             )
             guard tabInventoryEmissionGate.shouldEmit(tabList) else {
                 logger.debug("Remote: suppressed unchanged tab inventory (\(tabPayloads.count, privacy: .public) tabs)")

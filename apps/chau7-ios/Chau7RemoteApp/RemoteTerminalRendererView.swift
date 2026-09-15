@@ -31,10 +31,9 @@ struct RemoteTerminalRendererView: View {
     let client: RemoteClient
     @AppStorage(AppSettings.renderANSIKey) private var renderANSI = AppSettings.renderANSIDefault
     @AppStorage(AppSettings.terminalFontSizeKey) private var terminalFontSize = AppSettings.terminalFontSizeDefault
-    @AppStorage(AppSettings.colorSchemeNameKey) private var colorSchemeName = AppSettings.colorSchemeNameDefault
 
     private var colorScheme: TerminalColorScheme {
-        AppSettings.colorScheme(named: colorSchemeName)
+        client.terminalRenderer.colorScheme
     }
 
     var body: some View {

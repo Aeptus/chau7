@@ -67,7 +67,7 @@ final class RemoteInteractivePromptTests: XCTestCase {
         XCTAssertNil(object["multi_select"])
     }
 
-    func testComposedPushTextPreservesMultiSelect() throws {
+    func testComposedPushTextPreservesMultiSelect() {
         // Every prompt is composed through withComposedPushText() on its way to
         // the wire, so a field dropped there is dropped for all of them —
         // silently, since composition is otherwise additive.

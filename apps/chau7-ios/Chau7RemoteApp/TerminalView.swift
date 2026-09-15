@@ -17,7 +17,6 @@ struct TerminalView: View {
     private var experimentalTerminalRenderer = AppSettings.experimentalTerminalRendererDefault
     @AppStorage(AppSettings.showKeyboardBarKey) private var showKeyboardBar = AppSettings.showKeyboardBarDefault
     @AppStorage(AppSettings.terminalFontSizeKey) private var terminalFontSize = AppSettings.terminalFontSizeDefault
-    @AppStorage(AppSettings.colorSchemeNameKey) private var colorSchemeName = AppSettings.colorSchemeNameDefault
 
     @State private var inputText = ""
     /// The user hid an auto-surfaced key row for the current waiting episode.
@@ -362,7 +361,7 @@ struct TerminalView: View {
                 RemoteTerminalTextView(
                     text: renderANSI ? client.outputText : client.strippedOutputText,
                     fontSize: CGFloat(terminalFontSize),
-                    colorScheme: AppSettings.colorScheme(named: colorSchemeName),
+                    colorScheme: client.terminalRenderer.colorScheme,
                     isAwayFromBottom: $textAwayFromBottom,
                     scrollToBottomToken: scrollToBottomToken
                 )

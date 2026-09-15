@@ -275,10 +275,25 @@ public struct RemoteTabListPayload: Codable, Equatable, Sendable {
     /// Mac feature advertisement. Additive/optional: older Macs omit it and
     /// older clients ignore it. Normalized so an empty list is never encoded.
     public let capabilities: [String]?
+    /// The Mac terminal palette used for the remote stream. Additive/optional
+    /// so older peers continue to decode the inventory while newer iOS peers
+    /// can render ANSI colors exactly like the source terminal.
+    public let terminalColorScheme: TerminalColorScheme?
 
-    public init(tabs: [RemoteTabDescriptor], capabilities: [String]? = nil) {
+    public init(
+        tabs: [RemoteTabDescriptor],
+        capabilities: [String]? = nil,
+        terminalColorScheme: TerminalColorScheme? = nil
+    ) {
         self.tabs = tabs
         self.capabilities = capabilities?.isEmpty == true ? nil : capabilities
+        self.terminalColorScheme = terminalColorScheme
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case tabs
+        case capabilities
+        case terminalColorScheme = "terminal_color_scheme"
     }
 }
 

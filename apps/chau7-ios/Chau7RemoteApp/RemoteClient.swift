@@ -1117,6 +1117,14 @@ final class RemoteClient {
     }
 
     private func applyTabListPayload(_ msg: TabListPayload, source: String) {
+        // The Mac is the source of truth for terminal appearance. Applying the
+        // palette from the inventory keeps both the rich replay renderer and
+        // the plain-text fallback in lockstep with the terminal that produced
+        // the ANSI stream (including custom schemes).
+        if let terminalColorScheme = msg.terminalColorScheme {
+            terminalRenderer.applyColorScheme(terminalColorScheme)
+        }
+
         let previousVisibleTabIDs = Set(tabs.map(\.tabID))
         let visibleTabIDs = Set(msg.tabs.map(\.tabID))
         let nextActiveTabID = RemoteTabSelectionPolicy.resolvedActiveTabID(
