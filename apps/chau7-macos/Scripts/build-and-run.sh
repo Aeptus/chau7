@@ -6,6 +6,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BUILD_MODE="${BUILD_MODE:-release}"
 OPEN_AFTER_BUILD="${OPEN_AFTER_BUILD:-1}"
 BUNDLE_IDENTIFIER="${BUNDLE_IDENTIFIER:-com.chau7.app.dev}"
+APP_OUTPUT_DIR="${APP_OUTPUT_DIR:-$ROOT_DIR/build}"
 CODESIGN_IDENTITY="${CHAU7_CODESIGN_IDENTITY:-auto}"
 USE_STABLE_ADHOC_REQUIREMENT="${USE_STABLE_ADHOC_REQUIREMENT:-1}"
 BIN_PATH="(not built)"
@@ -31,6 +32,7 @@ summary() {
   log_info "Build mode: $BUILD_MODE"
   log_info "Binary: $BIN_PATH"
   log_info "App bundle: $APP_PATH"
+  log_info "App output directory: $APP_OUTPUT_DIR"
   log_info "Bundle identifier: $BUNDLE_IDENTIFIER"
   log_info "Codesign identity: $CODESIGN_IDENTITY"
   log_info "Stable ad-hoc requirement: $USE_STABLE_ADHOC_REQUIREMENT"
@@ -57,6 +59,7 @@ log_init "Build and Run"
 log_info "Build mode: $BUILD_MODE"
 log_info "Open after build: $OPEN_AFTER_BUILD"
 log_info "Bundle identifier: $BUNDLE_IDENTIFIER"
+log_info "App output directory: $APP_OUTPUT_DIR"
 log_info "Codesign identity: $CODESIGN_IDENTITY"
 log_info "Stable ad-hoc requirement: $USE_STABLE_ADHOC_REQUIREMENT"
 
@@ -69,8 +72,8 @@ log_info "Resolved codesign identity: $RESOLVED_CODESIGN_IDENTITY"
 
 if [[ "$BUNDLE_IDENTIFIER" == "com.chau7.app" ]]; then
   RUNNING_CHAU7="$(
-    ps -axo pid=,args= 2>/dev/null \
-      | awk 'match($0, /^[[:space:]]*[0-9]+[[:space:]]+.+\/Chau7\.app\/Contents\/MacOS\/Chau7([[:space:]]|$)/) { print $0 }' \
+    ps -axo pid=,comm=,args= 2>/dev/null \
+      | awk '$2 == "Chau7" || match($0, /^[[:space:]]*[0-9]+[[:space:]]+.+\/Chau7\.app\/Contents\/MacOS\/Chau7([[:space:]]|$)/) { print $0 }' \
       | sed 's/^[[:space:]]*//'
   )"
 
@@ -134,9 +137,9 @@ fi
 LAST_STEP="Bundle"
 CHAU7_LOG_FILE="$LOG_FILE" CHAU7_LOG_SUMMARY=0 CHAU7_LOG_SUPPRESS_HEADER=1 \
   BUNDLE_IDENTIFIER="$BUNDLE_IDENTIFIER" CHAU7_CODESIGN_PURPOSE="$BUILD_CODESIGN_PURPOSE" \
-  "$ROOT_DIR/Scripts/build-app.sh" "$ROOT_DIR/.build/$BUILD_MODE" "$ROOT_DIR/build"
+  "$ROOT_DIR/Scripts/build-app.sh" "$ROOT_DIR/.build/$BUILD_MODE" "$APP_OUTPUT_DIR"
 
-APP_PATH="$ROOT_DIR/build/$APP_NAME.app"
+APP_PATH="$APP_OUTPUT_DIR/$APP_NAME.app"
 if [[ ! -d "$APP_PATH" ]]; then
   log_warn "App bundle not found at $APP_PATH"
 else

@@ -743,6 +743,8 @@ Chau7's rendering pipeline is purpose-built for latency-sensitive terminal work:
 
 ## Scripting & Debugging
 
+- **Guarded local rebuild/relaunch** — `Scripts/rebuild-and-relaunch.sh` validates a clean, current checkout and the embedded helper revision, builds before stopping the running app, quits with bounded graceful escalation, and installs through same-volume atomic replacement with a rollback backup. It supports dry-run, quit-only, debug/no-install, and explicit dirty/stale-source overrides while leaving session data untouched.
+
 - **Test-run log isolation** — XCTest processes route app logs and terminal captures to a process-scoped temporary Library/Logs tree by default, keeping expected fixture warnings out of the user's operational audit history while preserving explicit test-home and log-file overrides.
 
 - **Complete restore phase attribution** — per-tab restore telemetry names setup, lookup, command-block, focus, metadata, resume, repository-grouping, and startup-finalization costs, including completed phases on early returns, so launch stalls can be assigned before changing thread ownership.

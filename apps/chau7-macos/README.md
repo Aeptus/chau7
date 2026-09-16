@@ -123,6 +123,10 @@ BUNDLE_IDENTIFIER=com.chau7.app ./Scripts/build-and-run.sh
 CHAU7_CODESIGN_IDENTITY="Apple Development: Your Name (TEAMID)" ./Scripts/build-and-run.sh
 ```
 
+`APP_OUTPUT_DIR=/path/to/output ./Scripts/build-and-run.sh` can be used by release
+orchestration to keep each bundle in a fresh directory. This avoids reusing files left by a
+previous bundle.
+
 ### Install / update the Launchpad app
 
 To install the production Launchpad app (`com.chau7.app`) into `/Applications`:
@@ -131,14 +135,47 @@ To install the production Launchpad app (`com.chau7.app`) into `/Applications`:
 ./Scripts/install-launchpad-app.sh
 ```
 
-Note: this script refuses to replace `/Applications/Chau7.app` while it is running.
-Replacing a running app causes TCC code-requirement mismatches and repeated permission prompts.
+This compatibility command now delegates to `rebuild-and-relaunch.sh`, so it builds the
+bundle before asking a running Chau7 to quit and performs the same atomic replacement. It
+keeps the historical default of installing without opening the app; set
+`OPEN_AFTER_INSTALL=1` to launch it. For the complete local upgrade loop, the explicit
+`./Scripts/rebuild-and-relaunch.sh` command below is easier to discover.
 
 To force Developer ID signing for the Launchpad app:
 
 ```bash
 CHAU7_CODESIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)" ./Scripts/install-launchpad-app.sh
 ```
+
+### Recommended local upgrade / relaunch workflow
+
+For the common “quit Chau7, rebuild, install, and relaunch” loop, use the single guarded
+command below from `apps/chau7-macos`:
+
+```bash
+./Scripts/rebuild-and-relaunch.sh
+```
+
+It checks that the checkout is clean and not behind `origin/main` or `aethyme/integration`,
+builds and verifies the complete bundle (including the `chau7-remote` revision) before
+stopping the running app, asks Chau7 to quit gracefully, and replaces the installed bundle
+with same-volume renames so old files cannot remain in the app. The previous app bundle is
+kept in `~/Library/Application Support/Chau7/ReleaseBackups/`; session data is not touched.
+
+Useful variants:
+
+```bash
+./Scripts/rebuild-and-relaunch.sh --quit-only       # stop Chau7 safely
+./Scripts/rebuild-and-relaunch.sh --dry-run         # validate without changing processes/files
+./Scripts/rebuild-and-relaunch.sh --no-install      # build/verify only; keep the app running
+./Scripts/rebuild-and-relaunch.sh --no-launch       # install without opening it
+./Scripts/rebuild-and-relaunch.sh --debug --no-install --no-launch
+./Scripts/rebuild-and-relaunch.sh --force           # last resort after SIGTERM fails
+```
+
+The workflow refuses dirty or stale source by default. `--allow-dirty` and
+`--allow-stale-source` are explicit escape hatches for intentional local experiments; they
+are recorded in the workflow log under `build/logs/`.
 
 ### Share a pre-release DMG
 
