@@ -38,7 +38,7 @@ Options:
   --allow-stale-source       Allow a checkout behind origin/main or
                              aethyme/integration
   --timeout SECONDS          Graceful quit timeout (default: 20)
-  --force                    Use SIGKILL only if graceful quit and SIGTERM fail
+  --force                    Permit unsafe SIGTERM/SIGKILL escalation after quit timeout
   --quit-only                Quit Chau7 without building or installing
   --dry-run                  Validate source and print the planned actions only
   --no-install               Build and verify, but do not replace /Applications
@@ -49,7 +49,8 @@ Options:
 Safety defaults:
   - a dirty or stale checkout is rejected unless explicitly allowed;
   - the old app is not quit until the new bundle is verified;
-  - a normal quit/SIGTERM is attempted before --force can use SIGKILL;
+  - no POSIX signal is sent unless --force is explicitly supplied;
+  - --force may bypass applicationWillTerminate and can lose the newest in-memory state;
   - the previous app bundle is retained under
     ~/Library/Application Support/Chau7/ReleaseBackups/.
 
@@ -260,17 +261,22 @@ quit_chau7() {
   fi
 
   log_warn "Chau7 did not exit after the AppleScript quit request."
-  send_signal_to_chau7 TERM
-  if wait_for_chau7_exit 5; then
-    log_ok "Chau7 exited after SIGTERM."
-    return 0
-  fi
-
   if [[ "$FORCE_QUIT" != "1" ]]; then
-    log_error "Chau7 is still running. Refusing SIGKILL to protect session data."
-    log_error "Retry with --force only after confirming the app is unrecoverably stuck."
+    # SIGTERM has the default POSIX disposition for Chau7. It can therefore
+    # terminate the process without running NSApplicationDelegate's
+    # applicationWillTerminate callback, which is the final durable restore
+    # snapshot. Never trade that snapshot for an automatic timeout escalation.
+    log_error "Refusing SIGTERM and SIGKILL to protect session data."
+    log_error "Retry with --force only after confirming the app is unrecoverably stuck; forced signals may lose the newest state."
     running_chau7_description >&2
     return 1
+  fi
+
+  log_warn "--force supplied; sending SIGTERM may bypass applicationWillTerminate and lose the newest session snapshot."
+  send_signal_to_chau7 TERM
+  if wait_for_chau7_exit 5; then
+    log_warn "Chau7 exited after forced SIGTERM; verify session restoration after relaunch."
+    return 0
   fi
 
   log_warn "Graceful quit and SIGTERM failed; --force permits SIGKILL as a last resort."
@@ -528,7 +534,7 @@ log_info "Dry run: $DRY_RUN"
 if [[ "$DRY_RUN" == "1" ]]; then
   check_source_state
   if [[ "$QUIT_ONLY" == "1" ]]; then
-    log_info "Dry run: would request a graceful quit (then SIGTERM, and SIGKILL only with --force)."
+    log_info "Dry run: would request a graceful quit; no POSIX signal unless --force is supplied."
   else
     log_info "Dry run: would build/verify, quit Chau7, atomically install, and relaunch."
   fi

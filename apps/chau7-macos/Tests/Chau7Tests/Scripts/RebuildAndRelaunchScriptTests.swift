@@ -43,7 +43,18 @@ final class RebuildAndRelaunchScriptTests: XCTestCase {
         XCTAssertTrue(script.contains("mv \"$INSTALL_STAGING_DIR/$APP_NAME.app\" \"$DST_APP\""))
         XCTAssertTrue(script.contains("--install-path must point to a Chau7.app bundle"))
         XCTAssertTrue(script.contains("Refusing to install an older build"))
-        XCTAssertTrue(script.contains("Refusing SIGKILL to protect session data"))
+        XCTAssertTrue(script.contains("Refusing SIGTERM and SIGKILL to protect session data"))
+
+        // A timed-out AppleScript quit must fail before any POSIX signal is
+        // sent. SIGTERM has no Chau7 handler and can bypass
+        // applicationWillTerminate, which is the final durable restore save.
+        let forceGuard = try XCTUnwrap(script.range(of: #"if [[ "$FORCE_QUIT" != "1" ]]; then"#))
+        let termEscalation = try XCTUnwrap(script.range(of: "send_signal_to_chau7 TERM"))
+        XCTAssertLessThan(
+            forceGuard.lowerBound,
+            termEscalation.lowerBound,
+            "SIGTERM must remain behind the explicit --force guard"
+        )
     }
 
     func testLegacyInstallerDelegatesToGuardedWorkflow() throws {
