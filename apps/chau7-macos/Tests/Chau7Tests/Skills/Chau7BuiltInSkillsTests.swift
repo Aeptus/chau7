@@ -10,8 +10,12 @@ final class Chau7SkillBuiltInSkillsTests: XCTestCase {
         XCTAssertEqual(validateBuiltInSkill("chau7-mcp"), [])
     }
 
+    func testBundledBuildSkillValidates() {
+        XCTAssertEqual(validateBuiltInSkill("chau7-build"), [])
+    }
+
     func testBuiltInSkillsValidateAgainstSharedAgentSkillsContract() {
-        for skillID in ["chau7-magi", "chau7-mcp"] {
+        for skillID in ["chau7-magi", "chau7-mcp", "chau7-build"] {
             XCTAssertEqual(
                 validateBuiltInSkill(skillID),
                 [],
@@ -42,6 +46,17 @@ final class Chau7SkillBuiltInSkillsTests: XCTestCase {
         XCTAssertTrue(content.contains("Logs And Diagnostics"))
         XCTAssertTrue(content.contains("~/Library/Logs/Chau7.log"))
         XCTAssertTrue(content.contains("Do not kill, restart, force-quit, or relaunch the Chau7 app"))
+    }
+
+    func testBuiltInBuildSkillContainsRestorationSafeWorkflow() throws {
+        let content = try skillMarkdown("chau7-build")
+
+        XCTAssertTrue(content.contains("rebuild-and-relaunch.sh"))
+        XCTAssertTrue(content.contains("--no-install --no-launch"))
+        XCTAssertTrue(content.contains("--force"))
+        XCTAssertTrue(content.contains("Restoration invariants"))
+        XCTAssertTrue(content.contains("manifest.json"))
+        XCTAssertTrue(content.contains("swift test --package-path apps/chau7-macos"))
     }
 
     func testBuildAppCopiesRawBuiltInSkillsIntoAppBundle() throws {
