@@ -940,6 +940,8 @@ Legacy `AI_*` and `SMART_OVERLAY_*` environment variables are still supported.
 
 ## Quality Gates
 
+- **Restoration-safe Chau7 build skill** — the bundled `chau7-build` skill documents the guarded quit/build/install/relaunch workflow, verifies source and helper provenance, and keeps session restoration artifacts outside release operations.
+- **Warnings-as-errors Swift baseline** — asynchronous callbacks use explicit capture ownership, and the macOS format, lint, and strict compiler gates run cleanly before publication.
 - Cloudflare Worker toolchains are pinned to audit-clean compatible Wrangler and Workers-types releases; both services must pass dependency audit and dry-run build validation.
 - Process-resource monitor lifecycle tests inject deterministic snapshots, isolating timer start/stop behavior from OS process-enumeration latency under full-suite load.
 - Swift formatting/lint and Go static analysis run across the complete source and test trees; test fixture guards terminate explicitly before optional values are dereferenced.

@@ -186,7 +186,7 @@ final class SessionRecorder {
 
     private func loadRecordingsList() {
         let dir = recordingsDir
-        DispatchQueue.global(qos: .utility).async {
+        DispatchQueue.global(qos: .utility).async { [weak self] in
             let fm = FileManager.default
             guard let files = try? fm.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil) else { return }
 

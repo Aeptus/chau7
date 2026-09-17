@@ -1270,7 +1270,9 @@ struct TokenOptimizationSettingsView: View {
 
             Text(L(
                 "cto.howItWorks.optimizerDesc",
-                "chau7-optim is a built-in binary that intercepts command output and compresses it for LLM consumption. For example, `cat large_file.rs` strips comments and blank lines, `git diff` condenses to changed lines only, and `cargo build` filters out Compiling... progress, keeping only errors."
+                "chau7-optim is a built-in binary that intercepts command output and compresses it for LLM consumption. " +
+                    "For example, `cat large_file.rs` strips comments and blank lines, `git diff` condenses to changed lines only, " +
+                    "and `cargo build` filters out Compiling... progress, keeping only errors."
             ))
             .font(.caption)
             .foregroundStyle(.secondary)

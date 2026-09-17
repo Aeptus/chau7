@@ -595,6 +595,7 @@ final class TerminalSessionModel {
             }
         }
     }
+
     var lastAISessionId: String? {
         didSet {
             syncRustTerminalObservabilityScope()

@@ -142,13 +142,13 @@ final class TripleBufferedTerminal {
         /// working set; cell offsets are rewritten atomically on the producer
         /// buffer and the allocation shrinks with the live content.
         private func compactClustersIfNeeded() {
-            let softLimit = 1 * 1_024 * 1_024
-            let hardCapacity = 4 * 1_024 * 1_024
+            let softLimit = 1 * 1024 * 1024
+            let hardCapacity = 4 * 1024 * 1024
             let liveBytes = cells.reduce(into: 0) { total, cell in
                 total += Int(cell.clusterLen)
             }
             guard clusterCount > max(softLimit, liveBytes * 3)
-                    || clusterCapacity > max(hardCapacity, liveBytes * 4) else {
+                || clusterCapacity > max(hardCapacity, liveBytes * 4) else {
                 return
             }
 

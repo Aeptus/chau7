@@ -96,8 +96,7 @@ private struct ImagePreviewContent: View {
         if let nsImage = NSImage(data: data) {
             ScrollView([.horizontal, .vertical]) {
                 Image(nsImage: nsImage)
-                    .resizable()
-                    .aspectRatio(contentMode: .fit)
+                    .resizable().scaledToFit()
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .padding(16)
             }

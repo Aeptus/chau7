@@ -1697,7 +1697,7 @@ final class MetalTerminalRenderer: NSObject {
         vertexBuffer = nil
         glyphAtlas = nil
         atlasContext = nil
-        instanceCapacity = 50_000
+        instanceCapacity = 50000
         resetAtlas()
         asciiGlyphCache = [GlyphInfo?](repeating: nil, count: 128 << 2)
         rowHasBlinkingCells.removeAll(keepingCapacity: false)

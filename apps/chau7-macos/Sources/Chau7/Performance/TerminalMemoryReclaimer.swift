@@ -78,7 +78,7 @@ final class TerminalMemoryReclaimer: MemoryReclaimable {
         guard clearedCaches > 0 || evictedWindows > 0 else { return }
         Log.info(
             "TerminalMemoryReclaimer[routine]: cleared \(clearedCaches) oversized cache(s), " +
-                "evicted \(evictedBytes / (1_024 * 1_024))MB across \(evictedWindows) invisible window(s)"
+                "evicted \(evictedBytes / (1024 * 1024))MB across \(evictedWindows) invisible window(s)"
         )
     }
 
@@ -122,7 +122,7 @@ final class TerminalMemoryReclaimer: MemoryReclaimable {
 
         Log.info(
             "TerminalMemoryReclaimer[\(level)]: cleared \(clearedBufferCaches) buffer cache(s), " +
-                "evicted \(evictedBytes / (1_024 * 1_024))MB across \(evictedWindows) invisible window(s)"
+                "evicted \(evictedBytes / (1024 * 1024))MB across \(evictedWindows) invisible window(s)"
         )
     }
 }

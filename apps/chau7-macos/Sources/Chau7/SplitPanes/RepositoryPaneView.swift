@@ -67,7 +67,7 @@ struct RepositoryPaneView: View {
                 repo.refreshAll()
             }
         }
-        .onChange(of: repo.commit.message) {
+        .onChange(of: repo.commit.message) { [repo] in
             draftPersistWork?.cancel()
             let work = DispatchWorkItem { [weak repo] in repo?.persistDraft() }
             draftPersistWork = work

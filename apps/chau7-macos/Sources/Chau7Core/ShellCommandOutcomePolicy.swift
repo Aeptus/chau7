@@ -18,15 +18,15 @@ public enum ShellCommandOutcomePolicy {
         case suppress
     }
 
-    private static let scriptExtensions: Set<String> = [
+    private static let scriptExtensions: Set = [
         "bash", "cjs", "fish", "js", "mjs", "py", "rb", "sh", "swift", "ts", "zsh"
     ]
 
-    private static let directTaskRunners: Set<String> = [
+    private static let directTaskRunners: Set = [
         "gradle", "gradlew", "just", "make", "mvn", "mvnw", "nox", "pytest", "rake", "task", "tox", "xcodebuild"
     ]
 
-    private static let packageManagerBuiltins: Set<String> = [
+    private static let packageManagerBuiltins: Set = [
         "add", "audit", "bin", "cache", "config", "create", "dlx", "doctor", "env", "exec", "fetch",
         "help", "import", "info", "init", "install", "licenses", "link", "list", "login", "logout",
         "outdated", "owner", "pack", "patch", "prune", "publish", "rebuild", "remove", "root", "search",

@@ -547,14 +547,14 @@ final class ScrollbackMemoryManagerTests: XCTestCase {
             tabID: UUID(),
             candidate: ScrollbackBudgetFlushCandidate(
                 viewId: "oversized",
-                estimatedRingBytes: { 65 * 1_024 * 1_024 },
+                estimatedRingBytes: { 65 * 1024 * 1024 },
                 requestFlush: { flushed = true }
             )
         )
 
         manager.enforceScrollbackBudget(
-            budgetBytes: 500 * 1_024 * 1_024,
-            perTabBudgetBytes: 64 * 1_024 * 1_024
+            budgetBytes: 500 * 1024 * 1024,
+            perTabBudgetBytes: 64 * 1024 * 1024
         )
 
         XCTAssertTrue(flushed, "A single warm tab must not consume most of the aggregate budget")

@@ -20,8 +20,8 @@ final class SwiftUIPreferenceUpdateCoalescer {
         let generation = (generations[key] ?? 0) &+ 1
         generations[key] = generation
         DispatchQueue.main.async { [weak self] in
-            guard let self, self.generations[key] == generation else { return }
-            self.generations.removeValue(forKey: key)
+            guard let self, generations[key] == generation else { return }
+            generations.removeValue(forKey: key)
             mutation()
         }
     }

@@ -230,7 +230,7 @@ final class RustGridView: NSView {
 
     private func compactClusterStorageIfNeeded() {
         let liveBytes = cells.reduce(into: 0) { $0 += Int($1.cluster_len) }
-        guard clusterStorage.count > max(1 * 1_024 * 1_024, liveBytes * 3) else { return }
+        guard clusterStorage.count > max(1 * 1024 * 1024, liveBytes * 3) else { return }
         var compacted = Data(capacity: liveBytes)
         for index in cells.indices {
             var cell = cells[index]
@@ -1353,8 +1353,7 @@ final class RustTerminalFFI: TerminalBackend {
             Log.trace("RustTerminalFFI[\(instanceId)]: isApplicationCursorMode - Function not available, returning false")
             return false
         }
-        let enabled = isApplicationCursorModeFn(terminal)
-        return enabled
+        return isApplicationCursorModeFn(terminal)
     }
 
     // MARK: - Debug and Performance Methods

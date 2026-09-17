@@ -202,7 +202,7 @@ final class ProviderStatusMonitor {
         isRefreshInFlight = true
         defer { isRefreshInFlight = false }
 
-        let fetcher = self.fetcher
+        let fetcher = fetcher
         let outcomes = await withTaskGroup(
             of: ProviderStatusFetchOutcome.self,
             returning: [ProviderStatusFetchOutcome].self
@@ -210,7 +210,7 @@ final class ProviderStatusMonitor {
             for source in Self.sources {
                 group.addTask {
                     do {
-                        return .success(source, try await fetcher.data(from: source.url))
+                        return try await .success(source, fetcher.data(from: source.url))
                     } catch {
                         return .failure(source, String(describing: error))
                     }
@@ -295,8 +295,8 @@ final class ProviderStatusMonitor {
         guard let providerKey = AnalyticsProvider.key(for: rawProvider),
               let snapshot = snapshotsByProvider[providerKey],
               snapshot.activeAlert(
-                at: now,
-                maximumAge: Self.maximumSnapshotAge
+                  at: now,
+                  maximumAge: Self.maximumSnapshotAge
               ) != nil else {
             return nil
         }

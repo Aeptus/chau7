@@ -246,7 +246,6 @@ extension RustTerminalView {
         }
     }
 
-    // swiftlint:disable:next cyclomatic_complexity
     func setupEventMonitors() {
         Log.trace("RustTerminalView[\(viewId)]: setupEventMonitors - Installing event monitors")
         removeEventMonitors()

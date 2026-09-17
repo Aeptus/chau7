@@ -21,7 +21,7 @@ final class PerformanceTelemetryWriter: PerformanceTelemetryRecording {
     init(
         fileURL: URL = RuntimeIsolation.logsDirectory()
             .appendingPathComponent("Chau7-performance.jsonl"),
-        maxBytes: Int = 8 * 1_024 * 1_024,
+        maxBytes: Int = 8 * 1024 * 1024,
         queueLabel: String = "com.chau7.performance-telemetry"
     ) {
         self.fileURL = fileURL
@@ -53,7 +53,9 @@ final class PerformanceTelemetryWriter: PerformanceTelemetryRecording {
         queue.sync {}
     }
 
-    var archiveURLForTesting: URL { archiveURL }
+    var archiveURLForTesting: URL {
+        archiveURL
+    }
 
     private func write(_ data: Data) {
         do {

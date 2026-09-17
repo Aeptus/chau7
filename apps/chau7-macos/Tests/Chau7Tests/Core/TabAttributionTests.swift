@@ -21,7 +21,7 @@ final class TabAttributionTests: XCTestCase {
             sessionID: "stale-claude-session"
         )
 
-        for _ in 0 ..< 1_000 {
+        for _ in 0 ..< 1000 {
             XCTAssertEqual(
                 resolver.resolve(target: target, policy: .requireSessionMatch),
                 .noMatch
@@ -32,7 +32,6 @@ final class TabAttributionTests: XCTestCase {
             )
         }
     }
-
 
     // MARK: - trustStampedTabID
 

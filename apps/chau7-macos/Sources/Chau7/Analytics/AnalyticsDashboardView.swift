@@ -65,7 +65,7 @@ final class APIAnalyticsDashboardModel {
         let days = range.days
 
         isLoading = true
-        DispatchQueue.global(qos: .userInitiated).async {
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             let store = ProxyAnalyticsStore.shared
             let stats = store.overallStats(after: after)
             let err = store.errorRate(after: after)

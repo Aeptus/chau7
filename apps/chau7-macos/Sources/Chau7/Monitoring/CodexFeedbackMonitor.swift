@@ -56,7 +56,7 @@ final class CodexFeedbackMonitor {
     init(
         fileURL: URL,
         debounceSeconds: TimeInterval = 0.25,
-        catchUpLineLimit: Int = 2_000,
+        catchUpLineLimit: Int = 2000,
         callbackQueue: DispatchQueue = .main,
         onPrompt: @escaping PromptHandler,
         onResolution: @escaping ResolutionHandler
@@ -115,7 +115,7 @@ final class CodexFeedbackMonitor {
     }
 
     func stop() {
-        let tailer = self.tailer
+        let tailer = tailer
         self.tailer = nil
         tailer?.stop()
 
@@ -274,7 +274,7 @@ final class CodexFeedbackMonitor {
     /// calls. Keep only the latest completed ids while never evicting a live
     /// pending or announced prompt.
     private func pruneCompletedCallsIfNeeded() {
-        let retainedLimit = 1_024
+        let retainedLimit = 1024
         guard callOrder.count > retainedLimit else { return }
 
         var retained: [String] = []

@@ -10,7 +10,7 @@ struct StatusBarIconPresentation: Equatable {
     let tooltip: String
 }
 
-struct StatusBarIconPresenter {
+enum StatusBarIconPresenter {
     static func presentation(
         isMonitoring: Bool,
         badgeCounts: CommandCenterBadgeCounts

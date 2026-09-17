@@ -8,8 +8,7 @@ public enum RemoteTabSelectionPolicy {
         incoming tabs: [RemoteTabDescriptor]
     ) -> UInt32 {
         if currentActiveTabID != 0,
-           tabs.contains(where: { $0.tabID == currentActiveTabID })
-        {
+           tabs.contains(where: { $0.tabID == currentActiveTabID }) {
             return currentActiveTabID
         }
         return tabs.first(where: \.isActive)?.tabID ?? tabs.first?.tabID ?? 0

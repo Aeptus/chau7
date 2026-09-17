@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import Combine
 import Chau7Core
 
 // Overlay color palette moved to OverlayColors.swift (shared across the
@@ -1276,7 +1277,7 @@ private struct ToolbarTabBarView: View {
         }
         // Auto-recovery: detect when rendered tab count doesn't match model
         // Report rendered count to model for watchdog monitoring
-        .onPreferenceChange(RenderedTabCountKey.self) { renderedCount in
+        .onPreferenceChange(RenderedTabCountKey.self) { [overlayModel] renderedCount in
             preferenceUpdates.schedule(.renderedTabCount) {
                 overlayModel.reportRenderedTabCount(renderedCount)
                 let expectedCount = overlayModel.tabs.count
@@ -1676,8 +1677,8 @@ struct Chau7OverlayView: View {
         guard settings.showProviderHealthBorder,
               overlayModel.overlayWindow?.isKeyWindow == true,
               let provider = overlayModel
-                .selectedPresentationSession(for: overlayModel.selectedTab)?
-                .effectiveAIProvider else {
+              .selectedPresentationSession(for: overlayModel.selectedTab)?
+              .effectiveAIProvider else {
             return nil
         }
         return providerStatusMonitor.activeSnapshot(for: provider)

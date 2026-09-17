@@ -6,7 +6,7 @@ final class MetalFramePreparationStateTests: XCTestCase {
         var state = MetalFramePreparationState()
         let first = try XCTUnwrap(state.request())
 
-        for _ in 0 ..< 1_000 {
+        for _ in 0 ..< 1000 {
             XCTAssertNil(state.request())
         }
 

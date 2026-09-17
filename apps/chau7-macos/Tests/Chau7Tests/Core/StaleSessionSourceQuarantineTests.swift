@@ -10,7 +10,7 @@ final class StaleSessionSourceQuarantineTests: XCTestCase {
 
     func testFirstFailureReconcilesThenRepeatsAreSuppressedAndSummarized() {
         var quarantine = StaleSessionSourceQuarantine(reportInterval: 60)
-        let start = Date(timeIntervalSince1970: 1_000)
+        let start = Date(timeIntervalSince1970: 1000)
 
         XCTAssertEqual(
             quarantine.recordOwnershipFailure(for: key, now: start),

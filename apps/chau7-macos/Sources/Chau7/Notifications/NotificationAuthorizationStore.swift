@@ -39,7 +39,7 @@ final class NotificationAuthorizationStore {
     /// Re-read the system settings. `completion` runs on the main actor with
     /// the fresh settings after the store has updated itself.
     func refresh(completion: (@MainActor (UNNotificationSettings) -> Void)? = nil) {
-        UNUserNotificationCenter.current().getNotificationSettings { settings in
+        UNUserNotificationCenter.current().getNotificationSettings { [weak self] settings in
             Task { @MainActor [weak self] in
                 guard let self else { return }
                 apply(status: settings.authorizationStatus)

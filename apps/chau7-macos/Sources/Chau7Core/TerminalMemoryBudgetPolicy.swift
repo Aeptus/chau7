@@ -4,12 +4,12 @@ import Foundation
 /// content is never discarded to satisfy these limits: warm scrollback is
 /// persisted before shrinking, and selected/live surfaces remain protected.
 public enum TerminalMemoryBudgetPolicy {
-    public static let defaultPerTabScrollbackBytes = 64 * 1_024 * 1_024
-    public static let defaultPerTabRegenerableCacheBytes = 16 * 1_024 * 1_024
+    public static let defaultPerTabScrollbackBytes = 64 * 1024 * 1024
+    public static let defaultPerTabRegenerableCacheBytes = 16 * 1024 * 1024
 
     public static func normalizedBudgetBytes(overrideMB: Int?, defaultBytes: Int) -> Int {
         guard let overrideMB, overrideMB > 0 else { return defaultBytes }
-        return overrideMB * 1_024 * 1_024
+        return overrideMB * 1024 * 1024
     }
 
     public static func exceedsBudget(bytes: Int, budgetBytes: Int) -> Bool {

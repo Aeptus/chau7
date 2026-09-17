@@ -3,7 +3,7 @@ import XCTest
 
 final class ProviderHealthTests: XCTestCase {
     private let sourceURL = URL(string: "https://status.example.test/api/v2/summary.json")!
-    private let checkedAt = Date(timeIntervalSince1970: 1_000)
+    private let checkedAt = Date(timeIntervalSince1970: 1000)
 
     func testStatusPageDecoderReturnsRelevantOutageAndIncidentSummary() throws {
         let snapshot = try StatusPageProviderHealthDecoder.decode(

@@ -367,6 +367,7 @@ struct RustTerminalSymbolTable {
         return unsafeBitCast(sym, to: Fn.self)
     }
 
+    // swiftlint:disable function_body_length
     /// Binds every symbol from an already-verified dylib handle.
     /// Returns nil when any of the 15 required symbols is missing.
     static func bind(handle: UnsafeMutableRawPointer) -> RustTerminalSymbolTable? {
@@ -668,4 +669,5 @@ struct RustTerminalSymbolTable {
             hasPendingImages: hasPendingImages
         )
     }
+    // swiftlint:enable function_body_length
 }

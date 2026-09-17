@@ -10,8 +10,7 @@ struct SplashView: View {
 
             VStack(spacing: 20) {
                 Image(nsImage: AppIcon.load())
-                    .resizable()
-                    .aspectRatio(contentMode: .fit)
+                    .resizable().scaledToFit()
                     .frame(width: 128, height: 128)
                     .cornerRadius(24)
                     .shadow(color: .white.opacity(0.1), radius: 20)
@@ -62,8 +61,7 @@ struct WelcomeView: View {
                 // Header
                 VStack(spacing: 12) {
                     Image(nsImage: AppIcon.load())
-                        .resizable()
-                        .aspectRatio(contentMode: .fit)
+                        .resizable().scaledToFit()
                         .frame(width: 64, height: 64)
                         .cornerRadius(14)
                         .shadow(color: .white.opacity(0.1), radius: 12)

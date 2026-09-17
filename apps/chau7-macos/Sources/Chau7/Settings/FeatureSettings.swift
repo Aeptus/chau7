@@ -2098,7 +2098,7 @@ final class FeatureSettings {
         var showTabCTOIndicator: Bool?
         var allowTabCTOToggle: Bool?
         var showTabBroadcastIndicator: Bool?
-        var showProviderHealthBorder: Bool? = nil
+        var showProviderHealthBorder: Bool?
         // Hover Card
         var hoverCardShowDirectory: Bool?
         var hoverCardShowGitBranch: Bool?

@@ -10,7 +10,7 @@ final class TerminalMemoryBudgetPolicyTests: XCTestCase {
     func testBudgetOverrideUsesMegabytesAndRejectsNonPositiveValues() {
         XCTAssertEqual(
             TerminalMemoryBudgetPolicy.normalizedBudgetBytes(overrideMB: 32, defaultBytes: 1),
-            32 * 1_024 * 1_024
+            32 * 1024 * 1024
         )
         XCTAssertEqual(
             TerminalMemoryBudgetPolicy.normalizedBudgetBytes(overrideMB: 0, defaultBytes: 123),

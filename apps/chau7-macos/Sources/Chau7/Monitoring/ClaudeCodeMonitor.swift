@@ -146,8 +146,8 @@ final class ClaudeCodeMonitor {
 
         scheduleNextIdleCheck()
 
-        DispatchQueue.main.async {
-            self.isMonitoring = true
+        DispatchQueue.main.async { [self] in
+            isMonitoring = true
         }
         Log.info("ClaudeCodeMonitor started. path=\(eventsFilePath)")
     }
@@ -288,9 +288,9 @@ final class ClaudeCodeMonitor {
     }
 
     private func markSessionClosed(_ sessionId: String) {
-        DispatchQueue.main.async {
-            self.activeSessions[sessionId]?.state = .closed
-            self.scheduleNextIdleCheck()
+        DispatchQueue.main.async { [self] in
+            activeSessions[sessionId]?.state = .closed
+            scheduleNextIdleCheck()
             // Closed sessions linger briefly for late event routing, then
             // evict — entries otherwise accumulate per AI session for the
             // app's lifetime. Skip eviction if the session re-opened.

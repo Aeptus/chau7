@@ -6,7 +6,7 @@ public struct NetworkRequestAttribution: Equatable, Sendable {
 
     public init(component: String, url: URL) {
         self.component = component
-        host = url.host?.lowercased() ?? "unknown"
+        self.host = url.host?.lowercased() ?? "unknown"
     }
 
     /// Intentionally excludes path, query, credentials, and fragments.

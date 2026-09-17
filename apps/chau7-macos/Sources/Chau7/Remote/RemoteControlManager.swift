@@ -243,18 +243,18 @@ final class RemoteControlManager {
 
         overlayModel.onSelectedTabIDChanged = { [weak self] in
             guard let self else { return }
-            self.sendTabList()
+            sendTabList()
             // Before the phone has chosen a tab it follows Mac focus. Once it
             // has an explicit remote selection, changing windows/tabs locally
             // must neither replace the phone's content nor force a redundant
             // full snapshot of the remotely viewed tab.
             if RemoteTabSelectionPolicy.followsMacFocus(
-                hasExplicitRemoteSelection: self.remoteSelectedTabUUID != nil
+                hasExplicitRemoteSelection: remoteSelectedTabUUID != nil
             ) {
-                self.sendSelectedTabSnapshot()
+                sendSelectedTabSnapshot()
             }
-            self.reconcileRemoteRealtimeDrainSubscription()
-            self.scheduleRemoteActivityRefresh()
+            reconcileRemoteRealtimeDrainSubscription()
+            scheduleRemoteActivityRefresh()
         }
 
         rebuildSessionStateSubscriptions()

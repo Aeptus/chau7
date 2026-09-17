@@ -1005,7 +1005,7 @@ final class RustMetalDisplayCoordinator: NSObject {
         fontConfigured = false
         lastFontConfigurationSignature = nil
         forceFullRefreshForNextPreparation = true
-        Log.info("RustMetalDisplayCoordinator: evicted \(releasedBytes / (1_024 * 1_024))MB from invisible renderer")
+        Log.info("RustMetalDisplayCoordinator: evicted \(releasedBytes / (1024 * 1024))MB from invisible renderer")
         return releasedBytes
     }
 

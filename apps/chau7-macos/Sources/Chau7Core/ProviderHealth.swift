@@ -14,8 +14,7 @@ public enum ProviderHealthSeverity: Int, Codable, CaseIterable, Sendable {
         self == .degraded || self == .outage
     }
 
-    static func maximum<S: Sequence>(_ values: S) -> ProviderHealthSeverity
-    where S.Element == ProviderHealthSeverity {
+    static func maximum(_ values: some Sequence<ProviderHealthSeverity>) -> ProviderHealthSeverity {
         values.max(by: { $0.rawValue < $1.rawValue }) ?? .unknown
     }
 }
