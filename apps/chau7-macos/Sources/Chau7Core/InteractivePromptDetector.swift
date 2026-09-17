@@ -29,6 +29,12 @@ public struct DetectedInteractivePrompt: Equatable, Sendable {
 }
 
 public enum InteractivePromptDetector {
+    private static let yesNoRegex = try? NSRegularExpression(
+        pattern: #"[\[\(]\s*(y(?:es)?)\s*/\s*(n(?:o)?)\s*[\]\)]"#,
+        options: [.caseInsensitive]
+    )
+    private static let numberedOptionRegex = try? NSRegularExpression(pattern: #"^[^A-Za-z0-9]*([0-9]+)\.\s+(.+?)$"#)
+
     public static func detect(in text: String, toolName: String) -> DetectedInteractivePrompt? {
         guard supports(toolName: toolName) else { return nil }
 
@@ -87,8 +93,7 @@ public enum InteractivePromptDetector {
     /// "Proceed?" with no y/n hint yields no options, because guessing the key
     /// for a live terminal is worse than leaving the custom-reply field.
     static func synthesizedYesNoOptions(prompt: String) -> [RemoteInteractivePromptOption] {
-        let pattern = #"[\[\(]\s*(y(?:es)?)\s*/\s*(n(?:o)?)\s*[\]\)]"#
-        guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else {
+        guard let regex = yesNoRegex else {
             return []
         }
         let range = NSRange(prompt.startIndex ..< prompt.endIndex, in: prompt)
@@ -237,8 +242,7 @@ public enum InteractivePromptDetector {
         from line: String
     ) -> (option: RemoteInteractivePromptOption, hasCursor: Bool)? {
         let line = line.trimmingCharacters(in: .whitespacesAndNewlines)
-        let pattern = #"^[^A-Za-z0-9]*([0-9]+)\.\s+(.+?)$"#
-        guard let regex = try? NSRegularExpression(pattern: pattern) else { return nil }
+        guard let regex = numberedOptionRegex else { return nil }
         let range = NSRange(line.startIndex ..< line.endIndex, in: line)
         guard let match = regex.firstMatch(in: line, options: [], range: range),
               match.numberOfRanges == 3,

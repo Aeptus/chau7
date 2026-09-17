@@ -9,11 +9,7 @@ import Chau7Core
 final class AethymeDeliveryMonitor {
     static let shared = AethymeDeliveryMonitor()
 
-    private struct CommandResult {
-        let status: Int32
-        let stdout: Data
-        let stderr: Data
-    }
+    private typealias CommandResult = SubprocessRunner.Result
 
     private let queue = DispatchQueue(label: "com.chau7.aethyme-delivery", qos: .utility)
     private let worker = "chau7-\(ProcessInfo.processInfo.processIdentifier)"
@@ -183,38 +179,33 @@ final class AethymeDeliveryMonitor {
     }
 
     private func runAethyme(arguments: [String], repositoryRoot: String) -> CommandResult? {
+        guard unsupportedUntil.map({ $0 <= Date() }) ?? true else { return nil }
         guard let executable = resolveAethymeExecutable() else { return nil }
-        let process = Process()
-        process.executableURL = executable
-        process.arguments = arguments
-        process.currentDirectoryURL = URL(fileURLWithPath: repositoryRoot, isDirectory: true)
         var environment = ProcessInfo.processInfo.environment
         environment["GH_PROMPT_DISABLED"] = "1"
         environment["GIT_TERMINAL_PROMPT"] = "0"
         environment["NO_COLOR"] = "1"
-        process.environment = environment
-        process.standardInput = FileHandle.nullDevice
-        let stdout = Pipe()
-        let stderr = Pipe()
-        process.standardOutput = stdout
-        process.standardError = stderr
-        do {
-            try process.run()
-        } catch {
+        guard let result = SubprocessRunner.capture(
+            executablePath: executable.path,
+            arguments: arguments,
+            currentDirectoryURL: URL(fileURLWithPath: repositoryRoot, isDirectory: true),
+            environment: environment,
+            timeout: 15
+        ) else {
             if !didLogUnavailable {
                 didLogUnavailable = true
                 Log.info("Aethyme PR delivery could not launch the aethyme binary")
             }
             return nil
         }
-        let stdoutData = stdout.fileHandleForReading.readDataToEndOfFile()
-        let stderrData = stderr.fileHandleForReading.readDataToEndOfFile()
-        process.waitUntilExit()
-        return CommandResult(
-            status: process.terminationStatus,
-            stdout: stdoutData,
-            stderr: stderrData
-        )
+        guard result.completed else {
+            // Never decode a partial claim or acknowledge an uncertain delivery.
+            // Back off the remaining commands too, so one hung CLI cannot pin a cycle.
+            unsupportedUntil = Date().addingTimeInterval(30)
+            Log.warn("Aethyme command capture incomplete (timeout=\(result.timedOut), outputLimit=\(result.outputLimitExceeded), readFailed=\(result.readFailed)); retrying next cycle")
+            return nil
+        }
+        return result
     }
 
     private func resolveAethymeExecutable() -> URL? {

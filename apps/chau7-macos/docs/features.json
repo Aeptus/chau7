@@ -1,5 +1,26 @@
 [
   {
+    "category": "Performance",
+    "feature": "Revision-Keyed Remote Prompt Detection",
+    "description": "Caches parsed Claude/Codex prompts and negative detections by terminal output revision, input time, provider and terminal identity, avoiding unchanged-history scans without stale cursor responses or observable cache churn",
+    "status": "Shipped",
+    "differentiator": "No"
+  },
+  {
+    "category": "Reliability",
+    "feature": "Bounded Monitoring Subprocess Capture",
+    "description": "Drains stdout and stderr together with deadlines, aggregate output limits and closed stdin; rejects incomplete results and backs off Aethyme delivery cycles without touching user terminal processes",
+    "status": "Shipped",
+    "differentiator": "No"
+  },
+  {
+    "category": "Developer Experience",
+    "feature": "Fail-Closed App and Helper Provenance",
+    "description": "Guarded local releases parse Go vcs.revision metadata and reject missing or mismatched bundle identity, app SHA and helper SHA before installation",
+    "status": "Shipped",
+    "differentiator": "No"
+  },
+  {
     "category": "Terminal Core",
     "feature": "Interactive TUI Color Isolation",
     "description": "Prevents inherited launcher NO_COLOR from disabling interactive TUI styling while retaining explicit shell overrides, with fragmented ANSI and styled-history replay regression coverage",

@@ -396,31 +396,41 @@ verify_bundle() {
     log_error "Bundled chau7-remote helper is missing or not executable: $app_path"; return 1;
   }
 
-  bundle_id="$(plist_value CFBundleIdentifier "$app_path/Contents/Info.plist")"
-  if [[ -n "$bundle_id" && "$bundle_id" != "com.chau7.app" ]]; then
+  bundle_id="$(plist_value CFBundleIdentifier "$app_path/Contents/Info.plist" || true)"
+  if [[ "$bundle_id" != "com.chau7.app" ]]; then
     log_error "Unexpected bundle identifier '$bundle_id' in $app_path"
     return 1
   fi
-  actual_sha="$(plist_value Chau7BuildGitSHA "$app_path/Contents/Info.plist")"
-  if [[ -n "$actual_sha" && "$actual_sha" != "$expected_sha" ]]; then
+  actual_sha="$(plist_value Chau7BuildGitSHA "$app_path/Contents/Info.plist" || true)"
+  if [[ -z "$expected_sha" || "$actual_sha" != "$expected_sha" ]]; then
     log_error "Bundle SHA mismatch: expected $expected_sha, got $actual_sha"
     return 1
   fi
 
-  if command -v go >/dev/null 2>&1; then
-    helper_revision="$(go version -m "$app_path/Contents/Resources/chau7-remote" 2>/dev/null |
-      awk '$2 == "vcs.revision" { print $3; exit }')"
-    if [[ -n "$helper_revision" && "$helper_revision" != "$expected_sha"* ]]; then
-      log_error "chau7-remote SHA mismatch: expected $expected_sha, got $helper_revision"
-      return 1
-    fi
+  if ! command -v go >/dev/null 2>&1; then
+    log_error "Cannot verify bundled chau7-remote revision: go is unavailable."
+    return 1
+  fi
+  # Go emits `build vcs.revision=<full-sha>`, not three whitespace fields.
+  # Consume all input (no early awk exit/SIGPIPE under pipefail).
+  helper_revision="$(go version -m "$app_path/Contents/Resources/chau7-remote" 2>/dev/null |
+    awk '$1 == "build" && $2 ~ /^vcs.revision=/ { sub(/^vcs.revision=/, "", $2); print $2 }')" || {
+    log_error "Cannot read bundled chau7-remote build metadata."
+    return 1
+  }
+  if [[ -z "$helper_revision" || "$helper_revision" != "$expected_sha"* ]]; then
+    log_error "chau7-remote SHA mismatch: expected $expected_sha, got ${helper_revision:-missing}"
+    return 1
   fi
 
   if command -v codesign >/dev/null 2>&1; then
     log_step "Verifying code signature: $app_path"
-    codesign --verify --deep --strict "$app_path"
+    codesign --verify --deep --strict "$app_path" || return 1
+  else
+    log_error "Cannot verify bundle signature: codesign is unavailable."
+    return 1
   fi
-  log_ok "Verified bundle SHA ${actual_sha:-unknown} and helper revision ${helper_revision:-unknown}."
+  log_ok "Verified bundle SHA $actual_sha and helper revision $helper_revision."
 }
 
 build_release_bundle() {

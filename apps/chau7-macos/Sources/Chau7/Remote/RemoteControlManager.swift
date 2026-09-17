@@ -165,6 +165,7 @@ final class RemoteControlManager {
             self?.remoteSelectedTabUUID = nil
             self?.cancelPendingOutputFlush()
             self?.reconcilePromptRecheckTimer(hasPrompts: false)
+            self?.promptDetectionCache.removeAll()
             self?.refreshPairedDevices()
             self?.logOperationalSnapshot(reason: "ipc_disconnected")
         }
@@ -827,25 +828,22 @@ final class RemoteControlManager {
         }
     }
 
-    /// One bounded tail scrape per session per refresh burst. The affordance
-    /// check and the prompt-card builder both read through this, so a refresh
-    /// costs at most one ~64 KB tail capture per waiting pane instead of two
-    /// full-ring flattens (multi-MB each with a 10k-line scrollback).
-    private var promptScrapeMemo: [String: (text: String, capturedAt: CFAbsoluteTime)] = [:]
-    private static let promptScrapeMemoTTL: CFAbsoluteTime = 0.5
+    /// Output/buffer changes advance the existing restoration revision, including
+    /// cursor-only redraws. Reuse the parsed result across refreshes until then;
+    /// unlike a time-only memo, a rapid menu change invalidates immediately.
+    @ObservationIgnored private var promptDetectionCache = RemotePromptDetectionCache()
 
-    private func scrapedPromptTail(for session: TerminalSessionModel) -> String? {
-        let now = CFAbsoluteTimeGetCurrent()
-        if let cached = promptScrapeMemo[session.tabIdentifier],
-           now - cached.capturedAt < Self.promptScrapeMemoTTL {
-            return cached.text.isEmpty ? nil : cached.text
-        }
-        if promptScrapeMemo.count > 64 {
-            promptScrapeMemo = promptScrapeMemo.filter { now - $0.value.capturedAt < Self.promptScrapeMemoTTL }
-        }
-        let text = session.captureRemoteTailSnapshot()
-        promptScrapeMemo[session.tabIdentifier] = (text ?? "", now)
-        return text
+    private func detectedPrompt(for session: TerminalSessionModel, toolName: String) -> DetectedInteractivePrompt? {
+        promptDetectionCache.detection(
+            sessionID: session.tabIdentifier,
+            revision: .init(
+                outputVersion: session.restorationScrollbackVersion,
+                lastInputAt: session.lastInputAt,
+                terminalIdentity: session.activeTerminalView.map { ObjectIdentifier($0) }
+            ),
+            toolName: toolName,
+            capture: { session.captureRemoteTailSnapshot() }
+        )
     }
 
     private func sendRemoteActivity(force: Bool = false) {
@@ -1036,11 +1034,7 @@ final class RemoteControlManager {
     /// always agree. Only called for sessions already in `.waitingForInput`, so
     /// the snapshot capture stays off the hot path.
     private func sessionShowsRealPromptAffordance(_ session: TerminalSessionModel, toolName: String) -> Bool {
-        guard let text = scrapedPromptTail(for: session) else {
-            return false
-        }
-        return InteractivePromptDetector.detect(in: text, toolName: toolName) != nil
-            || InteractivePromptDetector.fallbackInputRequest(in: text) != nil
+        detectedPrompt(for: session, toolName: toolName) != nil
     }
 
     private func currentInteractivePrompts() -> [RemoteInteractivePrompt] {
@@ -1099,9 +1093,6 @@ final class RemoteControlManager {
                     || session.effectiveStatus == .approvalRequired else { return nil }
 
                 let toolName = activityToolName(for: session, tab: tab)
-                guard let text = scrapedPromptTail(for: session) else {
-                    return nil
-                }
 
                 // Only surface a real decision: a numbered menu or a synthesized
                 // yes/no. An options-less match is a normal AI turn that merely
@@ -1109,9 +1100,8 @@ final class RemoteControlManager {
                 // prompt on the phone. (The fallback already declines to produce
                 // options without a y/n affordance; this guards the boundary so a
                 // future detector change can't leak optionless prompts.)
-                guard let detected = InteractivePromptDetector.detect(in: text, toolName: toolName)
-                    ?? InteractivePromptDetector.fallbackInputRequest(in: text),
-                    !detected.options.isEmpty else {
+                guard let detected = detectedPrompt(for: session, toolName: toolName),
+                      !detected.options.isEmpty else {
                     return nil
                 }
 

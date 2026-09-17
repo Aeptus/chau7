@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Stability hardening
+
+- Background process/resource and Aethyme monitoring now drains stdout and stderr together, with bounded capture size, deadlines, and EOF on stdin. Partial output is never treated as a complete monitoring result or delivery claim, and a failed Aethyme command backs off the rest of its cycle.
+- Remote Claude/Codex prompt detection caches parsed results, including negative results, by terminal output revision, input time, provider, and terminal identity. Unchanged prompts no longer recapture history on every timer tick; cursor redraws invalidate immediately, cache changes do not trigger SwiftUI observation, and fixed prompt regexes compile once.
+- Guarded local builds parse Go's actual `vcs.revision=<sha>` metadata and reject missing or mismatched app/helper provenance before installation.
+
 ### Added
 - **Guarded Local Rebuild and Relaunch**: `Scripts/rebuild-and-relaunch.sh` validates source freshness and bundle provenance, builds into a fresh output directory before stopping Chau7, quits gracefully with bounded escalation, and atomically installs a verified app with a rollback backup. Dirty or stale checkouts require an explicit override, and session data is never part of the release operation.
 - **Independent Main-Thread Hang Supervision**: A main-queue heartbeat is observed from a dedicated in-process queue and a separate same-binary watchdog process. After two seconds without event-loop progress Chau7 opens a lock-free terminal-paint circuit breaker so recovery can drain queued input; after four seconds the independent process captures one five-second `sample` plus a machine-readable manifest in `~/Library/Application Support/Chau7/HangDiagnostics/`. The watchdog never kills or relaunches Chau7, so app-owned PTYs, scrollback, and restoration state remain intact, and normal rendering pays only one atomic heartbeat update four times per second.

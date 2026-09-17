@@ -1,6 +1,95 @@
 import XCTest
+import Chau7Core
 
 final class RebuildAndRelaunchScriptTests: XCTestCase {
+    func testBundleVerificationAcceptsMatchingGoBuildRevision() throws {
+        let result = try verifyFixture(helperRevision: "abcdef1234567890abcdef1234567890abcdef1234")
+        XCTAssertEqual(result.status, 0, result.stdout + result.stderr)
+        XCTAssertTrue(result.stdout.contains("helper revision abcdef1234567890abcdef1234567890abcdef1234"))
+    }
+
+    func testBundleVerificationRejectsMismatchedGoBuildRevision() throws {
+        let result = try verifyFixture(helperRevision: "0000000000000000000000000000000000000000")
+        XCTAssertNotEqual(result.status, 0, result.stdout)
+    }
+
+    func testBundleVerificationRejectsMissingGoBuildRevision() throws {
+        let result = try verifyFixture(helperRevision: nil)
+        XCTAssertNotEqual(result.status, 0, result.stdout)
+    }
+
+    func testBundleVerificationRejectsMissingAppRevision() throws {
+        let result = try verifyFixture(appRevision: nil)
+        XCTAssertNotEqual(result.status, 0, result.stdout)
+    }
+
+    func testBundleVerificationRejectsMissingBundleIdentifier() throws {
+        let result = try verifyFixture(bundleIdentifier: nil)
+        XCTAssertNotEqual(result.status, 0, result.stdout)
+    }
+
+    func testBundleVerificationRejectsFailedGoInspectionEvenWithPartialMetadata() throws {
+        let result = try verifyFixture(goExitStatus: 1)
+        XCTAssertNotEqual(result.status, 0, result.stdout)
+    }
+
+    func testBundleVerificationRejectsFailedSignature() throws {
+        let result = try verifyFixture(codesignExitStatus: 1)
+        XCTAssertNotEqual(result.status, 0, result.stdout)
+    }
+
+    /// Runs the real verification functions against an isolated fixture. No
+    /// production build, signing, quit, installation, or launch can occur here.
+    private func verifyFixture(
+        bundleIdentifier: String? = "com.chau7.app",
+        appRevision: String? = "abcdef123456",
+        helperRevision: String? = "abcdef1234567890abcdef1234567890abcdef1234",
+        goExitStatus: Int = 0,
+        codesignExitStatus: Int = 0
+    ) throws -> (status: Int32, stdout: String, stderr: String) {
+        let directory = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let app = directory.appendingPathComponent("Chau7.app")
+        let bin = directory.appendingPathComponent("bin")
+        for path in ["Contents/MacOS", "Contents/Resources"] {
+            try FileManager.default.createDirectory(at: app.appendingPathComponent(path), withIntermediateDirectories: true)
+        }
+        try FileManager.default.createDirectory(at: bin, withIntermediateDirectories: true)
+        var plist: [String: String] = [:]
+        plist["CFBundleIdentifier"] = bundleIdentifier
+        plist["Chau7BuildGitSHA"] = appRevision
+        try PropertyListSerialization.data(fromPropertyList: plist, format: .xml, options: 0)
+            .write(to: app.appendingPathComponent("Contents/Info.plist"))
+        let goOutput = helperRevision.map { "    build   vcs.revision=\($0)" } ?? "    build   GOOS=darwin"
+        let executables: [(URL, String)] = [
+            (app.appendingPathComponent("Contents/MacOS/Chau7"), "#!/bin/sh\nexit 0\n"),
+            (app.appendingPathComponent("Contents/Resources/chau7-remote"), "#!/bin/sh\nexit 0\n"),
+            (bin.appendingPathComponent("go"), "#!/bin/sh\nprintf '%s\\n' '\(goOutput)'\nexit \(goExitStatus)\n"),
+            (bin.appendingPathComponent("codesign"), "#!/bin/sh\nexit \(codesignExitStatus)\n")
+        ]
+        for (url, source) in executables {
+            try source.write(to: url, atomically: true, encoding: .utf8)
+            try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: url.path)
+        }
+        let script = try String(contentsOf: repositoryRoot().appendingPathComponent("Scripts/rebuild-and-relaunch.sh"), encoding: .utf8)
+        let start = try XCTUnwrap(script.range(of: "\nplist_value() {"))
+        let end = try XCTUnwrap(script.range(of: "\nbuild_release_bundle() {"))
+        let functions = String(script[start.lowerBound ..< end.lowerBound])
+        return try run(
+            "/bin/bash",
+            ["-c", """
+            set -euo pipefail
+            APP_NAME=Chau7
+            log_error() { echo "$*" >&2; }
+            log_step() { :; }
+            log_ok() { echo "$*"; }
+            \(functions)
+            if verify_bundle "$1" abcdef123456; then exit 0; else exit 1; fi
+            """, "fixture", app.path],
+            environment: ["PATH": "\(bin.path):/usr/bin:/bin"]
+        )
+    }
+
     func testDryRunDoesNotAttemptToQuitOrBuild() throws {
         let tempHome = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: tempHome) }
@@ -88,21 +177,14 @@ final class RebuildAndRelaunchScriptTests: XCTestCase {
         _ arguments: [String],
         environment: [String: String]
     ) throws -> (status: Int32, stdout: String, stderr: String) {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: executable)
-        process.arguments = arguments
-        process.environment = environment
-
-        let stdoutPipe = Pipe()
-        let stderrPipe = Pipe()
-        process.standardOutput = stdoutPipe
-        process.standardError = stderrPipe
-
-        try process.run()
-        process.waitUntilExit()
-
-        let stdout = String(data: stdoutPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
-        let stderr = String(data: stderrPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
-        return (process.terminationStatus, stdout, stderr)
+        let result = try XCTUnwrap(SubprocessRunner.capture(
+            executablePath: executable, arguments: arguments, environment: environment, timeout: 10
+        ))
+        XCTAssertTrue(result.completed, "Script must complete without timeout or truncated output")
+        return (
+            result.status ?? -1,
+            String(decoding: result.stdout, as: UTF8.self),
+            String(decoding: result.stderr, as: UTF8.self)
+        )
     }
 }
