@@ -242,6 +242,54 @@ final class TabRenderLifecycleTests: XCTestCase {
         )
     }
 
+    // MARK: - shouldSynchronizeLivePresentation
+
+    func testLivePresentationSyncRequiresVisibleWindow() {
+        XCTAssertFalse(
+            TabRenderLifecyclePolicy.shouldSynchronizeLivePresentation(
+                phase: .active,
+                isWindowVisible: false,
+                isLivePollingActive: false,
+                requiresAuthoritativeReveal: true
+            )
+        )
+        XCTAssertFalse(
+            TabRenderLifecyclePolicy.shouldSynchronizeLivePresentation(
+                phase: .warm,
+                isWindowVisible: true,
+                isLivePollingActive: false,
+                requiresAuthoritativeReveal: true
+            )
+        )
+    }
+
+    func testVisibleLivePresentationSyncsWhenPollingIsInactiveOrRevealIsRequired() {
+        XCTAssertTrue(
+            TabRenderLifecyclePolicy.shouldSynchronizeLivePresentation(
+                phase: .active,
+                isWindowVisible: true,
+                isLivePollingActive: false,
+                requiresAuthoritativeReveal: false
+            )
+        )
+        XCTAssertTrue(
+            TabRenderLifecyclePolicy.shouldSynchronizeLivePresentation(
+                phase: .active,
+                isWindowVisible: true,
+                isLivePollingActive: true,
+                requiresAuthoritativeReveal: true
+            )
+        )
+        XCTAssertFalse(
+            TabRenderLifecyclePolicy.shouldSynchronizeLivePresentation(
+                phase: .active,
+                isWindowVisible: true,
+                isLivePollingActive: true,
+                requiresAuthoritativeReveal: false
+            )
+        )
+    }
+
     // MARK: - helpers
 
     private func makeInput(

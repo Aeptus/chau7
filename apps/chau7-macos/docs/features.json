@@ -7,6 +7,20 @@
     "differentiator": "Yes"
   },
   {
+    "category": "Developer Experience",
+    "feature": "SwiftFormat-Clean Managed Commits",
+    "description": "Touched Swift sources and focused tests are normalized before managed commits so the release quality pipeline remains deterministic",
+    "status": "Shipped",
+    "differentiator": "No"
+  },
+  {
+    "category": "Appearance",
+    "feature": "Configurable Window Backdrop Blur",
+    "description": "Window backdrop blur is persisted and applied immediately across overlay windows, with a default-on native appearance and an explicit off mode for lower graphics memory usage",
+    "status": "Shipped",
+    "differentiator": "No"
+  },
+  {
     "category": "AI Integration",
     "feature": "Aethyme Pull-Request Activity Delivery",
     "description": "Claims Aethyme's provider-neutral durable outbox and delivers metadata-only review prompts only to the exact subscribed Chau7 tab, AI session, repository, and idle input surface while the command-filtering buffer retains partial MCP fragments until submit or cancel, busy targets retry, and identity drift fails closed",
@@ -4335,7 +4349,7 @@
   {
     "category": "Restore",
     "feature": "Cross-Provider Resume Identity Repair",
-    "description": "Restore corrects a stale Claude or Codex provider only when its exact session artifact is absent and the alternate provider has an exact artifact for the same session ID and repository; autosave retains observed in-memory identity without filesystem scans",
+    "description": "Restore corrects a stale Claude or Codex provider only when its exact session artifact is absent and the alternate provider has an exact artifact for the same session ID and repository; autosave remains filesystem-free and retains the observed identity while restore preserves the ID, rebuilds the canonical resume command, and keeps provider-scoped ownership",
     "status": "Shipped",
     "differentiator": "Yes"
   },

@@ -33,6 +33,7 @@ final class AppChromeSettingsStoreTests: XCTestCase {
         XCTAssertFalse(store.menuBarOnlyMode)
         XCTAssertFalse(store.windowFloating)
         XCTAssertEqual(store.windowOpacity, 1.0)
+        XCTAssertTrue(store.windowBlurEnabled)
         // Isolated test mode reports no installed login item.
         XCTAssertFalse(store.launchAtLogin)
         XCTAssertFalse(store.enableLigatures)
@@ -44,6 +45,7 @@ final class AppChromeSettingsStoreTests: XCTestCase {
         store.menuBarOnlyMode = true
         store.windowFloating = true
         store.windowOpacity = 0.8
+        store.windowBlurEnabled = false
         store.launchAtLogin = true
         store.enableLigatures = true
 
@@ -52,6 +54,7 @@ final class AppChromeSettingsStoreTests: XCTestCase {
         XCTAssertTrue(reloaded.menuBarOnlyMode)
         XCTAssertTrue(reloaded.windowFloating)
         XCTAssertEqual(reloaded.windowOpacity, 0.8)
+        XCTAssertFalse(reloaded.windowBlurEnabled)
         XCTAssertTrue(reloaded.launchAtLogin)
         XCTAssertTrue(reloaded.enableLigatures)
         // Untouched members keep their loader defaults.
@@ -72,6 +75,7 @@ final class AppChromeSettingsStoreTests: XCTestCase {
         store.menuBarOnlyMode = true
         store.windowFloating = true
         store.windowOpacity = 0.5
+        store.windowBlurEnabled = false
         store.launchAtLogin = true
         store.enableLigatures = true
 
@@ -83,10 +87,12 @@ final class AppChromeSettingsStoreTests: XCTestCase {
         XCTAssertEqual(store.menuBarOnlyMode, fresh.menuBarOnlyMode)
         XCTAssertEqual(store.windowFloating, fresh.windowFloating)
         XCTAssertEqual(store.windowOpacity, fresh.windowOpacity)
+        XCTAssertEqual(store.windowBlurEnabled, fresh.windowBlurEnabled)
         XCTAssertEqual(store.launchAtLogin, fresh.launchAtLogin)
         XCTAssertEqual(store.enableLigatures, fresh.enableLigatures)
         // Regression guard: the theme returns to system with full opacity.
         XCTAssertEqual(store.appTheme, .system)
         XCTAssertEqual(store.windowOpacity, 1.0)
+        XCTAssertTrue(store.windowBlurEnabled)
     }
 }

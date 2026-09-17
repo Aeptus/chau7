@@ -431,7 +431,6 @@ struct TerminalViewRepresentable: NSViewRepresentable {
         nsView.onFocus = onFocus
         let transition = context.coordinator.consumeRenderPhaseTransition(to: renderPhase)
         let keepsVisibleSurface = renderPhase.keepsVisibleSurface
-        let allowsLivePresentation = renderPhase.allowsLivePresentation
         let isAuthoritativeFocusOwner = rendererClaimIsCurrent?() ?? true
         let ownsInteractivePresentation = MetalRendererClaimPolicy.shouldClaim(
             isInteractive: isInteractive,
@@ -479,9 +478,12 @@ struct TerminalViewRepresentable: NSViewRepresentable {
         }
 
         nsView.updatePollingMode(reason: "updateNSView")
-        if allowsLivePresentation,
-           nsView.window != nil,
-           !nsView.livePollingActiveForProfiling || shouldForceAuthoritativeReveal {
+        if TabRenderLifecyclePolicy.shouldSynchronizeLivePresentation(
+            phase: renderPhase,
+            isWindowVisible: nsView.window?.isVisible == true,
+            isLivePollingActive: nsView.livePollingActiveForProfiling,
+            requiresAuthoritativeReveal: shouldForceAuthoritativeReveal
+        ) {
             nsView.needsGridSync = true
             nsView.pollAndSync()
         }

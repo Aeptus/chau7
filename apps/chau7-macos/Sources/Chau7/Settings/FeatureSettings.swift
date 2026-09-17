@@ -979,6 +979,11 @@ final class FeatureSettings {
         set { appChromeStore.windowOpacity = newValue }
     }
 
+    var windowBlurEnabled: Bool {
+        get { appChromeStore.windowBlurEnabled }
+        set { appChromeStore.windowBlurEnabled = newValue }
+    }
+
     var appTheme: AppTheme {
         get { appChromeStore.appTheme }
         set { appChromeStore.appTheme = newValue }
@@ -2073,6 +2078,7 @@ final class FeatureSettings {
         var windowFloating: Bool?
         var appLanguage: String?
         var windowOpacity: Double
+        var windowBlurEnabled: Bool?
         var enableLigatures: Bool?
         var cursorStyle: String
         var cursorBlink: Bool
@@ -2202,6 +2208,7 @@ final class FeatureSettings {
             windowFloating: windowFloating,
             appLanguage: appLanguage.rawValue,
             windowOpacity: windowOpacity,
+            windowBlurEnabled: windowBlurEnabled,
             enableLigatures: enableLigatures,
             cursorStyle: cursorStyle,
             cursorBlink: cursorBlink,
@@ -2357,6 +2364,7 @@ final class FeatureSettings {
             appLanguage = lang
         }
         windowOpacity = imported.windowOpacity
+        windowBlurEnabled = imported.windowBlurEnabled ?? windowBlurEnabled
         enableLigatures = imported.enableLigatures ?? enableLigatures
         cursorStyle = imported.cursorStyle
         cursorBlink = imported.cursorBlink
@@ -2541,6 +2549,7 @@ final class FeatureSettings {
         menuBarOnlyMode = false
         windowFloating = false
         windowOpacity = 1.0
+        windowBlurEnabled = true
         alwaysShowToolbarInFullscreen = false
         isSplitPanesEnabled = true
         resetOverlayOffsets()
@@ -2780,6 +2789,7 @@ extension FeatureSettings {
             windowFloating: false,
             appLanguage: "system",
             windowOpacity: 1.0,
+            windowBlurEnabled: true,
             enableLigatures: false,
             cursorStyle: "block",
             cursorBlink: true,

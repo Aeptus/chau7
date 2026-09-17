@@ -37,6 +37,16 @@ struct WindowsSettingsView: View {
             // Window Behavior
             SettingsSectionHeader(L("settings.windows.windowBehavior", "Window Behavior"), icon: "macwindow")
 
+            SettingsToggle(
+                label: L("settings.windows.windowBlur", "Window Blur"),
+                help: L(
+                    "settings.windows.windowBlur.help",
+                    "Blur the desktop behind terminal windows. Disable to reduce graphics memory usage."
+                ),
+                isOn: $settings.windowBlurEnabled,
+                anchorID: "windowBlur"
+            )
+
             SettingsSlider(
                 label: L("settings.appearance.windowOpacity", "Window Opacity"),
                 help: L("settings.appearance.windowOpacity.help", "Transparency level for terminal window (30-100%)"),

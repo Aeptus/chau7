@@ -1681,9 +1681,11 @@ extension TerminalSessionModel {
         }
         if let lastInputAt {
             self.lastInputAt = lastInputAt
+            restoredAt = restoredAt ?? Date()
         }
         if let lastOutputAt {
             self.lastOutputAt = lastOutputAt
+            restoredAt = restoredAt ?? Date()
         }
         if let launchCommand {
             lastAgentLaunchCommand = launchCommand

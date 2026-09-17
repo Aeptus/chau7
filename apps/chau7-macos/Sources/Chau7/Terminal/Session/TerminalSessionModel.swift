@@ -554,6 +554,20 @@ final class TerminalSessionModel {
         max(lastInputAt, lastOutputAt)
     }
 
+    /// `lastActivityDate`, floored to the moment this session was restored
+    /// from persisted state (if it was). A restored tab's real
+    /// lastInputAt/lastOutputAt reflect activity from *before* the app
+    /// relaunched — often already older than the idle-grouping threshold —
+    /// which would otherwise sweep every background tab straight into the
+    /// idle dropdown on first render. Idle-grouping call sites should use
+    /// this instead of `lastActivityDate` directly; other consumers (MCP
+    /// reporting, command-center summaries, AI-resume candidate matching)
+    /// still want the true historical timestamp and should keep using
+    /// `lastActivityDate`.
+    var effectiveActivityDateForIdleGrouping: Date {
+        max(lastActivityDate, restoredAt ?? .distantPast)
+    }
+
     var lastInputDate: Date {
         lastInputAt
     }
@@ -1065,6 +1079,9 @@ final class TerminalSessionModel {
     @ObservationIgnored private var idleTimer: DispatchSourceTimer?
     @ObservationIgnored var lastInputAt = Date()
     @ObservationIgnored var lastOutputAt = Date()
+    /// Set once, when persisted activity timestamps are restored onto this
+    /// session (see `restoreAIMetadata`). Backs `effectiveActivityDateForIdleGrouping`.
+    @ObservationIgnored var restoredAt: Date?
     @ObservationIgnored private var cachedRepoName: String?
     @ObservationIgnored private var lastObservedSessionLookupAt: Date?
     @ObservationIgnored private var lastObservedSessionLookupSignature: String?

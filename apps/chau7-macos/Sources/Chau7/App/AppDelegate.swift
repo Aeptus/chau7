@@ -3,13 +3,62 @@ import Carbon.HIToolbox
 import SwiftUI
 import Chau7Core
 
-private final class OverlayBlurView: NSVisualEffectView {
+private final class OverlayContentView: NSView {
     weak var hostedView: NSView?
+    private(set) var blurView: NSVisualEffectView?
+
+    var isBlurEnabled: Bool {
+        blurView != nil
+    }
+
+    init(blurEnabled: Bool) {
+        super.init(frame: .zero)
+        setBlurEnabled(blurEnabled)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override var isOpaque: Bool {
+        !isBlurEnabled
+    }
+
+    func setBlurEnabled(_ enabled: Bool) {
+        guard enabled != isBlurEnabled else { return }
+
+        if enabled {
+            let blurView = NSVisualEffectView()
+            blurView.material = .hudWindow
+            blurView.blendingMode = .behindWindow
+            blurView.state = .active
+            blurView.frame = bounds
+            addSubview(blurView, positioned: .below, relativeTo: hostedView)
+            self.blurView = blurView
+        } else {
+            blurView?.removeFromSuperview()
+            blurView = nil
+        }
+        needsDisplay = true
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        guard !isBlurEnabled else { return }
+        (window?.backgroundColor ?? .windowBackgroundColor).setFill()
+        dirtyRect.fill()
+    }
 
     override func layout() {
         super.layout()
+        blurView?.frame = bounds
         guard let hostedView else { return }
         hostedView.frame = window?.contentLayoutRect ?? bounds
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        needsDisplay = true
     }
 }
 
@@ -70,6 +119,7 @@ private final class SettingsToolbarDelegate: NSObject, NSToolbarDelegate {
     private var lastOverlayDiagReason = ""
     private var keyMonitor: Any?
     private var opacityObserver: Any?
+    private var windowBlurObserver: Any?
     private var appThemeObserver: Any?
     private var splashController: SplashWindowController?
     private var settingsWindow: NSWindow?
@@ -243,6 +293,16 @@ private final class SettingsToolbarDelegate: NSObject, NSToolbarDelegate {
         ) { [weak self] _ in
             Task { @MainActor [weak self] in
                 self?.applyWindowOpacity()
+            }
+        }
+
+        windowBlurObserver = NotificationCenter.default.addObserver(
+            forName: .windowBlurChanged,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.applyWindowBlur()
             }
         }
 
@@ -640,6 +700,10 @@ private final class SettingsToolbarDelegate: NSObject, NSToolbarDelegate {
         if let opacityObserver {
             NotificationCenter.default.removeObserver(opacityObserver)
             self.opacityObserver = nil
+        }
+        if let windowBlurObserver {
+            NotificationCenter.default.removeObserver(windowBlurObserver)
+            self.windowBlurObserver = nil
         }
         if let appThemeObserver {
             NotificationCenter.default.removeObserver(appThemeObserver)
@@ -1432,13 +1496,10 @@ private final class SettingsToolbarDelegate: NSObject, NSToolbarDelegate {
         let overlay = Chau7OverlayView(overlayModel: tabsModel, appModel: model)
         let hostingView = NSHostingView(rootView: overlay.localized())
 
-        let blur = OverlayBlurView()
-        blur.material = .hudWindow
-        blur.blendingMode = .behindWindow
-        blur.state = .active
-        window.contentView = blur
-        blur.hostedView = hostingView
-        blur.addSubview(hostingView)
+        let contentView = OverlayContentView(blurEnabled: FeatureSettings.shared.windowBlurEnabled)
+        window.contentView = contentView
+        contentView.hostedView = hostingView
+        contentView.addSubview(hostingView)
         hostingView.frame = window.contentLayoutRect
 
         window.title = String(format: L("window.overlay.title", "Chau7 - Window %d"), windowNumber)
@@ -1460,7 +1521,7 @@ private final class SettingsToolbarDelegate: NSObject, NSToolbarDelegate {
         }
         window.toolbar = toolbar
 
-        window.isOpaque = false
+        window.isOpaque = !FeatureSettings.shared.windowBlurEnabled && FeatureSettings.shared.windowOpacity >= 1
         window.backgroundColor = FeatureSettings.shared.currentColorScheme.nsColor(
             for: FeatureSettings.shared.currentColorScheme.background
         )
@@ -1473,7 +1534,7 @@ private final class SettingsToolbarDelegate: NSObject, NSToolbarDelegate {
         window.isReleasedWhenClosed = false
         window.isRestorable = false // Chau7 manages its own window restoration
         window.delegate = self
-        window.contentView = blur
+        window.contentView = contentView
 
         tabsModel.overlayWindow = window
         tabsModel.onCloseLastTab = { [weak self, weak window] in
@@ -1495,6 +1556,18 @@ private final class SettingsToolbarDelegate: NSObject, NSToolbarDelegate {
         host.model.noteTabBarVisibilityChanged(isVisible: true)
         host.window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
+        // Recover the tab bar toolbar deterministically on every reveal,
+        // rather than relying solely on windowDidBecomeKey firing (which
+        // depends on AppKit notification timing during multi-window
+        // startup). A toolbar created while its window was ordered out
+        // can retain a valid SwiftUI model but fail to composite its
+        // hosting view once presented — see shouldRecoverTabBarAfterPresentation.
+        let revealedWindow = host.window
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            Log.info("Proactive tab bar refresh after showOverlayWindow(reason=\(reason))")
+            TabBarToolbarDelegate.shared.recreateToolbar(for: revealedWindow)
+            TabBarToolbarDelegate.shared.updateToolbarItemSizing(for: revealedWindow)
+        }
         StartupRestoreCoordinator.shared.noteWindowVisible(
             windowNumber: host.window.windowNumber,
             selectedTabID: host.model.selectedTabID
@@ -1599,8 +1672,18 @@ private final class SettingsToolbarDelegate: NSObject, NSToolbarDelegate {
         let opacity = FeatureSettings.shared.windowOpacity
         for host in overlayHosts {
             host.window.alphaValue = opacity
+            host.window.isOpaque = !FeatureSettings.shared.windowBlurEnabled && opacity >= 1
         }
         Log.info("Overlay window opacity updated: \(opacity)")
+    }
+
+    private func applyWindowBlur() {
+        let enabled = FeatureSettings.shared.windowBlurEnabled
+        for host in overlayHosts {
+            (host.window.contentView as? OverlayContentView)?.setBlurEnabled(enabled)
+            host.window.isOpaque = !enabled && host.window.alphaValue >= 1
+        }
+        Log.info("Overlay window blur updated: \(enabled ? "enabled" : "disabled")")
     }
 
     private func logOverlayDiagnostics(reason: String, window: NSWindow) {
@@ -1617,7 +1700,7 @@ private final class SettingsToolbarDelegate: NSObject, NSToolbarDelegate {
 
         let occlusionVisible = window.occlusionState.contains(.visible)
         let appearance = window.effectiveAppearance.name.rawValue
-        let blurView = window.contentView as? NSVisualEffectView
+        let blurView = (window.contentView as? OverlayContentView)?.blurView
         let blurDesc: String
         if let blurView {
             blurDesc = "material=\(blurView.material) blending=\(blurView.blendingMode) state=\(blurView.state)"

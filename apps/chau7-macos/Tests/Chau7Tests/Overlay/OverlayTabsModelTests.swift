@@ -2592,7 +2592,7 @@ final class OverlayTabsModelTests: XCTestCase {
         XCTAssertNil(pane.aiResumeCommand)
     }
 
-    func testExportTabStatesDefersConflictingProviderRepairUntilRestoreValidation() throws {
+    func testExportTabStatesDefersProviderValidationUntilRestore() throws {
         let home = try temporaryHomeDirectory()
         setenv("CHAU7_HOME_ROOT", home.path, 1)
         defer {

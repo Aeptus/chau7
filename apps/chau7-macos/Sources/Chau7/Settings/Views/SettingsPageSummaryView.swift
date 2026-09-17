@@ -209,6 +209,13 @@ struct SettingsPageSummaryView: View {
                 statusItem("theme", L("settings.appearance.appearance", "Appearance"), settings.appTheme.displayName, icon: "circle.lefthalf.filled", tone: .neutral),
                 statusItem("opacity", L("settings.appearance.windowOpacity", "Window Opacity"), "\(Int(settings.windowOpacity * 100))%", icon: "circle.dashed", tone: .neutral),
                 statusItem(
+                    "blur",
+                    L("settings.windows.windowBlur", "Window Blur"),
+                    enabledDisabled(settings.windowBlurEnabled),
+                    icon: "drop.halffull",
+                    tone: enabledTone(settings.windowBlurEnabled)
+                ),
+                statusItem(
                     "floating",
                     L("settings.windows.floatingWindow", "Keep Windows Above Other Apps"),
                     enabledDisabled(settings.windowFloating),

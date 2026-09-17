@@ -1,7 +1,7 @@
 import Foundation
 
 /// Owns the app-level chrome domain: app theme, app language, menu-bar-only
-/// mode, window floating/opacity, launch at login, and font ligatures.
+/// mode, window floating/opacity/blur, launch at login, and font ligatures.
 ///
 /// Extracted from `FeatureSettings` (which forwards) following the
 /// store-behind-facade pattern of the other settings domains.
@@ -15,6 +15,7 @@ final class AppChromeSettingsStore {
         static let menuBarOnlyMode = "window.menuBarOnlyMode"
         static let windowFloating = "window.floating"
         static let windowOpacity = "window.opacity"
+        static let windowBlurEnabled = "window.blurEnabled"
         static let enableLigatures = "terminal.enableLigatures"
     }
 
@@ -77,6 +78,14 @@ final class AppChromeSettingsStore {
         }
     }
 
+    /// Applies the full-window macOS backdrop blur behind terminal content.
+    var windowBlurEnabled: Bool {
+        didSet {
+            defaults.set(windowBlurEnabled, forKey: Keys.windowBlurEnabled)
+            NotificationCenter.default.post(name: .windowBlurChanged, object: nil)
+        }
+    }
+
     // MARK: - Font Ligatures
 
     /// Enable font ligature rendering (e.g., =>, ->, === in Fira Code, JetBrains Mono).
@@ -93,6 +102,7 @@ final class AppChromeSettingsStore {
 
         // Window Opacity
         self.windowOpacity = defaults.object(forKey: Keys.windowOpacity) as? Double ?? 1.0
+        self.windowBlurEnabled = defaults.object(forKey: Keys.windowBlurEnabled) as? Bool ?? true
 
         // App Theme
         if let themeRaw = defaults.string(forKey: Keys.appTheme),
@@ -126,7 +136,7 @@ final class AppChromeSettingsStore {
     func resetToDefaults() {
         for key in [
             Keys.appTheme, Keys.appLanguage, Keys.launchAtLogin,
-            Keys.menuBarOnlyMode, Keys.windowFloating, Keys.windowOpacity,
+            Keys.menuBarOnlyMode, Keys.windowFloating, Keys.windowOpacity, Keys.windowBlurEnabled,
             Keys.enableLigatures
         ] {
             defaults.removeObject(forKey: key)
@@ -138,6 +148,7 @@ final class AppChromeSettingsStore {
         menuBarOnlyMode = fresh.menuBarOnlyMode
         windowFloating = fresh.windowFloating
         windowOpacity = fresh.windowOpacity
+        windowBlurEnabled = fresh.windowBlurEnabled
         enableLigatures = fresh.enableLigatures
     }
 }

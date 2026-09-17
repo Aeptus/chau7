@@ -129,6 +129,20 @@ public enum TabRenderLifecyclePolicy {
         !previouslyHostedTUI && hostsTUIApp && phase.keepsVisibleSurface
     }
 
+    /// Whether an AppKit-backed terminal should perform an immediate grid sync
+    /// from its SwiftUI update callback. A view can remain attached to a hidden
+    /// window during startup and restoration; treating attachment as visibility
+    /// creates an update -> sync -> observation feedback loop.
+    public static func shouldSynchronizeLivePresentation(
+        phase: TabRenderPhase,
+        isWindowVisible: Bool,
+        isLivePollingActive: Bool,
+        requiresAuthoritativeReveal: Bool
+    ) -> Bool {
+        guard phase.allowsLivePresentation, isWindowVisible else { return false }
+        return !isLivePollingActive || requiresAuthoritativeReveal
+    }
+
     public static func phase(for input: TabRenderLifecycleInput) -> TabRenderPhase {
         if input.isSelectedTab {
             guard input.isWindowVisibleForRendering else {

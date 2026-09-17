@@ -303,8 +303,8 @@ public enum StartupWindowPresentationPolicy {
     /// presentation of restored windows; plain focus changes need no rebuild.
     public static func shouldRecoverTabBarAfterPresentation(
         wasHidden: Bool,
-        hasPresentedBefore _: Bool
+        hasPresentedBefore: Bool
     ) -> Bool {
-        return wasHidden
+        return wasHidden || !hasPresentedBefore
     }
 }

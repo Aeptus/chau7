@@ -511,6 +511,16 @@ extension FeatureSettings {
             description: L("settings.search.menuBarOnlyMode.description", "Run Chau7 from the menu bar without a Dock icon")
         ),
         SearchableSetting(
+            id: "windowBlur",
+            section: .windows,
+            title: L("settings.search.windowBlur.title", "Window Blur"),
+            keywords: localizedKeywords(
+                "settings.search.windowBlur.keywords",
+                "blur,transparency,performance,memory,graphics,background"
+            ),
+            description: L("settings.search.windowBlur.description", "Blur the desktop behind terminal windows")
+        ),
+        SearchableSetting(
             id: "windowFloating",
             section: .windows,
             title: L("settings.search.windowFloating.title", "Floating Window"),

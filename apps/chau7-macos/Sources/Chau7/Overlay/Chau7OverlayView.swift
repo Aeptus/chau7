@@ -661,7 +661,7 @@ private final class TabBarHostingView: NSHostingView<ToolbarTabBarView> {
             guard tab.id != model.selectedTabID else { return nil }
             if suspended.contains(tab.id) { return tab.id }
             guard let session = tab.displaySession ?? tab.session,
-                  now.timeIntervalSince(session.lastActivityDate) > threshold else {
+                  now.timeIntervalSince(session.effectiveActivityDateForIdleGrouping) > threshold else {
                 return nil
             }
             return tab.id
@@ -831,7 +831,7 @@ private struct ToolbarTabBarView: View {
             guard tab.id != overlayModel.selectedTabID else { return false }
             if suspended.contains(tab.id) { return true }
             guard let session = tab.displaySession ?? tab.session else { return false }
-            return now.timeIntervalSince(session.lastActivityDate) > threshold
+            return now.timeIntervalSince(session.effectiveActivityDateForIdleGrouping) > threshold
         }
     }
 

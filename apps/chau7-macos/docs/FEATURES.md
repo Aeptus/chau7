@@ -79,7 +79,7 @@ Detection methods:
 - **Menu Bar Command Center** -- the macOS status item summarizes live AI sessions across all overlay windows, prioritizes approval-required, waiting-input, and stuck sessions, opens the exact terminal pane, exposes pinned snippets as Insert actions with clipboard fallback, and deep-links Monitoring and Snippets settings.
 - **Codex feedback prompt detection** — each active Codex session tails its rollout for structured `request_user_input` calls, publishes authoritative waiting-input attention and clears it on the matching result; bounded catch-up, asynchronous rollout lookup retries, call-id deduplication, and failed-tool debounce keep the lifecycle deterministic. Completed turns that conservatively end in an explicit choice or confirmation request remain a heuristic fallback instead of false completions.
 - **Crash-safe Codex resume recovery** — autosave preserves a known Codex pane's in-memory identity, including provider-only evidence when observation has not attached its session ID yet. Restore performs the provider-scoped rollout lookup and keeps rejected, duplicate, foreign-project, and all-nil identities ineligible so tabs sharing a repository cannot collapse onto one session.
-- **Cross-provider resume identity repair** — restore corrects a stale Claude/Codex provider only when its exact session artifact is absent and the alternate provider has an exact artifact for the same session ID and repository. Autosave remains filesystem-free, while restore preserves the ID, rebuilds the canonical resume command, and keeps provider-scoped ownership deduplication intact.
+- **Cross-provider resume identity repair** — restore corrects a stale Claude/Codex provider only when its exact session artifact is absent and the alternate provider has an exact artifact for the same session ID and repository. Autosave remains filesystem-free and retains the observed identity; restore preserves the ID, rebuilds the canonical resume command, and keeps provider-scoped ownership deduplication intact.
 - **Confidence-tiered Codex prose classification** — completed-turn prose is assessed as high, medium, or low confidence with explicit evidence. Enumerated choices and direct terminal questions request attention; conversational questions stay low-confidence and retain completion semantics.
 - **Codex feedback monitor health** — the debug console exposes whether rollout discovery is active or exhausted and, once attached, the rollout name, total lines observed, structured interaction records parsed, and unresolved prompt count.
 - **Optional Codex App Server interaction ingestion** — an opt-in transport can feed request-user-input, approval, and resolved JSON-RPC messages into the same authoritative attention publisher used by rollout monitoring. Shared question parsing and pending-request tracking handle overlapping interactions without changing the default PTY launch path.
@@ -657,6 +657,7 @@ Chau7's rendering pipeline is purpose-built for latency-sensitive terminal work:
 - Unicode ambiguous-width: treat East Asian ambiguous characters as 1 or 2 cells.
 - Menu bar only mode — hide from Dock and Cmd+Tab.
 - Floating window mode — keep terminal above other apps.
+- Configurable window backdrop blur — enabled by default for the native overlay appearance, with an immediate persisted toggle to reduce graphics work when desired.
 
 ## Settings & Configuration
 
@@ -942,6 +943,8 @@ Legacy `AI_*` and `SMART_OVERLAY_*` environment variables are still supported.
 
 - **Restoration-safe Chau7 build skill** — the bundled `chau7-build` skill documents the guarded quit/build/install/relaunch workflow, verifies source and helper provenance, and keeps session restoration artifacts outside release operations.
 - **Warnings-as-errors Swift baseline** — asynchronous callbacks use explicit capture ownership, and the macOS format, lint, and strict compiler gates run cleanly before publication.
+- Swift source and focused tests are kept SwiftFormat-clean before managed commits, so release validation fails only on substantive quality issues.
+
 - Cloudflare Worker toolchains are pinned to audit-clean compatible Wrangler and Workers-types releases; both services must pass dependency audit and dry-run build validation.
 - Process-resource monitor lifecycle tests inject deterministic snapshots, isolating timer start/stop behavior from OS process-enumeration latency under full-suite load.
 - Swift formatting/lint and Go static analysis run across the complete source and test trees; test fixture guards terminate explicitly before optional values are dereferenced.

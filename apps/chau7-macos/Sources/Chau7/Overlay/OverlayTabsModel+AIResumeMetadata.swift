@@ -364,6 +364,10 @@ extension OverlayTabsModel {
         from session: TerminalSessionModel,
         claimedSessions: Set<AIResumeOwnership.ClaimedSession> = []
     ) -> (provider: String?, sessionId: String?, sessionIdSource: AISessionIdentitySource?) {
+        // Autosave must remain a bounded in-memory snapshot. Exact Claude/Codex
+        // artifact validation belongs to the restore boundary, where it can
+        // repair a mismatch before launching a resume command without putting
+        // filesystem work on the main thread every 30 seconds.
         let effectiveProvider = Self.normalizedAIProvider(from: session.effectiveAIProvider ?? session.lastAIProvider)
         let effectiveSessionId = Self.normalizePersistedAISessionId(
             session.effectiveAISessionId,

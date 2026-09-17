@@ -279,4 +279,14 @@ final class StartupRestorePolicyTests: XCTestCase {
         )
     }
 
+    func testWindowPresentationPolicyRecoversFirstPresentationEvenWithoutHiddenTracking() {
+        XCTAssertTrue(
+            StartupWindowPresentationPolicy.shouldRecoverTabBarAfterPresentation(
+                wasHidden: false,
+                hasPresentedBefore: false
+            ),
+            "A window's very first presentation must refresh the toolbar host even if it was never tracked as hidden"
+        )
+    }
+
 }

@@ -24,6 +24,7 @@ extension Notification.Name {
     static let terminalFontChanged = Notification.Name("com.chau7.terminalFontChanged")
     static let terminalColorsChanged = Notification.Name("com.chau7.terminalColorsChanged")
     static let terminalOpacityChanged = Notification.Name("com.chau7.terminalOpacityChanged")
+    static let windowBlurChanged = Notification.Name("com.chau7.windowBlurChanged")
     static let terminalZoomChanged = Notification.Name("com.chau7.terminalZoomChanged")
     static let terminalDangerousCommandHighlightChanged = Notification.Name("com.chau7.terminalDangerousCommandHighlightChanged")
     static let activePollingRateCapChanged = Notification.Name("com.chau7.activePollingRateCapChanged")
@@ -80,7 +81,7 @@ extension Notification.Name {
 enum AppSignals {
     static let all: [Notification.Name] = [
         .repoGroupingModeChanged, .remoteEnabledChanged, .remoteRelayURLChanged,
-        .terminalFontChanged, .terminalColorsChanged, .terminalOpacityChanged,
+        .terminalFontChanged, .terminalColorsChanged, .terminalOpacityChanged, .windowBlurChanged,
         .terminalZoomChanged, .terminalDangerousCommandHighlightChanged,
         .activePollingRateCapChanged, .terminalDidStart, .settingsProfileChanged,
         .appThemeChanged, .fullscreenToolbarSettingChanged,

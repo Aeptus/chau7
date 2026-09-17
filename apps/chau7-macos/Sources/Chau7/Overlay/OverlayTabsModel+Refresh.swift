@@ -489,7 +489,7 @@ extension OverlayTabsModel {
         let now = Date()
         for tab in tabs where tab.id != selectedTabID {
             guard let session = tab.displaySession ?? tab.session else { continue }
-            let isIdle = now.timeIntervalSince(session.lastActivityDate) > threshold
+            let isIdle = now.timeIntervalSince(session.effectiveActivityDateForIdleGrouping) > threshold
             if isIdle, !suspendedTabIDs.contains(tab.id) {
                 suspendedTabIDs.insert(tab.id)
             } else if !isIdle, suspendedTabIDs.contains(tab.id) {
@@ -505,7 +505,7 @@ extension OverlayTabsModel {
         return tabs.filter { tab in
             guard let session = tab.displaySession ?? tab.session,
                   tab.id != selectedTabID else { return false }
-            return now.timeIntervalSince(session.lastActivityDate) > threshold
+            return now.timeIntervalSince(session.effectiveActivityDateForIdleGrouping) > threshold
         }.count
     }
 

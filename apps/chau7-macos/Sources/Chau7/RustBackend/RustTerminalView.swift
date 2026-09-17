@@ -1365,9 +1365,9 @@ final class RustTerminalFFI: TerminalBackend {
             Log.trace("RustTerminalFFI[\(instanceId)]: shellPid - Function not available")
             return 0
         }
-        let pid = getShellPidFn(terminal)
+        let pid = pid_t(getShellPidFn(terminal))
         Log.traceThrottled("rust-terminal-shell-pid-\(instanceId)", interval: 30.0, "RustTerminalFFI[\(instanceId)]: shellPid = \(pid)")
-        return pid_t(pid)
+        return pid
     }
 
     /// Debug state structure matching the Rust DebugState (u8 for bools for FFI safety)
