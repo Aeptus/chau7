@@ -851,10 +851,15 @@ impl Chau7Terminal {
     /// The formatter closure wraps the text in the proper OSC 52 response sequence
     /// and we write it to the PTY.
     pub fn respond_clipboard_load(&self, clipboard_text: &str) {
-        let formatter = self.pending_clipboard_load.lock().take();
-        // Clear flag *after* lock to avoid TOCTOU race with producer
-        self.has_pending_clipboard_load
-            .store(false, Ordering::Release);
+        let formatter = {
+            let mut pending = self.pending_clipboard_load.lock();
+            let formatter = pending.take();
+            // Clear under the same lock as the producer. Replies now run on
+            // the input writer queue while new requests may arrive on drain.
+            self.has_pending_clipboard_load
+                .store(false, Ordering::Release);
+            formatter
+        };
         if let Some(fmt) = formatter {
             let response = fmt(clipboard_text);
             trace!(
@@ -1211,7 +1216,8 @@ impl Chau7Terminal {
                 }
                 Event::ClipboardLoad(_clipboard_type, formatter) => {
                     debug!("[terminal-{}] OSC 52 clipboard load request", self.id);
-                    *self.pending_clipboard_load.lock() = Some(formatter);
+                    let mut pending = self.pending_clipboard_load.lock();
+                    *pending = Some(formatter);
                     self.has_pending_clipboard_load
                         .store(true, Ordering::Release);
                 }
@@ -3149,6 +3155,27 @@ mod tests {
         let (tx, rx) = crossbeam_channel::unbounded();
         term.pty_rx = Some(rx);
         (term, tx)
+    }
+
+    #[test]
+    fn clipboard_reply_consumes_request_and_preserves_subsequent_requests() {
+        let (term, tx) = terminal_with_queued_pty();
+        // Production keeps Alacritty's copy-only permission default. Enable
+        // reads only in this fixture to exercise the asynchronous reply path.
+        term.term.lock().set_options(TermConfig {
+            osc52: alacritty_terminal::term::Osc52::CopyPaste,
+            ..TermConfig::default()
+        });
+        for _ in 0..2 {
+            tx.send(PtyMessage::Data(b"\x1b]52;c;?\x07".to_vec()))
+                .unwrap();
+            let _ = term.poll_events(0);
+            assert!(term.has_pending_clipboard_load());
+            // Headless terminal consumes the formatter without writing a PTY.
+            term.respond_clipboard_load("fixture clipboard");
+            assert!(!term.has_pending_clipboard_load());
+            assert!(term.pending_clipboard_load.lock().is_none());
+        }
     }
 
     #[test]

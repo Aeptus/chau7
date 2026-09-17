@@ -3,6 +3,8 @@ import Foundation
 public enum TelemetryMetricState: String, Codable, CaseIterable, Sendable {
     case complete
     case estimated
+    /// A known subset (for example a bounded transcript tail), not a total.
+    case partial
     case missing
     case invalid
 }

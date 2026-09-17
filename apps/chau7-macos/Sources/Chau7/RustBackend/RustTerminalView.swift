@@ -599,6 +599,15 @@ struct TerminalPollEventFlags: OptionSet {
 }
 
 final class RustTerminalFFI: TerminalBackend {
+    /// Rust's handle is thread-safe; Swift's raw pointer is not Sendable. The
+    /// writer owns ordering and queues destruction after all captured uses.
+    private struct QueuedTerminalPointer: @unchecked Sendable {
+        let value: OpaquePointer
+        init(_ value: OpaquePointer) {
+            self.value = value
+        }
+    }
+
     private static let lock = NSLock()
     /// When the last load attempt failed. Failed loads RETRY after a cooldown
     /// instead of giving up for the app's lifetime — a transient dlopen
@@ -806,7 +815,7 @@ final class RustTerminalFFI: TerminalBackend {
     /// blocks. By dispatching writes to a dedicated serial queue we keep the
     /// main thread responsive — the write blocks the queue thread instead of
     /// the UI. The serial ordering guarantees bytes arrive in order.
-    private let writeQueue = DispatchQueue(label: "com.chau7.pty-write", qos: .userInitiated)
+    private let writeQueue = TerminalWriteQueue()
 
     deinit {
         Log.info("RustTerminalFFI[\(instanceId)]: deinit - Destroying terminal")
@@ -817,11 +826,11 @@ final class RustTerminalFFI: TerminalBackend {
         //
         // We dispatch onto the writeQueue to ensure all pending writes complete
         // before the terminal is destroyed. The barrier ensures ordering.
-        let ptr = terminal
+        let ptr = QueuedTerminalPointer(terminal)
         let id = instanceId
         let destroyFn = Self.functions?.destroy
         writeQueue.async {
-            destroyFn?(ptr)
+            destroyFn?(ptr.value)
             Log.trace("RustTerminalFFI[\(id)]: deinit - Terminal destroyed (background)")
         }
     }
@@ -838,7 +847,7 @@ final class RustTerminalFFI: TerminalBackend {
             let suffix = data.count > 16 ? " ...<\(data.count - 16) more>" : ""
             Log.info("RustTerminalFFI[\(instanceId)]: sendBytes(Data) newline-ish bytes=[\(preview)\(suffix)]")
         }
-        let terminal = terminal
+        let terminal = QueuedTerminalPointer(terminal)
         let id = instanceId
         // Copy data before dispatching — the original buffer may be freed
         let copy = Data(data)
@@ -848,7 +857,7 @@ final class RustTerminalFFI: TerminalBackend {
                     Log.warn("RustTerminalFFI[\(id)]: sendBytes(Data) - Buffer baseAddress is nil")
                     return
                 }
-                fns.sendBytes(terminal, ptr, buffer.count)
+                fns.sendBytes(terminal.value, ptr, buffer.count)
             }
         }
     }
@@ -865,7 +874,7 @@ final class RustTerminalFFI: TerminalBackend {
             let suffix = bytes.count > 16 ? " ...<\(bytes.count - 16) more>" : ""
             Log.info("RustTerminalFFI[\(instanceId)]: sendBytes([UInt8]) newline-ish bytes=[\(preview)\(suffix)]")
         }
-        let terminal = terminal
+        let terminal = QueuedTerminalPointer(terminal)
         let id = instanceId
         let copy = bytes
         writeQueue.async {
@@ -874,7 +883,7 @@ final class RustTerminalFFI: TerminalBackend {
                     Log.warn("RustTerminalFFI[\(id)]: sendBytes([UInt8]) - Buffer baseAddress is nil")
                     return
                 }
-                fns.sendBytes(terminal, ptr, buffer.count)
+                fns.sendBytes(terminal.value, ptr, buffer.count)
             }
         }
     }
@@ -885,9 +894,9 @@ final class RustTerminalFFI: TerminalBackend {
             return
         }
         Log.trace("RustTerminalFFI[\(instanceId)]: sendText - Sending \(text.count) chars")
-        let terminal = terminal
+        let terminal = QueuedTerminalPointer(terminal)
         writeQueue.async {
-            text.withCString { fns.sendText(terminal, $0) }
+            text.withCString { fns.sendText(terminal.value, $0) }
         }
     }
 
@@ -1691,6 +1700,7 @@ final class RustTerminalFFI: TerminalBackend {
 
     /// Check if the terminal has a pending clipboard load request (OSC 52 read).
     func hasClipboardRequest() -> Bool {
+        guard !writeQueue.hasPendingClipboardReply else { return false }
         guard let hasClipboardRequestFn = Self.functions?.hasClipboardRequest else {
             return false
         }
@@ -1702,10 +1712,13 @@ final class RustTerminalFFI: TerminalBackend {
         guard let respondClipboardFn = Self.functions?.respondClipboard else {
             return
         }
-        text.withCString { cstr in
-            respondClipboardFn(terminal, cstr)
+        let terminal = QueuedTerminalPointer(terminal)
+        let reply = TerminalWriteQueue.boundedClipboardText(text)
+        writeQueue.enqueueClipboardReply {
+            reply.withCString { cstr in
+                respondClipboardFn(terminal.value, cstr)
+            }
         }
-        Log.info("RustTerminalFFI[\(instanceId)]: OSC 52 clipboard load response: \(text.count) chars")
     }
 
     // MARK: - Shell Integration (OSC 133)

@@ -8,7 +8,7 @@ struct TelemetryRepairReport: Sendable {
     var skippedRuns = 0
 }
 
-enum TelemetryRunRepairResult: Sendable {
+enum TelemetryRunRepairResult: Sendable, Equatable {
     case rebuilt
     case invalidated
     case skipped
@@ -19,9 +19,12 @@ final class TelemetryRepairService {
 
     private let store = TelemetryStore.shared
     private let providers: [RunContentProvider]
+    private let retryGate = TranscriptRepairRetryGate()
+    private let now: () -> Date
 
-    private init() {
-        self.providers = [
+    init(providers: [RunContentProvider]? = nil, now: @escaping () -> Date = Date.init) {
+        self.now = now
+        self.providers = providers ?? [
             ClaudeCodeContentProvider(),
             CodexContentProvider()
         ]
@@ -29,12 +32,8 @@ final class TelemetryRepairService {
 
     static func needsTranscriptRepair(_ run: TelemetryRun) -> Bool {
         guard run.endedAt != nil else { return false }
-        // Already attempted: an ended run's transcript is immutable, so one
-        // best-effort attempt is authoritative. Without this, runs whose metrics
-        // can't be derived (no pricing → cost_source 'unavailable', oversized or
-        // unparseable transcript) match the predicate forever and get re-read
-        // and re-parsed on every sweep.
-        guard run.transcriptRepairAttemptedAt == nil else { return false }
+        // This stamp now means an extraction completed (or was explicitly
+        // invalidated), not that discovery merely encountered a missing file.
         let hasSessionID = !(run.sessionID?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
         guard hasSessionID else {
             return false
@@ -45,6 +44,8 @@ final class TelemetryRepairService {
         let needsTranscriptSource = run.rawTranscriptRef == nil
             || run.rawTranscriptRef == "pty_log"
             || run.rawTranscriptRef == "terminal_buffer"
+        // Recover rows stamped by older versions before file discovery failed.
+        guard run.transcriptRepairAttemptedAt == nil || needsTranscriptSource else { return false }
         let needsMetrics = run.tokenUsageState == .missing
             || run.costState == .missing
             || run.costSource == .unavailable
@@ -64,7 +65,9 @@ final class TelemetryRepairService {
     /// per-outcome counts. Both public entry points are thin wrappers that
     /// pick a `limit` and the failure policy.
     private func rebuildRunsBatch(limit: Int, invalidateOnFailure: Bool) -> TelemetryRepairReport {
-        let runs = store.listRuns(filter: TelemetryRunFilter(limit: limit, needsTranscriptRepair: true))
+        var filter = TelemetryRunFilter(limit: limit, needsTranscriptRepair: true)
+        filter.excludedRunIDs = retryGate.deferredIDs(now: now())
+        let runs = store.listRuns(filter: filter)
             .sorted(by: Self.repairPriority(lhs:rhs:))
 
         var report = TelemetryRepairReport()
@@ -101,12 +104,9 @@ final class TelemetryRepairService {
             return .skipped
         }
 
-        // Stamp the attempt up front so every outcome (success, invalidation, or
-        // a missing/unparseable transcript) marks the run as attempted — it must
-        // not be re-selected by the sweep regardless of how this turns out.
-        let attemptedAt = Date()
-        store.markTranscriptRepairAttempted(run.id, at: attemptedAt)
-        run.transcriptRepairAttemptedAt = attemptedAt
+        guard retryGate.begin(run.id, now: now()) else { return .skipped }
+        var completed = false
+        defer { retryGate.finish(run.id, succeeded: completed, now: now()) }
 
         guard let content = provider.extractContent(
             runID: run.id,
@@ -117,6 +117,8 @@ final class TelemetryRepairService {
         ) else {
             if invalidateOnFailure {
                 store.invalidateRunMetrics(run.id, reason: "historical transcript repair failed to extract content")
+                store.markTranscriptRepairAttempted(run.id, at: now())
+                completed = true
                 return .invalidated
             }
             return .skipped
@@ -128,6 +130,10 @@ final class TelemetryRepairService {
         }
 
         let repaired = normalized.content
+        let attemptedAt = now()
+        store.markTranscriptRepairAttempted(run.id, at: attemptedAt)
+        run.transcriptRepairAttemptedAt = attemptedAt
+        completed = true
         run.applyContent(
             repaired,
             invalidMessage: "historical transcript repair invalidated implausible token metrics",

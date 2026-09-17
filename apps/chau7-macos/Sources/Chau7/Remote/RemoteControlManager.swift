@@ -18,6 +18,7 @@ final class RemoteControlManager {
     private(set) var pairedDevices: [RemotePairedDevice] = []
     private(set) var remoteActivity: RemoteActivityState?
     private(set) var interactivePrompts: [RemoteInteractivePrompt] = []
+    @ObservationIgnored private var answeredPromptIDs: Set<String> = []
 
     @ObservationIgnored private let logger = Logger(subsystem: "com.chau7.remote", category: "RemoteManager")
     /// Shared Go-sidecar process lifecycle (chmod, Process construction,
@@ -496,6 +497,10 @@ final class RemoteControlManager {
             handleInput(frame)
         case .keyInput:
             handleKeyInput(frame)
+        case .interactivePromptResponse:
+            handleInteractivePromptResponse(frame)
+        case .paneInput:
+            handlePaneInput(frame)
         case .checkpointRequest:
             sendSnapshot(for: frame.tabID)
         case .remoteTelemetry:
@@ -589,6 +594,11 @@ final class RemoteControlManager {
             return
         }
 
+        sendKeyInput(payload, to: session)
+    }
+
+    private func sendKeyInput(_ payload: RemoteKeyInputPayload, to session: TerminalSessionModel) {
+
         // ^C / ^U discard the line without executing anything, so no
         // input-line hook fires — retire any advertised prefill card here.
         // (Enter retires it through the input-line hook when the line runs.)
@@ -616,6 +626,67 @@ final class RemoteControlManager {
                     session?.sendKeyPress(keyPress)
                 }
             }
+        }
+    }
+
+    private func handleInteractivePromptResponse(_ frame: RemoteFrame) {
+        guard let request = try? JSONDecoder().decode(RemotePromptResponse.self, from: frame.payload),
+              !answeredPromptIDs.contains(request.promptID),
+              let uuid = tabRegistry.uuid(for: frame.tabID), let tab = locateTab(uuid: uuid)?.tab,
+              let prompt = currentInteractivePrompts().first(where: { $0.id == request.promptID }),
+              let text = request.responseText(
+                  for: prompt, tabID: frame.tabID,
+                  availablePaneIDs: Set(tab.splitController.terminalSessions.map(\.0))
+              ),
+              let session = tab.splitController.terminalSessions.first(where: { $0.0 == request.paneID })?.1 else {
+            sendError(code: "stale_prompt", message: "That prompt or terminal pane is no longer available. Refresh before answering.", tabID: frame.tabID)
+            sendRemoteActivity(force: true)
+            return
+        }
+        if let flagged = protectedRemoteActionLabel(for: text) {
+            queueProtectedRemoteInput(
+                requestID: UUID().uuidString,
+                text: text,
+                tabID: frame.tabID,
+                sessionTitle: session.title,
+                flaggedCommand: flagged,
+                paneID: request.paneID
+            )
+            return
+        }
+        if request.action != .toggle { answeredPromptIDs.insert(request.promptID) }
+        if let keys = RemotePromptResponse.navigationKeys(for: text) {
+            sendKeyInput(RemoteKeyInputPayload(keys: keys), to: session)
+        } else {
+            if text == "\u{15}" { session.clearDeliveredPrefillTracking() }
+            session.sendRemoteSubmittedInput(text)
+        }
+        scheduleRemoteActivityRefresh()
+    }
+
+    private func handlePaneInput(_ frame: RemoteFrame) {
+        guard let payload = try? JSONDecoder().decode(RemotePaneInput.self, from: frame.payload),
+              let uuid = tabRegistry.uuid(for: frame.tabID), let tab = locateTab(uuid: uuid)?.tab,
+              let session = tab.splitController.terminalSessions.first(where: { $0.0 == payload.paneID })?.1,
+              (payload.text == nil) != (payload.keys == nil) else {
+            sendError(code: "pane_unavailable", message: "Input target changed. Refresh the terminal before typing.", tabID: frame.tabID)
+            return
+        }
+        if let keys = payload.keys {
+            sendKeyInput(RemoteKeyInputPayload(keys: keys), to: session)
+        } else if let text = payload.text {
+            if let flagged = protectedRemoteActionLabel(for: text) {
+                queueProtectedRemoteInput(
+                    requestID: UUID().uuidString,
+                    text: text,
+                    tabID: frame.tabID,
+                    sessionTitle: session.title,
+                    flaggedCommand: flagged,
+                    paneID: payload.paneID
+                )
+                return
+            }
+            session.sendRemoteSubmittedInput(text)
         }
     }
 
@@ -654,7 +725,8 @@ final class RemoteControlManager {
         let approvalContext = approvalContexts.removeValue(forKey: response.requestID)
         if let protectedInput = pendingProtectedInputs.removeValue(forKey: response.requestID) {
             if response.approved,
-               let session = session(for: protectedInput.tabID) {
+               let session = scopedInputSession(for: protectedInput.tabID, paneID: protectedInput.paneID),
+               protectedInput.matchesTarget(sessionID: session.tabIdentifier, terminalIdentity: session.activeTerminalView.map(ObjectIdentifier.init)) {
                 session.sendRemoteSubmittedInput(protectedInput.text)
                 logger.info("Remote: protected action approved for tab \(protectedInput.tabID, privacy: .public)")
             } else {
@@ -728,7 +800,7 @@ final class RemoteControlManager {
     private func rebuildSessionStateSubscriptions() {
         // Subscribe across every window so AI state changes in additional
         // windows also refresh the remote activity feed.
-        let sessions = allOverlayModels.flatMap { $0.tabs }.compactMap(\.session)
+        let sessions = allOverlayModels.flatMap { $0.tabs }.flatMap { $0.splitController.terminalSessions.map(\.1) }
         guard !sessions.isEmpty else {
             subscribedSessionIDs.removeAll()
             return
@@ -897,6 +969,7 @@ final class RemoteControlManager {
 
     private func sendInteractivePrompts(force: Bool = false) {
         let nextPrompts = currentInteractivePrompts()
+        answeredPromptIDs.formIntersection(Set(nextPrompts.map(\.id)))
         defer { reconcilePromptRecheckTimer(hasPrompts: hasCursorRelativePrompt(nextPrompts)) }
         guard force || nextPrompts != interactivePrompts else { return }
 
@@ -1061,8 +1134,14 @@ final class RemoteControlManager {
             // tool_input) fall through — they drive the activity projection
             // while the scrape supplies the card with the real menu.
             if let structured = structuredPrompts.entry(forRuntimeTabID: tab.id),
-               !structured.options.isEmpty {
-                let session = tab.splitController.terminalSessions.first?.1
+               !structured.options.isEmpty,
+               let (paneID, matchedSession) = tab.splitController.terminalSessions.first(where: {
+                   $0.1.lastAISessionId?.caseInsensitiveCompare(structured.sessionID) == .orderedSame
+               }),
+               tab.splitController.terminalSessions.filter({
+                   $0.1.lastAISessionId?.caseInsensitiveCompare(structured.sessionID) == .orderedSame
+               }).count == 1 {
+                let session: TerminalSessionModel? = matchedSession
                 return [RemoteInteractivePrompt(
                     id: "tab-\(tabID)-hook-\(structured.signature)",
                     tabID: tabID,
@@ -1075,7 +1154,8 @@ final class RemoteControlManager {
                     detail: structured.detail,
                     options: structured.options,
                     detectedAt: structured.createdAt,
-                    isMultiSelect: structured.isMultiSelect
+                    isMultiSelect: structured.isMultiSelect,
+                    paneID: paneID
                 ).withComposedPushText()]
             }
 
@@ -1106,7 +1186,7 @@ final class RemoteControlManager {
                 }
 
                 return RemoteInteractivePrompt(
-                    id: "tab-\(tabID)-pane-\(paneID.uuidString.lowercased())-\(detected.signature)",
+                    id: "tab-\(tabID)-pane-\(paneID.uuidString.lowercased())-\(detected.signature)-\(session.lastInputAt.timeIntervalSinceReferenceDate)",
                     tabID: tabID,
                     tabTitle: activityTabTitle(for: tab),
                     toolName: toolName,
@@ -1116,7 +1196,8 @@ final class RemoteControlManager {
                     prompt: detected.prompt,
                     detail: detected.detail,
                     options: detected.options,
-                    detectedAt: activityUpdatedAt(for: session, tab: tab, approval: nil)
+                    detectedAt: activityUpdatedAt(for: session, tab: tab, approval: nil),
+                    paneID: paneID
                 ).withComposedPushText()
             }
         }
@@ -1138,7 +1219,7 @@ final class RemoteControlManager {
                 continue
             }
             return RemoteInteractivePrompt(
-                id: "tab-\(tabID)-prefill-\(paneID.uuidString.lowercased())",
+                id: "tab-\(tabID)-prefill-\(paneID.uuidString.lowercased())-\(session.deliveredPrefillAt?.timeIntervalSinceReferenceDate ?? 0)",
                 tabID: tabID,
                 tabTitle: activityTabTitle(for: tab),
                 toolName: activityToolName(for: session, tab: tab),
@@ -1151,7 +1232,8 @@ final class RemoteControlManager {
                     RemoteInteractivePromptOption(id: "run", label: "Run it", response: "\r"),
                     RemoteInteractivePromptOption(id: "clear", label: "Clear the line", response: "\u{15}")
                 ],
-                detectedAt: session.deliveredPrefillAt ?? Date(timeIntervalSince1970: 0)
+                detectedAt: session.deliveredPrefillAt ?? Date(timeIntervalSince1970: 0),
+                paneID: paneID
             ).withComposedPushText()
         }
         return nil
@@ -1328,7 +1410,8 @@ final class RemoteControlManager {
                     branchName: tab.displaySession.flatMap(activityBranchName(for:)) ?? tab.session.flatMap(activityBranchName(for:)),
                     aiProvider: activityAIProvider(for: tab),
                     isActive: tab.id == activeUUID,
-                    isMCPControlled: tab.isMCPControlled
+                    isMCPControlled: tab.isMCPControlled,
+                    inputPaneID: tab.splitController.terminalSessions.first?.0
                 )
             }
         )
@@ -1337,6 +1420,8 @@ final class RemoteControlManager {
                 tabs: tabPayloads,
                 capabilities: [
                     RemoteTabListPayload.keyInputCapability,
+                    RemoteTabListPayload.scopedPromptResponseCapability,
+                    RemoteTabListPayload.paneInputCapability,
                     RemoteTabListPayload.checkpointRequestCapability
                 ],
                 terminalColorScheme: FeatureSettings.shared.currentColorScheme
@@ -1573,6 +1658,7 @@ final class RemoteControlManager {
     private func resolveInputTarget(for tabID: UInt32) -> (TerminalSessionModel, UInt32)? {
         if tabID == RemoteTabRegistry.unscopedTabID {
             guard let uuid = effectiveRemoteSelectedUUID,
+                  locateTab(uuid: uuid)?.tab.splitController.terminalSessions.count == 1,
                   let session = locateTab(uuid: uuid)?.tab.session,
                   let resolvedTabID = tabRegistry.tabID(for: uuid) else {
                 return nil
@@ -1581,10 +1667,17 @@ final class RemoteControlManager {
         }
 
         guard let uuid = tabRegistry.uuid(for: tabID),
+              locateTab(uuid: uuid)?.tab.splitController.terminalSessions.count == 1,
               let session = locateTab(uuid: uuid)?.tab.session else {
             return nil
         }
         return (session, tabID)
+    }
+
+    private func scopedInputSession(for tabID: UInt32, paneID: UUID?) -> TerminalSessionModel? {
+        guard let paneID else { return resolveInputTarget(for: tabID)?.0 }
+        guard let uuid = tabRegistry.uuid(for: tabID), let tab = locateTab(uuid: uuid)?.tab else { return nil }
+        return tab.splitController.terminalSessions.first(where: { $0.0 == paneID })?.1
     }
 
     private func session(for tabID: UInt32) -> TerminalSessionModel? {
@@ -1616,7 +1709,7 @@ final class RemoteControlManager {
         }
 
         if let protectedInput = pendingProtectedInputs[requestID],
-           let session = session(for: protectedInput.tabID),
+           let session = scopedInputSession(for: protectedInput.tabID, paneID: protectedInput.paneID),
            let uuid = tabRegistry.uuid(for: protectedInput.tabID),
            let tab = locateTab(uuid: uuid)?.tab {
             approvalContexts[requestID] = PendingRemoteApprovalContext(
@@ -1666,8 +1759,10 @@ final class RemoteControlManager {
         text: String,
         tabID: UInt32,
         sessionTitle: String,
-        flaggedCommand: String
+        flaggedCommand: String,
+        paneID: UUID? = nil
     ) {
+        guard let targetSession = scopedInputSession(for: tabID, paneID: paneID) else { return }
         purgeExpiredProtectedInputs()
         if pendingProtectedInputs.count >= Self.maxPendingProtectedInputs {
             logger.warning("Remote: pending protected inputs at capacity (\(Self.maxPendingProtectedInputs, privacy: .public)), dropping oldest")
@@ -1678,13 +1773,16 @@ final class RemoteControlManager {
         pendingProtectedInputs[requestID] = ProtectedRemoteInput(
             tabID: tabID,
             text: text,
-            flaggedCommand: flaggedCommand
+            flaggedCommand: flaggedCommand,
+            paneID: paneID,
+            runtimeSessionID: targetSession.tabIdentifier,
+            terminalIdentity: targetSession.activeTerminalView.map(ObjectIdentifier.init)
         )
 
         let approvalContext: PendingRemoteApprovalContext?
-        if let session = session(for: tabID),
-           let uuid = tabRegistry.uuid(for: tabID),
+        if let uuid = tabRegistry.uuid(for: tabID),
            let tab = locateTab(uuid: uuid)?.tab {
+            let session = targetSession
             let context = PendingRemoteApprovalContext(
                 requestID: requestID,
                 tabID: tabID,

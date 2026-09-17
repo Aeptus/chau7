@@ -1724,8 +1724,7 @@ final class TerminalSessionModel {
             Log.warn("focusTerminal: selected terminal did not become focusable before timeout")
             return
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + TerminalFocusRequestPolicy.retryDelay) {
-            [weak self, weak window, weak initialResponder] in
+        DispatchQueue.main.asyncAfter(deadline: .now() + TerminalFocusRequestPolicy.retryDelay) { [weak self, weak window, weak initialResponder] in
             self?.attemptTerminalFocus(
                 in: window,
                 generation: generation,

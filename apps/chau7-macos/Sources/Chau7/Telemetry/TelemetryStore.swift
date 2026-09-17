@@ -733,11 +733,8 @@ final class TelemetryStore {
         }
     }
 
-    /// Records that transcript repair was attempted for `runID`. Ended-run
-    /// transcripts are immutable, so a single attempt is authoritative — this
-    /// stamp lets the repair sweep skip the run instead of re-reading and
-    /// re-parsing its transcript every cycle when metrics can't be derived
-    /// (no model pricing, oversized/unparseable rollout, etc.).
+    /// Records a completed repair, not a transient discovery failure. This
+    /// prevents repeated parsing of unchanged content with unavailable metrics.
     func markTranscriptRepairAttempted(_ runID: String, at date: Date) {
         queue.sync {
             guard let db else { return }
@@ -959,7 +956,8 @@ final class TelemetryStore {
             AND session_id IS NOT NULL AND TRIM(session_id) != ''
             AND (lower(provider) LIKE '%claude%' OR lower(provider) LIKE '%anthropic%'
                  OR lower(provider) LIKE '%codex%' OR lower(provider) LIKE '%openai%')
-            AND transcript_repair_attempted_at IS NULL
+            AND (transcript_repair_attempted_at IS NULL
+                 OR raw_transcript_ref IS NULL OR raw_transcript_ref IN ('pty_log', 'terminal_buffer'))
             AND (raw_transcript_ref IS NULL
                  OR raw_transcript_ref IN ('pty_log', 'terminal_buffer')
                  OR token_usage_state = 'missing'
@@ -969,6 +967,10 @@ final class TelemetryStore {
         }
 
         var sql = "SELECT * FROM runs"
+        if !filter.excludedRunIDs.isEmpty {
+            clauses.append("run_id NOT IN (" + filter.excludedRunIDs.map { _ in "?" }.joined(separator: ",") + ")")
+            values.append(contentsOf: filter.excludedRunIDs)
+        }
         if !clauses.isEmpty {
             sql += " WHERE " + clauses.joined(separator: " AND ")
         }

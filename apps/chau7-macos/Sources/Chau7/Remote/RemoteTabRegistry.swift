@@ -10,6 +10,7 @@ struct RemoteTabRegistryEntry {
     let aiProvider: String?
     let isActive: Bool
     let isMCPControlled: Bool
+    var inputPaneID: UUID?
 }
 
 struct RemoteTabRegistry {
@@ -52,7 +53,8 @@ struct RemoteTabRegistry {
                     branchName: entry.branchName,
                     aiProvider: entry.aiProvider,
                     isActive: entry.isActive,
-                    isMCPControlled: entry.isMCPControlled
+                    isMCPControlled: entry.isMCPControlled,
+                    inputPaneID: entry.inputPaneID
                 )
             )
         }

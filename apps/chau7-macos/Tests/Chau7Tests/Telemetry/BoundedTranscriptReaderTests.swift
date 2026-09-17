@@ -64,6 +64,24 @@ final class BoundedTranscriptReaderTests: XCTestCase {
         XCTAssertNil(BoundedTranscriptReader.read(at: tmpDir.appendingPathComponent("nope.jsonl")))
     }
 
+    func testAlignedTailDoesNotDropACompleteRecord() throws {
+        let result = try XCTUnwrap(BoundedTranscriptReader.read(at: write("old\nnew\n"), maxBytes: 4))
+        XCTAssertEqual(result.text, "new\n")
+        XCTAssertEqual(result.truncatedFromBytes, 8)
+    }
+
+    func testOversizedSingleRecordIsNotReturnedAsPartialGarbage() throws {
+        let result = try XCTUnwrap(BoundedTranscriptReader.read(at: write("0123456789"), maxBytes: 4))
+        XCTAssertEqual(result.text, "")
+        XCTAssertNotNil(result.truncatedFromBytes)
+    }
+
+    func testNonPositiveLimitIsRejected() throws {
+        let url = try write("data")
+        XCTAssertNil(BoundedTranscriptReader.read(at: url, maxBytes: 0))
+        XCTAssertNil(BoundedTranscriptReader.read(at: url, maxBytes: -1))
+    }
+
     func testFileSizeReportsBytes() throws {
         XCTAssertEqual(try BoundedTranscriptReader.fileSize(at: write("abcde").path), 5)
         XCTAssertEqual(BoundedTranscriptReader.fileSize(at: "/no/such/path"), 0)

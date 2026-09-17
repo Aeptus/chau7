@@ -164,7 +164,7 @@ final class TelemetryRecorder {
                 exitStatus: exitStatus,
                 turns: [],
                 toolCalls: [],
-                scheduleRepair: true
+                scheduleRepair: false
             )
 
             let runSnapshot = run
@@ -172,6 +172,9 @@ final class TelemetryRecorder {
             let ptyLogPathSnapshot = ptyLogPath
             extractionQueue.async { [weak self] in
                 guard let self else { return }
+                // Repair must follow the first extraction, not race it after
+                // two seconds and parse the same large rollout a second time.
+                defer { scheduleTranscriptRepairIfNeeded(for: store.getRun(runID) ?? runSnapshot) }
                 let extraction = extractCompletedRunContent(
                     run: runSnapshot,
                     runID: runID,

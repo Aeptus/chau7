@@ -203,6 +203,7 @@ type RemoteInteractivePromptOption struct {
 type RemoteInteractivePrompt struct {
 	ID               string                          `json:"id"`
 	TabID            uint32                          `json:"tab_id"`
+	PaneID           string                          `json:"pane_id,omitempty"`
 	TabTitle         string                          `json:"tab_title"`
 	ToolName         string                          `json:"tool_name"`
 	ProjectName      string                          `json:"project_name,omitempty"`
@@ -638,7 +639,7 @@ func (a *Agent) handleRelayFrame(frame *protocol.Frame) {
 		a.handleClientStateFrame(frame.Payload)
 		a.sendToIPC(frame)
 	case protocol.TypeTabSwitch, protocol.TypeInput, protocol.TypeKeyInput,
-		protocol.TypeCheckpointRequest,
+		protocol.TypeCheckpointRequest, protocol.TypeInteractivePromptResponse, protocol.TypePaneInput,
 		protocol.TypeRemoteTelemetry, protocol.TypeApprovalResponse:
 		if requiresEncryptedRelayFrame(frame.Type) && !wasEncrypted {
 			return
@@ -670,6 +671,8 @@ func requiresEncryptedRelayFrame(frameType uint8) bool {
 		protocol.TypeTabSwitch,
 		protocol.TypeInput,
 		protocol.TypeKeyInput,
+		protocol.TypeInteractivePromptResponse,
+		protocol.TypePaneInput,
 		protocol.TypeCheckpointRequest,
 		protocol.TypeRemoteTelemetry,
 		protocol.TypeApprovalResponse:

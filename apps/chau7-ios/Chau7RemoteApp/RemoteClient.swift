@@ -45,7 +45,7 @@ final class RemoteClient {
             guard oldValue.map(\.tabID) != tabs.map(\.tabID) else { return }
             DiagnosticsLog.shared.info(.tab, "Tab list updated", [
                 "count": String(tabs.count),
-                "active_tab": String(activeTabID),
+                "active_tab": String(activeTabID)
             ])
         }
     }
@@ -55,7 +55,7 @@ final class RemoteClient {
         didSet {
             guard oldValue != isConnected else { return }
             DiagnosticsLog.shared.info(.connection, "Connection state changed", [
-                "connected": isConnected ? "true" : "false",
+                "connected": isConnected ? "true" : "false"
             ])
         }
     }
@@ -188,8 +188,8 @@ final class RemoteClient {
     // MARK: - Init
 
     init() {
-        session = RemoteSessionController(iosKey: RemotePairingStore.loadOrCreateIOSKey())
-        pairingInfo = RemotePairingStore.loadPairing()
+        self.session = RemoteSessionController(iosKey: RemotePairingStore.loadOrCreateIOSKey())
+        self.pairingInfo = RemotePairingStore.loadPairing()
 
         backgroundKeepalive.onExpire = { [weak self] in
             self?.handleBackgroundTaskExpiration()
@@ -210,11 +210,11 @@ final class RemoteClient {
         }
         transport.onOutputRecoveryNeeded = { [weak self] in
             guard let self else { return }
-            self.streamingPerformance.recordOutputRecovery()
+            streamingPerformance.recordOutputRecovery()
             DiagnosticsLog.shared.info(.performance, "Remote output fast-forwarded to checkpoint", [
-                "tab_id": String(self.activeTabID),
+                "tab_id": String(activeTabID)
             ])
-            self.requestOutputCheckpointIfPossible()
+            requestOutputCheckpointIfPossible()
         }
         terminalRenderer.onFramePublished = { [weak self] durationMs in
             self?.streamingPerformance.recordPublish(durationMs: durationMs)
@@ -260,7 +260,7 @@ final class RemoteClient {
         }
 
         DiagnosticsLog.shared.info(.render, "Terminal presentation changed", [
-            "presentation": presentation.rawValue,
+            "presentation": presentation.rawValue
         ])
         sendClientStateIfPossible()
     }
@@ -279,7 +279,7 @@ final class RemoteClient {
             DiagnosticsLog.shared.info(.connection, "Connection request coalesced", [
                 "trigger": trigger.rawValue,
                 "transport_generation": String(transport.generation),
-                "status": status.displayText,
+                "status": status.displayText
             ])
             return
         }
@@ -287,7 +287,7 @@ final class RemoteClient {
         DiagnosticsLog.shared.info(.connection, "Connection requested", [
             "trigger": trigger.rawValue,
             "force_restart": forceRestart ? "true" : "false",
-            "transport_generation": String(transport.generation),
+            "transport_generation": String(transport.generation)
         ])
         disconnect(
             autoReconnect: false,
@@ -334,7 +334,7 @@ final class RemoteClient {
             status: "connecting",
             metadata: [
                 "relay_host": pairing.relayURL,
-                "trigger": trigger.rawValue,
+                "trigger": trigger.rawValue
             ]
         )
         scheduleHandshake(for: transport.generation)
@@ -392,8 +392,8 @@ final class RemoteClient {
                 || settings.authorizationStatus == .provisional
                 || settings.authorizationStatus == .ephemeral
             Task { @MainActor [weak self] in
-                guard let self, self.notificationsAuthorized != granted else { return }
-                self.updateNotificationAuthorization(isGranted: granted)
+                guard let self, notificationsAuthorized != granted else { return }
+                updateNotificationAuthorization(isGranted: granted)
             }
         }
     }
@@ -442,7 +442,7 @@ final class RemoteClient {
             "auto_reconnect": autoReconnect ? "true" : "false",
             "was_connected": isConnected ? "true" : "false",
             "transport_open": transport.isOpen ? "true" : "false",
-            "transport_generation": String(transport.generation),
+            "transport_generation": String(transport.generation)
         ])
         shouldReconnect = false
         reconnectTask?.cancel()
@@ -526,10 +526,13 @@ final class RemoteClient {
         else {
             return false
         }
-        guard let data = try? RemoteJSON.encoder.encode(RemoteKeyInputPayload(keys: keys)) else {
+        let paneID = inputPaneID(for: tabID)
+        let encoded = paneID.map { try? RemoteJSON.encoder.encode(RemotePaneInput(paneID: $0, keys: keys)) }
+            ?? (try? RemoteJSON.encoder.encode(RemoteKeyInputPayload(keys: keys)))
+        guard let data = encoded else {
             return false
         }
-        guard sendEncrypted(type: .keyInput, tabID: tabID, payload: data) else {
+        guard sendEncrypted(type: paneID == nil ? .keyInput : .paneInput, tabID: tabID, payload: data) else {
             reportBlockedInput(
                 "Key input could not be encrypted for the current remote session.",
                 reason: "encrypt_failed",
@@ -542,7 +545,7 @@ final class RemoteClient {
         }
         DiagnosticsLog.shared.debug(.input, "Key input forwarded to relay", [
             "tab_id": String(tabID),
-            "keys": String(keys.count),
+            "keys": String(keys.count)
         ])
         return true
     }
@@ -576,11 +579,11 @@ final class RemoteClient {
             return false
         }
         let prompt = pendingInteractivePrompts[promptIndex]
-        guard let option = prompt.options.first(where: { $0.id == optionID }) else {
+        guard prompt.options.contains(where: { $0.id == optionID }) else {
             return false
         }
 
-        guard sendInteractivePromptResponse(option.response, to: prompt.tabID) else {
+        guard sendScopedPromptAction(prompt, action: .select, optionID: optionID) else {
             return false
         }
 
@@ -594,16 +597,11 @@ final class RemoteClient {
     @discardableResult
     func toggleInteractivePromptOption(promptID: String, optionID: String) -> Bool {
         guard let prompt = pendingInteractivePrompts.first(where: { $0.id == promptID }),
-              let option = prompt.options.first(where: { $0.id == optionID })
+              prompt.options.contains(where: { $0.id == optionID })
         else {
             return false
         }
-        var toggle = option.response
-        while toggle.hasSuffix("\r") || toggle.hasSuffix("\n") {
-            toggle.removeLast()
-        }
-        guard !toggle.isEmpty else { return false }
-        return sendInput(toggle, appendNewline: false, to: prompt.tabID, allowUnlistedTab: true)
+        return sendScopedPromptAction(prompt, action: .toggle, optionID: optionID)
     }
 
     /// Submit a multi-select prompt after toggling: a bare Enter confirms the
@@ -614,7 +612,7 @@ final class RemoteClient {
             return false
         }
         let prompt = pendingInteractivePrompts[promptIndex]
-        guard sendInput("\r", appendNewline: false, to: prompt.tabID, allowUnlistedTab: true) else {
+        guard sendScopedPromptAction(prompt, action: .submit) else {
             return false
         }
         completeInteractivePrompt(at: promptIndex, id: prompt.id)
@@ -631,10 +629,7 @@ final class RemoteClient {
         guard !trimmed.isEmpty else { return false }
 
         let prompt = pendingInteractivePrompts[promptIndex]
-        guard sendInput("\u{1B}", appendNewline: false, to: prompt.tabID, allowUnlistedTab: true) else {
-            return false
-        }
-        guard sendInteractivePromptResponse(trimmed + "\r", to: prompt.tabID) else {
+        guard sendScopedPromptAction(prompt, action: .custom, customText: trimmed) else {
             return false
         }
 
@@ -664,7 +659,7 @@ final class RemoteClient {
         let generation = message.generation
         let processStartedAt = Date()
         let queueAgeMs = max(0, processStartedAt.timeIntervalSince(message.receivedAt) * 1000)
-        let crypto = self.crypto
+        let crypto = crypto
         let signpostID = OSSignpostID(log: perfLog)
         os_signpost(
             .begin,
@@ -722,7 +717,7 @@ final class RemoteClient {
                 "trigger": trigger.rawValue,
                 "failure_class": failureClass,
                 "attempt": String(reconnectBackoff.attempt),
-                "transport_generation": String(transport.generation),
+                "transport_generation": String(transport.generation)
             ])
             return
         }
@@ -737,7 +732,7 @@ final class RemoteClient {
             "trigger": trigger.rawValue,
             "failure_class": failureClass,
             "was_connected": wasConnected ? "true" : "false",
-            "transport_generation": String(transport.generation),
+            "transport_generation": String(transport.generation)
         ])
 
         if wasConnected || reason != nil {
@@ -762,7 +757,7 @@ final class RemoteClient {
             "failure_class": failureClass,
             "attempt": String(reconnectBackoff.attempt),
             "delay_seconds": String(format: "%.0f", delay),
-            "transport_generation": String(transport.generation),
+            "transport_generation": String(transport.generation)
         ])
         emitTelemetry(
             type: .reconnectScheduled,
@@ -770,7 +765,7 @@ final class RemoteClient {
             message: reason,
             metadata: [
                 "attempt": String(reconnectBackoff.attempt),
-                "delay_seconds": String(format: "%.0f", delay),
+                "delay_seconds": String(format: "%.0f", delay)
             ]
         )
 
@@ -778,9 +773,9 @@ final class RemoteClient {
             try? await Task.sleep(for: .seconds(delay))
             guard let self else { return }
             guard !Task.isCancelled else { return }
-            self.reconnectTask = nil
-            guard let pairing = self.pairingInfo else { return }
-            self.startConnection(
+            reconnectTask = nil
+            guard let pairing = pairingInfo else { return }
+            startConnection(
                 pairing: pairing,
                 preserveApprovalsAndPrompts: true,
                 preserveReconnectAttempt: true,
@@ -797,19 +792,18 @@ final class RemoteClient {
             var attempt = 0
             while !Task.isCancelled {
                 guard let self,
-                      self.transport.generation == generation,
-                      self.transport.isOpen,
+                      transport.generation == generation,
+                      transport.isOpen,
                       !self.isConnected else { return }
 
-                if attempt > 0, self.status == .connecting {
-                    self.status = .waitingForMac
+                if attempt > 0, status == .connecting {
+                    status = .waitingForMac
                 }
 
-                self.sendHello()
-                if let pairing = self.pairingInfo,
-                   self.shouldSendPairRequest(for: pairing, attempt: attempt)
-                {
-                    self.sendPairRequest(recordTelemetry: attempt == 0)
+                sendHello()
+                if let pairing = pairingInfo,
+                   shouldSendPairRequest(for: pairing, attempt: attempt) {
+                    sendPairRequest(recordTelemetry: attempt == 0)
                 }
 
                 attempt += 1
@@ -820,28 +814,28 @@ final class RemoteClient {
         handshakeTimeoutTask = Task { @MainActor [weak self] in
             try? await Task.sleep(for: .seconds(Self.handshakeTimeoutSeconds))
             guard let self,
-                  self.transport.generation == generation,
-                  self.transport.isOpen,
+                  transport.generation == generation,
+                  transport.isOpen,
                   !self.isConnected else { return }
 
             // Deduped teardown: the transport owns socket + generation, the
             // session controller owns crypto state — no second hand-rolled
             // copy of disconnect's steps.
-            self.cancelHandshakeTasks()
-            self.transport.close()
-            self.isConnected = false
-            self.session.invalidateSession(clearHandshakeMaterial: false)
-            self.lastError = "No response from your Mac. Make sure Chau7 is open, Remote is enabled, and the pairing payload is still current."
-            self.emitTelemetry(
+            cancelHandshakeTasks()
+            transport.close()
+            isConnected = false
+            session.invalidateSession(clearHandshakeMaterial: false)
+            lastError = "No response from your Mac. Make sure Chau7 is open, Remote is enabled, and the pairing payload is still current."
+            emitTelemetry(
                 type: .errorReceived,
                 status: "timeout",
-                message: self.lastError
+                message: lastError
             )
             // A handshake timeout is usually a transient relay/Mac delay rather
             // than a permanent failure. Route through the normal disconnect path
             // so the reconnect backoff retries instead of stranding the
             // connection until the user manually reconnects.
-            self.handleDisconnect(
+            handleDisconnect(
                 reason: "handshake_timeout",
                 trigger: .handshakeTimeout
             )
@@ -983,7 +977,7 @@ final class RemoteClient {
             cancelHandshakeTasks()
             if !wasConnected {
                 DiagnosticsLog.shared.info(.connection, "Secure session confirmed by Mac", [
-                    "transport_generation": String(transport.generation),
+                    "transport_generation": String(transport.generation)
                 ])
                 emitTelemetry(type: .sessionEncrypted, status: "confirmed")
                 flushBufferedTelemetryEvents()
@@ -1074,7 +1068,7 @@ final class RemoteClient {
         // one authoritative re-key. This also makes PAIR_ACCEPT/HELLO robust
         // if transport scheduling delivers them at either side of SESSION_READY.
         DiagnosticsLog.shared.info(.connection, "Pairing identity accepted", [
-            "session_established": session.isEstablished ? "true" : "false",
+            "session_established": session.isEstablished ? "true" : "false"
         ])
         establishSessionIfPossible()
         ensureHandshakeRecoveryRunning()
@@ -1156,7 +1150,7 @@ final class RemoteClient {
             "count": String(msg.tabs.count),
             "changed": inventoryChanged ? "true" : "false",
             "membership_changed": membershipChanged ? "true" : "false",
-            "active_changed": activeTabChanged ? "true" : "false",
+            "active_changed": activeTabChanged ? "true" : "false"
         ]
         if wasAwaitingInventory || membershipChanged {
             DiagnosticsLog.shared.info(.tab, "Remote tab inventory synchronized", inventoryMetadata)
@@ -1234,8 +1228,7 @@ final class RemoteClient {
         let macCapturedAtMicroseconds: UInt64?
         let macSentAtMicroseconds: UInt64?
         if flags & RemoteFrame.flagOutputTiming != 0,
-           let timedChunk = RemoteTimedOutputChunk.decode(from: payload)
-        {
+           let timedChunk = RemoteTimedOutputChunk.decode(from: payload) {
             data = timedChunk.bytes
             macCapturedAtMicroseconds = timedChunk.firstCapturedAtMicroseconds
             macSentAtMicroseconds = timedChunk.sentAtMicroseconds
@@ -1365,7 +1358,7 @@ final class RemoteClient {
         sendJSON(SessionReadyPayload(sessionID: sessionID), type: .sessionReady, encrypt: true)
         status = .encrypted
         DiagnosticsLog.shared.info(.connection, "Local crypto established; awaiting Mac confirmation", [
-            "transport_generation": String(transport.generation),
+            "transport_generation": String(transport.generation)
         ])
         ensureHandshakeRecoveryRunning()
     }
@@ -1383,7 +1376,7 @@ final class RemoteClient {
         status = .waitingForMac
         DiagnosticsLog.shared.warn(.connection, "Secure session recovery started", [
             "reason": reason,
-            "transport_generation": String(transport.generation),
+            "transport_generation": String(transport.generation)
         ])
         sendHello()
         ensureHandshakeRecoveryRunning()
@@ -1558,18 +1551,18 @@ final class RemoteClient {
 
             sendApprovalResponse(requestID: requestID, approved: approved) { [weak self] success in
                 guard let self else { return }
-                switch self.approvalCoordinator.resolveSend(requestID: requestID, approved: approved, success: success) {
+                switch approvalCoordinator.resolveSend(requestID: requestID, approved: approved, success: success) {
                 case let .completed(approved):
-                    self.completeApprovalResponse(requestID: requestID, approved: approved)
-                    if !self.approvalCoordinator.hasQueuedResponses {
-                        self.backgroundKeepalive.end()
+                    completeApprovalResponse(requestID: requestID, approved: approved)
+                    if !approvalCoordinator.hasQueuedResponses {
+                        backgroundKeepalive.end()
                     }
                 case let .requeue(approved):
-                    self.updateApprovalResponseState(requestID: requestID) { _ in .queued(approved) }
-                    self.lastError = "Approval response was not delivered. Chau7 will retry when the connection is ready."
-                    self.status = .approvalQueued
-                    if let pairing = self.pairingInfo, !self.transport.isOpen {
-                        self.startConnection(
+                    updateApprovalResponseState(requestID: requestID) { _ in .queued(approved) }
+                    lastError = "Approval response was not delivered. Chau7 will retry when the connection is ready."
+                    status = .approvalQueued
+                    if let pairing = pairingInfo, !self.transport.isOpen {
+                        startConnection(
                             pairing: pairing,
                             preserveApprovalsAndPrompts: true,
                             preserveReconnectAttempt: true,
@@ -1612,6 +1605,32 @@ final class RemoteClient {
 
     // MARK: - Input gating
 
+    private func sendScopedPromptAction(
+        _ prompt: RemoteInteractivePrompt, action: RemotePromptResponse.Action,
+        optionID: String? = nil, customText: String? = nil
+    ) -> Bool {
+        guard macCapabilities.contains(RemoteTabListPayload.scopedPromptResponseCapability),
+              let paneID = prompt.paneID else {
+            reportBlockedInput("Update Chau7 on the Mac to answer prompts with verified pane routing.", reason: "scoped_prompt_required", tabID: prompt.tabID)
+            return false
+        }
+        let request = RemotePromptResponse(promptID: prompt.id, paneID: paneID, action: action, optionID: optionID, customText: customText)
+        guard canSendInput(to: prompt.tabID, allowUnlistedTab: true),
+              request.responseText(for: prompt, tabID: prompt.tabID, availablePaneIDs: [paneID]) != nil,
+              let data = try? RemoteJSON.encoder.encode(request),
+              sendEncrypted(type: .interactivePromptResponse, tabID: prompt.tabID, payload: data) else {
+            reportBlockedInput("Prompt response was not sent. Refresh the prompt and try again.", reason: "prompt_send_failed", tabID: prompt.tabID)
+            return false
+        }
+        lastError = nil
+        return true
+    }
+
+    private func inputPaneID(for tabID: UInt32) -> UUID? {
+        guard macCapabilities.contains(RemoteTabListPayload.paneInputCapability) else { return nil }
+        return tabs.first(where: { $0.tabID == tabID })?.inputPaneID
+    }
+
     private func canSendInput(to tabID: UInt32) -> Bool {
         canSendInput(to: tabID, allowUnlistedTab: false)
     }
@@ -1619,36 +1638,6 @@ final class RemoteClient {
     private func canSendInput(to tabID: UInt32, allowUnlistedTab: Bool) -> Bool {
         guard crypto != nil, isConnected, transport.isOpen, tabID != 0 else { return false }
         return allowUnlistedTab || tabs.contains(where: { $0.tabID == tabID })
-    }
-
-    @discardableResult
-    private func sendInteractivePromptResponse(_ response: String, to tabID: UInt32) -> Bool {
-        let normalizedResponse = response
-            .replacingOccurrences(of: "\r\n", with: "\n")
-            .replacingOccurrences(of: "\n", with: "\r")
-        guard !normalizedResponse.isEmpty else { return false }
-
-        // Arrow-navigation responses (unnumbered menus) ride KEY_INPUT when
-        // the Mac supports it: the semantic keys get application-cursor-mode
-        // handling that raw CSI text cannot. Anything that isn't pure
-        // navigation — digits, y/n tokens, free text — stays on the text
-        // path, as does everything when the capability (or the send) fails.
-        if supportsKeyInput,
-           let keys = RemoteMenuKeyHeuristics.semanticKeys(forNavigationResponse: normalizedResponse),
-           sendKeyInput(keys, to: tabID, allowUnlistedTab: true)
-        {
-            return true
-        }
-
-        if normalizedResponse.hasSuffix("\r") {
-            let body = String(normalizedResponse.dropLast())
-            if !body.isEmpty, !sendInput(body, appendNewline: false, to: tabID, allowUnlistedTab: true) {
-                return false
-            }
-            return sendInput("\r", appendNewline: false, to: tabID, allowUnlistedTab: true)
-        }
-
-        return sendInput(normalizedResponse, appendNewline: false, to: tabID, allowUnlistedTab: true)
     }
 
     @discardableResult
@@ -1678,7 +1667,13 @@ final class RemoteClient {
         if appendNewline {
             data.append(0x0D)
         }
-        guard sendEncrypted(type: .input, tabID: tabID, payload: data) else {
+        var frameType = RemoteFrameType.input
+        if let paneID = inputPaneID(for: tabID) {
+            guard let scoped = try? RemoteJSON.encoder.encode(RemotePaneInput(paneID: paneID, text: String(decoding: data, as: UTF8.self))) else { return false }
+            data = scoped
+            frameType = .paneInput
+        }
+        guard sendEncrypted(type: frameType, tabID: tabID, payload: data) else {
             reportBlockedInput(
                 "Input could not be encrypted for the current remote session.",
                 reason: "encrypt_failed",
@@ -1694,7 +1689,7 @@ final class RemoteClient {
         DiagnosticsLog.shared.debug(.input, "Input forwarded to relay", [
             "tab_id": String(tabID),
             "bytes": String(data.count),
-            "newline": appendNewline ? "true" : "false",
+            "newline": appendNewline ? "true" : "false"
         ])
         return true
     }
@@ -1782,7 +1777,7 @@ final class RemoteClient {
             "reason": reason,
             "tab_id": String(tabID ?? activeTabID),
             "is_connected": isConnected ? "true" : "false",
-            "status": status.displayText,
+            "status": status.displayText
         ])
         emitTelemetry(
             type: .sendFailed,
@@ -1804,8 +1799,7 @@ final class RemoteClient {
                 return
             }
             if let lastPendingStateFetchAt,
-               Date().timeIntervalSince(lastPendingStateFetchAt) < Self.pendingStateFetchMinimumInterval
-            {
+               Date().timeIntervalSince(lastPendingStateFetchAt) < Self.pendingStateFetchMinimumInterval {
                 return
             }
         }
@@ -2025,9 +2019,9 @@ final class RemoteClient {
 
     private func currentPushEnvironment() -> RemotePushEnvironment? {
         #if DEBUG
-            .development
+        .development
         #else
-            .production
+        .production
         #endif
     }
 
@@ -2114,7 +2108,7 @@ final class RemoteClient {
             "subscribed_tab_id": remoteSubscribedTabID.map(String.init) ?? "none",
             "last_output_tab_id": lastReceivedOutputTabID.map(String.init) ?? "none",
             "last_output_matches_active": lastReceivedOutputTabID == activeTabID ? "true" : "false",
-            "presentation": desiredTerminalPresentation.rawValue,
+            "presentation": desiredTerminalPresentation.rawValue
         ])
     }
 
@@ -2123,7 +2117,7 @@ final class RemoteClient {
         outputFlushTask = Task { @MainActor [weak self] in
             try? await Task.sleep(for: RemoteOutputTuning.plainTextPublishInterval)
             guard let self, !Task.isCancelled else { return }
-            self.flushPendingOutput()
+            flushPendingOutput()
         }
     }
 
@@ -2197,7 +2191,7 @@ final class RemoteClient {
         strippedOutputRefreshTask = Task { @MainActor [weak self] in
             try? await Task.sleep(for: RemoteOutputTuning.plainTextPublishInterval)
             guard let self, !Task.isCancelled else { return }
-            let latestSourceText = self.outputText
+            let latestSourceText = outputText
             let signpostID = OSSignpostID(log: perfLog)
             os_signpost(.begin, log: perfLog, name: "ANSIStrip", signpostID: signpostID)
             let stripped = await Task.detached(priority: .utility) {
@@ -2212,11 +2206,11 @@ final class RemoteClient {
                 "bytes=%{public}d",
                 latestSourceText.utf8.count
             )
-            self.strippedOutputRefreshTask = nil
-            if self.outputText == latestSourceText {
-                self.strippedOutputText = stripped
+            strippedOutputRefreshTask = nil
+            if outputText == latestSourceText {
+                strippedOutputText = stripped
             } else {
-                self.scheduleStrippedOutputRefresh(immediate: false)
+                scheduleStrippedOutputRefresh(immediate: false)
             }
         }
     }
@@ -2233,7 +2227,7 @@ final class RemoteClient {
         remoteSubscribedTabID = activeTabID
         DiagnosticsLog.shared.debug(.tab, "Remote tab stream requested", [
             "tab_id": String(activeTabID),
-            "transport_generation": String(transport.generation),
+            "transport_generation": String(transport.generation)
         ])
         return true
     }
@@ -2302,9 +2296,9 @@ final class RemoteClient {
         let sent = sendEncrypted(type: .remoteTelemetry, tabID: event.tabID ?? 0, payload: data) { [weak self] success in
             guard let self else { return }
             if success {
-                self.telemetrySendAttempts.removeValue(forKey: rebufferCandidate.id)
+                telemetrySendAttempts.removeValue(forKey: rebufferCandidate.id)
             } else {
-                self.rebufferTelemetryEvent(rebufferCandidate)
+                rebufferTelemetryEvent(rebufferCandidate)
             }
         }
         if !sent {

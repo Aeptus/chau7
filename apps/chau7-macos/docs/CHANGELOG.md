@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Stability hardening
 
+- Remote prompt answers now carry validated pane/prompt identities across iOS, the encrypted helper, and macOS. Direct keyboard input is pane-scoped too; stale targets and ambiguous legacy split input fail closed. All split panes publish status changes, and delayed protected-action approvals retain the originating terminal identity.
+- Process hover-card cancellation no longer waits for a subprocess scan; stopped/replaced generations cannot publish stale snapshots. OSC 52 clipboard replies use the ordered background PTY writer, coalesce duplicate drain observations, and bound clipboard payloads.
+- Healthy current restoration identities skip archive reads. Recovery scans metadata lazily, retains current layout/scrollback, and hydrates full winning pane payloads only when a legacy base lacks them. No backup deletion or migration is needed.
+- Codex rollout discovery continues at a low-frequency interval after its initial retry budget. Missing transcripts remain repairable, including legacy failure stamps; repairs coalesce concurrent work and back off without starving other runs. Delayed repair follows initial background extraction instead of racing it.
+- Truncated transcript usage and history are explicitly partial; sanitization, reconciliation, and later pricing preserve that status. Bounded reads remain bounded as files grow and preserve whole records at aligned tail boundaries.
+- Guarded local builds limit Swift compiler fan-out to three jobs by default (`CHAU7_SWIFT_JOBS` can select another positive limit), reducing memory pressure on live terminal sessions.
+
 - Background process/resource and Aethyme monitoring now drains stdout and stderr together, with bounded capture size, deadlines, and EOF on stdin. Partial output is never treated as a complete monitoring result or delivery claim, and a failed Aethyme command backs off the rest of its cycle.
 - Remote Claude/Codex prompt detection caches parsed results, including negative results, by terminal output revision, input time, provider, and terminal identity. Unchanged prompts no longer recapture history on every timer tick; cursor redraws invalidate immediately, cache changes do not trigger SwiftUI observation, and fixed prompt regexes compile once.
 - Guarded local builds parse Go's actual `vcs.revision=<sha>` metadata and reject missing or mismatched app/helper provenance before installation.

@@ -37,30 +37,95 @@ enum TabStateBackupStore {
     }
 
     static func mergedBackupWindowStatesFromCandidates() -> [[SavedTabState]]? {
-        let decodedCandidates = tabStateRestoreCandidateURLs().compactMap { url -> [[SavedTabState]]? in
-            guard let data = try? Data(contentsOf: url) else { return nil }
-            return decodeBackupWindowStates(from: data)
+        let candidates = tabStateRestoreCandidateURLs()
+        for (index, url) in candidates.enumerated() {
+            guard let data = try? Data(contentsOf: url),
+                  let baseWindows = decodeBackupWindowStates(from: data) else { continue }
+            let mergedWindows = mergedWindowStatesWithBackupFallbacks(
+                baseWindows: baseWindows,
+                candidateURLs: Array(candidates.dropFirst(index + 1))
+            )
+            maybeRepairLatestBackup(baseWindows: baseWindows, mergedWindows: mergedWindows)
+            return mergedWindows
         }
-        guard let baseWindows = decodedCandidates.first else { return nil }
-        let mergedWindows = mergedWindowStates(
-            baseWindows: baseWindows,
-            fallbackCandidates: Array(decodedCandidates.dropFirst())
-        )
-        maybeRepairLatestBackup(baseWindows: baseWindows, mergedWindows: mergedWindows)
-        return mergedWindows
+        return nil
     }
 
-    static func mergedWindowStatesWithBackupFallbacks(baseWindows: [[SavedTabState]]) -> [[SavedTabState]] {
-        let decodedCandidates = tabStateRestoreCandidateURLs().compactMap { url -> [[SavedTabState]]? in
-            guard let data = try? Data(contentsOf: url) else { return nil }
-            return decodeBackupWindowStates(from: data)
+    static func mergedWindowStatesWithBackupFallbacks(
+        baseWindows: [[SavedTabState]],
+        recoverEmptyIdentities: Bool = true,
+        candidateURLs: [URL]? = nil,
+        loadMetadata: (URL) -> [[SavedTabState]]? = loadBackupResumeMetadata,
+        loadFullCandidate: (URL) -> [[SavedTabState]]? = loadFullBackup
+    ) -> [[SavedTabState]] {
+        var merged = baseWindows
+        /// A current, integrity-checked bundle is authoritative about plain
+        /// shells. Do not resurrect a former AI session into one from history.
+        func needsRecovery(_ windows: [[SavedTabState]]) -> Bool {
+            windows.joined().contains { $0.needsAIResumeBackup(recoverEmptyIdentities: recoverEmptyIdentities) }
         }
-        return mergedWindowStates(baseWindows: baseWindows, fallbackCandidates: decodedCandidates)
+        guard needsRecovery(merged) else { return merged }
+        let tabIDs = Set(baseWindows.joined().filter {
+            $0.needsAIResumeBackup(recoverEmptyIdentities: recoverEmptyIdentities)
+        }.compactMap(\.tabID))
+        var bestByTabID: [String: SavedTabState] = [:]
+        let missingPanePayloadIDs = Set(baseWindows.joined().filter { $0.paneStates == nil }.compactMap(\.tabID))
+        // Decode one metadata projection at a time, never 120 copies of every
+        // window's scrollback. Newest candidates win ties, as before.
+        for url in candidateURLs ?? tabStateRestoreCandidateURLs() {
+            autoreleasepool {
+                guard let windows = loadMetadata(url) else { return }
+                var fullCandidate: [[SavedTabState]]?
+                for state in windows.joined() {
+                    guard let id = state.tabID, tabIDs.contains(id),
+                          state.aiResumeRestorationScore > (bestByTabID[id]?.aiResumeRestorationScore ?? 0) else { continue }
+                    if recoverEmptyIdentities, missingPanePayloadIDs.contains(id), state.paneStates != nil {
+                        // Legacy bases can lack the entire pane payload. In
+                        // that case the winning backup supplies more than AI
+                        // fields: hydrate its scrollback too, never substitute
+                        // a metadata-only projection for recoverable history.
+                        if fullCandidate == nil { fullCandidate = loadFullCandidate(url) }
+                        guard let full = fullCandidate?.joined().first(where: { $0.tabID == id }) else { continue }
+                        bestByTabID[id] = full
+                    } else {
+                        bestByTabID[id] = state
+                    }
+                }
+            }
+            merged = mergedWindowStates(
+                baseWindows: baseWindows, fallbackCandidates: [[Array(bestByTabID.values)]],
+                recoverEmptyIdentities: recoverEmptyIdentities
+            )
+            if !needsRecovery(merged) { break }
+        }
+        return merged
+    }
+
+    private static func loadBackupResumeMetadata(at url: URL) -> [[SavedTabState]]? {
+        guard let data = try? Data(contentsOf: url, options: .mappedIfSafe) else { return nil }
+        return decodeBackupResumeMetadata(from: data)
+    }
+
+    private static func loadFullBackup(at url: URL) -> [[SavedTabState]]? {
+        guard let data = try? Data(contentsOf: url) else { return nil }
+        return decodeBackupWindowStates(from: data)
+    }
+
+    static func decodeBackupResumeMetadata(from data: Data) -> [[SavedTabState]]? {
+        let decoder = JSONDecoder()
+        if let multi = try? decoder.decode(BackupResumeWindows.self, from: data), !multi.windows.isEmpty {
+            return multi.windows.map { $0.map(\.state) }
+        }
+        if let single = try? decoder.decode([BackupResumeTab].self, from: data), !single.isEmpty {
+            return [single.map(\.state)]
+        }
+        return nil
     }
 
     static func mergedWindowStates(
         baseWindows: [[SavedTabState]],
-        fallbackCandidates: [[[SavedTabState]]]
+        fallbackCandidates: [[[SavedTabState]]],
+        recoverEmptyIdentities: Bool = true
     ) -> [[SavedTabState]] {
         let fallbackByTabID = fallbackCandidates.reduce(into: [String: SavedTabState]()) { result, windows in
             for tabs in windows {
@@ -82,7 +147,7 @@ enum TabStateBackupStore {
             tabs.map { state in
                 guard let tabID = state.tabID,
                       let fallback = fallbackByTabID[tabID] else { return state }
-                let merged = state.mergedAIResumePayload(with: fallback)
+                let merged = state.mergedAIResumePayload(with: fallback, recoverEmptyIdentities: recoverEmptyIdentities)
                 if merged.aiResumeRestorationScore > state.aiResumeRestorationScore {
                     // Surface exactly which tab got repaired and the score
                     // delta so operators can trace a tab back to the

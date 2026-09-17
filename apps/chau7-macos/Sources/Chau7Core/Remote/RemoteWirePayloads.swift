@@ -219,6 +219,7 @@ public struct RemoteTabDescriptor: Codable, Equatable, Identifiable, Sendable {
     public let aiProvider: String?
     public let isActive: Bool
     public let isMCPControlled: Bool
+    public let inputPaneID: UUID?
 
     public var id: UInt32 {
         tabID
@@ -231,7 +232,8 @@ public struct RemoteTabDescriptor: Codable, Equatable, Identifiable, Sendable {
         branchName: String? = nil,
         aiProvider: String? = nil,
         isActive: Bool,
-        isMCPControlled: Bool
+        isMCPControlled: Bool,
+        inputPaneID: UUID? = nil
     ) {
         self.tabID = tabID
         self.title = title
@@ -240,6 +242,7 @@ public struct RemoteTabDescriptor: Codable, Equatable, Identifiable, Sendable {
         self.aiProvider = aiProvider
         self.isActive = isActive
         self.isMCPControlled = isMCPControlled
+        self.inputPaneID = inputPaneID
     }
 
     enum CodingKeys: String, CodingKey {
@@ -250,6 +253,7 @@ public struct RemoteTabDescriptor: Codable, Equatable, Identifiable, Sendable {
         case aiProvider = "ai_provider"
         case isActive = "is_active"
         case isMCPControlled = "is_mcp_controlled"
+        case inputPaneID = "input_pane_id"
     }
 
     public init(from decoder: Decoder) throws {
@@ -262,6 +266,7 @@ public struct RemoteTabDescriptor: Codable, Equatable, Identifiable, Sendable {
         self.isActive = try container.decode(Bool.self, forKey: .isActive)
         // Lenient: older senders omit is_mcp_controlled.
         self.isMCPControlled = try container.decodeIfPresent(Bool.self, forKey: .isMCPControlled) ?? false
+        self.inputPaneID = try container.decodeIfPresent(UUID.self, forKey: .inputPaneID)
     }
 }
 
@@ -270,6 +275,8 @@ public struct RemoteTabListPayload: Codable, Equatable, Sendable {
     /// without the capability keep sending escape text over INPUT.
     public static let keyInputCapability = "key_input"
     public static let checkpointRequestCapability = "checkpoint_request"
+    public static let scopedPromptResponseCapability = "scoped_prompt_response"
+    public static let paneInputCapability = "pane_input"
 
     public let tabs: [RemoteTabDescriptor]
     /// Mac feature advertisement. Additive/optional: older Macs omit it and

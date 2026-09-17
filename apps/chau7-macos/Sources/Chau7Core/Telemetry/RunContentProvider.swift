@@ -50,6 +50,7 @@ public struct ExtractedRunContent: Sendable {
     public var costState: TelemetryMetricState
     public var rawTranscriptRef: String?
     public var toolCalls: [TelemetryToolCall]
+    public var transcriptIsPartial: Bool
 
     public init(
         model: String? = nil,
@@ -66,7 +67,8 @@ public struct ExtractedRunContent: Sendable {
         costSource: CostSource? = nil,
         costState: TelemetryMetricState = .missing,
         rawTranscriptRef: String? = nil,
-        toolCalls: [TelemetryToolCall] = []
+        toolCalls: [TelemetryToolCall] = [],
+        transcriptIsPartial: Bool = false
     ) {
         self.model = model
         self.turns = turns
@@ -88,5 +90,6 @@ public struct ExtractedRunContent: Sendable {
         self.costState = costState
         self.rawTranscriptRef = rawTranscriptRef
         self.toolCalls = toolCalls
+        self.transcriptIsPartial = transcriptIsPartial
     }
 }

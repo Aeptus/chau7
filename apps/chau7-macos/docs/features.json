@@ -1,5 +1,33 @@
 [
   {
+    "category": "Remote",
+    "feature": "Pane-Scoped Prompt Responses",
+    "description": "Validates prompt and pane identities for iOS replies, scopes direct input to the streamed pane, rejects ambiguous legacy split input, and binds delayed approvals to the originating terminal instance",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
+    "category": "Performance",
+    "feature": "Lazy Restoration Metadata Recovery",
+    "description": "Skips archives for complete current identities, scans incomplete identities one metadata projection at a time, and loads full winning legacy pane payloads when needed to preserve recoverable history without reviving plain shells",
+    "status": "Shipped",
+    "differentiator": "No"
+  },
+  {
+    "category": "Reliability",
+    "feature": "Nonblocking Clipboard and Monitor Lifecycles",
+    "description": "Orders and coalesces bounded OSC 52 replies off the UI thread without widening clipboard permissions; hover-monitor cancellation immediately invalidates in-flight generations without waiting for process scans",
+    "status": "Shipped",
+    "differentiator": "No"
+  },
+  {
+    "category": "Telemetry",
+    "feature": "Retryable Transcript Repair and Partial Coverage",
+    "description": "Coalesces transcript repairs with bounded retry backoff, recovers legacy failed-discovery stamps, schedules repair after initial extraction, and preserves explicit partial-history usage and cost status for bounded transcript tails",
+    "status": "Shipped",
+    "differentiator": "No"
+  },
+  {
     "category": "Performance",
     "feature": "Revision-Keyed Remote Prompt Detection",
     "description": "Caches parsed Claude/Codex prompts and negative detections by terminal output revision, input time, provider and terminal identity, avoiding unchanged-history scans without stale cursor responses or observable cache churn",
@@ -16,7 +44,7 @@
   {
     "category": "Developer Experience",
     "feature": "Fail-Closed App and Helper Provenance",
-    "description": "Guarded local releases parse Go vcs.revision metadata and reject missing or mismatched bundle identity, app SHA and helper SHA before installation",
+    "description": "Guarded local releases parse Go vcs.revision metadata and reject missing or mismatched bundle identity, app SHA and helper SHA before installation, with bounded Swift compiler concurrency to protect live sessions",
     "status": "Shipped",
     "differentiator": "No"
   },
@@ -338,7 +366,7 @@
   {
     "category": "AI Integration",
     "feature": "Fresh Codex Rollout Discovery Retries",
-    "description": "Global rollout-index misses refresh on later lookup so asynchronous feedback monitoring can attach when Codex creates a session file after the first discovery attempt",
+    "description": "Global rollout-index misses refresh on later lookup and eligible feedback monitors continue low-frequency discovery after the initial retry budget, attaching when Codex creates a session file late",
     "status": "Shipped",
     "differentiator": "Yes"
   },

@@ -128,6 +128,8 @@ Type codes (`u8`). The Swift enum `RemoteFrameType`
 - `0x23 TERMINAL_GRID_SNAPSHOT` (encrypted, bytes)
 - `0x24 KEY_INPUT` (encrypted, JSON — semantic key presses, iOS→Mac; forwarded opaquely by the agent)
 - `0x25 CHECKPOINT_REQUEST` (encrypted, empty payload — asks macOS for a fresh active-tab snapshot)
+- `0x26 INTERACTIVE_PROMPT_RESPONSE` (encrypted, JSON — validated prompt/pane action)
+- `0x27 PANE_INPUT` (encrypted, JSON — direct text or semantic keys for an explicit pane)
 - `0x30 PING` (encrypted, JSON)
 - `0x31 PONG` (encrypted, JSON)
 - `0x40 PAIRING_INFO` (local IPC, JSON)
@@ -313,6 +315,36 @@ Canonical Swift shape: `RemoteInteractivePromptListPayload`
 `is_destructive` is present iff `true` (Go `omitempty`; Swift mirrors this).
 `detected_at` is a Swift `Date` number.
 
+Current senders include `pane_id` (UUID). Prompt responses require the
+`scoped_prompt_response` TAB_LIST capability and never fall back to tab-only
+INPUT. Older prompts without pane identity remain visible but must be answered
+on the Mac until it is updated.
+
+### INTERACTIVE_PROMPT_RESPONSE
+
+```json
+{"prompt_id":"prompt-1","pane_id":"11111111-1111-4111-8111-111111111111","action":"select","option_id":"yes"}
+```
+
+The frame header identifies the tab. Actions are `select`, `toggle`, `submit`,
+or `custom` (`custom_text` instead of `option_id`). The Mac verifies that the
+prompt is still current, belongs to that tab and pane, and offers the named
+option before deriving any keystrokes. Toggle/submit require a multi-select
+prompt. Missing, closed, mismatched, and already-answered targets fail closed.
+The Go helper forwards the encrypted frame without changing the action.
+
+### PANE_INPUT
+
+```json
+{"pane_id":"11111111-1111-4111-8111-111111111111","text":"hello\r"}
+```
+
+Exactly one of `text` or `keys` (KEY_INPUT key array) is required. Advertised by
+the `pane_input` capability; `input_pane_id` in each TAB_LIST entry identifies
+the terminal being streamed. The Mac rejects stale pane IDs and ambiguous
+legacy tab-only INPUT/KEY_INPUT for split tabs. Protected-action approvals retain
+pane, session, and terminal-instance identity until the decision is delivered.
+
 ### CLIENT_STATE
 
 Sent by iOS whenever its delivery-relevant state changes. The agent uses it
@@ -409,7 +441,7 @@ Clients must continue accepting unwrapped OUTPUT frames from older senders.
 
 ### INPUT
 
-UTF-8 bytes. iOS app appends `\n` by default before sending.
+Legacy UTF-8 bytes. Submit uses CR (`\r`); modern clients use PANE_INPUT.
 
 ### SNAPSHOT
 

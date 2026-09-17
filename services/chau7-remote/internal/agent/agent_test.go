@@ -38,7 +38,7 @@ func TestAnnounceIPCConnectionReplaysExistingSessionStatus(t *testing.T) {
 			if err != nil {
 				t.Fatalf("listen unix: %v", err)
 			}
-			defer listener.Close()
+			t.Cleanup(func() { _ = listener.Close() })
 
 			accepted := make(chan *net.UnixConn, 1)
 			acceptErr := make(chan error, 1)
@@ -55,7 +55,7 @@ func TestAnnounceIPCConnectionReplaysExistingSessionStatus(t *testing.T) {
 			if err != nil {
 				t.Fatalf("dial unix: %v", err)
 			}
-			defer client.Close()
+			t.Cleanup(func() { _ = client.Close() })
 
 			var server *net.UnixConn
 			select {
@@ -65,7 +65,7 @@ func TestAnnounceIPCConnectionReplaysExistingSessionStatus(t *testing.T) {
 			case <-time.After(time.Second):
 				t.Fatal("timed out accepting unix connection")
 			}
-			defer server.Close()
+			t.Cleanup(func() { _ = server.Close() })
 
 			a := &Agent{
 				state:        &State{DeviceID: "mac-device"},
@@ -434,6 +434,8 @@ func TestRequiresEncryptedRelayFrame(t *testing.T) {
 		protocol.TypeTabSwitch,
 		protocol.TypeInput,
 		protocol.TypeKeyInput,
+		protocol.TypeInteractivePromptResponse,
+		protocol.TypePaneInput,
 		protocol.TypeCheckpointRequest,
 		protocol.TypeRemoteTelemetry,
 		protocol.TypeApprovalResponse,

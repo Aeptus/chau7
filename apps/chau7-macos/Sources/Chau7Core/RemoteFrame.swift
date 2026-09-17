@@ -137,6 +137,8 @@ public enum RemoteFrameType: UInt8, CaseIterable, Sendable {
     case terminalGridSnapshot = 0x23
     case keyInput = 0x24
     case checkpointRequest = 0x25
+    case interactivePromptResponse = 0x26
+    case paneInput = 0x27
     case approvalRequest = 0x50
     case approvalResponse = 0x51
     case notificationEvent = 0x52

@@ -109,7 +109,9 @@ extension OverlayTabsModel {
            let bundleWindows = TabRestoreBundleStore.loadCurrentWindowStates(),
            let primaryWindowStates = bundleWindows.first,
            !primaryWindowStates.isEmpty {
-            let mergedWindows = TabStateBackupStore.mergedWindowStatesWithBackupFallbacks(baseWindows: bundleWindows)
+            let mergedWindows = TabStateBackupStore.mergedWindowStatesWithBackupFallbacks(
+                baseWindows: bundleWindows, recoverEmptyIdentities: false
+            )
             return decodeRestorableTabs(
                 fromStates: mergedWindows.first ?? primaryWindowStates,
                 appModel: appModel

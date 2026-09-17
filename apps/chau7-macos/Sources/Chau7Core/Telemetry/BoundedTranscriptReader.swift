@@ -5,14 +5,11 @@ import Foundation
 ///
 /// Active, long-running agent sessions can produce multi-GB logs. Reading the
 /// whole file as `Data` + `String` allocates ~2× its size and can OOM the host
-/// process — especially the telemetry repair sweep, which walks many runs back
-/// to back. These JSONL logs record cumulative token-usage events at the *end*
-/// of the file, so for oversized files we read only the trailing `maxBytes` and
-/// drop the partial leading record, leaving callers with whole JSONL lines.
+/// process — especially the telemetry repair sweep. Oversized reads are partial
+/// history; callers must not label per-event usage summed from a tail complete.
 public enum BoundedTranscriptReader {
-    /// Default cap. The data callers actually need (cumulative token counts and
-    /// the most recent turns) lives at the tail; 48 MB keeps ample context while
-    /// bounding peak memory regardless of true file size.
+    /// Default cap for recent context. Full-run metrics may require earlier
+    /// records; `truncatedFromBytes` explicitly reports that loss of coverage.
     public static let defaultMaxBytes = 48 * 1024 * 1024
 
     public struct Reading {
@@ -32,26 +29,34 @@ public enum BoundedTranscriptReader {
     /// record is dropped and bytes are decoded leniently (a seek can land mid
     /// UTF-8 sequence), so the result always starts on a record boundary.
     public static func read(at file: URL, maxBytes: Int = defaultMaxBytes) -> Reading? {
-        let size = fileSize(at: file.path)
-        if size <= maxBytes {
-            guard let data = try? Data(contentsOf: file),
-                  let text = String(data: data, encoding: .utf8) else { return nil }
-            return Reading(text: text, truncatedFromBytes: nil)
-        }
-
-        guard let handle = try? FileHandle(forReadingFrom: file) else { return nil }
+        guard maxBytes > 0, let handle = try? FileHandle(forReadingFrom: file) else { return nil }
         defer { try? handle.close() }
         do {
-            try handle.seek(toOffset: UInt64(size - maxBytes))
+            let length = try handle.seekToEnd()
+            guard length <= UInt64(Int.max) else { return nil }
+            let size = Int(length)
+            let offset = max(0, size - maxBytes)
+            var startsOnRecordBoundary = true
+            if offset > 0 {
+                try handle.seek(toOffset: UInt64(offset - 1))
+                startsOnRecordBoundary = try handle.read(upToCount: 1)?.first == 0x0A
+            } else {
+                try handle.seek(toOffset: 0)
+            }
+            // Do not readToEnd: the file can grow between the size check and
+            // the read, defeating the very memory bound this helper promises.
+            let data = try handle.read(upToCount: min(size, maxBytes)) ?? Data()
+            if offset == 0 {
+                guard let text = String(data: data, encoding: .utf8) else { return nil }
+                return Reading(text: text, truncatedFromBytes: nil)
+            }
+            var text = String(decoding: data, as: UTF8.self)
+            if !startsOnRecordBoundary {
+                text = text.firstIndex(of: "\n").map { String(text[text.index(after: $0)...]) } ?? ""
+            }
+            return Reading(text: text, truncatedFromBytes: size)
         } catch {
             return nil
         }
-        guard let data = try? handle.readToEnd() else { return nil }
-
-        var text = String(decoding: data, as: UTF8.self)
-        if let newline = text.firstIndex(of: "\n") {
-            text = String(text[text.index(after: newline)...])
-        }
-        return Reading(text: text, truncatedFromBytes: size)
     }
 }

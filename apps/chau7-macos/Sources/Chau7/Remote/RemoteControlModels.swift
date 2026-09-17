@@ -211,11 +211,18 @@ struct ProtectedRemoteInput {
     let tabID: UInt32
     let text: String
     let flaggedCommand: String
+    var paneID: UUID?
+    var runtimeSessionID: String?
+    var terminalIdentity: ObjectIdentifier?
     let createdAt = Date()
 
     static let ttl: TimeInterval = 120
 
     var isExpired: Bool {
         Date().timeIntervalSince(createdAt) > Self.ttl
+    }
+
+    func matchesTarget(sessionID: String, terminalIdentity: ObjectIdentifier?) -> Bool {
+        runtimeSessionID == sessionID && self.terminalIdentity == terminalIdentity
     }
 }

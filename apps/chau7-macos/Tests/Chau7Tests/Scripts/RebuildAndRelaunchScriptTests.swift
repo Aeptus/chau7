@@ -2,6 +2,33 @@ import XCTest
 import Chau7Core
 
 final class RebuildAndRelaunchScriptTests: XCTestCase {
+    func testBuildParallelismIsBoundedAndValidatesOverrides() throws {
+        let script = try String(contentsOf: repositoryRoot().appendingPathComponent("Scripts/build-and-run.sh"), encoding: .utf8)
+        let start = try XCTUnwrap(script.range(of: "\n# Bound compiler fan-out"))
+        let end = try XCTUnwrap(script.range(of: "\n# Build Rust libraries"))
+        let configuration = String(script[start.lowerBound ..< end.lowerBound])
+        let invocation = try XCTUnwrap(script.components(separatedBy: "\n").first { $0.hasPrefix("run_cmd swift build ") })
+        for value in ["", "2", "0", "-1", "2x"] {
+            let result = try run("/bin/bash", ["-c", """
+            set -euo pipefail
+            log_error() { echo "$*" >&2; }
+            run_cmd() { printf '%s\\n' "$@"; }
+            BUILD_MODE=debug
+            ROOT_DIR=/isolated-fixture
+            \(configuration)
+            \(invocation)
+            """], environment: ["CHAU7_SWIFT_JOBS": value])
+            if value.isEmpty || value == "2" {
+                XCTAssertEqual(result.status, 0, result.stderr)
+                XCTAssertTrue(result.stdout.contains("--jobs\n\(value.isEmpty ? "3" : value)\n"))
+            } else {
+                XCTAssertNotEqual(result.status, 0)
+                XCTAssertTrue(result.stderr.contains("must be a positive integer"))
+                XCTAssertFalse(result.stdout.contains("swift"))
+            }
+        }
+    }
+
     func testBundleVerificationAcceptsMatchingGoBuildRevision() throws {
         let result = try verifyFixture(helperRevision: "abcdef1234567890abcdef1234567890abcdef1234")
         XCTAssertEqual(result.status, 0, result.stdout + result.stderr)

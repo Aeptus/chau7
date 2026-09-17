@@ -3,6 +3,49 @@ import XCTest
 @testable import Chau7Core
 
 final class TelemetryRepairServiceTests: XCTestCase {
+    func testMissingTranscriptDoesNotLatchCompletedAndCanRecoverAfterFlush() throws {
+        let provider = DelayedProvider()
+        var now = Date()
+        let service = TelemetryRepairService(providers: [provider], now: { now })
+        let run = TelemetryRun(
+            id: "delayed-repair-\(UUID())",
+            sessionID: "session",
+            provider: "codex",
+            cwd: "/tmp",
+            startedAt: now.addingTimeInterval(-10),
+            endedAt: now,
+            costSource: .unavailable,
+            rawTranscriptRef: "pty_log"
+        )
+        TelemetryStore.shared.insertRun(run)
+        XCTAssertEqual(service.rebuildRunIfNeeded(runID: run.id), .skipped)
+        XCTAssertNil(try XCTUnwrap(TelemetryStore.shared.getRun(run.id)).transcriptRepairAttemptedAt)
+        XCTAssertEqual(service.rebuildRunIfNeeded(runID: run.id), .skipped)
+        XCTAssertEqual(provider.calls, 1, "immediate sweeps must respect failure backoff")
+        provider.ready = true
+        now = now.addingTimeInterval(8)
+        XCTAssertEqual(service.rebuildRunIfNeeded(runID: run.id), .rebuilt)
+        XCTAssertEqual(provider.calls, 2)
+        let repaired = try XCTUnwrap(TelemetryStore.shared.getRun(run.id))
+        XCTAssertNotNil(repaired.transcriptRepairAttemptedAt)
+        XCTAssertEqual(repaired.totalInputTokens, 123)
+        XCTAssertFalse(TelemetryRepairService.needsTranscriptRepair(repaired))
+    }
+
+    private final class DelayedProvider: RunContentProvider, @unchecked Sendable {
+        let providerName = "codex"
+        var calls = 0
+        var ready = false
+        func canHandle(provider: String) -> Bool {
+            provider == "codex"
+        }
+
+        func extractContent(runID: String, sessionID: String?, cwd: String, startedAt: Date, endedAt: Date?) -> ExtractedRunContent? {
+            calls += 1
+            return ready ? ExtractedRunContent(totalInputTokens: 123, tokenUsageState: .complete, rawTranscriptRef: "/synthetic/transcript.jsonl") : nil
+        }
+    }
+
     func testNeedsTranscriptRepairForFallbackClaudeRun() {
         let run = TelemetryRun(
             id: "run-1",
@@ -19,10 +62,7 @@ final class TelemetryRepairServiceTests: XCTestCase {
         XCTAssertTrue(TelemetryRepairService.needsTranscriptRepair(run))
     }
 
-    func testDoesNotNeedTranscriptRepairOnceAttempted() {
-        // Same shape as the fallback-Claude run that DOES need repair, but with
-        // a prior repair attempt stamped — it must not be re-selected, otherwise
-        // un-derivable runs loop through the sweep forever.
+    func testLegacyFailedAttemptWithNoTranscriptRemainsRecoverable() {
         let run = TelemetryRun(
             id: "run-1",
             sessionID: "session-1",
@@ -36,7 +76,7 @@ final class TelemetryRepairServiceTests: XCTestCase {
             transcriptRepairAttemptedAt: Date(timeIntervalSince1970: 1_765_000_200)
         )
 
-        XCTAssertFalse(TelemetryRepairService.needsTranscriptRepair(run))
+        XCTAssertTrue(TelemetryRepairService.needsTranscriptRepair(run))
     }
 
     func testDoesNotNeedTranscriptRepairWithoutSessionID() {

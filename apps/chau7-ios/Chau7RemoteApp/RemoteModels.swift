@@ -1,15 +1,16 @@
-/// Data models for the remote control protocol.
-///
-/// The wire payload schemas (handshake, tabs, approvals, client state,
-/// pending state, errors) live in `Chau7Core/Remote/RemoteWirePayloads.swift`
-/// — the single Swift source of truth shared with the macOS app. This file
-/// keeps iOS-local aliases, UI-facing models, and utilities.
+// Data models for the remote control protocol.
+//
+// The wire payload schemas (handshake, tabs, approvals, client state,
+// pending state, errors) live in `Chau7Core/Remote/RemoteWirePayloads.swift`
+// — the single Swift source of truth shared with the macOS app. This file
+// keeps iOS-local aliases, UI-facing models, and utilities.
 import CryptoKit
 import Chau7Core
 import Foundation
 import Security
 
 // MARK: - Shared wire payload aliases
+
 //
 // Local names predate the Chau7Core consolidation; new code should use the
 // Chau7Core names directly. These aliases disappear with the RemoteClient
@@ -167,7 +168,7 @@ enum RemoteConnectionFailureClassifier {
 /// capture. Sensitive entries trim in batches to amortize the required JSONL
 /// rewrite; the global cap is then enforced against the remaining timeline.
 enum DiagnosticsRetentionPolicy {
-    static let sensitiveCategories: Set<String> = ["input", "keystroke"]
+    static let sensitiveCategories: Set = ["input", "keystroke"]
 
     static func removalIndexes(
         categories: [String],
@@ -326,10 +327,21 @@ struct ApprovalRequest: Identifiable {
     let severity: ApprovalSeverity
     var responseState: ApprovalResponseState = .idle
 
-    var id: String { requestID }
-    var isProtectedRemoteAction: Bool { flaggedCommand != command }
-    var title: String { isProtectedRemoteAction ? "Protected Remote Action" : "Command Approval" }
-    var subtitle: String? { isProtectedRemoteAction ? flaggedCommand : nil }
+    var id: String {
+        requestID
+    }
+
+    var isProtectedRemoteAction: Bool {
+        flaggedCommand != command
+    }
+
+    var title: String {
+        isProtectedRemoteAction ? "Protected Remote Action" : "Command Approval"
+    }
+
+    var subtitle: String? {
+        isProtectedRemoteAction ? flaggedCommand : nil
+    }
 }
 
 struct ApprovalHistoryEntry: Identifiable {
@@ -339,8 +351,13 @@ struct ApprovalHistoryEntry: Identifiable {
     let approved: Bool
     let timestamp: Date
 
-    var isProtectedRemoteAction: Bool { flaggedCommand != command }
-    var title: String { isProtectedRemoteAction ? flaggedCommand : command }
+    var isProtectedRemoteAction: Bool {
+        flaggedCommand != command
+    }
+
+    var title: String {
+        isProtectedRemoteAction ? flaggedCommand : command
+    }
 }
 
 // MARK: - Notifications
@@ -431,25 +448,7 @@ enum RemoteMenuKeyHeuristics {
     /// mode correctly. Returns nil for anything that isn't pure navigation
     /// (digits, y/n tokens, free text), which must stay on the text path.
     static func semanticKeys(forNavigationResponse response: String) -> [RemoteKeyInputPayload.Key]? {
-        var rest = Substring(response)
-        var keys: [RemoteKeyInputPayload.Key] = []
-        while true {
-            if rest.hasPrefix("\u{1B}[A") {
-                keys.append(.init(key: "up"))
-                rest = rest.dropFirst(3)
-            } else if rest.hasPrefix("\u{1B}[B") {
-                keys.append(.init(key: "down"))
-                rest = rest.dropFirst(3)
-            } else {
-                break
-            }
-        }
-        if rest == "\r" || rest == "\n" {
-            keys.append(.init(key: "enter"))
-            rest = ""
-        }
-        guard rest.isEmpty, !keys.isEmpty else { return nil }
-        return keys
+        RemotePromptResponse.navigationKeys(for: response)
     }
 
     /// Whether a text-field send should drop its submit terminator. TUI menus

@@ -100,6 +100,13 @@ if [[ ! -f "$ROOT_DIR/Package.swift" ]]; then
   exit 1
 fi
 
+# Bound compiler fan-out while Chau7 and its live sessions share this host.
+SWIFT_BUILD_JOBS="${CHAU7_SWIFT_JOBS:-3}"
+if [[ ! "$SWIFT_BUILD_JOBS" =~ ^[1-9][0-9]*$ ]]; then
+  log_error "CHAU7_SWIFT_JOBS must be a positive integer."
+  exit 1
+fi
+
 # Build Rust libraries (optional but recommended for Rust terminal backend)
 LAST_STEP="Rust Libraries"
 if command -v cargo >/dev/null 2>&1; then
@@ -126,7 +133,7 @@ else
 fi
 
 LAST_STEP="Swift Build"
-run_cmd swift build -c "$BUILD_MODE" --package-path "$ROOT_DIR"
+run_cmd swift build --jobs "$SWIFT_BUILD_JOBS" -c "$BUILD_MODE" --package-path "$ROOT_DIR"
 
 BIN_PATH="$ROOT_DIR/.build/$BUILD_MODE/$APP_NAME"
 if [[ ! -f "$BIN_PATH" ]]; then

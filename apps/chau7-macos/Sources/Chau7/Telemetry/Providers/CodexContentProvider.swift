@@ -46,12 +46,15 @@ final class CodexContentProvider: RunContentProvider {
         return extractFromJSONL(file: file, runID: runID, startedAt: startedAt, endedAt: endedAt)
     }
 
-    private func extractFromJSONL(file: URL, runID: String, startedAt: Date, endedAt: Date?) -> ExtractedRunContent? {
+    func extractFromJSONL(
+        file: URL, runID: String, startedAt: Date, endedAt: Date?,
+        maxBytes: Int = BoundedTranscriptReader.defaultMaxBytes
+    ) -> ExtractedRunContent? {
         guard FileManager.default.fileExists(atPath: file.path) else {
             return nil
         }
 
-        guard let reading = BoundedTranscriptReader.read(at: file) else { return nil }
+        guard let reading = BoundedTranscriptReader.read(at: file, maxBytes: maxBytes) else { return nil }
         if let originalBytes = reading.truncatedFromBytes {
             Log.warn("CodexContentProvider: rollout \(file.lastPathComponent) is \(originalBytes / 1_048_576)MB; parsed last \(BoundedTranscriptReader.defaultMaxBytes / 1_048_576)MB to avoid OOM")
         }
@@ -71,11 +74,12 @@ final class CodexContentProvider: RunContentProvider {
             totalReasoningOutputTokens: parsed.tokenUsage.reasoningOutputTokens > 0 ? parsed.tokenUsage.reasoningOutputTokens : nil,
             costUSD: estimatedCost,
             tokenUsageSource: .transcriptDelta,
-            tokenUsageState: .complete,
+            tokenUsageState: reading.truncatedFromBytes == nil ? .complete : .partial,
             costSource: estimatedCost != nil ? .estimated : .unavailable,
-            costState: estimatedCost != nil ? .estimated : .missing,
+            costState: estimatedCost != nil ? (reading.truncatedFromBytes == nil ? .estimated : .partial) : .missing,
             rawTranscriptRef: file.path,
-            toolCalls: parsed.toolCalls
+            toolCalls: parsed.toolCalls,
+            transcriptIsPartial: reading.truncatedFromBytes != nil
         )
     }
 

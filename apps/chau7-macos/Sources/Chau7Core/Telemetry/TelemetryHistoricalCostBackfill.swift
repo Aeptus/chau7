@@ -21,7 +21,7 @@ public enum TelemetryHistoricalCostBackfill {
         var repaired = run
         repaired.costUSD = estimatedCost
         repaired.costSource = .estimated
-        repaired.costState = .estimated
+        repaired.costState = run.tokenUsageState == .partial ? .partial : .estimated
         return repaired
     }
 }

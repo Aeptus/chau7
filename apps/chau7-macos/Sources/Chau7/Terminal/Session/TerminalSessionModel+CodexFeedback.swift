@@ -178,26 +178,25 @@ extension TerminalSessionModel {
             return
         }
 
-        let maxAttempts = 20
-        guard attempt < maxAttempts else {
+        if attempt == CodexFeedbackLookupPolicy.fastRetryCount {
             Log.warn(
-                "Codex feedback monitor could not resolve rollout session=\(sessionID.prefix(8)) attempts=\(maxAttempts + 1)"
+                "Codex feedback rollout still unavailable session=\(sessionID.prefix(8)); continuing discovery every 60s"
             )
-            return
         }
 
-        let delay = min(2.0, 0.25 * pow(1.45, Double(attempt)))
+        let delay = CodexFeedbackLookupPolicy.retryDelay(afterAttempt: attempt)
         let retry = DispatchWorkItem { [weak self] in
             guard let self,
                   codexFeedbackLookupGeneration == generation,
-                  codexFeedbackMonitorSessionID == sessionID else {
+                  codexFeedbackMonitorSessionID == sessionID,
+                  eligibleCodexFeedbackSessionID() == sessionID else {
                 return
             }
             codexFeedbackLookupRetryWorkItem = nil
             locateCodexRollout(
                 sessionID: sessionID,
                 generation: generation,
-                attempt: attempt + 1
+                attempt: min(attempt + 1, CodexFeedbackLookupPolicy.fastRetryCount + 1)
             )
         }
         codexFeedbackLookupRetryWorkItem = retry

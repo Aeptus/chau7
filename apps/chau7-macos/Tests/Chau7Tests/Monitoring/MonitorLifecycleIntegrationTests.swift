@@ -93,12 +93,7 @@ final class MonitorLifecycleIntegrationTests: XCTestCase {
         wait(for: [firstPoll], timeout: 20.0)
 
         monitor.stop()
-        // ProcessResourceMonitor.stop() cancels its timer but cannot synchronously wait
-        // for an already-dispatched tick to run its `onUpdate`. Without this drain window,
-        // a racing callback could fulfill `secondPoll` before `start()` is called again.
-        // Until the monitor exposes a completion callback, this short wall-clock wait is
-        // the only way to keep the restart test deterministic.
-        Thread.sleep(forTimeInterval: 0.1)
+        // Cancellation invalidates queued callbacks immediately; no drain sleep.
         lock.lock()
         shouldExpectSecondPoll = true
         lock.unlock()
@@ -117,6 +112,56 @@ final class MonitorLifecycleIntegrationTests: XCTestCase {
         ProcessResourceMonitor { pid in
             ProcessGroupSnapshot(shellPid: pid, children: [], timestamp: Date())
         }
+    }
+
+    func testProcessResourceMonitorStopAndRestartDoNotWaitForSlowSnapshot() {
+        let entered = expectation(description: "slow provider entered")
+        let restarted = expectation(description: "new generation published")
+        let release = DispatchSemaphore(value: 0)
+        let monitor = ProcessResourceMonitor { pid in
+            if pid == 101 {
+                entered.fulfill()
+                _ = release.wait(timeout: .now() + 5)
+            }
+            return ProcessGroupSnapshot(shellPid: pid, children: [], timestamp: Date())
+        }
+        defer { release.signal()
+            monitor.stop()
+        }
+        monitor.onUpdate = { snapshot in
+            XCTAssertEqual(snapshot?.shellPid, 202, "Cancelled generation must never publish")
+            restarted.fulfill()
+        }
+        monitor.start(shellPID: 101)
+        wait(for: [entered], timeout: 3)
+
+        let started = ProcessInfo.processInfo.systemUptime
+        monitor.stop()
+        monitor.start(shellPID: 202)
+        XCTAssertLessThan(ProcessInfo.processInfo.systemUptime - started, 0.2)
+        release.signal()
+        wait(for: [restarted], timeout: 3)
+    }
+
+    func testProcessResourceMonitorStopSuppressesInFlightResult() {
+        let entered = expectation(description: "provider entered")
+        let lateUpdate = expectation(description: "cancelled update")
+        lateUpdate.isInverted = true
+        let release = DispatchSemaphore(value: 0)
+        let monitor = ProcessResourceMonitor { pid in
+            entered.fulfill()
+            _ = release.wait(timeout: .now() + 5)
+            return ProcessGroupSnapshot(shellPid: pid, children: [], timestamp: Date())
+        }
+        defer { release.signal()
+            monitor.stop()
+        }
+        monitor.onUpdate = { _ in lateUpdate.fulfill() }
+        monitor.start(shellPID: 101)
+        wait(for: [entered], timeout: 3)
+        monitor.stop()
+        release.signal()
+        wait(for: [lateUpdate], timeout: 0.3)
     }
 
     // MARK: - HistoryIdleMonitor lifecycle

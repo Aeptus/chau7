@@ -46,6 +46,8 @@ public struct RemoteInteractivePromptOption: Codable, Equatable, Sendable, Hasha
 public struct RemoteInteractivePrompt: Codable, Equatable, Sendable, Hashable, Identifiable {
     public let id: String
     public let tabID: UInt32
+    /// Exact terminal pane. Missing on older peers; never guess a split target.
+    public let paneID: UUID?
     public let tabTitle: String
     public let toolName: String
     public let projectName: String?
@@ -79,10 +81,12 @@ public struct RemoteInteractivePrompt: Codable, Equatable, Sendable, Hashable, I
         detectedAt: Date,
         pushTitle: String? = nil,
         pushSubtitle: String? = nil,
-        isMultiSelect: Bool? = nil
+        isMultiSelect: Bool? = nil,
+        paneID: UUID? = nil
     ) {
         self.id = id
         self.tabID = tabID
+        self.paneID = paneID
         self.tabTitle = tabTitle
         self.toolName = toolName
         self.projectName = projectName
@@ -100,6 +104,7 @@ public struct RemoteInteractivePrompt: Codable, Equatable, Sendable, Hashable, I
     enum CodingKeys: String, CodingKey {
         case id
         case tabID = "tab_id"
+        case paneID = "pane_id"
         case tabTitle = "tab_title"
         case toolName = "tool_name"
         case projectName = "project_name"

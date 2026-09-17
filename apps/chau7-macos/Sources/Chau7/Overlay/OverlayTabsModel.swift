@@ -849,7 +849,7 @@ extension SavedTabState {
         return topLevelScore + (paneStates?.reduce(0) { $0 + $1.aiResumeRestorationScore } ?? 0)
     }
 
-    func mergedAIResumePayload(with fallback: SavedTabState?) -> SavedTabState {
+    func mergedAIResumePayload(with fallback: SavedTabState?, recoverEmptyIdentities: Bool = true) -> SavedTabState {
         guard let fallback else { return self }
         let merged = SavedAIResumePayload.merged(
             current: SavedAIResumePayload.Fields(
@@ -858,12 +858,12 @@ extension SavedTabState {
                 sessionId: aiSessionId,
                 sessionIdSource: aiSessionIdSource
             ),
-            fallback: SavedAIResumePayload.Fields(
+            fallback: (recoverEmptyIdentities || aiProvider != nil || aiSessionId != nil || aiResumeCommand != nil) ? SavedAIResumePayload.Fields(
                 command: fallback.aiResumeCommand,
                 provider: fallback.aiProvider,
                 sessionId: fallback.aiSessionId,
                 sessionIdSource: fallback.aiSessionIdSource
-            )
+            ) : nil
         )
 
         let mergedPaneStates: [SavedTerminalPaneState]?
@@ -875,10 +875,11 @@ extension SavedTabState {
                 uniquingKeysWith: { first, _ in first }
             )
             mergedPaneStates = paneStates.map { pane in
-                pane.mergedAIResumePayload(with: fallbackByPaneID[pane.paneID])
+                (recoverEmptyIdentities || pane.hasAIResumePayload)
+                    ? pane.mergedAIResumePayload(with: fallbackByPaneID[pane.paneID]) : pane
             }
         } else {
-            mergedPaneStates = fallback.paneStates
+            mergedPaneStates = recoverEmptyIdentities ? fallback.paneStates : nil
         }
 
         return SavedTabState(

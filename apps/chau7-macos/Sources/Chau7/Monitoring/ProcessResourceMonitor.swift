@@ -64,9 +64,10 @@ final class ProcessResourceMonitor {
     var onUpdate: ((ProcessGroupSnapshot?) -> Void)?
 
     private var timer: DispatchSourceTimer?
-    /// All reads/writes of `isStopped` and `timer` are synchronized on `queue`.
-    private var isStopped = true
-    private var shellPID: pid_t = 0
+    // Cancellation must never wait for `ps`. Only this small generation value
+    // crosses queues; timer/backoff state stays on the worker queue.
+    private let lifecycleLock = NSLock()
+    private var generation: UInt64 = 0
     private let queue = DispatchQueue(label: "com.chau7.processmonitor", qos: .utility)
     private let snapshotProvider: SnapshotProvider
     private var consecutiveNoDataPolls = 0
@@ -76,37 +77,55 @@ final class ProcessResourceMonitor {
     }
 
     func start(shellPID: pid_t) {
-        stop()
-        guard shellPID > 0 else { return }
-
-        queue.sync {
-            self.shellPID = shellPID
-            isStopped = false
+        let generation = advanceGeneration()
+        queue.async { [weak self] in
+            guard let self, isCurrent(generation) else { return }
+            timer?.cancel()
+            timer = nil
             consecutiveNoDataPolls = 0
-            scheduleNextPollLocked()
+            if shellPID > 0 {
+                scheduleNextPollLocked(shellPID: shellPID, generation: generation)
+            }
         }
     }
 
     func stop() {
-        queue.sync {
-            isStopped = true
-            shellPID = 0
-            consecutiveNoDataPolls = 0
+        let generation = advanceGeneration()
+        queue.async { [weak self] in
+            guard let self, isCurrent(generation) else { return }
             timer?.cancel()
             timer = nil
+            consecutiveNoDataPolls = 0
         }
+    }
+
+    deinit {
+        timer?.cancel()
     }
 
     // MARK: - Private
 
-    private func scheduleNextPollLocked() {
-        guard !isStopped else { return }
+    private func advanceGeneration() -> UInt64 {
+        lifecycleLock.lock()
+        defer { lifecycleLock.unlock() }
+        generation &+= 1
+        return generation
+    }
+
+    private func isCurrent(_ candidate: UInt64) -> Bool {
+        lifecycleLock.lock()
+        defer { lifecycleLock.unlock() }
+        return candidate == generation
+    }
+
+    private func scheduleNextPollLocked(shellPID: pid_t, generation: UInt64) {
+        guard isCurrent(generation) else { return }
 
         timer?.cancel()
         let timer = DispatchSource.makeTimerSource(queue: queue)
         timer.schedule(deadline: .now() + intervalForNextPoll())
         timer.setEventHandler { [weak self] in
-            self?.poll()
+            self?.poll(shellPID: shellPID, generation: generation)
         }
         timer.resume()
         self.timer = timer
@@ -118,17 +137,11 @@ final class ProcessResourceMonitor {
         )
     }
 
-    private func poll() {
-        guard !isStopped else { return }
-        let currentShellPID = shellPID
-        guard currentShellPID > 0 else {
-            stop()
-            return
-        }
+    private func poll(shellPID: pid_t, generation: UInt64) {
+        guard isCurrent(generation) else { return }
 
-        let snapshot = snapshotProvider(currentShellPID)
-        let shouldSchedule = !isStopped
-        let shouldPublish = !isStopped
+        let snapshot = snapshotProvider(shellPID)
+        guard isCurrent(generation) else { return }
 
         if snapshot == nil || snapshot?.children.isEmpty == true {
             consecutiveNoDataPolls = min(consecutiveNoDataPolls + 1, MonitoringSchedule.defaultMaxConsecutiveNoDataPolls)
@@ -136,17 +149,12 @@ final class ProcessResourceMonitor {
             consecutiveNoDataPolls = 0
         }
 
-        if shouldPublish {
-            DispatchQueue.main.async { [weak self] in
-                self?.onUpdate?(snapshot)
-            }
+        DispatchQueue.main.async { [weak self] in
+            guard let self, isCurrent(generation) else { return }
+            onUpdate?(snapshot)
         }
 
-        if shouldSchedule {
-            queue.async { [weak self] in
-                self?.scheduleNextPollLocked()
-            }
-        }
+        scheduleNextPollLocked(shellPID: shellPID, generation: generation)
     }
 
     private static func captureSnapshot(shellPID: pid_t) -> ProcessGroupSnapshot? {

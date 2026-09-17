@@ -154,6 +154,7 @@ public extension TelemetryRun {
         costState = content.costState
         rawTranscriptRef = content.rawTranscriptRef
         turnCount = content.turns.count
+        metadata["transcript_content_state"] = content.transcriptIsPartial ? "partial" : "complete"
         if content.tokenUsageState == .invalid {
             errorMessage = invalidMessage
         } else if clearOnValid, errorMessage == invalidMessage {
@@ -176,6 +177,7 @@ public struct TelemetryRunFilter: Sendable {
     /// When true, only return completed runs that need transcript repair
     /// (missing transcript source, missing metrics, or unavailable cost).
     public var needsTranscriptRepair = false
+    public var excludedRunIDs: [String] = []
 
     public init(
         sessionID: String? = nil,

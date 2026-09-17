@@ -470,7 +470,7 @@ public enum UsageReconciliationService {
             score += 60
         case .estimated:
             score += 30
-        case .missing:
+        case .partial, .missing:
             break
         case .invalid:
             score -= 500
@@ -480,7 +480,7 @@ public enum UsageReconciliationService {
             score += 60
         case .estimated:
             score += 30
-        case .missing:
+        case .partial, .missing:
             break
         case .invalid:
             score -= 500
@@ -501,6 +501,7 @@ public enum UsageReconciliationService {
         selected: UsageEvidenceAggregate,
         alternatives: [UsageEvidenceAggregate]
     ) -> UsageReconciliationConfidence {
+        if selected.tokenUsageState == .partial || selected.costState == .partial { return .incomplete }
         if selected.sourceKind == .proxy,
            selected.costSource == .observed,
            selected.costState == .complete,
@@ -521,6 +522,7 @@ public enum UsageReconciliationService {
         if unique.contains(.invalid) {
             return .invalid
         }
+        if unique.contains(.partial) { return .partial }
         if unique == [.missing] {
             return .missing
         }

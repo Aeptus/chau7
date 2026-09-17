@@ -31,7 +31,9 @@ final class TabStateBackupStoreTests: XCTestCase {
         tabID: UUID,
         provider: String?,
         sessionId: String?,
-        command: String?
+        command: String?,
+        scrollback: String? = nil,
+        panes: [SavedTerminalPaneState]? = nil
     ) -> SavedTabState {
         SavedTabState(
             tabID: tabID.uuidString,
@@ -41,14 +43,14 @@ final class TabStateBackupStoreTests: XCTestCase {
             directory: "/tmp",
             selectedIndex: nil,
             tokenOptOverride: nil,
-            scrollbackContent: nil,
+            scrollbackContent: scrollback,
             aiResumeCommand: command,
             aiProvider: provider,
             aiSessionId: sessionId,
             aiSessionIdSource: sessionId == nil ? nil : .explicit,
             splitLayout: nil,
             focusedPaneID: nil,
-            paneStates: nil
+            paneStates: panes
         )
     }
 
@@ -89,6 +91,132 @@ final class TabStateBackupStoreTests: XCTestCase {
     }
 
     // MARK: - shouldArchiveMultiWindowBackup
+
+    func testHealthyBundleReadsNoArchiveCandidates() {
+        let healthy = makeState(tabID: UUID(), provider: "codex", sessionId: "session-123", command: "codex resume session-123")
+        let plain = makeState(tabID: UUID(), provider: nil, sessionId: nil, command: nil)
+        let result = TabStateBackupStore.mergedWindowStatesWithBackupFallbacks(
+            baseWindows: [[healthy, plain]], recoverEmptyIdentities: false,
+            candidateURLs: [URL(fileURLWithPath: "/unused")], loadMetadata: { _ in XCTFail("healthy restore must not scan archives")
+                return nil
+            }
+        )
+        XCTAssertEqual(result[0][0].aiSessionId, "session-123")
+        XCTAssertNil(result[0][1].aiResumeCommand)
+    }
+
+    func testRecoveryStopsAfterNewestCompleteIdentityAndPreservesTabStructure() {
+        let tabID = UUID()
+        let base = makeState(tabID: tabID, provider: "codex", sessionId: nil, command: nil, scrollback: "newest scrollback")
+        let recovered = makeState(tabID: tabID, provider: "codex", sessionId: "session-123", command: "codex resume session-123")
+        var reads = 0
+        let result = TabStateBackupStore.mergedWindowStatesWithBackupFallbacks(
+            baseWindows: [[base]], candidateURLs: [URL(fileURLWithPath: "/newest"), URL(fileURLWithPath: "/older")],
+            loadMetadata: { _ in reads += 1
+                return [[recovered]]
+            }
+        )
+        XCTAssertEqual(reads, 1)
+        XCTAssertEqual(result[0][0].aiSessionId, "session-123")
+        XCTAssertEqual(result[0][0].directory, base.directory)
+        XCTAssertEqual(result[0][0].tabID, base.tabID)
+        XCTAssertEqual(result[0][0].customTitle, base.customTitle)
+        XCTAssertEqual(result[0][0].scrollbackContent, "newest scrollback")
+    }
+
+    func testLegacyMissingPanePayloadHydratesWinningBackupScrollback() {
+        let id = UUID()
+        let pane = SavedTerminalPaneState(
+            paneID: UUID().uuidString,
+            directory: "/tmp",
+            scrollbackContent: "irreplaceable history",
+            aiResumeCommand: "codex resume session-123",
+            aiProvider: "codex",
+            aiSessionId: "session-123",
+            aiSessionIdSource: .explicit
+        )
+        let full = makeState(tabID: id, provider: "codex", sessionId: "session-123", command: "codex resume session-123", panes: [pane])
+        var fullReads = 0
+        let restored = TabStateBackupStore.mergedWindowStatesWithBackupFallbacks(
+            baseWindows: [[makeState(tabID: id, provider: "codex", sessionId: nil, command: nil)]],
+            candidateURLs: [URL(fileURLWithPath: "/winning-backup")],
+            loadMetadata: { _ in [[full.strippedForRestoreIndex]] },
+            loadFullCandidate: { _ in fullReads += 1
+                return [[full]]
+            }
+        )
+        XCTAssertEqual(fullReads, 1)
+        XCTAssertEqual(restored[0][0].paneStates?.first?.scrollbackContent, "irreplaceable history")
+    }
+
+    func testCurrentPlainPaneDoesNotResurrectHistoricalAIWhileOtherPaneRecovers() {
+        let id = UUID()
+        let aiPane = SavedTerminalPaneState(paneID: "ai", directory: "/tmp", scrollbackContent: "current", aiResumeCommand: nil, aiProvider: "codex")
+        let shellPane = SavedTerminalPaneState(paneID: "shell", directory: "/tmp", scrollbackContent: "shell history", aiResumeCommand: nil)
+        let oldAI = SavedTerminalPaneState(
+            paneID: "ai",
+            directory: "/tmp",
+            scrollbackContent: "old",
+            aiResumeCommand: "codex resume session-123",
+            aiProvider: "codex",
+            aiSessionId: "session-123",
+            aiSessionIdSource: .explicit
+        )
+        let formerAI = SavedTerminalPaneState(
+            paneID: "shell",
+            directory: "/tmp",
+            scrollbackContent: "old shell",
+            aiResumeCommand: "claude --resume session-456",
+            aiProvider: "claude",
+            aiSessionId: "session-456",
+            aiSessionIdSource: .explicit
+        )
+        let restored = TabStateBackupStore.mergedWindowStatesWithBackupFallbacks(
+            baseWindows: [[makeState(tabID: id, provider: nil, sessionId: nil, command: nil, panes: [aiPane, shellPane])]],
+            recoverEmptyIdentities: false, candidateURLs: [URL(fileURLWithPath: "/backup")],
+            loadMetadata: { _ in [[self.makeState(tabID: id, provider: nil, sessionId: nil, command: nil, panes: [oldAI, formerAI])]] }
+        )
+        XCTAssertEqual(restored[0][0].paneStates?.first?.aiSessionId, "session-123")
+        XCTAssertEqual(restored[0][0].paneStates?.first?.scrollbackContent, "current")
+        XCTAssertNil(restored[0][0].paneStates?.last?.aiResumeCommand)
+        XCTAssertEqual(restored[0][0].paneStates?.last?.scrollbackContent, "shell history")
+    }
+
+    func testMetadataProjectionSkipsHeavyPayloadAndRetainsPaneIdentity() throws {
+        let data = Data(
+            #"""
+            {"windows":[[{
+                "tabID":"tab-1", "aiProvider":"codex", "aiSessionId":"session-123",
+                "scrollbackContent":{"not":"a string"}, "previewSnapshotPNGData":"invalid-base64",
+                "paneStates":[{"paneID":"pane-2", "directory":"/tmp",
+                    "aiResumeCommand":"claude --resume session-456", "scrollbackContent":123}]
+            }]]}
+            """#
+            .utf8
+        )
+        let result = try XCTUnwrap(TabStateBackupStore.decodeBackupResumeMetadata(from: data))
+        XCTAssertEqual(result[0][0].aiSessionId, "session-123")
+        XCTAssertNil(result[0][0].scrollbackContent)
+        XCTAssertNil(result[0][0].previewSnapshotPNGData)
+        XCTAssertEqual(result[0][0].paneStates?.first?.paneID, "pane-2")
+        XCTAssertEqual(result[0][0].paneStates?.first?.aiResumeCommand, "claude --resume session-456")
+        XCTAssertNil(result[0][0].paneStates?.first?.scrollbackContent)
+    }
+
+    func testLegacyRecoveryStillSearchesForCompletelyMissingIdentity() {
+        let id = UUID()
+        var reads = 0
+        let base = makeState(tabID: id, provider: nil, sessionId: nil, command: nil)
+        let result = TabStateBackupStore.mergedWindowStatesWithBackupFallbacks(
+            baseWindows: [[base]], candidateURLs: [URL(fileURLWithPath: "/corrupt"), URL(fileURLWithPath: "/valid")],
+            loadMetadata: { _ in
+                reads += 1
+                return reads == 1 ? nil : [[self.makeState(tabID: id, provider: "codex", sessionId: "session-123", command: "codex resume session-123")]]
+            }
+        )
+        XCTAssertEqual(reads, 2)
+        XCTAssertEqual(result[0][0].aiSessionId, "session-123")
+    }
 
     func testShouldArchiveAlwaysTrueForTerminationAndRestoreSource() {
         let data = Data("payload".utf8)
