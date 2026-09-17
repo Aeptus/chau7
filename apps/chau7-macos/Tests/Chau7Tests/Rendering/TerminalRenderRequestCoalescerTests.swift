@@ -2,6 +2,53 @@ import XCTest
 @testable import Chau7Core
 
 final class TerminalRenderRequestCoalescerTests: XCTestCase {
+    func testOutputArrivingDuringPreparationSurvivesLaterDraw() throws {
+        var coalescer = TerminalRenderRequestCoalescer()
+        let snapshotRequest = try XCTUnwrap(coalescer.drawRequest())
+
+        // The worker has captured the old grid. Another PTY chunk arrives
+        // before AppKit asks to draw that prepared frame.
+        coalescer.requestSync()
+        let drawRequest = try XCTUnwrap(coalescer.drawRequest())
+        XCTAssertTrue(coalescer.completeCommittedDraw(
+            drawRequest,
+            preparedSyncRequest: snapshotRequest
+        ))
+        XCTAssertTrue(coalescer.needsSync, "The latest prompt has not been captured or drawn yet")
+
+        let finalSnapshotRequest = try XCTUnwrap(coalescer.drawRequest())
+        XCTAssertFalse(coalescer.completeCommittedDraw(
+            finalSnapshotRequest,
+            preparedSyncRequest: finalSnapshotRequest
+        ))
+        XCTAssertNil(coalescer.drawRequest(), "The final frame settles without requiring another PTY event")
+    }
+
+    func testPreparedFrameConsumesCurrentBlinkButNotNewerTerminalOutput() throws {
+        var coalescer = TerminalRenderRequestCoalescer()
+        let snapshotRequest = try XCTUnwrap(coalescer.drawRequest())
+        coalescer.requestSync()
+        coalescer.requestPresent()
+
+        XCTAssertTrue(try coalescer.completeCommittedDraw(
+            XCTUnwrap(coalescer.drawRequest()),
+            preparedSyncRequest: snapshotRequest
+        ))
+        XCTAssertTrue(coalescer.needsSync)
+        XCTAssertFalse(coalescer.needsPresent, "Blink state is read at draw time, not snapshot time")
+    }
+
+    func testBlinkDuringPreparationDoesNotRequireAnotherGridSnapshot() throws {
+        var coalescer = TerminalRenderRequestCoalescer()
+        let snapshotRequest = try XCTUnwrap(coalescer.drawRequest())
+        coalescer.requestPresent()
+
+        XCTAssertFalse(try coalescer.completeCommittedDraw(
+            XCTUnwrap(coalescer.drawRequest()),
+            preparedSyncRequest: snapshotRequest
+        ))
+    }
+
     func testInitialStateRequestsSyncAndPresent() {
         let coalescer = TerminalRenderRequestCoalescer()
 

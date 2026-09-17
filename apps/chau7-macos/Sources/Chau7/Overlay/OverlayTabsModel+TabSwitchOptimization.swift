@@ -758,12 +758,19 @@ extension OverlayTabsModel {
         if let terminalID = tab.splitController.focusedTerminalSessionID() {
             tab.splitController.setFocusedPane(terminalID)
             if let focusedSession = tab.splitController.root.findSession(id: terminalID) {
-                focusedSession.focusTerminal(in: window)
+                let tabID = tab.id
+                let controller = tab.splitController
+                focusedSession.focusTerminal(in: window, while: { [weak self, weak controller] in
+                    self?.selectedTabID == tabID && controller?.focusedPaneID == terminalID
+                })
                 return
             }
         }
 
-        tab.displaySession?.focusTerminal(in: window)
+        let tabID = tab.id
+        tab.displaySession?.focusTerminal(in: window, while: { [weak self] in
+            self?.selectedTabID == tabID
+        })
     }
 
     func ensureFreshTabIfNeeded() {

@@ -124,6 +124,7 @@ final class UnifiedTerminalContainerView: NSView {
 struct TerminalViewRepresentable: NSViewRepresentable {
     final class Coordinator {
         var lastRenderPhase: TabRenderPhase?
+        var ownedInteractivePresentation = false
 
         func seedRenderPhase(_ renderPhase: TabRenderPhase) {
             lastRenderPhase = renderPhase
@@ -436,6 +437,8 @@ struct TerminalViewRepresentable: NSViewRepresentable {
             isInteractive: isInteractive,
             isAuthoritativeFocusOwner: isAuthoritativeFocusOwner
         )
+        let becameInteractive = ownsInteractivePresentation && !context.coordinator.ownedInteractivePresentation
+        context.coordinator.ownedInteractivePresentation = ownsInteractivePresentation
         nsView.applyRenderPhase(
             renderPhase,
             isInteractive: ownsInteractivePresentation,
@@ -448,6 +451,14 @@ struct TerminalViewRepresentable: NSViewRepresentable {
             useMetalRenderer: settings.useMetalRenderer,
             reason: "update_ns_view"
         )
+        if becameInteractive {
+            let claimIsCurrent = rendererClaimIsCurrent
+            model.focusTerminal(in: nsView.window, while: { [weak nsView, weak container] in
+                nsView?.isInteractiveForRendering == true
+                    && container?.rustTerminalView === nsView
+                    && (claimIsCurrent?() ?? true)
+            })
+        }
         let shouldForceAuthoritativeReveal = TabRenderLifecyclePolicy.requiresAuthoritativeReveal(
             previousPhase: transition.previous,
             nextPhase: renderPhase

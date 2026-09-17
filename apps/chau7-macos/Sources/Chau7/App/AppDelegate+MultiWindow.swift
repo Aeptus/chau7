@@ -28,10 +28,9 @@ extension AppDelegate {
     static let terminationStateReuseFreshness: TimeInterval = 35
 
     /// The cached snapshot is reusable at quit only when it is recent AND the
-    /// live window structure still matches the fingerprint captured when the
-    /// snapshot was saved. The autosave interval (30s) exceeds nothing here:
-    /// any structural change since the last save forces a fresh collection,
-    /// so reuse can only ever skip re-capturing scrollback content.
+    /// live window structure and terminal activity still match the fingerprint
+    /// captured when it was saved. New output or input forces fresh collection
+    /// even if the directory, tab structure, and AI identity are unchanged.
     func shouldReuseCachedWindowStatesForTermination(now: Date = Date()) -> Bool {
         guard let lastSavedWindowStatesAt,
               !lastSavedWindowStates.isEmpty else {

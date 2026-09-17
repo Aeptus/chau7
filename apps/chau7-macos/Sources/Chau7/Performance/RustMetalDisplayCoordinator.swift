@@ -41,6 +41,7 @@ final class RustMetalDisplayCoordinator: NSObject {
 
     private struct PreparedFrame {
         let ticket: MetalFramePreparationTicket
+        let renderRequest: TerminalRenderRequestCoalescer.DrawRequest
         let buffer: TripleBufferedTerminal
         let rows: Int
         let cols: Int
@@ -360,7 +361,13 @@ final class RustMetalDisplayCoordinator: NSObject {
             scheduleCircuitBreakerRetry()
             return
         }
-        guard let ticket = framePreparationState.request() else { return }
+        guard let ticket = framePreparationState.request() else {
+            // A prepared frame may be waiting after a drawable/window delay.
+            // New output must re-arm its draw, not merely queue more work
+            // behind a frame that only draw(in:) can consume.
+            if preparedFrame != nil { scheduleDisplay() }
+            return
+        }
         launchFramePreparation(ticket)
     }
 
@@ -386,6 +393,12 @@ final class RustMetalDisplayCoordinator: NSObject {
     }
 
     private func launchFramePreparation(_ ticket: MetalFramePreparationTicket) {
+        // Retire redundant follow-ups (for example a visibility retry) after
+        // the consumed frame satisfied every outstanding sync request.
+        guard let snapshotRequest = renderRequests.drawRequest(), snapshotRequest.shouldSync else {
+            _ = framePreparationState.complete(ticket, succeeded: false)
+            return
+        }
         guard let provider = gridProvider,
               let terminalView else {
             _ = framePreparationState.complete(ticket, succeeded: false)
@@ -490,6 +503,7 @@ final class RustMetalDisplayCoordinator: NSObject {
 
             let frame = PreparedFrame(
                 ticket: ticket,
+                renderRequest: snapshotRequest,
                 buffer: targetBuffer,
                 rows: gridRows,
                 cols: gridCols,
@@ -514,6 +528,9 @@ final class RustMetalDisplayCoordinator: NSObject {
         )
         guard completion == .publish, let frame else {
             if ticket.bindingGeneration == framePreparationState.bindingGeneration {
+                // A failed full snapshot must not consume a theme/resize
+                // refresh requirement before any frame was actually prepared.
+                forceFullRefreshForNextPreparation = true
                 schedulePreparationRetry()
             }
             return
@@ -1089,7 +1106,10 @@ extension RustMetalDisplayCoordinator: MTKViewDelegate {
             // or copying the terminal grid on AppKit's main thread.
             guard let frame = preparedFrame else {
                 FeatureProfiler.shared.end(token)
-                requestFramePreparation()
+                // Waiting for an existing worker is not new terminal output.
+                // Queuing a phantom follow-up here can strand a prepared frame
+                // after the only real render request has already completed.
+                if framePreparationState.inFlight == nil { requestFramePreparation() }
                 return
             }
             renderer.cursorRow = Int(frame.cursor.row)
@@ -1224,6 +1244,15 @@ extension RustMetalDisplayCoordinator: MTKViewDelegate {
             )
         }
 
+        // Consume only the sync generation captured before the worker acquired
+        // its snapshot. The newer request observed at draw time may include
+        // output absent from that snapshot. Complete before launching a
+        // follow-up so it can observe whether any sync work actually remains.
+        let needsFollowUp = renderRequests.completeCommittedDraw(
+            renderRequest,
+            preparedSyncRequest: shouldSync ? preparedFrame?.renderRequest : nil
+        )
+
         // 7. Advance triple buffer only when we consumed fresh synced terminal state.
         if shouldSync {
             let consumedTicket = preparedFrame?.ticket
@@ -1240,11 +1269,7 @@ extension RustMetalDisplayCoordinator: MTKViewDelegate {
             }
         }
 
-        // Complete only the request generation consumed by this draw. If PTY
-        // output, blink, theme, or resize requested another frame while this
-        // one was being prepared/committed, keep it pending and re-arm the
-        // coalesced display path.
-        if renderRequests.completeCommittedDraw(renderRequest) {
+        if needsFollowUp {
             scheduleDisplay()
         }
 

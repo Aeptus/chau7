@@ -2,6 +2,19 @@ import XCTest
 @testable import Chau7
 
 final class SettingsSurfaceTests: XCTestCase {
+    func testNativeSettingsSceneHasRealContentAndSharedNavigation() throws {
+        let packageRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().deletingLastPathComponent()
+        let source = try String(contentsOf: packageRoot.appendingPathComponent("Sources/Chau7/App/Chau7App.swift"))
+        let start = try XCTUnwrap(source.range(of: "        Settings {"))
+        let end = try XCTUnwrap(source.range(of: "        .commands {", range: start.upperBound ..< source.endIndex))
+        let scene = source[start.upperBound ..< end.lowerBound]
+        XCTAssertTrue(scene.contains("SettingsWindowView("))
+        XCTAssertTrue(scene.contains("navigation: appDelegate.settingsNavigationModel"))
+        XCTAssertFalse(scene.contains("EmptyView()"))
+    }
+
     func testEverySectionAppearsInExactlyOneSidebarGroup() {
         let groupedSections = SettingsSectionGroup.allCases.flatMap(\.sections)
         XCTAssertEqual(Set(groupedSections), Set(SettingsSection.allCases))

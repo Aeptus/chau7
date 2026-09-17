@@ -201,6 +201,15 @@ final class FileMonitorTests: XCTestCase {
         waitUntil { registry.activeWatchCountForTesting() == 0 }
     }
 
+    func testWaitUntilLatchesTheFirstSuccessfulObservation() {
+        var observations = 0
+        waitUntil {
+            observations += 1
+            return observations == 1
+        }
+        XCTAssertEqual(observations, 1)
+    }
+
     private func waitUntil(
         timeout: TimeInterval = 3,
         file: StaticString = #filePath,
@@ -208,7 +217,10 @@ final class FileMonitorTests: XCTestCase {
         condition: @escaping () -> Bool
     ) {
         let deadline = Date().addingTimeInterval(timeout)
-        while !condition(), Date() < deadline {
+        while Date() < deadline {
+            // A watch handoff may briefly change the registry again. Once the
+            // awaited state is observed, don't evaluate it a second time.
+            if condition() { return }
             RunLoop.current.run(until: Date().addingTimeInterval(0.01))
         }
         XCTAssertTrue(condition(), file: file, line: line)

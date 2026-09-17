@@ -1188,6 +1188,7 @@ final class TerminalSessionModel {
 
     @ObservationIgnored private var didClearOnLaunch = false
     @ObservationIgnored private var shouldAutoFocusOnAttach = true // Auto-focus when terminal view is attached
+    @ObservationIgnored private var terminalFocusRequestGeneration: UInt64 = 0
     @ObservationIgnored var didStartDevServerMonitor = false // Track if dev server monitor has started
     // AI detection state machine — handles sliding buffer, cooldown, re-detection
     // locking, and phase transitions. See AIDetectionState.swift for details.
@@ -1631,13 +1632,14 @@ final class TerminalSessionModel {
             }
         }
 
-        // Auto-focus on attach for newly created tabs
+        // Attachment is asynchronous. Only the currently interactive pane may
+        // request focus; background restore panes must never steal the responder.
         if shouldAutoFocusOnAttach {
             shouldAutoFocusOnAttach = false
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak view] in
-                guard let view = view, let window = view.window else { return }
-                window.makeFirstResponder(view)
-                Log.trace("Auto-focused Rust terminal view on attach")
+            if terminalFocusRequestGeneration == 0, view.isInteractiveForRendering {
+                focusTerminal(in: view.window, while: { [weak view] in
+                    view?.isInteractiveForRendering == true
+                })
             }
         }
 
@@ -1677,48 +1679,61 @@ final class TerminalSessionModel {
         Log.trace("restoreBootstrap: settled for \(title) via \(source)")
     }
 
-    func focusTerminal(in window: NSWindow?, retryCount: Int = 0) {
-        guard let window else { return }
+    func focusTerminal(in window: NSWindow?, while shouldStillFocus: @escaping () -> Bool) {
+        terminalFocusRequestGeneration &+= 1
+        attemptTerminalFocus(
+            in: window,
+            generation: terminalFocusRequestGeneration,
+            initialResponder: window?.firstResponder,
+            shouldStillFocus: shouldStillFocus,
+            attempt: 0
+        )
+    }
+
+    private func attemptTerminalFocus(
+        in window: NSWindow?,
+        generation: UInt64,
+        initialResponder: NSResponder?,
+        shouldStillFocus: @escaping () -> Bool,
+        attempt: Int
+    ) {
         let candidateView = rustTerminalView ?? retainedRustTerminalView
-
-        let responderName: String = {
-            guard let responder = window.firstResponder else { return "nil" }
-            return String(describing: type(of: responder))
-        }()
-
-        if EnvVars.isEnabled(EnvVars.inputDiagnostics) {
-            Log.info(
-                "focusTerminal: title='\(title)' retry=\(retryCount) " +
-                    "candidate=\(candidateView != nil) firstResponder=\(responderName)"
-            )
-        }
-
-        if let view = candidateView,
-           view.window === window {
-            let focused = window.makeFirstResponder(view)
-            if EnvVars.isEnabled(EnvVars.inputDiagnostics) {
-                Log.info(
-                    "focusTerminal: makeFirstResponder title='\(title)' success=\(focused) " +
-                        "viewWindowMatches=true"
-                )
-            }
-            if focused {
-                return
-            }
-        }
-
-        if retryCount < 8 {
-            // The terminal view may exist but not be attached yet after tab switch.
-            // Retry until the selected tab's view is in-window and focusable.
-            let attempt = retryCount + 1
-            Log.trace("focusTerminal: view not ready for '\(title)', retry \(attempt)/8 in 75ms")
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.075) { [weak self] in
-                self?.focusTerminal(in: window, retryCount: attempt)
-            }
+        let targetWindow = window ?? candidateView?.window
+        let responder = targetWindow?.firstResponder
+        let switchedToEditor = initialResponder != nil && responder !== initialResponder
+            && (responder is NSTextView || responder is NSTextField)
+            && candidateView?.isFirstResponderInTerminal() != true
+        let action = TerminalFocusRequestPolicy.action(
+            isCurrentRequest: generation == terminalFocusRequestGeneration,
+            ownsFocus: shouldStillFocus(),
+            responderChangedToEditor: switchedToEditor,
+            isInteractive: candidateView?.isInteractiveForRendering == true,
+            appIsActive: NSApp?.isActive == true,
+            isKeyWindow: targetWindow?.isKeyWindow == true,
+            isOnActiveSpace: targetWindow?.isOnActiveSpace == true,
+            viewIsAttached: candidateView?.window != nil && candidateView?.window === targetWindow,
+            attempt: attempt
+        )
+        guard action != .cancel else { return }
+        if action == .focus, let view = candidateView, let targetWindow,
+           targetWindow.makeFirstResponder(view) {
+            Log.trace("focusTerminal: focused current interactive pane after \(attempt) retries")
             return
         }
-
-        Log.warn("focusTerminal: unable to focus terminal for '\(title)' after 8 retries")
+        guard attempt < TerminalFocusRequestPolicy.retryLimit else {
+            Log.warn("focusTerminal: selected terminal did not become focusable before timeout")
+            return
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + TerminalFocusRequestPolicy.retryDelay) {
+            [weak self, weak window, weak initialResponder] in
+            self?.attemptTerminalFocus(
+                in: window,
+                generation: generation,
+                initialResponder: initialResponder,
+                shouldStillFocus: shouldStillFocus,
+                attempt: attempt + 1
+            )
+        }
     }
 
     // Shell Integration methods moved to TerminalSessionModel+ShellIntegration.swift

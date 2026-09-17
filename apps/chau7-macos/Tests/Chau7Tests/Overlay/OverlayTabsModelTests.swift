@@ -277,6 +277,24 @@ final class OverlayTabsModelTests: XCTestCase {
 
     // MARK: - Initial State
 
+    func testLiveStateSignatureInvalidatesQuitCacheAfterNewOutput() throws {
+        let session = try XCTUnwrap(model.tabs.first?.session)
+        let before = model.liveStateSignature()
+
+        session.lastOutputAt = session.lastOutputAt.addingTimeInterval(1)
+
+        XCTAssertNotEqual(model.liveStateSignature(), before)
+    }
+
+    func testLiveStateSignatureInvalidatesQuitCacheAfterNewInput() throws {
+        let session = try XCTUnwrap(model.tabs.first?.session)
+        let before = model.liveStateSignature()
+
+        session.lastInputAt = session.lastInputAt.addingTimeInterval(1)
+
+        XCTAssertNotEqual(model.liveStateSignature(), before)
+    }
+
     func testInitialState() {
         XCTAssertEqual(model.tabs.count, 1, "Model should start with exactly one tab")
         XCTAssertEqual(

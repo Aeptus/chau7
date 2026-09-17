@@ -124,7 +124,8 @@ private final class SettingsToolbarDelegate: NSObject, NSToolbarDelegate {
     private var splashController: SplashWindowController?
     private var settingsWindow: NSWindow?
     private var settingsToolbarDelegate: SettingsToolbarDelegate?
-    private let settingsNavigationModel = SettingsNavigationModel()
+    // Shared by the native Settings scene and the explicitly opened window.
+    let settingsNavigationModel = SettingsNavigationModel()
     private var isClosingTab = false // Flag to prevent windowShouldClose from hiding window during tab close
     private var nextOverlayWindowNumber = 1
     /// Tracks windows that were hidden via orderOut - used to trigger tab bar refresh only when needed
@@ -167,8 +168,8 @@ private final class SettingsToolbarDelegate: NSObject, NSToolbarDelegate {
     /// Cheap structural fingerprint of the live windows at the time
     /// `lastSavedWindowStates` was captured. Termination may only reuse the
     /// cached snapshot when the current fingerprint still matches — otherwise
-    /// a tab created/renamed/recolored/cd'd (or an AI session started) in the
-    /// final seconds before quit would be silently lost to timer phase.
+    /// a tab created/renamed/recolored/cd'd, an AI session started, or terminal
+    /// activity in the final seconds before quit would be lost to timer phase.
     var lastSavedWindowStatesSignature: [[String]] = []
 
     // MARK: - App Nap Prevention

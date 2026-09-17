@@ -394,6 +394,14 @@ The app still contains internal runtime orchestration used by dashboard and revi
 
 ## Terminal Core
 
+- **Interactive TUI color isolation** — new shells discard inherited launcher `NO_COLOR` suppression while respecting explicit shell preferences; fragmented ANSI/UTF-8 output and restored history retain their styling and layout.
+
+- **Fresh quit-time restoration** — recent terminal input/output invalidates cached quit snapshots so final activity is captured before the ordered persistence queue drains.
+
+- **Ordered PTY ingestion** — concurrent drains cannot reorder shell output or saved scrollback; UI polls remain non-blocking behind another reader, and raw output stays queued until consumed.
+
+- **Selection-owned input recovery** — bounded focus retries wait for terminal attachment and window activation, cancel when superseded or the selected pane changes, and do not reclaim focus after the user moves to an editor.
+
 - **Rust terminal backend** — custom emulator via FFI: fast, memory-safe, correct.
 - **Pinned FFI contract** — the terminal dylib exports an ABI version and struct-layout probes that Swift verifies before binding any symbols, and an integration test exercises the real built dylib end-to-end on every test run.
 - **Rust acceleration layer** — ANSI segment parsing, pattern matching, escape sanitizing, command-risk detection, and dim patching run in `chau7_parse` with Swift fallbacks; the dylib's symbol exports are verified at build time.
@@ -454,6 +462,8 @@ The app still contains internal runtime orchestration used by dashboard and revi
 - iPhone remote approvals now keep polling alive across websocket relay URLs and background-task expiration edges, with explicit push-entitlement and iOS 18 deployment settings tracked in the app project.
 
 ## Performance
+
+- **Async frame completion integrity** — a Metal frame acknowledges the output generation captured before its snapshot, retains newer output for a follow-up, re-arms prepared frames after presentation delays, and retires redundant work without stranding subsequent typing or shell prompts.
 
 - **Bounded scrollback cache I/O** — per-tab ordering is preserved through one shared serial operation lane, so simultaneous demotions cannot multiply full-buffer capture/compression peaks. Atomic verified writes classify capacity, permission, corruption, and generic I/O failures, and a failed cache never permits ring shrinkage.
 - **Independent main-thread hang supervision** — a four-Hz atomic main-queue heartbeat is observed without synchronously calling AppKit. A confirmed two-second stall temporarily blocks terminal paint work while PTY capture and persistence remain live; a separate watchdog process records one five-second stack sample after four seconds and never kills or relaunches the shell-owning app.
@@ -660,6 +670,8 @@ Chau7's rendering pipeline is purpose-built for latency-sensitive terminal work:
 - Configurable window backdrop blur — enabled by default for the native overlay appearance, with an immediate persisted toggle to reduce graphics work when desired.
 
 ## Settings & Configuration
+
+- **Populated native Settings scene** — macOS-driven Settings activation and restoration render the complete settings UI and share navigation with Chau7's explicitly opened Settings window.
 
 - Comprehensive settings UI with fuzzy search coverage for every routed settings pane, including app/window chrome, display rendering, tabs, performance, keyboard, AI detection, Agent Control, Context Optimization, AI Context, API Tracking, History, Diagnostics, Command Safety, repository metadata, hover card, and About support/diagnostics surfaces.
 - Settings profiles — save, load, export, import named configurations, and auto-switch the live runtime profile by directory/glob, repository name, SSH host, process name, or environment variable.
@@ -940,6 +952,8 @@ Legacy `AI_*` and `SMART_OVERLAY_*` environment variables are still supported.
 - Contextual power user tips.
 
 ## Quality Gates
+
+- **Restoration-safe test storage** — XCTest uses process-specific temporary Application Support by default, keeping restore-bundle cleanup away from production session data while honoring explicit test homes.
 
 - **Restoration-safe Chau7 build skill** — the bundled `chau7-build` skill documents the guarded quit/build/install/relaunch workflow, verifies source and helper provenance, and keeps session restoration artifacts outside release operations.
 - **Warnings-as-errors Swift baseline** — asynchronous callbacks use explicit capture ownership, and the macOS format, lint, and strict compiler gates run cleanly before publication.

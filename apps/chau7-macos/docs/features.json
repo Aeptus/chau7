@@ -1,5 +1,54 @@
 [
   {
+    "category": "Terminal Core",
+    "feature": "Interactive TUI Color Isolation",
+    "description": "Prevents inherited launcher NO_COLOR from disabling interactive TUI styling while retaining explicit shell overrides, with fragmented ANSI and styled-history replay regression coverage",
+    "status": "Shipped",
+    "differentiator": "No"
+  },
+  {
+    "category": "Terminal Core",
+    "feature": "Activity-Aware Quit Snapshots",
+    "description": "Invalidates cached termination snapshots after recent input or output even when tab structure and agent identity are unchanged, preserving activity from the final autosave interval",
+    "status": "Shipped",
+    "differentiator": "No"
+  },
+  {
+    "category": "Terminal Core",
+    "feature": "Ordered PTY Ingestion",
+    "description": "Serializes PTY receive, parse, and publication without blocking zero-timeout UI polls and retains unread raw output until consumed, preserving display and scrollback order",
+    "status": "Shipped",
+    "differentiator": "No"
+  },
+  {
+    "category": "Developer Experience",
+    "feature": "Restoration-Safe XCTest Storage",
+    "description": "Routes XCTest Application Support to process-specific temporary storage by default so test cleanup cannot erase the production restore bundle, while explicit isolated homes retain precedence",
+    "status": "Shipped",
+    "differentiator": "No"
+  },
+  {
+    "category": "Terminal Core",
+    "feature": "Selection-Owned Terminal Input Recovery",
+    "description": "Bounded generation-scoped focus retries wait for attachment and activation, validate selected pane ownership, and cancel when superseded or the user moves to an editor",
+    "status": "Shipped",
+    "differentiator": "No"
+  },
+  {
+    "category": "Performance",
+    "feature": "Asynchronous Terminal Frame Completion Integrity",
+    "description": "Metal acknowledges only the output generation captured before each snapshot, retains newer output, re-arms prepared frames, and retires redundant follow-ups without freezing subsequent typing or shell prompts",
+    "status": "Shipped",
+    "differentiator": "No"
+  },
+  {
+    "category": "Settings",
+    "feature": "Populated Native Settings Scene",
+    "description": "System-driven Settings activation and restoration render complete settings content using the same navigation model as the custom Settings window",
+    "status": "Shipped",
+    "differentiator": "No"
+  },
+  {
     "category": "Developer Experience",
     "feature": "Guarded Local Rebuild and Relaunch",
     "description": "Validates a clean current checkout and embedded helper revision, builds into a fresh directory before stopping Chau7, quits with bounded escalation, and atomically installs a verified bundle with rollback backup while leaving session data untouched",

@@ -69,6 +69,7 @@
 
  Acquire locks in ascending order to prevent deadlocks:
 
+ 0. `pty_poll_lock`        (Mutex)  — ordered receive/parse/publish transaction
  1. `pty_handle`           (Mutex)  — PTY writer for input/resize
  2. `term`                 (Mutex)  — alacritty terminal state
  3. `processor`            (Mutex)  — VTE processor (always acquired with #2)

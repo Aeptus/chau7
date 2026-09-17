@@ -87,6 +87,15 @@ const INVARIANT_CHECK_PERIOD: u64 = 16;
 const MALLOC_STACK_LOGGING_WARNING: &[u8] =
     b" MallocStackLogging: can't turn off malloc stack logging because it was not enabled.";
 
+fn configure_terminal_color_environment(cmd: &mut CommandBuilder) {
+    // GUI launches from automation must not make interactive TUIs monochrome.
+    // Explicit launch overrides are applied afterward, and shell startup files
+    // remain free to opt out of color themselves.
+    cmd.env_remove("NO_COLOR");
+    cmd.env("TERM", "xterm-256color");
+    cmd.env("COLORTERM", "truecolor");
+}
+
 fn filter_terminal_output_noise<'a>(data: &'a [u8]) -> Cow<'a, [u8]> {
     if !data
         .windows(b"MallocStackLogging".len())
@@ -244,6 +253,7 @@ pub enum TerminalError {
 ///
 /// Acquire locks in ascending order to prevent deadlocks:
 ///
+/// 0. `pty_poll_lock`        (Mutex)  — ordered receive/parse/publish transaction
 /// 1. `pty_handle`           (Mutex)  — PTY writer for input/resize
 /// 2. `term`                 (Mutex)  — alacritty terminal state
 /// 3. `processor`            (Mutex)  — VTE processor (always acquired with #2)
@@ -275,6 +285,9 @@ pub struct Chau7Terminal {
     pub(crate) shell_pid: AtomicU64,
     /// Channel receiver for PTY output data when backed by a live shell.
     pub(crate) pty_rx: Option<Receiver<PtyMessage>>,
+    /// One poll owns the stream from dequeue through parsing and publication.
+    /// Per-parser locks alone allow concurrent consumers to reorder PTY chunks.
+    pty_poll_lock: Mutex<()>,
     /// Flag to signal the reader pool to stop monitoring this terminal
     pub(crate) running: Arc<AtomicBool>,
     /// Raw fd registered with the shared reader pool (for unregistration on drop)
@@ -302,7 +315,7 @@ pub struct Chau7Terminal {
     pub(crate) last_primary_total_lines: AtomicU64,
     /// Theme colors for rendering (RwLock for read-heavy access pattern)
     pub(crate) theme_colors: RwLock<ThemeColors>,
-    /// Raw output bytes from the last poll (for Swift onOutput callback - Issue #3 fix)
+    /// Unread output bytes, accumulated until Swift consumes them.
     pub(crate) last_output: Mutex<Vec<u8>>,
     /// Flag indicating if a bell occurred since last check (shared with EventListener)
     pub(crate) bell_pending: Arc<AtomicBool>,
@@ -417,6 +430,7 @@ impl Chau7Terminal {
             child: Mutex::new(None),
             shell_pid: AtomicU64::new(0),
             pty_rx: None,
+            pty_poll_lock: Mutex::new(()),
             running: Arc::new(AtomicBool::new(false)),
             reader_pool_fd: None,
             event_rx,
@@ -547,8 +561,7 @@ impl Chau7Terminal {
             debug!("[terminal-{}] Working directory: {}", id, dir);
             cmd.cwd(dir);
         }
-        cmd.env("TERM", "xterm-256color");
-        cmd.env("COLORTERM", "truecolor");
+        configure_terminal_color_environment(&mut cmd);
 
         // Set environment variables
         for (key, value) in env_vars {
@@ -695,6 +708,7 @@ impl Chau7Terminal {
             child: Mutex::new(Some(child)),
             shell_pid: AtomicU64::new(shell_pid as u64),
             pty_rx: Some(pty_rx),
+            pty_poll_lock: Mutex::new(()),
             running,
             reader_pool_fd: if reader_fd >= 0 {
                 Some(reader_fd)
@@ -1045,6 +1059,9 @@ impl Chau7Terminal {
 
     /// Poll for new data from PTY, process it, and return event flags.
     /// Raw output bytes are stored in `last_output` for retrieval via `get_last_output()`.
+    /// Concurrent callers must not dequeue ahead of the active parser. A zero
+    /// timeout never waits for another poll; blocking callers share their timeout
+    /// budget between acquiring ownership and waiting for the first PTY message.
     #[must_use]
     pub fn poll_events(&self, timeout_ms: u32) -> u32 {
         let poll_start = Instant::now();
@@ -1058,6 +1075,10 @@ impl Chau7Terminal {
         );
 
         let timeout = Duration::from_millis(effective_timeout as u64);
+        let Some(_poll_guard) = self.pty_poll_lock.try_lock_for(timeout) else {
+            return 0;
+        };
+        let timeout = timeout.saturating_sub(poll_start.elapsed());
         let mut had_data = false;
         let mut had_renderable_data = false;
         let mut bytes_this_poll = 0usize;
@@ -1128,10 +1149,10 @@ impl Chau7Terminal {
             }
         }
 
-        // Single lock: replace last_output with accumulated data
-        {
+        // The event-drain worker can poll again before Swift handles its wake.
+        // Keep unread bytes in stream order; an idle poll must not erase them.
+        if !local_output.is_empty() {
             let mut last_output = self.last_output.lock();
-            last_output.clear();
             last_output.extend_from_slice(&local_output);
         }
 
@@ -1330,7 +1351,7 @@ impl Chau7Terminal {
         value
     }
 
-    /// Get the raw output bytes from the last poll.
+    /// Consume raw output bytes accumulated since the previous retrieval.
     pub fn get_last_output(&self) -> Vec<u8> {
         let mut last_output = self.last_output.lock();
         std::mem::take(&mut *last_output)
@@ -3088,6 +3109,179 @@ impl Drop for Chau7Terminal {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn interactive_terminal_drops_inherited_color_suppression() {
+        let mut cmd = CommandBuilder::new("/bin/sh");
+        cmd.env("NO_COLOR", "1");
+        cmd.env("TERM", "dumb");
+        cmd.env("COLORTERM", "");
+        cmd.env("CHAU7_TEST_UNRELATED", "preserved");
+
+        configure_terminal_color_environment(&mut cmd);
+
+        assert_eq!(cmd.get_env("NO_COLOR"), None);
+        assert_eq!(
+            cmd.get_env("TERM"),
+            Some(std::ffi::OsStr::new("xterm-256color"))
+        );
+        assert_eq!(
+            cmd.get_env("COLORTERM"),
+            Some(std::ffi::OsStr::new("truecolor"))
+        );
+        assert_eq!(
+            cmd.get_env("CHAU7_TEST_UNRELATED"),
+            Some(std::ffi::OsStr::new("preserved"))
+        );
+    }
+
+    #[test]
+    fn interactive_terminal_allows_explicit_color_opt_out() {
+        let mut cmd = CommandBuilder::new("/bin/sh");
+        configure_terminal_color_environment(&mut cmd);
+        // Same order as new_with_launch: explicit overrides win.
+        cmd.env("NO_COLOR", "1");
+        assert_eq!(cmd.get_env("NO_COLOR"), Some(std::ffi::OsStr::new("1")));
+    }
+
+    fn terminal_with_queued_pty() -> (Chau7Terminal, crossbeam_channel::Sender<PtyMessage>) {
+        let mut term = Chau7Terminal::new_headless(80, 24).expect("headless terminal");
+        let (tx, rx) = crossbeam_channel::unbounded();
+        term.pty_rx = Some(rx);
+        (term, tx)
+    }
+
+    #[test]
+    fn concurrent_polls_preserve_fragmented_tui_styles_and_layout() {
+        let input = (0..96)
+            .map(|n| format!("\x1b[1;38;2;255;140;30m│ row {n:03} │\x1b[0m \x1b[4;32mgreen\x1b[0m \x1b[3;34mblue\x1b[0m\r\n"))
+            .collect::<String>();
+        let reference = Chau7Terminal::new_headless(80, 24).unwrap();
+        reference.inject_output(input.as_bytes());
+        let (term, tx) = terminal_with_queued_pty();
+        let term = Arc::new(term);
+        // Split SGR parameters and UTF-8 box characters across PTY messages.
+        for chunk in input.as_bytes().chunks(3) {
+            tx.send(PtyMessage::Data(chunk.to_vec())).unwrap();
+        }
+        let barrier = Arc::new(std::sync::Barrier::new(8));
+        let workers: Vec<_> = (0..8)
+            .map(|_| {
+                let term = Arc::clone(&term);
+                let barrier = Arc::clone(&barrier);
+                std::thread::spawn(move || {
+                    barrier.wait();
+                    while !term.pty_rx.as_ref().unwrap().is_empty() {
+                        let _ = term.poll_events(0);
+                        std::thread::yield_now();
+                    }
+                })
+            })
+            .collect();
+        for worker in workers {
+            worker.join().unwrap();
+        }
+
+        assert_eq!(
+            term.full_buffer_ansi_text(),
+            reference.full_buffer_ansi_text()
+        );
+        assert_eq!(term.get_last_output(), input.as_bytes());
+        let restored = Chau7Terminal::new_headless(80, 24).unwrap();
+        restored.inject_output(term.full_buffer_ansi_text().as_bytes());
+        // Export includes the blank cursor row; compare all styled content
+        // exactly, ignoring only empty rows appended by replay/export.
+        assert_eq!(
+            restored
+                .full_buffer_ansi_text()
+                .trim_end_matches(['\r', '\n']),
+            reference
+                .full_buffer_ansi_text()
+                .trim_end_matches(['\r', '\n'])
+        );
+    }
+
+    #[test]
+    fn poll_preserves_unread_output_across_data_and_idle_polls() {
+        let (term, tx) = terminal_with_queued_pty();
+        tx.send(PtyMessage::Data(b"first\r\n".to_vec())).unwrap();
+        let _ = term.poll_events(0);
+        tx.send(PtyMessage::Data(b"second\r\n".to_vec())).unwrap();
+        let _ = term.poll_events(0);
+        let _ = term.poll_events(0);
+
+        assert_eq!(term.get_last_output(), b"first\r\nsecond\r\n");
+        assert!(term.get_last_output().is_empty(), "retrieval consumes once");
+    }
+
+    #[test]
+    fn poll_zero_timeout_does_not_wait_or_dequeue_behind_another_poller() {
+        let (term, tx) = terminal_with_queued_pty();
+        let term = Arc::new(term);
+        // Pause the first poll after it receives a chunk, before parsing it.
+        let parser_guard = term.graphics_interceptor.lock();
+        tx.send(PtyMessage::Data(b"first\r\n".to_vec())).unwrap();
+        let first_term = Arc::clone(&term);
+        let first = std::thread::spawn(move || first_term.poll_events(200));
+        let deadline = Instant::now() + Duration::from_secs(2);
+        while !term.pty_rx.as_ref().unwrap().is_empty() && Instant::now() < deadline {
+            std::thread::yield_now();
+        }
+        let first_dequeued = term.pty_rx.as_ref().unwrap().is_empty();
+
+        tx.send(PtyMessage::Data(b"second\r\n".to_vec())).unwrap();
+        let (finished_tx, finished_rx) = std::sync::mpsc::channel();
+        let second_term = Arc::clone(&term);
+        let second = std::thread::spawn(move || {
+            finished_tx.send(second_term.poll_events(0)).unwrap();
+        });
+        let result = finished_rx.recv_timeout(Duration::from_millis(200));
+        let queued_while_parser_blocked = term.pty_rx.as_ref().unwrap().len();
+        // Always release/join before assertions, even on the broken implementation.
+        drop(parser_guard);
+        first.join().unwrap();
+        second.join().unwrap();
+
+        assert!(first_dequeued, "first poll should reach the parser");
+        assert_eq!(result, Ok(0), "UI polling must not wait for another poll");
+        assert_eq!(
+            queued_while_parser_blocked, 1,
+            "only one consumer may dequeue"
+        );
+        assert_eq!(term.get_last_output(), b"first\r\nsecond\r\n");
+        assert_eq!(term.full_buffer_text().trim_end(), "first\nsecond");
+    }
+
+    #[test]
+    fn concurrent_polls_preserve_pty_byte_and_scrollback_order() {
+        let (term, tx) = terminal_with_queued_pty();
+        let term = Arc::new(term);
+        let expected_text = (0..1024).map(|n| format!("{n}\n")).collect::<String>();
+        let expected_bytes = expected_text.replace('\n', "\r\n").into_bytes();
+        for chunk in expected_bytes.chunks(7) {
+            tx.send(PtyMessage::Data(chunk.to_vec())).unwrap();
+        }
+        let barrier = Arc::new(std::sync::Barrier::new(8));
+        let workers: Vec<_> = (0..8)
+            .map(|_| {
+                let term = Arc::clone(&term);
+                let barrier = Arc::clone(&barrier);
+                std::thread::spawn(move || {
+                    barrier.wait();
+                    while !term.pty_rx.as_ref().unwrap().is_empty() {
+                        let _ = term.poll_events(0);
+                        std::thread::yield_now();
+                    }
+                })
+            })
+            .collect();
+        for worker in workers {
+            worker.join().unwrap();
+        }
+
+        assert_eq!(term.full_buffer_text().trim_end(), expected_text.trim_end());
+        assert_eq!(term.get_last_output(), expected_bytes);
+    }
 
     #[test]
     fn filters_codex_malloc_stack_logging_noise_line() {

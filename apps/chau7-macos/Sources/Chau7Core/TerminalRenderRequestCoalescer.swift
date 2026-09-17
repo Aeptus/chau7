@@ -104,11 +104,18 @@ public struct TerminalRenderRequestCoalescer: Equatable, Sendable {
         coalescedPresentRequestCount = 0
     }
 
-    /// Clears only the generations consumed by the committed draw.
+    /// Clears only the generations consumed by the committed draw. Async
+    /// renderers capture `preparedSyncRequest` before acquiring the grid; the
+    /// newer request at draw time may include output absent from that snapshot.
+    /// Present-only state (such as cursor blink) is still consumed at draw time.
     /// Returns true when a newer request remains pending and needs another draw.
     @discardableResult
-    public mutating func completeCommittedDraw(_ request: DrawRequest) -> Bool {
-        if request.shouldSync, syncGeneration == request.syncGeneration {
+    public mutating func completeCommittedDraw(
+        _ request: DrawRequest,
+        preparedSyncRequest: DrawRequest? = nil
+    ) -> Bool {
+        let consumedSync = preparedSyncRequest ?? request
+        if request.shouldSync, consumedSync.shouldSync, syncGeneration == consumedSync.syncGeneration {
             needsSync = false
         }
         if request.shouldPresent, presentGeneration == request.presentGeneration {

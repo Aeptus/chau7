@@ -1596,12 +1596,9 @@ final class OverlayTabsModel {
 
     /// Exports current tab states without persisting to disk.
     /// Used by AppDelegate to collect all windows' states for multi-window save.
-    /// Cheap structural fingerprint of the live tab state — every field the
-    /// termination save would silently lose by reusing a stale cached
-    /// snapshot (tab identity/order, titles, colors, selection, repo group,
-    /// pane layout, directories, AI session identity), EXCEPT scrollback
-    /// content, whose capture is the expensive part the cache exists to
-    /// avoid. Costs a few string concatenations per tab; no FFI calls.
+    /// Cheap fingerprint of tab structure, identity, and terminal activity.
+    /// Activity timestamps invalidate cached scrollback without copying it or
+    /// making FFI calls. Only unchanged, idle sessions may reuse a quit snapshot.
     func liveStateSignature() -> [String] {
         var parts: [String] = [selectedTabID.uuidString]
         for tab in tabs {
@@ -1610,6 +1607,7 @@ final class OverlayTabsModel {
                 let provider = session.effectiveAIProvider ?? session.lastAIProvider ?? ""
                 let sessionId = session.effectiveAISessionId ?? ""
                 piece += "|\(paneID.uuidString)|\(session.currentDirectory)|\(provider)|\(sessionId)"
+                piece += "|\(session.lastInputAt.timeIntervalSinceReferenceDate)|\(session.lastOutputAt.timeIntervalSinceReferenceDate)"
             }
             parts.append(piece)
         }

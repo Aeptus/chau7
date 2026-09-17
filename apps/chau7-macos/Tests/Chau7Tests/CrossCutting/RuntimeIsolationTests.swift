@@ -18,6 +18,25 @@ final class RuntimeIsolationTests: XCTestCase {
         XCTAssertEqual(url.path, "/tmp/chau7-isolated-home/Library/Application Support")
     }
 
+    func testApplicationSupportDefaultsToTemporaryStorageUnderXCTest() {
+        let url = RuntimeIsolation.appSupportDirectory(named: "Chau7", environment: [:])
+        let expected = FileManager.default.temporaryDirectory
+            .appendingPathComponent("Chau7Tests-\(ProcessInfo.processInfo.processIdentifier)")
+            .appendingPathComponent("Library/Application Support/Chau7")
+
+        XCTAssertEqual(url.standardizedFileURL, expected.standardizedFileURL)
+        XCTAssertFalse(url.path.hasPrefix(NSHomeDirectory()))
+    }
+
+    func testExplicitHomeWinsForApplicationSupportUnderXCTest() {
+        let url = RuntimeIsolation.applicationSupportDirectory(environment: [
+            "CHAU7_HOME_ROOT": "/tmp/chau7-isolated-home",
+            "XCTestBundlePath": "/tmp/Chau7Tests.xctest"
+        ])
+
+        XCTAssertEqual(url.path, "/tmp/chau7-isolated-home/Library/Application Support")
+    }
+
     func testChau7DirectoryUsesOverrideRoot() {
         let url = RuntimeIsolation.chau7Directory(environment: [
             "CHAU7_HOME_ROOT": "/tmp/chau7-isolated-home"

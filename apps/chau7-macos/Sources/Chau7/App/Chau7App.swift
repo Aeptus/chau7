@@ -110,7 +110,15 @@ struct Chau7App: App {
     var body: some Scene {
         // Status bar is handled by StatusBarController for multi-monitor support
         Settings {
-            EmptyView()
+            // macOS can open/restore this scene independently of our menu
+            // action. An EmptyView here creates a real but permanently blank
+            // Settings window on launch or system-driven settings activation.
+            SettingsWindowView(
+                model: model,
+                overlayModel: appDelegate.overlayModel ?? overlayModel,
+                navigation: appDelegate.settingsNavigationModel
+            )
+            .localized()
         }
         .commands {
 
