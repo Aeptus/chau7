@@ -3,6 +3,26 @@ import XCTest
 @testable import Chau7Core
 
 final class TelemetryRepairServiceTests: XCTestCase {
+    func testInitialExtractionExcludesPeriodicAndExplicitRepairUntilReleased() throws {
+        let provider = DelayedProvider(providerName: "codex-initial-\(UUID())")
+        provider.ready = true
+        let service = TelemetryRepairService(providers: [provider])
+        let run = TelemetryRun(
+            id: "initial-extraction-\(UUID())", sessionID: "session", provider: provider.providerName,
+            cwd: "/tmp", startedAt: Date(), endedAt: Date(), rawTranscriptRef: "pty_log"
+        )
+        XCTAssertTrue(service.beginInitialExtraction(runID: run.id))
+        XCTAssertFalse(service.beginInitialExtraction(runID: run.id))
+        TelemetryStore.shared.insertRun(run)
+        XCTAssertEqual(service.rebuildRunIfNeeded(runID: run.id), .skipped)
+        _ = service.rebuildRecentIncompleteRuns()
+        XCTAssertEqual(provider.calls, 0, "initial extraction must exclude periodic repair too")
+        XCTAssertNil(try XCTUnwrap(TelemetryStore.shared.getRun(run.id)).transcriptRepairAttemptedAt)
+        service.finishInitialExtraction(runID: run.id)
+        XCTAssertEqual(service.rebuildRunIfNeeded(runID: run.id), .rebuilt)
+        XCTAssertEqual(provider.calls, 1)
+    }
+
     func testMissingTranscriptDoesNotLatchCompletedAndCanRecoverAfterFlush() throws {
         let provider = DelayedProvider()
         var now = Date()
@@ -33,11 +53,15 @@ final class TelemetryRepairServiceTests: XCTestCase {
     }
 
     private final class DelayedProvider: RunContentProvider, @unchecked Sendable {
-        let providerName = "codex"
+        let providerName: String
         var calls = 0
         var ready = false
+        init(providerName: String = "codex") {
+            self.providerName = providerName
+        }
+
         func canHandle(provider: String) -> Bool {
-            provider == "codex"
+            provider == providerName
         }
 
         func extractContent(runID: String, sessionID: String?, cwd: String, startedAt: Date, endedAt: Date?) -> ExtractedRunContent? {

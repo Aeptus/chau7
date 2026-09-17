@@ -157,6 +157,8 @@ final class TelemetryRecorder {
         }
 
         if Self.shouldExtractRunContentInBackground(provider: run.provider, contentMode: contentMode) {
+            let repairService = TelemetryRepairService.shared
+            let ownsExtraction = repairService.beginInitialExtraction(runID: runID)
             finalizeCompletedRun(
                 run,
                 tabID: tabID,
@@ -167,10 +169,13 @@ final class TelemetryRecorder {
                 scheduleRepair: false
             )
 
+            guard ownsExtraction else { return }
+
             let runSnapshot = run
             let terminalBufferSnapshot = terminalBuffer
             let ptyLogPathSnapshot = ptyLogPath
             extractionQueue.async { [weak self] in
+                defer { repairService.finishInitialExtraction(runID: runID) }
                 guard let self else { return }
                 // Repair must follow the first extraction, not race it after
                 // two seconds and parse the same large rollout a second time.

@@ -99,6 +99,18 @@ final class TelemetryRepairService {
         return rebuildRun(&run, invalidateOnFailure: false)
     }
 
+    /// Reserve before publishing the completed run. Both periodic sweeps and
+    /// explicit repairs then coalesce behind its initial background extraction.
+    func beginInitialExtraction(runID: String) -> Bool {
+        retryGate.begin(runID, now: now())
+    }
+
+    func finishInitialExtraction(runID: String) {
+        // Release ownership without claiming transcript repair completed. A
+        // missing initial transcript remains eligible for the delayed repair.
+        retryGate.finish(runID, succeeded: true, now: now())
+    }
+
     private func rebuildRun(_ run: inout TelemetryRun, invalidateOnFailure: Bool) -> TelemetryRunRepairResult {
         guard let provider = providers.first(where: { $0.canHandle(provider: run.provider) }) else {
             return .skipped

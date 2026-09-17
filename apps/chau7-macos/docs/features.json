@@ -23,7 +23,7 @@
   {
     "category": "Telemetry",
     "feature": "Retryable Transcript Repair and Partial Coverage",
-    "description": "Coalesces transcript repairs with bounded retry backoff, recovers legacy failed-discovery stamps, schedules repair after initial extraction, and preserves explicit partial-history usage and cost status for bounded transcript tails",
+    "description": "Coalesces initial extraction and all transcript repairs with bounded retry backoff, recovers legacy failed-discovery stamps, and preserves explicit partial-history usage and cost status for bounded transcript tails",
     "status": "Shipped",
     "differentiator": "No"
   },
