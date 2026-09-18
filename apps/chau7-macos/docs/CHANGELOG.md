@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Stability hardening
 
+- CTO now passes machine-readable git output (`--porcelain`, `-z`, and `--format`) through byte-for-byte, including empty and NUL-delimited output, so scripts and CI do not parse human-oriented summaries.
 - Remote prompt answers now carry validated pane/prompt identities across iOS, the encrypted helper, and macOS. Direct keyboard input is pane-scoped too; stale targets and ambiguous legacy split input fail closed. All split panes publish status changes, and delayed protected-action approvals retain the originating terminal identity.
 - Process hover-card cancellation no longer waits for a subprocess scan; stopped/replaced generations cannot publish stale snapshots. OSC 52 clipboard replies use the ordered background PTY writer, coalesce duplicate drain observations, and bound clipboard payloads.
 - Healthy current restoration identities skip archive reads. Recovery scans metadata lazily, retains current layout/scrollback, and hydrates full winning pane payloads only when a legacy base lacks them. No backup deletion or migration is needed.

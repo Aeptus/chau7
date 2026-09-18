@@ -5031,5 +5031,12 @@
     "description": "Keeps visible terminal siblings mouse-interactive, transfers AppKit focus before selection, routes copy and paste to the focused terminal, and resets copy-on-select state so repeated selections cannot leave stale clipboard contents",
     "status": "Shipped",
     "differentiator": "Yes"
+  },
+  {
+    "category": "Developer Experience",
+    "feature": "Machine-Readable Git Pass-Through",
+    "description": "Git porcelain, NUL-delimited, and format output bypasses human-oriented CTO filtering and preserves empty and machine-readable results byte-for-byte for scripts and CI",
+    "status": "Shipped",
+    "differentiator": "Yes"
   }
 ]
