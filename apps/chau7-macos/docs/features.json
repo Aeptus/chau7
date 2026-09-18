@@ -5024,5 +5024,12 @@
     "description": "The bundled chau7-build skill documents and validates the guarded quit/build/install/relaunch workflow, checks source and helper provenance, and keeps session restoration artifacts outside release operations",
     "status": "Shipped",
     "differentiator": "Yes"
+  },
+  {
+    "category": "Terminal Core",
+    "feature": "Reliable Split-Pane Clipboard Focus",
+    "description": "Keeps visible terminal siblings mouse-interactive, transfers AppKit focus before selection, routes copy and paste to the focused terminal, and resets copy-on-select state so repeated selections cannot leave stale clipboard contents",
+    "status": "Shipped",
+    "differentiator": "Yes"
   }
 ]

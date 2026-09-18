@@ -3141,7 +3141,11 @@ final class RustTerminalView: NSView {
         if isHidden != shouldHide {
             isHidden = shouldHide
         }
-        setEventMonitoringEnabled(isInteractive)
+        // Keep mouse monitors installed for passive visible split panes.  The
+        // focused-pane flag controls keyboard routing and renderer ownership;
+        // it must not prevent an unfocused sibling from receiving the click
+        // that transfers focus to it.
+        setEventMonitoringEnabled(PaneInteractionPolicy.shouldMonitorMouse(for: phase))
         // Stop event drains for tabs leaving the active phase. Without this,
         // deselected tabs accumulate stale drain threads that hog PTY
         // channels and starve the selected tab.

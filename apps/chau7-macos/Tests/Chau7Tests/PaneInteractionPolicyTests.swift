@@ -31,4 +31,11 @@ final class PaneInteractionPolicyTests: XCTestCase {
             )
         )
     }
+
+    func testMouseMonitoringFollowsVisibleSurfaceNotKeyboardOwnership() {
+        XCTAssertTrue(PaneInteractionPolicy.shouldMonitorMouse(for: .active))
+        XCTAssertTrue(PaneInteractionPolicy.shouldMonitorMouse(for: .passiveVisible))
+        XCTAssertFalse(PaneInteractionPolicy.shouldMonitorMouse(for: .warm))
+        XCTAssertFalse(PaneInteractionPolicy.shouldMonitorMouse(for: .hidden))
+    }
 }

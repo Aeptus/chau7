@@ -180,6 +180,20 @@ extension RustTerminalView {
         send(mouseReport: report)
     }
 
+    /// Transfer AppKit focus before handling a click in this terminal.  This
+    /// is intentionally done from the local mouse monitor: an inactive split
+    /// pane has no SwiftUI gesture ownership, so waiting for a view-level
+    /// callback leaves copy/paste and subsequent keyboard input on the old
+    /// pane.
+    private func focusForMouseInteraction() {
+        guard let window, window.firstResponder !== self else { return }
+        guard window.makeFirstResponder(self) else {
+            Log.trace("RustTerminalView[\(viewId)]: mouse interaction could not become first responder")
+            return
+        }
+        Log.trace("RustTerminalView[\(viewId)]: focused via mouse interaction")
+    }
+
     /// Send a mouse press event
     func sendMousePress(button: MouseButton, at location: NSPoint, modifiers: NSEvent.ModifierFlags = []) {
         let cell = pointToCell(location)
@@ -270,6 +284,11 @@ extension RustTerminalView {
                 return event
             }
 
+            // An inactive split sibling is still visible and owns the click.
+            // Make it the first responder before selection or mouse reporting
+            // so the onFocus callback updates the split controller immediately.
+            focusForMouseInteraction()
+
             let cell = pointToCell(location)
             Log.trace("RustTerminalView[\(viewId)]: mouseDown at (\(location.x), \(location.y)) -> cell (\(cell.col), \(cell.row))")
 
@@ -310,6 +329,7 @@ extension RustTerminalView {
             if event.clickCount == 2 {
                 // Double-click: Select word at click location (Semantic selection)
                 Log.trace("RustTerminalView[\(viewId)]: Double-click at cell (\(absoluteCell.col), \(absoluteCell.row)) - selecting word")
+                lastSelectionText = nil
                 rustTerminal?.startSelection(col: absoluteCell.col, row: absoluteCell.row, selectionType: 2) // Semantic
                 needsGridSync = true
                 mouseDownLocation = nil // Prevent cursor positioning and drag start
@@ -318,6 +338,7 @@ extension RustTerminalView {
             } else if event.clickCount >= 3 {
                 // Triple-click: Select entire line (Lines selection)
                 Log.trace("RustTerminalView[\(viewId)]: Triple-click at row \(absoluteCell.row) - selecting line")
+                lastSelectionText = nil
                 rustTerminal?.startSelection(col: 0, row: absoluteCell.row, selectionType: 3) // Lines
                 needsGridSync = true
                 mouseDownLocation = nil // Prevent cursor positioning and drag start
@@ -326,7 +347,7 @@ extension RustTerminalView {
             }
 
             // Clear any existing selection on mouse down (single click)
-            rustTerminal?.clearSelection()
+            clearSelection()
             needsGridSync = true
 
             return event

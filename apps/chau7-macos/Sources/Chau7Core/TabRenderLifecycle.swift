@@ -32,6 +32,14 @@ public enum PaneInteractionPolicy {
     ) -> Bool {
         isFocused && tabIsInteractive
     }
+
+    /// Mouse interaction must remain available for every pane whose surface is
+    /// visible.  Only the focused pane is allowed to route keyboard input and
+    /// claim the shared renderer, but a passive split sibling still needs to
+    /// receive the click that transfers focus to it.
+    public static func shouldMonitorMouse(for phase: TabRenderPhase) -> Bool {
+        phase.keepsVisibleSurface
+    }
 }
 
 public struct TabRenderLifecycleInput: Equatable, Sendable {

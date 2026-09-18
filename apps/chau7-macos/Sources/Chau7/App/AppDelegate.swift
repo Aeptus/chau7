@@ -887,6 +887,21 @@ private final class SettingsToolbarDelegate: NSObject, NSToolbarDelegate {
     }
 
     func copyOrInterrupt() {
+        // Route terminal copy directly when the key window's responder is a
+        // terminal view (or one of its rendering subviews).  A generic
+        // sendAction can be reported as handled by a stale responder while
+        // leaving NSPasteboard unchanged, which is exactly what users see as
+        // copying the previous pane's selection.
+        if let window = NSApp.keyWindow,
+           let terminal = activeTerminalView(in: window) {
+            window.makeFirstResponder(terminal)
+            if let rustView = terminal as? RustTerminalView {
+                rustView.copy(nil)
+                Log.info("Copy action routed directly to RustTerminalView[\(rustView.viewId)].")
+                return
+            }
+        }
+
         if NSApp.sendAction(#selector(NSText.copy(_:)), to: nil, from: nil) {
             Log.info("Copy action sent via responder chain.")
             return
@@ -910,6 +925,18 @@ private final class SettingsToolbarDelegate: NSObject, NSToolbarDelegate {
     }
 
     func paste() {
+        // Mirror copy routing so a terminal paste cannot be consumed by a
+        // responder left behind by the previously focused split pane.
+        if let window = NSApp.keyWindow,
+           let terminal = activeTerminalView(in: window) {
+            window.makeFirstResponder(terminal)
+            if let rustView = terminal as? RustTerminalView {
+                rustView.paste(nil)
+                Log.trace("Paste action routed directly to RustTerminalView[\(rustView.viewId)].")
+                return
+            }
+        }
+
         if NSApp.sendAction(#selector(NSText.paste(_:)), to: nil, from: nil) {
             Log.trace("Paste handled by responder chain.")
             return
@@ -1792,6 +1819,17 @@ private final class SettingsToolbarDelegate: NSObject, NSToolbarDelegate {
 
         if let rustView = responder as? RustTerminalView {
             return rustView
+        }
+
+        // Metal/grid/overlay subviews can temporarily be AppKit's first
+        // responder. Walk their view ancestry so menu copy/paste still reaches
+        // the owning terminal instead of falling through to a stale handler.
+        var view = responder as? NSView
+        while let current = view {
+            if let rustView = current as? RustTerminalView {
+                return rustView
+            }
+            view = current.superview
         }
         return nil
     }
