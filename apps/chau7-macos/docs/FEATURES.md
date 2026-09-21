@@ -199,6 +199,7 @@ Built-in token optimizer (`chau7_optim`, forked from [RTK](https://github.com/rt
 - Safe wrapper installation: a wrapper is installed only when the command's real binary resolves (never shadowing a bare name with no target into a branded exit 127, which previously fired even with CTO off), and unsupported wrappers are pruned on setup so upgrades heal previously-installed names.
 - Shell-accurate binary resolution: the wrapper's hardcoded real binary is resolved from the same login-shell `PATH` terminals launch with (Homebrew/volta/cargo/`~/bin` ahead of the system dirs), not the GUI app's minimal `PATH`, so a wrapped command never execs a different interpreter than the one the user's shell would (e.g. Xcode's `python3` instead of Homebrew's).
 - Fail-safe optimizer: an internal `chau7-optim` error or panic exits 3 (the wrapper's fall-through code) so the real binary still runs and the reason is printed to stderr, instead of the wrapper mistaking the failure for optimized output and suppressing the command. Deliberate handler exit codes that follow real output (e.g. `grep`/`diff` no-match/differ) are preserved.
+- Machine-readable pass-through: git `--porcelain`, `-z`, and `--format` output bypass human-oriented filtering and preserve empty and NUL-delimited results byte-for-byte for scripts and CI.
 - Install diagnostics: setup logs an installed/skipped wrapper summary (with the skipped-command list) so a missing real binary is visible in the logs rather than surfacing only as a runtime failure. Real-binary PATH resolution — including the junction that it scans the login-shell PATH rather than the app's — and the wrapper exit-code fall-through contract are locked by unit and integration tests.
 
 Supported commands (46 parsers):
@@ -1019,3 +1020,4 @@ Key patterns:
 - PTY log tail parsing normalizes terminal control sequences and backspaces before downstream consumers read the transcript.
 - Deferred restore scheduling backs off during rapid tab switching, prioritizes tabs nearest to the selected tab, and logs per-tab restore stage timings with RSS deltas.
 - Proxy-observed usage evidence is attributed to the enclosing telemetry run (tab id, then session id, then project path, bounded by the run window); analytics migrations add each cache counter independently so a partially-migrated database still converges.
+- The generated CTO executable wrapper execs the real binary for `--porcelain`, `--format`, and `-z` invocations before reaching the optimizer, so machine-readable bytes survive regardless of optimizer behaviour.

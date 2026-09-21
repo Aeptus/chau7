@@ -5038,5 +5038,12 @@
     "description": "Folds proxy-observed usage evidence onto the enclosing telemetry run by tab id, then session id, then project path, requiring the observation to fall inside the run window and marking the result as proxy-sourced and observed rather than estimated",
     "status": "Shipped",
     "differentiator": "No"
+  },
+  {
+    "category": "Developer Experience",
+    "feature": "Machine-Readable Git Pass-Through",
+    "description": "Git porcelain, NUL-delimited, and format output bypasses human-oriented CTO filtering and preserves empty and machine-readable results byte-for-byte for scripts and CI; the generated command wrapper execs the real binary for these invocations before the optimizer is reached",
+    "status": "Shipped",
+    "differentiator": "Yes"
   }
 ]

@@ -457,6 +457,11 @@ final class CTOManager {
     ///    directly, so the optimizer's buffered capture never swallows a pager
     ///    or prompt; optimization applies only to non-interactive (agent)
     ///    callers, which is exactly the target.
+    /// 4. **Machine-readable bypass** — `--porcelain`, `--format`, and `-z`
+    ///    invocations exec the real binary, preserving the exact bytes
+    ///    (including NULs and empty output) that scripts parse. The optimizer
+    ///    applies the same rule internally; the wrapper enforces it before the
+    ///    optimizer is ever reached.
     ///
     /// Because only idempotent reads route to the optimizer, the existing
     /// exit-2/3 fall-through remains safe (re-running `git log` is harmless) —
@@ -488,6 +493,17 @@ final class CTOManager {
             # through to the single exec below.
             case "${1:-}" in
                 \(pattern))
+                    # Machine-readable output is a contract for the caller, not
+                    # prose for an agent. The optimizer's rendering cannot
+                    # preserve porcelain/format/NUL bytes or empty output, so
+                    # these invocations exec the real binary directly.
+                    for _a in "$@"; do
+                        case "$_a" in
+                            --porcelain|--porcelain=*|-z|--format|--format=*)
+                                exec "$_CTO_REAL" "$@"
+                                ;;
+                        esac
+                    done
                     \(optimizerBlock)
                     ;;
             esac

@@ -1744,6 +1744,57 @@ final class TokenOptimizationIntegrationTests: XCTestCase {
         XCTAssertEqual(count(optimCounter), 0)
     }
 
+    /// Machine-readable git output must bypass CTO entirely. The optimizer's
+    /// human-oriented rendering cannot preserve porcelain/format/NUL contracts
+    /// consumed by scripts, so the wrapper must forward those bytes unchanged.
+    func testGitMachineReadableOutputPassesThroughUnchanged() throws {
+        let fm = FileManager.default
+        let home = fm.temporaryDirectory.appendingPathComponent("ctogit-machine-\(UUID().uuidString)")
+        let binDir = home.appendingPathComponent("bin")
+        let chau7Bin = home.appendingPathComponent(".chau7/bin")
+        let ctoActive = home.appendingPathComponent(".chau7/cto_active")
+        for dir in [binDir, chau7Bin, ctoActive, home.appendingPathComponent(".chau7/cto_bin")] {
+            try fm.createDirectory(at: dir, withIntermediateDirectories: true)
+        }
+        defer { try? fm.removeItem(at: home) }
+
+        let expected = Data([0x4d, 0x41, 0x43, 0x48, 0x49, 0x4e, 0x45, 0x00, 0x4f, 0x55, 0x54, 0x50, 0x55, 0x54])
+        let git = binDir.appendingPathComponent("git")
+        try "#!/bin/bash\nprintf 'MACHINE\\0OUTPUT'\n".write(to: git, atomically: true, encoding: .utf8)
+        try fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: git.path)
+        let optimizer = chau7Bin.appendingPathComponent("chau7-optim")
+        try "#!/bin/bash\nprintf 'CORRUPTED\\n'\n".write(to: optimizer, atomically: true, encoding: .utf8)
+        try fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: optimizer.path)
+
+        let wrapperFile = home.appendingPathComponent("git-wrapper.sh")
+        try gitWrapperScript.write(to: wrapperFile, atomically: true, encoding: .utf8)
+        let session = "MACHINE_READABLE_SESSION"
+        fm.createFile(atPath: ctoActive.appendingPathComponent(session).path, contents: nil)
+
+        for args in [["status", "--porcelain"], ["log", "--format=%H"], ["status", "-z"]] {
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/bin/bash")
+            process.arguments = [wrapperFile.path] + args
+            process.environment = [
+                "HOME": home.path,
+                "PATH": "\(binDir.path):/usr/bin:/bin",
+                "CHAU7_CTO_SESSION": session
+            ]
+            let output = Pipe()
+            process.standardOutput = output
+            process.standardError = FileHandle.nullDevice
+            try process.run()
+            process.waitUntilExit()
+
+            XCTAssertEqual(process.terminationStatus, 0, "git \(args.joined(separator: " ")) failed")
+            XCTAssertEqual(
+                output.fileHandleForReading.readDataToEndOfFile(),
+                expected,
+                "git \(args.joined(separator: " ")) must preserve machine-readable bytes"
+            )
+        }
+    }
+
     /// curl's method gate must keep mutating requests away from the optimizer
     /// (no double-POST), while routing plain GETs through it.
     func testCurlMethodGateSingleExecution() throws {

@@ -1,6 +1,7 @@
 use crate::tracking;
 use anyhow::{Context, Result};
 use std::ffi::OsString;
+use std::io::Write;
 use std::process::Command;
 
 #[derive(Debug, Clone)]
@@ -579,6 +580,24 @@ fn run_status(args: &[String], verbose: u8, global_args: &[String]) -> Result<()
             .output()
             .context("Failed to run git status")?;
 
+        // Machine-readable formats are contracts for the caller, not prose for
+        // an agent. Preserve the exact bytes, including empty output and NULs.
+        if args.iter().any(|arg| is_machine_readable_status_arg(arg)) {
+            if !output.status.success() {
+                eprint!("{}", String::from_utf8_lossy(&output.stderr));
+                std::process::exit(output.status.code().unwrap_or(1));
+            }
+            std::io::stdout().write_all(&output.stdout)?;
+            std::io::stdout().flush()?;
+            timer.track(
+                &format!("git status {}", args.join(" ")),
+                &format!("rtk git status {} (passthrough)", args.join(" ")),
+                &String::from_utf8_lossy(&output.stdout),
+                &String::from_utf8_lossy(&output.stdout),
+            );
+            return Ok(());
+        }
+
         let stdout = String::from_utf8_lossy(&output.stdout);
         let stderr = String::from_utf8_lossy(&output.stderr);
 
@@ -628,6 +647,14 @@ fn run_status(args: &[String], verbose: u8, global_args: &[String]) -> Result<()
     timer.track("git status", "rtk git status", &raw_output, &formatted);
 
     Ok(())
+}
+
+fn is_machine_readable_status_arg(arg: &str) -> bool {
+    arg == "--porcelain"
+        || arg.starts_with("--porcelain=")
+        || arg == "-z"
+        || arg == "--format"
+        || arg.starts_with("--format=")
 }
 
 fn run_add(args: &[String], verbose: u8, global_args: &[String]) -> Result<()> {
