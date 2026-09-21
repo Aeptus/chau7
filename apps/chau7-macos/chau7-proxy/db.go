@@ -451,7 +451,9 @@ func runMigrations(db *sql.DB) error {
 	hasTaskID := false
 	hasTabID := false
 	hasProjectPath := false
-	hasCacheTokens := false
+	hasCacheCreationTokens := false
+	hasCacheReadTokens := false
+	hasReasoningTokens := false
 	hasTTFT := false
 	hasPricingVersion := false
 	for rows.Next() {
@@ -470,7 +472,11 @@ func runMigrations(db *sql.DB) error {
 		case "project_path":
 			hasProjectPath = true
 		case "cache_creation_input_tokens":
-			hasCacheTokens = true
+			hasCacheCreationTokens = true
+		case "cache_read_input_tokens":
+			hasCacheReadTokens = true
+		case "reasoning_output_tokens":
+			hasReasoningTokens = true
 		case "ttft_ms":
 			hasTTFT = true
 		case "pricing_version":
@@ -501,14 +507,22 @@ func runMigrations(db *sql.DB) error {
 		}
 	}
 
-	if !hasCacheTokens {
-		cacheTokenMigrations := []string{
-			"ALTER TABLE api_calls ADD COLUMN cache_creation_input_tokens INTEGER",
-			"ALTER TABLE api_calls ADD COLUMN cache_read_input_tokens INTEGER",
-			"ALTER TABLE api_calls ADD COLUMN reasoning_output_tokens INTEGER",
-		}
-		for _, m := range cacheTokenMigrations {
-			_, _ = db.Exec(m) // Ignore errors for columns that may already exist
+	// Each counter migrates on its own flag. Gating all three behind the
+	// presence of cache_creation_input_tokens stranded databases that had it
+	// but not the other two, and no later upgrade would ever add them.
+	cacheTokenMigrations := []struct {
+		missing bool
+		sql     string
+	}{
+		{!hasCacheCreationTokens, "ALTER TABLE api_calls ADD COLUMN cache_creation_input_tokens INTEGER"},
+		{!hasCacheReadTokens, "ALTER TABLE api_calls ADD COLUMN cache_read_input_tokens INTEGER"},
+		{!hasReasoningTokens, "ALTER TABLE api_calls ADD COLUMN reasoning_output_tokens INTEGER"},
+	}
+	for _, migration := range cacheTokenMigrations {
+		if migration.missing {
+			if _, err := db.Exec(migration.sql); err != nil {
+				return err
+			}
 		}
 	}
 

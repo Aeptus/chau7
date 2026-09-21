@@ -5031,5 +5031,12 @@
     "description": "Keeps visible terminal siblings mouse-interactive, transfers AppKit focus before selection, routes copy and paste to the focused terminal, and resets copy-on-select state so repeated selections cannot leave stale clipboard contents",
     "status": "Shipped",
     "differentiator": "Yes"
+  },
+  {
+    "category": "Telemetry",
+    "feature": "Proxy Run Cost Attribution",
+    "description": "Folds proxy-observed usage evidence onto the enclosing telemetry run by tab id, then session id, then project path, requiring the observation to fall inside the run window and marking the result as proxy-sourced and observed rather than estimated",
+    "status": "Shipped",
+    "differentiator": "No"
   }
 ]

@@ -12,17 +12,17 @@ func TestExtractResponseMetadataCapturesCacheReadAndCreationAcrossProviders(t *t
 	}{
 		{
 			name: "Anthropic", provider: ProviderAnthropic,
-			body: `{"usage":{"input_tokens":10,"output_tokens":5,"cache_creation_input_tokens":30,"cache_read_input_tokens":40}}`,
+			body:           `{"usage":{"input_tokens":10,"output_tokens":5,"cache_creation_input_tokens":30,"cache_read_input_tokens":40}}`,
 			expectCreation: 30, expectRead: 40,
 		},
 		{
 			name: "OpenAI compatible", provider: ProviderOpenAI,
-			body: `{"usage":{"prompt_tokens":10,"completion_tokens":5,"prompt_tokens_details":{"cached_tokens":40}}}`,
+			body:           `{"usage":{"prompt_tokens":10,"completion_tokens":5,"prompt_tokens_details":{"cached_tokens":40}}}`,
 			expectCreation: 0, expectRead: 40,
 		},
 		{
 			name: "Gemini", provider: ProviderGemini,
-			body: `{"usageMetadata":{"promptTokenCount":10,"candidatesTokenCount":5,"cachedContentTokenCount":40}}`,
+			body:           `{"usageMetadata":{"promptTokenCount":10,"candidatesTokenCount":5,"cachedContentTokenCount":40}}`,
 			expectCreation: 0, expectRead: 40,
 		},
 	}

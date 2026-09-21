@@ -1018,3 +1018,4 @@ Key patterns:
 - `tab_output` can read a fresher active AI PTY log tail for MCP-driven tabs, improving retrieval of live Codex and Claude responses.
 - PTY log tail parsing normalizes terminal control sequences and backspaces before downstream consumers read the transcript.
 - Deferred restore scheduling backs off during rapid tab switching, prioritizes tabs nearest to the selected tab, and logs per-tab restore stage timings with RSS deltas.
+- Proxy-observed usage evidence is attributed to the enclosing telemetry run (tab id, then session id, then project path, bounded by the run window); analytics migrations add each cache counter independently so a partially-migrated database still converges.
