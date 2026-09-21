@@ -88,12 +88,30 @@ public enum TelemetryProxyAttribution {
         var hasCost = false
 
         mutating func add(_ evidence: UsageEvidence) {
-            if let value = evidence.inputTokens { inputTokens += value; hasInput = true }
-            if let value = evidence.cacheCreationInputTokens { cacheCreationInputTokens += value; hasCacheCreation = true }
-            if let value = evidence.cacheReadInputTokens { cacheReadInputTokens += value; hasCacheRead = true }
-            if let value = evidence.outputTokens { outputTokens += value; hasOutput = true }
-            if let value = evidence.reasoningOutputTokens { reasoningOutputTokens += value; hasReasoning = true }
-            if let value = evidence.costUSD { costUSD += value; hasCost = true }
+            if let value = evidence.inputTokens {
+                inputTokens += value
+                hasInput = true
+            }
+            if let value = evidence.cacheCreationInputTokens {
+                cacheCreationInputTokens += value
+                hasCacheCreation = true
+            }
+            if let value = evidence.cacheReadInputTokens {
+                cacheReadInputTokens += value
+                hasCacheRead = true
+            }
+            if let value = evidence.outputTokens {
+                outputTokens += value
+                hasOutput = true
+            }
+            if let value = evidence.reasoningOutputTokens {
+                reasoningOutputTokens += value
+                hasReasoning = true
+            }
+            if let value = evidence.costUSD {
+                costUSD += value
+                hasCost = true
+            }
         }
     }
 }

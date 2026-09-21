@@ -4,7 +4,7 @@ import Chau7Core
 
 final class TelemetryProxyAttributionTests: XCTestCase {
     func test_attributes_proxy_usage_to_enclosing_run_by_tab_and_marks_measured() {
-        let startedAt = Date(timeIntervalSince1970: 1_000)
+        let startedAt = Date(timeIntervalSince1970: 1000)
         let run = TelemetryRun(
             id: "run-1",
             sessionID: "session-1",
@@ -46,7 +46,7 @@ final class TelemetryProxyAttributionTests: XCTestCase {
     }
 
     func test_does_not_attribute_proxy_usage_outside_run_window_without_identity() {
-        let startedAt = Date(timeIntervalSince1970: 2_000)
+        let startedAt = Date(timeIntervalSince1970: 2000)
         let run = TelemetryRun(
             id: "run-1",
             sessionID: nil,
