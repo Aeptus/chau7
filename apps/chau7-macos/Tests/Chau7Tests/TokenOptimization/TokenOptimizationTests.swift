@@ -1758,9 +1758,9 @@ final class TokenOptimizationIntegrationTests: XCTestCase {
         }
         defer { try? fm.removeItem(at: home) }
 
-        let payload = " M multiline\\nsecond\\0"
+        let expected = Data([0x4d, 0x41, 0x43, 0x48, 0x49, 0x4e, 0x45, 0x00, 0x4f, 0x55, 0x54, 0x50, 0x55, 0x54])
         let git = binDir.appendingPathComponent("git")
-        try "#!/bin/bash\nprintf '%b' '\(payload)'\n".write(to: git, atomically: true, encoding: .utf8)
+        try "#!/bin/bash\nprintf 'MACHINE\\0OUTPUT'\n".write(to: git, atomically: true, encoding: .utf8)
         try fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: git.path)
         let optimizer = chau7Bin.appendingPathComponent("chau7-optim")
         try "#!/bin/bash\nprintf 'CORRUPTED\\n'\n".write(to: optimizer, atomically: true, encoding: .utf8)
@@ -1789,7 +1789,7 @@ final class TokenOptimizationIntegrationTests: XCTestCase {
             XCTAssertEqual(process.terminationStatus, 0, "git \(args.joined(separator: " ")) failed")
             XCTAssertEqual(
                 output.fileHandleForReading.readDataToEndOfFile(),
-                Data(payload.utf8),
+                expected,
                 "git \(args.joined(separator: " ")) must preserve machine-readable bytes"
             )
         }
