@@ -48,13 +48,13 @@ func TestNewDatabaseMigratesEachCacheCounterIndependently(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer analytics.Close()
+	defer func() { _ = analytics.Close() }()
 
 	rows, err := analytics.db.Query("PRAGMA table_info(api_calls)")
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	columns := map[string]bool{}
 	for rows.Next() {
 		var cid, notnull, pk int

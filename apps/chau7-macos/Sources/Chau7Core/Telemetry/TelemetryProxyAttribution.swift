@@ -73,7 +73,7 @@ public enum TelemetryProxyAttribution {
             || (observation == "anthropic" && run == "claude")
     }
 
-    private struct Totals {
+    fileprivate struct Totals {
         var inputTokens = 0
         var cacheCreationInputTokens = 0
         var cacheReadInputTokens = 0
