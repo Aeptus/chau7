@@ -131,8 +131,12 @@ final class RepositoryStatsCacheTests: XCTestCase {
         }, "a newer invalidation must survive an older refresh completion")
     }
 
+    /// 5s matches the prevailing default across the suite. At 1s this polled
+    /// too few times under CPU contention and failed on timing alone; the
+    /// loop exits as soon as the condition holds, so the ceiling only costs
+    /// time when the assertion is genuinely going to fail.
     private func waitUntil(
-        timeout: TimeInterval = 1,
+        timeout: TimeInterval = 5,
         condition: @escaping () -> Bool
     ) -> Bool {
         let deadline = Date().addingTimeInterval(timeout)

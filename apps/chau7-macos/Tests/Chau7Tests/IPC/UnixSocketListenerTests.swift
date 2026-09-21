@@ -12,6 +12,12 @@ final class UnixSocketListenerTests: XCTestCase {
 
     // MARK: - Helpers
 
+    /// Generous on purpose. These waits only run to completion when accept is
+    /// genuinely broken, so a high ceiling costs nothing when the test passes,
+    /// while a tight one fails the suite purely from CPU contention — observed
+    /// at load average 40+, where 8 concurrent connects exceeded 5 seconds.
+    private static let acceptTimeout: TimeInterval = 30
+
     /// `sun_path` caps socket paths at ~104 bytes, so keep names short.
     private func makeSocketPath() -> String {
         let name = "usl-\(UUID().uuidString.prefix(8)).sock"
@@ -66,7 +72,7 @@ final class UnixSocketListenerTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(clientFD, 0, "client connect should succeed")
         defer { close(clientFD) }
 
-        wait(for: [accepted], timeout: 5)
+        wait(for: [accepted], timeout: Self.acceptTimeout)
 
         acceptedFDLock.lock()
         let serverFD = acceptedFD
@@ -86,7 +92,9 @@ final class UnixSocketListenerTests: XCTestCase {
         let path = makeSocketPath()
         // Simulate a stale socket file left behind by a crashed process.
         // Binding over an existing path fails, so removal must happen first.
-        XCTAssertTrue(FileManager.default.createFile(atPath: path, contents: nil))
+        // Written rather than createFile(atPath:) so a failure surfaces the
+        // underlying errno instead of an unexplained false.
+        try Data().write(to: URL(fileURLWithPath: path))
 
         let listener = UnixSocketListener(path: path, queue: DispatchQueue(label: "test.usl.stale"))
         self.listener = listener
@@ -189,7 +197,7 @@ final class UnixSocketListenerTests: XCTestCase {
             clientFDsLock.unlock()
         }
 
-        wait(for: [accepted], timeout: 5)
+        wait(for: [accepted], timeout: Self.acceptTimeout)
 
         clientFDsLock.lock()
         let openFDs = clientFDs
