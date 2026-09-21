@@ -1019,3 +1019,4 @@ Key patterns:
 - `tab_output` can read a fresher active AI PTY log tail for MCP-driven tabs, improving retrieval of live Codex and Claude responses.
 - PTY log tail parsing normalizes terminal control sequences and backspaces before downstream consumers read the transcript.
 - Deferred restore scheduling backs off during rapid tab switching, prioritizes tabs nearest to the selected tab, and logs per-tab restore stage timings with RSS deltas.
+- The generated CTO executable wrapper execs the real binary for `--porcelain`, `--format`, and `-z` invocations before reaching the optimizer, so machine-readable bytes survive regardless of optimizer behaviour.

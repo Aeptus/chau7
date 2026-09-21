@@ -5035,7 +5035,7 @@
   {
     "category": "Developer Experience",
     "feature": "Machine-Readable Git Pass-Through",
-    "description": "Git porcelain, NUL-delimited, and format output bypasses human-oriented CTO filtering and preserves empty and machine-readable results byte-for-byte for scripts and CI",
+    "description": "Git porcelain, NUL-delimited, and format output bypasses human-oriented CTO filtering and preserves empty and machine-readable results byte-for-byte for scripts and CI; the generated command wrapper execs the real binary for these invocations before the optimizer is reached",
     "status": "Shipped",
     "differentiator": "Yes"
   }
