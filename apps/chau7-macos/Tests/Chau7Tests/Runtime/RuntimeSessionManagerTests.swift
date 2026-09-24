@@ -154,6 +154,56 @@ final class RuntimeSessionManagerTests: XCTestCase {
         XCTAssertEqual(notificationEvents.first?.data["message"], "Heads up")
     }
 
+    func testCreateAndAdoptReuseTheExistingSessionForSameTab() {
+        let manager = RuntimeSessionManager.shared
+        let tabID = UUID()
+        let cwd = "/tmp/runtime-same-tab-\(UUID().uuidString)"
+
+        let created = manager.createSession(
+            tabID: tabID,
+            backend: ClaudeCodeBackend(),
+            config: SessionConfig(directory: cwd, provider: "claude")
+        )
+        let adopted = manager.adoptSession(
+            tabID: tabID,
+            backend: ClaudeCodeBackend(),
+            cwd: cwd
+        )
+        let duplicateCreate = manager.createSessionIfAbsent(
+            tabID: tabID,
+            backend: ClaudeCodeBackend(),
+            config: SessionConfig(directory: cwd, provider: "claude")
+        )
+
+        XCTAssertEqual(adopted.id, created.id)
+        XCTAssertNil(duplicateCreate)
+        XCTAssertEqual(manager.sessionForTab(tabID)?.id, created.id)
+        XCTAssertEqual(manager.allSessions(includeStopped: false).map(\.id), [created.id])
+    }
+
+    func testStoppedSessionCanBeReplacedOnSameTab() {
+        let manager = RuntimeSessionManager.shared
+        let tabID = UUID()
+        let cwd = "/tmp/runtime-reused-tab-\(UUID().uuidString)"
+        let first = manager.adoptSession(tabID: tabID, backend: ClaudeCodeBackend(), cwd: cwd)
+
+        XCTAssertTrue(manager.stopSession(id: first.id))
+
+        let second = manager.createSession(
+            tabID: tabID,
+            backend: ClaudeCodeBackend(),
+            config: SessionConfig(directory: cwd, provider: "claude")
+        )
+
+        XCTAssertNotEqual(second.id, first.id)
+        XCTAssertEqual(manager.sessionForTab(tabID)?.id, second.id)
+        XCTAssertEqual(manager.allSessions(includeStopped: false).map(\.id), [second.id])
+        XCTAssertEqual(
+            Set(manager.allSessions(includeStopped: true).map(\.id)),
+            Set([first.id, second.id])
+        )
+    }
+
     func testToolLifecycleJournalsCorrelationDurationAndResultMetadata() throws {
         let manager = RuntimeSessionManager.shared
         let cwd = "/tmp/runtime-tool-metadata-\(UUID().uuidString)"

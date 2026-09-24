@@ -48,6 +48,24 @@ struct DashboardSessionSnapshot {
     }
 }
 
+extension DashboardSessionSnapshot {
+    /// Builds a tab index without trapping if an upstream source contains
+    /// duplicate sessions. Keep the newest session, with ID as a stable tie-breaker.
+    static func indexByTabID(_ snapshots: [DashboardSessionSnapshot]) -> [UUID: DashboardSessionSnapshot] {
+        snapshots.reduce(into: [:]) { index, candidate in
+            guard let current = index[candidate.tabID] else {
+                index[candidate.tabID] = candidate
+                return
+            }
+
+            if candidate.createdAt > current.createdAt
+                || (candidate.createdAt == current.createdAt && candidate.id > current.id) {
+                index[candidate.tabID] = candidate
+            }
+        }
+    }
+}
+
 extension DashboardAgentState {
     init(commandStatus: CommandStatus, isAtPrompt: Bool) {
         switch commandStatus {

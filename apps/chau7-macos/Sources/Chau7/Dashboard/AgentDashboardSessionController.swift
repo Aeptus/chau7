@@ -16,10 +16,11 @@ final class AgentDashboardSessionController: AgentDashboardSessionControlling {
     private init() {}
 
     func allSessions(includeStopped: Bool) -> [DashboardSessionSnapshot] {
-        let runtimeSnapshots = Dictionary(uniqueKeysWithValues: RuntimeSessionManager.shared
-            .allSessions(includeStopped: includeStopped)
-            .map { snapshot(from: $0) }
-            .map { ($0.tabID, $0) })
+        let runtimeSnapshots = DashboardSessionSnapshot.indexByTabID(
+            RuntimeSessionManager.shared
+                .allSessions(includeStopped: includeStopped)
+                .map { snapshot(from: $0) }
+        )
 
         var snapshots: [DashboardSessionSnapshot] = []
         for (tabID, session) in liveTabs() {

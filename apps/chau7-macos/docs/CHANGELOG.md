@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Stability hardening
 
+- Opening a repository agent dashboard no longer traps on duplicate runtime sessions: active sessions are unique per tab, stop cleanup preserves any replacement session, provider indexes stay consistent, and dashboard refresh tolerates legacy duplicates.
 - CTO now passes machine-readable git output (`--porcelain`, `-z`, and `--format`) through byte-for-byte, including empty and NUL-delimited output, so scripts and CI do not parse human-oriented summaries.
 - The generated CTO command wrapper enforces that pass-through itself, before the optimizer is invoked, so machine-readable invocations reach the real binary even when the optimizer would otherwise have rendered them.
 - Remote prompt answers now carry validated pane/prompt identities across iOS, the encrypted helper, and macOS. Direct keyboard input is pane-scoped too; stale targets and ambiguous legacy split input fail closed. All split panes publish status changes, and delayed protected-action approvals retain the originating terminal identity.

@@ -1,5 +1,12 @@
 [
   {
+    "category": "Reliability",
+    "feature": "Tab-Scoped Runtime Session Uniqueness",
+    "description": "Enforces one active runtime session per tab, keeps replacement and provider mappings consistent, and makes agent dashboard indexing tolerate legacy duplicate sessions",
+    "status": "Shipped",
+    "differentiator": "No"
+  },
+  {
     "category": "Remote",
     "feature": "Pane-Scoped Prompt Responses",
     "description": "Validates prompt and pane identities for iOS replies, scopes direct input to the streamed pane, rejects ambiguous legacy split input, and binds delayed approvals to the originating terminal instance",

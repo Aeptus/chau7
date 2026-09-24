@@ -1,4 +1,5 @@
 Category,Feature,Description,Status,Differentiator
+Reliability,Tab-Scoped Runtime Session Uniqueness,"Enforces one active runtime session per tab, keeps replacement and provider mappings consistent, and makes agent dashboard indexing tolerate legacy duplicate sessions",Shipped,No
 Remote,Pane-Scoped Prompt Responses,"Validates prompt and pane identities for iOS replies, scopes direct input to the streamed pane, rejects ambiguous legacy split input, and binds delayed approvals to the originating terminal instance",Shipped,Yes
 Performance,Lazy Restoration Metadata Recovery,"Skips archives for complete current identities, scans incomplete identities one metadata projection at a time, and loads full winning legacy pane payloads when needed to preserve recoverable history without reviving plain shells",Shipped,No
 Reliability,Nonblocking Clipboard and Monitor Lifecycles,Orders and coalesces bounded OSC 52 replies off the UI thread without widening clipboard permissions; hover-monitor cancellation immediately invalidates in-flight generations without waiting for process scans,Shipped,No

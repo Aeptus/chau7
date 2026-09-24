@@ -29,6 +29,11 @@ final class RuntimeSessionManager {
         var nextChunkIndex: Int
     }
 
+    private struct SessionRegistration {
+        let session: RuntimeSession
+        let inserted: Bool
+    }
+
     // MARK: - Session Storage
 
     private var sessions: [String: RuntimeSession] = [:] // sessionID → session
@@ -78,11 +83,14 @@ final class RuntimeSessionManager {
             journalCapacity: FeatureSettings.shared.runtimeEventJournalCapacity
         )
 
-        lock.lock()
-        sessions[session.id] = session
-        tabToSession[tabID] = session.id
-        cwdToSessions[config.directory, default: []].insert(session.id)
-        lock.unlock()
+        let registration = registerActiveSession(session)
+        guard registration.inserted else {
+            Log.warn(
+                "RuntimeSessionManager: duplicate create for tab=\(tabID); " +
+                    "reusing active session \(registration.session.id)"
+            )
+            return registration.session
+        }
 
         session.journal.append(
             sessionID: session.id,
@@ -90,6 +98,40 @@ final class RuntimeSessionManager {
             type: RuntimeEventType.sessionStarting.rawValue
         )
 
+        Log.info("RuntimeSessionManager: created session \(session.id) tab=\(tabID) backend=\(backend.name)")
+        return session
+    }
+
+    /// Create a runtime session only when the tab does not already have one.
+    /// Callers that launch a new backend use this to avoid sending a second
+    /// process into a tab when a duplicate create request races the first.
+    func createSessionIfAbsent(
+        tabID: UUID,
+        backend: any AgentBackend,
+        config: SessionConfig,
+        autoApprove: Bool = false
+    ) -> RuntimeSession? {
+        let session = RuntimeSession(
+            tabID: tabID,
+            backend: backend,
+            config: config,
+            autoApprove: autoApprove,
+            journalCapacity: FeatureSettings.shared.runtimeEventJournalCapacity
+        )
+        let registration = registerActiveSession(session)
+        guard registration.inserted else {
+            Log.warn(
+                "RuntimeSessionManager: refused duplicate create for tab=\(tabID); " +
+                    "active session is \(registration.session.id)"
+            )
+            return nil
+        }
+
+        session.journal.append(
+            sessionID: session.id,
+            turnID: nil,
+            type: RuntimeEventType.sessionStarting.rawValue
+        )
         Log.info("RuntimeSessionManager: created session \(session.id) tab=\(tabID) backend=\(backend.name)")
         return session
     }
@@ -112,11 +154,14 @@ final class RuntimeSessionManager {
         // Adopted sessions start as ready (backend already running)
         session.transition(.backendReady)
 
-        lock.lock()
-        sessions[session.id] = session
-        tabToSession[tabID] = session.id
-        cwdToSessions[cwd, default: []].insert(session.id)
-        lock.unlock()
+        let registration = registerActiveSession(session)
+        guard registration.inserted else {
+            Log.warn(
+                "RuntimeSessionManager: duplicate adoption for tab=\(tabID); " +
+                    "reusing active session \(registration.session.id)"
+            )
+            return registration.session
+        }
 
         session.journal.append(
             sessionID: session.id,
@@ -129,6 +174,68 @@ final class RuntimeSessionManager {
         return session
     }
 
+    /// Must be called with `lock` held. Prefer the tab's current session; if a
+    /// stale mapping exists, recover the newest remaining session for the tab.
+    private func activeSessionLocked(for tabID: UUID) -> RuntimeSession? {
+        if let sessionID = tabToSession[tabID],
+           let session = sessions[sessionID],
+           session.tabID == tabID,
+           session.state != .stopped {
+            return session
+        }
+
+        let candidates = sessions.values.filter { $0.tabID == tabID && $0.state != .stopped }
+        guard let session = candidates.max(by: { isOlderSession($0, than: $1) }) else {
+            tabToSession.removeValue(forKey: tabID)
+            return nil
+        }
+        tabToSession[tabID] = session.id
+        return session
+    }
+
+    /// Must be called with `lock` held. The tab index is authoritative for
+    /// active sessions; collapse any legacy duplicate records to one entry.
+    private func activeSessionsLocked() -> [RuntimeSession] {
+        let grouped = Dictionary(
+            grouping: sessions.values.filter { $0.state != .stopped },
+            by: \.tabID
+        )
+
+        for tabID in Array(tabToSession.keys) where grouped[tabID] == nil {
+            tabToSession.removeValue(forKey: tabID)
+        }
+
+        var result: [RuntimeSession] = []
+        for (tabID, candidates) in grouped {
+            let mappedSession = tabToSession[tabID].flatMap { mappedID in
+                candidates.first { $0.id == mappedID }
+            }
+            guard let session = mappedSession ?? candidates.max(by: { isOlderSession($0, than: $1) }) else { continue }
+            tabToSession[tabID] = session.id
+            result.append(session)
+        }
+        return result
+    }
+
+    private func isOlderSession(_ lhs: RuntimeSession, than rhs: RuntimeSession) -> Bool {
+        if lhs.createdAt != rhs.createdAt { return lhs.createdAt < rhs.createdAt }
+        return lhs.id < rhs.id
+    }
+
+    private func registerActiveSession(_ candidate: RuntimeSession) -> SessionRegistration {
+        lock.lock()
+        if let existing = activeSessionLocked(for: candidate.tabID) {
+            lock.unlock()
+            return SessionRegistration(session: existing, inserted: false)
+        }
+
+        sessions[candidate.id] = candidate
+        tabToSession[candidate.tabID] = candidate.id
+        cwdToSessions[candidate.config.directory, default: []].insert(candidate.id)
+        lock.unlock()
+        return SessionRegistration(session: candidate, inserted: true)
+    }
+
     // MARK: - Lookups
 
     func session(id: String) -> RuntimeSession? {
@@ -139,11 +246,7 @@ final class RuntimeSessionManager {
 
     func sessionForTab(_ tabID: UUID) -> RuntimeSession? {
         lock.lock()
-        guard let sessionID = tabToSession[tabID] else {
-            lock.unlock()
-            return nil
-        }
-        let session = sessions[sessionID]
+        let session = activeSessionLocked(for: tabID)
         lock.unlock()
         return session
     }
@@ -197,7 +300,7 @@ final class RuntimeSessionManager {
     func allSessions(includeStopped: Bool = false) -> [RuntimeSession] {
         lock.lock()
         defer { lock.unlock() }
-        var result = Array(sessions.values)
+        var result = activeSessionsLocked()
         if includeStopped {
             result.append(contentsOf: recentlyStopped.values.map(\.session))
         }
@@ -232,7 +335,7 @@ final class RuntimeSessionManager {
     func isRuntimeManaged(_ tabID: UUID) -> Bool {
         lock.lock()
         defer { lock.unlock() }
-        return tabToSession[tabID] != nil
+        return activeSessionLocked(for: tabID) != nil
     }
 
     // MARK: - Event Handling
@@ -500,7 +603,7 @@ final class RuntimeSessionManager {
         let now = Date()
 
         lock.lock()
-        let activeSessions = Array(sessions.values)
+        let activeSessions = activeSessionsLocked()
         // Prune old stopped sessions
         recentlyStopped = recentlyStopped.filter {
             now.timeIntervalSince($0.value.stoppedAt) < Self.stoppedRetentionSeconds
@@ -634,9 +737,16 @@ final class RuntimeSessionManager {
 
     private func associateClaudeSessionID(_ claudeSessionID: String, withRuntimeSessionID runtimeSessionID: String) {
         lock.lock()
+        if let previousRuntimeSessionID = claudeToRuntimeSession[claudeSessionID],
+           previousRuntimeSessionID != runtimeSessionID,
+           runtimeToClaudeSession[previousRuntimeSessionID] == claudeSessionID {
+            runtimeToClaudeSession.removeValue(forKey: previousRuntimeSessionID)
+        }
         if let previousClaudeSessionID = runtimeToClaudeSession[runtimeSessionID],
            previousClaudeSessionID != claudeSessionID {
-            claudeToRuntimeSession.removeValue(forKey: previousClaudeSessionID)
+            if claudeToRuntimeSession[previousClaudeSessionID] == runtimeSessionID {
+                claudeToRuntimeSession.removeValue(forKey: previousClaudeSessionID)
+            }
         }
         claudeToRuntimeSession[claudeSessionID] = runtimeSessionID
         runtimeToClaudeSession[runtimeSessionID] = claudeSessionID
@@ -805,6 +915,13 @@ final class RuntimeSessionManager {
 
         let backend = ClaudeCodeBackend()
         let session = adoptSession(tabID: tabID, backend: backend, cwd: event.cwd)
+        guard session.backend.name.caseInsensitiveCompare(backend.name) == .orderedSame else {
+            Log.warn(
+                "RuntimeSessionManager: skipped Claude adoption for tab=\(tabID); " +
+                    "active runtime backend is \(session.backend.name)"
+            )
+            return nil
+        }
         if let normalizedClaudeSessionID {
             associateClaudeSessionID(normalizedClaudeSessionID, withRuntimeSessionID: session.id)
         }
@@ -1262,7 +1379,16 @@ final class RuntimeSessionManager {
         var externalSessionID: String?
         lock.lock()
         sessions.removeValue(forKey: session.id)
-        tabToSession.removeValue(forKey: session.tabID)
+        if tabToSession[session.tabID] == session.id {
+            let replacement = sessions.values
+                .filter { $0.tabID == session.tabID && $0.state != .stopped }
+                .max(by: { isOlderSession($0, than: $1) })
+            if let replacement {
+                tabToSession[session.tabID] = replacement.id
+            } else {
+                tabToSession.removeValue(forKey: session.tabID)
+            }
+        }
         if var sessionIDs = cwdToSessions[session.config.directory] {
             sessionIDs.remove(session.id)
             if sessionIDs.isEmpty {
@@ -1272,7 +1398,9 @@ final class RuntimeSessionManager {
             }
         }
         if let claudeSessionID = runtimeToClaudeSession.removeValue(forKey: session.id) {
-            claudeToRuntimeSession.removeValue(forKey: claudeSessionID)
+            if claudeToRuntimeSession[claudeSessionID] == session.id {
+                claudeToRuntimeSession.removeValue(forKey: claudeSessionID)
+            }
             externalSessionID = claudeSessionID
         }
         pendingToolInvocations.removeValue(forKey: session.id)

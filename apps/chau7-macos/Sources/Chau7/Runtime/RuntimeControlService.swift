@@ -233,18 +233,28 @@ final class RuntimeControlService {
 
         let session: RuntimeSession
         if attachTabID != nil {
-            session = sessionManager.adoptSession(
+            let attachedSession = sessionManager.adoptSession(
                 tabID: tabID,
                 backend: backend,
                 cwd: directory
             )
+            guard attachedSession.backend.name.caseInsensitiveCompare(backend.name) == .orderedSame else {
+                return jsonError(
+                    "Tab already has an active \(attachedSession.backend.name) runtime session; " +
+                        "cannot attach \(backend.name)"
+                )
+            }
+            session = attachedSession
         } else {
-            session = sessionManager.createSession(
+            guard let createdSession = sessionManager.createSessionIfAbsent(
                 tabID: tabID,
                 backend: backend,
                 config: config,
                 autoApprove: autoApprove
-            )
+            ) else {
+                return jsonError("Tab already has an active runtime session: \(tabID)")
+            }
+            session = createdSession
         }
 
         // Launch the backend command in the tab
