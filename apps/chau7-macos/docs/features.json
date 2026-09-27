@@ -2,7 +2,7 @@
   {
     "category": "Performance",
     "feature": "Self-Terminating View Loops",
-    "description": "Notification history no longer couples an .id identity token to the appear handler that rewrites it, and task-candidate countdowns are lifecycle-scoped rather than manually scheduled",
+    "description": "Notification history no longer couples an .id identity token to the appear handler that rewrites it, task-candidate countdowns are lifecycle-scoped rather than manually scheduled, and a terminal drain with no terminal backs off instead of waking twenty times a second",
     "status": "Shipped",
     "differentiator": "No"
   },

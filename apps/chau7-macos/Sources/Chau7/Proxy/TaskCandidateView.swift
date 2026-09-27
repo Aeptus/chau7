@@ -7,8 +7,6 @@ public struct TaskCandidateView: View {
     let onConfirm: () -> Void
     let onDismiss: () -> Void
 
-    @State private var graceRemaining: Int64
-
     public init(
         candidate: TaskCandidate,
         onConfirm: @escaping () -> Void,
@@ -17,7 +15,6 @@ public struct TaskCandidateView: View {
         self.candidate = candidate
         self.onConfirm = onConfirm
         self.onDismiss = onDismiss
-        self._graceRemaining = State(initialValue: candidate.graceRemainingMs)
     }
 
     public var body: some View {
@@ -42,14 +39,32 @@ public struct TaskCandidateView: View {
             Spacer()
 
             // Grace period countdown
-            if graceRemaining > 0 {
-                Text(String(format: L("task.graceSeconds", "%ds"), graceRemaining / 1000))
-                    .font(.system(size: 11, weight: .medium).monospacedDigit())
-                    .foregroundColor(.secondary)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background(Color.secondary.opacity(0.15))
-                    .cornerRadius(4)
+            //
+            // Driven by `TimelineView` rather than a `Timer` created in
+            // `.onAppear`. The previous implementation scheduled a 10 Hz
+            // repeating timer, never stored it, and only invalidated it when the
+            // grace period expired — so confirming or dismissing the banner
+            // (which removes the view) left a timer writing `@State` into a
+            // detached view for the rest of the grace window, and that timer ran
+            // in `.default` runloop mode so it also stalled during menu
+            // tracking. It captured the `candidate` from appear-time, so a
+            // replacement candidate froze the countdown at the old value.
+            //
+            // `TimelineView` is scoped to the view's lifetime, so there is
+            // nothing to invalidate, and each tick re-reads
+            // `candidate.graceRemainingMs` (computed from `gracePeriodEnd`), so
+            // replacing the candidate is correct for free.
+            TimelineView(.periodic(from: .now, by: TaskCandidateView.countdownTickInterval)) { _ in
+                let graceRemaining = candidate.graceRemainingMs
+                if graceRemaining > 0 {
+                    Text(String(format: L("task.graceSeconds", "%ds"), graceRemaining / 1000))
+                        .font(.system(size: 11, weight: .medium).monospacedDigit())
+                        .foregroundColor(.secondary)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Color.secondary.opacity(0.15))
+                        .cornerRadius(4)
+                }
             }
 
             // Action buttons
@@ -76,19 +91,12 @@ public struct TaskCandidateView: View {
                 .fill(Color(NSColor.controlBackgroundColor))
                 .shadow(color: .black.opacity(0.15), radius: 4, y: 2)
         )
-        .onAppear {
-            startCountdown()
-        }
     }
 
-    private func startCountdown() {
-        Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { timer in
-            graceRemaining = candidate.graceRemainingMs
-            if graceRemaining <= 0 {
-                timer.invalidate()
-            }
-        }
-    }
+    /// The label renders whole seconds, so a 5x refresh rate is more than
+    /// enough and costs 5x less than the previous 10 Hz. Shared with
+    /// `TaskCandidateToast` so both views tick together.
+    fileprivate static let countdownTickInterval: Double = 0.2
 }
 
 /// A compact toast-style notification for task candidates
@@ -98,6 +106,16 @@ public struct TaskCandidateToast: View {
     let onDismiss: () -> Void
 
     @State private var isHovered = false
+
+    /// Fraction of the grace window still to run, clamped to `0...1`. Derived
+    /// from `createdAt`/`gracePeriodEnd` so it is a pure function of the
+    /// candidate plus "now", and therefore testable.
+    private var graceProgress: CGFloat {
+        let total = candidate.gracePeriodEnd.timeIntervalSince(candidate.createdAt)
+        guard total > 0 else { return 0 }
+        let remainingSeconds = Double(candidate.graceRemainingMs) / 1000
+        return CGFloat(min(max(remainingSeconds / total, 0), 1))
+    }
 
     public var body: some View {
         HStack(spacing: 8) {
@@ -125,12 +143,18 @@ public struct TaskCandidateToast: View {
                     .buttonStyle(.plain)
                 }
             } else {
-                // Progress ring
-                Circle()
-                    .trim(from: 0, to: CGFloat(candidate.graceRemainingMs) / 5000.0)
-                    .stroke(Color.accentColor, lineWidth: 2)
-                    .frame(width: 16, height: 16)
-                    .rotationEffect(.degrees(-90))
+                // Progress ring. Driven from `gracePeriodEnd` over the actual
+                // grace window rather than dividing a live remaining-time value
+                // by a hard-coded 5000 ms, so the ring drains to empty at the
+                // real deadline instead of being wrong whenever the grace
+                // period is not exactly five seconds.
+                TimelineView(.periodic(from: .now, by: TaskCandidateView.countdownTickInterval)) { _ in
+                    Circle()
+                        .trim(from: 0, to: graceProgress)
+                        .stroke(Color.accentColor, lineWidth: 2)
+                        .frame(width: 16, height: 16)
+                        .rotationEffect(.degrees(-90))
+                }
             }
         }
         .padding(.horizontal, 10)

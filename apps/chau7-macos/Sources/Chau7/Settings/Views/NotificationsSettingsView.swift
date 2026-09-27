@@ -1828,7 +1828,6 @@ private struct ConditionRow: View {
 
 private struct NotificationHistoryTabView: View {
     @State private var entries: [NotificationHistory.Entry] = []
-    @State private var refreshToken = UUID()
 
     private var summaryText: String {
         let completed = entries.filter { $0.deliveryState == NotificationHistory.DeliveryState.completed.rawValue }.count
@@ -1886,14 +1885,25 @@ private struct NotificationHistoryTabView: View {
                 .frame(maxHeight: 400)
             }
         }
+        // NOTE: do not reintroduce an `.id(...)` identity token here. The
+        // previous revision attached `.id(refreshToken)` to this view and had
+        // `.onAppear` set `refreshToken = UUID()`, with `.onAppear` INSIDE the
+        // `.id()` wrapper. That made the view's identity a function of its own
+        // appear handler: appear -> new UUID -> new identity -> subtree torn
+        // down and rebuilt -> appear again, forever. Each cycle re-read 100
+        // history entries, rebuilt 100 rows, and re-ran the four `filter`
+        // passes in `summaryText`, pegging the CPU on a permanently growing log
+        // stream as soon as this tab was opened.
+        //
+        // `entries` alone is the correct driver: it is @State, the `ForEach`
+        // diffs off it, and `NotificationHistoryEntryRow` is a value type, so a
+        // refresh updates rows in place with no identity token needed.
         .onAppear { refreshHistory() }
-        .id(refreshToken)
     }
 
     private func refreshHistory() {
         Task { @MainActor in
             entries = NotificationServices.current?.manager.history.recent(limit: 100) ?? []
-            refreshToken = UUID()
         }
     }
 
@@ -1901,7 +1911,6 @@ private struct NotificationHistoryTabView: View {
         Task { @MainActor in
             NotificationServices.current?.manager.history.clear()
             entries = []
-            refreshToken = UUID()
         }
     }
 }
