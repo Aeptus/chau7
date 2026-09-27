@@ -1,5 +1,12 @@
 [
   {
+    "category": "Remote Access",
+    "feature": "Owner-Only Remote IPC Socket",
+    "description": "Creates the remote bridge socket with owner-only 0600 permissions inside an app-support directory restricted to 0700, preventing other local users from accessing its frames",
+    "status": "Shipped",
+    "differentiator": "No"
+  },
+  {
     "category": "Reliability",
     "feature": "Tab-Scoped Runtime Session Uniqueness",
     "description": "Enforces one active runtime session per tab, keeps replacement and provider mappings consistent, and makes agent dashboard indexing tolerate legacy duplicate sessions",

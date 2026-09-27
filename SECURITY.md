@@ -21,6 +21,8 @@ Here's everything security-relevant, with no hand-waving:
 
 **MCP Server**: 30+ tools exposed over a Unix socket at `~/.chau7/mcp.sock`, permissions `0600` (owner-only). Any process running as your user can connect. The tools can read terminal output, send input, manage tabs, and query history. This is powerful by design.
 
+**Remote IPC**: The remote bridge listens on `~/Library/Application Support/Chau7/remote.sock` with socket permissions `0600` inside an owner-only (`0700`) directory. This keeps other local users from reading or writing remote bridge frames.
+
 **Bug Reports**: Submitted via an encrypted Cloudflare Worker relay ([`services/chau7-relay/src/worker.ts`](services/chau7-relay/src/worker.ts)) to a [private GitHub repository](https://github.com/aeptus/chau7-issue-intake) that only maintainers can access. No data leaves your machine until you hit Submit. All diagnostic sections are off by default — you choose what to include. The in-app privacy page ([`IssueReportingPrivacyView.swift`](apps/chau7-macos/Sources/Chau7/Logging/IssueReportingPrivacyView.swift)) lists every third-party involved. See also [PRIVACY.md](PRIVACY.md).
 
 **Shell Integration**: OSC 7/133 escape sequences for working directory and command detection. Shell history access for frecency commands. Git status queries via `git rev-parse`.

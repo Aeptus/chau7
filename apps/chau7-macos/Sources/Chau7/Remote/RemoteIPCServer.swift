@@ -20,13 +20,14 @@ final class RemoteIPCServer {
     @ObservationIgnored private let logger = Logger(subsystem: "com.chau7.remote", category: "IPCServer")
     @ObservationIgnored private var buffer = Data()
     @ObservationIgnored private let maxFrameSize = 5 * 1024 * 1024
+    @ObservationIgnored private let socketPath: URL
 
-    private var socketPath: URL {
-        RuntimeIsolation.appSupportDirectory(named: "Chau7")
+    init(
+        socketPath: URL = RuntimeIsolation.appSupportDirectory(named: "Chau7")
             .appendingPathComponent("remote.sock")
+    ) {
+        self.socketPath = socketPath
     }
-
-    private init() {}
 
     func start() {
         queue.sync {
@@ -35,9 +36,19 @@ final class RemoteIPCServer {
             let path = socketPath.path
             let dir = socketPath.deletingLastPathComponent()
             do {
-                try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+                try FileManager.default.createDirectory(
+                    at: dir,
+                    withIntermediateDirectories: true,
+                    attributes: [.posixPermissions: 0o700]
+                )
+                // `createDirectory` does not update permissions when the directory
+                // already exists, so enforce the owner-only mode in both cases.
+                try FileManager.default.setAttributes(
+                    [.posixPermissions: 0o700],
+                    ofItemAtPath: dir.path
+                )
             } catch {
-                logger.error("Failed to create IPC socket directory: \(error.localizedDescription, privacy: .public)")
+                logger.error("Failed to secure IPC socket directory: \(error.localizedDescription, privacy: .public)")
                 return
             }
             let listener = UnixSocketListener(path: path, queue: queue)
@@ -46,6 +57,7 @@ final class RemoteIPCServer {
             do {
                 try listener.start(
                     backlog: 1,
+                    socketFilePermissions: 0o600,
                     onAccept: { [weak self] newClientFD in
                         self?.handleAcceptedClient(newClientFD)
                     },
