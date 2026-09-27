@@ -39,7 +39,7 @@ swift test
 | SwiftFormat | latest | Pre-commit hook | `brew install swiftformat` |
 | SwiftLint | latest | Pre-commit hook | `brew install swiftlint` |
 | pnpm | 10.11+ | Git hooks and quality runner | `corepack enable` |
-| gitleaks | any | Pre-commit secret scan | `brew install gitleaks` |
+| gitleaks | 8.20+ | Staged secret scan | `brew install gitleaks` |
 | shellcheck | any | Pre-commit shell lint | `brew install shellcheck` |
 | ruff | any | Pre-commit Python lint | `brew install ruff` |
 | golangci-lint | any | Go lint | `brew install golangci-lint` |

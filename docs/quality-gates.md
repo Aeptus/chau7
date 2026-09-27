@@ -59,6 +59,24 @@ warning-only mode. The known warning backlog is triaged in
 blocking isolation findings are fixed and the remaining diagnostics are
 reviewed.
 
+## SwiftLint Thresholds
+
+Repository SwiftLint checks run with `--strict`, so reaching a warning threshold
+fails the check. The configured caps leave limited room above measured current
+source sizes while keeping each threshold below its error cap:
+
+| Rule | Warning | Error |
+|---|---:|---:|
+| `file_length` | 4,000 | 5,000 |
+| `type_body_length` | 3,000 | 4,000 |
+| `function_body_length` | 250 | 350 |
+| `cyclomatic_complexity` | 40 | 50 |
+
+The length rules ignore whitespace and comment-only lines. `force_try`,
+`force_cast`, and `notification_center_detachment` remain enabled; known literal
+regexes handle invalid patterns explicitly, test fixtures unwrap casts, and
+NotificationCenter observer tokens are retained and removed with their owners.
+
 ## Staged Scope
 
 Pre-commit discovers files with:
@@ -73,13 +91,19 @@ Local artifacts are filtered centrally: `.aeptus-cache/`, `.cache/`,
 
 Staged gates include:
 
-- high-signal secret and credential scanning;
+- local high-signal secret checks plus Gitleaks against the staged index using
+  `gitleaks git --pre-commit --staged --redact --no-banner` (Gitleaks 8.20+);
+- forbidden credential-path and 5-MiB-or-larger blob checks through the
+  registered `staged-legacy-guardrails` gate;
 - dependency-manifest policy and lockfile drift checks;
 - Ruff fix/format/verify for staged Python files, with deliberate re-stage;
 - Python guardrails for bare/silent exceptions, placeholders, and debuggers;
 - Prettier write/check for staged JS/TS files where package-local Prettier is installed;
 - JS/TS security and naming guardrails;
-- registered legacy source-policy checks for anti-slop, design-system ratchet, and docs hygiene;
+- registered source-policy checks for anti-slop, design-system ratchet,
+  docs hygiene, and forbidden-file protection;
+- an advisory staged code review through Chau7 when the app scripting API is
+  available; disable it with `CHAU7_PRE_COMMIT_REVIEW_ENABLED=0`;
 - staged ShellCheck.
 - quality-runner unit tests when staged files touch `scripts/quality/`,
   `scripts/git/`, or the root quality package.
@@ -134,7 +158,9 @@ changes without a registered freshness check. Add the generator gate before
 committing that kind of drift.
 
 The pull request workflow selects Xcode 26.3 for its iPhone 17 simulator tests
-and installs the tools required by `scripts/ci-local`. Workflow changes
+and installs the tools required by `scripts/ci-local`, including Gitleaks. It
+disables the local Chau7 review because the app scripting service is unavailable
+on the hosted runner. Workflow changes
 therefore run the same conservative full suite as local pre-push checks.
 
 ## GitHub Actions Policy

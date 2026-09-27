@@ -28,9 +28,6 @@ disabled_rules:
   - implicit_getter               # Too strict for computed properties
   - for_where                     # Style preference — if-inside-for is often clearer
   - inclusive_language             # False positives (masterToggleSection is a UI term)
-  - notification_center_detachment  # AppDelegate pattern doesn't need deinit removal
-  - force_try                       # Used deliberately in tests and known-safe init paths
-  - force_cast                      # Rare, used deliberately
   - deployment_target               # Minimum deployment target checks are in Package.swift
   - optional_data_string_conversion # Style preference, not a safety issue
   - non_optional_string_data_conversion  # Style preference
@@ -83,31 +80,31 @@ line_length:
   ignores_function_declarations: true
   ignores_interpolated_strings: true
 
-# File length — RustTerminalView is ~6000, FeatureSettings ~4300
+# SwiftLint counts non-comment, non-whitespace lines; strict lint blocks at the warning threshold.
 file_length:
-  warning: 5000
-  error: 8000
+  warning: 4000
+  error: 5000
   ignore_comment_only_lines: true
 
-# Type body length — TerminalSessionModel ~2800, RustTerminalView ~2700, AppModel ~2000
+# Leave growth room above current type bodies while keeping the strict warning actionable.
 type_body_length:
-  warning: 2800
-  error: 3500
+  warning: 3000
+  error: 4000
 
-# Function body length — settings init is 269 lines, large dispatchers exist
+# SwiftLint excludes comments and whitespace from body lengths.
 function_body_length:
-  warning: 270
-  error: 400
+  warning: 250
+  error: 350
 
 # Function parameter count — some callbacks have many params
 function_parameter_count:
   warning: 11
   error: 15
 
-# Cyclomatic complexity — large switch statements are inherently complex
+# Strict lint rejects growth beyond the current largest measured function.
 cyclomatic_complexity:
-  warning: 46
-  error: 60
+  warning: 40
+  error: 50
   ignores_case_statements: true
 
 # Nesting

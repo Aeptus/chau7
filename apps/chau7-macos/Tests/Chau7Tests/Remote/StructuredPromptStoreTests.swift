@@ -10,7 +10,7 @@ final class StructuredPromptStoreTests: XCTestCase {
         header: String? = "Auth",
         labels: [String] = ["OAuth (Recommended)", "JWT", "Cancel setup"],
         multiSelect: Bool = false
-    ) -> String {
+    ) throws -> String {
         var questionDict: [String: Any] = [
             "question": question,
             "options": labels.map { ["label": $0, "description": "d"] },
@@ -18,8 +18,8 @@ final class StructuredPromptStoreTests: XCTestCase {
         ]
         if let header { questionDict["header"] = header }
         let root: [String: Any] = ["questions": [questionDict]]
-        let data = try! JSONSerialization.data(withJSONObject: root)
-        return String(data: data, encoding: .utf8)!
+        let data = try JSONSerialization.data(withJSONObject: root)
+        return try XCTUnwrap(String(data: data, encoding: .utf8))
     }
 
     private func makeStore(ttl: TimeInterval = 3600, now: @escaping () -> Date = Date.init) -> StructuredPromptStore {
@@ -30,7 +30,7 @@ final class StructuredPromptStoreTests: XCTestCase {
 
     func testSingleSelectIntakeSynthesizesDigitOnlyResponses() throws {
         let store = makeStore()
-        XCTAssertTrue(store.applyToolStart(
+        XCTAssertTrue(try store.applyToolStart(
             toolName: "AskUserQuestion",
             toolInputJSON: singleSelectInput(),
             toolUseID: "toolu_1",
@@ -52,7 +52,7 @@ final class StructuredPromptStoreTests: XCTestCase {
 
     func testMultiSelectResponsesToggleThenSubmit() throws {
         let store = makeStore()
-        store.applyToolStart(
+        try store.applyToolStart(
             toolName: "AskUserQuestion",
             toolInputJSON: singleSelectInput(multiSelect: true),
             toolUseID: "toolu_1",
@@ -97,9 +97,9 @@ final class StructuredPromptStoreTests: XCTestCase {
         XCTAssertTrue(store.isEmpty)
     }
 
-    func testOtherToolsAreIgnored() {
+    func testOtherToolsAreIgnored() throws {
         let store = makeStore()
-        XCTAssertFalse(store.applyToolStart(
+        XCTAssertFalse(try store.applyToolStart(
             toolName: "Bash", toolInputJSON: singleSelectInput(),
             toolUseID: "t", runtimeTabID: tabA, sessionID: "s1"
         ))
@@ -108,13 +108,13 @@ final class StructuredPromptStoreTests: XCTestCase {
 
     // MARK: - Lifecycle
 
-    func testToolEndClearsMatchingSessionOnly() {
+    func testToolEndClearsMatchingSessionOnly() throws {
         let store = makeStore()
-        store.applyToolStart(
+        try store.applyToolStart(
             toolName: "AskUserQuestion", toolInputJSON: singleSelectInput(),
             toolUseID: "t1", runtimeTabID: tabA, sessionID: "s1"
         )
-        store.applyToolStart(
+        try store.applyToolStart(
             toolName: "AskUserQuestion", toolInputJSON: singleSelectInput(question: "Other?"),
             toolUseID: "t2", runtimeTabID: tabB, sessionID: "s2"
         )
@@ -129,9 +129,9 @@ final class StructuredPromptStoreTests: XCTestCase {
         XCTAssertNotNil(store.entry(forRuntimeTabID: tabB))
     }
 
-    func testSessionTerminalClearsRegardlessOfTool() {
+    func testSessionTerminalClearsRegardlessOfTool() throws {
         let store = makeStore()
-        store.applyToolStart(
+        try store.applyToolStart(
             toolName: "AskUserQuestion", toolInputJSON: singleSelectInput(),
             toolUseID: "t1", runtimeTabID: tabA, sessionID: "s1"
         )
@@ -140,10 +140,10 @@ final class StructuredPromptStoreTests: XCTestCase {
         XCTAssertFalse(store.applySessionTerminal(sessionID: "s1"), "second clear is a no-op")
     }
 
-    func testEntriesExpireAfterTTL() {
+    func testEntriesExpireAfterTTL() throws {
         var current = Date(timeIntervalSince1970: 1000)
         let store = makeStore(ttl: 60) { current }
-        store.applyToolStart(
+        try store.applyToolStart(
             toolName: "AskUserQuestion", toolInputJSON: singleSelectInput(),
             toolUseID: "t1", runtimeTabID: tabA, sessionID: "s1"
         )
@@ -156,14 +156,14 @@ final class StructuredPromptStoreTests: XCTestCase {
 
     // MARK: - ExitPlanMode
 
-    private func exitPlanInput(plan: String) -> String {
-        let data = try! JSONSerialization.data(withJSONObject: ["plan": plan])
-        return String(data: data, encoding: .utf8)!
+    private func exitPlanInput(plan: String) throws -> String {
+        let data = try JSONSerialization.data(withJSONObject: ["plan": plan])
+        return try XCTUnwrap(String(data: data, encoding: .utf8))
     }
 
     func testExitPlanModeCarriesPlanExcerptWithoutOptions() throws {
         let store = makeStore()
-        XCTAssertTrue(store.applyToolStart(
+        XCTAssertTrue(try store.applyToolStart(
             toolName: "ExitPlanMode",
             toolInputJSON: exitPlanInput(plan: String(repeating: "step ", count: 200)),
             toolUseID: "t1", runtimeTabID: tabA, sessionID: "s1"
@@ -187,9 +187,9 @@ final class StructuredPromptStoreTests: XCTestCase {
         XCTAssertTrue(store.isEmpty)
     }
 
-    func testToolEndClearIsScopedToTheEntryTool() {
+    func testToolEndClearIsScopedToTheEntryTool() throws {
         let store = makeStore()
-        store.applyToolStart(
+        try store.applyToolStart(
             toolName: "ExitPlanMode", toolInputJSON: exitPlanInput(plan: "the plan"),
             toolUseID: "t1", runtimeTabID: tabA, sessionID: "s1"
         )
@@ -207,13 +207,13 @@ final class StructuredPromptStoreTests: XCTestCase {
 
     func testDuplicateApplyReportsNoChangeAndKeepsSignature() throws {
         let store = makeStore(now: { Date(timeIntervalSince1970: 5) })
-        XCTAssertTrue(store.applyToolStart(
+        XCTAssertTrue(try store.applyToolStart(
             toolName: "AskUserQuestion", toolInputJSON: singleSelectInput(),
             toolUseID: "t1", runtimeTabID: tabA, sessionID: "s1"
         ))
         let first = try XCTUnwrap(store.entry(forRuntimeTabID: tabA))
 
-        XCTAssertFalse(store.applyToolStart(
+        XCTAssertFalse(try store.applyToolStart(
             toolName: "AskUserQuestion", toolInputJSON: singleSelectInput(),
             toolUseID: "t1", runtimeTabID: tabA, sessionID: "s1"
         ), "identical re-apply (hook re-fire) must not report a change")
@@ -222,14 +222,14 @@ final class StructuredPromptStoreTests: XCTestCase {
 
     func testSignatureDiffersPerToolUse() throws {
         let store = makeStore()
-        store.applyToolStart(
+        try store.applyToolStart(
             toolName: "AskUserQuestion", toolInputJSON: singleSelectInput(),
             toolUseID: "toolu_1", runtimeTabID: tabA, sessionID: "s1"
         )
         let first = try XCTUnwrap(store.entry(forRuntimeTabID: tabA))
         store.applyToolEnd(toolName: "AskUserQuestion", sessionID: "s1")
 
-        store.applyToolStart(
+        try store.applyToolStart(
             toolName: "AskUserQuestion", toolInputJSON: singleSelectInput(),
             toolUseID: "toolu_2", runtimeTabID: tabA, sessionID: "s1"
         )

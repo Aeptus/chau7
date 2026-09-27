@@ -12,7 +12,7 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 # Size thresholds (bytes).
 WARN_BYTES=$((1 * 1024 * 1024))   # 1 MB
-BLOCK_BYTES=$((5 * 1024 * 1024))  # 5 MB
+BLOCK_BYTES=$((5 * 1024 * 1024))  # 5 MiB
 
 # Collect staged adds/modifies/renames/copies.
 staged_files="$(git -C "$REPO_ROOT" diff --cached --name-only --diff-filter=ACMR || true)"
@@ -100,7 +100,7 @@ fi
 
 if (( ${#oversize_block_hits[@]} > 0 )); then
   printf '\n'
-  printf '╭─ Oversized file staged (> 5 MB) ────────────────────────────╮\n'
+  printf '╭─ Oversized file staged (>= 5 MiB) ───────────────────────────╮\n'
   printf '│                                                             │\n'
   for entry in "${oversize_block_hits[@]}"; do
     printf '│    %-56s │\n' "• $entry"

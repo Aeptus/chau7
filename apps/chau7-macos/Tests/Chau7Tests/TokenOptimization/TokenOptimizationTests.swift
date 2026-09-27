@@ -916,7 +916,7 @@ final class TokenOptimizationCoreTests: XCTestCase {
             "CTOGainStats should round-trip through JSON encoding"
         )
 
-        let json = try JSONSerialization.jsonObject(with: data) as! [String: Any]
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
         XCTAssertNotNil(json["total_commands"], "Encoded key should be 'total_commands'")
         XCTAssertNotNil(json["total_input"], "Encoded key should be 'total_input'")
         XCTAssertNotNil(json["total_output"], "Encoded key should be 'total_output'")

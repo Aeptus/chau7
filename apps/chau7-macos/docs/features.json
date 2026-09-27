@@ -1,5 +1,12 @@
 [
   {
+    "category": "Developer Experience",
+    "feature": "Measured SwiftLint Budgets and Registered Staged Guards",
+    "description": "Strict SwiftLint uses measured file, type, function, and complexity caps with force operations enabled; staged quality policy runs Gitleaks and forbidden-file and 5-MiB-or-larger blob checks and registers advisory Chau7 code review",
+    "status": "Shipped",
+    "differentiator": "No"
+  },
+  {
     "category": "Reliability",
     "feature": "Safe Claude Status-Line Installation",
     "description": "Upserts the Claude status-line helper only after reading a valid settings object; missing settings retain first-install behavior, while read and parse failures surface an error without overwriting user configuration",

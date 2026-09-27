@@ -1,4 +1,5 @@
 Category,Feature,Description,Status,Differentiator
+Developer Experience,Measured SwiftLint Budgets and Registered Staged Guards,"Strict SwiftLint uses measured file, type, function, and complexity caps with force operations enabled; staged quality policy runs Gitleaks and forbidden-file and 5-MiB-or-larger blob checks and registers advisory Chau7 code review",Shipped,No
 Reliability,Safe Claude Status-Line Installation,"Upserts the Claude status-line helper only after reading a valid settings object; missing settings retain first-install behavior, while read and parse failures surface an error without overwriting user configuration",Shipped,No
 Remote Access,Owner-Only Remote IPC Socket,"Creates the remote bridge socket with owner-only 0600 permissions inside an app-support directory restricted to 0700, preventing other local users from accessing its frames",Shipped,No
 Reliability,Tab-Scoped Runtime Session Uniqueness,"Enforces one active runtime session per tab, keeps replacement and provider mappings consistent, and makes agent dashboard indexing tolerate legacy duplicate sessions",Shipped,No

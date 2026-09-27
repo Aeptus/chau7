@@ -328,9 +328,19 @@ export const gates = [
     rerun: "pnpm quality:staged --include=staged-secret-scan",
     run: async (context) => {
       const failures = secretFailures(context);
-      return failures.length
-        ? { status: "failed", summary: failures.join("\n") }
-        : { status: "passed", summary: "no staged high-signal secrets found" };
+      if (failures.length) return { status: "failed", summary: failures.join("\n") };
+
+      const scan = await context.exec("gitleaks", [
+        "git",
+        "--pre-commit",
+        "--staged",
+        "--redact",
+        "--no-banner",
+      ]);
+      if (scan.status !== "passed") {
+        return { ...scan, summary: `Gitleaks staged scan failed: ${scan.summary ?? "command failed"}` };
+      }
+      return { status: "passed", summary: "high-signal staged secret checks and Gitleaks passed" };
     },
   },
   {
@@ -464,16 +474,38 @@ export const gates = [
     wave: "static",
     tags: ["legacy", "source-policy"],
     cacheable: false,
-    inputs: ["scripts/check-anti-slop", "scripts/check-design-system", "scripts/check-docs-staged"],
+    inputs: [
+      "scripts/check-forbidden-files",
+      "scripts/check-anti-slop",
+      "scripts/check-design-system",
+      "scripts/check-docs-staged",
+    ],
     applies: (context) => context.stagedFiles.length > 0,
     rerun: "pnpm quality:staged --include=staged-legacy-guardrails",
     run: async (context) => {
-      for (const script of ["./scripts/check-anti-slop", "./scripts/check-design-system", "./scripts/check-docs-staged"]) {
+      for (const script of [
+        "./scripts/check-forbidden-files",
+        "./scripts/check-anti-slop",
+        "./scripts/check-design-system",
+        "./scripts/check-docs-staged",
+      ]) {
         const result = await runShellScript(context, script);
         if (result.status !== "passed") return result;
       }
       return { status: "passed", summary: "legacy staged guardrails passed through registered gate" };
     },
+  },
+  {
+    id: "staged-precommit-review",
+    modes: STAGED_ONLY,
+    scope: "staged",
+    wave: "audit",
+    tags: ["ai", "review"],
+    cacheable: false,
+    inputs: ["scripts/pre-commit-review"],
+    applies: (context) => context.stagedFiles.length > 0,
+    rerun: "pnpm quality:staged --include=staged-precommit-review",
+    run: async (context) => runShellScript(context, "./scripts/pre-commit-review"),
   },
   {
     id: "staged-features-csv",

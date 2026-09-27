@@ -270,217 +270,21 @@ extension RustTerminalView {
         // Mouse down for selection start, Cmd+click paths, Option+click cursor, mouse reporting
         mouseDownMonitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown) { [weak self] event in
             guard let self = self else { return event }
-            guard event.window === window else { return event }
-            let location = convert(event.locationInWindow, from: nil)
-            guard bounds.contains(location) else { return event }
-
-            // User is interacting — exit any idle throttle before we do work so
-            // the click response renders at full rate, not 10 Hz.
-            snapToFastPolling()
-
-            // If a SwiftUI overlay is above us, don't intercept the click
-            if let hitView = event.window?.contentView?.hitTest(event.locationInWindow),
-               hitView !== self, !hitView.isDescendant(of: self) {
-                return event
-            }
-
-            // An inactive split sibling is still visible and owns the click.
-            // Make it the first responder before selection or mouse reporting
-            // so the onFocus callback updates the split controller immediately.
-            focusForMouseInteraction()
-
-            let cell = pointToCell(location)
-            Log.trace("RustTerminalView[\(viewId)]: mouseDown at (\(location.x), \(location.y)) -> cell (\(cell.col), \(cell.row))")
-
-            // Mouse reporting: Forward mouse events to TUI apps (tmux, vim, htop, etc.)
-            // Control+click bypasses mouse reporting to allow context menu/selection
-            if isMouseReportingEnabled(), !event.modifierFlags.contains(.control) {
-                Log.trace("RustTerminalView[\(viewId)]: Mouse reporting - sending left press")
-                mouseReportingButtonDown = .left
-                sendMousePress(button: .left, at: location, modifiers: event.modifierFlags)
-                mouseDownLocation = location // Track for drag reporting
-                didDragSinceMouseDown = false
-                return event
-            }
-
-            // Track mouse down for click-to-position
-            mouseDownLocation = location
-            didDragSinceMouseDown = false
-            isSelecting = false
-
-            // F03: Check for Cmd+click on paths/URLs
-            if event.modifierFlags.contains(.command), FeatureSettings.shared.isCmdClickPathsEnabled {
-                if handleCmdClick(at: location) {
-                    mouseDownLocation = nil // Don't position cursor for Cmd+click
-                    return nil // Consume the event
-                }
-            }
-
-            // Option+click to position cursor (like iTerm2)
-            if event.modifierFlags.contains(.option), FeatureSettings.shared.isOptionClickCursorEnabled {
-                if handleOptionClick(at: location) {
-                    mouseDownLocation = nil // Already handled
-                    return nil // Consume the event
-                }
-            }
-
-            // Handle double-click (word selection) and triple-click (line selection)
-            let absoluteCell = pointToCellAbsolute(location)
-            if event.clickCount == 2 {
-                // Double-click: Select word at click location (Semantic selection)
-                Log.trace("RustTerminalView[\(viewId)]: Double-click at cell (\(absoluteCell.col), \(absoluteCell.row)) - selecting word")
-                lastSelectionText = nil
-                rustTerminal?.startSelection(col: absoluteCell.col, row: absoluteCell.row, selectionType: 2) // Semantic
-                needsGridSync = true
-                mouseDownLocation = nil // Prevent cursor positioning and drag start
-                scheduleCopyOnSelect()
-                return event
-            } else if event.clickCount >= 3 {
-                // Triple-click: Select entire line (Lines selection)
-                Log.trace("RustTerminalView[\(viewId)]: Triple-click at row \(absoluteCell.row) - selecting line")
-                lastSelectionText = nil
-                rustTerminal?.startSelection(col: 0, row: absoluteCell.row, selectionType: 3) // Lines
-                needsGridSync = true
-                mouseDownLocation = nil // Prevent cursor positioning and drag start
-                scheduleCopyOnSelect()
-                return event
-            }
-
-            // Clear any existing selection on mouse down (single click)
-            clearSelection()
-            needsGridSync = true
-
-            return event
+            return handleMouseDownMonitorEvent(event)
         }
 
         // Mouse dragged for selection OR mouse reporting
         mouseDragMonitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDragged) { [weak self] event in
             guard let self = self else { return event }
-            guard event.window === window else { return event }
-
-            // If a SwiftUI overlay is above us, don't intercept the drag
-            if let hitView = event.window?.contentView?.hitTest(event.locationInWindow),
-               hitView !== self, !hitView.isDescendant(of: self) {
-                return event
-            }
-
-            let location = convert(event.locationInWindow, from: nil)
-
-            // Mouse reporting: Forward drag events to TUI apps (mode 1002/1003)
-            if mouseReportingButtonDown != nil {
-                if shouldReportDragMotion() {
-                    sendMouseMotion(at: location, buttonDown: mouseReportingButtonDown, modifiers: event.modifierFlags)
-                }
-                didDragSinceMouseDown = true
-                return event // Don't do selection when mouse reporting is active
-            }
-
-            // Selection logic (only when not mouse reporting)
-            if let downLocation = mouseDownLocation {
-                let dx = abs(location.x - downLocation.x)
-                let dy = abs(location.y - downLocation.y)
-                if dx > Self.dragThreshold || dy > Self.dragThreshold {
-                    // Use absolute coordinates for selection (accounts for scrollback offset)
-                    let currentCell = pointToCellAbsolute(location)
-
-                    if !didDragSinceMouseDown {
-                        // First drag past threshold - start selection at mouse down location
-                        let startCell = pointToCellAbsolute(downLocation)
-                        Log.trace("RustTerminalView[\(viewId)]: mouseDrag - Starting selection at absolute cell (\(startCell.col), \(startCell.row))")
-                        rustTerminal?.startSelection(col: startCell.col, row: startCell.row, selectionType: 0)
-                        isSelecting = true
-                    }
-
-                    didDragSinceMouseDown = true
-
-                    // Update selection end point
-                    if isSelecting {
-                        Log.trace("RustTerminalView[\(viewId)]: mouseDrag - Updating selection to absolute cell (\(currentCell.col), \(currentCell.row))")
-                        rustTerminal?.updateSelection(col: currentCell.col, row: currentCell.row)
-                        needsGridSync = true
-                    }
-                }
-            }
-
-            // Auto-scroll when dragging near or outside view edges during selection.
-            // Use a 10px inset so the user doesn't have to leave the view entirely.
-            if didDragSinceMouseDown, isSelecting {
-                let edgeInset: CGFloat = 10
-                if location.y < edgeInset {
-                    // Near/below bottom edge - scroll down (show later content)
-                    autoScrollDirection = 1
-                    autoScrollDistance = max(0, edgeInset - location.y)
-                    startAutoScrollTimer()
-                } else if location.y > bounds.height - edgeInset {
-                    // Near/above top edge - scroll up (show earlier content)
-                    autoScrollDirection = -1
-                    autoScrollDistance = max(0, location.y - (bounds.height - edgeInset))
-                    startAutoScrollTimer()
-                } else {
-                    // Inside bounds - stop auto-scroll
-                    stopAutoScrollTimer()
-                }
-            }
-
-            return event
+            return handleMouseDragMonitorEvent(event)
         }
 
         // Mouse up for mouse reporting, copy-on-select, AND click-to-position cursor
         mouseUpMonitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseUp) { [weak self] event in
             guard let self = self else { return event }
-
-            // Capture and clear mouse tracking state
-            let downLocation = mouseDownLocation
-            let wasDrag = didDragSinceMouseDown
-            let wasSelecting = isSelecting
-            let wasMouseReporting = mouseReportingButtonDown
-
-            mouseDownLocation = nil
-            didDragSinceMouseDown = false
-            isSelecting = false
-            mouseReportingButtonDown = nil
-
-            // Stop auto-scroll timer on mouse up
-            stopAutoScrollTimer()
-
-            guard event.window === window else { return event }
-            let location = convert(event.locationInWindow, from: nil)
-
-            // Mouse reporting: Send release event to TUI apps
-            if let reportingButton = wasMouseReporting {
-                Log.trace("RustTerminalView[\(viewId)]: Mouse reporting - sending \(reportingButton) release")
-                sendMouseRelease(button: reportingButton, at: location, modifiers: event.modifierFlags)
-                return event // Don't do click-to-position or selection when mouse reporting
-            }
-
-            guard bounds.contains(location) else { return event }
-
-            Log.trace("RustTerminalView[\(viewId)]: mouseUp at (\(location.x), \(location.y)), wasSelecting=\(wasSelecting), wasDrag=\(wasDrag)")
-
-            // Click-to-position: If no drag occurred and single click, position cursor
-            if let clickLocation = downLocation, !wasDrag {
-                let isSingleClick = event.clickCount == 1
-                let noModifiers = !event.modifierFlags.contains(.shift) && !event.modifierFlags.contains(.command) && !event.modifierFlags.contains(.option)
-                let noActiveSelection = !hasSelection
-                let clickEnabled = FeatureSettings.shared.isClickToPositionEnabled
-
-                let shellReady = isAtPrompt?() ?? false
-                if isSingleClick, noModifiers, noActiveSelection, clickEnabled, shellReady {
-                    if handleClickToPosition(at: clickLocation) {
-                        Log.trace("RustTerminalView[\(viewId)]: Click-to-position handled")
-                        return event
-                    }
-                }
-            }
-
-            // Copy-on-select: Option key temporarily disables
-            let optionHeld = event.modifierFlags.contains(.option)
-            if wasSelecting, !optionHeld {
-                scheduleCopyOnSelect()
-            }
-
-            return event
+            return handleMouseUpMonitorEvent(event)
         }
+
         // Mouse move monitor for cursor change on hover (Cmd+hover shows hand cursor for clickable paths/URLs)
         if needsMouseMove {
             mouseMoveMonitor = NSEvent.addLocalMonitorForEvents(matching: .mouseMoved) { [weak self] event in
@@ -499,82 +303,299 @@ extension RustTerminalView {
         // Normal mode: navigate scrollback history (scroll up = see earlier output)
         scrollWheelMonitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
             guard let self = self else { return event }
-            guard event.window === window else { return event }
-            let location = convert(event.locationInWindow, from: nil)
-            guard bounds.contains(location) else { return event }
-
-            // Scroll needs to animate at full rate on ProMotion displays.
-            snapToFastPolling()
-
-            let deltaY = event.scrollingDeltaY
-            switch TerminalScrollPolicy.action(
-                deltaY: Double(deltaY),
-                state: terminalRuntimeStateForScroll()
-            ) {
-            case .ignore:
-                return event
-            case .forwardToApplication:
-                sendScrollEvent(deltaY: deltaY, at: location, modifiers: event.modifierFlags)
-                return nil
-            case .transcript(let lines):
-                showTranscriptOverlayAndScroll(lines: lines)
-                return nil
-            case .scrollback(let signedLines):
-                if signedLines > 0 {
-                    scrollUp(lines: signedLines)
-                } else {
-                    scrollDown(lines: abs(signedLines))
-                }
-                // If actively selecting, extend the selection to track the scroll.
-                // This lets users scroll-wheel to extend selection beyond the viewport.
-                if isSelecting, let rust = rustTerminal {
-                    let mouseLocation = convert(event.locationInWindow, from: nil)
-                    let cell = pointToCellAbsolute(mouseLocation)
-                    rust.updateSelection(col: cell.col, row: cell.row)
-                    needsGridSync = true
-                }
-
-                return nil // Consume the event
-            }
+            return handleScrollWheelMonitorEvent(event)
         }
 
         // General key event monitor - intercept ALL key events when terminal is active
         // This ensures key input goes to Rust terminal even if a subview is first responder
         generalKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard let self = self else { return event }
-            let inTerminal = isFirstResponderInTerminal()
-            let shouldRoute = shouldRouteHardwareKeyEvent(event)
-            if EnvVars.isEnabled(EnvVars.inputDiagnostics) {
-                let preview = (event.charactersIgnoringModifiers ?? "").prefix(6)
-                Log.info(
-                    "RustTerminalView[\(viewId)]: generalKeyMonitor seen keyCode=\(event.keyCode) " +
-                        "chars='\(preview)' eligible=\(shouldRoute) appActive=\(NSApp.isActive) " +
-                        "keyWindow=\(window?.isKeyWindow ?? false) " +
-                        "onActiveSpace=\(window?.isOnActiveSpace ?? false) " +
-                        "inTerminal=\(inTerminal) firstResponder=\(firstResponderDebugName())"
-                )
-            }
-            guard shouldRoute else { return event }
-
-            if transcriptOverlayController?.isVisible == true {
-                hideTranscriptOverlay()
-            }
-
-            // Let snippet and history monitors handle their specific keys first
-            // (they run before this and return nil to consume)
-
-            // Route to Rust terminal
-            if handleTerminalKeyEvent(event) {
-                markGeneralKeyEventHandled(event)
-                if EnvVars.isEnabled(EnvVars.inputDiagnostics) {
-                    Log.info("RustTerminalView[\(viewId)]: generalKeyMonitor consumed keyCode=\(event.keyCode)")
-                }
-                return nil // Consume event - we handled it
-            }
-            return event // Let it propagate if not handled
+            return handleGeneralKeyDownMonitorEvent(event)
         }
 
         Log.trace("RustTerminalView[\(viewId)]: setupEventMonitors - Event monitors installed (mouseMove=\(needsMouseMove), generalKey=true)")
+    }
+
+    private func handleMouseDownMonitorEvent(_ event: NSEvent) -> NSEvent? {
+        guard event.window === window else { return event }
+        let location = convert(event.locationInWindow, from: nil)
+        guard bounds.contains(location) else { return event }
+
+        // User is interacting — exit any idle throttle before we do work so
+        // the click response renders at full rate, not 10 Hz.
+        snapToFastPolling()
+
+        // If a SwiftUI overlay is above us, don't intercept the click
+        if let hitView = event.window?.contentView?.hitTest(event.locationInWindow),
+           hitView !== self, !hitView.isDescendant(of: self) {
+            return event
+        }
+
+        // An inactive split sibling is still visible and owns the click.
+        // Make it the first responder before selection or mouse reporting
+        // so the onFocus callback updates the split controller immediately.
+        focusForMouseInteraction()
+
+        let cell = pointToCell(location)
+        Log.trace("RustTerminalView[\(viewId)]: mouseDown at (\(location.x), \(location.y)) -> cell (\(cell.col), \(cell.row))")
+
+        // Mouse reporting: Forward mouse events to TUI apps (tmux, vim, htop, etc.)
+        // Control+click bypasses mouse reporting to allow context menu/selection
+        if isMouseReportingEnabled(), !event.modifierFlags.contains(.control) {
+            Log.trace("RustTerminalView[\(viewId)]: Mouse reporting - sending left press")
+            mouseReportingButtonDown = .left
+            sendMousePress(button: .left, at: location, modifiers: event.modifierFlags)
+            mouseDownLocation = location // Track for drag reporting
+            didDragSinceMouseDown = false
+            return event
+        }
+
+        // Track mouse down for click-to-position
+        mouseDownLocation = location
+        didDragSinceMouseDown = false
+        isSelecting = false
+
+        // F03: Check for Cmd+click on paths/URLs
+        if event.modifierFlags.contains(.command), FeatureSettings.shared.isCmdClickPathsEnabled {
+            if handleCmdClick(at: location) {
+                mouseDownLocation = nil // Don't position cursor for Cmd+click
+                return nil // Consume the event
+            }
+        }
+
+        // Option+click to position cursor (like iTerm2)
+        if event.modifierFlags.contains(.option), FeatureSettings.shared.isOptionClickCursorEnabled {
+            if handleOptionClick(at: location) {
+                mouseDownLocation = nil // Already handled
+                return nil // Consume the event
+            }
+        }
+
+        // Handle double-click (word selection) and triple-click (line selection)
+        let absoluteCell = pointToCellAbsolute(location)
+        if event.clickCount == 2 {
+            // Double-click: Select word at click location (Semantic selection)
+            Log.trace("RustTerminalView[\(viewId)]: Double-click at cell (\(absoluteCell.col), \(absoluteCell.row)) - selecting word")
+            lastSelectionText = nil
+            rustTerminal?.startSelection(col: absoluteCell.col, row: absoluteCell.row, selectionType: 2) // Semantic
+            needsGridSync = true
+            mouseDownLocation = nil // Prevent cursor positioning and drag start
+            scheduleCopyOnSelect()
+            return event
+        } else if event.clickCount >= 3 {
+            // Triple-click: Select entire line (Lines selection)
+            Log.trace("RustTerminalView[\(viewId)]: Triple-click at row \(absoluteCell.row) - selecting line")
+            lastSelectionText = nil
+            rustTerminal?.startSelection(col: 0, row: absoluteCell.row, selectionType: 3) // Lines
+            needsGridSync = true
+            mouseDownLocation = nil // Prevent cursor positioning and drag start
+            scheduleCopyOnSelect()
+            return event
+        }
+
+        // Clear any existing selection on mouse down (single click)
+        clearSelection()
+        needsGridSync = true
+
+        return event
+    }
+
+    private func handleMouseDragMonitorEvent(_ event: NSEvent) -> NSEvent? {
+        guard event.window === window else { return event }
+
+        // If a SwiftUI overlay is above us, don't intercept the drag
+        if let hitView = event.window?.contentView?.hitTest(event.locationInWindow),
+           hitView !== self, !hitView.isDescendant(of: self) {
+            return event
+        }
+
+        let location = convert(event.locationInWindow, from: nil)
+
+        // Mouse reporting: Forward drag events to TUI apps (mode 1002/1003)
+        if mouseReportingButtonDown != nil {
+            if shouldReportDragMotion() {
+                sendMouseMotion(at: location, buttonDown: mouseReportingButtonDown, modifiers: event.modifierFlags)
+            }
+            didDragSinceMouseDown = true
+            return event // Don't do selection when mouse reporting is active
+        }
+
+        // Selection logic (only when not mouse reporting)
+        if let downLocation = mouseDownLocation {
+            let dx = abs(location.x - downLocation.x)
+            let dy = abs(location.y - downLocation.y)
+            if dx > Self.dragThreshold || dy > Self.dragThreshold {
+                // Use absolute coordinates for selection (accounts for scrollback offset)
+                let currentCell = pointToCellAbsolute(location)
+
+                if !didDragSinceMouseDown {
+                    // First drag past threshold - start selection at mouse down location
+                    let startCell = pointToCellAbsolute(downLocation)
+                    Log.trace("RustTerminalView[\(viewId)]: mouseDrag - Starting selection at absolute cell (\(startCell.col), \(startCell.row))")
+                    rustTerminal?.startSelection(col: startCell.col, row: startCell.row, selectionType: 0)
+                    isSelecting = true
+                }
+
+                didDragSinceMouseDown = true
+
+                // Update selection end point
+                if isSelecting {
+                    Log.trace("RustTerminalView[\(viewId)]: mouseDrag - Updating selection to absolute cell (\(currentCell.col), \(currentCell.row))")
+                    rustTerminal?.updateSelection(col: currentCell.col, row: currentCell.row)
+                    needsGridSync = true
+                }
+            }
+        }
+
+        // Auto-scroll when dragging near or outside view edges during selection.
+        // Use a 10px inset so the user doesn't have to leave the view entirely.
+        if didDragSinceMouseDown, isSelecting {
+            let edgeInset: CGFloat = 10
+            if location.y < edgeInset {
+                // Near/below bottom edge - scroll down (show later content)
+                autoScrollDirection = 1
+                autoScrollDistance = max(0, edgeInset - location.y)
+                startAutoScrollTimer()
+            } else if location.y > bounds.height - edgeInset {
+                // Near/above top edge - scroll up (show earlier content)
+                autoScrollDirection = -1
+                autoScrollDistance = max(0, location.y - (bounds.height - edgeInset))
+                startAutoScrollTimer()
+            } else {
+                // Inside bounds - stop auto-scroll
+                stopAutoScrollTimer()
+            }
+        }
+
+        return event
+    }
+
+    private func handleMouseUpMonitorEvent(_ event: NSEvent) -> NSEvent? {
+
+        // Capture and clear mouse tracking state
+        let downLocation = mouseDownLocation
+        let wasDrag = didDragSinceMouseDown
+        let wasSelecting = isSelecting
+        let wasMouseReporting = mouseReportingButtonDown
+
+        mouseDownLocation = nil
+        didDragSinceMouseDown = false
+        isSelecting = false
+        mouseReportingButtonDown = nil
+
+        // Stop auto-scroll timer on mouse up
+        stopAutoScrollTimer()
+
+        guard event.window === window else { return event }
+        let location = convert(event.locationInWindow, from: nil)
+
+        // Mouse reporting: Send release event to TUI apps
+        if let reportingButton = wasMouseReporting {
+            Log.trace("RustTerminalView[\(viewId)]: Mouse reporting - sending \(reportingButton) release")
+            sendMouseRelease(button: reportingButton, at: location, modifiers: event.modifierFlags)
+            return event // Don't do click-to-position or selection when mouse reporting
+        }
+
+        guard bounds.contains(location) else { return event }
+
+        Log.trace("RustTerminalView[\(viewId)]: mouseUp at (\(location.x), \(location.y)), wasSelecting=\(wasSelecting), wasDrag=\(wasDrag)")
+
+        // Click-to-position: If no drag occurred and single click, position cursor
+        if let clickLocation = downLocation, !wasDrag {
+            let isSingleClick = event.clickCount == 1
+            let noModifiers = !event.modifierFlags.contains(.shift) && !event.modifierFlags.contains(.command) && !event.modifierFlags.contains(.option)
+            let noActiveSelection = !hasSelection
+            let clickEnabled = FeatureSettings.shared.isClickToPositionEnabled
+
+            let shellReady = isAtPrompt?() ?? false
+            if isSingleClick, noModifiers, noActiveSelection, clickEnabled, shellReady {
+                if handleClickToPosition(at: clickLocation) {
+                    Log.trace("RustTerminalView[\(viewId)]: Click-to-position handled")
+                    return event
+                }
+            }
+        }
+
+        // Copy-on-select: Option key temporarily disables
+        let optionHeld = event.modifierFlags.contains(.option)
+        if wasSelecting, !optionHeld {
+            scheduleCopyOnSelect()
+        }
+
+        return event
+    }
+
+    private func handleScrollWheelMonitorEvent(_ event: NSEvent) -> NSEvent? {
+        guard event.window === window else { return event }
+        let location = convert(event.locationInWindow, from: nil)
+        guard bounds.contains(location) else { return event }
+
+        // Scroll needs to animate at full rate on ProMotion displays.
+        snapToFastPolling()
+
+        let deltaY = event.scrollingDeltaY
+        switch TerminalScrollPolicy.action(
+            deltaY: Double(deltaY),
+            state: terminalRuntimeStateForScroll()
+        ) {
+        case .ignore:
+            return event
+        case .forwardToApplication:
+            sendScrollEvent(deltaY: deltaY, at: location, modifiers: event.modifierFlags)
+            return nil
+        case .transcript(let lines):
+            showTranscriptOverlayAndScroll(lines: lines)
+            return nil
+        case .scrollback(let signedLines):
+            if signedLines > 0 {
+                scrollUp(lines: signedLines)
+            } else {
+                scrollDown(lines: abs(signedLines))
+            }
+            // If actively selecting, extend the selection to track the scroll.
+            // This lets users scroll-wheel to extend selection beyond the viewport.
+            if isSelecting, let rust = rustTerminal {
+                let mouseLocation = convert(event.locationInWindow, from: nil)
+                let cell = pointToCellAbsolute(mouseLocation)
+                rust.updateSelection(col: cell.col, row: cell.row)
+                needsGridSync = true
+            }
+
+            return nil // Consume the event
+        }
+    }
+
+    private func handleGeneralKeyDownMonitorEvent(_ event: NSEvent) -> NSEvent? {
+        let inTerminal = isFirstResponderInTerminal()
+        let shouldRoute = shouldRouteHardwareKeyEvent(event)
+        if EnvVars.isEnabled(EnvVars.inputDiagnostics) {
+            let preview = (event.charactersIgnoringModifiers ?? "").prefix(6)
+            Log.info(
+                "RustTerminalView[\(viewId)]: generalKeyMonitor seen keyCode=\(event.keyCode) " +
+                    "chars='\(preview)' eligible=\(shouldRoute) appActive=\(NSApp.isActive) " +
+                    "keyWindow=\(window?.isKeyWindow ?? false) " +
+                    "onActiveSpace=\(window?.isOnActiveSpace ?? false) " +
+                    "inTerminal=\(inTerminal) firstResponder=\(firstResponderDebugName())"
+            )
+        }
+        guard shouldRoute else { return event }
+
+        if transcriptOverlayController?.isVisible == true {
+            hideTranscriptOverlay()
+        }
+
+        // Let snippet and history monitors handle their specific keys first
+        // (they run before this and return nil to consume)
+
+        // Route to Rust terminal
+        if handleTerminalKeyEvent(event) {
+            markGeneralKeyEventHandled(event)
+            if EnvVars.isEnabled(EnvVars.inputDiagnostics) {
+                Log.info("RustTerminalView[\(viewId)]: generalKeyMonitor consumed keyCode=\(event.keyCode)")
+            }
+            return nil // Consume event - we handled it
+        }
+        return event // Let it propagate if not handled
     }
 
     func removeEventMonitors() {

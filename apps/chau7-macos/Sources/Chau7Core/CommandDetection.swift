@@ -261,6 +261,14 @@ public enum CommandDetection {
 
     // MARK: - Cached URL/Port Patterns
 
+    private static func compilePortRegex(_ pattern: String) -> NSRegularExpression {
+        do {
+            return try NSRegularExpression(pattern: pattern)
+        } catch {
+            preconditionFailure("Invalid dev-server port regex: \(error)")
+        }
+    }
+
     private static let devServerURLPatterns: [NSRegularExpression] = [
         "http://localhost:\\d+",
         "http://127\\.0\\.0\\.1:\\d+",
@@ -268,7 +276,7 @@ public enum CommandDetection {
         "http://0\\.0\\.0\\.0:\\d+"
     ].compactMap { try? NSRegularExpression(pattern: $0) }
 
-    private static let portRegex = try! NSRegularExpression(pattern: ":(\\d{4,5})(?:/|\\s|$)")
+    private static let portRegex = compilePortRegex(":(\\d{4,5})(?:/|\\s|$)")
 
     /// Extracts a URL from dev server output (e.g., "http://localhost:3000")
     /// - Parameter output: The terminal output string

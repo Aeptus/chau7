@@ -6,19 +6,27 @@ public enum EscapeSequenceSanitizer {
 
     // MARK: - Precompiled regex patterns (compiled once at load time)
 
+    private static func compilePattern(_ pattern: String) -> Regex<Substring> {
+        do {
+            return try Regex(pattern)
+        } catch {
+            preconditionFailure("Invalid escape-sequence regex: \(error)")
+        }
+    }
+
     /// 1. OSC: ESC ] ... (BEL | ESC \)
-    private static let oscPattern = try! Regex(#"\x{1b}\][^\x{07}\x{1b}]*(?:\x{07}|\x{1b}\\)?"#)
+    private static let oscPattern = compilePattern(#"\x{1b}\][^\x{07}\x{1b}]*(?:\x{07}|\x{1b}\\)?"#)
     /// Bare OSC without ESC prefix
-    private static let bareOscPattern = try! Regex(#"\][0-9;]*[^\x{07}\x{1b}]*(?:\x{07})?"#)
+    private static let bareOscPattern = compilePattern(#"\][0-9;]*[^\x{07}\x{1b}]*(?:\x{07})?"#)
     /// 2. CSI: ESC [ params final_byte
-    private static let csiPattern = try! Regex(#"\x{1b}\[[0-9;?]*[@-~]"#)
+    private static let csiPattern = compilePattern(#"\x{1b}\[[0-9;?]*[@-~]"#)
     /// Bare CSI without ESC prefix
-    private static let bareCsiPattern = try! Regex(#"\[[0-9;?]*[A-Za-z]"#)
+    private static let bareCsiPattern = compilePattern(#"\[[0-9;?]*[A-Za-z]"#)
     // 3. Bracketed paste markers
-    private static let pastePattern = try! Regex(#"\x{1b}\[20[01]~"#)
-    private static let barePastePattern = try! Regex(#"\[20[01]~"#)
+    private static let pastePattern = compilePattern(#"\x{1b}\[20[01]~"#)
+    private static let barePastePattern = compilePattern(#"\[20[01]~"#)
     /// 4. Simple escape: ESC + single char (not [ or ])
-    private static let simpleEscPattern = try! Regex(#"\x{1b}[^\[\]]"#)
+    private static let simpleEscPattern = compilePattern(#"\x{1b}[^\[\]]"#)
 
     /// Strips all terminal escape sequences from the input string.
     /// Handles CSI sequences, OSC sequences, focus events, cursor reports, and device attributes.

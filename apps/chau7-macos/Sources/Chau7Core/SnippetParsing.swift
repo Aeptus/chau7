@@ -34,9 +34,26 @@ public enum SnippetParsing {
 
     // MARK: - Cached compiled patterns
 
-    private static let placeholderRegex = try! NSRegularExpression(pattern: #"\$\{(\d+)(?::([^}]*))?\}"#)
-    private static let envTokenRegex = try! NSRegularExpression(pattern: #"\$\{env:([A-Za-z0-9_]+)\}"#)
-    private static let hasPlaceholderRegex = try! Regex(#"\$\{\d+"#)
+    /// These patterns are source literals; fail at launch with a useful message if one is invalid.
+    private static func compileNSRegularExpression(_ pattern: String) -> NSRegularExpression {
+        do {
+            return try NSRegularExpression(pattern: pattern)
+        } catch {
+            preconditionFailure("Invalid snippet regular expression: \(error)")
+        }
+    }
+
+    private static func compileRegex(_ pattern: String) -> Regex<Substring> {
+        do {
+            return try Regex(pattern)
+        } catch {
+            preconditionFailure("Invalid snippet regex: \(error)")
+        }
+    }
+
+    private static let placeholderRegex = compileNSRegularExpression(#"\$\{(\d+)(?::([^}]*))?\}"#)
+    private static let envTokenRegex = compileNSRegularExpression(#"\$\{env:([A-Za-z0-9_]+)\}"#)
+    private static let hasPlaceholderRegex = compileRegex(#"\$\{\d+"#)
 
     // MARK: - Placeholder Expansion
 

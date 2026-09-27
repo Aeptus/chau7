@@ -121,6 +121,7 @@ private final class SettingsToolbarDelegate: NSObject, NSToolbarDelegate {
     private var opacityObserver: Any?
     private var windowBlurObserver: Any?
     private var appThemeObserver: Any?
+    private var memoryPressureObserver: NSObjectProtocol?
     private var splashController: SplashWindowController?
     private var settingsWindow: NSWindow?
     private var settingsToolbarDelegate: SettingsToolbarDelegate?
@@ -247,7 +248,7 @@ private final class SettingsToolbarDelegate: NSObject, NSToolbarDelegate {
         TerminalMemoryReclaimer.shared.arm()
         // Under memory pressure, re-evaluate the render lifecycle so non-selected
         // tabs demote to `.hidden` and flush their scrollback to disk.
-        NotificationCenter.default.addObserver(
+        memoryPressureObserver = NotificationCenter.default.addObserver(
             forName: .chau7MemoryPressureChanged,
             object: nil,
             queue: .main
@@ -709,6 +710,10 @@ private final class SettingsToolbarDelegate: NSObject, NSToolbarDelegate {
         if let appThemeObserver {
             NotificationCenter.default.removeObserver(appThemeObserver)
             self.appThemeObserver = nil
+        }
+        if let memoryPressureObserver {
+            NotificationCenter.default.removeObserver(memoryPressureObserver)
+            self.memoryPressureObserver = nil
         }
         // Cleanup status bar controller
         StatusBarController.shared.cleanup()

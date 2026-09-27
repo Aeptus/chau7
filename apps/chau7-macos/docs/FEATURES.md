@@ -962,6 +962,8 @@ Legacy `AI_*` and `SMART_OVERLAY_*` environment variables are still supported.
 
 ## Quality Gates
 
+- **Measured SwiftLint budgets** — strict lint blocks at 4,000 file lines, 3,000 type-body lines, 250 function-body lines, or cyclomatic complexity 40; unsafe force operations and detached notification observers remain linted.
+- **Registered staged safety guards** — the pre-commit registry runs local secret checks and Gitleaks on the staged index, rejects credential paths and blobs at least 5 MiB, and invokes the advisory Chau7 review when enabled and available.
 - **Restoration-safe test storage** — XCTest uses process-specific temporary Application Support by default, keeping restore-bundle cleanup away from production session data while honoring explicit test homes.
 
 - **Restoration-safe Chau7 build skill** — the bundled `chau7-build` skill documents the guarded quit/build/install/relaunch workflow, verifies source and helper provenance, and keeps session restoration artifacts outside release operations.

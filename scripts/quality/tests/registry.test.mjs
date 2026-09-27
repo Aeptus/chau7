@@ -162,6 +162,71 @@ test("cloud parity requires release and pull request quality workflows", async (
 test("security gates are blocking registered gates, not hook-only shell snippets", () => {
   assert.equal(gate("staged-secret-scan").wave, "preflight");
   assert.ok(gate("staged-dependency-policy").tags.includes("security"));
+  assert.ok(gate("staged-legacy-guardrails").inputs.includes("scripts/check-forbidden-files"));
+});
+
+test("staged secret gate runs Gitleaks against the staged diff", async () => {
+  let invocation;
+  const result = await gate("staged-secret-scan").run({
+    mode: "staged",
+    stagedFiles: ["probe.txt"],
+    git: () => ({ stdout: "" }),
+    exec: async (command, args) => {
+      invocation = [command, args];
+      return { status: "passed", summary: "clean" };
+    },
+  });
+
+  assert.equal(result.status, "passed");
+  assert.deepEqual(invocation, ["gitleaks", ["git", "--pre-commit", "--staged", "--redact", "--no-banner"]]);
+  assert.match(result.summary, /Gitleaks passed/);
+});
+
+test("staged secret gate fails closed when Gitleaks is missing or fails", async () => {
+  const result = await gate("staged-secret-scan").run({
+    mode: "staged",
+    stagedFiles: ["probe.txt"],
+    git: () => ({ stdout: "" }),
+    exec: async () => ({ status: "failed", summary: "gitleaks is not installed" }),
+  });
+
+  assert.equal(result.status, "failed");
+  assert.match(result.summary, /Gitleaks staged scan failed/);
+});
+
+test("staged forbidden-file guard runs through the registered legacy gate", async () => {
+  const calls = [];
+  const result = await gate("staged-legacy-guardrails").run({
+    mode: "staged",
+    stagedFiles: ["scripts/example.sh"],
+    exec: async (command) => {
+      calls.push(command);
+      return { status: "passed", summary: "ok" };
+    },
+  });
+
+  assert.equal(result.status, "passed");
+  assert.equal(calls[0], "./scripts/check-forbidden-files");
+});
+
+test("pre-commit review is a live registered staged gate", async () => {
+  const candidate = gate("staged-precommit-review");
+  let invocation;
+  const result = await candidate.run({
+    root: "/repo",
+    mode: "staged",
+    stagedFiles: ["Sources/App.swift"],
+    exec: async (command, args, options) => {
+      invocation = [command, args, options.cwd];
+      return { status: "passed", summary: "review skipped because Chau7 is unavailable" };
+    },
+  });
+
+  assert.ok(candidate.modes.includes("staged"));
+  assert.equal(candidate.cacheable, false);
+  assert.equal(candidate.applies({ stagedFiles: ["Sources/App.swift"] }), true);
+  assert.equal(result.status, "passed");
+  assert.deepEqual(invocation, ["./scripts/pre-commit-review", [], "."]);
 });
 
 async function scanStagedLine(line) {
@@ -169,6 +234,7 @@ async function scanStagedLine(line) {
     mode: "staged",
     stagedFiles: ["probe.txt"],
     git: () => ({ stdout: `--- a/probe.txt\n+++ b/probe.txt\n@@ -0,0 +1 @@\n${line}\n` }),
+    exec: async () => ({ status: "passed", summary: "clean" }),
   });
   return /home-path-leak/.test(result.summary ?? "");
 }

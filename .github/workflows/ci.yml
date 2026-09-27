@@ -47,7 +47,7 @@ jobs:
           components: rustfmt, clippy
 
       - name: Install full-suite quality tools
-        run: brew install swiftformat swiftlint shellcheck ruff golangci-lint periphery
+        run: brew install swiftformat swiftlint gitleaks shellcheck ruff golangci-lint periphery
 
       - name: Install cargo-deny
         run: cargo install cargo-deny --locked
@@ -72,6 +72,8 @@ jobs:
           fi
 
       - name: Run staged quality gates
+        env:
+          CHAU7_PRE_COMMIT_REVIEW_ENABLED: "0"
         run: pnpm quality:staged
 
       - name: Verify staged gates did not rewrite the pull request

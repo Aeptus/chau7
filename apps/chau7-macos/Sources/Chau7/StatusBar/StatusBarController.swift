@@ -20,6 +20,7 @@ final class StatusBarController: NSObject {
 
     /// Panel view model — lives as long as the controller so popover doesn't recreate state.
     private var panelViewModel: CommandCenterViewModel?
+    private var monitoringStateObserver: NSObjectProtocol?
 
     override private init() {
         super.init()
@@ -84,12 +85,13 @@ final class StatusBarController: NSObject {
         }
 
         // Observe monitoring state changes to update icon
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(updateIcon),
-            name: .monitoringStateChanged,
-            object: nil
-        )
+        monitoringStateObserver = NotificationCenter.default.addObserver(
+            forName: .monitoringStateChanged,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.updateIcon() }
+        }
 
         // Reactive badge updates from session state changes via didSet callback
         panelViewModel.onBadgeCountsChange = { [weak self] counts in
@@ -107,7 +109,10 @@ final class StatusBarController: NSObject {
 
     /// Cleanup all resources. Call from applicationWillTerminate.
     func cleanup() {
-        NotificationCenter.default.removeObserver(self)
+        if let monitoringStateObserver {
+            NotificationCenter.default.removeObserver(monitoringStateObserver)
+            self.monitoringStateObserver = nil
+        }
         panelViewModel?.onBadgeCountsChange = nil
         model?.onMonitoringChanged = nil
 
