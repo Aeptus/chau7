@@ -2921,7 +2921,7 @@
   {
     "category": "SSH, Profiles & Remote",
     "feature": "Peer-Confirmed iPhone Session Recovery",
-    "description": "A trusted iPhone HELLO can replace a stale helper crypto epoch after app relaunch without dropping cached terminal state; both peers stay provisional until an encrypted SESSION_READY round trip confirms the epoch, and application traffic remains queued until then",
+    "description": "A fresh iPhone HELLO from the trusted identity replaces a helper crypto epoch that survived the app relaunch without rotating the Mac nonce or discarding cached terminal state. Both peers remain provisional until an encrypted SESSION_READY round trip confirms the same epoch; input, tab requests, approvals, and telemetry stay queued until then, preventing a false connected state from becoming an endless empty inventory. Because HELLO is cleartext and therefore freely injectable, it is admitted only when it names the paired device id and Mac key fingerprint, and epoch resets are budgeted per window: exceeding the budget escalates to a reconnect-backoff-governed transport restart instead of re-keying in place forever. A successfully decrypted frame restores the budget, which also ages out, so a session that legitimately re-handshooks later still recovers",
     "status": "Experimental",
     "differentiator": "Yes"
   },

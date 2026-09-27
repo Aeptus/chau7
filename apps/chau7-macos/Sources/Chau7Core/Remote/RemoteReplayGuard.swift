@@ -21,16 +21,61 @@ public struct RemoteReplayGuard: Sendable {
         case drop(reason: String)
         /// Tear down crypto/seq state and re-handshake.
         case resetSession(reason: String)
+        /// Too many epoch resets inside the window: the peer is not converging,
+        /// so in-place re-keying is abandoned in favour of a full transport
+        /// restart, which is itself governed by the reconnect backoff.
+        ///
+        /// A hostile relay can inject an unauthenticated HELLO with an arbitrary
+        /// nonce; each one used to order a reset, so a frame at line speed could
+        /// keep the session from ever settling.
+        case escalate(reason: String)
     }
 
     /// Consecutive decrypt failures before ordering a session reset.
     public static let decryptFailureThreshold = 8
 
+    /// Epoch resets allowed inside `epochResetWindow` before escalating.
+    public static let maxEpochResetsInWindow = 3
+    public static let epochResetWindow: TimeInterval = 60
+
     public private(set) var maxReceivedSeq: UInt64 = 0
     private var consecutiveDecryptFailures = 0
     private var currentMacNonce: Data?
+    private var epochResetTimestamps: [Date] = []
+    private var lastNow: Date?
 
     public init() {}
+
+    /// Injectable clock so the window is testable without wall-clock sleeps.
+    /// Defaults to the current time.
+    public mutating func setNow(_ now: Date) {
+        lastNow = now
+    }
+
+    private func now() -> Date {
+        lastNow ?? Date()
+    }
+
+    /// Records an epoch reset and reports whether the caller may act on it.
+    /// Returns `.escalate` once the window is exhausted.
+    private mutating func admitEpochReset(now: Date) -> Action {
+        let cutoff = now.addingTimeInterval(-Self.epochResetWindow)
+        epochResetTimestamps.removeAll { $0 < cutoff }
+        guard epochResetTimestamps.count < Self.maxEpochResetsInWindow else {
+            return .escalate(
+                reason: "session epoch reset limit reached (\(Self.maxEpochResetsInWindow) in \(Int(Self.epochResetWindow))s)"
+            )
+        }
+        epochResetTimestamps.append(now)
+        return .resetSession(reason: "session epoch reset \(epochResetTimestamps.count)/\(Self.maxEpochResetsInWindow)")
+    }
+
+    /// A decrypted frame proves the current epoch is the peer's, so the reset
+    /// budget is restored. Without this a long-lived session that legitimately
+    /// re-handshook a few times over hours would stay permanently escalated.
+    private mutating func clearEpochResetBudget() {
+        epochResetTimestamps.removeAll()
+    }
 
     // MARK: - Frame sequencing
 
@@ -53,7 +98,7 @@ public struct RemoteReplayGuard: Sendable {
         defer { currentMacNonce = macNonce }
         if hasCryptoSession, let known = currentMacNonce, known != macNonce {
             resetCounters()
-            return .resetSession(reason: "mac HELLO nonce changed while session active (agent re-handshake)")
+            return admitEpochReset(now: now())
         }
         return .accept
     }
@@ -66,19 +111,21 @@ public struct RemoteReplayGuard: Sendable {
         consecutiveDecryptFailures += 1
         if consecutiveDecryptFailures >= Self.decryptFailureThreshold {
             resetCounters()
-            return .resetSession(reason: "\(Self.decryptFailureThreshold) consecutive decrypt failures (stale session key)")
+            return admitEpochReset(now: now())
         }
         return .drop(reason: "decrypt failure \(consecutiveDecryptFailures)/\(Self.decryptFailureThreshold)")
     }
 
     public mutating func noteDecryptSuccess() {
         consecutiveDecryptFailures = 0
+        clearEpochResetBudget()
     }
 
     /// Explicit reset (disconnect, pair-accept re-derivation).
     public mutating func reset() {
         resetCounters()
         currentMacNonce = nil
+        epochResetTimestamps.removeAll()
     }
 
     private mutating func resetCounters() {

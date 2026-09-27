@@ -1026,10 +1026,20 @@ final class RemoteClient {
                 status: "decrypt_failed",
                 metadata: ["frame_type": String(frameType)]
             )
-            if case let .resetSession(reason) = session.noteDecryptFailure() {
+            switch session.noteDecryptFailure() {
+            case let .resetSession(reason):
                 log.warning("Replay guard ordered session reset: \(reason)")
                 session.resetForRehandshake()
                 beginHandshakeRecovery(reason: "decrypt_failure_threshold")
+            case let .escalate(reason):
+                // The peer is not converging (or a hostile relay is looping
+                // stale ciphertext at us). Stop re-keying in place and let the
+                // reconnect backoff take over, which is rate limited.
+                log.error("Session recovery abandoned: \(reason)")
+                session.resetForRehandshake()
+                handleDisconnect(reason: reason, trigger: .handshakeTimeout)
+            case .accept, .drop:
+                break
             }
             return
         case let .success(frame, payload):
@@ -1159,6 +1169,24 @@ final class RemoteClient {
 
     private func handleHello(_ data: Data) {
         guard let msg: HelloPayload = decodePayload(data, as: HelloPayload.self, context: "handleHello") else { return }
+        // HELLO is cleartext and unauthenticated, so it is the one frame a
+        // hostile relay can inject freely. Validate the identity it claims
+        // before letting it drive the session epoch: previously only `nonce`
+        // was read, so any injected HELLO was enough to force a re-key.
+        if let expectedDeviceID = pairingInfo?.deviceID,
+           msg.deviceID != expectedDeviceID {
+            log.warning("Dropping HELLO for a different device")
+            DiagnosticsLog.shared.warn(.connection, "Dropping HELLO with a mismatched device id", [
+                "expected_device_id": String(expectedDeviceID.prefix(12))
+            ])
+            return
+        }
+        if let expectedFingerprint = macKeyFingerprint,
+           msg.pubKeyFP != expectedFingerprint {
+            log.warning("Dropping HELLO for a different Mac key")
+            DiagnosticsLog.shared.warn(.connection, "Dropping HELLO with a mismatched Mac key fingerprint")
+            return
+        }
         guard let nonce = Data(base64Encoded: msg.nonce) else {
             log.error("handleHello: invalid nonce base64")
             return
@@ -1167,10 +1195,18 @@ final class RemoteClient {
         // re-handshook (restart): the old session key and seq space are dead.
         // Reset deliberately and re-handshake instead of silently dropping
         // every future frame as replayed.
-        if case let .resetSession(reason) = session.evaluateHello(macNonce: nonce) {
+        switch session.evaluateHello(macNonce: nonce) {
+        case let .resetSession(reason):
             log.warning("Replay guard ordered session reset: \(reason)")
             session.resetForRehandshake()
             beginHandshakeRecovery(reason: "mac_hello_epoch_changed")
+        case let .escalate(reason):
+            log.error("Session recovery abandoned: \(reason)")
+            session.resetForRehandshake()
+            handleDisconnect(reason: reason, trigger: .handshakeTimeout)
+            return
+        case .accept, .drop:
+            break
         }
         session.setMacNonce(nonce)
         establishSessionIfPossible()
