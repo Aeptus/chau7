@@ -1,6 +1,12 @@
 // swift-tools-version: 5.9
 import PackageDescription
 
+// Keep strict-concurrency diagnostics enabled while the project migrates.
+// They remain warnings until the remaining isolation findings are triaged.
+let strictConcurrencySettings: [SwiftSetting] = [
+    .enableUpcomingFeature("StrictConcurrency"),
+]
+
 let package = Package(
     name: "Chau7",
     defaultLocalization: "en",
@@ -25,7 +31,8 @@ let package = Package(
             path: "Sources/Chau7Core",
             exclude: [
                 "README.md"
-            ]
+            ],
+            swiftSettings: strictConcurrencySettings
         ),
         // Main executable
         .executableTarget(
@@ -91,6 +98,7 @@ let package = Package(
                 .process("Resources/cursor-logo.png"),
                 .process("Resources/gemini-logo.png")
             ],
+            swiftSettings: strictConcurrencySettings,
             linkerSettings: [
                 .linkedFramework("Metal"),
                 .linkedFramework("MetalKit"),
@@ -105,7 +113,8 @@ let package = Package(
             dependencies: [
                 "Chau7Core"
             ],
-            path: "Sources/MagiCLI"
+            path: "Sources/MagiCLI",
+            swiftSettings: strictConcurrencySettings
         ),
         // Chau7 command-line interface
         .executableTarget(
@@ -113,7 +122,8 @@ let package = Package(
             dependencies: [
                 "Chau7Core"
             ],
-            path: "Sources/Chau7CLI"
+            path: "Sources/Chau7CLI",
+            swiftSettings: strictConcurrencySettings
         ),
         // Test target
         .testTarget(
@@ -146,7 +156,8 @@ let package = Package(
             ],
             resources: [
                 .process("Fixtures")
-            ]
+            ],
+            swiftSettings: strictConcurrencySettings
         )
     ]
 )

@@ -799,6 +799,13 @@
   },
   {
     "category": "Developer Experience",
+    "feature": "Strict-Concurrency Warning Rollout",
+    "description": "All SwiftPM targets enable complete concurrency diagnostics without failing builds; two invalid dashboard main-actor hops are fixed, and known shared-state races remain tracked before warning promotion",
+    "status": "Shipped",
+    "differentiator": "No"
+  },
+  {
+    "category": "Developer Experience",
     "feature": "Registry-Driven Quality Firewall",
     "description": "Thin Husky hooks delegate to pnpm quality modes backed by a central registry; pull requests select Xcode with the iPhone 17 simulator, run affected-surface or full-suite pre-push checks (including repository-wide SwiftFormat) plus staged-file checks, and workflow policy requires both PR CI and release validation",
     "status": "Shipped",

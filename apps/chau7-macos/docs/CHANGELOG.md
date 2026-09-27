@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Stability hardening
 
+- SwiftPM targets now enable complete strict-concurrency checking as warnings. The two dashboard main-actor hops explicitly assert isolation, and the remaining known race findings are tracked before warnings become errors.
 - Pull requests to `main` now run registry-backed affected checks, expanding to the full suite for high-impact changes, plus staged-file checks. CI selects Xcode 26.3 for iPhone 17 simulator tests, and the workflow policy requires both pull request CI and release validation.
 - The remote issue-report authorization call site now conforms to the repository's SwiftFormat indentation rule, keeping the newly enabled full-suite check clean.
 - Claude status-line installation now leaves `~/.claude/settings.json` untouched when the file cannot be read or contains invalid JSON, and reports the failure instead of replacing the user's settings.

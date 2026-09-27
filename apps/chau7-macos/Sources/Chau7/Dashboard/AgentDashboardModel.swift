@@ -313,7 +313,9 @@ final class AgentDashboardModel: Identifiable {
             }
         }
         return DispatchQueue.main.sync {
-            CommandBlockManager.shared.blocksForTab(tabID)
+            MainActor.assumeIsolated {
+                CommandBlockManager.shared.blocksForTab(tabID)
+            }
         }
     }
 

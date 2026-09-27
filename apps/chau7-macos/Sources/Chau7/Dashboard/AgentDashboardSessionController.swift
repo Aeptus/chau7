@@ -61,7 +61,7 @@ final class AgentDashboardSessionController: AgentDashboardSessionControlling {
             return MainActor.assumeIsolated { liveTabsOnMain() }
         }
         return DispatchQueue.main.sync {
-            liveTabsOnMain()
+            MainActor.assumeIsolated { liveTabsOnMain() }
         }
     }
 

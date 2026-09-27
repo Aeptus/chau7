@@ -50,6 +50,15 @@ This sets `core.hooksPath` to `.husky`. The legacy `scripts/install-hooks` and
 | `pnpm quality:cache:clear` | Remove quality cache entries and outputs. |
 | `pnpm test` | Fast unit tests for the quality runner and registry. |
 
+## Swift Strict-Concurrency Rollout
+
+Every macOS SwiftPM target enables complete strict-concurrency checking in
+warning-only mode. The known warning backlog is triaged in
+[`swift-concurrency-rollout.md`](swift-concurrency-rollout.md). Do not restore
+`-warnings-as-errors` to the `just build` or `just test` recipes until the
+blocking isolation findings are fixed and the remaining diagnostics are
+reviewed.
+
 ## Staged Scope
 
 Pre-commit discovers files with:

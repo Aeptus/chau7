@@ -10,13 +10,13 @@ rust_dir := "rust"
 check: build test lint fmt-check
     @echo "\n✅ All checks passed."
 
-# Swift build (warnings are errors)
+# Swift build (strict-concurrency diagnostics stay warnings during migration)
 build:
-    {{swift}} build -Xswiftc -warnings-as-errors
+    {{swift}} build
 
 # Swift tests
 test:
-    {{swift}} test -Xswiftc -warnings-as-errors
+    {{swift}} test
 
 # Lint: SwiftLint + Rust clippy
 lint: swift-lint rust-lint

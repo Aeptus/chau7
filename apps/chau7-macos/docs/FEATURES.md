@@ -978,6 +978,7 @@ Legacy `AI_*` and `SMART_OVERLAY_*` environment variables are still supported.
 - Persistence paths follow the `Persist` logged-failure convention end to end: settings, SSH profiles, remote approval frames, telemetry responses, repo injection rules, and scrollback reloads log corruption and write failures instead of silently degrading.
 
 - **Registry-driven hook policy** — `.husky/pre-commit` and `.husky/pre-push` only select `pnpm quality:staged` or `pnpm quality:prepush`; the gate contract lives in `scripts/quality/registry.mjs`.
+- **Strict-concurrency warning rollout** — all SwiftPM targets enable complete concurrency diagnostics without failing builds; two invalid dashboard main-actor hops are fixed, and known shared-state races remain tracked before warning promotion.
 - **Pull-request quality CI** — `.github/workflows/ci.yml` runs on pull requests to `main`, selects Xcode 26.3 for iPhone 17 simulator tests, checks workflow policy, runs affected checks or the full suite (including repository-wide SwiftFormat), and stages the PR diff for the staged-file firewall.
 - **Affected-surface pre-push** — pre-push reads Git update lines, resolves changed files against the pushed remote SHA or a conservative fallback base, and automatically upgrades to `prepush-full` for high-impact infrastructure, dependency, config, generator, workflow, or shared-contract changes.
 - **Reproducible failures** — failed gates print stable ids, scope, wave, rerun commands, cache/attestation status, and per-gate log paths under `.aeptus-cache/quality/outputs/`.
