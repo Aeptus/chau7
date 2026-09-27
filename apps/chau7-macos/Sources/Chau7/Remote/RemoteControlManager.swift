@@ -181,7 +181,7 @@ final class RemoteControlManager {
             Task { @MainActor [weak self] in
                 guard let self else { return }
                 if FeatureSettings.shared.isRemoteEnabled {
-                    startAgent()
+                    await startAgent()
                 } else {
                     stopAgent()
                 }
@@ -270,7 +270,9 @@ final class RemoteControlManager {
         // is idempotent (its `!isAgentRunning` guard) and stamps
         // `CHAU7_PARENT_PID`, so this cleanly supersedes any orphaned agent.
         if FeatureSettings.shared.isRemoteEnabled {
-            startAgent()
+            Task { @MainActor [weak self] in
+                await self?.startAgent()
+            }
         }
     }
 
@@ -339,9 +341,9 @@ final class RemoteControlManager {
         sendFrame(type: .terminalGridSnapshot, tabID: tabID, payload: snapshot)
     }
 
-    private func startAgent() {
+    private func startAgent() async {
         guard !isAgentRunning else { return }
-        guard let binaryPath = binaryProvider.resolveBinary() else {
+        guard let binaryPath = await binaryProvider.resolveBinary() else {
             let error = binaryProvider.lastError ?? lastError ?? "Remote agent binary not found."
             logger.error("\(error, privacy: .public)")
             lastError = error
@@ -422,8 +424,15 @@ final class RemoteControlManager {
 
     func restartAgentIfRunning() {
         guard isAgentRunning else { return }
-        stopAgent()
-        startAgent()
+        // Stop and start share one task so the async build cannot begin before
+        // the old agent has been torn down. Firing them as separate tasks would
+        // let a slow build outlive the `stopAgent()` and leave two agents racing
+        // for the single IPC client slot.
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            stopAgent()
+            await startAgent()
+        }
     }
 
     func regeneratePairing() {
@@ -436,11 +445,14 @@ final class RemoteControlManager {
         lastError = nil
         refreshPairedDevices()
 
-        if plan.shouldStopAgent {
-            stopAgent()
-        }
-        if plan.shouldStartAgent {
-            startAgent()
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            if plan.shouldStopAgent {
+                stopAgent()
+            }
+            if plan.shouldStartAgent {
+                await startAgent()
+            }
         }
     }
 
@@ -452,10 +464,15 @@ final class RemoteControlManager {
 
         guard FeatureSettings.shared.isRemoteEnabled else { return }
 
-        if isAgentRunning {
-            stopAgent()
+        // Same ordering guarantee as `restartAgentIfRunning`: the rebuild must
+        // not start before the previous agent is gone.
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            if isAgentRunning {
+                stopAgent()
+            }
+            await startAgent()
         }
-        startAgent()
     }
 
     private func handleIPCFrame(_ frame: RemoteFrame) {

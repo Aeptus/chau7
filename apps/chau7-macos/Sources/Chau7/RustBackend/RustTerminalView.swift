@@ -2607,6 +2607,13 @@ final class RustTerminalView: NSView {
         hasObservedInitialPTYActivity = false
         isAwaitingInitialPTYOutput = true
 
+        // Warm the process-wide `ps` snapshot this terminal's tree will later be
+        // matched against. The termination sweep reads that cache instead of
+        // spawning its own `ps`, so at quit only the first session pays even the
+        // bounded fallback. Refreshes run on a utility queue and re-entrant
+        // calls are dropped, so a burst of tab opens costs one fork+exec.
+        TerminalSessionModel.refreshProcessTreeAsync()
+
         // Recalculate dimensions with the shared render geometry contract so
         // Rust, CPU, and Metal all agree on the inset terminal grid.
         updateCellDimensions()

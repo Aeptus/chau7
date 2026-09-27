@@ -2254,47 +2254,34 @@ final class TerminalSessionModel {
         let command: String
     }
 
-    /// Captures a fresh snapshot of all descendant processes of the given shell PID
+    /// Captures a snapshot of all descendant processes of the given shell PID
     /// via `ps`. Returns an array in BFS order (parents before children).
+    ///
+    /// Reads the process-wide `SharedProcessTreeCache` rather than spawning its
+    /// own `ps`. The process table is global, so every session was previously
+    /// paying fork+exec+read for the same answer — and at app termination
+    /// `closeSessionForTermination` does this serially on the main thread, once
+    /// per session, which is the "Chau7 won't quit" beachball.
+    ///
+    /// The cache is kept warm by `refreshProcessTreeAsync()` on terminal start,
+    /// so this is normally a dictionary lookup. On a cold cache exactly one
+    /// session pays the bounded fallback; because the snapshot it stores is
+    /// shared, every session after it is free. That is the whole win: the
+    /// pre-rework path paid the timeout once per session on the main actor.
     private func captureDescendantPIDs(of shellPID: pid_t) -> [DescendantProcess] {
-        guard let output = SubprocessRunner.run(
-            executablePath: "/bin/ps",
-            arguments: ["-axo", "pid=,ppid=,command="]
-        ) else {
-            return []
+        let snapshot = SharedProcessTreeCache.shared.snapshot(
+            ttl: SharedProcessTreeCache.terminationTTL,
+            fallbackTimeout: SharedProcessTreeCache.terminationFallbackTimeout
+        )
+        return (snapshot?.descendants(of: shellPID) ?? []).map {
+            DescendantProcess(pid: $0.pid, parentPID: $0.parentPID, command: $0.command)
         }
+    }
 
-        var childrenOf: [pid_t: [pid_t]] = [:]
-        var rowsByPID: [pid_t: DescendantProcess] = [:]
-
-        for line in output.split(separator: "\n") {
-            let columns = line.split(separator: " ", maxSplits: 2, omittingEmptySubsequences: true)
-            guard columns.count >= 3,
-                  let pid = Int32(columns[0]),
-                  let parentPID = Int32(columns[1]) else {
-                continue
-            }
-
-            let command = String(columns[2]).trimmingCharacters(in: .whitespacesAndNewlines)
-            childrenOf[parentPID, default: []].append(pid)
-            rowsByPID[pid] = DescendantProcess(pid: pid, parentPID: parentPID, command: command)
-        }
-
-        var descendants: [DescendantProcess] = []
-        var queue: [pid_t] = childrenOf[shellPID] ?? []
-        var index = 0
-        while index < queue.count {
-            let pid = queue[index]
-            index += 1
-            if let row = rowsByPID[pid] {
-                descendants.append(row)
-            }
-            if let children = childrenOf[pid] {
-                queue.append(contentsOf: children)
-            }
-        }
-
-        return descendants
+    /// Warms the shared process-tree cache off the main thread. Cheap to call
+    /// often; the cache drops re-entrant requests while a refresh is in flight.
+    nonisolated static func refreshProcessTreeAsync() {
+        SharedProcessTreeCache.shared.refresh()
     }
 
     /// Formats a captured descendant list into the diagnostic log string.

@@ -27,6 +27,23 @@ public enum SubprocessRunner {
         return String(decoding: result.stdout, as: UTF8.self)
     }
 
+    /// Timeout-explicit overload. The default 5 s deadline is sized for
+    /// monitoring commands, and any caller on the main thread must pass a much
+    /// smaller value — the deadline is multiplied by however many times the call
+    /// is made within a single user-visible operation.
+    public static func run(
+        executablePath: String,
+        arguments: [String],
+        timeout: TimeInterval
+    ) -> String? {
+        guard let result = capture(
+            executablePath: executablePath,
+            arguments: arguments,
+            timeout: timeout
+        ), result.completed, result.status == 0 else { return nil }
+        return String(decoding: result.stdout, as: UTF8.self)
+    }
+
     /// Drains both pipes together so a full stderr pipe cannot deadlock stdout.
     /// The deadline also covers children that exit while descendants retain a pipe.
     /// Only the owned command is terminated on a limit; no terminal/process group is signalled.

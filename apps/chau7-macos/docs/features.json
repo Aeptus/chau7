@@ -1,5 +1,26 @@
 [
   {
+    "category": "Performance",
+    "feature": "Self-Terminating View Loops",
+    "description": "Notification history no longer couples an .id identity token to the appear handler that rewrites it, and task-candidate countdowns are lifecycle-scoped rather than manually scheduled",
+    "status": "Shipped",
+    "differentiator": "No"
+  },
+  {
+    "category": "Terminal Core",
+    "feature": "Bounded Graphics and Hyperlink Collections",
+    "description": "Chunked Kitty accumulation, the OSC 8 hyperlink table, and oversized pooled cell buffers carry hard caps that release capacity, the hyperlink table appears in the terminal memory report, and saturation degrades to no-link instead of a wrong link",
+    "status": "Shipped",
+    "differentiator": "No"
+  },
+  {
+    "category": "Performance",
+    "feature": "Nonblocking Main-Thread Work",
+    "description": "Remote-agent rebuild runs on a utility queue with a concurrent pipe drain and deadline, MCP bridge install runs on the listener queue, terminal shutdown shares one cached process-table snapshot instead of per-session ps spawns, and Metal frame admission skips rather than stalling the main thread",
+    "status": "Shipped",
+    "differentiator": "No"
+  },
+  {
     "category": "Reliability",
     "feature": "Tab-Scoped Runtime Session Uniqueness",
     "description": "Enforces one active runtime session per tab, keeps replacement and provider mappings consistent, and makes agent dashboard indexing tolerate legacy duplicate sessions",

@@ -1,5 +1,6 @@
 import Foundation
 import os.log
+import Chau7Core
 
 /// Resolves (and, in development, rebuilds) the chau7-remote agent binary.
 /// Extracted verbatim from RemoteControlManager, which previously embedded
@@ -10,6 +11,17 @@ import os.log
 /// Failure detail surfaces through `lastError` so the owning manager can
 /// propagate it into its own user-visible error state, exactly as the
 /// embedded code did.
+///
+/// `resolveBinary()` is `async` because the rebuild path must not run on the
+/// main actor. The previous implementation called `waitUntilExit()` on the
+/// main actor and read the child's pipe only *afterwards*, which had two
+/// independent failure modes: the whole UI froze for the duration of the
+/// compile, and because the pipe was never drained while the child ran, any
+/// build emitting more than 64 KB (a Go module with several packages routinely
+/// does on a compile error) blocked the child in `write(2)` so
+/// `waitUntilExit()` never returned — an unrecoverable main-thread deadlock.
+/// The build now runs on a utility queue through `SubprocessRunner.capture`,
+/// which drains stdout and stderr together under a deadline.
 @MainActor
 final class RemoteAgentBinaryProvider {
     private let logger: Logger
@@ -26,13 +38,13 @@ final class RemoteAgentBinaryProvider {
         self.dataDirectory = dataDirectory
     }
 
-    func resolveBinary() -> URL? {
+    func resolveBinary() async -> URL? {
         let fileManager = FileManager.default
 
         if let sourceURL = remoteAgentSourceURL(),
            let installedPath = installedRemoteBinaryPath(),
            shouldRefreshInstalledRemoteBinary(at: installedPath, from: sourceURL) {
-            if buildRemoteAgent(from: sourceURL, outputURL: installedPath),
+            if await buildRemoteAgent(from: sourceURL, outputURL: installedPath),
                FileManager.default.isExecutableFile(atPath: installedPath.path) {
                 return installedPath
             }
@@ -60,7 +72,7 @@ final class RemoteAgentBinaryProvider {
 
         if let sourceURL = remoteAgentSourceURL(),
            let installedPath = installedRemoteBinaryPath(),
-           buildRemoteAgent(from: sourceURL, outputURL: installedPath),
+           await buildRemoteAgent(from: sourceURL, outputURL: installedPath),
            fileManager.isExecutableFile(atPath: installedPath.path) {
             return installedPath
         }
@@ -192,7 +204,7 @@ final class RemoteAgentBinaryProvider {
             .deletingLastPathComponent()
     }
 
-    private func buildRemoteAgent(from sourceURL: URL, outputURL: URL) -> Bool {
+    private func buildRemoteAgent(from sourceURL: URL, outputURL: URL) async -> Bool {
         let outputDir = outputURL.deletingLastPathComponent()
         do {
             try FileManager.default.createDirectory(at: outputDir, withIntermediateDirectories: true)
@@ -202,35 +214,13 @@ final class RemoteAgentBinaryProvider {
             return false
         }
 
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-        process.arguments = ["go", "build", "-o", outputURL.path, "./cmd/chau7-remote"]
-        process.currentDirectoryURL = sourceURL
+        // Directory creation above is metadata-only and fast; the compile is the
+        // unbounded part, so only the compile is hopped off the main actor.
+        let outcome = await Self.performBuild(from: sourceURL, outputURL: outputURL)
 
-        let outputPipe = Pipe()
-        process.standardOutput = outputPipe
-        process.standardError = outputPipe
-
-        do {
-            try process.run()
-            process.waitUntilExit()
-        } catch {
-            logger.error("Failed to launch go build: \(error.localizedDescription, privacy: .public)")
-            lastError = "Failed to launch Go build for remote agent."
-            return false
-        }
-
-        let outputData = outputPipe.fileHandleForReading.readDataToEndOfFile()
-        let output = String(data: outputData, encoding: .utf8) ?? ""
-
-        guard process.terminationStatus == 0 else {
-            logger.error("Remote agent build failed: \(output, privacy: .public)")
-            let trimmed = output.trimmingCharacters(in: .whitespacesAndNewlines)
-            if trimmed.isEmpty {
-                lastError = "Remote agent build failed. Make sure Go is installed."
-            } else {
-                lastError = "Remote agent build failed. \(trimmed)"
-            }
+        if let failure = outcome.failure {
+            logger.error("Remote agent build failed: \(failure, privacy: .public)")
+            lastError = failure
             return false
         }
 
@@ -241,5 +231,37 @@ final class RemoteAgentBinaryProvider {
         }
 
         return true
+    }
+
+    /// Result of a build attempt, carried back across the actor hop so the
+    /// MainActor-isolated side only has to translate it into `lastError`.
+    private struct BuildOutcome: Sendable {
+        /// `nil` on success; otherwise the user-facing failure message.
+        let failure: String?
+    }
+
+    /// `go build` is unbounded in wall-clock time, so it runs on a utility
+    /// queue rather than blocking whatever actor called `resolveBinary()`.
+    /// `SubprocessRunner.capture` drains both pipes concurrently under a
+    /// deadline, so a large compile-error dump can never wedge the child.
+    nonisolated private static func performBuild(from sourceURL: URL, outputURL: URL) async -> BuildOutcome {
+        await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .utility).async {
+                let result = SubprocessRunner.capture(
+                    executablePath: "/usr/bin/env",
+                    arguments: ["go", "build", "-o", outputURL.path, "./cmd/chau7-remote"],
+                    currentDirectoryURL: sourceURL,
+                    timeout: 300,
+                    maximumOutputBytes: 1024 * 1024
+                )
+                let failure = SubprocessFailureMessage.describe(
+                    result,
+                    notLaunchedMessage: "Failed to launch Go build for remote agent.",
+                    timedOutMessage: "Remote agent build timed out after 5 minutes.",
+                    missingToolMessage: "Remote agent build failed. Make sure Go is installed."
+                )
+                continuation.resume(returning: BuildOutcome(failure: failure))
+            }
+        }
     }
 }
