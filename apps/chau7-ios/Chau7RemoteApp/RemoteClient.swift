@@ -144,6 +144,10 @@ final class RemoteClient {
     private var suppressedPromptIDs: Set<String> = []
     private var pendingStateFetchTask: Task<Void, Never>?
     private var lastPendingStateFetchAt: Date?
+    /// Approval decisions taken from a notification before the request was
+    /// known (cold launch from a lock-screen action). Applied once the
+    /// authoritative pending list arrives.
+    private let deferredDecisions = DeferredDecisionLedger()
     let terminalRenderer = RemoteTerminalRendererStore()
 
     private static let maxHistory = 50
@@ -236,10 +240,17 @@ final class RemoteClient {
         )
     }
 
+    /// Opens a connection only when one is not already up.
+    ///
+    /// Always preserves queued approval responses, pending prompt answers, and
+    /// queued Live Activity actions: this is the path a push wake and a deep
+    /// link both take, and they are frequently the reason a decision is
+    /// waiting to be delivered. Restarting the socket must not be what loses it.
     func connectIfNeeded(trigger: RemoteConnectionTrigger) {
         guard let pairing = pairingInfo else { return }
         startConnection(
             pairing: pairing,
+            preserveApprovalsAndPrompts: true,
             trigger: trigger,
             forceRestart: false
         )
@@ -267,7 +278,7 @@ final class RemoteClient {
 
     private func startConnection(
         pairing: PairingInfo,
-        preserveApprovalsAndPrompts: Bool = false,
+        preserveApprovalsAndPrompts: Bool = true,
         preserveReconnectAttempt: Bool = false,
         trigger: RemoteConnectionTrigger,
         forceRestart: Bool
@@ -346,6 +357,9 @@ final class RemoteClient {
         case .active:
             DiagnosticsLog.shared.markForegroundActive()
             DiagnosticsLog.shared.capturePerformanceSnapshot(reason: "scene_active")
+            // Foregrounded: no background delivery is outstanding, so release
+            // the keepalive here rather than from `disconnect`, which also runs
+            // on the path that is about to open a replacement socket.
             backgroundKeepalive.end()
             currentAppState = .foreground
             desiredStreamMode = .full
@@ -431,15 +445,29 @@ final class RemoteClient {
         )
     }
 
+    /// Tears down the transport and any per-session state.
+    ///
+    /// User *intent* — queued approval responses, pending prompt answers, and
+    /// queued Live Activity URL actions — survives every teardown unless the
+    /// caller explicitly asks for it to be discarded. Socket churn, a push
+    /// wake, a deep link, and a reconnect all restart the session, and an
+    /// earlier version of this method wiped the ledger from inside
+    /// `startConnection`, silently dropping an "Allow" the user had just
+    /// tapped (and the queued action that the connect was requested *for*).
+    ///
+    /// - Parameter discardUserIntent: set only for an explicit user-initiated
+    ///   Disconnect or an unpair. Never set it from an automatic path.
     func disconnect(
         autoReconnect: Bool = false,
-        preserveApprovalsAndPrompts: Bool = false,
+        preserveApprovalsAndPrompts: Bool = true,
         preserveReconnectAttempt: Bool = false,
-        trigger: RemoteDisconnectTrigger = .manual
+        trigger: RemoteDisconnectTrigger = .manual,
+        discardUserIntent: Bool = false
     ) {
         DiagnosticsLog.shared.info(.connection, "Connection teardown", [
             "trigger": trigger.rawValue,
             "auto_reconnect": autoReconnect ? "true" : "false",
+            "discard_user_intent": discardUserIntent ? "true" : "false",
             "was_connected": isConnected ? "true" : "false",
             "transport_open": transport.isOpen ? "true" : "false",
             "transport_generation": String(transport.generation)
@@ -475,22 +503,42 @@ final class RemoteClient {
         macCapabilities = []
         outputText = ""
         strippedOutputText = ""
-        if !preserveApprovalsAndPrompts {
+        let clearIntent = discardUserIntent || !preserveApprovalsAndPrompts
+        if clearIntent {
             pendingInteractivePrompts = []
             approvalCoordinator.reset()
             pendingReconciler.reset()
         }
-        backgroundKeepalive.end()
+        // The background task is ended by the paths that genuinely finish a
+        // background session (scene .active, expiration, explicit disconnect,
+        // and all approval responses delivered) — not here, because this also
+        // runs *before* `startConnection` opens the replacement socket, so
+        // ending it here released the task before the work it exists to
+        // protect had even started.
         if #available(iOS 16.1, *) {
             RemoteLiveActivityManager.shared.update(with: nil)
         }
         if !autoReconnect {
             lastError = nil
-            if !preserveApprovalsAndPrompts {
+            if clearIntent {
                 pendingApprovals = []
+                pendingURLActions.removeAll()
             }
-            pendingURLActions.removeAll()
         }
+    }
+
+    /// Explicit user-initiated teardown: drop the session *and* anything the
+    /// user still owes the Mac. Reserved for the Settings "Disconnect" button
+    /// and for unpairing.
+    func disconnectAndDiscardPendingDecisions() {
+        disconnect(
+            autoReconnect: false,
+            preserveApprovalsAndPrompts: false,
+            trigger: .manual,
+            discardUserIntent: true
+        )
+        deferredDecisions.reset()
+        backgroundKeepalive.end()
     }
 
     // MARK: - Input
@@ -563,13 +611,66 @@ final class RemoteClient {
 
     // MARK: - Approvals
 
+    /// Records an approval decision that arrived before the request was known.
+    ///
+    /// A lock-screen "Allow" can be delivered on a cold launch, before the
+    /// WebSocket has connected and before `/pending` has populated
+    /// `pendingApprovals`. Dropping the decision in that window left the
+    /// request sitting in the Approvals tab as if untouched, with the Mac's
+    /// agent still blocked. Decisions are held here and applied as soon as the
+    /// authoritative list arrives.
+    private func recordPendingUserDecision(requestID: String, approved: Bool) {
+        if let evicted = deferredDecisions.record(requestID: requestID, approved: approved) {
+            DiagnosticsLog.shared.warn(.approval, "Deferred approval decision dropped: ledger full", [
+                "evicted_request_id": evicted
+            ])
+        }
+        DiagnosticsLog.shared.info(.approval, "Approval decision deferred until the request is known", [
+            "request_id": requestID,
+            "approved": approved ? "true" : "false"
+        ])
+        // Make sure the list that resolves this decision is actually fetched.
+        if !transport.isOpen, pairingInfo != nil {
+            connectIfNeeded(trigger: .approvalDelivery)
+        } else {
+            schedulePendingStateFetch(reason: "deferred_decision", force: true)
+        }
+    }
+
+    /// Applies any deferred decisions whose requests are now present.
+    private func drainPendingUserDecisions() {
+        guard !deferredDecisions.isEmpty else { return }
+        let known = Set(pendingApprovals.map(\.requestID))
+        for (requestID, approved) in deferredDecisions.takeReady(knownRequestIDs: known) {
+            respondToApproval(requestID: requestID, approved: approved)
+        }
+    }
+
+    /// Entry point for an Allow/Deny tapped on a notification. Separate from
+    /// `respondToApproval` so the notification path is explicit and does not
+    /// depend on the root view's `NotificationCenter` subscription, which is
+    /// not installed yet on a cold launch.
+    func recordApprovalDecisionFromNotification(requestID: String, approved: Bool) {
+        respondToApproval(requestID: requestID, approved: approved)
+    }
+
     func respondToApproval(requestID: String, approved: Bool) {
-        guard let idx = pendingApprovals.firstIndex(where: { $0.requestID == requestID }) else { return }
+        guard let idx = pendingApprovals.firstIndex(where: { $0.requestID == requestID }) else {
+            // Unknown request: hold the decision rather than discarding the
+            // user's answer. It is applied once the request is known.
+            recordPendingUserDecision(requestID: requestID, approved: approved)
+            return
+        }
         guard !pendingApprovals[idx].responseState.isBusy else { return }
 
         pendingApprovals[idx].responseState = .queued(approved)
         approvalCoordinator.queue(requestID: requestID, approved: approved)
-        backgroundKeepalive.begin()
+        // Only ask for background time when we are actually backgrounded. In the
+        // foreground the socket is alive anyway, and a task that expires there
+        // would tear down a healthy session.
+        if currentAppState != .foreground {
+            backgroundKeepalive.begin()
+        }
         flushPendingApprovalResponses()
     }
 
@@ -1923,6 +2024,9 @@ final class RemoteClient {
         for payload in changes.added {
             scheduleApprovalNotificationIfAllowed(for: payload)
         }
+        // Decisions taken from a lock-screen action before we knew the request
+        // are applied as soon as it appears in the authoritative list.
+        drainPendingUserDecisions()
     }
 
     private func scheduleApprovalNotificationIfAllowed(for payload: ApprovalRequestPayload) {
@@ -2032,17 +2136,29 @@ final class RemoteClient {
     }
 
     private func handleBackgroundTaskExpiration() {
+        // The background task is gone, so the keepalive must be released here.
+        backgroundKeepalive.end()
         // No blanket notification suppression here: the pending-state
         // reconciler already dedupes re-delivered approvals/prompts on
         // reconnect (only genuinely new entries notify), and the old
         // wall-clock window could mute a legitimately new approval that
         // arrived while suspended.
+        //
+        // Queued decisions are deliberately preserved: the user already
+        // answered, and the next foreground session is responsible for
+        // delivering them.
         disconnect(
             autoReconnect: false,
             preserveApprovalsAndPrompts: true,
             trigger: .backgroundExpiration
         )
-        status = .backgroundSuspended
+        // Only label the session suspended when we are actually backgrounded.
+        // `beginBackgroundTask` can also be reached from the foreground
+        // approval path, and claiming "Background suspended" while the user is
+        // looking at the app was misleading.
+        if currentAppState != .foreground {
+            status = .backgroundSuspended
+        }
     }
 
     private func sendClientStateIfPossible() {

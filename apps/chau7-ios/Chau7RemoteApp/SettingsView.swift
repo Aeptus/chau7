@@ -212,7 +212,11 @@ struct SettingsView: View {
 
                         if client.isConnected {
                             Button("Disconnect", role: .destructive) {
-                                client.disconnect()
+                                // Explicit user teardown: also drop anything the
+                                // user still owes the Mac, so the session does
+                                // not quietly resume and resend queued decisions
+                                // the user believed they had cancelled.
+                                client.disconnectAndDiscardPendingDecisions()
                             }
                         } else {
                             Button("Connect") { client.connect() }

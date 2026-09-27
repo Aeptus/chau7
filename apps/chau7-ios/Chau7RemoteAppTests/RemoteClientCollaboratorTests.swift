@@ -875,5 +875,84 @@ final class RemoteTerminalViewportGeometryTests: XCTestCase {
         XCTAssertEqual(small?.rows, 5)
         XCTAssertEqual(large?.cols, 25)
         XCTAssertEqual(large?.rows, 11)
+
+/// A lock-screen Allow/Deny can be delivered on a cold launch, before the
+/// WebSocket has connected and before `/pending` has populated the approval
+/// list. Dropping it there left the request looking untouched with the Mac's
+/// agent still blocked, so the decision is deferred until the request is known.
+@MainActor
+final class DeferredDecisionLedgerTests: XCTestCase {
+    func testEmptyLedgerYieldsNothing() {
+        let ledger = DeferredDecisionLedger()
+        XCTAssertTrue(ledger.isEmpty)
+        XCTAssertTrue(ledger.takeReady(knownRequestIDs: ["r1"]).isEmpty)
+    }
+
+    func testDecisionForUnknownRequestIsHeld() {
+        let ledger = DeferredDecisionLedger()
+        ledger.record(requestID: "r1", approved: true)
+        XCTAssertFalse(ledger.isEmpty)
+        // A list that does not contain the request must not consume it.
+        XCTAssertTrue(ledger.takeReady(knownRequestIDs: ["other"]).isEmpty)
+        XCTAssertEqual(ledger.count, 1)
+    }
+
+    func testDecisionIsReleasedOnceRequestIsKnown() {
+        let ledger = DeferredDecisionLedger()
+        ledger.record(requestID: "r1", approved: true)
+        ledger.record(requestID: "r2", approved: false)
+
+        let ready = ledger.takeReady(knownRequestIDs: ["r1", "unrelated"])
+        XCTAssertEqual(ready.count, 1)
+        XCTAssertEqual(ready.first?.requestID, "r1")
+        XCTAssertEqual(ready.first?.approved, true)
+        // r2 is still unknown, so it stays deferred.
+        XCTAssertEqual(ledger.count, 1)
+    }
+
+    func testNewestDecisionForTheSameRequestWins() {
+        let ledger = DeferredDecisionLedger()
+        ledger.record(requestID: "r1", approved: true)
+        ledger.record(requestID: "r1", approved: false)
+        let ready = ledger.takeReady(knownRequestIDs: ["r1"])
+        XCTAssertEqual(ready.count, 1)
+        XCTAssertEqual(ready.first?.approved, false)
+    }
+
+    func testReleasedDecisionsAreNotReturnedTwice() {
+        let ledger = DeferredDecisionLedger()
+        ledger.record(requestID: "r1", approved: true)
+        XCTAssertEqual(ledger.takeReady(knownRequestIDs: ["r1"]).count, 1)
+        XCTAssertTrue(ledger.takeReady(knownRequestIDs: ["r1"]).isEmpty)
+        XCTAssertTrue(ledger.isEmpty)
+    }
+
+    func testLedgerIsBoundedAndEvictsOldestFirst() {
+        let ledger = DeferredDecisionLedger(capacity: 3)
+        for index in 0 ..< 5 {
+            ledger.record(requestID: "r\(index)", approved: true)
+        }
+        XCTAssertEqual(ledger.count, 3)
+        XCTAssertEqual(ledger.requestIDs, ["r2", "r3", "r4"])
+        // The two oldest are gone; the newest three are still deliverable.
+        let ready = ledger.takeReady(knownRequestIDs: ["r0", "r1", "r2", "r3", "r4"])
+        XCTAssertEqual(Set(ready.map(\.requestID)), ["r2", "r3", "r4"])
+    }
+
+    func testOverwritingARequestDoesNotConsumeCapacity() {
+        let ledger = DeferredDecisionLedger(capacity: 2)
+        ledger.record(requestID: "r1", approved: true)
+        ledger.record(requestID: "r1", approved: false)
+        ledger.record(requestID: "r2", approved: true)
+        XCTAssertEqual(ledger.count, 2)
+        XCTAssertEqual(ledger.requestIDs, ["r1", "r2"])
+    }
+
+    func testResetDiscardsEverything() {
+        let ledger = DeferredDecisionLedger()
+        ledger.record(requestID: "r1", approved: true)
+        ledger.reset()
+        XCTAssertTrue(ledger.isEmpty)
+        XCTAssertTrue(ledger.takeReady(knownRequestIDs: ["r1"]).isEmpty)
     }
 }

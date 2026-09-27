@@ -2767,7 +2767,7 @@
   {
     "category": "SSH, Profiles & Remote",
     "feature": "Remote Push Approval Delivery",
-    "description": "Relay-backed APNs push registration and wakeups for new approvals and interactive prompts on the Chau7 Remote iPhone app, with relay encryption performed on a frame copy so the local push decoder retains the original JSON payload",
+    "description": "Relay-backed APNs push registration and wakeups for new approvals and interactive prompts on the Chau7 Remote iPhone app, with relay encryption performed on a frame copy so the local push decoder retains the original JSON payload. A decision taken from a notification is delivered straight to the client and, if the request is not yet known (cold launch), held in a bounded deferred-decision ledger and applied when the authoritative pending list arrives; queued responses, pending prompt answers and deferred Live Activity actions survive connection restarts and are discarded only by an explicit user disconnect",
     "status": "Experimental",
     "differentiator": "Yes"
   },

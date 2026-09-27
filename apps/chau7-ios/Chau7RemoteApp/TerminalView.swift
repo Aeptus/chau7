@@ -123,7 +123,8 @@ struct TerminalView: View {
     private func toggleConnection() {
         switch client.connectionPhase {
         case .connected, .connecting:
-            client.disconnect()
+            // User-initiated: drop the session and any undelivered decision.
+            client.disconnectAndDiscardPendingDecisions()
         case .disconnected, .warning:
             guard client.pairingInfo != nil else { return }
             client.connect()
