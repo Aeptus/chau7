@@ -62,16 +62,23 @@ type Agent struct {
 
 	stateMu sync.Mutex // protects a.state reads/writes
 
-	sessionMu       sync.Mutex
-	crypto          *cryptoSession
-	macNonce        []byte
-	iosNonce        []byte
-	currentIOSPub   string
-	currentPeerID   string
-	currentPeerName string
-	sessionReady    bool
-	sendSeq         uint64
-	maxReceivedSeq  uint64
+	// encryptedRelaySendMu keeps outbound encrypted sequence assignment and
+	// WebSocket writes in the same order. The iOS replay guard accepts only
+	// strictly increasing encrypted frame sequences.
+	encryptedRelaySendMu sync.Mutex
+	sessionMu            sync.Mutex
+	crypto               *cryptoSession
+	macNonce             []byte
+	iosNonce             []byte
+	currentIOSPub        string
+	currentPeerID        string
+	currentPeerName      string
+	sessionReady         bool
+	// sendSeq is the agent-owned outbound sequence used for encrypted nonces.
+	// A frame's IPC sequence belongs to the app and must not define the relay
+	// send direction's nonce space.
+	sendSeq        uint64
+	maxReceivedSeq uint64
 
 	pairingMu         sync.Mutex
 	pairingAttempts   int
@@ -591,7 +598,6 @@ func (a *Agent) handleIPCFrame(frame *protocol.Frame) {
 				Version: 1,
 				Type:    protocol.TypePong,
 				TabID:   frame.TabID,
-				Seq:     a.nextSeq(),
 				Payload: frame.Payload,
 			})
 		}
@@ -656,7 +662,6 @@ func (a *Agent) handleRelayFrame(frame *protocol.Frame) {
 			Version: 1,
 			Type:    protocol.TypePong,
 			TabID:   frame.TabID,
-			Seq:     a.nextSeq(),
 			Payload: frame.Payload,
 		})
 	default:
@@ -1118,7 +1123,6 @@ func (a *Agent) sendSessionReadyToRelay() {
 	frame := &protocol.Frame{
 		Version: 1,
 		Type:    protocol.TypeSessionReady,
-		Seq:     a.nextSeq(),
 		Payload: data,
 	}
 	a.sendEncryptedToRelay(frame)
@@ -1228,6 +1232,9 @@ func (a *Agent) decryptPayload(frame *protocol.Frame) ([]byte, error) {
 }
 
 func (a *Agent) sendEncryptedToRelay(frame *protocol.Frame) {
+	a.encryptedRelaySendMu.Lock()
+	defer a.encryptedRelaySendMu.Unlock()
+
 	// Hold sessionMu across the entire encrypt operation to prevent
 	// resetSession from nullifying crypto between the nil check and Seal.
 	a.sessionMu.Lock()
@@ -1236,14 +1243,24 @@ func (a *Agent) sendEncryptedToRelay(frame *protocol.Frame) {
 		a.sessionMu.Unlock()
 		return
 	}
-	encryptedFrame := encryptRelayFrame(frame, crypto)
+	encryptedFrame := a.encryptRelayFrame(frame, crypto)
 	a.sessionMu.Unlock()
 	a.sendToRelay(encryptedFrame)
 }
 
-// encryptRelayFrame returns an encrypted copy so callers can continue using
-// the original plaintext payload for local state and push processing.
-func encryptRelayFrame(frame *protocol.Frame, crypto *cryptoSession) *protocol.Frame {
+// encryptRelayFrame assigns a sequence owned by the agent before encrypting.
+// IPC frames carry the app's independent sequence, which cannot be reused in
+// the Mac-to-iOS nonce space.
+func (a *Agent) encryptRelayFrame(frame *protocol.Frame, crypto *cryptoSession) *protocol.Frame {
+	outbound := *frame
+	outbound.Seq = a.nextSeq()
+	return encryptRelayFrameWithSequence(&outbound, crypto)
+}
+
+// encryptRelayFrameWithSequence returns an encrypted copy so callers can
+// continue using the original plaintext payload for local state and push
+// processing.
+func encryptRelayFrameWithSequence(frame *protocol.Frame, crypto *cryptoSession) *protocol.Frame {
 	encrypted := *frame
 	encrypted.Flags |= protocol.FlagEncrypted
 	payloadLen := uint32(len(frame.Payload) + crypto.aead.Overhead())

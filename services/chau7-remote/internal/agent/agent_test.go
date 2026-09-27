@@ -335,7 +335,7 @@ func TestSessionReadyRequiresEncryptedIOSConfirmation(t *testing.T) {
 		sendNoncePrefix: a.crypto.recvNoncePrefix,
 		recvNoncePrefix: a.crypto.sendNoncePrefix,
 	}
-	encrypted := encryptRelayFrame(&protocol.Frame{
+	encrypted := encryptRelayFrameWithSequence(&protocol.Frame{
 		Version: 1,
 		Type:    protocol.TypeSessionReady,
 		Seq:     2,
@@ -460,6 +460,56 @@ func TestRequiresEncryptedRelayFrame(t *testing.T) {
 	}
 }
 
+func TestAgentEncryptRelayFrameUsesAgentOwnedSequence(t *testing.T) {
+	crypto, err := newCryptoSession(
+		bytes.Repeat([]byte{0x11}, 32),
+		bytes.Repeat([]byte{0x22}, 16),
+		bytes.Repeat([]byte{0x33}, 16),
+	)
+	if err != nil {
+		t.Fatalf("new crypto session: %v", err)
+	}
+
+	a := &Agent{sendSeq: 9}
+	frame := &protocol.Frame{
+		Version: 1,
+		Type:    protocol.TypeInteractivePromptList,
+		Seq:     1, // the Mac app's independent IPC sequence
+		Payload: []byte(`{"prompts":[{"id":"prompt-1"}]}`),
+	}
+
+	first := a.encryptRelayFrame(frame, crypto)
+	second := a.encryptRelayFrame(frame, crypto)
+	if first.Seq != 9 || second.Seq != 10 {
+		t.Fatalf("outbound sequences = %d, %d; want 9, 10", first.Seq, second.Seq)
+	}
+	if frame.Seq != 1 {
+		t.Fatalf("encrypting changed the IPC frame sequence to %d", frame.Seq)
+	}
+
+	firstNonce := makeNonce(crypto.sendNoncePrefix, first.Seq)
+	secondNonce := makeNonce(crypto.sendNoncePrefix, second.Seq)
+	if bytes.Equal(firstNonce, secondNonce) {
+		t.Fatal("equal IPC sequences produced a repeated outbound nonce")
+	}
+
+	for _, encrypted := range []*protocol.Frame{first, second} {
+		header := encrypted.HeaderBytes(uint32(len(encrypted.Payload)))
+		plaintext, err := crypto.aead.Open(
+			nil,
+			makeNonce(crypto.sendNoncePrefix, encrypted.Seq),
+			encrypted.Payload,
+			header,
+		)
+		if err != nil {
+			t.Fatalf("decrypt frame with rewritten sequence %d: %v", encrypted.Seq, err)
+		}
+		if !bytes.Equal(plaintext, frame.Payload) {
+			t.Fatalf("decrypted payload = %q, want %q", plaintext, frame.Payload)
+		}
+	}
+}
+
 func TestEncryptRelayFramePreservesPlaintextInput(t *testing.T) {
 	crypto, err := newCryptoSession(
 		bytes.Repeat([]byte{0x11}, 32),
@@ -478,7 +528,7 @@ func TestEncryptRelayFramePreservesPlaintextInput(t *testing.T) {
 		Payload: append([]byte(nil), payload...),
 	}
 
-	encrypted := encryptRelayFrame(frame, crypto)
+	encrypted := encryptRelayFrameWithSequence(frame, crypto)
 
 	if frame.Flags != 0 {
 		t.Fatalf("plaintext frame flags mutated to 0x%02x", frame.Flags)
