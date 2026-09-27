@@ -24,7 +24,7 @@ jobs:
         run: corepack enable
 
       - name: Validate release quality policy
-        run: pnpm quality:cloud-parity --include=quality-cloud-parity-release-only
+        run: pnpm quality:cloud-parity --include=quality-cloud-parity-required-workflows
 
       - name: Parse version from tag
         id: version

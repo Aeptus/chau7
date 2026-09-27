@@ -17,6 +17,11 @@ registry selects policy, and the runner executes gates.
   -> scripts/git/run-prepush-checks.mjs
   -> scripts/quality/runner.mjs
   -> scripts/quality/registry.mjs
+
+.github/workflows/ci.yml (pull requests to main)
+  -> pnpm quality:cloud-parity
+  -> pnpm quality:prepush
+  -> pnpm quality:staged
 ```
 
 `scripts/git/` files are compatibility shims. Real quality policy belongs in
@@ -40,7 +45,7 @@ This sets `core.hooksPath` to `.husky`. The legacy `scripts/install-hooks` and
 | `pnpm quality:prepush` | Affected-surface pre-push firewall. |
 | `pnpm quality:prepush:full` | Conservative full-suite pre-push. |
 | `pnpm quality:local` | Local broad validation using registry gates. |
-| `pnpm quality:cloud-parity` | Checks local/release workflow parity policy. |
+| `pnpm quality:cloud-parity` | Checks required pull request and release workflow policy. |
 | `pnpm quality:cache:status` | Inspect content-hash cache state. |
 | `pnpm quality:cache:clear` | Remove quality cache entries and outputs. |
 | `pnpm test` | Fast unit tests for the quality runner and registry. |
@@ -89,6 +94,12 @@ Before running pre-push gates, the runner checks the dirty worktree state. In
 non-interactive contexts it fails closed unless
 `AEPTUS_SKIP_DIRTY_WORKTREE_CONFIRM=1` is set.
 
+The pull request workflow runs this check while the checkout is clean. It then
+builds an index containing the PR diff against the base commit so
+`pnpm quality:staged` checks the proposed changes instead of an empty GitHub
+Actions index. CI verifies that staging and staged checks leave the checked-out
+tree unchanged.
+
 ## Full-Suite Triggers
 
 `pnpm quality:prepush` upgrades to `prepush-full` when scoped validation is
@@ -112,6 +123,23 @@ unsafe:
 Generated contract gates fail closed when a generated artifact or OpenAPI input
 changes without a registered freshness check. Add the generator gate before
 committing that kind of drift.
+
+The pull request workflow selects Xcode 26.3 for its iPhone 17 simulator tests
+and installs the tools required by `scripts/ci-local`. Workflow changes
+therefore run the same conservative full suite as local pre-push checks.
+
+## GitHub Actions Policy
+
+The cloud-parity gate requires `.github/workflows/ci.yml` and
+`.github/workflows/release.yml`. It also checks that pull request CI runs both
+`pnpm quality:prepush` and `pnpm quality:staged`. Additional workflows are
+allowed.
+
+Commit `b5ddfafd` removed the former build-and-test workflow and introduced a
+release-only workflow gate as part of quality-gate hardening. That commit and
+the surrounding documentation did not record why pull request workflows were
+disallowed. The repository now keeps release validation and requires pull
+request CI so changes are checked before merge.
 
 ## Registry Contract
 

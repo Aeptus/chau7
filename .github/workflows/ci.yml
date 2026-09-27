@@ -1,0 +1,85 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    name: Quality gates
+    runs-on: macos-15
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Select Xcode with the iPhone 17 simulator
+        run: sudo xcode-select --switch /Applications/Xcode_26.3.app/Contents/Developer
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Enable pnpm
+        run: corepack enable
+
+      - name: Check workflow policy
+        run: pnpm quality:cloud-parity --include=quality-cloud-parity-required-workflows
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: services/chau7-remote/go.mod
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Install full-suite quality tools
+        run: brew install swiftformat swiftlint shellcheck ruff golangci-lint periphery
+
+      - name: Install cargo-deny
+        run: cargo install cargo-deny --locked
+
+      - name: Install jscpd
+        run: npm install --global jscpd
+
+      - name: Run affected and full-suite quality gates
+        run: pnpm quality:prepush
+
+      - name: Stage the pull request diff for staged gates
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          git read-tree "$BASE_SHA"
+          git add -A
+          expected_tree="$(git rev-parse 'HEAD^{tree}')"
+          staged_tree="$(git write-tree)"
+          if [ "$staged_tree" != "$expected_tree" ]; then
+            echo "Staging the pull request diff did not reproduce the checked-out tree." >&2
+            exit 1
+          fi
+
+      - name: Run staged quality gates
+        run: pnpm quality:staged
+
+      - name: Verify staged gates did not rewrite the pull request
+        run: |
+          expected_tree="$(git rev-parse 'HEAD^{tree}')"
+          staged_tree="$(git write-tree)"
+          if [ "$staged_tree" != "$expected_tree" ]; then
+            echo "A staged quality gate rewrote the pull request. Commit its formatting changes and rerun CI." >&2
+            exit 1
+          fi
+          git diff --exit-code

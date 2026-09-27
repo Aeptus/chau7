@@ -47,11 +47,116 @@ test("quality runner tests are represented as a registry gate", () => {
   assert.equal(gate("quality-runner-tests").wave, "tests");
 });
 
+test("quality runner tests clear inherited Git repository overrides", async () => {
+  let command;
+  let args;
+  const result = await gate("quality-runner-tests").run({
+    exec: async (nextCommand, nextArgs) => {
+      command = nextCommand;
+      args = nextArgs;
+      return { status: "passed", summary: "ok" };
+    },
+  });
+
+  assert.equal(result.status, "passed");
+  assert.equal(command, "env");
+  assert.deepEqual(args, [
+    "-u",
+    "GIT_DIR",
+    "-u",
+    "GIT_WORK_TREE",
+    "-u",
+    "GIT_COMMON_DIR",
+    "-u",
+    "GIT_INDEX_FILE",
+    "-u",
+    "GIT_PREFIX",
+    "-u",
+    "GIT_OBJECT_DIRECTORY",
+    "-u",
+    "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+    "-u",
+    "GIT_CONFIG_PARAMETERS",
+    "-u",
+    "GIT_CONFIG_COUNT",
+    "pnpm",
+    "test",
+  ]);
+});
+
 test("full-suite dependency audit gates are registered as live security gates", () => {
   assert.equal(gate("full-js-dependency-audit").cacheable, false);
   assert.equal(gate("full-js-dependency-audit").wave, "audit");
   assert.equal(gate("full-python-dependency-audit").cacheable, false);
   assert.equal(gate("full-python-dependency-audit").wave, "audit");
+});
+
+test("cloud parity requires release and pull request quality workflows", async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "chau7-quality-workflows-"));
+  const workflowsDir = path.join(root, ".github/workflows");
+  fs.mkdirSync(workflowsDir, { recursive: true });
+  fs.writeFileSync(path.join(workflowsDir, "release.yml"), "name: Release\n");
+  fs.writeFileSync(
+    path.join(workflowsDir, "ci.yml"),
+    [
+      "name: CI",
+      "on:",
+      "  pull_request:",
+      "jobs:",
+      "  quality:",
+      "    steps:",
+      "      - name: Check workflow policy",
+      "        run: pnpm quality:cloud-parity --include=quality-cloud-parity-required-workflows",
+      "      - name: Run pre-push quality gates",
+      "        run: pnpm quality:prepush",
+      "      - name: Run staged quality gates",
+      "        run: pnpm quality:staged",
+      "",
+    ].join("\n"),
+  );
+
+  try {
+    const result = await gate("quality-cloud-parity-required-workflows").run({ root });
+    assert.equal(result.status, "passed");
+
+    fs.writeFileSync(path.join(workflowsDir, "preview.yml"), "name: Preview\n");
+    assert.equal((await gate("quality-cloud-parity-required-workflows").run({ root })).status, "passed");
+
+    fs.writeFileSync(path.join(workflowsDir, "ci.yml"), "name: CI\non:\n  push:\n");
+    const incomplete = await gate("quality-cloud-parity-required-workflows").run({ root });
+    assert.equal(incomplete.status, "failed");
+    assert.match(incomplete.summary, /pull_request trigger/);
+    assert.match(incomplete.summary, /pnpm quality:staged/);
+    assert.match(incomplete.summary, /pnpm quality:prepush/);
+
+    fs.rmSync(path.join(workflowsDir, "ci.yml"));
+    const missing = await gate("quality-cloud-parity-required-workflows").run({ root });
+    assert.equal(missing.status, "failed");
+    assert.match(missing.summary, /ci\.yml/);
+
+    fs.writeFileSync(
+      path.join(workflowsDir, "ci.yml"),
+      [
+        "name: CI",
+        "on:",
+        "  pull_request:",
+        "jobs:",
+        "  quality:",
+        "    steps:",
+        "      - name: Run pre-push quality gates",
+        "        run: pnpm quality:prepush",
+        "      - name: Run staged quality gates",
+        "        run: pnpm quality:staged",
+        "",
+      ].join("\n"),
+    );
+    fs.rmSync(path.join(workflowsDir, "release.yml"));
+    const missingRelease = await gate("quality-cloud-parity-required-workflows").run({ root });
+    assert.equal(missingRelease.status, "failed");
+    assert.match(missingRelease.summary, /release\.yml/);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test("security gates are blocking registered gates, not hook-only shell snippets", () => {

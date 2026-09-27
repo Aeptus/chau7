@@ -844,7 +844,29 @@ export const gates = [
       hasPathPrefix(context.stagedFiles, "scripts/git/") ||
       context.stagedFiles.includes("package.json"),
     rerun: "pnpm quality:local --include=quality-runner-tests",
-    run: async (context) => context.exec("pnpm", ["test"]),
+    run: async (context) =>
+      context.exec("env", [
+        "-u",
+        "GIT_DIR",
+        "-u",
+        "GIT_WORK_TREE",
+        "-u",
+        "GIT_COMMON_DIR",
+        "-u",
+        "GIT_INDEX_FILE",
+        "-u",
+        "GIT_PREFIX",
+        "-u",
+        "GIT_OBJECT_DIRECTORY",
+        "-u",
+        "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+        "-u",
+        "GIT_CONFIG_PARAMETERS",
+        "-u",
+        "GIT_CONFIG_COUNT",
+        "pnpm",
+        "test",
+      ]),
   },
   {
     id: "full-js-dependency-audit",
@@ -901,23 +923,33 @@ export const gates = [
     },
   },
   {
-    id: "quality-cloud-parity-release-only",
+    id: "quality-cloud-parity-required-workflows",
     modes: ["cloud-parity"],
     scope: "repo",
     wave: "preflight",
-    tags: ["github-actions", "release"],
+    tags: ["github-actions", "ci", "release"],
     cacheable: true,
-    inputs: [".github/workflows/release.yml"],
+    inputs: [".github/workflows/ci.yml", ".github/workflows/release.yml"],
     applies: () => true,
-    rerun: "pnpm quality:cloud-parity --include=quality-cloud-parity-release-only",
+    rerun: "pnpm quality:cloud-parity --include=quality-cloud-parity-required-workflows",
     run: async (context) => {
-      const workflows = fs.existsSync(path.join(context.root, ".github/workflows"))
-        ? fs.readdirSync(path.join(context.root, ".github/workflows")).filter((file) => file.endsWith(".yml") || file.endsWith(".yaml"))
-        : [];
-      const nonRelease = workflows.filter((file) => file !== "release.yml");
-      return nonRelease.length
-        ? { status: "failed", summary: `GitHub Actions must remain release-only; found ${nonRelease.join(", ")}` }
-        : { status: "passed", summary: "GitHub Actions are release-only" };
+      const workflowsDir = path.join(context.root, ".github/workflows");
+      const required = ["ci.yml", "release.yml"];
+      const missing = required.filter((file) => !fs.existsSync(path.join(workflowsDir, file)));
+      if (missing.length) {
+        return { status: "failed", summary: `Required GitHub Actions workflows are missing: ${missing.join(", ")}` };
+      }
+
+      const ciWorkflow = fs.readFileSync(path.join(workflowsDir, "ci.yml"), "utf8");
+      const requiredCiParts = [
+        ["pull_request trigger", /^\s+pull_request:\s*(?:#.*)?$/m],
+        ["pnpm quality:staged", /^\s+run:\s*pnpm quality:staged\s*$/m],
+        ["pnpm quality:prepush", /^\s+run:\s*pnpm quality:prepush\s*$/m],
+      ];
+      const missingCiParts = requiredCiParts.filter(([, pattern]) => !pattern.test(ciWorkflow)).map(([label]) => label);
+      return missingCiParts.length
+        ? { status: "failed", summary: `Pull request CI is missing: ${missingCiParts.join(", ")}` }
+        : { status: "passed", summary: "Release and pull request quality workflows are present" };
     },
   },
 ];

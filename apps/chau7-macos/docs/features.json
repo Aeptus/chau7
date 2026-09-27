@@ -800,7 +800,7 @@
   {
     "category": "Developer Experience",
     "feature": "Registry-Driven Quality Firewall",
-    "description": "Thin Husky hooks delegate to pnpm quality modes backed by a central registry, affected-surface pre-push scoping, conservative full-suite triggers, content-hash caching, reproducible failure commands, dirty-worktree handling, and runner/registry tests",
+    "description": "Thin Husky hooks delegate to pnpm quality modes backed by a central registry; pull requests select Xcode with the iPhone 17 simulator, run affected-surface or full-suite pre-push checks (including repository-wide SwiftFormat) plus staged-file checks, and workflow policy requires both PR CI and release validation",
     "status": "Shipped",
     "differentiator": "Yes"
   },

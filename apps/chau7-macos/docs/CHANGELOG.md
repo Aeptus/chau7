@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Stability hardening
 
+- Pull requests to `main` now run registry-backed affected checks, expanding to the full suite for high-impact changes, plus staged-file checks. CI selects Xcode 26.3 for iPhone 17 simulator tests, and the workflow policy requires both pull request CI and release validation.
+- The remote issue-report authorization call site now conforms to the repository's SwiftFormat indentation rule, keeping the newly enabled full-suite check clean.
 - Claude status-line installation now leaves `~/.claude/settings.json` untouched when the file cannot be read or contains invalid JSON, and reports the failure instead of replacing the user's settings.
 - Remote bridge IPC now creates its socket with owner-only permissions (`0600`) inside an owner-only app-support directory (`0700`).
 - Issue reports from paired apps now require single-use v2 HMAC tokens scoped to issue intake; the Worker rejects browser writes and replays, validates labels and payload sizes, and enforces a strict per-IP limit.
