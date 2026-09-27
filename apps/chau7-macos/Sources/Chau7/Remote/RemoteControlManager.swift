@@ -1858,6 +1858,26 @@ final class RemoteControlManager {
             .appendingPathComponent("state.json")
     }
 
+    func issueReportAuthorization() -> (deviceID: String, token: String)? {
+        do {
+            guard let state = try loadAgentState(),
+                  let deviceID = state.deviceID,
+                  let secret = state.relaySecret,
+                  let token = RelayToken.make(
+                    deviceID: deviceID,
+                    secret: secret,
+                    role: "mac",
+                    scope: "issues"
+                  ) else {
+                return nil
+            }
+            return (deviceID, token)
+        } catch {
+            logger.warning("Could not load remote identity for issue reporting: \(error.localizedDescription, privacy: .public)")
+            return nil
+        }
+    }
+
     func revokePairedDevice(id: String) {
         do {
             guard var state = try loadAgentState() else { return }

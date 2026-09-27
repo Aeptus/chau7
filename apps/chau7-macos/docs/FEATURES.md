@@ -793,7 +793,8 @@ Chau7's rendering pipeline is purpose-built for latency-sensitive terminal work:
 - Live state inspector for tabs, sessions, and models.
 - Feature profiler with os.signpost integration.
 - Structured logging with category-based filtering and correlation IDs.
-- Privacy-first bug report dialog (⌥⌘I): all sensitive data off by default, per-toggle tab pickers, live preview, HTTPS-only submission via relay, success banner with created issue number when available, tab title redaction, background history capture, no AI session fallback leak.
+- Privacy-first bug report dialog (⌥⌘I): all sensitive data off by default, per-toggle tab pickers, live preview, HTTPS-only submission with single-use issue-scoped HMAC authorization, success banner with created issue number when available, tab title redaction, background history capture, no AI session fallback leak.
+- Private issue intake rejects browser writes and token replays, validates payload and labels, and applies a strict per-IP creation limit.
 - In-app issue reporting privacy page: GDPR-compliant sub-processor disclosure (Cloudflare, GitHub) with data categories, retention, legal basis, DPA links, and data subject rights.
 - Technology, Licenses & Acknowledgments help page: monorepo layout, languages, Rust crates, bundled binaries, third-party dependencies, system frameworks, and notice file locations. Accessible from Help menu and About settings.
 - Verbose (`CHAU7_VERBOSE=1`) and trace (`CHAU7_TRACE=1`) modes.

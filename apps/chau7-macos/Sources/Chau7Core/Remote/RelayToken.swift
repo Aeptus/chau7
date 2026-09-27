@@ -16,12 +16,20 @@ public enum RelayToken {
         guard let secret = pairing.relaySecret, !secret.isEmpty else {
             return nil
         }
+        return make(deviceID: pairing.deviceID, secret: secret, role: role, scope: scope)
+    }
+
+    /// Mint a token when a local device identity and its configured secret are
+    /// available without a full pairing payload (for example, macOS issue
+    /// reporting while the remote agent is stopped).
+    public static func make(deviceID: String, secret: String, role: String, scope: String) -> String? {
+        guard !deviceID.isEmpty, !secret.isEmpty else { return nil }
         var nonceBytes = [UInt8](repeating: 0, count: 16)
         for index in nonceBytes.indices {
             nonceBytes[index] = UInt8.random(in: UInt8.min ... UInt8.max)
         }
         return make(
-            deviceID: pairing.deviceID,
+            deviceID: deviceID,
             secret: secret,
             role: role,
             scope: scope,

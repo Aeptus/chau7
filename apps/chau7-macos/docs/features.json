@@ -2907,7 +2907,7 @@
   {
     "category": "SSH, Profiles & Remote",
     "feature": "iPhone Issue Reporting",
-    "description": "Chau7 Remote submits private issues from Settings with a description, environment snapshot, optional remembered contact, exact Markdown preview, and share-sheet fallback; its bounded recent-diagnostics excerpt is off by default with an explicit keystroke privacy warning",
+    "description": "Chau7 Remote submits private issues from Settings with issue-scoped single-use HMAC authorization, a description, environment snapshot, optional remembered contact, exact Markdown preview, and share-sheet fallback; its bounded recent-diagnostics excerpt is off by default with an explicit keystroke privacy warning",
     "status": "Experimental",
     "differentiator": "No"
   },
@@ -3558,7 +3558,7 @@
   {
     "category": "Debugging",
     "feature": "Privacy-First Bug Report Dialog",
-    "description": "In-app issue reporter (⌥⌘I) with all sensitive data off by default, per-toggle tab pickers, live markdown preview, HTTPS-only private relay submission, success banner with created issue number when available, tab title redaction, background history capture, and hardened rate limiting",
+    "description": "In-app issue reporter (⌥⌘I) with all sensitive data off by default, per-toggle tab pickers, live markdown preview, HTTPS-only private relay submission with single-use issue-scoped HMAC authorization, success banner with created issue number when available, tab title redaction, background history capture, and hardened rate limiting",
     "status": "Shipped",
     "differentiator": "Yes"
   },
@@ -4048,7 +4048,7 @@
   {
     "category": "Remote",
     "feature": "Issue Intake Landing Page",
-    "description": "issues.chau7.sh now serves a lightweight landing page for browsers while still accepting app-submitted bug reports at the root POST endpoint",
+    "description": "issues.chau7.sh serves a lightweight landing page while app writes require single-use issue-scoped HMAC authorization; browser writes and replays are rejected, payloads and labels are validated, and creation is rate limited per IP",
     "status": "Shipped",
     "differentiator": "Yes"
   },

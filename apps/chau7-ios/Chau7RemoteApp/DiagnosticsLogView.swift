@@ -49,7 +49,16 @@ final class IssueReportDraft {
         defer { isSubmitting = false }
 
         do {
-            submittedIssueNumber = try await Self.post(markdownReport, appVersion: context.appVersion)
+            guard let pairing = client.pairingInfo,
+                  let token = RelayToken.make(pairing: pairing, role: "ios", scope: "issues") else {
+                throw IssueReportSubmissionError.authenticationUnavailable
+            }
+            submittedIssueNumber = try await Self.post(
+                markdownReport,
+                appVersion: context.appVersion,
+                deviceID: pairing.deviceID,
+                token: token
+            )
             didSubmit = true
             persistContactPreference()
             DiagnosticsLog.shared.info(.network, "Issue report submitted", [
@@ -84,7 +93,12 @@ final class IssueReportDraft {
         UserDefaults.standard.set(saveContact ? contact : "", forKey: AppSettings.issueReportContactKey)
     }
 
-    private nonisolated static func post(_ report: String, appVersion: String) async throws -> Int? {
+    private nonisolated static func post(
+        _ report: String,
+        appVersion: String,
+        deviceID: String,
+        token: String
+    ) async throws -> Int? {
         guard let url = URL(string: endpoint), url.scheme == "https" else {
             throw IssueReportSubmissionError.invalidEndpoint
         }
@@ -95,6 +109,9 @@ final class IssueReportDraft {
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.setValue(deviceID, forHTTPHeaderField: "X-Chau7-Device-ID")
+        request.setValue("ios", forHTTPHeaderField: "X-Chau7-Role")
         request.httpBody = try JSONEncoder().encode(payload)
         request.timeoutInterval = 15
 
@@ -117,6 +134,7 @@ private enum IssueReportSubmissionError: LocalizedError {
     case invalidEndpoint
     case invalidResponse
     case rateLimited
+    case authenticationUnavailable
     case server(status: Int)
 
     var errorDescription: String? {
@@ -127,6 +145,8 @@ private enum IssueReportSubmissionError: LocalizedError {
             return "The issue service returned an invalid response."
         case .rateLimited:
             return "Too many reports were submitted recently. Please try again later."
+        case .authenticationUnavailable:
+            return "Issue reporting requires a valid Mac pairing. Export the report and try again after reconnecting."
         case let .server(status):
             return "The issue service returned HTTP \(status)."
         }

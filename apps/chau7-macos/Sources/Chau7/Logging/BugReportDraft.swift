@@ -233,6 +233,7 @@ final class BugReportDraft {
 
     /// POST the report to the Cloudflare Worker issue endpoint.
     /// Call `prepareSubmission()` on the main thread first, then pass the result here.
+    @MainActor
     func submit(preparedReport: String) async throws -> Int {
         let endpoint = FeatureSettings.shared.bugReportIssueEndpoint
         guard let url = URL(string: endpoint), !endpoint.isEmpty else {
@@ -240,6 +241,9 @@ final class BugReportDraft {
         }
         guard url.scheme == "https" else {
             throw BugReportError.insecureEndpoint
+        }
+        guard let authorization = RemoteControlManager.shared.issueReportAuthorization() else {
+            throw BugReportError.authenticationUnavailable
         }
 
         let title = "Bug report from Chau7 \(snapshot.appVersion)"
@@ -253,6 +257,9 @@ final class BugReportDraft {
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("Bearer \(authorization.token)", forHTTPHeaderField: "Authorization")
+        request.setValue(authorization.deviceID, forHTTPHeaderField: "X-Chau7-Device-ID")
+        request.setValue("mac", forHTTPHeaderField: "X-Chau7-Role")
         request.httpBody = jsonData
         request.timeoutInterval = 15
 
@@ -319,6 +326,7 @@ final class BugReportDraft {
 enum BugReportError: LocalizedError {
     case invalidEndpoint
     case insecureEndpoint
+    case authenticationUnavailable
     case rateLimited
     case networkError(String)
     case serverError(Int, String)
@@ -329,6 +337,8 @@ enum BugReportError: LocalizedError {
             return "Issue reporting endpoint is not configured."
         case .insecureEndpoint:
             return "Issue reporting endpoint must use HTTPS."
+        case .authenticationUnavailable:
+            return "Issue reporting requires a configured Remote identity. Save the report locally and retry after Remote is configured."
         case .rateLimited:
             return "Too many reports submitted recently. Please try again later."
         case .networkError(let msg):

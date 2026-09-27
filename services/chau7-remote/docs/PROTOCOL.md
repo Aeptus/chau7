@@ -65,7 +65,8 @@ wire:    v2.{ts}.{nonce}.{scope}.{base64url_sig}
 signed:  v2:{device_id}:{role}:{scope}:{ts}:{nonce}
 ```
 
-- `role` is `mac` or `ios`; `scope` is `connect`, `push`, or `pending`.
+- `role` is `mac` or `ios`; `scope` is `connect`, `push`, `pending`, or
+  `issues` (the latter is used only by the dedicated issue intake Worker).
 - `ts` is unix seconds; tokens are valid for 120s (+30s future skew).
 - `nonce` is 16 random bytes (base64url) and is single-use — the relay rejects
   reuse, defeating replay/connection-takeover.

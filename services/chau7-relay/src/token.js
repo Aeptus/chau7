@@ -23,7 +23,7 @@ export const TOKEN_VERSION = 'v2';
 export const ROLES = Object.freeze(['mac', 'ios']);
 
 /** Endpoint scopes. A token is valid only for the scope it was signed for. */
-export const SCOPES = Object.freeze(['connect', 'push', 'pending']);
+export const SCOPES = Object.freeze(['connect', 'push', 'pending', 'issues']);
 
 /** Tokens are valid for this many seconds after `iat`. */
 export const TOKEN_TTL_SECONDS = 120;

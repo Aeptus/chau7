@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Stability hardening
 
+- Issue reports from paired apps now require single-use v2 HMAC tokens scoped to issue intake; the Worker rejects browser writes and replays, validates labels and payload sizes, and enforces a strict per-IP limit.
 - Opening a repository agent dashboard no longer traps on duplicate runtime sessions: active sessions are unique per tab, stop cleanup preserves any replacement session, provider indexes stay consistent, and dashboard refresh tolerates legacy duplicates.
 - CTO now passes machine-readable git output (`--porcelain`, `-z`, and `--format`) through byte-for-byte, including empty and NUL-delimited output, so scripts and CI do not parse human-oriented summaries.
 - The generated CTO command wrapper enforces that pass-through itself, before the optimizer is invoked, so machine-readable invocations reach the real binary even when the optimizer would otherwise have rendered them.

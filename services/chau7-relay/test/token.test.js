@@ -39,6 +39,20 @@ test('accepts a freshly minted, correctly-scoped token', async () => {
   assert.equal(result.expiresAt, (NOW + TOKEN_TTL_SECONDS) * 1000);
 });
 
+test('accepts the issue-intake scope used by the dedicated worker', async () => {
+  const token = await mintToken(
+    { deviceId: DEVICE, role: 'mac', scope: 'issues', secret: HMAC_KEY },
+    NOW
+  );
+  const result = await verifyToken(
+    token,
+    { deviceId: DEVICE, role: 'mac', scope: 'issues', secret: HMAC_KEY },
+    NOW
+  );
+  assert.equal(result.ok, true);
+  assert.equal(parseToken(token).scope, 'issues');
+});
+
 test('rejects a token used for the wrong scope', async () => {
   const token = await mintToken(
     { deviceId: DEVICE, role: 'mac', scope: 'connect', secret: HMAC_KEY },

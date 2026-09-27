@@ -82,20 +82,19 @@ fi
 if [[ "$RUN_SMOKE" == "1" ]]; then
   smoke_body_file="$(mktemp)"
   trap 'rm -f "$smoke_body_file"' EXIT
-  smoke_title="Chau7 issue intake cutover smoke $(date -u +%Y-%m-%dT%H:%M:%SZ)"
-  smoke_payload="{\"title\":\"$smoke_title\",\"body\":\"Automated cutover smoke test for $ISSUES_DOMAIN.\"}"
+  smoke_payload='{"title":"Unauthenticated cutover smoke test","body":"This request must be rejected and must not create an issue."}'
   status="$(curl -sS -o "$smoke_body_file" -w '%{http_code}' \
     -X POST "https://$ISSUES_DOMAIN/issue" \
     -H 'Content-Type: application/json' \
     --data "$smoke_payload")"
-  if [[ "$status" != "200" && "$status" != "201" ]]; then
-    echo "error: smoke issue creation failed with HTTP $status." >&2
+  if [[ "$status" != "401" ]]; then
+    echo "error: unauthenticated smoke request should return HTTP 401; received $status." >&2
     cat "$smoke_body_file" >&2
     echo >&2
     echo "Not deleting legacy worker." >&2
     exit 1
   fi
-  echo "Smoke issue creation succeeded: $(cat "$smoke_body_file")"
+  echo "Unauthenticated issue creation was rejected as expected."
   rm -f "$smoke_body_file"
   trap - EXIT
 else

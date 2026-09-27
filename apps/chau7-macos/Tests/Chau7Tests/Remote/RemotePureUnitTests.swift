@@ -238,6 +238,21 @@ final class RelayTokenTests: XCTestCase {
         XCTAssertNil(RelayToken.make(pairing: pairing, role: "ios", scope: "connect"))
     }
 
+    func testIssueScopeCanBeMintedFromLocalDeviceIdentity() throws {
+        let token = try XCTUnwrap(
+            RelayToken.make(
+                deviceID: "11111111-2222-3333-4444-555555555555",
+                secret: vectorHMACKey,
+                role: "mac",
+                scope: "issues"
+            )
+        )
+        let parts = token.split(separator: ".").map(String.init)
+        XCTAssertEqual(parts.count, 5)
+        XCTAssertEqual(parts[0], "v2")
+        XCTAssertEqual(parts[3], "issues")
+    }
+
     func testNoncesAreUniqueAcrossMints() throws {
         let pairing = RemotePairingPayload(
             relayURL: "wss://r", deviceID: "d", macPub: "m",
