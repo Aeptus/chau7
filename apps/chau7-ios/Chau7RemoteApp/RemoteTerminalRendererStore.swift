@@ -17,6 +17,9 @@ private struct RemoteTerminalEngineSnapshot: Sendable {
 
 private actor RemoteTerminalRenderEngine {
     private static let maxReplayBytesPerTab = 400_000
+    /// How far below the cap a replay buffer is trimmed when it overflows, so
+    /// the (unavoidable) copy is amortised instead of running every frame.
+    private static let replayTrimHeadroomBytes = 100_000
 
     private var playbacks: [UInt32: RemoteRustTerminalPlayback] = [:]
     private var replayByTabID: [UInt32: Data] = [:]
@@ -71,7 +74,15 @@ private actor RemoteTerminalRenderEngine {
     func appendOutput(_ data: Data, for tabID: UInt32, trace: RemoteTerminalFrameTrace?) {
         let chunk = RemoteOutputTuning.capIncomingFrame(data)
         guard !chunk.isEmpty else { return }
-        appendReplayChunk(chunk, to: tabID)
+        // Only buffer a replay while there is no live playback to inject into.
+        // `ensurePlayback` is the only reader and short-circuits on a live
+        // playback, so appending while one exists was pure write amplification:
+        // once the buffer hit the cap, every single output frame re-copied all
+        // 400 KB (COW append + a full `Data.suffix` re-slice) for a buffer
+        // nothing would ever read.
+        if playbacks[tabID] == nil {
+            appendReplayChunk(chunk, to: tabID)
+        }
         playbacks[tabID]?.inject(chunk)
         if var trace {
             trace.engineAppliedAt = Date()
@@ -79,9 +90,9 @@ private actor RemoteTerminalRenderEngine {
         }
     }
 
-    func scroll(tabID: UInt32, to displayOffset: Int, scrollbackRows: Int) {
+    func scrollNormalized(tabID: UInt32, fraction: Double) {
         guard let playback = ensurePlayback(for: tabID) else { return }
-        playback.scrollTo(displayOffset: displayOffset, scrollbackRows: scrollbackRows)
+        playback.scrollToNormalized(fraction)
     }
 
     func snapshot(for tabID: UInt32) -> RemoteTerminalEngineSnapshot {
@@ -121,12 +132,22 @@ private actor RemoteTerminalRenderEngine {
     }
 
     private func appendReplayChunk(_ chunk: Data, to tabID: UInt32) {
-        if var replay = replayByTabID[tabID] {
-            replay.append(chunk)
-            replayByTabID[tabID] = Self.boundedReplay(replay)
-        } else {
-            replayByTabID[tabID] = Self.boundedReplay(chunk)
+        // Mutate in place through the subscript. `if var replay = …; replay.append(…)
+        // replayByTabID[tabID] = …` holds a second reference to the buffer, so the
+        // append copies the whole thing, and the re-slice below copies it again.
+        replayByTabID[tabID, default: Data()].append(chunk)
+        guard let replay = replayByTabID[tabID], replay.count > Self.maxReplayBytesPerTab else { return }
+        // Trim to a low watermark instead of exactly to the cap, so the copy is
+        // amortised over many frames instead of running on every frame once the
+        // buffer is full.
+        let keep = Self.maxReplayBytesPerTab - Self.replayTrimHeadroomBytes
+        var tail = Data(replay.suffix(keep))
+        // Resync to a UTF-8 scalar boundary so the replay cannot start with a
+        // replacement character after a mid-sequence cut.
+        while let first = tail.first, first & 0xC0 == 0x80 {
+            tail = tail.dropFirst()
         }
+        replayByTabID[tabID] = tail
     }
 
     private static func boundedReplay(_ data: Data) -> Data {
@@ -298,11 +319,22 @@ final class RemoteTerminalRendererStore {
         presentationPacer.requestFrame()
     }
 
-    func scrollActive(to displayOffset: Int) {
-        guard activeTabID != 0, let state = renderState else { return }
+    /// Scrolls the active tab to a *fraction* of its scrollback.
+    ///
+    /// The fraction is computed by `RemoteTerminalScrollPolicy.displayOffset`
+    /// from the same numbers the scroll view used, and applied against the
+    /// engine's live `history_size` when the mutation actually runs. Passing an
+    /// absolute row count captured from the last published `renderState` was
+    /// wrong: the captured struct was also a value copy held across an `await`,
+    /// so by the time the mutation ran the Rust history had already grown and
+    /// the viewport landed further back than the user asked for — by an error
+    /// that grew the longer the session ran.
+    func scrollActive(toNormalized fraction: Double) {
+        guard activeTabID != 0, renderState != nil else { return }
         let tabID = activeTabID
+        let clamped = min(max(fraction, 0), 1)
         enqueueMutation(publishFor: tabID) { engine in
-            await engine.scroll(tabID: tabID, to: displayOffset, scrollbackRows: state.scrollbackRows)
+            await engine.scrollNormalized(tabID: tabID, fraction: clamped)
         }
     }
 

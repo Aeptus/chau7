@@ -2795,7 +2795,7 @@
   {
     "category": "SSH, Profiles & Remote",
     "feature": "Responsive iPhone Streaming Pipeline",
-    "description": "Socket receive and ordered frame application are decoupled, replaceable grids coalesce without breaking encrypted sequence order, visible text refreshes run on a bounded cadence, hidden renderer work is skipped, and rolling metrics expose where receive-to-publish latency accumulates",
+    "description": "Socket receive and ordered frame application are decoupled, replaceable grids coalesce without breaking encrypted sequence order, the receive queue is genuinely bounded (already-suppressed output frames are shed once grids run out, so a large burst cannot grow it without limit), visible text refreshes run on a bounded cadence, hidden renderer work is skipped, and rolling metrics expose where receive-to-publish latency accumulates along with how many frames were shed",
     "status": "Experimental",
     "differentiator": "Yes"
   },

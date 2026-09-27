@@ -81,7 +81,7 @@ struct RemoteTerminalRendererView: View {
         .overlay(alignment: .bottomTrailing) {
             if isAwayFromBottom {
                 Button {
-                    client.terminalRenderer.scrollActive(to: 0)
+                    client.terminalRenderer.scrollActive(toNormalized: 0)
                 } label: {
                     Image(systemName: "arrow.down")
                         .font(.system(size: 16, weight: .semibold))
@@ -359,6 +359,9 @@ private final class RemoteTerminalViewportView: UIView, UIScrollViewDelegate {
             isDragging: scrollView.isDragging,
             isDecelerating: scrollView.isDecelerating
         ) else { return }
+        // Normalise to a 0…1 fraction of the scrollback here, from the same
+        // numbers the scroll view just reported, and let the engine resolve it
+        // against its live history size when the mutation runs.
         let displayOffset = RemoteTerminalScrollPolicy.displayOffset(
             contentHeight: Double(scrollView.contentSize.height),
             viewportHeight: Double(scrollView.bounds.height),
@@ -366,7 +369,8 @@ private final class RemoteTerminalViewportView: UIView, UIScrollViewDelegate {
             cellHeight: Double(cellSize.height),
             scrollbackRows: renderState.scrollbackRows
         )
-        store.scrollActive(to: displayOffset)
+        let scrollbackRows = max(1, renderState.scrollbackRows)
+        store.scrollActive(toNormalized: Double(displayOffset) / Double(scrollbackRows))
     }
 
     private func recalculateViewport() {

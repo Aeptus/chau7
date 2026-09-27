@@ -225,14 +225,14 @@ final nonisolated class RemoteRustTerminalPlayback {
         }
     }
 
-    func scrollTo(displayOffset: Int, scrollbackRows: Int) {
-        guard scrollbackRows > 0 else {
-            chau7_terminal_scroll_to(handle, 0)
-            return
-        }
-        let clampedOffset = min(max(displayOffset, 0), scrollbackRows)
-        let normalized = Double(clampedOffset) / Double(scrollbackRows)
-        chau7_terminal_scroll_to(handle, normalized)
+    /// Scrolls to a fraction of the live scrollback, where 0 is the newest
+    /// output and 1 is the oldest retained row.
+    ///
+    /// The fraction is resolved against the engine's *current* history size
+    /// inside Rust, so a viewport never lands at a row computed from a
+    /// `scrollbackRows` value captured before the mutation was queued.
+    func scrollToNormalized(_ fraction: Double) {
+        chau7_terminal_scroll_to(handle, min(max(fraction, 0), 1))
     }
 
     func snapshot() -> RemoteTerminalRenderState? {

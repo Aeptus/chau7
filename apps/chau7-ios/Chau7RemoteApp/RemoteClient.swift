@@ -203,8 +203,8 @@ final class RemoteClient {
         // `.task` (structured, cancelled with the scene) instead of an
         // unstructured Task cancelled from a deinit that a static singleton
         // never runs.
-        transport.onMessage = { [weak self] message, supersededGrids in
-            await self?.processIncomingMessage(message, supersededGrids: supersededGrids)
+        transport.onMessage = { [weak self] message, shed in
+            await self?.processIncomingMessage(message, shed: shed)
         }
         transport.onFailure = { [weak self] error in
             self?.handleDisconnect(
@@ -783,7 +783,7 @@ final class RemoteClient {
     /// ordered application drain. Socket receives continue independently.
     private func processIncomingMessage(
         _ message: RemoteInboundMessage,
-        supersededGrids: Int
+        shed: QueueShedCounts
     ) async {
         let data = message.data
         let generation = message.generation
@@ -832,7 +832,8 @@ final class RemoteClient {
             bytes: data.count,
             queueAgeMs: queueAgeMs,
             receiveToApplyMs: max(0, appliedAt.timeIntervalSince(message.receivedAt) * 1000),
-            supersededGrids: supersededGrids
+            supersededGrids: shed.supersededGrids,
+            evictedOutput: shed.evictedOutput
         )
         emitStreamingPerformanceIfDue(now: appliedAt)
     }
@@ -2276,6 +2277,7 @@ final class RemoteClient {
             "avg_grid_decode_ms": String(format: "%.2f", sample.averageGridDecodeMs),
             "avg_publish_ms": String(format: "%.2f", sample.averagePublishMs),
             "superseded_grid_frames": String(sample.supersededGridFrames),
+            "evicted_output_frames": String(sample.evictedOutputFrames),
             "output_recoveries": String(sample.outputRecoveryCount),
             "max_sender_batch_ms": String(format: "%.2f", sample.maxSenderBatchMs),
             "max_mac_capture_to_send_ms": String(format: "%.2f", sample.maxSenderBatchMs),

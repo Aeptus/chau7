@@ -597,7 +597,8 @@ final class RemoteStreamingPerformanceWindowTests: XCTestCase {
             bytes: 100,
             queueAgeMs: 4,
             receiveToApplyMs: 7,
-            supersededGrids: 2
+            supersededGrids: 2,
+            evictedOutput: 3
         )
         window.recordFrame(
             type: .terminalGridSnapshot,
@@ -605,7 +606,8 @@ final class RemoteStreamingPerformanceWindowTests: XCTestCase {
             bytes: 300,
             queueAgeMs: 9,
             receiveToApplyMs: 15,
-            supersededGrids: 0
+            supersededGrids: 0,
+            evictedOutput: 0
         )
         window.recordGridDecode(durationMs: 6)
         window.recordPublish(durationMs: 2)
@@ -629,6 +631,7 @@ final class RemoteStreamingPerformanceWindowTests: XCTestCase {
         XCTAssertEqual(sample.averageGridDecodeMs, 6)
         XCTAssertEqual(sample.averagePublishMs, 2)
         XCTAssertEqual(sample.supersededGridFrames, 2)
+        XCTAssertEqual(sample.evictedOutputFrames, 3)
         XCTAssertEqual(sample.outputRecoveryCount, 1)
         XCTAssertEqual(sample.maxSenderBatchMs, 4)
         XCTAssertEqual(sample.maxEstimatedCaptureToReceiveMs, 35)
@@ -655,7 +658,8 @@ final class RemoteStreamingPerformanceWindowTests: XCTestCase {
             bytes: 120,
             queueAgeMs: 1,
             receiveToApplyMs: 2,
-            supersededGrids: 0
+            supersededGrids: 0,
+            evictedOutput: 0
         )
         window.recordFrame(
             type: nil,
@@ -663,7 +667,8 @@ final class RemoteStreamingPerformanceWindowTests: XCTestCase {
             bytes: 5,
             queueAgeMs: 1,
             receiveToApplyMs: 2,
-            supersededGrids: 0
+            supersededGrids: 0,
+            evictedOutput: 0
         )
         window.recordFrame(
             type: .tabList,
@@ -671,7 +676,8 @@ final class RemoteStreamingPerformanceWindowTests: XCTestCase {
             bytes: 80,
             queueAgeMs: 1,
             receiveToApplyMs: 2,
-            supersededGrids: 0
+            supersededGrids: 0,
+            evictedOutput: 0
         )
         window.recordFrame(
             type: .sessionReady,
@@ -679,7 +685,8 @@ final class RemoteStreamingPerformanceWindowTests: XCTestCase {
             bytes: 40,
             queueAgeMs: 1,
             receiveToApplyMs: 2,
-            supersededGrids: 0
+            supersededGrids: 0,
+            evictedOutput: 0
         )
 
         guard let sample = window.takeSnapshotIfDue(now: start.addingTimeInterval(5)) else {
@@ -740,7 +747,7 @@ final class RemoteTransportTests: XCTestCase {
 
         let retained = queue.messages.compactMap { try? RemoteFrame.decode(from: $0.data).seq }
         XCTAssertEqual(retained, [1, 3, 4])
-        XCTAssertEqual(queue.takeSupersededGridCount(), 1)
+        XCTAssertEqual(queue.takeShedCounts().supersededGrids, 1)
     }
 
     func testInboundQueueShedsOnlyReplaceableGridStateAtByteLimit() {
@@ -753,7 +760,7 @@ final class RemoteTransportTests: XCTestCase {
 
         XCTAssertEqual(queue.messages.count, 1)
         XCTAssertFalse(queue.messages[0].isGridSnapshot)
-        XCTAssertEqual(queue.takeSupersededGridCount(), 1)
+        XCTAssertEqual(queue.takeShedCounts().supersededGrids, 1)
     }
 
     func testInboundQueueFastForwardsOrderedOutputAndSignalsCheckpointAfterDrain() {
@@ -781,8 +788,23 @@ final class RemoteTransportTests: XCTestCase {
             queue.enqueue(data: data, generation: 1)
         }
 
+        // Output is marked for fast-forward *and* dropped: its visual content
+        // was already abandoned in favour of a checkpoint, so the bytes are not
+        // worth holding. The control frame has no checkpoint equivalent and is
+        // kept regardless. Dropping a sequence number is safe because the
+        // replay guard only requires strict monotonicity, not contiguity.
         XCTAssertTrue(queue.outputRecoveryPending)
-        XCTAssertEqual(queue.messages.map(\.suppressOutputApplication), [true, false, true])
+        XCTAssertEqual(queue.messages.count, 2)
+        XCTAssertEqual(queue.messages.map(\.suppressOutputApplication), [false, true])
+        XCTAssertEqual(queue.evictedOutputFrames, 1)
+        XCTAssertFalse(
+            queue.messages.contains { message in
+                guard message.isOutput else { return false }
+                return message.data.count == 50 && message.data[message.data.startIndex + 8] == 1
+            },
+            "the seq-1 output frame is the one shed"
+        )
+
         XCTAssertFalse(queue.takeOutputRecoverySignalIfDrained())
         while queue.popFirst() != nil {}
         XCTAssertTrue(queue.takeOutputRecoverySignalIfDrained())
@@ -954,5 +976,90 @@ final class DeferredDecisionLedgerTests: XCTestCase {
         ledger.reset()
         XCTAssertTrue(ledger.isEmpty)
         XCTAssertTrue(ledger.takeReady(knownRequestIDs: ["r1"]).isEmpty)
+    }
+}
+
+/// The receive queue's byte budget used to be advisory only: grids were shed
+/// first, but once they were gone nothing was ever removed, so a `cat` of a
+/// large file (or a relay replaying captured output) grew `bufferedBytes`
+/// without limit until the process was jetsammed.
+@MainActor
+final class RemoteInboundQueueEvictionTests: XCTestCase {
+    private func outputFrame(bytes: Int) -> Data {
+        var data = Data([1 /* RemoteFrame version */, RemoteFrameType.output.rawValue, 0, 0])
+        data.append(contentsOf: [UInt8](repeating: 0x41, count: bytes))
+        return data
+    }
+
+    private func controlFrame(bytes: Int) -> Data {
+        var data = Data([1 /* RemoteFrame version */, RemoteFrameType.ping.rawValue, 0, 0])
+        data.append(contentsOf: [UInt8](repeating: 0x42, count: bytes))
+        return data
+    }
+
+    func testOutputFramesAreEvictedOnceOverBudget() {
+        var queue = RemoteInboundMessageQueue(maxBufferedBytes: 4_096)
+        for _ in 0 ..< 40 {
+            queue.enqueue(data: outputFrame(bytes: 1_024), generation: 1)
+        }
+        XCTAssertLessThanOrEqual(
+            queue.bufferedBytes, 4_096 + 1_024,
+            "output frames must be evicted, not merely marked suppressed"
+        )
+        XCTAssertGreaterThan(queue.evictedOutputFrames, 0)
+    }
+
+    func testControlFramesAreNeverEvicted() {
+        var queue = RemoteInboundMessageQueue(maxBufferedBytes: 4_096)
+        for _ in 0 ..< 20 {
+            queue.enqueue(data: controlFrame(bytes: 1_024), generation: 1)
+        }
+        // Control frames have no checkpoint equivalent, so they must survive
+        // even when that means the budget is exceeded.
+        XCTAssertEqual(queue.messages.count, 20)
+        XCTAssertEqual(queue.evictedOutputFrames, 0)
+    }
+
+    func testEvictionOnlyTargetsAlreadySuppressedOutput() {
+        // 1_024 payload bytes + a 4-byte header is 1_028 per frame, so three
+        // frames (3_084) stay under the 4_096 budget and nothing is shed.
+        var queue = RemoteInboundMessageQueue(maxBufferedBytes: 4_096)
+        for _ in 0 ..< 3 {
+            queue.enqueue(data: outputFrame(bytes: 1_024), generation: 1)
+        }
+        XCTAssertEqual(queue.evictedOutputFrames, 0)
+        XCTAssertEqual(queue.messages.count, 3)
+
+        // The frame that crosses the budget suppresses every queued output
+        // frame and then sheds the oldest until the queue is back under it.
+        queue.enqueue(data: outputFrame(bytes: 1_024), generation: 1)
+        XCTAssertGreaterThan(queue.evictedOutputFrames, 0)
+        XCTAssertLessThanOrEqual(queue.bufferedBytes, 4_096)
+        // Only output was shed, and every survivor is a frame the queue is
+        // still holding for a reason: an in-flight recovery, or a control event.
+        // The newest output frame stays queued but suppressed -- its visual
+        // application is what the checkpoint recovers.
+        XCTAssertTrue(queue.messages.allSatisfy(\.isOutput))
+    }
+
+    func testShedCountsAreSnapshottedAndReset() {
+        var queue = RemoteInboundMessageQueue(maxBufferedBytes: 2_048)
+        for _ in 0 ..< 20 {
+            queue.enqueue(data: outputFrame(bytes: 1_024), generation: 1)
+        }
+        let first = queue.takeShedCounts()
+        XCTAssertGreaterThan(first.evictedOutput, 0)
+        XCTAssertEqual(queue.takeShedCounts(), QueueShedCounts.none)
+    }
+
+    func testRemoveAllResetsEvictionCounters() {
+        var queue = RemoteInboundMessageQueue(maxBufferedBytes: 2_048)
+        for _ in 0 ..< 20 {
+            queue.enqueue(data: outputFrame(bytes: 1_024), generation: 1)
+        }
+        queue.removeAll()
+        XCTAssertEqual(queue.evictedOutputFrames, 0)
+        XCTAssertEqual(queue.bufferedBytes, 0)
+        XCTAssertEqual(queue.takeShedCounts(), QueueShedCounts.none)
     }
 }
