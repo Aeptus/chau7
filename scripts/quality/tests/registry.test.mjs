@@ -59,6 +59,63 @@ test("security gates are blocking registered gates, not hook-only shell snippets
   assert.ok(gate("staged-dependency-policy").tags.includes("security"));
 });
 
+async function scanStagedLine(line) {
+  const result = await gate("staged-secret-scan").run({
+    mode: "staged",
+    stagedFiles: ["probe.txt"],
+    git: () => ({ stdout: `--- a/probe.txt\n+++ b/probe.txt\n@@ -0,0 +1 @@\n${line}\n` }),
+  });
+  return /home-path-leak/.test(result.summary ?? "");
+}
+
+test("staged secret scan blocks absolute home directory paths", async () => {
+  // Regression guard for docs/recovered-tab-session-backup-2026-04-15.json,
+  // which was published with the maintainer's real home directory, repository
+  // paths, and tab/session identifiers in a repo that markets local-only privacy.
+  //
+  // Account names are interpolated instead of written out in full because the
+  // staged secret scan blocks real-looking home paths in *any* staged text,
+  // including this file. Keep them as separate segments — writing the literal
+  // path here would make the rule fail on its own regression test.
+  for (const account of ["christophehenner", "johndoe", "someuser"]) {
+    assert.equal(
+      await scanStagedLine(`+  "log": "/Users/${account}/Library/Logs/Chau7.log",`),
+      true,
+      `expected a home-path-leak failure for account: ${account}`,
+    );
+    assert.equal(
+      await scanStagedLine(`+  path = "/home/${account}/srv/app"`),
+      true,
+      `expected a home-path-leak failure for /home/${account}`,
+    );
+  }
+});
+
+test("staged secret scan allows documented placeholders, CI paths, and test fixtures", async () => {
+  // Guards the false-positive surface discovered when the rule was introduced:
+  // an over-broad home-path rule trains contributors to reach for --no-verify.
+  const allowed = [
+    '+  path = "/Users/Shared/Public"',
+    '+  path = "/Users/yourname/project"',
+    '+  path = "/Users/username/project"',
+    '+  path = "/Users/<name>/project"',
+    '+  path = "/Users/$USER/project"',
+    '+  path = "/Users/me/Downloads"',
+    '+  path = "/Users/dev/project"',
+    '+  path = "/Users/alice/project"',
+    '+  path = "/home/bob/project"',
+    '+  path = "/Users/foo/project"',
+    '+  path = "/Users/x/project"',
+    '+  let wrapperDir = "/home/.chau7/cto_bin"',
+    '+  path = "/home/linuxbrew/.linuxbrew/bin/wrangler"',
+    '+  path = "/opt/homebrew/bin/brew"',
+    '+  path = "/home/runner/work/repo/repo"',
+  ];
+  for (const line of allowed) {
+    assert.equal(await scanStagedLine(line), false, `expected no home-path-leak failure for: ${line}`);
+  }
+});
+
 test("root runner JavaScript is not silently formatted without a package formatter", () => {
   assert.equal(
     gate("staged-js-format").applies({
