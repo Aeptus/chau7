@@ -806,3 +806,74 @@ final class RemoteTransportTests: XCTestCase {
         XCTAssertFalse(transport.isOpen)
     }
 }
+
+/// Regression coverage for the rich terminal renderer's viewport declaration.
+///
+/// The renderer used to gate its viewport declaration behind
+/// `renderState != nil`. The store only publishes a `renderState` after it has
+/// been told the viewport, and the viewport can only be learned from a
+/// laid-out view — so the renderer could never start. Because `.replay` mode
+/// deliberately does not feed the plain-text output store, the text fallback
+/// then showed a permanently empty terminal.
+///
+/// These lock in the arithmetic half of the fix; the wiring itself is covered
+/// by the always-mounted declaration in `RemoteTerminalRendererView`, which
+/// cannot be host-tested (the rendering stack links the Rust terminal FFI).
+final class RemoteTerminalViewportGeometryTests: XCTestCase {
+    private let cell = CGSize(width: 8, height: 18)
+
+    func testGridFitsWholeCells() {
+        let size = RemoteTerminalViewportGeometry.gridSize(
+            available: CGSize(width: 81, height: 37),
+            cell: cell
+        )
+        XCTAssertEqual(size?.cols, 10, "81pt / 8pt is 10 whole columns, not 10.125")
+        XCTAssertEqual(size?.rows, 2, "37pt / 18pt is 2 whole rows, not 2.05")
+    }
+
+    func testDegenerateAvailableSizeDeclaresNothing() {
+        // A zero size means "not laid out yet" and must be distinguishable from
+        // a real 1x1 grid, otherwise the first layout pass would pin the store
+        // to a 1-column viewport.
+        XCTAssertNil(RemoteTerminalViewportGeometry.gridSize(available: .zero, cell: cell))
+        XCTAssertNil(
+            RemoteTerminalViewportGeometry.gridSize(
+                available: CGSize(width: -10, height: 40),
+                cell: cell
+            )
+        )
+    }
+
+    func testSubCellViewportStillDeclaresOneColumnAndRow() {
+        let size = RemoteTerminalViewportGeometry.gridSize(
+            available: CGSize(width: 3, height: 4),
+            cell: cell
+        )
+        XCTAssertEqual(size?.cols, 1)
+        XCTAssertEqual(size?.rows, 1)
+    }
+
+    func testDegenerateCellSizeDeclaresNothing() {
+        XCTAssertNil(
+            RemoteTerminalViewportGeometry.gridSize(
+                available: CGSize(width: 100, height: 100),
+                cell: .zero
+            )
+        )
+    }
+
+    func testLargerViewportYieldsLargerGrid() {
+        let small = RemoteTerminalViewportGeometry.gridSize(
+            available: CGSize(width: 100, height: 100),
+            cell: cell
+        )
+        let large = RemoteTerminalViewportGeometry.gridSize(
+            available: CGSize(width: 200, height: 200),
+            cell: cell
+        )
+        XCTAssertEqual(small?.cols, 12)
+        XCTAssertEqual(small?.rows, 5)
+        XCTAssertEqual(large?.cols, 25)
+        XCTAssertEqual(large?.rows, 11)
+    }
+}

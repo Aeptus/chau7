@@ -60,6 +60,31 @@ enum RemoteTabInventory {
     }
 }
 
+/// Pure geometry for the rich terminal renderer's grid dimensions.
+///
+/// The render store cannot build a playback — and therefore cannot publish a
+/// `renderState` — until it has been told how many columns/rows the viewport
+/// holds. That declaration must therefore happen from a laid-out view
+/// *regardless* of whether a `renderState` exists yet, or the renderer
+/// deadlocks itself into never starting.
+///
+/// Lives here (not in the renderer view) so the host-less test bundle — which
+/// compiles collaborators directly and cannot link the Rust terminal FFI or the
+/// UIKit font stack — can exercise the size math directly.
+enum RemoteTerminalViewportGeometry {
+    /// Largest whole-cell grid that fits `available`, never smaller than 1×1.
+    /// Returns nil for a degenerate size so callers can distinguish "not laid
+    /// out yet" from "genuinely 1×1".
+    static func gridSize(available: CGSize, cell: CGSize) -> (cols: Int, rows: Int)? {
+        guard available.width > 0, available.height > 0 else { return nil }
+        guard cell.width >= 1, cell.height >= 1 else { return nil }
+        return (
+            max(1, Int(floor(available.width / cell.width))),
+            max(1, Int(floor(available.height / cell.height)))
+        )
+    }
+}
+
 /// Keeps terminal layout updates from masquerading as user scroll input.
 /// `UIScrollView` may call its delegate when `contentSize` or a programmatic
 /// offset changes; forwarding those callbacks to the Rust terminal pins the

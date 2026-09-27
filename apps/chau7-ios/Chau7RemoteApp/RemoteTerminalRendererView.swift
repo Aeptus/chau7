@@ -37,10 +37,18 @@ struct RemoteTerminalRendererView: View {
     }
 
     var body: some View {
-        Group {
-            if client.terminalRenderer.isAvailable, client.terminalRenderer.renderState != nil {
-                GeometryReader { proxy in
-                    let renderState = client.terminalRenderer.renderState
+        // The viewport is declared unconditionally from this GeometryReader,
+        // and that declaration is the ONLY thing that tells the store the grid
+        // dimensions. The store cannot build a playback — and therefore cannot
+        // publish a `renderState` — until it has been told the viewport, so
+        // gating the declaration behind `renderState != nil` deadlocked the
+        // renderer: it could never start, and because `.replay` mode
+        // deliberately does not feed the plain-text output store, the text
+        // fallback then rendered a permanently empty terminal.
+        GeometryReader { proxy in
+            Group {
+                if client.terminalRenderer.isAvailable,
+                   let renderState = client.terminalRenderer.renderState {
                     RemoteTerminalRendererRepresentable(
                         store: client.terminalRenderer,
                         renderState: renderState,
@@ -49,13 +57,19 @@ struct RemoteTerminalRendererView: View {
                         colorScheme: colorScheme
                     )
                     .background(Color(colorScheme.backgroundUIColor))
+                } else {
+                    RemoteTerminalTextView(
+                        text: renderANSI ? client.outputText : client.strippedOutputText,
+                        fontSize: CGFloat(terminalFontSize),
+                        colorScheme: colorScheme
+                    )
                 }
-            } else {
-                RemoteTerminalTextView(
-                    text: renderANSI ? client.outputText : client.strippedOutputText,
-                    fontSize: CGFloat(terminalFontSize),
-                    colorScheme: colorScheme
-                )
+            }
+            .onAppear {
+                RemoteTerminalViewportDeclaration.declare(proxy.size, on: client.terminalRenderer)
+            }
+            .onChange(of: proxy.size) { _, newSize in
+                RemoteTerminalViewportDeclaration.declare(newSize, on: client.terminalRenderer)
             }
         }
         .onAppear {
@@ -117,6 +131,27 @@ private struct RemoteTerminalRendererRepresentable: UIViewRepresentable {
             availableSize: availableSize,
             colorScheme: colorScheme
         )
+    }
+}
+
+/// Declares the terminal grid dimensions to the render store from a laid-out
+/// view. It is mounted unconditionally — including while the rich renderer is
+/// still waiting for its first `renderState` — because the store cannot build a
+/// playback (and therefore cannot publish a `renderState`) until it has been
+/// told the viewport size. Gating this on `renderState != nil` creates an
+/// unbreakable circular dependency and the terminal never renders.
+///
+/// The cell size comes from `RemoteTerminalFontMetrics.cellSize()` — the same
+/// source `RemoteTerminalViewportView` uses — so the two can never disagree.
+/// The arithmetic itself lives in `RemoteTerminalViewportGeometry` so it is
+/// unit testable without the UIKit font stack.
+enum RemoteTerminalViewportDeclaration {
+    static func declare(_ size: CGSize, on store: RemoteTerminalRendererStore) {
+        guard let viewport = RemoteTerminalViewportGeometry.gridSize(
+            available: size,
+            cell: RemoteTerminalFontMetrics.cellSize()
+        ) else { return }
+        store.setViewport(cols: viewport.cols, rows: viewport.rows)
     }
 }
 

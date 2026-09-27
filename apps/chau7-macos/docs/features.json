@@ -2823,7 +2823,7 @@
   {
     "category": "SSH, Profiles & Remote",
     "feature": "Display-Paced iPhone Terminal Rendering",
-    "description": "A serial actor ingests PTY bytes and extracts Rust grids off-main while a one-shot 60/120 Hz display link publishes only the newest immutable frame; layout callbacks cannot pin playback to stale scrollback, renderer observation stays isolated from tab/input chrome, overloaded ordered output fast-forwards safely to a checkpoint, and sequence-correlated diagnostics time every boundary through Core Graphics draw and the next compositor refresh opportunity without per-frame disk logging",
+    "description": "A serial actor ingests PTY bytes and extracts Rust grids off-main while a one-shot 60/120 Hz display link publishes only the newest immutable frame; the viewport is declared unconditionally from the laid-out view so the renderer is never deadlocked behind its own first frame, layout callbacks cannot masquerade as user scrolling and pin playback to stale history, frame observation stays inside the renderer subtree so live content does not invalidate the tab picker or input chrome, overloaded output still fast-forwards safely to a checkpoint, and sequence-correlated diagnostics time every boundary through Core Graphics draw and the next compositor refresh opportunity without per-frame disk logging",
     "status": "Experimental",
     "differentiator": "Yes"
   },
