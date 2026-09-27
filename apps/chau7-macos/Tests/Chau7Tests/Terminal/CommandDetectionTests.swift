@@ -83,6 +83,18 @@ final class CommandDetectionTests: XCTestCase {
         XCTAssertEqual(CommandDetection.detectApp(from: "amp"), "Amp")
     }
 
+    func testDetectOpenCodeFromCommand() {
+        XCTAssertEqual(CommandDetection.detectApp(from: "opencode"), "OpenCode")
+        XCTAssertEqual(
+            CommandDetection.detectApp(from: "opencode /Volumes/T7/mockup-temporal"),
+            "OpenCode"
+        )
+        XCTAssertEqual(
+            CommandDetection.detectApp(from: "sudo opencode /Volumes/T7/mockup-temporal"),
+            "OpenCode"
+        )
+    }
+
     func testUnknownCommand() {
         XCTAssertNil(CommandDetection.detectApp(from: "vim"))
         XCTAssertNil(CommandDetection.detectApp(from: "ls -la"))
@@ -286,6 +298,10 @@ final class CommandDetectionTests: XCTestCase {
         XCTAssertEqual(CommandDetection.detectAppFromOutput("Amazon Q Developer"), "Amazon Q")
         XCTAssertEqual(CommandDetection.detectAppFromOutput("goose v1.2.0"), "Goose")
         XCTAssertEqual(CommandDetection.detectAppFromOutput("Visit continue.dev"), "Continue")
+    }
+
+    func testDetectOpenCodeFromOutput() {
+        XCTAssertEqual(CommandDetection.detectAppFromOutput("https://opencode.ai"), "OpenCode")
     }
 
     func testNoDetectionFromOutput() {

@@ -53,6 +53,7 @@ Chau7 recognizes AI CLIs the moment they launch — no configuration required. T
 - **Goose** (goose)
 - **Mentat** (mentat)
 - **Amp** (amp)
+- **OpenCode** (opencode)
 - Custom-defined tools with display name and tab color.
 
 Detection methods:

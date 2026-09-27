@@ -821,7 +821,7 @@
   {
     "category": "AI Detection & Integration",
     "feature": "Refined AI CLI Auto-Detection",
-    "description": "Recognizes AI tools via process-tree signals and terminal output scanning; uses strictly tuned patterns (e.g. CLI-style indicators) to prevent false positives from generic prose or analytics logs",
+    "description": "Recognizes AI tools via process-tree signals and terminal output scanning, including the OpenCode CLI; uses strictly tuned patterns (e.g. CLI-style indicators) to prevent false positives from generic prose or analytics logs",
     "status": "Shipped",
     "differentiator": "Yes"
   },

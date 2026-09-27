@@ -309,6 +309,18 @@ public enum AIToolRegistry {
             logoAssetName: nil,
             tabColorName: nil,
             eventSourceRawValue: "amp"
+        ),
+        // — OpenCode —
+        AIToolDefinition(
+            displayName: "OpenCode",
+            commandNames: ["opencode"],
+            outputPatterns: ["opencode.ai"],
+            resumeProviderKey: nil,
+            resumeFormat: nil,
+            logoAssetName: nil,
+            tabColorName: nil,
+            eventSourceRawValue: nil,
+            usesTerminalUIHeuristics: true
         )
     ]
 

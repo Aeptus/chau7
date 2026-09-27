@@ -58,6 +58,14 @@ final class AIToolRegistryTests: XCTestCase {
         }
     }
 
+    func testOpenCodeIsRegisteredAsATerminalAgent() {
+        let tool = AIToolRegistry.tool(named: "OpenCode")
+        XCTAssertEqual(tool?.commandNames, ["opencode"])
+        XCTAssertNil(tool?.eventSourceRawValue)
+        XCTAssertTrue(tool?.usesTerminalUIHeuristics == true)
+        XCTAssertNil(tool?.resumeFormat)
+    }
+
     // MARK: - Output Pattern List
 
     func testOutputPatternListPreservesAllPatterns() {
@@ -239,7 +247,7 @@ final class AIToolRegistryTests: XCTestCase {
             .filter(\.usesTerminalUIHeuristics)
             .map(\.displayName)
             .sorted()
-        XCTAssertEqual(flagged, ["Claude", "Codex", "Gemini"])
+        XCTAssertEqual(flagged, ["Claude", "Codex", "Gemini", "OpenCode"])
     }
 
     // MARK: - Registry as the single tool-identity table (drift guards)

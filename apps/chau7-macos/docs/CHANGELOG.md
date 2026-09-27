@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### AI integration
+
+- OpenCode's CLI is now recognized as a terminal agent, including when launched with a project directory.
+
 ### Stability hardening
 
 - SwiftLint now uses measured warning/error budgets for file, type, function, and complexity size; `--strict` makes those warnings blocking. Force-try, force-cast, and observer-detachment checks are enabled, with unsafe call sites fixed and notification observers removed through retained tokens.
