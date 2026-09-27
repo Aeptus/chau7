@@ -227,6 +227,13 @@ final class RemoteClient {
             self?.streamingPerformance.recordPresentation(trace)
         }
         _ = DiagnosticsLog.shared
+        // Anything left on the lock screen from a previous run is very likely
+        // stale: the requests it refers to were resolved while we were not
+        // running, and a surviving Allow/Deny card would be inert. Prune once
+        // the pending list is known, and again on every foreground.
+        Task { @MainActor [weak self] in
+            self?.schedulePendingStateFetch(reason: "launch", force: true)
+        }
     }
 
     // MARK: - Connection
@@ -361,6 +368,12 @@ final class RemoteClient {
             // the keepalive here rather than from `disconnect`, which also runs
             // on the path that is about to open a replacement socket.
             backgroundKeepalive.end()
+            // Re-read authorization on every foreground, not only when the
+            // Settings view happens to be on screen. The user can revoke
+            // notifications in iOS Settings and return to any tab; leaving a
+            // stale `true` kept the local-notification fallback switched off
+            // while the OS silently dropped every alert.
+            refreshNotificationAuthorization()
             currentAppState = .foreground
             desiredStreamMode = .full
             if !transport.isOpen, pairingInfo != nil {
@@ -515,9 +528,13 @@ final class RemoteClient {
         // runs *before* `startConnection` opens the replacement socket, so
         // ending it here released the task before the work it exists to
         // protect had even started.
-        if #available(iOS 16.1, *) {
-            RemoteLiveActivityManager.shared.update(with: nil)
-        }
+        //
+        // The Live Activity is deliberately *not* torn down here. `disconnect`
+        // also runs from inside `startConnection`, so dismissing on every
+        // teardown made the Dynamic Island blink off and on for each reconnect
+        // backoff attempt, each cycle requesting a brand-new activity. The
+        // activity is ended from the authoritative `.activityCleared` frame and
+        // after the reconnect budget is exhausted.
         if !autoReconnect {
             lastError = nil
             if clearIntent {
@@ -546,6 +563,18 @@ final class RemoteClient {
     @discardableResult
     func sendInput(_ text: String, appendNewline: Bool) -> Bool {
         sendInput(text, appendNewline: appendNewline, to: activeTabID)
+    }
+
+    /// Sends to an explicit tab rather than whichever tab happens to be active
+    /// at send time.
+    ///
+    /// Required by the protected-action confirmation, which pins the tab the
+    /// user actually looked at. Resolving the target at send time meant a tab
+    /// switch between composing the command and confirming it could retarget a
+    /// confirmed destructive command at a different shell.
+    @discardableResult
+    func sendInput(_ text: String, appendNewline: Bool, to tabID: UInt32) -> Bool {
+        sendInput(text, appendNewline: appendNewline, to: tabID, allowUnlistedTab: false)
     }
 
     /// Whether keys should go over the semantic KEY_INPUT frame. False
@@ -848,6 +877,12 @@ final class RemoteClient {
             if !reconnectBackoff.hasRemainingAttempts {
                 lastError = "Reconnect limit reached (\(Self.maxReconnectAttempts) attempts)"
                 status = .connectionFailed
+                // The session is over rather than merely restarting, so retire
+                // the Live Activity here instead of leaving a stale card whose
+                // actions can no longer resolve.
+                if #available(iOS 16.1, *) {
+                    RemoteLiveActivityManager.shared.update(with: nil)
+                }
             }
             return
         }
@@ -2027,6 +2062,16 @@ final class RemoteClient {
         // Decisions taken from a lock-screen action before we knew the request
         // are applied as soon as it appears in the authoritative list.
         drainPendingUserDecisions()
+        pruneStaleDeliveredNotifications()
+    }
+
+    /// Drops actionable notifications whose request is no longer pending, so a
+    /// resolved approval cannot leave a dead Allow/Deny card on the lock screen.
+    private func pruneStaleDeliveredNotifications() {
+        RemoteNotificationScheduler.pruneStaleActionableNotifications(
+            liveRequestIDs: Set(pendingApprovals.map(\.requestID)),
+            livePromptIDs: Set(pendingInteractivePrompts.map(\.id))
+        )
     }
 
     private func scheduleApprovalNotificationIfAllowed(for payload: ApprovalRequestPayload) {
