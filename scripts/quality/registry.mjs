@@ -158,6 +158,61 @@ function trackedPythonDependencyFiles(context) {
   return trackedFiles(context).filter((file) => /(^|\/)(pyproject\.toml|requirements[^/]*\.txt)$/.test(file)).sort();
 }
 
+/**
+ * Account names that legitimately appear in documentation placeholders, CI
+ * runner paths, toolchain prefixes, and test fixtures. Anything else directly
+ * after a `/Users/` or `/home/` segment is treated as a real account name and
+ * blocked, so the rule fails closed on unknown usernames.
+ */
+const SAFE_HOME_ACCOUNT_NAMES = [
+  // macOS shared locations
+  "shared",
+  "public",
+  // documentation placeholders
+  "username",
+  "user",
+  "yourname",
+  "your-name",
+  "your_username",
+  "your-username",
+  "name",
+  "example",
+  "exampleuser",
+  "someone",
+  "you",
+  "test",
+  "tests",
+  "guest",
+  "changeme",
+  "change-me",
+  "placeholder",
+  // canonical documentation/test placeholders
+  "alice",
+  "bob",
+  "foo",
+  "x",
+  // test-fixture conventions for a synthetic home directory
+  "me",
+  "dev",
+  // CI runners and toolchain prefixes
+  "runner",
+  "actions",
+  "vscode",
+  "codespaces",
+  "linuxbrew",
+  "node",
+  "vagrant",
+  "ubuntu",
+];
+
+// Only flag a segment that is a plain account-name identifier. A leading dot
+// (`/home/.chau7/...`) is a real directory, not a user, and shell/JS
+// placeholders such as `<name>` or `$USER` are not account names at all.
+const HOME_PATH_PATTERN = new RegExp(
+  `/(?:Users|home)/(?![.])(?!${SAFE_HOME_ACCOUNT_NAMES.join("|")}(?:/|$))[A-Za-z0-9._-]+(?=[/\\s"'\`)]|$)`,
+  "i",
+);
+
 function secretFailures(context) {
   const diff = context.git(["diff", "--cached", "--unified=0", "--diff-filter=ACMR"], {
     allowFailure: true,
@@ -182,6 +237,7 @@ function secretFailures(context) {
     { id: "bearer-token", pattern: /Bearer\s+[A-Za-z0-9._~+/=-]{32,}/ },
     { id: "generic-secret-assignment", pattern: /\b(?:secret|password|passwd|api[_-]?key|token)\b\s*[:=]\s*['"][^'"]{16,}['"]/i },
     { id: "pem-block", pattern: /-----BEGIN [A-Z ]+-----/ },
+    { id: "home-path-leak", pattern: HOME_PATH_PATTERN },
   ];
 
   for (const line of diff.split(/\r?\n/)) {

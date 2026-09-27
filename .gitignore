@@ -15,6 +15,11 @@ build/
 .seogeo-reports/
 .geo-results/
 docs/reports/
+# Local recovery/backup dumps reconstructed from runtime logs. These embed real
+# home directory paths and tab/session identifiers and must never be published.
+docs/*.backup.json
+docs/*-backup-*.json
+docs/*-recovery-*.json
 logs/quality-*.log
 .swiftpm/
 /.playwright-mcp/
