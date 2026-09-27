@@ -1,6 +1,18 @@
 import Foundation
+import Darwin
 
 public enum ClaudeCodeStatusLineConfiguration {
+    public enum UpdateError: LocalizedError, Equatable {
+        case invalidSettingsJSON
+
+        public var errorDescription: String? {
+            switch self {
+            case .invalidSettingsJSON:
+                return "Claude settings.json is not a valid JSON object."
+            }
+        }
+    }
+
     public static let helperName = "chau7-claude-statusline"
     private static let iso8601 = DateFormatters.iso8601
 
@@ -99,9 +111,22 @@ public enum ClaudeCodeStatusLineConfiguration {
         return try? JSONSerialization.data(withJSONObject: statusLine, options: [.prettyPrinted, .sortedKeys])
     }
 
+    public static func prepareStatusLineUpsert(
+        at settingsURL: URL,
+        helperPath: String
+    ) throws -> (originalData: Data, updatedData: Data) {
+        let existingData = try existingSettingsData(at: settingsURL)
+        guard let updatedData = upsertStatusLine(in: existingData, helperPath: helperPath) else {
+            throw UpdateError.invalidSettingsJSON
+        }
+        return (existingData, updatedData)
+    }
+
     public static func upsertStatusLine(in jsonData: Data, helperPath: String) -> Data? {
-        let rootObject = (try? JSONSerialization.jsonObject(with: jsonData)) ?? [:]
-        guard var root = rootObject as? [String: Any] else { return nil }
+        guard let rootObject = try? JSONSerialization.jsonObject(with: jsonData),
+              var root = rootObject as? [String: Any] else {
+            return nil
+        }
 
         root["statusLine"] = [
             "type": "command",
@@ -115,8 +140,10 @@ public enum ClaudeCodeStatusLineConfiguration {
     }
 
     public static func restoreStatusLine(in jsonData: Data, backupStatusLineData: Data?) -> Data? {
-        let rootObject = (try? JSONSerialization.jsonObject(with: jsonData)) ?? [:]
-        guard var root = rootObject as? [String: Any] else { return nil }
+        guard let rootObject = try? JSONSerialization.jsonObject(with: jsonData),
+              var root = rootObject as? [String: Any] else {
+            return nil
+        }
 
         if let backupStatusLineData,
            let statusLine = try? JSONSerialization.jsonObject(with: backupStatusLineData) {
@@ -129,6 +156,22 @@ public enum ClaudeCodeStatusLineConfiguration {
             withJSONObject: root,
             options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
         )
+    }
+
+    private static func existingSettingsData(at url: URL) throws -> Data {
+        var info = stat()
+        guard lstat(url.path, &info) == 0 else {
+            let readErrno = errno
+            guard readErrno == ENOENT else {
+                throw POSIXError(POSIXErrorCode(rawValue: readErrno) ?? .EIO)
+            }
+            // No settings file yet is the normal first-install case. Only this
+            // precise absence creates a new file; every other read failure must
+            // leave the user's existing settings untouched.
+            return Data("{}".utf8)
+        }
+
+        return try Data(contentsOf: url)
     }
 
     private static func quotedShellString(_ value: String) -> String {

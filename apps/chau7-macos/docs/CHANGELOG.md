@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Stability hardening
 
+- Claude status-line installation now leaves `~/.claude/settings.json` untouched when the file cannot be read or contains invalid JSON, and reports the failure instead of replacing the user's settings.
 - Remote bridge IPC now creates its socket with owner-only permissions (`0600`) inside an owner-only app-support directory (`0700`).
 - Issue reports from paired apps now require single-use v2 HMAC tokens scoped to issue intake; the Worker rejects browser writes and replays, validates labels and payload sizes, and enforces a strict per-IP limit.
 - Opening a repository agent dashboard no longer traps on duplicate runtime sessions: active sessions are unique per tab, stop cleanup preserves any replacement session, provider indexes stay consistent, and dashboard refresh tolerates legacy duplicates.

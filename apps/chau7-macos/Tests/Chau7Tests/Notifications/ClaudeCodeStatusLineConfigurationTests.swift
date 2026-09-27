@@ -36,6 +36,78 @@ final class ClaudeCodeStatusLineConfigurationTests: XCTestCase {
         )
     }
 
+    func testUpsertStatusLineRejectsUnparseableSettings() {
+        let malformedSettings = Data("{ \"hooks\": [".utf8)
+
+        XCTAssertNil(
+            ClaudeCodeStatusLineConfiguration.upsertStatusLine(
+                in: malformedSettings,
+                helperPath: "/tmp/chau7-claude-statusline"
+            )
+        )
+    }
+
+    func testPrepareStatusLineUpsertRejectsReadFailure() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("claude-settings-\(UUID().uuidString.prefix(8))", isDirectory: true)
+        let settingsURL = directory.appendingPathComponent("settings.json", isDirectory: true)
+        try FileManager.default.createDirectory(at: settingsURL, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        XCTAssertThrowsError(
+            try ClaudeCodeStatusLineConfiguration.prepareStatusLineUpsert(
+                at: settingsURL,
+                helperPath: "/tmp/chau7-claude-statusline"
+            )
+        )
+    }
+
+    func testPrepareStatusLineUpsertAllowsMissingSettingsFile() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("claude-settings-\(UUID().uuidString.prefix(8))", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let settingsURL = directory.appendingPathComponent("settings.json")
+        let prepared = try ClaudeCodeStatusLineConfiguration.prepareStatusLineUpsert(
+            at: settingsURL,
+            helperPath: "/tmp/chau7-claude-statusline"
+        )
+
+        XCTAssertEqual(prepared.originalData, Data("{}".utf8))
+        XCTAssertTrue(
+            ClaudeCodeStatusLineConfiguration.statusLineIncludesHelper(
+                in: prepared.updatedData,
+                helperPath: "/tmp/chau7-claude-statusline"
+            )
+        )
+        XCTAssertFalse(FileManager.default.fileExists(atPath: settingsURL.path))
+    }
+
+    func testPrepareStatusLineUpsertRejectsMalformedFileWithoutChangingIt() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("claude-settings-\(UUID().uuidString.prefix(8))", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let settingsURL = directory.appendingPathComponent("settings.json")
+        let originalData = Data("{ \"permissions\": ".utf8)
+        try originalData.write(to: settingsURL)
+
+        XCTAssertThrowsError(
+            try ClaudeCodeStatusLineConfiguration.prepareStatusLineUpsert(
+                at: settingsURL,
+                helperPath: "/tmp/chau7-claude-statusline"
+            )
+        ) { error in
+            XCTAssertEqual(
+                error as? ClaudeCodeStatusLineConfiguration.UpdateError,
+                .invalidSettingsJSON
+            )
+        }
+        XCTAssertEqual(try Data(contentsOf: settingsURL), originalData)
+    }
+
     func testCurrentStatusLineDataExtractsExistingCommand() throws {
         let data = Data("""
         {

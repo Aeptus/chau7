@@ -1,5 +1,12 @@
 [
   {
+    "category": "Reliability",
+    "feature": "Safe Claude Status-Line Installation",
+    "description": "Upserts the Claude status-line helper only after reading a valid settings object; missing settings retain first-install behavior, while read and parse failures surface an error without overwriting user configuration",
+    "status": "Shipped",
+    "differentiator": "No"
+  },
+  {
     "category": "Remote Access",
     "feature": "Owner-Only Remote IPC Socket",
     "description": "Creates the remote bridge socket with owner-only 0600 permissions inside an app-support directory restricted to 0700, preventing other local users from accessing its frames",

@@ -172,8 +172,9 @@ final class UsageMonitor {
         let currentLatencyProvider = selectedLatencyProvider
 
         DispatchQueue.global(qos: .utility).async {
+            var claudeStatusLineError: String?
             if claudeStatusLineEnabled {
-                self.ensureClaudeStatusLineInstalled()
+                claudeStatusLineError = self.ensureClaudeStatusLineInstalled()
                 self.captureLatestClaudeSnapshot()
             }
             if monitoringEnabled {
@@ -259,7 +260,7 @@ final class UsageMonitor {
                 self.providerSummaries = summaries
                 self.isClaudeStatusLineInstalled = claudeInstalled
                 self.lastRefreshAt = Date()
-                self.lastErrorMessage = nil
+                self.lastErrorMessage = claudeStatusLineError
                 self.isRefreshing = false
                 self.latencyProviders = latencyProviders
                 self.selectedLatencyProvider = selectedLatencyProvider
@@ -373,8 +374,8 @@ final class UsageMonitor {
         }
     }
 
-    private func ensureClaudeStatusLineInstalled() {
-        if claudeStatusLineInstalled { return }
+    private func ensureClaudeStatusLineInstalled() -> String? {
+        if claudeStatusLineInstalled { return nil }
         let helperPath = RuntimeIsolation.pathInHome(".chau7/bin/\(ClaudeCodeStatusLineConfiguration.helperName)")
         let settingsPath = RuntimeIsolation.pathInHome(".claude/settings.json")
         let settingsURL = URL(fileURLWithPath: settingsPath)
@@ -400,26 +401,23 @@ final class UsageMonitor {
             let claudeDir = (settingsPath as NSString).deletingLastPathComponent
             try fileManager.createDirectory(atPath: claudeDir, withIntermediateDirectories: true)
 
-            let existingData = (try? Data(contentsOf: settingsURL)) ?? Data("{}".utf8)
-            if !ClaudeCodeStatusLineConfiguration.statusLineIncludesHelper(in: existingData, helperPath: helperPath),
-               let backupData = ClaudeCodeStatusLineConfiguration.currentStatusLineData(in: existingData) {
+            let preparedUpdate = try ClaudeCodeStatusLineConfiguration.prepareStatusLineUpsert(
+                at: settingsURL,
+                helperPath: helperPath
+            )
+            if !ClaudeCodeStatusLineConfiguration.statusLineIncludesHelper(
+                in: preparedUpdate.originalData,
+                helperPath: helperPath
+            ),
+                let backupData = ClaudeCodeStatusLineConfiguration.currentStatusLineData(in: preparedUpdate.originalData) {
                 try backupData.write(to: backupURL, options: .atomic)
             }
 
-            guard let updated = ClaudeCodeStatusLineConfiguration.upsertStatusLine(
-                in: existingData,
-                helperPath: helperPath
-            ) else {
-                throw NSError(domain: "UsageMonitor", code: 1, userInfo: [
-                    NSLocalizedDescriptionKey: "Unable to update Claude settings.json"
-                ])
-            }
-            try updated.write(to: settingsURL, options: .atomic)
+            try preparedUpdate.updatedData.write(to: settingsURL, options: .atomic)
             claudeStatusLineInstalled = true
+            return nil
         } catch {
-            DispatchQueue.main.async {
-                self.lastErrorMessage = "Failed to install Claude statusLine: \(error.localizedDescription)"
-            }
+            return "Failed to install Claude statusLine: \(error.localizedDescription)"
         }
     }
 
