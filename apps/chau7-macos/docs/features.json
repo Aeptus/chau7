@@ -8,8 +8,8 @@
   },
   {
     "category": "Terminal Core",
-    "feature": "Bounded Graphics and Hyperlink Collections",
-    "description": "Chunked Kitty accumulation, the OSC 8 hyperlink table, and oversized pooled cell buffers carry hard caps that release capacity, the hyperlink table appears in the terminal memory report, and saturation degrades to no-link instead of a wrong link",
+    "feature": "Bounded Terminal-Core Accumulators",
+    "description": "The Rust emulator caps the chunked Kitty payload, the OSC 8 hyperlink table, and the pooled cell-buffer size, releasing capacity on every path rather than only clearing length; the hyperlink table appears in the terminal memory report and saturation degrades to no-link instead of a wrong link",
     "status": "Shipped",
     "differentiator": "No"
   },

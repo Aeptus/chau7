@@ -83,6 +83,22 @@ const SIXEL_MAX_BYTES: usize = 64 * 1024 * 1024; // 64MB
 /// Max bytes for a Kitty graphics payload.
 const KITTY_MAX_BYTES: usize = 64 * 1024 * 1024; // 64MB
 
+/// Max bytes accumulated across a chunked Kitty transmission.
+///
+/// `KITTY_MAX_BYTES` bounds a *single* `a=T` payload, but a chunked
+/// transmission sends many `m=1` chunks that are each individually small and
+/// each individually under that limit. `KittyAccumulator::payload` appended
+/// every chunk unconditionally, so a stream that kept sending `m=1` chunks and
+/// never sent the terminating `m=0` chunk grew without bound for the lifetime of
+/// the terminal — and because `estimated_grid_bytes` models only the alacritty
+/// grid, `MemoryPressureResponder` and `ScrollbackMemoryManager` were
+/// structurally blind to it.
+///
+/// 8 MB is comfortably above any legitimate chunked image while capping the
+/// worst case at a fixed, small number. On overflow the stream is abandoned and
+/// the buffer released rather than retained at its high-water mark.
+const KITTY_CHUNKED_MAX_BYTES: usize = 8 * 1024 * 1024;
+
 // ============================================================================
 // State Machine
 // ============================================================================
@@ -951,6 +967,19 @@ impl KittyAccumulator {
         }
     }
 
+    /// Drops the in-flight transmission *and releases its capacity*.
+    ///
+    /// `Vec::clear` alone would leave an 8 MB allocation pinned to this
+    /// terminal for the rest of the session, which is precisely the retention
+    /// this bound exists to prevent. Called after both a completed decode and
+    /// an overflow abandon.
+    fn discard(&mut self) {
+        self.payload.clear();
+        self.payload.shrink_to(4096);
+        self.control.clear();
+        self.control.shrink_to(64);
+    }
+
     /// Feed a Kitty graphics command. Returns the action to take.
     ///
     /// Handles multi-chunk (`m=1`) accumulation: intermediate chunks return
@@ -969,6 +998,17 @@ impl KittyAccumulator {
                     // First chunk — store control string
                     self.control = control.to_string();
                 }
+                // Bound the accumulated stream. Without this, a producer that
+                // emits `m=1` chunks indefinitely and never sends the final
+                // chunk grows this buffer for the lifetime of the terminal.
+                if self.payload.len().saturating_add(payload.len()) > KITTY_CHUNKED_MAX_BYTES {
+                    warn!(
+                        "Kitty: chunked payload exceeded {}B; abandoning transmission",
+                        KITTY_CHUNKED_MAX_BYTES
+                    );
+                    self.discard();
+                    return KittyAction::Noop;
+                }
                 self.payload.extend_from_slice(payload);
 
                 if more == "1" {
@@ -978,26 +1018,22 @@ impl KittyAccumulator {
 
                 // Final chunk — decode
                 let result = self.decode_payload();
-                self.payload.clear();
-                self.control.clear();
+                self.discard();
                 result
             }
             "d" => {
                 // Delete
                 let id = params.get("i").and_then(|s| s.parse().ok()).unwrap_or(0u32);
-                self.payload.clear();
-                self.control.clear();
+                self.discard();
                 KittyAction::Delete { id }
             }
             "q" => {
                 // Query — we don't respond to queries yet
-                self.payload.clear();
-                self.control.clear();
+                self.discard();
                 KittyAction::Noop
             }
             _ => {
-                self.payload.clear();
-                self.control.clear();
+                self.discard();
                 KittyAction::Noop
             }
         }
@@ -1093,8 +1129,7 @@ impl KittyAccumulator {
     /// Reset the accumulator (e.g., on error or terminal reset).
     #[allow(dead_code)]
     pub fn reset(&mut self) {
-        self.payload.clear();
-        self.control.clear();
+        self.discard();
     }
 }
 
@@ -1532,6 +1567,120 @@ mod tests {
         let data = b"";
         let result = decode_sixel(data);
         assert!(result.is_none(), "Empty data should return None");
+    }
+
+    // ---------------------------------------------------------------------
+    // Kitty chunked-accumulator bound
+    //
+    // A chunked Kitty transmission sends many `m=1` chunks, each individually
+    // far below `KITTY_MAX_BYTES`. The accumulator previously appended every
+    // chunk unconditionally, so a producer that kept sending `m=1` and never
+    // sent the terminating `m=0` grew the buffer without bound for the life of
+    // the terminal — and it was invisible to `estimated_grid_bytes`, so the
+    // Swift-side memory-pressure path could not see it either.
+    // ---------------------------------------------------------------------
+
+    fn kitty_chunk(size: usize, fill: u8) -> Vec<u8> {
+        vec![fill; size]
+    }
+
+    #[test]
+    fn test_kitty_chunked_accumulator_is_bounded() {
+        let mut accum = KittyAccumulator::new();
+        let chunk = kitty_chunk(64 * 1024, b'A');
+
+        // Feed well past the cap. Each chunk asks for "more".
+        let mut fed = 0usize;
+        let mut abandoned = false;
+        for _ in 0..2_000 {
+            let action = accum.feed("a=T,f=100,t=d,m=1", &chunk);
+            if !matches!(action, KittyAction::Continue) {
+                abandoned = true;
+                break;
+            }
+            fed += 1;
+        }
+
+        assert!(
+            abandoned,
+            "accumulator must stop accepting chunks once past the cap (fed {fed} chunks)"
+        );
+        assert!(
+            accum.payload.len() <= KITTY_CHUNKED_MAX_BYTES,
+            "payload must never exceed the cap, got {}",
+            accum.payload.len()
+        );
+    }
+
+    #[test]
+    fn test_kitty_chunked_accumulator_releases_capacity_on_overflow() {
+        let mut accum = KittyAccumulator::new();
+        let chunk = kitty_chunk(1024 * 1024, b'B');
+
+        for _ in 0..64 {
+            if !matches!(accum.feed("a=T,f=100,t=d,m=1", &chunk), KittyAction::Continue) {
+                break;
+            }
+        }
+
+        // Capacity, not just length, is the leak: `clear()` alone would leave
+        // the multi-megabyte allocation pinned to this terminal.
+        assert!(
+            accum.payload.capacity() < KITTY_CHUNKED_MAX_BYTES,
+            "overflow must release capacity, still holding {} bytes",
+            accum.payload.capacity()
+        );
+        assert!(accum.payload.is_empty());
+        assert!(accum.control.is_empty());
+    }
+
+    #[test]
+    fn test_kitty_legitimate_chunked_transmission_still_works() {
+        // A small multi-chunk transmission must still decode; the bound must not
+        // break the feature it protects. 4x1 raw RGBA (f=32) = 16 bytes, sent as
+        // three base64 chunks.
+        use base64::Engine;
+        let encoder = base64::engine::general_purpose::STANDARD;
+        let raw: Vec<u8> = (0..16).map(|i| i as u8).collect();
+        let encoded = encoder.encode(&raw);
+        let bytes = encoded.as_bytes();
+        let third = bytes.len() / 3;
+        let (c1, rest) = bytes.split_at(third);
+        let (c2, c3) = rest.split_at(third);
+
+        let mut accum = KittyAccumulator::new();
+        assert!(matches!(
+            accum.feed("a=T,f=32,s=4,v=1,t=d,m=1", c1),
+            KittyAction::Continue
+        ));
+        assert!(matches!(
+            accum.feed("a=T,f=32,s=4,v=1,t=d,m=1", c2),
+            KittyAction::Continue
+        ));
+        let final_action = accum.feed("a=T,f=32,s=4,v=1,t=d,m=0", c3);
+
+        match final_action {
+            KittyAction::Display {
+                rgba,
+                width,
+                height,
+            } => {
+                assert_eq!((width, height), (4, 1));
+                assert_eq!(rgba, raw, "decoded pixels must round-trip");
+            }
+            other => panic!("a legitimate chunked image must still display, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_kitty_discard_releases_both_buffers() {
+        let mut accum = KittyAccumulator::new();
+        accum.feed("a=T,f=100,t=d,m=1", &kitty_chunk(2 * 1024 * 1024, b'C'));
+        accum.reset();
+
+        assert!(accum.payload.is_empty());
+        assert!(accum.control.is_empty());
+        assert!(accum.payload.capacity() <= 4096);
     }
 
     #[test]

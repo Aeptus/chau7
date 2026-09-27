@@ -66,16 +66,51 @@ impl HyperlinkRegistry {
         if let Some(id) = self.ids.get(uri) {
             return *id;
         }
-        // u16::MAX is reserved as a safe saturation point. A single terminal
-        // displaying 65k distinct live links is pathological; retaining the
-        // last valid ID is safer than wrapping to 0 ("no link").
-        if self.urls.len() >= u16::MAX as usize {
-            return u16::MAX;
+        // Cap the table. This was an unbounded growth path: every distinct OSC 8
+        // URI a terminal ever printed was retained TWICE (once in `urls`, once
+        // as the `ids` key) and nothing ever evicted, so a
+        // `grep --color=always=hyperlink` sweep or an adversarial stream grew
+        // it until `u16::MAX` — 65 535 entries, and it counted for nothing in
+        // `estimated_grid_bytes`, so the memory-pressure path could not see it.
+        //
+        // On saturation this returns 0, which is already reserved for "no link".
+        // The previous revision returned `u16::MAX`, and since
+        // `get_link_url(u16::MAX)` resolves to the LAST url in the table, every
+        // hyperlink after saturation silently rendered and clicked as that one
+        // final link. A missing link is a much better failure than a
+        // confidently wrong one.
+        //
+        // There is no eviction. The type's own contract forbids rebuilding ids,
+        // because a delta consumer can still hold a row referencing an id
+        // assigned earlier; so once full the table is frozen and further URIs
+        // resolve to "no link".
+        if self.urls.len() >= MAX_HYPERLINKS {
+            return 0;
         }
         let id = self.urls.len() as u16;
         self.urls.push(uri.to_owned());
-        self.ids.insert(uri.to_owned(), id);
+        // One clone, not a second independent `to_owned`: the map key must be
+        // owned, so reuse the string already stored in `urls`.
+        let stored = self.urls[id as usize].clone();
+        self.ids.insert(stored, id);
         id
+    }
+
+    /// Resolves an id back to its URI. `0` is reserved for "no link" and always
+    /// resolves to `None`, so an id from a saturated table degrades to "no link"
+    /// rather than to an arbitrary earlier link.
+    fn url(&self, link_id: u16) -> Option<&str> {
+        if link_id == 0 {
+            return None;
+        }
+        self.urls.get(link_id as usize).map(String::as_str)
+    }
+
+    /// Bytes retained by this registry, for the memory report. Excludes
+    /// `HashMap` bucket overhead, which is proportional and not worth modelling
+    /// precisely.
+    fn estimated_bytes(&self) -> usize {
+        self.urls.iter().map(|u| u.len() + std::mem::size_of::<String>()).sum()
     }
 }
 
@@ -84,6 +119,15 @@ impl HyperlinkRegistry {
 /// the moment it happens. A power-of-two so `is_multiple_of` is a single
 /// AND in release builds.
 const INVARIANT_CHECK_PERIOD: u64 = 16;
+
+/// Upper bound on distinct OSC 8 hyperlink URIs retained per terminal.
+///
+/// Sized to cover any realistic interactive session with a wide margin while
+/// keeping the worst case a fixed, small allocation instead of an 65 535-entry
+/// table. See `HyperlinkRegistry::id_for_uri` for why saturation resolves to
+/// "no link" rather than to a wrong link.
+const MAX_HYPERLINKS: usize = 4096;
+
 const MALLOC_STACK_LOGGING_WARNING: &[u8] =
     b" MallocStackLogging: can't turn off malloc stack logging because it was not enabled.";
 
@@ -816,7 +860,7 @@ impl Chau7Terminal {
             return None;
         }
         let registry = self.hyperlinks.lock();
-        registry.urls.get(link_id as usize).cloned()
+        registry.url(link_id).map(str::to_owned)
     }
 
     /// Takes pending clipboard store text (OSC 52 write).
@@ -2388,8 +2432,17 @@ impl Chau7Terminal {
         };
         let cell_bytes = std::mem::size_of::<alacritty_terminal::term::cell::Cell>() as u64;
         let cols_estimate = u64::from(grid.columns() as u16);
+        // The hyperlink table is not part of the alacritty grid, so it was
+        // invisible to the Swift-side memory budget — which sizes flush and
+        // eviction decisions off this number. Add it here so the report reflects
+        // what the terminal actually retains.
+        //
+        // Lock order is `term` -> `hyperlinks`, the same order the grid
+        // snapshot path already uses (`get_grid` holds `term` while locking
+        // `hyperlinks`), so taking it here introduces no inversion.
+        let hyperlink_bytes = self.hyperlinks.lock().estimated_bytes() as u64;
         let estimated_grid_bytes =
-            (primary_total_lines + screen_lines) * cols_estimate * cell_bytes;
+            (primary_total_lines + screen_lines) * cols_estimate * cell_bytes + hyperlink_bytes;
         drop(term);
 
         let poll_count = self.metrics.poll_count.load(Ordering::Relaxed);
@@ -3115,6 +3168,114 @@ impl Drop for Chau7Terminal {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// -----------------------------------------------------------------
+    /// Hyperlink registry bound
+    ///
+    /// Two distinct defects lived in one 15-line function:
+    /// 1. Unbounded growth — every distinct OSC 8 URI ever printed was stored
+    ///    twice and never evicted, up to 65 535 entries, and invisible to
+    ///    `estimated_grid_bytes` so the Swift-side memory budget could not see
+    ///    it.
+    /// 2. A correctness bug at saturation — `id_for_uri` returned `u16::MAX`
+    ///    for every new URI once full, and that id resolves to the LAST url in
+    ///    the table, so every subsequent hyperlink rendered and clicked as
+    ///    that one final link. Returning 0 ("no link") is a far better failure
+    ///    than a confidently wrong one.
+    /// -----------------------------------------------------------------
+    mod hyperlink_registry {
+        use super::*;
+
+        #[test]
+        fn id_zero_is_reserved_for_no_link() {
+            let registry = HyperlinkRegistry::new();
+            // `new()` seeds index 0 with an empty url, so 0 means "no link".
+            assert_eq!(registry.urls[0], "");
+            assert_eq!(registry.url(0), None);
+        }
+
+        #[test]
+        fn same_uri_reuses_its_id() {
+            let mut registry = HyperlinkRegistry::new();
+            let a = registry.id_for_uri("https://example.com/a");
+            let b = registry.id_for_uri("https://example.com/a");
+            assert_eq!(a, b, "a repeated URI must not allocate a second id");
+        }
+
+        #[test]
+        fn distinct_uris_get_distinct_resolvable_ids() {
+            let mut registry = HyperlinkRegistry::new();
+            let a = registry.id_for_uri("https://example.com/a");
+            let b = registry.id_for_uri("https://example.com/b");
+            assert_ne!(a, b);
+            assert_eq!(registry.url(a), Some("https://example.com/a"));
+            assert_eq!(registry.url(b), Some("https://example.com/b"));
+        }
+
+        #[test]
+        fn table_is_bounded() {
+            let mut registry = HyperlinkRegistry::new();
+            for i in 0..(MAX_HYPERLINKS * 2) {
+                let _ = registry.id_for_uri(&format!("https://example.com/{i}"));
+            }
+            assert!(
+                registry.urls.len() <= MAX_HYPERLINKS,
+                "registry grew to {} entries, cap is {MAX_HYPERLINKS}",
+                registry.urls.len()
+            );
+        }
+
+        #[test]
+        fn saturation_resolves_to_no_link_not_a_wrong_link() {
+            let mut registry = HyperlinkRegistry::new();
+            for i in 0..MAX_HYPERLINKS {
+                let _ = registry.id_for_uri(&format!("https://example.com/{i}"));
+            }
+            assert!(
+                registry.urls.len() >= MAX_HYPERLINKS,
+                "table should be full for this test to mean anything"
+            );
+
+            // A URI past the cap must degrade to "no link" (0)...
+            let overflow_id = registry.id_for_uri("https://example.com/one-too-many");
+            assert_eq!(overflow_id, 0, "a URI past the cap must report no link");
+
+            // ...and must NOT resolve to some earlier link, which was the bug.
+            assert_eq!(
+                registry.url(overflow_id),
+                None,
+                "an overflowing URI must never resolve to a real URL"
+            );
+        }
+
+        #[test]
+        fn saturation_does_not_corrupt_ids_already_handed_out() {
+            let mut registry = HyperlinkRegistry::new();
+            let first = registry.id_for_uri("https://example.com/first");
+            let first_url = registry.url(first).map(str::to_owned);
+
+            for i in 0..(MAX_HYPERLINKS + 10) {
+                let _ = registry.id_for_uri(&format!("https://example.com/{i}"));
+            }
+
+            // Ids already handed to a delta consumer must still resolve — the
+            // type's whole contract is that ids are never rebuilt.
+            assert_eq!(registry.url(first).map(str::to_owned), first_url);
+        }
+
+        #[test]
+        fn estimated_bytes_grows_with_entries() {
+            let mut registry = HyperlinkRegistry::new();
+            let empty = registry.estimated_bytes();
+            for i in 0..100 {
+                let _ = registry.id_for_uri(&format!("https://example.com/{i}"));
+            }
+            assert!(
+                registry.estimated_bytes() > empty,
+                "estimated_bytes must reflect retained URIs so the memory report can see them"
+            );
+        }
+    }
 
     #[test]
     fn interactive_terminal_drops_inherited_color_suppression() {
