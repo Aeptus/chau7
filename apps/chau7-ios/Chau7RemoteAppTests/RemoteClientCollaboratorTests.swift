@@ -597,7 +597,8 @@ final class RemoteStreamingPerformanceWindowTests: XCTestCase {
             bytes: 100,
             queueAgeMs: 4,
             receiveToApplyMs: 7,
-            supersededGrids: 2
+            supersededGrids: 2,
+            evictedOutput: 3
         )
         window.recordFrame(
             type: .terminalGridSnapshot,
@@ -605,7 +606,8 @@ final class RemoteStreamingPerformanceWindowTests: XCTestCase {
             bytes: 300,
             queueAgeMs: 9,
             receiveToApplyMs: 15,
-            supersededGrids: 0
+            supersededGrids: 0,
+            evictedOutput: 0
         )
         window.recordGridDecode(durationMs: 6)
         window.recordPublish(durationMs: 2)
@@ -629,6 +631,7 @@ final class RemoteStreamingPerformanceWindowTests: XCTestCase {
         XCTAssertEqual(sample.averageGridDecodeMs, 6)
         XCTAssertEqual(sample.averagePublishMs, 2)
         XCTAssertEqual(sample.supersededGridFrames, 2)
+        XCTAssertEqual(sample.evictedOutputFrames, 3)
         XCTAssertEqual(sample.outputRecoveryCount, 1)
         XCTAssertEqual(sample.maxSenderBatchMs, 4)
         XCTAssertEqual(sample.maxEstimatedCaptureToReceiveMs, 35)
@@ -655,7 +658,8 @@ final class RemoteStreamingPerformanceWindowTests: XCTestCase {
             bytes: 120,
             queueAgeMs: 1,
             receiveToApplyMs: 2,
-            supersededGrids: 0
+            supersededGrids: 0,
+            evictedOutput: 0
         )
         window.recordFrame(
             type: nil,
@@ -663,7 +667,8 @@ final class RemoteStreamingPerformanceWindowTests: XCTestCase {
             bytes: 5,
             queueAgeMs: 1,
             receiveToApplyMs: 2,
-            supersededGrids: 0
+            supersededGrids: 0,
+            evictedOutput: 0
         )
         window.recordFrame(
             type: .tabList,
@@ -671,7 +676,8 @@ final class RemoteStreamingPerformanceWindowTests: XCTestCase {
             bytes: 80,
             queueAgeMs: 1,
             receiveToApplyMs: 2,
-            supersededGrids: 0
+            supersededGrids: 0,
+            evictedOutput: 0
         )
         window.recordFrame(
             type: .sessionReady,
@@ -679,7 +685,8 @@ final class RemoteStreamingPerformanceWindowTests: XCTestCase {
             bytes: 40,
             queueAgeMs: 1,
             receiveToApplyMs: 2,
-            supersededGrids: 0
+            supersededGrids: 0,
+            evictedOutput: 0
         )
 
         guard let sample = window.takeSnapshotIfDue(now: start.addingTimeInterval(5)) else {
@@ -740,7 +747,7 @@ final class RemoteTransportTests: XCTestCase {
 
         let retained = queue.messages.compactMap { try? RemoteFrame.decode(from: $0.data).seq }
         XCTAssertEqual(retained, [1, 3, 4])
-        XCTAssertEqual(queue.takeSupersededGridCount(), 1)
+        XCTAssertEqual(queue.takeShedCounts().supersededGrids, 1)
     }
 
     func testInboundQueueShedsOnlyReplaceableGridStateAtByteLimit() {
@@ -753,7 +760,7 @@ final class RemoteTransportTests: XCTestCase {
 
         XCTAssertEqual(queue.messages.count, 1)
         XCTAssertFalse(queue.messages[0].isGridSnapshot)
-        XCTAssertEqual(queue.takeSupersededGridCount(), 1)
+        XCTAssertEqual(queue.takeShedCounts().supersededGrids, 1)
     }
 
     func testInboundQueueFastForwardsOrderedOutputAndSignalsCheckpointAfterDrain() {
@@ -781,8 +788,23 @@ final class RemoteTransportTests: XCTestCase {
             queue.enqueue(data: data, generation: 1)
         }
 
+        // Output is marked for fast-forward *and* dropped: its visual content
+        // was already abandoned in favour of a checkpoint, so the bytes are not
+        // worth holding. The control frame has no checkpoint equivalent and is
+        // kept regardless. Dropping a sequence number is safe because the
+        // replay guard only requires strict monotonicity, not contiguity.
         XCTAssertTrue(queue.outputRecoveryPending)
-        XCTAssertEqual(queue.messages.map(\.suppressOutputApplication), [true, false, true])
+        XCTAssertEqual(queue.messages.count, 2)
+        XCTAssertEqual(queue.messages.map(\.suppressOutputApplication), [false, true])
+        XCTAssertEqual(queue.evictedOutputFrames, 1)
+        XCTAssertFalse(
+            queue.messages.contains { message in
+                guard message.isOutput else { return false }
+                return message.data.count == 50 && message.data[message.data.startIndex + 8] == 1
+            },
+            "the seq-1 output frame is the one shed"
+        )
+
         XCTAssertFalse(queue.takeOutputRecoverySignalIfDrained())
         while queue.popFirst() != nil {}
         XCTAssertTrue(queue.takeOutputRecoverySignalIfDrained())
@@ -804,5 +826,378 @@ final class RemoteTransportTests: XCTestCase {
         transport.close()
         XCTAssertGreaterThan(transport.generation, g1)
         XCTAssertFalse(transport.isOpen)
+    }
+}
+
+/// Regression coverage for the rich terminal renderer's viewport declaration.
+///
+/// The renderer used to gate its viewport declaration behind
+/// `renderState != nil`. The store only publishes a `renderState` after it has
+/// been told the viewport, and the viewport can only be learned from a
+/// laid-out view — so the renderer could never start. Because `.replay` mode
+/// deliberately does not feed the plain-text output store, the text fallback
+/// then showed a permanently empty terminal.
+///
+/// These lock in the arithmetic half of the fix; the wiring itself is covered
+/// by the always-mounted declaration in `RemoteTerminalRendererView`, which
+/// cannot be host-tested (the rendering stack links the Rust terminal FFI).
+final class RemoteTerminalViewportGeometryTests: XCTestCase {
+    private let cell = CGSize(width: 8, height: 18)
+
+    func testGridFitsWholeCells() {
+        let size = RemoteTerminalViewportGeometry.gridSize(
+            available: CGSize(width: 81, height: 37),
+            cell: cell
+        )
+        XCTAssertEqual(size?.cols, 10, "81pt / 8pt is 10 whole columns, not 10.125")
+        XCTAssertEqual(size?.rows, 2, "37pt / 18pt is 2 whole rows, not 2.05")
+    }
+
+    func testDegenerateAvailableSizeDeclaresNothing() {
+        // A zero size means "not laid out yet" and must be distinguishable from
+        // a real 1x1 grid, otherwise the first layout pass would pin the store
+        // to a 1-column viewport.
+        XCTAssertNil(RemoteTerminalViewportGeometry.gridSize(available: .zero, cell: cell))
+        XCTAssertNil(
+            RemoteTerminalViewportGeometry.gridSize(
+                available: CGSize(width: -10, height: 40),
+                cell: cell
+            )
+        )
+    }
+
+    func testSubCellViewportStillDeclaresOneColumnAndRow() {
+        let size = RemoteTerminalViewportGeometry.gridSize(
+            available: CGSize(width: 3, height: 4),
+            cell: cell
+        )
+        XCTAssertEqual(size?.cols, 1)
+        XCTAssertEqual(size?.rows, 1)
+    }
+
+    func testDegenerateCellSizeDeclaresNothing() {
+        XCTAssertNil(
+            RemoteTerminalViewportGeometry.gridSize(
+                available: CGSize(width: 100, height: 100),
+                cell: .zero
+            )
+        )
+    }
+
+    func testLargerViewportYieldsLargerGrid() {
+        let small = RemoteTerminalViewportGeometry.gridSize(
+            available: CGSize(width: 100, height: 100),
+            cell: cell
+        )
+        let large = RemoteTerminalViewportGeometry.gridSize(
+            available: CGSize(width: 200, height: 200),
+            cell: cell
+        )
+        XCTAssertEqual(small?.cols, 12)
+        XCTAssertEqual(small?.rows, 5)
+        XCTAssertEqual(large?.cols, 25)
+        XCTAssertEqual(large?.rows, 11)
+    }
+}
+
+/// The engine ingests at the Mac's PTY width so wide TUI output is not
+/// hard-wrapped (which is what scrambled every logical line), and the canvas
+/// re-wraps that source grid down to phone-width rows for display. These lock
+/// in both halves of that mapping.
+final class RemoteTerminalWrapGeometryTests: XCTestCase {
+    func testEngineIngestsAtSourceWidthNotPhoneWidth() {
+        // 120 Mac columns into a 40-column engine is exactly the hard-wrap that
+        // fragmented every line; the engine must be at least as wide as the source.
+        let size = RemoteTerminalWrapGeometry.engineSize(sourceCols: 120, displayCols: 40, displayRows: 30)
+        XCTAssertEqual(size.cols, 120)
+        XCTAssertEqual(size.rows, 30, "rows stay phone-driven so screen height and scroll math match the display")
+    }
+
+    func testEngineFallsBackToPhoneWidthWhenSourceUnknown() {
+        // Older Macs announce nothing; the phone width is then the best guess
+        // and must not collapse the grid to zero.
+        let size = RemoteTerminalWrapGeometry.engineSize(sourceCols: 0, displayCols: 40, displayRows: 30)
+        XCTAssertEqual(size.cols, 40)
+        XCTAssertEqual(size.rows, 30)
+    }
+
+    func testEngineNeverNarrowerThanEitherSide() {
+        let narrow = RemoteTerminalWrapGeometry.engineSize(sourceCols: 20, displayCols: 60, displayRows: 10)
+        XCTAssertEqual(narrow.cols, 60, "a wide phone must not be forced to ingest at the narrower source width")
+        let degenerate = RemoteTerminalWrapGeometry.engineSize(sourceCols: 0, displayCols: 0, displayRows: 0)
+        XCTAssertEqual(degenerate.cols, 1)
+        XCTAssertEqual(degenerate.rows, 1)
+    }
+
+    func testChunksPerRowRoundsUp() {
+        XCTAssertEqual(RemoteTerminalWrapGeometry.chunksPerRow(sourceCols: 120, displayCols: 40), 3)
+        XCTAssertEqual(RemoteTerminalWrapGeometry.chunksPerRow(sourceCols: 100, displayCols: 40), 3)
+        XCTAssertEqual(RemoteTerminalWrapGeometry.chunksPerRow(sourceCols: 80, displayCols: 40), 2)
+        // Exact multiple must not gain a trailing empty chunk.
+        XCTAssertEqual(RemoteTerminalWrapGeometry.chunksPerRow(sourceCols: 40, displayCols: 40), 1)
+    }
+
+    func testChunksPerRowSurvivesDegenerateInput() {
+        XCTAssertEqual(RemoteTerminalWrapGeometry.chunksPerRow(sourceCols: 0, displayCols: 40), 1)
+        XCTAssertEqual(RemoteTerminalWrapGeometry.chunksPerRow(sourceCols: 120, displayCols: 0), 1)
+    }
+
+    func testDisplayRowsCoverEverySourceColumnExactlyOnce() {
+        let sourceCols = 100
+        let displayCols = 40
+        let chunks = RemoteTerminalWrapGeometry.chunksPerRow(sourceCols: sourceCols, displayCols: displayCols)
+        let displayRows = RemoteTerminalWrapGeometry.displayRowCount(sourceRows: 2, chunksPerRow: chunks)
+
+        // No source column may be dropped by the final partial chunk, or the
+        // tail of a long line silently disappears on the phone.
+        var seen = Set<Int>()
+        for displayRow in 0 ..< displayRows {
+            let slice = try? XCTUnwrap(
+                RemoteTerminalWrapGeometry.sourceSlice(
+                    displayRow: displayRow,
+                    sourceCols: sourceCols,
+                    sourceRows: 2,
+                    chunksPerRow: chunks,
+                    displayCols: displayCols
+                )
+            )
+            guard let slice else { continue }
+            for col in slice.firstCol ..< (slice.firstCol + slice.colCount) {
+                seen.insert(col)
+            }
+        }
+        XCTAssertEqual(seen.count, sourceCols, "every source column must be painted on some display row")
+        XCTAssertEqual(seen.min(), 0)
+        XCTAssertEqual(seen.max(), sourceCols - 1)
+    }
+
+    func testSourceSliceMapsChunksInOrderWithinARow() {
+        let sourceCols = 100
+        let displayCols = 40
+        let chunks = RemoteTerminalWrapGeometry.chunksPerRow(sourceCols: sourceCols, displayCols: displayCols)
+        let sourceRows = 3
+
+        for row in 0 ..< sourceRows {
+            var expectedFirstCol = 0
+            for displayRow in row * chunks ..< (row + 1) * chunks {
+                let slice = RemoteTerminalWrapGeometry.sourceSlice(
+                    displayRow: displayRow,
+                    sourceCols: sourceCols,
+                    sourceRows: sourceRows,
+                    chunksPerRow: chunks,
+                    displayCols: displayCols
+                )
+                XCTAssertEqual(slice?.sourceRow, row)
+                XCTAssertEqual(slice?.firstCol, expectedFirstCol)
+                expectedFirstCol += slice?.colCount ?? 0
+            }
+            XCTAssertEqual(expectedFirstCol, sourceCols, "row \(row) must be fully covered across its chunks")
+        }
+    }
+
+    func testFinalChunkIsClampedToRemainingColumns() {
+        // 100 source columns over 3 chunks of 40 leaves a 20-wide tail.
+        let slice = RemoteTerminalWrapGeometry.sourceSlice(
+            displayRow: 2,
+            sourceCols: 100,
+            sourceRows: 1,
+            chunksPerRow: 3,
+            displayCols: 40
+        )
+        XCTAssertEqual(slice?.firstCol, 80)
+        XCTAssertEqual(slice?.colCount, 20, "the tail chunk must not read past the end of the row")
+    }
+
+    func testDisplayRowCountIsZeroSafe() {
+        XCTAssertEqual(RemoteTerminalWrapGeometry.displayRowCount(sourceRows: 0, chunksPerRow: 3), 0)
+        XCTAssertEqual(RemoteTerminalWrapGeometry.displayRowCount(sourceRows: 2, chunksPerRow: 0), 2)
+    }
+
+    func testOutOfRangeDisplayRowIsRejected() {
+        XCTAssertNil(
+            RemoteTerminalWrapGeometry.sourceSlice(
+                displayRow: 3,
+                sourceCols: 100,
+                sourceRows: 1,
+                chunksPerRow: 3,
+                displayCols: 40
+            ),
+            "a display row past the last source row must not index into stale cells"
+        )
+        XCTAssertNil(
+            RemoteTerminalWrapGeometry.sourceSlice(
+                displayRow: -1,
+                sourceCols: 100,
+                sourceRows: 4,
+                chunksPerRow: 3,
+                displayCols: 40
+            )
+        )
+    }
+}
+
+/// A lock-screen Allow/Deny can be delivered on a cold launch, before the
+/// WebSocket has connected and before `/pending` has populated the approval
+/// list. Dropping it there left the request looking untouched with the Mac's
+/// agent still blocked, so the decision is deferred until the request is known.
+@MainActor
+final class DeferredDecisionLedgerTests: XCTestCase {
+    func testEmptyLedgerYieldsNothing() {
+        let ledger = DeferredDecisionLedger()
+        XCTAssertTrue(ledger.isEmpty)
+        XCTAssertTrue(ledger.takeReady(knownRequestIDs: ["r1"]).isEmpty)
+    }
+
+    func testDecisionForUnknownRequestIsHeld() {
+        let ledger = DeferredDecisionLedger()
+        ledger.record(requestID: "r1", approved: true)
+        XCTAssertFalse(ledger.isEmpty)
+        // A list that does not contain the request must not consume it.
+        XCTAssertTrue(ledger.takeReady(knownRequestIDs: ["other"]).isEmpty)
+        XCTAssertEqual(ledger.count, 1)
+    }
+
+    func testDecisionIsReleasedOnceRequestIsKnown() {
+        let ledger = DeferredDecisionLedger()
+        ledger.record(requestID: "r1", approved: true)
+        ledger.record(requestID: "r2", approved: false)
+
+        let ready = ledger.takeReady(knownRequestIDs: ["r1", "unrelated"])
+        XCTAssertEqual(ready.count, 1)
+        XCTAssertEqual(ready.first?.requestID, "r1")
+        XCTAssertEqual(ready.first?.approved, true)
+        // r2 is still unknown, so it stays deferred.
+        XCTAssertEqual(ledger.count, 1)
+    }
+
+    func testNewestDecisionForTheSameRequestWins() {
+        let ledger = DeferredDecisionLedger()
+        ledger.record(requestID: "r1", approved: true)
+        ledger.record(requestID: "r1", approved: false)
+        let ready = ledger.takeReady(knownRequestIDs: ["r1"])
+        XCTAssertEqual(ready.count, 1)
+        XCTAssertEqual(ready.first?.approved, false)
+    }
+
+    func testReleasedDecisionsAreNotReturnedTwice() {
+        let ledger = DeferredDecisionLedger()
+        ledger.record(requestID: "r1", approved: true)
+        XCTAssertEqual(ledger.takeReady(knownRequestIDs: ["r1"]).count, 1)
+        XCTAssertTrue(ledger.takeReady(knownRequestIDs: ["r1"]).isEmpty)
+        XCTAssertTrue(ledger.isEmpty)
+    }
+
+    func testLedgerIsBoundedAndEvictsOldestFirst() {
+        let ledger = DeferredDecisionLedger(capacity: 3)
+        for index in 0 ..< 5 {
+            ledger.record(requestID: "r\(index)", approved: true)
+        }
+        XCTAssertEqual(ledger.count, 3)
+        XCTAssertEqual(ledger.requestIDs, ["r2", "r3", "r4"])
+        // The two oldest are gone; the newest three are still deliverable.
+        let ready = ledger.takeReady(knownRequestIDs: ["r0", "r1", "r2", "r3", "r4"])
+        XCTAssertEqual(Set(ready.map(\.requestID)), ["r2", "r3", "r4"])
+    }
+
+    func testOverwritingARequestDoesNotConsumeCapacity() {
+        let ledger = DeferredDecisionLedger(capacity: 2)
+        ledger.record(requestID: "r1", approved: true)
+        ledger.record(requestID: "r1", approved: false)
+        ledger.record(requestID: "r2", approved: true)
+        XCTAssertEqual(ledger.count, 2)
+        XCTAssertEqual(ledger.requestIDs, ["r1", "r2"])
+    }
+
+    func testResetDiscardsEverything() {
+        let ledger = DeferredDecisionLedger()
+        ledger.record(requestID: "r1", approved: true)
+        ledger.reset()
+        XCTAssertTrue(ledger.isEmpty)
+        XCTAssertTrue(ledger.takeReady(knownRequestIDs: ["r1"]).isEmpty)
+    }
+}
+
+/// The receive queue's byte budget used to be advisory only: grids were shed
+/// first, but once they were gone nothing was ever removed, so a `cat` of a
+/// large file (or a relay replaying captured output) grew `bufferedBytes`
+/// without limit until the process was jetsammed.
+@MainActor
+final class RemoteInboundQueueEvictionTests: XCTestCase {
+    private func outputFrame(bytes: Int) -> Data {
+        var data = Data([1 /* RemoteFrame version */, RemoteFrameType.output.rawValue, 0, 0])
+        data.append(contentsOf: [UInt8](repeating: 0x41, count: bytes))
+        return data
+    }
+
+    private func controlFrame(bytes: Int) -> Data {
+        var data = Data([1 /* RemoteFrame version */, RemoteFrameType.ping.rawValue, 0, 0])
+        data.append(contentsOf: [UInt8](repeating: 0x42, count: bytes))
+        return data
+    }
+
+    func testOutputFramesAreEvictedOnceOverBudget() {
+        var queue = RemoteInboundMessageQueue(maxBufferedBytes: 4_096)
+        for _ in 0 ..< 40 {
+            queue.enqueue(data: outputFrame(bytes: 1_024), generation: 1)
+        }
+        XCTAssertLessThanOrEqual(
+            queue.bufferedBytes, 4_096 + 1_024,
+            "output frames must be evicted, not merely marked suppressed"
+        )
+        XCTAssertGreaterThan(queue.evictedOutputFrames, 0)
+    }
+
+    func testControlFramesAreNeverEvicted() {
+        var queue = RemoteInboundMessageQueue(maxBufferedBytes: 4_096)
+        for _ in 0 ..< 20 {
+            queue.enqueue(data: controlFrame(bytes: 1_024), generation: 1)
+        }
+        // Control frames have no checkpoint equivalent, so they must survive
+        // even when that means the budget is exceeded.
+        XCTAssertEqual(queue.messages.count, 20)
+        XCTAssertEqual(queue.evictedOutputFrames, 0)
+    }
+
+    func testEvictionOnlyTargetsAlreadySuppressedOutput() {
+        // 1_024 payload bytes + a 4-byte header is 1_028 per frame, so three
+        // frames (3_084) stay under the 4_096 budget and nothing is shed.
+        var queue = RemoteInboundMessageQueue(maxBufferedBytes: 4_096)
+        for _ in 0 ..< 3 {
+            queue.enqueue(data: outputFrame(bytes: 1_024), generation: 1)
+        }
+        XCTAssertEqual(queue.evictedOutputFrames, 0)
+        XCTAssertEqual(queue.messages.count, 3)
+
+        // The frame that crosses the budget suppresses every queued output
+        // frame and then sheds the oldest until the queue is back under it.
+        queue.enqueue(data: outputFrame(bytes: 1_024), generation: 1)
+        XCTAssertGreaterThan(queue.evictedOutputFrames, 0)
+        XCTAssertLessThanOrEqual(queue.bufferedBytes, 4_096)
+        // Only output was shed, and every survivor is a frame the queue is
+        // still holding for a reason: an in-flight recovery, or a control event.
+        // The newest output frame stays queued but suppressed -- its visual
+        // application is what the checkpoint recovers.
+        XCTAssertTrue(queue.messages.allSatisfy(\.isOutput))
+    }
+
+    func testShedCountsAreSnapshottedAndReset() {
+        var queue = RemoteInboundMessageQueue(maxBufferedBytes: 2_048)
+        for _ in 0 ..< 20 {
+            queue.enqueue(data: outputFrame(bytes: 1_024), generation: 1)
+        }
+        let first = queue.takeShedCounts()
+        XCTAssertGreaterThan(first.evictedOutput, 0)
+        XCTAssertEqual(queue.takeShedCounts(), QueueShedCounts.none)
+    }
+
+    func testRemoveAllResetsEvictionCounters() {
+        var queue = RemoteInboundMessageQueue(maxBufferedBytes: 2_048)
+        for _ in 0 ..< 20 {
+            queue.enqueue(data: outputFrame(bytes: 1_024), generation: 1)
+        }
+        queue.removeAll()
+        XCTAssertEqual(queue.evictedOutputFrames, 0)
+        XCTAssertEqual(queue.bufferedBytes, 0)
+        XCTAssertEqual(queue.takeShedCounts(), QueueShedCounts.none)
     }
 }

@@ -130,6 +130,15 @@ final class RebuildAndRelaunchScriptTests: XCTestCase {
                     .appendingPathComponent("Scripts/rebuild-and-relaunch.sh").path,
                 "--dry-run",
                 "--allow-dirty",
+                // This test exercises the dry-run quit/build suppression, not the
+                // source-freshness preflight. Without this the script first runs
+                // a live git inspection against mutable refs (origin/main,
+                // aethyme/integration) and can abort on a checkout that is behind
+                // one of them before ever reaching the dry-run logic being tested
+                // here — coupling a deterministic behavior test to ambient branch
+                // state. Bypassing the freshness guard isolates the behavior under
+                // test; every quit/build assertion below is unchanged.
+                "--allow-stale-source",
                 "--quit-only"
             ],
             environment: [

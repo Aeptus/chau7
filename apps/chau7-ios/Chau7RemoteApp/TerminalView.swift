@@ -51,11 +51,33 @@ struct TerminalView: View {
             }
             Button("Request Approval", role: .destructive) {
                 guard let pendingProtectedSend else { return }
+                // Re-validate the pinned tab: the target may have closed or
+                // been replaced while the confirmation was on screen. Refuse
+                // rather than silently retargeting the command.
+                guard let stillValidTab = client.tabs.first(where: { $0.tabID == pendingProtectedSend.tabID }) else {
+                    DiagnosticsLog.shared.warn(.input, "Protected action refused: target tab is gone", [
+                        "tab_id": String(pendingProtectedSend.tabID),
+                        "action": pendingProtectedSend.flaggedAction
+                    ])
+                    client.lastError = "That terminal is no longer available, so the command was not sent."
+                    inputText = pendingProtectedSend.text
+                    self.pendingProtectedSend = nil
+                    return
+                }
+                // Make the pinned tab current so what the user confirmed is what
+                // runs, then send explicitly to it.
+                if client.activeTabID != pendingProtectedSend.tabID {
+                    client.switchTab(pendingProtectedSend.tabID)
+                }
                 client.recordProtectedActionSubmission(
                     text: pendingProtectedSend.text,
                     flaggedAction: pendingProtectedSend.flaggedAction
                 )
-                if client.sendInput(pendingProtectedSend.text, appendNewline: true) {
+                if client.sendInput(
+                    pendingProtectedSend.text,
+                    appendNewline: true,
+                    to: stillValidTab.tabID
+                ) {
                     inputText = ""
                     markSent()
                     self.pendingProtectedSend = nil
@@ -123,7 +145,8 @@ struct TerminalView: View {
     private func toggleConnection() {
         switch client.connectionPhase {
         case .connected, .connecting:
-            client.disconnect()
+            // User-initiated: drop the session and any undelivered decision.
+            client.disconnectAndDiscardPendingDecisions()
         case .disconnected, .warning:
             guard client.pairingInfo != nil else { return }
             client.connect()
@@ -570,7 +593,9 @@ struct TerminalView: View {
             pendingProtectedSend = ProtectedRemoteSend(
                 text: text,
                 flaggedAction: flaggedAction,
-                message: "\(flaggedAction) requires a second approval before it is forwarded to your Mac."
+                message: "\(flaggedAction) requires a second approval before it is forwarded to your Mac.",
+                tabID: client.activeTabID,
+                tabTitle: client.tabs.first { $0.tabID == client.activeTabID }?.title
             )
             return
         }
@@ -855,6 +880,15 @@ private struct ProtectedRemoteSend: Identifiable {
     let text: String
     let flaggedAction: String
     let message: String
+    /// The remote tab this action was composed against.
+    ///
+    /// `activeTabID` can change while the confirmation is on screen — the Mac
+    /// can close the tab, or a Live Activity / push deep link can switch tabs.
+    /// Resolving the target at *send* time would then forward a confirmed
+    /// `killall …` to a shell the user never looked at, so the tab is pinned
+    /// when the prompt is raised and re-validated before sending.
+    let tabID: UInt32
+    let tabTitle: String?
 }
 
 // MARK: - Connection Status Symbol

@@ -89,6 +89,38 @@ enum RemoteNotificationScheduler {
         "interactive-prompt-\(promptID)"
     }
 
+    /// Removes any *actionable* approval/prompt notification that is no longer
+    /// backed by a pending request.
+    ///
+    /// A notification stays on the lock screen until something removes it, and
+    /// nothing removed it when the request was resolved on the Mac: no frame is
+    /// sent to the phone, so `/pending` reported it gone and the removal path
+    /// simply never ran. The Allow/Deny buttons on such a notification then did
+    /// nothing, because the request was no longer in `pendingApprovals`.
+    ///
+    /// Called on launch and after every authoritative snapshot.
+    static func pruneStaleActionableNotifications(
+        liveRequestIDs: Set<String>,
+        livePromptIDs: Set<String>
+    ) {
+        let center = UNUserNotificationCenter.current()
+        center.getDeliveredNotifications { delivered in
+            let stale = delivered.compactMap { notification -> String? in
+                let identifier = notification.request.identifier
+                let userInfo = notification.request.content.userInfo
+                if let requestID = userInfo[RemoteNotificationID.UserInfoKey.requestID] as? String {
+                    return liveRequestIDs.contains(requestID) ? nil : identifier
+                }
+                if let promptID = userInfo[RemoteNotificationID.UserInfoKey.promptID] as? String {
+                    return livePromptIDs.contains(promptID) ? nil : identifier
+                }
+                return nil
+            }
+            guard !stale.isEmpty else { return }
+            center.removeDeliveredNotifications(withIdentifiers: stale)
+        }
+    }
+
     // MARK: - Content
 
     private static func makeContent(

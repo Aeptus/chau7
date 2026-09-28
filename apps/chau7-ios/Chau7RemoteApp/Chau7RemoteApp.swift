@@ -147,20 +147,24 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
         didReceive response: UNNotificationResponse
     ) async {
         let userInfo = response.notification.request.content.userInfo
-        await MainActor.run {
-            switch response.actionIdentifier {
-            case RemoteNotificationID.Action.approve, RemoteNotificationID.Action.deny:
-                guard let requestID = userInfo[RemoteNotificationID.UserInfoKey.requestID] as? String,
-                      !requestID.isEmpty else { return }
-                NotificationCenter.default.post(
-                    name: .approvalNotificationResponse,
-                    object: nil,
-                    userInfo: [
-                        RemoteNotificationID.UserInfoKey.requestID: requestID,
-                        RemoteNotificationID.UserInfoKey.approved: response.actionIdentifier == RemoteNotificationID.Action.approve
-                    ]
-                )
-            default:
+        switch response.actionIdentifier {
+        case RemoteNotificationID.Action.approve, RemoteNotificationID.Action.deny:
+            guard let requestID = userInfo[RemoteNotificationID.UserInfoKey.requestID] as? String,
+                  !requestID.isEmpty else { return }
+            let approved = response.actionIdentifier == RemoteNotificationID.Action.approve
+            // Deliver straight to the client rather than only posting a
+            // Notification: on a cold launch this delegate runs before SwiftUI
+            // has installed the root view's subscription, so a fire-and-forget
+            // post reached zero observers and the user's decision was lost.
+            // `respondToApproval` now defers unknown request ids, so a decision
+            // that still arrives before the pending list is populated is held
+            // rather than dropped.
+            await RemoteClient.shared.recordApprovalDecisionFromNotification(
+                requestID: requestID,
+                approved: approved
+            )
+        default:
+            await MainActor.run {
                 NotificationCenter.default.post(name: .openApprovals, object: nil)
             }
         }
