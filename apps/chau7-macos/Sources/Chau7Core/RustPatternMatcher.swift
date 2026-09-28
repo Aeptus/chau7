@@ -1,7 +1,12 @@
 import Foundation
 import Darwin
 
-public final class RustPatternMatcher {
+/// `@unchecked Sendable` is a claim, not a suppression: every instance owns an
+/// `NSLock` that guards all of its mutable state, including the lazily built
+/// dylib function table and the cached Rust pattern handle. Annotating the
+/// type keeps that invariant in one place next to the lock rather than
+/// repeating `nonisolated(unsafe)` on each global that exposes it.
+public final class RustPatternMatcher: @unchecked Sendable {
     public static let outputPatterns = RustPatternMatcher()
     public static let waitPatterns = RustPatternMatcher()
     /// Separate instance from `waitPatterns` on purpose. Each instance caches

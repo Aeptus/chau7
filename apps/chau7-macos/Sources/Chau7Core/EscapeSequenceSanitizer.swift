@@ -15,18 +15,22 @@ public enum EscapeSequenceSanitizer {
     }
 
     /// 1. OSC: ESC ] ... (BEL | ESC \)
-    private static let oscPattern = compilePattern(#"\x{1b}\][^\x{07}\x{1b}]*(?:\x{07}|\x{1b}\\)?"#)
+    /// Compiled once and never mutated afterwards, so every later use is a
+    /// read. `Regex` does not conform to `Sendable`, which is why a shared
+    /// global of this type needs the annotation; the invariant being asserted
+    /// is immutability after initialization.
+    nonisolated(unsafe) static let oscPattern = compilePattern(#"\x{1b}\][^\x{07}\x{1b}]*(?:\x{07}|\x{1b}\\)?"#)
     /// Bare OSC without ESC prefix
-    private static let bareOscPattern = compilePattern(#"\][0-9;]*[^\x{07}\x{1b}]*(?:\x{07})?"#)
+    nonisolated(unsafe) static let bareOscPattern = compilePattern(#"\][0-9;]*[^\x{07}\x{1b}]*(?:\x{07})?"#)
     /// 2. CSI: ESC [ params final_byte
-    private static let csiPattern = compilePattern(#"\x{1b}\[[0-9;?]*[@-~]"#)
+    nonisolated(unsafe) static let csiPattern = compilePattern(#"\x{1b}\[[0-9;?]*[@-~]"#)
     /// Bare CSI without ESC prefix
-    private static let bareCsiPattern = compilePattern(#"\[[0-9;?]*[A-Za-z]"#)
+    nonisolated(unsafe) static let bareCsiPattern = compilePattern(#"\[[0-9;?]*[A-Za-z]"#)
     // 3. Bracketed paste markers
-    private static let pastePattern = compilePattern(#"\x{1b}\[20[01]~"#)
-    private static let barePastePattern = compilePattern(#"\[20[01]~"#)
+    nonisolated(unsafe) static let pastePattern = compilePattern(#"\x{1b}\[20[01]~"#)
+    nonisolated(unsafe) static let barePastePattern = compilePattern(#"\[20[01]~"#)
     /// 4. Simple escape: ESC + single char (not [ or ])
-    private static let simpleEscPattern = compilePattern(#"\x{1b}[^\[\]]"#)
+    nonisolated(unsafe) static let simpleEscPattern = compilePattern(#"\x{1b}[^\[\]]"#)
 
     /// Strips all terminal escape sequences from the input string.
     /// Handles CSI sequences, OSC sequences, focus events, cursor reports, and device attributes.

@@ -1,7 +1,10 @@
 import Foundation
 import Darwin
 
-final class RustEscapeSanitizer {
+/// `@unchecked Sendable` is a claim, not a suppression: this type guards all
+/// of its mutable state — the dylib function table and load latch — with a
+/// single `NSLock`.
+final class RustEscapeSanitizer: @unchecked Sendable {
     static let shared = RustEscapeSanitizer()
 
     private typealias Sanitize = @convention(c) (UnsafePointer<CChar>) -> UnsafeMutablePointer<CChar>?

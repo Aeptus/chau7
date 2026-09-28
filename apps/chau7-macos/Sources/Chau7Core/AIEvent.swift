@@ -10,7 +10,9 @@ import Foundation
 public enum Chau7CoreLocalization {
     /// Closure: `(key, englishDefault) -> String`.
     /// Chau7 overrides this in its app init to forward to its `L()` helper.
-    public static var localize: @Sendable (_ key: String, _ defaultValue: String) -> String = { _, defaultValue in
+    /// `nonisolated(unsafe)` is precise: the value is `@Sendable`, so reads are
+    /// safe, and the only write is the one-time startup override.
+    public nonisolated(unsafe) static var localize: @Sendable (_ key: String, _ defaultValue: String) -> String = { _, defaultValue in
         defaultValue
     }
 }

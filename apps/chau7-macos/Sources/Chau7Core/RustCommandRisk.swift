@@ -1,7 +1,11 @@
 import Foundation
 import Darwin
 
-final class RustCommandRisk {
+/// `@unchecked Sendable` is a claim, not a suppression: every instance owns an
+/// `NSLock` that guards its lazily built dylib function table, the load
+/// attempt latch, and the pattern hash. Keeping the annotation next to the
+/// lock records the invariant where the state lives.
+final class RustCommandRisk: @unchecked Sendable {
     static let shared = RustCommandRisk()
 
     private typealias PatternsCreate = @convention(c) (UnsafePointer<UnsafePointer<CChar>?>?, Int) -> UnsafeMutableRawPointer?

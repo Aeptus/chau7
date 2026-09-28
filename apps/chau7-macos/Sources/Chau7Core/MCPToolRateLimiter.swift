@@ -3,8 +3,12 @@ import Foundation
 /// Token-bucket rate limiter for MCP tool invocations.
 /// Buckets are keyed by tool name so high-volume polling tools do not consume
 /// the same budget as tab/session creation calls.
-public struct MCPToolRateLimiter {
-    public struct Limit: Equatable {
+/// `Sendable` because every stored property is a value type and the limiter
+/// keeps all mutable state inside each call's own locals, so concurrent calls
+/// share nothing. That is why `Config.default` needs no suppression: the type
+/// itself satisfies the concurrency checker.
+public struct MCPToolRateLimiter: Sendable {
+    public struct Limit: Equatable, Sendable {
         public var maxPerMinute: Int
         public var burstAllowance: Int
 
@@ -22,7 +26,7 @@ public struct MCPToolRateLimiter {
         }
     }
 
-    public struct Config: Equatable {
+    public struct Config: Equatable, Sendable {
         public var defaultLimit: Limit
         public var perToolLimits: [String: Limit]
 

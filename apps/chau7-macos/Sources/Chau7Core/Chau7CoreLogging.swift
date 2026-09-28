@@ -8,9 +8,15 @@ import Foundation
 public enum Chau7CoreLog {
     /// Warn-level diagnostics (schema drift, silent-drop candidates).
     /// Chau7 overrides this in its app init to forward to `Log.warn`.
-    public static var warn: @Sendable (_ message: String) -> Void = { _ in }
+    ///
+    /// `nonisolated(unsafe)` is precise here: the stored type is already
+    /// `@Sendable`, so concurrent *reads* are safe. The only mutation is the
+    /// one-time override during app startup, which happens before Core is used
+    /// from any other thread.
+    public nonisolated(unsafe) static var warn: @Sendable (_ message: String) -> Void = { _ in }
 
     /// Error-level diagnostics (explicit failures that the caller handled
     /// by returning nil or throwing but wants surfaced in logs).
-    public static var error: @Sendable (_ message: String) -> Void = { _ in }
+    /// See the note on `warn` for the annotation.
+    public nonisolated(unsafe) static var error: @Sendable (_ message: String) -> Void = { _ in }
 }

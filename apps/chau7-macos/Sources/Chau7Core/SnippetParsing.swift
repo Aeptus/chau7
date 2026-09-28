@@ -51,9 +51,13 @@ public enum SnippetParsing {
         }
     }
 
-    private static let placeholderRegex = compileNSRegularExpression(#"\$\{(\d+)(?::([^}]*))?\}"#)
-    private static let envTokenRegex = compileNSRegularExpression(#"\$\{env:([A-Za-z0-9_]+)\}"#)
-    private static let hasPlaceholderRegex = compileRegex(#"\$\{\d+"#)
+    /// Compiled once and never mutated afterwards, so every later use is a
+    /// read. `Regex` does not conform to `Sendable`, which is why a shared
+    /// global of this type needs the annotation; the invariant being asserted
+    /// is immutability after initialization.
+    nonisolated(unsafe) static let placeholderRegex = compileNSRegularExpression(#"\$\{(\d+)(?::([^}]*))?\}"#)
+    nonisolated(unsafe) static let envTokenRegex = compileNSRegularExpression(#"\$\{env:([A-Za-z0-9_]+)\}"#)
+    nonisolated(unsafe) static let hasPlaceholderRegex = compileRegex(#"\$\{\d+"#)
 
     // MARK: - Placeholder Expansion
 
