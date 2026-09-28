@@ -60,6 +60,14 @@ final class RemoteControlManager {
         logger: logger,
         dataDirectory: { [weak self] in self?.dataDirectory() }
     )
+    /// True between entering `startAgent()` and its first successful launch.
+    /// Guards the window where `isAgentRunning` is still false but a start is
+    /// already committed; see `startAgent()` for why a bare
+    /// `guard !isAgentRunning` is not sufficient now that resolution is async.
+    @ObservationIgnored private var isAgentStartInFlight = false
+    /// Bumped by every start and every stop. A start compares the value it
+    /// captured against this after its `await` and bails if a stop intervened.
+    @ObservationIgnored private var agentStartGeneration: UInt64 = 0
     /// Last tab-list count emitted to the remote client, used to throttle
     /// the noisy "sent tab list with N tabs" log so it only fires on change.
     @ObservationIgnored private var lastSentTabListCount: Int?
@@ -171,6 +179,7 @@ final class RemoteControlManager {
             self?.logOperationalSnapshot(reason: "ipc_disconnected")
         }
         ipc.start()
+        startTransportHealthMonitor()
         refreshPairedDevices()
 
         remoteEnabledObserver = NotificationCenter.default.addObserver(
@@ -181,9 +190,10 @@ final class RemoteControlManager {
             Task { @MainActor [weak self] in
                 guard let self else { return }
                 if FeatureSettings.shared.isRemoteEnabled {
-                    startAgent()
+                    await startAgent()
                 } else {
                     stopAgent()
+                    stopTransportHealthMonitor()
                 }
             }
         }
@@ -270,7 +280,9 @@ final class RemoteControlManager {
         // is idempotent (its `!isAgentRunning` guard) and stamps
         // `CHAU7_PARENT_PID`, so this cleanly supersedes any orphaned agent.
         if FeatureSettings.shared.isRemoteEnabled {
-            startAgent()
+            Task { @MainActor [weak self] in
+                await self?.startAgent()
+            }
         }
     }
 
@@ -339,12 +351,34 @@ final class RemoteControlManager {
         sendFrame(type: .terminalGridSnapshot, tabID: tabID, payload: snapshot)
     }
 
-    private func startAgent() {
-        guard !isAgentRunning else { return }
-        guard let binaryPath = binaryProvider.resolveBinary() else {
+    private func startAgent() async {
+        // This guard and the flag below are set before the first suspension
+        // point, which is what makes this atomic with respect to other
+        // MainActor callers.
+        //
+        // `resolveBinary()` is async and can take seconds (it may compile the Go
+        // helper). While it is suspended, `isAgentRunning` is still false, so a
+        // second caller — `start()` and the `.remoteEnabledChanged` observer
+        // both call this — would sail past a bare `guard !isAgentRunning` and
+        // launch a second agent. Two agents then fight for the single IPC
+        // client slot, and the phone never receives a tab inventory.
+        guard !isAgentRunning, !isAgentStartInFlight else { return }
+        isAgentStartInFlight = true
+        agentStartGeneration &+= 1
+        let generation = agentStartGeneration
+        defer { isAgentStartInFlight = false }
+
+        guard let binaryPath = await binaryProvider.resolveBinary() else {
             let error = binaryProvider.lastError ?? lastError ?? "Remote agent binary not found."
             logger.error("\(error, privacy: .public)")
             lastError = error
+            return
+        }
+
+        // A stop that landed while the binary was resolving must not be followed
+        // by a launch.
+        guard generation == agentStartGeneration else {
+            Log.info("Remote agent start superseded while resolving the binary")
             return
         }
 
@@ -404,6 +438,13 @@ final class RemoteControlManager {
 
     func stopAgent() {
         clearRemoteRealtimeDrainSubscription()
+        // Invalidate an in-flight start even when no process exists yet. The
+        // `guard sidecar.hasProcess` below returns early in that case, so
+        // without this a "stop remote" issued while the binary was still being
+        // resolved was a silent no-op — and the agent launched anyway moments
+        // later, which reads as "stop does nothing".
+        agentStartGeneration &+= 1
+        isAgentStartInFlight = false
         guard sidecar.hasProcess else { return }
         cancelPendingOutputFlush()
         // The sidecar terminates the process BEFORE closing pipes (SIGPIPE).
@@ -422,8 +463,15 @@ final class RemoteControlManager {
 
     func restartAgentIfRunning() {
         guard isAgentRunning else { return }
-        stopAgent()
-        startAgent()
+        // Stop and start share one task so the async build cannot begin before
+        // the old agent has been torn down. Firing them as separate tasks would
+        // let a slow build outlive the `stopAgent()` and leave two agents racing
+        // for the single IPC client slot.
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            stopAgent()
+            await startAgent()
+        }
     }
 
     func regeneratePairing() {
@@ -436,11 +484,14 @@ final class RemoteControlManager {
         lastError = nil
         refreshPairedDevices()
 
-        if plan.shouldStopAgent {
-            stopAgent()
-        }
-        if plan.shouldStartAgent {
-            startAgent()
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            if plan.shouldStopAgent {
+                stopAgent()
+            }
+            if plan.shouldStartAgent {
+                await startAgent()
+            }
         }
     }
 
@@ -452,10 +503,15 @@ final class RemoteControlManager {
 
         guard FeatureSettings.shared.isRemoteEnabled else { return }
 
-        if isAgentRunning {
-            stopAgent()
+        // Same ordering guarantee as `restartAgentIfRunning`: the rebuild must
+        // not start before the previous agent is gone.
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            if isAgentRunning {
+                stopAgent()
+            }
+            await startAgent()
         }
-        startAgent()
     }
 
     private func handleIPCFrame(_ frame: RemoteFrame) {
@@ -822,6 +878,59 @@ final class RemoteControlManager {
                 }
             }
         }
+    }
+
+    // MARK: - Transport Health
+
+    /// Cadence for the IPC liveness check. Slow on purpose: this exists to
+    /// recover a dead listener, which is a rare condition, and it must run even
+    /// when no remote traffic is flowing — a silent listener is exactly the
+    /// broken state, so an event-driven check would never fire.
+    private static let transportHealthInterval: TimeInterval = 15
+    @ObservationIgnored private var transportHealthTimer: DispatchSourceTimer?
+
+    /// Watches the local IPC listener and restarts it if it stops accepting.
+    ///
+    /// Without this, remote control has a single point of failure with no
+    /// recovery: the listener is started once at launch and `stop()` is never
+    /// called, so if the accept source is ever torn down the socket file stays on
+    /// disk with nothing behind it. The helper then retries `connect()` forever
+    /// against a dead endpoint, and the phone sits on "Syncing tabs" until the
+    /// app is restarted. That is not a degraded mode, it is a dead feature.
+    private func startTransportHealthMonitor() {
+        transportHealthTimer?.cancel()
+
+        let timer = DispatchSource.makeTimerSource(queue: .main)
+        timer.schedule(
+            deadline: .now() + Self.transportHealthInterval,
+            repeating: Self.transportHealthInterval
+        )
+        timer.setEventHandler { [weak self] in
+            self?.checkTransportHealth()
+        }
+        transportHealthTimer = timer
+        timer.resume()
+    }
+
+    func stopTransportHealthMonitor() {
+        transportHealthTimer?.cancel()
+        transportHealthTimer = nil
+    }
+
+    /// Cheap when healthy: one relaxed atomic read.
+    private func checkTransportHealth() {
+        guard FeatureSettings.shared.isRemoteEnabled else {
+            stopTransportHealthMonitor()
+            return
+        }
+        guard !ipc.isAccepting else { return }
+
+        // Logged at warn because from the user's side this is indistinguishable
+        // from "remote is broken", and the helper's ECONNREFUSED retries give no
+        // hint that the Mac side is at fault.
+        Log.warn("Remote IPC listener is not accepting; restarting it")
+        logOperationalSnapshot(reason: "ipc_restart")
+        ipc.start()
     }
 
     private func scheduleRemoteActivityRefresh() {

@@ -134,6 +134,12 @@ struct TelemetrySchemaMigrator {
             ON usage_evidence(reconciliation_key, source_kind);
         CREATE INDEX IF NOT EXISTS idx_usage_evidence_run
             ON usage_evidence(run_id);
+        -- Retention deletes by observed_at alone. The existing indexes lead
+        -- with provider / run_id / reconciliation_key, so none of them serves
+        -- that predicate and the prune would degrade into a full scan of a
+        -- table that only ever grows.
+        CREATE INDEX IF NOT EXISTS idx_usage_evidence_observed
+            ON usage_evidence(observed_at);
 
         CREATE TABLE IF NOT EXISTS provider_latency_samples (
             sample_id TEXT PRIMARY KEY,

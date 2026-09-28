@@ -98,6 +98,58 @@ final class TelemetryMaintenance {
         Log.info(parts.joined(separator: " "))
     }
 
+    /// Tables that carry their own timestamp but have **no** foreign key to
+    /// `runs`, so `ON DELETE CASCADE` + `foreign_keys=ON` never removes them.
+    ///
+    /// `turns.run_id` and `tool_calls.run_id` are declared
+    /// `REFERENCES runs(run_id) ON DELETE CASCADE`; these three declare a bare
+    /// `run_id TEXT` (or have no `run_id` at all). Pruning `runs` therefore left
+    /// them behind indefinitely — `usage_evidence` grows one row per proxied LLM
+    /// call, `remote_client_events` one per remote-control event, and neither was
+    /// ever deleted by any code path, so `runs.db` growth was governed entirely
+    /// by rows the retention policy could not see.
+    static let unscopedRetentionTables: [(table: String, timestampColumn: String)] = [
+        ("usage_evidence", "observed_at"),
+        ("provider_latency_samples", "observed_at"),
+        ("remote_client_events", "timestamp")
+    ]
+
+    /// Delete rows from the run-independent tables older than the retention
+    /// window, using the same window as `runs` so evidence never outlives the run
+    /// it describes by more than the skew between a run's start and the calls
+    /// made against it.
+    ///
+    /// Separate from `deleteRunsOlderThan` by design: that function returns
+    /// `.nothingToPrune` — and so deletes nothing — whenever no *run* is old
+    /// enough. Folding this in would mean the largest tables in the database are
+    /// pruned only on days that happen to also retire a run.
+    ///
+    /// Pure deletion core, parameterized on the connection so it can be exercised
+    /// against a throwaway database in tests.
+    @discardableResult
+    static func deleteUnscopedTelemetryOlderThan(retentionDays: Int, in db: OpaquePointer) -> PruneOutcome {
+        guard retentionDays > 0 else { return .disabled }
+        let clampedDays = max(1, min(retentionDays, TelemetryRetention.maxDays))
+        // Same lexicographic date-prefix comparison the runs prune relies on:
+        // stored timestamps are ISO 8601 ('YYYY-MM-DDTHH:MM:...Z') and
+        // date('now','-Nd') yields 'YYYY-MM-DD', so a row is pruned only once
+        // its whole calendar day is past the window.
+        let cutoff = "date('now', '-\(clampedDays) days')"
+
+        var totalDeleted = 0
+        for entry in unscopedRetentionTables {
+            let sql = "DELETE FROM \(entry.table) WHERE \(entry.timestampColumn) < \(cutoff)"
+            guard sqlite3_exec(db, sql, nil, nil, nil) == SQLITE_OK else {
+                return .failed(
+                    "\(entry.table): \(String(cString: sqlite3_errmsg(db)))"
+                )
+            }
+            totalDeleted += Int(sqlite3_changes(db))
+        }
+        guard totalDeleted > 0 else { return .nothingToPrune }
+        return .pruned(deleted: totalDeleted, clampedDays: clampedDays)
+    }
+
     /// Delete runs (and, via `ON DELETE CASCADE` + `foreign_keys=ON`, their
     /// turns / tool_calls / latency samples) older than the retention window,
     /// then reclaim the freed disk with a full `VACUUM`.
@@ -113,26 +165,56 @@ final class TelemetryMaintenance {
     private func pruneOldRuns(retentionDays: Int) {
         guard let db = store.db else { return }
         let startedAt = CFAbsoluteTimeGetCurrent()
-        switch Self.deleteRunsOlderThan(retentionDays: retentionDays, in: db) {
-        case .disabled:
+
+        // Two independent prunes. `deleteRunsOlderThan` cascades into `turns`
+        // and `tool_calls` but structurally cannot reach the tables in
+        // `unscopedRetentionTables`, and it short-circuits to `.nothingToPrune`
+        // when no run is old — so the run-independent prune must be its own call
+        // or the biggest tables in the database would only ever be trimmed on
+        // days that also retire a run.
+        let runOutcome = Self.deleteRunsOlderThan(retentionDays: retentionDays, in: db)
+        let unscopedOutcome = Self.deleteUnscopedTelemetryOlderThan(retentionDays: retentionDays, in: db)
+
+        if case .disabled = runOutcome {
             Log.info("TelemetryStore: retention disabled (keep forever)")
-        case .nothingToPrune:
-            break
-        case let .failed(message):
-            Log.warn("TelemetryStore: retention prune failed: \(message)")
-        case let .pruned(deleted, clampedDays):
-            let elapsedMs = Int((CFAbsoluteTimeGetCurrent() - startedAt) * 1000.0)
-            Log.info(
-                "TelemetryStore: retention prune removed \(deleted) run(s) older than \(clampedDays)d, vacuumed in \(elapsedMs)ms"
-            )
         }
+        for (label, outcome) in [("runs", runOutcome), ("unscoped telemetry", unscopedOutcome)] {
+            switch outcome {
+            case .disabled, .nothingToPrune:
+                continue
+            case let .failed(message):
+                Log.warn("TelemetryStore: retention prune failed for \(label): \(message)")
+            case let .pruned(deleted, clampedDays):
+                Log.info("TelemetryStore: retention prune removed \(deleted) \(label) row(s) older than \(clampedDays)d")
+            }
+        }
+
+        // One VACUUM for the pass, and only if something was actually removed —
+        // this database has no `auto_vacuum`, so the rewrite is the only way to
+        // shrink the file and must never be paid for a no-op.
+        let deletedRuns: Int
+        if case let .pruned(deleted, _) = runOutcome { deletedRuns = deleted } else { deletedRuns = 0 }
+        let deletedUnscoped: Int
+        if case let .pruned(deleted, _) = unscopedOutcome { deletedUnscoped = deleted } else { deletedUnscoped = 0 }
+        guard deletedRuns + deletedUnscoped > 0 else { return }
+
+        if sqlite3_exec(db, "VACUUM", nil, nil, nil) != SQLITE_OK {
+            Log.warn("TelemetryStore: post-prune VACUUM failed: \(String(cString: sqlite3_errmsg(db)))")
+        }
+        let elapsedMs = Int((CFAbsoluteTimeGetCurrent() - startedAt) * 1000.0)
+        Log.info(
+            "TelemetryStore: retention prune removed \(deletedRuns) run(s) and \(deletedUnscoped) unscoped row(s), vacuumed in \(elapsedMs)ms"
+        )
     }
 
     /// Pure deletion core, parameterized on the connection so it can be exercised
     /// against a throwaway database in tests without touching the shared store's
     /// real file. Relies on `foreign_keys=ON` + `ON DELETE CASCADE` to remove the
-    /// pruned runs' turns / tool_calls / latency samples, then a full `VACUUM`
-    /// (this DB has no `auto_vacuum`, so `incremental_vacuum` can't shrink it).
+    /// pruned runs' turns / tool_calls.
+    ///
+    /// Does not `VACUUM`: the caller (`pruneOldRuns`) runs both prunes and then
+    /// vacuums once, since this database has no `auto_vacuum` and the rewrite is
+    /// only worth paying for when rows were actually removed.
     @discardableResult
     static func deleteRunsOlderThan(retentionDays: Int, in db: OpaquePointer) -> PruneOutcome {
         guard retentionDays > 0 else { return .disabled }
@@ -154,11 +236,7 @@ final class TelemetryMaintenance {
         if sqlite3_exec(db, "DELETE FROM runs WHERE \(whereClause)", nil, nil, nil) != SQLITE_OK {
             return .failed(String(cString: sqlite3_errmsg(db)))
         }
-        let deleted = Int(sqlite3_changes(db))
-        if sqlite3_exec(db, "VACUUM", nil, nil, nil) != SQLITE_OK {
-            Log.warn("TelemetryStore: post-prune VACUUM failed: \(String(cString: sqlite3_errmsg(db)))")
-        }
-        return .pruned(deleted: deleted, clampedDays: clampedDays)
+        return .pruned(deleted: Int(sqlite3_changes(db)), clampedDays: clampedDays)
     }
 
     /// Run PRAGMA incremental_vacuum if more than 7 days have passed since the

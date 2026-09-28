@@ -58,6 +58,9 @@ final class TerminalEventDrain {
         thread.qualityOfService = .userInitiated
         thread.name = "com.chau7.terminal-event-drain-\(viewId)"
         self.thread = thread
+        // Fresh run: drop any backoff state so a restarted drain still polls at
+        // full rate while its terminal is being created.
+        terminalMissingBackoffPasses = 0
         stateLock.unlock()
 
         thread.start()
@@ -87,6 +90,26 @@ final class TerminalEventDrain {
         return generation == gen
     }
 
+    /// Consecutive passes that found no Rust terminal. Reset as soon as one
+    /// appears. Only touched from the drain thread, and reset when a new run
+    /// starts, so no lock is needed.
+    private var terminalMissingBackoffPasses = 0
+
+    /// Startup responsiveness comes from the first few passes; after that a
+    /// drain that still has no terminal is almost certainly a failed creation,
+    /// so the interval converges to `maxPollTimeoutSeconds` and the thread
+    /// costs ~0.2 wakeups/second instead of 20.
+    ///
+    /// Returns a `TimeInterval`; pure so the curve is testable.
+    static func pollTimeoutInterval(
+        afterMissingPasses passes: Int,
+        initialSeconds: TimeInterval = 0.05,
+        maxSeconds: TimeInterval = 0.25
+    ) -> TimeInterval {
+        guard passes > 1 else { return initialSeconds }
+        return min(initialSeconds * pow(2, Double(passes - 1)), maxSeconds)
+    }
+
     private func runLoop(view: RustTerminalView?, viewId: UInt64, generation: UInt64) {
         while isCurrent(generation) {
             guard let view = view, !view.isBeingDeallocated else {
@@ -94,10 +117,20 @@ final class TerminalEventDrain {
                 return
             }
             guard let rust = view.rustTerminal else {
-                // Terminal not started yet — wait and retry
-                Thread.sleep(forTimeInterval: 0.05)
+                // Terminal not created yet. Back off instead of spinning: the
+                // previous fixed 50 ms sleep meant a drain started for a view
+                // whose terminal creation failed (and was never stopped) woke
+                // 20x a second for the life of the view. Startup latency is
+                // unaffected because `startEventDrain` is called after the
+                // terminal exists, so the first pass hits this branch at most
+                // for the moment between "view allocated" and "terminal ready".
+                terminalMissingBackoffPasses += 1
+                let interval = Self.pollTimeoutInterval(afterMissingPasses: terminalMissingBackoffPasses)
+                guard isCurrent(generation) else { return }
+                Thread.sleep(forTimeInterval: interval)
                 continue
             }
+            terminalMissingBackoffPasses = 0
 
             // Block until the Rust pty-reader has processed new PTY data,
             // or the timeout elapses. This is the key efficiency win:

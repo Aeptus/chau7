@@ -1097,9 +1097,17 @@ final class MetalTerminalRenderer: NSObject {
         // The gate admits one frame at a time; the completed handler releases
         // it. Terminal frames are sub-millisecond on the GPU and draws are
         // vsync-coalesced, so by the next draw the previous frame has long
-        // completed — the timeout only trips if the GPU wedges.
-        guard inflightGate.wait(timeout: .now() + .milliseconds(100)) == .success else {
-            Log.warn("MetalRenderer: previous frame still in flight after 100ms; skipping frame")
+        // completed — the wait is deliberately non-blocking.
+        //
+        // This runs on the main thread (MTKView's draw delegate), so it must
+        // never block. The previous 100 ms timeout turned a slow GPU into a
+        // hard UI freeze of up to 100 ms per frame, which is both worse than
+        // the dropped frame it was avoiding and far below
+        // `MainThreadHangMonitorPolicy.stallThreshold` (2 s), so it was never
+        // even reported. Skipping is the correct trade: the caller keeps the
+        // dirty state, so the next `draw(in:)` re-sends the full frame.
+        guard inflightGate.wait(timeout: .now()) == .success else {
+            Log.warn("MetalRenderer: previous frame still in flight; skipping frame")
             return false
         }
         var committed = false
@@ -1685,7 +1693,18 @@ final class MetalTerminalRenderer: NSObject {
     @discardableResult
     func evictResources() -> Int {
         guard allocatedResourceBytes > 0 else { return 0 }
-        guard inflightGate.wait(timeout: .now() + .milliseconds(100)) == .success else {
+        // Reached from `TerminalMemoryReclaimer`, which hops to main and then
+        // calls this once per window — so a long wait here multiplies into
+        // N x wait of main-thread stall during memory pressure, which is
+        // exactly when the user is already suffering. A short bounded wait is
+        // enough: eviction only ever runs for a window AppKit has confirmed
+        // fully invisible, and that window's draw loop is paused, so the gate
+        // is essentially always free. If a frame is genuinely still in flight,
+        // deferring is correct — the reclaim pass is periodic (the 30 s
+        // footprint timer and every pressure notification) so the next pass
+        // retries, and `restoreRendererResourcesIfNeeded` rebuilds the atlas on
+        // the next draw if this window comes back.
+        guard inflightGate.wait(timeout: .now() + .milliseconds(5)) == .success else {
             Log.warn("MetalRenderer: GPU frame still in flight; deferring inactive resource eviction")
             return 0
         }

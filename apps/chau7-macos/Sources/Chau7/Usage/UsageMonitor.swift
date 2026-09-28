@@ -690,8 +690,31 @@ final class UsageMonitor {
         return results
     }
 
+    /// Reads snapshots from the tail of the log, bounded by
+    /// `ProviderQuotaSnapshotLog.readBudgetBytes`.
+    ///
+    /// This used to read the entire file, split it, and run `JSONSerialization`
+    /// over every line on a 30 s timer, while the caller consumed only the last
+    /// 600 seconds. Cost therefore scaled with total history rather than with the
+    /// window used, and the file had no cap — see `ProviderQuotaSnapshotLog`.
     private func loadSnapshots(from path: String) -> [ProviderQuotaSnapshot] {
-        guard let content = try? String(contentsOfFile: path, encoding: .utf8) else { return [] }
+        let url = URL(fileURLWithPath: path)
+        guard let handle = try? FileHandle(forReadingFrom: url) else { return [] }
+        defer { try? handle.close() }
+
+        let size = Int((try? handle.seekToEnd()) ?? 0)
+        let start = ProviderQuotaSnapshotLog.readStartOffset(fileSize: size)
+        guard size > 0 else { return [] }
+        do {
+            try handle.seek(toOffset: UInt64(start))
+        } catch {
+            Log.warn("UsageMonitor: failed to seek quota snapshot log: \(error.localizedDescription)")
+            return []
+        }
+        guard var data = try? handle.readToEnd() else { return [] }
+        data = ProviderQuotaSnapshotLog.alignedTail(data, startedMidFile: start > 0)
+        guard let content = String(data: data, encoding: .utf8) else { return [] }
+
         return content
             .split(separator: "\n")
             .compactMap { parseSnapshotLine(String($0)) }
@@ -729,6 +752,15 @@ final class UsageMonitor {
                 try line.write(to: targetURL, atomically: true, encoding: .utf8)
             }
             lastSnapshotByProvider[providerKey] = snapshot
+            // Bound the file. Safe to do here because `loadSnapshots` re-reads
+            // from the start on every refresh rather than tailing from a saved
+            // offset, so a rewrite cannot strand a reader mid-stream. This file
+            // was the one append-only log in the app with no cap at all.
+            LogFileCompactor.compactIfNeeded(
+                path: Self.snapshotsFilePath,
+                maxBytes: ProviderQuotaSnapshotLog.maxBytes,
+                keepBytes: ProviderQuotaSnapshotLog.keepBytes
+            )
         } catch {
             DispatchQueue.main.async {
                 self.lastErrorMessage = "Failed to store usage snapshot: \(error.localizedDescription)"

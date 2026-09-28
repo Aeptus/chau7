@@ -1,3 +1,4 @@
+import Atomics
 import Foundation
 import os.log
 import Chau7Core
@@ -22,6 +23,16 @@ final class RemoteIPCServer {
     @ObservationIgnored private let maxFrameSize = 5 * 1024 * 1024
     @ObservationIgnored private let socketPath: URL
 
+    /// Lock-free mirror of the listener's accepting state. The IPC queue writes it,
+    /// and the transport health check can read it without blocking on a queue hop.
+    @ObservationIgnored private let acceptingFlag = ManagedAtomic<Bool>(false)
+
+    /// A nonblocking liveness signal for the transport health check. Probing the
+    /// socket would occupy the listener's single client slot.
+    var isAccepting: Bool {
+        acceptingFlag.load(ordering: .relaxed)
+    }
+
     init(
         socketPath: URL = RuntimeIsolation.appSupportDirectory(named: "Chau7")
             .appendingPathComponent("remote.sock")
@@ -31,6 +42,16 @@ final class RemoteIPCServer {
 
     func start() {
         queue.sync {
+            // Reconcile before the idempotence check. `isListeningState` and the
+            // real listener can disagree if the accept source was torn down
+            // without `stop()` running; bailing out here would leave the socket
+            // file present with nothing listening, which is precisely the state
+            // that strands a remote helper on ECONNREFUSED forever. A restart is
+            // cheap and idempotent, so prefer repairing over trusting the flag.
+            if isListeningState, !isAccepting {
+                logger.warning("Remote IPC listener lost while marked listening; restarting")
+                stopLocked()
+            }
             guard !isListeningState else { return }
 
             let path = socketPath.path
@@ -72,6 +93,7 @@ final class RemoteIPCServer {
 
             self.listener = listener
             isListeningState = true
+            acceptingFlag.store(true, ordering: .relaxed)
             DispatchQueue.main.async { [weak self] in
                 self?.isListening = true
             }
@@ -80,26 +102,31 @@ final class RemoteIPCServer {
     }
 
     func stop() {
-        queue.sync {
-            if let cs = clientSource {
-                cs.cancel()
-                clientSource = nil
-            } else if clientFD >= 0 {
-                close(clientFD)
-                clientFD = -1
-            }
+        queue.sync { stopLocked() }
+    }
 
-            if let listener {
-                listener.stop(removeSocketFile: true)
-                self.listener = nil
-            } else {
-                unlink(socketPath.path)
-            }
+    /// Queue-confined teardown. Split out so `start()` can reuse it when
+    /// reconciling a desynced state without re-entering `queue.sync`.
+    private func stopLocked() {
+        if let cs = clientSource {
+            cs.cancel()
+            clientSource = nil
+        } else if clientFD >= 0 {
+            close(clientFD)
+            clientFD = -1
+        }
 
-            isListeningState = false
-            DispatchQueue.main.async { [weak self] in
-                self?.isListening = false
-            }
+        if let listener {
+            listener.stop(removeSocketFile: true)
+            self.listener = nil
+        } else {
+            unlink(socketPath.path)
+        }
+
+        isListeningState = false
+        acceptingFlag.store(false, ordering: .relaxed)
+        DispatchQueue.main.async { [weak self] in
+            self?.isListening = false
         }
     }
 

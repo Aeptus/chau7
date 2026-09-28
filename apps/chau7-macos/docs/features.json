@@ -1,22 +1,50 @@
 [
   {
-    "category": "Developer Experience",
-    "feature": "Measured SwiftLint Budgets and Registered Staged Guards",
-    "description": "Strict SwiftLint uses measured file, type, function, and complexity caps with force operations enabled; staged quality policy runs Gitleaks and forbidden-file and 5-MiB-or-larger blob checks and registers advisory Chau7 code review",
+    "category": "Telemetry",
+    "feature": "Complete Retention Coverage",
+    "description": "Telemetry retention prunes the tables the run cascade structurally cannot reach — usage_evidence, provider_latency_samples and remote_client_events declare no foreign key to runs — independently of the run prune, with one shared VACUUM per pass and an index so the prune is not a full scan",
+    "status": "Shipped",
+    "differentiator": "No"
+  },
+  {
+    "category": "Performance",
+    "feature": "Bounded Provider Quota Log",
+    "description": "The provider-quota snapshot log is capped on disk and read only as a bounded, line-aligned tail, so per-refresh parse cost tracks the consumed window rather than total history instead of growing until the refresh allocates gigabytes",
     "status": "Shipped",
     "differentiator": "No"
   },
   {
     "category": "Reliability",
-    "feature": "Safe Claude Status-Line Installation",
-    "description": "Upserts the Claude status-line helper only after reading a valid settings object; missing settings retain first-install behavior, while read and parse failures surface an error without overwriting user configuration",
+    "feature": "Recoverable Remote IPC Transport",
+    "description": "The local remote IPC listener is polled for liveness and restarted when it stops accepting, and reconciles a desynced state on start, so a torn-down accept source no longer strands the socket file with nothing behind it and leaves the phone on Syncing tabs until an app restart",
     "status": "Shipped",
     "differentiator": "No"
   },
   {
-    "category": "Remote Access",
-    "feature": "Owner-Only Remote IPC Socket",
-    "description": "Creates the remote bridge socket with owner-only 0600 permissions inside an app-support directory restricted to 0700, preventing other local users from accessing its frames",
+    "category": "Reliability",
+    "feature": "Bounded Hang Watchdog Lifetime",
+    "description": "The independent hang watchdog child retires once the main thread is demonstrably advancing again, instead of supervising until the parent dies, so a single startup stall no longer leaves a process and a copy of the app's inherited file descriptors resident for the rest of the session",
+    "status": "Shipped",
+    "differentiator": "No"
+  },
+  {
+    "category": "Performance",
+    "feature": "Self-Terminating View Loops",
+    "description": "Notification history no longer couples an .id identity token to the appear handler that rewrites it, task-candidate countdowns are lifecycle-scoped rather than manually scheduled, and a terminal drain with no terminal backs off instead of waking twenty times a second",
+    "status": "Shipped",
+    "differentiator": "No"
+  },
+  {
+    "category": "Terminal Core",
+    "feature": "Bounded Terminal-Core Accumulators",
+    "description": "The Rust emulator caps the chunked Kitty payload, the OSC 8 hyperlink table, and the pooled cell-buffer size, releasing capacity on every path rather than only clearing length; the hyperlink table appears in the terminal memory report and saturation degrades to no-link instead of a wrong link",
+    "status": "Shipped",
+    "differentiator": "No"
+  },
+  {
+    "category": "Performance",
+    "feature": "Nonblocking Main-Thread Work",
+    "description": "Remote-agent resolution runs entirely off the main actor (Go checkout walk, bundled-helper copy, and compile) with a concurrent pipe drain and deadline; startup carries a generation guard against duplicate agents and a mid-resolution stop; MCP bridge install runs on the listener queue; terminal shutdown shares one cached process-table snapshot; Metal frame admission skips rather than stalling the main thread",
     "status": "Shipped",
     "differentiator": "No"
   },
@@ -806,15 +834,8 @@
   },
   {
     "category": "Developer Experience",
-    "feature": "Strict-Concurrency Warning Rollout",
-    "description": "All SwiftPM targets enable complete concurrency diagnostics without failing builds; two invalid dashboard main-actor hops are fixed, and known shared-state races remain tracked before warning promotion",
-    "status": "Shipped",
-    "differentiator": "No"
-  },
-  {
-    "category": "Developer Experience",
     "feature": "Registry-Driven Quality Firewall",
-    "description": "Thin Husky hooks delegate to pnpm quality modes backed by a central registry; pull requests select Xcode with the iPhone 17 simulator, run affected-surface or full-suite pre-push checks (including repository-wide SwiftFormat) plus staged-file checks, and workflow policy requires both PR CI and release validation",
+    "description": "Thin Husky hooks delegate to pnpm quality modes backed by a central registry; affected-surface pre-push scoping, conservative full-suite triggers, content-hash caching, reproducible failure commands, dirty-worktree handling, and runner/registry tests. Pull requests select Xcode with the iPhone 17 simulator, run affected-surface or full-suite pre-push checks (including repository-wide SwiftFormat) plus staged-file checks, and workflow policy requires both PR CI and release validation.",
     "status": "Shipped",
     "differentiator": "Yes"
   },
@@ -2935,7 +2956,7 @@
   {
     "category": "SSH, Profiles & Remote",
     "feature": "iPhone Issue Reporting",
-    "description": "Chau7 Remote submits private issues from Settings with issue-scoped single-use HMAC authorization, a description, environment snapshot, optional remembered contact, exact Markdown preview, and share-sheet fallback; its bounded recent-diagnostics excerpt is off by default with an explicit keystroke privacy warning",
+    "description": "Chau7 Remote submits private issues from Settings with issue-scoped single-use HMAC authorization, a description, environment snapshot, optional remembered contact, exact Markdown preview, and share-sheet fallback; it also writes a timestamped Markdown report file, reads pairing at submit time so a sheet opened before pairing completes still works, and its bounded recent-diagnostics excerpt is off by default with an explicit keystroke privacy warning",
     "status": "Experimental",
     "differentiator": "No"
   },
@@ -5080,5 +5101,33 @@
     "description": "Git porcelain, NUL-delimited, and format output bypasses human-oriented CTO filtering and preserves empty and machine-readable results byte-for-byte for scripts and CI; the generated command wrapper execs the real binary for these invocations before the optimizer is reached",
     "status": "Shipped",
     "differentiator": "Yes"
+  },
+  {
+    "category": "Developer Experience",
+    "feature": "Measured SwiftLint Budgets and Registered Staged Guards",
+    "description": "Strict SwiftLint uses measured file, type, function, and complexity caps with force operations enabled; staged quality policy runs Gitleaks and forbidden-file and 5-MiB-or-larger blob checks and registers advisory Chau7 code review",
+    "status": "Shipped",
+    "differentiator": "No"
+  },
+  {
+    "category": "Reliability",
+    "feature": "Safe Claude Status-Line Installation",
+    "description": "Upserts the Claude status-line helper only after reading a valid settings object; missing settings retain first-install behavior, while read and parse failures surface an error without overwriting user configuration",
+    "status": "Shipped",
+    "differentiator": "No"
+  },
+  {
+    "category": "Remote Access",
+    "feature": "Owner-Only Remote IPC Socket",
+    "description": "Creates the remote bridge socket with owner-only 0600 permissions inside an app-support directory restricted to 0700, preventing other local users from accessing its frames",
+    "status": "Shipped",
+    "differentiator": "No"
+  },
+  {
+    "category": "Developer Experience",
+    "feature": "Strict-Concurrency Warning Rollout",
+    "description": "All SwiftPM targets enable complete concurrency diagnostics without failing builds; two invalid dashboard main-actor hops are fixed, and known shared-state races remain tracked before warning promotion",
+    "status": "Shipped",
+    "differentiator": "No"
   }
 ]

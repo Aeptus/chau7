@@ -718,6 +718,10 @@ private final class SettingsToolbarDelegate: NSObject, NSToolbarDelegate {
         // Cleanup status bar controller
         StatusBarController.shared.cleanup()
         MainThreadHangRecoveryController.shared.stop()
+        // Stop the remote IPC liveness check. Without this it is the only
+        // Chau7 subsystem left holding a repeating source at termination, and
+        // the path is untested for an in-place relaunch.
+        RemoteControlManager.shared.stopTransportHealthMonitor()
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {

@@ -297,9 +297,20 @@ final class MCPServerManager {
             Log.info("MCPServer: disabled in isolated test mode")
             return
         }
-        installBridgeIfNeeded()
+        // `installBridgeIfNeeded()` must NOT run on the caller's thread. It does
+        // `FileManager.copyItem` of the bridge executable, plus synchronous reads
+        // and writes of the Codex notify helper, the Claude Code hook, and
+        // `~/.codex/config.toml` — and the clonefileat deadlock documented above is
+        // a property of that `copyItem` hitting the main thread, not of the test
+        // build. Running it here froze startup so the terminal never opened. The
+        // fix is to move the work, not to keep skipping it, so it now runs on the
+        // same serial queue as the listener. That also removes the previous
+        // install-then-listen window in which a client could connect before the
+        // bridge existed.
         queue.async { [weak self] in
-            self?._start()
+            guard let self else { return }
+            installBridgeIfNeeded()
+            _start()
         }
     }
 
