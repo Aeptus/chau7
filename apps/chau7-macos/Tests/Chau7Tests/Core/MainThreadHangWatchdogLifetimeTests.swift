@@ -109,7 +109,7 @@ final class MainThreadHangWatchdogLifetimeTests: XCTestCase {
     /// forever. The heartbeat check in the runner already exits on an unreadable
     /// heartbeat; this is the belt to that braces.
     func testMaximumLifetimeIsBounded() {
-        var lifetime = lifetime()
+        let lifetime = lifetime()
         // Never healthy, never sampled.
         XCTAssertFalse(lifetime.shouldExit(parentIsAlive: true, now: start + 60))
         XCTAssertTrue(
