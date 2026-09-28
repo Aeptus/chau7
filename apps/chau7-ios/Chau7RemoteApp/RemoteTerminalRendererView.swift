@@ -406,8 +406,15 @@ private final class RemoteTerminalViewportView: UIView, UIScrollViewDelegate {
             cellHeight: Double(cellSize.height),
             scrollbackRows: renderState.scrollbackRows
         )
+        // The engine scrolls in source rows while the scroll view moves in phone-width
+        // rows, so convert before normalising — otherwise a re-wrapped screen
+        // reports a scrollback offset `chunksPerRow` times too large and the
+        // view snaps to the wrong place in history.
+        let displayCols = max(1, Int((bounds.width / max(cellSize.width, 1)).rounded(.down)))
+        let chunks = RemoteTerminalWrapGeometry.chunksPerRow(sourceCols: renderState.cols, displayCols: displayCols)
+        let sourceOffset = displayOffset / max(1, chunks)
         let scrollbackRows = max(1, renderState.scrollbackRows)
-        store.scrollActive(toNormalized: Double(displayOffset) / Double(scrollbackRows))
+        store.scrollActive(toNormalized: Double(sourceOffset) / Double(scrollbackRows))
     }
 
     private func recalculateViewport() {
@@ -435,12 +442,18 @@ private final class RemoteTerminalViewportView: UIView, UIScrollViewDelegate {
             return
         }
 
-        let contentHeight = max(bounds.height, CGFloat(max(renderState.totalRows, renderState.rows)) * cellSize.height)
+        // Content height is measured in phone-width rows, which is what the canvas
+        // paints: the engine holds the wider source grid, so its own row count
+        // understates the visible height once rows are re-wrapped.
+        let displayCols = max(1, Int((bounds.width / max(cellSize.width, 1)).rounded(.down)))
+        let chunksPerRow = RemoteTerminalWrapGeometry.chunksPerRow(sourceCols: renderState.cols, displayCols: displayCols)
+        let displayRows = RemoteTerminalWrapGeometry.displayRowCount(sourceRows: renderState.totalRows, chunksPerRow: chunksPerRow)
+        let contentHeight = max(bounds.height, CGFloat(displayRows) * cellSize.height)
         scrollContentView.frame = CGRect(x: 0, y: 0, width: max(bounds.width, 1), height: contentHeight)
         scrollView.contentSize = scrollContentView.frame.size
 
         let maxOffset = max(0, contentHeight - bounds.height)
-        let targetOffsetY = max(0, maxOffset - CGFloat(renderState.displayOffset) * cellSize.height)
+        let targetOffsetY = max(0, maxOffset - CGFloat(renderState.displayOffset * chunksPerRow) * cellSize.height)
 
         if force || abs(scrollView.contentOffset.y - targetOffsetY) > (cellSize.height / 2) {
             scrollView.setContentOffset(CGPoint(x: 0, y: targetOffsetY), animated: false)
@@ -514,9 +527,9 @@ private final class RemoteTerminalCanvasView: UIView {
         context.fill(bounds)
         let backgroundColorKey = colorScheme.backgroundColorKey
 
-        let rows = renderState.rows
-        let cols = renderState.cols
-        guard rows > 0, cols > 0 else { return }
+        let sourceRows = renderState.rows
+        let sourceCols = renderState.cols
+        guard sourceRows > 0, sourceCols > 0 else { return }
 
         let cellW = metrics.cellWidth
         let cellH = metrics.cellHeight
@@ -526,35 +539,55 @@ private final class RemoteTerminalCanvasView: UIView {
         // every line into the row above it).
         let baselineOffset = metrics.baselineOffset
 
+        // The engine holds the source grid (Mac PTY width); this canvas holds
+        // phone-width rows. Each source row is re-wrapped across as many
+        // phone-width rows as it needs, so the content reads top-to-bottom on a
+        // narrow screen instead of being clipped.
+        let displayCols = max(1, Int((bounds.width / cellW).rounded(.down)))
+        let chunksPerRow = RemoteTerminalWrapGeometry.chunksPerRow(sourceCols: sourceCols, displayCols: displayCols)
+        let displayRows = RemoteTerminalWrapGeometry.displayRowCount(sourceRows: sourceRows, chunksPerRow: chunksPerRow)
+
         // Background pass: batch consecutive cells with same bg color into single fills
         context.setAllowsAntialiasing(false)
         context.setShouldAntialias(false)
-        for row in 0 ..< rows {
-            let rowStartIndex = row * cols
-            guard rowStartIndex < renderState.cells.count else { break }
-            let y = CGFloat(row) * cellH
+        for displayRow in 0 ..< displayRows {
+            guard let slice = RemoteTerminalWrapGeometry.sourceSlice(
+                displayRow: displayRow,
+                sourceCols: sourceCols,
+                sourceRows: sourceRows,
+                chunksPerRow: chunksPerRow,
+                displayCols: displayCols
+            ) else { break }
+            let rowStartIndex = slice.sourceRow * sourceCols + slice.firstCol
+            guard rowStartIndex < renderState.cells.count else { continue }
+            let y = CGFloat(displayRow) * cellH
             var runStart = 0
             var runColorKey = colorCache.backgroundKey(for: renderState.cells[rowStartIndex])
-            for col in 1 ..< cols {
-                let idx = row * cols + col
+            for offset in 1 ..< slice.colCount {
+                let idx = rowStartIndex + offset
                 guard idx < renderState.cells.count else { break }
                 let key = colorCache.backgroundKey(for: renderState.cells[idx])
                 if key != runColorKey {
-                    fillBackgroundRun(context: context, row: row, startCol: runStart, endCol: col, colorKey: runColorKey, skipColorKey: backgroundColorKey, y: y, cellW: cellW, cellH: cellH)
-                    runStart = col
+                    fillBackgroundRun(context: context, row: displayRow, startCol: runStart, endCol: offset, colorKey: runColorKey, skipColorKey: backgroundColorKey, y: y, cellW: cellW, cellH: cellH)
+                    runStart = offset
                     runColorKey = key
                 }
             }
-            fillBackgroundRun(context: context, row: row, startCol: runStart, endCol: cols, colorKey: runColorKey, skipColorKey: backgroundColorKey, y: y, cellW: cellW, cellH: cellH)
+            fillBackgroundRun(context: context, row: displayRow, startCol: runStart, endCol: slice.colCount, colorKey: runColorKey, skipColorKey: backgroundColorKey, y: y, cellW: cellW, cellH: cellH)
         }
 
         if renderState.cursorVisible,
-           renderState.cursorRow >= 0, renderState.cursorRow < rows,
-           renderState.cursorCol >= 0, renderState.cursorCol < cols {
+           renderState.cursorRow >= 0, renderState.cursorRow < sourceRows,
+           renderState.cursorCol >= 0, renderState.cursorCol < sourceCols,
+           chunksPerRow > 0 {
+            // The cursor cell can land in any phone-width chunk of its source
+            // row, so place the highlight there rather than assuming column 0.
+            let cursorDisplayRow = renderState.cursorRow * chunksPerRow + renderState.cursorCol / displayCols
+            let cursorDisplayCol = renderState.cursorCol % displayCols
             colorScheme.cursorUIColor.withAlphaComponent(0.28).setFill()
             UIRectFill(CGRect(
-                x: CGFloat(renderState.cursorCol) * cellW,
-                y: CGFloat(renderState.cursorRow) * cellH,
+                x: CGFloat(cursorDisplayCol) * cellW,
+                y: CGFloat(cursorDisplayRow) * cellH,
                 width: cellW,
                 height: cellH
             ))
@@ -564,11 +597,19 @@ private final class RemoteTerminalCanvasView: UIView {
         context.setAllowsAntialiasing(true)
         context.setShouldAntialias(true)
 
-        for row in 0 ..< rows {
-            let y = CGFloat(row) * cellH
-            for col in 0 ..< cols {
-                let idx = row * cols + col
-                guard idx < renderState.cells.count else { continue }
+        for displayRow in 0 ..< displayRows {
+            guard let slice = RemoteTerminalWrapGeometry.sourceSlice(
+                displayRow: displayRow,
+                sourceCols: sourceCols,
+                sourceRows: sourceRows,
+                chunksPerRow: chunksPerRow,
+                displayCols: displayCols
+            ) else { break }
+            let rowStartIndex = slice.sourceRow * sourceCols + slice.firstCol
+            let y = CGFloat(displayRow) * cellH
+            for offset in 0 ..< slice.colCount {
+                let idx = rowStartIndex + offset
+                guard idx < renderState.cells.count else { break }
                 let cell = renderState.cells[idx]
                 if cell.flags & rustCellFlagHidden != 0 { continue }
                 if cell.continuation != 0 { continue }
@@ -580,11 +621,11 @@ private final class RemoteTerminalCanvasView: UIView {
                 let font = resolvedFont(for: cell)
                 let str = clusterStr as NSString
                 str.draw(
-                    at: CGPoint(x: CGFloat(col) * cellW, y: y + baselineOffset),
+                    at: CGPoint(x: CGFloat(offset) * cellW, y: y + baselineOffset),
                     withAttributes: colorCache.textAttributes(font: font, colorKey: fgKey, color: fg)
                 )
 
-                let x = CGFloat(col) * cellW
+                let x = CGFloat(offset) * cellW
                 if cell.flags & rustCellFlagUnderline != 0 {
                     fg.setStroke()
                     context.setLineWidth(1)

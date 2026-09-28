@@ -1336,6 +1336,13 @@ final class RemoteClient {
             terminalRenderer.retainVisibleTabs(visibleTabIDs)
             pendingInteractivePrompts.removeAll { !visibleTabIDs.contains($0.tabID) }
         }
+        // Announce each tab's Mac PTY width (when the Mac knows it) so its engine
+        // ingests at the source width instead of hard-wrapping the TUI at the
+        // phone's. Applied on every inventory, not just membership changes: the
+        // Mac's window can be resized without any tab appearing or disappearing.
+        for tab in tabs {
+            terminalRenderer.setSourceColumns(tab.terminalCols ?? 0, for: tab.tabID)
+        }
         if membershipChanged || activeTabChanged {
             refreshVisibleOutput(prioritizeStrippedOutput: true)
             terminalRenderer.setActiveTab(activeTabID)

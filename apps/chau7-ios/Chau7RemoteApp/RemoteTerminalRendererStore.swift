@@ -25,6 +25,10 @@ private actor RemoteTerminalRenderEngine {
     private var replayByTabID: [UInt32: Data] = [:]
     private var viewportCols = 0
     private var viewportRows = 0
+    /// Source (Mac PTY) width per tab, announced in the tab inventory. The
+    /// engine ingests at this width so the TUI is not hard-wrapped at the
+    /// phone's narrower viewport; the canvas re-wraps it for display.
+    private var sourceColsByTabID: [UInt32: Int] = [:]
     private var colorScheme: TerminalColorScheme
     private var isAvailable = true
     private var unpresentedTraceByTabID: [UInt32: RemoteTerminalFrameTrace] = [:]
@@ -38,6 +42,7 @@ private actor RemoteTerminalRenderEngine {
         replayByTabID.removeAll()
         viewportCols = 0
         viewportRows = 0
+        sourceColsByTabID.removeAll()
         self.colorScheme = colorScheme
         isAvailable = true
         unpresentedTraceByTabID.removeAll()
@@ -61,8 +66,31 @@ private actor RemoteTerminalRenderEngine {
         guard cols != viewportCols || rows != viewportRows else { return }
         viewportCols = cols
         viewportRows = rows
-        for playback in playbacks.values {
-            playback.resize(cols: cols, rows: rows)
+        resizeEngines()
+    }
+
+    /// Records the Mac's PTY width for a tab and resizes that tab's engine to
+    /// ingest at it. Called when the tab inventory arrives or its width changes.
+    func setSourceColumns(_ cols: Int, for tabID: UInt32) {
+        let sanitized = max(0, cols)
+        guard sanitized != sourceColsByTabID[tabID] else { return }
+        sourceColsByTabID[tabID] = sanitized
+        resizeEngines()
+    }
+
+    /// Engine width is the source width when known, never the phone width —
+    /// ingesting wide TUI output into a narrow engine is what hard-wrapped and
+    /// scrambled it. Rows stay phone-driven so the visible screen height and the
+    /// scroll math keep matching the display.
+    private func resizeEngines() {
+        guard viewportCols > 0, viewportRows > 0 else { return }
+        for (tabID, playback) in playbacks {
+            let size = RemoteTerminalWrapGeometry.engineSize(
+                sourceCols: sourceColsByTabID[tabID] ?? 0,
+                displayCols: viewportCols,
+                displayRows: viewportRows
+            )
+            playback.resize(cols: size.cols, rows: size.rows)
         }
     }
 
@@ -117,9 +145,14 @@ private actor RemoteTerminalRenderEngine {
             return playback
         }
         guard let replay = replayByTabID[tabID], !replay.isEmpty else { return nil }
+        let size = RemoteTerminalWrapGeometry.engineSize(
+            sourceCols: sourceColsByTabID[tabID] ?? 0,
+            displayCols: viewportCols,
+            displayRows: viewportRows
+        )
         guard let playback = RemoteRustTerminalPlayback(
-            cols: viewportCols,
-            rows: viewportRows,
+            cols: size.cols,
+            rows: size.rows,
             colorScheme: colorScheme
         ) else {
             isAvailable = false
@@ -276,6 +309,15 @@ final class RemoteTerminalRendererStore {
         guard cols > 0, rows > 0 else { return }
         enqueueMutation(publishFor: activeTabID) { engine in
             await engine.setViewport(cols: cols, rows: rows)
+        }
+    }
+
+    /// Announces the Mac PTY width for a tab so its engine ingests at that
+    /// width. Pass 0 when the inventory carries none (older Macs), which falls
+    /// the engine back to sizing to the phone viewport.
+    func setSourceColumns(_ cols: Int, for tabID: UInt32) {
+        enqueueMutation(publishFor: tabID) { engine in
+            await engine.setSourceColumns(cols, for: tabID)
         }
     }
 

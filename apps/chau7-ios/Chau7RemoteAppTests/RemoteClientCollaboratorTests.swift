@@ -900,6 +900,142 @@ final class RemoteTerminalViewportGeometryTests: XCTestCase {
     }
 }
 
+/// The engine ingests at the Mac's PTY width so wide TUI output is not
+/// hard-wrapped (which is what scrambled every logical line), and the canvas
+/// re-wraps that source grid down to phone-width rows for display. These lock
+/// in both halves of that mapping.
+final class RemoteTerminalWrapGeometryTests: XCTestCase {
+    func testEngineIngestsAtSourceWidthNotPhoneWidth() {
+        // 120 Mac columns into a 40-column engine is exactly the hard-wrap that
+        // fragmented every line; the engine must be at least as wide as the source.
+        let size = RemoteTerminalWrapGeometry.engineSize(sourceCols: 120, displayCols: 40, displayRows: 30)
+        XCTAssertEqual(size.cols, 120)
+        XCTAssertEqual(size.rows, 30, "rows stay phone-driven so screen height and scroll math match the display")
+    }
+
+    func testEngineFallsBackToPhoneWidthWhenSourceUnknown() {
+        // Older Macs announce nothing; the phone width is then the best guess
+        // and must not collapse the grid to zero.
+        let size = RemoteTerminalWrapGeometry.engineSize(sourceCols: 0, displayCols: 40, displayRows: 30)
+        XCTAssertEqual(size.cols, 40)
+        XCTAssertEqual(size.rows, 30)
+    }
+
+    func testEngineNeverNarrowerThanEitherSide() {
+        let narrow = RemoteTerminalWrapGeometry.engineSize(sourceCols: 20, displayCols: 60, displayRows: 10)
+        XCTAssertEqual(narrow.cols, 60, "a wide phone must not be forced to ingest at the narrower source width")
+        let degenerate = RemoteTerminalWrapGeometry.engineSize(sourceCols: 0, displayCols: 0, displayRows: 0)
+        XCTAssertEqual(degenerate.cols, 1)
+        XCTAssertEqual(degenerate.rows, 1)
+    }
+
+    func testChunksPerRowRoundsUp() {
+        XCTAssertEqual(RemoteTerminalWrapGeometry.chunksPerRow(sourceCols: 120, displayCols: 40), 3)
+        XCTAssertEqual(RemoteTerminalWrapGeometry.chunksPerRow(sourceCols: 100, displayCols: 40), 3)
+        XCTAssertEqual(RemoteTerminalWrapGeometry.chunksPerRow(sourceCols: 80, displayCols: 40), 2)
+        // Exact multiple must not gain a trailing empty chunk.
+        XCTAssertEqual(RemoteTerminalWrapGeometry.chunksPerRow(sourceCols: 40, displayCols: 40), 1)
+    }
+
+    func testChunksPerRowSurvivesDegenerateInput() {
+        XCTAssertEqual(RemoteTerminalWrapGeometry.chunksPerRow(sourceCols: 0, displayCols: 40), 1)
+        XCTAssertEqual(RemoteTerminalWrapGeometry.chunksPerRow(sourceCols: 120, displayCols: 0), 1)
+    }
+
+    func testDisplayRowsCoverEverySourceColumnExactlyOnce() {
+        let sourceCols = 100
+        let displayCols = 40
+        let chunks = RemoteTerminalWrapGeometry.chunksPerRow(sourceCols: sourceCols, displayCols: displayCols)
+        let displayRows = RemoteTerminalWrapGeometry.displayRowCount(sourceRows: 2, chunksPerRow: chunks)
+
+        // No source column may be dropped by the final partial chunk, or the
+        // tail of a long line silently disappears on the phone.
+        var seen = Set<Int>()
+        for displayRow in 0 ..< displayRows {
+            let slice = try? XCTUnwrap(
+                RemoteTerminalWrapGeometry.sourceSlice(
+                    displayRow: displayRow,
+                    sourceCols: sourceCols,
+                    sourceRows: 2,
+                    chunksPerRow: chunks,
+                    displayCols: displayCols
+                )
+            )
+            guard let slice else { continue }
+            for col in slice.firstCol ..< (slice.firstCol + slice.colCount) {
+                seen.insert(col)
+            }
+        }
+        XCTAssertEqual(seen.count, sourceCols, "every source column must be painted on some display row")
+        XCTAssertEqual(seen.min(), 0)
+        XCTAssertEqual(seen.max(), sourceCols - 1)
+    }
+
+    func testSourceSliceMapsChunksInOrderWithinARow() {
+        let sourceCols = 100
+        let displayCols = 40
+        let chunks = RemoteTerminalWrapGeometry.chunksPerRow(sourceCols: sourceCols, displayCols: displayCols)
+        let sourceRows = 3
+
+        for row in 0 ..< sourceRows {
+            var expectedFirstCol = 0
+            for displayRow in row * chunks ..< (row + 1) * chunks {
+                let slice = RemoteTerminalWrapGeometry.sourceSlice(
+                    displayRow: displayRow,
+                    sourceCols: sourceCols,
+                    sourceRows: sourceRows,
+                    chunksPerRow: chunks,
+                    displayCols: displayCols
+                )
+                XCTAssertEqual(slice?.sourceRow, row)
+                XCTAssertEqual(slice?.firstCol, expectedFirstCol)
+                expectedFirstCol += slice?.colCount ?? 0
+            }
+            XCTAssertEqual(expectedFirstCol, sourceCols, "row \(row) must be fully covered across its chunks")
+        }
+    }
+
+    func testFinalChunkIsClampedToRemainingColumns() {
+        // 100 source columns over 3 chunks of 40 leaves a 20-wide tail.
+        let slice = RemoteTerminalWrapGeometry.sourceSlice(
+            displayRow: 2,
+            sourceCols: 100,
+            sourceRows: 1,
+            chunksPerRow: 3,
+            displayCols: 40
+        )
+        XCTAssertEqual(slice?.firstCol, 80)
+        XCTAssertEqual(slice?.colCount, 20, "the tail chunk must not read past the end of the row")
+    }
+
+    func testDisplayRowCountIsZeroSafe() {
+        XCTAssertEqual(RemoteTerminalWrapGeometry.displayRowCount(sourceRows: 0, chunksPerRow: 3), 0)
+        XCTAssertEqual(RemoteTerminalWrapGeometry.displayRowCount(sourceRows: 2, chunksPerRow: 0), 2)
+    }
+
+    func testOutOfRangeDisplayRowIsRejected() {
+        XCTAssertNil(
+            RemoteTerminalWrapGeometry.sourceSlice(
+                displayRow: 3,
+                sourceCols: 100,
+                sourceRows: 1,
+                chunksPerRow: 3,
+                displayCols: 40
+            ),
+            "a display row past the last source row must not index into stale cells"
+        )
+        XCTAssertNil(
+            RemoteTerminalWrapGeometry.sourceSlice(
+                displayRow: -1,
+                sourceCols: 100,
+                sourceRows: 4,
+                chunksPerRow: 3,
+                displayCols: 40
+            )
+        )
+    }
+}
+
 /// A lock-screen Allow/Deny can be delivered on a cold launch, before the
 /// WebSocket has connected and before `/pending` has populated the approval
 /// list. Dropping it there left the request looking untouched with the Mac's

@@ -85,6 +85,69 @@ enum RemoteTerminalViewportGeometry {
     }
 }
 
+/// Re-composition of a terminal grid that is wider than the phone.
+///
+/// The Mac draws full-screen TUIs (Claude Code, Codex) at its own PTY width —
+/// often 100+ columns. Sizing the iOS emulator to the *phone* instead made the
+/// engine hard-wrap that output at ~40 columns, so every logical line arrived
+/// already fragmented and the layout was scrambled before it was ever painted.
+///
+/// The fix separates the two widths:
+///  * **ingest** happens at the source width (announced by the Mac), so the
+///    engine reproduces the TUI faithfully with no hard-wrap; and
+///  * **display** folds that wide grid down to the phone by re-wrapping each
+///    source row across as many phone-width rows as it needs.
+///
+/// Only presentation wraps. The engine's row grid — cursor, scrollback,
+/// alternate screen — is untouched, so a cursor-positioning TUI still lands in
+/// the right cell, it is simply painted across the phone-width row that cell
+/// falls in.
+///
+/// Lives here (not in the renderer view) so the host-less test bundle can
+/// exercise the mapping directly.
+enum RemoteTerminalWrapGeometry {
+    /// Engine size to ingest into. Never narrower than the source width, since
+    /// that is what reintroduces hard-wrap; the phone width only wins when the
+    /// Mac did not announce a usable one.
+    static func engineSize(sourceCols: Int, displayCols: Int, displayRows: Int) -> (cols: Int, rows: Int) {
+        let cols = max(1, max(sourceCols, displayCols))
+        return (cols, max(1, displayRows))
+    }
+
+    /// Phone-width rows each source row is split into.
+    static func chunksPerRow(sourceCols: Int, displayCols: Int) -> Int {
+        guard sourceCols > 0, displayCols > 0 else { return 1 }
+        return max(1, Int(ceil(Double(sourceCols) / Double(displayCols))))
+    }
+
+    /// Maps a phone-width display row back to the source row and the source
+    /// column slice it paints. `nil` when the display row is out of range.
+    ///
+    /// The last chunk of a source row is narrower than `displayCols` whenever
+    /// the source width is not a multiple of the phone width — the common case —
+    /// so `colCount` is clamped to the columns that actually remain.
+    static func sourceSlice(
+        displayRow: Int,
+        sourceCols: Int,
+        sourceRows: Int,
+        chunksPerRow: Int,
+        displayCols: Int
+    ) -> (sourceRow: Int, firstCol: Int, colCount: Int)? {
+        guard chunksPerRow > 0, displayRow >= 0, displayCols > 0, sourceCols > 0 else { return nil }
+        let sourceRow = displayRow / chunksPerRow
+        guard sourceRow < sourceRows else { return nil }
+        let firstCol = (displayRow % chunksPerRow) * displayCols
+        guard firstCol < sourceCols else { return nil }
+        let colCount = max(0, min(displayCols, sourceCols - firstCol))
+        return (sourceRow, firstCol, colCount)
+    }
+
+    /// Total phone-width rows needed to show `sourceRows` source rows.
+    static func displayRowCount(sourceRows: Int, chunksPerRow: Int) -> Int {
+        max(0, sourceRows) * max(1, chunksPerRow)
+    }
+}
+
 /// Keeps terminal layout updates from masquerading as user scroll input.
 /// `UIScrollView` may call its delegate when `contentSize` or a programmatic
 /// offset changes; forwarding those callbacks to the Rust terminal pins the

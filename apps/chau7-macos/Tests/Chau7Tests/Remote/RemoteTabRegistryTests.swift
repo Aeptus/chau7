@@ -110,4 +110,70 @@ final class RemoteTabRegistryTests: XCTestCase {
         let decoded = try JSONDecoder().decode(RemoteTabDescriptor.self, from: data)
         XCTAssertEqual(decoded, descriptor)
     }
+
+    func testTerminalDimensionsAreAdvertisedOnTheDescriptor() throws {
+        let uuid = UUID()
+        var registry = RemoteTabRegistry()
+        var entry = RemoteTabRegistryEntry(
+            id: uuid,
+            sessionIdentifier: nil,
+            title: "Claude",
+            projectName: nil,
+            branchName: nil,
+            aiProvider: nil,
+            isActive: true,
+            isMCPControlled: false
+        )
+        entry.terminalCols = 120
+        entry.terminalRows = 40
+
+        let descriptors = registry.rebuild(with: [entry])
+        let descriptor = try XCTUnwrap(descriptors.first)
+        XCTAssertEqual(descriptor.terminalCols, 120)
+        XCTAssertEqual(descriptor.terminalRows, 40)
+
+        // The client sizes its own emulator to this width, so it has to
+        // survive the wire as the snake_case key the protocol documents.
+        let encoded = try JSONEncoder().encode(descriptor)
+        let json = try XCTUnwrap(String(data: encoded, encoding: .utf8))
+        XCTAssertTrue(json.contains("\"terminal_cols\":120"))
+        let decoded = try JSONDecoder().decode(RemoteTabDescriptor.self, from: encoded)
+        XCTAssertEqual(decoded, descriptor)
+    }
+
+    func testUnlaidOutTerminalAdvertisesNoDimensions() throws {
+        // A tab with no attached view reports 0, which must be sent as absent
+        // rather than 0 — a zero-width engine would ingest nothing.
+        let uuid = UUID()
+        var registry = RemoteTabRegistry()
+        let descriptors = registry.rebuild(
+            with: [
+                RemoteTabRegistryEntry(
+                    id: uuid,
+                    sessionIdentifier: nil,
+                    title: "Empty",
+                    projectName: nil,
+                    branchName: nil,
+                    aiProvider: nil,
+                    isActive: true,
+                    isMCPControlled: false
+                )
+            ]
+        )
+        let descriptor = try XCTUnwrap(descriptors.first)
+        XCTAssertNil(descriptor.terminalCols)
+        XCTAssertNil(descriptor.terminalRows)
+    }
+
+    func testOlderMacWithoutDimensionsStillDecodes() throws {
+        // Backward compatibility: a peer that predates the field must still be
+        // readable, and the client falls back to its own viewport width.
+        let json = """
+        {"tab_id":3,"title":"legacy","is_active":true}
+        """
+        let descriptor = try JSONDecoder().decode(RemoteTabDescriptor.self, from: Data(json.utf8))
+        XCTAssertEqual(descriptor.tabID, 3)
+        XCTAssertNil(descriptor.terminalCols)
+        XCTAssertNil(descriptor.terminalRows)
+    }
 }

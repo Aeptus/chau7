@@ -11,6 +11,11 @@ struct RemoteTabRegistryEntry {
     let isActive: Bool
     let isMCPControlled: Bool
     var inputPaneID: UUID?
+    /// The tab's live PTY dimensions, so remote clients can size their own
+    /// terminal emulator to the width this terminal actually draws at. Zero
+    /// when the tab has no attached terminal view.
+    var terminalCols = 0
+    var terminalRows = 0
 }
 
 struct RemoteTabRegistry {
@@ -54,7 +59,12 @@ struct RemoteTabRegistry {
                     aiProvider: entry.aiProvider,
                     isActive: entry.isActive,
                     isMCPControlled: entry.isMCPControlled,
-                    inputPaneID: entry.inputPaneID
+                    inputPaneID: entry.inputPaneID,
+                    // Guard against a not-yet-laid-out terminal reporting a
+                    // degenerate size; the client then falls back to its own
+                    // viewport width rather than ingesting into a 0-col grid.
+                    terminalCols: entry.terminalCols > 0 ? entry.terminalCols : nil,
+                    terminalRows: entry.terminalRows > 0 ? entry.terminalRows : nil
                 )
             )
         }

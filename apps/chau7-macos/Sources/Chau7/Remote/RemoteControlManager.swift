@@ -1520,7 +1520,9 @@ final class RemoteControlManager {
                     aiProvider: activityAIProvider(for: tab),
                     isActive: tab.id == activeUUID,
                     isMCPControlled: tab.isMCPControlled,
-                    inputPaneID: tab.splitController.terminalSessions.first?.0
+                    inputPaneID: tab.splitController.terminalSessions.first?.0,
+                    terminalCols: tab.splitController.terminalSessions.first?.1.terminalDimensions.cols ?? 0,
+                    terminalRows: tab.splitController.terminalSessions.first?.1.terminalDimensions.rows ?? 0
                 )
             }
         )

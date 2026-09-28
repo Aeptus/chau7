@@ -220,6 +220,15 @@ public struct RemoteTabDescriptor: Codable, Equatable, Identifiable, Sendable {
     public let isActive: Bool
     public let isMCPControlled: Bool
     public let inputPaneID: UUID?
+    /// The Mac terminal's current width in columns, when the sender knows it.
+    ///
+    /// A remote client sizes its own terminal emulator to the *source* width so
+    /// full-screen TUIs (Claude Code, Codex) are ingested without being wrapped
+    /// at the client's narrower viewport, which scrambles the layout. Absent on
+    /// older senders, where clients fall back to their own viewport width.
+    public let terminalCols: Int?
+    /// The Mac terminal's current height in rows, when known.
+    public let terminalRows: Int?
 
     public var id: UInt32 {
         tabID
@@ -233,7 +242,9 @@ public struct RemoteTabDescriptor: Codable, Equatable, Identifiable, Sendable {
         aiProvider: String? = nil,
         isActive: Bool,
         isMCPControlled: Bool,
-        inputPaneID: UUID? = nil
+        inputPaneID: UUID? = nil,
+        terminalCols: Int? = nil,
+        terminalRows: Int? = nil
     ) {
         self.tabID = tabID
         self.title = title
@@ -243,6 +254,8 @@ public struct RemoteTabDescriptor: Codable, Equatable, Identifiable, Sendable {
         self.isActive = isActive
         self.isMCPControlled = isMCPControlled
         self.inputPaneID = inputPaneID
+        self.terminalCols = terminalCols
+        self.terminalRows = terminalRows
     }
 
     enum CodingKeys: String, CodingKey {
@@ -254,6 +267,8 @@ public struct RemoteTabDescriptor: Codable, Equatable, Identifiable, Sendable {
         case isActive = "is_active"
         case isMCPControlled = "is_mcp_controlled"
         case inputPaneID = "input_pane_id"
+        case terminalCols = "terminal_cols"
+        case terminalRows = "terminal_rows"
     }
 
     public init(from decoder: Decoder) throws {
@@ -267,6 +282,10 @@ public struct RemoteTabDescriptor: Codable, Equatable, Identifiable, Sendable {
         // Lenient: older senders omit is_mcp_controlled.
         self.isMCPControlled = try container.decodeIfPresent(Bool.self, forKey: .isMCPControlled) ?? false
         self.inputPaneID = try container.decodeIfPresent(UUID.self, forKey: .inputPaneID)
+        // Lenient: older senders omit terminal dimensions; the client then falls
+        // back to sizing its engine to its own viewport.
+        self.terminalCols = try container.decodeIfPresent(Int.self, forKey: .terminalCols)
+        self.terminalRows = try container.decodeIfPresent(Int.self, forKey: .terminalRows)
     }
 }
 
