@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- iOS issue reporting no longer breaks the app build. `submit()` referenced the `RemoteClient` passed to `IssueReportDraft.init` without retaining it, and the file did not import `Chau7Core`, so the `RelayToken` minting call was unresolved. Both errors (and a follow-on "unreachable catch" warning) were introduced with the in-app issue reporter and are unrelated to terminal performance.
+
 ### Stability hardening
 
 - Four main-thread stalls are removed. The remote-agent rebuild no longer blocks the main actor on `waitUntilExit()` and no longer reads the child's pipe afterwards, which could deadlock permanently once a build produced more than 64 KB of compiler output; it now runs on a utility queue with a concurrent drain and a deadline. The MCP bridge install moved onto the listener queue, resolving the `clonefileat` startup freeze documented in that code. Terminal shutdown shares one cached process-table snapshot instead of spawning `ps` once per session on the main thread, and Metal frame admission no longer waits up to 100ms on a busy GPU.

@@ -2928,7 +2928,7 @@
   {
     "category": "SSH, Profiles & Remote",
     "feature": "iPhone Issue Reporting",
-    "description": "Chau7 Remote submits private issues from Settings with issue-scoped single-use HMAC authorization, a description, environment snapshot, optional remembered contact, exact Markdown preview, and share-sheet fallback; its bounded recent-diagnostics excerpt is off by default with an explicit keystroke privacy warning",
+    "description": "Chau7 Remote submits private issues from Settings with issue-scoped single-use HMAC authorization, a description, environment snapshot, optional remembered contact, exact Markdown preview, and share-sheet fallback; it also writes a timestamped Markdown report file, reads pairing at submit time so a sheet opened before pairing completes still works, and its bounded recent-diagnostics excerpt is off by default with an explicit keystroke privacy warning",
     "status": "Experimental",
     "differentiator": "No"
   },

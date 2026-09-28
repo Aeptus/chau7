@@ -1,10 +1,20 @@
 import Foundation
 import SwiftUI
+// `RelayToken` is the shared v2 HMAC contract that lives in Chau7Core; without
+// this import `submit()` cannot mint the bearer token and fails to compile.
+import Chau7Core
 
 @MainActor
 @Observable
 final class IssueReportDraft {
     private nonisolated static let endpoint = "https://issues.chau7.sh"
+
+    /// Retained rather than snapshotted: `submit()` must read `pairingInfo` at
+    /// submit time, not at view-construction time, because the user can open
+    /// this sheet before pairing completes and expect it to work once paired.
+    /// `RemoteClient` is a `@MainActor @Observable` singleton, so this reference
+    /// does not extend any object's lifetime.
+    private let client: RemoteClient
 
     let context: RemoteIssueReportContext
     var userDescription = ""
@@ -17,6 +27,7 @@ final class IssueReportDraft {
     var didSubmit = false
 
     init(client: RemoteClient) {
+        self.client = client
         context = RemoteIssueReportContext(
             appVersion: RemoteClient.appVersion,
             osVersion: UIDevice.current.systemVersion,
