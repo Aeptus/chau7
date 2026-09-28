@@ -1122,7 +1122,7 @@
   {
     "category": "Terminal Core",
     "feature": "Full ANSI/VT100 Support",
-    "description": "16-color, 256-color, and 24-bit true color with full SGR attributes (bold, italic, underline, strikethrough)",
+    "description": "16-color, 256-color, and 24-bit true color with full SGR attributes (bold, italic, underline, strikethrough); plain-text stripping consumes every escape introducer family (CSI, OSC, DCS, PM, APC, charset selection, and 8-bit C1) to its real terminator instead of replaying unknown payloads as visible text",
     "status": "Shipped",
     "differentiator": "No"
   },

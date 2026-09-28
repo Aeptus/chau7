@@ -168,6 +168,54 @@ final class RemotePureUnitTests: XCTestCase {
     func testANSIStripperHandlesBareEscape() {
         XCTAssertEqual(ANSIStripper.strip("a\u{1B}b"), "ab")
     }
+
+    /// OSC 7 (the cwd report zsh and fish emit on essentially every prompt),
+    /// OSC 0/1/2 (title), and their 8-bit C1 form all used to leak their whole
+    /// payload as visible text because only `ESC [` was understood.
+    func testANSIStripperConsumesOSCThroughSTAndBEL() {
+        XCTAssertEqual(
+            ANSIStripper.strip("\u{1B}]7;file:///Users/me/proj\u{1B}\\next> "),
+            "next> "
+        )
+        XCTAssertEqual(ANSIStripper.strip("\u{1B}]7;file:///x\u{07}after"), "after")
+        XCTAssertEqual(ANSIStripper.strip("\u{1B}]0;my title\u{07}after"), "after")
+        // The backslash completing ST must not leak.
+        XCTAssertEqual(ANSIStripper.strip("\u{1B}]0;t\u{1B}\\ok"), "ok")
+        // 8-bit C1 OSC.
+        XCTAssertEqual(ANSIStripper.strip("\u{9D}0;t\u{07}after"), "after")
+    }
+
+    /// DCS / PM / APC are string-terminated and used to leak their payload.
+    func testANSIStripperConsumesStringTerminatedSequences() {
+        XCTAssertEqual(ANSIStripper.strip("\u{1B}Pqdata\u{1B}\\tail"), "tail")
+        XCTAssertEqual(ANSIStripper.strip("\u{1B}^pm\u{1B}\\tail"), "tail")
+        XCTAssertEqual(ANSIStripper.strip("\u{1B}_apc\u{1B}\\tail"), "tail")
+    }
+
+    /// `ESC ( B` is three bytes: the introducer plus a designator. Only the
+    /// `ESC` used to be dropped, so `(B` rendered as visible text.
+    func testANSIStripperConsumesCharsetDesignator() {
+        XCTAssertEqual(ANSIStripper.strip("\u{1B}(Bok"), "ok")
+        XCTAssertEqual(ANSIStripper.strip("\u{1B})0ok"), "ok")
+    }
+
+    /// 8-bit C1 CSI (`U+009B`) is equivalent to `ESC [`.
+    func testANSIStripperHandlesEightBitCSI() {
+        XCTAssertEqual(ANSIStripper.strip("\u{9B}31mred"), "red")
+    }
+
+    /// A sequence whose terminator never arrives must consume the remainder
+    /// rather than replaying it as text.
+    func testANSIStripperDropsUnterminatedSequences() {
+        XCTAssertEqual(ANSIStripper.strip("\u{1B}]7;abc"), "")
+        XCTAssertEqual(ANSIStripper.strip("abc\u{1B}"), "abc")
+    }
+
+    /// Stripping must be transparent to non-ASCII content.
+    func testANSIStripperPreservesMultibyteText() {
+        XCTAssertEqual(ANSIStripper.strip("日本語 ✅ done"), "日本語 ✅ done")
+        XCTAssertEqual(ANSIStripper.strip("\u{1B}[1m日本\u{1B}[0m ✅"), "日本 ✅")
+    }
 }
 
 /// Vector tests mirroring `services/chau7-remote/internal/agent/relay_token_test.go`

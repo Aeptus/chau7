@@ -399,6 +399,8 @@ The app still contains internal runtime orchestration used by dashboard and revi
 
 - **Interactive TUI color isolation** — new shells discard inherited launcher `NO_COLOR` suppression while respecting explicit shell preferences; fragmented ANSI/UTF-8 output and restored history retain their styling and layout.
 
+- **Complete escape-sequence stripping** — plain-text rendering consumes every ANSI escape introducer family (CSI, OSC, DCS, PM, APC, charset selection, and 8-bit C1) through to its real terminator, so sequences such as the OSC 7 working-directory report that zsh and fish emit on nearly every prompt no longer print their payload as visible text. A bare `ESC` in front of ordinary text is still left lenient, so mangled or truncated output cannot swallow readable content.
+
 - **Fresh quit-time restoration** — recent terminal input/output invalidates cached quit snapshots so final activity is captured before the ordered persistence queue drains.
 
 - **Ordered PTY ingestion** — concurrent drains cannot reorder shell output or saved scrollback; UI polls remain non-blocking behind another reader, and raw output stays queued until consumed.
