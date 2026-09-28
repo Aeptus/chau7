@@ -49,7 +49,7 @@ final class ProxyIPCServer {
 
     /// Reused across api_call events — ISO8601DateFormatter init is expensive
     /// and this runs on the IPC read path for every proxied LLM request.
-    private static let apiCallTimestampFormatter = DateFormatters.iso8601NoFractional
+    private nonisolated(unsafe) static let apiCallTimestampFormatter = DateFormatters.iso8601NoFractional
 
     // MARK: - Initialization
 

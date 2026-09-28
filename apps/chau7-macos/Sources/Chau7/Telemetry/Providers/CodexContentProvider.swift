@@ -305,7 +305,7 @@ final class CodexContentProvider: RunContentProvider {
         return String(cString: ptr)
     }
 
-    private static let isoFormatter = DateFormatters.iso8601
+    private nonisolated(unsafe) static let isoFormatter = DateFormatters.iso8601
 
     private static func parseISO8601(_ string: String) -> Date? {
         isoFormatter.date(from: string)

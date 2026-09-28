@@ -1006,7 +1006,7 @@ final class UsageMonitor {
         }
     }
 
-    private static let isoFormatter = DateFormatters.iso8601
+    private nonisolated(unsafe) static let isoFormatter = DateFormatters.iso8601
 
     private static let snapshotsFilePath = RuntimeIsolation.pathInHome(".chau7/usage/provider-quotas.jsonl")
     private static let claudeStatusLineLatestPayloadPath = RuntimeIsolation.pathInHome(".chau7/usage/claude-statusline-latest.json")

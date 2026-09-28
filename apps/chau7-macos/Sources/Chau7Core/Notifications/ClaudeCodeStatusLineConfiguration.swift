@@ -14,9 +14,9 @@ public enum ClaudeCodeStatusLineConfiguration {
     }
 
     public static let helperName = "chau7-claude-statusline"
-    private static let iso8601 = DateFormatters.iso8601
+    private nonisolated(unsafe) static let iso8601 = DateFormatters.iso8601
 
-    private static let iso8601Basic = DateFormatters.iso8601NoFractional
+    private nonisolated(unsafe) static let iso8601Basic = DateFormatters.iso8601NoFractional
 
     public static func helperScript(
         latestStatusPayloadPath: String,

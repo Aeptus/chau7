@@ -1834,7 +1834,7 @@ final class TelemetryStore {
         return sqlite3_column_double(stmt, i)
     }
 
-    static let isoFormatter = DateFormatters.iso8601
+    nonisolated(unsafe) static let isoFormatter = DateFormatters.iso8601
 
     static func isoString(from date: Date) -> String {
         isoFormatter.string(from: date)

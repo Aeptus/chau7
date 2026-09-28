@@ -1,9 +1,11 @@
 import Foundation
 
 public enum ClaudeTranscriptUsageParser {
-    private static let iso8601 = DateFormatters.iso8601
+    /// See `DateFormatters.iso8601`: a shared, never-mutated `Formatter` read is
+    /// safe, but the type is not `Sendable`, so the alias needs the same annotation.
+    private nonisolated(unsafe) static let iso8601 = DateFormatters.iso8601
 
-    private static let iso8601Basic = DateFormatters.iso8601NoFractional
+    private nonisolated(unsafe) static let iso8601Basic = DateFormatters.iso8601NoFractional
 
     public struct State: Sendable {
         public var model: String?

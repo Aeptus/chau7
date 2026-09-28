@@ -311,7 +311,13 @@ public enum ProcessTreeProviderResolver {
 
     /// `ps` runner used only when native enumeration fails. Kept internal so tests can
     /// inject deterministic fixtures.
-    public static let defaultRunner: (String, [String]) -> String? = { path, args in
+    ///
+    /// `@Sendable` is required, not decorative: this is a global `let` whose type is a
+    /// bare function, so under `StrictConcurrency` (and therefore under the repo's
+    /// `-warnings-as-errors` pre-push build) a non-`Sendable` global function value is
+    /// a mutable-global error. The closure captures nothing, so annotating the type
+    /// states the truth rather than suppressing a real race.
+    public static let defaultRunner: @Sendable (String, [String]) -> String? = { path, args in
         let process = Process()
         process.executableURL = URL(fileURLWithPath: path)
         process.arguments = args

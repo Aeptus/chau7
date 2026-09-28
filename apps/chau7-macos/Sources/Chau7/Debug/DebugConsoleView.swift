@@ -2122,9 +2122,9 @@ struct DebugConsoleView: View {
         return counts.map { (type: $0.key, count: $0.value) }.sorted { $0.count > $1.count }
     }
 
-    private static let isoFractionalFormatter = DateFormatters.iso8601
+    private nonisolated(unsafe) static let isoFractionalFormatter = DateFormatters.iso8601
 
-    private static let isoBasicFormatter = DateFormatters.iso8601NoFractional
+    private nonisolated(unsafe) static let isoBasicFormatter = DateFormatters.iso8601NoFractional
 
     private func eventsPerHour(for path: String) -> Int {
         let events = appModel.eventsByRepo[path] ?? []

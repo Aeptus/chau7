@@ -19,7 +19,7 @@ final class BugReportDraft {
 
     /// Shared formatter — allocated once, not per render cycle.
     @ObservationIgnored
-    private static let isoFormatter = DateFormatters.iso8601NoFractional
+    private nonisolated(unsafe) static let isoFormatter = DateFormatters.iso8601NoFractional
 
     // MARK: - User Input
 
