@@ -26,8 +26,7 @@ public struct MainThreadHangMonitorPolicy: Equatable, Sendable {
 /// Pure, token-based stall detector. A caller advances `progressToken` only
 /// from the queue it is supervising. Observers can therefore run elsewhere
 /// without synchronously asking the supervised queue whether it is alive.
-public struct MainThreadHangMonitorState: Equatable, Sendable {
-    public enum Phase: Equatable, Sendable {
+public struct MainThreadHangMonitorState: Equatable, Sendable {    public enum Phase: Equatable, Sendable {
         case healthy
         case stalled
     }

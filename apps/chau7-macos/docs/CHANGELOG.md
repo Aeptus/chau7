@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Remote control no longer has a single unrecoverable point of failure. The local IPC listener is now polled for liveness and restarted if it stops accepting, and the listener reconciles a desynced state on start. Previously the listener was started once at launch with no recovery path, so a torn-down accept source left the socket file on disk with nothing behind it; the helper then retried `connect()` forever against a dead endpoint and the phone sat on "Syncing tabs" until the app was restarted.
+- The hang watchdog now retires once the main thread is advancing again. It was written to supervise "until the parent dies", so a single stall seven seconds after launch left a child process alive for over twelve hours, holding a process slot and a copy of the app's inherited file descriptors including the remote IPC socket. Its lifetime rule is now a pure, tested policy with a grace window and a hard bound.
 - iOS issue reporting no longer breaks the app build. `submit()` referenced the `RemoteClient` passed to `IssueReportDraft.init` without retaining it, and the file did not import `Chau7Core`, so the `RelayToken` minting call was unresolved. Both errors (and a follow-on "unreachable catch" warning) were introduced with the in-app issue reporter and are unrelated to terminal performance.
 
 ### Stability hardening

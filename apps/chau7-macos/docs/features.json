@@ -1,5 +1,19 @@
 [
   {
+    "category": "Reliability",
+    "feature": "Recoverable Remote IPC Transport",
+    "description": "The local remote IPC listener is polled for liveness and restarted when it stops accepting, and reconciles a desynced state on start, so a torn-down accept source no longer strands the socket file with nothing behind it and leaves the phone on Syncing tabs until an app restart",
+    "status": "Shipped",
+    "differentiator": "No"
+  },
+  {
+    "category": "Reliability",
+    "feature": "Bounded Hang Watchdog Lifetime",
+    "description": "The independent hang watchdog child retires once the main thread is demonstrably advancing again, instead of supervising until the parent dies, so a single startup stall no longer leaves a process and a copy of the app's inherited file descriptors resident for the rest of the session",
+    "status": "Shipped",
+    "differentiator": "No"
+  },
+  {
     "category": "Performance",
     "feature": "Self-Terminating View Loops",
     "description": "Notification history no longer couples an .id identity token to the appear handler that rewrites it, task-candidate countdowns are lifecycle-scoped rather than manually scheduled, and a terminal drain with no terminal backs off instead of waking twenty times a second",

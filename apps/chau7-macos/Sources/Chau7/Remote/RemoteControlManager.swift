@@ -179,6 +179,7 @@ final class RemoteControlManager {
             self?.logOperationalSnapshot(reason: "ipc_disconnected")
         }
         ipc.start()
+        startTransportHealthMonitor()
         refreshPairedDevices()
 
         remoteEnabledObserver = NotificationCenter.default.addObserver(
@@ -192,6 +193,7 @@ final class RemoteControlManager {
                     await startAgent()
                 } else {
                     stopAgent()
+                    stopTransportHealthMonitor()
                 }
             }
         }
@@ -878,8 +880,60 @@ final class RemoteControlManager {
         }
     }
 
-    private func scheduleRemoteActivityRefresh() {
-        activityRefreshWorkItem?.cancel()
+    // MARK: - Transport Health
+
+    /// Cadence for the IPC liveness check. Slow on purpose: this exists to
+    /// recover a dead listener, which is a rare condition, and it must run even
+    /// when no remote traffic is flowing — a silent listener is exactly the
+    /// broken state, so an event-driven check would never fire.
+    private static let transportHealthInterval: TimeInterval = 15
+    @ObservationIgnored private var transportHealthTimer: DispatchSourceTimer?
+
+    /// Watches the local IPC listener and restarts it if it stops accepting.
+    ///
+    /// Without this, remote control has a single point of failure with no
+    /// recovery: the listener is started once at launch and `stop()` is never
+    /// called, so if the accept source is ever torn down the socket file stays on
+    /// disk with nothing behind it. The helper then retries `connect()` forever
+    /// against a dead endpoint, and the phone sits on "Syncing tabs" until the
+    /// app is restarted. That is not a degraded mode, it is a dead feature.
+    private func startTransportHealthMonitor() {
+        transportHealthTimer?.cancel()
+
+        let timer = DispatchSource.makeTimerSource(queue: .main)
+        timer.schedule(
+            deadline: .now() + Self.transportHealthInterval,
+            repeating: Self.transportHealthInterval
+        )
+        timer.setEventHandler { [weak self] in
+            self?.checkTransportHealth()
+        }
+        transportHealthTimer = timer
+        timer.resume()
+    }
+
+    func stopTransportHealthMonitor() {
+        transportHealthTimer?.cancel()
+        transportHealthTimer = nil
+    }
+
+    /// Cheap when healthy: one relaxed atomic read.
+    private func checkTransportHealth() {
+        guard FeatureSettings.shared.isRemoteEnabled else {
+            stopTransportHealthMonitor()
+            return
+        }
+        guard !ipc.isAccepting else { return }
+
+        // Logged at warn because from the user's side this is indistinguishable
+        // from "remote is broken", and the helper's ECONNREFUSED retries give no
+        // hint that the Mac side is at fault.
+        Log.warn("Remote IPC listener is not accepting; restarting it")
+        logOperationalSnapshot(reason: "ipc_restart")
+        ipc.start()
+    }
+
+    private func scheduleRemoteActivityRefresh() {        activityRefreshWorkItem?.cancel()
         let workItem = DispatchWorkItem { [weak self] in
             self?.sendRemoteActivity()
         }

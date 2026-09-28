@@ -271,12 +271,21 @@ enum MainThreadHangWatchdogRunner {
         let outputDirectoryURL = URL(fileURLWithPath: command.outputDirectoryPath, isDirectory: true)
         let policy = MainThreadHangMonitorPolicy()
         var state: MainThreadHangMonitorState?
+        var lifetime = MainThreadHangWatchdogLifetime(startedAt: Date().timeIntervalSince1970)
 
         while parentIsAlive(command.parentPID) {
+            var shouldExit = false
+            var healthy = false
+            var capturedSampleNow = false
+            var heartbeatReadable = true
+
             autoreleasepool {
                 guard let data = try? Data(contentsOf: heartbeatURL),
                       let heartbeat = try? JSONDecoder().decode(MainThreadHeartbeat.self, from: data),
                       heartbeat.parentPID == command.parentPID else {
+                    // No readable heartbeat means the parent is gone or the
+                    // controller stopped; either way there is nothing to watch.
+                    heartbeatReadable = false
                     return
                 }
 
@@ -287,20 +296,40 @@ enum MainThreadHangWatchdogRunner {
                         now: min(now, heartbeat.observedAt)
                     )
                 }
-                guard var currentState = state else { return }
+                guard var currentState = state else {
+                    heartbeatReadable = false
+                    return
+                }
                 let observation = currentState.observe(
                     progressToken: heartbeat.progressToken,
                     now: now,
                     policy: policy
                 )
                 state = currentState
+                healthy = observation.phase == .healthy
                 if observation.shouldSample {
                     captureSample(
                         parentPID: command.parentPID,
                         staleFor: observation.staleFor,
                         outputDirectoryURL: outputDirectoryURL
                     )
+                    capturedSampleNow = true
                 }
+            }
+
+            if !heartbeatReadable { break }
+
+            let now = Date().timeIntervalSince1970
+            lifetime.observe(
+                isHealthy: healthy,
+                capturedSampleNow: capturedSampleNow,
+                now: now
+            )
+            // Exit once the main thread is advancing again. See
+            // `MainThreadHangWatchdogLifetime` for why a watchdog that outlives
+            // its own stall is a liability rather than a safety net.
+            if lifetime.shouldExit(parentIsAlive: parentIsAlive(command.parentPID), now: now) {
+                break
             }
             Thread.sleep(forTimeInterval: 0.25)
         }
