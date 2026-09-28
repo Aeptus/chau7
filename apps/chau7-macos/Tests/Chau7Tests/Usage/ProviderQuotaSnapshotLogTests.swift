@@ -12,11 +12,12 @@ import XCTest
 /// with total history instead of with the window consumed, which is an
 /// out-of-memory failure rather than merely a slow one.
 final class ProviderQuotaSnapshotLogTests: XCTestCase {
+
     // MARK: - Read window
 
     func testSmallFileIsReadWhole() {
-        XCTAssertEqual(ProviderQuotaSnapshotLog.readStartOffset(fileSize: 1_000), 0)
-        XCTAssertEqual(ProviderQuotaSnapshotLog.readWindowBytes(fileSize: 1_000), 1_000)
+        XCTAssertEqual(ProviderQuotaSnapshotLog.readStartOffset(fileSize: 1000), 0)
+        XCTAssertEqual(ProviderQuotaSnapshotLog.readWindowBytes(fileSize: 1000), 1000)
     }
 
     func testFileExactlyAtBudgetIsReadWhole() {
@@ -59,8 +60,8 @@ final class ProviderQuotaSnapshotLogTests: XCTestCase {
     /// A non-positive budget must not produce a negative offset, which would trap
     /// in `seek(toOffset:)`.
     func testNonPositiveBudgetIsSafe() {
-        XCTAssertEqual(ProviderQuotaSnapshotLog.readStartOffset(fileSize: 5_000, budgetBytes: 0), 0)
-        XCTAssertEqual(ProviderQuotaSnapshotLog.readStartOffset(fileSize: 5_000, budgetBytes: -10), 0)
+        XCTAssertEqual(ProviderQuotaSnapshotLog.readStartOffset(fileSize: 5000, budgetBytes: 0), 0)
+        XCTAssertEqual(ProviderQuotaSnapshotLog.readStartOffset(fileSize: 5000, budgetBytes: -10), 0)
     }
 
     // MARK: - Line alignment

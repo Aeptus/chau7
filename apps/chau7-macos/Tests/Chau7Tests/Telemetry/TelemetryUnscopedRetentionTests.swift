@@ -151,7 +151,7 @@ final class TelemetryUnscopedRetentionTests: XCTestCase {
         insertRow("INSERT INTO usage_evidence VALUES ('ancient', 'run-1', '\(ancient)')")
 
         let outcome = TelemetryMaintenance.deleteUnscopedTelemetryOlderThan(
-            retentionDays: TelemetryRetention.maxDays + 5_000,
+            retentionDays: TelemetryRetention.maxDays + 5000,
             in: handle
         )
 
