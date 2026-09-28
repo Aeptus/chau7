@@ -110,7 +110,10 @@ impl HyperlinkRegistry {
     /// `HashMap` bucket overhead, which is proportional and not worth modelling
     /// precisely.
     fn estimated_bytes(&self) -> usize {
-        self.urls.iter().map(|u| u.len() + std::mem::size_of::<String>()).sum()
+        self.urls
+            .iter()
+            .map(|u| u.len() + std::mem::size_of::<String>())
+            .sum()
     }
 }
 

@@ -1618,7 +1618,10 @@ mod tests {
         let chunk = kitty_chunk(1024 * 1024, b'B');
 
         for _ in 0..64 {
-            if !matches!(accum.feed("a=T,f=100,t=d,m=1", &chunk), KittyAction::Continue) {
+            if !matches!(
+                accum.feed("a=T,f=100,t=d,m=1", &chunk),
+                KittyAction::Continue
+            ) {
                 break;
             }
         }
