@@ -897,6 +897,8 @@ final class RemoteTerminalViewportGeometryTests: XCTestCase {
         XCTAssertEqual(small?.rows, 5)
         XCTAssertEqual(large?.cols, 25)
         XCTAssertEqual(large?.rows, 11)
+    }
+}
 
 /// A lock-screen Allow/Deny can be delivered on a cold launch, before the
 /// WebSocket has connected and before `/pending` has populated the approval
