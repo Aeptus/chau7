@@ -38,7 +38,9 @@ final class RemoteIPCServer {
     /// real queue-confined state rather than probing the socket, because a probe
     /// would connect and occupy the single client slot that the real helper needs
     /// (`backlog: 1`, one client at a time).
-    var isAccepting: Bool { acceptingFlag.load(ordering: .relaxed) }
+    var isAccepting: Bool {
+        acceptingFlag.load(ordering: .relaxed)
+    }
 
     private var socketPath: URL {
         RuntimeIsolation.appSupportDirectory(named: "Chau7")

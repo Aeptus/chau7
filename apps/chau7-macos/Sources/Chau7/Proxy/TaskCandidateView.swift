@@ -96,7 +96,7 @@ public struct TaskCandidateView: View {
     /// The label renders whole seconds, so a 5x refresh rate is more than
     /// enough and costs 5x less than the previous 10 Hz. Shared with
     /// `TaskCandidateToast` so both views tick together.
-    fileprivate static let countdownTickInterval: Double = 0.2
+    fileprivate static let countdownTickInterval = 0.2
 }
 
 /// A compact toast-style notification for task candidates

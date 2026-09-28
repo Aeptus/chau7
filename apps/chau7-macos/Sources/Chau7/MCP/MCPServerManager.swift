@@ -309,8 +309,8 @@ final class MCPServerManager {
         // bridge existed.
         queue.async { [weak self] in
             guard let self else { return }
-            self.installBridgeIfNeeded()
-            self._start()
+            installBridgeIfNeeded()
+            _start()
         }
     }
 

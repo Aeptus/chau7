@@ -39,7 +39,7 @@ final class TerminalEventDrainBackoffTests: XCTestCase {
     func testConvergesToCap() {
         XCTAssertEqual(interval(after: 4), maximum, accuracy: 0.0001)
         XCTAssertEqual(interval(after: 40), maximum, accuracy: 0.0001)
-        XCTAssertEqual(interval(after: 10_000), maximum, accuracy: 0.0001)
+        XCTAssertEqual(interval(after: 10000), maximum, accuracy: 0.0001)
     }
 
     /// The interval is a sleep, so it must never be zero or negative —

@@ -67,7 +67,7 @@ final class RemoteAgentBinaryProvider {
 
     // MARK: - Resolution (off the main actor)
 
-    nonisolated private static func resolve(
+    private nonisolated static func resolve(
         dataDirectory: URL?,
         logger: Logger
     ) async -> Resolution {
@@ -112,7 +112,7 @@ final class RemoteAgentBinaryProvider {
         return Resolution(binary: nil, failure: nil)
     }
 
-    nonisolated private static func syncInstalledRemoteBinary(
+    private nonisolated static func syncInstalledRemoteBinary(
         from bundledPath: URL,
         to installedPath: URL?,
         logger: Logger
@@ -140,7 +140,7 @@ final class RemoteAgentBinaryProvider {
         }
     }
 
-    nonisolated private static func shouldReplaceInstalledRemoteBinary(
+    private nonisolated static func shouldReplaceInstalledRemoteBinary(
         at installedPath: URL,
         with bundledPath: URL
     ) -> Bool {
@@ -157,7 +157,7 @@ final class RemoteAgentBinaryProvider {
     /// installed binary. This is the expensive step — a full recursive
     /// enumeration with a `stat` per candidate — which is why resolution runs
     /// off the main actor.
-    nonisolated private static func shouldRefreshInstalledRemoteBinary(
+    private nonisolated static func shouldRefreshInstalledRemoteBinary(
         at binaryURL: URL,
         from sourceURL: URL
     ) -> Bool {
@@ -183,11 +183,11 @@ final class RemoteAgentBinaryProvider {
         return false
     }
 
-    nonisolated private static func modificationDate(for url: URL) -> Date? {
+    private nonisolated static func modificationDate(for url: URL) -> Date? {
         (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
     }
 
-    nonisolated private static func bundledRemoteBinaryPath() -> URL? {
+    private nonisolated static func bundledRemoteBinaryPath() -> URL? {
         if let bundlePath = Chau7Resources.bundle.url(forResource: "chau7-remote", withExtension: nil) {
             return bundlePath
         }
@@ -202,7 +202,7 @@ final class RemoteAgentBinaryProvider {
         return nil
     }
 
-    nonisolated private static func devRemoteBinaryPath() -> URL? {
+    private nonisolated static func devRemoteBinaryPath() -> URL? {
         guard let projectRoot = projectRootURL() else { return nil }
         let packagedBuildPath = projectRoot
             .appendingPathComponent("apps/chau7-macos/build/remote-agent/chau7-remote")
@@ -225,7 +225,7 @@ final class RemoteAgentBinaryProvider {
         return nil
     }
 
-    nonisolated private static func remoteAgentSourceURL() -> URL? {
+    private nonisolated static func remoteAgentSourceURL() -> URL? {
         guard let projectRoot = projectRootURL() else { return nil }
         let sourceURL = projectRoot.appendingPathComponent("services/chau7-remote")
         let goMod = sourceURL.appendingPathComponent("go.mod")
@@ -236,7 +236,7 @@ final class RemoteAgentBinaryProvider {
     /// Six levels up from Sources/Chau7/Sidecar/<this file> — the same depth
     /// as the original Sources/Chau7/Remote location, so the resolved root is
     /// unchanged.
-    nonisolated private static func projectRootURL() -> URL? {
+    private nonisolated static func projectRootURL() -> URL? {
         URL(fileURLWithPath: #file)
             .deletingLastPathComponent()
             .deletingLastPathComponent()
@@ -252,7 +252,7 @@ final class RemoteAgentBinaryProvider {
     /// queue rather than blocking whatever actor called `resolveBinary()`.
     /// `SubprocessRunner.capture` drains both pipes concurrently under a
     /// deadline, so a large compile-error dump can never wedge the child.
-    nonisolated private static func performBuild(
+    private nonisolated static func performBuild(
         from sourceURL: URL,
         outputURL: URL,
         logger: Logger

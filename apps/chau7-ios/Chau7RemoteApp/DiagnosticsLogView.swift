@@ -1,5 +1,6 @@
 import Foundation
 import SwiftUI
+
 // `RelayToken` is the shared v2 HMAC contract that lives in Chau7Core; without
 // this import `submit()` cannot mint the bearer token and fails to compile.
 import Chau7Core
@@ -61,7 +62,8 @@ final class IssueReportDraft {
 
         do {
             guard let pairing = client.pairingInfo,
-                  let token = RelayToken.make(pairing: pairing, role: "ios", scope: "issues") else {
+                  let token = RelayToken.make(pairing: pairing, role: "ios", scope: "issues")
+            else {
                 throw IssueReportSubmissionError.authenticationUnavailable
             }
             submittedIssueNumber = try await Self.post(
@@ -74,12 +76,12 @@ final class IssueReportDraft {
             persistContactPreference()
             DiagnosticsLog.shared.info(.network, "Issue report submitted", [
                 "issue_number": submittedIssueNumber.map(String.init) ?? "unknown",
-                "diagnostics_included": includeDiagnostics ? "true" : "false"
+                "diagnostics_included": includeDiagnostics ? "true" : "false",
             ])
         } catch {
             submitError = error.localizedDescription
             DiagnosticsLog.shared.error(.network, "Issue report submission failed", [
-                "error": error.localizedDescription
+                "error": error.localizedDescription,
             ])
         }
     }
@@ -115,7 +117,7 @@ final class IssueReportDraft {
         }
         let payload = [
             "title": "iOS issue report from Chau7 Remote \(appVersion)",
-            "body": report
+            "body": report,
         ]
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
@@ -218,7 +220,9 @@ struct IssueReportView: View {
                     HStack {
                         Label("Create Issue", systemImage: "paperplane")
                         Spacer()
-                        if draft.isSubmitting { ProgressView() }
+                        if draft.isSubmitting {
+                            ProgressView()
+                        }
                     }
                 }
                 .disabled(!draft.canSubmit)
@@ -260,7 +264,9 @@ struct IssueReportView: View {
 
     private struct IssueExportItem: Identifiable {
         let url: URL
-        var id: String { url.absoluteString }
+        var id: String {
+            url.absoluteString
+        }
     }
 }
 
@@ -278,16 +284,24 @@ struct DiagnosticsLogView: View {
     /// without a retroactive `URL: Identifiable` conformance.
     private struct ExportItem: Identifiable {
         let url: URL
-        var id: String { url.absoluteString }
+        var id: String {
+            url.absoluteString
+        }
     }
 
     private var filteredEntries: [DiagnosticsLog.Entry] {
         log.entries.reversed().filter { entry in
-            if entry.levelValue < minimumLevel { return false }
-            if let selectedCategory, entry.category != selectedCategory.rawValue { return false }
+            if entry.levelValue < minimumLevel {
+                return false
+            }
+            if let selectedCategory, entry.category != selectedCategory.rawValue {
+                return false
+            }
             if !searchText.isEmpty {
                 let haystack = entry.message + " " + entry.metadata.values.joined(separator: " ")
-                if !haystack.localizedCaseInsensitiveContains(searchText) { return false }
+                if !haystack.localizedCaseInsensitiveContains(searchText) {
+                    return false
+                }
             }
             return true
         }
@@ -459,9 +473,9 @@ private struct DiagnosticsRow: View {
 struct ShareSheet: UIViewControllerRepresentable {
     let items: [Any]
 
-    func makeUIViewController(context: Context) -> UIActivityViewController {
+    func makeUIViewController(context _: Context) -> UIActivityViewController {
         UIActivityViewController(activityItems: items, applicationActivities: nil)
     }
 
-    func updateUIViewController(_ controller: UIActivityViewController, context: Context) {}
+    func updateUIViewController(_: UIActivityViewController, context _: Context) {}
 }

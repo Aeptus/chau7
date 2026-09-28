@@ -55,7 +55,9 @@ public struct ProcessTreeSnapshot: Sendable {
         self.rowsByPID = rows
     }
 
-    public var isEmpty: Bool { rowsByPID.isEmpty }
+    public var isEmpty: Bool {
+        rowsByPID.isEmpty
+    }
 
     /// All descendants of `shellPID` in BFS order (parents before children), so
     /// a kill sweep walks ancestors first.

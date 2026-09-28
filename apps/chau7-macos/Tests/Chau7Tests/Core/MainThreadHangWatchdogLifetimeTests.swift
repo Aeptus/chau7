@@ -14,7 +14,7 @@ import XCTest
 /// The child's job is one diagnostic sample for one stall, so it should exit as
 /// soon as the main thread is demonstrably advancing again.
 final class MainThreadHangWatchdogLifetimeTests: XCTestCase {
-    private let start = 1_000.0
+    private let start = 1000.0
     private let grace = MainThreadHangWatchdogLifetime.healthyGraceSeconds
 
     private func lifetime() -> MainThreadHangWatchdogLifetime {

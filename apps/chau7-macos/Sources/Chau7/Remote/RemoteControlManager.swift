@@ -933,7 +933,8 @@ final class RemoteControlManager {
         ipc.start()
     }
 
-    private func scheduleRemoteActivityRefresh() {        activityRefreshWorkItem?.cancel()
+    private func scheduleRemoteActivityRefresh() {
+        activityRefreshWorkItem?.cancel()
         let workItem = DispatchWorkItem { [weak self] in
             self?.sendRemoteActivity()
         }
@@ -1972,10 +1973,10 @@ final class RemoteControlManager {
                   let deviceID = state.deviceID,
                   let secret = state.relaySecret,
                   let token = RelayToken.make(
-                    deviceID: deviceID,
-                    secret: secret,
-                    role: "mac",
-                    scope: "issues"
+                      deviceID: deviceID,
+                      secret: secret,
+                      role: "mac",
+                      scope: "issues"
                   ) else {
                 return nil
             }
