@@ -5087,5 +5087,12 @@
     "description": "Git porcelain, NUL-delimited, and format output bypasses human-oriented CTO filtering and preserves empty and machine-readable results byte-for-byte for scripts and CI; the generated command wrapper execs the real binary for these invocations before the optimizer is reached",
     "status": "Shipped",
     "differentiator": "Yes"
+  },
+  {
+    "category": "Reliability",
+    "feature": "Load-Safe Git Probing",
+    "description": "The git probe drains stdout and stderr concurrently, so a command that fills the stderr pipe buffer can no longer deadlock against a reader waiting on stdout and get killed by the timeout. A git that is killed or crashed by a signal is treated as a failed probe rather than a clean exit, so an overloaded machine falls back to the filesystem snapshot instead of silently reporting an empty git result that looked like a clean repository. The fallback tests assert their own precondition, so a runner that relocates TMPDIR inside a repository skips them explicitly instead of intermittently asserting the wrong thing.",
+    "status": "Shipped",
+    "differentiator": "No"
   }
 ]

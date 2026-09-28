@@ -232,9 +232,15 @@ final class GitDiffTracker {
         let stdout: String
         let stderr: String
         let exitCode: Int32
+        var terminationReason: Process.TerminationReason = .exit
 
+        /// A git killed by the timeout, or crashed, did not succeed — whatever
+        /// `terminationStatus` happens to report for a signalled process. Treating
+        /// it as success made a timed-out probe look like "inside a repository",
+        /// which silently downgraded every changed-files call to an empty git
+        /// answer instead of the filesystem fallback it should have used.
         var succeeded: Bool {
-            exitCode == 0
+            terminationReason == .exit && exitCode == 0
         }
     }
 
@@ -262,14 +268,39 @@ final class GitDiffTracker {
         let deadline = DispatchWorkItem { if process.isRunning { process.terminate() } }
         DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 15, execute: deadline)
 
-        let outData = outPipe.fileHandleForReading.readDataToEndOfFile()
-        let errData = errPipe.fileHandleForReading.readDataToEndOfFile()
+        // Drain both pipes concurrently. Reading stdout to EOF *then* stderr
+        // deadlocks whenever stderr fills its 64 KB buffer: git blocks writing
+        // stderr, we block reading stdout waiting for an EOF that never comes,
+        // and the only thing that ends it is the timeout below -- so a busy
+        // machine turns a normal command into a killed one.
+        var outData = Data()
+        var errData = Data()
+        let group = DispatchGroup()
+        let lock = NSLock()
+        DispatchQueue.global(qos: .utility).async(group: group) {
+            let data = outPipe.fileHandleForReading.readDataToEndOfFile()
+            lock.lock()
+            outData = data
+            lock.unlock()
+        }
+        DispatchQueue.global(qos: .utility).async(group: group) {
+            let data = errPipe.fileHandleForReading.readDataToEndOfFile()
+            lock.lock()
+            errData = data
+            lock.unlock()
+        }
+        group.wait()
         process.waitUntilExit()
         deadline.cancel()
 
         let stdout = String(data: outData, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         let stderr = String(data: errData, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        return GitResult(stdout: stdout, stderr: stderr, exitCode: process.terminationStatus)
+        return GitResult(
+            stdout: stdout,
+            stderr: stderr,
+            exitCode: process.terminationStatus,
+            terminationReason: process.terminationReason
+        )
     }
 
     static func runGit(args: [String], in directory: String) -> String {
