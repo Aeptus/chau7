@@ -16,7 +16,7 @@
   {
     "category": "Performance",
     "feature": "Nonblocking Main-Thread Work",
-    "description": "Remote-agent rebuild runs on a utility queue with a concurrent pipe drain and deadline, MCP bridge install runs on the listener queue, terminal shutdown shares one cached process-table snapshot instead of per-session ps spawns, and Metal frame admission skips rather than stalling the main thread",
+    "description": "Remote-agent resolution runs entirely off the main actor (Go checkout walk, bundled-helper copy, and compile) with a concurrent pipe drain and deadline; startup carries a generation guard against duplicate agents and a mid-resolution stop; MCP bridge install runs on the listener queue; terminal shutdown shares one cached process-table snapshot; Metal frame admission skips rather than stalling the main thread",
     "status": "Shipped",
     "differentiator": "No"
   },

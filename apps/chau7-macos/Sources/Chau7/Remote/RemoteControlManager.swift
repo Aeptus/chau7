@@ -60,6 +60,14 @@ final class RemoteControlManager {
         logger: logger,
         dataDirectory: { [weak self] in self?.dataDirectory() }
     )
+    /// True between entering `startAgent()` and its first successful launch.
+    /// Guards the window where `isAgentRunning` is still false but a start is
+    /// already committed; see `startAgent()` for why a bare
+    /// `guard !isAgentRunning` is not sufficient now that resolution is async.
+    @ObservationIgnored private var isAgentStartInFlight = false
+    /// Bumped by every start and every stop. A start compares the value it
+    /// captured against this after its `await` and bails if a stop intervened.
+    @ObservationIgnored private var agentStartGeneration: UInt64 = 0
     /// Last tab-list count emitted to the remote client, used to throttle
     /// the noisy "sent tab list with N tabs" log so it only fires on change.
     @ObservationIgnored private var lastSentTabListCount: Int?
@@ -342,11 +350,33 @@ final class RemoteControlManager {
     }
 
     private func startAgent() async {
-        guard !isAgentRunning else { return }
+        // This guard and the flag below are set before the first suspension
+        // point, which is what makes this atomic with respect to other
+        // MainActor callers.
+        //
+        // `resolveBinary()` is async and can take seconds (it may compile the Go
+        // helper). While it is suspended, `isAgentRunning` is still false, so a
+        // second caller — `start()` and the `.remoteEnabledChanged` observer
+        // both call this — would sail past a bare `guard !isAgentRunning` and
+        // launch a second agent. Two agents then fight for the single IPC
+        // client slot, and the phone never receives a tab inventory.
+        guard !isAgentRunning, !isAgentStartInFlight else { return }
+        isAgentStartInFlight = true
+        agentStartGeneration &+= 1
+        let generation = agentStartGeneration
+        defer { isAgentStartInFlight = false }
+
         guard let binaryPath = await binaryProvider.resolveBinary() else {
             let error = binaryProvider.lastError ?? lastError ?? "Remote agent binary not found."
             logger.error("\(error, privacy: .public)")
             lastError = error
+            return
+        }
+
+        // A stop that landed while the binary was resolving must not be followed
+        // by a launch.
+        guard generation == agentStartGeneration else {
+            Log.info("Remote agent start superseded while resolving the binary")
             return
         }
 
@@ -406,6 +436,13 @@ final class RemoteControlManager {
 
     func stopAgent() {
         clearRemoteRealtimeDrainSubscription()
+        // Invalidate an in-flight start even when no process exists yet. The
+        // `guard sidecar.hasProcess` below returns early in that case, so
+        // without this a "stop remote" issued while the binary was still being
+        // resolved was a silent no-op — and the agent launched anyway moments
+        // later, which reads as "stop does nothing".
+        agentStartGeneration &+= 1
+        isAgentStartInFlight = false
         guard sidecar.hasProcess else { return }
         cancelPendingOutputFlush()
         // The sidecar terminates the process BEFORE closing pipes (SIGPIPE).
