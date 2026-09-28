@@ -696,7 +696,9 @@ private final class TabBarHostingView: NSHostingView<ToolbarTabBarView> {
 }
 
 private struct TabWidthPreferenceKey: PreferenceKey {
-    static var defaultValue: [UUID: CGFloat] = [:]
+    /// Protocol-required `static var`, never mutated: it only seeds
+    /// `reduce`, so every read is of a constant.
+    nonisolated(unsafe) static var defaultValue: [UUID: CGFloat] = [:]
 
     static func reduce(value: inout [UUID: CGFloat], nextValue: () -> [UUID: CGFloat]) {
         value.merge(nextValue(), uniquingKeysWith: { _, new in new })
@@ -705,7 +707,9 @@ private struct TabWidthPreferenceKey: PreferenceKey {
 
 /// Preference key for tracking the global midX of each tab chip (for hover card positioning)
 private struct TabMidXPreferenceKey: PreferenceKey {
-    static var defaultValue: [UUID: CGFloat] = [:]
+    /// Protocol-required `static var`, never mutated: it only seeds
+    /// `reduce`, so every read is of a constant.
+    nonisolated(unsafe) static var defaultValue: [UUID: CGFloat] = [:]
 
     static func reduce(value: inout [UUID: CGFloat], nextValue: () -> [UUID: CGFloat]) {
         value.merge(nextValue(), uniquingKeysWith: { _, new in new })
@@ -714,7 +718,9 @@ private struct TabMidXPreferenceKey: PreferenceKey {
 
 /// Preference key for tracking rendered tab count (for auto-recovery)
 private struct RenderedTabCountKey: PreferenceKey {
-    static var defaultValue = 0
+    /// Protocol-required `static var`, never mutated: it only seeds
+    /// `reduce`, so every read is of a constant.
+    nonisolated(unsafe) static var defaultValue = 0
     static func reduce(value: inout Int, nextValue: () -> Int) {
         value += nextValue()
     }
@@ -728,7 +734,9 @@ private struct BracketFramePreferenceValue: Equatable {
 }
 
 private struct BracketFramePreferenceKey: PreferenceKey {
-    static var defaultValue: [String: BracketFramePreferenceValue] = [:]
+    /// Protocol-required `static var`, never mutated: it only seeds
+    /// `reduce`, so every read is of a constant.
+    nonisolated(unsafe) static var defaultValue: [String: BracketFramePreferenceValue] = [:]
     static func reduce(value: inout [String: BracketFramePreferenceValue], nextValue: () -> [String: BracketFramePreferenceValue]) {
         value.merge(nextValue(), uniquingKeysWith: { _, new in new })
     }
@@ -736,7 +744,9 @@ private struct BracketFramePreferenceKey: PreferenceKey {
 
 /// Preference key for tracking tab bar size (for visibility-based recovery)
 private struct TabBarSizeKey: PreferenceKey {
-    static var defaultValue: CGSize = .zero
+    /// Protocol-required `static var`, never mutated: it only seeds
+    /// `reduce`, so every read is of a constant.
+    nonisolated(unsafe) static var defaultValue: CGSize = .zero
     static func reduce(value: inout CGSize, nextValue: () -> CGSize) {
         let next = nextValue()
         // Take the larger size (in case of multiple reports)
@@ -747,7 +757,9 @@ private struct TabBarSizeKey: PreferenceKey {
 }
 
 private struct TabBarFrameKey: PreferenceKey {
-    static var defaultValue: CGRect = .zero
+    /// Protocol-required `static var`, never mutated: it only seeds
+    /// `reduce`, so every read is of a constant.
+    nonisolated(unsafe) static var defaultValue: CGRect = .zero
 
     static func reduce(value: inout CGRect, nextValue: () -> CGRect) {
         let next = nextValue()
@@ -758,7 +770,9 @@ private struct TabBarFrameKey: PreferenceKey {
 }
 
 private struct TabBarScrollViewportFrameKey: PreferenceKey {
-    static var defaultValue: CGRect = .zero
+    /// Protocol-required `static var`, never mutated: it only seeds
+    /// `reduce`, so every read is of a constant.
+    nonisolated(unsafe) static var defaultValue: CGRect = .zero
 
     static func reduce(value: inout CGRect, nextValue: () -> CGRect) {
         let next = nextValue()
