@@ -23,12 +23,21 @@ final class RemoteIPCServer {
     @ObservationIgnored private let maxFrameSize = 5 * 1024 * 1024
     @ObservationIgnored private let socketPath: URL
 
-    /// Lock-free mirror of the listener's accepting state. The IPC queue writes it,
-    /// and the transport health check can read it without blocking on a queue hop.
+    /// Lock-free mirror of the listener's accepting state. The IPC queue writes
+    /// it, and the transport health check can read it without blocking on a queue
+    /// hop.
+    ///
+    /// A `queue.sync` accessor would be simpler but is unsafe here: `send()`
+    /// performs a blocking write on `queue`, so a `sync` from a main-actor timer
+    /// would stall the UI for as long as a stalled peer takes to drain — the
+    /// health check would then itself become a source of the hang it looks for.
+    /// An atomic read cannot block.
     @ObservationIgnored private let acceptingFlag = ManagedAtomic<Bool>(false)
 
-    /// A nonblocking liveness signal for the transport health check. Probing the
-    /// socket would occupy the listener's single client slot.
+    /// A nonblocking liveness signal for the transport health check. It reads the
+    /// real queue-confined state rather than probing the socket, because a probe
+    /// would connect and occupy the listener's single client slot
+    /// (`backlog: 1`, one client at a time) that the real helper needs.
     var isAccepting: Bool {
         acceptingFlag.load(ordering: .relaxed)
     }
