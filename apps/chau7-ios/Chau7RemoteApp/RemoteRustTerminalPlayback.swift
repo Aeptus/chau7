@@ -111,24 +111,65 @@ enum RemoteTerminalRenderStateDecoder {
     }
 }
 
-enum RemoteTerminalFontMetrics {
-    static let baseFont = UIFont.monospacedSystemFont(ofSize: 13, weight: .regular)
+/// Font-derived geometry for the terminal canvas.
+///
+/// All three values are derived from the *same* `CTFont` so the grid the Rust
+/// engine is sized to, the cells the canvas paints, and the baseline each glyph
+/// is drawn on cannot disagree. The previous code mixed a `CTFont` line box
+/// (`ascent + descent + leading`, the cell height) with a `UIFont.lineHeight`
+/// to compute the baseline offset, and produced a *negative* offset — every
+/// line was drawn roughly one line-height above its own cell, landing in the
+/// row above and clipping. That made multi-line output barely readable.
+struct RemoteTerminalCellMetrics {
+    /// Advance of the monospaced font: the horizontal distance between the
+    /// origins of two adjacent cells. Measured from a representative glyph
+    /// (all ASCII advances are identical in a monospaced font) and used
+    /// *exactly*, rather than `ceil(max)`, which inflated every cell by ~12%
+    /// and visibly loosened the character spacing.
+    let cellWidth: CGFloat
+    /// Height of one terminal row, in points.
+    let cellHeight: CGFloat
+    /// Distance from the top of a cell down to the text baseline. Because
+    /// `draw(at:)` places the baseline, this is what vertically seats a line
+    /// inside its row: the glyph box occupies
+    /// `[baseline - ascent, baseline + descent]` and must sit inside
+    /// `[0, cellHeight]`.
+    let baselineOffset: CGFloat
 
-    static func cellSize(for font: UIFont = baseFont) -> CGSize {
+    var cellSize: CGSize { CGSize(width: cellWidth, height: cellHeight) }
+
+    init(font: UIFont) {
         let ctFont = font as CTFont
-        var characters = (32 ... 126).map { UniChar($0) }
-        var glyphs = [CGGlyph](repeating: 0, count: characters.count)
-        CTFontGetGlyphsForCharacters(ctFont, &characters, &glyphs, characters.count)
-        var advances = [CGSize](repeating: .zero, count: characters.count)
-        CTFontGetAdvancesForGlyphs(ctFont, .horizontal, glyphs, &advances, glyphs.count)
-        let width = max(1, ceil(advances.map(\.width).max() ?? 0))
+
+        var probe = Array("0".utf16)
+        var glyphs = [CGGlyph](repeating: 0, count: probe.count)
+        CTFontGetGlyphsForCharacters(ctFont, &probe, &glyphs, probe.count)
+        var advances = [CGSize](repeating: .zero, count: probe.count)
+        CTFontGetAdvancesForGlyphs(ctFont, .horizontal, glyphs, &advances, advances.count)
+        let advance = advances.first?.width ?? max(1, font.pointSize * 0.6)
+        cellWidth = max(0.5, advance)
 
         let ascent = CTFontGetAscent(ctFont)
         let descent = CTFontGetDescent(ctFont)
         let leading = CTFontGetLeading(ctFont)
-        let height = max(1, ceil(ascent + descent + leading))
+        // The cell must be tall enough for the whole line box (ink + leading).
+        let lineBox = ascent + descent + leading
+        cellHeight = max(1, lineBox.rounded(.up))
+        // Centre the line box's ink inside the cell, then drop to the baseline.
+        baselineOffset = ((cellHeight - lineBox) / 2) + ascent
+    }
+}
 
-        return CGSize(width: width, height: height)
+enum RemoteTerminalFontMetrics {
+    static let baseFont = UIFont.monospacedSystemFont(ofSize: 13, weight: .regular)
+
+    /// Cell geometry for the current rendering font.
+    static func metrics(for font: UIFont = baseFont) -> RemoteTerminalCellMetrics {
+        RemoteTerminalCellMetrics(font: font)
+    }
+
+    static func cellSize(for font: UIFont = baseFont) -> CGSize {
+        metrics(for: font).cellSize
     }
 }
 

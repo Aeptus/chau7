@@ -54,7 +54,8 @@ struct RemoteTerminalRendererView: View {
                         renderState: renderState,
                         frameTrace: client.terminalRenderer.publishedTrace,
                         availableSize: proxy.size,
-                        colorScheme: colorScheme
+                        colorScheme: colorScheme,
+                        fontSize: CGFloat(terminalFontSize)
                     )
                     .background(Color(colorScheme.backgroundUIColor))
                 } else {
@@ -66,10 +67,27 @@ struct RemoteTerminalRendererView: View {
                 }
             }
             .onAppear {
-                RemoteTerminalViewportDeclaration.declare(proxy.size, on: client.terminalRenderer)
+                RemoteTerminalViewportDeclaration.declare(
+                    proxy.size,
+                    fontSize: CGFloat(terminalFontSize),
+                    on: client.terminalRenderer
+                )
             }
             .onChange(of: proxy.size) { _, newSize in
-                RemoteTerminalViewportDeclaration.declare(newSize, on: client.terminalRenderer)
+                RemoteTerminalViewportDeclaration.declare(
+                    newSize,
+                    fontSize: CGFloat(terminalFontSize),
+                    on: client.terminalRenderer
+                )
+            }
+            .onChange(of: terminalFontSize) { _, newSize in
+                // A new text size changes the cell metrics, so the engine must
+                // be re-sized to the grid the canvas will now paint.
+                RemoteTerminalViewportDeclaration.declare(
+                    proxy.size,
+                    fontSize: CGFloat(newSize),
+                    on: client.terminalRenderer
+                )
             }
         }
         .onAppear {
@@ -110,6 +128,7 @@ private struct RemoteTerminalRendererRepresentable: UIViewRepresentable {
     let frameTrace: RemoteTerminalFrameTrace?
     let availableSize: CGSize
     let colorScheme: TerminalColorScheme
+    let fontSize: CGFloat
 
     func makeUIView(context: Context) -> RemoteTerminalViewportView {
         let view = RemoteTerminalViewportView()
@@ -118,7 +137,8 @@ private struct RemoteTerminalRendererRepresentable: UIViewRepresentable {
             renderState: renderState,
             frameTrace: frameTrace,
             availableSize: availableSize,
-            colorScheme: colorScheme
+            colorScheme: colorScheme,
+            fontSize: fontSize
         )
         return view
     }
@@ -129,7 +149,8 @@ private struct RemoteTerminalRendererRepresentable: UIViewRepresentable {
             renderState: renderState,
             frameTrace: frameTrace,
             availableSize: availableSize,
-            colorScheme: colorScheme
+            colorScheme: colorScheme,
+            fontSize: fontSize
         )
     }
 }
@@ -141,16 +162,21 @@ private struct RemoteTerminalRendererRepresentable: UIViewRepresentable {
 /// told the viewport size. Gating this on `renderState != nil` creates an
 /// unbreakable circular dependency and the terminal never renders.
 ///
-/// The cell size comes from `RemoteTerminalFontMetrics.cellSize()` — the same
-/// source `RemoteTerminalViewportView` uses — so the two can never disagree.
-/// The arithmetic itself lives in `RemoteTerminalViewportGeometry` so it is
-/// unit testable without the UIKit font stack.
+/// The cell size is measured for the *same font the canvas draws with*
+/// (`RemoteTerminalFontMetrics.metrics(for:)`), so the grid the engine is sized
+/// to always matches the glyphs painted into it — including when the user
+/// changes the Text Size setting. The arithmetic itself lives in
+/// `RemoteTerminalViewportGeometry` so it is unit testable without the UIKit
+/// font stack.
 enum RemoteTerminalViewportDeclaration {
-    static func declare(_ size: CGSize, on store: RemoteTerminalRendererStore) {
-        guard let viewport = RemoteTerminalViewportGeometry.gridSize(
-            available: size,
-            cell: RemoteTerminalFontMetrics.cellSize()
-        ) else { return }
+    static func declare(
+        _ size: CGSize,
+        fontSize: CGFloat,
+        on store: RemoteTerminalRendererStore
+    ) {
+        let font = UIFont.monospacedSystemFont(ofSize: fontSize, weight: .regular)
+        let cell = RemoteTerminalFontMetrics.metrics(for: font).cellSize
+        guard let viewport = RemoteTerminalViewportGeometry.gridSize(available: size, cell: cell) else { return }
         store.setViewport(cols: viewport.cols, rows: viewport.rows)
     }
 }
@@ -292,7 +318,10 @@ private final class RemoteTerminalViewportView: UIView, UIScrollViewDelegate {
     private var store: RemoteTerminalRendererStore?
     private var renderState: RemoteTerminalRenderState?
     private var availableSize: CGSize = .zero
-    private var cellSize = RemoteTerminalFontMetrics.cellSize()
+    /// Cell geometry comes straight from the canvas so the grid we size the
+    /// engine to, the cells it paints, and the scroll math all agree — and so
+    /// they follow the user's Text Size setting together.
+    private var cellSize: CGSize { canvasView.metrics.cellSize }
     private var viewportCols = 0
     private var viewportRows = 0
     private var isSyncingScroll = false
@@ -332,7 +361,8 @@ private final class RemoteTerminalViewportView: UIView, UIScrollViewDelegate {
         renderState: RemoteTerminalRenderState?,
         frameTrace: RemoteTerminalFrameTrace?,
         availableSize: CGSize,
-        colorScheme: TerminalColorScheme
+        colorScheme: TerminalColorScheme,
+        fontSize: CGFloat
     ) {
         self.store = store
         self.renderState = renderState
@@ -341,6 +371,13 @@ private final class RemoteTerminalViewportView: UIView, UIScrollViewDelegate {
         if backgroundColor != bg { backgroundColor = bg }
         if canvasView.backgroundColor != bg { canvasView.backgroundColor = bg }
         canvasView.colorScheme = colorScheme
+        // A new text size changes the cell metrics, so the grid must be
+        // recomputed (cols/rows) before the next frame.
+        if canvasView.fontSize != fontSize {
+            canvasView.fontSize = fontSize
+            viewportCols = 0
+            viewportRows = 0
+        }
         var updatedTrace = frameTrace
         updatedTrace?.viewUpdatedAt = Date()
         canvasView.update(renderState: renderState, frameTrace: updatedTrace)
@@ -433,12 +470,35 @@ private final class RemoteTerminalCanvasView: UIView {
         }
     }
 
-    private let regularFont = RemoteTerminalFontMetrics.baseFont
-    private lazy var boldFont = UIFont.monospacedSystemFont(ofSize: regularFont.pointSize, weight: .bold)
-    private lazy var italicFont = italicVariant(for: regularFont) ?? regularFont
-    private lazy var boldItalicFont = italicVariant(for: boldFont) ?? boldFont
-    private let cellSize = RemoteTerminalFontMetrics.cellSize()
+    /// Rendered text size, driven by the user's Text Size setting. Changing it
+    /// rebuilds the fonts and the cell metrics together so the grid the engine
+    /// is sized to always matches the glyphs that are painted into it.
+    var fontSize: CGFloat = RemoteTerminalFontMetrics.baseFont.pointSize {
+        didSet {
+            let clamped = min(max(fontSize, 6), 40)
+            guard abs(clamped - oldValue) > 0.01 else { return }
+            fontSize = clamped
+            rebuildFontResources()
+            setNeedsDisplay()
+        }
+    }
+
+    private(set) var regularFont = RemoteTerminalFontMetrics.baseFont
+    private(set) var boldFont = UIFont.monospacedSystemFont(ofSize: 13, weight: .bold)
+    private(set) var italicFont: UIFont = RemoteTerminalFontMetrics.baseFont
+    private(set) var boldItalicFont: UIFont = UIFont.monospacedSystemFont(ofSize: 13, weight: .bold)
+    private(set) var metrics = RemoteTerminalFontMetrics.metrics(for: RemoteTerminalFontMetrics.baseFont)
     private var colorCache = TerminalColorCache()
+
+    private func rebuildFontResources() {
+        let size = fontSize
+        regularFont = .monospacedSystemFont(ofSize: size, weight: .regular)
+        boldFont = .monospacedSystemFont(ofSize: size, weight: .bold)
+        italicFont = italicVariant(for: regularFont) ?? regularFont
+        boldItalicFont = italicVariant(for: boldFont) ?? boldFont
+        metrics = RemoteTerminalFontMetrics.metrics(for: regularFont)
+        colorCache = TerminalColorCache()
+    }
 
     override func draw(_ rect: CGRect) {
         let schemeBackground = colorScheme.backgroundUIColor
@@ -458,10 +518,13 @@ private final class RemoteTerminalCanvasView: UIView {
         let cols = renderState.cols
         guard rows > 0, cols > 0 else { return }
 
-        let cellW = cellSize.width
-        let cellH = cellSize.height
-        let lineHeight = regularFont.lineHeight
-        let baselineOffset = (cellH - lineHeight) / 2
+        let cellW = metrics.cellWidth
+        let cellH = metrics.cellHeight
+        // Baseline derived from the same font as the cell, not from
+        // `UIFont.lineHeight` (a different metric than the CTFont line box the
+        // cell is built from, which produced a negative offset and stacked
+        // every line into the row above it).
+        let baselineOffset = metrics.baselineOffset
 
         // Background pass: batch consecutive cells with same bg color into single fills
         context.setAllowsAntialiasing(false)
