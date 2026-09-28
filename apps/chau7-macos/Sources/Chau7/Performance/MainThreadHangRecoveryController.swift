@@ -165,11 +165,38 @@ final class MainThreadHangRecoveryController {
            now - lastHeartbeatWriteAt >= Self.heartbeatFileInterval {
             writeHeartbeat(progressToken: token, wallTime: Date().timeIntervalSince1970)
         }
-        if watchdogProcess?.isRunning == false {
-            Log.warn("Independent hang watchdog exited; scheduling replacement")
+
+        // The watchdog exists only to capture a diagnostic sample for a main-thread
+        // stall. It must be launched when a stall begins (or is ongoing) and
+        // allowed to exit once the main thread is healthy again.
+        //
+        // Calling `launchIndependentWatchdog()` unconditionally on every tick was
+        // harmless only for as long as the child never self-exited: the
+        // `watchdogProcess == nil` guard inside then blocked every respawn, and
+        // exactly one child lived for the app's whole lifetime. Once the child was
+        // taught to retire on recovery, `watchdogProcess?.isRunning == false` became
+        // true within a second, the handle was cleared, and the next tick spawned a
+        // replacement — which retired, which spawned another. That is a ~3s
+        // fork/exec loop, observed 2806 times in one session.
+        //
+        // So: respawn only while a stall is actually in progress, and never
+        // resurrect a child the moment the main thread is healthy.
+        switch MainThreadHangWatchdogLifetime.launchAction(
+            phaseIsStalled: observation.phase == .stalled,
+            enteredStall: observation.enteredStall,
+            existingWatchdogRunning: watchdogProcess?.isRunning
+        ) {
+        case .launch:
+            launchIndependentWatchdog()
+        case .replace:
+            Log.info("Hang watchdog exited during an ongoing stall; scheduling replacement")
+            watchdogProcess = nil
+            launchIndependentWatchdog()
+        case .idle:
+            // Main thread is healthy: drop the handle so a later stall spawns a
+            // fresh child. The child terminates itself; we are not killing it.
             watchdogProcess = nil
         }
-        launchIndependentWatchdog()
 
         if observation.enteredStall {
             let changed = TerminalRenderCircuitBreaker.shared.setOpen(true)

@@ -80,4 +80,38 @@ public struct MainThreadHangWatchdogLifetime: Equatable, Sendable {
         return false
     }
 }
+
+/// What the controller should do about the watchdog child on one tick.
+public enum MainThreadHangWatchdogLaunchAction: Equatable, Sendable {
+    /// Spawn a child (the callee's own `isRunning` guard makes this idempotent).
+    case launch
+    /// A child existed but is gone while a stall continues — clear and respawn.
+    case replace
+    /// Healthy: drop the handle, do not spawn.
+    case idle
+}
+
+public extension MainThreadHangWatchdogLifetime {
+    /// Whether to launch / replace / idle the watchdog child.
+    ///
+    /// The bug this encodes against: `launchIndependentWatchdog()` used to run
+    /// unconditionally on every tick, which was safe only because the child never
+    /// self-exited — the `watchdogProcess == nil` guard then suppressed every
+    /// respawn forever. Teaching the child to retire on recovery (see
+    /// `MainThreadHangWatchdogLifetime`) flipped that invariant and turned the
+    /// tick into a ~3 second fork/exec loop, observed 2806 times in one session.
+    ///
+    /// The child is a diagnostic aid for a stall, so it is launched only while a
+    /// stall is in progress and is otherwise left to retire on its own.
+    static func launchAction(
+        phaseIsStalled: Bool,
+        enteredStall: Bool,
+        existingWatchdogRunning: Bool?
+    ) -> MainThreadHangWatchdogLaunchAction {
+        let stallActive = phaseIsStalled || enteredStall
+        guard stallActive else { return .idle }
+        if existingWatchdogRunning == false { return .replace }
+        return .launch
+    }
+}
 #endif
