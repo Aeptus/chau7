@@ -132,6 +132,24 @@ struct RemoteTerminalRenderDiagnostics: Equatable {
     var softWrappedRows: Int = 0
 }
 
+/// Maps a display row to its slice of the engine's folded cell buffer.
+///
+/// The engine hands back a flat cell array plus one start offset per row (with a
+/// trailing sentinel). Getting this wrong paints the wrong cells on a row rather
+/// than failing visibly, so the arithmetic lives here where it can be tested
+/// without the Rust FFI the renderer links.
+enum RemoteTerminalDisplayRowMap {
+    /// Cell range backing `row`, or nil when the row is out of range or the
+    /// offsets are inconsistent with the cell count.
+    static func range(row: Int, offsets: [UInt32], cellCount: Int) -> Range<Int>? {
+        guard row >= 0, row + 1 < offsets.count else { return nil }
+        let begin = Int(offsets[row])
+        let end = Int(offsets[row + 1])
+        guard begin <= end, end <= cellCount else { return nil }
+        return begin ..< end
+    }
+}
+
 enum RemoteTerminalWrapGeometry {
     /// Engine size to ingest into. Never narrower than the source width, since
     /// that is what reintroduces hard-wrap; the phone width only wins when the

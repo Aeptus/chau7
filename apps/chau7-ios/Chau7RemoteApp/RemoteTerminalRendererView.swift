@@ -53,6 +53,7 @@ struct RemoteTerminalRendererView: View {
                     RemoteTerminalRendererRepresentable(
                         store: client.terminalRenderer,
                         renderState: renderState,
+                        displayState: client.terminalRenderer.displayState,
                         frameTrace: client.terminalRenderer.publishedTrace,
                         availableSize: proxy.size,
                         colorScheme: colorScheme,
@@ -127,6 +128,7 @@ struct RemoteTerminalRendererView: View {
 private struct RemoteTerminalRendererRepresentable: UIViewRepresentable {
     let store: RemoteTerminalRendererStore
     let renderState: RemoteTerminalRenderState?
+    let displayState: RemoteTerminalDisplayState?
     let frameTrace: RemoteTerminalFrameTrace?
     let availableSize: CGSize
     let colorScheme: TerminalColorScheme
@@ -138,6 +140,7 @@ private struct RemoteTerminalRendererRepresentable: UIViewRepresentable {
         view.update(
             store: store,
             renderState: renderState,
+            displayState: displayState,
             frameTrace: frameTrace,
             availableSize: availableSize,
             colorScheme: colorScheme,
@@ -151,6 +154,7 @@ private struct RemoteTerminalRendererRepresentable: UIViewRepresentable {
         uiView.update(
             store: store,
             renderState: renderState,
+            displayState: displayState,
             frameTrace: frameTrace,
             availableSize: availableSize,
             colorScheme: colorScheme,
@@ -322,6 +326,7 @@ private final class RemoteTerminalViewportView: UIView, UIScrollViewDelegate {
     private let canvasView = RemoteTerminalCanvasView()
     private var store: RemoteTerminalRendererStore?
     private var renderState: RemoteTerminalRenderState?
+    private var displayState: RemoteTerminalDisplayState?
     private var availableSize: CGSize = .zero
     /// Cell geometry comes straight from the canvas so the grid we size the
     /// engine to, the cells it paints, and the scroll math all agree — and so
@@ -364,6 +369,7 @@ private final class RemoteTerminalViewportView: UIView, UIScrollViewDelegate {
     func update(
         store: RemoteTerminalRendererStore,
         renderState: RemoteTerminalRenderState?,
+        displayState: RemoteTerminalDisplayState?,
         frameTrace: RemoteTerminalFrameTrace?,
         availableSize: CGSize,
         colorScheme: TerminalColorScheme,
@@ -372,6 +378,7 @@ private final class RemoteTerminalViewportView: UIView, UIScrollViewDelegate {
     ) {
         self.store = store
         self.renderState = renderState
+        self.displayState = displayState
         self.availableSize = availableSize
         let bg = colorScheme.backgroundUIColor
         if backgroundColor != bg { backgroundColor = bg }
@@ -387,7 +394,11 @@ private final class RemoteTerminalViewportView: UIView, UIScrollViewDelegate {
         }
         var updatedTrace = frameTrace
         updatedTrace?.viewUpdatedAt = Date()
-        canvasView.update(renderState: renderState, frameTrace: updatedTrace)
+        canvasView.update(
+            renderState: renderState,
+            displayState: displayState,
+            frameTrace: updatedTrace
+        )
         canvasView.onFrameDrawn = { [weak store] trace in
             store?.recordCanvasDrawn(trace)
         }
@@ -470,15 +481,21 @@ private final class RemoteTerminalViewportView: UIView, UIScrollViewDelegate {
 
 private final class RemoteTerminalCanvasView: UIView {
     private var renderState: RemoteTerminalRenderState?
+    /// Engine-folded rows, when the grid is wider than the phone. Painting these
+    /// removes the per-frame source-to-display index remap and the fold the
+    /// canvas used to do itself.
+    private var displayState: RemoteTerminalDisplayState?
     private var frameTrace: RemoteTerminalFrameTrace?
     private var lastDrawnTraceIdentity: RemoteTerminalFrameIdentity?
     var onFrameDrawn: ((RemoteTerminalFrameTrace) -> Void)?
 
     func update(
         renderState: RemoteTerminalRenderState?,
+        displayState: RemoteTerminalDisplayState?,
         frameTrace: RemoteTerminalFrameTrace?
     ) {
         self.renderState = renderState
+        self.displayState = displayState
         self.frameTrace = frameTrace
         setNeedsDisplay()
     }
@@ -551,6 +568,28 @@ private final class RemoteTerminalCanvasView: UIView {
         // phone-width rows as it needs, so the content reads top-to-bottom on a
         // narrow screen instead of being clipped.
         let displayCols = max(1, Int((bounds.width / cellW).rounded(.down)))
+
+        // Preferred path: the engine already folded the grid to the phone's
+        // width, joining soft-wrapped rows, so painting is a blit — no
+        // source-to-display index remap and no per-cell fold decision.
+        if let displayState, displayState.displayCols == displayCols, displayState.displayRows > 0 {
+            drawFolded(
+                displayState,
+                context: context,
+                cellW: cellW,
+                cellH: cellH,
+                baselineOffset: baselineOffset,
+                backgroundColorKey: backgroundColorKey
+            )
+            if showsDiagnostics {
+                drawFoldedDiagnostics(context: context, display: displayState, cellW: cellW, cellH: cellH)
+            }
+            return
+        }
+
+        // Fallback: the engine did not fold (1:1 grid, or the export failed), so
+        // the canvas folds physical rows itself. Less correct across soft wraps,
+        // which is why this is now the backup rather than the only path.
         let chunksPerRow = RemoteTerminalWrapGeometry.chunksPerRow(sourceCols: sourceCols, displayCols: displayCols)
         let displayRows = RemoteTerminalWrapGeometry.displayRowCount(sourceRows: sourceRows, chunksPerRow: chunksPerRow)
 
@@ -723,6 +762,111 @@ private final class RemoteTerminalCanvasView: UIView {
         }
     }
     private(set) var diagnostics = RemoteTerminalRenderDiagnostics()
+
+    /// Paint engine-folded rows. The layout is already decided, so this walks
+    /// display rows and, within each, paints runs of same-foreground cells —
+    /// there is no per-cell index arithmetic to remap.
+    private func drawFolded(
+        _ display: RemoteTerminalDisplayState,
+        context: CGContext,
+        cellW: CGFloat,
+        cellH: CGFloat,
+        baselineOffset: CGFloat,
+        backgroundColorKey: UInt32
+    ) {
+        context.setAllowsAntialiasing(false)
+        context.setShouldAntialias(false)
+        for row in 0 ..< display.displayRows {
+            guard let range = display.range(forRow: row) else { continue }
+            let y = CGFloat(row) * cellH
+            var runStart = 0
+            var runKey = colorCache.backgroundKey(for: display.cells[range.lowerBound])
+            for offset in 1 ..< range.count {
+                let key = colorCache.backgroundKey(for: display.cells[range.lowerBound + offset])
+                if key != runKey {
+                    fillFoldedRun(
+                        display: display, context: context, range: range, start: runStart, end: offset,
+                        y: y, cellW: cellW, cellH: cellH, colorKey: runKey, skipKey: backgroundColorKey
+                    )
+                    runStart = offset
+                    runKey = key
+                }
+            }
+            fillFoldedRun(
+                display: display, context: context, range: range, start: runStart, end: range.count,
+                y: y, cellW: cellW, cellH: cellH, colorKey: runKey, skipKey: backgroundColorKey
+            )
+        }
+
+        context.setAllowsAntialiasing(true)
+        context.setShouldAntialias(true)
+        for row in 0 ..< display.displayRows {
+            guard let range = display.range(forRow: row) else { continue }
+            let y = CGFloat(row) * cellH
+            for index in range {
+                let cell = display.cells[index]
+                if cell.flags & rustCellFlagHidden != 0 { continue }
+                if cell.continuation != 0 { continue }
+                let cluster = display.clusterString(for: cell)
+                if cluster.isEmpty || cluster == " " { continue }
+                let column = index - range.lowerBound
+                let x = CGFloat(column) * cellW
+                let fgKey = colorCache.foregroundKey(for: cell)
+                let fg = colorCache.foreground(forKey: fgKey)
+                (cluster as NSString).draw(
+                    at: CGPoint(x: x, y: y + baselineOffset),
+                    withAttributes: colorCache.textAttributes(font: resolvedFont(for: cell), colorKey: fgKey, color: fg)
+                )
+                if cell.flags & rustCellFlagUnderline != 0 {
+                    fg.setStroke()
+                    context.setLineWidth(1)
+                    context.move(to: CGPoint(x: x, y: y + cellH - 2))
+                    context.addLine(to: CGPoint(x: x + cellW, y: y + cellH - 2))
+                    context.strokePath()
+                }
+                if cell.flags & rustCellFlagStrikethrough != 0 {
+                    fg.setStroke()
+                    context.setLineWidth(1)
+                    context.move(to: CGPoint(x: x, y: y + cellH / 2))
+                    context.addLine(to: CGPoint(x: x + cellW, y: y + cellH / 2))
+                    context.strokePath()
+                }
+            }
+        }
+    }
+
+    private func fillFoldedRun(
+        display: RemoteTerminalDisplayState,
+        context: CGContext,
+        range: Range<Int>,
+        start: Int,
+        end: Int,
+        y: CGFloat,
+        cellW: CGFloat,
+        cellH: CGFloat,
+        colorKey: UInt32,
+        skipKey: UInt32
+    ) {
+        guard colorKey != skipKey, end > start else { return }
+        colorCache.background(forKey: colorKey).setFill()
+        UIRectFill(CGRect(
+            x: CGFloat(start) * cellW,
+            y: y,
+            width: CGFloat(end - start) * cellW,
+            height: cellH
+        ))
+    }
+
+    private func drawFoldedDiagnostics(
+        context: CGContext,
+        display: RemoteTerminalDisplayState,
+        cellW: CGFloat,
+        cellH: CGFloat
+    ) {
+        let state = renderState
+        let text = "src \(state?.cols ?? 0)x\(state?.rows ?? 0) → \(display.displayCols)x\(display.displayRows)  engine-folded"
+        drawReadout(context: context, text: text, cellW: cellW, cellH: cellH)
+    }
 
     /// Whether a source row soft-wraps from the row above. The engine sets the
     /// flag on the row's first cell (bit 7 of the cell flags), so a row that

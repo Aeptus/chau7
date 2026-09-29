@@ -515,6 +515,69 @@ pub unsafe extern "C" fn chau7_terminal_get_grid_delta(
     }
 }
 
+/// Fold the visible grid to `display_cols` phone-width rows.
+///
+/// The returned buffer is already the width a narrow client can paint, folded
+/// on logical lines, so the client does not re-derive cell indices or decode a
+/// cluster per drawn cell every frame. Free with
+/// `chau7_terminal_free_display_rows`.
+///
+/// # Safety
+/// - `term` must be a valid pointer returned by `chau7_terminal_create_headless`
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn chau7_terminal_get_display_rows(
+    term: *mut Chau7Terminal,
+    display_cols: u16,
+) -> *mut DisplayRowBuffer {
+    unsafe {
+        if term.is_null() {
+            warn!("chau7_terminal_get_display_rows: term is null");
+            return std::ptr::null_mut();
+        }
+        let buffer = (&*term).get_display_rows(display_cols);
+        Box::into_raw(Box::new(buffer))
+    }
+}
+
+/// Free a buffer from `chau7_terminal_get_display_rows`.
+///
+/// All three allocations are reconstructed with their recorded capacity; the
+/// cells buffer goes back to the shared pool so per-frame folding does not
+/// churn the allocator.
+///
+/// # Safety
+/// - `buffer` must be a pointer returned by `chau7_terminal_get_display_rows`
+///   and must not be used afterwards
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn chau7_terminal_free_display_rows(buffer: *mut DisplayRowBuffer) {
+    unsafe {
+        if buffer.is_null() {
+            warn!("chau7_terminal_free_display_rows: buffer is null");
+            return;
+        }
+        let buf = Box::from_raw(buffer);
+
+        if !buf.cells.is_null() {
+            let cells = Vec::from_raw_parts(buf.cells, buf.cell_count, buf.cells_capacity);
+            get_cell_buffer_pool().release(cells);
+        }
+        if !buf.clusters_utf8.is_null() {
+            drop(Vec::from_raw_parts(
+                buf.clusters_utf8,
+                buf.clusters_len,
+                buf.clusters_capacity,
+            ));
+        }
+        if !buf.row_offsets.is_null() {
+            drop(Vec::from_raw_parts(
+                buf.row_offsets,
+                buf.row_offsets_len,
+                buf.row_offsets_capacity,
+            ));
+        }
+    }
+}
+
 /// Free a grid snapshot
 ///
 /// # Safety
