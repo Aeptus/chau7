@@ -139,6 +139,10 @@ public enum RemoteFrameType: UInt8, CaseIterable, Sendable {
     case checkpointRequest = 0x25
     case interactivePromptResponse = 0x26
     case paneInput = 0x27
+    /// Live PTY dimensions of a tab's terminal, so the client can size its own
+    /// emulator to the width the terminal actually draws at. A rendering
+    /// concern, deliberately not carried on the tab inventory.
+    case terminalSize = 0x28
     case approvalRequest = 0x50
     case approvalResponse = 0x51
     case notificationEvent = 0x52

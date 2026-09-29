@@ -5101,5 +5101,12 @@
     "description": "A claimed iOS identity is held provisional when PAIR_REQUEST arrives and is persisted as trusted only once the Mac accepts an encrypted SESSION_READY, which only the holder of the matching private key can produce. PAIR_REQUEST is cleartext and relayed verbatim, so the public key it carries is attacker-chosen: persisting it on arrival let a hostile relay register a key of its own, and replaying a legitimate key could hijack an already-trusted identity. Trust is now anchored in the Mac private key, which never leaves the Mac, so a relay that observes the pairing code still cannot derive the shared secret and is never persisted. Pairing stays long-lived: the code is a one-time bootstrap credential and the stored public key authorises every later reconnect, so the code is never re-entered.",
     "status": "Shipped",
     "differentiator": "No"
+  },
+  {
+    "category": "Reliability",
+    "feature": "Terminal Size Frame and Soft-Wrap Marking",
+    "description": "A tab PTY width is announced on its own tab-scoped TERMINAL_SIZE frame instead of riding on the tab inventory, so a Mac window resize reaches the client as a real event rather than an incidental side effect of the inventory payload changing. The shared terminal crate marks each grid row that soft-wraps from the row above, exposing the information clients already needed to re-compose a wide grid onto a narrow display by folding on logical lines rather than chopping soft-wrapped prose mid-sentence at every fold.",
+    "status": "Shipped",
+    "differentiator": "No"
   }
 ]

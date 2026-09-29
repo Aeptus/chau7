@@ -1152,6 +1152,7 @@ final class RemoteClient {
                 receivedAt: receivedAt
             )
         case .snapshot: storeSnapshot(payload, tabID: frame.tabID)
+        case .terminalSize: handleTerminalSize(payload, tabID: frame.tabID)
         case .terminalGridSnapshot:
             // A replay/text client never consumes server grids. Older Macs may
             // still send them, so discard after authenticated frame admission
@@ -1213,7 +1214,17 @@ final class RemoteClient {
         establishSessionIfPossible()
     }
 
-    private func handlePairAccept(_ data: Data) {
+    /// Records the Mac's live PTY width for a tab so its engine ingests at that
+/// width. Without it the engine is sized to the phone, and full-screen TUIs
+/// drawn for the Mac's terminal get hard-wrapped and arrive scrambled.
+private func handleTerminalSize(_ data: Data, tabID: UInt32) {
+    guard tabID != RemoteTerminalSizePayload.unscopedTabID,
+          let payload: RemoteTerminalSizePayload = decodePayload(data, as: RemoteTerminalSizePayload.self, context: "handleTerminalSize"),
+          payload.cols > 0 else { return }
+    terminalRenderer.setSourceColumns(payload.cols, for: tabID)
+}
+
+private func handlePairAccept(_ data: Data) {
         guard let msg: PairAcceptPayload = decodePayload(data, as: PairAcceptPayload.self, context: "handlePairAccept") else { return }
         guard let keyData = Data(base64Encoded: msg.macPub) else {
             log.error("handlePairAccept: invalid macPub base64")
@@ -1335,13 +1346,6 @@ final class RemoteClient {
             outputStore.retainVisibleTabs(visibleTabIDs)
             terminalRenderer.retainVisibleTabs(visibleTabIDs)
             pendingInteractivePrompts.removeAll { !visibleTabIDs.contains($0.tabID) }
-        }
-        // Announce each tab's Mac PTY width (when the Mac knows it) so its engine
-        // ingests at the source width instead of hard-wrapping the TUI at the
-        // phone's. Applied on every inventory, not just membership changes: the
-        // Mac's window can be resized without any tab appearing or disappearing.
-        for tab in tabs {
-            terminalRenderer.setSourceColumns(tab.terminalCols ?? 0, for: tab.tabID)
         }
         if membershipChanged || activeTabChanged {
             refreshVisibleOutput(prioritizeStrippedOutput: true)

@@ -16,6 +16,14 @@ pub const CELL_FLAG_STRIKETHROUGH: u8 = 1 << 3;
 pub const CELL_FLAG_INVERSE: u8 = 1 << 4;
 pub const CELL_FLAG_DIM: u8 = 1 << 5;
 pub const CELL_FLAG_HIDDEN: u8 = 1 << 6;
+/// This physical row is a soft-wrap continuation of the logical line that
+/// started on the row above (i.e. the row did not begin because a newline was
+/// emitted — the text simply exceeded the terminal width).
+///
+/// Clients that re-compose a wide grid onto a narrower display need this to
+/// fold on *logical* lines. Folding each physical row independently instead
+/// chops soft-wrapped prose mid-sentence at every fold.
+pub const CELL_FLAG_WRAPPED: u8 = 1 << 7;
 
 /// Underline style variants stored in `CellData.underline_style`.
 /// 0 = no underline (or simple single), 1 = single, 2 = double, 3 = curl, 4 = dotted, 5 = dashed.
