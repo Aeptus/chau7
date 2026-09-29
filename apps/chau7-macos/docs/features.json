@@ -5108,5 +5108,12 @@
     "description": "A tab PTY width is announced on its own tab-scoped TERMINAL_SIZE frame instead of riding on the tab inventory, so a Mac window resize reaches the client as a real event rather than an incidental side effect of the inventory payload changing. The shared terminal crate marks each grid row that soft-wraps from the row above, exposing the information clients already needed to re-compose a wide grid onto a narrow display by folding on logical lines rather than chopping soft-wrapped prose mid-sentence at every fold. The engine pre-folds the grid to the client width, so the iPhone paints rows that are already the right size instead of re-deriving cell indices and decoding a cluster per drawn cell every frame. Folding joins soft-wrapped continuation rows before reflowing, so a paragraph that exceeded the source width reads continuously rather than being cut at the terminal wrap point, and trailing padding is trimmed so a short line does not inflate display height. The previous client-side fold is retained as a fallback.",
     "status": "Shipped",
     "differentiator": "No"
+  },
+  {
+    "category": "Productivity",
+    "feature": "Native iPhone Activity Card",
+    "description": "The phone renders the agent current activity as a native card above the terminal, showing the running tool, its status, and the pending command when it is blocked on approval. The Mac already published a structured activity snapshot per tab and the phone already decoded it, but only ever used it to drive the lock-screen Live Activity, so answering the common question of what the agent is doing and whether it needs you required reading a re-wrapped terminal. Approval buttons only appear for a request the phone actually holds, so a tap can never queue a decision that would never be applied.",
+    "status": "Shipped",
+    "differentiator": "No"
   }
 ]

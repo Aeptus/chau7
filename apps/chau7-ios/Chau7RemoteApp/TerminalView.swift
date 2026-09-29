@@ -91,10 +91,42 @@ struct TerminalView: View {
         }
     }
 
+    private func respondToActivityApproval(_ activity: RemoteActivityState, approved: Bool) {
+        guard let requestID = activity.approval?.requestID,
+              client.pendingApprovals.contains(where: { $0.requestID == requestID }) else {
+            return
+        }
+        client.respondToApproval(requestID: requestID, approved: approved)
+    }
+
+    /// The Mac publishes one activity snapshot per tab; only the selected tab's
+    /// is relevant to what is on screen. `idle` is treated as "nothing to say"
+    /// so the card does not occupy space when the agent is simply quiet.
+    private var activeTabActivity: RemoteActivityState? {
+        guard let state = client.liveActivityState,
+              state.status != .idle,
+              state.isSelectedTab || state.tabID == client.activeTabID else { return nil }
+        return state
+    }
+
     private var pairedContent: some View {
         VStack(spacing: 0) {
             statusBar
             tabsBar
+            if let activity = activeTabActivity {
+                RemoteActivityCard(
+                    activity: activity,
+                    // Only offer a decision for a request the client actually
+                    // holds. Responding to an id it has never seen would queue a
+                    // decision that may never be applied, leaving the user
+                    // believing they approved something that is still blocked.
+                    onApprove: { respondToActivityApproval(activity, approved: true) },
+                    onDeny: { respondToActivityApproval(activity, approved: false) }
+                )
+                .padding(.horizontal, 12)
+                .padding(.bottom, 8)
+                .transition(.move(edge: .top).combined(with: .opacity))
+            }
             outputView
             // One in-flow key row, keyboard up or down. It deliberately does
             // NOT use a keyboard-accessory toolbar: the system accessory
@@ -109,6 +141,7 @@ struct TerminalView: View {
         // active tab waits on a menu), so animate on the resolved value rather
         // than relying on the toggle button's withAnimation.
         .animation(.easeInOut(duration: 0.15), value: showsPinnedControlKeys)
+        .animation(.easeInOut(duration: 0.2), value: activeTabActivity?.status)
         .onChange(of: client.activeTabNeedsMenuKeys) { _, needed in
             if needed { autoKeysDismissed = false }
         }

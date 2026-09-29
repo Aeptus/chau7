@@ -179,12 +179,32 @@ terminal mode. Do not keep tuning the fold.
 
 ## Phase 4 — Semantic surface *(separate initiative)*
 
-The primary surface, and the largest piece of work. Tool calls, diffs, prompts
-and status as native views, correct at any width. Largely independent of the
+The primary surface, and the largest piece of work. Largely independent of the
 rendering track; run in parallel if bandwidth allows.
 
-Its relevance to this plan: it is what makes §5 meaningful, and what makes
-approvals usable without ever opening a terminal.
+> **Correction (added after Phase 0–3 landed).** This phase was originally scoped
+> as "tool calls, diffs, prompts and status as native views", which implied a
+> stream of semantic events already reaches the phone. It does not. The Mac
+> publishes **one `RemoteActivityState` snapshot per tab** — tool, status,
+> headline, detail, and any pending approval — and the phone already decoded it,
+> but used it only to drive the lock-screen Live Activity. There is no history
+> and no per-tool-call event stream.
+>
+> So Phase 4 splits in two, and the first half is much smaller than planned:
+>
+> - **4a — current state (shipped, #135).** A native card above the terminal
+>   showing the running tool, its status, and the pending command with
+>   Approve/Deny. Built entirely from data already arriving. This is what makes
+>   "what is it doing, and does it need me?" answerable without a terminal.
+> - **4b — timeline (not started).** A history of past tool calls and diffs.
+>   This needs **new Mac-side event publishing**, not just a client change, plus
+>   a product decision about how much history the phone retains and how it is
+>   paged. Treat it as its own project, not a view-layer task.
+
+Approval actions in 4a deliberately render only for a request the phone actually
+holds: `respondToApproval` queues a decision for an unknown id and applies it if
+the request later appears, so a button bound to a stale id would let someone
+believe they had approved something that is still blocked.
 
 ---
 
