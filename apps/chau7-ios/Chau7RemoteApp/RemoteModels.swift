@@ -105,6 +105,33 @@ enum RemoteTerminalViewportGeometry {
 ///
 /// Lives here (not in the renderer view) so the host-less test bundle can
 /// exercise the mapping directly.
+/// Numbers needed to explain what the re-composition is doing to a frame.
+///
+/// Without these, a wrong-looking phone render can only be diagnosed by reading
+/// the draw path: it is not visible anywhere that the eye can check. Rendered by
+/// `RemoteTerminalCanvasView` when diagnostics are enabled.
+struct RemoteTerminalRenderDiagnostics: Equatable {
+    /// Engine grid width (the Mac's PTY width the output was ingested at).
+    var sourceCols: Int = 0
+    /// Engine grid height.
+    var sourceRows: Int = 0
+    /// Phone-width columns that fit on screen.
+    var displayCols: Int = 0
+    /// Phone-width rows the visible source rows fold into.
+    var displayRows: Int = 0
+    /// Engine rows retained in scrollback.
+    var scrollbackRows: Int = 0
+    /// Cells whose cluster bytes were decoded this frame. This is the cost that
+    /// makes the current per-cell `clusterString` fold expensive; Phase 3
+    /// should drive it to roughly the visible cell count once Rust pre-folds.
+    var decodedCells: Int = 0
+    /// Milliseconds spent inside the last `draw(_:)`.
+    var drawMilliseconds: Double = 0
+    /// Source rows that soft-wrap from the row above, as reported by the
+    /// engine's wrap flag.
+    var softWrappedRows: Int = 0
+}
+
 enum RemoteTerminalWrapGeometry {
     /// Engine size to ingest into. Never narrower than the source width, since
     /// that is what reintroduces hard-wrap; the phone width only wins when the

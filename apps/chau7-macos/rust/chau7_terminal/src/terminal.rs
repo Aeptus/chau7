@@ -27,8 +27,8 @@ use crate::pool::get_cell_buffer_pool;
 use crate::pty::{Chau7EventListener, PtyHandle, PtyMessage, SizeInfo};
 use crate::types::{
     CELL_FLAG_BOLD, CELL_FLAG_DIM, CELL_FLAG_HIDDEN, CELL_FLAG_INVERSE, CELL_FLAG_ITALIC,
-    CELL_FLAG_STRIKETHROUGH, CELL_FLAG_UNDERLINE, CellData, DebugState, GridDeltaSnapshot,
-    GridSnapshot, PerformanceMetrics, cell_flags_to_u8, underline_style,
+    CELL_FLAG_STRIKETHROUGH, CELL_FLAG_UNDERLINE, CELL_FLAG_WRAPPED, CellData, DebugState,
+    GridDeltaSnapshot, GridSnapshot, PerformanceMetrics, cell_flags_to_u8, underline_style,
 };
 
 /// Static counter for terminal IDs (for logging)
@@ -1583,6 +1583,10 @@ impl Chau7Terminal {
     fn snapshot_cell(
         cell: &Cell,
         point: Point,
+        // True when this row is a soft-wrap continuation, i.e. the row *above*
+        // it ran out of width rather than ending with a newline. Derived from
+        // the previous line's WRAPLINE marker, not this line's.
+        row_is_continuation: bool,
         selection_range: Option<&SelectionRange>,
         theme: &ThemeColors,
         hyperlinks: &mut HyperlinkRegistry,
@@ -1633,6 +1637,14 @@ impl Chau7Terminal {
         let (mut fg_r, mut fg_g, mut fg_b) = color_to_rgb_with_theme(fg_color, true, theme);
         let (mut bg_r, mut bg_g, mut bg_b) = color_to_rgb_with_theme(cell.bg, false, theme);
         let flags = cell_flags_to_u8(cell.flags);
+        // The wrap marker is a property of the *row*, so it is set on the row's
+        // first cell only. Clients fold on logical lines by reading
+        // `cells[row * cols].flags & CELL_FLAG_WRAPPED`.
+        let flags = if row_is_continuation && point.column.0 == 0 {
+            flags | CELL_FLAG_WRAPPED
+        } else {
+            flags
+        };
         let link_id = cell
             .hyperlink()
             .map(|hyperlink| hyperlinks.id_for_uri(hyperlink.uri()))
@@ -1715,12 +1727,17 @@ impl Chau7Terminal {
             //   When display_offset == 0, this simplifies to Line(0)..Line(rows-1).
             for line_idx in 0..rows {
                 let line = Line(line_idx as i32 - display_offset as i32);
+                // A row continues the line above when the *previous* line carried
+                // the WRAPLINE marker on its last cell.
+                let row_is_continuation =
+                    line_idx > 0 && Self::grid_line_wraps(grid, Line(line.0 - 1));
                 for col_idx in 0..cols {
                     let point = Point::new(line, Column(col_idx));
                     let cell = &grid[point];
                     cells.push(Self::snapshot_cell(
                         cell,
                         point,
+                        row_is_continuation,
                         selection_range.as_ref(),
                         &theme,
                         &mut hyperlinks,
@@ -1864,11 +1881,13 @@ impl Chau7Terminal {
             for row in dirty.rows.iter().copied() {
                 row_indices.push(row as u16);
                 let line = Line(row as i32 - display_offset as i32);
+                let row_is_continuation = row > 0 && Self::grid_line_wraps(grid, Line(line.0 - 1));
                 for col in 0..cols {
                     let point = Point::new(line, Column(col));
                     cells.push(Self::snapshot_cell(
                         &grid[point],
                         point,
+                        row_is_continuation,
                         selection_range.as_ref(),
                         &theme,
                         &mut hyperlinks,
@@ -3171,6 +3190,62 @@ impl Drop for Chau7Terminal {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A grid snapshot must mark rows that soft-wrap from the row above.
+    ///
+    /// Clients re-composing a wide grid onto a narrow display fold on logical
+    /// lines. Folding physical rows independently instead chops soft-wrapped
+    /// prose mid-sentence at every fold, so this bit is the difference between
+    /// readable output and fragmented output.
+    mod wrapped_row_flag {
+        use super::*;
+        use crate::types::CELL_FLAG_WRAPPED;
+
+        fn row_is_wrapped(snapshot: &GridSnapshot, cols: usize, row: usize) -> bool {
+            // Safety: the snapshot owns `cols * rows` cells; callers pass row
+            // indices within that range.
+            unsafe { (*snapshot.cells.add(row * cols)).flags & CELL_FLAG_WRAPPED != 0 }
+        }
+
+        #[test]
+        fn soft_wrapped_row_is_marked() {
+            let term = Chau7Terminal::new_headless(20, 4).expect("create headless terminal");
+            // 45 chars into a 20-column terminal: rows 1 and 2 are soft-wrap
+            // continuations of the line that began on row 0.
+            term.inject_output(b"123456789012345678901234567890123456789012345\r\nnext");
+
+            let snapshot = term.get_grid_snapshot();
+            let cols = snapshot.cols as usize;
+
+            assert!(
+                !row_is_wrapped(&snapshot, cols, 0),
+                "the first row never continues a previous line"
+            );
+            assert!(
+                row_is_wrapped(&snapshot, cols, 1),
+                "row 1 continues row 0 after 20 columns"
+            );
+            assert!(
+                row_is_wrapped(&snapshot, cols, 2),
+                "row 2 continues row 1 after 40 columns"
+            );
+        }
+
+        #[test]
+        fn newline_started_row_is_not_marked() {
+            let term = Chau7Terminal::new_headless(20, 4).expect("create headless terminal");
+            term.inject_output(b"short\r\nalso short");
+
+            let snapshot = term.get_grid_snapshot();
+            let cols = snapshot.cols as usize;
+
+            assert!(!row_is_wrapped(&snapshot, cols, 0));
+            assert!(
+                !row_is_wrapped(&snapshot, cols, 1),
+                "a row that begins after a newline is not a soft-wrap continuation"
+            );
+        }
+    }
 
     /// -----------------------------------------------------------------
     /// Hyperlink registry bound

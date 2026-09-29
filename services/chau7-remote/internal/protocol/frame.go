@@ -31,17 +31,21 @@ const (
 	TypeCheckpointRequest         = 0x25
 	TypeInteractivePromptResponse = 0x26
 	TypePaneInput                 = 0x27
-	TypePing                      = 0x30
-	TypePong                      = 0x31
-	TypePairingInfo               = 0x40
-	TypeSessionStatus             = 0x41
-	TypeRemoteTelemetry           = 0x42
-	TypeClientState               = 0x43
-	TypeRelayStatus               = 0x44
-	TypeApprovalRequest           = 0x50
-	TypeApprovalResponse          = 0x51
-	TypeNotificationEvent         = 0x52
-	TypeError                     = 0x7F
+	// TypeTerminalSize announces a tab's live PTY dimensions so the client can
+	// size its own emulator to the source width. A rendering concern, so it is
+	// its own tab-scoped frame rather than a field on the tab inventory.
+	TypeTerminalSize      = 0x28
+	TypePing              = 0x30
+	TypePong              = 0x31
+	TypePairingInfo       = 0x40
+	TypeSessionStatus     = 0x41
+	TypeRemoteTelemetry   = 0x42
+	TypeClientState       = 0x43
+	TypeRelayStatus       = 0x44
+	TypeApprovalRequest   = 0x50
+	TypeApprovalResponse  = 0x51
+	TypeNotificationEvent = 0x52
+	TypeError             = 0x7F
 )
 
 var (

@@ -17,6 +17,14 @@ let rustCellFlagStrikethrough: UInt8 = 1 << 3
 let rustCellFlagInverse: UInt8 = 1 << 4
 let rustCellFlagDim: UInt8 = 1 << 5
 let rustCellFlagHidden: UInt8 = 1 << 6
+/// Set on the first cell of a grid row that soft-wraps from the row above.
+///
+/// A property of the row, not of the cell: it marks where the terminal broke a
+/// logical line because the text exceeded the width, rather than because a
+/// newline was emitted. Folding each physical row independently (which is what
+/// the display re-composition did before this existed) chops soft-wrapped
+/// prose mid-sentence at every fold; folding on logical lines does not.
+let rustCellFlagWrapped: UInt8 = 1 << 7
 
 /// iOS mirror of the macOS `RustCellData` (see chau7_terminal.h).
 ///
@@ -77,6 +85,15 @@ struct RemoteTerminalRenderState: Sendable {
         let end = start + Int(cell.cluster_len)
         guard end <= clusters.count else { return "" }
         return String(decoding: clusters[start ..< end], as: UTF8.self)
+    }
+
+    /// Whether the grid row at `row` is a soft-wrap continuation of the logical
+    /// line begun on the row above, rather than the start of a new line.
+    func isSoftWrapped(row: Int) -> Bool {
+        guard row > 0, row < rows, cols > 0 else { return false }
+        let index = row * cols
+        guard index < cells.count else { return false }
+        return cells[index].flags & rustCellFlagWrapped != 0
     }
 }
 
