@@ -118,7 +118,13 @@ enum LogEnhanced {
     // MARK: - Configuration
 
     private static let enabledCategories: Set<LogCategory> = Set(LogCategory.allCases)
-    private static var osLogs: [LogCategory: OSLog] = [:]
+    /// Lazily built, and written from whichever thread first logs a given
+    /// category — so this one is genuinely racy rather than merely
+    /// unsynchronised-looking. It gets a real lock instead of a
+    /// `nonisolated(unsafe)` annotation, because two threads entering the
+    /// miss path concurrently would both insert into the dictionary.
+    private static let osLogsLock = NSLock()
+    private nonisolated(unsafe) static var osLogs: [LogCategory: OSLog] = [:]
 
     // MARK: - Logging Methods
 
@@ -245,11 +251,18 @@ enum LogEnhanced {
     }
 
     private static func logToOSLog(_ entry: LogEntry, category: LogCategory) {
-        let osLog = osLogs[category] ?? {
-            let log = OSLog(subsystem: "com.chau7", category: category.osLogCategory)
-            osLogs[category] = log
-            return log
-        }()
+        // Read and insert under one lock acquisition: a separate lookup and insert
+        // would let two threads both miss and both write.
+        osLogsLock.lock()
+        let osLog: OSLog
+        if let existing = osLogs[category] {
+            osLog = existing
+        } else {
+            let created = OSLog(subsystem: "com.chau7", category: category.osLogCategory)
+            osLogs[category] = created
+            osLog = created
+        }
+        osLogsLock.unlock()
 
         let type: OSLogType
         switch entry.level {

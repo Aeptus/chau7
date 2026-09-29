@@ -20,18 +20,26 @@ enum Log {
     }
 
     private static let sinkLock = NSLock()
-    private static var _sink: ((String) -> Void)?
+    /// Guarded by `sinkLock` through the computed `sink` accessor, which locks on
+    /// both the get and the set. The raw storage cannot carry the annotation itself.
+    private nonisolated(unsafe) static var _sink: ((String) -> Void)?
 
     private nonisolated(unsafe) static let formatter = DateFormatters.iso8601
 
     private static let fileQueue = DispatchQueue(label: "com.chau7.logfile")
-    private static var fileHandle: FileHandle?
-    private static var isConfigured = false
-    private static var filePathValue = ""
-    private static var writeCount = 0
+    /// The four globals below are serialised by `fileQueue`, not by a lock: every
+    /// steady-state access is inside `writeRaw`'s `fileQueue.async` block, and
+    /// `trimLogFileIfNeeded` — the only other reader of `filePathValue` — is
+    /// reachable solely from that block. The sole exception is `configure()`, which
+    /// writes them once during startup, before concurrent logging begins.
+    private nonisolated(unsafe) static var fileHandle: FileHandle?
+    private nonisolated(unsafe) static var isConfigured = false
+    private nonisolated(unsafe) static var filePathValue = ""
+    private nonisolated(unsafe) static var writeCount = 0
     private static let retainedArchiveCount = 5
     private static let traceThrottleLock = NSLock()
-    private static var traceThrottleLastEmit: [String: CFAbsoluteTime] = [:]
+    /// Guarded by `traceThrottleLock` on every read and write.
+    private nonisolated(unsafe) static var traceThrottleLastEmit: [String: CFAbsoluteTime] = [:]
     /// Bounds for `traceThrottleLastEmit`. Keys are per-terminal-instance
     /// (e.g. "rust-terminal-grid-<instanceId>"), so without eviction the map
     /// grows by ~one set per tab for the entire process lifetime — closed-tab
@@ -145,8 +153,11 @@ enum Log {
 
     // MARK: - Wakeup Tracking
 
-    private static var wakeupCounts: [String: Int] = [:]
-    private static var wakeupFlushTimer: DispatchSourceTimer?
+    /// Both are confined to `wakeupQueue`: `wakeup(_:)` increments inside
+    /// `wakeupQueue.async`, and the flush timer is created on that same queue and
+    /// reads/writes only from its handler there.
+    private nonisolated(unsafe) static var wakeupCounts: [String: Int] = [:]
+    private nonisolated(unsafe) static var wakeupFlushTimer: DispatchSourceTimer?
     private static let wakeupFlushInterval: TimeInterval = 300 // 5 minutes
     private static let wakeupQueue = DispatchQueue(label: "com.chau7.wakeup", qos: .utility)
 
