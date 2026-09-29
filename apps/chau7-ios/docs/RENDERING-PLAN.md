@@ -208,26 +208,36 @@ believe they had approved something that is still blocked.
 
 ---
 
-## Phase 5 — Scoped, opt-in takeover width negotiation
+## Phase 5 — Scoped, opt-in takeover width negotiation — **REJECTED**
 
-*Depends on Phase 4 existing, so takeover is a deliberate mode.*
+**Decision (2026-09-29, product owner): the phone must never resize the Mac's
+terminal.** This phase is cancelled, not deferred.
 
-Only for the explicit "drive this session from my phone" mode:
+The original argument was that a 120-column TUI cannot be made correct on a
+390pt screen, and that the Mac rendering at the phone's width is the only way to
+get a correct TUI. That reasoning still holds — and the decision rejects it
+anyway. The Mac terminal belongs to the person sitting at the Mac. A remote
+companion silently changing it is not a trade worth making, whatever it buys on
+the phone.
 
-- Phone declares its width **only while holding an explicit lease**; Mac resizes
-  that PTY only for the lease holder.
-- Release on: phone release, lease expiry, focus loss, disconnect, or app
-  background. Restore the Mac's width on every one of those paths.
-- Visible, non-surprising UI: the Mac must make it obvious the PTY is narrow.
-  The user is looking at a Mac terminal that mysteriously got skinny.
-- Reuse the existing `chau7_terminal_resize` + `chau7_terminal_nudge_winsize`
-  path rather than adding new plumbing.
+### What this settles
 
-This reverses the "don't touch the Mac" decision from PR #128. That is not
-churn: negotiation was rejected when the terminal was the phone's only surface,
-where it was the only route to anything correct. Once a semantic surface exists,
-the terminal becomes an explicit takeover mode and a correct TUI is worth a
-scoped, opt-in Mac resize.
+The phone is a permanent **observer** of a Mac-driven terminal. That constrains
+everything downstream, so record it plainly:
+
+1. **A full-screen TUI will never render correctly on the phone.** Not "not yet"
+   — it is geometrically impossible while the Mac keeps its own width.
+   Box-drawing and multi-column layouts are cut at fold seams no matter how
+   clever the fold gets. The Rust fold (§3) makes *prose* read continuously,
+   which is the achievable goal, and that is all it promises.
+2. **The semantic surface is therefore the primary surface, not an
+   enhancement.** Phase 4a exists; 4b is not optional polish. The terminal is the
+   "something looks off, let me read raw output" view; the structured surface is
+   how you normally find out what the agent did. This raises 4b's priority
+   considerably.
+3. **The display fold stays as the permanent terminal mechanism** — there is no
+   takeover mode to hand off to. Do not remove the §3 fallback on the theory
+   that a better path is coming. There isn't one.
 
 ---
 
@@ -262,6 +272,9 @@ scoped, opt-in Mac resize.
 | `TERMINAL_SIZE` frame | 1 | prompt resize | yes |
 | Wrap bit in FFI | 2 | no | no |
 | Rust-side fold + blit | 3 | **yes, heavily** | yes |
-| Semantic surface | 4 | yes | yes |
-| Takeover negotiation | 5 | yes, both ends | yes |
-| Cleanup | 6 | yes | yes |
+| Activity card (4a) | 4a | yes | yes |
+| Event timeline (4b) — needs Mac-side publishing | 4b | yes | yes |
+| Takeover negotiation — **rejected** | 5 | n/a | decided |
+| Cleanup — do not remove the §3 fallback | 6 | yes | yes |
+
+Phases 0–4a are merged. Phase 3's device gate and 4b are outstanding.
