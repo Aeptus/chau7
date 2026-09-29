@@ -13,7 +13,10 @@ import Chau7Core
 final class ClaudeCodeContentProvider: RunContentProvider {
     let providerName = "claude"
     private static let sessionIndexLock = NSLock()
-    private static var sessionDirsByRoot: [String: [String: URL]] = [:]
+    /// Guarded by `sessionIndexLock`: `findSessionDirGlobally` does its
+    /// lookup-then-insert inside one acquisition (and builds the index under
+    /// the same lock when absent), so the dictionary never escapes unlocked.
+    private nonisolated(unsafe) static var sessionDirsByRoot: [String: [String: URL]] = [:]
 
     func canHandle(provider: String) -> Bool {
         let lower = provider.lowercased()

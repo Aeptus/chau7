@@ -10,7 +10,16 @@ import Chau7Core
 /// `TelemetryMaintenance`. Both collaborators run exclusively on this store's
 /// serial queue and reach shared row parsing / binding through the store's
 /// on-queue internals.
-final class TelemetryStore {
+///
+/// `@unchecked Sendable` is asserted against the queue, verified site by site
+/// rather than assumed: `db`, `maintenance` and
+/// `lastLatencySamplesPrepareFailureLogAt` are the only mutable state, and each
+/// is read or written only inside a `queue.sync` / `queue.async` block. The
+/// public surface is entirely one of those two enqueue forms, so no caller can
+/// observe the state off-queue. `deinit` is the single exception — it copies
+/// `db` out and closes it in a `queue.async`, which is a hand-off of the handle
+/// rather than a concurrent read of the store.
+final class TelemetryStore: @unchecked Sendable {
     static let shared = TelemetryStore()
 
     /// Only the store mutates the handle (open/integrity recovery). The
@@ -39,10 +48,12 @@ final class TelemetryStore {
         // Close after in-flight writes drain, without deinit blocking on the
         // queue — `queue.sync` here is a latent deadlock if the last strong
         // reference is ever released from a task running on `queue` itself
-        // (same fix as SpineJournalStore.deinit).
-        let db = self.db
+        // (same fix as SpineJournalStore.deinit). The handle travels back to
+        // the queue that owns it, which is what `SQLiteHandleBox` asserts;
+        // nothing else reads it off-queue.
+        let box = SQLiteHandleBox(self.db)
         queue.async {
-            if let db {
+            if let db = box.handle {
                 sqlite3_close(db)
             }
         }

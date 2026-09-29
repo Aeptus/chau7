@@ -17,7 +17,12 @@ import SQLite3
 final class CodexContentProvider: RunContentProvider {
     let providerName = "codex"
     private static let rolloutFileIndexLock = NSLock()
-    private static var rolloutFileIndexByRoot: [String: [String: URL]] = [:]
+    /// Guarded by `rolloutFileIndexLock`: `globallyFindRolloutFile` reads the
+    /// cached match under the lock, releases it to rebuild off-lock (an
+    /// expensive directory walk), then re-acquires to publish. Nothing is read
+    /// between those two acquisitions, so the window is a redundant rebuild
+    /// rather than a torn read.
+    private nonisolated(unsafe) static var rolloutFileIndexByRoot: [String: [String: URL]] = [:]
 
     func canHandle(provider: String) -> Bool {
         let lower = provider.lowercased()

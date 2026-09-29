@@ -5,7 +5,16 @@ import Chau7Core
 ///
 /// Lifecycle data comes from Chau7's terminal monitoring (process start/exit, cwd, timing).
 /// Content data comes from pluggable RunContentProviders that read provider-specific storage.
-final class TelemetryRecorder {
+///
+/// `@unchecked Sendable` is asserted against two verified locks rather than
+/// assumed. Every mutable field is covered by exactly one of them:
+/// `activeRuns` / `inProgressRuns` under `lock`, and `pendingMetricsFlush` /
+/// `pendingMetricsRuns` under `metricsLock`; both dictionaries are only ever
+/// read back out under the same lock that wrote them. Everything else is
+/// `let`. The async queues below (`extractionQueue`, `repairQueue`,
+/// `metricsFlushQueue`) only ever receive value snapshots, never a live
+/// reference to one of those dictionaries.
+final class TelemetryRecorder: @unchecked Sendable {
     static let shared = TelemetryRecorder()
 
     struct CompletedRunExtractionResult {
@@ -586,28 +595,25 @@ final class TelemetryRecorder {
 
     private func scheduleTranscriptRepairIfNeeded(for run: TelemetryRun) {
         guard TelemetryRepairService.needsTranscriptRepair(run) else { return }
-        // Use a shared flag so later retries skip work once an earlier attempt succeeds.
-        let repairDone = NSLock()
-        var done = false
+        // One latch shared by the three scheduled attempts: once an earlier one
+        // reaches a final answer the later ones skip their work. This is a
+        // shared-state flag read by several closures, so it is a `Sendable`
+        // latch rather than a locked local `var` — the lock discipline it
+        // replaces was correct but invisible to the compiler, which is why it
+        // was flagged at all. `.skipped` deliberately leaves the latch open so
+        // a later retry can still try.
+        let settled = CompletionLatch()
         for delaySeconds in [2, 10, 60] {
             repairQueue.asyncAfter(deadline: .now() + .seconds(delaySeconds)) {
-                repairDone.lock()
-                if done { repairDone.unlock()
-                    return
-                }
-                repairDone.unlock()
+                guard settled.shouldProceed() else { return }
 
                 let result = TelemetryRepairService.shared.rebuildRunIfNeeded(runID: run.id)
                 switch result {
                 case .rebuilt:
-                    repairDone.lock()
-                    done = true
-                    repairDone.unlock()
+                    settled.latch()
                     Log.info("TelemetryRecorder: repaired transcript-derived metrics for run \(run.id) after \(delaySeconds)s")
                 case .invalidated:
-                    repairDone.lock()
-                    done = true
-                    repairDone.unlock()
+                    settled.latch()
                     Log.warn("TelemetryRecorder: transcript repair invalidated run \(run.id) after \(delaySeconds)s")
                 case .skipped:
                     break

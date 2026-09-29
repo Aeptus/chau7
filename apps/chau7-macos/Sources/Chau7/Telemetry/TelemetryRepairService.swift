@@ -14,7 +14,11 @@ enum TelemetryRunRepairResult: Sendable, Equatable {
     case skipped
 }
 
-final class TelemetryRepairService {
+/// `@unchecked Sendable` is asserted because every stored property is `let`
+/// and the one mutable collaborator — `retryGate` — is itself a
+/// `@unchecked Sendable` type in `Chau7Core` whose lock discipline is covered
+/// by its own tests. Nothing here is written after `init`.
+final class TelemetryRepairService: @unchecked Sendable {
     static let shared = TelemetryRepairService()
 
     private let store = TelemetryStore.shared

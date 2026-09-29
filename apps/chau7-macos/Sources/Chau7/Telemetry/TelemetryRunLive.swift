@@ -2,7 +2,13 @@ import Chau7Core
 import Foundation
 import Observation
 
+/// `@MainActor` because both mutation sites already dispatch to main
+/// explicitly (`TelemetryRecorder.publishLiveRun` / `removeLiveRun` hop via
+/// `DispatchQueue.main.async`), and the SwiftUI surfaces that observe it read
+/// it from the main actor. Isolating the type records that invariant in the
+/// declaration instead of leaving it to be re-derived at each call site.
 @Observable
+@MainActor
 final class TelemetryRunLiveStore {
     static let shared = TelemetryRunLiveStore()
 

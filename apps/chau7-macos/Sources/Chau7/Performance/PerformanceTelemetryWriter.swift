@@ -8,7 +8,14 @@ protocol PerformanceTelemetryRecording: AnyObject {
 /// Dedicated bounded JSONL sink for sampled performance aggregates. Routine
 /// measurements no longer consume the operational Chau7.log rotation budget;
 /// that log remains reserved for lifecycle transitions and actionable faults.
-final class PerformanceTelemetryWriter: PerformanceTelemetryRecording {
+///
+/// `@unchecked Sendable` is asserted against `queue`, verified rather than
+/// assumed: `fileHandle` and `didReportWriteFailure` are the only mutable
+/// fields, and every read and write of both happens inside `write(_:)`, which
+/// is reached only from the `queue.async` block in `record(category:fields:at:)`.
+/// `openIfNeeded` and `rotateIfNeeded` are `private` and called from nowhere
+/// else, so no caller can touch the handle off-queue.
+final class PerformanceTelemetryWriter: PerformanceTelemetryRecording, @unchecked Sendable {
     static let shared = PerformanceTelemetryWriter()
 
     private let fileURL: URL
@@ -43,8 +50,12 @@ final class PerformanceTelemetryWriter: PerformanceTelemetryRecording {
             return
         }
         data.append(0x0A)
+        // Bound before the hand-off: `data` is a `var` above, and capturing a
+        // mutable local in the escaping closure is what the compiler flags.
+        // Freezing it to a `let` makes the capture genuinely immutable.
+        let payload = data
         queue.async { [self] in
-            write(data)
+            write(payload)
         }
     }
 
