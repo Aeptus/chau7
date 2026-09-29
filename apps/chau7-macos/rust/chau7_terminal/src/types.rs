@@ -96,6 +96,51 @@ impl Default for CellData {
 // Grid snapshot
 // ============================================================================
 
+/// C-compatible, pre-folded display grid.
+///
+/// A terminal that is wider than the client rendering it has to be re-composed
+/// onto a narrower display. Doing that in the client means re-deriving cell
+/// indices through a source-to-display mapping and decoding a cluster per drawn
+/// cell, every frame. Doing it here means the client receives rows that are
+/// already the width it can paint, in one contiguous allocation.
+///
+/// Rows are folded on *logical* lines: a row the engine marked as a soft-wrap
+/// continuation is joined to the line above before folding, so prose that
+/// exceeds the source width reads continuously instead of being chopped at
+/// every fold. Trailing blank cells on a logical line are trimmed, so a short
+/// line in a wide grid does not inflate the display height.
+///
+/// Owns three allocations — `cells`, `clusters_utf8`, and `row_offsets` — all
+/// of which must be freed via `chau7_terminal_free_display_rows`.
+#[repr(C)]
+pub struct DisplayRowBuffer {
+    /// Folded display cells. Exactly `display_cols * display_rows` elements.
+    pub cells: *mut CellData,
+    /// Allocated capacity of `cells`, recorded because the buffer crosses the
+    /// FFI boundary and must be reconstructed exactly on free. Dropping it
+    /// would be undefined behaviour, not merely a leak.
+    pub cells_capacity: usize,
+    /// Packed UTF-8 grapheme clusters, referenced by `cells[i].cluster_offset`.
+    pub clusters_utf8: *mut u8,
+    pub clusters_len: usize,
+    pub clusters_capacity: usize,
+    /// Start offset into `cells` for each display row, plus a final sentinel
+    /// equal to the total cell count, so row `r` is
+    /// `cells[row_offsets[r] ..< row_offsets[r + 1]]`.
+    pub row_offsets: *mut u32,
+    pub row_offsets_len: usize,
+    pub row_offsets_capacity: usize,
+    pub cell_count: usize,
+    /// Phone-width columns each folded row holds.
+    pub display_cols: u16,
+    /// Number of folded rows produced.
+    pub display_rows: u16,
+    /// Source grid width the fold was computed from.
+    pub source_cols: u16,
+    /// Source grid height the fold was computed from.
+    pub source_rows: u16,
+}
+
 /// C-compatible grid snapshot containing all cell data.
 ///
 /// Owns two parallel allocations: the `cells` array and the `clusters_utf8` byte
