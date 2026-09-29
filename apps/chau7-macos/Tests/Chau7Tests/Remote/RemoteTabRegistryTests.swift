@@ -132,7 +132,8 @@ final class RemoteTabRegistryTests: XCTestCase {
             ]
         )
         let descriptor = try XCTUnwrap(descriptors.first)
-        let json = try XCTUnwrap(String(data: try JSONEncoder().encode(descriptor), encoding: .utf8))
+        let encoded = try JSONEncoder().encode(descriptor)
+        let json = try XCTUnwrap(String(data: encoded, encoding: .utf8))
         XCTAssertFalse(
             json.contains("terminal_cols"),
             "terminal size must not ride on the inventory; it would only update incidentally"

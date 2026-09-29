@@ -1600,32 +1600,32 @@ final class RemoteControlManager {
         pendingGridSnapshotTabID = nil
     }
 
+    /// Announces a tab's live PTY dimensions, but only when they changed.
+    ///
+    /// The client sizes its own emulator to this width so full-screen TUIs are
+    /// ingested without being hard-wrapped at the phone's narrower viewport. The
+    /// Mac's own view is untouched — this only reads a dimension it already has.
+    ///
+    /// Cheapest correct hook is the output cadence plus the snapshot path: a
+    /// full-screen TUI redraws when its window is resized, so an idle-but-resized
+    /// terminal is still announced on its next paint or checkpoint. A terminal that
+    /// is resized *and* stays completely silent defers the announcement until it
+    /// next emits, which is harmless — nothing is rendered from it in the meantime.
+    private func announceTerminalSizeIfChanged(for tabID: UInt32) {
+        guard isIPCConnected, connectedClientStreamMode == .full else { return }
+        guard let session = snapshotTargetTab(for: tabID)?.session else { return }
+        let dims = session.terminalDimensions
+        guard dims.cols > 0, dims.rows > 0 else { return }
+        let payload = RemoteTerminalSizePayload(cols: dims.cols, rows: dims.rows)
+        guard announcedTerminalSizeByTabID[tabID] != payload else { return }
+        announcedTerminalSizeByTabID[tabID] = payload
+        guard let data = try? JSONEncoder().encode(payload) else { return }
+        sendFrame(type: .terminalSize, tabID: tabID, payload: data)
+    }
+
     /// Grid invalidations are latest-wins: output bursts update this single
     /// pending tab and one capped task captures the newest viewport state.
-    /// Announces a tab's live PTY dimensions, but only when they changed.
-///
-/// The client sizes its own emulator to this width so full-screen TUIs are
-/// ingested without being hard-wrapped at the phone's narrower viewport. The
-/// Mac's own view is untouched — this only reads a dimension it already has.
-///
-/// Cheapest correct hook is the output cadence plus the snapshot path: a
-/// full-screen TUI redraws when its window is resized, so an idle-but-resized
-/// terminal is still announced on its next paint or checkpoint. A terminal that
-/// is resized *and* stays completely silent defers the announcement until it
-/// next emits, which is harmless — nothing is rendered from it in the meantime.
-private func announceTerminalSizeIfChanged(for tabID: UInt32) {
-    guard isIPCConnected, connectedClientStreamMode == .full else { return }
-    guard let session = snapshotTargetTab(for: tabID)?.session else { return }
-    let dims = session.terminalDimensions
-    guard dims.cols > 0, dims.rows > 0 else { return }
-    let payload = RemoteTerminalSizePayload(cols: dims.cols, rows: dims.rows)
-    guard announcedTerminalSizeByTabID[tabID] != payload else { return }
-    announcedTerminalSizeByTabID[tabID] = payload
-    guard let data = try? JSONEncoder().encode(payload) else { return }
-    sendFrame(type: .terminalSize, tabID: tabID, payload: data)
-}
-
-private func scheduleGridSnapshot(for tabID: UInt32) {
+    private func scheduleGridSnapshot(for tabID: UInt32) {
         pendingGridSnapshotTabID = tabID
         guard gridSnapshotFlushTask == nil else { return }
         gridSnapshotFlushTask = Task { @MainActor [weak self] in

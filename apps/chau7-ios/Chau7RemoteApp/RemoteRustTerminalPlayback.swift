@@ -60,6 +60,57 @@ struct RustGridSnapshot {
     var capacity: Int
 }
 
+/// iOS mirror of the Rust `DisplayRowBuffer` (see chau7_terminal.h).
+///
+/// The grid already folded to a width the client can paint, so the renderer
+/// blits rows straight out of it instead of re-deriving cell indices through a
+/// source-to-display mapping.
+struct RustDisplayRowBuffer {
+    var cells: UnsafeMutablePointer<RustCellData>?
+    var cells_capacity: Int
+    var clusters_utf8: UnsafeMutablePointer<UInt8>?
+    var clusters_len: Int
+    var clusters_capacity: Int
+    var row_offsets: UnsafeMutablePointer<UInt32>?
+    var row_offsets_len: Int
+    var row_offsets_capacity: Int
+    var cell_count: Int
+    var display_cols: UInt16
+    var display_rows: UInt16
+    var source_cols: UInt16
+    var source_rows: UInt16
+}
+
+/// Rows already folded to the client's width, ready to paint.
+///
+/// Produced by `RemoteRustTerminalPlayback.displayRows(displayCols:)`. The
+/// cluster bytes are copied out of the FFI buffer before it is freed.
+struct RemoteTerminalDisplayState: Sendable {
+    let cells: [RustCellData]
+    let clusters: Data
+    /// Start offset into `cells` for each display row, plus a trailing sentinel,
+    /// so row `r` is `cells[rowOffsets[r] ..< rowOffsets[r + 1]]`.
+    let rowOffsets: [UInt32]
+    let displayCols: Int
+    let displayRows: Int
+
+    /// Cell range backing one display row.
+    func range(forRow row: Int) -> Range<Int>? {
+        RemoteTerminalDisplayRowMap.range(row: row, offsets: rowOffsets, cellCount: cells.count)
+    }
+
+    /// Decode a cell's grapheme cluster. Kept off the hot path deliberately: the
+    /// Rust fold removes the *index* work, but glyphs still have to be turned
+    /// into strings to draw, so this is called once per painted cell per frame.
+    func clusterString(for cell: RustCellData) -> String {
+        guard cell.cluster_len > 0, cell.continuation == 0 else { return "" }
+        let start = Int(cell.cluster_offset)
+        let end = start + Int(cell.cluster_len)
+        guard end <= clusters.count else { return "" }
+        return String(decoding: clusters[start ..< end], as: UTF8.self)
+    }
+}
+
 struct RemoteTerminalRenderState: Sendable {
     let cells: [RustCellData]
     /// Packed UTF-8 cluster bytes referenced by `cells[i].cluster_offset`. The
@@ -229,6 +280,23 @@ private nonisolated func chau7_terminal_set_colors(
     _ palette: UnsafePointer<UInt8>?
 ) -> Void
 
+/// C signature of `chau7_terminal_get_display_rows` (see rust `ffi.rs`):
+/// `DisplayRowBuffer *chau7_terminal_get_display_rows(term, u16 display_cols)`.
+/// The result is already folded to `display_cols`, joined across soft-wrapped
+/// rows, and must be released with `chau7_terminal_free_display_rows`.
+@_silgen_name("chau7_terminal_get_display_rows")
+private nonisolated func chau7_terminal_get_display_rows(
+    _ term: UnsafeMutableRawPointer?,
+    _ displayCols: UInt16
+) -> UnsafeMutablePointer<RustDisplayRowBuffer>?
+
+/// C signature of `chau7_terminal_free_display_rows`:
+/// `void chau7_terminal_free_display_rows(DisplayRowBuffer *)`.
+@_silgen_name("chau7_terminal_free_display_rows")
+private nonisolated func chau7_terminal_free_display_rows(
+    _ buffer: UnsafeMutablePointer<RustDisplayRowBuffer>?
+) -> Void
+
 final nonisolated class RemoteRustTerminalPlayback {
     private var handle: UnsafeMutableRawPointer?
     private(set) var cols: Int
@@ -291,6 +359,45 @@ final nonisolated class RemoteRustTerminalPlayback {
     /// `scrollbackRows` value captured before the mutation was queued.
     func scrollToNormalized(_ fraction: Double) {
         chau7_terminal_scroll_to(handle, min(max(fraction, 0), 1))
+    }
+
+    /// Fold the engine grid down to `displayCols` phone-width rows.
+    ///
+    /// The fold is done in Rust because that is the layer that knows which
+    /// physical rows are soft-wrap continuations of the line above. Doing it
+    /// here would mean re-deriving `row * cols + col` through a source-to-display
+    /// mapping on every frame.
+    ///
+    /// Returns nil if the engine cannot produce a buffer, so the caller can fall
+    /// back to folding in Swift.
+    func displayRows(displayCols: Int) -> RemoteTerminalDisplayState? {
+        guard let handle, displayCols > 0, displayCols <= Int(UInt16.max) else { return nil }
+        guard let raw = chau7_terminal_get_display_rows(handle, UInt16(displayCols)) else { return nil }
+        defer { chau7_terminal_free_display_rows(raw) }
+
+        let buffer = raw.pointee
+        guard buffer.display_rows > 0, buffer.display_cols > 0 else { return nil }
+        guard let cellsPointer = buffer.cells, buffer.cell_count > 0 else { return nil }
+        guard let offsetsPointer = buffer.row_offsets, buffer.row_offsets_len >= 2 else { return nil }
+
+        let cells = Array(UnsafeBufferPointer(start: cellsPointer, count: buffer.cell_count))
+        let rowOffsets = Array(UnsafeBufferPointer(start: offsetsPointer, count: buffer.row_offsets_len))
+
+        // Copy cluster bytes before the defer frees the FFI buffer.
+        let clusters: Data
+        if let base = buffer.clusters_utf8, buffer.clusters_len > 0 {
+            clusters = Data(bytes: base, count: buffer.clusters_len)
+        } else {
+            clusters = Data()
+        }
+
+        return RemoteTerminalDisplayState(
+            cells: cells,
+            clusters: clusters,
+            rowOffsets: rowOffsets,
+            displayCols: Int(buffer.display_cols),
+            displayRows: Int(buffer.display_rows)
+        )
     }
 
     func snapshot() -> RemoteTerminalRenderState? {

@@ -11,6 +11,10 @@ import UIKit
 
 private struct RemoteTerminalEngineSnapshot: Sendable {
     let state: RemoteTerminalRenderState?
+    /// Rows already folded to the phone's width by the engine, when a fold is
+    /// actually needed. nil means "paint the grid as-is" (1:1) or that the engine
+    /// could not fold, in which case the canvas falls back to folding in Swift.
+    let display: RemoteTerminalDisplayState?
     let isAvailable: Bool
     let frameTrace: RemoteTerminalFrameTrace?
 }
@@ -128,12 +132,24 @@ private actor RemoteTerminalRenderEngine {
         guard tabID != 0 else {
             return RemoteTerminalEngineSnapshot(
                 state: nil,
+                display: nil,
                 isAvailable: isAvailable,
                 frameTrace: frameTrace
             )
         }
+        let playback = ensurePlayback(for: tabID)
+        // Fold in the engine whenever it is wider than the phone, so the canvas
+        // paints rows that are already the right width. `viewportCols` is the
+        // phone's own width (the engine is sized to max(source, display)), which
+        // makes it exactly the fold target.
+        let display = playback.flatMap { playback in
+            viewportCols > 0 && viewportCols < playback.cols
+                ? playback.displayRows(displayCols: viewportCols)
+                : nil
+        }
         return RemoteTerminalEngineSnapshot(
-            state: ensurePlayback(for: tabID)?.snapshot(),
+            state: playback?.snapshot(),
+            display: display,
             isAvailable: isAvailable,
             frameTrace: frameTrace
         )
@@ -220,6 +236,8 @@ private final class RemoteDisplayLinkPacer: NSObject {
 @Observable
 final class RemoteTerminalRendererStore {
     private(set) var renderState: RemoteTerminalRenderState?
+    /// Engine-folded rows for the active tab, when a fold is needed.
+    private(set) var displayState: RemoteTerminalDisplayState?
     private(set) var activeTabID: UInt32 = 0
     private(set) var isAvailable = true
     private(set) var colorScheme: TerminalColorScheme = AppSettings.currentColorScheme
@@ -275,6 +293,7 @@ final class RemoteTerminalRendererStore {
         }
         gridSnapshotByTabID.removeAll()
         renderState = nil
+        displayState = nil
         publishedTrace = nil
         pendingPresentationTrace = nil
         activeTabID = 0
@@ -427,6 +446,10 @@ final class RemoteTerminalRendererStore {
                     self.publishedTrace = nil
                 }
                 self.renderState = snapshot.state ?? self.gridSnapshotByTabID[tabID]
+                // A nil display state means the grid is already phone-width, or
+                // the engine could not fold; the canvas then paints the grid
+                // directly rather than falling back to its own fold.
+                self.displayState = snapshot.display
             }
             let elapsed = startedAt.duration(to: .now)
             let milliseconds = Double(elapsed.components.seconds) * 1000

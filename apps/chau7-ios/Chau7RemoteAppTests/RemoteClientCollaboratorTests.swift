@@ -904,6 +904,48 @@ final class RemoteTerminalViewportGeometryTests: XCTestCase {
 /// hard-wrapped (which is what scrambled every logical line), and the canvas
 /// re-wraps that source grid down to phone-width rows for display. These lock
 /// in both halves of that mapping.
+/// The engine returns a flat cell array plus one start offset per folded row. A
+/// wrong mapping paints the wrong cells on a row rather than failing visibly, so
+/// it is pinned here rather than trusted.
+final class RemoteTerminalDisplayRowMapTests: XCTestCase {
+    func testRowsMapToContiguousNonOverlappingSlices() {
+        let offsets: [UInt32] = [0, 3, 3, 7, 10]
+        let cellCount = 10
+        XCTAssertEqual(RemoteTerminalDisplayRowMap.range(row: 0, offsets: offsets, cellCount: cellCount), 0 ..< 3)
+        // A trimmed blank row is emitted as an empty slice, not skipped.
+        XCTAssertEqual(RemoteTerminalDisplayRowMap.range(row: 1, offsets: offsets, cellCount: cellCount), 3 ..< 3)
+        XCTAssertEqual(RemoteTerminalDisplayRowMap.range(row: 2, offsets: offsets, cellCount: cellCount), 3 ..< 7)
+        XCTAssertEqual(RemoteTerminalDisplayRowMap.range(row: 3, offsets: offsets, cellCount: cellCount), 7 ..< 10)
+    }
+
+    func testEveryCellIsCoveredExactlyOnce() {
+        let offsets: [UInt32] = [0, 3, 3, 7, 10]
+        var covered = Set<Int>()
+        for row in 0 ..< offsets.count - 1 {
+            guard let range = RemoteTerminalDisplayRowMap.range(row: row, offsets: offsets, cellCount: 10) else {
+                return XCTFail("row \(row) did not map")
+            }
+            covered.formUnion(range)
+        }
+        XCTAssertEqual(covered.count, 10, "the folded rows must partition the cell buffer")
+    }
+
+    func testOutOfRangeRowIsRejected() {
+        let offsets: [UInt32] = [0, 3, 6]
+        // The final entry is a sentinel, not a row.
+        XCTAssertNil(RemoteTerminalDisplayRowMap.range(row: 2, offsets: offsets, cellCount: 6))
+        XCTAssertNil(RemoteTerminalDisplayRowMap.range(row: -1, offsets: offsets, cellCount: 6))
+        XCTAssertNil(RemoteTerminalDisplayRowMap.range(row: 0, offsets: [], cellCount: 6))
+    }
+
+    func testInconsistentOffsetsAreRejectedRatherThanReadOutOfBounds() {
+        // Offsets that disagree with the cell count would otherwise index past
+        // the end of the array and read whatever follows it in memory.
+        XCTAssertNil(RemoteTerminalDisplayRowMap.range(row: 0, offsets: [0, 99], cellCount: 6))
+        XCTAssertNil(RemoteTerminalDisplayRowMap.range(row: 0, offsets: [5, 2], cellCount: 6))
+    }
+}
+
 final class RemoteTerminalWrapGeometryTests: XCTestCase {
     func testEngineIngestsAtSourceWidthNotPhoneWidth() {
         // 120 Mac columns into a 40-column engine is exactly the hard-wrap that
