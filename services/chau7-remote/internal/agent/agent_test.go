@@ -225,11 +225,93 @@ func TestHandlePairRequestChangesPeerAndWaitsForFreshIOSHello(t *testing.T) {
 	if a.currentIOSPub != iosPub {
 		t.Fatal("expected repaired session to track the newly paired iOS public key")
 	}
-	if a.currentPeerID == "" || a.currentPeerID == "stale-peer" {
-		t.Fatal("expected repaired session to replace stale peer identity")
+	// The claimed identity is deliberately NOT promoted to trusted here. PAIR_
+	// REQUEST is an unencrypted, relay-forwarded frame, so the key in it is
+	// attacker-chosen; trust is granted only after the peer proves possession
+	// with the encrypted handshake (confirmPendingPair).
+	if a.currentPeerID != "" {
+		t.Fatalf("expected unproven identity to stay untrusted, got peer id %q", a.currentPeerID)
+	}
+	if a.state.FindPairedDeviceByPublicKey(iosPub) != nil {
+		t.Fatal("pair request must not persist an identity before the handshake proves possession")
+	}
+	if a.pendingPair == nil || a.pendingPair.iosPub != iosPub {
+		t.Fatal("expected the claimed identity to be held provisionally")
 	}
 	if !bytes.Equal(a.macNonce, macNonce) {
 		t.Fatal("pairing identity repair must re-send rather than rotate the Mac nonce")
+	}
+}
+
+func TestPairRequestAloneNeverPersistsIdentity(t *testing.T) {
+	// The attack: the relay relays PAIR_REQUEST verbatim and unencrypted, so it
+	// learns the pairing code and can append a key pair of its own. Trust must
+	// not move until the peer proves it holds the private key.
+	a, iosPub := makePairTestAgent(t)
+	a.pairingCode = "424242"
+	a.pairingExpires = time.Now().Add(time.Minute)
+
+	payload, err := json.Marshal(PairRequestPayload{
+		DeviceID:    "mac-device",
+		PairingCode: "424242",
+		IOSPub:      iosPub,
+		IOSName:     "Attacker",
+	})
+	if err != nil {
+		t.Fatalf("marshal pair request: %v", err)
+	}
+	a.handlePairRequest(payload)
+
+	if a.state.FindPairedDeviceByPublicKey(iosPub) != nil {
+		t.Fatal("identity was persisted from an unproven pair request")
+	}
+}
+
+func TestConfirmPendingPairPersistsOnlyTheProvenIdentity(t *testing.T) {
+	a, iosPub := makePairTestAgent(t)
+	a.pairingCode = "424242"
+	a.pairingExpires = time.Now().Add(time.Minute)
+	a.setPendingPair("Real Phone", iosPub)
+	a.currentIOSPub = iosPub
+
+	a.confirmPendingPair()
+
+	device := a.state.FindPairedDeviceByPublicKey(iosPub)
+	if device == nil {
+		t.Fatal("a proven identity must be persisted")
+	}
+	if device.Name != "Real Phone" {
+		t.Fatalf("expected the proven name to be stored, got %q", device.Name)
+	}
+	if a.currentPeerID != device.ID {
+		t.Fatal("expected the trusted peer to become current after proof")
+	}
+}
+
+func TestConfirmPendingPairRefusesIdentityNotProvenByHandshake(t *testing.T) {
+	// A second pair request arriving mid-handshake must not be able to have its
+	// key promoted by the proof belonging to the first.
+	a, claimedPub := makePairTestAgent(t)
+	a.setPendingPair("Attacker", claimedPub)
+	a.currentIOSPub = "some-other-proven-key"
+
+	a.confirmPendingPair()
+
+	if a.state.FindPairedDeviceByPublicKey(claimedPub) != nil {
+		t.Fatal("an identity the handshake did not prove must not be persisted")
+	}
+}
+
+func TestConfirmPendingPairIgnoresStaleClaims(t *testing.T) {
+	a, iosPub := makePairTestAgent(t)
+	a.setPendingPair("Late Phone", iosPub)
+	a.currentIOSPub = iosPub
+	a.pendingPair.claimedAt = time.Now().Add(-2 * pendingPairTTL)
+
+	a.confirmPendingPair()
+
+	if a.state.FindPairedDeviceByPublicKey(iosPub) != nil {
+		t.Fatal("a claim older than the TTL must not be persisted")
 	}
 }
 
@@ -392,6 +474,30 @@ func makeHandshakeTestAgent(t *testing.T) (*Agent, []byte, []byte) {
 		currentPeerName: device.Name,
 		sessionReady:    true,
 	}, iosNonce, macNonce
+}
+
+// makePairTestAgent builds an agent with no trusted devices, for exercising the
+// pairing path where trust must not be granted without a possession proof.
+func makePairTestAgent(t *testing.T) (*Agent, string) {
+	t.Helper()
+	macPrivate := bytes.Repeat([]byte{0x51}, 32)
+	macPublic, err := curve25519.X25519(macPrivate, curve25519.Basepoint)
+	if err != nil {
+		t.Fatalf("derive Mac public key: %v", err)
+	}
+	iosPrivate := bytes.Repeat([]byte{0x61}, 32)
+	iosPublic, err := curve25519.X25519(iosPrivate, curve25519.Basepoint)
+	if err != nil {
+		t.Fatalf("derive iOS public key: %v", err)
+	}
+	return &Agent{
+		state: &State{
+			DeviceID:      "mac-device",
+			MacPrivateKey: base64.StdEncoding.EncodeToString(macPrivate),
+			MacPublicKey:  base64.StdEncoding.EncodeToString(macPublic),
+		},
+		statePath: t.TempDir() + "/state.json",
+	}, base64.StdEncoding.EncodeToString(iosPublic)
 }
 
 func TestRelayAPIBaseURLConvertsWebsocketSchemesForHTTPPosts(t *testing.T) {
