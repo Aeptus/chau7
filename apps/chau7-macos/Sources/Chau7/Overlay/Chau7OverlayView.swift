@@ -36,6 +36,12 @@ enum OverlayLayout {
 
 /// Toolbar delegate that provides a tab bar as the main toolbar item.
 /// Uses Safari's unified toolbar style for seamless traffic light integration.
+///
+/// `@MainActor` because `NSToolbarDelegate` is itself main-actor isolated and
+/// every member here is AppKit: `NSToolbarItem`, `NSToolbar`,
+/// `NSHostingView`. AppKit calls the delegate on the main thread, so this
+/// records the thread it already runs on.
+@MainActor
 final class TabBarToolbarDelegate: NSObject, NSToolbarDelegate {
     static let shared = TabBarToolbarDelegate()
 

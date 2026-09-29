@@ -14,6 +14,28 @@ import Chau7Core
 final class RuntimeControlService {
     static let shared = RuntimeControlService()
 
+    /// Runs `block` on the main actor and returns its result, from any thread.
+    ///
+    /// This service keeps its own session state behind an `NSLock` and is
+    /// called off-main, but every tab operation it delegates goes to
+    /// `TerminalControlService`, which is `@MainActor`. Before that type said
+    /// so, those calls were unisolated reads of main-actor state that happened
+    /// to work because nothing enforced the ordering. This is the explicit
+    /// crossing.
+    ///
+    /// `DispatchQueue.main.sync` alone is not enough: it blocks the main queue
+    /// at the right moment but does not tell the compiler the block is
+    /// actor-isolated, so `MainActor.assumeIsolated` carries the actual claim.
+    /// That claim is true because this is the main queue.
+    private func onMainActor<T>(_ block: @MainActor @escaping () -> T) -> T {
+        if Thread.isMainThread {
+            return MainActor.assumeIsolated(block)
+        }
+        return DispatchQueue.main.sync {
+            MainActor.assumeIsolated(block)
+        }
+    }
+
     private let controlService = TerminalControlService.shared
     private let sessionManager = RuntimeSessionManager.shared
     private let telemetryStore = TelemetryStore.shared
@@ -207,7 +229,7 @@ final class RuntimeControlService {
         // Create or attach to tab
         let tabID: UUID
         if let attachStr = attachTabID {
-            guard let uuid = controlService.resolveControlPlaneTabID(attachStr) else {
+            guard let uuid = onMainActor({ controlService.resolveControlPlaneTabID(attachStr) }) else {
                 Log.warn("MCP runtime_session_create: invalid attach tab id \(attachStr)")
                 return jsonError("Invalid tab ID: \(attachStr)")
             }
@@ -215,15 +237,15 @@ final class RuntimeControlService {
             Log.info("MCP runtime_session_create: attaching to existing tab \(attachStr)")
         } else {
             // Create a new tab via TerminalControlService
-            let tabResult = controlService.createTab(
+            let tabResult = onMainActor { controlService.createTab(
                 directory: directory,
                 windowID: nil,
                 context: "runtime_session_create"
-            )
+            ) }
             guard let data = tabResult.data(using: .utf8),
                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                   let tabIDStr = json["tab_id"] as? String,
-                  let uuid = controlService.resolveControlPlaneTabID(tabIDStr) else {
+                  let uuid = onMainActor({ controlService.resolveControlPlaneTabID(tabIDStr) }) else {
                 Log.error("MCP runtime_session_create: failed to create tab — \(tabResult)")
                 return visibleTabCreationFailureResponse(tabResult: tabResult)
             }
@@ -261,7 +283,7 @@ final class RuntimeControlService {
         let launchCmd = backend.launchCommand(config: config)
         if !launchCmd.isEmpty, attachTabID == nil {
             Log.info("MCP runtime_session_create: launching command: \(launchCmd)")
-            _ = controlService.execInTab(tabID: tabID.uuidString, command: launchCmd)
+            _ = onMainActor { controlService.execInTab(tabID: tabID.uuidString, command: launchCmd) }
             if backend.launchReadinessStrategy == .immediate {
                 sessionManager.markReady(sessionID: session.id)
             }
@@ -324,7 +346,7 @@ final class RuntimeControlService {
 
         // Send Ctrl+C if force
         if force || session.state == .busy || session.state == .awaitingApproval {
-            _ = controlService.sendInput(tabID: session.tabID.uuidString, input: "\u{3}") // Ctrl+C
+            _ = onMainActor { controlService.sendInput(tabID: session.tabID.uuidString, input: "\u{3}") } // Ctrl+C
         }
 
         let stopped = sessionManager.stopSession(id: sessionID)
@@ -365,7 +387,7 @@ final class RuntimeControlService {
         var stoppedIDs: [String] = []
         for child in children {
             if force || child.state == .busy || child.state == .awaitingApproval {
-                _ = controlService.sendInput(tabID: child.tabID.uuidString, input: "\u{3}")
+                _ = onMainActor { controlService.sendInput(tabID: child.tabID.uuidString, input: "\u{3}") }
             }
             if sessionManager.stopSession(id: child.id) {
                 stoppedIDs.append(child.id)
@@ -468,7 +490,7 @@ final class RuntimeControlService {
 
         // Format and send to PTY
         let input = session.backend.formatPromptInput(prompt, context: context)
-        let sendResult = controlService.sendInput(tabID: session.tabID.uuidString, input: input)
+        let sendResult = onMainActor { controlService.sendInput(tabID: session.tabID.uuidString, input: input) }
         Log.info("MCP runtime_turn_send: session=\(session.id) turn=\(turnID) inputLen=\(input.count) sendResult=\(sendResult.prefix(100))")
         guard sendSucceeded(sendResult) else {
             session.failTurn(reason: "send_input_failed")
@@ -538,7 +560,7 @@ final class RuntimeControlService {
                 "description": approval.description
             ]
         }
-        if let activeRun = controlService.activeRunSummary(forOverlayTabID: session.tabID) {
+        if let activeRun = onMainActor({ controlService.activeRunSummary(forOverlayTabID: session.tabID) }) {
             result["active_run"] = activeRun
         }
         return encodeAny(result)
@@ -655,11 +677,11 @@ final class RuntimeControlService {
 
         // Send y/n to the PTY
         let input = approved ? "y\n" : "n\n"
-        _ = controlService.sendInput(tabID: session.tabID.uuidString, input: input)
+        _ = onMainActor { controlService.sendInput(tabID: session.tabID.uuidString, input: input) }
 
         let didResolve = session.resolveApproval(id: approvalID, approved: approved, resolvedBy: reason)
         if didResolve {
-            _ = TerminalControlService.shared.clearPersistentNotificationStyleAcrossWindows(tabID: session.tabID)
+            _ = onMainActor { TerminalControlService.shared.clearPersistentNotificationStyleAcrossWindows(tabID: session.tabID) }
         }
 
         return encodeAny(["ok": true, "approved": approved])
@@ -747,8 +769,8 @@ final class RuntimeControlService {
 
     private func sessionSummary(_ session: RuntimeSession) -> [String: Any] {
         var summary = session.summary()
-        summary["tab_id"] = controlService.controlPlaneTabID(for: session.tabID)
-        if let activeRun = controlService.activeRunSummary(forOverlayTabID: session.tabID) {
+        summary["tab_id"] = onMainActor { controlService.controlPlaneTabID(for: session.tabID) }
+        if let activeRun = onMainActor({ controlService.activeRunSummary(forOverlayTabID: session.tabID) }) {
             summary["active_run"] = activeRun
         }
         return summary
@@ -779,7 +801,7 @@ final class RuntimeControlService {
               session.state == .busy,
               session.currentTurnID != nil,
               let snapshot = launchReadinessProbe?(session)
-              ?? controlService.runtimeLaunchSnapshot(forOverlayTabID: session.tabID),
+              ?? onMainActor({ controlService.runtimeLaunchSnapshot(forOverlayTabID: session.tabID) }),
               RuntimeLaunchReadiness.isSettledAfterTurn(
                   snapshot: snapshot,
                   backendName: session.backend.name
@@ -842,7 +864,7 @@ final class RuntimeControlService {
             return true
         case .interactiveAgent:
             guard let snapshot = launchReadinessProbe?(session)
-                ?? controlService.runtimeLaunchSnapshot(forOverlayTabID: session.tabID) else {
+                ?? onMainActor({ controlService.runtimeLaunchSnapshot(forOverlayTabID: session.tabID) }) else {
                 return false
             }
             return RuntimeLaunchReadiness.isReady(
@@ -988,15 +1010,17 @@ final class RuntimeControlService {
     }
 
     private func queueTabClose(tabID: UUID, force: Bool, context: String) {
-        controlService.closeTabAsync(
-            tabID: tabID.uuidString,
-            force: force,
-            context: context
-        )
+        onMainActor {
+            controlService.closeTabAsync(
+                tabID: tabID.uuidString,
+                force: force,
+                context: context
+            )
+        }
         guard !force else { return }
 
         DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [controlService] in
-            guard controlService.tabExistsAcrossWindows(tabID: tabID) else { return }
+            guard onMainActor({ controlService.tabExistsAcrossWindows(tabID: tabID) }) else { return }
             Log.info("MCP \(context): escalating delayed tab close for \(tabID)")
             controlService.closeTabAsync(
                 tabID: tabID.uuidString,

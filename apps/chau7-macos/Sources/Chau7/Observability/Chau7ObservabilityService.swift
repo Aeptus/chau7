@@ -49,6 +49,23 @@ final class Chau7ObservabilityService {
     private static let eventLimit = 1000
     private static let changeLimit = 2000
     private let queue = DispatchQueue(label: "com.chau7.observability")
+
+    /// Runs `block` on the main actor and returns its result, from any thread.
+    ///
+    /// This service serialises its own state on `queue` and is called from
+    /// background contexts, but the control-plane tab-id mapping it consults
+    /// belongs to `TerminalControlService`, which is `@MainActor`. Mirrors the
+    /// helper of the same name in `RuntimeControlService`; both are needed
+    /// because neither service can call the other's private helper.
+    private func onMainActor<T>(_ block: @MainActor @escaping () -> T) -> T {
+        if Thread.isMainThread {
+            return MainActor.assumeIsolated(block)
+        }
+        return DispatchQueue.main.sync {
+            MainActor.assumeIsolated(block)
+        }
+    }
+
     private let launchedAt = Date()
     private var nextSeq: Int64 = 1
     /// The event spine, attached at bootstrap. When present, recordEvent and
@@ -204,7 +221,7 @@ final class Chau7ObservabilityService {
         // Surface eligibility (including the former `.app` exclusion) is
         // decided by NotificationRoutingPolicy at the caller.
         let seq = queue.sync { spineSeqFloor + Int64(clamping: envelope.seq) }
-        let controlPlaneTabID = adapted.tabID.map { TerminalControlService.shared.controlPlaneTabID(for: $0) }
+        let controlPlaneTabID = adapted.tabID.map { onMainActor { TerminalControlService.shared.controlPlaneTabID(for: $0) } }
         recordDirect(
             type: "ai_event",
             subsystem: adapted.source.rawValue,
@@ -343,7 +360,7 @@ final class Chau7ObservabilityService {
         repoPath: String? = nil,
         detail: [String: Any] = [:]
     ) {
-        let controlPlaneTabID = nativeTabID.map { TerminalControlService.shared.controlPlaneTabID(for: $0) }
+        let controlPlaneTabID = nativeTabID.map { onMainActor { TerminalControlService.shared.controlPlaneTabID(for: $0) } }
         recordEvent(
             type: type,
             subsystem: subsystem,

@@ -12,6 +12,7 @@ import Chau7Core
 /// `changeCount(touchedBy:)`) stay on the model because they correlate
 /// session state with status state.
 @Observable
+@MainActor
 final class RepoSessionState {
     /// Whether the pane is currently in session-aware mode — `true` when a
     /// RuntimeSession is active for this tab and the user hasn't forced

@@ -11,6 +11,7 @@ import Foundation
 /// The persistence + conventional-prefix rules live on `RepoCommitDraftStore`
 /// (a value type); this class just carries the observable mutable state.
 @Observable
+@MainActor
 final class RepoCommitDraft {
     /// The in-flight commit message text bound to the composer's TextEditor.
     var message = ""

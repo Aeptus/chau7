@@ -4,14 +4,23 @@ import Foundation
 import Chau7Core
 
 /// Bridges MCP tool calls to Chau7's tab/terminal system.
-/// All methods are safe to call from any thread — dispatches to main as needed.
 ///
-/// Threading model: OverlayTabsModel lives on the main thread.
-/// MCP sessions run on dedicated background queues. Read-only operations use
-/// DispatchQueue.main.sync. Input-sending operations (execInTab, sendInput)
-/// validate synchronously but send asynchronously via DispatchQueue.main.async
-/// so PTY backpressure or input bookkeeping cannot stall the control-plane
-/// caller while it is waiting for a response.
+/// Threading model: `OverlayTabsModel` and everything it owns
+/// (`SplitPaneController`, `TerminalSessionModel`) live on the main actor, and
+/// this service's own bookkeeping — `mcpTabIDs`, `mcpPendingInput`,
+/// `routingIndex` — was already documented as main-thread-confined long before
+/// it was expressed in the type system. `@MainActor` states that once, here,
+/// instead of leaving 57 separate unisolated reads of main-actor state that
+/// only happened to work because MCP calls arrived on a background queue
+/// without anything enforcing the ordering.
+///
+/// Callers that genuinely run off-main (the MCP session) hop explicitly; see
+/// `onMainActor`. Callers already on the main actor need no change.
+///
+/// Input-sending operations (execInTab, sendInput) still send asynchronously
+/// via `DispatchQueue.main.async` so PTY backpressure or input bookkeeping
+/// cannot stall the control-plane caller while it waits for a response.
+@MainActor
 final class TerminalControlService {
     static let shared = TerminalControlService()
 

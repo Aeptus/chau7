@@ -131,6 +131,13 @@ struct EnhancedEditorView: NSViewRepresentable {
 
 // MARK: - Editor Coordinator
 
+/// `@MainActor` because every one of its members is AppKit: the
+/// `NSTextViewDelegate` callbacks, the `NSGestureRecognizerDelegate` methods,
+/// and the checkbox editing that pokes `NSTextStorage` directly. AppKit
+/// delivers all of those on the main thread, so the annotation records an
+/// invariant that already holds rather than introducing one — and it is what
+/// lets these delegate methods touch `textView` without a hop.
+@MainActor
 class EditorCoordinator: NSObject, NSTextViewDelegate, NSGestureRecognizerDelegate {
     let parent: EnhancedEditorView
     weak var textView: NSTextView?
@@ -195,7 +202,15 @@ class EditorCoordinator: NSObject, NSTextViewDelegate, NSGestureRecognizerDelega
         // Debounced syntax highlighting (150ms delay to avoid excessive re-highlighting)
         syntaxTimer?.invalidate()
         syntaxTimer = Timer.scheduledTimer(withTimeInterval: 0.15, repeats: false) { [weak self] _ in
-            self?.applySyntaxHighlighting()
+            // `scheduledTimer` adds to the run loop of the thread that
+            // schedules it, and this method is main-actor isolated, so the
+            // timer is a main-run-loop timer and fires on main. The compiler
+            // cannot see that through `Timer`'s `@Sendable` block, hence the
+            // explicit assertion rather than an extra hop that would change
+            // when the highlight lands.
+            MainActor.assumeIsolated {
+                self?.applySyntaxHighlighting()
+            }
         }
 
         // Auto-indent on newline

@@ -10,6 +10,7 @@ import Foundation
 /// schedules a closure on the main queue after a delay, and cancels the
 /// previous schedule when a new one supersedes it. Tests can verify the
 /// scheduling behaviour in isolation.
+@MainActor
 final class EditorAutoSaver {
     private var saveWorkItem: DispatchWorkItem?
     private var clearStatusWorkItem: DispatchWorkItem?

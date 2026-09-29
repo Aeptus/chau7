@@ -10,6 +10,12 @@ import Chau7Core
 /// with tree-shape responsibilities and made the close decision invisible
 /// to tests except through the controller. With this struct, callers do
 /// `confirmer.confirmCloseDirty(editor)` and follow the returned decision.
+/// `@MainActor` because every decision it makes is a modal AppKit dialog
+/// (`Dialogs.confirmCloseDirtyEditor` / `runSaveAsPanel`) and every editor it
+/// touches is main-actor state. It runs `editor.save()` and
+/// `editor.discardPendingChanges()`, so it has to be on the same actor as the
+/// editor whose contents it is deciding the fate of.
+@MainActor
 struct PaneCloseConfirmer {
     let dialogs: Dialogs
 

@@ -30,6 +30,7 @@ enum RunbookCodeBlockState {
 /// to `codeBlockRunStates` mutations. The mainScheduler is overridable for
 /// unit tests; production keeps the default `SystemMainScheduler`.
 @Observable
+@MainActor
 final class RunbookCodeBlockTracker {
     /// Per-block terminal state. Observed by `MarkdownRunbookView` to colour
     /// each code block's border.

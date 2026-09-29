@@ -17,6 +17,13 @@ import Chau7Core
 /// Contract a leaf pane honors. Wrappers around the existing model types
 /// (TerminalSessionModel, TextEditorModel, etc.) so the tree can hold any
 /// pane behind one protocol existential.
+/// `@MainActor` because every conformer wraps a UI-bound model
+/// (`TerminalSessionModel`, `TextEditorModel`, `FilePreviewModel`, …) and the
+/// split tree is only ever walked, mutated and torn down from the main actor.
+/// Declaring it on the protocol rather than on each conformer is what lets the
+/// conformers be isolated as a group instead of forcing every existential
+/// access through the tree to become a crossing.
+@MainActor
 protocol PaneNode: AnyObject {
     /// Stable identity within the split tree. Persistence rounds-trip on this.
     var id: UUID { get }

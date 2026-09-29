@@ -10,6 +10,7 @@ import Foundation
 /// Follows the same pattern as `DiffViewerModel`: injectable runner,
 /// background execution, `@Observable` state, token-based cancellation.
 @Observable
+@MainActor
 final class RepositoryPaneModel: Identifiable {
     let id = UUID()
 
@@ -44,10 +45,24 @@ final class RepositoryPaneModel: Identifiable {
     var session = RepoSessionState()
 
     /// Tracks files across turns by reading the EventJournal.
+    ///
+    /// `nonisolated(unsafe)` because it is owned by `loadQueue`, not the main
+    /// actor: every mutation and every read happens inside a `loadQueue.async`
+    /// block except the single `reset()` in `clearState`, which is reached from
+    /// the main actor only when no load is in flight. The values are snapshots
+    /// taken out of the tracker and handed to main — the tracker itself is
+    /// never read from two queues at once because `loadQueue` is serial.
     @ObservationIgnored
-    private let sessionTracker = SessionFilesTracker()
+    private nonisolated(unsafe) let sessionTracker = SessionFilesTracker()
+
+    /// Two-second memo of `git diff --numstat`, keyed by directory.
+    ///
+    /// `nonisolated(unsafe)` for the same reason as `sessionTracker`: the
+    /// read-then-rebuild-then-publish sequence is entirely inside one
+    /// `loadQueue.async` block, and `loadQueue` is serial, so two refreshes
+    /// cannot interleave here.
     @ObservationIgnored
-    private var cachedDiffStats: (directory: String, fetchedAt: Date, stats: [String: DiffStat])?
+    private nonisolated(unsafe) var cachedDiffStats: (directory: String, fetchedAt: Date, stats: [String: DiffStat])?
 
     // MARK: - Session File Partitioning
 

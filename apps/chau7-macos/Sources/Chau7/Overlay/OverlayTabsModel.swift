@@ -939,7 +939,15 @@ struct ClosedTabEntry {
 /// Manages terminal tabs, search, and broadcast mode for the overlay window.
 /// - Note: Thread Safety - observed properties must be modified on main thread.
 ///   All methods assume main thread execution.
+///
+/// `@MainActor` asserts exactly the invariant documented immediately above,
+/// which until now was prose only. The type is `@Observable`, so every one of
+/// its stored properties is observation-tracked and read by SwiftUI on the
+/// main actor; making that a compiler-checked fact rather than a comment is
+/// what lets its collaborators (`SplitPaneController`, `TerminalSessionModel`)
+/// be isolated without every property access becoming a crossing.
 @Observable
+@MainActor
 final class OverlayTabsModel {
     var tabs: [OverlayTab] {
         didSet {

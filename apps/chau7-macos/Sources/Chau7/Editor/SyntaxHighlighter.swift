@@ -13,7 +13,16 @@ private func makeRegex(_ pattern: String, options: NSRegularExpression.Options =
 }
 
 /// Provides syntax highlighting for terminal output with caching and background processing.
-final class SyntaxHighlighter {
+/// `@unchecked Sendable` is asserted because this type has no mutable
+/// instance state to race on: the only stored properties are `highlightCache`
+/// (an `NSCache`, documented thread-safe and used as such) and
+/// `highlightQueue` (a `let` serial queue), plus a set of `static let`
+/// precompiled `NSRegularExpression` values that are never rebuilt. Every
+/// regex literal goes through `makeRegex` at first use and is then immutable.
+///
+/// It is deliberately *not* `@MainActor`: `highlightLinesAsync` builds results
+/// on `highlightQueue` and only hops to main to deliver them.
+final class SyntaxHighlighter: @unchecked Sendable {
     static let shared = SyntaxHighlighter()
 
     // MARK: - Highlighting Cache (Performance Optimization)
@@ -188,11 +197,39 @@ final class SyntaxHighlighter {
         return lines.map { highlight($0) }
     }
 
+}
+
+/// Publishes highlighted lines from `highlightQueue` to the main queue.
+///
+/// `NSAttributedString` is a reference type and correctly not `Sendable`. The
+/// values produced here are built inside `highlight(_:)` and are only ever
+/// read by the main-thread consumer — nothing mutates them after
+/// construction, and `NSCache` never hands out a mutable view of a cached
+/// entry. That makes this a publication hand-off, not shared mutable state.
+///
+/// The type is file-private and exposes exactly one accessor so a caller
+/// cannot obtain the array and start mutating it off-queue, which would make
+/// the claim false.
+private struct HighlightedLines: @unchecked Sendable {
+    let lines: [NSAttributedString]
+
+    init(_ lines: [NSAttributedString]) {
+        self.lines = lines
+    }
+}
+
+extension SyntaxHighlighter {
     /// Highlights lines asynchronously on a background queue.
     /// - Parameters:
     ///   - lines: Lines to highlight
     ///   - completion: Called on main thread with results
-    func highlightLinesAsync(_ lines: [String], completion: @escaping ([NSAttributedString]) -> Void) {
+    ///
+    /// `completion` is `@Sendable` because it is invoked from inside the
+    /// background block's main-thread hop, so it crosses a queue boundary.
+    /// That is only sound if it captures nothing mutable off-main — the
+    /// caller's obligation, and the reason it is spelled out here rather
+    /// than left implicit.
+    func highlightLinesAsync(_ lines: [String], completion: @escaping @Sendable ([NSAttributedString]) -> Void) {
         guard FeatureSettings.shared.isSyntaxHighlightEnabled else {
             completion(lines.map { NSAttributedString(string: $0) })
             return
@@ -200,9 +237,9 @@ final class SyntaxHighlighter {
 
         highlightQueue.async { [weak self] in
             guard let self else { return }
-            let results = lines.map { self.highlight($0) }
+            let results = HighlightedLines(lines.map { self.highlight($0) })
             DispatchQueue.main.async {
-                completion(results)
+                completion(results.lines)
             }
         }
     }

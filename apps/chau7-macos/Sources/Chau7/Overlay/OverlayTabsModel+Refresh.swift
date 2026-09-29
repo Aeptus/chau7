@@ -355,7 +355,14 @@ extension OverlayTabsModel {
         let timer = DispatchSource.makeTimerSource(queue: .main)
         timer.schedule(deadline: .now() + interval, repeating: interval, leeway: .seconds(1))
         timer.setEventHandler { [weak self] in
-            self?.checkTabBarHealth()
+            // The source is explicitly created on the main queue, and this
+            // method is main-actor isolated, so the handler is a main-queue
+            // handler. `setEventHandler` still types its closure `@Sendable`,
+            // which the compiler cannot reconcile with main-actor state
+            // without the assertion being made explicit.
+            MainActor.assumeIsolated {
+                self?.checkTabBarHealth()
+            }
         }
         timer.resume()
         tabBarWatchdogTimer = timer

@@ -398,6 +398,7 @@ extension SplitNode {
 /// methods stay on the model as thin delegates for backwards compat with
 /// existing view code.
 @Observable
+@MainActor
 final class TextEditorModel: Identifiable {
     let id = UUID()
 
@@ -477,11 +478,17 @@ final class TextEditorModel: Identifiable {
         externalConflictMessage = nil
         pendingScrollToLine = line // Store for after load completes
 
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+        // The background block deliberately does not capture `self`: it only
+        // needs `path` and the pure `contentHash`. Holding the model alive
+        // across a background read would pin the whole editor for the
+        // duration of a disk I/O, and would require the model to be Sendable
+        // for no benefit. The weak capture happens on the main hop instead,
+        // which is the only place that touches model state.
+        DispatchQueue.global(qos: .userInitiated).async {
             do {
                 let contents = try String(contentsOfFile: path, encoding: .utf8)
                 let hash = Self.contentHash(contents)
-                DispatchQueue.main.async {
+                DispatchQueue.main.async { [weak self] in
                     // Only apply if this is still the current load operation
                     guard self?.loadingToken == token else {
                         Log.info("Ignoring stale file load result for: \(path)")
@@ -503,7 +510,7 @@ final class TextEditorModel: Identifiable {
                     Log.info("Loaded file: \(path)")
                 }
             } catch {
-                DispatchQueue.main.async {
+                DispatchQueue.main.async { [weak self] in
                     guard self?.loadingToken == token else { return }
                     self?.isLoading = false
                     self?.pendingScrollToLine = nil
@@ -623,13 +630,17 @@ final class TextEditorModel: Identifiable {
             return
         }
         stopWatchingCurrentFile()
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+        // Read-modify-write of the file on disk belongs off the main thread,
+        // but it needs nothing from the model — only `path` and the pure
+        // `toggleCheckboxInContent` / `contentHash` statics. See `loadContents`
+        // for why the weak capture is taken on the main hop instead.
+        DispatchQueue.global(qos: .userInitiated).async {
             do {
                 let currentDiskContent = try String(contentsOfFile: path, encoding: .utf8)
                 let updated = toggleCheckboxInContent(currentDiskContent, lineNumber: lineNumber)
                 try updated.write(toFile: path, atomically: true, encoding: .utf8)
                 let hash = Self.contentHash(updated)
-                DispatchQueue.main.async {
+                DispatchQueue.main.async { [weak self] in
                     guard let self else { return }
                     self.content = updated
                     self.loadedContentHash = hash
@@ -641,7 +652,7 @@ final class TextEditorModel: Identifiable {
                     self.startWatchingCurrentFile()
                 }
             } catch {
-                DispatchQueue.main.async {
+                DispatchQueue.main.async { [weak self] in
                     self?.startWatchingCurrentFile()
                     self?.lastError = "Failed to toggle checkbox: \(error.localizedDescription)"
                 }
@@ -700,6 +711,9 @@ final class TextEditorModel: Identifiable {
             url: URL(fileURLWithPath: path),
             watchRegistry: fileWatchRegistry
         ) { [weak self] in
+            // The file-watch callback arrives on a background dispatch queue;
+            // only the main hop below touches model state, so the weak capture
+            // is taken here and the crossing happens explicitly.
             DispatchQueue.main.async {
                 self?.handleExternalFileChange()
             }
@@ -777,6 +791,7 @@ final class TextEditorModel: Identifiable {
 /// Read-only file viewer model — lighter than TextEditorModel (no editing, no dirty tracking).
 /// Supports both text files (with syntax highlighting) and image files.
 @Observable
+@MainActor
 final class FilePreviewModel: Identifiable {
     let id = UUID()
 
@@ -819,11 +834,14 @@ final class FilePreviewModel: Identifiable {
         let ext = (path as NSString).pathExtension.lowercased()
         let isImage = Self.imageExtensions.contains(ext)
 
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+        // Only `path` and the static image-extension set are needed off the
+        // main thread; the weak capture is taken on each main hop below
+        // instead, so the preview model is not pinned across file I/O.
+        DispatchQueue.global(qos: .userInitiated).async {
             if isImage {
                 do {
                     let data = try Data(contentsOf: URL(fileURLWithPath: path))
-                    DispatchQueue.main.async {
+                    DispatchQueue.main.async { [weak self] in
                         guard self?.loadingToken == token else { return }
                         self?.imageData = data
                         self?.isImageFile = true
@@ -833,7 +851,7 @@ final class FilePreviewModel: Identifiable {
                         Log.info("Loaded image preview: \(path)")
                     }
                 } catch {
-                    DispatchQueue.main.async {
+                    DispatchQueue.main.async { [weak self] in
                         guard self?.loadingToken == token else { return }
                         self?.isLoading = false
                         self?.lastError = "Failed to load image: \(error.localizedDescription)"
@@ -842,7 +860,7 @@ final class FilePreviewModel: Identifiable {
             } else {
                 do {
                     let contents = try String(contentsOfFile: path, encoding: .utf8)
-                    DispatchQueue.main.async {
+                    DispatchQueue.main.async { [weak self] in
                         guard self?.loadingToken == token else { return }
                         self?.content = contents
                         self?.isImageFile = false
@@ -856,7 +874,7 @@ final class FilePreviewModel: Identifiable {
                         Log.info("Loaded file preview: \(path)")
                     }
                 } catch {
-                    DispatchQueue.main.async {
+                    DispatchQueue.main.async { [weak self] in
                         guard self?.loadingToken == token else { return }
                         self?.isLoading = false
                         self?.pendingScrollToLine = nil
@@ -887,6 +905,7 @@ typealias DiffHunk = Chau7Core.DiffHunk
 /// Model for a git diff viewer pane.
 /// Loads unified diff output via `git diff` and parses it into structured hunks.
 @Observable
+@MainActor
 final class DiffViewerModel: Identifiable {
     let id = UUID()
 
@@ -988,18 +1007,23 @@ final class DiffViewerModel: Identifiable {
         }
         let token = startLoading(file: file, in: liveDirectory, mode: mode)
 
-        loadQueue.async { [weak self] in
+        // `gitRunner` is an immutable injected closure, so the background block
+        // can hold the function itself rather than the model. That is the
+        // whole reason this block can touch git off-main while the model stays
+        // main-actor: it needs the pure part of the dependency, not the object.
+        let runGit = gitRunner
+        loadQueue.async {
             var args = ["diff"]
             if mode == .staged { args.append("--cached") }
             args += ["--", file]
 
-            var output = self?.gitRunner(args, liveDirectory) ?? ""
+            var output = runGit(args, liveDirectory)
             var parsed = Self.parseUnifiedDiff(output)
             var effectiveMode = mode
 
             // Fallback: try staged diff if working tree was empty (runs on background thread)
             if output.isEmpty, parsed.hunks.isEmpty, mode == .workingTree {
-                let stagedOutput = self?.gitRunner(["diff", "--cached", "--", file], liveDirectory) ?? ""
+                let stagedOutput = runGit(["diff", "--cached", "--", file], liveDirectory)
                 if !stagedOutput.isEmpty {
                     output = stagedOutput
                     parsed = Self.parseUnifiedDiff(stagedOutput)
@@ -1007,7 +1031,7 @@ final class DiffViewerModel: Identifiable {
                 }
             }
 
-            DispatchQueue.main.async {
+            DispatchQueue.main.async { [weak self] in
                 self?.finishLoading(
                     token: token,
                     file: file,
@@ -1085,6 +1109,7 @@ final class DiffViewerModel: Identifiable {
 
 /// Manages split pane layout for a tab
 @Observable
+@MainActor
 final class SplitPaneController {
     var root: SplitNode {
         didSet {

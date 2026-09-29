@@ -12,6 +12,11 @@ import Chau7Core
 /// ISP win: callers that only need the render (no run, no checkbox toggle)
 /// can ship a no-op conformer instead of supplying five separate closures
 /// each.
+/// `@MainActor` because the only consumer is `MarkdownRunbookView`, a SwiftUI
+/// view, and the requirements all mutate view-backed state: running a block
+/// updates the runbook's tracked state, and toggling a checkbox rewrites the
+/// host editor's buffer.
+@MainActor
 protocol RunbookHost {
     /// Run a single fenced code block against the host terminal session.
     /// `lineNumber` identifies the block's position in the markdown source

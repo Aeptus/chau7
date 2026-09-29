@@ -7,6 +7,7 @@ import Foundation
 /// don't fan invalidations out to status / history / commit through the
 /// outer model.
 @Observable
+@MainActor
 final class RepoBranchState {
     /// Currently checked-out branch name, or nil for detached HEAD.
     var currentBranch: String?

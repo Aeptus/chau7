@@ -27,7 +27,14 @@ final class NotificationDelegateHelper: NSObject, UNUserNotificationCenterDelega
 /// Main application model managing state, monitoring, and notifications.
 /// - Note: Thread Safety - Properties must be modified on main thread.
 ///   Use DispatchQueue.main.async when updating state from background callbacks.
+///
+/// `@MainActor` asserts exactly the invariant documented immediately above.
+/// The type is `@Observable`, so every stored property is observation-tracked
+/// and read by SwiftUI on the main actor; stating it in the declaration is
+/// what turns "use DispatchQueue.main.async" from a convention into something
+/// the compiler checks at each boundary.
 @Observable
+@MainActor
 final class AppModel {
     enum NotificationPermissionState: String, Codable {
         case unavailableNotBundled

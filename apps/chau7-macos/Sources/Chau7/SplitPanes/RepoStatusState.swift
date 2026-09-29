@@ -12,6 +12,7 @@ import Foundation
 /// access to multiple sub-states; this class just carries the observable
 /// data the Status view binds against.
 @Observable
+@MainActor
 final class RepoStatusState {
     var stagedFiles: [FileStatus] = []
     var unstagedFiles: [FileStatus] = []

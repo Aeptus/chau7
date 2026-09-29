@@ -12,6 +12,7 @@ import Foundation
 /// limit itself — it's a parameter the model captures before async git
 /// calls and grows when the user pages further back.
 @Observable
+@MainActor
 final class RepoHistoryState {
     var commits: [CommitEntry] = []
     var stashes: [StashEntry] = []
