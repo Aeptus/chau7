@@ -40,8 +40,10 @@ enum ClaudeSessionResolver {
     }
 
     private static let cacheLock = NSLock()
-    private static var metadataCache: [String: MetadataCacheEntry] = [:]
-    private static var historyIndexCache: [String: HistoryIndex] = [:]
+    /// Both guarded by `cacheLock`, which wraps every read, insert, and eviction
+    /// in this type.
+    private nonisolated(unsafe) static var metadataCache: [String: MetadataCacheEntry] = [:]
+    private nonisolated(unsafe) static var historyIndexCache: [String: HistoryIndex] = [:]
     /// Bounds the caches: keys are distinct session IDs and history paths seen
     /// for the process lifetime, so without a cap the maps only ever grow.
     private static let metadataCacheMaxEntries = 256

@@ -49,17 +49,37 @@ enum AIAgent: String, CaseIterable {
 
 /// Handles loading and generating AI agent logos for tab display.
 enum AIAgentLogo {
-    private static var logoCache: [AIAgent: NSImage] = [:]
+    /// `logo(for:)` is a plain static func with no isolation, so it is reachable
+    /// from any thread and the cache below was genuinely racy: a concurrent miss
+    /// for the same agent would both build an image and both write the
+    /// dictionary. Fixed with a real lock rather than silenced.
+    private static let logoCacheLock = NSLock()
+    private nonisolated(unsafe) static var logoCache: [AIAgent: NSImage] = [:]
     private static let logoSize = NSSize(width: 16, height: 16)
 
     /// Returns the logo for an AI agent, using cached version if available.
     /// Loads from bundle resources first, falls back to programmatic generation.
     static func logo(for agent: AIAgent) -> NSImage {
+        logoCacheLock.lock()
         if let cached = logoCache[agent] {
+            logoCacheLock.unlock()
             return cached
         }
+        logoCacheLock.unlock()
+
+        // Built outside the lock: file I/O and image generation are far too slow
+        // to hold a global lock for, and a redundant build is harmless.
         let image = loadFromFile(agent: agent) ?? generateLogo(for: agent)
+
+        logoCacheLock.lock()
+        // Re-check under the lock so two threads racing on the same agent keep the
+        // same instance rather than whichever wrote last.
+        if let existing = logoCache[agent] {
+            logoCacheLock.unlock()
+            return existing
+        }
         logoCache[agent] = image
+        logoCacheLock.unlock()
         return image
     }
 

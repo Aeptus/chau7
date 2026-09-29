@@ -14,7 +14,8 @@ extension TerminalColorScheme {
     // MARK: - Color Cache (Performance Optimization)
 
     /// Thread-safe cache for parsed NSColor values to avoid repeated hex parsing
-    private static var colorCache: [String: NSColor] = [:]
+    /// Guarded by `colorCacheLock`, taken around every read and every insert.
+    private nonisolated(unsafe) static var colorCache: [String: NSColor] = [:]
     private static let colorCacheLock = NSLock()
 
     /// Converts a hex color string to NSColor, using caching for performance.

@@ -248,6 +248,10 @@ struct EditorLanguage: Identifiable {
         }
     }
 
-    private static var compiledRulesCache: [String: [CompiledRule]] = [:]
+    /// The whole read-compile-insert in `compiledRules()` runs inside one
+    /// `cacheQueue.sync`, so this is serialised by that queue. The cached
+    /// `NSRegularExpression` values are non-`Sendable` for the same reason the
+    /// dictionary is: they never leave the queue.
+    private nonisolated(unsafe) static var compiledRulesCache: [String: [CompiledRule]] = [:]
     private static let cacheQueue = DispatchQueue(label: "com.chau7.editor.language.cache")
 }

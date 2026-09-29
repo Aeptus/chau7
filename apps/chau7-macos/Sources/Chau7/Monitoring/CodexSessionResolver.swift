@@ -15,7 +15,8 @@ enum CodexSessionResolver {
     }
 
     private static let cacheLock = NSLock()
-    private static var metadataCache: [String: Candidate] = [:]
+    /// Guarded by `cacheLock`, taken around every access.
+    private nonisolated(unsafe) static var metadataCache: [String: Candidate] = [:]
     /// Bounds the cache: keys are distinct session IDs seen for the process
     /// lifetime, so without a cap the map only ever grows.
     private static let metadataCacheMaxEntries = 256

@@ -242,9 +242,14 @@ enum LocalizedFormatters {
     // render paths (e.g. shortTime per terminal line). Cache one instance per
     // type, rebuilding only when the language or regional number format changes.
     // Access is main-thread only.
-    private static var cachedLocaleID: String?
-    private static var cachedNumberFormatID: String?
-    private static var formatterCache: [String: Any] = [:]
+    /// Serialised by the documented invariant directly above: this cache is
+    /// main-thread only, and every reader goes through `cached(_:_:)` on the main
+    /// actor. `Any` is inherently unsendable, so a lock would be a larger claim
+    /// than the code supports; the annotation records the main-thread-only
+    /// invariant instead.
+    private nonisolated(unsafe) static var cachedLocaleID: String?
+    private nonisolated(unsafe) static var cachedNumberFormatID: String?
+    private nonisolated(unsafe) static var formatterCache: [String: Any] = [:]
 
     private static func cached<T>(_ key: String, _ build: () -> T) -> T {
         let localeID = LocalizationManager.shared.currentLanguage.locale.identifier
