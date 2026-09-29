@@ -5094,5 +5094,12 @@
     "description": "The git probe drains stdout and stderr concurrently, so a command that fills the stderr pipe buffer can no longer deadlock against a reader waiting on stdout and get killed by the timeout. A git that is killed or crashed by a signal is treated as a failed probe rather than a clean exit, so an overloaded machine falls back to the filesystem snapshot instead of silently reporting an empty git result that looked like a clean repository. The fallback tests assert their own precondition, so a runner that relocates TMPDIR inside a repository skips them explicitly instead of intermittently asserting the wrong thing.",
     "status": "Shipped",
     "differentiator": "No"
+  },
+  {
+    "category": "Security",
+    "feature": "Handshake-Proven Device Pairing",
+    "description": "A claimed iOS identity is held provisional when PAIR_REQUEST arrives and is persisted as trusted only once the Mac accepts an encrypted SESSION_READY, which only the holder of the matching private key can produce. PAIR_REQUEST is cleartext and relayed verbatim, so the public key it carries is attacker-chosen: persisting it on arrival let a hostile relay register a key of its own, and replaying a legitimate key could hijack an already-trusted identity. Trust is now anchored in the Mac private key, which never leaves the Mac, so a relay that observes the pairing code still cannot derive the shared secret and is never persisted. Pairing stays long-lived: the code is a one-time bootstrap credential and the stored public key authorises every later reconnect, so the code is never re-entered.",
+    "status": "Shipped",
+    "differentiator": "No"
   }
 ]
