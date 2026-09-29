@@ -31,6 +31,7 @@ struct RemoteTerminalRendererView: View {
     let client: RemoteClient
     @AppStorage(AppSettings.renderANSIKey) private var renderANSI = AppSettings.renderANSIDefault
     @AppStorage(AppSettings.terminalFontSizeKey) private var terminalFontSize = AppSettings.terminalFontSizeDefault
+    @AppStorage("terminal_show_render_diagnostics") private var showsRenderDiagnostics = false
 
     private var colorScheme: TerminalColorScheme {
         client.terminalRenderer.colorScheme
@@ -55,7 +56,8 @@ struct RemoteTerminalRendererView: View {
                         frameTrace: client.terminalRenderer.publishedTrace,
                         availableSize: proxy.size,
                         colorScheme: colorScheme,
-                        fontSize: CGFloat(terminalFontSize)
+                        fontSize: CGFloat(terminalFontSize),
+                        showsDiagnostics: showsRenderDiagnostics
                     )
                     .background(Color(colorScheme.backgroundUIColor))
                 } else {
@@ -129,6 +131,7 @@ private struct RemoteTerminalRendererRepresentable: UIViewRepresentable {
     let availableSize: CGSize
     let colorScheme: TerminalColorScheme
     let fontSize: CGFloat
+    let showsDiagnostics: Bool
 
     func makeUIView(context: Context) -> RemoteTerminalViewportView {
         let view = RemoteTerminalViewportView()
@@ -138,7 +141,8 @@ private struct RemoteTerminalRendererRepresentable: UIViewRepresentable {
             frameTrace: frameTrace,
             availableSize: availableSize,
             colorScheme: colorScheme,
-            fontSize: fontSize
+            fontSize: fontSize,
+            showsDiagnostics: showsDiagnostics
         )
         return view
     }
@@ -150,7 +154,8 @@ private struct RemoteTerminalRendererRepresentable: UIViewRepresentable {
             frameTrace: frameTrace,
             availableSize: availableSize,
             colorScheme: colorScheme,
-            fontSize: fontSize
+            fontSize: fontSize,
+            showsDiagnostics: showsDiagnostics
         )
     }
 }
@@ -362,7 +367,8 @@ private final class RemoteTerminalViewportView: UIView, UIScrollViewDelegate {
         frameTrace: RemoteTerminalFrameTrace?,
         availableSize: CGSize,
         colorScheme: TerminalColorScheme,
-        fontSize: CGFloat
+        fontSize: CGFloat,
+        showsDiagnostics: Bool = false
     ) {
         self.store = store
         self.renderState = renderState
@@ -371,6 +377,7 @@ private final class RemoteTerminalViewportView: UIView, UIScrollViewDelegate {
         if backgroundColor != bg { backgroundColor = bg }
         if canvasView.backgroundColor != bg { canvasView.backgroundColor = bg }
         canvasView.colorScheme = colorScheme
+        canvasView.showsDiagnostics = showsDiagnostics
         // A new text size changes the cell metrics, so the grid must be
         // recomputed (cols/rows) before the next frame.
         if canvasView.fontSize != fontSize {
@@ -597,6 +604,12 @@ private final class RemoteTerminalCanvasView: UIView {
         context.setAllowsAntialiasing(true)
         context.setShouldAntialias(true)
 
+        var decodedCells = 0
+        var softWrappedRows = 0
+        for sourceRow in 0 ..< sourceRows where isSoftWrappedRow(sourceRow, sourceCols: sourceCols, state: renderState) {
+            softWrappedRows += 1
+        }
+
         for displayRow in 0 ..< displayRows {
             guard let slice = RemoteTerminalWrapGeometry.sourceSlice(
                 displayRow: displayRow,
@@ -614,6 +627,7 @@ private final class RemoteTerminalCanvasView: UIView {
                 if cell.flags & rustCellFlagHidden != 0 { continue }
                 if cell.continuation != 0 { continue }
                 let clusterStr = renderState.clusterString(for: cell)
+                decodedCells += 1
                 if clusterStr.isEmpty || clusterStr == " " { continue }
 
                 let fgKey = colorCache.foregroundKey(for: cell)
@@ -642,6 +656,82 @@ private final class RemoteTerminalCanvasView: UIView {
                 }
             }
         }
+
+        diagnostics = RemoteTerminalRenderDiagnostics(
+            sourceCols: sourceCols,
+            sourceRows: sourceRows,
+            displayCols: displayCols,
+            displayRows: displayRows,
+            scrollbackRows: renderState.scrollbackRows,
+            decodedCells: decodedCells,
+            drawMilliseconds: 0,
+            softWrappedRows: softWrappedRows
+        )
+        if showsDiagnostics {
+            drawDiagnostics(context: context, sourceCols: sourceCols, chunksPerRow: chunksPerRow, cellH: cellH, cellW: cellW)
+        }
+    }
+
+    /// Paints the fold seams and a readout of the numbers behind them. The seams
+    /// mark where a source row had to be split across phone-width rows, which is
+    /// where a TUI's layout breaks; the readout says whether the engine is
+    /// ingesting at the Mac's width or silently at the phone's.
+    private func drawDiagnostics(
+        context: CGContext,
+        sourceCols: Int,
+        chunksPerRow: Int,
+        cellH: CGFloat,
+        cellW: CGFloat
+    ) {
+        guard let state = renderState else { return }
+        let seam = UIColor.systemOrange.withAlphaComponent(0.55)
+        seam.setStroke()
+        context.setLineWidth(1)
+        guard chunksPerRow > 1 else {
+            // Nothing is being re-composed; still worth saying so.
+            drawReadout(context: context, text: "1:1  src \(sourceCols)x\(state.rows)  no fold", cellW: cellW, cellH: cellH)
+            return
+        }
+        for sourceRow in 0 ..< state.rows where isSoftWrappedRow(sourceRow, sourceCols: sourceCols, state: state) {
+            let y = CGFloat((sourceRow + 1) * chunksPerRow) * cellH
+            context.move(to: CGPoint(x: 0, y: y))
+            context.addLine(to: CGPoint(x: bounds.width, y: y))
+        }
+        context.strokePath()
+        drawReadout(
+            context: context,
+            text: "src \(sourceCols)x\(state.rows) → \(diagnostics.displayCols)x\(diagnostics.displayRows)  fold x\(chunksPerRow)  softwrap \(diagnostics.softWrappedRows)  decodes \(diagnostics.decodedCells)",
+            cellW: cellW,
+            cellH: cellH
+        )
+    }
+
+    private func drawReadout(context: CGContext, text: String, cellW: CGFloat, cellH: CGFloat) {
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: UIFont.monospacedDigitSystemFont(ofSize: max(9, cellH * 0.6), weight: .semibold),
+            .foregroundColor: UIColor.systemYellow
+        ]
+        (text as NSString).draw(at: CGPoint(x: 4, y: 4), withAttributes: attributes)
+    }
+
+    /// Diagnostics overlay. Off by default; toggled from Settings so a wrong
+    /// render can be explained on the device instead of guessed at from code.
+    var showsDiagnostics = false {
+        didSet {
+            guard showsDiagnostics != oldValue else { return }
+            setNeedsDisplay()
+        }
+    }
+    private(set) var diagnostics = RemoteTerminalRenderDiagnostics()
+
+    /// Whether a source row soft-wraps from the row above. The engine sets the
+    /// flag on the row's first cell (bit 7 of the cell flags), so a row that
+    /// begins a new logical line — because a newline was emitted — is false.
+    private func isSoftWrappedRow(_ row: Int, sourceCols: Int, state: RemoteTerminalRenderState) -> Bool {
+        guard row > 0, sourceCols > 0 else { return false }
+        let index = row * sourceCols
+        guard index < state.cells.count else { return false }
+        return state.cells[index].flags & rustCellFlagWrapped != 0
     }
 
     private func acknowledgeDrawnFrame() {
