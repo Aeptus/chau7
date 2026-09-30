@@ -138,7 +138,7 @@ final class TerminalSessionModel {
 
     var currentDirectory: String = TerminalSessionModel.defaultStartDirectory() {
         didSet {
-            MainActor.assumeIsolated {
+            MainActorBridge.run {
                 TerminalControlService.shared.invalidateRoutingIndex(reason: "session_directory")
             }
             onSessionStateChanged?()
@@ -274,7 +274,7 @@ final class TerminalSessionModel {
                     name: .terminalSessionRenderSuspensionStateChanged,
                     object: self
                 )
-                MainActor.assumeIsolated {
+                MainActorBridge.run {
                     TerminalControlService.shared.invalidateRoutingIndex(reason: "active_app")
                 }
             }
@@ -306,7 +306,7 @@ final class TerminalSessionModel {
                 name: .terminalSessionRenderSuspensionStateChanged,
                 object: self
             )
-            MainActor.assumeIsolated {
+            MainActorBridge.run {
                 TerminalControlService.shared.invalidateRoutingIndex(reason: "live_agent")
             }
             if oldValue == nil, liveAgentName != nil {
@@ -620,7 +620,7 @@ final class TerminalSessionModel {
         didSet {
             syncRustTerminalObservabilityScope()
             if lastAISessionId != oldValue {
-                MainActor.assumeIsolated {
+                MainActorBridge.run {
                     TerminalControlService.shared.invalidateRoutingIndex(reason: "ai_session_id")
                 }
                 refreshCodexFeedbackMonitorIfNeeded()
@@ -653,7 +653,7 @@ final class TerminalSessionModel {
         lastAIProvider = record.provider
         lastAISessionId = record.sessionId
         lastAISessionIdentitySource = record.source
-        MainActor.assumeIsolated {
+        MainActorBridge.run {
             TerminalControlService.shared.invalidateRoutingIndex(reason: "agent_identity")
         }
     }
@@ -681,7 +681,7 @@ final class TerminalSessionModel {
 
         // Always keep lastAIProvider current so persistence is correct
         lastAIProvider = newProvider
-        MainActor.assumeIsolated {
+        MainActorBridge.run {
             TerminalControlService.shared.invalidateRoutingIndex(reason: "detected_app")
         }
 

@@ -23,14 +23,18 @@ final class AgentDashboardSessionController: AgentDashboardSessionControlling {
         )
 
         var snapshots: [DashboardSessionSnapshot] = []
-        for (tabID, session) in liveTabs() {
-            let activeRun = recorder.activeRunForTab(session.tabIdentifier)
-            guard isAgentTab(session: session, activeRun: activeRun) else { continue }
+        for liveTab in liveTabs() {
+            let activeRun = recorder.activeRunForTab(liveTab.tabIdentifier)
+            guard liveTab.isAgentTab(activeRun: activeRun) else { continue }
 
-            if let runtimeSnapshot = runtimeSnapshots[tabID] {
-                snapshots.append(runtimeSnapshot.mergingLiveTab(session, activeRun: activeRun))
+            if let runtimeSnapshot = runtimeSnapshots[liveTab.tabID] {
+                snapshots.append(runtimeSnapshot.mergingLiveTab(liveTab, activeRun: activeRun))
             } else {
-                snapshots.append(fallbackSnapshot(from: session, tabID: tabID, activeRun: activeRun))
+                snapshots.append(.fallback(
+                    id: fallbackSessionID(for: liveTab.tabID),
+                    liveTab: liveTab,
+                    activeRun: activeRun
+                ))
             }
         }
         return snapshots.sorted { $0.createdAt < $1.createdAt }
@@ -56,27 +60,18 @@ final class AgentDashboardSessionController: AgentDashboardSessionControlling {
         )
     }
 
-    private func liveTabs() -> [(UUID, TerminalSessionModel)] {
-        if Thread.isMainThread {
-            return MainActor.assumeIsolated { liveTabsOnMain() }
-        }
-        return DispatchQueue.main.sync {
-            MainActor.assumeIsolated { liveTabsOnMain() }
-        }
+    /// Callers run on the dashboard's background refresh queue, so every
+    /// session read happens here, inside the main-thread hop.
+    private func liveTabs() -> [DashboardLiveTabState] {
+        MainActorBridge.sync { liveTabsOnMain() }
     }
 
     @MainActor
-    private func liveTabsOnMain() -> [(UUID, TerminalSessionModel)] {
+    private func liveTabsOnMain() -> [DashboardLiveTabState] {
         terminalControl.allTabs.compactMap { tab in
             guard let session = tab.displaySession ?? tab.session else { return nil }
-            return (tab.id, session)
+            return DashboardLiveTabState(tabID: tab.id, session: session)
         }
-    }
-
-    private func isAgentTab(session: TerminalSessionModel, activeRun: TelemetryRun?) -> Bool {
-        activeRun != nil
-            || session.effectiveAIProvider != nil
-            || session.effectiveAISessionId != nil
     }
 
     private func snapshot(from session: RuntimeSession) -> DashboardSessionSnapshot {
@@ -100,32 +95,6 @@ final class AgentDashboardSessionController: AgentDashboardSessionControlling {
             createdAt: session.createdAt,
             costUSD: session.estimatedCostUSD ?? 0,
             journal: session.journal
-        )
-    }
-
-    private func fallbackSnapshot(from session: TerminalSessionModel, tabID: UUID, activeRun: TelemetryRun?) -> DashboardSessionSnapshot {
-        let usage = activeRun?.tokenUsage ?? TokenUsage()
-        let provider = (activeRun?.provider ?? session.effectiveAIProvider ?? session.activeAppName ?? "AI")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        return DashboardSessionSnapshot(
-            id: fallbackSessionID(for: tabID),
-            tabID: tabID,
-            backendName: provider.isEmpty ? "AI" : provider,
-            directory: session.displayGitRootPath ?? session.gitRootPath ?? session.currentDirectory,
-            purpose: nil,
-            parentSessionID: nil,
-            delegationDepth: 0,
-            state: DashboardAgentState(commandStatus: session.effectiveStatus, isAtPrompt: session.effectiveIsAtPrompt),
-            turnCount: activeRun?.turnCount ?? 0,
-            inputTokens: usage.inputTokens,
-            outputTokens: usage.outputTokens + usage.reasoningOutputTokens,
-            cacheCreationTokens: usage.cacheCreationInputTokens,
-            cacheReadTokens: usage.cacheReadInputTokens,
-            requiresApproval: session.effectiveStatus == .approvalRequired,
-            latestResult: nil,
-            createdAt: activeRun?.startedAt ?? Date.distantPast,
-            costUSD: activeRun?.costUSD ?? 0,
-            journal: EventJournal()
         )
     }
 

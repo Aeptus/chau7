@@ -13,6 +13,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The agent dashboard no longer crashes the app while polling. Its refresh runs on a background queue and read each tab's `effectiveStatus` there; once a tab carried an AI provider and session id, that read reached `MainActor.assumeIsolated` off the main thread and trapped (`EXC_BREAKPOINT` on `com.chau7.agent-dashboard.refresh`). Tab state is now copied into a `DashboardLiveTabState` value inside the existing main-thread hop, and snapshots are built from that value.
+- Terminal-session property observers no longer trap when they fire off the main thread. The routing-index invalidations in the `currentDirectory`, `activeAppName`, `liveAgentName`, and `lastAISessionId` observers, plus `applyAgentIdentity` and `updateLastDetectedApp`, used a bare `MainActor.assumeIsolated`. `deinit` clears `liveAgentName`, so releasing a session with a live agent from a background queue would crash. They now use `MainActorBridge.run`, which runs inline on main and otherwise hops with `main.async`.
+
 - Updated pinned Wrangler tooling for both Workers and the relay’s matching Cloudflare type definitions so dependency audits pass with the upstream Undici and Sharp fixes.
 
 - Completed actor boundaries for live tab, split-pane, notification, and control-plane state so reconciled main/integration sources build from a clean checkout. Readiness, agent-launch, and output-stability polling stay off-main; logging captures configured paths before entering its queue. Local CI follows the declared strict-concurrency warning rollout while compiler errors and failing tests remain blocking.
