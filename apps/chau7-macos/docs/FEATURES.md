@@ -978,7 +978,7 @@ Legacy `AI_*` and `SMART_OVERLAY_*` environment variables are still supported.
 - **Warnings-as-errors Swift baseline** — asynchronous callbacks use explicit capture ownership, and the macOS format, lint, and strict compiler gates run cleanly before publication.
 - Swift source and focused tests are kept SwiftFormat-clean before managed commits, so release validation fails only on substantive quality issues.
 
-- Cloudflare Worker toolchains are pinned to audit-clean compatible Wrangler and Workers-types releases; both services must pass dependency audit and dry-run build validation.
+- Cloudflare Worker toolchains pin Wrangler 4.144.0, with matching Workers-types 5.20260926.1 for the relay, to include upstream Undici and Sharp fixes; both services pass dependency audit and dry-run build validation.
 - Process-resource monitor lifecycle tests inject deterministic snapshots, isolating timer start/stop behavior from OS process-enumeration latency under full-suite load.
 - Swift formatting/lint and Go static analysis run across the complete source and test trees; test fixture guards terminate explicitly before optional values are dereferenced.
 - Quality-runner tests isolate process-wide environment overrides, preserving fail-closed dirty-worktree coverage even when the parent pre-push invocation explicitly acknowledges local changes.

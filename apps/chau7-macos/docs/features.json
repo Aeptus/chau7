@@ -380,7 +380,7 @@
   {
     "category": "Developer Experience",
     "feature": "Audited Cloudflare Worker Toolchain",
-    "description": "Issues and Relay Workers pin compatible Wrangler and Workers-types releases that pass dependency audits, tests, typechecks, and dry-run builds",
+    "description": "Issues and Relay Workers pin Wrangler 4.144.0 and Relay pins compatible Workers-types 5.20260926.1; dependency audits, tests, typechecks, and dry-run builds verify the toolchain and upstream Undici/Sharp fixes",
     "status": "Shipped",
     "differentiator": "No"
   },

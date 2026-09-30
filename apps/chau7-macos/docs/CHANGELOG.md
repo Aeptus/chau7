@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Updated pinned Wrangler tooling for both Workers and the relay’s matching Cloudflare type definitions so dependency audits pass with the upstream Undici and Sharp fixes.
+
 - Completed actor boundaries for live tab, split-pane, notification, and control-plane state so reconciled main/integration sources build from a clean checkout. Readiness, agent-launch, and output-stability polling stay off-main; logging captures configured paths before entering its queue. Local CI follows the declared strict-concurrency warning rollout while compiler errors and failing tests remain blocking.
 
 - Telemetry retention now covers the tables the run cascade cannot reach. `turns.run_id` and `tool_calls.run_id` are declared `REFERENCES runs(run_id) ON DELETE CASCADE`, but `usage_evidence.run_id` and `provider_latency_samples.run_id` are bare `TEXT` and `remote_client_events` has no `run_id` at all, so pruning runs could never remove them and no other path deleted them. The three largest tables in the database grew without bound while retention reported itself healthy. They are now pruned on their own timestamps, independently of the run prune (which short-circuits whenever no run is old), with one shared VACUUM per pass. Adds an `observed_at` index so the prune is not a full scan.
