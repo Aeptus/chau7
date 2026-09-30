@@ -425,7 +425,7 @@ class EditorCoordinator: NSObject, NSTextViewDelegate, NSGestureRecognizerDelega
 
     /// Search forward from the given position to find the matching closing bracket.
     /// Pure scan, exposed for direct unit testing.
-    static func findMatchingBracketForward(in text: NSString, from pos: Int, open: unichar, close: unichar) -> Int? {
+    nonisolated static func findMatchingBracketForward(in text: NSString, from pos: Int, open: unichar, close: unichar) -> Int? {
         var depth = 0
         for i in pos ..< text.length {
             let c = text.character(at: i)
@@ -438,7 +438,7 @@ class EditorCoordinator: NSObject, NSTextViewDelegate, NSGestureRecognizerDelega
 
     /// Search backward from the given position to find the matching opening bracket.
     /// Pure scan, exposed for direct unit testing.
-    static func findMatchingBracketBackward(in text: NSString, from pos: Int, open: unichar, close: unichar) -> Int? {
+    nonisolated static func findMatchingBracketBackward(in text: NSString, from pos: Int, open: unichar, close: unichar) -> Int? {
         var depth = 0
         for i in stride(from: pos, through: 0, by: -1) {
             let c = text.character(at: i)

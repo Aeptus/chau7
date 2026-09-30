@@ -49,6 +49,17 @@
 #define CELL_FLAG_HIDDEN (1 << 6)
 
 /*
+ This physical row is a soft-wrap continuation of the logical line that
+ started on the row above (i.e. the row did not begin because a newline was
+ emitted — the text simply exceeded the terminal width).
+
+ Clients that re-compose a wide grid onto a narrower display need this to
+ fold on *logical* lines. Folding each physical row independently instead
+ chops soft-wrapped prose mid-sentence at every fold.
+ */
+#define CELL_FLAG_WRAPPED (1 << 7)
+
+/*
  Underline style variants stored in `CellData.underline_style`.
  0 = no underline (or simple single), 1 = single, 2 = double, 3 = curl, 4 = dotted, 5 = dashed.
  */
@@ -215,6 +226,68 @@ typedef struct GridDeltaSnapshot {
     uint8_t full_refresh;
     uint8_t _pad[6];
 } GridDeltaSnapshot;
+
+/*
+ C-compatible, pre-folded display grid.
+
+ A terminal that is wider than the client rendering it has to be re-composed
+ onto a narrower display. Doing that in the client means re-deriving cell
+ indices through a source-to-display mapping and decoding a cluster per drawn
+ cell, every frame. Doing it here means the client receives rows that are
+ already the width it can paint, in one contiguous allocation.
+
+ Rows are folded on *logical* lines: a row the engine marked as a soft-wrap
+ continuation is joined to the line above before folding, so prose that
+ exceeds the source width reads continuously instead of being chopped at
+ every fold. Trailing blank cells on a logical line are trimmed, so a short
+ line in a wide grid does not inflate the display height.
+
+ Owns three allocations — `cells`, `clusters_utf8`, and `row_offsets` — all
+ of which must be freed via `chau7_terminal_free_display_rows`.
+ */
+typedef struct DisplayRowBuffer {
+    /*
+     Folded display cells. Exactly `display_cols * display_rows` elements.
+     */
+    struct CellData *cells;
+    /*
+     Allocated capacity of `cells`, recorded because the buffer crosses the
+     FFI boundary and must be reconstructed exactly on free. Dropping it
+     would be undefined behaviour, not merely a leak.
+     */
+    size_t cells_capacity;
+    /*
+     Packed UTF-8 grapheme clusters, referenced by `cells[i].cluster_offset`.
+     */
+    uint8_t *clusters_utf8;
+    size_t clusters_len;
+    size_t clusters_capacity;
+    /*
+     Start offset into `cells` for each display row, plus a final sentinel
+     equal to the total cell count, so row `r` is
+     `cells[row_offsets[r] ..< row_offsets[r + 1]]`.
+     */
+    uint32_t *row_offsets;
+    size_t row_offsets_len;
+    size_t row_offsets_capacity;
+    size_t cell_count;
+    /*
+     Phone-width columns each folded row holds.
+     */
+    uint16_t display_cols;
+    /*
+     Number of folded rows produced.
+     */
+    uint16_t display_rows;
+    /*
+     Source grid width the fold was computed from.
+     */
+    uint16_t source_cols;
+    /*
+     Source grid height the fold was computed from.
+     */
+    uint16_t source_rows;
+} DisplayRowBuffer;
 
 /*
  Pool statistics for debugging
@@ -533,6 +606,33 @@ struct GridSnapshot *chau7_terminal_get_grid(struct Chau7Terminal *term);
  */
 struct GridDeltaSnapshot *chau7_terminal_get_grid_delta(struct Chau7Terminal *term,
                                                         uint64_t consumer_generation);
+
+/*
+ Fold the visible grid to `display_cols` phone-width rows.
+
+ The returned buffer is already the width a narrow client can paint, folded
+ on logical lines, so the client does not re-derive cell indices or decode a
+ cluster per drawn cell every frame. Free with
+ `chau7_terminal_free_display_rows`.
+
+ # Safety
+ - `term` must be a valid pointer returned by `chau7_terminal_create_headless`
+ */
+struct DisplayRowBuffer *chau7_terminal_get_display_rows(struct Chau7Terminal *term,
+                                                         uint16_t display_cols);
+
+/*
+ Free a buffer from `chau7_terminal_get_display_rows`.
+
+ All three allocations are reconstructed with their recorded capacity; the
+ cells buffer goes back to the shared pool so per-frame folding does not
+ churn the allocator.
+
+ # Safety
+ - `buffer` must be a pointer returned by `chau7_terminal_get_display_rows`
+   and must not be used afterwards
+ */
+void chau7_terminal_free_display_rows(struct DisplayRowBuffer *buffer);
 
 /*
  Free a grid snapshot

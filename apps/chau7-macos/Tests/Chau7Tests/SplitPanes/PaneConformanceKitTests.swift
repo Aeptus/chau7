@@ -16,10 +16,11 @@ final class PaneConformanceKitTests: XCTestCase {
     /// One row of the cross-product. Each row knows how to build its pane,
     /// optionally dirtying an underlying editor, and how to label itself
     /// in failure messages.
+    @MainActor
     private struct PaneFixture {
         let label: String
         let editorDirty: Bool
-        let makePane: () -> any PaneNode
+        let makePane: @MainActor () -> any PaneNode
 
         static func allCases(appModel: AppModel) -> [PaneFixture] {
             // Editor-clean fixture vs. editor-dirty fixture must produce a

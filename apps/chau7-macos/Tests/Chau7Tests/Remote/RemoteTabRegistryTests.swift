@@ -110,4 +110,61 @@ final class RemoteTabRegistryTests: XCTestCase {
         let decoded = try JSONDecoder().decode(RemoteTabDescriptor.self, from: data)
         XCTAssertEqual(decoded, descriptor)
     }
+
+    func testTerminalSizeIsNotCarriedOnTheTabDescriptor() throws {
+        // Width deliberately moved to the tab-scoped TERMINAL_SIZE frame: it is a
+        // rendering concern, and a window resize changes it without any tab
+        // appearing or disappearing.
+        let uuid = UUID()
+        var registry = RemoteTabRegistry()
+        let descriptors = registry.rebuild(
+            with: [
+                RemoteTabRegistryEntry(
+                    id: uuid,
+                    sessionIdentifier: nil,
+                    title: "Claude",
+                    projectName: nil,
+                    branchName: nil,
+                    aiProvider: nil,
+                    isActive: true,
+                    isMCPControlled: false
+                )
+            ]
+        )
+        let descriptor = try XCTUnwrap(descriptors.first)
+        let encoded = try JSONEncoder().encode(descriptor)
+        let json = try XCTUnwrap(String(data: encoded, encoding: .utf8))
+        XCTAssertFalse(
+            json.contains("terminal_cols"),
+            "terminal size must not ride on the inventory; it would only update incidentally"
+        )
+    }
+
+    func testTerminalSizePayloadRoundTripsThroughJSON() throws {
+        let payload = RemoteTerminalSizePayload(cols: 120, rows: 40)
+        let encoded = try JSONEncoder().encode(payload)
+        let json = try XCTUnwrap(String(data: encoded, encoding: .utf8))
+        XCTAssertTrue(json.contains("\"cols\":120"))
+        XCTAssertTrue(json.contains("\"rows\":40"))
+        let decoded = try JSONDecoder().decode(RemoteTerminalSizePayload.self, from: encoded)
+        XCTAssertEqual(decoded, payload)
+    }
+
+    func testOlderMacInventoryWithoutDimensionsStillDecodes() throws {
+        // Backward compatibility: a peer predating the field — and a peer that
+        // still sends the old keys, which are now ignored — must both decode.
+        let legacy = """
+        {"tab_id":3,"title":"legacy","is_active":true}
+        """
+        let descriptor = try JSONDecoder().decode(RemoteTabDescriptor.self, from: Data(legacy.utf8))
+        XCTAssertEqual(descriptor.tabID, 3)
+        XCTAssertEqual(descriptor.title, "legacy")
+
+        // A Mac still emitting the old inventory keys must not break the client.
+        let stale = """
+        {"tab_id":4,"title":"old-shape","is_active":true,"terminal_cols":120,"terminal_rows":40}
+        """
+        let staleDescriptor = try JSONDecoder().decode(RemoteTabDescriptor.self, from: Data(stale.utf8))
+        XCTAssertEqual(staleDescriptor.tabID, 4, "unknown inventory keys must be ignored, not fatal")
+    }
 }

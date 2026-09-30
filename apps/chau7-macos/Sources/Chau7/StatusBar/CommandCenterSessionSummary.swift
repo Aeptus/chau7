@@ -100,12 +100,14 @@ struct CommandCenterSessionSummary: Identifiable, Equatable {
         }
     }
 
+    @MainActor
     static func collectLiveSessions(in overlayModel: OverlayTabsModel?) -> [CommandCenterSessionSummary] {
         guard let overlayModel else { return [] }
 
         return collectLiveSessions(in: [overlayModel])
     }
 
+    @MainActor
     static func collectLiveSessions(in overlayModels: [OverlayTabsModel]) -> [CommandCenterSessionSummary] {
         overlayModels
             .flatMap(\.tabs)

@@ -308,7 +308,7 @@ final class TelemetryQueryService {
             return cached.turns
         }
 
-        let response = terminalControl.tabOutput(tabID: tabID, lines: 80, source: "pty_log")
+        let response = MainActorBridge.sync { terminalControl.tabOutput(tabID: tabID, lines: 80, source: "pty_log") }
         guard let data = response.data(using: .utf8),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let output = (json["output"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines),

@@ -81,6 +81,7 @@ struct TabNotificationStyle: Equatable {
     )
 }
 
+@MainActor
 struct OverlayTab: Identifiable, Equatable {
     let id: UUID
     let splitController: SplitPaneController
@@ -1424,7 +1425,7 @@ final class OverlayTabsModel {
         }
     }
 
-    deinit {
+    isolated deinit {
         Log.warn("OverlayTabsModel deinit — tabs=\(tabs.count) pid=\(ProcessInfo.processInfo.processIdentifier)")
         stopTabBarWatchdog()
         if let ctoModeObserver { NotificationCenter.default.removeObserver(ctoModeObserver) }

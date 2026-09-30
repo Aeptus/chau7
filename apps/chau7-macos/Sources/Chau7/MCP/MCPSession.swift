@@ -918,7 +918,7 @@ final class MCPSession {
             guard let tabID = arguments["tab_id"] as? String else {
                 return .protocolError(code: -32602, message: "Invalid params: tab_id is required")
             }
-            return classifyToolResponse(controlService.mcpTabStatus(tabID: tabID))
+            return classifyToolResponse(MainActorBridge.sync { controlService.mcpTabStatus(tabID: tabID) })
 
         case "tab_wait_ready":
             guard let tabID = arguments["tab_id"] as? String else {
@@ -940,7 +940,7 @@ final class MCPSession {
         // so a raw tab UUID can't reach a terminal the user opened themselves.
         case "tab_exec", "tab_send_input", "tab_press_key", "tab_submit_prompt", "tab_close", "tab_release_control":
             if let tabID = arguments["tab_id"] as? String,
-               let scopeError = controlService.mcpControlScopeError(forTabID: tabID) {
+               let scopeError = MainActorBridge.sync { controlService.mcpControlScopeError(forTabID: tabID) } {
                 return classifyToolResponse(scopeError)
             }
             return classifyToolResponse(controlPlane.call(name: name, arguments: arguments))
@@ -961,39 +961,39 @@ final class MCPSession {
                   let override = arguments["override"] as? String else {
                 return .protocolError(code: -32602, message: "Invalid params: tab_id and override are required")
             }
-            return classifyToolResponse(controlService.setCTO(tabID: tabID, override: override))
+            return classifyToolResponse(MainActorBridge.sync { controlService.setCTO(tabID: tabID, override: override) })
 
         case "tab_rename":
             guard let tabID = arguments["tab_id"] as? String,
                   let title = arguments["title"] as? String else {
                 return .protocolError(code: -32602, message: "Invalid params: tab_id and title are required")
             }
-            return classifyToolResponse(controlService.renameTab(tabID: tabID, title: title))
+            return classifyToolResponse(MainActorBridge.sync { controlService.renameTab(tabID: tabID, title: title) })
 
         // Repo Metadata
         case "repo_get_metadata":
             guard let repoPath = arguments["repo_path"] as? String else {
                 return .protocolError(code: -32602, message: "Invalid params: repo_path is required")
             }
-            return classifyToolResponse(controlService.getRepoMetadata(repoPath: repoPath))
+            return classifyToolResponse(MainActorBridge.sync { controlService.getRepoMetadata(repoPath: repoPath) })
 
         case "repo_set_metadata":
             guard let repoPath = arguments["repo_path"] as? String else {
                 return .protocolError(code: -32602, message: "Invalid params: repo_path is required")
             }
-            return classifyToolResponse(controlService.setRepoMetadata(
+            return classifyToolResponse(MainActorBridge.sync { controlService.setRepoMetadata(
                 repoPath: repoPath,
                 description: arguments["description"] as? String,
                 labels: arguments["labels"] as? [String],
                 favoriteFiles: arguments["favorite_files"] as? [String]
-            ))
+            ) })
 
         case "repo_frequent_commands":
             guard let repoPath = arguments["repo_path"] as? String else {
                 return .protocolError(code: -32602, message: "Invalid params: repo_path is required")
             }
             let limit = arguments["limit"] as? Int ?? 20
-            return classifyToolResponse(controlService.repoFrequentCommands(repoPath: repoPath, limit: limit))
+            return classifyToolResponse(MainActorBridge.sync { controlService.repoFrequentCommands(repoPath: repoPath, limit: limit) })
 
         case "repo_get_events":
             guard let repoPath = arguments["repo_path"] as? String else {
@@ -1001,7 +1001,7 @@ final class MCPSession {
             }
             // Cap enforced at the source in repoGetEvents (repoEventsMaxLimit).
             let limit = arguments["limit"] as? Int ?? 20
-            return classifyToolResponse(controlService.repoGetEvents(
+            return classifyToolResponse(MainActorBridge.sync { controlService.repoGetEvents(
                 repoPath: repoPath,
                 limit: limit,
                 tabID: arguments["tab_id"] as? String,
@@ -1010,7 +1010,7 @@ final class MCPSession {
                 producer: arguments["producer"] as? String,
                 sessionID: arguments["session_id"] as? String,
                 truncateMessages: arguments["truncate_messages"] as? Bool ?? true
-            ))
+            ) })
 
         default:
             return .protocolError(code: -32602, message: "Unknown tool: \(name)")

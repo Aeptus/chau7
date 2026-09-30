@@ -45,7 +45,7 @@ final class AgentDashboardSessionController: AgentDashboardSessionControlling {
         guard let tabID = fallbackTabID(from: id) else {
             return false
         }
-        let response = terminalControl.sendInput(tabID: tabID.uuidString, input: "\u{3}")
+        let response = MainActorBridge.sync { terminalControl.sendInput(tabID: tabID.uuidString, input: "\u{3}") }
         return !response.contains("\"error\"")
     }
 

@@ -408,18 +408,20 @@ extension TerminalSessionModel {
             ? "\(toolName) needs your approval in \(location)"
             : "\(toolName) is waiting for your input in \(location)"
 
-        appModel?.recordEvent(
-            source: source,
-            type: type,
-            tool: toolName,
-            message: message,
-            notify: true,
-            directory: currentDirectory,
-            tabID: ownerTabID,
-            sessionID: effectiveAISessionId,
-            producer: "terminal_wait_pattern_attention",
-            reliability: .heuristic
-        )
+        MainActor.assumeIsolated {
+            appModel?.recordEvent(
+                source: source,
+                type: type,
+                tool: toolName,
+                message: message,
+                notify: true,
+                directory: currentDirectory,
+                tabID: ownerTabID,
+                sessionID: effectiveAISessionId,
+                producer: "terminal_wait_pattern_attention",
+                reliability: .heuristic
+            )
+        }
     }
 
     func processAILogOutput(_ data: Data) -> (loggable: Data?, exitCode: Int?) {
@@ -467,10 +469,12 @@ extension TerminalSessionModel {
     }
 
     func startAILoggingIfNeeded(toolName: String, commandLine: String?) {
+        // Capture main-actor configuration before entering the log queue.
+        let logPath = terminalLogPath(for: toolName)
+        let eventsPath = eventsLogPath()
         // Synchronized access to AI log state
         aiLogQueue.sync {
             guard aiLogSession == nil else { return }
-            let logPath = terminalLogPath(for: toolName)
             aiLogSession = AITerminalLogSession(toolName: toolName, logPath: logPath)
             lastPTYLogPath = logPath
             let trimmedCommand = commandLine.flatMap { SensitiveInputGuard.sanitizedCommandForPersistence($0) }
@@ -493,7 +497,7 @@ extension TerminalSessionModel {
                 tool: toolName,
                 message: message,
                 source: .terminalSession,
-                logPath: eventsLogPath()
+                logPath: eventsPath
             )
         }
     }
@@ -527,6 +531,8 @@ extension TerminalSessionModel {
     }
 
     func finishAILogging(exitCode: Int?, mode: AILoggingFinishMode = .normal) {
+        // Capture main-actor configuration before entering the log queue.
+        let eventsPath = eventsLogPath()
         // Capture terminal buffer snapshot for telemetry fallback transcript.
         // Prefer a fresh capture (runs on main where the view is accessible),
         // but fall back to the cached buffer if the view was already detached.
@@ -582,7 +588,7 @@ extension TerminalSessionModel {
                         tool: session.toolName,
                         message: "Finished (cleanup)",
                         source: .terminalSession,
-                        logPath: eventsLogPath()
+                        logPath: eventsPath
                     )
                 }
                 aiLogSession?.close()
@@ -616,7 +622,7 @@ extension TerminalSessionModel {
                 tool: context.toolName,
                 message: message,
                 source: .terminalSession,
-                logPath: eventsLogPath()
+                logPath: eventsPath
             )
 
             aiLogSession?.close()
@@ -627,7 +633,9 @@ extension TerminalSessionModel {
     }
 
     private func eventsLogPath() -> String {
-        let trimmed = appModel?.logPath.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let trimmed = MainActor.assumeIsolated {
+            appModel?.logPath.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        }
         if !trimmed.isEmpty {
             return trimmed
         }
@@ -636,7 +644,10 @@ extension TerminalSessionModel {
 
     private func terminalLogPath(for toolName: String) -> String {
         let trimmed = toolName.trimmingCharacters(in: .whitespacesAndNewlines)
-        if let appModel, let path = appModel.terminalLogPath(forToolName: trimmed), !path.isEmpty {
+        let configuredPath = MainActor.assumeIsolated {
+            appModel?.terminalLogPath(forToolName: trimmed)
+        }
+        if let path = configuredPath, !path.isEmpty {
             return path
         }
         let logDir = RuntimeIsolation.logsDirectory()
@@ -837,18 +848,20 @@ extension TerminalSessionModel {
         let projectName = URL(fileURLWithPath: currentDirectory).lastPathComponent
         let location = projectName.isEmpty ? notificationTabName : projectName
 
-        appModel?.recordEvent(
-            source: source,
-            type: "waiting_input",
-            tool: toolName,
-            message: "\(toolName) is waiting for your input in \(location)",
-            notify: true,
-            directory: currentDirectory,
-            tabID: ownerTabID,
-            sessionID: effectiveAISessionId,
-            producer: "terminal_prompt_waiting_input",
-            reliability: .fallback
-        )
+        MainActor.assumeIsolated {
+            appModel?.recordEvent(
+                source: source,
+                type: "waiting_input",
+                tool: toolName,
+                message: "\(toolName) is waiting for your input in \(location)",
+                notify: true,
+                directory: currentDirectory,
+                tabID: ownerTabID,
+                sessionID: effectiveAISessionId,
+                producer: "terminal_prompt_waiting_input",
+                reliability: .fallback
+            )
+        }
     }
 
     private func hasAuthoritativeNotifications(for provider: String?) -> Bool {

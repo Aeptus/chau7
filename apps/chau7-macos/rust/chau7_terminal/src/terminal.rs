@@ -27,8 +27,9 @@ use crate::pool::get_cell_buffer_pool;
 use crate::pty::{Chau7EventListener, PtyHandle, PtyMessage, SizeInfo};
 use crate::types::{
     CELL_FLAG_BOLD, CELL_FLAG_DIM, CELL_FLAG_HIDDEN, CELL_FLAG_INVERSE, CELL_FLAG_ITALIC,
-    CELL_FLAG_STRIKETHROUGH, CELL_FLAG_UNDERLINE, CellData, DebugState, GridDeltaSnapshot,
-    GridSnapshot, PerformanceMetrics, cell_flags_to_u8, underline_style,
+    CELL_FLAG_STRIKETHROUGH, CELL_FLAG_UNDERLINE, CELL_FLAG_WRAPPED, CellData, DebugState,
+    DisplayRowBuffer, GridDeltaSnapshot, GridSnapshot, PerformanceMetrics, cell_flags_to_u8,
+    underline_style,
 };
 
 /// Static counter for terminal IDs (for logging)
@@ -1577,12 +1578,250 @@ impl Chau7Terminal {
         self.grid_dirty.store(true, Ordering::Release);
     }
 
+    /// Fold the visible grid down to `display_cols` phone-width rows.
+    ///
+    /// Folding happens on *logical* lines. A physical row the engine marked as a
+    /// soft-wrap continuation is joined to the line above, so a paragraph that
+    /// exceeded the source width reads continuously instead of being cut at
+    /// every fold. Trailing blank cells on a logical line are trimmed so a short
+    /// line in a wide grid does not inflate the display height, and a wide
+    /// grapheme is never split across a fold boundary.
+    ///
+    /// `display_cols` of 0 (or wider than the source grid) yields the source
+    /// grid unchanged, one display row per source row.
+    pub fn get_display_rows(&self, display_cols: u16) -> DisplayRowBuffer {
+        let display_cols = if display_cols == 0 {
+            u16::MAX
+        } else {
+            display_cols
+        };
+        let fold_width = display_cols as usize;
+        let theme = self.theme_colors.read().clone();
+
+        let (mut cells, mut clusters, out_cells, out_clusters, row_offsets, cols, rows) = {
+            let term = self.term.lock();
+            let grid = term.grid();
+            let cursor_visible = term.mode().contains(TermMode::SHOW_CURSOR);
+            let _ = cursor_visible;
+
+            let cols = grid.columns();
+            let rows = grid.screen_lines();
+            let display_offset = grid.display_offset();
+            let selection_range = term.selection.as_ref().and_then(|sel| sel.to_range(&*term));
+
+            let total_cells = cols * rows;
+            let mut cells: Vec<CellData> = get_cell_buffer_pool().acquire(total_cells);
+            let mut clusters: Vec<u8> = Vec::with_capacity(total_cells);
+            let mut cluster_scratch = String::with_capacity(16);
+            let mut hyperlinks = self.hyperlinks.lock();
+
+            for line_idx in 0..rows {
+                let line = Line(line_idx as i32 - display_offset as i32);
+                let row_is_continuation =
+                    line_idx > 0 && Self::grid_line_wraps(grid, Line(line.0 - 1));
+                for col_idx in 0..cols {
+                    let point = Point::new(line, Column(col_idx));
+                    let cell = &grid[point];
+                    cells.push(Self::snapshot_cell(
+                        cell,
+                        point,
+                        row_is_continuation,
+                        selection_range.as_ref(),
+                        &theme,
+                        &mut hyperlinks,
+                        &mut clusters,
+                        &mut cluster_scratch,
+                    ));
+                }
+            }
+
+            // ── Fold ────────────────────────────────────────────────────
+            // Group physical rows into logical lines, then lay each logical line
+            // out at `display_cols` width.
+            let mut out_cells: Vec<CellData> = Vec::with_capacity(total_cells);
+            let mut out_clusters: Vec<u8> = Vec::with_capacity(total_cells);
+            let mut row_offsets: Vec<u32> = vec![0];
+
+            // Copy a source cell into the output buffers, re-basing the cluster
+            // offset into the output cluster buffer.
+            fn push_cell(
+                cell: &CellData,
+                source_clusters: &[u8],
+                out_cells: &mut Vec<CellData>,
+                out_clusters: &mut Vec<u8>,
+            ) {
+                let start = cell.cluster_offset as usize;
+                let end = start + cell.cluster_len as usize;
+                // CellData is intentionally not Copy (it crosses the FFI
+                // boundary), so the fold rebuilds it field-wise. Only the cluster
+                // offset changes: it is re-based into the output buffer.
+                let mut cluster_len = cell.cluster_len;
+                let mut cluster_offset = cell.cluster_offset;
+                if cell.cluster_len > 0 && end <= source_clusters.len() {
+                    cluster_offset = out_clusters.len() as u32;
+                    out_clusters.extend_from_slice(&source_clusters[start..end]);
+                } else {
+                    cluster_len = 0;
+                }
+                out_cells.push(CellData {
+                    cluster_offset,
+                    fg_r: cell.fg_r,
+                    fg_g: cell.fg_g,
+                    fg_b: cell.fg_b,
+                    bg_r: cell.bg_r,
+                    bg_g: cell.bg_g,
+                    bg_b: cell.bg_b,
+                    cluster_len,
+                    width: cell.width,
+                    continuation: cell.continuation,
+                    flags: cell.flags,
+                    underline_style: cell.underline_style,
+                    link_id: cell.link_id,
+                });
+            }
+
+            let mut row = 0usize;
+            while row < rows {
+                // Collect the physical rows of this logical line.
+                let line_start = row;
+                let mut line_end = row + 1;
+                while line_end < rows && Self::is_continuation_cell(&cells, line_end, cols) {
+                    line_end += 1;
+                }
+
+                // Find the last non-blank cell in the logical line so trailing
+                // padding does not create empty display rows.
+                let mut last_content = None;
+                for r in line_start..line_end {
+                    for c in 0..cols {
+                        let idx = r * cols + c;
+                        let cell = &cells[idx];
+                        if cell.cluster_len > 0 && !Self::cell_is_space(cell, &clusters) {
+                            last_content = Some(idx);
+                        }
+                    }
+                }
+
+                let content_end = last_content.map_or(line_start * cols, |i| i + 1);
+                let line_begin = line_start * cols;
+
+                if content_end > line_begin || line_end == line_start + 1 {
+                    let mut col_in_row = 0usize;
+                    let mut idx = line_begin;
+                    while idx < content_end {
+                        // Never split a wide grapheme across a fold: if this cell
+                        // owns a following continuation cell, push both.
+                        let cell_width = cells[idx].width;
+                        push_cell(&cells[idx], &clusters, &mut out_cells, &mut out_clusters);
+                        idx += 1;
+                        if cell_width == 2 && idx < content_end {
+                            push_cell(&cells[idx], &clusters, &mut out_cells, &mut out_clusters);
+                            idx += 1;
+                        }
+                        col_in_row += 1;
+                        if col_in_row == fold_width {
+                            row_offsets.push(out_cells.len() as u32);
+                            col_in_row = 0;
+                        }
+                    }
+                    if col_in_row > 0 {
+                        row_offsets.push(out_cells.len() as u32);
+                    }
+                }
+
+                row = line_end;
+            }
+
+            // Guarantee at least one row so the buffer is never empty.
+            if row_offsets.len() == 1 {
+                row_offsets.push(0);
+            }
+
+            (
+                cells,
+                clusters,
+                out_cells,
+                out_clusters,
+                row_offsets,
+                cols,
+                rows,
+            )
+        };
+        cells.clear();
+        clusters.clear();
+        drop((cells, clusters));
+
+        let display_rows = (row_offsets.len() - 1) as u16;
+        let cell_count = out_cells.len();
+        Self::into_display_row_buffer(
+            out_cells,
+            out_clusters,
+            row_offsets,
+            cell_count,
+            display_cols,
+            display_rows,
+            cols as u16,
+            rows as u16,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn into_display_row_buffer(
+        mut cells: Vec<CellData>,
+        mut clusters: Vec<u8>,
+        mut row_offsets: Vec<u32>,
+        cell_count: usize,
+        display_cols: u16,
+        display_rows: u16,
+        source_cols: u16,
+        source_rows: u16,
+    ) -> DisplayRowBuffer {
+        let cells_ptr = cells.as_mut_ptr();
+        let cells_capacity = cells.capacity();
+        std::mem::forget(cells);
+
+        let clusters_len = clusters.len();
+        let clusters_capacity = clusters.capacity();
+        let clusters_ptr = if clusters_capacity == 0 {
+            std::ptr::null_mut()
+        } else {
+            let p = clusters.as_mut_ptr();
+            std::mem::forget(clusters);
+            p
+        };
+
+        let row_offsets_len = row_offsets.len();
+        let row_offsets_capacity = row_offsets.capacity();
+        let row_offsets_ptr = row_offsets.as_mut_ptr();
+        std::mem::forget(row_offsets);
+
+        DisplayRowBuffer {
+            cells: cells_ptr,
+            cells_capacity,
+            clusters_utf8: clusters_ptr,
+            clusters_len,
+            clusters_capacity,
+            row_offsets: row_offsets_ptr,
+            row_offsets_len,
+            row_offsets_capacity,
+            cell_count,
+            display_cols,
+            display_rows,
+            source_cols,
+            source_rows,
+        }
+    }
+
     /// Convert one Alacritty cell into the stable C representation shared by
     /// full and incremental snapshots.
     #[allow(clippy::too_many_arguments)]
     fn snapshot_cell(
         cell: &Cell,
         point: Point,
+        // True when this row is a soft-wrap continuation, i.e. the row *above*
+        // it ran out of width rather than ending with a newline. Derived from
+        // the previous line's WRAPLINE marker, not this line's.
+        row_is_continuation: bool,
         selection_range: Option<&SelectionRange>,
         theme: &ThemeColors,
         hyperlinks: &mut HyperlinkRegistry,
@@ -1633,6 +1872,14 @@ impl Chau7Terminal {
         let (mut fg_r, mut fg_g, mut fg_b) = color_to_rgb_with_theme(fg_color, true, theme);
         let (mut bg_r, mut bg_g, mut bg_b) = color_to_rgb_with_theme(cell.bg, false, theme);
         let flags = cell_flags_to_u8(cell.flags);
+        // The wrap marker is a property of the *row*, so it is set on the row's
+        // first cell only. Clients fold on logical lines by reading
+        // `cells[row * cols].flags & CELL_FLAG_WRAPPED`.
+        let flags = if row_is_continuation && point.column.0 == 0 {
+            flags | CELL_FLAG_WRAPPED
+        } else {
+            flags
+        };
         let link_id = cell
             .hyperlink()
             .map(|hyperlink| hyperlinks.id_for_uri(hyperlink.uri()))
@@ -1715,12 +1962,17 @@ impl Chau7Terminal {
             //   When display_offset == 0, this simplifies to Line(0)..Line(rows-1).
             for line_idx in 0..rows {
                 let line = Line(line_idx as i32 - display_offset as i32);
+                // A row continues the line above when the *previous* line carried
+                // the WRAPLINE marker on its last cell.
+                let row_is_continuation =
+                    line_idx > 0 && Self::grid_line_wraps(grid, Line(line.0 - 1));
                 for col_idx in 0..cols {
                     let point = Point::new(line, Column(col_idx));
                     let cell = &grid[point];
                     cells.push(Self::snapshot_cell(
                         cell,
                         point,
+                        row_is_continuation,
                         selection_range.as_ref(),
                         &theme,
                         &mut hyperlinks,
@@ -1864,11 +2116,13 @@ impl Chau7Terminal {
             for row in dirty.rows.iter().copied() {
                 row_indices.push(row as u16);
                 let line = Line(row as i32 - display_offset as i32);
+                let row_is_continuation = row > 0 && Self::grid_line_wraps(grid, Line(line.0 - 1));
                 for col in 0..cols {
                     let point = Point::new(line, Column(col));
                     cells.push(Self::snapshot_cell(
                         &grid[point],
                         point,
+                        row_is_continuation,
                         selection_range.as_ref(),
                         &theme,
                         &mut hyperlinks,
@@ -3008,6 +3262,30 @@ impl Chau7Terminal {
                 .contains(CellFlags::WRAPLINE)
     }
 
+    /// Whether the first cell of source row `row` carries the engine's
+    /// soft-wrap marker, i.e. that row continues the logical line above it.
+    fn is_continuation_cell(cells: &[CellData], row: usize, cols: usize) -> bool {
+        if row == 0 || cols == 0 {
+            return false;
+        }
+        let index = row * cols;
+        match cells.get(index) {
+            Some(cell) => cell.flags & CELL_FLAG_WRAPPED != 0,
+            None => false,
+        }
+    }
+
+    /// A cell counts as blank padding when it holds no cluster or holds a plain
+    /// space. Such cells are trimmed from the end of a logical line so a short
+    /// line in a wide grid does not inflate the display height.
+    fn cell_is_space(cell: &CellData, clusters: &[u8]) -> bool {
+        if cell.cluster_len != 1 {
+            return false;
+        }
+        let start = cell.cluster_offset as usize;
+        matches!(clusters.get(start), Some(b' '))
+    }
+
     fn grid_column_utf16_offset(
         grid: &alacritty_terminal::grid::Grid<Cell>,
         line: Line,
@@ -3171,6 +3449,234 @@ impl Drop for Chau7Terminal {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The fold must produce display rows a narrow client can paint directly:
+    /// folded on *logical* lines, trailing padding trimmed, and never splitting a
+    /// wide grapheme across a fold boundary.
+    mod display_row_fold {
+        use super::*;
+        use crate::types::DisplayRowBuffer;
+
+        /// Read a folded buffer back as plain text, one String per display row.
+        fn folded_text(buffer: &DisplayRowBuffer, clusters: &[u8]) -> Vec<String> {
+            let mut rows = Vec::with_capacity(buffer.display_rows as usize);
+            let offsets =
+                unsafe { std::slice::from_raw_parts(buffer.row_offsets, buffer.row_offsets_len) };
+            for r in 0..buffer.display_rows as usize {
+                let begin = offsets[r] as usize;
+                let end = offsets[r + 1] as usize;
+                let mut line = String::new();
+                for i in begin..end {
+                    let cell = unsafe { &*buffer.cells.add(i) };
+                    if cell.cluster_len == 0 || cell.continuation != 0 {
+                        continue;
+                    }
+                    let start = cell.cluster_offset as usize;
+                    let stop = start + cell.cluster_len as usize;
+                    line.push_str(&String::from_utf8_lossy(&clusters[start..stop]));
+                }
+                rows.push(line);
+            }
+            rows
+        }
+
+        fn fold(term: &Chau7Terminal, display_cols: u16) -> (DisplayRowBuffer, Vec<u8>) {
+            let buffer = term.get_display_rows(display_cols);
+            let clusters = if buffer.clusters_utf8.is_null() {
+                Vec::new()
+            } else {
+                unsafe {
+                    std::slice::from_raw_parts(buffer.clusters_utf8, buffer.clusters_len).to_vec()
+                }
+            };
+            (buffer, clusters)
+        }
+
+        fn release(buffer: &mut DisplayRowBuffer) {
+            unsafe {
+                crate::ffi::chau7_terminal_free_display_rows(Box::into_raw(Box::new(
+                    std::mem::replace(
+                        buffer,
+                        DisplayRowBuffer {
+                            cells: std::ptr::null_mut(),
+                            cells_capacity: 0,
+                            clusters_utf8: std::ptr::null_mut(),
+                            clusters_len: 0,
+                            clusters_capacity: 0,
+                            row_offsets: std::ptr::null_mut(),
+                            row_offsets_len: 0,
+                            row_offsets_capacity: 0,
+                            cell_count: 0,
+                            display_cols: 0,
+                            display_rows: 0,
+                            source_cols: 0,
+                            source_rows: 0,
+                        },
+                    ),
+                )));
+            }
+        }
+
+        #[test]
+        fn soft_wrapped_prose_folds_as_one_logical_line() {
+            // 20-column source, 40 columns of text: the terminal soft-wraps it
+            // across two physical rows. Folding to 10 must re-wrap the *logical*
+            // line into four continuous display rows, not two rows each cut at
+            // the physical boundary.
+            let term = Chau7Terminal::new_headless(20, 6).expect("create headless terminal");
+            let text = "abcdefghijklmnopqrstuvwxyz0123456789";
+            term.inject_output(text.as_bytes());
+
+            let (mut buffer, clusters) = fold(&term, 10);
+            let rows = folded_text(&buffer, &clusters);
+            let joined: String = rows.concat();
+
+            assert_eq!(joined, text, "folding must not lose or reorder content");
+            assert_eq!(buffer.display_rows, 4, "40 columns at 10 wide is 4 rows");
+            release(&mut buffer);
+        }
+
+        #[test]
+        fn fold_ignores_physical_row_boundaries() {
+            // The distinction that matters. With a display width that does not
+            // divide the source width, folding each *physical* row separately
+            // would break the display rows at column 20; folding the logical
+            // line keeps filling to the display width across that boundary.
+            // 20 -> 7: logical gives rows of 7,7,7,7,7,5; physical would give
+            // 7,7,6,7,7,6, cutting mid-word at the terminal's own wrap point.
+            let term = Chau7Terminal::new_headless(20, 6).expect("create headless terminal");
+            let text = "abcdefghijklmnopqrstuvwxyz0123456789";
+            term.inject_output(text.as_bytes());
+
+            let (mut buffer, clusters) = fold(&term, 7);
+            let rows = folded_text(&buffer, &clusters);
+
+            let expected: Vec<String> = text
+                .as_bytes()
+                .chunks(7)
+                .map(|c| String::from_utf8_lossy(c).to_string())
+                .collect();
+            assert_eq!(
+                rows, expected,
+                "display rows must fill to the display width across the source wrap point"
+            );
+            // Row 2 spans source columns 14..=20, crossing the terminal's own
+            // 20-column wrap point. A per-physical-row fold would stop at 19 and
+            // emit a 6-character row here instead.
+            assert_eq!(
+                rows[2], "opqrstu",
+                "row 2 must continue past the physical row end"
+            );
+            release(&mut buffer);
+        }
+
+        #[test]
+        fn trailing_padding_does_not_inflate_height() {
+            // A 20-column grid with one short line: folding must not emit rows
+            // of mostly padding.
+            let term = Chau7Terminal::new_headless(20, 4).expect("create headless terminal");
+            term.inject_output(b"hi");
+
+            let (mut buffer, clusters) = fold(&term, 10);
+            let rows = folded_text(&buffer, &clusters);
+
+            assert_eq!(
+                rows.iter().filter(|r| !r.is_empty()).count(),
+                1,
+                "a short line must occupy exactly one non-empty display row"
+            );
+            assert!(
+                buffer.display_rows < 4,
+                "trailing padding must be trimmed, got {} rows",
+                buffer.display_rows
+            );
+            release(&mut buffer);
+        }
+
+        #[test]
+        fn newline_separated_lines_stay_separate() {
+            let term = Chau7Terminal::new_headless(20, 4).expect("create headless terminal");
+            term.inject_output(b"one\r\ntwo");
+
+            let (mut buffer, clusters) = fold(&term, 10);
+            let rows: Vec<String> = folded_text(&buffer, &clusters)
+                .into_iter()
+                .filter(|r| !r.is_empty())
+                .collect();
+
+            assert_eq!(rows, vec!["one".to_string(), "two".to_string()]);
+            release(&mut buffer);
+        }
+
+        #[test]
+        fn display_wider_than_source_is_one_to_one() {
+            let term = Chau7Terminal::new_headless(20, 4).expect("create headless terminal");
+            term.inject_output(b"0123456789012345");
+
+            let (mut buffer, clusters) = fold(&term, 40);
+            let rows = folded_text(&buffer, &clusters);
+
+            assert_eq!(buffer.display_cols, 40);
+            assert_eq!(rows[0], "0123456789012345");
+            release(&mut buffer);
+        }
+    }
+
+    /// A grid snapshot must mark rows that soft-wrap from the row above.
+    ///
+    /// Clients re-composing a wide grid onto a narrow display fold on logical
+    /// lines. Folding physical rows independently instead chops soft-wrapped
+    /// prose mid-sentence at every fold, so this bit is the difference between
+    /// readable output and fragmented output.
+    mod wrapped_row_flag {
+        use super::*;
+        use crate::types::CELL_FLAG_WRAPPED;
+
+        fn row_is_wrapped(snapshot: &GridSnapshot, cols: usize, row: usize) -> bool {
+            // Safety: the snapshot owns `cols * rows` cells; callers pass row
+            // indices within that range.
+            unsafe { (*snapshot.cells.add(row * cols)).flags & CELL_FLAG_WRAPPED != 0 }
+        }
+
+        #[test]
+        fn soft_wrapped_row_is_marked() {
+            let term = Chau7Terminal::new_headless(20, 4).expect("create headless terminal");
+            // 45 chars into a 20-column terminal: rows 1 and 2 are soft-wrap
+            // continuations of the line that began on row 0.
+            term.inject_output(b"123456789012345678901234567890123456789012345\r\nnext");
+
+            let snapshot = term.get_grid_snapshot();
+            let cols = snapshot.cols as usize;
+
+            assert!(
+                !row_is_wrapped(&snapshot, cols, 0),
+                "the first row never continues a previous line"
+            );
+            assert!(
+                row_is_wrapped(&snapshot, cols, 1),
+                "row 1 continues row 0 after 20 columns"
+            );
+            assert!(
+                row_is_wrapped(&snapshot, cols, 2),
+                "row 2 continues row 1 after 40 columns"
+            );
+        }
+
+        #[test]
+        fn newline_started_row_is_not_marked() {
+            let term = Chau7Terminal::new_headless(20, 4).expect("create headless terminal");
+            term.inject_output(b"short\r\nalso short");
+
+            let snapshot = term.get_grid_snapshot();
+            let cols = snapshot.cols as usize;
+
+            assert!(!row_is_wrapped(&snapshot, cols, 0));
+            assert!(
+                !row_is_wrapped(&snapshot, cols, 1),
+                "a row that begins after a newline is not a soft-wrap continuation"
+            );
+        }
+    }
 
     /// -----------------------------------------------------------------
     /// Hyperlink registry bound

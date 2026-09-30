@@ -59,6 +59,7 @@ struct StateSnapshot: Codable {
     }
 
     /// Creates a snapshot of the current app state
+    @MainActor
     static func capture(from appModel: AppModel?, overlayModel: OverlayTabsModel?) -> StateSnapshot {
         let processInfo = ProcessInfo.processInfo
 
@@ -242,7 +243,7 @@ final class BugReporter {
     }
 
     private func makeReportPayload(userDescription: String) -> (snapshot: StateSnapshot, report: String) {
-        let snapshot = StateSnapshot.capture(from: appModel, overlayModel: overlayModel)
+        let snapshot = MainActorBridge.sync { StateSnapshot.capture(from: self.appModel, overlayModel: self.overlayModel) }
         let bodyDescription = userDescription.isEmpty ? "(No description provided)" : userDescription
 
         var report = """

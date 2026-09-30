@@ -58,12 +58,23 @@ final class RuntimeSessionManager {
 
     private init() {}
 
+    /// Runtime monitor callbacks can arrive off-main. Access the UI-owned
+    /// control plane without changing the registry's lock-based ownership.
+    private func onMainActor<T>(_ block: @MainActor () -> T) -> T {
+        if Thread.isMainThread {
+            return MainActor.assumeIsolated(block)
+        }
+        return DispatchQueue.main.sync {
+            MainActor.assumeIsolated(block)
+        }
+    }
+
     /// Unified attribution resolver — replaces the scatter of session/tab
     /// matching logic that produced today's leak chain. Migration is
     /// incremental: this commit migrates only `tryAdoptFromEvent`; remaining
     /// callers still go through the legacy resolvers.
     private lazy var tabAttribution = TabAttribution {
-        TerminalControlService.shared.routingRecords()
+        self.onMainActor { TerminalControlService.shared.routingRecords() }
     }
 
     // MARK: - Session Creation
@@ -294,7 +305,7 @@ final class RuntimeSessionManager {
     }
 
     private func tabExistsLocked(_ tabID: UUID) -> Bool {
-        TerminalControlService.shared.routingRecords().contains { $0.tabID == tabID }
+        onMainActor { TerminalControlService.shared.routingRecords() }.contains { $0.tabID == tabID }
     }
 
     func allSessions(includeStopped: Bool = false) -> [RuntimeSession] {
@@ -437,9 +448,9 @@ final class RuntimeSessionManager {
                 let toolCorrelationID = currentToolCorrelationID(sessionID: session.id, turnID: session.currentTurnID)
                 let ownsUserFacingNotifications = session.backend.name.lowercased() == "claude"
                 if let policyError = session.config.policy.validateTool(event.toolName) {
-                    _ = TerminalControlService.shared.sendInput(
+                    _ = onMainActor { TerminalControlService.shared.sendInput(
                         tabID: session.tabID.uuidString, input: "n\n"
-                    )
+                    ) }
                     session.recordPolicyBlock(tool: event.toolName, reason: policyError)
                     if !ownsUserFacingNotifications {
                         emitNotification(session: session, type: "policy_blocked", message: policyError)
@@ -447,9 +458,9 @@ final class RuntimeSessionManager {
                 } else if session.autoApprove {
                     // Layer 2: auto-respond to permission requests that bypass Layer 1
                     // (Layer 1 is the CLI flag like --full-auto / --dangerously-skip-permissions)
-                    _ = TerminalControlService.shared.sendInput(
+                    _ = onMainActor { TerminalControlService.shared.sendInput(
                         tabID: session.tabID.uuidString, input: "y\n"
-                    )
+                    ) }
                     Log.info("Auto-approved permission for session \(session.id): \(event.toolName) — \(event.message)")
                     if !ownsUserFacingNotifications {
                         emitNotification(session: session, type: "permission_auto_approved", message: event.message)
@@ -614,7 +625,7 @@ final class RuntimeSessionManager {
         let controlService = TerminalControlService.shared
         for session in activeSessions where !session.isTerminal {
             // Use tab_status to check if tab still exists
-            let status = controlService.tabStatus(tabID: session.tabID.uuidString)
+            let status = onMainActor { controlService.tabStatus(tabID: session.tabID.uuidString) }
             if status.contains("\"error\"") {
                 // Tab no longer exists
                 session.journal.append(
@@ -648,11 +659,11 @@ final class RuntimeSessionManager {
         lock.unlock()
 
         if let normalizedClaudeSessionID, let exactSession {
-            if TerminalControlService.shared.hasConflictingLiveAIIdentity(
+            if onMainActor({ TerminalControlService.shared.hasConflictingLiveAIIdentity(
                 tabID: exactSession.tabID,
                 incomingProvider: "Claude",
                 incomingSessionID: normalizedClaudeSessionID
-            ) {
+            ) }) {
                 invalidateStaleClaudeBinding(
                     session: exactSession,
                     claudeSessionID: normalizedClaudeSessionID
@@ -934,11 +945,11 @@ final class RuntimeSessionManager {
         guard let tabID = UUID(uuidString: trimmed), tabExistsLocked(tabID) else {
             return nil
         }
-        guard !TerminalControlService.shared.hasConflictingLiveAIIdentity(
+        guard !onMainActor({ TerminalControlService.shared.hasConflictingLiveAIIdentity(
             tabID: tabID,
             incomingProvider: "Claude",
             incomingSessionID: nil
-        ) else {
+        ) }) else {
             return nil
         }
         return tabID
@@ -980,8 +991,8 @@ final class RuntimeSessionManager {
         case let .ambiguous(candidates, _):
             // Pure resolver can't choose — consult live process tree to pick
             // the tab whose shell actually has claude running.
-            if let disambiguated = TerminalControlService.shared
-                .disambiguateClaudeTabsByProcessTree(candidates: candidates) {
+            if let disambiguated = onMainActor({ TerminalControlService.shared
+                    .disambiguateClaudeTabsByProcessTree(candidates: candidates) }) {
                 return disambiguated
             }
             recordAdoptionFailure(cacheKey)
@@ -1039,14 +1050,14 @@ final class RuntimeSessionManager {
 
     private func listAITabs() -> [AITabSummary] {
         let controlService = TerminalControlService.shared
-        let tabsJSON = controlService.listTabs()
+        let tabsJSON = onMainActor { controlService.listTabs() }
         guard let data = tabsJSON.data(using: .utf8),
               let tabs = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else {
             return []
         }
         return tabs.compactMap { tab in
             guard let tabIDStr = tab["tab_id"] as? String,
-                  let uuid = controlService.resolveControlPlaneTabID(tabIDStr) else {
+                  let uuid = onMainActor({ controlService.resolveControlPlaneTabID(tabIDStr) }) else {
                 return nil
             }
             let provider = AIResumeParser.normalizeProviderName(
@@ -1068,13 +1079,13 @@ final class RuntimeSessionManager {
     /// Capture recent terminal output for a session's tab.
     private func captureOutput(for session: RuntimeSession) -> String? {
         let controlService = TerminalControlService.shared
-        let result = controlService.tabOutput(
+        let result = onMainActor { controlService.tabOutput(
             tabID: session.tabID.uuidString,
             // Bounded pty_log read: a 100k scrollback setting must not balloon
             // this transient capture; 5000 lines is ample agent context.
             lines: ScrollbackRetentionPolicy.trackerEntryCap(configuredLines: max(FeatureSettings.shared.scrollbackLines, 5000)),
             source: "pty_log"
-        )
+        ) }
         guard let data = result.data(using: .utf8),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let output = json["output"] as? String else {

@@ -49,7 +49,7 @@ extension OverlayTabsModel {
         return map
     }
 
-    static func estimatedRestorePayloadBytes(for state: SavedTabState) -> Int {
+    nonisolated static func estimatedRestorePayloadBytes(for state: SavedTabState) -> Int {
         var total = 0
         total += stringPayloadBytes(state.tabID)
         total += stringPayloadBytes(state.selectedTabID)
@@ -73,7 +73,7 @@ extension OverlayTabsModel {
         return total
     }
 
-    static func estimatedRestorePayloadBytes(for pane: SavedTerminalPaneState) -> Int {
+    nonisolated static func estimatedRestorePayloadBytes(for pane: SavedTerminalPaneState) -> Int {
         var total = 0
         total += stringPayloadBytes(pane.paneID)
         total += stringPayloadBytes(pane.directory)
@@ -88,7 +88,7 @@ extension OverlayTabsModel {
         return total
     }
 
-    private static func stringPayloadBytes(_ value: String?) -> Int {
+    private nonisolated static func stringPayloadBytes(_ value: String?) -> Int {
         value?.utf8.count ?? 0
     }
 
@@ -343,7 +343,7 @@ extension OverlayTabsModel {
         TabStateBackupStore.restoreAdditionalWindowStatesFromBackups()
     }
 
-    static func decodeBackupWindowStates(from data: Data) -> [[SavedTabState]]? {
+    nonisolated static func decodeBackupWindowStates(from data: Data) -> [[SavedTabState]]? {
         TabStateBackupStore.decodeBackupWindowStates(from: data)
     }
 

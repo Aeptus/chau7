@@ -112,6 +112,7 @@ struct RemoteStreamingPerformanceSnapshot: Equatable {
     let averageGridDecodeMs: Double
     let averagePublishMs: Double
     let supersededGridFrames: Int
+    let evictedOutputFrames: Int
     let outputRecoveryCount: Int
     let maxSenderBatchMs: Double
     let maxEstimatedCaptureToReceiveMs: Double
@@ -155,6 +156,7 @@ struct RemoteStreamingPerformanceWindow {
     private var publishMs = 0.0
     private var publishCount = 0
     private var supersededGridFrames = 0
+    private var evictedOutputFrames = 0
     private var outputRecoveryCount = 0
     private var maxSenderBatchMs = 0.0
     private var maxEstimatedCaptureToReceiveMs = 0.0
@@ -181,13 +183,15 @@ struct RemoteStreamingPerformanceWindow {
         bytes: Int,
         queueAgeMs: Double,
         receiveToApplyMs: Double,
-        supersededGrids: Int
+        supersededGrids: Int,
+        evictedOutput: Int
     ) {
         frameCount += 1
         self.bytes += bytes
         maxQueueAgeMs = max(maxQueueAgeMs, queueAgeMs)
         maxReceiveToApplyMs = max(maxReceiveToApplyMs, receiveToApplyMs)
         supersededGridFrames += supersededGrids
+        evictedOutputFrames += evictedOutput
         switch admission {
         case .admitted:
             admittedFrameCount += 1
@@ -270,6 +274,7 @@ struct RemoteStreamingPerformanceWindow {
             averageGridDecodeMs: gridDecodeCount == 0 ? 0 : gridDecodeMs / Double(gridDecodeCount),
             averagePublishMs: publishCount == 0 ? 0 : publishMs / Double(publishCount),
             supersededGridFrames: supersededGridFrames,
+            evictedOutputFrames: evictedOutputFrames,
             outputRecoveryCount: outputRecoveryCount,
             maxSenderBatchMs: maxSenderBatchMs,
             maxEstimatedCaptureToReceiveMs: maxEstimatedCaptureToReceiveMs,
@@ -305,6 +310,27 @@ struct RemoteInboundMessage: Sendable, Equatable {
     var isOutput: Bool {
         data.count > 1 && data[data.startIndex + 1] == RemoteFrameType.output.rawValue
     }
+
+    /// Whether this frame's bytes can be dropped to keep the queue bounded.
+    ///
+    /// Only output whose *visual application has already been abandoned* is
+    /// eligible: it still has to be decrypted and admitted in sequence, but it
+    /// no longer has to be buffered, and a checkpoint recovery follows the
+    /// drain. Anything still being applied to the UI is never dropped.
+    var isEvictableOutput: Bool {
+        isOutput && suppressOutputApplication
+    }
+}
+
+/// Frames the receive queue has shed since the previous observation.
+struct QueueShedCounts: Equatable, Sendable {
+    /// Full-grid snapshots replaced by a newer one (replaceable state).
+    let supersededGrids: Int
+    /// Output frames dropped after their visual application was already
+    /// abandoned in favour of a checkpoint recovery.
+    let evictedOutput: Int
+
+    static let none = QueueShedCounts(supersededGrids: 0, evictedOutput: 0)
 }
 
 /// Bounded application-side receive queue. Control and output frames remain
@@ -316,6 +342,9 @@ struct RemoteInboundMessageQueue {
     private(set) var bufferedBytes = 0
     private(set) var supersededGridFrames = 0
     private(set) var outputRecoveryPending = false
+    /// Output frames dropped to keep the queue bounded. Their visual content
+    /// was already being discarded in favour of a checkpoint recovery.
+    private(set) var evictedOutputFrames = 0
     let maxBufferedBytes: Int
 
     init(maxBufferedBytes: Int = 2 * 1024 * 1024) {
@@ -366,6 +395,26 @@ struct RemoteInboundMessageQueue {
                 messages[index].suppressOutputApplication = true
             }
         }
+
+        // A suppressed output frame has already had its visual application
+        // abandoned, and a checkpoint follows the drain, so the *bytes* are no
+        // longer worth holding: they still have to be admitted in sequence, but
+        // they do not have to be buffered to do that.
+        //
+        // Without this the "bound" was only advisory. Grids are the first thing
+        // shed, but once they are gone nothing was ever removed, so a `cat` of
+        // a large file (or a relay replaying captured output) grew
+        // `bufferedBytes` without limit until the process was jetsammed. A
+        // frame must be fully suppressed before it is eligible, so nothing
+        // user-visible is ever dropped to save memory.
+        //
+        // Control frames are never shed: they carry session events with no
+        // checkpoint equivalent.
+        while bufferedBytes > maxBufferedBytes,
+              let index = messages.firstIndex(where: \.isEvictableOutput) {
+            bufferedBytes -= messages.remove(at: index).data.count
+            evictedOutputFrames += 1
+        }
     }
 
     mutating func popFirst() -> RemoteInboundMessage? {
@@ -375,9 +424,16 @@ struct RemoteInboundMessageQueue {
         return message
     }
 
-    mutating func takeSupersededGridCount() -> Int {
-        defer { supersededGridFrames = 0 }
-        return supersededGridFrames
+    /// Snapshot-and-clear the frame counts shed since the last call.
+    mutating func takeShedCounts() -> QueueShedCounts {
+        defer {
+            supersededGridFrames = 0
+            evictedOutputFrames = 0
+        }
+        return QueueShedCounts(
+            supersededGrids: supersededGridFrames,
+            evictedOutput: evictedOutputFrames
+        )
     }
 
     mutating func takeOutputRecoverySignalIfDrained() -> Bool {
@@ -391,6 +447,7 @@ struct RemoteInboundMessageQueue {
         bufferedBytes = 0
         supersededGridFrames = 0
         outputRecoveryPending = false
+        evictedOutputFrames = 0
     }
 }
 
@@ -417,7 +474,7 @@ final class RemoteTransport {
 
     /// Awaited serially by the application-queue drain. Queue age/depth and
     /// superseded-grid count feed streaming performance diagnostics.
-    var onMessage: (@MainActor (RemoteInboundMessage, Int) async -> Void)?
+    var onMessage: (@MainActor (RemoteInboundMessage, QueueShedCounts) async -> Void)?
     /// A receive failure for the current generation (stale-generation
     /// failures are swallowed — the socket they belonged to is gone).
     var onFailure: (@MainActor (Error) -> Void)?
@@ -522,8 +579,8 @@ final class RemoteTransport {
             guard let self else { return }
             while !Task.isCancelled, let message = self.inboundQueue.popFirst() {
                 guard message.generation == self.generation else { continue }
-                let supersededGrids = self.inboundQueue.takeSupersededGridCount()
-                await self.onMessage?(message, supersededGrids)
+                let shed = self.inboundQueue.takeShedCounts()
+                await self.onMessage?(message, shed)
                 guard message.generation == self.generation else { return }
             }
             self.drainTask = nil

@@ -6,6 +6,7 @@ import XCTest
 /// CloseDirtyEditorPolicyTests; these tests pin the work-item scheduling
 /// contract — schedule supersedes, cancel skips the run — without the
 /// model in the picture.
+@MainActor
 final class EditorAutoSaverTests: XCTestCase {
 
     func testScheduledWorkRunsAfterDelay() {

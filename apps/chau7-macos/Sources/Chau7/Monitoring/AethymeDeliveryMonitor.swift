@@ -58,7 +58,7 @@ final class AethymeDeliveryMonitor {
     }
 
     private func liveRepositoryRoots() -> [String] {
-        let summaries = TerminalControlService.shared.liveTabSummaries()
+        let summaries = MainActorBridge.sync { TerminalControlService.shared.liveTabSummaries() }
         let roots = summaries.compactMap { $0["repo_root"] as? String }.filter { !$0.isEmpty }
         return Array(Set(roots.map(canonicalPath))).sorted()
     }
@@ -114,11 +114,11 @@ final class AethymeDeliveryMonitor {
             }
 
             let prompt = "[Aethyme delivery #\(envelope.item.id)]\n\(envelope.prompt)"
-            switch TerminalControlService.shared.deliverAethymePrompt(
+            switch MainActorBridge.sync { TerminalControlService.shared.deliverAethymePrompt(
                 target: target,
                 repositoryRoot: repositoryRoot,
                 prompt: prompt
-            ) {
+            ) } {
             case .ready:
                 complete(
                     envelope: envelope,

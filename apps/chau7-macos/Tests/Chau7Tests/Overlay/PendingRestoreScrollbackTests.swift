@@ -8,6 +8,7 @@ import XCTest
 /// clears. Both the interactive (selected) and background/deferred restore
 /// profiles reach this single metadata-apply site, so covering it here covers
 /// both paths.
+@MainActor
 final class PendingRestoreScrollbackTests: XCTestCase {
 
     /// A restored pane carrying non-empty scrollback content leaves it on the

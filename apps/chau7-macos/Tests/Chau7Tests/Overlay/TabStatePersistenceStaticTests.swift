@@ -2,13 +2,14 @@ import XCTest
 @testable import Chau7
 
 /// SPM-runnable tests for the static persistence helpers on `OverlayTabsModel`.
-/// These helpers are pure (no instance state, no main-actor dependency), so they
-/// can run via `swift test` and form a regression safety net before the W3.25
+/// These helpers have no instance state and follow OverlayTabsModel actor ownership.
+/// They run via `swift test` and form a regression safety net before the W3.25
 /// extraction passes touch any of the surrounding code.
 ///
 /// The instance-level tests live in `OverlayTabsModelTests.swift` (Xcode-only
 /// because they exercise tab/session construction that depends on AppKit-bound
 /// types not visible across the SPM test boundary).
+@MainActor
 final class TabStatePersistenceStaticTests: XCTestCase {
     override func setUp() {
         super.setUp()

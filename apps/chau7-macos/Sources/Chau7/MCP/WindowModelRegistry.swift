@@ -9,6 +9,7 @@ import Foundation
 /// Threading: main-thread confined, exactly like the state it replaced —
 /// registration happens from AppDelegate (main thread) and lookups run inside
 /// `TerminalControlService`'s main-queue hops.
+@MainActor
 final class WindowModelRegistry {
     /// Weak wrapper with a stable ID so window_id doesn't shift when models deallocate.
     private struct WeakModel {

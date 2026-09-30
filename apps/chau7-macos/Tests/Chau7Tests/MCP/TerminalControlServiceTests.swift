@@ -41,6 +41,25 @@ final class TerminalControlServiceTests: XCTestCase {
         super.tearDown()
     }
 
+    func testBackgroundReadinessWaitAllowsWindowUnregistration() async throws {
+        let session = try XCTUnwrap(overlayModel.tabs.first?.session)
+        session.status = .running
+        session.isAtPrompt = false
+        session.isShellLoading = false
+        let tabID = overlayModel.selectedTabID.uuidString
+        let service = TerminalControlService.shared
+
+        let waiting = Task.detached {
+            service.waitForTabReady(tabID: tabID, timeoutMs: 2000)
+        }
+        try await Task.sleep(for: .milliseconds(50))
+        service.unregister(overlayModel)
+        let response = await waiting.value
+        let json = try XCTUnwrap(parseJSONObject(response))
+
+        XCTAssertEqual(json["error"] as? String, "Tab not found: \(tabID)")
+    }
+
     func testTabStatusUsesEffectiveStateForAutomation() throws {
         let session = try XCTUnwrap(overlayModel.tabs.first?.session)
         session.status = .running

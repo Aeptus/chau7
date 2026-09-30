@@ -11,17 +11,28 @@ import UIKit
 
 private struct RemoteTerminalEngineSnapshot: Sendable {
     let state: RemoteTerminalRenderState?
+    /// Rows already folded to the phone's width by the engine, when a fold is
+    /// actually needed. nil means "paint the grid as-is" (1:1) or that the engine
+    /// could not fold, in which case the canvas falls back to folding in Swift.
+    let display: RemoteTerminalDisplayState?
     let isAvailable: Bool
     let frameTrace: RemoteTerminalFrameTrace?
 }
 
 private actor RemoteTerminalRenderEngine {
     private static let maxReplayBytesPerTab = 400_000
+    /// How far below the cap a replay buffer is trimmed when it overflows, so
+    /// the (unavoidable) copy is amortised instead of running every frame.
+    private static let replayTrimHeadroomBytes = 100_000
 
     private var playbacks: [UInt32: RemoteRustTerminalPlayback] = [:]
     private var replayByTabID: [UInt32: Data] = [:]
     private var viewportCols = 0
     private var viewportRows = 0
+    /// Source (Mac PTY) width per tab, announced in the tab inventory. The
+    /// engine ingests at this width so the TUI is not hard-wrapped at the
+    /// phone's narrower viewport; the canvas re-wraps it for display.
+    private var sourceColsByTabID: [UInt32: Int] = [:]
     private var colorScheme: TerminalColorScheme
     private var isAvailable = true
     private var unpresentedTraceByTabID: [UInt32: RemoteTerminalFrameTrace] = [:]
@@ -35,6 +46,7 @@ private actor RemoteTerminalRenderEngine {
         replayByTabID.removeAll()
         viewportCols = 0
         viewportRows = 0
+        sourceColsByTabID.removeAll()
         self.colorScheme = colorScheme
         isAvailable = true
         unpresentedTraceByTabID.removeAll()
@@ -58,8 +70,31 @@ private actor RemoteTerminalRenderEngine {
         guard cols != viewportCols || rows != viewportRows else { return }
         viewportCols = cols
         viewportRows = rows
-        for playback in playbacks.values {
-            playback.resize(cols: cols, rows: rows)
+        resizeEngines()
+    }
+
+    /// Records the Mac's PTY width for a tab and resizes that tab's engine to
+    /// ingest at it. Called when the tab inventory arrives or its width changes.
+    func setSourceColumns(_ cols: Int, for tabID: UInt32) {
+        let sanitized = max(0, cols)
+        guard sanitized != sourceColsByTabID[tabID] else { return }
+        sourceColsByTabID[tabID] = sanitized
+        resizeEngines()
+    }
+
+    /// Engine width is the source width when known, never the phone width —
+    /// ingesting wide TUI output into a narrow engine is what hard-wrapped and
+    /// scrambled it. Rows stay phone-driven so the visible screen height and the
+    /// scroll math keep matching the display.
+    private func resizeEngines() {
+        guard viewportCols > 0, viewportRows > 0 else { return }
+        for (tabID, playback) in playbacks {
+            let size = RemoteTerminalWrapGeometry.engineSize(
+                sourceCols: sourceColsByTabID[tabID] ?? 0,
+                displayCols: viewportCols,
+                displayRows: viewportRows
+            )
+            playback.resize(cols: size.cols, rows: size.rows)
         }
     }
 
@@ -71,7 +106,15 @@ private actor RemoteTerminalRenderEngine {
     func appendOutput(_ data: Data, for tabID: UInt32, trace: RemoteTerminalFrameTrace?) {
         let chunk = RemoteOutputTuning.capIncomingFrame(data)
         guard !chunk.isEmpty else { return }
-        appendReplayChunk(chunk, to: tabID)
+        // Only buffer a replay while there is no live playback to inject into.
+        // `ensurePlayback` is the only reader and short-circuits on a live
+        // playback, so appending while one exists was pure write amplification:
+        // once the buffer hit the cap, every single output frame re-copied all
+        // 400 KB (COW append + a full `Data.suffix` re-slice) for a buffer
+        // nothing would ever read.
+        if playbacks[tabID] == nil {
+            appendReplayChunk(chunk, to: tabID)
+        }
         playbacks[tabID]?.inject(chunk)
         if var trace {
             trace.engineAppliedAt = Date()
@@ -79,9 +122,9 @@ private actor RemoteTerminalRenderEngine {
         }
     }
 
-    func scroll(tabID: UInt32, to displayOffset: Int, scrollbackRows: Int) {
+    func scrollNormalized(tabID: UInt32, fraction: Double) {
         guard let playback = ensurePlayback(for: tabID) else { return }
-        playback.scrollTo(displayOffset: displayOffset, scrollbackRows: scrollbackRows)
+        playback.scrollToNormalized(fraction)
     }
 
     func snapshot(for tabID: UInt32) -> RemoteTerminalEngineSnapshot {
@@ -89,12 +132,24 @@ private actor RemoteTerminalRenderEngine {
         guard tabID != 0 else {
             return RemoteTerminalEngineSnapshot(
                 state: nil,
+                display: nil,
                 isAvailable: isAvailable,
                 frameTrace: frameTrace
             )
         }
+        let playback = ensurePlayback(for: tabID)
+        // Fold in the engine whenever it is wider than the phone, so the canvas
+        // paints rows that are already the right width. `viewportCols` is the
+        // phone's own width (the engine is sized to max(source, display)), which
+        // makes it exactly the fold target.
+        let display = playback.flatMap { playback in
+            viewportCols > 0 && viewportCols < playback.cols
+                ? playback.displayRows(displayCols: viewportCols)
+                : nil
+        }
         return RemoteTerminalEngineSnapshot(
-            state: ensurePlayback(for: tabID)?.snapshot(),
+            state: playback?.snapshot(),
+            display: display,
             isAvailable: isAvailable,
             frameTrace: frameTrace
         )
@@ -106,9 +161,14 @@ private actor RemoteTerminalRenderEngine {
             return playback
         }
         guard let replay = replayByTabID[tabID], !replay.isEmpty else { return nil }
+        let size = RemoteTerminalWrapGeometry.engineSize(
+            sourceCols: sourceColsByTabID[tabID] ?? 0,
+            displayCols: viewportCols,
+            displayRows: viewportRows
+        )
         guard let playback = RemoteRustTerminalPlayback(
-            cols: viewportCols,
-            rows: viewportRows,
+            cols: size.cols,
+            rows: size.rows,
             colorScheme: colorScheme
         ) else {
             isAvailable = false
@@ -121,12 +181,22 @@ private actor RemoteTerminalRenderEngine {
     }
 
     private func appendReplayChunk(_ chunk: Data, to tabID: UInt32) {
-        if var replay = replayByTabID[tabID] {
-            replay.append(chunk)
-            replayByTabID[tabID] = Self.boundedReplay(replay)
-        } else {
-            replayByTabID[tabID] = Self.boundedReplay(chunk)
+        // Mutate in place through the subscript. `if var replay = …; replay.append(…)
+        // replayByTabID[tabID] = …` holds a second reference to the buffer, so the
+        // append copies the whole thing, and the re-slice below copies it again.
+        replayByTabID[tabID, default: Data()].append(chunk)
+        guard let replay = replayByTabID[tabID], replay.count > Self.maxReplayBytesPerTab else { return }
+        // Trim to a low watermark instead of exactly to the cap, so the copy is
+        // amortised over many frames instead of running on every frame once the
+        // buffer is full.
+        let keep = Self.maxReplayBytesPerTab - Self.replayTrimHeadroomBytes
+        var tail = Data(replay.suffix(keep))
+        // Resync to a UTF-8 scalar boundary so the replay cannot start with a
+        // replacement character after a mid-sequence cut.
+        while let first = tail.first, first & 0xC0 == 0x80 {
+            tail = tail.dropFirst()
         }
+        replayByTabID[tabID] = tail
     }
 
     private static func boundedReplay(_ data: Data) -> Data {
@@ -166,6 +236,8 @@ private final class RemoteDisplayLinkPacer: NSObject {
 @Observable
 final class RemoteTerminalRendererStore {
     private(set) var renderState: RemoteTerminalRenderState?
+    /// Engine-folded rows for the active tab, when a fold is needed.
+    private(set) var displayState: RemoteTerminalDisplayState?
     private(set) var activeTabID: UInt32 = 0
     private(set) var isAvailable = true
     private(set) var colorScheme: TerminalColorScheme = AppSettings.currentColorScheme
@@ -221,6 +293,7 @@ final class RemoteTerminalRendererStore {
         }
         gridSnapshotByTabID.removeAll()
         renderState = nil
+        displayState = nil
         publishedTrace = nil
         pendingPresentationTrace = nil
         activeTabID = 0
@@ -255,6 +328,15 @@ final class RemoteTerminalRendererStore {
         guard cols > 0, rows > 0 else { return }
         enqueueMutation(publishFor: activeTabID) { engine in
             await engine.setViewport(cols: cols, rows: rows)
+        }
+    }
+
+    /// Announces the Mac PTY width for a tab so its engine ingests at that
+    /// width. Pass 0 when the inventory carries none (older Macs), which falls
+    /// the engine back to sizing to the phone viewport.
+    func setSourceColumns(_ cols: Int, for tabID: UInt32) {
+        enqueueMutation(publishFor: tabID) { engine in
+            await engine.setSourceColumns(cols, for: tabID)
         }
     }
 
@@ -298,11 +380,22 @@ final class RemoteTerminalRendererStore {
         presentationPacer.requestFrame()
     }
 
-    func scrollActive(to displayOffset: Int) {
-        guard activeTabID != 0, let state = renderState else { return }
+    /// Scrolls the active tab to a *fraction* of its scrollback.
+    ///
+    /// The fraction is computed by `RemoteTerminalScrollPolicy.displayOffset`
+    /// from the same numbers the scroll view used, and applied against the
+    /// engine's live `history_size` when the mutation actually runs. Passing an
+    /// absolute row count captured from the last published `renderState` was
+    /// wrong: the captured struct was also a value copy held across an `await`,
+    /// so by the time the mutation ran the Rust history had already grown and
+    /// the viewport landed further back than the user asked for — by an error
+    /// that grew the longer the session ran.
+    func scrollActive(toNormalized fraction: Double) {
+        guard activeTabID != 0, renderState != nil else { return }
         let tabID = activeTabID
+        let clamped = min(max(fraction, 0), 1)
         enqueueMutation(publishFor: tabID) { engine in
-            await engine.scroll(tabID: tabID, to: displayOffset, scrollbackRows: state.scrollbackRows)
+            await engine.scrollNormalized(tabID: tabID, fraction: clamped)
         }
     }
 
@@ -353,6 +446,10 @@ final class RemoteTerminalRendererStore {
                     self.publishedTrace = nil
                 }
                 self.renderState = snapshot.state ?? self.gridSnapshotByTabID[tabID]
+                // A nil display state means the grid is already phone-width, or
+                // the engine could not fold; the canvas then paints the grid
+                // directly rather than falling back to its own fold.
+                self.displayState = snapshot.display
             }
             let elapsed = startedAt.duration(to: .now)
             let milliseconds = Double(elapsed.components.seconds) * 1000

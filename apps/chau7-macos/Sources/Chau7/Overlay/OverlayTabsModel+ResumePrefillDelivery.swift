@@ -252,7 +252,7 @@ extension OverlayTabsModel {
     /// Empty in → empty out (a directory-less saved state is still a
     /// legitimate value; `URL(fileURLWithPath:).resolvingSymlinksInPath`
     /// on `""` would return `/`, conflating "no directory" with "root").
-    static func canonicalizeRestoreDirectory(_ raw: String) -> String {
+    nonisolated static func canonicalizeRestoreDirectory(_ raw: String) -> String {
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return "" }
         let expanded: String
@@ -266,7 +266,7 @@ extension OverlayTabsModel {
         return URL(fileURLWithPath: expanded).resolvingSymlinksInPath().path
     }
 
-    static func evaluateResumeRestoreIntent(
+    nonisolated static func evaluateResumeRestoreIntent(
         expectedDirectory: String,
         currentDirectory: String,
         expectedProvider: String?,
@@ -384,7 +384,7 @@ extension OverlayTabsModel {
         case preserveTerminalOutcome
     }
 
-    static func decideResumeRestoreDeliveryUpdate(
+    nonisolated static func decideResumeRestoreDeliveryUpdate(
         existing: ResumeRestoreDeliveryState?,
         newToken: String,
         newOutcome: ResumeRestoreDeliveryState.Outcome
@@ -530,7 +530,7 @@ extension OverlayTabsModel {
         let isFocusedPane: Bool
     }
 
-    static func normalizedResumeCommand(_ value: String?) -> String? {
+    nonisolated static func normalizedResumeCommand(_ value: String?) -> String? {
         guard let value else { return nil }
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
@@ -538,7 +538,7 @@ extension OverlayTabsModel {
         return trimmed
     }
 
-    static func isSafeResumeCommand(_ command: String) -> Bool {
+    nonisolated static func isSafeResumeCommand(_ command: String) -> Bool {
         if let sessionId = command.extractResumeSessionId(prefix: "claude --resume ") {
             return isValidSessionId(sessionId)
         }

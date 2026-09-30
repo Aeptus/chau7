@@ -18,6 +18,7 @@ import Chau7Core
 /// Gated on a env var so CI never runs it — it's a once-per-investigation
 /// gun we point at a specific machine. Set
 /// `CHAU7_RUN_RESUME_PROOF=1` to enable.
+@MainActor
 final class ReResolveResumeCommandIntegrationProof: XCTestCase {
 
     /// All-nil identity case: the tightened contract returns nil. Asserting

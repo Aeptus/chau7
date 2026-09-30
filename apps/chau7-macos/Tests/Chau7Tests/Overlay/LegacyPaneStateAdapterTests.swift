@@ -13,6 +13,7 @@ import XCTest
 /// Pre-W3.28.2 these adapters lived inline in restoreTabState (50 lines
 /// of struct copies). Extracting them lets us pin the rules with unit
 /// tests; W3.28.1 already extracted the executeRestore body.
+@MainActor
 final class LegacyPaneStateAdapterTests: XCTestCase {
 
     // MARK: - Single-pane adapter (paneStates missing)

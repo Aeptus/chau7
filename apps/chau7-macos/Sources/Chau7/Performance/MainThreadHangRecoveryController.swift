@@ -301,7 +301,6 @@ enum MainThreadHangWatchdogRunner {
         var lifetime = MainThreadHangWatchdogLifetime(startedAt: Date().timeIntervalSince1970)
 
         while parentIsAlive(command.parentPID) {
-            var shouldExit = false
             var healthy = false
             var capturedSampleNow = false
             var heartbeatReadable = true

@@ -36,9 +36,9 @@ final class Chau7StateSnapshotService {
                 "delivery_mode": Chau7MCPObserverContract.deliveryMode
             ],
             "runtime_info": observability.runtimeInfoPayload(),
-            "tabs": controlService.liveTabSummaries(),
-            "approvals": controlService.pendingApprovalSummaries(),
-            "repo_events": controlService.repoEventSnapshots(),
+            "tabs": MainActorBridge.sync { controlService.liveTabSummaries() },
+            "approvals": MainActorBridge.sync { controlService.pendingApprovalSummaries() },
+            "repo_events": MainActorBridge.sync { controlService.repoEventSnapshots() },
             "telemetry": [
                 "active_runs": queryService.currentRunObjects(),
                 "active_sessions": queryService.activeSessionObjects()

@@ -56,15 +56,15 @@ extension OverlayTabsModel {
     /// Provider/session-id normalization moved to `AIResumeIdentityResolver`;
     /// these forwarders keep the `OverlayTabsModel.<fn>` entry points stable
     /// for the save/restore paths and the test suite.
-    static func normalizedAIProvider(from value: String?) -> String? {
+    nonisolated static func normalizedAIProvider(from value: String?) -> String? {
         AIResumeIdentityResolver.normalizedAIProvider(from: value)
     }
 
-    static func normalizeAISessionId(_ sessionId: String?) -> String? {
+    nonisolated static func normalizeAISessionId(_ sessionId: String?) -> String? {
         AIResumeIdentityResolver.normalizeAISessionId(sessionId)
     }
 
-    static func normalizePersistedAISessionId(
+    nonisolated static func normalizePersistedAISessionId(
         _ sessionId: String?,
         source: AISessionIdentitySource?
     ) -> String? {
@@ -123,7 +123,7 @@ extension OverlayTabsModel {
         return left == right || left.hasPrefix(right + "/")
     }
 
-    static func isValidSessionId(_ id: String) -> Bool {
+    nonisolated static func isValidSessionId(_ id: String) -> Bool {
         AIResumeParser.isValidSessionId(id)
     }
 

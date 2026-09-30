@@ -14,6 +14,7 @@ import XCTest
 /// baseline tab and asserts the copy is `!=` the baseline. If a future
 /// refactor accidentally drops a comparison, the test fails with a
 /// clear name pointing at the dropped field.
+@MainActor
 final class OverlayTabEquatableTests: XCTestCase {
 
     /// id mismatch ⇒ unequal. Sanity baseline.

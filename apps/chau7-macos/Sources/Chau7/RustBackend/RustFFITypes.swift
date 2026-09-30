@@ -12,6 +12,10 @@ enum RustCellFlags {
     static let inverse: UInt8 = 1 << 4
     static let dim: UInt8 = 1 << 5
     static let hidden: UInt8 = 1 << 6
+    /// Set on the first cell of a row that soft-wraps from the row above. A row
+    /// property, not a cell style — deliberately excluded from `metalStyleMask`
+    /// so it never reaches the Metal style path.
+    static let wrapped: UInt8 = 1 << 7
     /// Mask for style flags passed to Metal (bold | italic | underline | strikethrough)
     static let metalStyleMask: UInt8 = 0x0F
 }

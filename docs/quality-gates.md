@@ -53,7 +53,10 @@ This sets `core.hooksPath` to `.husky`. The legacy `scripts/install-hooks` and
 ## Swift Strict-Concurrency Rollout
 
 Every macOS SwiftPM target enables complete strict-concurrency checking in
-warning-only mode. The known warning backlog is triaged in
+warning-only mode. The registry and full local CI build/test checks use the
+same policy; compilation errors and failed tests remain blocking.
+The Periphery analysis build uses SwiftPM’s native driver to produce the
+index-store layout expected by Periphery 3.x, with the same job limit. The known warning backlog is triaged in
 [`swift-concurrency-rollout.md`](swift-concurrency-rollout.md). Do not restore
 `-warnings-as-errors` to the `just build` or `just test` recipes until the
 blocking isolation findings are fixed and the remaining diagnostics are

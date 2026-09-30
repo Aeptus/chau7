@@ -121,6 +121,12 @@ impl CellBufferPool {
     }
 }
 
+impl Default for CellBufferPool {
+    fn default() -> Self {
+        Self::new(16) // Keep up to 16 buffers pooled (multi-tab friendly)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -202,11 +208,5 @@ mod tests {
             large.capacity() >= 100_000,
             "a miss must allocate rather than return an undersized buffer"
         );
-    }
-}
-
-impl Default for CellBufferPool {
-    fn default() -> Self {
-        Self::new(16) // Keep up to 16 buffers pooled (multi-tab friendly)
     }
 }

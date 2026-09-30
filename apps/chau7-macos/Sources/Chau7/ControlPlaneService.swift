@@ -12,33 +12,33 @@ final class ControlPlaneService {
     func call(name: String, arguments: [String: Any]) -> String {
         switch name {
         case "tab_list":
-            return terminalControl.listTabs()
+            return MainActorBridge.sync { terminalControl.listTabs() }
         case "tab_create":
-            return terminalControl.createTab(
+            return MainActorBridge.sync { terminalControl.createTab(
                 directory: arguments["directory"] as? String,
                 windowID: arguments["window_id"] as? Int
-            )
+            ) }
         case "tab_request_control":
             guard let tabID = arguments["tab_id"] as? String else {
                 return jsonError("tab_id is required")
             }
-            return terminalControl.requestMCPControl(tabID: tabID)
+            return MainActorBridge.sync { terminalControl.requestMCPControl(tabID: tabID) }
         case "tab_release_control":
             guard let tabID = arguments["tab_id"] as? String else {
                 return jsonError("tab_id is required")
             }
-            return terminalControl.releaseMCPControl(tabID: tabID)
+            return MainActorBridge.sync { terminalControl.releaseMCPControl(tabID: tabID) }
         case "tab_exec":
             guard let tabID = arguments["tab_id"] as? String,
                   let command = arguments["command"] as? String else {
                 return jsonError("tab_id and command are required")
             }
-            return terminalControl.execInTab(tabID: tabID, command: command)
+            return MainActorBridge.sync { terminalControl.execInTab(tabID: tabID, command: command) }
         case "tab_status":
             guard let tabID = arguments["tab_id"] as? String else {
                 return jsonError("tab_id is required")
             }
-            return terminalControl.tabStatus(tabID: tabID)
+            return MainActorBridge.sync { terminalControl.tabStatus(tabID: tabID) }
         case "tab_wait_ready":
             guard let tabID = arguments["tab_id"] as? String else {
                 return jsonError("tab_id is required")
@@ -52,24 +52,24 @@ final class ControlPlaneService {
                   let input = arguments["input"] as? String else {
                 return jsonError("tab_id and input are required")
             }
-            return terminalControl.sendInput(tabID: tabID, input: input)
+            return MainActorBridge.sync { terminalControl.sendInput(tabID: tabID, input: input) }
         case "tab_press_key":
             guard let tabID = arguments["tab_id"] as? String,
                   let key = arguments["key"] as? String else {
                 return jsonError("tab_id and key are required")
             }
             let modifiers = arguments["modifiers"] as? [String] ?? []
-            return terminalControl.pressKey(tabID: tabID, key: key, modifiers: modifiers)
+            return MainActorBridge.sync { terminalControl.pressKey(tabID: tabID, key: key, modifiers: modifiers) }
         case "tab_submit_prompt":
             guard let tabID = arguments["tab_id"] as? String else {
                 return jsonError("tab_id is required")
             }
-            return terminalControl.submitPrompt(tabID: tabID)
+            return MainActorBridge.sync { terminalControl.submitPrompt(tabID: tabID) }
         case "tab_close":
             guard let tabID = arguments["tab_id"] as? String else {
                 return jsonError("tab_id is required")
             }
-            return terminalControl.closeTab(tabID: tabID, force: arguments["force"] as? Bool ?? false)
+            return MainActorBridge.sync { terminalControl.closeTab(tabID: tabID, force: arguments["force"] as? Bool ?? false) }
         case "tab_output":
             guard let tabID = arguments["tab_id"] as? String else {
                 return jsonError("tab_id is required")
@@ -88,7 +88,7 @@ final class ControlPlaneService {
             }
             // Cap enforced at the source in repoGetEvents (repoEventsMaxLimit).
             let limit = arguments["limit"] as? Int ?? 25
-            return terminalControl.repoGetEvents(
+            return MainActorBridge.sync { terminalControl.repoGetEvents(
                 repoPath: repoPath,
                 limit: limit,
                 tabID: arguments["tab_id"] as? String,
@@ -97,7 +97,7 @@ final class ControlPlaneService {
                 producer: arguments["producer"] as? String,
                 sessionID: arguments["session_id"] as? String,
                 truncateMessages: arguments["truncate_messages"] as? Bool ?? true
-            )
+            ) }
         default:
             return jsonError("Unknown control plane command: \(name)")
         }

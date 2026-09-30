@@ -984,11 +984,11 @@ extension OverlayTabsModel {
     // `AIResumeIdentityResolver`; these forwarders keep the historical
     // `OverlayTabsModel.buildAIResumeCommand(provider:sessionId:...)` entry
     // points stable for the save/restore paths and the test suite.
-    static func buildAIResumeCommand(provider: String?, sessionId: String?) -> String? {
+    nonisolated static func buildAIResumeCommand(provider: String?, sessionId: String?) -> String? {
         AIResumeIdentityResolver.buildAIResumeCommand(provider: provider, sessionId: sessionId)
     }
 
-    static func buildAIResumeCommand(
+    nonisolated static func buildAIResumeCommand(
         provider: String?,
         sessionId: String?,
         sessionIdSource: AISessionIdentitySource?

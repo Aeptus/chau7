@@ -138,7 +138,9 @@ final class TerminalSessionModel {
 
     var currentDirectory: String = TerminalSessionModel.defaultStartDirectory() {
         didSet {
-            TerminalControlService.shared.invalidateRoutingIndex(reason: "session_directory")
+            MainActor.assumeIsolated {
+                TerminalControlService.shared.invalidateRoutingIndex(reason: "session_directory")
+            }
             onSessionStateChanged?()
             // Notify repo-grouping (OverlayTabsModel) so the tab's repoGroupID
             // can re-evaluate against the new cwd directly, without waiting
@@ -272,7 +274,9 @@ final class TerminalSessionModel {
                     name: .terminalSessionRenderSuspensionStateChanged,
                     object: self
                 )
-                TerminalControlService.shared.invalidateRoutingIndex(reason: "active_app")
+                MainActor.assumeIsolated {
+                    TerminalControlService.shared.invalidateRoutingIndex(reason: "active_app")
+                }
             }
             onSessionStateChanged?()
         }
@@ -302,7 +306,9 @@ final class TerminalSessionModel {
                 name: .terminalSessionRenderSuspensionStateChanged,
                 object: self
             )
-            TerminalControlService.shared.invalidateRoutingIndex(reason: "live_agent")
+            MainActor.assumeIsolated {
+                TerminalControlService.shared.invalidateRoutingIndex(reason: "live_agent")
+            }
             if oldValue == nil, liveAgentName != nil {
                 MainActor.assumeIsolated {
                     PromptInjectionInjector.onAIToolDetected(session: self)
@@ -614,7 +620,9 @@ final class TerminalSessionModel {
         didSet {
             syncRustTerminalObservabilityScope()
             if lastAISessionId != oldValue {
-                TerminalControlService.shared.invalidateRoutingIndex(reason: "ai_session_id")
+                MainActor.assumeIsolated {
+                    TerminalControlService.shared.invalidateRoutingIndex(reason: "ai_session_id")
+                }
                 refreshCodexFeedbackMonitorIfNeeded()
             }
         }
@@ -645,7 +653,9 @@ final class TerminalSessionModel {
         lastAIProvider = record.provider
         lastAISessionId = record.sessionId
         lastAISessionIdentitySource = record.source
-        TerminalControlService.shared.invalidateRoutingIndex(reason: "agent_identity")
+        MainActor.assumeIsolated {
+            TerminalControlService.shared.invalidateRoutingIndex(reason: "agent_identity")
+        }
     }
 
     /// The last app name set by live detection (command or output).
@@ -671,7 +681,9 @@ final class TerminalSessionModel {
 
         // Always keep lastAIProvider current so persistence is correct
         lastAIProvider = newProvider
-        TerminalControlService.shared.invalidateRoutingIndex(reason: "detected_app")
+        MainActor.assumeIsolated {
+            TerminalControlService.shared.invalidateRoutingIndex(reason: "detected_app")
+        }
 
         // Only clear session metadata on an actual provider SWITCH.
         // When oldProvider is nil (after restore or first detection),
@@ -810,7 +822,7 @@ final class TerminalSessionModel {
     }
 
     private func historyAdoptionResumeCommand(for request: HistorySessionAdoptionRequest) -> String? {
-        OverlayTabsModel.buildAIResumeCommand(
+        AIResumeIdentityResolver.buildAIResumeCommand(
             provider: request.providerKey,
             sessionId: request.sessionId,
             sessionIdSource: .observed
@@ -829,7 +841,9 @@ final class TerminalSessionModel {
         }
 
         let toolName = Self.displayName(fromProvider: provider) ?? provider.capitalized
-        return appModel.latestSessionStatus(toolName: toolName, sessionId: sessionId)?.state
+        return MainActor.assumeIsolated {
+            appModel.latestSessionStatus(toolName: toolName, sessionId: sessionId)?.state
+        }
     }
 
     static func displayName(fromProvider provider: String?) -> String? {
@@ -898,11 +912,13 @@ final class TerminalSessionModel {
         lastObservedSessionLookupSignature = lookupSignature
         lastObservedSessionLookupAt = now
 
-        guard let observed = OverlayTabsModel.findAIResumeSessionId(
-            for: provider,
-            directory: currentDirectory,
-            referenceDate: startedAt
-        ) else {
+        guard let observed = MainActor.assumeIsolated({
+            OverlayTabsModel.findAIResumeSessionId(
+                for: provider,
+                directory: currentDirectory,
+                referenceDate: startedAt
+            )
+        }) else {
             return nil
         }
 
@@ -1326,18 +1342,20 @@ final class TerminalSessionModel {
                 let endpoint = serverInfo.url
                     ?? serverInfo.port.map { "http://localhost:\($0)" }
                     ?? "a local port"
-                appModel?.recordEvent(
-                    source: .shell,
-                    type: "dev_server_started",
-                    tool: serverInfo.name,
-                    message: "\(serverInfo.name) is ready at \(endpoint)",
-                    notify: true,
-                    directory: currentDirectory,
-                    tabID: ownerTabID,
-                    sessionID: nil,
-                    producer: "dev_server_monitor",
-                    reliability: .authoritative
-                )
+                MainActor.assumeIsolated {
+                    self.appModel?.recordEvent(
+                        source: .shell,
+                        type: "dev_server_started",
+                        tool: serverInfo.name,
+                        message: "\(serverInfo.name) is ready at \(endpoint)",
+                        notify: true,
+                        directory: self.currentDirectory,
+                        tabID: self.ownerTabID,
+                        sessionID: nil,
+                        producer: "dev_server_monitor",
+                        reliability: .authoritative
+                    )
+                }
             } else {
                 Log.info("Dev server stopped")
             }
@@ -1920,7 +1938,9 @@ final class TerminalSessionModel {
 
     private func syncRustTerminalObservabilityScope() {
         guard let view = existingRustTerminalView else { return }
-        view.observabilityTabID = ownerTabID.map { TerminalControlService.shared.controlPlaneTabID(for: $0) }
+        view.observabilityTabID = MainActor.assumeIsolated {
+            ownerTabID.map { TerminalControlService.shared.controlPlaneTabID(for: $0) }
+        }
         view.observabilitySessionID = normalizedStoredAISessionId()
         view.refreshObservabilityTimerScope()
     }
@@ -2079,15 +2099,17 @@ final class TerminalSessionModel {
             shouldNotify = true
         }
 
-        appModel?.recordEvent(
-            source: .terminalSession,
-            type: type,
-            tool: notificationTabName,
-            message: message,
-            notify: shouldNotify,
-            directory: currentDirectory,
-            tabID: ownerTabID
-        )
+        MainActor.assumeIsolated {
+            appModel?.recordEvent(
+                source: .terminalSession,
+                type: type,
+                tool: notificationTabName,
+                message: message,
+                notify: shouldNotify,
+                directory: currentDirectory,
+                tabID: ownerTabID
+            )
+        }
     }
 
     private func scheduleForcedTerminationIfNeeded() {
@@ -3073,7 +3095,9 @@ final class TerminalSessionModel {
     }
 
     private func sharedEventsLogPathForEnvironment() -> String {
-        let trimmed = appModel?.logPath.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let trimmed = MainActor.assumeIsolated {
+            appModel?.logPath.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        }
         if !trimmed.isEmpty {
             return RuntimeIsolation.expandTilde(in: trimmed)
         }
@@ -3696,18 +3720,20 @@ final class TerminalSessionModel {
             Log.trace("Dropping unrecognized OSC 9 AI notification: \(message.prefix(120))")
             return
         }
-        appModel?.recordEvent(
-            source: classification.source,
-            type: classification.type,
-            tool: classification.tool,
-            message: message,
-            notify: true,
-            directory: currentDirectory,
-            tabID: ownerTabID,
-            sessionID: lastAISessionId,
-            producer: "terminal_osc9",
-            reliability: .authoritative
-        )
+        MainActor.assumeIsolated {
+            appModel?.recordEvent(
+                source: classification.source,
+                type: classification.type,
+                tool: classification.tool,
+                message: message,
+                notify: true,
+                directory: currentDirectory,
+                tabID: ownerTabID,
+                sessionID: lastAISessionId,
+                producer: "terminal_osc9",
+                reliability: .authoritative
+            )
+        }
     }
 
     /// Classification result for a foreign OSC 9 desktop notification.

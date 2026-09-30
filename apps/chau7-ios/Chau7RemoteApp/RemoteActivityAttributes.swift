@@ -24,14 +24,20 @@ struct Chau7RemoteActivityAttributes: ActivityAttributes {
 }
 
 extension Chau7RemoteActivityAttributes.ContentState {
-    init(state: RemoteActivityState) {
+    /// - Parameter redactDetails: when true, the free-form `detail` text is
+    ///   dropped. It carries the raw command / flagged action for an approval,
+    ///   which is exactly what the "Hide Details on Lock Screen" setting exists
+    ///   to withhold. The Live Activity is the only surface that renders it
+    ///   while the phone is locked, so it has to honour the same preference as
+    ///   local notifications.
+    init(state: RemoteActivityState, redactDetails: Bool = false) {
         self.init(
             tabID: state.tabID,
             tabTitle: state.tabTitle,
             toolName: state.toolName,
             projectName: state.projectName,
             headline: state.headline,
-            detail: state.detail,
+            detail: redactDetails ? nil : state.detail,
             status: state.status,
             updatedAt: state.updatedAt,
             approvalRequestID: state.approval?.requestID

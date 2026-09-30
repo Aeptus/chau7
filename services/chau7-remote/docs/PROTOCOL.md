@@ -45,8 +45,23 @@ Flow:
 1. Mac connects to relay and waits for pair requests.
 2. iOS pastes pairing payload and connects to relay.
 3. iOS sends `PAIR_REQUEST` to the Mac through the relay.
-4. Mac validates `pairing_code`, stores the iOS public key, and replies `PAIR_ACCEPT`.
-5. Both sides persist keys locally.
+4. Mac validates `pairing_code` and replies `PAIR_ACCEPT` carrying `mac_pub`.
+5. Both sides derive session keys via X25519 and exchange an encrypted
+   `SESSION_READY`.
+6. Only when the Mac accepts that encrypted `SESSION_READY` — which only the
+   holder of the matching iOS private key can produce — does it persist the
+   iOS identity as trusted.
+
+`PAIR_REQUEST` is cleartext and the relay forwards it verbatim, so the
+`ios_pub` it carries is attacker-chosen and must not be trusted on arrival. The
+Mac therefore treats a claimed identity as *provisional* until the handshake
+proves possession. Trust is anchored in the Mac's own private key, which never
+leaves the Mac: a relay that observes the pairing code still cannot derive the
+shared secret, so it cannot complete a handshake and is never persisted.
+
+Pairing is long-lived. The pairing code is a bootstrap credential used once;
+after the first confirmed handshake the iOS public key is stored permanently and
+authorises later reconnects on its own, so the code is never re-entered.
 
 ## Session Establishment
 
@@ -131,6 +146,7 @@ Type codes (`u8`). The Swift enum `RemoteFrameType`
 - `0x25 CHECKPOINT_REQUEST` (encrypted, empty payload — asks macOS for a fresh active-tab snapshot)
 - `0x26 INTERACTIVE_PROMPT_RESPONSE` (encrypted, JSON — validated prompt/pane action)
 - `0x27 PANE_INPUT` (encrypted, JSON — direct text or semantic keys for an explicit pane)
+- `0x28 TERMINAL_SIZE` (encrypted, JSON — a tab's live PTY dimensions `{cols, rows}`; the client sizes its own emulator to the source width so full-screen TUIs are not hard-wrapped. Sent when the dimensions change, and on snapshot/reconnect. The Mac's view is unaffected.)
 - `0x30 PING` (encrypted, JSON)
 - `0x31 PONG` (encrypted, JSON)
 - `0x40 PAIRING_INFO` (local IPC, JSON)

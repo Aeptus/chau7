@@ -51,11 +51,33 @@ struct TerminalView: View {
             }
             Button("Request Approval", role: .destructive) {
                 guard let pendingProtectedSend else { return }
+                // Re-validate the pinned tab: the target may have closed or
+                // been replaced while the confirmation was on screen. Refuse
+                // rather than silently retargeting the command.
+                guard let stillValidTab = client.tabs.first(where: { $0.tabID == pendingProtectedSend.tabID }) else {
+                    DiagnosticsLog.shared.warn(.input, "Protected action refused: target tab is gone", [
+                        "tab_id": String(pendingProtectedSend.tabID),
+                        "action": pendingProtectedSend.flaggedAction
+                    ])
+                    client.lastError = "That terminal is no longer available, so the command was not sent."
+                    inputText = pendingProtectedSend.text
+                    self.pendingProtectedSend = nil
+                    return
+                }
+                // Make the pinned tab current so what the user confirmed is what
+                // runs, then send explicitly to it.
+                if client.activeTabID != pendingProtectedSend.tabID {
+                    client.switchTab(pendingProtectedSend.tabID)
+                }
                 client.recordProtectedActionSubmission(
                     text: pendingProtectedSend.text,
                     flaggedAction: pendingProtectedSend.flaggedAction
                 )
-                if client.sendInput(pendingProtectedSend.text, appendNewline: true) {
+                if client.sendInput(
+                    pendingProtectedSend.text,
+                    appendNewline: true,
+                    to: stillValidTab.tabID
+                ) {
                     inputText = ""
                     markSent()
                     self.pendingProtectedSend = nil
@@ -69,10 +91,42 @@ struct TerminalView: View {
         }
     }
 
+    private func respondToActivityApproval(_ activity: RemoteActivityState, approved: Bool) {
+        guard let requestID = activity.approval?.requestID,
+              client.pendingApprovals.contains(where: { $0.requestID == requestID }) else {
+            return
+        }
+        client.respondToApproval(requestID: requestID, approved: approved)
+    }
+
+    /// The Mac publishes one activity snapshot per tab; only the selected tab's
+    /// is relevant to what is on screen. `idle` is treated as "nothing to say"
+    /// so the card does not occupy space when the agent is simply quiet.
+    private var activeTabActivity: RemoteActivityState? {
+        guard let state = client.liveActivityState,
+              state.status != .idle,
+              state.isSelectedTab || state.tabID == client.activeTabID else { return nil }
+        return state
+    }
+
     private var pairedContent: some View {
         VStack(spacing: 0) {
             statusBar
             tabsBar
+            if let activity = activeTabActivity {
+                RemoteActivityCard(
+                    activity: activity,
+                    // Only offer a decision for a request the client actually
+                    // holds. Responding to an id it has never seen would queue a
+                    // decision that may never be applied, leaving the user
+                    // believing they approved something that is still blocked.
+                    onApprove: { respondToActivityApproval(activity, approved: true) },
+                    onDeny: { respondToActivityApproval(activity, approved: false) }
+                )
+                .padding(.horizontal, 12)
+                .padding(.bottom, 8)
+                .transition(.move(edge: .top).combined(with: .opacity))
+            }
             outputView
             // One in-flow key row, keyboard up or down. It deliberately does
             // NOT use a keyboard-accessory toolbar: the system accessory
@@ -87,6 +141,7 @@ struct TerminalView: View {
         // active tab waits on a menu), so animate on the resolved value rather
         // than relying on the toggle button's withAnimation.
         .animation(.easeInOut(duration: 0.15), value: showsPinnedControlKeys)
+        .animation(.easeInOut(duration: 0.2), value: activeTabActivity?.status)
         .onChange(of: client.activeTabNeedsMenuKeys) { _, needed in
             if needed { autoKeysDismissed = false }
         }
@@ -123,7 +178,8 @@ struct TerminalView: View {
     private func toggleConnection() {
         switch client.connectionPhase {
         case .connected, .connecting:
-            client.disconnect()
+            // User-initiated: drop the session and any undelivered decision.
+            client.disconnectAndDiscardPendingDecisions()
         case .disconnected, .warning:
             guard client.pairingInfo != nil else { return }
             client.connect()
@@ -570,7 +626,9 @@ struct TerminalView: View {
             pendingProtectedSend = ProtectedRemoteSend(
                 text: text,
                 flaggedAction: flaggedAction,
-                message: "\(flaggedAction) requires a second approval before it is forwarded to your Mac."
+                message: "\(flaggedAction) requires a second approval before it is forwarded to your Mac.",
+                tabID: client.activeTabID,
+                tabTitle: client.tabs.first { $0.tabID == client.activeTabID }?.title
             )
             return
         }
@@ -855,6 +913,15 @@ private struct ProtectedRemoteSend: Identifiable {
     let text: String
     let flaggedAction: String
     let message: String
+    /// The remote tab this action was composed against.
+    ///
+    /// `activeTabID` can change while the confirmation is on screen — the Mac
+    /// can close the tab, or a Live Activity / push deep link can switch tabs.
+    /// Resolving the target at *send* time would then forward a confirmed
+    /// `killall …` to a shell the user never looked at, so the tab is pinned
+    /// when the prompt is raised and re-validated before sending.
+    let tabID: UInt32
+    let tabTitle: String?
 }
 
 // MARK: - Connection Status Symbol

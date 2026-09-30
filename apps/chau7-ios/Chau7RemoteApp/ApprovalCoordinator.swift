@@ -74,3 +74,64 @@ final class ApprovalCoordinator {
         inFlight.removeAll(keepingCapacity: true)
     }
 }
+
+/// Approval decisions that were expressed before the request was known.
+///
+/// A lock-screen "Allow" can be delivered on a cold launch, before the
+/// WebSocket has connected and before `/pending` has populated the approval
+/// list. Holding the decision here and applying it once the authoritative list
+/// arrives means the user's answer survives the launch window instead of being
+/// silently dropped with the Mac's agent still blocked.
+///
+/// Bounded so a flood of unknown request ids cannot grow without limit; the
+/// oldest decision is evicted first.
+@MainActor
+final class DeferredDecisionLedger {
+    static let defaultCapacity = 32
+
+    private var decisions: [String: Bool] = [:]
+    /// Insertion order, so eviction is oldest-first without sorting per insert.
+    private var order: [String] = []
+    private let capacity: Int
+
+    init(capacity: Int = DeferredDecisionLedger.defaultCapacity) {
+        self.capacity = max(1, capacity)
+    }
+
+    var isEmpty: Bool { decisions.isEmpty }
+    var count: Int { decisions.count }
+    var requestIDs: [String] { order }
+
+    /// Record a decision for a request that is not yet known. The newest
+    /// decision for a given id wins. Returns the id that was evicted to stay
+    /// within capacity, if any.
+    @discardableResult
+    func record(requestID: String, approved: Bool) -> String? {
+        if decisions[requestID] == nil {
+            order.append(requestID)
+        }
+        decisions[requestID] = approved
+        guard order.count > capacity else { return nil }
+        let evicted = order.removeFirst()
+        decisions.removeValue(forKey: evicted)
+        return evicted
+    }
+
+    /// Remove and return the decisions whose requests are now present, so the
+    /// caller can apply them. Unrelated deferred decisions are left in place.
+    func takeReady(knownRequestIDs: Set<String>) -> [(requestID: String, approved: Bool)] {
+        let ready = order.filter { knownRequestIDs.contains($0) }
+        for requestID in ready {
+            order.removeAll { $0 == requestID }
+        }
+        return ready.compactMap { requestID in
+            guard let approved = decisions.removeValue(forKey: requestID) else { return nil }
+            return (requestID, approved)
+        }
+    }
+
+    func reset() {
+        decisions.removeAll(keepingCapacity: true)
+        order.removeAll(keepingCapacity: true)
+    }
+}

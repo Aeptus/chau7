@@ -20,7 +20,7 @@ final class NotificationDelegateHelper: NSObject, UNUserNotificationCenterDelega
         willPresent notification: UNNotification,
         withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
     ) {
-        completionHandler(appModel?.notificationPresentationOptions() ?? [])
+        completionHandler(MainActorBridge.sync { self.appModel?.notificationPresentationOptions() ?? [] })
     }
 }
 
@@ -465,7 +465,7 @@ final class AppModel {
         Log.info("Log file=\(logFilePath)")
     }
 
-    deinit {
+    isolated deinit {
         pendingClaudeWaitingInputFallbacks.values.forEach { $0.cancel() }
         claudeMonitorNotificationTask?.cancel()
         stopTailer()

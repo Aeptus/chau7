@@ -221,7 +221,7 @@ final class Chau7ObservabilityService {
         // Surface eligibility (including the former `.app` exclusion) is
         // decided by NotificationRoutingPolicy at the caller.
         let seq = queue.sync { spineSeqFloor + Int64(clamping: envelope.seq) }
-        let controlPlaneTabID = adapted.tabID.map { onMainActor { TerminalControlService.shared.controlPlaneTabID(for: $0) } }
+        let controlPlaneTabID = adapted.tabID.map { tabID in onMainActor { TerminalControlService.shared.controlPlaneTabID(for: tabID) } }
         recordDirect(
             type: "ai_event",
             subsystem: adapted.source.rawValue,
@@ -360,7 +360,7 @@ final class Chau7ObservabilityService {
         repoPath: String? = nil,
         detail: [String: Any] = [:]
     ) {
-        let controlPlaneTabID = nativeTabID.map { onMainActor { TerminalControlService.shared.controlPlaneTabID(for: $0) } }
+        let controlPlaneTabID = nativeTabID.map { tabID in onMainActor { TerminalControlService.shared.controlPlaneTabID(for: tabID) } }
         recordEvent(
             type: type,
             subsystem: subsystem,

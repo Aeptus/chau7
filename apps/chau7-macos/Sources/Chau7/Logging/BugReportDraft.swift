@@ -57,6 +57,7 @@ final class BugReportDraft {
 
     // MARK: - Init
 
+    @MainActor
     init(snapshot: StateSnapshot, currentTabID: UUID?, overlayModel: OverlayTabsModel?) {
         self.snapshot = snapshot
         self.currentTabID = currentTabID
@@ -120,6 +121,7 @@ final class BugReportDraft {
     // MARK: - Terminal History Capture
 
     /// Reads the last N lines of scrollback from a tab via TerminalControlService.
+    @MainActor
     func captureTabHistory(tabID: UUID, lines: Int = 50) -> String? {
         let result = TerminalControlService.shared.tabOutput(tabID: tabID.uuidString, lines: lines)
         guard let data = result.data(using: .utf8),

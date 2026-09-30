@@ -39,7 +39,19 @@ const (
 	pairingTTL          = 10 * time.Minute
 	maxFrameSize        = 5 * 1024 * 1024
 	relayRequestTimeout = 10 * time.Second
+	// How long a claimed iOS identity stays provisional, waiting for the peer to
+	// prove it holds the matching private key by completing the encrypted
+	// handshake. Short: a real phone completes it in well under a second.
+	pendingPairTTL = 60 * time.Second
 )
+
+// pendingPair is an iOS identity claimed by a pair request but not yet proven.
+// It becomes trusted only when the peer completes the encrypted handshake.
+type pendingPair struct {
+	iosName   string
+	iosPub    string
+	claimedAt time.Time
+}
 
 type Agent struct {
 	socketPath   string
@@ -51,6 +63,13 @@ type Agent struct {
 
 	pairingCode    string
 	pairingExpires time.Time
+
+	// A pair request names an iOS identity but does not yet prove the sender
+	// holds the private key for it. Trust is only persisted once the peer
+	// completes the encrypted handshake (see confirmPendingPair), because that
+	// is the one step a relay replaying a cleartext PAIR_REQUEST cannot fake.
+	pendingPairMu sync.Mutex
+	pendingPair   *pendingPair
 
 	ipcMu   sync.Mutex
 	ipcConn *net.UnixConn
@@ -630,6 +649,10 @@ func (a *Agent) handleRelayFrame(frame *protocol.Frame) {
 		a.sessionMu.Lock()
 		a.sessionReady = true
 		a.sessionMu.Unlock()
+		// This frame decrypted under keys derived from the claimed ios_pub, so
+		// the sender holds the matching private key. Only now is it safe to
+		// make that identity permanently trusted.
+		a.confirmPendingPair()
 		log.Printf("session ready: encrypted epoch confirmed by iOS")
 		a.sendToIPC(&protocol.Frame{
 			Version: 1,
@@ -809,19 +832,19 @@ func (a *Agent) handlePairRequest(payload []byte) {
 		log.Printf("pair request: invalidated crypto for changed iOS identity")
 	}
 
-	a.stateMu.Lock()
-	device, err := a.state.UpsertPairedDevice(request.IOSName, request.IOSPub, time.Now())
-	if err != nil {
-		a.stateMu.Unlock()
-		log.Printf("pair request: upsert paired device: %v", err)
-		a.sendPairReject("invalid_ios_pub")
-		return
-	}
-	a.setCurrentPeer(device)
-	if err := SaveState(a.statePath, a.state); err != nil {
-		log.Printf("pair request: save state: %v", err)
-	}
-	a.stateMu.Unlock()
+	// Do NOT persist the claimed identity yet. PAIR_REQUEST is an unencrypted
+	// frame that the relay relays verbatim, so `request.IOSPub` is attacker-
+	// chosen: a hostile relay can replay the code it just observed together with
+	// a key pair of its own. Persisting here handed that key permanent trusted
+	// status, and a later PAIR_REQUEST could replay the *legitimate* pub key to
+	// hijack an already-trusted identity. Persisting only after the peer proves
+	// possession (confirmPendingPair) closes both.
+	a.setPendingPair(request.IOSName, request.IOSPub)
+	a.sessionMu.Lock()
+	a.currentIOSPub = request.IOSPub
+	a.currentPeerID = ""
+	a.currentPeerName = request.IOSName
+	a.sessionMu.Unlock()
 
 	accept := PairAcceptPayload{
 		DeviceID: a.state.DeviceID,
@@ -869,6 +892,64 @@ func (a *Agent) isPairRequestAuthorized(request PairRequestPayload, now time.Tim
 	found := a.state.FindPairedDeviceByPublicKey(request.IOSPub) != nil
 	a.stateMu.Unlock()
 	return found
+}
+
+func (a *Agent) setPendingPair(name, pub string) {
+	a.pendingPairMu.Lock()
+	a.pendingPair = &pendingPair{iosName: name, iosPub: pub, claimedAt: time.Now()}
+	a.pendingPairMu.Unlock()
+}
+
+func (a *Agent) clearPendingPair() {
+	a.pendingPairMu.Lock()
+	a.pendingPair = nil
+	a.pendingPairMu.Unlock()
+}
+
+// confirmPendingPair persists a claimed iOS identity, but only once the peer
+// has demonstrated it holds the private key for it. It is called when an
+// encrypted SESSION_READY is admitted: those frames are decrypted with session
+// keys derived from X25519(macPriv, iosPub), so only the holder of ios_priv can
+// produce one. Until this succeeds nothing about the peer is written to disk.
+//
+// Pairing stays long-lived: after the first confirmation the public key is
+// stored permanently, and later reconnects are authorised by that stored key,
+// so the pairing code is needed exactly once and never re-entered.
+func (a *Agent) confirmPendingPair() {
+	a.pendingPairMu.Lock()
+	pending := a.pendingPair
+	a.pendingPair = nil
+	a.pendingPairMu.Unlock()
+	if pending == nil {
+		return
+	}
+	if time.Since(pending.claimedAt) > pendingPairTTL {
+		log.Printf("pair request: discarding stale provisional identity")
+		return
+	}
+	// Only confirm the identity the live session actually proved. If the peer
+	// changed mid-handshake, the proof belongs to the other key.
+	a.sessionMu.Lock()
+	provedPub := a.currentIOSPub
+	a.sessionMu.Unlock()
+	if provedPub != pending.iosPub {
+		log.Printf("pair request: refusing to persist identity not proved by handshake")
+		return
+	}
+
+	a.stateMu.Lock()
+	device, err := a.state.UpsertPairedDevice(pending.iosName, pending.iosPub, time.Now())
+	if err != nil {
+		a.stateMu.Unlock()
+		log.Printf("pair request: upsert paired device: %v", err)
+		return
+	}
+	a.setCurrentPeer(device)
+	if err := SaveState(a.statePath, a.state); err != nil {
+		log.Printf("pair request: save state: %v", err)
+	}
+	a.stateMu.Unlock()
+	log.Printf("pair request: trusted iOS identity after encrypted handshake proof")
 }
 
 func (a *Agent) setCurrentPeer(device *PairedDevice) {
@@ -1147,6 +1228,11 @@ func (a *Agent) resetSession() {
 // leaving relay/IPC transports and long-lived pairing identity untouched.
 // It is shared by full relay resets and in-place iOS rekeys.
 func (a *Agent) resetSessionEpochState() {
+	// A provisional identity belongs to the epoch that was just torn down.
+	// Keeping it would let a later SESSION_READY in an unrelated epoch promote
+	// a key the current handshake never proved.
+	a.clearPendingPair()
+
 	a.pendingStateMu.Lock()
 	a.sessionEpoch = newSessionEpoch()
 	a.stateVersion = 0

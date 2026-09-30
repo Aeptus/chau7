@@ -1,6 +1,7 @@
 import XCTest
 @testable import Chau7
 
+@MainActor
 final class CodexRestoreValidationTests: XCTestCase {
     private var temporaryHome: URL!
     private let referenceDate = Date(timeIntervalSince1970: 1_723_132_800)

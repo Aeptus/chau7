@@ -1052,6 +1052,44 @@ final class TerminalSessionModelTests: XCTestCase {
         XCTAssertEqual(session.lastExitAt, lastExitAt)
     }
 
+    func testAILoggingCapturesConfiguredPathsBeforeEnteringLogQueue() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("chau7-actor-log-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let model = AppModel()
+        let originalEventPath = model.logPath
+        let originalPTYPath = model.codexTerminalPath
+        defer {
+            model.logPath = originalEventPath
+            model.codexTerminalPath = originalPTYPath
+        }
+        let eventURL = directory.appendingPathComponent("events.jsonl")
+        let ptyURL = directory.appendingPathComponent("codex.log")
+        model.logPath = eventURL.path
+        model.codexTerminalPath = ptyURL.path
+        let session = TerminalSessionModel(appModel: model)
+
+        session.startAILoggingIfNeeded(toolName: "Codex", commandLine: "codex")
+        XCTAssertEqual(session.currentPTYLogPath(), ptyURL.path)
+        session.finishAILogging(exitCode: 0)
+
+        var eventTypes: [String] = []
+        waitUntil {
+            guard let content = try? String(contentsOf: eventURL, encoding: .utf8) else { return false }
+            eventTypes = content.split(separator: "\n").compactMap { line in
+                guard let object = try? JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any] else {
+                    return nil
+                }
+                return object["type"] as? String
+            }
+            return eventTypes.contains("finished")
+        }
+        XCTAssertTrue(eventTypes.contains("info"))
+        XCTAssertTrue(eventTypes.contains("finished"))
+    }
+
     func testCurrentPTYLogPathReflectsActiveAILogSession() {
         let model = AppModel()
         let session = TerminalSessionModel(appModel: model)

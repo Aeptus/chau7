@@ -4,6 +4,7 @@ import Chau7Core
 
 // MARK: - SplitNode Tests
 
+@MainActor
 final class SplitNodeTests: XCTestCase {
 
     // We create nodes directly using the SplitNode enum without needing AppModel.
@@ -777,6 +778,7 @@ final class SplitPaneControllerTests: XCTestCase {
 
 // MARK: - TextEditorModel Tests
 
+@MainActor
 final class TextEditorModelTests: XCTestCase {
 
     private func waitUntil(
@@ -994,6 +996,7 @@ final class TextEditorModelTests: XCTestCase {
     }
 }
 
+@MainActor
 final class MarkdownRunbookInfrastructureTests: XCTestCase {
 
     func testParseMarkdownSupportsBulletsNumbersAndRules() {
@@ -1078,6 +1081,7 @@ final class MarkdownRunbookInfrastructureTests: XCTestCase {
 
 // MARK: - SplitDirection / PaneType Tests
 
+@MainActor
 final class SplitEnumTests: XCTestCase {
 
     private func makeTerminalNode(id: UUID = UUID(), appModel: AppModel) -> SplitNode {

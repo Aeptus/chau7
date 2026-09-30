@@ -2,6 +2,7 @@ import XCTest
 import Chau7Core
 @testable import Chau7
 
+@MainActor
 final class Chau7ObservabilityServiceTests: XCTestCase {
     override func setUp() {
         super.setUp()

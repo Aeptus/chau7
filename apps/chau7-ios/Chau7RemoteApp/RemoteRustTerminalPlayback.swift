@@ -17,6 +17,14 @@ let rustCellFlagStrikethrough: UInt8 = 1 << 3
 let rustCellFlagInverse: UInt8 = 1 << 4
 let rustCellFlagDim: UInt8 = 1 << 5
 let rustCellFlagHidden: UInt8 = 1 << 6
+/// Set on the first cell of a grid row that soft-wraps from the row above.
+///
+/// A property of the row, not of the cell: it marks where the terminal broke a
+/// logical line because the text exceeded the width, rather than because a
+/// newline was emitted. Folding each physical row independently (which is what
+/// the display re-composition did before this existed) chops soft-wrapped
+/// prose mid-sentence at every fold; folding on logical lines does not.
+let rustCellFlagWrapped: UInt8 = 1 << 7
 
 /// iOS mirror of the macOS `RustCellData` (see chau7_terminal.h).
 ///
@@ -52,6 +60,57 @@ struct RustGridSnapshot {
     var capacity: Int
 }
 
+/// iOS mirror of the Rust `DisplayRowBuffer` (see chau7_terminal.h).
+///
+/// The grid already folded to a width the client can paint, so the renderer
+/// blits rows straight out of it instead of re-deriving cell indices through a
+/// source-to-display mapping.
+struct RustDisplayRowBuffer {
+    var cells: UnsafeMutablePointer<RustCellData>?
+    var cells_capacity: Int
+    var clusters_utf8: UnsafeMutablePointer<UInt8>?
+    var clusters_len: Int
+    var clusters_capacity: Int
+    var row_offsets: UnsafeMutablePointer<UInt32>?
+    var row_offsets_len: Int
+    var row_offsets_capacity: Int
+    var cell_count: Int
+    var display_cols: UInt16
+    var display_rows: UInt16
+    var source_cols: UInt16
+    var source_rows: UInt16
+}
+
+/// Rows already folded to the client's width, ready to paint.
+///
+/// Produced by `RemoteRustTerminalPlayback.displayRows(displayCols:)`. The
+/// cluster bytes are copied out of the FFI buffer before it is freed.
+struct RemoteTerminalDisplayState: Sendable {
+    let cells: [RustCellData]
+    let clusters: Data
+    /// Start offset into `cells` for each display row, plus a trailing sentinel,
+    /// so row `r` is `cells[rowOffsets[r] ..< rowOffsets[r + 1]]`.
+    let rowOffsets: [UInt32]
+    let displayCols: Int
+    let displayRows: Int
+
+    /// Cell range backing one display row.
+    func range(forRow row: Int) -> Range<Int>? {
+        RemoteTerminalDisplayRowMap.range(row: row, offsets: rowOffsets, cellCount: cells.count)
+    }
+
+    /// Decode a cell's grapheme cluster. Kept off the hot path deliberately: the
+    /// Rust fold removes the *index* work, but glyphs still have to be turned
+    /// into strings to draw, so this is called once per painted cell per frame.
+    func clusterString(for cell: RustCellData) -> String {
+        guard cell.cluster_len > 0, cell.continuation == 0 else { return "" }
+        let start = Int(cell.cluster_offset)
+        let end = start + Int(cell.cluster_len)
+        guard end <= clusters.count else { return "" }
+        return String(decoding: clusters[start ..< end], as: UTF8.self)
+    }
+}
+
 struct RemoteTerminalRenderState: Sendable {
     let cells: [RustCellData]
     /// Packed UTF-8 cluster bytes referenced by `cells[i].cluster_offset`. The
@@ -77,6 +136,15 @@ struct RemoteTerminalRenderState: Sendable {
         let end = start + Int(cell.cluster_len)
         guard end <= clusters.count else { return "" }
         return String(decoding: clusters[start ..< end], as: UTF8.self)
+    }
+
+    /// Whether the grid row at `row` is a soft-wrap continuation of the logical
+    /// line begun on the row above, rather than the start of a new line.
+    func isSoftWrapped(row: Int) -> Bool {
+        guard row > 0, row < rows, cols > 0 else { return false }
+        let index = row * cols
+        guard index < cells.count else { return false }
+        return cells[index].flags & rustCellFlagWrapped != 0
     }
 }
 
@@ -111,24 +179,65 @@ enum RemoteTerminalRenderStateDecoder {
     }
 }
 
-enum RemoteTerminalFontMetrics {
-    static let baseFont = UIFont.monospacedSystemFont(ofSize: 13, weight: .regular)
+/// Font-derived geometry for the terminal canvas.
+///
+/// All three values are derived from the *same* `CTFont` so the grid the Rust
+/// engine is sized to, the cells the canvas paints, and the baseline each glyph
+/// is drawn on cannot disagree. The previous code mixed a `CTFont` line box
+/// (`ascent + descent + leading`, the cell height) with a `UIFont.lineHeight`
+/// to compute the baseline offset, and produced a *negative* offset — every
+/// line was drawn roughly one line-height above its own cell, landing in the
+/// row above and clipping. That made multi-line output barely readable.
+struct RemoteTerminalCellMetrics {
+    /// Advance of the monospaced font: the horizontal distance between the
+    /// origins of two adjacent cells. Measured from a representative glyph
+    /// (all ASCII advances are identical in a monospaced font) and used
+    /// *exactly*, rather than `ceil(max)`, which inflated every cell by ~12%
+    /// and visibly loosened the character spacing.
+    let cellWidth: CGFloat
+    /// Height of one terminal row, in points.
+    let cellHeight: CGFloat
+    /// Distance from the top of a cell down to the text baseline. Because
+    /// `draw(at:)` places the baseline, this is what vertically seats a line
+    /// inside its row: the glyph box occupies
+    /// `[baseline - ascent, baseline + descent]` and must sit inside
+    /// `[0, cellHeight]`.
+    let baselineOffset: CGFloat
 
-    static func cellSize(for font: UIFont = baseFont) -> CGSize {
+    var cellSize: CGSize { CGSize(width: cellWidth, height: cellHeight) }
+
+    init(font: UIFont) {
         let ctFont = font as CTFont
-        var characters = (32 ... 126).map { UniChar($0) }
-        var glyphs = [CGGlyph](repeating: 0, count: characters.count)
-        CTFontGetGlyphsForCharacters(ctFont, &characters, &glyphs, characters.count)
-        var advances = [CGSize](repeating: .zero, count: characters.count)
-        CTFontGetAdvancesForGlyphs(ctFont, .horizontal, glyphs, &advances, glyphs.count)
-        let width = max(1, ceil(advances.map(\.width).max() ?? 0))
+
+        var probe = Array("0".utf16)
+        var glyphs = [CGGlyph](repeating: 0, count: probe.count)
+        CTFontGetGlyphsForCharacters(ctFont, &probe, &glyphs, probe.count)
+        var advances = [CGSize](repeating: .zero, count: probe.count)
+        CTFontGetAdvancesForGlyphs(ctFont, .horizontal, glyphs, &advances, advances.count)
+        let advance = advances.first?.width ?? max(1, font.pointSize * 0.6)
+        cellWidth = max(0.5, advance)
 
         let ascent = CTFontGetAscent(ctFont)
         let descent = CTFontGetDescent(ctFont)
         let leading = CTFontGetLeading(ctFont)
-        let height = max(1, ceil(ascent + descent + leading))
+        // The cell must be tall enough for the whole line box (ink + leading).
+        let lineBox = ascent + descent + leading
+        cellHeight = max(1, lineBox.rounded(.up))
+        // Centre the line box's ink inside the cell, then drop to the baseline.
+        baselineOffset = ((cellHeight - lineBox) / 2) + ascent
+    }
+}
 
-        return CGSize(width: width, height: height)
+enum RemoteTerminalFontMetrics {
+    static let baseFont = UIFont.monospacedSystemFont(ofSize: 13, weight: .regular)
+
+    /// Cell geometry for the current rendering font.
+    static func metrics(for font: UIFont = baseFont) -> RemoteTerminalCellMetrics {
+        RemoteTerminalCellMetrics(font: font)
+    }
+
+    static func cellSize(for font: UIFont = baseFont) -> CGSize {
+        metrics(for: font).cellSize
     }
 }
 
@@ -169,6 +278,23 @@ private nonisolated func chau7_terminal_set_colors(
     _ bgR: UInt8, _ bgG: UInt8, _ bgB: UInt8,
     _ cursorR: UInt8, _ cursorG: UInt8, _ cursorB: UInt8,
     _ palette: UnsafePointer<UInt8>?
+) -> Void
+
+/// C signature of `chau7_terminal_get_display_rows` (see rust `ffi.rs`):
+/// `DisplayRowBuffer *chau7_terminal_get_display_rows(term, u16 display_cols)`.
+/// The result is already folded to `display_cols`, joined across soft-wrapped
+/// rows, and must be released with `chau7_terminal_free_display_rows`.
+@_silgen_name("chau7_terminal_get_display_rows")
+private nonisolated func chau7_terminal_get_display_rows(
+    _ term: UnsafeMutableRawPointer?,
+    _ displayCols: UInt16
+) -> UnsafeMutablePointer<RustDisplayRowBuffer>?
+
+/// C signature of `chau7_terminal_free_display_rows`:
+/// `void chau7_terminal_free_display_rows(DisplayRowBuffer *)`.
+@_silgen_name("chau7_terminal_free_display_rows")
+private nonisolated func chau7_terminal_free_display_rows(
+    _ buffer: UnsafeMutablePointer<RustDisplayRowBuffer>?
 ) -> Void
 
 final nonisolated class RemoteRustTerminalPlayback {
@@ -225,14 +351,53 @@ final nonisolated class RemoteRustTerminalPlayback {
         }
     }
 
-    func scrollTo(displayOffset: Int, scrollbackRows: Int) {
-        guard scrollbackRows > 0 else {
-            chau7_terminal_scroll_to(handle, 0)
-            return
+    /// Scrolls to a fraction of the live scrollback, where 0 is the newest
+    /// output and 1 is the oldest retained row.
+    ///
+    /// The fraction is resolved against the engine's *current* history size
+    /// inside Rust, so a viewport never lands at a row computed from a
+    /// `scrollbackRows` value captured before the mutation was queued.
+    func scrollToNormalized(_ fraction: Double) {
+        chau7_terminal_scroll_to(handle, min(max(fraction, 0), 1))
+    }
+
+    /// Fold the engine grid down to `displayCols` phone-width rows.
+    ///
+    /// The fold is done in Rust because that is the layer that knows which
+    /// physical rows are soft-wrap continuations of the line above. Doing it
+    /// here would mean re-deriving `row * cols + col` through a source-to-display
+    /// mapping on every frame.
+    ///
+    /// Returns nil if the engine cannot produce a buffer, so the caller can fall
+    /// back to folding in Swift.
+    func displayRows(displayCols: Int) -> RemoteTerminalDisplayState? {
+        guard let handle, displayCols > 0, displayCols <= Int(UInt16.max) else { return nil }
+        guard let raw = chau7_terminal_get_display_rows(handle, UInt16(displayCols)) else { return nil }
+        defer { chau7_terminal_free_display_rows(raw) }
+
+        let buffer = raw.pointee
+        guard buffer.display_rows > 0, buffer.display_cols > 0 else { return nil }
+        guard let cellsPointer = buffer.cells, buffer.cell_count > 0 else { return nil }
+        guard let offsetsPointer = buffer.row_offsets, buffer.row_offsets_len >= 2 else { return nil }
+
+        let cells = Array(UnsafeBufferPointer(start: cellsPointer, count: buffer.cell_count))
+        let rowOffsets = Array(UnsafeBufferPointer(start: offsetsPointer, count: buffer.row_offsets_len))
+
+        // Copy cluster bytes before the defer frees the FFI buffer.
+        let clusters: Data
+        if let base = buffer.clusters_utf8, buffer.clusters_len > 0 {
+            clusters = Data(bytes: base, count: buffer.clusters_len)
+        } else {
+            clusters = Data()
         }
-        let clampedOffset = min(max(displayOffset, 0), scrollbackRows)
-        let normalized = Double(clampedOffset) / Double(scrollbackRows)
-        chau7_terminal_scroll_to(handle, normalized)
+
+        return RemoteTerminalDisplayState(
+            cells: cells,
+            clusters: clusters,
+            rowOffsets: rowOffsets,
+            displayCols: Int(buffer.display_cols),
+            displayRows: Int(buffer.display_rows)
+        )
     }
 
     func snapshot() -> RemoteTerminalRenderState? {

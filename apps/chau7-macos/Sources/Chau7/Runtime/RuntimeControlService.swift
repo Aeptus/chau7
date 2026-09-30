@@ -27,7 +27,7 @@ final class RuntimeControlService {
     /// at the right moment but does not tell the compiler the block is
     /// actor-isolated, so `MainActor.assumeIsolated` carries the actual claim.
     /// That claim is true because this is the main queue.
-    private func onMainActor<T>(_ block: @MainActor @escaping () -> T) -> T {
+    private func onMainActor<T>(_ block: @MainActor () -> T) -> T {
         if Thread.isMainThread {
             return MainActor.assumeIsolated(block)
         }
@@ -1020,7 +1020,7 @@ final class RuntimeControlService {
         guard !force else { return }
 
         DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [controlService] in
-            guard onMainActor({ controlService.tabExistsAcrossWindows(tabID: tabID) }) else { return }
+            guard controlService.tabExistsAcrossWindows(tabID: tabID) else { return }
             Log.info("MCP \(context): escalating delayed tab close for \(tabID)")
             controlService.closeTabAsync(
                 tabID: tabID.uuidString,

@@ -1171,7 +1171,7 @@
   {
     "category": "Terminal Core",
     "feature": "Full ANSI/VT100 Support",
-    "description": "16-color, 256-color, and 24-bit true color with full SGR attributes (bold, italic, underline, strikethrough)",
+    "description": "16-color, 256-color, and 24-bit true color with full SGR attributes (bold, italic, underline, strikethrough); plain-text stripping consumes every escape introducer family (CSI, OSC, DCS, PM, APC, charset selection, and 8-bit C1) to its real terminator instead of replaying unknown payloads as visible text",
     "status": "Shipped",
     "differentiator": "No"
   },
@@ -2816,7 +2816,7 @@
   {
     "category": "SSH, Profiles & Remote",
     "feature": "Remote Push Approval Delivery",
-    "description": "Relay-backed APNs push registration and wakeups for new approvals and interactive prompts on the Chau7 Remote iPhone app, with relay encryption performed on a frame copy so the local push decoder retains the original JSON payload",
+    "description": "Relay-backed APNs push registration and wakeups for new approvals and interactive prompts on the Chau7 Remote iPhone app, with relay encryption performed on a frame copy so the local push decoder retains the original JSON payload. A decision taken from a notification is delivered straight to the client and, if the request is not yet known (cold launch), held in a bounded deferred-decision ledger and applied when the authoritative pending list arrives; queued responses, pending prompt answers and deferred Live Activity actions survive connection restarts and are discarded only by an explicit user disconnect. Actionable notifications whose request is no longer pending are pruned on launch and after every authoritative snapshot, so a resolved approval cannot leave a dead Allow/Deny card on the lock screen",
     "status": "Experimental",
     "differentiator": "Yes"
   },
@@ -2844,7 +2844,7 @@
   {
     "category": "SSH, Profiles & Remote",
     "feature": "Responsive iPhone Streaming Pipeline",
-    "description": "Socket receive and ordered frame application are decoupled, replaceable grids coalesce without breaking encrypted sequence order, visible text refreshes run on a bounded cadence, hidden renderer work is skipped, and rolling metrics expose where receive-to-publish latency accumulates",
+    "description": "Socket receive and ordered frame application are decoupled, replaceable grids coalesce without breaking encrypted sequence order, the receive queue is genuinely bounded (already-suppressed output frames are shed once grids run out, so a large burst cannot grow it without limit), visible text refreshes run on a bounded cadence, hidden renderer work is skipped, and rolling metrics expose where receive-to-publish latency accumulates along with how many frames were shed",
     "status": "Experimental",
     "differentiator": "Yes"
   },
@@ -2872,7 +2872,7 @@
   {
     "category": "SSH, Profiles & Remote",
     "feature": "Display-Paced iPhone Terminal Rendering",
-    "description": "A serial actor ingests PTY bytes and extracts Rust grids off-main while a one-shot 60/120 Hz display link publishes only the newest immutable frame; layout callbacks cannot pin playback to stale scrollback, renderer observation stays isolated from tab/input chrome, overloaded ordered output fast-forwards safely to a checkpoint, and sequence-correlated diagnostics time every boundary through Core Graphics draw and the next compositor refresh opportunity without per-frame disk logging",
+    "description": "A serial actor ingests PTY bytes and extracts Rust grids off-main while a one-shot 60/120 Hz display link publishes only the newest immutable frame; the viewport is declared unconditionally from the laid-out view so the renderer is never deadlocked behind its own first frame, cell width/height/baseline are derived from one font measurement (correct baseline, tight monospaced advance) and the Text Size setting actually resizes the engine grid, canvas, and scroll math together, the engine ingests at the Mac's announced PTY width so wide full-screen TUIs are not hard-wrapped and are instead re-wrapped to phone-width rows for display with the scroll offset converted between source and display rows, layout callbacks cannot masquerade as user scrolling and pin playback to stale history, frame observation stays inside the renderer subtree so live content does not invalidate the tab picker or input chrome, overloaded output still fast-forwards safely to a checkpoint, and sequence-correlated diagnostics time every boundary through Core Graphics draw and the next compositor refresh opportunity without per-frame disk logging",
     "status": "Experimental",
     "differentiator": "Yes"
   },
@@ -2970,7 +2970,7 @@
   {
     "category": "SSH, Profiles & Remote",
     "feature": "Peer-Confirmed iPhone Session Recovery",
-    "description": "A trusted iPhone HELLO can replace a stale helper crypto epoch after app relaunch without dropping cached terminal state; both peers stay provisional until an encrypted SESSION_READY round trip confirms the epoch, and application traffic remains queued until then",
+    "description": "A fresh iPhone HELLO from the trusted identity replaces a helper crypto epoch that survived the app relaunch without rotating the Mac nonce or discarding cached terminal state. Both peers remain provisional until an encrypted SESSION_READY round trip confirms the same epoch; input, tab requests, approvals, and telemetry stay queued until then, preventing a false connected state from becoming an endless empty inventory. Because HELLO is cleartext and therefore freely injectable, it is admitted only when it names the paired device id and Mac key fingerprint, and epoch resets are budgeted per window: exceeding the budget escalates to a reconnect-backoff-governed transport restart instead of re-keying in place forever. A successfully decrypted frame restores the budget, which also ages out, so a session that legitimately re-handshooks later still recovers",
     "status": "Experimental",
     "differentiator": "Yes"
   },
@@ -5162,6 +5162,34 @@
     "category": "Developer Experience",
     "feature": "Strict-Concurrency Warning Rollout",
     "description": "All SwiftPM targets enable complete concurrency diagnostics without failing builds; two invalid dashboard main-actor hops are fixed, and known shared-state races remain tracked before warning promotion",
+    "status": "Shipped",
+    "differentiator": "No"
+  },
+  {
+    "category": "Reliability",
+    "feature": "Load-Safe Git Probing",
+    "description": "The git probe drains stdout and stderr concurrently, so a command that fills the stderr pipe buffer can no longer deadlock against a reader waiting on stdout and get killed by the timeout. A git that is killed or crashed by a signal is treated as a failed probe rather than a clean exit, so an overloaded machine falls back to the filesystem snapshot instead of silently reporting an empty git result that looked like a clean repository. The fallback tests assert their own precondition, so a runner that relocates TMPDIR inside a repository skips them explicitly instead of intermittently asserting the wrong thing.",
+    "status": "Shipped",
+    "differentiator": "No"
+  },
+  {
+    "category": "Security",
+    "feature": "Handshake-Proven Device Pairing",
+    "description": "A claimed iOS identity is held provisional when PAIR_REQUEST arrives and is persisted as trusted only once the Mac accepts an encrypted SESSION_READY, which only the holder of the matching private key can produce. PAIR_REQUEST is cleartext and relayed verbatim, so the public key it carries is attacker-chosen: persisting it on arrival let a hostile relay register a key of its own, and replaying a legitimate key could hijack an already-trusted identity. Trust is now anchored in the Mac private key, which never leaves the Mac, so a relay that observes the pairing code still cannot derive the shared secret and is never persisted. Pairing stays long-lived: the code is a one-time bootstrap credential and the stored public key authorises every later reconnect, so the code is never re-entered.",
+    "status": "Shipped",
+    "differentiator": "No"
+  },
+  {
+    "category": "Reliability",
+    "feature": "Terminal Size Frame and Soft-Wrap Marking",
+    "description": "A tab PTY width is announced on its own tab-scoped TERMINAL_SIZE frame instead of riding on the tab inventory, so a Mac window resize reaches the client as a real event rather than an incidental side effect of the inventory payload changing. The shared terminal crate marks each grid row that soft-wraps from the row above, exposing the information clients already needed to re-compose a wide grid onto a narrow display by folding on logical lines rather than chopping soft-wrapped prose mid-sentence at every fold. The engine pre-folds the grid to the client width, so the iPhone paints rows that are already the right size instead of re-deriving cell indices and decoding a cluster per drawn cell every frame. Folding joins soft-wrapped continuation rows before reflowing, so a paragraph that exceeded the source width reads continuously rather than being cut at the terminal wrap point, and trailing padding is trimmed so a short line does not inflate display height. The previous client-side fold is retained as a fallback.",
+    "status": "Shipped",
+    "differentiator": "No"
+  },
+  {
+    "category": "Productivity",
+    "feature": "Native iPhone Activity Card",
+    "description": "The phone renders the agent current activity as a native card above the terminal, showing the running tool, its status, and the pending command when it is blocked on approval. The Mac already published a structured activity snapshot per tab and the phone already decoded it, but only ever used it to drive the lock-screen Live Activity, so answering the common question of what the agent is doing and whether it needs you required reading a re-wrapped terminal. Approval buttons only appear for a request the phone actually holds, so a tap can never queue a decision that would never be applied.",
     "status": "Shipped",
     "differentiator": "No"
   }

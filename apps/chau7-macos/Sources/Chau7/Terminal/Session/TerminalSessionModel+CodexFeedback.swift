@@ -36,18 +36,20 @@ extension TerminalSessionModel {
                 eventType = "approval_requested"
                 message = "Codex is waiting for approval."
             }
-            appModel?.recordEvent(
-                source: .codex,
-                type: eventType,
-                tool: "Codex",
-                message: message,
-                notify: true,
-                directory: currentDirectory,
-                tabID: ownerTabID,
-                sessionID: interaction.threadID ?? lastAISessionId,
-                producer: "codex_app_server",
-                reliability: .authoritative
-            )
+            MainActor.assumeIsolated {
+                appModel?.recordEvent(
+                    source: .codex,
+                    type: eventType,
+                    tool: "Codex",
+                    message: message,
+                    notify: true,
+                    directory: currentDirectory,
+                    tabID: ownerTabID,
+                    sessionID: interaction.threadID ?? lastAISessionId,
+                    producer: "codex_app_server",
+                    reliability: .authoritative
+                )
+            }
 
         case .resolved:
             if outcome.pendingKinds.contains(.approval) {
@@ -219,18 +221,20 @@ extension TerminalSessionModel {
         let optionSummary = prompt.optionLabels.isEmpty
             ? ""
             : "\nOptions: \(prompt.optionLabels.joined(separator: ", "))"
-        appModel?.recordEvent(
-            source: .codex,
-            type: "user_input_requested",
-            tool: "Codex",
-            message: prompt.message + optionSummary,
-            notify: true,
-            directory: currentDirectory,
-            tabID: ownerTabID,
-            sessionID: sessionID,
-            producer: "codex_rollout_feedback",
-            reliability: .authoritative
-        )
+        MainActor.assumeIsolated {
+            appModel?.recordEvent(
+                source: .codex,
+                type: "user_input_requested",
+                tool: "Codex",
+                message: prompt.message + optionSummary,
+                notify: true,
+                directory: currentDirectory,
+                tabID: ownerTabID,
+                sessionID: sessionID,
+                producer: "codex_rollout_feedback",
+                reliability: .authoritative
+            )
+        }
         Log.info(
             "Codex structured feedback pending session=\(sessionID.prefix(8)) call=\(prompt.callID?.prefix(12) ?? "unknown") options=\(prompt.optionLabels.count)"
         )

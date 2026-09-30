@@ -10,6 +10,7 @@ import XCTest
 /// this kit factors the same checks into reusable assertion functions
 /// that the parameterized `PaneConformanceKitTests` driver can run over
 /// the full cross-product (pane kind × edit state × post-dispose state).
+@MainActor
 enum PaneConformanceKit {
 
     // MARK: - Entry point

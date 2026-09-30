@@ -20,6 +20,7 @@ final class BugReportWindowController: NSObject, NSWindowDelegate {
         self.overlayModel = overlayModel
     }
 
+    @MainActor
     func show() {
         guard let appModel, let overlayModel else {
             Log.warn("BugReportWindowController: not configured, falling back to browser")

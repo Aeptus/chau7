@@ -167,6 +167,7 @@ enum PaneType: String, Codable {
 /// RepositoryPane, DashboardPane); branches are splits. The single
 /// `findLeaf` / `collectLeaves` / `walkLeaves` visitors collapse what
 /// used to be ~17 hand-rolled 7-case switches.
+@MainActor
 indirect enum SplitNode: Identifiable {
     case leaf(any PaneNode)
     case split(id: UUID, direction: SplitDirection, first: SplitNode, second: SplitNode, ratio: CGFloat)
@@ -642,14 +643,14 @@ final class TextEditorModel: Identifiable {
                 let hash = Self.contentHash(updated)
                 DispatchQueue.main.async { [weak self] in
                     guard let self else { return }
-                    self.content = updated
-                    self.loadedContentHash = hash
-                    self.isDirty = false
-                    self.hasExternalChangeConflict = false
-                    self.hasSaveConflict = false
-                    self.externalConflictMessage = nil
-                    self.setAutoSaveStatusMessage(L("editor.autoSaved", "Auto-saved"))
-                    self.startWatchingCurrentFile()
+                    content = updated
+                    loadedContentHash = hash
+                    isDirty = false
+                    hasExternalChangeConflict = false
+                    hasSaveConflict = false
+                    externalConflictMessage = nil
+                    setAutoSaveStatusMessage(L("editor.autoSaved", "Auto-saved"))
+                    startWatchingCurrentFile()
                 }
             } catch {
                 DispatchQueue.main.async { [weak self] in
@@ -680,7 +681,7 @@ final class TextEditorModel: Identifiable {
         runbook.codeBlockState(for: code, lineNumber: lineNumber)
     }
 
-    deinit {
+    isolated deinit {
         dispose()
         // Autosave + runbook work items are owned by their respective
         // helpers (`autoSaver`, `runbook`) and cancelled in their own
@@ -1100,7 +1101,7 @@ final class DiffViewerModel: Identifiable {
 
     /// Forwards to ``Chau7Core/UnifiedDiffParser/parseUnifiedDiff(_:)``;
     /// kept so the model's call sites and existing tests compile unchanged.
-    static func parseUnifiedDiff(_ raw: String) -> ParseResult {
+    nonisolated static func parseUnifiedDiff(_ raw: String) -> ParseResult {
         UnifiedDiffParser.parseUnifiedDiff(raw)
     }
 }

@@ -71,6 +71,8 @@ struct SettingsView: View {
     private var experimentalTerminalRenderer = AppSettings.experimentalTerminalRendererDefault
     @AppStorage(AppSettings.showKeyboardBarKey) private var showKeyboardBar = AppSettings.showKeyboardBarDefault
     @AppStorage(AppSettings.terminalFontSizeKey) private var terminalFontSize = AppSettings.terminalFontSizeDefault
+    /// Off by default. Turns on the terminal's in-app diagnostics overlay.
+    @AppStorage("terminal_show_render_diagnostics") private var showsRenderDiagnostics = false
     @AppStorage(AppSettings.colorSchemeNameKey) private var colorSchemeName = AppSettings.colorSchemeNameDefault
     @AppStorage(AppSettings.verboseLoggingKey) private var verboseLogging = AppSettings.verboseLoggingDefault
     @AppStorage(AppSettings.logKeystrokesKey) private var logKeystrokes = AppSettings.logKeystrokesDefault
@@ -140,6 +142,9 @@ struct SettingsView: View {
                         .accessibilityLabel("Terminal text size")
                         .accessibilityValue("\(Int(terminalFontSize)) points")
                     }
+                    Toggle("Show Render Diagnostics", isOn: $showsRenderDiagnostics)
+                        .accessibilityLabel("Show terminal render diagnostics")
+                        .accessibilityHint("Overlays the terminal with the source and display grid sizes, where wide output is being folded, and the per-frame cluster decode count.")
                 } header: {
                     Text("Display")
                 } footer: {
@@ -212,7 +217,11 @@ struct SettingsView: View {
 
                         if client.isConnected {
                             Button("Disconnect", role: .destructive) {
-                                client.disconnect()
+                                // Explicit user teardown: also drop anything the
+                                // user still owes the Mac, so the session does
+                                // not quietly resume and resend queued decisions
+                                // the user believed they had cancelled.
+                                client.disconnectAndDiscardPendingDecisions()
                             }
                         } else {
                             Button("Connect") { client.connect() }

@@ -902,15 +902,15 @@ final class TerminalControlService {
         }
     }
 
-    func waitForTabReady(tabID: String, timeoutMs: Int = 30000) -> String {
+    nonisolated func waitForTabReady(tabID: String, timeoutMs: Int = 30000) -> String {
         waitForTabReady(tabID: tabID, timeoutMs: timeoutMs, enforceMCPControl: false)
     }
 
-    func waitForMCPControlledTabReady(tabID: String, timeoutMs: Int = 30000) -> String {
+    nonisolated func waitForMCPControlledTabReady(tabID: String, timeoutMs: Int = 30000) -> String {
         waitForTabReady(tabID: tabID, timeoutMs: timeoutMs, enforceMCPControl: true)
     }
 
-    private func waitForTabReady(tabID: String, timeoutMs: Int, enforceMCPControl: Bool) -> String {
+    private nonisolated func waitForTabReady(tabID: String, timeoutMs: Int, enforceMCPControl: Bool) -> String {
         let boundedTimeoutMs = max(0, min(timeoutMs, 120_000))
         let start = Date()
 
@@ -1003,7 +1003,7 @@ final class TerminalControlService {
     /// so MCP callers get a one-call "spawn agents" entrypoint instead of
     /// wiring the primitives themselves. Runs off the main thread (like
     /// waitForTabReady), so its per-agent waits don't block the UI.
-    func launchAgents(
+    nonisolated func launchAgents(
         directory: String?,
         windowID: Int?,
         agentCommand: String,
@@ -1020,7 +1020,7 @@ final class TerminalControlService {
         for index in 0 ..< clampedCount {
             // 1. Open the tab.
             guard let tabID = decodeJSONObject(
-                createTab(directory: directory, windowID: windowID, context: "agent_launch")
+                onMain { self.createTab(directory: directory, windowID: windowID, context: "agent_launch") }
             )?["tab_id"] as? String else {
                 agents.append([
                     "index": index, "status": "failed", "stage": "create",
@@ -1044,7 +1044,7 @@ final class TerminalControlService {
             throttleAgentLaunchAction()
 
             // 3. Start the agent (optionally after checking out the PR).
-            if let execError = decodeJSONObject(execInTab(tabID: tabID, command: launchCommand))?["error"] as? String {
+            if let execError = decodeJSONObject(onMain { self.execInTab(tabID: tabID, command: launchCommand) })?["error"] as? String {
                 agents.append([
                     "index": index, "tab_id": tabID, "status": "failed",
                     "stage": "exec", "launch_command": launchCommand, "error": execError
@@ -1101,12 +1101,12 @@ final class TerminalControlService {
 
     /// Builds the shell command that starts an agent, prefixing a PR checkout
     /// when a PR number is supplied so the agent opens on the PR's branch.
-    static func agentLaunchCommand(agentCommand: String, prNumber: Int?) -> String {
+    nonisolated static func agentLaunchCommand(agentCommand: String, prNumber: Int?) -> String {
         guard let prNumber else { return agentCommand }
         return "gh pr checkout \(prNumber) && \(agentCommand)"
     }
 
-    static func agentPromptInjectionTimeoutMs(readyTimeoutMs: Int) -> Int {
+    nonisolated static func agentPromptInjectionTimeoutMs(readyTimeoutMs: Int) -> Int {
         let boundedTimeout = max(0, min(readyTimeoutMs, 120_000))
         return min(boundedTimeout, maxAgentPromptInjectionTimeoutMs)
     }
@@ -1115,7 +1115,7 @@ final class TerminalControlService {
     /// verifies, and submits the prompt. The tab is still launched if
     /// verification fails, but `agent_launch` reports the prompt failure
     /// explicitly so callers do not assume a silent handoff worked.
-    private func injectPromptWhenAgentAttaches(
+    private nonisolated func injectPromptWhenAgentAttaches(
         tabID: String,
         prompt: String,
         timeoutMs: Int
@@ -1124,7 +1124,7 @@ final class TerminalControlService {
         while Date() < deadline {
             Thread.sleep(forTimeInterval: 0.25)
 
-            if let status = decodeJSONObject(tabStatus(tabID: tabID)),
+            if let status = decodeJSONObject(onMain { self.tabStatus(tabID: tabID) }),
                Self.agentLaunchExitedBeforePrompt(status),
                currentLaunchProvider(tabID: tabID) == nil {
                 Log.warn("MCP: agent_launch \(tabID) exited before prompt injection")
@@ -1168,7 +1168,7 @@ final class TerminalControlService {
 
             throttleAgentLaunchAction()
 
-            let sendResult = decodeJSONObject(sendInput(tabID: tabID, input: prompt))
+            let sendResult = decodeJSONObject(onMain { self.sendInput(tabID: tabID, input: prompt) })
             guard sendResult?["ok"] as? Bool == true else {
                 return AgentPromptInjectionResult(
                     status: "input_rejected",
@@ -1187,7 +1187,7 @@ final class TerminalControlService {
             )
 
             throttleAgentLaunchAction()
-            let submitResult = decodeJSONObject(submitPrompt(tabID: tabID))
+            let submitResult = decodeJSONObject(onMain { self.submitPrompt(tabID: tabID) })
             let submitted = submitResult?["ok"] as? Bool == true
             guard submitted else {
                 return AgentPromptInjectionResult(
@@ -1252,7 +1252,7 @@ final class TerminalControlService {
         )
     }
 
-    private func currentLaunchProvider(tabID: String) -> String? {
+    private nonisolated func currentLaunchProvider(tabID: String) -> String? {
         onMain {
             guard let (_, session) = self.resolveTab(tabID) else { return nil }
             if let activeApp = Self.nonEmptyString(session.activeAppName) {
@@ -1264,14 +1264,14 @@ final class TerminalControlService {
         }
     }
 
-    private func waitForAgentInputSurfaceReady(
+    private nonisolated func waitForAgentInputSurfaceReady(
         tabID: String,
         provider: String?,
         timeoutMs: Int
     ) -> AgentInputSurfaceReadiness {
         let deadline = Date().addingTimeInterval(Double(max(0, timeoutMs)) / 1000.0)
         while Date() < deadline {
-            if let status = decodeJSONObject(tabStatus(tabID: tabID)),
+            if let status = decodeJSONObject(onMain { self.tabStatus(tabID: tabID) }),
                Self.agentLaunchExitedBeforePrompt(status),
                currentLaunchProvider(tabID: tabID) == nil {
                 return .exited
@@ -1295,7 +1295,7 @@ final class TerminalControlService {
         return .timedOut
     }
 
-    private func waitForPromptInputVisible(tabID: String, prompt: String, timeoutMs: Int) -> Bool {
+    private nonisolated func waitForPromptInputVisible(tabID: String, prompt: String, timeoutMs: Int) -> Bool {
         let needles = Self.promptVisibilityNeedles(from: prompt)
         guard !needles.isEmpty else { return true }
 
@@ -1316,10 +1316,10 @@ final class TerminalControlService {
         return false
     }
 
-    private func waitForAgentRunningAfterSubmit(tabID: String, timeoutMs: Int) -> Bool {
+    private nonisolated func waitForAgentRunningAfterSubmit(tabID: String, timeoutMs: Int) -> Bool {
         let deadline = Date().addingTimeInterval(Double(max(0, timeoutMs)) / 1000.0)
         while Date() < deadline {
-            if let status = decodeJSONObject(tabStatus(tabID: tabID)),
+            if let status = decodeJSONObject(onMain { self.tabStatus(tabID: tabID) }),
                Self.agentStatusReportsRunning(status) {
                 return true
             }
@@ -1334,7 +1334,7 @@ final class TerminalControlService {
         return false
     }
 
-    static func agentStatusReportsRunning(_ status: [String: Any]) -> Bool {
+    nonisolated static func agentStatusReportsRunning(_ status: [String: Any]) -> Bool {
         if status["active_run"] is [String: Any] {
             return true
         }
@@ -1361,7 +1361,7 @@ final class TerminalControlService {
         }
     }
 
-    static func agentLaunchExitedBeforePrompt(_ status: [String: Any]) -> Bool {
+    nonisolated static func agentLaunchExitedBeforePrompt(_ status: [String: Any]) -> Bool {
         if nonEmptyString(status["raw_active_app"]) != nil {
             return false
         }
@@ -1389,22 +1389,22 @@ final class TerminalControlService {
         return promptReturned || acceptsExec
     }
 
-    private static func nonEmptyString(_ value: Any?) -> String? {
+    private nonisolated static func nonEmptyString(_ value: Any?) -> String? {
         guard let string = value as? String else { return nil }
         let trimmed = string.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? nil : trimmed
     }
 
-    static func agentOutputLooksInputReady(_ output: String, provider: String? = nil) -> Bool {
+    nonisolated static func agentOutputLooksInputReady(_ output: String, provider: String? = nil) -> Bool {
         agentOutputMatches(output, provider: provider, extraNeedles: [])
     }
 
     /// Same banner needles as input-ready plus in-flight activity markers.
-    static func agentOutputLooksResponsive(_ output: String, provider: String? = nil) -> Bool {
+    nonisolated static func agentOutputLooksResponsive(_ output: String, provider: String? = nil) -> Bool {
         agentOutputMatches(output, provider: provider, extraNeedles: ["thinking", "working..."])
     }
 
-    private static func agentOutputMatches(
+    private nonisolated static func agentOutputMatches(
         _ output: String,
         provider: String?,
         extraNeedles: [String]
@@ -1433,7 +1433,7 @@ final class TerminalControlService {
         return needles.contains { lowercased.contains($0) }
     }
 
-    private func agentOutputLooksResponsive(tabID: String) -> Bool {
+    private nonisolated func agentOutputLooksResponsive(tabID: String) -> Bool {
         for source in ["buffer", "pty_log"] {
             guard let output = decodeJSONObject(
                 tabOutput(tabID: tabID, lines: 160, waitForStableMs: nil, source: source)
@@ -1447,7 +1447,7 @@ final class TerminalControlService {
         return false
     }
 
-    static func promptVisibilityNeedles(from prompt: String) -> [String] {
+    nonisolated static func promptVisibilityNeedles(from prompt: String) -> [String] {
         prompt
             .components(separatedBy: .newlines)
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
@@ -1459,11 +1459,11 @@ final class TerminalControlService {
             }
     }
 
-    private func throttleAgentLaunchAction() {
+    private nonisolated func throttleAgentLaunchAction() {
         Thread.sleep(forTimeInterval: Self.agentLaunchActionThrottleSeconds)
     }
 
-    private func decodeJSONObject(_ json: String) -> [String: Any]? {
+    private nonisolated func decodeJSONObject(_ json: String) -> [String: Any]? {
         guard let data = json.data(using: .utf8) else { return nil }
         return (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
     }
@@ -1659,7 +1659,7 @@ final class TerminalControlService {
         }
     }
 
-    func tabOutput(tabID: String, lines: Int, waitForStableMs: Int? = nil, source: String? = nil) -> String {
+    nonisolated func tabOutput(tabID: String, lines: Int, waitForStableMs: Int? = nil, source: String? = nil) -> String {
         // source=pty_log: return ANSI-stripped PTY log instead of terminal buffer.
         // Works for all AI tools regardless of alternate screen usage.
         if source == "pty_log" {
@@ -1726,14 +1726,14 @@ final class TerminalControlService {
     /// Returns the ANSI-stripped PTY log output for an AI session in a tab.
     /// This captures everything written to the terminal including alternate-screen
     /// content that TUI-based AI tools discard on exit.
-    private func ptyLogOutput(tabID: String, lines: Int, waitForStableMs: Int? = nil) -> String {
+    private nonisolated func ptyLogOutput(tabID: String, lines: Int, waitForStableMs: Int? = nil) -> String {
         if let waitForStableMs, waitForStableMs > 0 {
             return waitForStablePTYLogOutput(tabID: tabID, lines: lines, waitForStableMs: waitForStableMs)
         }
         return encodedPTYLogOutput(tabID: tabID, lines: lines)
     }
 
-    private func waitForStablePTYLogOutput(tabID: String, lines: Int, waitForStableMs: Int) -> String {
+    private nonisolated func waitForStablePTYLogOutput(tabID: String, lines: Int, waitForStableMs: Int) -> String {
         let maxWaitMs = min(waitForStableMs, 30000)
         let stabilityThresholdMs = min(maxWaitMs, 500)
         let pollIntervalMs = 250
@@ -1769,7 +1769,7 @@ final class TerminalControlService {
         return latestResponse
     }
 
-    private func encodedPTYLogOutput(tabID: String, lines: Int) -> String {
+    private nonisolated func encodedPTYLogOutput(tabID: String, lines: Int) -> String {
         let result: (path: String?, transcriptData: Data?, error: String?) = onMain {
             guard let (_, session) = self.resolveTab(tabID) else {
                 return (nil, nil, self.jsonError("Tab not found: \(tabID)"))
@@ -1782,7 +1782,7 @@ final class TerminalControlService {
             )
         }
         if let error = result.error { return error }
-        let outputTabID = canonicalControlPlaneTabID(tabID)
+        let outputTabID = onMain { self.canonicalControlPlaneTabID(tabID) }
 
         let text = result.transcriptData.flatMap(Self.normalizedTranscriptText)
             ?? result.path.flatMap { TelemetryRecorder.readPTYLogTail(path: $0) }
@@ -1807,7 +1807,7 @@ final class TerminalControlService {
     /// Trims to the last `maxLines` lines and re-slices to half if the joined
     /// output would exceed the wire cap. Shared by the buffer and pty_log
     /// output paths (previously duplicated with drift risk).
-    private static func trimmedOutputLines(_ lines: [String], maxLines: Int) -> [String] {
+    private nonisolated static func trimmedOutputLines(_ lines: [String], maxLines: Int) -> [String] {
         var outputLines = lines
         if outputLines.count > maxLines {
             outputLines = Array(outputLines.suffix(maxLines))
@@ -1818,7 +1818,7 @@ final class TerminalControlService {
         return outputLines
     }
 
-    private static func normalizedTranscriptText(from data: Data) -> String? {
+    private nonisolated static func normalizedTranscriptText(from data: Data) -> String? {
         let raw = String(decoding: data, as: UTF8.self)
         let normalized = TerminalNormalizer.normalize(raw)
             .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1826,8 +1826,8 @@ final class TerminalControlService {
     }
 
     /// Formats buffer data into the standard tab_output response.
-    private func formatBufferOutput(tabID: String, data: Data, lines: Int) -> String {
-        let outputTabID = canonicalControlPlaneTabID(tabID)
+    private nonisolated func formatBufferOutput(tabID: String, data: Data, lines: Int) -> String {
+        let outputTabID = onMain { self.canonicalControlPlaneTabID(tabID) }
         let text = String(decoding: data, as: UTF8.self)
         var rawLines = text.components(separatedBy: "\n")
 
@@ -1869,7 +1869,7 @@ final class TerminalControlService {
 
     /// Lightweight fingerprint of buffer content: (byteCount, SHA256 of last 4KB).
     /// Avoids retaining full buffer strings between stability polls.
-    private static func bufferFingerprint(_ data: Data) -> (Int, Data) {
+    private nonisolated static func bufferFingerprint(_ data: Data) -> (Int, Data) {
         let count = data.count
         let tailSize = min(count, 4096)
         let tail = data.suffix(tailSize)
@@ -2411,7 +2411,7 @@ final class TerminalControlService {
         return encodeAny(cmds.map(Self.frequentCommandPayload))
     }
 
-    private static func frequentCommandPayload(_ cmd: FrequentCommand) -> [String: Any] {
+    private nonisolated static func frequentCommandPayload(_ cmd: FrequentCommand) -> [String: Any] {
         [
             "command": cmd.command,
             "count": cmd.count,
@@ -2926,9 +2926,8 @@ final class TerminalControlService {
     }
 
     /// Dispatch to main thread and return result. Safe from any background queue.
-    private func onMain<T>(_ block: @escaping () -> T) -> T {
-        if Thread.isMainThread { return block() }
-        return DispatchQueue.main.sync { block() }
+    private nonisolated func onMain<T>(_ block: @MainActor () -> T) -> T {
+        MainActorBridge.sync(block)
     }
 
     /// Dispatch to the main actor and return result.
@@ -3122,7 +3121,7 @@ final class TerminalControlService {
         jsonError("No active Chau7 window")
     }
 
-    private func jsonError(_ message: String) -> String {
+    private nonisolated func jsonError(_ message: String) -> String {
         // Build via JSONSerialization so backslashes and control characters in
         // caller-influenced text (tab IDs, command strings) are escaped properly
         // — a hand-rolled `"`-only escape produced malformed JSON that
@@ -3130,7 +3129,7 @@ final class TerminalControlService {
         encodeAny(["error": message])
     }
 
-    private func encodeAny(_ value: Any) -> String {
+    private nonisolated func encodeAny(_ value: Any) -> String {
         guard let data = try? JSONSerialization.data(withJSONObject: value, options: [.sortedKeys]),
               let str = String(data: data, encoding: .utf8) else {
             return "{}"

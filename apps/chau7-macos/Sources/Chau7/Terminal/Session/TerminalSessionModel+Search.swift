@@ -161,6 +161,13 @@ extension TerminalSessionModel {
         activeTerminalView?.captureRemoteGridSnapshotPayload()
     }
 
+    /// Current PTY dimensions, used to tell remote clients the width this
+    /// terminal actually draws at. Zero when no terminal view is attached.
+    var terminalDimensions: (cols: Int, rows: Int) {
+        guard let view = activeTerminalView else { return (0, 0) }
+        return (view.terminalCols, view.terminalRows)
+    }
+
     private func updateBufferLineCount(from bufferData: Data) {
         let newlineCount = bufferData.reduce(0) { count, byte in
             count + (byte == 0x0A ? 1 : 0)

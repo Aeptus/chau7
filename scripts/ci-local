@@ -26,9 +26,14 @@ ci_run_in "Swift format check" "apps/chau7-macos" swiftformat Sources Tests --li
 ci_run_in "Swift lint" "apps/chau7-macos" swiftlint lint --strict
 # --jobs is capped: uncapped swift-frontend fan-out saturates memory next to
 # the running Chau7 app and jetsam then SIGKILLs it (JetsamEvent 2026-07-03).
-ci_run_in "Swift build" "apps/chau7-macos" "$SWIFT_BIN" build --jobs "${CHAU7_SWIFT_JOBS:-3}" -Xswiftc -warnings-as-errors
-ci_run_in "Swift test" "apps/chau7-macos" "$SWIFT_BIN" test --jobs "${CHAU7_SWIFT_JOBS:-3}" -Xswiftc -warnings-as-errors
-ci_run_in "Swift dead-code (periphery)" "apps/chau7-macos" periphery scan --config .periphery.yml --strict
+
+# Match Package.swift strict-concurrency warning rollout; compile errors fail.
+ci_run_in "Swift build" "apps/chau7-macos" "$SWIFT_BIN" build --jobs "${CHAU7_SWIFT_JOBS:-3}"
+ci_run_in "Swift test" "apps/chau7-macos" "$SWIFT_BIN" test --jobs "${CHAU7_SWIFT_JOBS:-3}"
+# Periphery 3.x expects the native SwiftPM index-store layout. Swift 6.4
+# defaults to swiftbuild, which does not populate that path. Keep this
+# analysis build on the supported native driver and cap its parallelism too.
+ci_run_in "Swift dead-code (periphery)" "apps/chau7-macos" periphery scan --config .periphery.yml --strict -- --build-system native --jobs "${CHAU7_SWIFT_JOBS:-3}"
 
 ci_run_in "Rust format check" "apps/chau7-macos/rust" cargo fmt --all --check
 ci_run_in "Rust clippy" "apps/chau7-macos/rust" cargo clippy --workspace --all-targets --all-features -- -D warnings

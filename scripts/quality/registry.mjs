@@ -644,7 +644,9 @@ export const gates = [
         // --jobs is capped: full-parallelism swift-frontend jobs saturate
         // memory alongside the running Chau7 app and other agents, and
         // jetsam then SIGKILLs Chau7 itself (JetsamEvent 2026-07-03).
-        ["/usr/bin/swift", ["build", "--jobs", swiftBuildJobs(), "-Xswiftc", "-warnings-as-errors"]],
+        // Keep concurrency diagnostics visible as warnings, matching Package.swift
+        // and the documented migration policy; compiler errors still fail.
+        ["/usr/bin/swift", ["build", "--jobs", swiftBuildJobs()]],
       ]) {
         const result = await context.exec(command[0], command[1], { cwd: "apps/chau7-macos" });
         if (result.status !== "passed") return result;
@@ -662,7 +664,7 @@ export const gates = [
     inputs: ["apps/chau7-macos/Sources", "apps/chau7-macos/Tests", "apps/chau7-macos/Package.swift"],
     applies: (context) => hasPathPrefix(context.changedFiles, "apps/chau7-macos/Sources/") || hasPathPrefix(context.changedFiles, "apps/chau7-macos/Tests/"),
     rerun: "pnpm quality:prepush --include=swift-macos-tests",
-    run: async (context) => context.exec("/usr/bin/swift", ["test", "--jobs", swiftBuildJobs(), "-Xswiftc", "-warnings-as-errors"], { cwd: "apps/chau7-macos" }),
+    run: async (context) => context.exec("/usr/bin/swift", ["test", "--jobs", swiftBuildJobs()], { cwd: "apps/chau7-macos" }),
   },
   {
     id: "rust-terminal-static",

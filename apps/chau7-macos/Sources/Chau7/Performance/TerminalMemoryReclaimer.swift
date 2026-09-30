@@ -40,6 +40,7 @@ final class TerminalMemoryReclaimer: MemoryReclaimable {
         }
     }
 
+    @MainActor
     private static func enforceRoutineBudgetsOnMain() {
         let cacheBudget = TerminalMemoryBudgetPolicy.normalizedBudgetBytes(
             overrideMB: UserDefaults.standard.object(forKey: "terminal.perTabCacheBudgetMB") as? Int,
@@ -82,6 +83,7 @@ final class TerminalMemoryReclaimer: MemoryReclaimable {
         )
     }
 
+    @MainActor
     private static func reclaimOnMain(_ level: MemoryPressureLevel) {
         var clearedBufferCaches = 0
         var evictedWindows = 0

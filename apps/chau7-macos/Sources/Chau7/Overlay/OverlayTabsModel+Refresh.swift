@@ -654,7 +654,7 @@ extension OverlayTabsModel {
         let applyRenderPhaseReason: String
     }
 
-    static func paneRefreshPlan(
+    nonisolated static func paneRefreshPlan(
         isFocused: Bool,
         decisionIsInteractive: Bool
     ) -> PaneRefreshPlan {

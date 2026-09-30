@@ -267,6 +267,33 @@ public struct RemoteTabDescriptor: Codable, Equatable, Identifiable, Sendable {
         // Lenient: older senders omit is_mcp_controlled.
         self.isMCPControlled = try container.decodeIfPresent(Bool.self, forKey: .isMCPControlled) ?? false
         self.inputPaneID = try container.decodeIfPresent(UUID.self, forKey: .inputPaneID)
+        // `terminal_cols`/`terminal_rows` used to ride here and are deliberately
+        // no longer decoded. They now arrive on the tab-scoped TERMINAL_SIZE
+        // frame, which a window resize can push without a tab change. Keeping
+        // the old keys here would invite reading a stale value.
+    }
+}
+
+/// Live PTY dimensions of a tab's terminal.
+/// A client sizes its own terminal emulator to the *source* width so full-screen
+/// TUIs are ingested without being hard-wrapped at the client's narrower
+/// viewport, which scrambles the layout. The Mac's view is unaffected: this is
+/// a read-only announcement about a dimension it already has.
+///
+/// Sent as its own tab-scoped frame rather than on the tab inventory, because
+/// it is a rendering concern and because it changes on window resize — an
+/// event that otherwise produces no inventory update at all.
+public struct RemoteTerminalSizePayload: Codable, Equatable, Sendable {
+    /// Sentinel `tab_id` meaning "not scoped to a specific tab". A size frame
+    /// carrying it is meaningless and must be ignored.
+    public static let unscopedTabID: UInt32 = 0
+
+    public let cols: Int
+    public let rows: Int
+
+    public init(cols: Int, rows: Int) {
+        self.cols = cols
+        self.rows = rows
     }
 }
 

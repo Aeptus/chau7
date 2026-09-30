@@ -3,6 +3,7 @@ import AppKit
 import Chau7Core
 @testable import Chau7
 
+@MainActor
 final class TerminalViewRepresentableTests: XCTestCase {
     func testRendererSyncCallbackIsIndependentFromSessionBufferCallback() {
         let view = RustTerminalView(frame: .zero)
