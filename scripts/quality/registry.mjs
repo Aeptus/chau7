@@ -30,6 +30,27 @@ function swiftBuildJobs() {
   return process.env.CHAU7_SWIFT_JOBS || "3";
 }
 
+// Git exports these to hooks, pointing at the Chau7 repository. Tools that run
+// their own git inherit them and operate on the wrong repository: SwiftPM and
+// xcodebuild dependency checkouts in a fresh worktree fail with
+// "'swift-atomics': Couldn't check out revision ...: unable to read tree".
+const HOOK_GIT_ENV_VARS = [
+  "GIT_DIR",
+  "GIT_WORK_TREE",
+  "GIT_COMMON_DIR",
+  "GIT_INDEX_FILE",
+  "GIT_PREFIX",
+  "GIT_OBJECT_DIRECTORY",
+  "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+  "GIT_CONFIG_PARAMETERS",
+  "GIT_CONFIG_COUNT",
+];
+
+function execWithoutHookGitEnv(context, command, args = [], options) {
+  const unset = HOOK_GIT_ENV_VARS.flatMap((name) => ["-u", name]);
+  return context.exec("env", [...unset, command, ...args], options);
+}
+
 function stagedFileList(context, predicate) {
   return context.stagedFiles.filter(predicate);
 }
@@ -648,7 +669,7 @@ export const gates = [
         // and the documented migration policy; compiler errors still fail.
         ["/usr/bin/swift", ["build", "--jobs", swiftBuildJobs()]],
       ]) {
-        const result = await context.exec(command[0], command[1], { cwd: "apps/chau7-macos" });
+        const result = await execWithoutHookGitEnv(context, command[0], command[1], { cwd: "apps/chau7-macos" });
         if (result.status !== "passed") return result;
       }
       return { status: "passed", summary: "Swift macOS format, lint, and build passed" };
@@ -664,7 +685,7 @@ export const gates = [
     inputs: ["apps/chau7-macos/Sources", "apps/chau7-macos/Tests", "apps/chau7-macos/Package.swift"],
     applies: (context) => hasPathPrefix(context.changedFiles, "apps/chau7-macos/Sources/") || hasPathPrefix(context.changedFiles, "apps/chau7-macos/Tests/"),
     rerun: "pnpm quality:prepush --include=swift-macos-tests",
-    run: async (context) => context.exec("/usr/bin/swift", ["test", "--jobs", swiftBuildJobs()], { cwd: "apps/chau7-macos" }),
+    run: async (context) => execWithoutHookGitEnv(context, "/usr/bin/swift", ["test", "--jobs", swiftBuildJobs()], { cwd: "apps/chau7-macos" }),
   },
   {
     id: "rust-terminal-static",
@@ -776,7 +797,7 @@ export const gates = [
       hasPathPrefix(context.changedFiles, "apps/chau7-macos/Sources/Chau7Core/"),
     rerun: "pnpm quality:prepush --include=ios-app-build",
     run: async (context) =>
-      context.exec("xcodebuild", [
+      execWithoutHookGitEnv(context, "xcodebuild", [
         "-project", "apps/chau7-ios/Chau7RemoteApp/Chau7RemoteApp.xcodeproj",
         "-scheme", "Chau7RemoteApp",
         "-destination", "generic/platform=iOS Simulator",
@@ -798,7 +819,7 @@ export const gates = [
       hasPathPrefix(context.changedFiles, "apps/chau7-macos/Sources/Chau7Core/"),
     rerun: "pnpm quality:prepush-full --include=ios-app-tests",
     run: async (context) =>
-      context.exec("xcodebuild", [
+      execWithoutHookGitEnv(context, "xcodebuild", [
         "-project", "apps/chau7-ios/Chau7RemoteApp/Chau7RemoteApp.xcodeproj",
         "-scheme", "Chau7RemoteApp",
         "-destination", "platform=iOS Simulator,name=iPhone 17 Pro",
@@ -862,7 +883,8 @@ export const gates = [
     inputs: ["scripts/ci-local", "scripts/ci-lib.sh", "scripts/.jscpd.json"],
     applies: () => true,
     rerun: "pnpm quality:prepush:full --include=full-local-ci",
-    run: async (context) => runShellScript(context, "./scripts/ci-local"),
+    // ci-local runs swift build/test; see HOOK_GIT_ENV_VARS.
+    run: async (context) => execWithoutHookGitEnv(context, "./scripts/ci-local", [], { cwd: "." }),
   },
   {
     id: "quality-runner-tests",
@@ -879,28 +901,7 @@ export const gates = [
       context.stagedFiles.includes("package.json"),
     rerun: "pnpm quality:local --include=quality-runner-tests",
     run: async (context) =>
-      context.exec("env", [
-        "-u",
-        "GIT_DIR",
-        "-u",
-        "GIT_WORK_TREE",
-        "-u",
-        "GIT_COMMON_DIR",
-        "-u",
-        "GIT_INDEX_FILE",
-        "-u",
-        "GIT_PREFIX",
-        "-u",
-        "GIT_OBJECT_DIRECTORY",
-        "-u",
-        "GIT_ALTERNATE_OBJECT_DIRECTORIES",
-        "-u",
-        "GIT_CONFIG_PARAMETERS",
-        "-u",
-        "GIT_CONFIG_COUNT",
-        "pnpm",
-        "test",
-      ]),
+      execWithoutHookGitEnv(context, "pnpm", ["test"]),
   },
   {
     id: "full-js-dependency-audit",

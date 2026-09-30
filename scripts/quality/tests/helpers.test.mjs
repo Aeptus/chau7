@@ -17,7 +17,9 @@ import {
 
 function makeRepo() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "chau7-quality-"));
-  execFileSync("git", ["init"], { cwd: root, stdio: "ignore" });
+  // Pin the branch: Apple Git (first on PATH inside git hooks) defaults to
+  // `main`, which resolveFallbackBase would pick before `HEAD^`.
+  execFileSync("git", ["init", "-b", "work"], { cwd: root, stdio: "ignore" });
   execFileSync("git", ["config", "user.email", "quality@example.test"], { cwd: root });
   execFileSync("git", ["config", "user.name", "Quality Tests"], { cwd: root });
   return root;

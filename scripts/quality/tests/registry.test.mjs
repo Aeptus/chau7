@@ -84,6 +84,38 @@ test("quality runner tests clear inherited Git repository overrides", async () =
   ]);
 });
 
+for (const [id, wrapped, cwd] of [
+  ["swift-macos-static-build", "/usr/bin/swift", "apps/chau7-macos"],
+  ["swift-macos-tests", "/usr/bin/swift", "apps/chau7-macos"],
+  ["ios-app-build", "xcodebuild", undefined],
+  ["ios-app-tests", "xcodebuild", undefined],
+  ["full-local-ci", "./scripts/ci-local", "."],
+]) {
+  // Hooks export GIT_DIR & co.; SwiftPM/xcodebuild dependency checkouts inherit
+  // them and fail in a fresh worktree ("swift-atomics: unable to read tree").
+  test(`${id} clears inherited Git repository overrides`, async () => {
+    const calls = [];
+    const result = await gate(id).run({
+      exec: async (command, args, options) => {
+        calls.push({ command, args, options });
+        return { status: "passed", summary: "ok" };
+      },
+    });
+
+    assert.equal(result.status, "passed");
+    assert.ok(calls.length > 0);
+    for (const call of calls) {
+      assert.equal(call.command, "env");
+      for (const name of ["GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_COMMON_DIR"]) {
+        const index = call.args.indexOf(name);
+        assert.ok(index > 0 && call.args[index - 1] === "-u", `${id} must unset ${name}`);
+      }
+      assert.equal(call.options?.cwd, cwd);
+    }
+    assert.ok(calls.some((call) => call.args.includes(wrapped)), `${id} must still run ${wrapped}`);
+  });
+}
+
 test("full-suite dependency audit gates are registered as live security gates", () => {
   assert.equal(gate("full-js-dependency-audit").cacheable, false);
   assert.equal(gate("full-js-dependency-audit").wave, "audit");
