@@ -146,7 +146,7 @@ Type codes (`u8`). The Swift enum `RemoteFrameType`
 - `0x25 CHECKPOINT_REQUEST` (encrypted, empty payload — asks macOS for a fresh active-tab snapshot)
 - `0x26 INTERACTIVE_PROMPT_RESPONSE` (encrypted, JSON — validated prompt/pane action)
 - `0x27 PANE_INPUT` (encrypted, JSON — direct text or semantic keys for an explicit pane)
-- `0x28 TERMINAL_SIZE` (encrypted, JSON — a tab's live PTY dimensions `{cols, rows}`; the client sizes its own emulator to the source width so full-screen TUIs are not hard-wrapped. Sent when the dimensions change, and on snapshot/reconnect. The Mac's view is unaffected.)
+- `0x28 TERMINAL_SIZE` (encrypted, JSON — a tab's live PTY dimensions `{cols, rows}` plus optional `alternate_screen_active`; sent when either changes and on snapshot/reconnect. Replay clients use the host grid for alternate-screen TUIs and keep their existing reflow for ordinary output. The Mac's view is unaffected.)
 - `0x30 PING` (encrypted, JSON)
 - `0x31 PONG` (encrypted, JSON)
 - `0x40 PAIRING_INFO` (local IPC, JSON)

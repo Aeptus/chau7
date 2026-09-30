@@ -168,6 +168,11 @@ extension TerminalSessionModel {
         return (view.terminalCols, view.terminalRows)
     }
 
+    /// True while a full-screen TUI is drawing into the alternate screen.
+    var remoteAlternateScreenIsActive: Bool {
+        activeTerminalView?.isAlternateScreenActive() ?? false
+    }
+
     private func updateBufferLineCount(from bufferData: Data) {
         let newlineCount = bufferData.reduce(0) { count, byte in
             count + (byte == 0x0A ? 1 : 0)

@@ -898,6 +898,35 @@ final class RemoteTerminalViewportGeometryTests: XCTestCase {
         XCTAssertEqual(large?.cols, 25)
         XCTAssertEqual(large?.rows, 11)
     }
+
+    func testAlternateScreenContentKeepsHostGridAtOneToOneSize() {
+        let size = RemoteTerminalViewportGeometry.alternateScreenContentSize(
+            cols: 120,
+            rows: 40,
+            cell: cell,
+            viewport: CGSize(width: 390, height: 500)
+        )
+        XCTAssertEqual(size, CGSize(width: 960, height: 720))
+    }
+
+    func testAlternateScreenContentRejectsInvalidHostGrid() {
+        XCTAssertNil(
+            RemoteTerminalViewportGeometry.alternateScreenContentSize(
+                cols: 0,
+                rows: 40,
+                cell: cell,
+                viewport: CGSize(width: 390, height: 500)
+            )
+        )
+        XCTAssertNil(
+            RemoteTerminalViewportGeometry.alternateScreenContentSize(
+                cols: 120,
+                rows: 40,
+                cell: .zero,
+                viewport: CGSize(width: 390, height: 500)
+            )
+        )
+    }
 }
 
 /// The engine ingests at the Mac's PTY width so wide TUI output is not

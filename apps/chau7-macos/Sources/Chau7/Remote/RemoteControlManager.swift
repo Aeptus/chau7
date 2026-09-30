@@ -302,6 +302,14 @@ final class RemoteControlManager {
             return
         }
 
+        if connectedTerminalPresentation == .replay,
+           snapshotTargetTab(for: tabID)?.session?.remoteAlternateScreenIsActive == true {
+            // Cursor-positioned TUIs cannot be folded into phone-width rows.
+            // Send a coalesced host-grid checkpoint while the alternate
+            // screen is active; ordinary replay output remains unchanged.
+            scheduleGridSnapshot(for: tabID)
+        }
+
         pendingOutputByTabID.append(data, to: tabID) { existing, chunk in
             existing.append(chunk)
         }
@@ -317,12 +325,12 @@ final class RemoteControlManager {
     }
 
     func sendSnapshot(for tabID: UInt32) {
-        sendTextSnapshot(for: tabID)
-        sendGridSnapshot(for: tabID)
         // A reconnect or checkpoint must re-state the width even if it is
         // unchanged since last time, because the client may have reset.
         announcedTerminalSizeByTabID[tabID] = nil
         announceTerminalSizeIfChanged(for: tabID)
+        sendTextSnapshot(for: tabID)
+        sendGridSnapshot(for: tabID)
     }
 
     /// Resolve the tab a snapshot/request frame targets, searching every
@@ -355,8 +363,11 @@ final class RemoteControlManager {
 
     func sendGridSnapshot(for tabID: UInt32) {
         guard connectedClientStreamMode == .full else { return }
-        guard RemoteTerminalStreamingPolicy.sendsGridSnapshots(for: connectedTerminalPresentation) else { return }
         guard let session = snapshotTargetTab(for: tabID)?.session,
+              RemoteTerminalStreamingPolicy.sendsGridSnapshots(
+                  for: connectedTerminalPresentation,
+                  alternateScreenActive: session.remoteAlternateScreenIsActive
+              ),
               let snapshot = session.captureRemoteGridSnapshot() else { return }
         sendFrame(type: .terminalGridSnapshot, tabID: tabID, payload: snapshot)
     }
@@ -1616,7 +1627,11 @@ final class RemoteControlManager {
         guard let session = snapshotTargetTab(for: tabID)?.session else { return }
         let dims = session.terminalDimensions
         guard dims.cols > 0, dims.rows > 0 else { return }
-        let payload = RemoteTerminalSizePayload(cols: dims.cols, rows: dims.rows)
+        let payload = RemoteTerminalSizePayload(
+            cols: dims.cols,
+            rows: dims.rows,
+            alternateScreenActive: session.remoteAlternateScreenIsActive
+        )
         guard announcedTerminalSizeByTabID[tabID] != payload else { return }
         announcedTerminalSizeByTabID[tabID] = payload
         guard let data = try? JSONEncoder().encode(payload) else { return }

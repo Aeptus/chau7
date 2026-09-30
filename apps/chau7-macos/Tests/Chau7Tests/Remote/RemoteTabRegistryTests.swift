@@ -141,13 +141,20 @@ final class RemoteTabRegistryTests: XCTestCase {
     }
 
     func testTerminalSizePayloadRoundTripsThroughJSON() throws {
-        let payload = RemoteTerminalSizePayload(cols: 120, rows: 40)
+        let payload = RemoteTerminalSizePayload(cols: 120, rows: 40, alternateScreenActive: true)
         let encoded = try JSONEncoder().encode(payload)
         let json = try XCTUnwrap(String(data: encoded, encoding: .utf8))
         XCTAssertTrue(json.contains("\"cols\":120"))
         XCTAssertTrue(json.contains("\"rows\":40"))
+        XCTAssertTrue(json.contains("\"alternate_screen_active\":true"))
         let decoded = try JSONDecoder().decode(RemoteTerminalSizePayload.self, from: encoded)
         XCTAssertEqual(decoded, payload)
+
+        let legacy = try JSONDecoder().decode(
+            RemoteTerminalSizePayload.self,
+            from: Data("{\"cols\":120,\"rows\":40}".utf8)
+        )
+        XCTAssertNil(legacy.alternateScreenActive, "older terminal-size frames omit alternate-screen state")
     }
 
     func testOlderMacInventoryWithoutDimensionsStillDecodes() throws {

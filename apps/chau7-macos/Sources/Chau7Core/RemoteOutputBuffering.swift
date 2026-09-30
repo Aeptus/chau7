@@ -41,14 +41,20 @@ public enum RemoteTerminalStreamingPolicy {
         presentation != .grid
     }
 
-    public static func sendsGridSnapshots(for presentation: RemoteTerminalPresentation?) -> Bool {
-        presentation == nil || presentation == .grid
+    public static func sendsGridSnapshots(
+        for presentation: RemoteTerminalPresentation?,
+        alternateScreenActive: Bool = false
+    ) -> Bool {
+        presentation == nil || presentation == .grid || (presentation == .replay && alternateScreenActive)
     }
 
     /// Only an older client expects a grid after every text-output batch.
     /// Current replay/text clients use snapshots solely as initial/recovery
     /// checkpoints, while grid clients are driven by their own invalidations.
-    public static func sendsGridCheckpointAfterOutput(for presentation: RemoteTerminalPresentation?) -> Bool {
+    public static func sendsGridCheckpointAfterOutput(
+        for presentation: RemoteTerminalPresentation?,
+        alternateScreenActive _: Bool = false
+    ) -> Bool {
         presentation == nil
     }
 }

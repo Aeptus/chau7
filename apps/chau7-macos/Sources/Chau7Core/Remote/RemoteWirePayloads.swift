@@ -290,10 +290,19 @@ public struct RemoteTerminalSizePayload: Codable, Equatable, Sendable {
 
     public let cols: Int
     public let rows: Int
+    /// Whether the terminal is currently displaying a full-screen alternate
+    /// screen (for example, an interactive TUI). Optional for older peers.
+    public let alternateScreenActive: Bool?
 
-    public init(cols: Int, rows: Int) {
+    public init(cols: Int, rows: Int, alternateScreenActive: Bool? = nil) {
         self.cols = cols
         self.rows = rows
+        self.alternateScreenActive = alternateScreenActive
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case cols, rows
+        case alternateScreenActive = "alternate_screen_active"
     }
 }
 

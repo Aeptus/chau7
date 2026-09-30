@@ -18,7 +18,12 @@ final class RemotePureUnitTests: XCTestCase {
         XCTAssertTrue(RemoteTerminalStreamingPolicy.sendsOutputFrames(for: .replay))
         XCTAssertTrue(RemoteTerminalStreamingPolicy.sendsTextSnapshots(for: .replay))
         XCTAssertFalse(RemoteTerminalStreamingPolicy.sendsGridSnapshots(for: .replay))
+        XCTAssertTrue(RemoteTerminalStreamingPolicy.sendsGridSnapshots(for: .replay, alternateScreenActive: true))
         XCTAssertFalse(RemoteTerminalStreamingPolicy.sendsGridCheckpointAfterOutput(for: .replay))
+        XCTAssertFalse(
+            RemoteTerminalStreamingPolicy.sendsGridCheckpointAfterOutput(for: .replay, alternateScreenActive: true),
+            "alternate-screen checkpoints are scheduled through the capped grid sender"
+        )
 
         XCTAssertFalse(RemoteTerminalStreamingPolicy.sendsOutputFrames(for: .grid))
         XCTAssertFalse(RemoteTerminalStreamingPolicy.sendsTextSnapshots(for: .grid))

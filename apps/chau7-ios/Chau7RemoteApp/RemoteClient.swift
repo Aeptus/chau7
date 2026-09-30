@@ -1154,10 +1154,12 @@ final class RemoteClient {
         case .snapshot: storeSnapshot(payload, tabID: frame.tabID)
         case .terminalSize: handleTerminalSize(payload, tabID: frame.tabID)
         case .terminalGridSnapshot:
-            // A replay/text client never consumes server grids. Older Macs may
-            // still send them, so discard after authenticated frame admission
-            // without allocating a full RustCellData array.
-            guard desiredTerminalPresentation == .grid else { return }
+            // Grid clients always consume host frames. Replay clients also use
+            // them while a host full-screen TUI is active because folding an
+            // absolute-positioned screen to phone-width rows scrambles it.
+            // Ignore out-of-mode frames before decoding their full cell array.
+            guard desiredTerminalPresentation == .grid
+                    || terminalRenderer.isAlternateScreenActive(for: frame.tabID) else { return }
             storeGridSnapshot(payload, tabID: frame.tabID)
         case .approvalRequest: handleApprovalRequest(payload)
         case .ping: sendEncrypted(type: .pong, tabID: frame.tabID, payload: payload)
@@ -1214,14 +1216,20 @@ final class RemoteClient {
         establishSessionIfPossible()
     }
 
-    /// Records the Mac's live PTY width for a tab so its engine ingests at that
-/// width. Without it the engine is sized to the phone, and full-screen TUIs
-/// drawn for the Mac's terminal get hard-wrapped and arrive scrambled.
+/// Records the Mac's live PTY grid and alternate-screen state for a tab. The
+/// renderer uses the host grid directly for full-screen TUIs and keeps its
+/// existing phone-width reflow for ordinary terminal output.
 private func handleTerminalSize(_ data: Data, tabID: UInt32) {
     guard tabID != RemoteTerminalSizePayload.unscopedTabID,
           let payload: RemoteTerminalSizePayload = decodePayload(data, as: RemoteTerminalSizePayload.self, context: "handleTerminalSize"),
-          payload.cols > 0 else { return }
-    terminalRenderer.setSourceColumns(payload.cols, for: tabID)
+          payload.cols > 0,
+          payload.rows > 0 else { return }
+    terminalRenderer.setTerminalSize(
+        cols: payload.cols,
+        rows: payload.rows,
+        alternateScreenActive: payload.alternateScreenActive,
+        for: tabID
+    )
 }
 
 private func handlePairAccept(_ data: Data) {

@@ -83,6 +83,23 @@ enum RemoteTerminalViewportGeometry {
             max(1, Int(floor(available.height / cell.height)))
         )
     }
+
+    /// Pixel size for a host-rendered alternate screen. Its terminal grid is
+    /// authoritative, so every source cell keeps its real dimensions and the
+    /// scroll view pans over the full grid instead of folding rows to the phone.
+    static func alternateScreenContentSize(
+        cols: Int,
+        rows: Int,
+        cell: CGSize,
+        viewport: CGSize
+    ) -> CGSize? {
+        guard cols > 0, rows > 0, cell.width >= 1, cell.height >= 1 else { return nil }
+        guard viewport.width > 0, viewport.height > 0 else { return nil }
+        return CGSize(
+            width: max(viewport.width, CGFloat(cols) * cell.width),
+            height: max(viewport.height, CGFloat(rows) * cell.height)
+        )
+    }
 }
 
 /// Re-composition of a terminal grid that is wider than the phone.
@@ -154,7 +171,7 @@ enum RemoteTerminalWrapGeometry {
     /// Engine size to ingest into. Never narrower than the source width, since
     /// that is what reintroduces hard-wrap; the phone width only wins when the
     /// Mac did not announce a usable one.
-    static func engineSize(sourceCols: Int, displayCols: Int, displayRows: Int) -> (cols: Int, rows: Int) {
+    nonisolated static func engineSize(sourceCols: Int, displayCols: Int, displayRows: Int) -> (cols: Int, rows: Int) {
         let cols = max(1, max(sourceCols, displayCols))
         return (cols, max(1, displayRows))
     }

@@ -29,10 +29,12 @@ private actor RemoteTerminalRenderEngine {
     private var replayByTabID: [UInt32: Data] = [:]
     private var viewportCols = 0
     private var viewportRows = 0
-    /// Source (Mac PTY) width per tab, announced in the tab inventory. The
-    /// engine ingests at this width so the TUI is not hard-wrapped at the
-    /// phone's narrower viewport; the canvas re-wraps it for display.
+    /// Source (Mac PTY) dimensions per tab. Normal output ingests at source
+    /// width and folds for display; alternate-screen TUIs use both dimensions
+    /// exactly and pan the canvas at 1:1.
     private var sourceColsByTabID: [UInt32: Int] = [:]
+    private var sourceRowsByTabID: [UInt32: Int] = [:]
+    private var alternateScreenByTabID: [UInt32: Bool] = [:]
     private var colorScheme: TerminalColorScheme
     private var isAvailable = true
     private var unpresentedTraceByTabID: [UInt32: RemoteTerminalFrameTrace] = [:]
@@ -47,6 +49,8 @@ private actor RemoteTerminalRenderEngine {
         viewportCols = 0
         viewportRows = 0
         sourceColsByTabID.removeAll()
+        sourceRowsByTabID.removeAll()
+        alternateScreenByTabID.removeAll()
         self.colorScheme = colorScheme
         isAvailable = true
         unpresentedTraceByTabID.removeAll()
@@ -55,6 +59,9 @@ private actor RemoteTerminalRenderEngine {
     func retainVisibleTabs(_ visibleTabIDs: Set<UInt32>) {
         playbacks = playbacks.filter { visibleTabIDs.contains($0.key) }
         replayByTabID = replayByTabID.filter { visibleTabIDs.contains($0.key) }
+        sourceColsByTabID = sourceColsByTabID.filter { visibleTabIDs.contains($0.key) }
+        sourceRowsByTabID = sourceRowsByTabID.filter { visibleTabIDs.contains($0.key) }
+        alternateScreenByTabID = alternateScreenByTabID.filter { visibleTabIDs.contains($0.key) }
         unpresentedTraceByTabID = unpresentedTraceByTabID.filter { visibleTabIDs.contains($0.key) }
     }
 
@@ -73,29 +80,41 @@ private actor RemoteTerminalRenderEngine {
         resizeEngines()
     }
 
-    /// Records the Mac's PTY width for a tab and resizes that tab's engine to
-    /// ingest at it. Called when the tab inventory arrives or its width changes.
-    func setSourceColumns(_ cols: Int, for tabID: UInt32) {
-        let sanitized = max(0, cols)
-        guard sanitized != sourceColsByTabID[tabID] else { return }
-        sourceColsByTabID[tabID] = sanitized
+    /// Records the Mac's PTY dimensions and presentation mode for a tab.
+    func setTerminalSize(cols: Int, rows: Int, alternateScreenActive: Bool, for tabID: UInt32) {
+        let sanitizedCols = max(0, cols)
+        let sanitizedRows = max(0, rows)
+        let modeChanged = alternateScreenByTabID[tabID] != alternateScreenActive
+        guard sanitizedCols != sourceColsByTabID[tabID]
+                || sanitizedRows != sourceRowsByTabID[tabID]
+                || modeChanged else { return }
+        sourceColsByTabID[tabID] = sanitizedCols
+        sourceRowsByTabID[tabID] = sanitizedRows
+        alternateScreenByTabID[tabID] = alternateScreenActive
         resizeEngines()
     }
 
-    /// Engine width is the source width when known, never the phone width —
-    /// ingesting wide TUI output into a narrow engine is what hard-wrapped and
-    /// scrambled it. Rows stay phone-driven so the visible screen height and the
-    /// scroll math keep matching the display.
+    /// Normal output uses the source width and phone-driven height. Alternate
+    /// screen TUIs use the exact source grid so cursor-positioned rows stay put.
     private func resizeEngines() {
         guard viewportCols > 0, viewportRows > 0 else { return }
         for (tabID, playback) in playbacks {
-            let size = RemoteTerminalWrapGeometry.engineSize(
-                sourceCols: sourceColsByTabID[tabID] ?? 0,
-                displayCols: viewportCols,
-                displayRows: viewportRows
-            )
+            let size = engineSize(for: tabID)
             playback.resize(cols: size.cols, rows: size.rows)
         }
+    }
+
+    private func engineSize(for tabID: UInt32) -> (cols: Int, rows: Int) {
+        if alternateScreenByTabID[tabID] == true,
+           let cols = sourceColsByTabID[tabID], cols > 0,
+           let rows = sourceRowsByTabID[tabID], rows > 0 {
+            return (cols, rows)
+        }
+        return RemoteTerminalWrapGeometry.engineSize(
+            sourceCols: sourceColsByTabID[tabID] ?? 0,
+            displayCols: viewportCols,
+            displayRows: viewportRows
+        )
     }
 
     func replaceSnapshot(_ data: Data, for tabID: UInt32) {
@@ -143,7 +162,8 @@ private actor RemoteTerminalRenderEngine {
         // phone's own width (the engine is sized to max(source, display)), which
         // makes it exactly the fold target.
         let display = playback.flatMap { playback in
-            viewportCols > 0 && viewportCols < playback.cols
+            alternateScreenByTabID[tabID] != true
+                && viewportCols > 0 && viewportCols < playback.cols
                 ? playback.displayRows(displayCols: viewportCols)
                 : nil
         }
@@ -161,11 +181,7 @@ private actor RemoteTerminalRenderEngine {
             return playback
         }
         guard let replay = replayByTabID[tabID], !replay.isEmpty else { return nil }
-        let size = RemoteTerminalWrapGeometry.engineSize(
-            sourceCols: sourceColsByTabID[tabID] ?? 0,
-            displayCols: viewportCols,
-            displayRows: viewportRows
-        )
+        let size = engineSize(for: tabID)
         guard let playback = RemoteRustTerminalPlayback(
             cols: size.cols,
             rows: size.rows,
@@ -239,11 +255,13 @@ final class RemoteTerminalRendererStore {
     /// Engine-folded rows for the active tab, when a fold is needed.
     private(set) var displayState: RemoteTerminalDisplayState?
     private(set) var activeTabID: UInt32 = 0
+    private(set) var isActiveAlternateScreen = false
     private(set) var isAvailable = true
     private(set) var colorScheme: TerminalColorScheme = AppSettings.currentColorScheme
 
     @ObservationIgnored private let engine: RemoteTerminalRenderEngine
     @ObservationIgnored private var gridSnapshotByTabID: [UInt32: RemoteTerminalRenderState] = [:]
+    @ObservationIgnored private var alternateScreenByTabID: [UInt32: Bool] = [:]
     @ObservationIgnored private var mutationTail: Task<Void, Never>?
     @ObservationIgnored private var renderRequestInFlight = false
     @ObservationIgnored private var renderDirty = false
@@ -292,8 +310,10 @@ final class RemoteTerminalRendererStore {
             self.markRenderDirty()
         }
         gridSnapshotByTabID.removeAll()
+        alternateScreenByTabID.removeAll()
         renderState = nil
         displayState = nil
+        isActiveAlternateScreen = false
         publishedTrace = nil
         pendingPresentationTrace = nil
         activeTabID = 0
@@ -305,6 +325,7 @@ final class RemoteTerminalRendererStore {
 
     func retainVisibleTabs(_ visibleTabIDs: Set<UInt32>) {
         gridSnapshotByTabID = gridSnapshotByTabID.filter { visibleTabIDs.contains($0.key) }
+        alternateScreenByTabID = alternateScreenByTabID.filter { visibleTabIDs.contains($0.key) }
         enqueueMutation(publishFor: nil) { engine in
             await engine.retainVisibleTabs(visibleTabIDs)
         }
@@ -313,6 +334,7 @@ final class RemoteTerminalRendererStore {
             activeTabChangedAt = Date()
             renderState = nil
             publishedTrace = nil
+            isActiveAlternateScreen = false
         }
     }
 
@@ -331,12 +353,26 @@ final class RemoteTerminalRendererStore {
         }
     }
 
-    /// Announces the Mac PTY width for a tab so its engine ingests at that
-    /// width. Pass 0 when the inventory carries none (older Macs), which falls
-    /// the engine back to sizing to the phone viewport.
-    func setSourceColumns(_ cols: Int, for tabID: UInt32) {
+    /// Announces the Mac PTY grid and whether its alternate screen is active.
+    /// Older hosts omit the mode; those sessions keep the existing reflow path.
+    func setTerminalSize(cols: Int, rows: Int, alternateScreenActive: Bool?, for tabID: UInt32) {
+        let isAlternate = alternateScreenActive ?? false
+        if alternateScreenByTabID[tabID] != isAlternate {
+            alternateScreenByTabID[tabID] = isAlternate
+            // A grid from the previous mode must not be shown while waiting for
+            // the first authoritative checkpoint in the newly entered TUI.
+            gridSnapshotByTabID[tabID] = nil
+            if tabID == activeTabID {
+                isActiveAlternateScreen = isAlternate
+            }
+        }
         enqueueMutation(publishFor: tabID) { engine in
-            await engine.setSourceColumns(cols, for: tabID)
+            await engine.setTerminalSize(
+                cols: cols,
+                rows: rows,
+                alternateScreenActive: isAlternate,
+                for: tabID
+            )
         }
     }
 
@@ -345,8 +381,13 @@ final class RemoteTerminalRendererStore {
             activeTabChangedAt = Date()
         }
         activeTabID = tabID
+        isActiveAlternateScreen = alternateScreenByTabID[tabID] ?? false
         publishedTrace = nil
         markRenderDirty()
+    }
+
+    func isAlternateScreenActive(for tabID: UInt32) -> Bool {
+        alternateScreenByTabID[tabID] ?? false
     }
 
     /// Initial and recovery snapshots are keyframes. Incremental PTY bytes
@@ -445,11 +486,14 @@ final class RemoteTerminalRendererStore {
                 } else {
                     self.publishedTrace = nil
                 }
-                self.renderState = snapshot.state ?? self.gridSnapshotByTabID[tabID]
+                let gridSnapshot = self.gridSnapshotByTabID[tabID]
+                self.renderState = self.isActiveAlternateScreen
+                    ? (gridSnapshot ?? snapshot.state)
+                    : (snapshot.state ?? gridSnapshot)
                 // A nil display state means the grid is already phone-width, or
                 // the engine could not fold; the canvas then paints the grid
                 // directly rather than falling back to its own fold.
-                self.displayState = snapshot.display
+                self.displayState = self.isActiveAlternateScreen ? nil : snapshot.display
             }
             let elapsed = startedAt.duration(to: .now)
             let milliseconds = Double(elapsed.components.seconds) * 1000

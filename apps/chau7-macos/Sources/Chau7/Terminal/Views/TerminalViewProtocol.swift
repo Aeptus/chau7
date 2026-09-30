@@ -62,6 +62,9 @@ protocol TerminalViewLike: NSView {
     /// Whether there is currently selected text
     var hasSelection: Bool { get }
 
+    /// Whether a full-screen TUI currently owns the alternate screen buffer.
+    func isAlternateScreenActive() -> Bool
+
     /// Current scroll position (0.0 = bottom, 1.0 = top of history)
     var scrollPosition: Double { get }
 
@@ -216,6 +219,8 @@ protocol TerminalViewLike: NSView {
 }
 
 extension TerminalViewLike {
+    func isAlternateScreenActive() -> Bool { false }
+
     func getStyledBufferAsData() -> Data? {
         nil
     }

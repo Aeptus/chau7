@@ -54,6 +54,7 @@ struct RemoteTerminalRendererView: View {
                         store: client.terminalRenderer,
                         renderState: renderState,
                         displayState: client.terminalRenderer.displayState,
+                        isAlternateScreenActive: client.terminalRenderer.isActiveAlternateScreen,
                         frameTrace: client.terminalRenderer.publishedTrace,
                         availableSize: proxy.size,
                         colorScheme: colorScheme,
@@ -129,6 +130,7 @@ private struct RemoteTerminalRendererRepresentable: UIViewRepresentable {
     let store: RemoteTerminalRendererStore
     let renderState: RemoteTerminalRenderState?
     let displayState: RemoteTerminalDisplayState?
+    let isAlternateScreenActive: Bool
     let frameTrace: RemoteTerminalFrameTrace?
     let availableSize: CGSize
     let colorScheme: TerminalColorScheme
@@ -141,6 +143,7 @@ private struct RemoteTerminalRendererRepresentable: UIViewRepresentable {
             store: store,
             renderState: renderState,
             displayState: displayState,
+            isAlternateScreenActive: isAlternateScreenActive,
             frameTrace: frameTrace,
             availableSize: availableSize,
             colorScheme: colorScheme,
@@ -155,6 +158,7 @@ private struct RemoteTerminalRendererRepresentable: UIViewRepresentable {
             store: store,
             renderState: renderState,
             displayState: displayState,
+            isAlternateScreenActive: isAlternateScreenActive,
             frameTrace: frameTrace,
             availableSize: availableSize,
             colorScheme: colorScheme,
@@ -327,6 +331,8 @@ private final class RemoteTerminalViewportView: UIView, UIScrollViewDelegate {
     private var store: RemoteTerminalRendererStore?
     private var renderState: RemoteTerminalRenderState?
     private var displayState: RemoteTerminalDisplayState?
+    private var isAlternateScreenActive = false
+    private var lastSyncedAlternateScreenActive: Bool?
     private var availableSize: CGSize = .zero
     /// Cell geometry comes straight from the canvas so the grid we size the
     /// engine to, the cells it paints, and the scroll math all agree — and so
@@ -351,7 +357,8 @@ private final class RemoteTerminalViewportView: UIView, UIScrollViewDelegate {
 
         canvasView.isUserInteractionEnabled = false
         canvasView.backgroundColor = TerminalColorScheme.default.backgroundUIColor
-        addSubview(canvasView)
+        insertSubview(canvasView, belowSubview: scrollView)
+        clipsToBounds = true
     }
 
     required init?(coder: NSCoder) {
@@ -361,7 +368,9 @@ private final class RemoteTerminalViewportView: UIView, UIScrollViewDelegate {
     override func layoutSubviews() {
         super.layoutSubviews()
         scrollView.frame = bounds
-        canvasView.frame = bounds
+        if !isAlternateScreenActive {
+            canvasView.frame = bounds
+        }
         recalculateViewport()
         syncScrollPosition(force: false)
     }
@@ -370,6 +379,7 @@ private final class RemoteTerminalViewportView: UIView, UIScrollViewDelegate {
         store: RemoteTerminalRendererStore,
         renderState: RemoteTerminalRenderState?,
         displayState: RemoteTerminalDisplayState?,
+        isAlternateScreenActive: Bool,
         frameTrace: RemoteTerminalFrameTrace?,
         availableSize: CGSize,
         colorScheme: TerminalColorScheme,
@@ -379,6 +389,7 @@ private final class RemoteTerminalViewportView: UIView, UIScrollViewDelegate {
         self.store = store
         self.renderState = renderState
         self.displayState = displayState
+        self.isAlternateScreenActive = isAlternateScreenActive
         self.availableSize = availableSize
         let bg = colorScheme.backgroundUIColor
         if backgroundColor != bg { backgroundColor = bg }
@@ -407,6 +418,10 @@ private final class RemoteTerminalViewportView: UIView, UIScrollViewDelegate {
     }
 
     func scrollViewDidScroll(_ scrollView: UIScrollView) {
+        if isAlternateScreenActive {
+            canvasView.frame.origin = CGPoint(x: -scrollView.contentOffset.x, y: -scrollView.contentOffset.y)
+            return
+        }
         guard let store, let renderState else { return }
         guard RemoteTerminalScrollPolicy.shouldForwardUserScroll(
             isSynchronizing: isSyncingScroll,
@@ -454,11 +469,50 @@ private final class RemoteTerminalViewportView: UIView, UIScrollViewDelegate {
         isSyncingScroll = true
         defer { isSyncingScroll = false }
 
+        scrollView.showsHorizontalScrollIndicator = isAlternateScreenActive
+        scrollView.alwaysBounceHorizontal = isAlternateScreenActive
+
         guard let renderState else {
             scrollContentView.frame = CGRect(origin: .zero, size: bounds.size)
             scrollView.contentSize = bounds.size
+            canvasView.frame = bounds
             return
         }
+
+        let alternateScreenModeChanged = lastSyncedAlternateScreenActive != isAlternateScreenActive
+        if isAlternateScreenActive {
+            let contentSize = RemoteTerminalViewportGeometry.alternateScreenContentSize(
+                cols: renderState.cols,
+                rows: renderState.rows,
+                cell: cellSize,
+                viewport: bounds.size
+            ) ?? bounds.size
+            scrollContentView.frame = CGRect(origin: .zero, size: contentSize)
+            scrollView.contentSize = contentSize
+            let maxX = max(0, contentSize.width - bounds.width)
+            let maxY = max(0, contentSize.height - bounds.height)
+            let targetOffset = alternateScreenModeChanged
+                ? CGPoint.zero
+                : CGPoint(
+                    x: min(max(scrollView.contentOffset.x, 0), maxX),
+                    y: min(max(scrollView.contentOffset.y, 0), maxY)
+                )
+            if force || alternateScreenModeChanged
+                || abs(scrollView.contentOffset.x - targetOffset.x) > 1
+                || abs(scrollView.contentOffset.y - targetOffset.y) > 1 {
+                scrollView.setContentOffset(targetOffset, animated: false)
+            }
+            canvasView.frame = CGRect(
+                origin: CGPoint(x: -scrollView.contentOffset.x, y: -scrollView.contentOffset.y),
+                size: contentSize
+            )
+            canvasView.setNeedsDisplay()
+            lastSyncedAlternateScreenActive = true
+            return
+        }
+
+        lastSyncedAlternateScreenActive = false
+        canvasView.frame = bounds
 
         // Content height is measured in phone-width rows, which is what the canvas
         // paints: the engine holds the wider source grid, so its own row count
@@ -473,7 +527,9 @@ private final class RemoteTerminalViewportView: UIView, UIScrollViewDelegate {
         let maxOffset = max(0, contentHeight - bounds.height)
         let targetOffsetY = max(0, maxOffset - CGFloat(renderState.displayOffset * chunksPerRow) * cellSize.height)
 
-        if force || abs(scrollView.contentOffset.y - targetOffsetY) > (cellSize.height / 2) {
+        if force
+            || abs(scrollView.contentOffset.x) > 1
+            || abs(scrollView.contentOffset.y - targetOffsetY) > (cellSize.height / 2) {
             scrollView.setContentOffset(CGPoint(x: 0, y: targetOffsetY), animated: false)
         }
     }

@@ -28,6 +28,12 @@ That fixed the corruption. It is **readable, not correct**:
 - A paragraph the TUI soft-wrapped at column 100 is treated as two independent
   lines, so it is chopped mid-sentence at each fold.
 
+Replay clients use a host-grid checkpoint while the Mac reports a full-screen
+alternate screen. iOS paints that grid at the source cell size and lets the user
+pan horizontally and vertically; normal terminal output keeps the existing
+phone-width reflow. This preserves cursor-positioned OpenCode, Claude Code, and
+similar layouts without changing the Mac PTY dimensions.
+
 The root cause of both: **the fold lives in Swift, one layer above the layer that
 knows the answer.** `RustGridSnapshot` exposes bold/italic/underline/strike/
 inverse/dim/hidden — and no wrap bit — even though `chau7_terminal` tracks
