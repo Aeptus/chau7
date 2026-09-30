@@ -53,6 +53,7 @@ Chau7 recognizes AI CLIs the moment they launch — no configuration required. T
 - **Goose** (goose)
 - **Mentat** (mentat)
 - **Amp** (amp)
+- **OpenCode** (opencode)
 - Custom-defined tools with display name and tab color.
 
 Detection methods:
@@ -60,6 +61,7 @@ Detection methods:
 - Claude cross-repo cwd writeback. Claude hook and idle events carry the session's authoritative cwd even when the host shell cannot see a `cd` performed inside Claude's TUI; when the live Claude session id matches the tab, Chau7 lets that cwd cross repo boundaries so path display, snippet context, and automatic repo grouping follow the real project.
 - Pre-notification AI identity adoption. Validated Claude hook and idle events atomically hydrate the tab's provider, session ID, and identity source before notification filtering, so they can fix both Shell-labeled tabs and stale cross-provider tuples immediately while still staying out of user-facing notification history.
 - Command line tokenization with wrapper skipping (env, sudo, command, builtin, exec, noglob, time). Command detection gates output scanning to prevent false positives.
+- OpenCode detections persist the canonical `opencode` identity, replacing a stale Codex label and preserving the correct name across tab restoration. Explicit session IDs restore with `opencode --session <id>`; project launches without an ID keep their identity without fabricating one.
 - Output banner matching for all supported CLIs. Patterns require tool-specific context to avoid substring collisions, and exclude API-endpoint/website substrings (e.g. `openai.com/v1`) that appear in ordinary project code rather than CLI banners.
 - Corroborated output origination. An output-pattern match can only *originate* a new tool identity on a tab that has none when a live process-tree signal corroborates it; otherwise output matching only *confirms* an already-established identity. This prevents incidental output — an API URL printed by a `git push` in a repo that uses that API — from flipping a plain shell to an AI tool.
 - Custom detection rules with display name and tab color.

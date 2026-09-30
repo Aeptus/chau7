@@ -52,6 +52,29 @@ final class TerminalSessionModelLiveAgentTests: XCTestCase {
         XCTAssertEqual(session.aiDisplayAppName, "Codex")
     }
 
+    func testOpenCodeDetectionReplacesStaleCodexIdentity() {
+        let session = TerminalSessionModel(appModel: AppModel())
+        session.restoreAIMetadata(provider: "codex", sessionId: "stale-codex-session")
+
+        session.updateLastDetectedApp("OpenCode")
+
+        XCTAssertEqual(session.lastDetectedAppName, "OpenCode")
+        XCTAssertEqual(session.lastAIProvider, "opencode")
+        XCTAssertNil(session.lastAISessionId, "switching tools must discard the stale Codex session ID")
+        XCTAssertEqual(session.aiDisplayAppName, "OpenCode")
+        XCTAssertEqual(session.effectiveAIProvider, "opencode")
+    }
+
+    func testRestoredOpenCodeIdentityKeepsItsDisplayNameWithoutResumeID() {
+        let session = TerminalSessionModel(appModel: AppModel())
+
+        session.restoreAIMetadata(provider: "opencode", sessionId: nil)
+
+        XCTAssertEqual(session.lastAIProvider, "opencode")
+        XCTAssertEqual(session.aiDisplayAppName, "OpenCode")
+        XCTAssertNil(session.lastAISessionId)
+    }
+
     // MARK: - isAIRunning (logo opacity contract)
 
     /// Regression: post-b39a863a, output detection is gated on corroboration

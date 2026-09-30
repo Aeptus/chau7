@@ -27,6 +27,14 @@ final class AIResumeIdentityResolverTests: XCTestCase {
         XCTAssertEqual(command, "codex resume sess-9")
     }
 
+    func testBuildResumeCommandForOpenCode() {
+        let command = AIResumeIdentityResolver.buildAIResumeCommand(
+            provider: "opencode",
+            sessionId: "ses_abc123"
+        )
+        XCTAssertEqual(command, "opencode --session ses_abc123")
+    }
+
     func testBuildResumeCommandNormalizesProviderDisplayName() {
         // A display-cased provider string still routes to the registry key.
         let command = AIResumeIdentityResolver.buildAIResumeCommand(

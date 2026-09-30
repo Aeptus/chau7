@@ -15,6 +15,11 @@ final class AIResumeParserTests: XCTestCase {
         XCTAssertEqual(result, AIResumeParser.ResumeMetadata(provider: "codex", sessionId: "my-session-42"))
     }
 
+    func testExtractMetadataFromOpenCodeSession() {
+        let result = AIResumeParser.extractMetadata(from: "opencode --session ses_abc123")
+        XCTAssertEqual(result, AIResumeParser.ResumeMetadata(provider: "opencode", sessionId: "ses_abc123"))
+    }
+
     func testExtractMetadataReturnsNilForPlainCommand() {
         XCTAssertNil(AIResumeParser.extractMetadata(from: "claude"))
         XCTAssertNil(AIResumeParser.extractMetadata(from: "ls -la"))
@@ -55,9 +60,15 @@ final class AIResumeParserTests: XCTestCase {
     func testNormalizeProviderName() {
         XCTAssertEqual(AIResumeParser.normalizeProviderName("Claude Code"), "claude")
         XCTAssertEqual(AIResumeParser.normalizeProviderName("codex"), "codex")
+        XCTAssertEqual(AIResumeParser.normalizeProviderName("OpenCode"), "opencode")
         XCTAssertEqual(AIResumeParser.normalizeProviderName("  CLAUDE  "), "claude")
         XCTAssertNil(AIResumeParser.normalizeProviderName("vim"))
         XCTAssertNil(AIResumeParser.normalizeProviderName(""))
+    }
+
+    func testOpenCodeIdentityDoesNotInventResumeMetadata() {
+        XCTAssertEqual(AIResumeParser.detectProvider(from: "opencode /tmp/project"), "opencode")
+        XCTAssertNil(AIResumeParser.extractMetadata(from: "opencode /tmp/project"))
     }
 
     // MARK: - isValidSessionId

@@ -2610,6 +2610,55 @@ final class OverlayTabsModelTests: XCTestCase {
         XCTAssertNil(pane.aiResumeCommand)
     }
 
+    func testExportAndRestoreKeepsOpenCodeIdentityWithoutInventingSessionID() throws {
+        let tab = try XCTUnwrap(model.tabs.first)
+        let session = try XCTUnwrap(tab.session)
+        session.restoreAIMetadata(provider: "codex", sessionId: "stale-codex-session")
+
+        session.updateLastDetectedApp("OpenCode")
+
+        let exported = try XCTUnwrap(model.exportTabStates().first)
+        let pane = try XCTUnwrap(exported.paneStates?.first)
+
+        XCTAssertEqual(exported.aiProvider, "opencode")
+        XCTAssertEqual(pane.aiProvider, "opencode")
+        XCTAssertNil(exported.aiSessionId)
+        XCTAssertNil(pane.aiSessionId)
+        XCTAssertNil(pane.aiResumeCommand)
+
+        let restored = TerminalSessionModel(appModel: AppModel())
+        restored.restoreAIMetadata(provider: pane.aiProvider, sessionId: pane.aiSessionId)
+        XCTAssertEqual(restored.aiDisplayAppName, "OpenCode")
+        XCTAssertNil(restored.lastAISessionId)
+    }
+
+    func testExportAndRestorePreservesOpenCodeSessionAndResumeCommand() throws {
+        let tab = try XCTUnwrap(model.tabs.first)
+        let session = try XCTUnwrap(tab.session)
+        session.restoreAIMetadata(provider: "opencode", sessionId: "ses_abc123")
+
+        let exported = try XCTUnwrap(model.exportTabStates().first)
+        let pane = try XCTUnwrap(exported.paneStates?.first)
+
+        XCTAssertEqual(pane.aiProvider, "opencode")
+        XCTAssertEqual(pane.aiSessionId, "ses_abc123")
+        XCTAssertEqual(pane.aiResumeCommand, "opencode --session ses_abc123")
+
+        let restored = TerminalSessionModel(appModel: AppModel())
+        restored.restoreAIMetadata(provider: pane.aiProvider, sessionId: pane.aiSessionId)
+
+        XCTAssertEqual(restored.lastAIProvider, "opencode")
+        XCTAssertEqual(restored.lastAISessionId, "ses_abc123")
+        XCTAssertEqual(restored.aiDisplayAppName, "OpenCode")
+        XCTAssertEqual(
+            AIResumeIdentityResolver.buildAIResumeCommand(
+                provider: restored.lastAIProvider,
+                sessionId: restored.lastAISessionId
+            ),
+            pane.aiResumeCommand
+        )
+    }
+
     func testExportTabStatesDefersProviderValidationUntilRestore() throws {
         let home = try temporaryHomeDirectory()
         setenv("CHAU7_HOME_ROOT", home.path, 1)

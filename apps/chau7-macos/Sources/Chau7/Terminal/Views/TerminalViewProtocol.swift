@@ -219,7 +219,9 @@ protocol TerminalViewLike: NSView {
 }
 
 extension TerminalViewLike {
-    func isAlternateScreenActive() -> Bool { false }
+    func isAlternateScreenActive() -> Bool {
+        false
+    }
 
     func getStyledBufferAsData() -> Data? {
         nil

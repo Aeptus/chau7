@@ -13,8 +13,9 @@ public struct AIToolDefinition: Sendable {
     public let commandNames: [String]
     /// Terminal output patterns for detection, already lowercased
     public let outputPatterns: [String]
-    /// Provider key for session resume/persistence (e.g. "claude", "codex").
-    /// Nil for tools that don't support `--resume`-style session continuation.
+    /// Stable provider identity persisted with a terminal session (e.g. "claude",
+    /// "codex", "opencode"). A tool may have an identity key without supporting
+    /// session continuation; `resumeFormat` controls whether Chau7 can resume it.
     public let resumeProviderKey: String?
     /// Resume command format. Maps (providerKey, sessionId) → shell command.
     /// Nil for tools without resume support.
@@ -315,8 +316,11 @@ public enum AIToolRegistry {
             displayName: "OpenCode",
             commandNames: ["opencode"],
             outputPatterns: ["opencode.ai"],
-            resumeProviderKey: nil,
-            resumeFormat: nil,
+            // Persist identity so live OpenCode detection replaces stale providers
+            // (such as Codex) and the correct label survives tab restoration.
+            resumeProviderKey: "opencode",
+            // OpenCode's CLI supports `opencode --session <id>` to continue a session.
+            resumeFormat: .dashFlag(command: "opencode", flag: "--session"),
             logoAssetName: nil,
             tabColorName: nil,
             eventSourceRawValue: nil,
@@ -359,9 +363,11 @@ public enum AIToolRegistry {
 
     // MARK: - Queries
 
-    /// Returns the resume provider key for a display name or provider string.
-    /// Uses substring matching to mirror the original `normalizeProviderName` semantics
-    /// (e.g. "Claude Code" contains "claude" → returns "claude").
+    /// Returns the canonical provider key for a display name or provider string.
+    /// Used for persisted tool identity and resume metadata. A tool may have a key
+    /// even when `resumeFormat` is nil. Uses substring matching to mirror the
+    /// original `normalizeProviderName` semantics (e.g. "Claude Code" contains
+    /// "claude" → returns "claude").
     public static func resumeProviderKey(for name: String) -> String? {
         let lowered = name.lowercased()
         for tool in allTools {

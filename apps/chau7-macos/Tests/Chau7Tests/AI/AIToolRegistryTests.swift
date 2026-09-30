@@ -63,7 +63,16 @@ final class AIToolRegistryTests: XCTestCase {
         XCTAssertEqual(tool?.commandNames, ["opencode"])
         XCTAssertNil(tool?.eventSourceRawValue)
         XCTAssertTrue(tool?.usesTerminalUIHeuristics == true)
-        XCTAssertNil(tool?.resumeFormat)
+        guard let resumeFormat = tool?.resumeFormat else {
+            XCTFail("OpenCode should support restoring a session by id")
+            return
+        }
+        guard case let .dashFlag(command, flag) = resumeFormat else {
+            XCTFail("OpenCode should use its --session continuation flag")
+            return
+        }
+        XCTAssertEqual(command, "opencode")
+        XCTAssertEqual(flag, "--session")
     }
 
     // MARK: - Output Pattern List
@@ -114,6 +123,7 @@ final class AIToolRegistryTests: XCTestCase {
     func testResumeProviderKeyDirectMatch() {
         XCTAssertEqual(AIToolRegistry.resumeProviderKey(for: "claude"), "claude")
         XCTAssertEqual(AIToolRegistry.resumeProviderKey(for: "codex"), "codex")
+        XCTAssertEqual(AIToolRegistry.resumeProviderKey(for: "OpenCode"), "opencode")
     }
 
     func testResumeProviderKeySubstringMatch() {
@@ -205,13 +215,11 @@ final class AIToolRegistryTests: XCTestCase {
 
     func testResumeFormatConsistency() {
         for tool in AIToolRegistry.allTools {
-            if tool.resumeProviderKey != nil {
-                XCTAssertNotNil(tool.resumeFormat, "\(tool.displayName) has providerKey but no resumeFormat")
-            }
             if tool.resumeFormat != nil {
                 XCTAssertNotNil(tool.resumeProviderKey, "\(tool.displayName) has resumeFormat but no providerKey")
             }
         }
+        XCTAssertNotNil(AIToolRegistry.tool(named: "OpenCode")?.resumeFormat)
     }
 
     // MARK: - usesTerminalUIHeuristics (W3.7)
