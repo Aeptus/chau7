@@ -5185,5 +5185,12 @@
     "description": "A tab's PTY dimensions and alternate-screen state are announced on its own tab-scoped TERMINAL_SIZE frame instead of riding on the tab inventory, so a Mac resize or full-screen TUI transition reaches the client directly. The shared terminal crate marks each grid row that soft-wraps from the row above, exposing the information clients already needed to re-compose a wide grid onto a narrow display by folding on logical lines rather than chopping soft-wrapped prose mid-sentence at every fold. The engine pre-folds normal output to the client width, so the iPhone paints rows that are already the right size instead of re-deriving cell indices and decoding a cluster per drawn cell every frame. Folding joins soft-wrapped continuation rows before reflowing, so a paragraph that exceeded the source width reads continuously rather than being cut at the terminal wrap point, and trailing padding is trimmed so a short line does not inflate display height. During an alternate-screen TUI, replay clients instead receive coalesced host-grid checkpoints rendered at 1:1 cell size with horizontal and vertical panning, preserving cursor-positioned layouts. The previous client-side fold is retained as a fallback.",
     "status": "Shipped",
     "differentiator": "No"
+  },
+  {
+    "category": "Developer Experience",
+    "feature": "Lockfile-Aware Package Manifest Validation",
+    "description": "The staged dependency gate compares package.json dependency declarations with the package-lock root, allowing metadata- or scripts-only manifest edits without a lockfile diff while dependency drift remains blocking.",
+    "status": "Shipped",
+    "differentiator": "No"
   }
 ]

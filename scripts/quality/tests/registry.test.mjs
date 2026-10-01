@@ -338,14 +338,109 @@ test("unregistered generated contract drift fails closed", async () => {
   assert.match(generated.summary, /Generated artifact changed/);
 });
 
+test("staged dependency policy allows scripts-only package edits with the existing lockfile", async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "chau7-quality-policy-"));
+  const packageDir = path.join(root, "pkg");
+  fs.mkdirSync(packageDir);
+  const manifest = {
+    name: "pkg",
+    scripts: { test: "node --test" },
+    devDependencies: { prettier: "3.8.2" },
+  };
+  const lockfile = {
+    name: "pkg",
+    lockfileVersion: 3,
+    packages: {
+      "": { name: "pkg", devDependencies: { prettier: "3.8.2" } },
+    },
+  };
+  const indexedFiles = new Map([
+    ["pkg/package.json", JSON.stringify(manifest)],
+    ["pkg/package-lock.json", JSON.stringify(lockfile)],
+  ]);
+  fs.writeFileSync(path.join(packageDir, "package.json"), JSON.stringify(manifest));
+  fs.writeFileSync(path.join(packageDir, "package-lock.json"), JSON.stringify(lockfile));
+
+  try {
+    const result = await gate("staged-dependency-policy").run({
+      root,
+      mode: "staged",
+      stagedFiles: ["pkg/package.json"],
+      git: (args) => {
+        const spec = args[1];
+        const file = typeof spec === "string" && spec.startsWith(":0:") ? spec.slice(3) : "";
+        return { stdout: indexedFiles.get(file) ?? "" };
+      },
+    });
+
+    assert.equal(result.status, "passed");
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("staged dependency policy rejects dependency drift until the lockfile matches", async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "chau7-quality-policy-"));
+  const packageDir = path.join(root, "pkg");
+  fs.mkdirSync(packageDir);
+  const manifest = { name: "pkg", devDependencies: { prettier: "3.8.3" } };
+  const staleLockfile = {
+    lockfileVersion: 3,
+    packages: { "": { name: "pkg", devDependencies: { prettier: "3.8.2" } } },
+  };
+  const indexedFiles = new Map([
+    ["pkg/package.json", JSON.stringify(manifest)],
+    ["pkg/package-lock.json", JSON.stringify(staleLockfile)],
+  ]);
+  fs.writeFileSync(path.join(packageDir, "package.json"), JSON.stringify(manifest));
+
+  try {
+    const run = (stagedFiles) =>
+      gate("staged-dependency-policy").run({
+        root,
+        mode: "staged",
+        stagedFiles,
+        git: (args) => {
+          if (args[0] === "ls-files") {
+            const file = args[2];
+            return { stdout: indexedFiles.has(file) ? file : "" };
+          }
+          const spec = args[1];
+          const file = typeof spec === "string" && spec.startsWith(":0:") ? spec.slice(3) : "";
+          return { stdout: indexedFiles.get(file) ?? "" };
+        },
+      });
+
+    const stale = await run(["pkg/package.json"]);
+    assert.equal(stale.status, "failed");
+    assert.match(stale.summary, /does not match/);
+
+    const updatedLockfile = {
+      lockfileVersion: 3,
+      packages: { "": { name: "pkg", devDependencies: { prettier: "3.8.3" } } },
+    };
+    indexedFiles.set("pkg/package-lock.json", JSON.stringify(updatedLockfile));
+    const synchronized = await run(["pkg/package.json", "pkg/package-lock.json"]);
+    assert.equal(synchronized.status, "passed");
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("dependency policy accepts a manifest when its lockfile is in scope", async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "chau7-quality-policy-"));
   fs.mkdirSync(path.join(root, "pkg"));
   fs.writeFileSync(
     path.join(root, "pkg/package.json"),
-    JSON.stringify({ devDependencies: { prettier: "3.8.2" } }),
+    JSON.stringify({ name: "pkg", devDependencies: { prettier: "3.8.2" } }),
   );
-  fs.writeFileSync(path.join(root, "pkg/package-lock.json"), "{}\n");
+  fs.writeFileSync(
+    path.join(root, "pkg/package-lock.json"),
+    JSON.stringify({
+      lockfileVersion: 3,
+      packages: { "": { name: "pkg", devDependencies: { prettier: "3.8.2" } } },
+    }),
+  );
 
   const result = await gate("always-dependency-policy").run({
     root,

@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Scripts-only or metadata-only `package.json` edits now pass the staged dependency policy when the existing lockfile's dependency declarations still match; dependency drift remains blocking.
 - Chau7 Remote now has a dedicated keyboard show/hide control, separate from the terminal shortcut-row toggle. The agent activity card above terminal output has been removed, so the output begins directly below the tab bar; approval controls remain available in Approvals.
 
 ### Fixed

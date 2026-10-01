@@ -98,7 +98,10 @@ Staged gates include:
   `gitleaks git --pre-commit --staged --redact --no-banner` (Gitleaks 8.20+);
 - forbidden credential-path and 5-MiB-or-larger blob checks through the
   registered `staged-legacy-guardrails` gate;
-- dependency-manifest policy and lockfile drift checks;
+- pinned dependency-manifest policy and lockfile consistency checks. The gate
+  compares dependency declarations with the lockfile, so metadata- or
+  scripts-only `package.json` edits need no lockfile diff; dependency changes
+  must match the lockfile;
 - Ruff fix/format/verify for staged Python files, with deliberate re-stage;
 - Python guardrails for bare/silent exceptions, placeholders, and debuggers;
 - Prettier write/check for staged JS/TS files where package-local Prettier is installed;
