@@ -1,0 +1,12 @@
+# Aethyme broker configuration. `aethyme init` documents every key.
+schema = 1
+
+[promote]
+# Verify submissions but promote nothing: this repository delivers through
+# pull requests, so each session branch is the only copy of its work.
+mode = "verify-only"
+
+[delivery]
+# Agents may push their own session branch and open a draft PR
+# (`aethyme broker push --session <id> [--pr]`). Nothing else.
+push_session_branches = true

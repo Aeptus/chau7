@@ -1,7 +1,8 @@
 .DS_Store
 .cache/
 .aeptus-cache/
-.aethyme/
+.aethyme/*
+!.aethyme/config.toml
 .chau7/plan.md
 .chau7/pre-commit-review.conf
 .chau7/sessions/
