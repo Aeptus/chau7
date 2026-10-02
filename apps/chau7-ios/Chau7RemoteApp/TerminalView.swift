@@ -19,6 +19,7 @@ struct TerminalView: View {
     @AppStorage(AppSettings.terminalFontSizeKey) private var terminalFontSize = AppSettings.terminalFontSizeDefault
 
     @State private var inputText = ""
+    @State private var showsTabPicker = false
     /// The user hid an auto-surfaced key row for the current waiting episode.
     /// Reset when the active tab's need signal rises again, so the row
     /// re-appears for the NEXT menu without permanently re-pinning itself.
@@ -42,6 +43,25 @@ struct TerminalView: View {
                 }
             }
             .navigationBarTitleDisplayMode(.inline)
+        }
+        .sheet(isPresented: $showsTabPicker) {
+            RemoteTabPickerView(
+                snapshot: RemoteTabPickerSnapshot(orderedTabs: RemoteTabOrdering.alphabetically(client.tabs)),
+                activeTabID: client.activeTabID,
+                inventoryState: client.tabInventoryState,
+                isConnected: client.isConnected && client.tabInventoryState == .ready
+            ) { tabID in
+                // Selecting the already-open tab only closes the picker; it
+                // must not restart the terminal stream or reset scrollback.
+                if tabID != client.activeTabID {
+                    DiagnosticsLog.shared.info(.tab, "Selected remote tab", ["tab_id": String(tabID)])
+                    client.switchTab(tabID)
+                }
+                showsTabPicker = false
+            }
+            .equatable()
+            .presentationDetents([.large])
+            .presentationDragIndicator(.visible)
         }
         .alert("Protected Remote Action", isPresented: protectedSendBinding) {
             Button("Cancel", role: .cancel) {
@@ -231,31 +251,9 @@ struct TerminalView: View {
         HStack(spacing: 10) {
             connectionStatusSymbol
 
-            Menu {
-                let groups = repoTabGroups
-                if groups.isEmpty {
-                    switch client.tabInventoryState {
-                    case .syncing:
-                        Text("Syncing remote tabs…")
-                    case .ready:
-                        Text("No remote tabs available")
-                    case .unavailable:
-                        Text("Remote tabs unavailable")
-                    }
-                } else if groups.count == 1 {
-                    // A single group's header (often just "Other") is noise —
-                    // keep the flat list.
-                    tabMenuButtons(for: groups[0].tabs)
-                } else {
-                    // Repo names render as section titles — the system menu
-                    // styles them smaller and secondary, visually distinct
-                    // from the tab entries beneath them.
-                    ForEach(groups) { group in
-                        Section(group.title) {
-                            tabMenuButtons(for: group.tabs)
-                        }
-                    }
-                }
+            Button {
+                inputFocused = false
+                showsTabPicker = true
             } label: {
                 HStack(spacing: 8) {
                     if let color = activeTabStatusColor {
@@ -264,20 +262,29 @@ struct TerminalView: View {
                             .frame(width: 7, height: 7)
                             .accessibilityHidden(true)
                     }
-                    Text(activeTabMenuLabel)
-                        .font(.system(.footnote, design: .rounded).weight(.semibold))
-                        .lineLimit(1)
-                        .truncationMode(.middle)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(activeTabMenuLabel)
+                            .font(.system(.subheadline, design: .rounded).weight(.semibold))
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                        Text("Switch session · \(client.tabs.count)")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                     Image(systemName: "chevron.down")
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(.secondary)
                 }
                 .padding(.horizontal, 12)
-                .padding(.vertical, 8)
+                .frame(minHeight: 44)
                 .background(Color(UIColor.secondarySystemBackground))
-                .clipShape(Capsule(style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
             }
+            .buttonStyle(.plain)
             .accessibilityLabel("Active session: \(activeTabMenuLabel)\(activeTabStatusDescription.map { ", \($0)" } ?? "")")
+            .accessibilityHint("Opens the session list at the current session.")
+            .accessibilityIdentifier("terminal.sessionPicker")
+            .layoutPriority(1)
 
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
@@ -299,80 +306,6 @@ struct TerminalView: View {
         .padding(.horizontal)
         .padding(.vertical, 8)
         .background(Color(UIColor.systemBackground))
-    }
-
-    private struct RepoTabGroup: Identifiable {
-        let id: String
-        let title: String
-        let tabs: [RemoteTab]
-    }
-
-    /// Tabs grouped by repo (projectName) and alphabetized within each group.
-    /// Tabs without a repo collect under "Other", always last.
-    ///
-    /// Groups are ordered by name rather than by first appearance in
-    /// `client.tabs`. `RemoteClient` suppresses duplicate/reorder-only wire
-    /// snapshots; sorting both levels here gives the rendered menu a stable
-    /// identity sequence while still reflecting real metadata and membership
-    /// changes.
-    private var repoTabGroups: [RepoTabGroup] {
-        let fallback = "Other"
-        var tabsByRepo: [String: [RemoteTab]] = [:]
-        for tab in client.tabs {
-            let name = tab.projectName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            tabsByRepo[name.isEmpty ? fallback : name, default: []].append(tab)
-        }
-        let order = tabsByRepo.keys.sorted { lhs, rhs in
-            // "Other" is a catch-all, not a repo — it sorts last regardless.
-            if lhs == fallback { return false }
-            if rhs == fallback { return true }
-            return lhs.localizedCaseInsensitiveCompare(rhs) == .orderedAscending
-        }
-        return order.map {
-            RepoTabGroup(
-                id: $0,
-                title: $0,
-                tabs: RemoteTabOrdering.alphabetically(tabsByRepo[$0] ?? [])
-            )
-        }
-    }
-
-    private func tabMenuButtons(for tabs: [RemoteTab]) -> some View {
-        ForEach(tabs) { tab in
-            Button {
-                DiagnosticsLog.shared.info(.tab, "Selected remote tab", [
-                    "tab_id": String(tab.tabID),
-                    "title": tab.title
-                ])
-                client.switchTab(tab.tabID)
-            } label: {
-                Label {
-                    Text(tabMenuTitle(for: tab))
-                        .lineLimit(1)
-                } icon: {
-                    tabMenuIcon(for: tab)
-                }
-            }
-        }
-    }
-
-    @ViewBuilder
-    private func tabMenuIcon(for tab: RemoteTab) -> some View {
-        if tab.tabID == client.activeTabID {
-            Image(systemName: "checkmark")
-        } else if let symbol = statusSymbol(for: tab) {
-            Image(systemName: symbol)
-        } else if tab.isMCPControlled {
-            Image(systemName: "face.dashed.fill")
-        }
-    }
-
-    private func tabMenuTitle(for tab: RemoteTab) -> String {
-        guard let activity = client.liveActivityState, activity.tabID == tab.tabID,
-              let label = statusWord(for: activity.status) else {
-            return tab.title
-        }
-        return "\(tab.title) · \(label)"
     }
 
     // MARK: - Output
@@ -714,18 +647,6 @@ struct TerminalView: View {
         case .completed: return .green
         case .running: return .blue
         case .idle: return .secondary
-        }
-    }
-
-    private func statusSymbol(for tab: RemoteTab) -> String? {
-        guard let activity = client.liveActivityState, activity.tabID == tab.tabID else { return nil }
-        switch activity.status {
-        case .approvalRequired: return "lock.shield.fill"
-        case .waitingInput: return "exclamationmark.bubble.fill"
-        case .failed: return "xmark.octagon.fill"
-        case .completed: return "checkmark.circle.fill"
-        case .running: return "circle.fill"
-        case .idle: return nil
         }
     }
 

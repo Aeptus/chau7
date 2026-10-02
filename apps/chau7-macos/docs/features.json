@@ -2956,7 +2956,7 @@
   {
     "category": "SSH, Profiles & Remote",
     "feature": "Truthful and Stable iPhone Tab Inventory",
-    "description": "Chau7 Remote distinguishes encrypted-session readiness from tab-inventory readiness, shows syncing until the first live or cached inventory arrives, and suppresses duplicate or reorder-only observable updates; macOS gates inventory frames by semantic descriptor equality, never attaches a terminal keyframe to generic tab-model notifications, and resets the gate before reconnect inventory",
+    "description": "Chau7 Remote distinguishes encrypted-session readiness from tab-inventory readiness, shows syncing until the first live or cached inventory arrives, and suppresses duplicate or reorder-only observable updates; macOS gates inventory frames by semantic descriptor equality, never attaches a terminal keyframe to generic tab-model notifications, and resets the gate before reconnect inventory; the searchable session sheet opens at the iPhone-selected tab and preserves browsing position across metadata refreshes and automatic reconnects, retains last-known inventory while switching is disabled during synchronization, and avoids resubscribing when the open session is tapped",
     "status": "Experimental",
     "differentiator": "No"
   },

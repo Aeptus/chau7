@@ -80,7 +80,16 @@ final class RemoteClient {
     // MARK: - Pairing (persisted in Keychain)
 
     var pairingInfo: PairingInfo? {
-        didSet { RemotePairingStore.savePairing(pairingInfo) }
+        didSet {
+            RemotePairingStore.savePairing(pairingInfo)
+            if RemoteTabInventoryRetention.shouldClear(
+                previousPairing: oldValue, nextPairing: pairingInfo, discardingUserIntent: false
+            ) {
+                tabs = []
+                activeTabID = 0
+                tabInventoryState = .unavailable
+            }
+        }
     }
 
     // MARK: - Private
@@ -497,7 +506,12 @@ final class RemoteClient {
         if !preserveReconnectAttempt {
             reconnectBackoff.reset()
         }
-        tabs = []
+        let clearIntent = discardUserIntent || !preserveApprovalsAndPrompts
+        if RemoteTabInventoryRetention.shouldClear(
+            previousPairing: pairingInfo, nextPairing: pairingInfo, discardingUserIntent: clearIntent
+        ) {
+            tabs = []
+        }
         tabInventoryState = .unavailable
         remoteSubscribedTabID = nil
         lastReceivedOutputTabID = nil
@@ -516,7 +530,6 @@ final class RemoteClient {
         macCapabilities = []
         outputText = ""
         strippedOutputText = ""
-        let clearIntent = discardUserIntent || !preserveApprovalsAndPrompts
         if clearIntent {
             pendingInteractivePrompts = []
             approvalCoordinator.reset()

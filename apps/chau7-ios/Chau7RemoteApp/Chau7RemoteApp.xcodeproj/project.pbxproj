@@ -7,6 +7,9 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		C7A098000000000000000002 /* RemoteTabPickerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C7A098000000000000000001 /* RemoteTabPickerView.swift */; };
+		C7A098000000000000000003 /* RemoteTabPickerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C7A098000000000000000001 /* RemoteTabPickerView.swift */; };
+		C7A098000000000000000005 /* RemoteTabPickerViewTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C7A098000000000000000004 /* RemoteTabPickerViewTests.swift */; };
 		001E223890DB19BD80601C0F /* RemoteTransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF25AD1B07A6E0D52C51D94E /* RemoteTransport.swift */; };
 		07C488E2F7DE512EF0FF2E13 /* ApprovalCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 03E6A0C2ED2794AA74FE8FE3 /* ApprovalCoordinator.swift */; };
 		1F7EE7F1364B8A481F1996E6 /* RemoteSessionController.swift in Sources */ = {isa = PBXBuildFile; fileRef = D864F8C560873AF51AA1BACA /* RemoteSessionController.swift */; };
@@ -85,6 +88,8 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		C7A098000000000000000001 /* RemoteTabPickerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteTabPickerView.swift; sourceTree = "<group>"; };
+		C7A098000000000000000004 /* RemoteTabPickerViewTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteTabPickerViewTests.swift; sourceTree = "<group>"; };
 		03E6A0C2ED2794AA74FE8FE3 /* ApprovalCoordinator.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ApprovalCoordinator.swift; sourceTree = "<group>"; };
 		4A94D77131F2A00100A1B001 /* RemoteModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteModels.swift; sourceTree = "<group>"; };
 		4A94D77331F2A00100A1B001 /* TerminalView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalView.swift; sourceTree = "<group>"; };
@@ -193,6 +198,7 @@
 				AA01C0DF31F0A00100A1B001 /* RemoteActivityCard.swift */,
 				4A94D78F31F2A00100A1B001 /* RemoteTerminalOutputStore.swift */,
 				4A94D77331F2A00100A1B001 /* TerminalView.swift */,
+				C7A098000000000000000001 /* RemoteTabPickerView.swift */,
 				4A94D77531F2A00100A1B001 /* ApprovalsView.swift */,
 				4A94D77731F2A00100A1B001 /* SettingsView.swift */,
 				4A94D78131F2A00100A1B001 /* RemoteActivityAttributes.swift */,
@@ -234,6 +240,7 @@
 			isa = PBXGroup;
 			children = (
 				840F72AE8D478EBA71D05E4D /* RemoteClientCollaboratorTests.swift */,
+				C7A098000000000000000004 /* RemoteTabPickerViewTests.swift */,
 			);
 			name = Chau7RemoteAppTests;
 			path = ../Chau7RemoteAppTests;
@@ -417,6 +424,8 @@
 			buildActionMask = 2147483647;
 			files = (
 				64F5859B561CE7AF7EDB6603 /* RemoteClientCollaboratorTests.swift in Sources */,
+				C7A098000000000000000003 /* RemoteTabPickerView.swift in Sources */,
+				C7A098000000000000000005 /* RemoteTabPickerViewTests.swift in Sources */,
 				AFB28EFD06FD3AC670A01E92 /* RemoteTransport.swift in Sources */,
 				E570863FEAD1BF0245EC079F /* RemoteSessionController.swift in Sources */,
 				65E060C5E28959F2B6FA70E9 /* ApprovalCoordinator.swift in Sources */,
@@ -441,6 +450,7 @@
 				4A94D79031F2A00100A1B001 /* RemoteTerminalOutputStore.swift in Sources */,
 				4A94D77831F2A00100A1B001 /* SettingsView.swift in Sources */,
 				4A94D77431F2A00100A1B001 /* TerminalView.swift in Sources */,
+				C7A098000000000000000002 /* RemoteTabPickerView.swift in Sources */,
 				84B3034D2F3107BB00A7D19E /* KeychainStore.swift in Sources */,
 				84B3034E2F3107BB00A7D19E /* RemoteCrypto.swift in Sources */,
 				84B3034F2F3107BB00A7D19E /* PairingSheetView.swift in Sources */,

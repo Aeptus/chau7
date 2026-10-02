@@ -42,3 +42,13 @@ The transport and payload contract live in
 - iOS accepts that payload by scanning the Mac's QR code, a one-tap "Paste & Pair"
   from the clipboard, or manual entry
 - Payload validation reports specific errors (missing field, expired code, unreadable text)
+
+
+## Session picker
+
+- The session selector opens a searchable sheet, centered on the open iPhone session.
+- Sessions stay grouped by project with alphabetical titles and stable tab IDs. Rows show the session number, provider, branch, and MCP ownership when available.
+- Search matches session titles, projects, branches, providers, and tab numbers. Current returns to the open session; Done closes the sheet.
+- Refreshes update changed row metadata without returning to the top or re-centering a user who is browsing. Mac focus and input-pane metadata do not invalidate the picker presentation.
+- Tapping the already-open session closes the picker without resubscribing to its terminal stream.
+- Automatic reconnects keep the last inventory visible, with switching disabled until synchronization completes. An authoritative empty inventory, explicit disconnect, or pairing change clears stale sessions.
