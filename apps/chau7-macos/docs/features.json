@@ -5210,7 +5210,7 @@
   {
     "category": "Developer Experience",
     "feature": "Pinned Tooling and Dependency Baseline",
-    "description": "Pinned review baseline: actions/setup-go v7, relay TypeScript 6.0.3, Prettier 3.8.4, Cloudflare Worker types 5.20260926.1, Wrangler 4.144.0, proxy SQLite v1.53.0, remote x/crypto v0.53.0 with Go 1.25.0. Compatibility checks cover relay typechecking, formatting and dry-run builds plus race-enabled Go tests.",
+    "description": "Pinned review baseline: actions/setup-go v7, relay TypeScript 6.0.3, Prettier 3.8.4, Cloudflare Worker types 5.20260926.1, Wrangler 4.144.0, proxy SQLite v1.53.0, remote x/crypto v0.57.0 with Go 1.26.0. Compatibility checks cover relay typechecking, formatting and dry-run builds plus race-enabled Go tests.",
     "status": "Shipped",
     "differentiator": "No"
   }

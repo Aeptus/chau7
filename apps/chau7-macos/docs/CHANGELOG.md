@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Updated remote cryptography to x/crypto v0.57.0 and x/sys v0.48.0, with Go 1.26 matching the dependency requirement.
+
 - GitHub validation and release workflows now use actions/setup-go v7; pull-request CI exercises the same action as release validation.
 
 - Scripts-only package edits validate against indexed lockfile declarations; dependency drift remains blocking.
@@ -19,9 +21,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- Repeated local IPC listener stop/deinit relinquishes descriptor ownership immediately while its dispatch cancellation handler closes exactly once, preventing delayed double-close corruption of reused descriptors. Accept events use their own listener descriptor.
-
 - CI prepares a simulator runtime matching the selected Xcode SDK and selects a concrete device ID before compilation, avoiding missing iPhone destinations on runner images. The iOS gate caches by the explicit destination.
+
+- Repeated local IPC listener stop/deinit relinquishes descriptor ownership immediately while its dispatch cancellation handler closes exactly once, preventing delayed double-close corruption of reused descriptors. Accept events use their own listener descriptor.
 
 - Rust iOS target checks consume the complete installed-target list, preventing intermittent false missing-target errors from SIGPIPE under pipefail.
 - CI installs pip-audit for the tracked Python project and verifies audit tools before full-suite compilation.
