@@ -58,7 +58,9 @@ export CARGO_TARGET_DIR="$RUST_TARGET_DIR"
 
 require_target() {
     local target="$1"
-    if ! "$RUSTUP_BIN" target list --installed | grep -qx "$target"; then
+    # Consume the full list: grep -q can close the pipe early and make rustup
+    # fail with SIGPIPE under pipefail even when the target is installed.
+    if ! "$RUSTUP_BIN" target list --installed | grep -x "$target" >/dev/null; then
         echo "Missing Rust target $target. Install it with: rustup target add $target" >&2
         exit 1
     fi
