@@ -21,7 +21,7 @@ test("Xcode Rust target checks and builds resolve the workspace toolchain from a
   fs.copyFileSync(buildScript, script);
   fs.writeFileSync(path.join(rust, "rust-toolchain.toml"), '[toolchain]\nchannel = "1.96.0"\n');
   const writeTool = (name, source) => fs.writeFileSync(path.join(bin, name), source, { mode: 0o755 });
-  writeTool("rustup", `#!/bin/bash\nprintf 'rustup:%s\\n' "$PWD" >> "$TEST_COMMAND_LOG"\nprintf '%s\\n' aarch64-apple-ios aarch64-apple-ios-sim x86_64-apple-ios\n`);
+  writeTool("rustup", `#!/bin/bash\nprintf 'rustup:%s\\n' "$PWD" >> "$TEST_COMMAND_LOG"\nprintf '%s\\n' aarch64-apple-ios\nsleep 0.02\nprintf '%s\\n' aarch64-apple-ios-sim x86_64-apple-ios\n`);
   writeTool("cargo", `#!/bin/bash\nprintf 'cargo:%s\\n' "$PWD" >> "$TEST_COMMAND_LOG"\nwhile [[ "$1" != --target ]]; do shift; done\nmkdir -p "$CARGO_TARGET_DIR/$2/debug"\ntouch "$CARGO_TARGET_DIR/$2/debug/libchau7_terminal.a"\n`);
   writeTool("lipo", `#!/bin/bash\nwhile [[ "$1" != -output ]]; do shift; done\ntouch "$2"\n`);
   try {
