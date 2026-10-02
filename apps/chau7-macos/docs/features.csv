@@ -257,7 +257,7 @@ API Analytics,Provider-Family Fallback Pricing,Model-less Claude Codex and Gemin
 API Analytics,Completed Turn Summary Persistence,Repository turn summaries preserve the last completed turn's tokens tools duration exit reason and estimated cost after the session goes idle,Shipped,Yes
 API Analytics,Cost Threshold Events,Runtime sessions emit cost_threshold journal events when cumulative estimated cost crosses configured limits,Shipped,Yes
 API Analytics,Dashboard Cache Token Split,"Agent dashboard, Usage Monitor, Debug Console analytics, and API analytics keep cache creation and cache read tokens separate instead of collapsing all cached usage into one ambiguous token count",Shipped,Yes
-API Analytics,Async Usage Analytics Loading,"Usage dashboards coalesce overlapping refreshes, run proxy analytics database reads off the main thread, and show model-level proxy cost rows",Shipped,Yes
+API Analytics,Async Usage Analytics Loading,"Usage dashboards coalesce overlapping refreshes, run proxy analytics database reads off the main thread, and show model-level proxy cost rows; latency refreshes release the database lock before decoding timestamps and use a fast value parser with legacy-format compatibility, with latency eligibility grouped so repository, time-window, and success-status filters apply to every row",Shipped,Yes
 API Analytics,Regional Usage Number Formatting,"Usage dashboards and cost displays use a configurable regional number format - French by default, with European and US choices independent of app language",Shipped,Yes
 MCP Server,MCP Command Filter Hardening,"Permission checks parse background separators, tabs, and newlines before applying allow/block/approval rules",Shipped,Yes
 MCP Server,Backend Launch Environment Validation,Runtime backend launch strings drop invalid environment variable names before shell interpolation,Shipped,Yes
@@ -305,7 +305,7 @@ MCP Tools — Tab Management,tab_close,Close a tab with optional force flag — 
 MCP Tools — Tab Management,tab_output,"Get terminal output (max 10000 lines, 512KB cap). source=pty_log returns full ANSI-stripped AI session. wait_for_stable_ms polls buffer.",Shipped,Yes
 MCP Tools — Tab Management,tab_set_cto,Set per-tab CTO override (default/forceOn/forceOff) — recalculates flag files and records decision,Shipped,Yes
 MCP Tools — Tab Management,tab_rename,Set a custom title for a tab — pass empty string to clear,Shipped,Yes
-MCP Tools — Repository,repo_get_metadata,"Get metadata for a repository including description, labels, favorite files, and frequent commands",Shipped,Yes
+MCP Tools — Repository,repo_get_metadata,"Get repository description, labels, favorite files, frequent commands, and statistics; database/file reads run on the MCP worker after copying cached observable metadata on main",Shipped,Yes
 MCP Tools — Repository,repo_set_metadata,"Set metadata for a repository (description, labels, favorite files) — only provided fields are updated",Shipped,Yes
 MCP Tools — Repository,repo_frequent_commands,"Get frequently used commands for a repository, sorted by frecency",Shipped,Yes
 MCP Tools — Repository,repo_get_events,"Get recent AI tool events (finished, permission, tool_called, etc.) scoped to a given repo",Shipped,Yes

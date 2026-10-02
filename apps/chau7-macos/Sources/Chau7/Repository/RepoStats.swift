@@ -2,7 +2,7 @@ import Foundation
 
 /// Computed snapshot of per-repo metrics from history.db and runs.db.
 /// Not persisted — assembled fresh on demand.
-struct RepoStats {
+struct RepoStats: Sendable {
     // Command history
     let totalCommands: Int
     let successfulCommands: Int

@@ -1,7 +1,7 @@
 import Foundation
 
 /// Persisted per-repo metadata stored at `{repo-root}/.chau7/metadata.json`.
-struct RepoMetadata: Codable, Equatable {
+struct RepoMetadata: Codable, Equatable, Sendable {
     var description: String?
     var labels: [String]
     var favoriteFiles: [String]

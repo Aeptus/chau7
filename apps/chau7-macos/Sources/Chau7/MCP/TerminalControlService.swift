@@ -24,6 +24,12 @@ import Chau7Core
 final class TerminalControlService {
     static let shared = TerminalControlService()
 
+    private nonisolated let repoStatsProvider: @Sendable (String) -> RepoStats
+
+    init(repoStatsProvider: @escaping @Sendable (String) -> RepoStats = { RepoStatsProvider.stats(for: $0) }) {
+        self.repoStatsProvider = repoStatsProvider
+    }
+
     /// Window/model registration state. Owned here because the MCP service is
     /// the registration funnel (AppDelegate registers every new window through
     /// it); the Remote layer consumes it via `TabDirectoryProviding`.
@@ -2332,9 +2338,13 @@ final class TerminalControlService {
 
     // MARK: - Repo Metadata
 
-    func getRepoMetadata(repoPath: String) -> String {
-        let model = RepositoryCache.shared.cachedModel(forRoot: repoPath)
-        let metadata = model?.metadata ?? RepoMetadataStore.load(repoRoot: repoPath)
+    nonisolated func getRepoMetadata(repoPath: String) -> String {
+        // Only copy observable metadata on main. Disk reads, database waits,
+        // aggregation, and response encoding stay on the MCP client worker.
+        let cachedMetadata = onMain {
+            RepositoryCache.shared.cachedModel(forRoot: repoPath)?.metadata
+        }
+        let metadata = cachedMetadata ?? RepoMetadataStore.load(repoRoot: repoPath)
         let frequentCmds = PersistentHistoryStore.shared
             .frequentCommandsForRepo(repoRoot: repoPath, limit: 10)
 
@@ -2353,7 +2363,7 @@ final class TerminalControlService {
         }
 
         // Aggregated stats from history.db + runs.db
-        let stats = RepoStatsProvider.stats(for: repoPath)
+        let stats = repoStatsProvider(repoPath)
         let iso = DateFormatters.iso8601NoFractional
         var statsDict: [String: Any] = [
             "total_commands": stats.totalCommands,

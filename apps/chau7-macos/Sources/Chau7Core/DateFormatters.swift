@@ -35,6 +35,14 @@ public enum DateFormatters {
         iso8601.string(from: Date())
     }
 
+    /// Parse high-volume analytics rows without constructing ICU date parsers.
+    /// The formatter fallback preserves compatibility with legacy timestamps.
+    public static func parseAnalyticsTimestamp(_ string: String) -> Date? {
+        (try? Date.ISO8601FormatStyle(includingFractionalSeconds: true).parse(string))
+            ?? (try? Date.ISO8601FormatStyle().parse(string))
+            ?? parseISO8601(string)
+    }
+
     /// Parses an ISO8601 string with or without fractional seconds.
     public static func parseISO8601(_ string: String) -> Date? {
         iso8601.date(from: string) ?? iso8601NoFractional.date(from: string)

@@ -13,7 +13,7 @@ final class MCPSession {
 
     private let fd: Int32
     private let queryService = TelemetryQueryService()
-    private let controlService = TerminalControlService.shared
+    private let controlService: TerminalControlService
     private let controlPlane = ControlPlaneService.shared
     private let stateSnapshotService = Chau7StateSnapshotService.shared
     private var lifecycleState: LifecycleState = .awaitingInitialize
@@ -55,8 +55,13 @@ final class MCPSession {
         let structuredContent: [String: Any]?
     }
 
-    init(fd: Int32, notificationSink: (([String: Any]) -> Void)? = nil) {
+    init(
+        fd: Int32,
+        notificationSink: (([String: Any]) -> Void)? = nil,
+        controlService: TerminalControlService? = nil
+    ) {
         self.fd = fd
+        self.controlService = controlService ?? TerminalControlService.shared
         self.notificationSink = notificationSink
     }
 
@@ -975,7 +980,7 @@ final class MCPSession {
             guard let repoPath = arguments["repo_path"] as? String else {
                 return .protocolError(code: -32602, message: "Invalid params: repo_path is required")
             }
-            return classifyToolResponse(MainActorBridge.sync { controlService.getRepoMetadata(repoPath: repoPath) })
+            return classifyToolResponse(controlService.getRepoMetadata(repoPath: repoPath))
 
         case "repo_set_metadata":
             guard let repoPath = arguments["repo_path"] as? String else {
