@@ -355,3 +355,23 @@ test("dependency policy accepts a manifest when its lockfile is in scope", async
 
   assert.equal(result.status, "passed");
 });
+
+
+test("iOS tests use the prepared simulator destination and include it in the cache contract", async () => {
+  const previous = process.env.CHAU7_IOS_TEST_DESTINATION;
+  const destination = "platform=iOS Simulator,id=12345678-1234-1234-1234-123456789abc";
+  process.env.CHAU7_IOS_TEST_DESTINATION = destination;
+  let args;
+  try {
+    const result = await gate("ios-app-tests").run({ exec: async (command, nextArgs) => {
+      args = nextArgs;
+      return { status: "passed", summary: "ok" };
+    } });
+    assert.equal(result.status, "passed");
+    assert.equal(args[args.indexOf("-destination") + 1], destination);
+    assert.deepEqual(gate("ios-app-tests").cacheEnv, ["CHAU7_IOS_TEST_DESTINATION"]);
+  } finally {
+    if (previous === undefined) delete process.env.CHAU7_IOS_TEST_DESTINATION;
+    else process.env.CHAU7_IOS_TEST_DESTINATION = previous;
+  }
+});
