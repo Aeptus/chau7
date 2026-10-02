@@ -5196,7 +5196,7 @@
   {
     "category": "Developer Experience",
     "feature": "Pinned Rust iOS Validation",
-    "description": "CI prepares iOS device and simulator targets for the workspace Rust compiler, and Xcode terminal builds select that same pinned toolchain; dependency audits remain blocking. CI installs pip-audit for tracked Python projects and verifies audit tools before compilation. Installed-target checks consume all output to avoid false missing-target failures from SIGPIPE.",
+    "description": "CI prepares iOS device and simulator targets for the workspace Rust compiler, and Xcode terminal builds select that same pinned toolchain; dependency audits remain blocking. CI installs pip-audit for tracked Python projects and verifies audit tools before compilation. Installed-target checks consume all output to avoid false missing-target failures from SIGPIPE. CI prepares a compatible iOS simulator runtime and concrete test-device ID before compilation; destination overrides participate in the iOS gate cache key.",
     "status": "Shipped",
     "differentiator": "No"
   }

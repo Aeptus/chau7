@@ -15,6 +15,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- CI prepares a simulator runtime matching the selected Xcode SDK and selects a concrete device ID before compilation, avoiding missing iPhone destinations on runner images. The iOS gate caches by the explicit destination.
+
 - Repeated local IPC listener stop/deinit relinquishes descriptor ownership immediately while its dispatch cancellation handler closes exactly once, preventing delayed double-close corruption of reused descriptors. Accept events use their own listener descriptor.
 
 - Rust iOS target checks consume the complete installed-target list, preventing intermittent false missing-target errors from SIGPIPE under pipefail.
