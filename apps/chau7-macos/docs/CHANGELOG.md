@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Updated remote cryptography to x/crypto v0.57.0 and x/sys v0.48.0, with Go 1.26 matching the dependency requirement.
+
 - GitHub validation and release workflows now use actions/setup-go v7; pull-request CI exercises the same action as release validation.
 
 - Scripts-only package edits validate against indexed lockfile declarations; dependency drift remains blocking.
