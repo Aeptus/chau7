@@ -46,6 +46,12 @@ jobs:
         with:
           components: rustfmt, clippy
 
+      - name: Prepare pinned Rust toolchain and iOS targets
+        working-directory: apps/chau7-macos/rust
+        run: |
+          rustup show active-toolchain
+          rustup target add aarch64-apple-ios aarch64-apple-ios-sim x86_64-apple-ios
+
       - name: Install full-suite quality tools
         run: brew install swiftformat swiftlint gitleaks shellcheck ruff golangci-lint periphery
 
