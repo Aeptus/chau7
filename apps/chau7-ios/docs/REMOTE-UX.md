@@ -52,3 +52,9 @@ The transport and payload contract live in
 - Refreshes update changed row metadata without returning to the top or re-centering a user who is browsing. Mac focus and input-pane metadata do not invalidate the picker presentation.
 - Tapping the already-open session closes the picker without resubscribing to its terminal stream.
 - Automatic reconnects keep the last inventory visible, with switching disabled until synchronization completes. An authoritative empty inventory, explicit disconnect, or pairing change clears stale sessions.
+
+## Terminal scrolling
+
+- Normal output reaches the complete source scrollback even when each Mac row wraps into several phone-width rows.
+- Dragging, bounce, and deceleration remain controlled by UIKit while renderer frames arrive. Scroll destinations coalesce to the latest request per display refresh and are discarded on tab switch or reset.
+- Rich rendering draws only rows intersecting the visible dirty region. Alternate-screen applications keep their source layout and pan horizontally/vertically on a viewport-sized canvas.
