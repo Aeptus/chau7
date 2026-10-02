@@ -117,8 +117,13 @@ function getContextContent(context, file) {
 
 function dependencyManifestFailures(context, files) {
   const failures = [];
-  const changed = new Set(context.mode === "staged" ? context.stagedFiles : context.changedFiles);
+  const manifests = new Set(files);
   for (const file of files) {
+    if (file.endsWith("package-lock.json")) {
+      manifests.add(path.join(path.dirname(file), "package.json").replaceAll(path.sep, "/"));
+    }
+  }
+  for (const file of manifests) {
     if (file.endsWith("package.json")) {
       let data;
       try {
@@ -141,8 +146,37 @@ function dependencyManifestFailures(context, files) {
       }
 
       const lockfile = path.join(path.dirname(file), "package-lock.json").replaceAll(path.sep, "/");
-      if (pathExists(path.join(context.root, lockfile)) && !changed.has(lockfile)) {
-        failures.push(`${file}: matching ${lockfile} was not included in this validation scope`);
+      const indexedLockfiles =
+        context.mode === "staged"
+          ? context.git(["ls-files", "--", lockfile], { allowFailure: true }).stdout.split(/\r?\n/).filter(Boolean)
+          : [];
+      const lockfileExists = context.mode === "staged"
+        ? indexedLockfiles.includes(lockfile)
+        : pathExists(path.join(context.root, lockfile));
+      if (lockfileExists) {
+        let lockData;
+        try {
+          lockData = JSON.parse(getContextContent(context, lockfile));
+        } catch {
+          failures.push(`${lockfile}: invalid package-lock.json`);
+          continue;
+        }
+
+        const lockManifest = lockData?.packages?.[""];
+        if (!lockManifest || typeof lockManifest !== "object" || Array.isArray(lockManifest)) {
+          failures.push(`${lockfile}: missing the root package declaration`);
+          continue;
+        }
+
+        const normalize = (dependencies) =>
+          Object.fromEntries(
+            Object.entries(dependencies ?? {}).sort(([left], [right]) => left.localeCompare(right)),
+          );
+        for (const section of sections) {
+          if (JSON.stringify(normalize(data[section])) !== JSON.stringify(normalize(lockManifest[section]))) {
+            failures.push(`${file}: ${section} does not match ${lockfile}; update the lockfile`);
+          }
+        }
       }
     }
 
@@ -373,7 +407,7 @@ export const gates = [
     cacheable: false,
     inputs: [],
     applies: (context) =>
-      hasAny(context.stagedFiles, (file) => file.endsWith("package.json") || /requirements.*\.txt$/.test(file)),
+      hasAny(context.stagedFiles, (file) => file.endsWith("package.json") || file.endsWith("package-lock.json") || /requirements.*\.txt$/.test(file)),
     rerun: "pnpm quality:staged --include=staged-dependency-policy",
     run: async (context) => {
       const files = stagedFileList(
@@ -383,7 +417,7 @@ export const gates = [
       const failures = dependencyManifestFailures(context, files);
       return failures.length
         ? { status: "failed", summary: failures.join("\n") }
-        : { status: "passed", summary: "dependency manifests are bounded and lockfiles are staged" };
+        : { status: "passed", summary: "dependency manifests are bounded and existing lockfiles are consistent" };
     },
   },
   {
