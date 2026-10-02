@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Updated Cloudflare Worker types to 5.20260927.1, checked against the current Wrangler build.
+
 - Updated relay Prettier to 3.9.9; source and tests pass the new formatter.
 
 - Updated the proxy SQLite driver to v1.59.0 with consistent transitive modules, verified by module integrity and race-enabled database and proxy tests.
