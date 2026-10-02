@@ -847,16 +847,18 @@ export const gates = [
     wave: "tests",
     tags: ["swift", "ios", "tests"],
     cacheable: true,
-    inputs: ["apps/chau7-ios", "apps/chau7-macos/Sources/Chau7Core"],
+    cacheEnv: ["CHAU7_IOS_TEST_DESTINATION"],
+    inputs: ["apps/chau7-ios", "apps/chau7-macos/Sources/Chau7Core", "scripts/quality/ios-simulator.mjs"],
     applies: (context) =>
       hasPathPrefix(context.changedFiles, "apps/chau7-ios/") ||
-      hasPathPrefix(context.changedFiles, "apps/chau7-macos/Sources/Chau7Core/"),
+      hasPathPrefix(context.changedFiles, "apps/chau7-macos/Sources/Chau7Core/") ||
+      context.changedFiles.some((file) => ["scripts/quality/ios-simulator.mjs", "scripts/quality/registry.mjs", ".github/workflows/ci.yml"].includes(file)),
     rerun: "pnpm quality:prepush-full --include=ios-app-tests",
     run: async (context) =>
       execWithoutHookGitEnv(context, "xcodebuild", [
         "-project", "apps/chau7-ios/Chau7RemoteApp/Chau7RemoteApp.xcodeproj",
         "-scheme", "Chau7RemoteApp",
-        "-destination", "platform=iOS Simulator,name=iPhone 17 Pro",
+        "-destination", process.env.CHAU7_IOS_TEST_DESTINATION || "platform=iOS Simulator,name=iPhone 17 Pro",
         "test",
         "CODE_SIGNING_ALLOWED=NO",
       ]),

@@ -52,8 +52,8 @@ final class UnixSocketListener {
     private var ownedSocketFileIdentity: SocketFileIdentity?
 
     /// The listening descriptor, or -1 when closed. Exposed for the health
-    /// snapshots the MCP and Scripting servers report. Reset to -1 by the
-    /// accept source's cancel handler, which runs asynchronously on `queue`.
+    /// snapshots the MCP and Scripting servers report. Reset synchronously by
+    /// `stop`; the canceled source retains ownership of its captured descriptor until its handler runs.
     var fileDescriptor: Int32 {
         socketFD
     }
@@ -148,12 +148,10 @@ final class UnixSocketListener {
         let listeningFD = socketFD
         let source = DispatchSource.makeReadSource(fileDescriptor: listeningFD, queue: queue)
         source.setEventHandler { [weak self] in
-            self?.acceptClient(onAccept: onAccept, onAcceptFailure: onAcceptFailure)
+            self?.acceptClient(listeningFD: listeningFD, onAccept: onAccept, onAcceptFailure: onAcceptFailure)
         }
-        source.setCancelHandler { [weak self] in
+        source.setCancelHandler {
             close(listeningFD)
-            guard let self, socketFD == listeningFD else { return }
-            socketFD = -1
         }
         source.resume()
         acceptSource = source
@@ -166,6 +164,9 @@ final class UnixSocketListener {
     func stop(removeSocketFile: Bool) {
         if let source = acceptSource {
             acceptSource = nil
+            // Relinquish the property immediately. Repeated stop/deinit must
+            // not close a descriptor still owned by the cancellation handler.
+            socketFD = -1
             source.cancel()
         } else if socketFD >= 0 {
             close(socketFD)
@@ -222,13 +223,13 @@ final class UnixSocketListener {
 
     // MARK: - Private
 
-    private func acceptClient(onAccept: (Int32) -> Void, onAcceptFailure: (Int32) -> Void) {
+    private func acceptClient(listeningFD: Int32, onAccept: (Int32) -> Void, onAcceptFailure: (Int32) -> Void) {
         var clientAddr = sockaddr_un()
         var clientAddrLen = socklen_t(MemoryLayout<sockaddr_un>.size)
 
         let clientFD = withUnsafeMutablePointer(to: &clientAddr) { addrPtr in
             addrPtr.withMemoryRebound(to: sockaddr.self, capacity: 1) { sockaddrPtr in
-                accept(socketFD, sockaddrPtr, &clientAddrLen)
+                accept(listeningFD, sockaddrPtr, &clientAddrLen)
             }
         }
 

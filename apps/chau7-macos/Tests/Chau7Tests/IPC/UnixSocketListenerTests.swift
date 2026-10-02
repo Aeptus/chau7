@@ -129,6 +129,39 @@ final class UnixSocketListenerTests: XCTestCase {
         XCTAssertTrue(rival.removeStaleSocketFileIfInactive(), "a dead socket path should be reclaimable")
     }
 
+    func testRepeatedStopLeavesDescriptorOwnedByPendingCancellation() throws {
+        let queue = DispatchQueue(label: "test.usl.repeated-stop")
+        queue.suspend()
+        defer { queue.resume() }
+        let listener = UnixSocketListener(path: makeSocketPath(), queue: queue)
+        defer { listener.stop(removeSocketFile: true) }
+        try listener.start(backlog: 1, onAccept: { close($0) }, onAcceptFailure: { _ in })
+        let descriptor = listener.fileDescriptor
+
+        listener.stop(removeSocketFile: true)
+        XCTAssertEqual(listener.fileDescriptor, -1)
+        listener.stop(removeSocketFile: true)
+
+        // The suspended queue guarantees the source's cancel handler has not
+        // run. Repeated stop must not close its still-owned descriptor.
+        XCTAssertGreaterThanOrEqual(fcntl(descriptor, F_GETFD), 0)
+    }
+
+    func testDeinitAfterStopLeavesDescriptorOwnedByPendingCancellation() throws {
+        let queue = DispatchQueue(label: "test.usl.deinit-after-stop")
+        queue.suspend()
+        defer { queue.resume() }
+        var listener: UnixSocketListener? = UnixSocketListener(path: makeSocketPath(), queue: queue)
+        defer { listener?.stop(removeSocketFile: true) }
+        try listener?.start(backlog: 1, onAccept: { close($0) }, onAcceptFailure: { _ in })
+        let descriptor = try XCTUnwrap(listener?.fileDescriptor)
+
+        listener?.stop(removeSocketFile: true)
+        listener = nil
+
+        XCTAssertGreaterThanOrEqual(fcntl(descriptor, F_GETFD), 0)
+    }
+
     func testStopClosesListener() throws {
         let path = makeSocketPath()
         let listener = UnixSocketListener(path: path, queue: DispatchQueue(label: "test.usl.stop"))
