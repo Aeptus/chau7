@@ -368,9 +368,7 @@ private final class RemoteTerminalViewportView: UIView, UIScrollViewDelegate {
     override func layoutSubviews() {
         super.layoutSubviews()
         scrollView.frame = bounds
-        if !isAlternateScreenActive {
-            canvasView.frame = bounds
-        }
+        canvasView.frame = bounds
         recalculateViewport()
         syncScrollPosition(force: false)
     }
@@ -396,6 +394,7 @@ private final class RemoteTerminalViewportView: UIView, UIScrollViewDelegate {
         if canvasView.backgroundColor != bg { canvasView.backgroundColor = bg }
         canvasView.colorScheme = colorScheme
         canvasView.showsDiagnostics = showsDiagnostics
+        canvasView.isAlternateScreenActive = isAlternateScreenActive
         // A new text size changes the cell metrics, so the grid must be
         // recomputed (cols/rows) before the next frame.
         if canvasView.fontSize != fontSize {
@@ -419,7 +418,7 @@ private final class RemoteTerminalViewportView: UIView, UIScrollViewDelegate {
 
     func scrollViewDidScroll(_ scrollView: UIScrollView) {
         if isAlternateScreenActive {
-            canvasView.frame.origin = CGPoint(x: -scrollView.contentOffset.x, y: -scrollView.contentOffset.y)
+            canvasView.contentOffset = scrollView.contentOffset
             return
         }
         guard let store, let renderState else { return }
@@ -429,25 +428,17 @@ private final class RemoteTerminalViewportView: UIView, UIScrollViewDelegate {
             isDragging: scrollView.isDragging,
             isDecelerating: scrollView.isDecelerating
         ) else { return }
-        // Normalise to a 0…1 fraction of the scrollback here, from the same
-        // numbers the scroll view just reported, and let the engine resolve it
-        // against its live history size when the mutation runs.
-        let displayOffset = RemoteTerminalScrollPolicy.displayOffset(
+        let displayCols = max(1, Int((bounds.width / max(cellSize.width, 1)).rounded(.down)))
+        let chunks = RemoteTerminalWrapGeometry.chunksPerRow(sourceCols: renderState.cols, displayCols: displayCols)
+        let fraction = RemoteTerminalScrollPolicy.normalizedOffset(
             contentHeight: Double(scrollView.contentSize.height),
             viewportHeight: Double(scrollView.bounds.height),
             contentOffsetY: Double(scrollView.contentOffset.y),
             cellHeight: Double(cellSize.height),
-            scrollbackRows: renderState.scrollbackRows
+            scrollbackRows: renderState.scrollbackRows,
+            chunksPerRow: chunks
         )
-        // The engine scrolls in source rows while the scroll view moves in phone-width
-        // rows, so convert before normalising — otherwise a re-wrapped screen
-        // reports a scrollback offset `chunksPerRow` times too large and the
-        // view snaps to the wrong place in history.
-        let displayCols = max(1, Int((bounds.width / max(cellSize.width, 1)).rounded(.down)))
-        let chunks = RemoteTerminalWrapGeometry.chunksPerRow(sourceCols: renderState.cols, displayCols: displayCols)
-        let sourceOffset = displayOffset / max(1, chunks)
-        let scrollbackRows = max(1, renderState.scrollbackRows)
-        store.scrollActive(toNormalized: Double(sourceOffset) / Double(scrollbackRows))
+        store.scrollActive(toNormalized: fraction)
     }
 
     private func recalculateViewport() {
@@ -480,6 +471,12 @@ private final class RemoteTerminalViewportView: UIView, UIScrollViewDelegate {
         }
 
         let alternateScreenModeChanged = lastSyncedAlternateScreenActive != isAlternateScreenActive
+        let maySynchronize = RemoteTerminalScrollPolicy.shouldSynchronizePosition(
+            force: force || alternateScreenModeChanged,
+            isTracking: scrollView.isTracking,
+            isDragging: scrollView.isDragging,
+            isDecelerating: scrollView.isDecelerating
+        )
         if isAlternateScreenActive {
             let contentSize = RemoteTerminalViewportGeometry.alternateScreenContentSize(
                 cols: renderState.cols,
@@ -497,15 +494,15 @@ private final class RemoteTerminalViewportView: UIView, UIScrollViewDelegate {
                     x: min(max(scrollView.contentOffset.x, 0), maxX),
                     y: min(max(scrollView.contentOffset.y, 0), maxY)
                 )
-            if force || alternateScreenModeChanged
+            if maySynchronize && (force || alternateScreenModeChanged
                 || abs(scrollView.contentOffset.x - targetOffset.x) > 1
-                || abs(scrollView.contentOffset.y - targetOffset.y) > 1 {
+                || abs(scrollView.contentOffset.y - targetOffset.y) > 1) {
                 scrollView.setContentOffset(targetOffset, animated: false)
             }
-            canvasView.frame = CGRect(
-                origin: CGPoint(x: -scrollView.contentOffset.x, y: -scrollView.contentOffset.y),
-                size: contentSize
-            )
+            // A viewport-sized layer avoids allocating/rasterizing the whole TUI.
+            // Translate drawing instead of moving a source-grid-sized UIView.
+            canvasView.frame = bounds
+            canvasView.contentOffset = scrollView.contentOffset
             canvasView.setNeedsDisplay()
             lastSyncedAlternateScreenActive = true
             return
@@ -513,6 +510,7 @@ private final class RemoteTerminalViewportView: UIView, UIScrollViewDelegate {
 
         lastSyncedAlternateScreenActive = false
         canvasView.frame = bounds
+        canvasView.contentOffset = .zero
 
         // Content height is measured in phone-width rows, which is what the canvas
         // paints: the engine holds the wider source grid, so its own row count
@@ -527,15 +525,21 @@ private final class RemoteTerminalViewportView: UIView, UIScrollViewDelegate {
         let maxOffset = max(0, contentHeight - bounds.height)
         let targetOffsetY = max(0, maxOffset - CGFloat(renderState.displayOffset * chunksPerRow) * cellSize.height)
 
-        if force
+        if maySynchronize && (force
             || abs(scrollView.contentOffset.x) > 1
-            || abs(scrollView.contentOffset.y - targetOffsetY) > (cellSize.height / 2) {
+            || abs(scrollView.contentOffset.y - targetOffsetY) > (cellSize.height / 2)) {
             scrollView.setContentOffset(CGPoint(x: 0, y: targetOffsetY), animated: false)
         }
     }
 }
 
 private final class RemoteTerminalCanvasView: UIView {
+    var isAlternateScreenActive = false
+    var contentOffset: CGPoint = .zero {
+        didSet {
+            if contentOffset != oldValue { setNeedsDisplay() }
+        }
+    }
     private var renderState: RemoteTerminalRenderState?
     /// Engine-folded rows, when the grid is wider than the phone. Painting these
     /// removes the per-frame source-to-display index remap and the fold the
@@ -623,7 +627,11 @@ private final class RemoteTerminalCanvasView: UIView {
         // phone-width rows. Each source row is re-wrapped across as many
         // phone-width rows as it needs, so the content reads top-to-bottom on a
         // narrow screen instead of being clipped.
-        let displayCols = max(1, Int((bounds.width / cellW).rounded(.down)))
+        let displayCols = isAlternateScreenActive
+            ? sourceCols
+            : max(1, Int((bounds.width / cellW).rounded(.down)))
+        let visibleRect = rect.intersection(bounds).offsetBy(dx: contentOffset.x, dy: contentOffset.y)
+        context.translateBy(x: -contentOffset.x, y: -contentOffset.y)
 
         // Preferred path: the engine already folded the grid to the phone's
         // width, joining soft-wrapped rows, so painting is a blit — no
@@ -635,7 +643,8 @@ private final class RemoteTerminalCanvasView: UIView {
                 cellW: cellW,
                 cellH: cellH,
                 baselineOffset: baselineOffset,
-                backgroundColorKey: backgroundColorKey
+                backgroundColorKey: backgroundColorKey,
+                visibleRect: visibleRect
             )
             if showsDiagnostics {
                 drawFoldedDiagnostics(context: context, display: displayState, cellW: cellW, cellH: cellH)
@@ -649,10 +658,15 @@ private final class RemoteTerminalCanvasView: UIView {
         let chunksPerRow = RemoteTerminalWrapGeometry.chunksPerRow(sourceCols: sourceCols, displayCols: displayCols)
         let displayRows = RemoteTerminalWrapGeometry.displayRowCount(sourceRows: sourceRows, chunksPerRow: chunksPerRow)
 
+        let visibleRows = RemoteTerminalScrollPolicy.visibleRows(
+            totalRows: displayRows, cellHeight: Double(cellH),
+            minY: Double(visibleRect.minY), maxY: Double(visibleRect.maxY)
+        )
+
         // Background pass: batch consecutive cells with same bg color into single fills
         context.setAllowsAntialiasing(false)
         context.setShouldAntialias(false)
-        for displayRow in 0 ..< displayRows {
+        for displayRow in visibleRows {
             guard let slice = RemoteTerminalWrapGeometry.sourceSlice(
                 displayRow: displayRow,
                 sourceCols: sourceCols,
@@ -701,11 +715,13 @@ private final class RemoteTerminalCanvasView: UIView {
 
         var decodedCells = 0
         var softWrappedRows = 0
-        for sourceRow in 0 ..< sourceRows where isSoftWrappedRow(sourceRow, sourceCols: sourceCols, state: renderState) {
-            softWrappedRows += 1
+        if showsDiagnostics {
+            for sourceRow in 0 ..< sourceRows where isSoftWrappedRow(sourceRow, sourceCols: sourceCols, state: renderState) {
+                softWrappedRows += 1
+            }
         }
 
-        for displayRow in 0 ..< displayRows {
+        for displayRow in visibleRows {
             guard let slice = RemoteTerminalWrapGeometry.sourceSlice(
                 displayRow: displayRow,
                 sourceCols: sourceCols,
@@ -828,12 +844,17 @@ private final class RemoteTerminalCanvasView: UIView {
         cellW: CGFloat,
         cellH: CGFloat,
         baselineOffset: CGFloat,
-        backgroundColorKey: UInt32
+        backgroundColorKey: UInt32,
+        visibleRect: CGRect
     ) {
+        let visibleRows = RemoteTerminalScrollPolicy.visibleRows(
+            totalRows: display.displayRows, cellHeight: Double(cellH),
+            minY: Double(visibleRect.minY), maxY: Double(visibleRect.maxY)
+        )
         context.setAllowsAntialiasing(false)
         context.setShouldAntialias(false)
-        for row in 0 ..< display.displayRows {
-            guard let range = display.range(forRow: row) else { continue }
+        for row in visibleRows {
+            guard let range = display.range(forRow: row), !range.isEmpty else { continue }
             let y = CGFloat(row) * cellH
             var runStart = 0
             var runKey = colorCache.backgroundKey(for: display.cells[range.lowerBound])
@@ -856,8 +877,8 @@ private final class RemoteTerminalCanvasView: UIView {
 
         context.setAllowsAntialiasing(true)
         context.setShouldAntialias(true)
-        for row in 0 ..< display.displayRows {
-            guard let range = display.range(forRow: row) else { continue }
+        for row in visibleRows {
+            guard let range = display.range(forRow: row), !range.isEmpty else { continue }
             let y = CGFloat(row) * cellH
             for index in range {
                 let cell = display.cells[index]

@@ -410,21 +410,21 @@ final class RemoteTerminalScrollPolicyTests: XCTestCase {
         ))
     }
 
-    func testDisplayOffsetMeasuresRowsFromLiveBottom() {
-        XCTAssertEqual(RemoteTerminalScrollPolicy.displayOffset(
+    func testNormalizedOffsetMeasuresHistoryFromLiveBottom() {
+        XCTAssertEqual(RemoteTerminalScrollPolicy.normalizedOffset(
             contentHeight: 1000,
             viewportHeight: 400,
             contentOffsetY: 600,
             cellHeight: 20,
             scrollbackRows: 100
         ), 0)
-        XCTAssertEqual(RemoteTerminalScrollPolicy.displayOffset(
+        XCTAssertEqual(RemoteTerminalScrollPolicy.normalizedOffset(
             contentHeight: 1000,
             viewportHeight: 400,
             contentOffsetY: 400,
             cellHeight: 20,
             scrollbackRows: 100
-        ), 10)
+        ), 0.1)
     }
 }
 

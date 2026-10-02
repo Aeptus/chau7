@@ -263,6 +263,7 @@ final class RemoteTerminalRendererStore {
     @ObservationIgnored private var gridSnapshotByTabID: [UInt32: RemoteTerminalRenderState] = [:]
     @ObservationIgnored private var alternateScreenByTabID: [UInt32: Bool] = [:]
     @ObservationIgnored private var mutationTail: Task<Void, Never>?
+    @ObservationIgnored private var scrollRequests = RemoteTerminalScrollRequests()
     @ObservationIgnored private var renderRequestInFlight = false
     @ObservationIgnored private var renderDirty = false
     @ObservationIgnored private var generation: UInt64 = 0
@@ -295,6 +296,7 @@ final class RemoteTerminalRendererStore {
     }
 
     func reset() {
+        scrollRequests.discard()
         generation &+= 1
         let currentGeneration = generation
         let predecessor = mutationTail
@@ -330,6 +332,7 @@ final class RemoteTerminalRendererStore {
             await engine.retainVisibleTabs(visibleTabIDs)
         }
         if !visibleTabIDs.contains(activeTabID) {
+            scrollRequests.discard()
             activeTabID = 0
             activeTabChangedAt = Date()
             renderState = nil
@@ -378,6 +381,7 @@ final class RemoteTerminalRendererStore {
 
     func setActiveTab(_ tabID: UInt32) {
         if tabID != activeTabID {
+            scrollRequests.discard()
             activeTabChangedAt = Date()
         }
         activeTabID = tabID
@@ -421,27 +425,17 @@ final class RemoteTerminalRendererStore {
         presentationPacer.requestFrame()
     }
 
-    /// Scrolls the active tab to a *fraction* of its scrollback.
-    ///
-    /// The fraction is computed by `RemoteTerminalScrollPolicy.displayOffset`
-    /// from the same numbers the scroll view used, and applied against the
-    /// engine's live `history_size` when the mutation actually runs. Passing an
-    /// absolute row count captured from the last published `renderState` was
-    /// wrong: the captured struct was also a value copy held across an `await`,
-    /// so by the time the mutation ran the Rust history had already grown and
-    /// the viewport landed further back than the user asked for — by an error
-    /// that grew the longer the session ran.
+    /// Keep only the newest gesture destination until the next display refresh.
+    /// Output stays ordered on the mutation chain; scroll callbacks cannot grow it.
     func scrollActive(toNormalized fraction: Double) {
         guard activeTabID != 0, renderState != nil else { return }
-        let tabID = activeTabID
-        let clamped = min(max(fraction, 0), 1)
-        enqueueMutation(publishFor: tabID) { engine in
-            await engine.scrollNormalized(tabID: tabID, fraction: clamped)
-        }
+        scrollRequests.request(tabID: activeTabID, fraction: fraction)
+        markRenderDirty()
     }
 
     private func enqueueMutation(
         publishFor tabID: UInt32?,
+        publishAfterMutation: Bool = true,
         _ operation: @escaping @Sendable (RemoteTerminalRenderEngine) async -> Void
     ) {
         let currentGeneration = generation
@@ -451,7 +445,7 @@ final class RemoteTerminalRendererStore {
             guard let self, self.generation == currentGeneration, !Task.isCancelled else { return }
             await operation(engine)
             guard self.generation == currentGeneration else { return }
-            if tabID == nil || tabID == self.activeTabID {
+            if publishAfterMutation && (tabID == nil || tabID == self.activeTabID) {
                 self.markRenderDirty()
             }
         }
@@ -464,6 +458,12 @@ final class RemoteTerminalRendererStore {
 
     private func publishAtDisplayRefresh() {
         guard renderDirty, !renderRequestInFlight else { return }
+        if let request = scrollRequests.take(for: activeTabID) {
+            // This refresh already owns publication after the ordered mutation.
+            enqueueMutation(publishFor: request.tabID, publishAfterMutation: false) { engine in
+                await engine.scrollNormalized(tabID: request.tabID, fraction: request.fraction)
+            }
+        }
         renderDirty = false
         renderRequestInFlight = true
         let tabID = activeTabID
