@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Pull-request CI now prints complete grouped quality diagnostics after failures, retaining the compiler and test errors hidden by abbreviated gate summaries. Window teardown fixtures emit fixed stage labels to identify runtime aborts.
+- Pull-request CI now prints complete grouped quality diagnostics after failures, retaining the compiler and test errors hidden by abbreviated gate summaries. Window teardown fixtures emit fixed stage labels to identify runtime aborts. CI and release validation select Xcode 26.6 on macOS 26 so actor-isolated teardown uses the modern Swift runtime.
 
 - Chau7 Remote now has a dedicated keyboard show/hide control, separate from the terminal shortcut-row toggle. The agent activity card above terminal output has been removed, so the output begins directly below the tab bar; approval controls remain available in Approvals.
 

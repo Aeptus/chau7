@@ -14,7 +14,7 @@ permissions:
 jobs:
   quality:
     name: Quality gates
-    runs-on: macos-15
+    runs-on: macos-26
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v7
@@ -23,7 +23,7 @@ jobs:
           persist-credentials: false
 
       - name: Select Xcode with the iPhone 17 simulator
-        run: sudo xcode-select --switch /Applications/Xcode_26.3.app/Contents/Developer
+        run: sudo xcode-select --switch /Applications/Xcode_26.6.app/Contents/Developer
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
