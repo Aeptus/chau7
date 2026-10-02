@@ -53,13 +53,18 @@ jobs:
           rustup target add aarch64-apple-ios aarch64-apple-ios-sim x86_64-apple-ios
 
       - name: Install full-suite quality tools
-        run: brew install swiftformat swiftlint gitleaks shellcheck ruff golangci-lint periphery
+        run: brew install swiftformat swiftlint gitleaks shellcheck ruff golangci-lint periphery pip-audit
 
       - name: Install cargo-deny
         run: cargo install cargo-deny --locked
 
       - name: Install jscpd
         run: npm install --global jscpd
+
+      - name: Verify full-suite audit tooling
+        run: |
+          cargo deny --version
+          pip-audit --version
 
       - name: Run affected and full-suite quality gates
         run: pnpm quality:prepush
