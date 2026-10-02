@@ -21,6 +21,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Repeated local IPC listener stop/deinit relinquishes descriptor ownership immediately while its dispatch cancellation handler closes exactly once, preventing delayed double-close corruption of reused descriptors. Accept events use their own listener descriptor.
+
 - Rust iOS target checks consume the complete installed-target list, preventing intermittent false missing-target errors from SIGPIPE under pipefail.
 - CI installs pip-audit for the tracked Python project and verifies audit tools before full-suite compilation.
 - CI prepares iOS device and simulator targets for the pinned Rust compiler; Xcode terminal builds resolve the same workspace toolchain. Updated anyhow to fix RUSTSEC-2026-0190 without suppressing the dependency audit.

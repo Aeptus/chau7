@@ -541,7 +541,7 @@
   {
     "category": "Architecture",
     "feature": "Single-Instance and Socket Ownership",
-    "description": "Chau7 acquires a process-lifetime lock before restoring tabs, redirects duplicate launches to the existing process, and removes Unix socket paths only while the stopping listener still owns their filesystem identity",
+    "description": "Chau7 acquires a process-lifetime lock before restoring tabs, redirects duplicate launches to the existing process, and removes Unix socket paths only while the stopping listener still owns their filesystem identity Listener stop/deinit relinquishes descriptor ownership synchronously, with one deferred close and accepts bound to the original listener descriptor.",
     "status": "Shipped",
     "differentiator": "Yes"
   },
