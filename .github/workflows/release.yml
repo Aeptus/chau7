@@ -13,12 +13,15 @@ permissions:
 jobs:
   build:
     name: Build and Release
-    runs-on: macos-15
+    runs-on: macos-26
     outputs:
       version: ${{ steps.version.outputs.version }}
       dmg_sha256: ${{ steps.checksums.outputs.dmg_sha256 }}
     steps:
       - uses: actions/checkout@v7
+
+      - name: Select Xcode 26.6
+        run: sudo xcode-select --switch /Applications/Xcode_26.6.app/Contents/Developer
 
       - name: Enable pnpm
         run: corepack enable

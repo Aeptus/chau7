@@ -255,7 +255,7 @@ final class AppDelegateTests: XCTestCase {
     /// `clearPersistedWindowState` without touching the real Application Support store.
     /// `RuntimeIsolation` reads the process environment at call time, so setting
     /// `CHAU7_HOME_ROOT` here redirects the whole store; it is unset again afterward.
-    private func withIsolatedHome(_ body: () -> Void) {
+    private func withIsolatedHome(_ body: (_ trace: (String) -> Void) -> Void) {
         let home = FileManager.default.temporaryDirectory
             .appendingPathComponent("Chau7Tests-\(UUID().uuidString)", isDirectory: true)
         setenv("CHAU7_HOME_ROOT", home.path, 1)
@@ -264,7 +264,9 @@ final class AppDelegateTests: XCTestCase {
             unsetenv("CHAU7_HOME_ROOT")
             try? FileManager.default.removeItem(at: home)
         }
-        body()
+        body { stage in
+            FileHandle.standardError.write(Data("Window fixture stage: \(stage)\n".utf8))
+        }
     }
 
     func testTearDownOverlayHostReturnsFalseForUnknownWindow() {
@@ -274,40 +276,54 @@ final class AppDelegateTests: XCTestCase {
     }
 
     func testTearDownOverlayHostRemovesOnlyThatWindow() {
-        withIsolatedHome {
+        withIsolatedHome { trace in
+            trace("creating delegate")
             let delegate = AppDelegate()
+            trace("creating app model")
             let appModel = AppModel()
             delegate.model = appModel
+            trace("creating overlay model")
             let keep = OverlayTabsModel(appModel: appModel, restoreState: false)
             let drop = OverlayTabsModel(appModel: appModel, restoreState: false)
+            trace("creating windows")
             let keepWindow = NSWindow()
             let dropWindow = NSWindow()
             delegate.overlayHosts.append(.init(window: keepWindow, model: keep))
             delegate.overlayHosts.append(.init(window: dropWindow, model: drop))
 
+            trace("removing overlay host")
             XCTAssertTrue(delegate.tearDownOverlayHost(for: dropWindow))
             // The closed window's host is gone (so it is no longer collected for
             // persistence/restore); the other window is untouched.
             XCTAssertEqual(delegate.overlayHosts.count, 1)
             XCTAssertTrue(delegate.overlayHosts.first?.window === keepWindow)
+            trace("waiting for persistence")
             delegate.windowStatePersistenceQueue.sync {}
+            trace("fixture body complete")
         }
     }
 
     func testTearDownLastOverlayHostEmptiesHosts() {
-        withIsolatedHome {
+        withIsolatedHome { trace in
+            trace("creating delegate")
             let delegate = AppDelegate()
+            trace("creating app model")
             let appModel = AppModel()
             delegate.model = appModel
+            trace("creating overlay model")
             let model = OverlayTabsModel(appModel: appModel, restoreState: false)
+            trace("creating window")
             let window = NSWindow()
             delegate.overlayHosts.append(.init(window: window, model: model))
 
+            trace("removing last overlay host")
             XCTAssertTrue(delegate.tearDownOverlayHost(for: window))
             // Closing the last window leaves no hosts; the status-bar summon
             // (showOverlay) creates a fresh one on demand.
             XCTAssertTrue(delegate.overlayHosts.isEmpty)
+            trace("waiting for persistence")
             delegate.windowStatePersistenceQueue.sync {}
+            trace("fixture body complete")
         }
     }
 }

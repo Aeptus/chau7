@@ -903,29 +903,39 @@ final class TerminalSessionModel {
 
         let lookupSignature = "\(provider)|\(currentDirectory)|\(Int(startedAt.timeIntervalSince1970))"
         let now = Date()
+        guard !observedSessionLookupInFlight else { return nil }
         if lastObservedSessionLookupSignature == lookupSignature,
            let lastLookup = lastObservedSessionLookupAt,
-           now.timeIntervalSince(lastLookup) < 1.0 {
+           now.timeIntervalSince(lastLookup) < 5.0 {
             return nil
         }
 
         lastObservedSessionLookupSignature = lookupSignature
         lastObservedSessionLookupAt = now
 
-        guard let observed = MainActor.assumeIsolated({
-            OverlayTabsModel.findAIResumeSessionId(
-                for: provider,
-                directory: currentDirectory,
-                referenceDate: startedAt
-            )
-        }) else {
-            return nil
+        observedSessionLookupInFlight = true
+        let directory = currentDirectory
+        MainActor.assumeIsolated {
+            OverlayTabsModel.discoverAIResumeSessionId(
+                for: provider, directory: directory, referenceDate: startedAt
+            ) { [weak self] observed in
+                guard let self else { return }
+                observedSessionLookupInFlight = false
+                // Never adopt a result for a restarted agent or an old CWD,
+                // or overwrite an authoritative identity received meanwhile.
+                guard effectiveAIProvider == provider,
+                      currentDirectory == directory,
+                      agentStartedAt == startedAt else { return }
+                lastObservedSessionLookupAt = Date()
+                guard lastAISessionIdentitySource == nil || lastAISessionIdentitySource == .synthetic,
+                      let observed,
+                      AIResumeParser.isValidSessionId(observed) else { return }
+                lastAISessionId = observed
+                lastAISessionIdentitySource = .observed
+                TelemetryRecorder.shared.updateSessionID(tabID: tabIdentifier, sessionID: observed)
+            }
         }
-
-        lastAISessionId = observed
-        lastAISessionIdentitySource = .observed
-        TelemetryRecorder.shared.updateSessionID(tabID: tabIdentifier, sessionID: observed)
-        return (observed, .observed)
+        return nil
     }
 
     private func syntheticAISessionIdentity(provider: String) -> (id: String, source: AISessionIdentitySource)? {
@@ -1101,6 +1111,7 @@ final class TerminalSessionModel {
     @ObservationIgnored private var cachedRepoName: String?
     @ObservationIgnored private var lastObservedSessionLookupAt: Date?
     @ObservationIgnored private var lastObservedSessionLookupSignature: String?
+    @ObservationIgnored private(set) var observedSessionLookupInFlight = false
     @ObservationIgnored var commandStartedAt = Date.distantPast // Track when command started for "stuck" detection
     @ObservationIgnored var hasPendingCommand = false
     @ObservationIgnored var inputBuffer = ""

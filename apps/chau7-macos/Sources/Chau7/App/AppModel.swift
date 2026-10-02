@@ -1103,11 +1103,19 @@ final class AppModel {
                 forDirectory: directory, referenceDate: referenceDate, claimedSessionIds: claimedSessionIds
             )
         }
-        OverlayTabsModel.registerSessionFinder(forProviderKey: "codex") { directory, referenceDate, claimedSessionIds in
-            OverlayTabsModel.findCodexSessionId(
-                forDirectory: directory, referenceDate: referenceDate, claimedSessionIds: claimedSessionIds
-            )
-        }
+        OverlayTabsModel.registerSessionFinder(
+            forProviderKey: "codex",
+            finder: { directory, referenceDate, claimedSessionIds in
+                OverlayTabsModel.findCodexSessionId(
+                    forDirectory: directory, referenceDate: referenceDate, claimedSessionIds: claimedSessionIds
+                )
+            },
+            backgroundFinder: { directory, referenceDate, claimedSessionIds in
+                OverlayTabsModel.findCodexSessionId(
+                    forDirectory: directory, referenceDate: referenceDate, claimedSessionIds: claimedSessionIds
+                )
+            }
+        )
 
         // Initial sync
         syncClaudeCodeSessions()

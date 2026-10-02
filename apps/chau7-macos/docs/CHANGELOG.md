@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Pull-request CI now prints complete grouped quality diagnostics after failures, retaining the compiler and test errors hidden by abbreviated gate summaries. Window teardown fixtures emit fixed stage labels to identify runtime aborts. CI and release validation select Xcode 26.6 on macOS 26 so actor-isolated teardown uses the modern Swift runtime.
+
 - Chau7 Remote now has a dedicated keyboard show/hide control, separate from the terminal shortcut-row toggle. The agent activity card above terminal output has been removed, so the output begins directly below the tab bar; approval controls remain available in Approvals.
 
 ### Fixed
@@ -16,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Chau7 Remote now opens its searchable session picker at the selected iPhone tab, preserves browsing position during metadata refreshes and automatic reconnects, and avoids restarting the stream when the open tab is tapped. Session rows show project, branch, provider, and tab number.
 
+- Terminal polling now takes locks immediately or yields, and processes output in bounded batches. Agent status reads discover file-backed sessions in the background with coalesced requests, main-actor completion, and stale-result protection. CPU fallback rendering caches styled glyph lines with bounded storage instead of shaping identical text for every cell on every frame.
 - OpenCode now keeps its own provider identity through detection and tab restoration, replacing stale Codex metadata. Tabs with an explicit OpenCode session ID restore with `opencode --session <id>`; plain project launches retain OpenCode identity without inventing a session ID.
 - The agent dashboard no longer crashes the app while polling. Its refresh runs on a background queue and read each tab's `effectiveStatus` there; once a tab carried an AI provider and session id, that read reached `MainActor.assumeIsolated` off the main thread and trapped (`EXC_BREAKPOINT` on `com.chau7.agent-dashboard.refresh`). Tab state is now copied into a `DashboardLiveTabState` value inside the existing main-thread hop, and snapshots are built from that value.
 - Terminal-session property observers no longer trap when they fire off the main thread. The routing-index invalidations in the `currentDirectory`, `activeAppName`, `liveAgentName`, and `lastAISessionId` observers, plus `applyAgentIdentity` and `updateLastDetectedApp`, used a bare `MainActor.assumeIsolated`. `deinit` clears `liveAgentName`, so releasing a session with a live agent from a background queue would crash. They now use `MainActorBridge.run`, which runs inline on main and otherwise hops with `main.async`.

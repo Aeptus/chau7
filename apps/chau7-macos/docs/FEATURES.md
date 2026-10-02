@@ -470,6 +470,7 @@ The app still contains internal runtime orchestration used by dashboard and revi
 
 ## Performance
 
+- **Terminal responsiveness** — zero-timeout polls never spin for ownership, output batches yield between chunks, and file-backed session discovery stays off status getters. A bounded cache reuses shaped graphemes in CPU fallback frames while preserving colors and font traits; discovery completes on the main actor and stale results cannot replace newer agent identities.
 - Complete retention coverage: telemetry retention prunes the tables the run cascade structurally cannot reach (`usage_evidence`, `provider_latency_samples`, and `remote_client_events` declare no foreign key to `runs`), independently of the run prune rather than only on days that happen to retire a run, with an index so the prune is not a full scan. The provider-quota snapshot log is capped on disk and read as a bounded, line-aligned tail, so per-refresh parse cost tracks the consumed 600-second window rather than total history.
 
 - **Async frame completion integrity** — a Metal frame acknowledges the output generation captured before its snapshot, retains newer output for a follow-up, re-arms prepared frames after presentation delays, and retires redundant work without stranding subsequent typing or shell prompts.
@@ -992,6 +993,7 @@ Legacy `AI_*` and `SMART_OVERLAY_*` environment variables are still supported.
 - Distribution versions derive from git tags and fail loudly when underivable; the Rust toolchain is pinned; app signing is strictly inside-out (no `--deep`); and the pre-commit guard rejects new `#if !SWIFT_PACKAGE` test gates so dead tests cannot be reintroduced.
 - Persistence paths follow the `Persist` logged-failure convention end to end: settings, SSH profiles, remote approval frames, telemetry responses, repo injection rules, and scrollback reloads log corruption and write failures instead of silently degrading.
 
+- **CI failure diagnostics** — failed pull-request checks print complete grouped gate logs so compiler errors and test failures remain available for investigation. Window teardown fixtures emit fixed stage labels to identify runtime aborts. CI and release validation use Xcode 26.6 on macOS 26.
 - **Registry-driven hook policy** — `.husky/pre-commit` and `.husky/pre-push` only select `pnpm quality:staged` or `pnpm quality:prepush`; the gate contract lives in `scripts/quality/registry.mjs`.
 - **Affected-surface pre-push** — pre-push reads Git update lines, resolves changed files against the pushed remote SHA or a conservative fallback base, and automatically upgrades to `prepush-full` for high-impact infrastructure, dependency, config, generator, workflow, or shared-contract changes.
 - **Reproducible failures** — failed gates print stable ids, scope, wave, rerun commands, cache/attestation status, and per-gate log paths under `.aeptus-cache/quality/outputs/`.

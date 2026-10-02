@@ -1,5 +1,12 @@
 [
   {
+    "category": "Performance",
+    "feature": "Terminal Responsiveness",
+    "description": "Immediate lock acquisition and bounded output batches keep polling responsive; coalesced background session discovery returns on the main actor and rejects stale identities, and a bounded styled glyph cache avoids repeated CPU text shaping",
+    "status": "Shipped",
+    "differentiator": "No"
+  },
+  {
     "category": "Telemetry",
     "feature": "Complete Retention Coverage",
     "description": "Telemetry retention prunes the tables the run cascade structurally cannot reach — usage_evidence, provider_latency_samples and remote_client_events declare no foreign key to runs — independently of the run prune, with one shared VACUUM per pass and an index so the prune is not a full scan",
@@ -870,7 +877,7 @@
   {
     "category": "Developer Experience",
     "feature": "Registry-Driven Quality Firewall",
-    "description": "Thin Husky hooks delegate to pnpm quality modes backed by a central registry; affected-surface pre-push scoping, conservative full-suite triggers, content-hash caching, reproducible failure commands, dirty-worktree handling, and runner/registry tests. Pull requests select Xcode with the iPhone 17 simulator, run affected-surface or full-suite pre-push checks (including repository-wide SwiftFormat) plus staged-file checks, and workflow policy requires both PR CI and release validation.",
+    "description": "Thin Husky hooks delegate to pnpm quality modes backed by a central registry; affected-surface pre-push scoping, conservative full-suite triggers, content-hash caching, reproducible failure commands, dirty-worktree handling, and runner/registry tests. Pull requests select Xcode with the iPhone 17 simulator, run affected-surface or full-suite pre-push checks (including repository-wide SwiftFormat) plus staged-file checks, and workflow policy requires both PR CI and release validation. Failed PR checks print complete grouped gate logs, preserving compiler and test diagnostics hidden by short summaries; window teardown fixtures emit fixed stage labels to identify runtime aborts. CI and release validation use Xcode 26.6 on macOS 26.",
     "status": "Shipped",
     "differentiator": "Yes"
   },
