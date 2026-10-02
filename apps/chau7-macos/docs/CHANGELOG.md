@@ -14,6 +14,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Chau7 Remote now has a dedicated keyboard show/hide control, separate from the terminal shortcut-row toggle. The agent activity card above terminal output has been removed, so the output begins directly below the tab bar; approval controls remain available in Approvals.
 
 ### Fixed
+
+- Repeated local IPC listener stop/deinit relinquishes descriptor ownership immediately while its dispatch cancellation handler closes exactly once, preventing delayed double-close corruption of reused descriptors. Accept events use their own listener descriptor.
+
+- Rust iOS target checks consume the complete installed-target list, preventing intermittent false missing-target errors from SIGPIPE under pipefail.
+- CI installs pip-audit for the tracked Python project and verifies audit tools before full-suite compilation.
+- CI prepares iOS device and simulator targets for the pinned Rust compiler; Xcode terminal builds resolve the same workspace toolchain. Updated anyhow to fix RUSTSEC-2026-0190 without suppressing the dependency audit.
 - MCP repository metadata queries copy only cached observable metadata on the main actor, then read files and aggregate statistics on the client worker so analytics database waits cannot freeze the UI. Proxy latency refreshes release the database lock before decoding rows and use a faster ISO8601 value parser with legacy-format compatibility. Blocking-operation regressions verify main-actor progress and concurrent database reads. Parenthesized latency eligibility prevents positive TTFT rows from bypassing repository, timestamp, and success-status filters.
 - iPhone terminal scrolling converts wrapped display rows before clamping source history, keeps drag and deceleration under UIKit control, and coalesces gesture destinations once per display refresh. Both canvas paths draw only visible rows; full-screen TUI panning uses a viewport-sized layer instead of a source-grid-sized backing surface.
 

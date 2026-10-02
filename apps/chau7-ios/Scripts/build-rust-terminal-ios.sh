@@ -5,6 +5,10 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 IOS_APP_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 MACOS_APP_DIR="$(cd "$IOS_APP_DIR/../chau7-macos" && pwd)"
 CRATE_MANIFEST="$MACOS_APP_DIR/rust/chau7_terminal/Cargo.toml"
+# Rustup resolves rust-toolchain.toml from the working directory, not
+# --manifest-path. Match macOS/CI for both target checks and compilation.
+cd "$MACOS_APP_DIR/rust"
+
 deployment_target="${IPHONEOS_DEPLOYMENT_TARGET:-20.0}"
 deployment_target_key="${deployment_target//./_}"
 RUST_TARGET_DIR="$IOS_APP_DIR/BuildArtifacts/rust/target/ios-${deployment_target_key}"
@@ -54,7 +58,9 @@ export CARGO_TARGET_DIR="$RUST_TARGET_DIR"
 
 require_target() {
     local target="$1"
-    if ! "$RUSTUP_BIN" target list --installed | grep -qx "$target"; then
+    # Consume the full list: grep -q can close the pipe early and make rustup
+    # fail with SIGPIPE under pipefail even when the target is installed.
+    if ! "$RUSTUP_BIN" target list --installed | grep -x "$target" >/dev/null; then
         echo "Missing Rust target $target. Install it with: rustup target add $target" >&2
         exit 1
     fi
