@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Updated relay TypeScript to 7.0.2 and verified Worker typechecking, tests, formatting, and dry-run builds while preserving the current Wrangler security baseline.
+
 - Updated Cloudflare Worker types to 5.20260927.1, checked against the current Wrangler build.
 
 - Updated relay Prettier to 3.9.9; source and tests pass the new formatter.
