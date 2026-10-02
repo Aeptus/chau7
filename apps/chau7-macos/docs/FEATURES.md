@@ -470,6 +470,7 @@ The app still contains internal runtime orchestration used by dashboard and revi
 
 ## Performance
 
+- **Terminal responsiveness** — zero-timeout polls never spin for ownership, output batches yield between chunks, and file-backed session discovery stays off status getters. A bounded cache reuses shaped graphemes in CPU fallback frames while preserving colors and font traits; discovery completes on the main actor and stale results cannot replace newer agent identities.
 - Complete retention coverage: telemetry retention prunes the tables the run cascade structurally cannot reach (`usage_evidence`, `provider_latency_samples`, and `remote_client_events` declare no foreign key to `runs`), independently of the run prune rather than only on days that happen to retire a run, with an index so the prune is not a full scan. The provider-quota snapshot log is capped on disk and read as a bounded, line-aligned tail, so per-refresh parse cost tracks the consumed 600-second window rather than total history.
 
 - **Async frame completion integrity** — a Metal frame acknowledges the output generation captured before its snapshot, retains newer output for a follow-up, re-arms prepared frames after presentation delays, and retires redundant work without stranding subsequent typing or shell prompts.

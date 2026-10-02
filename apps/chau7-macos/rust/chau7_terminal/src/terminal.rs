@@ -1128,7 +1128,15 @@ impl Chau7Terminal {
         );
 
         let timeout = Duration::from_millis(effective_timeout as u64);
-        let Some(_poll_guard) = self.pty_poll_lock.try_lock_for(timeout) else {
+        // A timed lock still spins/yields before inspecting its deadline.
+        // On an overloaded machine even a zero deadline can park the UI
+        // behind the event-drain worker. Zero-timeout callers must only CAS.
+        let poll_guard = if effective_timeout == 0 {
+            self.pty_poll_lock.try_lock()
+        } else {
+            self.pty_poll_lock.try_lock_for(timeout)
+        };
+        let Some(_poll_guard) = poll_guard else {
             return 0;
         };
         let timeout = timeout.saturating_sub(poll_start.elapsed());
@@ -1167,8 +1175,13 @@ impl Chau7Terminal {
                 }
             }
 
-            // Drain any additional pending data without blocking
-            loop {
+            // Yield ownership between output batches. A producer can keep
+            // the channel permanently nonempty; draining it to exhaustion
+            // would monopolize the UI and starve grid snapshots indefinitely.
+            // Leave queued chunks untouched so subsequent polls preserve order.
+            let batch_started = Instant::now();
+            while bytes_this_poll < 64 * 1024 && batch_started.elapsed() < Duration::from_millis(2)
+            {
                 match pty_rx.try_recv() {
                     Ok(PtyMessage::Data(data)) => {
                         bytes_this_poll += data.len();
@@ -3896,6 +3909,29 @@ mod tests {
                 .full_buffer_ansi_text()
                 .trim_end_matches(['\r', '\n'])
         );
+    }
+
+    #[test]
+    fn poll_yields_with_output_backlog_without_losing_or_reordering_bytes() {
+        let (term, tx) = terminal_with_queued_pty();
+        let chunk = b"batch\r\n".repeat(512);
+        let chunks = 64;
+        for _ in 0..chunks {
+            tx.send(PtyMessage::Data(chunk.clone())).unwrap();
+        }
+        let first_flags = term.poll_events(0);
+        assert_ne!(first_flags & POLL_EVENT_GRID_CHANGED, 0);
+        assert!(
+            !term.pty_rx.as_ref().unwrap().is_empty(),
+            "one UI poll must yield before consuming an entire backlog"
+        );
+        let mut output = term.get_last_output();
+        while !term.pty_rx.as_ref().unwrap().is_empty() {
+            let _ = term.poll_events(0);
+            output.extend(term.get_last_output());
+        }
+        assert_eq!(output, chunk.repeat(chunks));
+        assert!(term.get_last_output().is_empty());
     }
 
     #[test]

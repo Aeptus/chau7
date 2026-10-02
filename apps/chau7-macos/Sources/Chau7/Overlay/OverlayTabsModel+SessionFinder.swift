@@ -31,14 +31,18 @@ extension OverlayTabsModel {
 
     static var sessionFinderLock = NSLock()
     static var sessionFinders: [String: (String, Date?, Set<String>) -> String?] = [:]
+    static var backgroundSessionFinders: [String: @Sendable (String, Date?, Set<String>) -> String?] = [:]
+    private static let sessionDiscoveryQueue = DispatchQueue(label: "com.chau7.session-discovery", qos: .utility)
 
     static func registerSessionFinder(
         forProviderKey key: String,
-        finder: @escaping (String, Date?, Set<String>) -> String?
+        finder: @escaping (String, Date?, Set<String>) -> String?,
+        backgroundFinder: (@Sendable (String, Date?, Set<String>) -> String?)? = nil
     ) {
         sessionFinderLock.lock()
         defer { sessionFinderLock.unlock() }
         sessionFinders[key] = finder
+        backgroundSessionFinders[key] = backgroundFinder
     }
 
     static func findAIResumeSessionId(
@@ -51,6 +55,29 @@ extension OverlayTabsModel {
         let finder = sessionFinders[provider]
         sessionFinderLock.unlock()
         return finder?(directory, referenceDate, claimedSessionIds)
+    }
+
+    /// Status getters enqueue discovery rather than doing filesystem work.
+    /// Providers backed by main-owned in-memory state retain that isolation;
+    /// file-backed providers opt into the serial utility queue explicitly.
+    static func discoverAIResumeSessionId(
+        for provider: String,
+        directory: String,
+        referenceDate: Date?,
+        completion: @escaping @MainActor @Sendable (String?) -> Void
+    ) {
+        if let finder = backgroundSessionFinders[provider] {
+            sessionDiscoveryQueue.async {
+                let result = finder(directory, referenceDate, [])
+                DispatchQueue.main.async { completion(result) }
+            }
+        } else {
+            DispatchQueue.main.async {
+                completion(findAIResumeSessionId(
+                    for: provider, directory: directory, referenceDate: referenceDate
+                ))
+            }
+        }
     }
 
     /// Provider/session-id normalization moved to `AIResumeIdentityResolver`;
@@ -131,7 +158,7 @@ extension OverlayTabsModel {
     /// Scans ~/.codex/sessions/ day directories for session files whose
     /// cwd matches the given directory. Caps total file reads to avoid
     /// blocking the main thread.
-    static func findCodexSessionId(
+    nonisolated static func findCodexSessionId(
         forDirectory dir: String,
         referenceDate: Date? = nil,
         claimedSessionIds: Set<String> = []
@@ -217,7 +244,7 @@ extension OverlayTabsModel {
     }
 
     /// Read just the first line of a file without loading the entire contents.
-    static func readFirstLine(atPath path: String) -> String? {
+    nonisolated static func readFirstLine(atPath path: String) -> String? {
         guard let handle = FileHandle(forReadingAtPath: path) else { return nil }
         defer { handle.closeFile() }
 
@@ -253,7 +280,7 @@ extension OverlayTabsModel {
         return readFirstLine(from: buffer)
     }
 
-    static func readFirstLine(from data: Data, maxBytes: Int = 262_144) -> String? {
+    nonisolated static func readFirstLine(from data: Data, maxBytes: Int = 262_144) -> String? {
         guard data.count <= maxBytes else {
             return nil
         }
@@ -271,7 +298,7 @@ extension OverlayTabsModel {
     /// to extract the cwd and session ID. Thin alias over
     /// `CodexSessionResolver.parseSessionMeta` so this file's call sites
     /// keep the local naming while the parser itself lives in one place.
-    static func parseCodexSessionMeta(_ line: String) -> (cwd: String, id: String)? {
+    nonisolated static func parseCodexSessionMeta(_ line: String) -> (cwd: String, id: String)? {
         guard let parsed = CodexSessionResolver.parseSessionMeta(line) else { return nil }
         return (parsed.cwd, parsed.sessionId)
     }

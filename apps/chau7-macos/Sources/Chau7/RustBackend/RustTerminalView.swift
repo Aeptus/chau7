@@ -91,6 +91,7 @@ final class RustGridView: NSView {
     /// CPU-path `updateGrid` repopulates from a full sync (existing cold-start
     /// behavior when dimensions differ from the empty state).
     func releaseGridStorage() {
+        glyphLines.removeAll(keepingCapacity: false)
         cells = []
         clusterStorage = Data()
         overlayCells = [:]
@@ -102,6 +103,39 @@ final class RustGridView: NSView {
     private var boldFont = NSFont.monospacedSystemFont(ofSize: 13, weight: .bold)
     private var italicFont = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
     private var boldItalicFont = NSFont.monospacedSystemFont(ofSize: 13, weight: .bold)
+
+    private struct GlyphLineKey: Hashable {
+        let cluster: String
+        let fontFlags: UInt8
+        let color: NSColor
+    }
+
+    private var glyphLines: [GlyphLineKey: CTLine] = [:]
+    static let glyphLineCacheLimit = 2048
+    var cachedGlyphLineCount: Int {
+        glyphLines.count
+    }
+
+    /// Shape a grapheme once per font/color, rather than once per screen cell
+    /// on every fallback frame. Include resolved color (inverse/dim/cursor)
+    /// and both font traits so cached text retains exact terminal styling.
+    func glyphLine(cluster: String, flags: UInt8, color: NSColor) -> CTLine {
+        let key = GlyphLineKey(
+            cluster: cluster,
+            fontFlags: flags & (RustCellFlags.bold | RustCellFlags.italic),
+            color: color
+        )
+        if let line = glyphLines[key] { return line }
+        let line = CTLineCreateWithAttributedString(NSAttributedString(
+            string: cluster,
+            attributes: [.font: fontForCell(flags), .foregroundColor: color]
+        ))
+        if glyphLines.count >= Self.glyphLineCacheLimit {
+            glyphLines.removeAll(keepingCapacity: true)
+        }
+        glyphLines[key] = line
+        return line
+    }
 
     override var acceptsFirstResponder: Bool {
         false
@@ -392,12 +426,7 @@ final class RustGridView: NSView {
                     textColor = textColor.withAlphaComponent(0.6)
                 }
 
-                let attrs: [NSAttributedString.Key: Any] = [
-                    .font: drawFont,
-                    .foregroundColor: textColor
-                ]
-                let attrString = NSAttributedString(string: clusterStr, attributes: attrs)
-                let line = CTLineCreateWithAttributedString(attrString)
+                let line = glyphLine(cluster: clusterStr, flags: cell.flags, color: textColor)
                 ctx.textPosition = CGPoint(x: x, y: y + baselineOffset)
                 CTLineDraw(line, ctx)
 
@@ -500,13 +529,7 @@ final class RustGridView: NSView {
             let clusterStr = clusterString(for: cell)
             if clusterStr.isEmpty { return }
             let (_, bg) = resolveColors(for: cell)
-            let drawFont = fontForCell(cell.flags)
-            let attrs: [NSAttributedString.Key: Any] = [
-                .font: drawFont,
-                .foregroundColor: bg
-            ]
-            let attrString = NSAttributedString(string: clusterStr, attributes: attrs)
-            let line = CTLineCreateWithAttributedString(attrString)
+            let line = glyphLine(cluster: clusterStr, flags: cell.flags, color: bg)
             ctx.textPosition = CGPoint(x: x, y: y + baselineOffset)
             CTLineDraw(line, ctx)
         case .underline:
@@ -525,6 +548,7 @@ final class RustGridView: NSView {
     }
 
     private func updateFontCache() {
+        glyphLines.removeAll(keepingCapacity: true)
         regularFont = font
         let manager = NSFontManager.shared
         boldFont = manager.convert(font, toHaveTrait: .boldFontMask)
