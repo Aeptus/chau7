@@ -232,7 +232,7 @@ Supported commands (46 parsers):
 - **OpenAI Responses usage normalization** — Codex request metadata and usage accounting recognize Responses API `input`, `max_output_tokens`, `input_tokens`/`output_tokens`, cached/reasoning detail fields, and nested `response.completed` SSE envelopes while retaining Chat Completions compatibility, so valid provider usage does not degrade into body-size estimates.
 - **Token counting & cost calculation** — full token breakdown per call: input, output, cache creation, cache read, and reasoning tokens. Accurate cost calculation using provider-specific cache pricing (Anthropic 0.1x cache-read / 1.25x cache-write; OpenAI per-model cache-read rates, 0.1x–0.5x). Fallback estimation when extraction fails.
 - **Cache-aware usage dashboards** — Usage Monitor, Debug Console analytics, and API analytics keep cache creation/read, output, and reasoning token buckets distinguishable while still showing aggregate billable traffic and cost.
-- **Async usage analytics loading** — usage dashboards coalesce overlapping refreshes, run proxy analytics database reads off the main thread, and expose model-level cost rows.
+- **Async usage analytics loading** — usage dashboards coalesce overlapping refreshes, run proxy analytics database reads off the main thread, and expose model-level cost rows. Latency refreshes release the database lock before timestamp decoding and use a fast value parser with legacy-format compatibility; repository, time-window, and success-status filters apply to every latency row.
 - **Regional number formatting** — usage dashboards and cost displays use a configurable regional number format (French default, European, or US) independently of the app language.
 - **Latency tracking** — total request duration and time-to-first-token (TTFT) per API call.
 - **Deterministic latency-sample reads** — equal-timestamp samples retain their monotonic ingestion order through canonicalization, while throttled SQLite preparation diagnostics expose schema/query failures without flooding logs.
@@ -351,7 +351,7 @@ Fan a review across N parallel agents — e.g. three agents reviewing PR #323:
 
 | Tool | Description |
 | --- | --- |
-| `repo_get_metadata` | Get metadata for a repository including description, labels, favorite files, and frequent commands |
+| `repo_get_metadata` | Get repository description, labels, favorite files, frequent commands, and statistics; database/file reads run on the MCP worker after copying cached observable metadata on main |
 | `repo_set_metadata` | Set metadata for a repository (description, labels, favorite files) — only provided fields are updated |
 | `repo_frequent_commands` | Get frequently used commands for a repository, sorted by frecency |
 | `repo_get_events` | Get recent AI tool events (finished, permission, tool_called, etc.) scoped to a given repo |

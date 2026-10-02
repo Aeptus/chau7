@@ -1808,7 +1808,7 @@
   {
     "category": "API Analytics",
     "feature": "Async Usage Analytics Loading",
-    "description": "Usage dashboards coalesce overlapping refreshes, run proxy analytics database reads off the main thread, and show model-level proxy cost rows",
+    "description": "Usage dashboards coalesce overlapping refreshes, run proxy analytics database reads off the main thread, and show model-level proxy cost rows; latency refreshes release the database lock before decoding timestamps and use a fast value parser with legacy-format compatibility, with latency eligibility grouped so repository, time-window, and success-status filters apply to every row",
     "status": "Shipped",
     "differentiator": "Yes"
   },
@@ -2144,7 +2144,7 @@
   {
     "category": "MCP Tools — Repository",
     "feature": "repo_get_metadata",
-    "description": "Get metadata for a repository including description, labels, favorite files, and frequent commands",
+    "description": "Get repository description, labels, favorite files, frequent commands, and statistics; database/file reads run on the MCP worker after copying cached observable metadata on main",
     "status": "Shipped",
     "differentiator": "Yes"
   },

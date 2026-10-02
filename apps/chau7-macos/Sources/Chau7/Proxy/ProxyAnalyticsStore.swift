@@ -96,8 +96,6 @@ final class ProxyAnalyticsStore {
 
     private nonisolated(unsafe) static let isoWithFractional = DateFormatters.iso8601
 
-    private nonisolated(unsafe) static let isoBasic = DateFormatters.iso8601NoFractional
-
     private static var defaultDatabasePath: String {
         RuntimeIsolation.appSupportDirectory(named: "Chau7")
             .appendingPathComponent("Proxy", isDirectory: true)
@@ -207,12 +205,27 @@ final class ProxyAnalyticsStore {
         } ?? []
     }
 
+    /// Copy SQLite values while holding the connection lock, then release it
+    /// before provider filtering and timestamp parsing. Usage refreshes can
+    /// contain tens of thousands of rows; decoding must not serialize readers.
     func latencySamples(
         after: Date? = nil,
         providerFilterKey: String? = nil,
-        projectPath: String? = nil
+        projectPath: String? = nil,
+        timestampParser: ((String) -> Date?)? = nil
     ) -> [ProviderLatencySample] {
-        withDatabase { db in
+        struct Row {
+            let provider: String?
+            let model: String?
+            let endpoint: String?
+            let roundTripMs: Int
+            let timeToFirstTokenMs: Int
+            let timestamp: String?
+            let projectPath: String?
+            let sessionID: String?
+        }
+
+        let rows: [Row] = withDatabase { db in
             var sql = """
             SELECT provider,
                    model,
@@ -225,7 +238,7 @@ final class ProxyAnalyticsStore {
             FROM api_calls
             """
             var clauses = [
-                "(ttft_ms IS NOT NULL AND ttft_ms > 0) OR (latency_ms IS NOT NULL AND latency_ms > 0)",
+                "((ttft_ms IS NOT NULL AND ttft_ms > 0) OR (latency_ms IS NOT NULL AND latency_ms > 0))",
                 "status_code >= 200",
                 "status_code < 300"
             ]
@@ -238,40 +251,45 @@ final class ProxyAnalyticsStore {
             sql += " WHERE " + clauses.joined(separator: " AND ")
             sql += " ORDER BY timestamp ASC"
 
-            return withFilteredStatement(db: db, sql: sql, after: after, projectPath: projectPath) { stmt -> [ProviderLatencySample] in
-                var samples: [ProviderLatencySample] = []
+            return withFilteredStatement(db: db, sql: sql, after: after, projectPath: projectPath) { stmt -> [Row] in
+                var rows: [Row] = []
                 while stmt.step() == .row {
-                    guard let rawProvider = stmt.columnText(0),
-                          AnalyticsProvider.matches(rawProvider, filterKey: providerFilterKey),
-                          let provider = AnalyticsProvider.key(for: rawProvider),
-                          ProviderLatencyAnalytics.isLatencyRelevantAPIEndpoint(
-                              provider: provider,
-                              endpoint: stmt.columnText(2)
-                          ),
-                          let timestamp = stmt.columnText(5).flatMap(isoDate),
-                          let latencyMs = ProviderLatencyAnalytics.preferredAPILatencyMs(
-                              roundTripMs: Int(stmt.columnInt64(3)),
-                              timeToFirstTokenMs: Int(stmt.columnInt64(4))
-                          ) else {
-                        continue
-                    }
-
-                    samples.append(
-                        ProviderLatencySample(
-                            provider: provider,
-                            metricKind: .apiRequest,
-                            latencyMs: latencyMs,
-                            timestamp: timestamp,
-                            model: stmt.columnText(1),
-                            sessionID: stmt.columnText(7),
-                            projectPath: stmt.columnText(6),
-                            sourceKind: Int(stmt.columnInt64(4)) > 0 ? "proxy_api_ttft" : "proxy_api_round_trip"
-                        )
-                    )
+                    rows.append(Row(
+                        provider: stmt.columnText(0),
+                        model: stmt.columnText(1),
+                        endpoint: stmt.columnText(2),
+                        roundTripMs: Int(stmt.columnInt64(3)),
+                        timeToFirstTokenMs: Int(stmt.columnInt64(4)),
+                        timestamp: stmt.columnText(5),
+                        projectPath: stmt.columnText(6),
+                        sessionID: stmt.columnText(7)
+                    ))
                 }
-                return samples
+                return rows
             } ?? []
         } ?? []
+
+        let parseTimestamp = timestampParser ?? DateFormatters.parseAnalyticsTimestamp
+        return rows.compactMap { row in
+            guard let rawProvider = row.provider,
+                  AnalyticsProvider.matches(rawProvider, filterKey: providerFilterKey),
+                  let provider = AnalyticsProvider.key(for: rawProvider),
+                  ProviderLatencyAnalytics.isLatencyRelevantAPIEndpoint(provider: provider, endpoint: row.endpoint),
+                  let timestamp = row.timestamp.flatMap(parseTimestamp),
+                  let latencyMs = ProviderLatencyAnalytics.preferredAPILatencyMs(
+                      roundTripMs: row.roundTripMs, timeToFirstTokenMs: row.timeToFirstTokenMs
+                  ) else { return nil }
+            return ProviderLatencySample(
+                provider: provider,
+                metricKind: .apiRequest,
+                latencyMs: latencyMs,
+                timestamp: timestamp,
+                model: row.model,
+                sessionID: row.sessionID,
+                projectPath: row.projectPath,
+                sourceKind: row.timeToFirstTokenMs > 0 ? "proxy_api_ttft" : "proxy_api_round_trip"
+            )
+        }
     }
 
     func activitySamples(
@@ -730,6 +748,6 @@ final class ProxyAnalyticsStore {
     }
 
     private func isoDate(_ value: String) -> Date? {
-        Self.isoWithFractional.date(from: value) ?? Self.isoBasic.date(from: value)
+        DateFormatters.parseAnalyticsTimestamp(value)
     }
 }
