@@ -394,11 +394,14 @@ final class RepositoryCacheTests: XCTestCase {
 
     func testRefreshBranchCoalescesRapidCalls() {
         let runnerCalls = LockedCounter()
+        let refreshed = expectation(description: "debounced runner completes")
+        refreshed.assertForOverFulfill = true
         let model = RepositoryModel(
             rootPath: "/repos/main",
             branch: "main",
             gitRunner: { _, _ in
                 runnerCalls.increment()
+                refreshed.fulfill()
                 return "main"
             },
             refreshDelay: 0.05
@@ -408,12 +411,10 @@ final class RepositoryCacheTests: XCTestCase {
         model.refreshBranch()
         model.refreshBranch()
 
-        let expectation = expectation(description: "debounced refresh completes")
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+        withExtendedLifetime(model) {
+            wait(for: [refreshed], timeout: 3.0)
             XCTAssertEqual(runnerCalls.value, 1)
-            expectation.fulfill()
         }
-        wait(for: [expectation], timeout: 1.0)
     }
 }
 
