@@ -11,15 +11,20 @@ final class Chau7StateSnapshotService {
     private init() {}
 
     func snapshotPayload() -> [String: Any] {
-        [
+        let latestSequence = observability.latestSequence()
+        guard let components = MainActorBridge.read({
+            (self.controlService.liveTabSummaries(), self.controlService.pendingApprovalSummaries(), self.controlService.repoEventSnapshots())
+        }) else {
+            return ["error": "main_thread_unresponsive", "retryable": true, "timeout_ms": 1000]
+        }
+        return [
             "schema_version": Chau7MCPObserverContract.snapshotSchemaVersion,
             "observer_contract_version": Chau7MCPObserverContract.version,
             "generated_at_millis": Int64(Date().timeIntervalSince1970 * 1000),
-            // Captured before the component reads below (dictionary literals
-            // evaluate in source order): a change landing mid-snapshot then has
+            // Captured before the component reads: a change landing mid-snapshot has
             // seq > latest_seq and is re-delivered on replay — duplicates are
             // safe for idempotent subscribers, gaps are not.
-            "latest_seq": observability.latestSequence(),
+            "latest_seq": latestSequence,
             "observer_contract": [
                 "version": Chau7MCPObserverContract.version,
                 "snapshot_tool": Chau7MCPObserverContract.snapshotToolName,
@@ -36,9 +41,9 @@ final class Chau7StateSnapshotService {
                 "delivery_mode": Chau7MCPObserverContract.deliveryMode
             ],
             "runtime_info": observability.runtimeInfoPayload(),
-            "tabs": MainActorBridge.sync { controlService.liveTabSummaries() },
-            "approvals": MainActorBridge.sync { controlService.pendingApprovalSummaries() },
-            "repo_events": MainActorBridge.sync { controlService.repoEventSnapshots() },
+            "tabs": components.0,
+            "approvals": components.1,
+            "repo_events": components.2,
             "telemetry": [
                 "active_runs": queryService.currentRunObjects(),
                 "active_sessions": queryService.activeSessionObjects()

@@ -63,10 +63,14 @@ extension TerminalSessionModel {
 
         // Detached-session fallbacks, bounded to a tail approximation.
         if !cachedRemoteOutputText.isEmpty {
-            return String(cachedRemoteOutputText.suffix(maxBytes))
+            return TerminalOutputBudget.tail(cachedRemoteOutputText, maximumLines: maxLines, maximumBytes: maxBytes)
         }
         if let data = cachedBufferData, !data.isEmpty {
-            return String(String(decoding: data, as: UTF8.self).suffix(maxBytes))
+            var tail = data.suffix(max(0, maxBytes))
+            while let first = tail.first, first & 0xC0 == 0x80 {
+                tail = tail.dropFirst()
+            }
+            return TerminalOutputBudget.tail(String(decoding: tail, as: UTF8.self), maximumLines: maxLines, maximumBytes: maxBytes)
         }
         return nil
     }

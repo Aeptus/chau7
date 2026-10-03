@@ -470,6 +470,8 @@ The app still contains internal runtime orchestration used by dashboard and revi
 
 ## Performance
 
+- Read-only MCP requests return a retryable UI-timeout error instead of waiting indefinitely. Expired queued reads are cancelled, terminal output uses bounded tails, and response formatting and provider-log fallback flushes stay on the MCP worker.
+
 - **Core-only test workflow** — `Scripts/test-core.sh` selects pure Chau7Core tests and caches their build independently of the app. Standard `swift test` continues to validate the full integration graph.
 
 - **Terminal responsiveness** — zero-timeout polls never spin for ownership, output batches yield between chunks, and file-backed session discovery stays off status getters. A bounded cache reuses shaped graphemes in CPU fallback frames while preserving colors and font traits; discovery completes on the main actor and stale results cannot replace newer agent identities.
