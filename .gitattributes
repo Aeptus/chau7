@@ -1,0 +1,12 @@
+# Normalize source/config/docs to LF without touching binary payloads.
+* text=auto eol=lf
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.icns binary
+*.pdf binary
+*.dylib binary
+*.a binary
+*.zip binary
+*.dmg binary

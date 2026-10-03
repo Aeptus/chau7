@@ -4,23 +4,98 @@ updates:
     directory: /apps/chau7-macos
     schedule:
       interval: weekly
+    groups:
+      compatible-updates:
+        patterns: ["*"]
+        update-types: [minor, patch]
+    open-pull-requests-limit: 5
+
+  - package-ecosystem: swift
+    directory: /apps/chau7-ios/Chau7RemoteApp
+    schedule:
+      interval: weekly
+    groups:
+      compatible-updates:
+        patterns: ["*"]
+        update-types: [minor, patch]
+    open-pull-requests-limit: 5
 
   - package-ecosystem: npm
     directory: /services/chau7-relay
     schedule:
       interval: weekly
+    groups:
+      compatible-updates:
+        patterns: ["*"]
+        update-types: [minor, patch]
+    open-pull-requests-limit: 5
+
+  - package-ecosystem: npm
+    directory: /services/chau7-issues
+    schedule:
+      interval: weekly
+    groups:
+      compatible-updates:
+        patterns: ["*"]
+        update-types: [minor, patch]
+    open-pull-requests-limit: 5
 
   - package-ecosystem: gomod
     directory: /services/chau7-remote
     schedule:
       interval: weekly
+    groups:
+      compatible-updates:
+        patterns: ["*"]
+        update-types: [minor, patch]
+    open-pull-requests-limit: 5
 
   - package-ecosystem: gomod
     directory: /apps/chau7-macos/chau7-proxy
     schedule:
       interval: weekly
+    groups:
+      compatible-updates:
+        patterns: ["*"]
+        update-types: [minor, patch]
+    open-pull-requests-limit: 5
+
+  - package-ecosystem: cargo
+    directory: /apps/chau7-macos/rust
+    schedule:
+      interval: weekly
+    groups:
+      compatible-updates:
+        patterns: ["*"]
+        update-types: [minor, patch]
+    open-pull-requests-limit: 5
+
+  - package-ecosystem: pip
+    directory: /tools/pentagi-mcp
+    schedule:
+      interval: weekly
+    groups:
+      compatible-updates:
+        patterns: ["*"]
+        update-types: [minor, patch]
+    open-pull-requests-limit: 5
+
+  - package-ecosystem: pip
+    directory: /scripts
+    schedule:
+      interval: weekly
+    groups:
+      compatible-updates:
+        patterns: ["*"]
+        update-types: [minor, patch]
+    open-pull-requests-limit: 5
 
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: weekly
+    groups:
+      compatible-updates:
+        patterns: ["*"]
+        update-types: [minor, patch]
+    open-pull-requests-limit: 5

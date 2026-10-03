@@ -1,3 +1,4 @@
+import { sharedSwiftLockPaths, sharedSwiftPinFailures } from "./shared-swift-pins.mjs";
 import fs from "node:fs";
 import path from "node:path";
 import {
@@ -924,6 +925,21 @@ export const gates = [
     rerun: "pnpm quality:prepush:full --include=full-local-ci",
     // ci-local runs swift build/test; see HOOK_GIT_ENV_VARS.
     run: async (context) => execWithoutHookGitEnv(context, "./scripts/ci-local", [], { cwd: "." }),
+  },
+  {
+    id: "shared-swift-pins",
+    modes: ["staged", "prepush-full", "local"],
+    scope: "repo",
+    wave: "static",
+    tags: ["swift", "dependencies"],
+    cacheable: true,
+    inputs: sharedSwiftLockPaths,
+    applies: () => true,
+    rerun: "pnpm quality:staged --include=shared-swift-pins",
+    run: async (context) => {
+      const failures = sharedSwiftPinFailures((file) => getContextContent(context, file));
+      return failures.length ? { status: "failed", summary: failures.join("\n") } : { status: "passed", summary: "Shared Swift dependency pins agree" };
+    },
   },
   {
     id: "quality-runner-tests",
