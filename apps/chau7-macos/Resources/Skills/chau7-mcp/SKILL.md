@@ -37,8 +37,6 @@ If an MCP tool reports a permission or readiness failure, surface that failure c
 
 Use Chau7 diagnostics before guessing. Helpful places include:
 
-- Per-run technical logs such as `.chau7/magi/runs/<run-id>/technical.jsonl`
-- MAGI artifacts under `.chau7/magi/runs/<run-id>/`
 - Chau7 logs at `~/Library/Logs/Chau7.log`
 - Chau7 debug reports and snapshots under `~/.chau7/reports/` and `~/.chau7/snapshots/`
 - MCP tool responses, especially structured fields for tab IDs, launch status, prompt submission, events, and errors

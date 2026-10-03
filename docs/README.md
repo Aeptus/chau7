@@ -35,3 +35,6 @@ This repository keeps public-facing documentation close to the code it describes
 ## Public Repo Rule
 
 Working assessments, planning notes, and TODO-style documents should not live in the public repository. Keep public docs focused on current product, contributor, and operational guidance.
+
+- [MAGI removal](magi-removal.md): removed command compatibility and preserved artifacts
+- [Archived MAGI protocol](magi-rfc.md): historical specification only

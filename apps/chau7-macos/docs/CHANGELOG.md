@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed
+
+- Removed the MAGI CLI product, protocol implementation, installer and bundled skill. Generic MCP agent launch, event handling, skills and terminal path lookup remain available. The protocol is archived with a removal note.
+
 ### Changed
 
 - Dependency ownership uses one Rust workspace lock and checked shared Swift pins; update coverage includes all maintained services and platforms. Local review configuration has a tracked example and repository text has an LF policy.
