@@ -14,43 +14,46 @@ Or just open an issue here. Include: what you did, what you expected, what happe
 git clone https://github.com/aeptus/chau7.git
 cd chau7
 
-# Install pre-commit hooks (format + lint + build gate)
-./scripts/install-hooks
+# Install mise (https://mise.jdx.dev/getting-started.html), then the pinned tools.
+mise install
+mise exec -- pnpm install       # prepare installs .husky hooks in a clone/worktree
+mise exec -- pnpm setup:check   # fails clearly for missing or wrong mandatory tools
+mise exec -- python3 -m venv .venv
+.venv/bin/pip install -r scripts/requirements-tests.txt # exact Python test dependency lock
 
-# Enter the macOS app directory
+# Build required emulator/parser/helper backends before Swift and packaging.
 cd apps/chau7-macos
-
-# Build
-swift build
-
-# Test
-swift test
-
-# Run (for proper notifications, build the app bundle)
-./Scripts/build-app.sh
+mise exec -- ./Scripts/build-rust.sh --release
+mise exec -- swift build -c release
+mise exec -- swift test
+mise exec -- ./Scripts/build-app.sh
+# Launch only when desired: open build/Chau7.app
 ```
 
 ### Environment Requirements
 
-| Tool | Version | Required For | Install |
-|------|---------|-------------|---------|
-| macOS | 14+ | Everything | — |
-| Xcode | 26+ (Swift 6+) | Swift build + test | Mac App Store |
-| SwiftFormat | latest | Pre-commit hook | `brew install swiftformat` |
-| SwiftLint | latest | Pre-commit hook | `brew install swiftlint` |
-| pnpm | 10.11+ | Git hooks and quality runner | `corepack enable` |
-| gitleaks | 8.20+ | Staged secret scan | `brew install gitleaks` |
-| shellcheck | any | Pre-commit shell lint | `brew install shellcheck` |
-| ruff | any | Pre-commit Python lint | `brew install ruff` |
-| golangci-lint | any | Go lint | `brew install golangci-lint` |
-| periphery | any | Local CI dead-code scan | `brew install periphery` |
-| cargo-deny | any | Local CI Rust dep audit | `cargo install cargo-deny` |
-| jscpd | any | Local CI duplication scan | `npm install -g jscpd` |
-| Rust | stable | Terminal backend rebuild | [rustup.rs](https://rustup.rs) |
-| Go | 1.25+ | Proxy and remote agent | `brew install go` |
-| Node.js | 22+ | Relay service | `brew install node` |
+The exact developer tool baseline lives in [mise.toml](mise.toml); the Rust
+workspace additionally enforces `rust-toolchain.toml`. Xcode 26.6 must be installed
+and selected separately (`sudo xcode-select --switch /Applications/Xcode_26.6.app/Contents/Developer`).
+Rust/Go binaries and `Libraries/` are generated, ignored artifacts and do not ship
+in a clean clone. `build-app.sh` builds the Go proxy and remote helper and requires
+the Rust terminal emulator; the parser has a Swift fallback. `build-dist.sh` builds
+all backends and Swift once, then reuses its Go artifacts for packaging.
 
-The Rust terminal backend and Go proxy ship pre-built in the repo. You only need the Rust and Go toolchains if you're modifying those components. Swift, SwiftFormat, SwiftLint, gitleaks, shellcheck, ruff, and golangci-lint are required for all contributors; periphery, cargo-deny, and jscpd are only required when running the full local quality gate (`pnpm quality:prepush:full`).
+`pnpm setup:check` checks pinned mandatory tools, real author identity and hooks;
+it does not build, install, launch or terminate Chau7. `pnpm hooks:check` detects
+missing hook configuration. `pnpm install` skips hook preparation in CI and when
+this package is copied outside its own Git repository. Hooks share the repository's
+relative `.husky` path across worktrees. CI remains the required server-side gate.
+The legacy `tools/git-hooks` path includes pre-commit, pre-push and post-commit
+maintenance shims. Optional advisory pre-commit AI review is separately documented;
+missing security audit tools are blocking, never silently skipped.
+
+Run `pnpm test` for Node quality tests and both Python unittest suites (review
+helper and isolated PentAGI logic). These tests use temporary fixtures and do not
+contact live Chau7 or require a running container. For rapid Core-only validation,
+run `apps/chau7-macos/Scripts/test-core.sh` from the repository root; it builds only
+Chau7Core and cannot replace full `swift test`/`swift build` validation in native CI.
 
 ### Bypassing a check
 

@@ -11,6 +11,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Release jobs pin action revisions, reuse one built distribution, limit publication permissions and signing-key access, and always clean runner signing material. Manual validation cannot publish or access signing secrets.
 
+### Fixed
+- Source packaging rejects a missing terminal emulator with its build command; developer setup pins required tools, installs/verifies hooks and runs both Python suites. Distribution packaging reuses freshly built Go backends.
+
 ### Changed
 
 - Serialized usage refresh caches and rejected stale selections; Metal pipeline pairs are synchronized per retained device. MCP command approvals use main-owned sheets and expire closed on the worker, removing the shared callback result and nested command modal loop.

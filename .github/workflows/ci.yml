@@ -69,6 +69,12 @@ jobs:
           cargo deny --version
           pip-audit --version
 
+      - name: Prepare Python test prerequisites
+        run: |
+          python3 -m venv "$RUNNER_TEMP/chau7-test-python"
+          "$RUNNER_TEMP/chau7-test-python/bin/pip" install -r scripts/requirements-tests.txt
+          echo "CHAU7_TEST_PYTHON=$RUNNER_TEMP/chau7-test-python/bin/python3" >> "$GITHUB_ENV"
+
       - name: Run affected and full-suite quality gates
         run: pnpm quality:prepush
 

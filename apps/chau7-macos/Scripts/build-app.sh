@@ -62,6 +62,13 @@ if [[ ! -f "$BIN" ]]; then
   exit 1
 fi
 
+RUST_LIBS_DIR="$ROOT_DIR/Libraries"
+if [[ ! -f "$RUST_LIBS_DIR/libchau7_terminal.dylib" ]]; then
+  log_error "Required terminal emulator missing: $RUST_LIBS_DIR/libchau7_terminal.dylib"
+  log_error "Run: ./Scripts/build-rust.sh --release (from apps/chau7-macos), then package again."
+  exit 1
+fi
+
 run_cmd mkdir -p "$CONTENTS/MacOS" "$CONTENTS/Resources"
 
 LSUI_ELEMENT_VALUE="<true/>"
@@ -167,7 +174,7 @@ else
 fi
 
 # Copy Rust libraries from Libraries/ directory (built by build-rust.sh)
-# Both libraries are optional but recommended for full functionality
+# The terminal library is mandatory; the parser has a Swift fallback.
 RUST_LIBS_DIR="$ROOT_DIR/Libraries"
 
 RUST_PARSE_LIB="$RUST_LIBS_DIR/libchau7_parse.dylib"
@@ -222,7 +229,7 @@ done
 # skew at compile time — the two halves are only wrong when paired — so build
 # the proxy here rather than trusting whatever is left in build/darwin.
 PROXY_BIN="$ROOT_DIR/chau7-proxy/build/darwin/chau7-proxy"
-if command -v go >/dev/null 2>&1; then
+if [[ "${CHAU7_REUSE_BUILT_BACKENDS:-0}" != "1" ]] && command -v go >/dev/null 2>&1; then
     run_cmd bash "$ROOT_DIR/chau7-proxy/build.sh" darwin
 fi
 if [[ -f "$PROXY_BIN" ]]; then
@@ -235,7 +242,7 @@ fi
 
 # Copy or build the remote agent helper
 REMOTE_AGENT_BIN="$ROOT_DIR/build/remote-agent/chau7-remote"
-if command -v go >/dev/null 2>&1; then
+if [[ "${CHAU7_REUSE_BUILT_BACKENDS:-0}" != "1" ]] && command -v go >/dev/null 2>&1; then
     run_cmd bash "$ROOT_DIR/Scripts/build-remote-agent.sh" --output "$REMOTE_AGENT_BIN"
 fi
 if [[ -f "$REMOTE_AGENT_BIN" ]]; then
