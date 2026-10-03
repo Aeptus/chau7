@@ -5269,5 +5269,12 @@
     "description": "Nonblocking confirmation sheets preserve explicit one-time consent tied to the original pane, PTY, directory and input; remote submissions are checked before body or Enter delivery and pending approval appears in session status; automation submission and delayed Enter are bound to the same consent context; pending local consent blocks MCP mutations and readiness; dashboard health publication uses an explicit main-actor task handoff",
     "status": "Shipped",
     "differentiator": "No"
+  },
+  {
+    "category": "Developer Experience",
+    "feature": "Nonpublishing Release Validation",
+    "description": "Commit-pinned actions, a preserved single-build distribution, restricted runner signing keychain with always cleanup, bounded serialized release and optional tap jobs",
+    "status": "Shipped",
+    "differentiator": "No"
   }
 ]

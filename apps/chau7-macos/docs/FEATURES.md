@@ -1068,3 +1068,7 @@ Key patterns:
 - **MCP transport recovery** — bounded per-connection writers keep slow subscription clients off the UI thread, with queue-inclusive deadlines, nonblocking connect and linear frame scanning; reconnect completes the saved handshake before dispatching buffered requests. Interrupted requests return their original IDs and are never automatically replayed when execution is uncertain.
 
 - **Hang capture evidence** — schema 3 diagnostics record sampling duration, before/after heartbeat tokens, watchdog identity and bounded main-thread stack families. These observations distinguish captures overlapping recovery without claiming a teardown root cause.
+
+Release validation builds one preserved distribution in CI. Manual runs do not
+publish or access signing secrets; signing lifecycle tests use synthetic commands.
+See the repository release-validation documentation for bounded jobs and tap policy.
