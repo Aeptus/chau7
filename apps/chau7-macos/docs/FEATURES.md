@@ -1064,3 +1064,5 @@ Key patterns:
 - Deferred restore scheduling backs off during rapid tab switching, prioritizes tabs nearest to the selected tab, and logs per-tab restore stage timings with RSS deltas.
 - Proxy-observed usage evidence is attributed to the enclosing telemetry run (tab id, then session id, then project path, bounded by the run window); analytics migrations add each cache counter independently so a partially-migrated database still converges.
 - The generated CTO executable wrapper execs the real binary for `--porcelain`, `--format`, and `-z` invocations before reaching the optimizer, so machine-readable bytes survive regardless of optimizer behaviour.
+
+- **MCP transport recovery** — bounded per-connection writers keep slow subscription clients off the UI thread; reconnect completes the saved handshake before dispatching buffered requests. Interrupted requests return their original IDs and are never automatically replayed when execution is uncertain.

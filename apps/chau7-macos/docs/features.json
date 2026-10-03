@@ -1,5 +1,12 @@
 [
   {
+    "category": "MCP",
+    "feature": "Bounded Socket Transport Recovery",
+    "description": "Serial socket owners handle complete frames, bounded async notification writes and reconnect handshakes; interrupted requests return correlated errors without replaying uncertain command execution",
+    "status": "Shipped",
+    "differentiator": "No"
+  },
+  {
     "category": "Performance",
     "feature": "Concurrent Refresh and Consent Ownership",
     "description": "Usage caches and cursors have one serial worker with generation guarded publication; Metal pipeline pairs are synchronized per retained device; local and remote MCP command decisions share one main actor sheet owner with bounded worker waiting and fail closed expiry",

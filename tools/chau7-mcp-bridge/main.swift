@@ -1,215 +1,253 @@
 #!/usr/bin/env swift
-//
-// chau7-mcp-bridge — Resilient stdio <-> Unix socket bridge for MCP clients.
-//
-// MCP clients (Claude Code, Cursor, etc.) launch this via:
-//   { "command": "chau7-mcp-bridge" }
-//
-// Connects to Chau7.app's MCP socket at ~/.chau7/mcp.sock and pipes
-// stdin/stdout <-> socket.
-//
-// Resilience contract: the AI tool spawns one bridge per session and assumes
-// it stays available for that session's lifetime. Chau7 itself can restart
-// (rebuild loop, force-quit, app crash) while a Claude/Codex session is
-// running, which would otherwise kill MCP for that session until the user
-// restarts the AI tool. To avoid that, the bridge:
-//
-//   1. Retries the initial connect for up to `initialConnectTimeoutSec` —
-//      handles the case where the AI tool launches at the same time as
-//      Chau7 and beats it to the socket.
-//   2. On socket EOF / error mid-session, reconnects (with retry) and
-//      replays the saved `initialize` request so the new Chau7 server
-//      enters the same protocol state. The first response (the new
-//      initialize result) is consumed silently — the AI tool already
-//      received the original; a second one would confuse its bookkeeping.
-//   3. Buffers any stdin received while the socket is down and replays it
-//      after reconnect, so a Claude tool call that fires at the wrong
-//      moment doesn't drop on the floor.
-
+// Resilient stdio <-> Unix socket MCP bridge. The main loop is the sole socket
+// owner; stdin only appends bounded frames. Requests whose delivery is ambiguous
+// fail with their original JSON-RPC IDs and are never replayed automatically.
 import Foundation
 
-// Ignore SIGPIPE so a broken stdout pipe returns EPIPE instead of killing us.
 signal(SIGPIPE, SIG_IGN)
+let socketPath = ProcessInfo.processInfo.environment["CHAU7_MCP_SOCKET_PATH"] ?? NSHomeDirectory() + "/.chau7/mcp.sock"
+let maxFrameBytes = 8 * 1024 * 1024
+let maxQueuedBytes = 16 * 1024 * 1024
+let maxQueuedFrames = 64
+let inputLock = NSLock()
+var queued: [Data] = []
+var queuedBytes = 0
+var inputClosed = false
+var inputOverflow = false
 
-let socketPath = NSHomeDirectory() + "/.chau7/mcp.sock"
-let initialConnectTimeoutSec: Double = 30.0
-let reconnectTimeoutSec: Double = 30.0
-let connectRetryDelayUs: useconds_t = 100_000  // 100 ms
-
-// All socket / replay state guarded by a single lock.
-let stateLock = NSLock()
-var sockFD: Int32 = -1
-var savedInitialize: Data?
-var pendingStdin: [Data] = []
-// Flipped when the stdin thread sees EOF on stdin (the AI tool closed its
-// end). After that, a socket drop means "we're done" — don't try to reconnect.
-var stdinClosed = false
-
-func writeStdout(_ data: Data) -> Bool {
-    data.withUnsafeBytes { buf in
-        var remaining = buf.count
+func uptime() -> TimeInterval { ProcessInfo.processInfo.systemUptime }
+func log(_ message: String) { FileHandle.standardError.write(Data("[chau7-mcp-bridge] \(message)\n".utf8)) }
+func object(_ frame: Data) -> [String: Any]? { try? JSONSerialization.jsonObject(with: frame) as? [String: Any] }
+func idKey(_ id: Any) -> String? {
+    guard id is String || id is NSNumber else { return nil }
+    return (try? JSONSerialization.data(withJSONObject: [id])).flatMap { String(data: $0, encoding: .utf8) }
+}
+func stdout(_ frame: Data) -> Bool {
+    frame.withUnsafeBytes { bytes in
+        guard let address = bytes.baseAddress else { return bytes.isEmpty }
         var offset = 0
-        while remaining > 0 {
-            let n = Foundation.write(STDOUT_FILENO, buf.baseAddress! + offset, remaining)
-            if n <= 0 { return false }
+        while offset < bytes.count {
+            let n = Foundation.write(STDOUT_FILENO, address.advanced(by: offset), bytes.count - offset)
+            if n < 0, errno == EINTR { continue }
+            guard n > 0 else { return false }
             offset += n
-            remaining -= n
         }
         return true
     }
 }
-
-func writeJSONRPCError(_ message: String) {
-    let json = "{\"jsonrpc\":\"2.0\",\"id\":null,\"error\":{\"code\":-32000,\"message\":\"\(message)\"}}\n"
-    _ = writeStdout(Data(json.utf8))
-}
-
-func logStderr(_ message: String) {
-    let line = "[chau7-mcp-bridge] \(message)\n"
-    let data = Data(line.utf8)
-    _ = data.withUnsafeBytes { buf in
-        Foundation.write(STDERR_FILENO, buf.baseAddress, buf.count)
+func error(_ id: Any?, _ message: String) {
+    let payload: [String: Any] = ["jsonrpc": "2.0", "id": id ?? NSNull(), "error": [
+        "code": -32000, "message": message,
+        "data": ["errorClass": "transport_interrupted", "automaticReplay": false],
+    ]]
+    if var frame = try? JSONSerialization.data(withJSONObject: payload) {
+        frame.append(10)
+        _ = stdout(frame)
     }
 }
 
-func makeSocketAddr() -> sockaddr_un {
-    var addr = sockaddr_un()
-    addr.sun_family = sa_family_t(AF_UNIX)
-    var pathBytes = [CChar](repeating: 0, count: 104)
-    _ = socketPath.withCString { src in strncpy(&pathBytes, src, 103) }
-    withUnsafeMutableBytes(of: &addr.sun_path) { buf in
-        pathBytes.withUnsafeBytes { src in buf.copyBytes(from: src.prefix(buf.count)) }
+struct Frames {
+    var buffer = Data()
+    mutating func append(_ data: Data) throws -> [Data] {
+        buffer.append(data)
+        var frames: [Data] = []
+        while let end = buffer.firstIndex(of: 10) {
+            let count = buffer.distance(from: buffer.startIndex, to: end) + 1
+            guard count <= maxFrameBytes else { throw FrameError.oversized }
+            frames.append(Data(buffer.prefix(count)))
+            buffer.removeFirst(count)
+        }
+        guard buffer.count <= maxFrameBytes else { throw FrameError.oversized }
+        return frames
     }
-    return addr
 }
+enum FrameError: Error { case oversized }
+func enqueue(_ frame: Data) -> Bool {
+    inputLock.lock()
+    defer { inputLock.unlock() }
+    guard queued.count < maxQueuedFrames, queuedBytes + frame.count <= maxQueuedBytes else {
+        inputOverflow = true
+        return false
+    }
+    queued.append(frame)
+    queuedBytes += frame.count
+    return true
+}
+Thread {
+    var frames = Frames()
+    var bytes = [UInt8](repeating: 0, count: 65536)
+    while true {
+        let n = Foundation.read(STDIN_FILENO, &bytes, bytes.count)
+        if n < 0, errno == EINTR { continue }
+        if n <= 0 {
+            if !frames.buffer.isEmpty { _ = enqueue(frames.buffer + Data([10])) }
+            break
+        }
+        do {
+            for frame in try frames.append(Data(bytes.prefix(n))) {
+                if !enqueue(frame) { break }
+            }
+        } catch {
+            inputLock.lock(); inputOverflow = true; inputLock.unlock()
+            break
+        }
+        inputLock.lock(); let overflow = inputOverflow; inputLock.unlock()
+        if overflow { break }
+    }
+    inputLock.lock(); inputClosed = true; inputLock.unlock()
+}.start()
 
-/// Connect to the MCP socket with bounded retry. Returns fd ≥ 0 on success,
-/// -1 on timeout. Each retry uses a fresh socket because a failed `connect`
-/// leaves the fd unusable on macOS.
-func connectWithRetry(timeoutSec: Double) -> Int32 {
-    let deadline = Date().addingTimeInterval(timeoutSec)
-    while Date() < deadline {
+func connectSocket(until deadline: TimeInterval) -> Int32 {
+    guard socketPath.utf8.count < MemoryLayout.size(ofValue: sockaddr_un().sun_path) else { return -1 }
+    while uptime() < deadline {
         let fd = socket(AF_UNIX, SOCK_STREAM, 0)
         guard fd >= 0 else { return -1 }
-        var addr = makeSocketAddr()
-        let ok = withUnsafePointer(to: &addr) { ptr in
-            ptr.withMemoryRebound(to: sockaddr.self, capacity: 1) { sockPtr in
-                connect(fd, sockPtr, socklen_t(MemoryLayout<sockaddr_un>.size))
+        var address = sockaddr_un()
+        address.sun_family = sa_family_t(AF_UNIX)
+        withUnsafeMutableBytes(of: &address.sun_path) { buffer in
+            buffer.copyBytes(from: Array(socketPath.utf8) + [0])
+        }
+        let result = withUnsafePointer(to: &address) { pointer in
+            pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                connect(fd, $0, socklen_t(MemoryLayout<sockaddr_un>.size))
             }
         }
-        if ok == 0 { return fd }
+        if result == 0 {
+            _ = fcntl(fd, F_SETFL, fcntl(fd, F_GETFL) | O_NONBLOCK)
+            return fd
+        }
         close(fd)
-        usleep(connectRetryDelayUs)
+        inputLock.lock(); let done = inputClosed && queued.isEmpty; inputLock.unlock()
+        if done { return -1 }
+        usleep(100_000)
     }
     return -1
 }
-
-func sendBytes(_ fd: Int32, _ data: Data) {
-    _ = data.withUnsafeBytes { buf in
-        send(fd, buf.baseAddress, buf.count, 0)
+func sendAll(_ fd: Int32, _ data: Data, until deadline: TimeInterval) -> Bool {
+    data.withUnsafeBytes { bytes in
+        guard let address = bytes.baseAddress else { return bytes.isEmpty }
+        var offset = 0
+        while offset < bytes.count, uptime() < deadline {
+            let n = send(fd, address.advanced(by: offset), bytes.count - offset, 0)
+            if n > 0 { offset += n; continue }
+            if n < 0, errno == EINTR { continue }
+            guard n < 0, errno == EAGAIN || errno == EWOULDBLOCK else { return false }
+            var descriptor = pollfd(fd: fd, events: Int16(POLLOUT), revents: 0)
+            _ = poll(&descriptor, 1, Int32(max(1, min(100, (deadline - uptime()) * 1000))))
+        }
+        return offset == bytes.count
     }
 }
 
-// Initial connect.
-let firstFD = connectWithRetry(timeoutSec: initialConnectTimeoutSec)
-guard firstFD >= 0 else {
-    writeJSONRPCError("Chau7 is not running. Start the app to enable MCP.")
-    exit(1)
-}
-stateLock.lock()
-sockFD = firstFD
-stateLock.unlock()
-logStderr("connected to \(socketPath)")
+var socketFD = connectSocket(until: uptime() + 30)
+guard socketFD >= 0 else { error(nil, "Chau7 connection unavailable"); exit(1) }
+var received = Frames()
+var outstanding: [String: Any] = [:]
+var savedInitialize: Data?
+var initializeID: String?
+var initialized = false
+var writeClosed = false
+var bytes = [UInt8](repeating: 0, count: 65536)
 
-// stdin -> socket. Buffers writes while the socket is being reconnected so
-// no stdin bytes are silently dropped.
-let stdinThread = Thread {
-    while let line = readLine(strippingNewline: false) {
-        let data = Data(line.utf8)
-        stateLock.lock()
-        if savedInitialize == nil {
-            savedInitialize = data  // Per MCP, the first message is `initialize`.
-        }
-        let fd = sockFD
-        if fd < 0 {
-            pendingStdin.append(data)
-            stateLock.unlock()
-            continue
-        }
-        stateLock.unlock()
-        sendBytes(fd, data)
+func receiveFrame(_ frame: Data) -> Bool {
+    if let json = object(frame), let id = json["id"], let key = idKey(id) {
+        outstanding.removeValue(forKey: key)
+        if key == initializeID, json["result"] != nil { initialized = true }
     }
-    stateLock.lock()
-    stdinClosed = true
-    let fd = sockFD
-    stateLock.unlock()
-    if fd >= 0 { shutdown(fd, SHUT_WR) }
+    return stdout(frame)
 }
-stdinThread.start()
+func failOutstanding(_ message: String) {
+    for id in outstanding.values { error(id, message) }
+    outstanding.removeAll()
+}
+func restoreHandshake(_ fd: Int32) -> Bool {
+    guard initialized, let request = savedInitialize, let initializeID else { return true }
+    let deadline = uptime() + 10
+    guard sendAll(fd, request, until: deadline) else { return false }
+    while uptime() < deadline {
+        var descriptor = pollfd(fd: fd, events: Int16(POLLIN), revents: 0)
+        let ready = poll(&descriptor, 1, 100)
+        if ready < 0, errno == EINTR { continue }
+        if ready <= 0 { continue }
+        let n = recv(fd, &bytes, bytes.count, 0)
+        if n < 0, errno == EINTR || errno == EAGAIN || errno == EWOULDBLOCK { continue }
+        guard n > 0, let frames = try? received.append(Data(bytes.prefix(n))) else { return false }
+        var restored = false
+        for frame in frames {
+            if let json = object(frame), let id = json["id"], idKey(id) == initializeID {
+                guard json["result"] != nil else { return false }
+                restored = true
+            } else if !receiveFrame(frame) { return false }
+        }
+        if restored {
+            return sendAll(fd, Data("{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\"}\n".utf8), until: deadline)
+        }
+    }
+    return false
+}
 
-// socket -> stdout, with transparent reconnect on EOF / error.
-var buffer = [UInt8](repeating: 0, count: 65536)
 mainLoop: while true {
-    stateLock.lock()
-    let fd = sockFD
-    stateLock.unlock()
-    if fd < 0 { break }
-
-    let n = recv(fd, &buffer, buffer.count, 0)
-    if n > 0 {
-        if !writeStdout(Data(bytes: buffer, count: n)) { break mainLoop }
-        continue
+    inputLock.lock()
+    let overflow = inputOverflow
+    let closed = inputClosed
+    let next = queued.isEmpty ? nil : queued.removeFirst()
+    if let next { queuedBytes -= next.count }
+    let empty = queued.isEmpty
+    inputLock.unlock()
+    if overflow {
+        error(nil, "Bridge input exceeded its bounded queue or frame limit")
+        failOutstanding("Bridge input queue exceeded its limit; reconnect the MCP client")
+        if let next { error(object(next)?["id"], "Bridge input queue exceeded its limit") }
+        inputLock.lock(); let pending = queued; queued.removeAll(); inputLock.unlock()
+        for frame in pending { error(object(frame)?["id"], "Bridge input queue exceeded its limit") }
+        break
     }
-
-    // Socket dropped. If stdin already closed, the AI tool is done with us —
-    // exit cleanly instead of holding open a reconnect loop on a dead session.
-    close(fd)
-    stateLock.lock()
-    sockFD = -1
-    let stdinIsClosed = stdinClosed
-    stateLock.unlock()
-    if stdinIsClosed {
-        logStderr("socket dropped after stdin EOF; exiting")
-        break mainLoop
+    var dropped = false
+    if let next {
+        let json = object(next)
+        if let id = json?["id"], let key = idKey(id) {
+            guard outstanding.count < 64 else { error(id, "Too many outstanding requests"); continue }
+            outstanding[key] = id
+            if json?["method"] as? String == "initialize" { savedInitialize = next; initializeID = key }
+        }
+        dropped = !sendAll(socketFD, next, until: uptime() + 5)
     }
-    logStderr("socket dropped (recv=\(n)); attempting reconnect")
-
-    let newFD = connectWithRetry(timeoutSec: reconnectTimeoutSec)
-    guard newFD >= 0 else {
-        logStderr("reconnect timed out; exiting")
-        break mainLoop
+    if closed, empty, !writeClosed, !dropped {
+        shutdown(socketFD, SHUT_WR)
+        writeClosed = true
     }
-
-    stateLock.lock()
-    sockFD = newFD
-    let initRequest = savedInitialize
-    let queued = pendingStdin
-    pendingStdin = []
-    stateLock.unlock()
-
-    logStderr("reconnected; replaying handshake (\(queued.count) buffered request(s))")
-
-    if let initRequest {
-        sendBytes(newFD, initRequest)
-        // Drain the initialize response from the new server. The AI tool
-        // already received the original initialize result; forwarding the new
-        // one would duplicate it and confuse the client's request bookkeeping.
-        let _ = recv(newFD, &buffer, buffer.count, 0)
-        // Replay the `notifications/initialized` step the AI tool sent only
-        // to the OLD server. Without it, the new MCPSession stays in
-        // `.awaitingInitializedNotification` forever and every subsequent
-        // tools/call returns -32002. The notification has no params per
-        // MCP spec, so synthesizing it locally is safe.
-        let initializedNotification = "{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\"}\n"
-        sendBytes(newFD, Data(initializedNotification.utf8))
+    if !dropped {
+        var descriptor = pollfd(fd: socketFD, events: Int16(POLLIN), revents: 0)
+        let ready = poll(&descriptor, 1, next == nil ? 100 : 0)
+        if ready < 0, errno == EINTR { continue }
+        if ready < 0 { dropped = true }
+        else if ready > 0 {
+            let n = recv(socketFD, &bytes, bytes.count, 0)
+            if n < 0, errno == EINTR || errno == EAGAIN || errno == EWOULDBLOCK { continue }
+            if n > 0 {
+                guard let frames = try? received.append(Data(bytes.prefix(n))) else {
+                    failOutstanding("Server response exceeded the frame limit")
+                    break
+                }
+                for frame in frames { if !receiveFrame(frame) { break mainLoop } }
+            } else { dropped = true }
+        }
     }
-
-    for data in queued {
-        sendBytes(newFD, data)
+    if !dropped { continue }
+    close(socketFD)
+    socketFD = -1
+    received = Frames()
+    failOutstanding("Chau7 connection interrupted; execution may have occurred. Review before retrying.")
+    if closed { break }
+    if !initialized { savedInitialize = nil; initializeID = nil }
+    log("connection interrupted; restoring handshake before queued requests")
+    socketFD = connectSocket(until: uptime() + 30)
+    guard socketFD >= 0, restoreHandshake(socketFD) else {
+        error(nil, "Chau7 reconnect or handshake timed out")
+        inputLock.lock(); let pending = queued; inputLock.unlock()
+        for frame in pending { error(object(frame)?["id"], "Chau7 reconnect failed") }
+        break
     }
+    writeClosed = false
 }
-stateLock.lock()
-let finalFD = sockFD
-sockFD = -1
-stateLock.unlock()
-if finalFD >= 0 { close(finalFD) }
+if socketFD >= 0 { close(socketFD) }

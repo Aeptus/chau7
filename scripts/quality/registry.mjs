@@ -932,11 +932,12 @@ export const gates = [
     wave: "tests",
     tags: ["quality", "tests"],
     cacheable: false,
-    inputs: ["package.json", "scripts/quality", "scripts/git"],
+    inputs: ["package.json", "scripts/quality", "scripts/git", "tools/chau7-mcp-bridge"],
     applies: (context) =>
       context.mode !== "staged" ||
       hasPathPrefix(context.stagedFiles, "scripts/quality/") ||
       hasPathPrefix(context.stagedFiles, "scripts/git/") ||
+      hasPathPrefix(context.stagedFiles, "tools/chau7-mcp-bridge/") ||
       context.stagedFiles.includes("package.json"),
     rerun: "pnpm quality:local --include=quality-runner-tests",
     run: async (context) =>
