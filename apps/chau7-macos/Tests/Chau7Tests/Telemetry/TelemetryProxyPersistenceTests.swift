@@ -12,7 +12,16 @@ final class TelemetryProxyPersistenceTests: XCTestCase {
     }
 
     private func run(_ id: String, start: TimeInterval = 1000, end: TimeInterval? = 1100) -> TelemetryRun {
-        TelemetryRun(id: id, sessionID: "session", tabID: "tab", provider: "codex", cwd: "/repo", repoPath: "/repo", startedAt: Date(timeIntervalSince1970: start), endedAt: end.map(Date.init(timeIntervalSince1970:)))
+        TelemetryRun(
+            id: id,
+            sessionID: "session",
+            tabID: "tab",
+            provider: "codex",
+            cwd: "/repo",
+            repoPath: "/repo",
+            startedAt: Date(timeIntervalSince1970: start),
+            endedAt: end.map(Date.init(timeIntervalSince1970:))
+        )
     }
 
     private func evidence(_ id: String, creation: Int? = nil, read: Int? = 40) throws -> UsageEvidence {
