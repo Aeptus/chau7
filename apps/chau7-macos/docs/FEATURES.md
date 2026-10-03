@@ -470,6 +470,7 @@ The app still contains internal runtime orchestration used by dashboard and revi
 
 ## Performance
 
+- Read-only MCP requests return a retryable UI-timeout error instead of waiting indefinitely. Expired queued reads are cancelled, terminal output uses bounded tails, and response formatting and provider-log fallback flushes stay on the MCP worker. Short readiness deadlines remain ordinary readiness timeouts.
 - Dashboard proxy health tasks start on their publishing actor, avoiding a nested cross-queue task transfer that crashed the native compiler during validation.
 
 - Pending local command approval blocks MCP execution and input, exposes a truthful readiness reason, and requires an existing live PTY before deferred consent can resume.

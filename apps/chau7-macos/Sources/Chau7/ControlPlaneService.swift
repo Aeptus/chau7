@@ -12,7 +12,7 @@ final class ControlPlaneService {
     func call(name: String, arguments: [String: Any]) -> String {
         switch name {
         case "tab_list":
-            return MainActorBridge.sync { terminalControl.listTabs() }
+            return MainActorBridge.read { self.terminalControl.listTabs() } ?? MainActorBridge.unresponsiveJSON
         case "tab_create":
             return MainActorBridge.sync { terminalControl.createTab(
                 directory: arguments["directory"] as? String,
@@ -38,7 +38,7 @@ final class ControlPlaneService {
             guard let tabID = arguments["tab_id"] as? String else {
                 return jsonError("tab_id is required")
             }
-            return MainActorBridge.sync { terminalControl.tabStatus(tabID: tabID) }
+            return MainActorBridge.read { self.terminalControl.tabStatus(tabID: tabID) } ?? MainActorBridge.unresponsiveJSON
         case "tab_wait_ready":
             guard let tabID = arguments["tab_id"] as? String else {
                 return jsonError("tab_id is required")

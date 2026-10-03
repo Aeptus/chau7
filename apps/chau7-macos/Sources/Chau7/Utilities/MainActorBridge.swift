@@ -1,4 +1,5 @@
 import Foundation
+import Chau7Core
 
 /// Brief synchronous access to UI-owned state from a background service.
 /// Waiting and I/O stay on the caller's queue, outside this closure.
@@ -10,6 +11,24 @@ enum MainActorBridge {
         return DispatchQueue.main.sync {
             MainActor.assumeIsolated(block)
         }
+    }
+
+    private static let readAdmission = DispatchSemaphore(value: 32)
+    static let readTimeout: TimeInterval = 1
+    static let unresponsiveJSON = #"{"error":"main_thread_unresponsive","retryable":true,"timeout_ms":1000}"#
+
+    /// Read-only requests may time out; an expired queued closure is never executed.
+    /// Admission remains held until main drains the closure, bounding backlog during a stall.
+    static func read<T>(timeout: TimeInterval = readTimeout, _ block: @escaping @MainActor () -> T) -> T? {
+        if Thread.isMainThread { return MainActor.assumeIsolated(block) }
+        guard readAdmission.wait(timeout: .now()) == .success else { return nil }
+        let latch = DeadlineResultLatch<T>(timeout: timeout)
+        DispatchQueue.main.async {
+            defer { readAdmission.signal() }
+            guard latch.begin() else { return }
+            latch.complete(MainActor.assumeIsolated(block))
+        }
+        return latch.wait()
     }
 
     /// Fire-and-forget: runs `block` inline when already on main, otherwise

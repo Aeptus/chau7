@@ -28,6 +28,20 @@ final class TerminalControlServiceTests: XCTestCase {
         XCTAssertEqual(status["can_accept_exec"] as? Bool, false)
     }
 
+    func testShortReadinessWaitReportsDeadlineInsteadOfUIFailure() async throws {
+        let tab = try XCTUnwrap(overlayModel.tabs.first)
+        let session = try XCTUnwrap(tab.session)
+        session.isAtPrompt = false
+        session.isShellLoading = false
+        let tabID = TerminalControlService.shared.controlPlaneTabID(for: tab.id)
+        let service = TerminalControlService.shared
+        let task = Task.detached { service.waitForTabReady(tabID: tabID, timeoutMs: 30) }
+        let response = await task.value
+        let result = try XCTUnwrap(parseJSONObject(response))
+        XCTAssertEqual(result["timed_out"] as? Bool, true)
+        XCTAssertNil(result["error"])
+    }
+
     override func setUp() {
         super.setUp()
         UserDefaults.standard.removeObject(forKey: SavedTabState.userDefaultsKey)
