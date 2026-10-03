@@ -1072,3 +1072,7 @@ Key patterns:
 Developer setup: source clones build native backends with `Scripts/build-rust.sh`;
 pinned prerequisites and automatic hooks are documented in CONTRIBUTING. Packaging
 fails before creating an app bundle if the required terminal emulator is absent.
+
+Release validation builds one preserved distribution in CI. Manual runs do not
+publish or access signing secrets; signing lifecycle tests use synthetic commands.
+See the repository release-validation documentation for bounded jobs and tap policy.

@@ -5276,5 +5276,12 @@
     "description": "Pinned developer tools, automatic clone/worktree hooks and explicit backend prerequisites; packaging requires the terminal emulator and reuses freshly built Go artifacts",
     "status": "Shipped",
     "differentiator": "No"
+  },
+  {
+    "category": "Developer Experience",
+    "feature": "Nonpublishing Release Validation",
+    "description": "Commit-pinned actions, a preserved single-build distribution, restricted runner signing keychain with always cleanup, bounded serialized release and optional tap jobs",
+    "status": "Shipped",
+    "differentiator": "No"
   }
 ]
