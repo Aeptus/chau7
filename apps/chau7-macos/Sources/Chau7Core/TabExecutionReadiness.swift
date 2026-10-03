@@ -29,6 +29,7 @@ public struct TabExecutionReadiness: Sendable, Equatable {
     public enum Reason: String, Sendable {
         case ready
         case exited
+        case commandApprovalPending = "command_approval_pending"
         case shellLoading = "shell_loading"
         case viewUnattached = "view_unattached"
         case notAtPrompt = "not_at_prompt"
@@ -53,6 +54,9 @@ public struct TabExecutionReadiness: Sendable, Equatable {
 
     public static func evaluate(snapshot: TabExecutionReadinessSnapshot) -> TabExecutionReadiness {
         let normalizedStatus = snapshot.status.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if normalizedStatus == "command_approval_pending" {
+            return TabExecutionReadiness(isReady: false, canAcceptExec: false, acceptanceMode: .blocked, reason: .commandApprovalPending)
+        }
         if normalizedStatus == "exited" {
             return TabExecutionReadiness(
                 isReady: false,

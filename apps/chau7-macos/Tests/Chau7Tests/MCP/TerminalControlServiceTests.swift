@@ -10,6 +10,24 @@ final class TerminalControlServiceTests: XCTestCase {
     private var savedRequiresApproval = false
     private var savedMCPEnabled = false
 
+    func testPendingLocalApprovalBlocksMCPInputAndReadiness() throws {
+        let tab = try XCTUnwrap(overlayModel.tabs.first)
+        let session = try XCTUnwrap(tab.session)
+        session.hasPendingCommandApproval = true
+        let tabID = TerminalControlService.shared.controlPlaneTabID(for: tab.id)
+        for response in [
+            TerminalControlService.shared.execInTab(tabID: tabID, command: "echo test"),
+            TerminalControlService.shared.sendInput(tabID: tabID, input: "echo test"),
+            TerminalControlService.shared.submitPrompt(tabID: tabID),
+            TerminalControlService.shared.pressKey(tabID: tabID, key: "enter", modifiers: [])
+        ] {
+            XCTAssertEqual(parseJSONObject(response)?["error"] as? String, "command_approval_pending")
+        }
+        let status = try XCTUnwrap(parseJSONObject(TerminalControlService.shared.tabStatus(tabID: tabID)))
+        XCTAssertEqual(status["command_approval_pending"] as? Bool, true)
+        XCTAssertEqual(status["can_accept_exec"] as? Bool, false)
+    }
+
     override func setUp() {
         super.setUp()
         UserDefaults.standard.removeObject(forKey: SavedTabState.userDefaultsKey)

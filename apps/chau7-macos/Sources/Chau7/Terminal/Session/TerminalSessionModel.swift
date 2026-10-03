@@ -386,6 +386,7 @@ final class TerminalSessionModel {
     }
 
     var effectiveStatus: CommandStatus {
+        if hasPendingCommandApproval { return .approvalRequired }
         guard let historyState = matchedAIHistoryState else { return status }
         return Self.resolveEffectiveStatus(historyState: historyState, fallback: status)
     }
@@ -1103,6 +1104,14 @@ final class TerminalSessionModel {
     @ObservationIgnored private var lastAutomationInputAt: Date?
     @ObservationIgnored private var settingsObservers: [NSObjectProtocol] = []
     @ObservationIgnored private var idleTimer: DispatchSourceTimer?
+    @ObservationIgnored var deferredInputApproval = DeferredInputApproval()
+    var hasPendingCommandApproval = false {
+        didSet {
+            onSessionStateChanged?()
+            postRuntimeReadinessChange(source: "command_approval")
+        }
+    }
+
     @ObservationIgnored var lastInputAt = Date()
     @ObservationIgnored var lastOutputAt = Date()
     /// Set once, when persisted activity timestamps are restored onto this
@@ -2533,6 +2542,7 @@ final class TerminalSessionModel {
 
     /// Sends text input to the terminal (used for broadcast mode)
     func sendInput(_ text: String) {
+        guard !hasPendingCommandApproval else { return }
         sendRawInput(text)
     }
 
@@ -2588,26 +2598,40 @@ final class TerminalSessionModel {
     /// becomes available. Used during tab restore when the view hasn't been
     /// created yet. If the view already exists, sends immediately.
     func sendOrQueueInput(_ text: String) {
+        guard !hasPendingCommandApproval else { return }
         trackAIResumeMetadata(from: text)
         sendRawInput(text)
     }
 
     func sendOrQueueAutomationInput(_ text: String) {
-        trackAIResumeMetadata(from: text)
         let provider = aiDisplayAppName ?? activeAppName ?? effectiveAIProvider
         let plan = AIAutomationStrategy.inputPlan(for: text, provider: provider)
+        let reviewedInput = plan.insertText + (plan.submitMode == .none ? "" : "\r")
+        guard shouldAcceptDirectUserInput(reviewedInput, resume: { [weak self] in
+            self?.deliverApprovedAutomationInput(plan, deferred: true)
+        }) else { return }
+        deliverApprovedAutomationInput(plan, deferred: false)
+    }
+
+    private func deliverApprovedAutomationInput(_ plan: AIAutomationInputPlan, deferred: Bool) {
+        trackAIResumeMetadata(from: plan.insertText)
         if !plan.insertText.isEmpty {
             lastAutomationInputAt = Date()
             switch plan.insertMode {
             case .rawText:
                 sendRawInput(plan.insertText)
             case .pasteText:
-                sendPastedInput(plan.insertText)
+                if let view = activeRustTerminalView {
+                    view.pasteApprovedText(plan.insertText)
+                } else {
+                    sendPastedInput(plan.insertText)
+                }
             }
         }
         scheduleAutomationSubmit(
             mode: plan.submitMode,
-            delayMs: plan.submitDelayMs
+            delayMs: plan.submitDelayMs,
+            expectedContext: deferred ? commandApprovalContext() : nil
         )
     }
 
@@ -2620,6 +2644,16 @@ final class TerminalSessionModel {
     func sendRemoteSubmittedInput(_ text: String) {
         let provider = aiDisplayAppName ?? activeAppName ?? effectiveAIProvider
         let plan = AIAutomationStrategy.remoteInputPlan(for: text, provider: provider)
+        let reviewedInput = plan.insertText + (plan.submitMode == .none ? "" : "\r")
+        guard shouldAcceptDirectUserInput(
+            reviewedInput,
+            inputPrefix: plan.clearLineFirst ? "" : nil,
+            resume: { [weak self] in self?.deliverApprovedRemoteInput(plan, deferred: true) }
+        ) else { return }
+        deliverApprovedRemoteInput(plan, deferred: false)
+    }
+
+    private func deliverApprovedRemoteInput(_ plan: AIAutomationInputPlan, deferred: Bool) {
         if plan.submitMode != .none {
             // The old single-chunk path set this via the trailing terminator in
             // sendRawInput; keep command-based AI detection primed for the
@@ -2644,10 +2678,14 @@ final class TerminalSessionModel {
             case .rawText:
                 sendRawInput(plan.insertText)
             case .pasteText:
-                sendPastedInput(plan.insertText)
+                if let view = activeRustTerminalView {
+                    view.pasteApprovedText(plan.insertText)
+                } else {
+                    sendPastedInput(plan.insertText)
+                }
             }
         }
-        scheduleRemoteSubmit(mode: plan.submitMode, delayMs: plan.submitDelayMs)
+        scheduleRemoteSubmit(mode: plan.submitMode, delayMs: plan.submitDelayMs, expectedContext: deferred ? commandApprovalContext() : nil)
     }
 
     /// Called from the ShellIntegration input-line handler too: any executed
@@ -2660,12 +2698,14 @@ final class TerminalSessionModel {
     /// Remote submits use their own work-item pool: no mutual cancellation
     /// (two rapid phone sends each get their Enter) and no interference from
     /// the automation slot shared by restore prefill and MCP submits.
-    private func scheduleRemoteSubmit(mode: AIAutomationSubmitMode, delayMs: Int) {
+    private func scheduleRemoteSubmit(mode: AIAutomationSubmitMode, delayMs: Int, expectedContext: DeferredInputApproval.Context? = nil) {
         guard mode != .none else { return }
         let id = UUID()
         let work = DispatchWorkItem { [weak self] in
             guard let self else { return }
             pendingRemoteSubmitWorkItems.removeValue(forKey: id)
+            if let expectedContext, commandApprovalContext() != expectedContext { return }
+            guard !hasPendingCommandApproval else { return }
             performAutomationSubmit(mode: mode)
         }
         pendingRemoteSubmitWorkItems[id] = work
@@ -2680,6 +2720,10 @@ final class TerminalSessionModel {
             provider: provider,
             recentAutomationInputAgeMs: ageMs
         )
+        guard shouldAcceptDirectUserInput("\r", resume: { [weak self] in
+            guard let self else { return }
+            scheduleAutomationSubmit(mode: plan.submitMode, delayMs: plan.submitDelayMs, expectedContext: commandApprovalContext())
+        }) else { return }
         scheduleAutomationSubmit(mode: plan.submitMode, delayMs: plan.submitDelayMs)
     }
 
@@ -2698,6 +2742,7 @@ final class TerminalSessionModel {
     }
 
     func sendKeyPress(_ keyPress: TerminalKeyPress) {
+        guard !hasPendingCommandApproval else { return }
         guard let activeTerminalView else {
             enqueuePendingTerminalAction(.keyPress(keyPress))
             return
@@ -2720,12 +2765,14 @@ final class TerminalSessionModel {
         }
     }
 
-    private func scheduleAutomationSubmit(mode: AIAutomationSubmitMode, delayMs: Int) {
+    private func scheduleAutomationSubmit(mode: AIAutomationSubmitMode, delayMs: Int, expectedContext: DeferredInputApproval.Context? = nil) {
         guard mode != .none else { return }
         pendingAutomationSubmitWorkItem?.cancel()
         let work = DispatchWorkItem { [weak self] in
             guard let self else { return }
             pendingAutomationSubmitWorkItem = nil
+            if let expectedContext, commandApprovalContext() != expectedContext { return }
+            guard !hasPendingCommandApproval else { return }
             performAutomationSubmit(mode: mode)
         }
         pendingAutomationSubmitWorkItem = work

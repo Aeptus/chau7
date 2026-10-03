@@ -285,6 +285,7 @@ final class MCPSessionTests: XCTestCase {
         XCTAssertEqual(timers.first?["id"] as? String, "mcp_health_check")
     }
 
+    @MainActor
     func testTimedOutReadReturnsToolErrorAndSessionStillAnswersPing() async {
         let session = initializedSession()
         let finished = DispatchSemaphore(value: 0)

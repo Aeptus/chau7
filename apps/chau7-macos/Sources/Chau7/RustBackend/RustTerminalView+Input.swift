@@ -5,6 +5,16 @@ import Chau7Core
 
 extension RustTerminalView {
 
+    /// Bind a deferred approval to the exact native terminal instance. A
+    /// closed or replaced PTY must never receive the previously approved text.
+    func acceptUserText(_ text: String, resume: @escaping () -> Void) -> Bool {
+        guard let shouldAcceptUserText else { return true }
+        return shouldAcceptUserText(text) { [weak self, weak backend = rustTerminal] in
+            guard let self, let backend, rustTerminal === backend else { return }
+            resume()
+        }
+    }
+
     private func isReturnKey(_ keyCode: UInt16) -> Bool {
         KeyboardShortcuts.isReturnKeyCode(keyCode)
     }
@@ -131,15 +141,19 @@ extension RustTerminalView {
         _ sequence: [UInt8], rust: any TerminalBackend, logContext: String
     ) -> Bool {
         if let text = String(bytes: sequence, encoding: .utf8),
-           !(shouldAcceptUserText?(text) ?? true) {
+           !acceptUserText(text, resume: { [weak self] in
+               self?.forwardApprovedTerminalSequence(sequence, rust: rust)
+           }) {
             Log.info("RustTerminalView[\(viewId)]: \(logContext) - Suppressed user input by command guard")
             return false
         }
-        if let text = String(bytes: sequence, encoding: .utf8) {
-            onInput?(text)
-        }
-        rust.sendBytes(sequence)
+        forwardApprovedTerminalSequence(sequence, rust: rust)
         return true
+    }
+
+    private func forwardApprovedTerminalSequence(_ sequence: [UInt8], rust: any TerminalBackend) {
+        if let text = String(bytes: sequence, encoding: .utf8) { onInput?(text) }
+        rust.sendBytes(sequence)
     }
 
     /// Handle key event from event monitor - routes to Rust terminal
@@ -204,7 +218,7 @@ extension RustTerminalView {
         if let chars = event.characters, !chars.isEmpty {
             let escaped = chars.replacingOccurrences(of: "\n", with: "\\n").replacingOccurrences(of: "\r", with: "\\r")
             Log.trace("RustTerminalView[\(viewId)]: \(logContext) - Sending characters (fallback): '\(escaped)' (keyCode=\(keyCode))")
-            guard shouldAcceptUserText?(chars) ?? true else {
+            guard acceptUserText(chars, resume: { [weak self] in self?.send(txt: chars) }) else {
                 Log.info("RustTerminalView[\(viewId)]: \(logContext) - Suppressed fallback characters by command guard")
                 return true
             }
@@ -215,7 +229,7 @@ extension RustTerminalView {
         if let charsNoMod = event.charactersIgnoringModifiers, !charsNoMod.isEmpty {
             let escaped = charsNoMod.replacingOccurrences(of: "\n", with: "\\n").replacingOccurrences(of: "\r", with: "\\r")
             Log.trace("RustTerminalView[\(viewId)]: \(logContext) - Sending chars (no mod, fallback): '\(escaped)' (keyCode=\(keyCode))")
-            guard shouldAcceptUserText?(charsNoMod) ?? true else {
+            guard acceptUserText(charsNoMod, resume: { [weak self] in self?.send(txt: charsNoMod) }) else {
                 Log.info("RustTerminalView[\(viewId)]: \(logContext) - Suppressed fallback chars (no mod) by command guard")
                 return true
             }
@@ -448,7 +462,7 @@ extension RustTerminalView: NSTextInputClient {
 
         if handlingKeyDown {
             // Regular keyboard input routed through inputContext — send directly
-            guard shouldAcceptUserText?(text) ?? true else {
+            guard acceptUserText(text, resume: { [weak self] in self?.send(txt: text) }) else {
                 Log.info("RustTerminalView[\(viewId)]: insertText - Suppressed keyboard input by command guard")
                 return
             }

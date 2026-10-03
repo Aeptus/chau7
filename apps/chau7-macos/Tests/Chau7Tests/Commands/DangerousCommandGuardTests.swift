@@ -26,6 +26,15 @@ final class DangerousCommandGuardTests: XCTestCase {
         )
     }
 
+    func testMissingPresentationWindowRejectsWithoutBlocking() {
+        let guard_ = makeGuard()
+        var approved: Bool?
+        guard_.showConfirmation(command: "rm -rf /tmp/example", matchedPattern: "rm -rf", window: nil) {
+            approved = $0
+        }
+        XCTAssertEqual(approved, false)
+    }
+
     // MARK: - Safe Commands
 
     func testSafeCommand() {
