@@ -22,6 +22,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Persisted proxy request identities and measured/cache run attribution, rejecting overlaps and half-open window mismatches. Retained backfill and lifecycle updates are idempotent; run coverage remains explicitly partial and derived summaries are not counted twice.
+
+
+### Fixed
+
 - Release jobs pin action revisions, reuse one built distribution, limit publication permissions and signing-key access, and always clean runner signing material. Manual validation cannot publish or access signing secrets.
 
 ### Fixed
