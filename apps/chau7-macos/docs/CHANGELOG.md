@@ -27,6 +27,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Proxy usage separates inclusive OpenAI/Gemini cache counters and OpenAI reasoning before canonical aggregation and pricing, so those tokens are charged and counted once. Raw evidence and its pricing version are retained; historical prices are not silently rewritten.
+
+### Fixed
+
+- Repository totals preserve known tokens when optional counters are missing and subtract retained measured proxy overlap once when combining cost sources.
+
+### Changed
+
+- Repository reads now have a dedicated MCP query owner and shared event-filter policy. Terminal control captures UI snapshots and tab aliases; worker-side metadata/statistics and the existing JSON contracts are preserved.
+
+### Removed
+
+- Removed the MAGI CLI product, protocol implementation, installer and bundled skill. Generic MCP agent launch, event handling, skills and terminal path lookup remain available. The protocol is archived with a removal note.
+
+### Changed
+
+- Dependency ownership uses one Rust workspace lock and checked shared Swift pins; update coverage includes all maintained services and platforms. Local review configuration has a tracked example and repository text has an LF policy.
+
+### Fixed
+
+- Persisted proxy request identities and measured/cache run attribution, rejecting overlaps and half-open window mismatches. Retained backfill and lifecycle updates are idempotent; run coverage remains explicitly partial and derived summaries are not counted twice.
+
+
+### Fixed
+
 - Release jobs pin action revisions, reuse one built distribution, limit publication permissions and signing-key access, and always clean runner signing material. Manual validation cannot publish or access signing secrets.
 
 ### Fixed
