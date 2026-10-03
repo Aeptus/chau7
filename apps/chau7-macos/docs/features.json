@@ -1,5 +1,12 @@
 [
   {
+    "category": "Developer Experience",
+    "feature": "Core-only Test Workflow",
+    "description": "Pure Chau7Core tests run through a separate dependency graph and reusable cache without compiling the macOS app; full app integration validation remains in normal CI",
+    "status": "Shipped",
+    "differentiator": "No"
+  },
+  {
     "category": "Performance",
     "feature": "Terminal Responsiveness",
     "description": "Immediate lock acquisition and bounded output batches keep polling responsive; coalesced background session discovery returns on the main actor and rejects stale identities, and a bounded styled glyph cache avoids repeated CPU text shaping",
@@ -9,7 +16,7 @@
   {
     "category": "Telemetry",
     "feature": "Complete Retention Coverage",
-    "description": "Telemetry retention prunes the tables the run cascade structurally cannot reach — usage_evidence, provider_latency_samples and remote_client_events declare no foreign key to runs — independently of the run prune, with one shared VACUUM per pass and an index so the prune is not a full scan",
+    "description": "Telemetry retention prunes the tables the run cascade structurally cannot reach \u2014 usage_evidence, provider_latency_samples and remote_client_events declare no foreign key to runs \u2014 independently of the run prune, with one shared VACUUM per pass and an index so the prune is not a full scan",
     "status": "Shipped",
     "differentiator": "No"
   },
@@ -940,7 +947,7 @@
   {
     "category": "Terminal Core",
     "feature": "Rust Terminal Backend",
-    "description": "Custom terminal emulator written in Rust with FFI bridge — fast, memory-safe, and correct",
+    "description": "Custom terminal emulator written in Rust with FFI bridge \u2014 fast, memory-safe, and correct",
     "status": "Shipped",
     "differentiator": "Yes"
   },
@@ -1017,7 +1024,7 @@
   {
     "category": "AI Detection & Integration",
     "feature": "Autosaved Side-Panel Notes",
-    "description": "Default text side panels attach to the tab-scoped .chau7/sessions/<tab-id>/note.md when opened, auto-save edits, and silently flush dirty content on close. Regular non-auto-save files prompt save/discard/cancel via one shared dialog so the X button and ⌃⌘W agree and Don't Save actually discards.",
+    "description": "Default text side panels attach to the tab-scoped .chau7/sessions/<tab-id>/note.md when opened, auto-save edits, and silently flush dirty content on close. Regular non-auto-save files prompt save/discard/cancel via one shared dialog so the X button and \u2303\u2318W agree and Don't Save actually discards.",
     "status": "Shipped",
     "differentiator": "Yes"
   },
@@ -1129,7 +1136,7 @@
   {
     "category": "Performance",
     "feature": "Adaptive Render-Loop Throttling",
-    "description": "Active tab drops to ~10 Hz after idle, snaps back instantly on PTY data or user input (keys, mouse, scroll, paste, IME) — cuts wakeups and CPU on idle AI sessions without any perceptible lag",
+    "description": "Active tab drops to ~10 Hz after idle, snaps back instantly on PTY data or user input (keys, mouse, scroll, paste, IME) \u2014 cuts wakeups and CPU on idle AI sessions without any perceptible lag",
     "status": "Shipped",
     "differentiator": "Yes"
   },
@@ -1199,14 +1206,14 @@
   {
     "category": "Terminal Core",
     "feature": "Inline Image Protocols",
-    "description": "iTerm2 (ESC ] 1337), Sixel, and Kitty image protocol — display images directly in your terminal",
+    "description": "iTerm2 (ESC ] 1337), Sixel, and Kitty image protocol \u2014 display images directly in your terminal",
     "status": "Shipped",
     "differentiator": "No"
   },
   {
     "category": "Terminal Core",
     "feature": "Configurable Cursor Styles",
-    "description": "Block, underline, bar — with optional blinking",
+    "description": "Block, underline, bar \u2014 with optional blinking",
     "status": "Shipped",
     "differentiator": "No"
   },
@@ -1220,7 +1227,7 @@
   {
     "category": "Terminal Core",
     "feature": "Shell Selection",
-    "description": "Zsh, Bash, Fish, or custom shell path — Apple Silicon and Intel native",
+    "description": "Zsh, Bash, Fish, or custom shell path \u2014 Apple Silicon and Intel native",
     "status": "Shipped",
     "differentiator": "No"
   },
@@ -1269,7 +1276,7 @@
   {
     "category": "Performance",
     "feature": "Metal GPU Rendering",
-    "description": "Hardware-accelerated text rendering via Apple Metal — smooth even at high throughput",
+    "description": "Hardware-accelerated text rendering via Apple Metal \u2014 smooth even at high throughput",
     "status": "Shipped",
     "differentiator": "Yes"
   },
@@ -1346,21 +1353,21 @@
   {
     "category": "Performance",
     "feature": "SIMD Escape Parsing",
-    "description": "16–32 byte SIMD-accelerated ANSI escape sequence parsing in Rust for maximum parse throughput",
+    "description": "16\u201332 byte SIMD-accelerated ANSI escape sequence parsing in Rust for maximum parse throughput",
     "status": "Shipped",
     "differentiator": "Yes"
   },
   {
     "category": "Performance",
     "feature": "Lock-Free Ring Buffer",
-    "description": "SPSC lock-free PTY data pipeline — zero contention between read and render threads",
+    "description": "SPSC lock-free PTY data pipeline \u2014 zero contention between read and render threads",
     "status": "Shipped",
     "differentiator": "Yes"
   },
   {
     "category": "Performance",
     "feature": "Triple Buffering",
-    "description": "Triple-buffered terminal state with atomic swaps — no tearing and no render blocking",
+    "description": "Triple-buffered terminal state with atomic swaps \u2014 no tearing and no render blocking",
     "status": "Shipped",
     "differentiator": "Yes"
   },
@@ -1388,7 +1395,7 @@
   {
     "category": "Performance",
     "feature": "Dirty Region Tracking",
-    "description": "Only re-render changed terminal regions — saves GPU cycles on partial updates",
+    "description": "Only re-render changed terminal regions \u2014 saves GPU cycles on partial updates",
     "status": "Shipped",
     "differentiator": "Yes"
   },
@@ -1458,21 +1465,21 @@
   {
     "category": "AI Detection",
     "feature": "Output Banner Detection",
-    "description": "Detect AI tools from output banners — command-based detection gates output scanning to prevent false positives",
+    "description": "Detect AI tools from output banners \u2014 command-based detection gates output scanning to prevent false positives",
     "status": "Shipped",
     "differentiator": "Yes"
   },
   {
     "category": "AI Integration",
     "feature": "LLM Error Explanation",
-    "description": "One-click error analysis via OpenAI, Anthropic, Ollama, or custom endpoint — plain-language root cause and fix suggestions",
+    "description": "One-click error analysis via OpenAI, Anthropic, Ollama, or custom endpoint \u2014 plain-language root cause and fix suggestions",
     "status": "Shipped",
     "differentiator": "Yes"
   },
   {
     "category": "AI Integration",
     "feature": "Claude Code Deep Integration",
-    "description": "Monitor Claude Code hook events: prompts, tools, permissions, responses — first-class agentic workflow support",
+    "description": "Monitor Claude Code hook events: prompts, tools, permissions, responses \u2014 first-class agentic workflow support",
     "status": "Shipped",
     "differentiator": "Yes"
   },
@@ -1878,7 +1885,7 @@
   {
     "category": "AI Integration",
     "feature": "Context Token Optimization (CTO)",
-    "description": "Monitor and optimize LLM API token usage in real time — per tab or globally",
+    "description": "Monitor and optimize LLM API token usage in real time \u2014 per tab or globally",
     "status": "Shipped",
     "differentiator": "Yes"
   },
@@ -1969,7 +1976,7 @@
   {
     "category": "MCP Server",
     "feature": "Built-in MCP Server",
-    "description": "Embedded JSON-RPC 2.0 server on Unix socket (~/.chau7/mcp.sock) — AI agents can control your terminal",
+    "description": "Embedded JSON-RPC 2.0 server on Unix socket (~/.chau7/mcp.sock) \u2014 AI agents can control your terminal",
     "status": "Shipped",
     "differentiator": "Yes"
   },
@@ -2032,7 +2039,7 @@
   {
     "category": "MCP Server",
     "feature": "MCP Tab Limit",
-    "description": "Configurable maximum MCP-created tabs per session (default 4 — hard cap 50)",
+    "description": "Configurable maximum MCP-created tabs per session (default 4 \u2014 hard cap 50)",
     "status": "Shipped",
     "differentiator": "No"
   },
@@ -2044,247 +2051,247 @@
     "differentiator": "No"
   },
   {
-    "category": "MCP Tools — Tab Management",
+    "category": "MCP Tools \u2014 Tab Management",
     "feature": "tab_list",
     "description": "List all open tabs across all windows with status, cwd, git branch, CTO state, active app; primary live discovery API for active AI tabs",
     "status": "Shipped",
     "differentiator": "Yes"
   },
   {
-    "category": "MCP Tools — Tab Management",
+    "category": "MCP Tools \u2014 Tab Management",
     "feature": "tab_create",
-    "description": "Open a new terminal tab with optional directory and target window — respects approval gate and tab limit and returns exec-acceptance plus prompt-readiness fields",
+    "description": "Open a new terminal tab with optional directory and target window \u2014 respects approval gate and tab limit and returns exec-acceptance plus prompt-readiness fields",
     "status": "Shipped",
     "differentiator": "Yes"
   },
   {
-    "category": "MCP Tools — Tab Management",
+    "category": "MCP Tools \u2014 Tab Management",
     "feature": "tab_request_control",
-    "description": "Request control of an existing user-opened tab — always requires an explicit Chau7-owned local confirmation before MCP terminal mutations are enabled",
+    "description": "Request control of an existing user-opened tab \u2014 always requires an explicit Chau7-owned local confirmation before MCP terminal mutations are enabled",
     "status": "Shipped",
     "differentiator": "Yes"
   },
   {
-    "category": "MCP Tools — Tab Management",
+    "category": "MCP Tools \u2014 Tab Management",
     "feature": "tab_release_control",
     "description": "Revoke MCP control of a tab without closing it and clear any staged MCP input",
     "status": "Shipped",
     "differentiator": "Yes"
   },
   {
-    "category": "MCP Tools — Tab Management",
+    "category": "MCP Tools \u2014 Tab Management",
     "feature": "tab_exec",
-    "description": "Execute a shell command in a tab — auto-queues when shell/bootstrap state still needs to settle so launchers can submit deterministically without waiting for prompt-ready rendering",
+    "description": "Execute a shell command in a tab \u2014 auto-queues when shell/bootstrap state still needs to settle so launchers can submit deterministically without waiting for prompt-ready rendering",
     "status": "Shipped",
     "differentiator": "Yes"
   },
   {
-    "category": "MCP Tools — Tab Management",
+    "category": "MCP Tools \u2014 Tab Management",
     "feature": "tab_status",
     "description": "Detailed live tab status: process state, child processes (PID/CPU/RSS), active telemetry run, AI identity, and authorization-aware exec/prompt readiness; user tabs expose mcp_control_required plus underlying terminal-only readiness until control is granted",
     "status": "Shipped",
     "differentiator": "Yes"
   },
   {
-    "category": "MCP Tools — Tab Management",
+    "category": "MCP Tools \u2014 Tab Management",
     "feature": "tab_wait_ready",
     "description": "Wait until tab_exec will be accepted (can_accept_exec=true); fail immediately with mcp_control_required for unauthorized user tabs, otherwise return the last status snapshot on success or timeout",
     "status": "Shipped",
     "differentiator": "Yes"
   },
   {
-    "category": "MCP Tools — Tab Management",
+    "category": "MCP Tools \u2014 Tab Management",
     "feature": "tab_send_input",
-    "description": "Send raw input to terminal for interactive prompts and confirmations — no auto-newline",
+    "description": "Send raw input to terminal for interactive prompts and confirmations \u2014 no auto-newline",
     "status": "Shipped",
     "differentiator": "Yes"
   },
   {
-    "category": "MCP Tools — Tab Management",
+    "category": "MCP Tools \u2014 Tab Management",
     "feature": "tab_press_key",
-    "description": "Send terminal key presses for interactive TUIs — Enter, Escape, arrows, backspace, delete, paging keys, and ctrl/alt combos",
+    "description": "Send terminal key presses for interactive TUIs \u2014 Enter, Escape, arrows, backspace, delete, paging keys, and ctrl/alt combos",
     "status": "Shipped",
     "differentiator": "Yes"
   },
   {
-    "category": "MCP Tools — Tab Management",
+    "category": "MCP Tools \u2014 Tab Management",
     "feature": "tab_submit_prompt",
     "description": "Submit the current interactive prompt by sending Enter as a key press",
     "status": "Shipped",
     "differentiator": "Yes"
   },
   {
-    "category": "MCP Tools — Tab Management",
+    "category": "MCP Tools \u2014 Tab Management",
     "feature": "tab_close",
-    "description": "Close a tab with optional force flag — checks for running processes before closing",
+    "description": "Close a tab with optional force flag \u2014 checks for running processes before closing",
     "status": "Shipped",
     "differentiator": "Yes"
   },
   {
-    "category": "MCP Tools — Tab Management",
+    "category": "MCP Tools \u2014 Tab Management",
     "feature": "tab_output",
     "description": "Get terminal output (max 10000 lines, 512KB cap). source=pty_log returns full ANSI-stripped AI session. wait_for_stable_ms polls buffer.",
     "status": "Shipped",
     "differentiator": "Yes"
   },
   {
-    "category": "MCP Tools — Tab Management",
+    "category": "MCP Tools \u2014 Tab Management",
     "feature": "tab_set_cto",
-    "description": "Set per-tab CTO override (default/forceOn/forceOff) — recalculates flag files and records decision",
+    "description": "Set per-tab CTO override (default/forceOn/forceOff) \u2014 recalculates flag files and records decision",
     "status": "Shipped",
     "differentiator": "Yes"
   },
   {
-    "category": "MCP Tools — Tab Management",
+    "category": "MCP Tools \u2014 Tab Management",
     "feature": "tab_rename",
-    "description": "Set a custom title for a tab — pass empty string to clear",
+    "description": "Set a custom title for a tab \u2014 pass empty string to clear",
     "status": "Shipped",
     "differentiator": "Yes"
   },
   {
-    "category": "MCP Tools — Repository",
+    "category": "MCP Tools \u2014 Repository",
     "feature": "repo_get_metadata",
     "description": "Get repository description, labels, favorite files, frequent commands, and statistics; database/file reads run on the MCP worker after copying cached observable metadata on main",
     "status": "Shipped",
     "differentiator": "Yes"
   },
   {
-    "category": "MCP Tools — Repository",
+    "category": "MCP Tools \u2014 Repository",
     "feature": "repo_set_metadata",
-    "description": "Set metadata for a repository (description, labels, favorite files) — only provided fields are updated",
+    "description": "Set metadata for a repository (description, labels, favorite files) \u2014 only provided fields are updated",
     "status": "Shipped",
     "differentiator": "Yes"
   },
   {
-    "category": "MCP Tools — Repository",
+    "category": "MCP Tools \u2014 Repository",
     "feature": "repo_frequent_commands",
     "description": "Get frequently used commands for a repository, sorted by frecency",
     "status": "Shipped",
     "differentiator": "Yes"
   },
   {
-    "category": "MCP Tools — Repository",
+    "category": "MCP Tools \u2014 Repository",
     "feature": "repo_get_events",
     "description": "Get recent AI tool events (finished, permission, tool_called, etc.) scoped to a given repo",
     "status": "Shipped",
     "differentiator": "Yes"
   },
   {
-    "category": "MCP Tools — Telemetry",
+    "category": "MCP Tools \u2014 Telemetry",
     "feature": "run_get",
     "description": "Get a single telemetry run by ID (active or from store), including run_state and content_state for live vs finalized data",
     "status": "Shipped",
     "differentiator": "Yes"
   },
   {
-    "category": "MCP Tools — Telemetry",
+    "category": "MCP Tools \u2014 Telemetry",
     "feature": "run_list",
     "description": "List telemetry runs with filters: session_id, repo_path, provider, parent_run_id, date range, tags, limit/offset; active runs are deduplicated before pagination",
     "status": "Shipped",
     "differentiator": "Yes"
   },
   {
-    "category": "MCP Tools — Telemetry",
+    "category": "MCP Tools \u2014 Telemetry",
     "feature": "run_tool_calls",
-    "description": "Get all tool calls for a telemetry run — see exactly what an AI agent did",
+    "description": "Get all tool calls for a telemetry run \u2014 see exactly what an AI agent did",
     "status": "Shipped",
     "differentiator": "Yes"
   },
   {
-    "category": "MCP Tools — Telemetry",
+    "category": "MCP Tools \u2014 Telemetry",
     "feature": "run_transcript",
-    "description": "Get conversation transcript for a run — active Codex runs use ~/.codex/history.jsonl first, then ANSI-stripped PTY log for TUI tools, then terminal buffer",
+    "description": "Get conversation transcript for a run \u2014 active Codex runs use ~/.codex/history.jsonl first, then ANSI-stripped PTY log for TUI tools, then terminal buffer",
     "status": "Shipped",
     "differentiator": "Yes"
   },
   {
-    "category": "MCP Tools — Telemetry",
+    "category": "MCP Tools \u2014 Telemetry",
     "feature": "run_tag",
     "description": "Set tags on a telemetry run for organization and filtering",
     "status": "Shipped",
     "differentiator": "Yes"
   },
   {
-    "category": "MCP Tools — Telemetry",
+    "category": "MCP Tools \u2014 Telemetry",
     "feature": "run_latest_for_repo",
-    "description": "Get the most recent run for a repository — optionally filter by provider",
+    "description": "Get the most recent run for a repository \u2014 optionally filter by provider",
     "status": "Shipped",
     "differentiator": "Yes"
   },
   {
-    "category": "MCP Tools — Telemetry",
+    "category": "MCP Tools \u2014 Telemetry",
     "feature": "session_list",
-    "description": "List telemetry/history AI sessions with run counts — filter by repo_path, active_only; includes active/completed rollups and latest_run_state. Use tab_list/tab_status for live discovery",
+    "description": "List telemetry/history AI sessions with run counts \u2014 filter by repo_path, active_only; includes active/completed rollups and latest_run_state. Use tab_list/tab_status for live discovery",
     "status": "Shipped",
     "differentiator": "Yes"
   },
   {
-    "category": "MCP Tools — Telemetry",
+    "category": "MCP Tools \u2014 Telemetry",
     "feature": "session_current",
     "description": "Get currently active telemetry-backed AI sessions. Use tab_list/tab_status for live discovery and control",
     "status": "Shipped",
     "differentiator": "Yes"
   },
   {
-    "category": "MCP Tools — Observability",
+    "category": "MCP Tools \u2014 Observability",
     "feature": "chau7_runtime_info",
     "description": "Get Chau7 build and process identity for external observability: version, build metadata, process id, launch time, and schema version",
     "status": "Shipped",
     "differentiator": "Yes"
   },
   {
-    "category": "MCP Tools — Observability",
+    "category": "MCP Tools \u2014 Observability",
     "feature": "chau7_mcp_session_info",
     "description": "Get non-secret diagnostics for the current MCP connection: client/server identity, resolved bridge and socket paths, requested and negotiated protocol revisions, startup status, and stable error class",
     "status": "Shipped",
     "differentiator": "Yes"
   },
   {
-    "category": "MCP Tools — Observability",
+    "category": "MCP Tools \u2014 Observability",
     "feature": "chau7_runtime_events",
     "description": "Get recent Chau7 observability events with stable sequence ids. Includes app lifecycle markers and unified non-app AI events with optional tab/session/run/repo scoping",
     "status": "Shipped",
     "differentiator": "Yes"
   },
   {
-    "category": "MCP Tools — Observability",
+    "category": "MCP Tools \u2014 Observability",
     "feature": "chau7_timer_inventory",
     "description": "Get Chau7-owned timer and display-link inventory with stable ids, subsystem, queue label, cadence, and active state",
     "status": "Shipped",
     "differentiator": "Yes"
   },
   {
-    "category": "MCP Tools — Observability",
+    "category": "MCP Tools \u2014 Observability",
     "feature": "chau7_state_snapshot",
     "description": "Get the authoritative aggregated observer snapshot: runtime identity, live tabs, pending approvals, repo event summaries, active telemetry runs/sessions, timers, latest sequence, and observer contract metadata",
     "status": "Shipped",
     "differentiator": "Yes"
   },
   {
-    "category": "MCP Tools — Observability",
+    "category": "MCP Tools \u2014 Observability",
     "feature": "chau7_subscribe",
     "description": "Open one long-lived Chau7 state subscription on the current MCP connection. Returns an initial snapshot plus optional replayed changes since a cursor, exposes subscription health metadata, and emits JSON-RPC notifications/chau7.event deltas plus heartbeat keepalives",
     "status": "Shipped",
     "differentiator": "Yes"
   },
   {
-    "category": "MCP Tools — Observability",
+    "category": "MCP Tools \u2014 Observability",
     "feature": "chau7_unsubscribe",
     "description": "Stop the active Chau7 state subscription for the current MCP connection",
     "status": "Shipped",
     "differentiator": "Yes"
   },
   {
-    "category": "MCP Tools — Contract",
+    "category": "MCP Tools \u2014 Contract",
     "feature": "No public runtime tools",
     "description": "MCP no longer accepts runtime_* tool calls; live control is tab_* and history/analytics are run_* and session_*",
     "status": "Shipped",
     "differentiator": "Yes"
   },
   {
-    "category": "MCP Tools — Agent Orchestration",
+    "category": "MCP Tools \u2014 Agent Orchestration",
     "feature": "agent_launch",
-    "description": "Launch one or more AI coding agents in fresh tabs in a single call — composes tab_create + tab_wait_ready + tab_exec + verified prompt injection with throttles, optional gh pr checkout, and per-agent prompt visibility/submission/running fields",
+    "description": "Launch one or more AI coding agents in fresh tabs in a single call \u2014 composes tab_create + tab_wait_ready + tab_exec + verified prompt injection with throttles, optional gh pr checkout, and per-agent prompt visibility/submission/running fields",
     "status": "Shipped",
     "differentiator": "Yes"
   },
@@ -2354,7 +2361,7 @@
   {
     "category": "API Analytics",
     "feature": "API Call Logging",
-    "description": "Capture every LLM API call — tokens in/out, cost, latency, model, endpoint",
+    "description": "Capture every LLM API call \u2014 tokens in/out, cost, latency, model, endpoint",
     "status": "Shipped",
     "differentiator": "Yes"
   },
@@ -2403,7 +2410,7 @@
   {
     "category": "API Analytics",
     "feature": "Task Detection & Assessment",
-    "description": "Auto-detect AI task candidates from API activity with confidence scoring — approve or fail with notes",
+    "description": "Auto-detect AI task candidates from API activity with confidence scoring \u2014 approve or fail with notes",
     "status": "Shipped",
     "differentiator": "Yes"
   },
@@ -2459,7 +2466,7 @@
   {
     "category": "Tab Management",
     "feature": "Multi-Tab Interface",
-    "description": "Unlimited tabs per window — Cmd+T to create, Cmd+1–9 to jump",
+    "description": "Unlimited tabs per window \u2014 Cmd+T to create, Cmd+1\u20139 to jump",
     "status": "Shipped",
     "differentiator": "No"
   },
@@ -2480,14 +2487,14 @@
   {
     "category": "Tab Management",
     "feature": "Tab Reordering",
-    "description": "Drag tabs or Cmd+Opt+Shift+[/] to move left/right — center-crossing snap thresholds keep sibling motion aligned with the grabbed tab",
+    "description": "Drag tabs or Cmd+Opt+Shift+[/] to move left/right \u2014 center-crossing snap thresholds keep sibling motion aligned with the grabbed tab",
     "status": "Shipped",
     "differentiator": "No"
   },
   {
     "category": "Tab Management",
     "feature": "Git Branch Indicator",
-    "description": "Current git branch displayed in the tab — no need to type git branch. In protected folders, the last known branch remains visible from cached repo identity until live access is granted again.",
+    "description": "Current git branch displayed in the tab \u2014 no need to type git branch. In protected folders, the last known branch remains visible from cached repo identity until live access is granted again.",
     "status": "Shipped",
     "differentiator": "No"
   },
@@ -2508,7 +2515,7 @@
   {
     "category": "Tab Management",
     "feature": "Broadcast Input",
-    "description": "Type once and send to all tabs — with per-tab exclusion and visual indicator",
+    "description": "Type once and send to all tabs \u2014 with per-tab exclusion and visual indicator",
     "status": "Shipped",
     "differentiator": "No"
   },
@@ -2536,7 +2543,7 @@
   {
     "category": "Split Panes",
     "feature": "Horizontal Split",
-    "description": "Cmd+D — split side-by-side with draggable dividers",
+    "description": "Cmd+D \u2014 split side-by-side with draggable dividers",
     "status": "Shipped",
     "differentiator": "No"
   },
@@ -2564,7 +2571,7 @@
   {
     "category": "Split Panes",
     "feature": "Vertical Split",
-    "description": "Cmd+Opt+D — stack panes vertically",
+    "description": "Cmd+Opt+D \u2014 stack panes vertically",
     "status": "Shipped",
     "differentiator": "No"
   },
@@ -2585,7 +2592,7 @@
   {
     "category": "Split Panes",
     "feature": "Injectable Side-Panel Infrastructure",
-    "description": "MainScheduler / Polling / Dialogs protocols injected into SplitPaneController and TextEditorModel; the close-time dialog branches and the markdown runbook sequential runner are unit-driveable headlessly via FakeDialogs and a virtual-time TestMainScheduler — no AppKit modal loops or real sleeps required",
+    "description": "MainScheduler / Polling / Dialogs protocols injected into SplitPaneController and TextEditorModel; the close-time dialog branches and the markdown runbook sequential runner are unit-driveable headlessly via FakeDialogs and a virtual-time TestMainScheduler \u2014 no AppKit modal loops or real sleeps required",
     "status": "Shipped",
     "differentiator": "No"
   },
@@ -2662,7 +2669,7 @@
   {
     "category": "Split Panes",
     "feature": "PaneConformanceKit",
-    "description": "Reusable test bundle exposing every PaneNode contract invariant as a focused assertion function plus a single assertContract entry; the parametrized driver runs the full kit over every pane kind × edit state × persistence round-trip.",
+    "description": "Reusable test bundle exposing every PaneNode contract invariant as a focused assertion function plus a single assertContract entry; the parametrized driver runs the full kit over every pane kind \u00d7 edit state \u00d7 persistence round-trip.",
     "status": "Shipped",
     "differentiator": "No"
   },
@@ -2683,7 +2690,7 @@
   {
     "category": "Split Panes",
     "feature": "Pane Factory Registry",
-    "description": "Decode-side persistence routes through PaneFactoryRegistry keyed on PaneType (each pane class provides static makeFromSaved); adding a new pane kind requires zero edits to existing fromSavedNode code — one registry entry + one static.",
+    "description": "Decode-side persistence routes through PaneFactoryRegistry keyed on PaneType (each pane class provides static makeFromSaved); adding a new pane kind requires zero edits to existing fromSavedNode code \u2014 one registry entry + one static.",
     "status": "Shipped",
     "differentiator": "No"
   },
@@ -2697,7 +2704,7 @@
   {
     "category": "Split Panes",
     "feature": "Built-in Text Editor",
-    "description": "Full editor in a split pane (⌘⌥E) — syntax highlighting, line numbers, bracket matching, auto-indent, scroll-to-line, find/replace",
+    "description": "Full editor in a split pane (\u2318\u2325E) \u2014 syntax highlighting, line numbers, bracket matching, auto-indent, scroll-to-line, find/replace",
     "status": "Shipped",
     "differentiator": "Yes"
   },
@@ -2711,7 +2718,7 @@
   {
     "category": "Split Panes",
     "feature": "Repository Pane",
-    "description": "Full git UI in a split pane (⌘⌥B) — session-aware: shows agent-touched files with diff stats when AI active, resets after push. Stage/unstage, commit (⌘Enter), branch, push/pull, stash, history with search, conflict resolution, ahead/behind, hover tooltips, commit chips. Prompts for protected-folder access only when a live git action is requested. Supporting types extracted into a dedicated file as scaffolding toward splitting status/commit/history into independent observable sub-states.",
+    "description": "Full git UI in a split pane (\u2318\u2325B) \u2014 session-aware: shows agent-touched files with diff stats when AI active, resets after push. Stage/unstage, commit (\u2318Enter), branch, push/pull, stash, history with search, conflict resolution, ahead/behind, hover tooltips, commit chips. Prompts for protected-folder access only when a live git action is requested. Supporting types extracted into a dedicated file as scaffolding toward splitting status/commit/history into independent observable sub-states.",
     "status": "Shipped",
     "differentiator": "Yes"
   },
@@ -2732,28 +2739,28 @@
   {
     "category": "Split Panes",
     "feature": "Terminal + Editor Side-by-Side",
-    "description": "Edit code and run it in the same window — no app switching",
+    "description": "Edit code and run it in the same window \u2014 no app switching",
     "status": "Shipped",
     "differentiator": "Yes"
   },
   {
     "category": "Split Panes",
     "feature": "Append Terminal Selection To Editor",
-    "description": "⇧⌥⌘E appends the current terminal selection to the side editor; opens the editor on demand if none is open so the shortcut never silently no-ops",
+    "description": "\u21e7\u2325\u2318E appends the current terminal selection to the side editor; opens the editor on demand if none is open so the shortcut never silently no-ops",
     "status": "Shipped",
     "differentiator": "No"
   },
   {
     "category": "Window Management",
     "feature": "Overlay / Floating Terminal",
-    "description": "Floating terminal layer on top of all other apps with blur background — always accessible",
+    "description": "Floating terminal layer on top of all other apps with blur background \u2014 always accessible",
     "status": "Shipped",
     "differentiator": "Yes"
   },
   {
     "category": "Window Management",
     "feature": "Dropdown Terminal (Quake-Style)",
-    "description": "Ctrl+` to summon a dropdown terminal from anywhere — configurable height",
+    "description": "Ctrl+` to summon a dropdown terminal from anywhere \u2014 configurable height",
     "status": "Shipped",
     "differentiator": "No"
   },
@@ -2767,7 +2774,7 @@
   {
     "category": "Window Management",
     "feature": "Adjustable Window Opacity",
-    "description": "Transparent terminal windows — see through to your code",
+    "description": "Transparent terminal windows \u2014 see through to your code",
     "status": "Shipped",
     "differentiator": "No"
   },
@@ -2781,7 +2788,7 @@
   {
     "category": "Window Management",
     "feature": "Minimal Mode",
-    "description": "Strip all chrome — maximum terminal space with zero distraction",
+    "description": "Strip all chrome \u2014 maximum terminal space with zero distraction",
     "status": "Shipped",
     "differentiator": "No"
   },
@@ -2809,7 +2816,7 @@
   {
     "category": "Window Management",
     "feature": "Menu Bar Only Mode",
-    "description": "Run as a menu bar app — no Dock icon needed",
+    "description": "Run as a menu bar app \u2014 no Dock icon needed",
     "status": "Shipped",
     "differentiator": "No"
   },
@@ -2900,14 +2907,14 @@
   {
     "category": "SSH, Profiles & Remote",
     "feature": "Structural Prompt Detection",
-    "description": "Selection menus are detected by shape — cursor-glyph-marked (❯ › ▸) option rows at the snapshot tail — instead of only prompt keywords, so agent-authored questions like AskUserQuestion surface as iPhone prompt cards, with arrow-only menus answered via synthesized arrow-navigation responses",
+    "description": "Selection menus are detected by shape \u2014 cursor-glyph-marked (\u276f \u203a \u25b8) option rows at the snapshot tail \u2014 instead of only prompt keywords, so agent-authored questions like AskUserQuestion surface as iPhone prompt cards, with arrow-only menus answered via synthesized arrow-navigation responses",
     "status": "Experimental",
     "differentiator": "Yes"
   },
   {
     "category": "SSH, Profiles & Remote",
     "feature": "Menu Waiting-Status Gating",
-    "description": "A cursor-marked menu row (❯ 1.) flips the session to waiting-for-input so keyword-less selection menus get scanned for prompt cards, and a 1-second recheck while cards are live keeps arrow-navigation responses tracking the on-screen menu cursor",
+    "description": "A cursor-marked menu row (\u276f 1.) flips the session to waiting-for-input so keyword-less selection menus get scanned for prompt cards, and a 1-second recheck while cards are live keeps arrow-navigation responses tracking the on-screen menu cursor",
     "status": "Experimental",
     "differentiator": "Yes"
   },
@@ -2949,7 +2956,7 @@
   {
     "category": "SSH, Profiles & Remote",
     "feature": "Remote Sends Always Submit",
-    "description": "Codex submits press the Enter key instead of a raw LF (0x0A parses as Ctrl-J in current Codex TUIs and never submits), and the iOS Send action always carries the submit terminator — the Append Newline toggle is removed",
+    "description": "Codex submits press the Enter key instead of a raw LF (0x0A parses as Ctrl-J in current Codex TUIs and never submits), and the iOS Send action always carries the submit terminator \u2014 the Append Newline toggle is removed",
     "status": "Experimental",
     "differentiator": "No"
   },
@@ -3012,7 +3019,7 @@
   {
     "category": "Search & Find",
     "feature": "Find Overlay",
-    "description": "Cmd+F — search terminal output with match highlighting",
+    "description": "Cmd+F \u2014 search terminal output with match highlighting",
     "status": "Shipped",
     "differentiator": "No"
   },
@@ -3054,7 +3061,7 @@
   {
     "category": "Command Safety",
     "feature": "Dangerous Command Guard",
-    "description": "Intercepts rm -rf, dd, mkfs, and other destructive commands — confirms before execution",
+    "description": "Intercepts rm -rf, dd, mkfs, and other destructive commands \u2014 confirms before execution",
     "status": "Shipped",
     "differentiator": "Yes"
   },
@@ -3096,7 +3103,7 @@
   {
     "category": "Keyboard & Clipboard",
     "feature": "Clipboard History",
-    "description": "Cmd+Shift+V — configurable clipboard history, default 50 entries (up to 1000), with LRU eviction, pinning, and quick paste",
+    "description": "Cmd+Shift+V \u2014 configurable clipboard history, default 50 entries (up to 1000), with LRU eviction, pinning, and quick paste",
     "status": "Shipped",
     "differentiator": "No"
   },
@@ -3110,7 +3117,7 @@
   {
     "category": "Snippets",
     "feature": "Snippet Manager",
-    "description": "Cmd+; to open — create, edit, delete, import, export snippets",
+    "description": "Cmd+; to open \u2014 create, edit, delete, import, export snippets",
     "status": "Shipped",
     "differentiator": "No"
   },
@@ -3131,7 +3138,7 @@
   {
     "category": "Snippets",
     "feature": "Repo-Level Snippets",
-    "description": ".chau7/config.toml in your repo — share snippets with your team",
+    "description": ".chau7/config.toml in your repo \u2014 share snippets with your team",
     "status": "Shipped",
     "differentiator": "No"
   },
@@ -3145,7 +3152,7 @@
   {
     "category": "History & Bookmarks",
     "feature": "SQLite-Backed Persistence",
-    "description": "History survives restarts — searchable and fast",
+    "description": "History survives restarts \u2014 searchable and fast",
     "status": "Shipped",
     "differentiator": "No"
   },
@@ -3229,7 +3236,7 @@
   {
     "category": "SSH & Profiles",
     "feature": "SSH Connection Manager",
-    "description": "Save hosts, ports, identity files, jump hosts (ProxyJump) — all in one place",
+    "description": "Save hosts, ports, identity files, jump hosts (ProxyJump) \u2014 all in one place",
     "status": "Shipped",
     "differentiator": "No"
   },
@@ -3257,21 +3264,21 @@
   {
     "category": "Remote & Collaboration",
     "feature": "Remote Terminal Viewing",
-    "description": "Share a read-only view of your terminal — others see what you see",
+    "description": "Share a read-only view of your terminal \u2014 others see what you see",
     "status": "Experimental",
     "differentiator": "Yes"
   },
   {
     "category": "Remote & Collaboration",
     "feature": "Viewer Approval Flow",
-    "description": "Approve or deny viewer connections — you control access",
+    "description": "Approve or deny viewer connections \u2014 you control access",
     "status": "Experimental",
     "differentiator": "No"
   },
   {
     "category": "Remote & Collaboration",
     "feature": "Cloudflare Relay",
-    "description": "Cloudflare Workers relay — no port forwarding required",
+    "description": "Cloudflare Workers relay \u2014 no port forwarding required",
     "status": "Experimental",
     "differentiator": "Yes"
   },
@@ -3313,7 +3320,7 @@
   {
     "category": "Appearance",
     "feature": "Full Color Schemes",
-    "description": "16 ANSI colors + background, foreground, cursor, selection — fully customizable",
+    "description": "16 ANSI colors + background, foreground, cursor, selection \u2014 fully customizable",
     "status": "Shipped",
     "differentiator": "No"
   },
@@ -3327,14 +3334,14 @@
   {
     "category": "Appearance",
     "feature": "100+ Monospace Fonts",
-    "description": "System fonts plus popular coding fonts — or use any installed font",
+    "description": "System fonts plus popular coding fonts \u2014 or use any installed font",
     "status": "Shipped",
     "differentiator": "No"
   },
   {
     "category": "Appearance",
     "feature": "Adjustable Font Size",
-    "description": "8–72pt with per-tab zoom (Cmd++/-, 50–200%)",
+    "description": "8\u201372pt with per-tab zoom (Cmd++/-, 50\u2013200%)",
     "status": "Shipped",
     "differentiator": "No"
   },
@@ -3348,7 +3355,7 @@
   {
     "category": "Appearance",
     "feature": "Command Blocks",
-    "description": "Colored left-border gutter marks — green (success), red (fail), blue (running)",
+    "description": "Colored left-border gutter marks \u2014 green (success), red (fail), blue (running)",
     "status": "Shipped",
     "differentiator": "Yes"
   },
@@ -3390,14 +3397,14 @@
   {
     "category": "Settings",
     "feature": "Per-Folder Config",
-    "description": ".chau7/config.toml in any repo — project-specific settings",
+    "description": ".chau7/config.toml in any repo \u2014 project-specific settings",
     "status": "Shipped",
     "differentiator": "No"
   },
   {
     "category": "Settings",
     "feature": "Config File Watcher",
-    "description": "Auto-reload on config changes — no restart needed",
+    "description": "Auto-reload on config changes \u2014 no restart needed",
     "status": "Shipped",
     "differentiator": "No"
   },
@@ -3488,21 +3495,21 @@
   {
     "category": "Accessibility",
     "feature": "5 Languages",
-    "description": "English, French, Spanish, Arabic, Hebrew — with proper RTL layout across all windows",
+    "description": "English, French, Spanish, Arabic, Hebrew \u2014 with proper RTL layout across all windows",
     "status": "Shipped",
     "differentiator": "No"
   },
   {
     "category": "Accessibility",
     "feature": "RTL Layout Propagation",
-    "description": "Layout direction set at every NSHostingView boundary — all 13 hosting sites flip for Arabic/Hebrew",
+    "description": "Layout direction set at every NSHostingView boundary \u2014 all 13 hosting sites flip for Arabic/Hebrew",
     "status": "Shipped",
     "differentiator": "Yes"
   },
   {
     "category": "Accessibility",
     "feature": "Full Translation Coverage",
-    "description": "Zero untranslated strings across en/fr/ar/he — all UI elements localized: SwiftUI views, NSMenuItem context menus, hover cards, agent dashboard, terminal right-click, and all auxiliary windows",
+    "description": "Zero untranslated strings across en/fr/ar/he \u2014 all UI elements localized: SwiftUI views, NSMenuItem context menus, hover cards, agent dashboard, terminal right-click, and all auxiliary windows",
     "status": "Shipped",
     "differentiator": "Yes"
   },
@@ -3530,7 +3537,7 @@
   {
     "category": "Scripting",
     "feature": "JSON-RPC API",
-    "description": "Unix socket API for external automation — control tabs, run commands, query history, manage snippets",
+    "description": "Unix socket API for external automation \u2014 control tabs, run commands, query history, manage snippets",
     "status": "Shipped",
     "differentiator": "Yes"
   },
@@ -3621,7 +3628,7 @@
   {
     "category": "Debugging",
     "feature": "Debug Console",
-    "description": "Cmd+Option+L — scoped sidebar surfaces for Diagnostics, Runtime Inspector, Usage Monitor, and the full console, covering Health, Logs, Perf, Lag, State, Events, Report, Usage, Analytics, Repos, and Token Optimizer, with direct menu/palette/settings entry points, privacy-first issue reporting, aligned performance/usage analytics tables, and surface/tab routing kept in a dedicated model file",
+    "description": "Cmd+Option+L \u2014 scoped sidebar surfaces for Diagnostics, Runtime Inspector, Usage Monitor, and the full console, covering Health, Logs, Perf, Lag, State, Events, Report, Usage, Analytics, Repos, and Token Optimizer, with direct menu/palette/settings entry points, privacy-first issue reporting, aligned performance/usage analytics tables, and surface/tab routing kept in a dedicated model file",
     "status": "Shipped",
     "differentiator": "No"
   },
@@ -3649,7 +3656,7 @@
   {
     "category": "Debugging",
     "feature": "Privacy-First Bug Report Dialog",
-    "description": "In-app issue reporter (⌥⌘I) with all sensitive data off by default, per-toggle tab pickers, live markdown preview, HTTPS-only private relay submission with single-use issue-scoped HMAC authorization, success banner with created issue number when available, tab title redaction, background history capture, and hardened rate limiting",
+    "description": "In-app issue reporter (\u2325\u2318I) with all sensitive data off by default, per-toggle tab pickers, live markdown preview, HTTPS-only private relay submission with single-use issue-scoped HMAC authorization, success banner with created issue number when available, tab title redaction, background history capture, and hardened rate limiting",
     "status": "Shipped",
     "differentiator": "Yes"
   },
@@ -3733,21 +3740,21 @@
   {
     "category": "Window",
     "feature": "Menu Bar Only Mode",
-    "description": "Hide from Dock and Cmd+Tab — activation policy .accessory",
+    "description": "Hide from Dock and Cmd+Tab \u2014 activation policy .accessory",
     "status": "Shipped",
     "differentiator": "No"
   },
   {
     "category": "Window",
     "feature": "Floating Window Mode",
-    "description": "Keep terminal above other apps — .floating window level",
+    "description": "Keep terminal above other apps \u2014 .floating window level",
     "status": "Shipped",
     "differentiator": "No"
   },
   {
     "category": "Terminal",
     "feature": "Cursor Blink Rate",
-    "description": "Configurable blink interval (0.3–2.0s) and custom cursor color (hex)",
+    "description": "Configurable blink interval (0.3\u20132.0s) and custom cursor color (hex)",
     "status": "Shipped",
     "differentiator": "No"
   },
@@ -3880,7 +3887,7 @@
   {
     "category": "Terminal",
     "feature": "Split Pane Diff Viewer",
-    "description": "Unified git diff view with colored additions/deletions, dual line numbers, Working/Staged toggle (Cmd+Opt+Shift+D). Binary and rename-only changes show a dedicated empty-state ('Binary file' / 'File renamed: old → new') instead of a misleading 'no changes' panel. Requests protected-folder access on demand before loading live git diffs.",
+    "description": "Unified git diff view with colored additions/deletions, dual line numbers, Working/Staged toggle (Cmd+Opt+Shift+D). Binary and rename-only changes show a dedicated empty-state ('Binary file' / 'File renamed: old \u2192 new') instead of a misleading 'no changes' panel. Requests protected-folder access on demand before loading live git diffs.",
     "status": "Shipped",
     "differentiator": "No"
   },
@@ -4307,7 +4314,7 @@
   {
     "category": "Telemetry",
     "feature": "Cache-Aware Cost Calculation",
-    "description": "Cost calculation accounts for provider-specific cache pricing — Anthropic cache reads 0.1x, writes 1.25x; OpenAI per-model cache-read rates (0.1x–0.5x). Token estimation fallback when extraction fails.",
+    "description": "Cost calculation accounts for provider-specific cache pricing \u2014 Anthropic cache reads 0.1x, writes 1.25x; OpenAI per-model cache-read rates (0.1x\u20130.5x). Token estimation fallback when extraction fails.",
     "status": "Shipped",
     "differentiator": "Yes"
   },
@@ -4335,7 +4342,7 @@
   {
     "category": "API Analytics",
     "feature": "Adaptive Dashboard Polling",
-    "description": "Dashboard polls adaptively — 2s active, 5s idle, 10s no agents — with proxy health monitoring and timeline pagination",
+    "description": "Dashboard polls adaptively \u2014 2s active, 5s idle, 10s no agents \u2014 with proxy health monitoring and timeline pagination",
     "status": "Shipped",
     "differentiator": "Yes"
   },
@@ -4356,7 +4363,7 @@
   {
     "category": "API Analytics",
     "feature": "Per-Repository Prompt Injection",
-    "description": "Inject content into API requests per repository via ~/.chau7/prompt-rules.json or repo-local .chau7/injection.json — match by repo name (portable) or path, choose prepend/append/system position, and trigger on every prompt, the first matching prompt in a shell session, or the first matching prompt after /compact or /clear",
+    "description": "Inject content into API requests per repository via ~/.chau7/prompt-rules.json or repo-local .chau7/injection.json \u2014 match by repo name (portable) or path, choose prepend/append/system position, and trigger on every prompt, the first matching prompt in a shell session, or the first matching prompt after /compact or /clear",
     "status": "Shipped",
     "differentiator": "Yes"
   },
@@ -4433,7 +4440,7 @@
   {
     "category": "Overlay",
     "feature": "Shortcut Helper Hint",
-    "description": "Floating hint box showing keyboard shortcuts (⌘/) and report issue (⌥⌘I), positioned 4pt from tab bar and window edge",
+    "description": "Floating hint box showing keyboard shortcuts (\u2318/) and report issue (\u2325\u2318I), positioned 4pt from tab bar and window edge",
     "status": "Shipped",
     "differentiator": "No"
   },
