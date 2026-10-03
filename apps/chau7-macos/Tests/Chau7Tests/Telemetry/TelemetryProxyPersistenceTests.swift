@@ -12,7 +12,7 @@ final class TelemetryProxyPersistenceTests: XCTestCase {
     }
 
     private func run(_ id: String, start: TimeInterval = 1000, end: TimeInterval? = 1100) -> TelemetryRun {
-        TelemetryRun(id: id, sessionID: "session", tabID: "tab", provider: "codex", cwd: "/repo", startedAt: Date(timeIntervalSince1970: start), endedAt: end.map(Date.init(timeIntervalSince1970:)))
+        TelemetryRun(id: id, sessionID: "session", tabID: "tab", provider: "codex", cwd: "/repo", repoPath: "/repo", startedAt: Date(timeIntervalSince1970: start), endedAt: end.map(Date.init(timeIntervalSince1970:)))
     }
 
     private func evidence(_ id: String, creation: Int? = nil, read: Int? = 40) throws -> UsageEvidence {
@@ -96,6 +96,7 @@ final class TelemetryProxyPersistenceTests: XCTestCase {
         store.insertRun(run("run"))
         try store.insertUsageEvidence(evidence("observed", read: nil))
         let stats = store.runStatsForRepo(repoPath: "/repo")
+        XCTAssertEqual(stats.totalRuns, 1)
         XCTAssertEqual(stats.totalTokens, 110)
         XCTAssertEqual(stats.totalCost, 0.25)
         XCTAssertEqual(stats.attributedProxyCost, 0.25)
