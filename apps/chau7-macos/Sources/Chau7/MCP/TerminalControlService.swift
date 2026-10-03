@@ -24,10 +24,10 @@ import Chau7Core
 final class TerminalControlService {
     static let shared = TerminalControlService()
 
-    private nonisolated let repoStatsProvider: @Sendable (String) -> RepoStats
+    private nonisolated let repositoryQueries: MCPRepositoryQueryService
 
     init(repoStatsProvider: @escaping @Sendable (String) -> RepoStats = { RepoStatsProvider.stats(for: $0) }) {
-        self.repoStatsProvider = repoStatsProvider
+        self.repositoryQueries = MCPRepositoryQueryService(statsProvider: repoStatsProvider)
     }
 
     /// Window/model registration state. Owned here because the MCP service is
@@ -55,7 +55,7 @@ final class TerminalControlService {
 
     /// Shared cap for `repo_get_events` across all transports (MCP tool +
     /// scripting socket), matching the documented MCP contract (max 50).
-    static let repoEventsMaxLimit = 50
+    static let repoEventsMaxLimit = RepoEventQuery.maxLimit
 
     /// Maximum output size returned by tab_output (512 KB).
     private static let maxOutputBytes = 512 * 1024
@@ -2344,49 +2344,7 @@ final class TerminalControlService {
         guard let cachedMetadata = MainActorBridge.read({
             RepositoryCache.shared.cachedModel(forRoot: repoPath)?.metadata
         }) else { return MainActorBridge.unresponsiveJSON }
-        let metadata = cachedMetadata ?? RepoMetadataStore.load(repoRoot: repoPath)
-        let frequentCmds = PersistentHistoryStore.shared
-            .frequentCommandsForRepo(repoRoot: repoPath, limit: 10)
-
-        var result: [String: Any] = [
-            "repo_path": repoPath,
-            "repo_name": URL(fileURLWithPath: repoPath).lastPathComponent
-        ]
-        if let desc = metadata.description { result["description"] = desc }
-        if !metadata.labels.isEmpty { result["labels"] = metadata.labels }
-        if !metadata.favoriteFiles.isEmpty { result["favorite_files"] = metadata.favoriteFiles }
-        if let updated = metadata.updatedAt {
-            result["updated_at"] = DateFormatters.iso8601NoFractional.string(from: updated)
-        }
-        if !frequentCmds.isEmpty {
-            result["frequent_commands"] = frequentCmds.map(Self.frequentCommandPayload)
-        }
-
-        // Aggregated stats from history.db + runs.db
-        let stats = repoStatsProvider(repoPath)
-        let iso = DateFormatters.iso8601NoFractional
-        var statsDict: [String: Any] = [
-            "total_commands": stats.totalCommands,
-            "successful_commands": stats.successfulCommands,
-            "failed_commands": stats.failedCommands,
-            "success_rate": stats.successRate,
-            "avg_command_duration": stats.averageCommandDuration,
-            "total_runs": stats.totalRuns,
-            "total_tokens": stats.totalTokens,
-            "total_cost": stats.totalCost,
-            "total_turns": stats.totalTurns,
-            "providers": stats.providers
-        ]
-        if !stats.topTools.isEmpty {
-            statsDict["top_tools"] = stats.topTools.map { [
-                "tool": $0.tool, "count": $0.count
-            ] as [String: Any] }
-        }
-        if let lastCmd = stats.lastCommandAt { statsDict["last_command_at"] = iso.string(from: lastCmd) }
-        if let lastRun = stats.lastRunAt { statsDict["last_run_at"] = iso.string(from: lastRun) }
-        result["stats"] = statsDict
-
-        return encodeAny(result)
+        return repositoryQueries.metadataJSON(repoPath: repoPath, cachedMetadata: cachedMetadata)
     }
 
     func setRepoMetadata(
@@ -2416,18 +2374,7 @@ final class TerminalControlService {
     }
 
     func repoFrequentCommands(repoPath: String, limit: Int) -> String {
-        let cmds = PersistentHistoryStore.shared
-            .frequentCommandsForRepo(repoRoot: repoPath, limit: limit)
-        return encodeAny(cmds.map(Self.frequentCommandPayload))
-    }
-
-    private nonisolated static func frequentCommandPayload(_ cmd: FrequentCommand) -> [String: Any] {
-        [
-            "command": cmd.command,
-            "count": cmd.count,
-            "last_used": DateFormatters.iso8601NoFractional.string(from: cmd.lastUsed),
-            "frecency_score": cmd.frecencyScore
-        ]
+        repositoryQueries.frequentCommandsJSON(repoPath: repoPath, limit: limit)
     }
 
     func repoGetEvents(
@@ -2440,66 +2387,13 @@ final class TerminalControlService {
         sessionID: String? = nil,
         truncateMessages: Bool = true
     ) -> String {
-        // Clamp at the source so every transport (MCP tool + scripting socket)
-        // shares one cap instead of each caller applying its own divergent limit.
-        let limit = max(1, min(limit, Self.repoEventsMaxLimit))
-        // Check the per-repo event buffer in AppModel (populated on event ingestion)
-        let events: [AIEvent]
-        if let appModel = allModels.first?.model.appModel {
-            let requestedTypes = Set((eventTypes ?? []).map { $0.lowercased() }.filter { !$0.isEmpty })
-            let normalizedTool = tool?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-            let normalizedProducer = producer?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-            let normalizedSessionID = sessionID?.trimmingCharacters(in: .whitespacesAndNewlines)
-            let normalizedTabID = tabID?.trimmingCharacters(in: .whitespacesAndNewlines)
-
-            let filtered = (appModel.eventsByRepo[repoPath] ?? []).filter { event in
-                if let normalizedTabID,
-                   let eventTabID = event.tabID,
-                   controlPlaneTabID(for: eventTabID) != normalizedTabID {
-                    return false
-                } else if normalizedTabID != nil, event.tabID == nil {
-                    return false
-                }
-
-                if !requestedTypes.isEmpty, !requestedTypes.contains(event.type.lowercased()) {
-                    return false
-                }
-                if let normalizedTool, event.tool.lowercased() != normalizedTool {
-                    return false
-                }
-                if let normalizedProducer,
-                   event.producer?.lowercased() != normalizedProducer {
-                    return false
-                }
-                if let normalizedSessionID,
-                   event.sessionID != normalizedSessionID {
-                    return false
-                }
-                return true
-            }
-
-            events = Array(filtered.suffix(limit))
-        } else {
-            events = []
-        }
-        let result: [[String: Any]] = events.map { event in
-            let message = truncateMessages ? String(event.message.prefix(200)) : event.message
-            var entry: [String: Any] = [
-                "id": event.id.uuidString,
-                "source": event.source.rawValue,
-                "type": event.type,
-                "tool": event.tool,
-                "message": message,
-                "ts": event.ts
-            ]
-            if let dir = event.directory { entry["directory"] = dir }
-            if let tab = event.tabID { entry["tab_id"] = self.controlPlaneTabID(for: tab) }
-            if let session = event.sessionID { entry["session_id"] = session }
-            if let producer = event.producer { entry["producer"] = producer }
-            entry["reliability"] = event.reliability.rawValue
-            return entry
-        }
-        return encodeAny(["repo_path": repoPath, "count": result.count, "events": result])
+        repositoryQueries.eventsJSON(
+            repoPath: repoPath,
+            snapshot: allModels.first?.model.appModel.eventsByRepo[repoPath] ?? [],
+            query: RepoEventQuery(limit: limit, tabID: tabID, eventTypes: eventTypes, tool: tool, producer: producer, sessionID: sessionID),
+            truncateMessages: truncateMessages,
+            tabIDProvider: { self.controlPlaneTabID(for: $0) }
+        )
     }
 
     func activeRunSummary(forOverlayTabID tabID: UUID) -> [String: Any]? {

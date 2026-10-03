@@ -37,7 +37,7 @@ final class TelemetryProxyAttributionTests: XCTestCase {
         )
 
         XCTAssertEqual(attributed["run-1"]?.costUSD, 0.25)
-        XCTAssertEqual(attributed["run-1"]?.inputTokens, 100)
+        XCTAssertEqual(attributed["run-1"]?.inputTokens, 60)
         XCTAssertEqual(attributed["run-1"]?.cacheCreationInputTokens, 30)
         XCTAssertEqual(attributed["run-1"]?.cacheReadInputTokens, 40)
         XCTAssertEqual(attributed["run-1"]?.tokenUsageSource, .proxy)

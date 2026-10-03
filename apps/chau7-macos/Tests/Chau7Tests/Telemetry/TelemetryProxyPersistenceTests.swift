@@ -12,7 +12,7 @@ final class TelemetryProxyPersistenceTests: XCTestCase {
     }
 
     private func run(_ id: String, start: TimeInterval = 1000, end: TimeInterval? = 1100) -> TelemetryRun {
-        TelemetryRun(id: id, sessionID: "session", tabID: "tab", provider: "codex", cwd: "/repo", startedAt: Date(timeIntervalSince1970: start), endedAt: end.map(Date.init(timeIntervalSince1970:)))
+        TelemetryRun(id: id, sessionID: "session", tabID: "tab", provider: "codex", cwd: "/repo", repoPath: "/repo", startedAt: Date(timeIntervalSince1970: start), endedAt: end.map(Date.init(timeIntervalSince1970:)))
     }
 
     private func evidence(_ id: String, creation: Int? = nil, read: Int? = 40) throws -> UsageEvidence {
@@ -35,7 +35,7 @@ final class TelemetryProxyPersistenceTests: XCTestCase {
         store.insertUsageEvidence(request)
         try store.insertUsageEvidence(evidence("second", read: 0))
         let saved = try XCTUnwrap(store.getRun("run"))
-        XCTAssertEqual(saved.totalInputTokens, 200)
+        XCTAssertEqual(saved.totalInputTokens, 160)
         XCTAssertNil(saved.totalCacheCreationInputTokens)
         XCTAssertEqual(saved.totalCacheReadInputTokens, 40)
         XCTAssertEqual(saved.costUSD, 0.5)
@@ -84,11 +84,23 @@ final class TelemetryProxyPersistenceTests: XCTestCase {
         store.invalidateRunMetrics("run", reason: "Transcript metrics invalid")
         XCTAssertEqual(store.getRun("run")?.costUSD, 0.25)
         XCTAssertEqual(store.getRun("run")?.costSource, .observed)
-        XCTAssertEqual(store.getRun("run")?.totalInputTokens, 100)
+        XCTAssertEqual(store.getRun("run")?.totalInputTokens, 60)
         // A later ambiguous run restores the invalid transcript baseline.
         store.insertRun(run("overlap"))
         XCTAssertNil(store.getRun("run")?.costUSD)
         XCTAssertEqual(store.getRun("run")?.tokenUsageState, .invalid)
+    }
+
+    func testRepositoryAggregatesKeepKnownTokensWhenOtherCountersAreMissing() throws {
+        let store = try makeStore()
+        store.insertRun(run("run"))
+        try store.insertUsageEvidence(evidence("observed", read: nil))
+        let stats = store.runStatsForRepo(repoPath: "/repo")
+        XCTAssertEqual(stats.totalRuns, 1)
+        XCTAssertEqual(stats.totalTokens, 110)
+        XCTAssertEqual(stats.totalCost, 0.25)
+        XCTAssertEqual(stats.attributedProxyCost, 0.25)
+        XCTAssertEqual(store.runStatsForRepo(repoPath: "/repo", providerFilterKey: "claude").attributedProxyCost, 0)
     }
 
     func testAdjacentRunBoundaryDoesNotDoubleCount() throws {
