@@ -235,11 +235,8 @@ final class AgentDashboardModel: Identifiable {
         // Periodic health check (every 5th poll cycle)
         pollCount += 1
         if pollCount.isMultiple(of: 5) {
-            Task {
-                let healthy = await ProxyManager.shared.checkHealth()
-                await MainActor.run { [weak self] in
-                    self?.proxyHealthy = healthy
-                }
+            DispatchQueue.main.async { [weak self] in
+                self?.refreshProxyHealth()
             }
         }
 
@@ -260,6 +257,16 @@ final class AgentDashboardModel: Identifiable {
             self?.totalTokens = allTokens
             self?.totalCost = allCost
             self?.overallStatus = status
+        }
+    }
+
+    /// Start the health task in its publishing actor rather than transferring
+    /// refresh-queue state through nested task and MainActor.run closures.
+    @MainActor
+    private func refreshProxyHealth() {
+        Task { [weak self] in
+            let healthy = await ProxyManager.shared.checkHealth()
+            self?.proxyHealthy = healthy
         }
     }
 

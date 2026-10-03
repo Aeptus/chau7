@@ -2,7 +2,7 @@
   {
     "category": "Developer Experience",
     "feature": "Core-only Test Workflow",
-    "description": "Pure Chau7Core tests run through a separate dependency graph and reusable cache without compiling the macOS app; full app integration validation remains in normal CI",
+    "description": "Pure Chau7Core tests run through a separate dependency graph and reusable cache without compiling the macOS app; full app integration validation remains in normal CI; discovery refreshes each run so added tests are included with existing build caches",
     "status": "Shipped",
     "differentiator": "No"
   },
@@ -5245,7 +5245,7 @@
   {
     "category": "Reliability",
     "feature": "Asynchronous Command Approval",
-    "description": "Nonblocking confirmation sheets preserve explicit one-time consent tied to the original pane, PTY, directory and input; remote submissions are checked before body or Enter delivery and pending approval appears in session status; automation submission and delayed Enter are bound to the same consent context; pending local consent blocks MCP mutations and readiness",
+    "description": "Nonblocking confirmation sheets preserve explicit one-time consent tied to the original pane, PTY, directory and input; remote submissions are checked before body or Enter delivery and pending approval appears in session status; automation submission and delayed Enter are bound to the same consent context; pending local consent blocks MCP mutations and readiness; dashboard health publication uses an explicit main-actor task handoff",
     "status": "Shipped",
     "differentiator": "No"
   }
