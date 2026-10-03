@@ -5220,5 +5220,12 @@
     "description": "Pinned review baseline: actions/setup-go v7, relay TypeScript 7.0.2, Prettier 3.9.9, Cloudflare Worker types 5.20260927.1, Wrangler 4.144.0, proxy SQLite v1.59.0, remote x/crypto v0.57.0 with Go 1.26.0. Compatibility checks cover relay typechecking, formatting and dry-run builds plus race-enabled Go tests.",
     "status": "Shipped",
     "differentiator": "No"
+  },
+  {
+    "category": "Reliability",
+    "feature": "Bounded Changed-file Backups",
+    "description": "Non-Git probes never recursively scan directories; changed-file lists are count and byte bounded with truncation metadata, and archives have count, age, per-file and total byte budgets while latest restoration remains preserved",
+    "status": "Shipped",
+    "differentiator": "No"
   }
 ]

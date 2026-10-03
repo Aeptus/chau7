@@ -20,6 +20,8 @@ import Chau7Core
 /// instance save path in `OverlayTabsModel` writes the restore index/bundle
 /// and is deliberately kept separate (do not unify the two).
 enum TabStateBackupStore {
+    static let maximumArchiveFileBytes = 16 * 1024 * 1024
+    static let maximumArchiveBytes = 128 * 1024 * 1024
 
     // Archive throttle bookkeeping. Read by `shouldArchiveMultiWindowBackup`,
     // written by `persistWindowStateBackups` — the single accounting pair for
@@ -252,6 +254,8 @@ enum TabStateBackupStore {
         guard let payload else { return }
         do {
             try writeLatestTabStateBackup(payload)
+            let urls = try ensureTabStateBackupDirectories()
+            try pruneArchivedTabStateBackups(in: urls.archive)
             if shouldArchiveMultiWindowBackup(data: payload, reason: reason) {
                 try writeArchivedTabStateBackup(payload, reason: reason)
                 lastArchivedMultiWindowTabStateFingerprint = payload.hashValue
@@ -286,6 +290,7 @@ enum TabStateBackupStore {
     }
 
     static func shouldArchiveMultiWindowBackup(data: Data, reason: TabStateSaveReason) -> Bool {
+        guard data.count <= maximumArchiveFileBytes else { return false }
         if reason == .termination || reason == .restoreSource {
             return true
         }
@@ -328,6 +333,10 @@ enum TabStateBackupStore {
 
     static func writeArchivedTabStateBackup(_ data: Data, reason: TabStateSaveReason) throws {
         let urls = try ensureTabStateBackupDirectories()
+        guard data.count <= maximumArchiveFileBytes else {
+            try pruneArchivedTabStateBackups(in: urls.archive)
+            return
+        }
         let millis = Int64(Date().timeIntervalSince1970 * 1000)
         let name = String(format: "%013lld-%@.json", millis, reason.rawValue)
         let archiveURL = urls.archive.appendingPathComponent(name)
@@ -339,21 +348,25 @@ enum TabStateBackupStore {
         let fileManager = FileManager.default
         let contents = try fileManager.contentsOfDirectory(
             at: archiveURL,
-            includingPropertiesForKeys: [.contentModificationDateKey],
+            includingPropertiesForKeys: [.contentModificationDateKey, .fileSizeKey],
             options: [.skipsHiddenFiles]
         )
         let jsonFiles = contents.filter { $0.pathExtension == "json" }.sorted { $0.lastPathComponent > $1.lastPathComponent }
-        let cutoff = Date().addingTimeInterval(-30 * 24 * 60 * 60)
-
-        for url in jsonFiles.dropFirst(120) {
-            try? fileManager.removeItem(at: url)
+        let entries = jsonFiles.map { url -> FileRetentionBudget.Entry in
+            let values = try? url.resourceValues(forKeys: [.contentModificationDateKey, .fileSizeKey])
+            return .init(
+                key: url.lastPathComponent,
+                bytes: values?.fileSize ?? Int.max,
+                modifiedAt: values?.contentModificationDate?.timeIntervalSince1970 ?? 0
+            )
         }
-
-        for url in jsonFiles.prefix(120) {
-            let values = try? url.resourceValues(forKeys: [.contentModificationDateKey])
-            if let modifiedAt = values?.contentModificationDate, modifiedAt < cutoff {
-                try? fileManager.removeItem(at: url)
-            }
+        let removed = FileRetentionBudget.removals(
+            newestFirst: entries, maximumCount: 120, maximumBytes: maximumArchiveBytes,
+            maximumFileBytes: maximumArchiveFileBytes,
+            cutoff: Date().addingTimeInterval(-30 * 24 * 60 * 60).timeIntervalSince1970
+        )
+        for name in removed {
+            try fileManager.removeItem(at: archiveURL.appendingPathComponent(name))
         }
     }
 
