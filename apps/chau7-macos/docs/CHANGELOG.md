@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed
+
+- Removed the MAGI CLI product, protocol implementation, installer and bundled skill. Generic MCP agent launch, event handling, skills and terminal path lookup remain available. The protocol is archived with a migration note.
+
+
 ### Fixed
 
 - Release jobs pin action revisions, reuse one built distribution, limit publication permissions and signing-key access, and always clean runner signing material. Manual validation cannot publish or access signing secrets.

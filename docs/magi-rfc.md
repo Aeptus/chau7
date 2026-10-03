@@ -1,4 +1,8 @@
-# RFC: MAGI Protocol
+# Archived RFC: MAGI Protocol
+
+MAGI was removed from Chau7 by the explicit product decision in issue #91. This
+document preserves the historical specification, not a supported command surface.
+See [removal and migration](magi-removal.md) before using historical examples.
 
 ## Summary
 
