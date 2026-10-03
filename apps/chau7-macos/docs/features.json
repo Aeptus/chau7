@@ -5227,5 +5227,12 @@
     "description": "Non-Git probes never recursively scan directories; changed-file lists are count and byte bounded with truncation metadata, and archives have count, age, per-file and total byte budgets while latest restoration remains preserved",
     "status": "Shipped",
     "differentiator": "No"
+  },
+  {
+    "category": "Reliability",
+    "feature": "Bounded Hang Diagnostics",
+    "description": "Diagnostic helpers have deadlines; samples and manifests are retained as bounded bundles with build identity, timeout and truncation outcomes, and monotonic watchdog health tracking",
+    "status": "Shipped",
+    "differentiator": "No"
   }
 ]

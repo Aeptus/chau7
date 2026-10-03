@@ -26,9 +26,11 @@ private struct MainThreadHeartbeat: Codable {
     let parentPID: Int32
     let progressToken: UInt64
     let observedAt: TimeInterval
+    let observedUptime: TimeInterval?
 
     init(parentPID: Int32, progressToken: UInt64, observedAt: TimeInterval) {
-        self.schemaVersion = 1
+        self.schemaVersion = 2
+        self.observedUptime = ProcessInfo.processInfo.systemUptime
         self.parentPID = parentPID
         self.progressToken = progressToken
         self.observedAt = observedAt
@@ -43,6 +45,11 @@ private struct MainThreadHangSampleManifest: Codable {
     let samplePath: String
     let sampleExitStatus: Int32?
     let sampleLaunchError: String?
+    let sampleTimedOut: Bool
+    let sampleTruncated: Bool
+    let buildSHA: String
+    let buildTimestamp: String
+    let operatingSystem: String
 }
 
 /// Supervises the main event loop without ever synchronously consulting it.
@@ -298,7 +305,7 @@ enum MainThreadHangWatchdogRunner {
         let outputDirectoryURL = URL(fileURLWithPath: command.outputDirectoryPath, isDirectory: true)
         let policy = MainThreadHangMonitorPolicy()
         var state: MainThreadHangMonitorState?
-        var lifetime = MainThreadHangWatchdogLifetime(startedAt: Date().timeIntervalSince1970)
+        var lifetime = MainThreadHangWatchdogLifetime(startedAt: ProcessInfo.processInfo.systemUptime)
 
         while parentIsAlive(command.parentPID) {
             var healthy = false
@@ -315,11 +322,11 @@ enum MainThreadHangWatchdogRunner {
                     return
                 }
 
-                let now = Date().timeIntervalSince1970
+                let now = ProcessInfo.processInfo.systemUptime
                 if state == nil {
                     state = MainThreadHangMonitorState(
                         initialProgressToken: heartbeat.progressToken,
-                        now: min(now, heartbeat.observedAt)
+                        now: min(now, heartbeat.observedUptime ?? now)
                     )
                 }
                 guard var currentState = state else {
@@ -345,7 +352,7 @@ enum MainThreadHangWatchdogRunner {
 
             if !heartbeatReadable { break }
 
-            let now = Date().timeIntervalSince1970
+            let now = ProcessInfo.processInfo.systemUptime
             lifetime.observe(
                 isHealthy: healthy,
                 capturedSampleNow: capturedSampleNow,
@@ -377,41 +384,89 @@ enum MainThreadHangWatchdogRunner {
         let manifestURL = outputDirectoryURL.appendingPathComponent("\(stem).json")
         var exitStatus: Int32?
         var launchError: String?
+        var timedOut = false
+        var truncated = false
 
         do {
-            try FileManager.default.createDirectory(
-                at: outputDirectoryURL,
-                withIntermediateDirectories: true
-            )
-            let sample = Process()
-            sample.executableURL = URL(fileURLWithPath: "/usr/bin/sample")
-            sample.arguments = [
-                "\(parentPID)",
-                "5",
-                "10",
-                "-file", sampleURL.path
-            ]
-            sample.standardInput = FileHandle.nullDevice
-            sample.standardOutput = FileHandle.nullDevice
-            sample.standardError = FileHandle.nullDevice
-            try sample.run()
-            sample.waitUntilExit()
-            exitStatus = sample.terminationStatus
+            try FileManager.default.createDirectory(at: outputDirectoryURL, withIntermediateDirectories: true)
+            // This deadline covers only our diagnostic helper. The shell-owning app
+            // is never terminated or relaunched, even if its UI cannot recover.
+            if let result = SubprocessRunner.capture(
+                executablePath: "/usr/bin/sample",
+                arguments: ["\(parentPID)", "5", "10", "-file", sampleURL.path],
+                timeout: 10,
+                maximumOutputBytes: 64 * 1024
+            ) {
+                exitStatus = result.status
+                timedOut = result.timedOut
+                if result.outputLimitExceeded { launchError = "Diagnostic helper exceeded output budget" }
+                if result.readFailed { launchError = "Diagnostic helper output could not be read" }
+            } else {
+                launchError = "Diagnostic helper could not be launched"
+            }
+            let size = try sampleURL.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
+            if size > 8 * 1024 * 1024 {
+                let file = try FileHandle(forWritingTo: sampleURL)
+                defer { try? file.close() }
+                try file.truncate(atOffset: 8 * 1024 * 1024)
+                truncated = true
+            }
         } catch {
             launchError = String(describing: error)
         }
 
+        let info = Bundle.main.infoDictionary ?? [:]
         let manifest = MainThreadHangSampleManifest(
-            schemaVersion: 1,
+            schemaVersion: 2,
             detectedAt: detectedAt,
             parentPID: parentPID,
-            staleMilliseconds: Int(staleFor * 1000),
+            staleMilliseconds: Int(min(Double(Int.max / 2), max(0, staleFor * 1000))),
             samplePath: sampleURL.path,
             sampleExitStatus: exitStatus,
-            sampleLaunchError: launchError
+            sampleLaunchError: launchError,
+            sampleTimedOut: timedOut,
+            sampleTruncated: truncated,
+            buildSHA: info["Chau7BuildGitSHA"] as? String ?? "unknown",
+            buildTimestamp: info["Chau7BuildTimestamp"] as? String ?? "unknown",
+            operatingSystem: ProcessInfo.processInfo.operatingSystemVersionString
         )
         if let data = try? JSONEncoder().encode(manifest) {
             try? data.write(to: manifestURL, options: .atomic)
+            try? data.write(to: outputDirectoryURL.appendingPathComponent("latest-hang.json"), options: .atomic)
+        }
+        pruneDiagnostics(in: outputDirectoryURL, now: detectedAt)
+    }
+
+    /// Only recognized diagnostic bundles are eligible. Heartbeats and unrelated
+    /// files stay untouched; paired samples/manifests retire together.
+    static func pruneDiagnostics(in directory: URL, now: Date = Date()) {
+        let manager = FileManager.default
+        guard let urls = try? manager.contentsOfDirectory(at: directory, includingPropertiesForKeys: [.fileSizeKey, .contentModificationDateKey, .isRegularFileKey]) else { return }
+        var groups: [String: (urls: [URL], bytes: Int, modifiedAt: TimeInterval)] = [:]
+        for url in urls {
+            let name = url.lastPathComponent
+            guard name.hasPrefix("hang-"), name.hasSuffix(".json") || name.hasSuffix(".sample.txt"),
+                  let values = try? url.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey, .isRegularFileKey]), values.isRegularFile == true else { continue }
+            let stem = name.hasSuffix(".sample.txt") ? String(name.dropLast(11)) : String(name.dropLast(5))
+            var group = groups[stem] ?? ([], 0, 0)
+            group.urls.append(url)
+            group.bytes += values.fileSize ?? 0
+            group.modifiedAt = max(group.modifiedAt, values.contentModificationDate?.timeIntervalSince1970 ?? 0)
+            groups[stem] = group
+        }
+        let entries = groups.map { FileRetentionBudget.Entry(key: $0.key, bytes: $0.value.bytes, modifiedAt: $0.value.modifiedAt) }
+            .sorted { $0.modifiedAt == $1.modifiedAt ? $0.key > $1.key : $0.modifiedAt > $1.modifiedAt }
+        let removed = FileRetentionBudget.removals(
+            newestFirst: entries,
+            maximumCount: 40,
+            maximumBytes: 64 * 1024 * 1024,
+            maximumFileBytes: 8 * 1024 * 1024 + 64 * 1024,
+            cutoff: now.addingTimeInterval(-7 * 86400).timeIntervalSince1970
+        )
+        for key in removed {
+            for url in groups[key]?.urls ?? [] {
+                try? manager.removeItem(at: url)
+            }
         }
     }
 }

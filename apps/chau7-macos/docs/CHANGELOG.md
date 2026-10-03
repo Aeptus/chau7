@@ -31,6 +31,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Hang sampling has a ten-second helper deadline and bounded diagnostic retention (40 bundles, seven days, 64 MiB). Manifests record build identity and timeout/truncation outcomes; watchdog health uses monotonic time.
+
 - Failed Git probes no longer crawl non-Git directories. Changed-file lists are capped at creation, mutation, decoding, and encoding with visible truncation; oversized legacy lists are repaired. Backup archives now enforce per-file and total-byte budgets while preserving the latest restore regardless of archive size.
 
 - CI prepares a simulator runtime matching the selected Xcode SDK and selects a concrete device ID before compilation, avoiding missing iPhone destinations on runner images. The iOS gate caches by the explicit destination.
