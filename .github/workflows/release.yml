@@ -2,296 +2,156 @@ name: Release
 
 on:
   push:
-    tags:
-      - 'v*'
+    tags: ['v*']
+  workflow_dispatch: # Nonpublishing build/test; signing jobs cannot run here.
 
 permissions:
-  contents: write
-  id-token: write
-  attestations: write
+  contents: read
+
+concurrency:
+  group: chau7-release-and-tap
+  cancel-in-progress: false
 
 jobs:
   build:
-    name: Build and Release
+    name: Build release artifacts once
     runs-on: macos-26
+    timeout-minutes: 60
     outputs:
       version: ${{ steps.version.outputs.version }}
-      dmg_sha256: ${{ steps.checksums.outputs.dmg_sha256 }}
     steps:
-      - uses: actions/checkout@v7
-
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
       - name: Select Xcode 26.6
         run: sudo xcode-select --switch /Applications/Xcode_26.6.app/Contents/Developer
-
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
       - name: Enable pnpm
         run: corepack enable
-
       - name: Validate release quality policy
         run: pnpm quality:cloud-parity --include=quality-cloud-parity-required-workflows
-
-      - name: Parse version from tag
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: services/chau7-remote/go.mod
+      - uses: dtolnay/rust-toolchain@89b12181fb390509a0842a86cc55eeb8eb928c1d # stable
+      - name: Parse version
         id: version
-        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
-
-      - name: Export version to environment
         env:
-          VERSION: ${{ steps.version.outputs.version }}
+          REF_NAME: ${{ github.ref_name }}
+          EVENT_NAME: ${{ github.event_name }}
         run: |
-          echo "CHAU7_VERSION=$VERSION" >> "$GITHUB_ENV"
-          echo "CHAU7_BUILD_NUMBER=${{ github.run_number }}" >> "$GITHUB_ENV"
-
-      - name: Swift version
-        run: swift --version
-
-      - name: Build release binary
+          if [ "$EVENT_NAME" = push ]; then
+            version="${REF_NAME#v}"
+          else
+            version="0.0.0-dry-run"
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "CHAU7_VERSION=$version" >> "$GITHUB_ENV"
+      - name: Build DMG and ZIP
         working-directory: apps/chau7-macos
-        run: swift build -c release
-
-      - name: Build app bundle
-        working-directory: apps/chau7-macos
-        run: ./Scripts/build-app.sh
-
+        env:
+          CHAU7_CODESIGN_IDENTITY: '-'
+          CHAU7_BUILD_NUMBER: ${{ github.run_number }}
+        run: ./Scripts/build-dist.sh
       - name: Run tests
         working-directory: apps/chau7-macos
         run: swift test
-
-      - name: Setup Go
-        uses: actions/setup-go@v7
+      - name: Preserve built artifacts
+        run: tar -cf "$RUNNER_TEMP/release-artifacts.tar" -C apps/chau7-macos dist
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          go-version-file: apps/chau7-macos/chau7-proxy/go.mod
+          name: release-artifacts
+          path: ${{ runner.temp }}/release-artifacts.tar
+          retention-days: 7
+          if-no-files-found: error
 
-      - name: Build DMG and ZIP
-        working-directory: apps/chau7-macos
-        run: |
-          if [ -f ./Scripts/build-dist.sh ]; then
-            ./Scripts/build-dist.sh
-          else
-            echo "No dist script found, skipping DMG"
-          fi
-
-      # ── Conditional: Apple Developer ID signing & notarization ──
-      # These steps activate when APPLE_DEVELOPER_ID_APPLICATION is set.
-      # Until then, artifacts remain ad-hoc signed.
-
-      - name: Check for Apple signing secrets
+  publish:
+    name: Sign and publish built artifacts
+    needs: build
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    runs-on: macos-26
+    timeout-minutes: 40
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    outputs:
+      dmg_sha256: ${{ steps.checksums.outputs.dmg_sha256 }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: release-artifacts
+          path: ${{ runner.temp }}
+      - name: Restore built artifacts
+        run: tar -xf "$RUNNER_TEMP/release-artifacts.tar" -C apps/chau7-macos
+      - name: Check optional signing configuration
         id: signing
         env:
-          HAS_IDENTITY: ${{ secrets.APPLE_DEVELOPER_ID_APPLICATION }}
+          IDENTITY: ${{ secrets.APPLE_DEVELOPER_ID_APPLICATION }}
         run: |
-          if [ -n "$HAS_IDENTITY" ]; then
+          if [ -n "$IDENTITY" ]; then
             echo "available=true" >> "$GITHUB_OUTPUT"
           else
             echo "available=false" >> "$GITHUB_OUTPUT"
-            echo "Apple signing secrets not configured — skipping notarization."
+            echo 'Signing unavailable: release remains ad-hoc signed.' >> "$GITHUB_STEP_SUMMARY"
           fi
-
-      - name: Import signing certificate
+      - name: Prepare isolated signing keychain
         if: steps.signing.outputs.available == 'true'
         env:
           APPLE_CERTIFICATE_P12: ${{ secrets.APPLE_CERTIFICATE_P12 }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-        run: |
-          echo "$APPLE_CERTIFICATE_P12" | base64 --decode > /tmp/certificate.p12
-          KEYCHAIN_PATH="$RUNNER_TEMP/build.keychain"
-          security create-keychain -p "" "$KEYCHAIN_PATH"
-          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
-          security unlock-keychain -p "" "$KEYCHAIN_PATH"
-          security import /tmp/certificate.p12 -P "$APPLE_CERTIFICATE_PASSWORD" \
-            -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
-          security list-keychains -d user -s "$KEYCHAIN_PATH" login.keychain
-          security set-key-partition-list -S apple-tool:,apple: -s -k "" "$KEYCHAIN_PATH"
-          rm /tmp/certificate.p12
-
-      - name: Sign, notarize, and re-package
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: ./scripts/release/signing-keychain.sh setup
+      - name: Sign and notarize reused app
         if: steps.signing.outputs.available == 'true'
-        working-directory: apps/chau7-macos
         env:
           IDENTITY: ${{ secrets.APPLE_DEVELOPER_ID_APPLICATION }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-        run: |
-          APP_DIR="dist/Chau7.app"
-
-          # Re-sign with Developer ID (replaces ad-hoc signature)
-          codesign --force --options runtime --sign "$IDENTITY" --deep "$APP_DIR"
-
-          # Create temporary ZIP for notarization submission
-          ditto -c -k --sequesterRsrc --keepParent "$APP_DIR" /tmp/Chau7-notarize.zip
-
-          # Submit and wait for notarization
-          xcrun notarytool submit /tmp/Chau7-notarize.zip \
-            --apple-id "$APPLE_ID" \
-            --password "$APPLE_ID_PASSWORD" \
-            --team-id "$APPLE_TEAM_ID" \
-            --wait --timeout 600
-
-          # Staple the notarization ticket to the app
-          xcrun stapler staple "$APP_DIR"
-
-          # Rebuild DMG from notarized app
-          DMG_PATH="dist/Chau7-AppleSilicon.dmg"
-          rm -f "$DMG_PATH"
-          DMG_STAGING="dist/dmg-staging-notarized"
-          mkdir -p "$DMG_STAGING"
-          cp -R "$APP_DIR" "$DMG_STAGING/"
-          ln -s /Applications "$DMG_STAGING/Applications"
-          hdiutil create -fs APFS -volname "Chau7" \
-            -srcfolder "$DMG_STAGING" -ov -format UDBZ "$DMG_PATH"
-          rm -rf "$DMG_STAGING"
-          xcrun stapler staple "$DMG_PATH"
-
-          # Rebuild ZIP from notarized app
-          ZIP_PATH="dist/Chau7-AppleSilicon.zip"
-          rm -f "$ZIP_PATH"
-          ditto -c -k --sequesterRsrc --keepParent "$APP_DIR" "$ZIP_PATH"
-
-          echo "Notarization complete — DMG and ZIP rebuilt with stapled ticket."
-
-      - name: Build signed PKG installer
-        if: steps.signing.outputs.available == 'true'
-        working-directory: apps/chau7-macos
-        env:
           INSTALLER_IDENTITY: ${{ secrets.APPLE_DEVELOPER_ID_INSTALLER }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          VERSION: ${{ steps.version.outputs.version }}
-        run: |
-          PKG_PATH="dist/Chau7-AppleSilicon.pkg"
-
-          pkgbuild \
-            --component "dist/Chau7.app" \
-            --install-location "/Applications" \
-            --identifier "com.chau7.app.pkg" \
-            --version "$VERSION" \
-            --sign "$INSTALLER_IDENTITY" \
-            "$PKG_PATH"
-
-          xcrun notarytool submit "$PKG_PATH" \
-            --apple-id "$APPLE_ID" \
-            --password "$APPLE_ID_PASSWORD" \
-            --team-id "$APPLE_TEAM_ID" \
-            --wait --timeout 600
-
-          xcrun stapler staple "$PKG_PATH"
-          echo "PKG installer created, signed, and notarized."
-
-      # ── Checksums and attestation (run AFTER notarization) ──
-
-      - name: Compute artifact checksums
+          VERSION: ${{ needs.build.outputs.version }}
+        run: ./scripts/release/sign-artifacts.sh
+      - name: Always remove signing material
+        if: always()
+        run: ./scripts/release/signing-keychain.sh cleanup
+      - name: Compute checksums
         id: checksums
-        working-directory: apps/chau7-macos
+        working-directory: apps/chau7-macos/dist
         run: |
-          for f in dist/*.dmg dist/*.zip dist/*.pkg; do
-            [ -f "$f" ] || continue
-            name=$(basename "$f")
-            sha=$(shasum -a 256 "$f" | awk '{print $1}')
-            echo "$sha  $name" >> dist/SHA256SUMS.txt
-            echo "  $name: $sha"
-          done
-          # Export DMG sha for Homebrew cask
-          DMG_FILE="dist/Chau7-AppleSilicon.dmg"
-          if [ -f "$DMG_FILE" ]; then
-            DMG_SHA=$(shasum -a 256 "$DMG_FILE" | awk '{print $1}')
-            echo "dmg_sha256=$DMG_SHA" >> "$GITHUB_OUTPUT"
+          shasum -a 256 ./*.dmg ./*.zip > SHA256SUMS.txt
+          if [ -f Chau7-AppleSilicon.pkg ]; then
+            shasum -a 256 Chau7-AppleSilicon.pkg >> SHA256SUMS.txt
           fi
-
-      - name: Generate SLSA provenance attestations
-        uses: actions/attest-build-provenance@v4
+          echo "dmg_sha256=$(shasum -a 256 Chau7-AppleSilicon.dmg | awk '{print $1}')" >> "$GITHUB_OUTPUT"
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4
         with:
           subject-path: |
             apps/chau7-macos/dist/*.dmg
             apps/chau7-macos/dist/*.zip
             apps/chau7-macos/dist/*.pkg
             apps/chau7-macos/dist/SHA256SUMS.txt
-
-      # ── Release creation ──
-
-      - name: Extract release notes from CHANGELOG
-        id: notes
+      - name: Extract release notes
         env:
-          VERSION: ${{ steps.version.outputs.version }}
-        run: |
-          NOTES=$(./scripts/extract-changelog "$VERSION")
-          if [ -z "$NOTES" ]; then
-            NOTES="See [CHANGELOG](https://github.com/aeptus/chau7/blob/main/apps/chau7-macos/docs/CHANGELOG.md) for details."
-          fi
-          echo "$NOTES" > /tmp/release-notes.md
-
-      - name: Build release body
-        env:
+          VERSION: ${{ needs.build.outputs.version }}
           SIGNED: ${{ steps.signing.outputs.available }}
         run: |
-          cat > /tmp/release-body.md << 'HEADER'
-          ## What's Changed
-
-          HEADER
-          cat /tmp/release-notes.md >> /tmp/release-body.md
-
-          cat >> /tmp/release-body.md << 'INSTALL'
-
-          ## Install
-
-          ```bash
-          brew tap aeptus/chau7
-          brew install --cask chau7
-          ```
-
-          Or download from the assets below:
-
-          | Format | File | Description |
-          |--------|------|-------------|
-          INSTALL
-
-          for f in apps/chau7-macos/dist/*.dmg apps/chau7-macos/dist/*.zip apps/chau7-macos/dist/*.pkg; do
-            [ -f "$f" ] || continue
-            name=$(basename "$f")
-            ext="${name##*.}"
-            case "$ext" in
-              dmg) desc="Drag-and-drop installer" ;;
-              zip) desc="ZIP archive (for automation / MDM)" ;;
-              pkg) desc="macOS installer package" ;;
-              *) desc="" ;;
-            esac
-            echo "| ${ext^^} | **${name}** | ${desc} |" >> /tmp/release-body.md
-          done
-
-          if [ -f apps/chau7-macos/dist/SHA256SUMS.txt ]; then
-            {
-              echo ""
-              echo "<details>"
-              echo "<summary>SHA-256 Checksums</summary>"
-              echo ""
-              echo '```'
-              cat apps/chau7-macos/dist/SHA256SUMS.txt
-              echo '```'
-              echo "</details>"
-            } >> /tmp/release-body.md
-          fi
-
-          echo "" >> /tmp/release-body.md
-          if [ "$SIGNED" = "true" ]; then
-            echo "> Signed with Developer ID and notarized by Apple." >> /tmp/release-body.md
+          ./scripts/extract-changelog "$VERSION" > "$RUNNER_TEMP/release-notes.md"
+          if [ "$SIGNED" = true ]; then
+            echo 'Developer ID signed and notarized.' >> "$RUNNER_TEMP/release-notes.md"
           else
-            echo "> Ad-hoc signed, not notarized. First launch: right-click Chau7.app, then Open." >> /tmp/release-body.md
+            echo 'Ad-hoc signed, not notarized. First launch: Control-click Chau7.app, then Open.' >> "$RUNNER_TEMP/release-notes.md"
           fi
-
-          cat >> /tmp/release-body.md << 'ATTEST'
-
-          ## Verification
-
-          All release artifacts include [SLSA provenance attestations](https://slsa.dev). Verify with:
-
-          ```bash
-          gh attestation verify Chau7-AppleSilicon.dmg --owner aeptus
-          ```
-          ATTEST
-
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v3
+          echo 'Verify the attached SHA256SUMS.txt and provenance with gh attestation verify.' >> "$RUNNER_TEMP/release-notes.md"
+      - uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3
         with:
-          body_path: /tmp/release-body.md
+          body_path: ${{ runner.temp }}/release-notes.md
+          fail_on_unmatched_files: false # PKG is optional without an installer identity.
           files: |
             apps/chau7-macos/dist/*.dmg
             apps/chau7-macos/dist/*.zip
@@ -299,63 +159,57 @@ jobs:
             apps/chau7-macos/dist/SHA256SUMS.txt
 
   update-homebrew-tap:
-    name: Update Homebrew Tap
-    needs: build
+    name: Update optional Homebrew tap
+    needs: [build, publish]
+    if: needs.publish.outputs.dmg_sha256 != ''
     runs-on: ubuntu-latest
-    if: ${{ needs.build.outputs.dmg_sha256 != '' }}
+    timeout-minutes: 10
+    permissions:
+      contents: read
     env:
       HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
     steps:
-      - name: Skip when tap token is missing
-        if: ${{ env.HOMEBREW_TAP_TOKEN == '' }}
-        run: echo "HOMEBREW_TAP_TOKEN is not configured; skipping Homebrew tap update."
-
-      - name: Checkout tap repo
-        if: ${{ env.HOMEBREW_TAP_TOKEN != '' }}
-        uses: actions/checkout@v7
+      - name: Report optional tap skip
+        if: env.HOMEBREW_TAP_TOKEN == ''
+        run: echo 'Optional Homebrew tap update skipped; HOMEBREW_TAP_TOKEN is not configured. Release assets are available directly.' >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        if: env.HOMEBREW_TAP_TOKEN != ''
         with:
           repository: aeptus/homebrew-chau7
           token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          persist-credentials: false
           path: tap
-
-      - name: Update cask formula
-        if: ${{ env.HOMEBREW_TAP_TOKEN != '' }}
+      - name: Update cask
+        if: env.HOMEBREW_TAP_TOKEN != ''
         env:
           VERSION: ${{ needs.build.outputs.version }}
-          SHA256: ${{ needs.build.outputs.dmg_sha256 }}
+          SHA256: ${{ needs.publish.outputs.dmg_sha256 }}
         run: |
           mkdir -p tap/Casks
           cat > tap/Casks/chau7.rb << CASK
           cask "chau7" do
             version "$VERSION"
             sha256 "$SHA256"
-
             url "https://github.com/aeptus/chau7/releases/download/v#{version}/Chau7-AppleSilicon.dmg"
             name "Chau7"
             desc "See your coding agents, know what they cost, steer them from the outside"
             homepage "https://chau7.sh"
-
             depends_on macos: ">= :sonoma"
             depends_on arch: :arm64
-
             app "Chau7.app"
-
-            zap trash: [
-              "~/.chau7",
-              "~/Library/Logs/Chau7.log",
-              "~/Library/Logs/Chau7",
-            ]
+            zap trash: ["~/.chau7", "~/Library/Logs/Chau7.log", "~/Library/Logs/Chau7"]
           end
           CASK
-
-      - name: Commit and push
-        if: ${{ env.HOMEBREW_TAP_TOKEN != '' }}
+      - name: Commit and push only changed cask
+        if: env.HOMEBREW_TAP_TOKEN != ''
         working-directory: tap
         env:
           VERSION: ${{ needs.build.outputs.version }}
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config user.name 'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
           git add Casks/chau7.rb
+          if git diff --cached --quiet; then exit 0; fi
           git commit -m "Update chau7 to $VERSION"
-          git push
+          # shellcheck disable=SC2016 # Expand the token only inside Git's credential helper.
+          git -c 'credential.helper=!f() { echo username=x-access-token; echo "password=$HOMEBREW_TAP_TOKEN"; }; f' push

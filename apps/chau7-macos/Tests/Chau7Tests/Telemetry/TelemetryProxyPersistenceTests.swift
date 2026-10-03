@@ -77,6 +77,20 @@ final class TelemetryProxyPersistenceTests: XCTestCase {
         XCTAssertNil(store.getRun("first")?.metadata["proxy_request_count"])
     }
 
+    func testTranscriptInvalidationPreservesIndependentProxyMeasurements() throws {
+        let store = try makeStore()
+        store.insertRun(run("run"))
+        try store.insertUsageEvidence(evidence("observed"))
+        store.invalidateRunMetrics("run", reason: "Transcript metrics invalid")
+        XCTAssertEqual(store.getRun("run")?.costUSD, 0.25)
+        XCTAssertEqual(store.getRun("run")?.costSource, .observed)
+        XCTAssertEqual(store.getRun("run")?.totalInputTokens, 100)
+        // A later ambiguous run restores the invalid transcript baseline.
+        store.insertRun(run("overlap"))
+        XCTAssertNil(store.getRun("run")?.costUSD)
+        XCTAssertEqual(store.getRun("run")?.tokenUsageState, .invalid)
+    }
+
     func testAdjacentRunBoundaryDoesNotDoubleCount() throws {
         let store = try makeStore()
         store.insertRun(run("first", end: 1010))

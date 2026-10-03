@@ -32,9 +32,20 @@ final class TelemetryProxyRunReconciler {
         sqlite3_finalize(stmt)
         // Backfill only bounded retained windows; older unavailable evidence is
         // never reconstructed from tokens or attributed by project alone in a tie.
-        for run in retained.prefix(runLimit) {
-            reconcile(start: run.startedAt, end: run.endedAt ?? Date())
+        // Process connected windows once instead of rescanning the same
+        // long-running/overlapping sessions for every retained run.
+        var window: (start: Date, end: Date)?
+        let now = Date()
+        for run in retained.prefix(runLimit).sorted(by: { $0.startedAt < $1.startedAt }) {
+            let end = run.endedAt ?? now
+            if let current = window, run.startedAt <= current.end {
+                window = (current.start, max(current.end, end))
+            } else {
+                if let current = window { reconcile(start: current.start, end: current.end) }
+                window = (run.startedAt, end)
+            }
         }
+        if let current = window { reconcile(start: current.start, end: current.end) }
     }
 
     private func reconcile(start: Date, end: Date) {

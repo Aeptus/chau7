@@ -766,6 +766,9 @@ final class TelemetryStore: @unchecked Sendable {
 
             if let refreshedRun = _getRun(runID) {
                 _insertUsageEvidence(UsageEvidence.runSummary(refreshedRun))
+                // Transcript repair invalidation cannot invalidate independently
+                // observed requests; retain invalid metrics as the fallback.
+                proxyReconciler.reconcile(around: refreshedRun.startedAt)
             }
         }
     }
