@@ -2,6 +2,15 @@ import XCTest
 @testable import Chau7Core
 
 final class DeferredInputApprovalTests: XCTestCase {
+    func testPendingLocalApprovalBlocksExecEvenAtPromptOrDuringShellLoading() {
+        for loading in [false, true] {
+            let readiness = TabExecutionReadiness.evaluate(snapshot: .init(shellLoading: loading, isAtPrompt: true, hasView: true, status: "command_approval_pending"))
+            XCTAssertFalse(readiness.canAcceptExec)
+            XCTAssertFalse(readiness.isReady)
+            XCTAssertEqual(readiness.reason, .commandApprovalPending)
+        }
+    }
+
     private func context(
         terminalID: UInt64 = 1,
         shellPID: Int32 = 2,

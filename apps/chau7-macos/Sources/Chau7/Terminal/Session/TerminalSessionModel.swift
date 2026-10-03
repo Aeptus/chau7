@@ -2542,6 +2542,7 @@ final class TerminalSessionModel {
 
     /// Sends text input to the terminal (used for broadcast mode)
     func sendInput(_ text: String) {
+        guard !hasPendingCommandApproval else { return }
         sendRawInput(text)
     }
 
@@ -2597,6 +2598,7 @@ final class TerminalSessionModel {
     /// becomes available. Used during tab restore when the view hasn't been
     /// created yet. If the view already exists, sends immediately.
     func sendOrQueueInput(_ text: String) {
+        guard !hasPendingCommandApproval else { return }
         trackAIResumeMetadata(from: text)
         sendRawInput(text)
     }
@@ -2740,6 +2742,7 @@ final class TerminalSessionModel {
     }
 
     func sendKeyPress(_ keyPress: TerminalKeyPress) {
+        guard !hasPendingCommandApproval else { return }
         guard let activeTerminalView else {
             enqueuePendingTerminalAction(.keyPress(keyPress))
             return

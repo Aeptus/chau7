@@ -815,6 +815,9 @@ final class TerminalControlService {
     }
 
     func execInTab(tabID: String, command: String) -> String {
+        if let (_, session) = resolveTab(tabID), session.hasPendingCommandApproval {
+            return jsonError("command_approval_pending")
+        }
         let context = onMain { self.gatherTabContext(tabID) }
         let (verdict, permissions) = MCPCommandFilter.check(command, context: context)
         if let err = enforceVerdict(verdict, permissions: permissions, fullInput: command, context: "tab \(tabID)") {
@@ -1475,6 +1478,9 @@ final class TerminalControlService {
     }
 
     func sendInput(tabID: String, input: String) -> String {
+        if let (_, session) = resolveTab(tabID), session.hasPendingCommandApproval {
+            return jsonError("command_approval_pending")
+        }
         guard let target = inputTargetState(tabID: tabID) else {
             return jsonError("Tab not found: \(tabID)")
         }
@@ -1517,6 +1523,9 @@ final class TerminalControlService {
     }
 
     func pressKey(tabID: String, key: String, modifiers: [String]) -> String {
+        if let (_, session) = resolveTab(tabID), session.hasPendingCommandApproval {
+            return jsonError("command_approval_pending")
+        }
         let keyPress: TerminalKeyPress
         do {
             keyPress = try TerminalKeyPress(key: key, modifiers: modifiers)
@@ -1555,6 +1564,9 @@ final class TerminalControlService {
     }
 
     func submitPrompt(tabID: String) -> String {
+        if let (_, session) = resolveTab(tabID), session.hasPendingCommandApproval {
+            return jsonError("command_approval_pending")
+        }
         let keyPress: TerminalKeyPress
         do {
             keyPress = try TerminalKeyPress(key: "enter", modifiers: [])
@@ -2775,7 +2787,7 @@ final class TerminalControlService {
                 shellLoading: session?.isShellLoading ?? true,
                 isAtPrompt: session?.isAtPrompt ?? false,
                 hasView: session?.existingRustTerminalView != nil,
-                status: session?.status.rawValue ?? "unknown"
+                status: session?.hasPendingCommandApproval == true ? "command_approval_pending" : (session?.status.rawValue ?? "unknown")
             )
         )
     }
@@ -2790,6 +2802,7 @@ final class TerminalControlService {
         result["has_terminal_view"] = session?.existingRustTerminalView != nil
         result["mcp_mutation_allowed"] = mcpControlAllowed ?? true
         result["mcp_control_required"] = mcpControlAllowed == false
+        result["command_approval_pending"] = session?.hasPendingCommandApproval ?? false
 
         if mcpControlAllowed == false {
             // Preserve the underlying terminal facts for diagnostics while

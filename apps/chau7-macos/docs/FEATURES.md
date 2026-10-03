@@ -470,6 +470,8 @@ The app still contains internal runtime orchestration used by dashboard and revi
 
 ## Performance
 
+- Pending local command approval blocks MCP execution and input, exposes a truthful readiness reason, and requires an existing live PTY before deferred consent can resume.
+
 - Automation submissions wait for consent before sending their body or Enter; delayed approved submits are discarded if pane or input context changes.
 
 - **Asynchronous command approval** — confirmation sheets keep the UI and heartbeat advancing. Consent releases only the original unchanged input once; remote commands remain unsent until approved, and pending approval appears in session status.
