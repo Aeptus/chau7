@@ -39,6 +39,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Automation submissions wait for consent before sending their body or Enter; delayed approved submits are discarded if pane or input context changes.
 
 - Dangerous-command approval and rejection alerts now use asynchronous sheets, so remote input cannot strand the main dispatch queue in a modal loop. Deferred consent is one-time and bound to the original pane, PTY, directory, and input; edited or replaced contexts are rejected. Remote sends review the complete submission before writing its body or scheduling Enter and expose pending approval through session status.
+- Core-only tests refresh manifest discovery on every run so newly added regressions cannot be silently omitted by a cached dynamic test list; compiled Core artifacts remain reusable.
+
 - Failed Git probes no longer crawl non-Git directories. Changed-file lists are capped at creation, mutation, decoding, and encoding with visible truncation; oversized legacy lists are repaired. Backup archives now enforce per-file and total-byte budgets while preserving the latest restore regardless of archive size.
 
 - CI prepares a simulator runtime matching the selected Xcode SDK and selects a concrete device ID before compilation, avoiding missing iPhone destinations on runner images. The iOS gate caches by the explicit destination.
