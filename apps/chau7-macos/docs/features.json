@@ -1,5 +1,12 @@
 [
   {
+    "category": "MCP",
+    "feature": "Bounded Socket Transport Recovery",
+    "description": "Serial socket owners use complete linear-time framing, queue-inclusive write deadlines and nonblocking reconnect handshakes; bounded async notifications keep slow peers off UI and interrupted requests return errors without replaying uncertain execution",
+    "status": "Shipped",
+    "differentiator": "No"
+  },
+  {
     "category": "Diagnostics",
     "feature": "Hang Capture Progress Evidence",
     "description": "Bounded main-thread stack observations, watchdog identity and before/after heartbeat progress identify captures overlapping recovery without asserting a runtime teardown root cause",

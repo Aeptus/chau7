@@ -35,6 +35,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Hang manifests record heartbeat progress before and after sampling, bounded main-thread stack families and watchdog identity, so a sample overlapping recovery is explicit rather than mistaken for a persistent teardown stall.
 
+- MCP socket writers admit bounded frames asynchronously, handle partial writes and isolate slow clients; deadlines include queue wait, bridge connect cannot block past its retry budget, and incremental framing scans each byte once. The stdio bridge restores complete handshakes before queued calls and reports interrupted request IDs without replaying commands whose execution is uncertain.
+
 - Hang sampling has a ten-second helper deadline and bounded diagnostic retention (40 bundles, seven days, 64 MiB). Manifests record build identity and timeout/truncation outcomes; watchdog health uses monotonic time.
 
 - Read-only MCP requests return a retryable UI-timeout error instead of waiting indefinitely. Expired queued reads are cancelled, terminal output uses bounded tails, and response formatting and provider-log fallback flushes stay on the MCP worker.

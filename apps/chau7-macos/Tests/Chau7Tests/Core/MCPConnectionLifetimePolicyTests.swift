@@ -4,6 +4,6 @@ import XCTest
 final class MCPConnectionLifetimePolicyTests: XCTestCase {
     func testInitializedConnectionsHaveNoServerIdleReadTimeout() {
         XCTAssertNil(MCPConnectionLifetimePolicy.receiveTimeoutSeconds)
-        XCTAssertEqual(MCPConnectionLifetimePolicy.sendTimeoutSeconds, 30)
+        XCTAssertEqual(MCPConnectionLifetimePolicy.sendTimeoutSeconds, 5)
     }
 }

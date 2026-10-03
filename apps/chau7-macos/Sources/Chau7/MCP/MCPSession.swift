@@ -17,10 +17,9 @@ final class MCPSession {
     private let controlPlane = ControlPlaneService.shared
     private let stateSnapshotService = Chau7StateSnapshotService.shared
     private var lifecycleState: LifecycleState = .awaitingInitialize
-    private let writeQueue = DispatchQueue(label: "com.chau7.mcp.session.write")
+    private let writer: BoundedSocketWriter?
     private let subscriptionStateQueue = DispatchQueue(label: "com.chau7.mcp.session.subscription-state")
     private let notificationSink: (([String: Any]) -> Void)?
-    private var liveNotificationWriter: (([String: Any]) -> Void)?
     private var handshakeDiagnostic = MCPHandshakeDiagnostic()
 
     private struct SubscriptionState {
@@ -61,6 +60,7 @@ final class MCPSession {
         controlService: TerminalControlService? = nil
     ) {
         self.fd = fd
+        self.writer = BoundedSocketWriter(socket: fd)
         self.controlService = controlService ?? TerminalControlService.shared
         self.notificationSink = notificationSink
     }
@@ -72,29 +72,15 @@ final class MCPSession {
     /// Blocking run loop: reads JSON-RPC messages, dispatches, writes responses.
     /// Note: this takes ownership of fd — the fd is closed when the session ends.
     func run() {
-        configureSocketTimeouts()
-        let readStream = fdopen(fd, "r")
-        // dup() so each FILE* owns its own fd — avoids double-close
-        let writeFD = dup(fd)
-        let writeStream = writeFD >= 0 ? fdopen(writeFD, "w") : nil
-        guard let readStream, let writeStream else {
-            if let readStream { fclose(readStream) }
-            else { close(fd) }
-            if writeFD >= 0, writeStream == nil { close(writeFD) }
+        guard writer != nil, let readStream = fdopen(fd, "r") else {
+            writer?.close()
+            close(fd)
             return
         }
-
         defer {
             cancelSubscription()
-            liveNotificationWriter = nil
-            writeQueue.sync {}
-            fclose(readStream) // closes original fd
-            fclose(writeStream) // closes dup'd fd
-        }
-
-        liveNotificationWriter = { [weak self] payload in
-            guard let self else { return }
-            writeJSON(to: writeStream, json: payload, mirrorToNotificationSink: true)
+            writer?.finish()
+            fclose(readStream) // closes the original; writer owns its duplicate
         }
 
         readLoop: while true {
@@ -113,7 +99,7 @@ final class MCPSession {
                 // partial line and cannot realign to the next JSON boundary, so
                 // report and close rather than risk interpreting garbage.
                 Log.warn("MCPSession: request line exceeded \(Self.maxRequestLineBytes) bytes (fd=\(fd)); closing")
-                writeError(to: writeStream, id: nil, code: -32700, message: "Request too large")
+                writeError(id: nil, code: -32700, message: "Request too large")
                 break readLoop
             case .line(let rawLine):
                 let lineStr = rawLine.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -123,12 +109,12 @@ final class MCPSession {
                 guard let data = lineStr.data(using: .utf8),
                       let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
                 else {
-                    writeError(to: writeStream, id: nil, code: -32700, message: "Parse error")
+                    writeError(id: nil, code: -32700, message: "Parse error")
                     continue
                 }
 
                 if let response = handleRequestObject(json) {
-                    writeJSON(to: writeStream, json: response)
+                    writeJSON(json: response)
                 }
             }
         }
@@ -151,7 +137,9 @@ final class MCPSession {
             errno = 0
             let c = fgetc(stream)
             if c == EOF {
-                if errno == EINTR { continue }
+                if errno == EINTR { clearerr(stream)
+                    continue
+                }
                 if errno != 0 { return .readError(errno) }
                 // Clean end of stream: surface any final unterminated line.
                 return bytes.isEmpty ? .endOfStream : .line(decodeUTF8(bytes))
@@ -168,16 +156,6 @@ final class MCPSession {
 
     private func decodeUTF8(_ bytes: [UInt8]) -> String {
         String(decoding: bytes, as: UTF8.self)
-    }
-
-    private func configureSocketTimeouts() {
-        // An initialized local MCP session remains valid while its Unix socket
-        // remains open. Do not impose a server-side read-idle timeout: the peer
-        // process closing the socket is the authoritative lifecycle signal.
-        var timeout = timeval(tv_sec: MCPConnectionLifetimePolicy.sendTimeoutSeconds, tv_usec: 0)
-        withUnsafePointer(to: &timeout) { ptr in
-            _ = setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, ptr, socklen_t(MemoryLayout<timeval>.size))
-        }
     }
 
     // MARK: - Method Dispatch
@@ -1081,29 +1059,15 @@ final class MCPSession {
         return ["jsonrpc": "2.0", "id": id as Any, "error": error]
     }
 
-    private func writeError(to stream: UnsafeMutablePointer<FILE>, id: Any?, code: Int, message: String) {
-        writeJSON(to: stream, json: buildError(id: id, code: code, message: message))
+    private func writeError(id: Any?, code: Int, message: String) {
+        writeJSON(json: buildError(id: id, code: code, message: message))
     }
 
-    private func writeJSON(
-        to stream: UnsafeMutablePointer<FILE>,
-        json: [String: Any],
-        mirrorToNotificationSink: Bool = false
-    ) {
-        writeQueue.sync {
-            writeLine(to: stream, json: json)
-            if mirrorToNotificationSink {
-                notificationSink?(json)
-            }
-        }
-    }
-
-    private func writeLine(to stream: UnsafeMutablePointer<FILE>, json: [String: Any]) {
+    private func writeJSON(json: [String: Any]) {
         guard !json.isEmpty,
-              let data = try? JSONSerialization.data(withJSONObject: json),
-              let line = String(data: data, encoding: .utf8) else { return }
-        fputs(line + "\n", stream)
-        fflush(stream)
+              var frame = try? JSONSerialization.data(withJSONObject: json) else { return }
+        frame.append(10)
+        writer?.enqueue(frame)
     }
 
     private func requireInitializedResponse(for method: String, id: Any?, isNotification: Bool) -> [String: Any]? {
@@ -1352,7 +1316,7 @@ final class MCPSession {
     }
 
     private var canEmitNotifications: Bool {
-        liveNotificationWriter != nil || notificationSink != nil
+        writer?.isOpen == true || notificationSink != nil
     }
 
     private func cancelSubscription() {
@@ -1406,11 +1370,11 @@ final class MCPSession {
             "method": method,
             "params": params
         ]
-        if let liveNotificationWriter {
-            liveNotificationWriter(payload)
-        } else {
-            notificationSink?(payload)
+        if let writer {
+            guard writer.isOpen else { return }
+            writeJSON(json: payload)
         }
+        notificationSink?(payload)
     }
 
     private func encodeJSONObject(_ object: [String: Any]) -> String? {

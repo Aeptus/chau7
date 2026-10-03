@@ -4,6 +4,7 @@ public enum MCPConnectionLifetimePolicy {
     /// the Unix socket; subscription heartbeats remain an opt-in data feature.
     public static let receiveTimeoutSeconds: Int? = nil
 
-    /// A peer that stops reading must not block a session writer forever.
-    public static let sendTimeoutSeconds = 30
+    /// A peer that stops reading must not block a session writer forever; this is a total frame
+    /// deadline, enforced alongside bounded kernel waits.
+    public static let sendTimeoutSeconds = 5
 }

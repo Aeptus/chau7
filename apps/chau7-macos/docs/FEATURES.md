@@ -1065,4 +1065,6 @@ Key patterns:
 - Proxy-observed usage evidence is attributed to the enclosing telemetry run (tab id, then session id, then project path, bounded by the run window); analytics migrations add each cache counter independently so a partially-migrated database still converges.
 - The generated CTO executable wrapper execs the real binary for `--porcelain`, `--format`, and `-z` invocations before reaching the optimizer, so machine-readable bytes survive regardless of optimizer behaviour.
 
+- **MCP transport recovery** — bounded per-connection writers keep slow subscription clients off the UI thread, with queue-inclusive deadlines, nonblocking connect and linear frame scanning; reconnect completes the saved handshake before dispatching buffered requests. Interrupted requests return their original IDs and are never automatically replayed when execution is uncertain.
+
 - **Hang capture evidence** — schema 3 diagnostics record sampling duration, before/after heartbeat tokens, watchdog identity and bounded main-thread stack families. These observations distinguish captures overlapping recovery without claiming a teardown root cause.
