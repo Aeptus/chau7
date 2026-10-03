@@ -470,6 +470,8 @@ The app still contains internal runtime orchestration used by dashboard and revi
 
 ## Performance
 
+- Automation submissions wait for consent before sending their body or Enter; delayed approved submits are discarded if pane or input context changes.
+
 - **Asynchronous command approval** — confirmation sheets keep the UI and heartbeat advancing. Consent releases only the original unchanged input once; remote commands remain unsent until approved, and pending approval appears in session status.
 
 - **Terminal responsiveness** — zero-timeout polls never spin for ownership, output batches yield between chunks, and file-backed session discovery stays off status getters. A bounded cache reuses shaped graphemes in CPU fallback frames while preserving colors and font traits; discovery completes on the main actor and stale results cannot replace newer agent identities.

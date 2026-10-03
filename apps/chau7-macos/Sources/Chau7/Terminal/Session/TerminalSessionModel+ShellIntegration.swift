@@ -92,7 +92,7 @@ extension TerminalSessionModel {
         }
     }
 
-    private func commandApprovalContext() -> DeferredInputApproval.Context? {
+    func commandApprovalContext() -> DeferredInputApproval.Context? {
         guard let view = existingRustTerminalView else { return nil }
         return .init(
             terminalID: view.viewId,
