@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Dependency ownership uses one Rust workspace lock and checked shared Swift pins; update coverage includes all maintained services and platforms. Local review configuration has a tracked example and repository text has an LF policy.
+
 ### Fixed
 
 - Release jobs pin action revisions, reuse one built distribution, limit publication permissions and signing-key access, and always clean runner signing material. Manual validation cannot publish or access signing secrets.

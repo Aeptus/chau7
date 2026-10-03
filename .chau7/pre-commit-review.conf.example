@@ -1,3 +1,4 @@
+# Copy to pre-commit-review.conf for local advisory review preferences.
 # Chau7 pre-commit review configuration
 #
 # enabled: 1|0
