@@ -964,9 +964,15 @@ final class TerminalControlService {
             let interval = min(0.5, 0.1 + elapsed * 0.1)
             Thread.sleep(forTimeInterval: min(interval, max(0.01, deadline.timeIntervalSinceNow)))
 
-            guard let readinessRead = MainActorBridge.read(timeout: min(1, max(0, deadline.timeIntervalSinceNow)), {
+            let remaining = deadline.timeIntervalSinceNow
+            if remaining <= 0 { break }
+            let readTimeout = min(1, remaining)
+            guard let readinessRead = MainActorBridge.read(timeout: readTimeout, {
                 self.tabReadinessSnapshot(tabID: tabID, enforceMCPControl: enforceMCPControl)
-            }) else { return MainActorBridge.unresponsiveJSON }
+            }) else {
+                if readTimeout < 1 { break }
+                return MainActorBridge.unresponsiveJSON
+            }
             guard let snapshot = readinessRead else {
                 return jsonError("Tab not found: \(tabID)")
             }
