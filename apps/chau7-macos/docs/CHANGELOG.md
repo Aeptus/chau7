@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Proxy usage separates inclusive OpenAI/Gemini cache counters and OpenAI reasoning before canonical aggregation and pricing, so those tokens are charged and counted once. Raw evidence and its pricing version are retained; historical prices are not silently rewritten.
+
+### Fixed
+
 - Repository totals preserve known tokens when optional counters are missing and subtract retained measured proxy overlap once when combining cost sources.
 
 ### Changed

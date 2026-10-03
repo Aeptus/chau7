@@ -18,3 +18,13 @@ Repository aggregates coalesce each optional counter before summing. Combined
 run/proxy cost subtracts the measured overlap retained in both sources once;
 separate source totals keep their provenance. This prevents the new measured
 run fields from disappearing through SQL NULL arithmetic or being added twice.
+
+ProviderTokenAccounting converts raw proxy counters to separate canonical
+buckets before run/reconciliation totals. OpenAI cached/reasoning counters are
+subsets of input/output totals; Gemini cached tokens are included in prompt
+tokens while thoughts are separate. Anthropic cache buckets are independent.
+See the [OpenAI caching contract](https://developers.openai.com/api/docs/guides/prompt-caching),
+[reasoning contract](https://developers.openai.com/api/docs/guides/reasoning) and
+[Gemini usage metadata](https://ai.google.dev/api/generate-content#UsageMetadata).
+The Go pricing boundary applies the same rules. Stored raw evidence remains
+unchanged and historical costs keep their original pricing version.

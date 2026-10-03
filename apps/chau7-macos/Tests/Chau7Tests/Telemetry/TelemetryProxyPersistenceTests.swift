@@ -35,7 +35,7 @@ final class TelemetryProxyPersistenceTests: XCTestCase {
         store.insertUsageEvidence(request)
         try store.insertUsageEvidence(evidence("second", read: 0))
         let saved = try XCTUnwrap(store.getRun("run"))
-        XCTAssertEqual(saved.totalInputTokens, 200)
+        XCTAssertEqual(saved.totalInputTokens, 160)
         XCTAssertNil(saved.totalCacheCreationInputTokens)
         XCTAssertEqual(saved.totalCacheReadInputTokens, 40)
         XCTAssertEqual(saved.costUSD, 0.5)
@@ -84,7 +84,7 @@ final class TelemetryProxyPersistenceTests: XCTestCase {
         store.invalidateRunMetrics("run", reason: "Transcript metrics invalid")
         XCTAssertEqual(store.getRun("run")?.costUSD, 0.25)
         XCTAssertEqual(store.getRun("run")?.costSource, .observed)
-        XCTAssertEqual(store.getRun("run")?.totalInputTokens, 100)
+        XCTAssertEqual(store.getRun("run")?.totalInputTokens, 60)
         // A later ambiguous run restores the invalid transcript baseline.
         store.insertRun(run("overlap"))
         XCTAssertNil(store.getRun("run")?.costUSD)
