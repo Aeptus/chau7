@@ -386,6 +386,7 @@ final class TerminalSessionModel {
     }
 
     var effectiveStatus: CommandStatus {
+        if hasPendingCommandApproval { return .approvalRequired }
         guard let historyState = matchedAIHistoryState else { return status }
         return Self.resolveEffectiveStatus(historyState: historyState, fallback: status)
     }
@@ -1103,6 +1104,14 @@ final class TerminalSessionModel {
     @ObservationIgnored private var lastAutomationInputAt: Date?
     @ObservationIgnored private var settingsObservers: [NSObjectProtocol] = []
     @ObservationIgnored private var idleTimer: DispatchSourceTimer?
+    @ObservationIgnored var deferredInputApproval = DeferredInputApproval()
+    var hasPendingCommandApproval = false {
+        didSet {
+            onSessionStateChanged?()
+            postRuntimeReadinessChange(source: "command_approval")
+        }
+    }
+
     @ObservationIgnored var lastInputAt = Date()
     @ObservationIgnored var lastOutputAt = Date()
     /// Set once, when persisted activity timestamps are restored onto this
@@ -2620,6 +2629,16 @@ final class TerminalSessionModel {
     func sendRemoteSubmittedInput(_ text: String) {
         let provider = aiDisplayAppName ?? activeAppName ?? effectiveAIProvider
         let plan = AIAutomationStrategy.remoteInputPlan(for: text, provider: provider)
+        let reviewedInput = plan.insertText + (plan.submitMode == .none ? "" : "\r")
+        guard shouldAcceptDirectUserInput(
+            reviewedInput,
+            inputPrefix: plan.clearLineFirst ? "" : nil,
+            resume: { [weak self] in self?.deliverApprovedRemoteInput(plan) }
+        ) else { return }
+        deliverApprovedRemoteInput(plan)
+    }
+
+    private func deliverApprovedRemoteInput(_ plan: AIAutomationInputPlan) {
         if plan.submitMode != .none {
             // The old single-chunk path set this via the trailing terminator in
             // sendRawInput; keep command-based AI detection primed for the
@@ -2644,7 +2663,11 @@ final class TerminalSessionModel {
             case .rawText:
                 sendRawInput(plan.insertText)
             case .pasteText:
-                sendPastedInput(plan.insertText)
+                if let view = activeRustTerminalView {
+                    view.pasteApprovedText(plan.insertText)
+                } else {
+                    sendPastedInput(plan.insertText)
+                }
             }
         }
         scheduleRemoteSubmit(mode: plan.submitMode, delayMs: plan.submitDelayMs)

@@ -69,12 +69,12 @@ extension TerminalSessionModel {
         }
     }
 
-    func dangerousCommandCheckForDirectUserInput(_ text: String) -> DangerousCommandGuard.CheckResult? {
+    func dangerousCommandCheckForDirectUserInput(_ text: String, inputPrefix: String? = nil) -> DangerousCommandGuard.CheckResult? {
         let sanitizedText = sanitizeInputForBuffer(text)
         guard !sanitizedText.isEmpty else { return nil }
         guard sanitizedText.contains("\n") || sanitizedText.contains("\r") else { return nil }
 
-        let pendingCommand = inputBuffer + sanitizedText
+        let pendingCommand = (inputPrefix ?? inputBuffer) + sanitizedText
         let shellPID = existingRustTerminalView?.shellPid ?? 0
         let extraProtectedPIDs: Set<Int32> = shellPID > 0 ? [shellPID] : []
         let observedProcesses = processGroup?.children.map(\.name) ?? []
@@ -92,25 +92,52 @@ extension TerminalSessionModel {
         }
     }
 
-    func shouldAcceptDirectUserInput(_ text: String) -> Bool {
-        guard let result = dangerousCommandCheckForDirectUserInput(text) else { return true }
+    private func commandApprovalContext() -> DeferredInputApproval.Context? {
+        guard let view = existingRustTerminalView else { return nil }
+        return .init(
+            terminalID: view.viewId,
+            shellPID: view.shellPid,
+            directory: currentDirectory,
+            inputPrefix: inputBuffer,
+            lastInputAt: lastInputAt
+        )
+    }
 
+    func shouldAcceptDirectUserInput(_ text: String, inputPrefix: String? = nil, resume: @escaping () -> Void) -> Bool {
+        guard !hasPendingCommandApproval else { return false }
+        guard let result = dangerousCommandCheckForDirectUserInput(text, inputPrefix: inputPrefix) else { return true }
         switch result {
         case .safe, .allowed:
             return true
         case .needsConfirmation(let command, let matchedPattern, let reason):
-            return MainActor.assumeIsolated {
-                DangerousCommandGuard.shared.showConfirmation(
-                    command: command,
-                    matchedPattern: matchedPattern,
-                    reason: reason
-                )
-            }
-        case .blocked(let reason):
-            let sanitizedText = sanitizeInputForBuffer(text)
-            let pendingCommand = (inputBuffer + sanitizedText).trimmingCharacters(in: .whitespacesAndNewlines)
+            guard let context = commandApprovalContext(),
+                  let token = deferredInputApproval.begin(context: context) else { return false }
+            hasPendingCommandApproval = true
             MainActor.assumeIsolated {
-                DangerousCommandGuard.shared.showBlockedAlert(command: pendingCommand, reason: reason)
+                DangerousCommandGuard.shared.showConfirmation(
+                    command: command, matchedPattern: matchedPattern, reason: reason,
+                    window: existingRustTerminalView?.window
+                ) { [weak self] approved in
+                    guard let self else { return }
+                    let accept = deferredInputApproval.resolve(
+                        token: token,
+                        current: commandApprovalContext(),
+                        approved: approved
+                    )
+                    hasPendingCommandApproval = deferredInputApproval.pendingToken != nil
+                    if accept, commandApprovalContext() == context { resume() }
+                }
+            }
+            return false
+        case .blocked(let reason):
+            let pendingCommand = (inputBuffer + sanitizeInputForBuffer(text))
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            MainActor.assumeIsolated {
+                DangerousCommandGuard.shared.showBlockedAlert(
+                    command: pendingCommand,
+                    reason: reason,
+                    window: existingRustTerminalView?.window
+                )
             }
             return false
         }
