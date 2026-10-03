@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Repository reads now have a dedicated MCP query owner and shared event-filter policy. Terminal control captures UI snapshots and tab aliases; worker-side metadata/statistics and the existing JSON contracts are preserved.
+
 ### Fixed
 
 - Release jobs pin action revisions, reuse one built distribution, limit publication permissions and signing-key access, and always clean runner signing material. Manual validation cannot publish or access signing secrets.
