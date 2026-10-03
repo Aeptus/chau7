@@ -8,6 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+
+- Persisted proxy request identities and measured/cache run attribution, rejecting overlaps and half-open window mismatches. Retained backfill and lifecycle updates are idempotent; run coverage remains explicitly partial and derived summaries are not counted twice.
+
+### Fixed
 - Source packaging rejects a missing terminal emulator with its build command; developer setup pins required tools, installs/verifies hooks and runs both Python suites. Distribution packaging reuses freshly built Go backends.
 
 ### Changed
