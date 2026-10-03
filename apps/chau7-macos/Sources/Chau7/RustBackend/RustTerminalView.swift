@@ -1934,7 +1934,7 @@ final class RustTerminalView: NSView {
     var onFocus: (() -> Void)?
 
     /// Callback before user-originated text is sent to the PTY.
-    var shouldAcceptUserText: ((String) -> Bool)?
+    var shouldAcceptUserText: ((String, @escaping () -> Void) -> Bool)?
 
     /// Callback when buffer content changes
     var onBufferChanged: (() -> Void)?

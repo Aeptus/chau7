@@ -472,6 +472,13 @@ The app still contains internal runtime orchestration used by dashboard and revi
 
 - Hang sampling has a ten-second helper deadline and bounded diagnostic retention (40 bundles, seven days, 64 MiB). Manifests record build identity and timeout/truncation outcomes; watchdog health uses monotonic time.
 
+- Read-only MCP requests return a retryable UI-timeout error instead of waiting indefinitely. Expired queued reads are cancelled, terminal output uses bounded tails, and response formatting and provider-log fallback flushes stay on the MCP worker.
+
+- Pending local command approval blocks MCP execution and input, exposes a truthful readiness reason, and requires an existing live PTY before deferred consent can resume.
+
+- Automation submissions wait for consent before sending their body or Enter; delayed approved submits are discarded if pane or input context changes.
+
+- **Asynchronous command approval** — confirmation sheets keep the UI and heartbeat advancing. Consent releases only the original unchanged input once; remote commands remain unsent until approved, and pending approval appears in session status.
 - **Bounded changed-file backups** — non-Git directories report unavailable changes without recursive scanning. Changed-file lists retain truncation metadata; archive count, age, per-file size, and total bytes are bounded without discarding the latest restore.
 - **Core-only test workflow** — `Scripts/test-core.sh` selects pure Chau7Core tests and caches their build independently of the app. Standard `swift test` continues to validate the full integration graph.
 

@@ -901,11 +901,8 @@ final class MCPSession {
             return classifyToolResponse(Chau7ObservabilityService.shared.timerInventoryJSON())
 
         case "chau7_state_snapshot":
-            return .toolResult(
-                toolSuccessResult(
-                    payload: stateSnapshotService.snapshotPayload()
-                )
-            )
+            let payload = stateSnapshotService.snapshotPayload()
+            return classifyToolResponse(encodeJSONObject(payload) ?? #"{"error":"serialization_failed"}"#)
 
         case "chau7_subscribe":
             return subscribeToChau7State(arguments: arguments)
@@ -923,7 +920,7 @@ final class MCPSession {
             guard let tabID = arguments["tab_id"] as? String else {
                 return .protocolError(code: -32602, message: "Invalid params: tab_id is required")
             }
-            return classifyToolResponse(MainActorBridge.sync { controlService.mcpTabStatus(tabID: tabID) })
+            return classifyToolResponse(MainActorBridge.read { self.controlService.mcpTabStatus(tabID: tabID) } ?? MainActorBridge.unresponsiveJSON)
 
         case "tab_wait_ready":
             guard let tabID = arguments["tab_id"] as? String else {

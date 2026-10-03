@@ -5234,5 +5234,19 @@
     "description": "Diagnostic helpers have deadlines; samples and manifests are retained as bounded bundles with build identity, timeout and truncation outcomes, and monotonic watchdog health tracking",
     "status": "Shipped",
     "differentiator": "No"
+  },
+  {
+    "category": "Reliability",
+    "feature": "Bounded MCP UI Reads",
+    "description": "Read-only UI requests have deadlines and bounded queue admission; expired reads never run after recovery, and terminal output capture and UTF-8 responses respect strict tail budgets; provider-log fallback flushing stays on the MCP worker",
+    "status": "Shipped",
+    "differentiator": "No"
+  },
+  {
+    "category": "Reliability",
+    "feature": "Asynchronous Command Approval",
+    "description": "Nonblocking confirmation sheets preserve explicit one-time consent tied to the original pane, PTY, directory and input; remote submissions are checked before body or Enter delivery and pending approval appears in session status; automation submission and delayed Enter are bound to the same consent context; pending local consent blocks MCP mutations and readiness",
+    "status": "Shipped",
+    "differentiator": "No"
   }
 ]

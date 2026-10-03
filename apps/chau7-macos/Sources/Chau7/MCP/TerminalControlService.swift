@@ -815,6 +815,9 @@ final class TerminalControlService {
     }
 
     func execInTab(tabID: String, command: String) -> String {
+        if let (_, session) = resolveTab(tabID), session.hasPendingCommandApproval {
+            return jsonError("command_approval_pending")
+        }
         let context = onMain { self.gatherTabContext(tabID) }
         let (verdict, permissions) = MCPCommandFilter.check(command, context: context)
         if let err = enforceVerdict(verdict, permissions: permissions, fullInput: command, context: "tab \(tabID)") {
@@ -920,9 +923,10 @@ final class TerminalControlService {
         let boundedTimeoutMs = max(0, min(timeoutMs, 120_000))
         let start = Date()
 
-        guard var lastSnapshot = onMain({
+        guard let initialRead = MainActorBridge.read({
             self.tabReadinessSnapshot(tabID: tabID, enforceMCPControl: enforceMCPControl)
-        }) else {
+        }) else { return MainActorBridge.unresponsiveJSON }
+        guard var lastSnapshot = initialRead else {
             return jsonError("Tab not found: \(tabID)")
         }
 
@@ -960,9 +964,10 @@ final class TerminalControlService {
             let interval = min(0.5, 0.1 + elapsed * 0.1)
             Thread.sleep(forTimeInterval: min(interval, max(0.01, deadline.timeIntervalSinceNow)))
 
-            guard let snapshot = onMain({
+            guard let readinessRead = MainActorBridge.read(timeout: min(1, max(0, deadline.timeIntervalSinceNow)), {
                 self.tabReadinessSnapshot(tabID: tabID, enforceMCPControl: enforceMCPControl)
-            }) else {
+            }) else { return MainActorBridge.unresponsiveJSON }
+            guard let snapshot = readinessRead else {
                 return jsonError("Tab not found: \(tabID)")
             }
             lastSnapshot = snapshot
@@ -1475,6 +1480,9 @@ final class TerminalControlService {
     }
 
     func sendInput(tabID: String, input: String) -> String {
+        if let (_, session) = resolveTab(tabID), session.hasPendingCommandApproval {
+            return jsonError("command_approval_pending")
+        }
         guard let target = inputTargetState(tabID: tabID) else {
             return jsonError("Tab not found: \(tabID)")
         }
@@ -1517,6 +1525,9 @@ final class TerminalControlService {
     }
 
     func pressKey(tabID: String, key: String, modifiers: [String]) -> String {
+        if let (_, session) = resolveTab(tabID), session.hasPendingCommandApproval {
+            return jsonError("command_approval_pending")
+        }
         let keyPress: TerminalKeyPress
         do {
             keyPress = try TerminalKeyPress(key: key, modifiers: modifiers)
@@ -1555,6 +1566,9 @@ final class TerminalControlService {
     }
 
     func submitPrompt(tabID: String) -> String {
+        if let (_, session) = resolveTab(tabID), session.hasPendingCommandApproval {
+            return jsonError("command_approval_pending")
+        }
         let keyPress: TerminalKeyPress
         do {
             keyPress = try TerminalKeyPress(key: "enter", modifiers: [])
@@ -1666,66 +1680,51 @@ final class TerminalControlService {
     }
 
     nonisolated func tabOutput(tabID: String, lines: Int, waitForStableMs: Int? = nil, source: String? = nil) -> String {
-        // source=pty_log: return ANSI-stripped PTY log instead of terminal buffer.
-        // Works for all AI tools regardless of alternate screen usage.
         if source == "pty_log" {
             return ptyLogOutput(tabID: tabID, lines: lines, waitForStableMs: waitForStableMs)
         }
-
-        // If wait_for_stable_ms is requested, poll the buffer on the calling (MCP background)
-        // thread, only briefly grabbing main for each snapshot. This avoids blocking the UI.
-        if let waitMs = waitForStableMs, waitMs > 0 {
-            let maxWaitMs = min(waitMs, 30000)
-            // Content must be unchanged for this long to be considered stable.
-            // The caller's wait_for_stable_ms is the total budget; we use a shorter
-            // inner threshold so we return as soon as content settles.
-            let stabilityThresholdMs = min(maxWaitMs, 500)
-            let pollIntervalMs = 250
-            let deadline = DispatchTime.now() + .milliseconds(maxWaitMs)
-            var previousFingerprint: (Int, Data)?
-            var stableSince: DispatchTime?
-
-            while DispatchTime.now() < deadline {
-                let fingerprint: (Int, Data)? = onMain {
-                    guard let (_, session) = self.resolveTab(tabID) else { return nil }
-                    guard let data = session.captureRemoteSnapshot() else { return nil }
-                    return Self.bufferFingerprint(data)
-                }
-
-                // Tab closed or view detached — return what we have
-                guard let fp = fingerprint else { break }
-
-                if let prev = previousFingerprint,
-                   fp.0 == prev.0, fp.1 == prev.1 {
-                    // Content unchanged since last poll
-                    if stableSince == nil { stableSince = DispatchTime.now() }
-                    let stableMs = Int((DispatchTime.now().uptimeNanoseconds - stableSince!.uptimeNanoseconds) / 1_000_000)
-                    if stableMs >= stabilityThresholdMs {
-                        break // Buffer has been stable long enough
-                    }
-                } else {
-                    // Content changed — reset stability timer
-                    stableSince = nil
-                    previousFingerprint = fp
-                }
-
-                Thread.sleep(forTimeInterval: Double(pollIntervalMs) / 1000.0)
+        let clampedLines = max(1, min(lines, 10000))
+        let maxWaitMs = max(0, min(waitForStableMs ?? 0, 30000))
+        let deadline = DispatchTime.now() + .milliseconds(maxWaitMs)
+        var previousFingerprint: (Int, Data)?
+        var stableSince: DispatchTime?
+        while maxWaitMs > 0, DispatchTime.now() < deadline {
+            let now = DispatchTime.now()
+            let remaining = now < deadline ? Double(deadline.uptimeNanoseconds - now.uptimeNanoseconds) / 1_000_000_000 : 0
+            guard let snapshot = bufferTailSnapshot(tabID: tabID, lines: clampedLines, timeout: min(1, max(0, remaining))) else {
+                return MainActorBridge.unresponsiveJSON
             }
+            if let error = snapshot.error { return error }
+            let fingerprint = Self.bufferFingerprint(snapshot.data)
+            if let previousFingerprint, fingerprint.0 == previousFingerprint.0, fingerprint.1 == previousFingerprint.1 {
+                if stableSince == nil { stableSince = .now() }
+                if let stableSince, DispatchTime.now().uptimeNanoseconds - stableSince.uptimeNanoseconds >= UInt64(min(maxWaitMs, 500)) * 1_000_000 { break }
+            } else {
+                stableSince = nil
+                previousFingerprint = fingerprint
+            }
+            let pollNow = DispatchTime.now()
+            if pollNow >= deadline { break }
+            Thread.sleep(forTimeInterval: min(0.25, Double(deadline.uptimeNanoseconds - pollNow.uptimeNanoseconds) / 1_000_000_000))
         }
+        guard let snapshot = bufferTailSnapshot(tabID: tabID, lines: clampedLines) else { return MainActorBridge.unresponsiveJSON }
+        if let error = snapshot.error { return error }
+        return formatBufferOutput(tabID: snapshot.tabID, data: snapshot.data, lines: clampedLines)
+    }
 
-        // Final capture and format from terminal buffer
-        return onMain {
+    private struct BufferTailSnapshot {
+        let tabID: String
+        let data: Data
+        let error: String?
+    }
+
+    private nonisolated func bufferTailSnapshot(tabID: String, lines: Int, timeout: TimeInterval = 1) -> BufferTailSnapshot? {
+        MainActorBridge.read(timeout: timeout) {
             guard let (tab, session) = self.resolveTab(tabID) else {
-                return self.jsonError("Tab not found: \(tabID)")
+                return BufferTailSnapshot(tabID: tabID, data: Data(), error: self.jsonError("Tab not found: \(tabID)"))
             }
-
-            let clampedLines = max(1, lines)
-
-            guard let data = session.captureRemoteSnapshot() else {
-                return self.encodeAny(["tab_id": self.controlPlaneTabIDLocked(for: tab.id), "output": "", "lines": 0])
-            }
-
-            return self.formatBufferOutput(tabID: tabID, data: data, lines: clampedLines)
+            let text = session.captureRemoteTailSnapshot(maxLines: lines, maxBytes: Self.maxOutputBytes) ?? ""
+            return BufferTailSnapshot(tabID: self.controlPlaneTabIDLocked(for: tab.id), data: Data(text.utf8), error: nil)
         }
     }
 
@@ -1776,19 +1775,17 @@ final class TerminalControlService {
     }
 
     private nonisolated func encodedPTYLogOutput(tabID: String, lines: Int) -> String {
-        let result: (path: String?, transcriptData: Data?, error: String?) = onMain {
-            guard let (_, session) = self.resolveTab(tabID) else {
-                return (nil, nil, self.jsonError("Tab not found: \(tabID)"))
+        guard let result = MainActorBridge.read({ () -> (path: String?, transcriptData: Data?, error: String?, tabID: String, logSession: AITerminalLogSession?) in
+            guard let (tab, session) = self.resolveTab(tabID) else {
+                return (nil, nil, self.jsonError("Tab not found: \(tabID)"), tabID, nil)
             }
-            session.syncCurrentPTYLog()
-            return (
-                session.currentPTYLogPath(),
-                session.currentTranscriptTailData(maxBytes: 1_024_000),
-                nil
-            )
-        }
+            return (session.currentPTYLogPath(), session.currentTranscriptTailData(maxBytes: 1_024_000), nil, self.controlPlaneTabIDLocked(for: tab.id), session.aiLogSession)
+        }) else { return MainActorBridge.unresponsiveJSON }
         if let error = result.error { return error }
-        let outputTabID = onMain { self.canonicalControlPlaneTabID(tabID) }
+        let outputTabID = result.tabID
+        // Flush only the provider log fallback, on the MCP caller's worker.
+        // Tab-local transcript capture needs no file or output-processing barrier.
+        if result.transcriptData == nil { result.logSession?.sync() }
 
         let text = result.transcriptData.flatMap(Self.normalizedTranscriptText)
             ?? result.path.flatMap { TelemetryRecorder.readPTYLogTail(path: $0) }
@@ -1810,18 +1807,9 @@ final class TerminalControlService {
         ])
     }
 
-    /// Trims to the last `maxLines` lines and re-slices to half if the joined
-    /// output would exceed the wire cap. Shared by the buffer and pty_log
-    /// output paths (previously duplicated with drift risk).
     private nonisolated static func trimmedOutputLines(_ lines: [String], maxLines: Int) -> [String] {
-        var outputLines = lines
-        if outputLines.count > maxLines {
-            outputLines = Array(outputLines.suffix(maxLines))
-        }
-        if outputLines.joined(separator: "\n").utf8.count > maxOutputBytes {
-            outputLines = Array(outputLines.suffix(max(1, maxLines / 2)))
-        }
-        return outputLines
+        let text = TerminalOutputBudget.tail(lines.suffix(max(1, min(maxLines, 10000))).joined(separator: "\n"), maximumLines: max(1, min(maxLines, 10000)), maximumBytes: maxOutputBytes)
+        return text.isEmpty ? [] : text.components(separatedBy: "\n")
     }
 
     private nonisolated static func normalizedTranscriptText(from data: Data) -> String? {
@@ -1833,7 +1821,7 @@ final class TerminalControlService {
 
     /// Formats buffer data into the standard tab_output response.
     private nonisolated func formatBufferOutput(tabID: String, data: Data, lines: Int) -> String {
-        let outputTabID = onMain { self.canonicalControlPlaneTabID(tabID) }
+        let outputTabID = tabID
         let text = String(decoding: data, as: UTF8.self)
         var rawLines = text.components(separatedBy: "\n")
 
@@ -2341,9 +2329,9 @@ final class TerminalControlService {
     nonisolated func getRepoMetadata(repoPath: String) -> String {
         // Only copy observable metadata on main. Disk reads, database waits,
         // aggregation, and response encoding stay on the MCP client worker.
-        let cachedMetadata = onMain {
+        guard let cachedMetadata = MainActorBridge.read({
             RepositoryCache.shared.cachedModel(forRoot: repoPath)?.metadata
-        }
+        }) else { return MainActorBridge.unresponsiveJSON }
         let metadata = cachedMetadata ?? RepoMetadataStore.load(repoRoot: repoPath)
         let frequentCmds = PersistentHistoryStore.shared
             .frequentCommandsForRepo(repoRoot: repoPath, limit: 10)
@@ -2775,7 +2763,7 @@ final class TerminalControlService {
                 shellLoading: session?.isShellLoading ?? true,
                 isAtPrompt: session?.isAtPrompt ?? false,
                 hasView: session?.existingRustTerminalView != nil,
-                status: session?.status.rawValue ?? "unknown"
+                status: session?.hasPendingCommandApproval == true ? "command_approval_pending" : (session?.status.rawValue ?? "unknown")
             )
         )
     }
@@ -2790,6 +2778,7 @@ final class TerminalControlService {
         result["has_terminal_view"] = session?.existingRustTerminalView != nil
         result["mcp_mutation_allowed"] = mcpControlAllowed ?? true
         result["mcp_control_required"] = mcpControlAllowed == false
+        result["command_approval_pending"] = session?.hasPendingCommandApproval ?? false
 
         if mcpControlAllowed == false {
             // Preserve the underlying terminal facts for diagnostics while
