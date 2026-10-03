@@ -22,7 +22,7 @@ final class RuntimeIsolationTests: XCTestCase {
         let url = RuntimeIsolation.appSupportDirectory(named: "Chau7", environment: [:])
         let expected = FileManager.default.temporaryDirectory
             .appendingPathComponent("Chau7Tests-\(ProcessInfo.processInfo.processIdentifier)")
-            .appendingPathComponent("Library/Application Support/Chau7")
+            .appendingPathComponent("Library/Application Support/Chau7", isDirectory: true)
 
         XCTAssertEqual(url.standardizedFileURL, expected.standardizedFileURL)
         XCTAssertFalse(url.path.hasPrefix(NSHomeDirectory()))

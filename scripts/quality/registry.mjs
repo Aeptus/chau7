@@ -717,7 +717,10 @@ export const gates = [
     tags: ["swift", "tests"],
     cacheable: true,
     inputs: ["apps/chau7-macos/Sources", "apps/chau7-macos/Tests", "apps/chau7-macos/Package.swift"],
-    applies: (context) => hasPathPrefix(context.changedFiles, "apps/chau7-macos/Sources/") || hasPathPrefix(context.changedFiles, "apps/chau7-macos/Tests/"),
+    applies: (context) => hasPathPrefix(context.changedFiles, "apps/chau7-macos/Sources/")
+      || hasPathPrefix(context.changedFiles, "apps/chau7-macos/Tests/")
+      || context.changedFiles.includes("apps/chau7-macos/Package.swift")
+      || context.changedFiles.includes("apps/chau7-macos/Scripts/test-core.sh"),
     rerun: "pnpm quality:prepush --include=swift-macos-tests",
     run: async (context) => execWithoutHookGitEnv(context, "/usr/bin/swift", ["test", "--jobs", swiftBuildJobs()], { cwd: "apps/chau7-macos" }),
   },
