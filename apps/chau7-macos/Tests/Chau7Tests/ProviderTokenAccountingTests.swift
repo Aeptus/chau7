@@ -14,6 +14,17 @@ final class ProviderTokenAccountingTests: XCTestCase {
         XCTAssertEqual(ProviderTokenAccounting.visibleOutput(provider: "openai", output: 10, reasoning: 20), 0)
     }
 
+    func testSharedTokenUsageHandlesAliasesUnknownsAndClamping() {
+        let usage = ProviderTokenAccounting.tokenUsage(provider: " OpenAI ", input: 125, output: 47, cacheCreation: nil, cacheRead: 80, reasoning: 19)
+        XCTAssertEqual(usage.totalBillableTokens, 172)
+        XCTAssertEqual(ProviderTokenAccounting.uncachedInput(provider: "google", input: 125, cacheRead: 80), 45)
+        XCTAssertEqual(ProviderTokenAccounting.visibleOutput(provider: "chatgpt", output: 47, reasoning: 19), 28)
+        let missing = ProviderTokenAccounting.tokenUsage(provider: "openai", input: nil, output: nil, cacheCreation: nil, cacheRead: nil, reasoning: nil)
+        XCTAssertEqual(missing.totalBillableTokens, 0)
+        let clamped = ProviderTokenAccounting.tokenUsage(provider: "openai", input: 3, output: 2, cacheCreation: -1, cacheRead: 4, reasoning: 3)
+        XCTAssertEqual(clamped.totalBillableTokens, 7)
+    }
+
     func testRawEvidenceAndReconciliationNormalizeExactlyOnce() {
         let evidence = UsageEvidence.proxyEvent(
             provider: "openai",
