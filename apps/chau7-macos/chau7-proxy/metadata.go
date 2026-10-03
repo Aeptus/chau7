@@ -14,6 +14,8 @@ type RequestMetadata struct {
 
 // ResponseMetadata contains metadata extracted from the response
 type ResponseMetadata struct {
+	CacheCreationReported    bool
+	CacheReadReported        bool
 	Model                    string
 	InputTokens              int
 	OutputTokens             int
@@ -68,10 +70,10 @@ type anthropicResponse struct {
 }
 
 type anthropicUsage struct {
-	InputTokens              int `json:"input_tokens"`
-	OutputTokens             int `json:"output_tokens"`
-	CacheCreationInputTokens int `json:"cache_creation_input_tokens"`
-	CacheReadInputTokens     int `json:"cache_read_input_tokens"`
+	InputTokens              int  `json:"input_tokens"`
+	OutputTokens             int  `json:"output_tokens"`
+	CacheCreationInputTokens *int `json:"cache_creation_input_tokens"`
+	CacheReadInputTokens     *int `json:"cache_read_input_tokens"`
 }
 
 func extractAnthropicRequest(body []byte) RequestMetadata {
@@ -95,8 +97,10 @@ func extractAnthropicResponse(body []byte) ResponseMetadata {
 		Model:                    resp.Model,
 		InputTokens:              resp.Usage.InputTokens,
 		OutputTokens:             resp.Usage.OutputTokens,
-		CacheCreationInputTokens: resp.Usage.CacheCreationInputTokens,
-		CacheReadInputTokens:     resp.Usage.CacheReadInputTokens,
+		CacheCreationInputTokens: counterValue(resp.Usage.CacheCreationInputTokens),
+		CacheCreationReported:    resp.Usage.CacheCreationInputTokens != nil,
+		CacheReadInputTokens:     counterValue(resp.Usage.CacheReadInputTokens),
+		CacheReadReported:        resp.Usage.CacheReadInputTokens != nil,
 		FinishReason:             resp.StopReason,
 	}
 }
@@ -132,7 +136,7 @@ type openAIUsage struct {
 }
 
 type openAIPromptDetails struct {
-	CachedTokens int `json:"cached_tokens"`
+	CachedTokens *int `json:"cached_tokens"`
 }
 
 type openAICompletionDetails struct {
@@ -198,7 +202,8 @@ func openAIResponseMetadata(resp openAIResponse) ResponseMetadata {
 		FinishReason: finishReason,
 	}
 	if d := firstNonNil(resp.Usage.InputTokensDetails, resp.Usage.PromptTokensDetails); d != nil {
-		meta.CacheReadInputTokens = d.CachedTokens
+		meta.CacheReadInputTokens = counterValue(d.CachedTokens)
+		meta.CacheReadReported = d.CachedTokens != nil
 	}
 	if d := firstNonNil(resp.Usage.OutputTokensDetails, resp.Usage.CompletionDetails); d != nil {
 		meta.ReasoningOutputTokens = d.ReasoningTokens
@@ -234,10 +239,12 @@ func mergeResponseMetadata(target *ResponseMetadata, update ResponseMetadata) {
 	if update.OutputTokens > 0 {
 		target.OutputTokens = update.OutputTokens
 	}
-	if update.CacheCreationInputTokens > 0 {
+	if update.CacheCreationReported {
+		target.CacheCreationReported = true
 		target.CacheCreationInputTokens = update.CacheCreationInputTokens
 	}
-	if update.CacheReadInputTokens > 0 {
+	if update.CacheReadReported {
+		target.CacheReadReported = true
 		target.CacheReadInputTokens = update.CacheReadInputTokens
 	}
 	if update.ReasoningOutputTokens > 0 {
@@ -271,10 +278,10 @@ type geminiCandidate struct {
 }
 
 type geminiUsage struct {
-	PromptTokenCount        int `json:"promptTokenCount"`
-	CandidatesTokenCount    int `json:"candidatesTokenCount"`
-	TotalTokenCount         int `json:"totalTokenCount"`
-	CachedContentTokenCount int `json:"cachedContentTokenCount"`
+	PromptTokenCount        int  `json:"promptTokenCount"`
+	CandidatesTokenCount    int  `json:"candidatesTokenCount"`
+	TotalTokenCount         int  `json:"totalTokenCount"`
+	CachedContentTokenCount *int `json:"cachedContentTokenCount"`
 }
 
 func extractGeminiRequest(body []byte) RequestMetadata {
@@ -310,7 +317,8 @@ func extractGeminiResponse(body []byte) ResponseMetadata {
 		Model:                resp.ModelVersion,
 		InputTokens:          resp.UsageMetadata.PromptTokenCount,
 		OutputTokens:         resp.UsageMetadata.CandidatesTokenCount,
-		CacheReadInputTokens: resp.UsageMetadata.CachedContentTokenCount,
+		CacheReadInputTokens: counterValue(resp.UsageMetadata.CachedContentTokenCount),
+		CacheReadReported:    resp.UsageMetadata.CachedContentTokenCount != nil,
 		FinishReason:         finishReason,
 	}
 }
@@ -387,11 +395,13 @@ func ParseStreamingChunks(provider Provider, chunks []byte) ResponseMetadata {
 			if envelope.Message.Usage.InputTokens > 0 {
 				result.InputTokens = envelope.Message.Usage.InputTokens
 			}
-			if envelope.Message.Usage.CacheCreationInputTokens > 0 {
-				result.CacheCreationInputTokens = envelope.Message.Usage.CacheCreationInputTokens
+			if envelope.Message.Usage.CacheCreationInputTokens != nil {
+				result.CacheCreationReported = true
+				result.CacheCreationInputTokens = counterValue(envelope.Message.Usage.CacheCreationInputTokens)
 			}
-			if envelope.Message.Usage.CacheReadInputTokens > 0 {
-				result.CacheReadInputTokens = envelope.Message.Usage.CacheReadInputTokens
+			if envelope.Message.Usage.CacheReadInputTokens != nil {
+				result.CacheReadReported = true
+				result.CacheReadInputTokens = counterValue(envelope.Message.Usage.CacheReadInputTokens)
 			}
 			if envelope.Usage.InputTokens > 0 {
 				result.InputTokens = envelope.Usage.InputTokens
@@ -399,11 +409,13 @@ func ParseStreamingChunks(provider Provider, chunks []byte) ResponseMetadata {
 			if envelope.Usage.OutputTokens > 0 {
 				result.OutputTokens = envelope.Usage.OutputTokens
 			}
-			if envelope.Usage.CacheCreationInputTokens > 0 {
-				result.CacheCreationInputTokens = envelope.Usage.CacheCreationInputTokens
+			if envelope.Usage.CacheCreationInputTokens != nil {
+				result.CacheCreationReported = true
+				result.CacheCreationInputTokens = counterValue(envelope.Usage.CacheCreationInputTokens)
 			}
-			if envelope.Usage.CacheReadInputTokens > 0 {
-				result.CacheReadInputTokens = envelope.Usage.CacheReadInputTokens
+			if envelope.Usage.CacheReadInputTokens != nil {
+				result.CacheReadReported = true
+				result.CacheReadInputTokens = counterValue(envelope.Usage.CacheReadInputTokens)
 			}
 
 		case ProviderOpenAI:
@@ -426,4 +438,11 @@ func ParseStreamingChunks(provider Provider, chunks []byte) ResponseMetadata {
 	}
 
 	return result
+}
+
+func counterValue(value *int) int {
+	if value == nil {
+		return 0
+	}
+	return *value
 }

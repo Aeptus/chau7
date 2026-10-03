@@ -5283,5 +5283,12 @@
     "description": "Commit-pinned actions, a preserved single-build distribution, restricted runner signing keychain with always cleanup, bounded serialized release and optional tap jobs",
     "status": "Shipped",
     "differentiator": "No"
+  },
+  {
+    "category": "Usage Analytics",
+    "feature": "Measured Proxy Run Attribution",
+    "description": "Stable request identities, serial persisted measured/cache run totals and bounded retained-evidence backfill; overlaps reject attribution, partial coverage is explicit and summaries do not double count",
+    "status": "Shipped",
+    "differentiator": "No"
   }
 ]

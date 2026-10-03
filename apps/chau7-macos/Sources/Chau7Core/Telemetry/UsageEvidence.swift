@@ -100,7 +100,8 @@ public struct UsageEvidence: Codable, Equatable, Identifiable, Sendable {
         reasoningOutputTokens: Int?,
         costUSD: Double?,
         pricingVersion: String?,
-        metadata: [String: String] = [:]
+        metadata: [String: String] = [:],
+        requestID: String? = nil
     ) -> UsageEvidence {
         let normalizedProvider = provider.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         let normalizedSessionID = normalizedNonEmpty(sessionID)
@@ -128,7 +129,10 @@ public struct UsageEvidence: Codable, Equatable, Identifiable, Sendable {
             reasoningKey,
             costKey
         ]
-        let uniqueEventKey = keyParts.joined(separator: "|")
+        // New proxy messages carry a persisted request identity. Historical
+        // evidence keeps its old key: indistinguishable old calls cannot be split.
+        let uniqueEventKey = normalizedNonEmpty(requestID).map { "proxy-request|\(normalizedProvider)|\($0)" }
+            ?? keyParts.joined(separator: "|")
         return UsageEvidence(
             id: uniqueEventKey,
             uniqueEventKey: uniqueEventKey,
@@ -380,7 +384,10 @@ public struct UsageReconciliationReport: Codable, Equatable, Sendable {
 public enum UsageReconciliationService {
     public static func reconcile(_ evidence: [UsageEvidence]) -> UsageReconciliationReport {
         let deduped = Dictionary(evidence.map { ($0.uniqueEventKey, $0) }, uniquingKeysWith: { current, _ in current }).values
-        let grouped = Dictionary(grouping: deduped) { evidence in
+        // Measured run summaries are projections of retained request rows. They
+        // must not be summed again, even when CLI/provider aliases differ.
+        let independent = deduped.filter { !($0.sourceKind == .proxy && $0.metadata["proxy_coverage"] != nil) }
+        let grouped = Dictionary(grouping: independent) { evidence in
             "\(evidence.provider)|\(evidence.reconciliationKey)"
         }
 

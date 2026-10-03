@@ -49,8 +49,9 @@ func (n *IPCNotifier) NotifyAPICallWithTask(record *APICallRecord, taskID, tabID
 		Type:          "api_call",
 		Tool:          "proxy",
 		Origin:        "proxy",
-		Timestamp:     record.Timestamp.UTC().Format(time.RFC3339),
+		Timestamp:     record.Timestamp.UTC().Format(time.RFC3339Nano),
 		Data: IPCAPICallData{
+			RequestID:                record.RequestID,
 			SessionID:                record.SessionID,
 			Provider:                 string(record.Provider),
 			Model:                    record.Model,
@@ -65,7 +66,7 @@ func (n *IPCNotifier) NotifyAPICallWithTask(record *APICallRecord, taskID, tabID
 			StatusCode:               record.StatusCode,
 			CostUSD:                  record.CostUSD,
 			PricingVersion:           record.PricingVersion,
-			Timestamp:                record.Timestamp.UTC().Format(time.RFC3339),
+			Timestamp:                record.Timestamp.UTC().Format(time.RFC3339Nano),
 			ErrorMessage:             record.ErrorMessage,
 			TaskID:                   taskID,
 			TabID:                    tabID,
@@ -272,6 +273,7 @@ type IPCEventMessage struct {
 
 // IPCAPICallData contains the data for an API call notification
 type IPCAPICallData struct {
+	RequestID                string   `json:"request_id,omitempty"`
 	SessionID                string   `json:"session_id"`
 	Provider                 string   `json:"provider"`
 	Model                    string   `json:"model"`
