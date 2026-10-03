@@ -1,6 +1,6 @@
 # Chau7 (macOS)
 
-Chau7 is a macOS menu bar helper and floating terminal overlay built for AI-assisted CLI work. It tails local JSONL logs and CLI history to send notifications and keep a live multi-tab terminal in view.
+Chau7 is a macOS terminal app with a Dock icon, menu bar controls and floating terminal overlay built for AI-assisted CLI work. It tails local JSONL logs and CLI history to send notifications and keep a live multi-tab terminal in view.
 
 ## Feature Highlights
 
@@ -33,8 +33,8 @@ For a complete feature inventory, see `docs/FEATURES.md`:
 Repo-root verification lives outside the app-specific build helpers:
 
 ```bash
-../../Scripts/ci-local-fast
-../../Scripts/ci-local
+pnpm --dir ../.. quality:prepush
+pnpm --dir ../.. quality:prepush:full
 ```
 
 Use those for local verification. Keep `./Scripts/build-app.sh`, `./Scripts/build-and-run.sh`, and
@@ -57,7 +57,7 @@ All commands below assume you are in `apps/chau7-macos`.
 
 ### Option A: Open in Xcode
 
-1. Open `Package.swift` in Xcode.
+1. Complete the [pinned developer setup](../../CONTRIBUTING.md#setting-up), including `./Scripts/build-rust.sh --release`, then open `Package.swift` in Xcode.
 2. Select the `Chau7` scheme.
 3. Run (Cmd+R).
 
@@ -69,6 +69,7 @@ To see verbose logs when launched from Terminal, set `CHAU7_VERBOSE=1`.
 From the project folder:
 
 ```bash
+./Scripts/build-rust.sh --release
 swift build -c release
 CHAU7_VERBOSE=1 .build/release/Chau7
 ```

@@ -1,0 +1,17 @@
+# Bump intentionally with native CI; Rust also has its workspace rust-toolchain.toml.
+[tools]
+node = "26.7.0"
+go = "1.27.1"
+python = "3.14.7"
+rust = "1.96.0"
+"npm:pnpm" = "10.11.1"
+"aqua:nicklockwood/SwiftFormat" = "0.63.0"
+"aqua:realm/SwiftLint" = "0.65.1"
+"aqua:gitleaks/gitleaks" = "8.30.1"
+"aqua:koalaman/shellcheck" = "0.11.0"
+"aqua:astral-sh/ruff" = "0.16.7"
+"aqua:golangci/golangci-lint" = "2.13.2"
+"aqua:peripheryapp/periphery" = "3.8.0"
+"cargo:cargo-deny" = "0.19.0"
+"npm:jscpd" = "5.2.0"
+"pipx:pip-audit" = "2.10.1"
