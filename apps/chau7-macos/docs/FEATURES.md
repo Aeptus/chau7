@@ -470,6 +470,8 @@ The app still contains internal runtime orchestration used by dashboard and revi
 
 ## Performance
 
+- Core-only tests refresh manifest discovery on every run so newly added regressions cannot be silently omitted by a cached dynamic test list; compiled Core artifacts remain reusable.
+
 - **Bounded changed-file backups** — non-Git directories report unavailable changes without recursive scanning. Changed-file lists retain truncation metadata; archive count, age, per-file size, and total bytes are bounded without discarding the latest restore.
 - **Core-only test workflow** — `Scripts/test-core.sh` selects pure Chau7Core tests and caches their build independently of the app. Standard `swift test` continues to validate the full integration graph.
 
