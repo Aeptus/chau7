@@ -2,7 +2,7 @@
   {
     "category": "Developer Experience",
     "feature": "Core-only Test Workflow",
-    "description": "Pure Chau7Core tests run through a separate dependency graph and reusable cache without compiling the macOS app; full app integration validation remains in normal CI",
+    "description": "Pure Chau7Core tests run through a separate dependency graph and reusable cache without compiling the macOS app; full app integration validation remains in normal CI; discovery refreshes each run so added tests are included with existing build caches",
     "status": "Shipped",
     "differentiator": "No"
   },
