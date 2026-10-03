@@ -87,14 +87,16 @@ final class CommandBlockManager {
         _ files: [String],
         unavailable: Bool = false,
         status: CommandBlockChangedFilesStatus,
+        truncated: Bool = false,
         for blockID: UUID,
         in tabID: String
     ) {
         guard var blocks = blocksByTab[tabID],
               let index = blocks.firstIndex(where: { $0.id == blockID }) else { return }
+        blocks[index].changedFilesStatus = status
+        blocks[index].changedFilesTruncated = truncated
         blocks[index].changedFiles = files
         blocks[index].changedFilesUnavailable = unavailable
-        blocks[index].changedFilesStatus = status
         blocksByTab[tabID] = blocks
         Log.info(
             "CommandBlock: \(files.count) files changed in '\(blocks[index].command.prefix(40))' (tab \(tabID.prefix(8))) status=\(status.rawValue) unavailable=\(unavailable)"
@@ -103,9 +105,13 @@ final class CommandBlockManager {
 
     /// Returns changed files from the most recent finished block in a tab.
     func lastChangedFiles(tabID: String) -> [String] {
-        guard let blocks = blocksByTab[tabID],
-              let last = blocks.last(where: { !$0.isRunning && !$0.changedFiles.isEmpty }) else { return [] }
-        return last.changedFiles
+        lastChangedFilesBlock(tabID: tabID)?.changedFiles ?? []
+    }
+
+    func lastChangedFilesBlock(tabID: String) -> CommandBlock? {
+        blocksByTab[tabID]?.last(where: {
+            !$0.isRunning && (!$0.changedFiles.isEmpty || $0.changedFilesTruncated)
+        })
     }
 
     // MARK: - Queries

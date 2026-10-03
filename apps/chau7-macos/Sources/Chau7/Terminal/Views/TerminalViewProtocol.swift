@@ -19,8 +19,8 @@ protocol TerminalViewLike: NSView {
     var onInput: ((String) -> Void)? { get set }
 
     /// Called before user-originated text is sent to the PTY.
-    /// Return false to suppress the input.
-    var shouldAcceptUserText: ((String) -> Bool)? { get set }
+    /// Return false to defer or suppress input; resume releases approved input once.
+    var shouldAcceptUserText: ((String, @escaping () -> Void) -> Bool)? { get set }
 
     /// Called when buffer content changes
     var onBufferChanged: (() -> Void)? { get set }

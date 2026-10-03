@@ -68,7 +68,7 @@ extension AppDelegate {
               let tab = model.tabs.first(where: { $0.id == model.selectedTabID }),
               let session = tab.session else { return false }
         let tabID = session.ownerTabID?.uuidString ?? model.selectedTabID.uuidString
-        return !CommandBlockManager.shared.lastChangedFiles(tabID: tabID).isEmpty
+        return CommandBlockManager.shared.lastChangedFilesBlock(tabID: tabID) != nil
     }
 
     func menuTabItems(fallback: OverlayTabsModel? = nil) -> [AppMenuTabItem] {
@@ -388,12 +388,13 @@ extension AppDelegate {
               let tab = model.tabs.first(where: { $0.id == model.selectedTabID }),
               let session = tab.session else { return }
         let tabID = session.ownerTabID?.uuidString ?? model.selectedTabID.uuidString
-        let files = CommandBlockManager.shared.lastChangedFiles(tabID: tabID)
-        if files.isEmpty {
+        let block = CommandBlockManager.shared.lastChangedFilesBlock(tabID: tabID)
+        let files = block?.changedFiles ?? []
+        if files.isEmpty, block?.changedFilesTruncated != true {
             Log.info("AppDelegate: showChangedFiles — no changed files for tab \(tabID.prefix(8))")
             return
         }
-        ChangedFilesPanel.show(files: files, directory: session.currentDirectory)
+        ChangedFilesPanel.show(files: files, directory: session.currentDirectory, truncated: block?.changedFilesTruncated ?? false)
     }
 
     // MARK: - Pane Focus / Selection Actions

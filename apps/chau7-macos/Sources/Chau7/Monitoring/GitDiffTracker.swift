@@ -12,6 +12,7 @@ final class GitDiffTracker {
         let unavailableReason: String?
         let usedFallback: Bool
         let status: CommandBlockChangedFilesStatus
+        var truncated = false
 
         var diffUnavailable: Bool {
             unavailableReason != nil && files.isEmpty
@@ -20,7 +21,7 @@ final class GitDiffTracker {
 
     private enum SnapshotMode {
         case git(Set<String>)
-        case fileSystem([String: Date], reason: String?)
+        case unavailable(reason: String)
     }
 
     static func changedPath(fromStatusPorcelainLine line: String) -> String? {
@@ -63,6 +64,18 @@ final class GitDiffTracker {
     }
 
     func changedFilesResult(directory: String) -> ChangedFilesResult {
+        let raw = rawChangedFilesResult(directory: directory)
+        let bounded = ChangedFilesBudget.select(raw.files, status: raw.status)
+        return ChangedFilesResult(
+            files: bounded.files,
+            unavailableReason: raw.unavailableReason,
+            usedFallback: false,
+            status: raw.status,
+            truncated: bounded.truncated
+        )
+    }
+
+    private func rawChangedFilesResult(directory: String) -> ChangedFilesResult {
         let current = currentSnapshot(in: directory)
         lock.lock()
         let baseline = baselineSnapshot
@@ -74,7 +87,7 @@ final class GitDiffTracker {
             return ChangedFilesResult(
                 files: files,
                 unavailableReason: unavailableReason(from: current),
-                usedFallback: isFallback(current),
+                usedFallback: false,
                 status: status(for: current, files: files)
             )
         }
@@ -83,20 +96,12 @@ final class GitDiffTracker {
         case let (.git(before), .git(after)):
             let changed = Array(after.symmetricDifference(before)).sorted()
             return ChangedFilesResult(files: changed, unavailableReason: nil, usedFallback: false, status: .loaded)
-        case let (.fileSystem(before, _), .fileSystem(after, _)):
-            let changed = Array(changedPaths(from: before, to: after)).sorted()
-            return ChangedFilesResult(
-                files: changed,
-                unavailableReason: unavailableReason(from: current),
-                usedFallback: true,
-                status: status(for: current, files: changed)
-            )
         default:
             let files = snapshotFiles(from: current)
             return ChangedFilesResult(
                 files: files,
                 unavailableReason: unavailableReason(from: current),
-                usedFallback: isFallback(current),
+                usedFallback: false,
                 status: status(for: current, files: files)
             )
         }
@@ -119,15 +124,15 @@ final class GitDiffTracker {
         if gitResult.succeeded {
             return .git(gitResult.files)
         }
-        return .fileSystem(currentFileModDates(in: directory), reason: gitResult.reason)
+        return .unavailable(reason: gitResult.reason ?? "git status unavailable")
     }
 
     private func snapshotFiles(from snapshot: SnapshotMode) -> [String] {
         switch snapshot {
         case .git(let files):
             return Array(files).sorted()
-        case .fileSystem(let files, _):
-            return Array(files.keys).sorted()
+        case .unavailable:
+            return []
         }
     }
 
@@ -135,22 +140,16 @@ final class GitDiffTracker {
         switch snapshot {
         case .git:
             return nil
-        case .fileSystem(_, let reason):
+        case .unavailable(let reason):
             return reason
         }
-    }
-
-    private func isFallback(_ snapshot: SnapshotMode) -> Bool {
-        if case .fileSystem = snapshot { return true }
-        return false
     }
 
     private func status(for snapshot: SnapshotMode, files: [String]) -> CommandBlockChangedFilesStatus {
         switch snapshot {
         case .git:
             return .loaded
-        case .fileSystem(_, let reason):
-            guard let reason else { return .loaded }
+        case .unavailable(let reason):
             if reason.localizedCaseInsensitiveContains("not a git repository") {
                 return .notGitRepo
             }
@@ -172,59 +171,6 @@ final class GitDiffTracker {
             files.insert(path)
         }
         return (files, true, nil)
-    }
-
-    private func currentFileModDates(in directory: String) -> [String: Date] {
-        let rootURL = URL(fileURLWithPath: directory, isDirectory: true)
-        guard let enumerator = FileManager.default.enumerator(
-            at: rootURL,
-            includingPropertiesForKeys: [.isRegularFileKey, .contentModificationDateKey, .isDirectoryKey],
-            options: []
-        ) else {
-            return [:]
-        }
-
-        var result: [String: Date] = [:]
-        let ignoredDirectories: Set = [".git", ".build", "node_modules", "DerivedData"]
-
-        // The enumerator yields canonical paths (e.g. /private/var/…) even when the
-        // requested root goes through a symlink (e.g. /var/… or /tmp/…). Strip
-        // whichever root form actually prefixes the entry, otherwise a naive
-        // replacement mangles the relative path ("/private" + "example.txt").
-        let canonicalRootPath = (try? rootURL.resourceValues(forKeys: [.canonicalPathKey]).canonicalPath) ?? rootURL.path
-        let rootPrefixes = Set([rootURL.path, canonicalRootPath]).map { $0.hasSuffix("/") ? $0 : $0 + "/" }
-
-        for case let url as URL in enumerator {
-            if ignoredDirectories.contains(url.lastPathComponent) {
-                enumerator.skipDescendants()
-                continue
-            }
-
-            let values = try? url.resourceValues(forKeys: [.isRegularFileKey, .contentModificationDateKey])
-            guard values?.isRegularFile == true else { continue }
-            let path = url.path
-            var relative = path
-            for prefix in rootPrefixes where path.hasPrefix(prefix) {
-                relative = String(path.dropFirst(prefix.count))
-                break
-            }
-            result[relative] = values?.contentModificationDate ?? Date.distantPast
-        }
-        return result
-    }
-
-    private func changedPaths(from before: [String: Date], to after: [String: Date]) -> Set<String> {
-        let allPaths = Set(before.keys).union(after.keys)
-        return Set(allPaths.filter { path in
-            switch (before[path], after[path]) {
-            case (.none, .some), (.some, .none):
-                return true
-            case let (.some(lhs), .some(rhs)):
-                return lhs != rhs
-            default:
-                return false
-            }
-        })
     }
 
     /// Result of a git command that captures both outputs and exit status.

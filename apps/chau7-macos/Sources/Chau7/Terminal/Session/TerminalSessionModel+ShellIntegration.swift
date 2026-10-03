@@ -2099,6 +2099,7 @@ extension TerminalSessionModel {
                     result.files,
                     unavailable: result.diffUnavailable,
                     status: result.status,
+                    truncated: result.truncated,
                     for: blockID,
                     in: tabID
                 )

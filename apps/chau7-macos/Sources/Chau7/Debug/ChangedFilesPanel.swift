@@ -7,11 +7,11 @@ enum ChangedFilesPanel {
     private static var panel: NSPanel?
 
     @MainActor
-    static func show(files: [String], directory: String? = nil) {
+    static func show(files: [String], directory: String? = nil, truncated: Bool = false) {
         // Dismiss existing panel
         panel?.close()
 
-        let view = ChangedFilesView(files: files, directory: directory)
+        let view = ChangedFilesView(files: files, directory: directory, truncated: truncated)
         let hosting = NSHostingController(rootView: view.localized())
 
         let p = NSPanel(
@@ -34,6 +34,7 @@ enum ChangedFilesPanel {
 private struct ChangedFilesView: View {
     let files: [String]
     let directory: String?
+    let truncated: Bool
     @State private var searchText = ""
     @State private var diffStats: [String: String] = [:]
 
@@ -44,6 +45,10 @@ private struct ChangedFilesView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
+            if truncated {
+                Text(L("panel.changedFiles.truncated", "Showing a limited file list. Additional paths were omitted."))
+                    .font(.caption).foregroundStyle(.secondary).padding(8)
+            }
             // Search field
             TextField(L("panel.changedFiles.filter", "Filter files..."), text: $searchText)
                 .textFieldStyle(.roundedBorder)
