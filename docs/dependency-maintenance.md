@@ -17,7 +17,7 @@ pnpm lock is unnecessary while the root has no dependency declarations. Rust
 members resolve through their parent workspace; only its Cargo.lock is tracked.
 
 Repository text follows LF through .gitattributes; no history normalization was
-performed. Root CHANGELOG.md points to the app's canonical changelog. Local
+performed. Root CHANGELOG.md is already a symlink to the app's canonical changelog; it is preserved. Local
 `.chau7/pre-commit-review.conf` is ignored; the tracked `.example` documents the
 optional advisory override. The existing script has matching defaults when the
 local file is absent. Do not author product commits with a fixture identity:

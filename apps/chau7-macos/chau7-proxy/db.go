@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/rand"
 	"database/sql"
 	"encoding/json"
 	"log"
@@ -61,6 +62,7 @@ func retryOnBusy(operation func() error) error {
 
 // APICallRecord represents a single API call to be stored in the database
 type APICallRecord struct {
+	RequestID                string
 	SessionID                string
 	Provider                 Provider
 	Model                    string
@@ -131,15 +133,19 @@ func (d *Database) Close() error {
 
 // InsertAPICall inserts a new API call record
 func (d *Database) InsertAPICall(record *APICallRecord) error {
+	if record.RequestID == "" {
+		record.RequestID = rand.Text()
+	}
 	_, err := d.db.Exec(`
 		INSERT INTO api_calls (
-			session_id, provider, model, endpoint,
+			request_id, session_id, provider, model, endpoint,
 			input_tokens, output_tokens,
 			cache_creation_input_tokens, cache_read_input_tokens, reasoning_output_tokens,
 			latency_ms, ttft_ms, status_code,
 			cost_usd, pricing_version, timestamp, error_message
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`,
+		record.RequestID,
 		record.SessionID,
 		string(record.Provider),
 		record.Model,
@@ -448,6 +454,7 @@ func runMigrations(db *sql.DB) error {
 		return err
 	}
 
+	hasRequestID := false
 	hasTaskID := false
 	hasTabID := false
 	hasProjectPath := false
@@ -465,6 +472,8 @@ func runMigrations(db *sql.DB) error {
 			continue
 		}
 		switch name {
+		case "request_id":
+			hasRequestID = true
 		case "task_id":
 			hasTaskID = true
 		case "tab_id":
@@ -495,6 +504,7 @@ func runMigrations(db *sql.DB) error {
 		missing bool
 		sql     string
 	}{
+		{!hasRequestID, "ALTER TABLE api_calls ADD COLUMN request_id TEXT"},
 		{!hasTaskID, "ALTER TABLE api_calls ADD COLUMN task_id TEXT"},
 		{!hasTabID, "ALTER TABLE api_calls ADD COLUMN tab_id TEXT"},
 		{!hasProjectPath, "ALTER TABLE api_calls ADD COLUMN project_path TEXT"},
@@ -727,18 +737,22 @@ func (d *Database) InsertTaskAssessment(assessment *TaskAssessment) error {
 
 // InsertAPICallWithTask inserts an API call with task correlation
 func (d *Database) InsertAPICallWithTask(record *APICallRecord, taskID, tabID, projectPath string) (int64, error) {
+	if record.RequestID == "" {
+		record.RequestID = rand.Text()
+	}
 	var result sql.Result
 	err := retryOnBusy(func() error {
 		var execErr error
 		result, execErr = d.db.Exec(`
 		INSERT INTO api_calls (
-			session_id, provider, model, endpoint,
+			request_id, session_id, provider, model, endpoint,
 			input_tokens, output_tokens,
 			cache_creation_input_tokens, cache_read_input_tokens, reasoning_output_tokens,
 			latency_ms, ttft_ms, status_code,
 			cost_usd, pricing_version, timestamp, error_message, task_id, tab_id, project_path
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`,
+			record.RequestID,
 			record.SessionID,
 			string(record.Provider),
 			record.Model,
@@ -860,6 +874,9 @@ func (d *Database) GetModelOutputStats() ([]*ModelOutputStats, error) {
 
 // InsertAPICallWithBaseline inserts an API call with task and baseline data
 func (d *Database) InsertAPICallWithBaseline(record *APICallRecord, taskID, tabID, projectPath string, baseline *BaselineEstimate) (int64, error) {
+	if record.RequestID == "" {
+		record.RequestID = rand.Text()
+	}
 	var baselineInput, baselineOutput, baselineTotal, tokensSaved *int
 	var baselineMethod, baselineVersion *string
 
@@ -878,15 +895,16 @@ func (d *Database) InsertAPICallWithBaseline(record *APICallRecord, taskID, tabI
 		var execErr error
 		result, execErr = d.db.Exec(`
 		INSERT INTO api_calls (
-			session_id, provider, model, endpoint,
+			request_id, session_id, provider, model, endpoint,
 			input_tokens, output_tokens,
 			cache_creation_input_tokens, cache_read_input_tokens, reasoning_output_tokens,
 			latency_ms, ttft_ms, status_code,
 			cost_usd, pricing_version, timestamp, error_message, task_id, tab_id, project_path,
 			baseline_input_tokens, baseline_output_tokens, baseline_total_tokens,
 			baseline_method, baseline_version, tokens_saved
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`,
+			record.RequestID,
 			record.SessionID,
 			string(record.Provider),
 			record.Model,

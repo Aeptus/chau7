@@ -10,6 +10,8 @@ public struct ProxyRunAttribution: Equatable, Sendable {
     public let costUSD: Double?
     public let tokenUsageSource: TokenUsageSource
     public let costSource: CostSource
+    public let requestCount: Int
+    public let pricedRequestCount: Int
 
     public init(
         inputTokens: Int?,
@@ -17,7 +19,9 @@ public struct ProxyRunAttribution: Equatable, Sendable {
         cacheReadInputTokens: Int?,
         outputTokens: Int?,
         reasoningOutputTokens: Int?,
-        costUSD: Double?
+        costUSD: Double?,
+        requestCount: Int = 1,
+        pricedRequestCount: Int = 0
     ) {
         self.inputTokens = inputTokens
         self.cacheCreationInputTokens = cacheCreationInputTokens
@@ -26,7 +30,9 @@ public struct ProxyRunAttribution: Equatable, Sendable {
         self.reasoningOutputTokens = reasoningOutputTokens
         self.costUSD = costUSD
         self.tokenUsageSource = .proxy
-        self.costSource = .observed
+        self.costSource = costUSD == nil ? .unavailable : .observed
+        self.requestCount = requestCount
+        self.pricedRequestCount = pricedRequestCount
     }
 }
 
@@ -37,7 +43,11 @@ public enum TelemetryProxyAttribution {
         runs: [TelemetryRun]
     ) -> [String: ProxyRunAttribution] {
         var totals: [String: Totals] = [:]
+        var seen = Set<String>()
         for observation in observations where observation.sourceKind == .proxy {
+            // Run summaries are derived aggregates, never request observations.
+            guard !observation.uniqueEventKey.hasPrefix("run|"),
+                  seen.insert(observation.uniqueEventKey).inserted else { continue }
             guard let run = bestRun(for: observation, runs: runs) else { continue }
             totals[run.id, default: Totals()].add(observation)
         }
@@ -48,20 +58,30 @@ public enum TelemetryProxyAttribution {
         let candidates = runs.filter { run in
             providerMatches(observation.provider, run.provider) &&
                 observation.observedAt >= run.startedAt &&
-                observation.observedAt <= (run.endedAt ?? Date.distantFuture)
+                observation.observedAt < (run.endedAt ?? Date.distantFuture)
         }
-        guard !candidates.isEmpty else { return nil }
-
-        if let tabID = observation.metadata["tab_id"], !tabID.isEmpty,
-           let match = candidates.first(where: { $0.tabID == tabID }) {
-            return match
+        // Each supplied identity constrains the same candidate set. Do not fall
+        // back to a weaker identity when a stronger one is wrong or ambiguous.
+        var matches = candidates
+        var hasIdentity = false
+        if let runID = observation.runID {
+            hasIdentity = true
+            matches = matches.filter { $0.id == runID }
         }
-        if let sessionID = observation.sessionID,
-           let match = candidates.first(where: { $0.sessionID == sessionID }) {
-            return match
+        if let tabID = observation.metadata["tab_id"], !tabID.isEmpty {
+            hasIdentity = true
+            matches = matches.filter { $0.tabID == tabID }
         }
-        guard let projectPath = observation.projectPath else { return nil }
-        return candidates.first { ($0.repoPath ?? $0.cwd) == projectPath }
+        if let sessionID = observation.sessionID {
+            hasIdentity = true
+            matches = matches.filter { $0.sessionID == sessionID }
+        }
+        if let projectPath = observation.projectPath {
+            hasIdentity = true
+            matches = matches.filter { ($0.repoPath ?? $0.cwd) == projectPath }
+        }
+        guard hasIdentity, matches.count == 1 else { return nil }
+        return matches.first
     }
 
     private static func providerMatches(_ observation: String, _ run: String) -> Bool {
@@ -74,6 +94,8 @@ public enum TelemetryProxyAttribution {
     }
 
     fileprivate struct Totals {
+        var requestCount = 0
+        var pricedRequestCount = 0
         var inputTokens = 0
         var cacheCreationInputTokens = 0
         var cacheReadInputTokens = 0
@@ -88,6 +110,7 @@ public enum TelemetryProxyAttribution {
         var hasCost = false
 
         mutating func add(_ evidence: UsageEvidence) {
+            requestCount += 1
             if let value = evidence.inputTokens {
                 inputTokens += value
                 hasInput = true
@@ -109,6 +132,7 @@ public enum TelemetryProxyAttribution {
                 hasReasoning = true
             }
             if let value = evidence.costUSD {
+                pricedRequestCount += 1
                 costUSD += value
                 hasCost = true
             }
@@ -124,7 +148,32 @@ private extension ProxyRunAttribution {
             cacheReadInputTokens: totals.hasCacheRead ? totals.cacheReadInputTokens : nil,
             outputTokens: totals.hasOutput ? totals.outputTokens : nil,
             reasoningOutputTokens: totals.hasReasoning ? totals.reasoningOutputTokens : nil,
-            costUSD: totals.hasCost ? totals.costUSD : nil
+            costUSD: totals.hasCost ? totals.costUSD : nil,
+            requestCount: totals.requestCount,
+            pricedRequestCount: totals.pricedRequestCount
         )
+    }
+}
+
+public extension ProxyRunAttribution {
+    /// Requests are measured, but interception cannot prove complete run coverage.
+    func applying(to run: TelemetryRun) -> TelemetryRun {
+        var updated = run
+        updated.totalInputTokens = inputTokens
+        updated.totalCacheCreationInputTokens = cacheCreationInputTokens
+        updated.totalCacheReadInputTokens = cacheReadInputTokens
+        updated.totalCachedInputTokens = cacheCreationInputTokens == nil && cacheReadInputTokens == nil
+            ? nil : (cacheCreationInputTokens ?? 0) + (cacheReadInputTokens ?? 0)
+        updated.totalOutputTokens = outputTokens
+        updated.totalReasoningOutputTokens = reasoningOutputTokens
+        updated.costUSD = costUSD
+        updated.tokenUsageSource = .proxy
+        updated.tokenUsageState = inputTokens == nil && outputTokens == nil && updated.totalCachedInputTokens == nil ? .missing : .partial
+        updated.costSource = costSource
+        updated.costState = costUSD == nil ? .missing : .partial
+        updated.metadata["proxy_request_count"] = String(requestCount)
+        updated.metadata["proxy_priced_request_count"] = String(pricedRequestCount)
+        updated.metadata["proxy_coverage"] = "partial_retained_observations"
+        return updated
     }
 }
