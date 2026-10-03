@@ -1,5 +1,12 @@
 [
   {
+    "category": "Developer Experience",
+    "feature": "Core-only Test Workflow",
+    "description": "Pure Chau7Core tests run through a separate dependency graph and reusable cache without compiling the macOS app; full app integration validation remains in normal CI",
+    "status": "Shipped",
+    "differentiator": "No"
+  },
+  {
     "category": "Performance",
     "feature": "Terminal Responsiveness",
     "description": "Immediate lock acquisition and bounded output batches keep polling responsive; coalesced background session discovery returns on the main actor and rejects stale identities, and a bounded styled glyph cache avoids repeated CPU text shaping",

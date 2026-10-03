@@ -1,10 +1,11 @@
 // swift-tools-version: 5.9
+import Foundation
 import PackageDescription
 
-// Keep strict-concurrency diagnostics enabled while the project migrates.
-// They remain warnings until the remaining isolation findings are triaged.
+/// Keep strict-concurrency diagnostics enabled while the project migrates.
+/// They remain warnings until the remaining isolation findings are triaged.
 let strictConcurrencySettings: [SwiftSetting] = [
-    .enableUpcomingFeature("StrictConcurrency"),
+    .enableUpcomingFeature("StrictConcurrency")
 ]
 
 let package = Package(
@@ -82,7 +83,7 @@ let package = Package(
                 "DataExplorer/README.md",
                 "Repository/README.md",
                 "Runtime/README.md",
-                "Views/README.md",
+                "Views/README.md"
             ],
             resources: [
                 .process("Resources/ar.lproj"),
@@ -152,7 +153,7 @@ let package = Package(
                 "Scripting/README.md",
                 "Snippets/README.md",
                 "Terminal/README.md",
-                "Utilities/README.md",
+                "Utilities/README.md"
             ],
             resources: [
                 .process("Fixtures")
@@ -161,3 +162,41 @@ let package = Package(
         )
     ]
 )
+
+// A separate graph and scratch directory keep pure Core iteration independent
+// of the app executable. --filter alone still builds the full test dependency graph.
+if ProcessInfo.processInfo.environment["CHAU7_CORE_TESTS_ONLY"] == "1" {
+    let testRoot = URL(fileURLWithPath: #filePath)
+        .deletingLastPathComponent().appendingPathComponent("Tests/Chau7Tests")
+    let files = FileManager.default.enumerator(
+        at: testRoot, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]
+    )?.allObjects.compactMap { $0 as? URL } ?? []
+    let importPattern = try NSRegularExpression(pattern: #"(?m)^\s*(?:@testable\s+)?import\s+(\w+)"#)
+    var coreTests: [String] = []
+    var excludedTests: [String] = []
+    for file in files where file.pathExtension == "swift" {
+        let text = try String(contentsOf: file, encoding: .utf8)
+        let nsText = text as NSString
+        let imports = Set(importPattern.matches(in: text, range: NSRange(location: 0, length: nsText.length))
+            .map { nsText.substring(with: $0.range(at: 1)) })
+        let relativePath = String(file.path.dropFirst(testRoot.path.count + 1))
+        if imports.contains("Chau7Core"), imports.isDisjoint(with: ["Chau7", "Chau7CLI", "MagiCLI"]) {
+            coreTests.append(relativePath)
+        } else {
+            excludedTests.append(relativePath)
+        }
+    }
+    let readmes = files.filter { $0.lastPathComponent == "README.md" }
+        .map { String($0.path.dropFirst(testRoot.path.count + 1)) }
+    package.products = [.library(name: "Chau7Core", targets: ["Chau7Core"])]
+    // Retain resolution declarations so SwiftPM never removes the shared lockfile.
+    package.targets = [
+        package.targets[0],
+        .testTarget(
+            name: "Chau7CoreTests", dependencies: ["Chau7Core"],
+            path: "Tests/Chau7Tests", exclude: (excludedTests + readmes).sorted(),
+            sources: coreTests.sorted(), resources: [.process("Fixtures")],
+            swiftSettings: strictConcurrencySettings
+        )
+    ]
+}

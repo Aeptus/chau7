@@ -454,6 +454,10 @@ sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
 
 # Run all tests
 swift test
+
+# Fast pure Core iteration: excludes the app from the build graph, keeps its own cache
+./Scripts/test-core.sh
+./Scripts/test-core.sh --filter CommandBlockTests
 ```
 
 ### Test Coverage

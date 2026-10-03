@@ -471,6 +471,7 @@ The app still contains internal runtime orchestration used by dashboard and revi
 ## Performance
 
 - **Bounded changed-file backups** — non-Git directories report unavailable changes without recursive scanning. Changed-file lists retain truncation metadata; archive count, age, per-file size, and total bytes are bounded without discarding the latest restore.
+- **Core-only test workflow** — `Scripts/test-core.sh` selects pure Chau7Core tests and caches their build independently of the app. Standard `swift test` continues to validate the full integration graph.
 
 - **Terminal responsiveness** — zero-timeout polls never spin for ownership, output batches yield between chunks, and file-backed session discovery stays off status getters. A bounded cache reuses shaped graphemes in CPU fallback frames while preserving colors and font traits; discovery completes on the main actor and stale results cannot replace newer agent identities.
 - Complete retention coverage: telemetry retention prunes the tables the run cascade structurally cannot reach (`usage_evidence`, `provider_latency_samples`, and `remote_client_events` declare no foreign key to `runs`), independently of the run prune rather than only on days that happen to retire a run, with an index so the prune is not a full scan. The provider-quota snapshot log is capped on disk and read as a bounded, line-aligned tail, so per-refresh parse cost tracks the consumed 600-second window rather than total history.
