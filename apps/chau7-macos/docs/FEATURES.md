@@ -470,6 +470,13 @@ The app still contains internal runtime orchestration used by dashboard and revi
 
 ## Performance
 
+- Dashboard proxy health tasks start on their publishing actor, avoiding a nested cross-queue task transfer that crashed the native compiler during validation.
+
+- Pending local command approval blocks MCP execution and input, exposes a truthful readiness reason, and requires an existing live PTY before deferred consent can resume.
+
+- Automation submissions wait for consent before sending their body or Enter; delayed approved submits are discarded if pane or input context changes.
+
+- **Asynchronous command approval** — confirmation sheets keep the UI and heartbeat advancing. Consent releases only the original unchanged input once; remote commands remain unsent until approved, and pending approval appears in session status.
 - Core-only tests refresh manifest discovery on every run so newly added regressions cannot be silently omitted by a cached dynamic test list; compiled Core artifacts remain reusable.
 
 - **Bounded changed-file backups** — non-Git directories report unavailable changes without recursive scanning. Changed-file lists retain truncation metadata; archive count, age, per-file size, and total bytes are bounded without discarding the latest restore.

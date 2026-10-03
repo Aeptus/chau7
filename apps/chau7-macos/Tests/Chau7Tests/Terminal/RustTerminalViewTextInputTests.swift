@@ -6,6 +6,37 @@ import Carbon.HIToolbox
 @MainActor
 final class RustTerminalViewTextInputTests: XCTestCase {
 
+    func testPendingApprovalDoesNotForwardPaste() {
+        let view = RustTerminalView(frame: .zero)
+        var inputs: [String] = []
+        view.onInput = { inputs.append($0) }
+        view.shouldAcceptUserText = { _, _ in false }
+        view.pasteText("rm -rf /tmp/example\n")
+        XCTAssertTrue(inputs.isEmpty)
+    }
+
+    func testDeferredInputCannotResumeWithoutOriginalBackend() {
+        let view = RustTerminalView(frame: .zero)
+        var inputs: [String] = []
+        var decision: (() -> Void)?
+        view.onInput = { inputs.append($0) }
+        view.shouldAcceptUserText = { _, resume in decision = resume
+            return false
+        }
+        view.pasteText("test\n")
+        decision?()
+        XCTAssertTrue(inputs.isEmpty)
+    }
+
+    func testImmediatelyAllowedPasteStillForwardsExactlyOnce() {
+        let view = RustTerminalView(frame: .zero)
+        var inputs: [String] = []
+        view.onInput = { inputs.append($0) }
+        view.shouldAcceptUserText = { _, _ in true }
+        view.pasteText("hello\n")
+        XCTAssertEqual(inputs, ["hello\n"])
+    }
+
     func testTerminalDoesNotAdvertiseMacOSServicesPasteboardTypes() {
         let view = RustTerminalView(frame: .zero)
 

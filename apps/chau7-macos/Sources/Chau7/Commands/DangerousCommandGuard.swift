@@ -252,7 +252,7 @@ final class DangerousCommandGuard {
 
     /// Shows a confirmation alert for a dangerous command.
     /// Returns true if the user confirms execution.
-    /// Must be called on the main actor (which this class is isolated to).
+    /// Returns immediately; the exact deferred input resumes only after approval.
     ///
     /// The command text is rendered inside a bounded scrollable accessoryView
     /// rather than the alert's informativeText so that very long or multi-line
@@ -262,7 +262,17 @@ final class DangerousCommandGuard {
     /// If a `ConfirmationReason` is supplied, its `explanation` replaces the
     /// generic alert body with category-specific text telling the user *why*
     /// this input was flagged (not just which pattern matched).
-    func showConfirmation(command: String, matchedPattern: String, reason: ConfirmationReason? = nil) -> Bool {
+    func showConfirmation(
+        command: String,
+        matchedPattern: String,
+        reason: ConfirmationReason? = nil,
+        window: NSWindow?,
+        completion: @escaping @MainActor (Bool) -> Void
+    ) {
+        guard let window, window.attachedSheet == nil else {
+            completion(false)
+            return
+        }
         let alert = NSAlert()
         alert.messageText = L("dangerousGuard.alert.title", "Dangerous Command Detected")
         let explanation = reason?.explanation ?? L(
@@ -286,24 +296,25 @@ final class DangerousCommandGuard {
         // button's "\r" key equivalent. Force focus onto Execute instead.
         alert.window.initialFirstResponder = executeButton
 
-        let response = alert.runModal()
-        switch response {
-        case .alertFirstButtonReturn:
-            Log.info("DangerousCommandGuard: user confirmed '\(command)'")
-            return true
-        case .alertThirdButtonReturn:
-            Log.info("DangerousCommandGuard: user always-allowed '\(command)'")
-            allowList.insert(command)
-            return true
-        default:
-            Log.info("DangerousCommandGuard: user cancelled '\(command)'")
-            return false
+        alert.beginSheetModal(for: window) { [weak self] response in
+            MainActor.assumeIsolated {
+                switch response {
+                case .alertFirstButtonReturn:
+                    completion(true)
+                case .alertThirdButtonReturn:
+                    self?.allowList.insert(command)
+                    completion(true)
+                default:
+                    completion(false)
+                }
+            }
         }
+        NSApp.requestUserAttention(.informationalRequest)
     }
 
-    /// Shows a blocking alert when a command is denied by policy.
-    /// Must be called on the main actor (which this class is isolated to).
-    func showBlockedAlert(command: String, reason: String) {
+    /// Policy rejection must not block the main dispatch queue either.
+    func showBlockedAlert(command: String, reason: String, window: NSWindow?) {
+        guard let window, window.attachedSheet == nil else { return }
         let alert = NSAlert()
         alert.messageText = L("dangerousGuard.blocked.title", "Command Blocked")
         alert.informativeText = L(
@@ -314,8 +325,8 @@ final class DangerousCommandGuard {
         )
         alert.alertStyle = .warning
         alert.addButton(withTitle: L("dangerousGuard.blocked.dismiss", "OK"))
-        _ = alert.runModal()
-        Log.warn("DangerousCommandGuard: blocked alert shown '\(command)' (\(reason))")
+        alert.beginSheetModal(for: window)
+        NSApp.requestUserAttention(.informationalRequest)
     }
 
     // MARK: - List Management

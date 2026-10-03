@@ -4,6 +4,17 @@ import Chau7Core
 
 @MainActor
 final class TerminalSessionModelTests: XCTestCase {
+    func testPendingLocalApprovalRejectsAutomationAndRemoteSubmissions() {
+        let session = TerminalSessionModel(appModel: AppModel())
+        session.hasPendingCommandApproval = true
+        XCTAssertEqual(session.effectiveStatus, .approvalRequired)
+        session.sendOrQueueAutomationInput("echo test\n")
+        session.sendRemoteSubmittedInput("echo test\n")
+        session.submitAutomationPrompt()
+        XCTAssertTrue(session.hasPendingCommandApproval)
+        XCTAssertFalse(session.shouldAcceptDirectUserInput("\r", resume: { XCTFail("Pending approval must not resume another input") }))
+    }
+
     private func flushMainQueue() async {
         let expectation = expectation(description: "main queue flush")
         DispatchQueue.main.async { expectation.fulfill() }
