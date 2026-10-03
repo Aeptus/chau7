@@ -27,10 +27,25 @@ public struct CommandBlock: Identifiable, Codable, Equatable, Sendable {
 
     /// Files changed during this command execution (populated via git diff snapshot).
     /// Empty if not a git repo, or if the command hasn't finished yet.
-    public var changedFiles: [String] = []
+    public var changedFiles: [String] = [] {
+        didSet {
+            let bounded = ChangedFilesBudget.select(changedFiles, status: changedFilesStatus)
+            changedFiles = bounded.files
+            changedFilesTruncated = changedFilesTruncated || bounded.truncated
+        }
+    }
+
+    public var changedFilesTruncated = false
     /// Whether change detection completed but could not determine the diff reliably.
     public var changedFilesUnavailable = false
-    public var changedFilesStatus: CommandBlockChangedFilesStatus = .loading
+    public var changedFilesStatus: CommandBlockChangedFilesStatus = .loading {
+        didSet {
+            if changedFilesStatus == .notGitRepo {
+                changedFiles = []
+                changedFilesTruncated = false
+            }
+        }
+    }
 
     /// Whether the command is still executing (neither end line nor end time recorded)
     public var isRunning: Bool {
@@ -89,7 +104,8 @@ public struct CommandBlock: Identifiable, Codable, Equatable, Sendable {
         turnID: String? = nil,
         changedFiles: [String] = [],
         changedFilesUnavailable: Bool = false,
-        changedFilesStatus: CommandBlockChangedFilesStatus = .loading
+        changedFilesStatus: CommandBlockChangedFilesStatus = .loading,
+        changedFilesTruncated: Bool = false
     ) {
         self.id = id
         self.command = command
@@ -100,7 +116,9 @@ public struct CommandBlock: Identifiable, Codable, Equatable, Sendable {
         self.exitCode = exitCode
         self.directory = directory
         self.turnID = turnID
-        self.changedFiles = changedFiles
+        let bounded = ChangedFilesBudget.select(changedFiles, status: changedFilesStatus)
+        self.changedFiles = bounded.files
+        self.changedFilesTruncated = changedFilesStatus != .notGitRepo && (changedFilesTruncated || bounded.truncated)
         self.changedFilesUnavailable = changedFilesUnavailable
         self.changedFilesStatus = changedFilesStatus
     }
@@ -116,6 +134,7 @@ public struct CommandBlock: Identifiable, Codable, Equatable, Sendable {
         case directory
         case turnID
         case changedFiles
+        case changedFilesTruncated
         case changedFilesUnavailable
         case changedFilesStatus
     }
@@ -131,7 +150,6 @@ public struct CommandBlock: Identifiable, Codable, Equatable, Sendable {
         self.exitCode = try container.decodeIfPresent(Int.self, forKey: .exitCode)
         self.directory = try container.decodeIfPresent(String.self, forKey: .directory)
         self.turnID = try container.decodeIfPresent(String.self, forKey: .turnID)
-        self.changedFiles = try container.decodeIfPresent([String].self, forKey: .changedFiles) ?? []
         self.changedFilesUnavailable = try container.decodeIfPresent(Bool.self, forKey: .changedFilesUnavailable) ?? false
         if let decodedStatus = try container.decodeIfPresent(CommandBlockChangedFilesStatus.self, forKey: .changedFilesStatus) {
             self.changedFilesStatus = decodedStatus
@@ -141,6 +159,27 @@ public struct CommandBlock: Identifiable, Codable, Equatable, Sendable {
             self.changedFilesStatus = .loaded
         } else {
             self.changedFilesStatus = .loading
+        }
+        self.changedFilesTruncated = try container.decodeIfPresent(Bool.self, forKey: .changedFilesTruncated) ?? false
+        if changedFilesStatus == .notGitRepo {
+            self.changedFiles = []
+            self.changedFilesTruncated = false
+        } else if container.contains(.changedFiles), try !(container.decodeNil(forKey: .changedFiles)) {
+            var paths = try container.nestedUnkeyedContainer(forKey: .changedFiles)
+            var selected: [String] = []
+            var bytes = 2
+            while !paths.isAtEnd, selected.count < ChangedFilesBudget.maximumCount {
+                let path = try paths.decode(String.self)
+                let cost = ChangedFilesBudget.encodedPathBytes(path)
+                guard cost <= ChangedFilesBudget.maximumEncodedBytes - bytes else {
+                    self.changedFilesTruncated = true
+                    break
+                }
+                selected.append(path)
+                bytes += cost
+            }
+            self.changedFiles = selected
+            self.changedFilesTruncated = changedFilesTruncated || !paths.isAtEnd
         }
     }
 
@@ -155,7 +194,9 @@ public struct CommandBlock: Identifiable, Codable, Equatable, Sendable {
         try container.encodeIfPresent(exitCode, forKey: .exitCode)
         try container.encodeIfPresent(directory, forKey: .directory)
         try container.encodeIfPresent(turnID, forKey: .turnID)
-        try container.encode(changedFiles, forKey: .changedFiles)
+        let bounded = ChangedFilesBudget.select(changedFiles, status: changedFilesStatus)
+        try container.encode(bounded.files, forKey: .changedFiles)
+        try container.encode(changedFilesStatus != .notGitRepo && (changedFilesTruncated || bounded.truncated), forKey: .changedFilesTruncated)
         try container.encode(changedFilesUnavailable, forKey: .changedFilesUnavailable)
         try container.encode(changedFilesStatus, forKey: .changedFilesStatus)
     }

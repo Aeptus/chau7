@@ -69,7 +69,7 @@ final class GitDiffTrackerTests: XCTestCase {
         XCTAssertFalse(failed.succeeded)
     }
 
-    func testChangedFilesResultFallsBackToFilesystemOutsideGit() throws {
+    func testNonGitDirectoryReturnsNoFileList() throws {
         let tracker = GitDiffTracker()
         // NSTemporaryDirectory() goes through the /var → /private/var symlink on
         // macOS; this deliberately exercises the canonical-path handling in the
@@ -82,15 +82,15 @@ final class GitDiffTrackerTests: XCTestCase {
         try "hello".write(to: file, atomically: true, encoding: .utf8)
 
         let result = tracker.changedFilesResult(directory: directory.path)
-        XCTAssertTrue(result.usedFallback)
-        XCTAssertEqual(result.files, ["example.txt"])
-        // The fallback produced a usable file list, so the diff is not "unavailable"
-        // even though git itself was (unavailableReason explains the fallback).
-        XCTAssertFalse(result.diffUnavailable)
+        XCTAssertFalse(result.usedFallback)
+        XCTAssertTrue(result.files.isEmpty)
+        XCTAssertEqual(result.status, .notGitRepo)
+        // Git failure is explicit; it must not trigger a home-directory crawl.
+        XCTAssertTrue(result.diffUnavailable)
         XCTAssertNotNil(result.unavailableReason)
     }
 
-    func testChangedFilesResultFallbackIncludesHiddenFiles() throws {
+    func testNonGitDirectoryDoesNotExposeHiddenFiles() throws {
         let tracker = GitDiffTracker()
         let directory = try makeScratchDirectoryOutsideGit()
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -100,7 +100,8 @@ final class GitDiffTrackerTests: XCTestCase {
         try "SECRET=1".write(to: file, atomically: true, encoding: .utf8)
 
         let result = tracker.changedFilesResult(directory: directory.path)
-        XCTAssertTrue(result.usedFallback)
-        XCTAssertTrue(result.files.contains(".env"))
+        XCTAssertFalse(result.usedFallback)
+        XCTAssertTrue(result.files.isEmpty)
+        XCTAssertEqual(result.status, .notGitRepo)
     }
 }
