@@ -50,6 +50,11 @@ private struct MainThreadHangSampleManifest: Codable {
     let buildSHA: String
     let buildTimestamp: String
     let operatingSystem: String
+    let watchdogPID: Int32
+    let heartbeatBeforeCapture: MainThreadHeartbeat
+    let heartbeatAfterCapture: MainThreadHeartbeat?
+    let captureEvidence: HangSampleEvidence
+    let mainThreadStacks: MainThreadStackObservations
 }
 
 /// Supervises the main event loop without ever synchronously consulting it.
@@ -344,6 +349,8 @@ enum MainThreadHangWatchdogRunner {
                     captureSample(
                         parentPID: command.parentPID,
                         staleFor: observation.staleFor,
+                        heartbeatBeforeCapture: heartbeat,
+                        heartbeatURL: heartbeatURL,
                         outputDirectoryURL: outputDirectoryURL
                     )
                     capturedSampleNow = true
@@ -376,8 +383,11 @@ enum MainThreadHangWatchdogRunner {
     private static func captureSample(
         parentPID: Int32,
         staleFor: TimeInterval,
+        heartbeatBeforeCapture: MainThreadHeartbeat,
+        heartbeatURL: URL,
         outputDirectoryURL: URL
     ) {
+        let startedUptime = ProcessInfo.processInfo.systemUptime
         let detectedAt = Date()
         let stem = "hang-\(Int(detectedAt.timeIntervalSince1970))-pid-\(parentPID)"
         let sampleURL = outputDirectoryURL.appendingPathComponent("\(stem).sample.txt")
@@ -415,9 +425,26 @@ enum MainThreadHangWatchdogRunner {
             launchError = String(describing: error)
         }
 
+        let completedUptime = ProcessInfo.processInfo.systemUptime
+        let afterData = try? Data(contentsOf: heartbeatURL)
+        let decodedAfter = afterData.flatMap { try? JSONDecoder().decode(MainThreadHeartbeat.self, from: $0) }
+        let heartbeatAfter = decodedAfter?.parentPID == parentPID ? decodedAfter : nil
+        let evidence = HangSampleEvidence(
+            beforeToken: heartbeatBeforeCapture.progressToken,
+            afterToken: heartbeatAfter?.progressToken,
+            startedUptime: startedUptime,
+            completedUptime: completedUptime
+        )
+        var sampleText = ""
+        if let file = try? FileHandle(forReadingFrom: sampleURL) {
+            defer { try? file.close() }
+            if let data = try? file.read(upToCount: MainThreadStackObservations.maximumInputBytes + 1) {
+                sampleText = String(decoding: data, as: UTF8.self)
+            }
+        }
         let info = Bundle.main.infoDictionary ?? [:]
         let manifest = MainThreadHangSampleManifest(
-            schemaVersion: 2,
+            schemaVersion: 3,
             detectedAt: detectedAt,
             parentPID: parentPID,
             staleMilliseconds: Int(min(Double(Int.max / 2), max(0, staleFor * 1000))),
@@ -428,7 +455,12 @@ enum MainThreadHangWatchdogRunner {
             sampleTruncated: truncated,
             buildSHA: info["Chau7BuildGitSHA"] as? String ?? "unknown",
             buildTimestamp: info["Chau7BuildTimestamp"] as? String ?? "unknown",
-            operatingSystem: ProcessInfo.processInfo.operatingSystemVersionString
+            operatingSystem: ProcessInfo.processInfo.operatingSystemVersionString,
+            watchdogPID: getpid(),
+            heartbeatBeforeCapture: heartbeatBeforeCapture,
+            heartbeatAfterCapture: heartbeatAfter,
+            captureEvidence: evidence,
+            mainThreadStacks: MainThreadStackObservations(sampleText: sampleText)
         )
         if let data = try? JSONEncoder().encode(manifest) {
             try? data.write(to: manifestURL, options: .atomic)

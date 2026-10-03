@@ -33,6 +33,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Hang manifests record heartbeat progress before and after sampling, bounded main-thread stack families and watchdog identity, so a sample overlapping recovery is explicit rather than mistaken for a persistent teardown stall.
+
 - Hang sampling has a ten-second helper deadline and bounded diagnostic retention (40 bundles, seven days, 64 MiB). Manifests record build identity and timeout/truncation outcomes; watchdog health uses monotonic time.
 
 - Read-only MCP requests return a retryable UI-timeout error instead of waiting indefinitely. Expired queued reads are cancelled, terminal output uses bounded tails, and response formatting and provider-log fallback flushes stay on the MCP worker.

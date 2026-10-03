@@ -1064,3 +1064,5 @@ Key patterns:
 - Deferred restore scheduling backs off during rapid tab switching, prioritizes tabs nearest to the selected tab, and logs per-tab restore stage timings with RSS deltas.
 - Proxy-observed usage evidence is attributed to the enclosing telemetry run (tab id, then session id, then project path, bounded by the run window); analytics migrations add each cache counter independently so a partially-migrated database still converges.
 - The generated CTO executable wrapper execs the real binary for `--porcelain`, `--format`, and `-z` invocations before reaching the optimizer, so machine-readable bytes survive regardless of optimizer behaviour.
+
+- **Hang capture evidence** — schema 3 diagnostics record sampling duration, before/after heartbeat tokens, watchdog identity and bounded main-thread stack families. These observations distinguish captures overlapping recovery without claiming a teardown root cause.
