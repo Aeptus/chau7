@@ -7,6 +7,13 @@
     "differentiator": "No"
   },
   {
+    "category": "Diagnostics",
+    "feature": "Hang Capture Progress Evidence",
+    "description": "Bounded main-thread stack observations, watchdog identity and before/after heartbeat progress identify captures overlapping recovery without asserting a runtime teardown root cause",
+    "status": "Shipped",
+    "differentiator": "No"
+  },
+  {
     "category": "Performance",
     "feature": "Concurrent Refresh and Consent Ownership",
     "description": "Usage caches and cursors have one serial worker with generation guarded publication; Metal pipeline pairs are synchronized per retained device; local and remote MCP command decisions share one main actor sheet owner with bounded worker waiting and fail closed expiry",
