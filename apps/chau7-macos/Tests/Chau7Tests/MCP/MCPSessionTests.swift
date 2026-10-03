@@ -285,6 +285,27 @@ final class MCPSessionTests: XCTestCase {
         XCTAssertEqual(timers.first?["id"] as? String, "mcp_health_check")
     }
 
+    func testTimedOutReadReturnsToolErrorAndSessionStillAnswersPing() async {
+        let session = initializedSession()
+        let finished = DispatchSemaphore(value: 0)
+        DispatchQueue.global().async {
+            let response = session.handleRequestObject(["jsonrpc": "2.0", "id": 71, "method": "tools/call", "params": ["name": "tab_list", "arguments": [:]]])
+            let result = response?["result"] as? [String: Any]
+            XCTAssertEqual(result?["isError"] as? Bool, true)
+            let payload = result?["structuredContent"] as? [String: Any]
+            XCTAssertEqual(payload?["error"] as? String, "main_thread_unresponsive")
+            XCTAssertEqual(payload?["retryable"] as? Bool, true)
+            let ping = session.handleRequestObject(["jsonrpc": "2.0", "id": 72, "method": "ping"])
+            XCTAssertNotNil(ping?["result"])
+            finished.signal()
+        }
+        // Fault only this isolated test process; no live app or socket is touched.
+        XCTAssertEqual(finished.wait(timeout: .now() + 3), .success)
+        let drained = expectation(description: "expired queued read drained")
+        DispatchQueue.main.async { drained.fulfill() }
+        await fulfillment(of: [drained], timeout: 2)
+    }
+
     func testStateSnapshotReturnsAggregatedState() throws {
         Chau7ObservabilityService.shared.recordEvent(type: "app_launched", subsystem: "app_lifecycle")
 

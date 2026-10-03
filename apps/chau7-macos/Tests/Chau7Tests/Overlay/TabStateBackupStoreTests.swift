@@ -229,6 +229,25 @@ final class TabStateBackupStoreTests: XCTestCase {
         XCTAssertTrue(TabStateBackupStore.shouldArchiveMultiWindowBackup(data: data, reason: .restoreSource))
     }
 
+    func testOversizedArchiveIsSkippedEvenForTerminationAndRestore() {
+        let data = Data(count: TabStateBackupStore.maximumArchiveFileBytes + 1)
+        XCTAssertFalse(TabStateBackupStore.shouldArchiveMultiWindowBackup(data: data, reason: .autosave))
+        XCTAssertFalse(TabStateBackupStore.shouldArchiveMultiWindowBackup(data: data, reason: .termination))
+        XCTAssertFalse(TabStateBackupStore.shouldArchiveMultiWindowBackup(data: data, reason: .restoreSource))
+    }
+
+    func testLatestRestoreIsPreservedAboveArchiveLimitAndHistoricalHugeArchivePruned() throws {
+        let root = try XCTUnwrap(TabStateBackupStore.tabStateBackupRootURL())
+        let urls = try TabStateBackupStore.ensureTabStateBackupDirectories()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let oversized = Data(count: TabStateBackupStore.maximumArchiveFileBytes + 1)
+        try oversized.write(to: urls.archive.appendingPathComponent("huge.json"))
+        try TabStateBackupStore.writeLatestTabStateBackup(oversized)
+        try TabStateBackupStore.writeArchivedTabStateBackup(oversized, reason: .termination)
+        XCTAssertEqual(try Data(contentsOf: root.appendingPathComponent("latest.json")).count, oversized.count)
+        XCTAssertTrue(try FileManager.default.contentsOfDirectory(atPath: urls.archive.path).isEmpty)
+    }
+
     func testShouldArchiveDedupesIdenticalFingerprintForAutosave() {
         let data = Data("payload".utf8)
         TabStateBackupStore.lastArchivedMultiWindowTabStateFingerprint = data.hashValue
