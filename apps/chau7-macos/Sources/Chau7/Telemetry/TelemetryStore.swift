@@ -31,6 +31,8 @@ final class TelemetryStore: @unchecked Sendable {
     private let checkpointLogRemainingFramesThreshold: Int32 = 1000
     private let latencySamplesPrepareFailureLogInterval: TimeInterval = 60
     private var lastLatencySamplesPrepareFailureLogAt = Date.distantPast
+    private let databasePathOverride: String?
+    private lazy var proxyReconciler = TelemetryProxyRunReconciler(store: self)
     private lazy var maintenance = TelemetryMaintenance(store: self)
 
     private static var dbPath: String {
@@ -41,6 +43,12 @@ final class TelemetryStore: @unchecked Sendable {
     }
 
     private init() {
+        self.databasePathOverride = nil
+        queue.sync { self.open() }
+    }
+
+    init(testDatabasePath: String) {
+        self.databasePathOverride = testDatabasePath
         queue.sync { self.open() }
     }
 
@@ -62,7 +70,7 @@ final class TelemetryStore: @unchecked Sendable {
     // MARK: - Setup
 
     private func open() {
-        let path = Self.dbPath
+        let path = databasePathOverride ?? Self.dbPath
         guard sqlite3_open(path, &db) == SQLITE_OK else {
             Log.error("TelemetryStore: failed to open database at \(path)")
             return
@@ -106,6 +114,14 @@ final class TelemetryStore: @unchecked Sendable {
         queue.sync {
             maintenance.backfillCompletedRunLatencySamples()
         }
+    }
+
+    func backfillProxyRunAttribution() {
+        queue.sync { proxyReconciler.backfill() }
+    }
+
+    func _backfillProxyRunAttribution() {
+        proxyReconciler.backfill()
     }
 
     typealias PruneOutcome = TelemetryMaintenance.PruneOutcome
@@ -249,6 +265,8 @@ final class TelemetryStore: @unchecked Sendable {
         if sqlite3_step(stmt) != SQLITE_DONE {
             let err = String(cString: sqlite3_errmsg(db))
             Log.warn("TelemetryStore: insert run failed for \(run.id): \(err)")
+        } else {
+            proxyReconciler.reconcile(around: run.startedAt)
         }
     }
 
@@ -313,6 +331,7 @@ final class TelemetryStore: @unchecked Sendable {
             _insertUsageEvidence(UsageEvidence.runSummary(run))
             upsertCompletedRunLatencySamples(run: run, turns: turns)
 
+            proxyReconciler.reconcile(around: run.startedAt)
             commitWriteTransaction(db, reason: "finalizeRun")
         }
     }
@@ -412,6 +431,7 @@ final class TelemetryStore: @unchecked Sendable {
             bindText(stmt, 1, sessionID)
             bindText(stmt, 2, runID)
             sqlite3_step(stmt)
+            if let run = _getRun(runID) { proxyReconciler.reconcile(around: run.startedAt) }
         }
     }
 
@@ -459,12 +479,17 @@ final class TelemetryStore: @unchecked Sendable {
             bindText(stmt, 14, run.errorMessage)
             bindText(stmt, 15, run.id)
             sqlite3_step(stmt)
+            proxyReconciler.reconcile(around: run.startedAt)
         }
     }
 
     func insertUsageEvidence(_ evidence: UsageEvidence) {
         queue.async { [weak self] in
-            self?._insertUsageEvidence(evidence)
+            guard let self else { return }
+            _insertUsageEvidence(evidence)
+            if evidence.sourceKind == .proxy, !evidence.uniqueEventKey.hasPrefix("run|") {
+                proxyReconciler.reconcile(around: evidence.observedAt)
+            }
         }
     }
 
@@ -708,6 +733,7 @@ final class TelemetryStore: @unchecked Sendable {
             _insertUsageEvidence(UsageEvidence.runSummary(run))
             upsertCompletedRunLatencySamples(run: run, turns: turns)
 
+            proxyReconciler.reconcile(around: run.startedAt)
             commitWriteTransaction(db, reason: "rewriteCompletedRun")
         }
     }
@@ -740,6 +766,9 @@ final class TelemetryStore: @unchecked Sendable {
 
             if let refreshedRun = _getRun(runID) {
                 _insertUsageEvidence(UsageEvidence.runSummary(refreshedRun))
+                // Transcript repair invalidation cannot invalidate independently
+                // observed requests; retain invalid metrics as the fallback.
+                proxyReconciler.reconcile(around: refreshedRun.startedAt)
             }
         }
     }
@@ -1708,7 +1737,7 @@ final class TelemetryStore: @unchecked Sendable {
         )
     }
 
-    private func parseUsageEvidence(_ stmt: OpaquePointer?) -> UsageEvidence? {
+    func parseUsageEvidence(_ stmt: OpaquePointer?) -> UsageEvidence? {
         let map = columnIndexMap(stmt)
         guard let stmt,
               let id = colByName(stmt, "evidence_id", map),

@@ -100,6 +100,11 @@ struct TelemetrySchemaMigrator {
         CREATE INDEX IF NOT EXISTS idx_tool_calls_run ON tool_calls(run_id);
         CREATE INDEX IF NOT EXISTS idx_tool_calls_name ON tool_calls(tool_name);
 
+        CREATE TABLE IF NOT EXISTS proxy_run_baselines (
+            run_id TEXT PRIMARY KEY REFERENCES runs(run_id) ON DELETE CASCADE,
+            snapshot TEXT NOT NULL
+        );
+
         CREATE TABLE IF NOT EXISTS usage_evidence (
             evidence_id TEXT PRIMARY KEY,
             unique_event_key TEXT NOT NULL,

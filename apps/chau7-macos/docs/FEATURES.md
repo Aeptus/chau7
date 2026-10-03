@@ -1054,5 +1054,11 @@ Release validation builds one preserved distribution in CI. Manual runs do not
 publish or access signing secrets; signing lifecycle tests use synthetic commands.
 See the repository release-validation documentation for bounded jobs and tap policy.
 
+Measured proxy run usage carries observed provenance, cache reads/creation where
+reported, attributed and priced request counts, and explicit partial retained
+coverage. Missing counters stay unavailable, while reported zero remains zero.
+Ambiguous overlaps are unassigned; historical evidence without unique request IDs
+cannot reconstruct collapsed or uncaptured calls.
+
 MAGI has been removed from Chau7. The archived protocol and migration note are
 linked from [the documentation map](../../../docs/README.md).
