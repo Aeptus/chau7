@@ -297,3 +297,13 @@ Logs older than 7 days are pruned by the runner/post-commit hook.
 `--no-verify` is an emergency escape hatch only. Prefer named, narrow, logged
 environment overrides when a gate has an intentional escape hatch. Any bypass
 should be justified in the commit message.
+
+Documentation policy: implementation behavior changes require a meaningful entry in
+`apps/chau7-macos/docs/CHANGELOG.md`. Update `FEATURES.md` and `features.json` when
+capabilities change; an unchanged generated CSV is valid. The gate checks the indexed
+manifest/CSV pair, including when working-tree metadata has unstaged edits. Tooling,
+configuration and test-only changes do not require invented product features. For a
+behavior-preserving implementation change, stage `.chau7/docs-exemption.json` containing
+`{"reason":"A specific explanation of at least 20 characters","paths":["exact/changed/path"]}`.
+Only a staged exemption covering every changed implementation path applies. This policy
+never disables credential scanning or other quality gates.
