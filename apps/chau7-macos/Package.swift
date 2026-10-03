@@ -18,7 +18,6 @@ let package = Package(
     products: [
         .executable(name: "Chau7", targets: ["Chau7"]),
         .executable(name: "chau7-cli", targets: ["Chau7CLI"]),
-        .executable(name: "magi", targets: ["MagiCLI"]),
         .library(name: "Chau7Core", targets: ["Chau7Core"])
     ],
     dependencies: [
@@ -108,15 +107,6 @@ let package = Package(
                 .linkedFramework("CoreVideo")
             ]
         ),
-        // MAGI command-line interface
-        .executableTarget(
-            name: "MagiCLI",
-            dependencies: [
-                "Chau7Core"
-            ],
-            path: "Sources/MagiCLI",
-            swiftSettings: strictConcurrencySettings
-        ),
         // Chau7 command-line interface
         .executableTarget(
             name: "Chau7CLI",
@@ -133,7 +123,6 @@ let package = Package(
                 "Chau7Core",
                 "Chau7",
                 "Chau7CLI",
-                "MagiCLI",
                 .product(name: "Atomics", package: "swift-atomics")
             ],
             path: "Tests/Chau7Tests",
@@ -180,7 +169,7 @@ if ProcessInfo.processInfo.environment["CHAU7_CORE_TESTS_ONLY"] == "1" {
         let imports = Set(importPattern.matches(in: text, range: NSRange(location: 0, length: nsText.length))
             .map { nsText.substring(with: $0.range(at: 1)) })
         let relativePath = String(file.path.dropFirst(testRoot.path.count + 1))
-        if imports.contains("Chau7Core"), imports.isDisjoint(with: ["Chau7", "Chau7CLI", "MagiCLI"]) {
+        if imports.contains("Chau7Core"), imports.isDisjoint(with: ["Chau7", "Chau7CLI"]) {
             coreTests.append(relativePath)
         } else {
             excludedTests.append(relativePath)

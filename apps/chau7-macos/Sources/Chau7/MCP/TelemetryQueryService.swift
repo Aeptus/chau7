@@ -265,6 +265,8 @@ final class TelemetryQueryService {
     }
 
     private func projectRun(_ run: TelemetryRun, activeRunIDs: Set<String>) -> [String: Any] {
+        // Recorder snapshots may predate the asynchronously persisted proxy update.
+        let run = store.getRun(run.id).flatMap { $0.tokenUsageSource == .proxy ? $0 : nil } ?? run
         guard let data = Persist.encodeLogged(run, context: "telemetry.projectRun(\(run.id))", encoder: encoder),
               var json = (try? JSONSerialization.jsonObject(with: data) as? [String: Any]) else {
             return [:]
@@ -281,6 +283,12 @@ final class TelemetryQueryService {
 
         json["run_state"] = isActive ? TelemetryRunState.active.rawValue : TelemetryRunState.completed.rawValue
         json["content_state"] = contentState.rawValue
+        json["measurement_coverage"] = [
+            "state": run.metadata["proxy_coverage"] ?? (run.costSource == .estimated ? "estimated" : "unavailable"),
+            "attributed_requests": Int(run.metadata["proxy_request_count"] ?? "0") ?? 0,
+            "priced_requests": Int(run.metadata["proxy_priced_request_count"] ?? "0") ?? 0,
+            "unobserved_usage": "unknown"
+        ] as [String: Any]
         return json
     }
 

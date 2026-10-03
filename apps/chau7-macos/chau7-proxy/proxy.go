@@ -285,8 +285,12 @@ func (p *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if usagePresent {
 		record.InputTokens = IntPointer(respMeta.InputTokens)
 		record.OutputTokens = IntPointer(respMeta.OutputTokens)
-		record.CacheCreationInputTokens = IntPointer(respMeta.CacheCreationInputTokens)
-		record.CacheReadInputTokens = IntPointer(respMeta.CacheReadInputTokens)
+		if respMeta.CacheCreationReported {
+			record.CacheCreationInputTokens = IntPointer(respMeta.CacheCreationInputTokens)
+		}
+		if respMeta.CacheReadReported {
+			record.CacheReadInputTokens = IntPointer(respMeta.CacheReadInputTokens)
+		}
 		record.ReasoningOutputTokens = IntPointer(respMeta.ReasoningOutputTokens)
 	}
 

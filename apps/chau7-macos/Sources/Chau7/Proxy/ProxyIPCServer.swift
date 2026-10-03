@@ -47,10 +47,6 @@ final class ProxyIPCServer {
             .appendingPathComponent("proxy.sock")
     }
 
-    /// Reused across api_call events — ISO8601DateFormatter init is expensive
-    /// and this runs on the IPC read path for every proxied LLM request.
-    private nonisolated(unsafe) static let apiCallTimestampFormatter = DateFormatters.iso8601NoFractional
-
     // MARK: - Initialization
 
     private init() {}
@@ -258,28 +254,12 @@ final class ProxyIPCServer {
             statusCode: data.statusCode,
             costUSD: data.costUSD,
             pricingVersion: data.pricingVersion,
-            timestamp: Self.apiCallTimestampFormatter.date(from: data.timestamp) ?? Date(),
+            timestamp: DateFormatters.parseISO8601(data.timestamp) ?? Date(),
             errorMessage: data.errorMessage.isEmpty ? nil : data.errorMessage,
             projectPath: data.projectPath
         )
 
-        TelemetryStore.shared.insertUsageEvidence(
-            UsageEvidence.proxyEvent(
-                provider: data.provider,
-                model: data.model.isEmpty ? nil : data.model,
-                sessionID: data.sessionId.isEmpty ? nil : data.sessionId,
-                endpoint: data.endpoint.isEmpty ? nil : data.endpoint,
-                projectPath: data.projectPath,
-                observedAt: event.timestamp,
-                inputTokens: data.inputTokens,
-                outputTokens: data.outputTokens,
-                cacheCreationInputTokens: data.cacheCreationInputTokens,
-                cacheReadInputTokens: data.cacheReadInputTokens,
-                reasoningOutputTokens: data.reasoningOutputTokens,
-                costUSD: data.costUSD,
-                pricingVersion: data.pricingVersion
-            )
-        )
+        TelemetryStore.shared.insertUsageEvidence(data.usageEvidence(observedAt: event.timestamp))
 
         // Update state on main thread
         Task { @MainActor in
@@ -486,6 +466,7 @@ extension ProxyIPCServerMessage {
 }
 
 struct ProxyIPCServerData: Decodable {
+    let requestId: String?
     let sessionId: String
     let provider: String
     let model: String
@@ -514,6 +495,7 @@ struct ProxyIPCServerData: Decodable {
     )
 
     enum CodingKeys: String, CodingKey {
+        case requestId = "request_id"
         case sessionId = "session_id"
         case provider
         case model
@@ -552,8 +534,10 @@ struct ProxyIPCServerData: Decodable {
         errorMessage: String,
         taskId: String?,
         tabId: String?,
-        projectPath: String?
+        projectPath: String?,
+        requestId: String? = nil
     ) {
+        self.requestId = requestId
         self.sessionId = sessionId
         self.provider = provider
         self.model = model
@@ -576,6 +560,7 @@ struct ProxyIPCServerData: Decodable {
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.requestId = try container.decodeIfPresent(String.self, forKey: .requestId)
         self.sessionId = try container.decode(String.self, forKey: .sessionId)
         self.provider = try container.decode(String.self, forKey: .provider)
         self.model = try container.decode(String.self, forKey: .model)
@@ -613,4 +598,19 @@ struct TaskDismissedEventWrapper: Decodable {
 
 struct TaskAssessmentEventWrapper: Decodable {
     let data: TaskAssessmentEventData
+}
+
+extension ProxyIPCServerData {
+    func usageEvidence(observedAt: Date) -> UsageEvidence {
+        var metadata: [String: String] = [:]
+        if let tabId, !tabId.isEmpty { metadata["tab_id"] = tabId }
+        return UsageEvidence.proxyEvent(
+            provider: provider, model: model.isEmpty ? nil : model,
+            sessionID: sessionId.isEmpty ? nil : sessionId, endpoint: endpoint.isEmpty ? nil : endpoint,
+            projectPath: projectPath, observedAt: observedAt, inputTokens: inputTokens, outputTokens: outputTokens,
+            cacheCreationInputTokens: cacheCreationInputTokens, cacheReadInputTokens: cacheReadInputTokens,
+            reasoningOutputTokens: reasoningOutputTokens, costUSD: costUSD, pricingVersion: pricingVersion,
+            metadata: metadata, requestID: requestId
+        )
+    }
 }

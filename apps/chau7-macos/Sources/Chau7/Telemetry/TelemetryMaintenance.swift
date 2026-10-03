@@ -65,6 +65,7 @@ final class TelemetryMaintenance {
         Log.info("TelemetryStore: starting deferred maintenance [\(reason)]")
         backfillHistoricalMissingCosts()
         backfillRunUsageEvidence()
+        store._backfillProxyRunAttribution()
         let latencyBackfill = backfillCompletedRunLatencySamples()
         if latencyBackfill.insertedSamples > 0 {
             Log.info(
