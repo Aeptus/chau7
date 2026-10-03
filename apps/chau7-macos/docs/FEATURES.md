@@ -6,6 +6,8 @@ See your coding agents, know what they cost, steer them from the outside. A macO
 >
 > Canonical docs live in [../../../docs/README.md](../../../docs/README.md).
 
+Usage refresh caches have one serial owner and reject late selection results. Metal pipeline pairs are synchronized per device. MCP command consent uses asynchronous sheets; the worker waits at most five minutes and late responses cannot grant permission.
+
 ## Table of Contents
 
 - [AI Detection & Integration](#ai-detection--integration)

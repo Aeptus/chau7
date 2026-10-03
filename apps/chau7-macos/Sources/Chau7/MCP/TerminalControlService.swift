@@ -89,7 +89,11 @@ final class TerminalControlService {
     // MARK: - Pending Approvals
 
     /// Tracks in-flight approval requests so iOS responses can resolve them.
-    private var pendingApprovals: [String: (MCPApprovalResult) -> Void] = [:]
+    private var pendingApprovals: [String: @MainActor (MCPApprovalResult) -> Void] = [:]
+    private var commandApprovalPresentations: [String: MCPCommandApprovalPresentation] = [:]
+    /// Human consent waits only on the MCP worker and expires closed after five minutes.
+    var commandApprovalTimeout: TimeInterval = 300
+    var commandApprovalPresenter: ((String, @escaping (MCPApprovalResult) -> Void) -> Bool)?
     private var pendingApprovalDetails: [String: [String: Any]] = [:]
     private let approvalLock = NSLock()
 
@@ -1942,13 +1946,15 @@ final class TerminalControlService {
     // MARK: - Approval Response (from iOS)
 
     /// Called by RemoteControlManager when the iOS app responds to an approval request.
-    func resolveApproval(requestID: String, approved: Bool) {
-        let result: MCPApprovalResult = approved ? .allowedOnce : .denied
-        approvalLock.lock()
-        let handler = pendingApprovals.removeValue(forKey: requestID)
-        pendingApprovalDetails.removeValue(forKey: requestID)
-        approvalLock.unlock()
-        handler?(result)
+    nonisolated func resolveApproval(requestID: String, approved: Bool) {
+        MainActorBridge.run {
+            let result: MCPApprovalResult = approved ? .allowedOnce : .denied
+            self.approvalLock.lock()
+            let handler = self.pendingApprovals.removeValue(forKey: requestID)
+            self.pendingApprovalDetails.removeValue(forKey: requestID)
+            self.approvalLock.unlock()
+            handler?(result)
+        }
     }
 
     // MARK: - Runtime Integration
@@ -2970,113 +2976,97 @@ final class TerminalControlService {
         return approved
     }
 
-    /// Dual-path command approval: shows a three-option NSAlert on Mac AND sends
-    /// request to iOS. First response (Mac or iOS) wins. Must be called on main thread.
-    private func requestCommandApproval(command: String, flaggedCommand: String, reason: String, permissions: ResolvedPermissions) -> MCPApprovalResult {
+    /// Waits only on the caller's worker; main owns the asynchronous sheet and callbacks.
+    /// A synchronous main-thread caller cannot wait for its own consent and fails closed.
+    nonisolated func requestCommandApproval(command: String, flaggedCommand: String, reason: String, permissions: ResolvedPermissions) -> MCPApprovalResult {
+        guard !Thread.isMainThread,
+              let timeout = MainActorBridge.read({ self.commandApprovalTimeout }) else { return .denied }
         let requestID = UUID().uuidString
-        let sourceInfo = permissions.matchedProfile != nil
-            ? "Permissions source: profile \"\(permissions.matchedProfile!.name)\""
-            : "Permissions source: global settings"
-        let contextNote = "\(reason)\n\n\(sourceInfo)"
-        Chau7ObservabilityService.shared.recordEvent(
-            type: "approval_waiting",
-            subsystem: "mcp_approvals",
-            sessionID: requestID,
-            detail: [
-                "kind": "command_request",
-                "flagged_command": flaggedCommand,
-                "reason": reason,
-                "permissions_source": permissions.sourceName
-            ]
-        )
-
-        // Send approval request to iOS via the injected forwarder
-        let payload = ApprovalRequestPayload(
-            requestID: requestID,
-            command: command,
-            flaggedCommand: flaggedCommand,
-            timestamp: DateFormatters.iso8601NoFractional.string(from: Date()),
-            tabTitle: nil,
-            toolName: nil,
-            projectName: nil,
-            branchName: nil,
-            currentDirectory: nil,
-            recentCommand: nil,
-            contextNote: contextNote,
-            sessionID: nil
-        ).withComposedPushText().withSeverity(
-            ApprovalSeverity.classify(command: command, flaggedCommand: flaggedCommand, reason: reason)
-        )
-        onMainActor {
-            self.approvalForwarder?.sendApprovalRequest(requestID: requestID, payload: payload)
+        let decision = DeadlineResultLatch<MCPApprovalResult>(timeout: timeout)
+        guard decision.begin() else { return .denied }
+        defer {
+            MainActorBridge.run {
+                self.commandApprovalPresentations.removeValue(forKey: requestID)?.resolve(.denied)
+                self.approvalLock.lock()
+                self.pendingApprovals.removeValue(forKey: requestID)
+                self.pendingApprovalDetails.removeValue(forKey: requestID)
+                self.approvalLock.unlock()
+            }
         }
+        guard MainActorBridge.read({
+            self.presentCommandApproval(
+                requestID: requestID,
+                command: command,
+                flaggedCommand: flaggedCommand,
+                reason: reason,
+                permissions: permissions,
+                completion: { decision.complete($0) }
+            )
+        }) == true else { return .denied }
 
-        // Show local alert with three options
+        return decision.wait() ?? .denied
+    }
+
+    private func presentCommandApproval(
+        requestID: String,
+        command: String,
+        flaggedCommand: String,
+        reason: String,
+        permissions: ResolvedPermissions,
+        completion: @escaping (MCPApprovalResult) -> Void
+    ) -> Bool {
+        let sourceInfo = permissions.matchedProfile.map { "Permissions source: profile \"\($0.name)\"" }
+            ?? "Permissions source: global settings"
+        let contextNote = "\(reason)\n\n\(sourceInfo)"
         let alert = NSAlert()
         alert.messageText = L("mcp.approval.commandTitle", "MCP Command Approval")
         alert.informativeText = String(format: L("mcp.approval.commandMessage", "An MCP client wants to execute:\n\n%@\n\n%@"), command, contextNote)
         alert.alertStyle = .warning
-
-        // Buttons: Deny (default, safest), Allow Once, Always Allow
         alert.addButton(withTitle: L("mcp.approval.deny", "Deny"))
         alert.addButton(withTitle: L("mcp.approval.allowOnce", "Allow Once"))
         alert.addButton(withTitle: L("mcp.approval.alwaysAllow", "Always Allow"))
-
-        // Register a handler so iOS response can dismiss the alert
-        var iosResult: MCPApprovalResult?
+        let presentation = MCPCommandApprovalPresentation(alert: alert) { result in
+            completion(result)
+            self.commandApprovalPresentations.removeValue(forKey: requestID)
+            self.approvalLock.lock()
+            self.pendingApprovals.removeValue(forKey: requestID)
+            self.pendingApprovalDetails.removeValue(forKey: requestID)
+            self.approvalLock.unlock()
+            Chau7ObservabilityService.shared.recordEvent(
+                type: "approval_resolved", subsystem: "mcp_approvals", sessionID: requestID,
+                detail: ["kind": "command_request", "decision": self.approvalDecisionLabel(result), "flagged_command": flaggedCommand]
+            )
+        }
+        commandApprovalPresentations[requestID] = presentation
         approvalLock.lock()
         pendingApprovalDetails[requestID] = [
-            "request_id": requestID,
-            "kind": "command_request",
-            "flagged_command": flaggedCommand,
-            "reason": reason,
-            "permissions_source": permissions.sourceName,
+            "request_id": requestID, "kind": "command_request", "flagged_command": flaggedCommand,
+            "reason": reason, "permissions_source": permissions.sourceName,
             "requested_at": DateFormatters.iso8601NoFractional.string(from: Date())
         ]
-        pendingApprovals[requestID] = { result in
-            iosResult = result
-            // Dismiss the Mac alert from iOS response
-            DispatchQueue.main.async {
-                let code: NSApplication.ModalResponse = result == .denied ? .alertFirstButtonReturn : .alertSecondButtonReturn
-                NSApp.stopModal(withCode: code)
-            }
-        }
+        pendingApprovals[requestID] = { result in presentation.resolve(result) }
         approvalLock.unlock()
-
-        let response = alert.runModal()
-
-        // Clean up pending handler if Mac user responded first
-        approvalLock.lock()
-        pendingApprovals.removeValue(forKey: requestID)
-        pendingApprovalDetails.removeValue(forKey: requestID)
-        approvalLock.unlock()
-
-        let result: MCPApprovalResult
-        if let iosResult {
-            result = iosResult
-        } else {
-            switch response {
-            case .alertFirstButtonReturn:
-                result = .denied
-            case .alertSecondButtonReturn:
-                result = .allowedOnce
-            case .alertThirdButtonReturn:
-                result = .alwaysAllow
-            default:
-                result = .denied
-            }
-        }
         Chau7ObservabilityService.shared.recordEvent(
-            type: "approval_resolved",
-            subsystem: "mcp_approvals",
-            sessionID: requestID,
-            detail: [
-                "kind": "command_request",
-                "decision": approvalDecisionLabel(result),
-                "flagged_command": flaggedCommand
-            ]
+            type: "approval_waiting", subsystem: "mcp_approvals", sessionID: requestID,
+            detail: ["kind": "command_request", "flagged_command": flaggedCommand, "reason": reason]
         )
-        return result
+        let presented = commandApprovalPresenter?(requestID) { presentation.resolve($0) }
+            ?? presentation.present(in: NSApp.keyWindow ?? NSApp.mainWindow)
+        guard presented else {
+            presentation.resolve(.denied)
+            return false
+        }
+        guard !presentation.isResolved else { return true }
+        let payload = ApprovalRequestPayload(
+            requestID: requestID, command: command, flaggedCommand: flaggedCommand,
+            timestamp: DateFormatters.iso8601NoFractional.string(from: Date()),
+            tabTitle: nil, toolName: nil, projectName: nil, branchName: nil, currentDirectory: nil,
+            recentCommand: nil, contextNote: contextNote, sessionID: nil
+        ).withComposedPushText().withSeverity(
+            ApprovalSeverity.classify(command: command, flaggedCommand: flaggedCommand, reason: reason)
+        )
+        approvalForwarder?.sendApprovalRequest(requestID: requestID, payload: payload)
+        return true
     }
 
     private func approvalDecisionLabel(_ result: MCPApprovalResult) -> String {
@@ -3104,9 +3094,7 @@ final class TerminalControlService {
             Log.info("MCP: blocked '\(cmd)' in \(context) (\(reason))")
             return jsonError("Command '\(cmd)' was blocked: \(reason).")
         case .needsApproval(let cmd, let reason):
-            let result = onMain {
-                self.requestCommandApproval(command: fullInput, flaggedCommand: cmd, reason: reason, permissions: permissions)
-            }
+            let result = requestCommandApproval(command: fullInput, flaggedCommand: cmd, reason: reason, permissions: permissions)
             switch result {
             case .denied:
                 Log.info("MCP: user denied '\(cmd)' in \(context)")
@@ -3116,7 +3104,7 @@ final class TerminalControlService {
                 return nil
             case .alwaysAllow:
                 Log.info("MCP: user always-allowed '\(cmd)' in \(context) (\(permissions.sourceName))")
-                FeatureSettings.shared.addToAllowedCommands(cmd, profileID: permissions.profileID)
+                onMain { FeatureSettings.shared.addToAllowedCommands(cmd, profileID: permissions.profileID) }
                 return nil
             }
         }

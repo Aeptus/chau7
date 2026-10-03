@@ -22,11 +22,12 @@ Sendable/capture diagnostics can cascade from the same isolation boundary.
 |---|---|---|
 | `AgentDashboardModel.fetchCommandBlocks` called a main-actor API from a main-queue closure without an isolation assertion. | Fixed here with `MainActor.assumeIsolated`. | None. |
 | `AgentDashboardSessionController.liveTabs` called its main-actor helper from a main-queue closure without an isolation assertion. | Fixed here with `MainActor.assumeIsolated`. | None. |
-| `TerminalControlService` captures mutable `iosResult` in the escaping pending-approval callback. | Blocking follow-up; the callback's ownership needs an explicit synchronization or actor contract. | Resolve and add a race-focused test before concurrency warnings become errors. |
-| `UsageMonitor` mutates its latency/activity caches from both background work and a main-thread timer. | Blocking follow-up; give the caches one synchronized owner. | Resolve and add a concurrency-focused test before warning promotion. |
-| `MetalTerminalRenderer` shares mutable pipeline state across renderer instances without device-specific ownership. | Blocking follow-up; synchronize and key cached pipelines by `MTLDevice`. | Resolve and test multiple devices before warning promotion. |
+| `TerminalControlService` captures mutable `iosResult` in the escaping pending-approval callback. | Fixed: asynchronous command sheets and local/remote decisions have one main-actor owner; only the MCP worker waits, with an expiring decision latch. | Decision-order, worker/main progress, timeout and late-response regressions are present. |
+| `UsageMonitor` mutates its latency/activity caches from both background work and a main-thread timer. | Fixed: one serial usage worker owns caches/cursors, with generation checks rejecting stale selections. | Queue ownership is asserted and generation races are covered. |
+| `MetalTerminalRenderer` shares mutable pipeline state across renderer instances without device-specific ownership. | Fixed: synchronized, atomic pipeline pairs are keyed by the retained device identity. | Distinct keys, concurrent factory admission and compilation failure retry are covered. |
 | Remaining non-Sendable captures and actor-isolation diagnostics across legacy callbacks and UI models. | Non-blocking migration backlog; warnings remain visible in builds. | Triage by subsystem and fix before adopting Swift 6 language mode or treating concurrency warnings as errors. |
 
 The two dashboard fixes close the known unchecked main-actor calls immediately.
-The three shared-state findings remain explicit blockers for promoting the
-warning set; enabling diagnostics is not a claim that those races are fixed.
+The three named shared-state findings now have explicit ownership and regression
+coverage. Remaining subsystem diagnostics still block blanket warning promotion;
+this does not claim the entire application is Swift 6-clean.

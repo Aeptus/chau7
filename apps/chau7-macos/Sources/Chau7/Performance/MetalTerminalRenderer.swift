@@ -96,9 +96,14 @@ final class MetalTerminalRenderer: NSObject {
 
     // MARK: - Shared Caches (compiled once, reused across all renderer instances)
 
-    private static var cachedLibrary: MTLLibrary?
-    private static var cachedPipeline: MTLRenderPipelineState?
-    private static var cachedBgPipeline: MTLRenderPipelineState?
+    private struct DevicePipelines: @unchecked Sendable {
+        // Retaining the device prevents ObjectIdentifier reuse while cached.
+        let device: MTLDevice
+        let glyph: MTLRenderPipelineState
+        let background: MTLRenderPipelineState
+    }
+
+    private static let pipelines = LockedCache<ObjectIdentifier, DevicePipelines>()
 
     // Note: shared atlas was removed — the CGContext sharing caused thread-safety
     // issues and bitmap corruption. Per-renderer atlases cost ~5ms each for ASCII
@@ -288,45 +293,41 @@ final class MetalTerminalRenderer: NSObject {
     // MARK: - Setup
 
     private func setupPipelines() throws {
-        if let cached = Self.cachedPipeline, let cachedBg = Self.cachedBgPipeline {
-            pipelineState = cached
-            backgroundPipelineState = cachedBg
-            return
+        let cached = try Self.pipelines.value(for: ObjectIdentifier(device as AnyObject)) {
+            let library = try device.makeLibrary(source: Self.shaderSource, options: nil)
+
+            guard let vertexFunction = library.makeFunction(name: "vertexShader"),
+                  let fragmentFunction = library.makeFunction(name: "fragmentShader"),
+                  let bgVertexFunction = library.makeFunction(name: "backgroundVertexShader"),
+                  let bgFragmentFunction = library.makeFunction(name: "backgroundFragmentShader") else {
+                throw MetalError.shaderCompilationFailed
+            }
+
+            // Glyph pipeline with alpha blending
+            let descriptor = MTLRenderPipelineDescriptor()
+            descriptor.vertexFunction = vertexFunction
+            descriptor.fragmentFunction = fragmentFunction
+            descriptor.colorAttachments[0].pixelFormat = .bgra8Unorm
+            descriptor.colorAttachments[0].isBlendingEnabled = true
+            descriptor.colorAttachments[0].rgbBlendOperation = .add
+            descriptor.colorAttachments[0].alphaBlendOperation = .add
+            descriptor.colorAttachments[0].sourceRGBBlendFactor = .sourceAlpha
+            descriptor.colorAttachments[0].destinationRGBBlendFactor = .oneMinusSourceAlpha
+            descriptor.colorAttachments[0].sourceAlphaBlendFactor = .one
+            descriptor.colorAttachments[0].destinationAlphaBlendFactor = .oneMinusSourceAlpha
+            let glyph = try device.makeRenderPipelineState(descriptor: descriptor)
+
+            // Background pipeline (opaque)
+            let bgDescriptor = MTLRenderPipelineDescriptor()
+            bgDescriptor.vertexFunction = bgVertexFunction
+            bgDescriptor.fragmentFunction = bgFragmentFunction
+            bgDescriptor.colorAttachments[0].pixelFormat = .bgra8Unorm
+            let background = try device.makeRenderPipelineState(descriptor: bgDescriptor)
+
+            return DevicePipelines(device: device, glyph: glyph, background: background)
         }
-
-        let library = try device.makeLibrary(source: Self.shaderSource, options: nil)
-        Self.cachedLibrary = library
-
-        guard let vertexFunction = library.makeFunction(name: "vertexShader"),
-              let fragmentFunction = library.makeFunction(name: "fragmentShader"),
-              let bgVertexFunction = library.makeFunction(name: "backgroundVertexShader"),
-              let bgFragmentFunction = library.makeFunction(name: "backgroundFragmentShader") else {
-            throw MetalError.shaderCompilationFailed
-        }
-
-        // Glyph pipeline with alpha blending
-        let descriptor = MTLRenderPipelineDescriptor()
-        descriptor.vertexFunction = vertexFunction
-        descriptor.fragmentFunction = fragmentFunction
-        descriptor.colorAttachments[0].pixelFormat = .bgra8Unorm
-        descriptor.colorAttachments[0].isBlendingEnabled = true
-        descriptor.colorAttachments[0].rgbBlendOperation = .add
-        descriptor.colorAttachments[0].alphaBlendOperation = .add
-        descriptor.colorAttachments[0].sourceRGBBlendFactor = .sourceAlpha
-        descriptor.colorAttachments[0].destinationRGBBlendFactor = .oneMinusSourceAlpha
-        descriptor.colorAttachments[0].sourceAlphaBlendFactor = .one
-        descriptor.colorAttachments[0].destinationAlphaBlendFactor = .oneMinusSourceAlpha
-        pipelineState = try device.makeRenderPipelineState(descriptor: descriptor)
-
-        // Background pipeline (opaque)
-        let bgDescriptor = MTLRenderPipelineDescriptor()
-        bgDescriptor.vertexFunction = bgVertexFunction
-        bgDescriptor.fragmentFunction = bgFragmentFunction
-        bgDescriptor.colorAttachments[0].pixelFormat = .bgra8Unorm
-        backgroundPipelineState = try device.makeRenderPipelineState(descriptor: bgDescriptor)
-
-        Self.cachedPipeline = pipelineState
-        Self.cachedBgPipeline = backgroundPipelineState
+        pipelineState = cached.glyph
+        backgroundPipelineState = cached.background
     }
 
     private func setupBuffers() throws {
