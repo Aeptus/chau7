@@ -1,5 +1,12 @@
 [
   {
+    "category": "Performance",
+    "feature": "Concurrent Refresh and Consent Ownership",
+    "description": "Usage caches and cursors have one serial worker with generation guarded publication; Metal pipeline pairs are synchronized per retained device; local and remote MCP command decisions share one main actor sheet owner with bounded worker waiting and fail closed expiry",
+    "status": "Shipped",
+    "differentiator": "No"
+  },
+  {
     "category": "Developer Experience",
     "feature": "Core-only Test Workflow",
     "description": "Pure Chau7Core tests run through a separate dependency graph and reusable cache without compiling the macOS app; full app integration validation remains in normal CI; discovery refreshes each run so added tests are included with existing build caches",

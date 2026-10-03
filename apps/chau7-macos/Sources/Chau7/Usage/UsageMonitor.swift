@@ -68,6 +68,9 @@ final class UsageMonitor {
     static let shared = UsageMonitor()
 
     @ObservationIgnored private let fileManager = FileManager.default
+    /// Owns caches, incremental cursors and quota-file I/O across both refresh paths.
+    @ObservationIgnored private let workerQueue = DispatchQueue(label: "com.chau7.usage.refresh", qos: .utility)
+    @ObservationIgnored private let latencyGeneration = LatestWorkGeneration()
     @ObservationIgnored private let refreshInterval: TimeInterval = 30
     @ObservationIgnored private var refreshTimer: Timer?
     @ObservationIgnored private var settingsObserver: NSObjectProtocol?
@@ -170,8 +173,9 @@ final class UsageMonitor {
         // block raced UI writes.
         let latencyTimeRange = selectedLatencyTimeRange
         let currentLatencyProvider = selectedLatencyProvider
+        let generation = latencyGeneration.advance()
 
-        DispatchQueue.global(qos: .utility).async {
+        workerQueue.async {
             var claudeStatusLineError: String?
             if claudeStatusLineEnabled {
                 claudeStatusLineError = self.ensureClaudeStatusLineInstalled()
@@ -262,9 +266,11 @@ final class UsageMonitor {
                 self.lastRefreshAt = Date()
                 self.lastErrorMessage = claudeStatusLineError
                 self.isRefreshing = false
-                self.latencyProviders = latencyProviders
-                self.selectedLatencyProvider = selectedLatencyProvider
-                self.latencyDashboard = latencyDashboard
+                if self.latencyGeneration.isCurrent(generation) {
+                    self.latencyProviders = latencyProviders
+                    self.selectedLatencyProvider = selectedLatencyProvider
+                    self.latencyDashboard = latencyDashboard
+                }
                 warningEvents.forEach { self.warningHandler?($0) }
             }
         }
@@ -341,8 +347,10 @@ final class UsageMonitor {
     private func refreshLatencySection() {
         let timeRange = selectedLatencyTimeRange
         let selectedProvider = selectedLatencyProvider
+        let generation = latencyGeneration.advance()
 
-        DispatchQueue.global(qos: .userInitiated).async {
+        workerQueue.async {
+            guard self.latencyGeneration.isCurrent(generation) else { return }
             let latencySamples = self.loadLatencySamples(for: timeRange)
             let activitySamples = self.loadActivitySamples(for: timeRange)
             let interactionCounts = Dictionary(
@@ -367,6 +375,7 @@ final class UsageMonitor {
             }
 
             DispatchQueue.main.async {
+                guard self.latencyGeneration.isCurrent(generation) else { return }
                 self.latencyProviders = latencyProviders
                 self.selectedLatencyProvider = resolvedProvider
                 self.latencyDashboard = latencyDashboard
@@ -521,6 +530,7 @@ final class UsageMonitor {
     }
 
     private func loadLatencySamples(for timeRange: ProviderLatencyTimeRange) -> [ProviderLatencySample] {
+        dispatchPrecondition(condition: .onQueue(workerQueue))
         let now = Date()
         if let cached = latencySamplesCache[timeRange],
            now.timeIntervalSince(cached.loadedAt) < Self.latencyCacheTTL(for: timeRange) {
@@ -536,6 +546,7 @@ final class UsageMonitor {
     }
 
     private func loadActivitySamples(for timeRange: ProviderLatencyTimeRange) -> [ProviderActivitySample] {
+        dispatchPrecondition(condition: .onQueue(workerQueue))
         let now = Date()
         if let cached = activitySamplesCache[timeRange],
            now.timeIntervalSince(cached.loadedAt) < Self.latencyCacheTTL(for: timeRange) {

@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Serialized usage refresh caches and rejected stale selections; Metal pipeline pairs are synchronized per retained device. MCP command approvals use main-owned sheets and expire closed on the worker, removing the shared callback result and nested command modal loop.
+
 - Added a Core-only Swift test graph with a separate reusable cache; pure tests no longer require compiling the macOS executable, while normal CI retains full app build and integration validation.
 
 - Updated relay TypeScript to 7.0.2 and verified Worker typechecking, tests, formatting, and dry-run builds while preserving the current Wrangler security baseline.
