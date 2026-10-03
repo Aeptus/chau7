@@ -1060,5 +1060,5 @@ coverage. Missing counters stay unavailable, while reported zero remains zero.
 Ambiguous overlaps are unassigned; historical evidence without unique request IDs
 cannot reconstruct collapsed or uncaptured calls.
 
-MAGI has been removed from Chau7. The archived protocol and migration note are
+MAGI has been removed from Chau7. The archived protocol and removal note are
 linked from [the documentation map](../../../docs/README.md).
