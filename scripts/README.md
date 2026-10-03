@@ -81,3 +81,9 @@ runner architecture, registry contract, cache policy, and reproduction flow.
 ## App-Level Scripts
 
 The macOS app has 17 additional scripts in `apps/chau7-macos/Scripts/` for building the app bundle, creating DMGs, building Rust dylibs, managing PTY wrappers, and more. See the macOS app README for details.
+
+Developer setup uses the pinned [mise.toml](../mise.toml) baseline; see
+[CONTRIBUTING](../CONTRIBUTING.md#setting-up). `pnpm install` installs hooks via
+`prepare` in repository clones/worktrees. `pnpm setup:check` verifies tools and
+hooks without compiling or launching the app. `pnpm test` runs the Node and both
+Python suites; `pnpm test:node` is the narrower Node-only command.

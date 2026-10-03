@@ -177,7 +177,7 @@ info "Swift build complete"
 # ── 4. Assemble app bundle ──
 info "Assembling app bundle..."
 CHAU7_LOG_SUPPRESS_HEADER=1 BUNDLE_IDENTIFIER="com.chau7.app" \
-    CHAU7_CODESIGN_PURPOSE="release" CHAU7_SKIP_CODESIGN=1 \
+    CHAU7_CODESIGN_PURPOSE="release" CHAU7_SKIP_CODESIGN=1 CHAU7_REUSE_BUILT_BACKENDS=1 \
     "$ROOT_DIR/Scripts/build-app.sh" "$BUILD_DIR" "$DIST_DIR"
 
 if [[ -f "$REMOTE_AGENT_OUT" ]]; then

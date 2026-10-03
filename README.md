@@ -9,7 +9,7 @@ Your coding agents are running. All of them. Across models, across windows, some
 
 - **See every agent.** Detects 13+ AI tools automatically: Claude Code, Codex, Cursor, Windsurf, Copilot, Aider, Cline, Continue, Goose, Devin, Mentat, Amazon Q, Amp. Knows when they finish, fail, or need approval. Zero config.
 - **Know what it costs.** Per-run token counts, cost tracking, tool call distribution. Across providers, across models. All in one place.
-- **Steer from the outside.** 36 MCP tools over a local Unix socket. Read terminal output, send input, approve tool use, launch agents, stop them. Control from another terminal, a script, or your phone.
+- **Steer from the outside.** MCP tools over an owner-only local Unix socket. Read terminal output, send input, approve tool use, launch agents, stop them. Control from another terminal, a script, or your phone.
 - **Trust it.** Everything stays on your machine. No analytics, no heartbeats, no "anonymous" usage data. API keys forwarded by the local proxy, never stored. [Full privacy details](PRIVACY.md).
 - **The terminal underneath.** Rust backend via FFI. Metal GPU rendering, triple-buffered, VSync-synced. Context Token Optimization cuts ~40% off agent token usage. Tabs auto-group by git repo. Not Electron. Not a wrapper.
 
@@ -82,13 +82,14 @@ swift test               # verify you didn't break anything
 ./Scripts/build-app.sh   # create a proper .app bundle with notifications and everything
 ```
 
-Requirements: macOS 14+, Xcode 26+. The Rust terminal backend and Go proxy are pre-built in the repo. If you want to rebuild them: Rust toolchain for `rust/chau7_terminal`, Go 1.25+ for `chau7-proxy`.
+Requirements: macOS 14+, Xcode 26.6 and the tool baseline in [mise.toml](mise.toml). Native Rust/Go backends are generated and ignored; a source clone must build them. See [contributor setup](CONTRIBUTING.md#setting-up).
 
 ## Local CI
 
 ```bash
-corepack enable
-pnpm hooks:install
+mise install
+mise exec -- pnpm install
+mise exec -- pnpm setup:check
 ```
 
 `pre-commit` runs `pnpm quality:staged`. `pre-push` runs `pnpm quality:prepush`, which scopes to the affected integration surface and upgrades to full validation for high-impact changes.
