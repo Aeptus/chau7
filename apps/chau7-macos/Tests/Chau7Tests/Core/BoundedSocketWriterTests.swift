@@ -57,6 +57,23 @@ final class BoundedSocketWriterTests: XCTestCase {
         XCTAssertLessThan(readToEOF(peer).count, 2 * 1024 * 1024)
     }
 
+    func testDeadlineIncludesTimeWaitingOnWriterQueue() throws {
+        let (socket, peer) = try sockets()
+        defer { Darwin.close(socket)
+            Darwin.close(peer)
+        }
+        let queue = DispatchQueue(label: "writer.deadline.fixture")
+        let writer = try XCTUnwrap(BoundedSocketWriter(socket: socket, timeout: 0.02, maxPendingBytes: 1024, maxPendingFrames: 4, queue: queue))
+        queue.suspend()
+        XCTAssertTrue(writer.enqueue(Data("expired frame\n".utf8)))
+        writer.finish()
+        let expired = expectation(description: "admitted deadline expires")
+        DispatchQueue.global().asyncAfter(deadline: .now() + 0.06) { expired.fulfill() }
+        wait(for: [expired], timeout: 2)
+        queue.resume()
+        XCTAssertEqual(readToEOF(peer), Data())
+    }
+
     func testQueueOverflowClosesOnlyItsConnection() throws {
         let (socket, peer) = try sockets()
         defer { Darwin.close(socket)

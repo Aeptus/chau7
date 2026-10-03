@@ -18,3 +18,6 @@ fake Unix servers; they never launch, replace or restart Chau7:
 ```sh
 node --test scripts/quality/tests/mcp-bridge.test.mjs
 ```
+
+Server write deadlines include admission queue wait, and bridge connections use
+nonblocking connect so a full listen backlog cannot bypass the retry deadline.

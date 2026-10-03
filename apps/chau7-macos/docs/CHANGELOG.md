@@ -33,7 +33,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- MCP socket writers admit bounded frames asynchronously, handle partial writes and isolate slow clients. The stdio bridge restores complete handshakes before queued calls and reports interrupted request IDs without replaying commands whose execution is uncertain.
+- MCP socket writers admit bounded frames asynchronously, handle partial writes and isolate slow clients; deadlines include queue wait, bridge connect cannot block past its retry budget, and incremental framing scans each byte once. The stdio bridge restores complete handshakes before queued calls and reports interrupted request IDs without replaying commands whose execution is uncertain.
 
 - Hang sampling has a ten-second helper deadline and bounded diagnostic retention (40 bundles, seven days, 64 MiB). Manifests record build identity and timeout/truncation outcomes; watchdog health uses monotonic time.
 

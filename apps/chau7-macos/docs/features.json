@@ -2,7 +2,7 @@
   {
     "category": "MCP",
     "feature": "Bounded Socket Transport Recovery",
-    "description": "Serial socket owners handle complete frames, bounded async notification writes and reconnect handshakes; interrupted requests return correlated errors without replaying uncertain command execution",
+    "description": "Serial socket owners use complete linear-time framing, queue-inclusive write deadlines and nonblocking reconnect handshakes; bounded async notifications keep slow peers off UI and interrupted requests return errors without replaying uncertain execution",
     "status": "Shipped",
     "differentiator": "No"
   },

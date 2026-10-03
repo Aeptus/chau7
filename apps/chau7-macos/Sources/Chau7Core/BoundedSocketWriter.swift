@@ -5,7 +5,7 @@ import Foundation
 /// never waits for the peer. A slow/broken peer aborts this connection, waking its
 /// reader; graceful finish drains accepted frames before closing the duplicate.
 public final class BoundedSocketWriter: @unchecked Sendable {
-    private let queue = DispatchQueue(label: "com.chau7.socket.writer", qos: .utility)
+    private let queue: DispatchQueue
     private let lock = NSLock()
     private var accepting = true
     private var writable = true
@@ -17,7 +17,19 @@ public final class BoundedSocketWriter: @unchecked Sendable {
     private let maxPendingBytes: Int
     private let maxPendingFrames: Int
 
-    public init?(socket: Int32, timeout: TimeInterval = TimeInterval(MCPConnectionLifetimePolicy.sendTimeoutSeconds), maxPendingBytes: Int = 16 * 1024 * 1024, maxPendingFrames: Int = 64) {
+    public convenience init?(socket: Int32, timeout: TimeInterval = TimeInterval(MCPConnectionLifetimePolicy.sendTimeoutSeconds), maxPendingBytes: Int = 16 * 1024 * 1024, maxPendingFrames: Int = 64) {
+        self.init(
+            socket: socket,
+            timeout: timeout,
+            maxPendingBytes: maxPendingBytes,
+            maxPendingFrames: maxPendingFrames,
+            queue: DispatchQueue(label: "com.chau7.socket.writer", qos: .utility)
+        )
+    }
+
+    /// Internal serial-owner seam for deterministic queue-delay regressions.
+    init?(socket: Int32, timeout: TimeInterval, maxPendingBytes: Int, maxPendingFrames: Int, queue: DispatchQueue) {
+        self.queue = queue
         let duplicate = dup(socket)
         guard duplicate >= 0 else { return nil }
         self.descriptor = duplicate
@@ -56,12 +68,13 @@ public final class BoundedSocketWriter: @unchecked Sendable {
             close()
             return false
         }
+        let deadline = ProcessInfo.processInfo.systemUptime + timeout
         pendingBytes += frame.count
         pendingFrames += 1
         // Enqueue while holding the admission lock so finish cannot overtake an
         // accepted frame. No socket I/O or client callback holds this lock.
         queue.async { [self] in
-            if !sendAll(frame) { close() }
+            if !sendAll(frame, until: deadline) { close() }
             lock.lock()
             pendingBytes -= frame.count
             pendingFrames -= 1
@@ -104,8 +117,7 @@ public final class BoundedSocketWriter: @unchecked Sendable {
         return writable
     }
 
-    private func sendAll(_ frame: Data) -> Bool {
-        let deadline = ProcessInfo.processInfo.systemUptime + timeout
+    private func sendAll(_ frame: Data, until deadline: TimeInterval) -> Bool {
         return frame.withUnsafeBytes { bytes in
             guard let address = bytes.baseAddress else { return bytes.isEmpty }
             var offset = 0

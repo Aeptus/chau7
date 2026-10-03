@@ -48,15 +48,18 @@ func error(_ id: Any?, _ message: String) {
 
 struct Frames {
     var buffer = Data()
+    private var scannedByteCount = 0
     mutating func append(_ data: Data) throws -> [Data] {
         buffer.append(data)
         var frames: [Data] = []
-        while let end = buffer.firstIndex(of: 10) {
+        while let end = buffer.dropFirst(scannedByteCount).firstIndex(of: 10) {
             let count = buffer.distance(from: buffer.startIndex, to: end) + 1
             guard count <= maxFrameBytes else { throw FrameError.oversized }
             frames.append(Data(buffer.prefix(count)))
             buffer.removeFirst(count)
+            scannedByteCount = 0
         }
+        scannedByteCount = buffer.count
         guard buffer.count <= maxFrameBytes else { throw FrameError.oversized }
         return frames
     }
@@ -80,7 +83,11 @@ Thread {
         let n = Foundation.read(STDIN_FILENO, &bytes, bytes.count)
         if n < 0, errno == EINTR { continue }
         if n <= 0 {
-            if !frames.buffer.isEmpty { _ = enqueue(frames.buffer + Data([10])) }
+            if frames.buffer.count >= maxFrameBytes {
+                inputLock.lock(); inputOverflow = true; inputLock.unlock()
+            } else if !frames.buffer.isEmpty {
+                _ = enqueue(frames.buffer + Data([10]))
+            }
             break
         }
         do {
@@ -102,6 +109,10 @@ func connectSocket(until deadline: TimeInterval) -> Int32 {
     while uptime() < deadline {
         let fd = socket(AF_UNIX, SOCK_STREAM, 0)
         guard fd >= 0 else { return -1 }
+        guard fcntl(fd, F_SETFL, fcntl(fd, F_GETFL) | O_NONBLOCK) == 0 else {
+            close(fd)
+            return -1
+        }
         var address = sockaddr_un()
         address.sun_family = sa_family_t(AF_UNIX)
         withUnsafeMutableBytes(of: &address.sun_path) { buffer in
@@ -112,9 +123,18 @@ func connectSocket(until deadline: TimeInterval) -> Int32 {
                 connect(fd, $0, socklen_t(MemoryLayout<sockaddr_un>.size))
             }
         }
-        if result == 0 {
-            _ = fcntl(fd, F_SETFL, fcntl(fd, F_GETFL) | O_NONBLOCK)
-            return fd
+        if result == 0 { return fd }
+        if errno == EINPROGRESS {
+            while uptime() < deadline {
+                var descriptor = pollfd(fd: fd, events: Int16(POLLOUT), revents: 0)
+                let ready = poll(&descriptor, 1, Int32(max(1, min(100, (deadline - uptime()) * 1000))))
+                if ready < 0, errno == EINTR { continue }
+                if ready == 0 { continue }
+                var socketError: Int32 = 0
+                var length = socklen_t(MemoryLayout<Int32>.size)
+                if ready > 0, getsockopt(fd, SOL_SOCKET, SO_ERROR, &socketError, &length) == 0, socketError == 0 { return fd }
+                break
+            }
         }
         close(fd)
         inputLock.lock(); let done = inputClosed && queued.isEmpty; inputLock.unlock()
