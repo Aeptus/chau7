@@ -91,6 +91,17 @@ final class TelemetryProxyPersistenceTests: XCTestCase {
         XCTAssertEqual(store.getRun("run")?.tokenUsageState, .invalid)
     }
 
+    func testRepositoryAggregatesKeepKnownTokensWhenOtherCountersAreMissing() throws {
+        let store = try makeStore()
+        store.insertRun(run("run"))
+        try store.insertUsageEvidence(evidence("observed", read: nil))
+        let stats = store.runStatsForRepo(repoPath: "/repo")
+        XCTAssertEqual(stats.totalTokens, 110)
+        XCTAssertEqual(stats.totalCost, 0.25)
+        XCTAssertEqual(stats.attributedProxyCost, 0.25)
+        XCTAssertEqual(store.runStatsForRepo(repoPath: "/repo", providerFilterKey: "claude").attributedProxyCost, 0)
+    }
+
     func testAdjacentRunBoundaryDoesNotDoubleCount() throws {
         let store = try makeStore()
         store.insertRun(run("first", end: 1010))

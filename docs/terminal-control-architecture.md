@@ -13,3 +13,8 @@ it does not claim a measured rendering or responsiveness improvement. The prior
 main-actor responsiveness test remains required alongside event JSON/alias tests.
 Other large terminal/session/UI owners remain candidates for later focused work;
 line count alone is not justification for a broad rewrite or weaker lint gates.
+
+Repository aggregates coalesce each optional counter before summing. Combined
+run/proxy cost subtracts the measured overlap retained in both sources once;
+separate source totals keep their provenance. This prevents the new measured
+run fields from disappearing through SQL NULL arithmetic or being added twice.

@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Repository totals preserve known tokens when optional counters are missing and subtract retained measured proxy overlap once when combining cost sources.
+
 ### Changed
 
 - Repository reads now have a dedicated MCP query owner and shared event-filter policy. Terminal control captures UI snapshots and tab aliases; worker-side metadata/statistics and the existing JSON contracts are preserved.

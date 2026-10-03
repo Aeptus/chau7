@@ -1,4 +1,5 @@
 import Foundation
+import Chau7Core
 
 /// Computed snapshot of per-repo metrics from history.db and runs.db.
 /// Not persisted — assembled fresh on demand.
@@ -27,6 +28,8 @@ struct RepoStats: Sendable {
     let lastRunAt: Date?
     let lastProxyCallAt: Date?
 
+    var attributedProxyCost: Double = 0
+
     var successRate: Double {
         totalCommands > 0 ? Double(successfulCommands) / Double(totalCommands) : 0
     }
@@ -36,7 +39,7 @@ struct RepoStats: Sendable {
     }
 
     var combinedCost: Double {
-        totalCost + proxyCost
+        RepositoryUsageTotals.combinedCost(runCost: totalCost, proxyCost: proxyCost, attributedProxyCost: attributedProxyCost)
     }
 
     static let empty = RepoStats(
@@ -82,7 +85,8 @@ enum RepoStatsProvider {
             proxyHourlyCost: proxyStats.hourlyCost,
             lastCommandAt: lastCmd,
             lastRunAt: runStats.lastRunAt,
-            lastProxyCallAt: proxyStats.lastCallAt
+            lastProxyCallAt: proxyStats.lastCallAt,
+            attributedProxyCost: runStats.attributedProxyCost
         )
     }
 }
