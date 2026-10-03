@@ -18,7 +18,7 @@ lazy_static = "1.4"
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
 colored = "2"
-dirs = "5"
+dirs = "7"
 rusqlite = { version = "0.31", features = ["bundled"] }
 toml = "0.8"
 chrono = "0.4"
