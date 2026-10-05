@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- The iOS session picker shows only the active tab title and uses compact padding to leave more space for terminal output while retaining its 44-point touch target.
+
 ### Removed
 
 - Removed the MAGI CLI product, protocol implementation, installer and bundled skill. Generic MCP agent launch, event handling, skills and terminal path lookup remain available. The protocol is archived with a removal note.
