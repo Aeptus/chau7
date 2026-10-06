@@ -274,7 +274,7 @@ extension RustTerminalView {
         Log.trace("RustTerminalView[\(viewId)]: copyToClipboard - Copying \(text.count) chars")
         let clipboard = NSPasteboard.general
         clipboard.clearContents()
-        clipboard.setString(text, forType: .string)
+        clipboard.setString(TerminalClipboard.copiedText(text, fromTUI: hostsLiveTerminalUI), forType: .string)
     }
 
     /// Copy selection to clipboard

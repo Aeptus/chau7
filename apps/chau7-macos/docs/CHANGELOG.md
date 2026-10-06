@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Copying from AI TUIs and alternate-screen apps automatically joins displayed lines and removes screen indentation. This also flattens intentional multiline TUI content; ordinary shell copies retain their original formatting.
+- Dedicated Home/End keys and click positioning follow application cursor mode. Automatic clicks position within the live logical input line, including soft wraps and Unicode characters, without navigating history from output rows or scrollback. Native TUI mouse reporting is unchanged.
+
 ### Changed
 
 - The iOS session picker shows only the active tab title and uses compact padding to leave more space for terminal output while retaining its 44-point touch target.

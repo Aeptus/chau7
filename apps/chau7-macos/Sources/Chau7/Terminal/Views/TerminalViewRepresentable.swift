@@ -285,7 +285,7 @@ struct TerminalViewRepresentable: NSViewRepresentable {
             existingView.tabIdentifier = model.tabIdentifier
             existingView.persistentTabID = model.ownerTabID?.uuidString
             existingView.hostsTUIApp = model.shouldProtectTerminalUIState
-            existingView.isAtPrompt = { [weak model] in model?.isAtPrompt ?? false }
+            existingView.isAtPrompt = { [weak model] in model?.effectiveIsAtPrompt ?? false }
             existingView.liveEligibilityReasonForProfiling = liveEligibilitySummary()
             existingView.installHistoryKeyMonitor()
             let container = UnifiedTerminalContainerView(rustView: existingView)
@@ -379,7 +379,7 @@ struct TerminalViewRepresentable: NSViewRepresentable {
         view.dangerousRowTintsProvider = { [weak model] top, bottom in
             model?.dangerousRowTints(top: top, bottom: bottom) ?? [:]
         }
-        view.isAtPrompt = { [weak model] in model?.isAtPrompt ?? false }
+        view.isAtPrompt = { [weak model] in model?.effectiveIsAtPrompt ?? false }
         view.hostsTUIApp = model.shouldProtectTerminalUIState
         view.liveEligibilityReasonForProfiling = liveEligibilitySummary()
         view.installHistoryKeyMonitor()
