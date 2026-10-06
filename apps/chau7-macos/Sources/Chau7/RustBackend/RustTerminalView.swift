@@ -3516,7 +3516,7 @@ final class RustTerminalView: NSView {
             return false
         }
         pboard.clearContents()
-        return pboard.setString(selection, forType: .string)
+        return pboard.setString(TerminalClipboard.copiedText(selection, fromTUI: hostsLiveTerminalUI), forType: .string)
     }
 
     @objc(readSelectionFromPasteboard:)
