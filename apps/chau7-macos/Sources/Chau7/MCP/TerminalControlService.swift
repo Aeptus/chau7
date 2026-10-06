@@ -2078,6 +2078,13 @@ final class TerminalControlService {
 
     private func rebuildRoutingIndexIfNeededLocked() {
         guard routingIndexNeedsRebuild else { return }
+        let token = FeatureProfiler.shared.begin(.routingRebuild)
+        defer {
+            FeatureProfiler.shared.end(token)
+            FeatureProfiler.shared.recordMainThreadStallIfNeeded(
+                operation: "routingRebuild", startedAt: token.startTime
+            )
+        }
         routingIndex = TabRoutingIndex(records: routingRecordsLocked())
         routingIndexNeedsRebuild = false
     }

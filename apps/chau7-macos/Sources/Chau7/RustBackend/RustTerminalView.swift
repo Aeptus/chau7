@@ -3658,41 +3658,52 @@ final class RustTerminalView: NSView {
     }
 
     func captureRemoteGridSnapshotPayload() -> Data? {
-        guard let rust = rustTerminal,
-              let gridResult = measuredGridSnapshot(rust: rust, caller: "remoteGridSnapshot") else {
-            return nil
+        guard let update = captureRemoteGridUpdate(since: 0) else { return nil }
+        if update.fullRefresh, update.rowIndices == Array(0 ..< update.snapshot.rows) {
+            return update.snapshot.encode()
         }
-        defer { gridResult.free() }
+        var cache = RemoteGridSnapshotCache()
+        return cache.encode(update)
+    }
 
-        let snapshot = gridResult.snapshot.pointee
-        let cellCount = Int(snapshot.cols) * Int(snapshot.rows)
-        guard cellCount > 0, let cells = snapshot.cells else {
-            return nil
-        }
-
-        let cellBytes = Data(
-            bytes: cells,
-            count: cellCount * MemoryLayout<RustCellData>.stride
-        )
-        let clusterBytes: Data
-        if let clusters = snapshot.clusters_utf8, snapshot.clusters_len > 0 {
-            clusterBytes = Data(bytes: clusters, count: snapshot.clusters_len)
-        } else {
-            clusterBytes = Data()
-        }
+    func captureRemoteGridUpdate(since generation: UInt64) -> RemoteGridUpdate? {
+        guard let rust = rustTerminal else { return nil }
         let cursor = rust.cursorPosition
-        let payload = RemoteTerminalGridSnapshot(
-            cols: snapshot.cols,
-            rows: snapshot.rows,
-            cursorCol: cursor.col,
-            cursorRow: cursor.row,
-            cursorVisible: snapshot.cursor_visible != 0,
-            scrollbackRows: snapshot.scrollback_rows,
-            displayOffset: snapshot.display_offset,
-            cells: cellBytes,
-            clusters: clusterBytes
+        if let result = measuredGridDeltaSnapshot(rust: rust, since: generation, caller: "remoteGridSnapshot") {
+            defer { result.free() }
+            let delta = result.snapshot.pointee
+            let rowCount = Int(delta.row_count)
+            let cellCount = rowCount * Int(delta.cols)
+            guard rowCount == 0 || (delta.cells != nil && delta.row_indices != nil) else { return nil }
+            let cells = delta.cells.map { Data(bytes: $0, count: cellCount * MemoryLayout<RustCellData>.stride) } ?? Data()
+            let clusters = delta.clusters_utf8.map { Data(bytes: $0, count: delta.clusters_len) } ?? Data()
+            let indices = delta.row_indices.map { Array(UnsafeBufferPointer(start: $0, count: rowCount)) } ?? []
+            return RemoteGridUpdate(
+                baseGeneration: generation, generation: delta.generation, fullRefresh: delta.full_refresh != 0,
+                rowIndices: indices,
+                snapshot: RemoteTerminalGridSnapshot(
+                    cols: delta.cols, rows: delta.rows, cursorCol: cursor.col, cursorRow: cursor.row,
+                    cursorVisible: delta.cursor_visible != 0, scrollbackRows: delta.scrollback_rows,
+                    displayOffset: delta.display_offset, cells: cells, clusters: clusters
+                )
+            )
+        }
+        guard let result = measuredGridSnapshot(rust: rust, caller: "remoteGridSnapshotLegacy") else { return nil }
+        defer { result.free() }
+        let snapshot = result.snapshot.pointee
+        let cellCount = Int(snapshot.cols) * Int(snapshot.rows)
+        guard cellCount > 0, let cells = snapshot.cells else { return nil }
+        return RemoteGridUpdate(
+            baseGeneration: 0, generation: 0, fullRefresh: true,
+            rowIndices: Array(0 ..< snapshot.rows),
+            snapshot: RemoteTerminalGridSnapshot(
+                cols: snapshot.cols, rows: snapshot.rows, cursorCol: cursor.col, cursorRow: cursor.row,
+                cursorVisible: snapshot.cursor_visible != 0, scrollbackRows: snapshot.scrollback_rows,
+                displayOffset: snapshot.display_offset,
+                cells: Data(bytes: cells, count: cellCount * MemoryLayout<RustCellData>.stride),
+                clusters: snapshot.clusters_utf8.map { Data(bytes: $0, count: snapshot.clusters_len) } ?? Data()
+            )
         )
-        return payload.encode()
     }
 
     var terminalRows: Int {
