@@ -25,4 +25,23 @@ final class TerminalClipboardTests: XCTestCase {
         XCTAssertEqual(TerminalClipboard.singleLine("echo café\u{2028}    😀"), "echo café 😀")
         XCTAssertEqual(TerminalClipboard.singleLine("\r\n  \t"), "")
     }
+
+    func testHardWrapInsideLongTokenDoesNotInsertSpace() {
+        for separator in ["\n", "\r\n", "\r", "\u{2028}"] {
+            XCTAssertEqual(TerminalClipboard.singleLine("cat /tmp/verylongpa" + separator + "th/file.md"), "cat /tmp/verylongpath/file.md")
+            XCTAssertEqual(TerminalClipboard.singleLine("curl https://example.com/verylong" + separator + "path"), "curl https://example.com/verylongpath")
+        }
+    }
+
+    func testWhitespaceAtEitherBoundarySeparatesArguments() {
+        XCTAssertEqual(TerminalClipboard.singleLine("echo hello \nworld"), "echo hello world")
+        XCTAssertEqual(TerminalClipboard.singleLine("echo hello\n    world"), "echo hello world")
+        XCTAssertEqual(TerminalClipboard.singleLine("echo hello\t\nworld"), "echo hello world")
+    }
+
+    func testBlankRowsSeparateContentWhileAdjacentTokenRowsJoin() {
+        XCTAssertEqual(TerminalClipboard.singleLine("first\n\nsecond"), "first second")
+        XCTAssertEqual(TerminalClipboard.singleLine("first\r\nsecond"), "firstsecond")
+    }
+
 }
