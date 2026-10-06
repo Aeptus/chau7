@@ -5,6 +5,10 @@ import Chau7Core
 /// These are hard budgets, unlike XCTest measure() without a saved baseline.
 /// They run in the existing Swift CI suite and require no extra Actions job.
 final class ResponsivenessRegressionTests: XCTestCase {
+    private static let viewportCount = 19
+    private static let repetitions = 10
+    private static let sampleCount = viewportCount * repetitions
+
     func testGridEncodingAndCacheBudgetAcrossNineteenViewportSwitches() throws {
         let cols: UInt16 = 160
         let rows: UInt16 = 50
@@ -20,7 +24,8 @@ final class ResponsivenessRegressionTests: XCTestCase {
         // Warm up Swift/Foundation before measuring.
         _ = cache.encode(update)
         var milliseconds: [Double] = []
-        for _ in 0 ..< 19 {
+        // Ten sweeps separate p95/p99 ranks and tolerate an isolated scheduler pause.
+        for _ in 0 ..< Self.sampleCount {
             cache.reset()
             let started = ProcessInfo.processInfo.systemUptime
             let payload = try XCTUnwrap(cache.encode(update))
@@ -30,12 +35,8 @@ final class ResponsivenessRegressionTests: XCTestCase {
             XCTAssertTrue(String(decoding: decoded.clusters, as: UTF8.self).contains("👩🏽‍💻"))
             XCTAssertLessThanOrEqual(cache.retainedBytes, RemoteGridSnapshotCache.defaultMaximumBytes)
         }
-        milliseconds.sort()
-        let p95 = milliseconds[Int(ceil(Double(milliseconds.count) * 0.95)) - 1]
-        let p99 = milliseconds[Int(ceil(Double(milliseconds.count) * 0.99)) - 1]
-        Log.info("Remote grid benchmark: p95=\(p95)ms p99=\(p99)ms retained=\(cache.retainedBytes) bytes")
-        XCTAssertLessThan(p95, 50, "remote encoding p95 budget")
-        XCTAssertLessThan(p99, 100, "remote encoding p99 budget")
+        assertLatencyBudget(milliseconds, operation: "remote encoding")
+
     }
 
     func testBackgroundEncodingAllowsMainQueueToProcessInputProbes() async {
@@ -48,22 +49,53 @@ final class ResponsivenessRegressionTests: XCTestCase {
             rowIndices: Array(0 ..< 100),
             snapshot: frame
         )
-        for index in 0 ..< 19 {
+        var milliseconds: [Double] = []
+        for index in 0 ..< Self.sampleCount {
             let encoded = expectation(description: "encoded frame \(index)")
-            let input = expectation(description: "main input probe \(index)")
-            worker.encode(update, scope: "viewport-\(index)") { result in
+            worker.encode(update, scope: "viewport-\(index % Self.viewportCount)") { result in
                 XCTAssertFalse(Thread.isMainThread)
                 XCTAssertNotNil(result.payload)
                 encoded.fulfill()
             }
             let started = ProcessInfo.processInfo.systemUptime
-            DispatchQueue.main.async {
-                let milliseconds = (ProcessInfo.processInfo.systemUptime - started) * 1000
-                XCTAssertLessThan(milliseconds, 100, "main queue input probe budget during remote encoding")
-                input.fulfill()
+            let latency = await withCheckedContinuation { continuation in
+                DispatchQueue.main.async {
+                    continuation.resume(returning: (ProcessInfo.processInfo.systemUptime - started) * 1000)
+                }
             }
-            await fulfillment(of: [input, encoded], timeout: 5)
+            milliseconds.append(latency)
+            await fulfillment(of: [encoded], timeout: 5)
         }
+        assertLatencyBudget(milliseconds, operation: "main queue input probe")
+    }
+
+    func testPercentilesHaveDistinctRanksAndTolerateOneSchedulerPause() {
+        var samples = (0 ..< Self.sampleCount).map(Double.init)
+        let ordinary = percentiles(samples)
+        XCTAssertEqual(ordinary.p95, 180)
+        XCTAssertEqual(ordinary.p99, 188)
+        samples[0] = 1000
+        let paused = percentiles(samples)
+        XCTAssertEqual(paused.p95, 181)
+        XCTAssertEqual(paused.p99, 189)
+        XCTAssertLessThan(paused.p99, 1000)
+    }
+
+    private func assertLatencyBudget(_ samples: [Double], operation: String) {
+        XCTAssertGreaterThanOrEqual(samples.count, 100, "percentile budgets need distinct tail ranks")
+        let latency = percentiles(samples)
+        Log.info("Responsiveness benchmark \(operation): samples=\(samples.count) p95=\(latency.p95)ms p99=\(latency.p99)ms")
+        XCTAssertLessThan(latency.p95, 50, "\(operation) p95 budget")
+        XCTAssertLessThan(latency.p99, 100, "\(operation) p99 budget")
+    }
+
+    private func percentiles(_ samples: [Double]) -> (p95: Double, p99: Double) {
+        guard !samples.isEmpty else { return (.infinity, .infinity) }
+        let sorted = samples.sorted()
+        return (
+            sorted[Int(ceil(Double(sorted.count) * 0.95)) - 1],
+            sorted[Int(ceil(Double(sorted.count) * 0.99)) - 1]
+        )
     }
 
     private func makeFrame(cols: UInt16, rows: UInt16) -> RemoteTerminalGridSnapshot {

@@ -19,7 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Regenerable terminal caches have a 64 MiB global target in addition to the per-tab limit, preserving selected panes and authoritative terminal/restoration state. The remote viewport cache is bounded to 4 MiB and reports retained bytes separately.
-- The existing Swift test suite enforces encoding and main-queue responsiveness budgets under a 19-viewport workload. End-to-end release validation is documented in `PERFORMANCE.md`; these component checks do not establish installed-app typing latency.
+- The existing Swift test suite enforces encoding and main-queue responsiveness budgets over 190 samples across repeated 19-viewport workloads, distinguishing tail percentiles and tolerating an isolated scheduling pause. End-to-end release validation is documented in `PERFORMANCE.md`; these component checks do not establish installed-app typing latency.
 
 - The iOS session picker shows only the active tab title and uses compact padding to leave more space for terminal output while retaining its 44-point touch target.
 

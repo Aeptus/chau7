@@ -3,8 +3,11 @@
 Run `swift test` and `swift build` from this directory. The existing macOS CI
 suite includes `ResponsivenessRegressionTests`; no additional GitHub Actions
 runner is required. The tests enforce remote-grid encoding p95 < 50 ms and
-p99 < 100 ms for 19 switched 160×50 viewports, main-queue input probes < 100 ms
-while 240×100 frames encode in the background, off-main encoding, unchanged
+p99 < 100 ms for switched 160×50 viewports, and main-queue input probe p95 < 50 ms /
+p99 < 100 ms while 240×100 frames encode in the background. Each metric collects
+190 samples (ten sweeps of 19 viewports), so p95/p99 have distinct ranks and one
+unrelated scheduling pause does not become the measured tail. Checks also cover
+off-main encoding, unchanged
 frame suppression, Unicode preservation, and a 4 MiB retained viewport cache.
 Routine memory maintenance also caps estimated cold search/scrollback caches
 across all tabs at 64 MiB, in addition to the existing 16 MiB per-tab limit.
