@@ -81,8 +81,19 @@ final class FakeTerminalBackend: TerminalBackend {
 
     // MARK: Grid / Rows
 
+    var gridProvider: (() -> (snapshot: UnsafeMutablePointer<RustGridSnapshot>, free: () -> Void)?)?
+    var gridDeltaProvider: ((UInt64) -> (snapshot: UnsafeMutablePointer<RustGridDeltaSnapshot>, free: () -> Void)?)?
+    private(set) var fullGridReadCount = 0
+    private(set) var gridDeltaRequests: [UInt64] = []
+
     func getGrid() -> (snapshot: UnsafeMutablePointer<RustGridSnapshot>, free: () -> Void)? {
-        nil
+        fullGridReadCount += 1
+        return gridProvider?()
+    }
+
+    func getGridDelta(since generation: UInt64) -> (snapshot: UnsafeMutablePointer<RustGridDeltaSnapshot>, free: () -> Void)? {
+        gridDeltaRequests.append(generation)
+        return gridDeltaProvider?(generation)
     }
 
     func getLineText(row: Int) -> String? {

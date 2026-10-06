@@ -115,6 +115,12 @@ final class RemoteControlManager {
     @ObservationIgnored private var pendingOutputFirstCaptureMicrosByTabID: [UInt32: UInt64] = [:]
     @ObservationIgnored private var gridSnapshotFlushTask: Task<Void, Never>?
     @ObservationIgnored private var pendingGridSnapshotTabID: UInt32?
+    @ObservationIgnored private var pendingGridSnapshotForce = false
+    @ObservationIgnored private let gridSnapshotWorker = RemoteGridSnapshotWorker()
+    @ObservationIgnored private var gridSnapshotEncodingInFlight = false
+    @ObservationIgnored private var gridSnapshotGeneration: UInt64 = 0
+    @ObservationIgnored private var gridSnapshotScope: String?
+    @ObservationIgnored private var gridSnapshotEpoch: UInt64 = 0
     /// Last PTY size announced per tab, so TERMINAL_SIZE is only sent when the
     /// dimensions actually change. Resizing a Mac window is frequent and would
     /// otherwise re-announce on every output frame.
@@ -361,15 +367,70 @@ final class RemoteControlManager {
         sendFrame(type: .snapshot, tabID: tabID, payload: RemoteOutputTuning.capSnapshot(snapshot))
     }
 
-    func sendGridSnapshot(for tabID: UInt32) {
-        guard connectedClientStreamMode == .full else { return }
-        guard let session = snapshotTargetTab(for: tabID)?.session,
+    func sendGridSnapshot(for tabID: UInt32, force: Bool = true) {
+        guard let tabID = tabID == RemoteTabRegistry.unscopedTabID ? selectedRemoteTabID() : tabID else { return }
+        guard isIPCConnected, connectedClientStreamMode == .full,
+              let session = snapshotTargetTab(for: tabID)?.session,
               RemoteTerminalStreamingPolicy.sendsGridSnapshots(
                   for: connectedTerminalPresentation,
                   alternateScreenActive: session.remoteAlternateScreenIsActive
-              ),
-              let snapshot = session.captureRemoteGridSnapshot() else { return }
-        sendFrame(type: .terminalGridSnapshot, tabID: tabID, payload: snapshot)
+              ) else { return }
+        if gridSnapshotEncodingInFlight {
+            if pendingGridSnapshotTabID == tabID {
+                pendingGridSnapshotForce = pendingGridSnapshotForce || force
+            } else {
+                pendingGridSnapshotForce = force
+            }
+            pendingGridSnapshotTabID = tabID
+            return
+        }
+        let epoch = gridSnapshotEpoch
+        let sessionID = session.tabIdentifier
+        let scope = "\(epoch)/\(sessionID)"
+        if gridSnapshotScope != scope {
+            gridSnapshotScope = scope
+            gridSnapshotGeneration = 0
+        }
+        let generation = force ? 0 : gridSnapshotGeneration
+        guard let update = session.captureRemoteGridUpdate(since: generation) else { return }
+        gridSnapshotEncodingInFlight = true
+        gridSnapshotWorker.encode(update, scope: scope) { [weak self] result in
+            DispatchQueue.main.async { [weak self] in
+                self?.completeGridSnapshot(result, tabID: tabID, sessionID: sessionID, epoch: epoch)
+            }
+        }
+    }
+
+    private func completeGridSnapshot(
+        _ result: RemoteGridSnapshotWorker.Result,
+        tabID: UInt32,
+        sessionID: String,
+        epoch: UInt64
+    ) {
+        gridSnapshotEncodingInFlight = false
+        // A frame captured before disconnect, selection change or pane replacement
+        // must never appear in the new client's stream.
+        if RemoteGridDeliveryPolicy.shouldDeliver(
+            capturedEpoch: epoch, currentEpoch: gridSnapshotEpoch,
+            capturedTab: tabID, selectedTab: selectedRemoteTabID(),
+            capturedSession: sessionID, currentSession: snapshotTargetTab(for: tabID)?.session?.tabIdentifier,
+            isConnected: isIPCConnected, streamsTerminal: connectedClientStreamMode == .full
+        ) {
+            gridSnapshotGeneration = result.generation
+            if let payload = result.payload {
+                sendFrame(type: .terminalGridSnapshot, tabID: tabID, payload: payload)
+            }
+        }
+        guard let pendingTabID = pendingGridSnapshotTabID else { return }
+        let force = pendingGridSnapshotForce
+        pendingGridSnapshotTabID = nil
+        pendingGridSnapshotForce = false
+        guard pendingTabID == selectedRemoteTabID() else { return }
+        if force {
+            sendGridSnapshot(for: pendingTabID)
+        } else {
+            scheduleGridSnapshot(for: pendingTabID)
+        }
     }
 
     private func startAgent() async {
@@ -551,6 +612,7 @@ final class RemoteControlManager {
             // "Syncing tabs" until a manual tab switch forces a resend.
             tabInventoryEmissionGate.reset()
             lastSentTabListCount = nil
+            cancelPendingOutputFlush()
             isIPCConnected = true
             sendInitialState()
         case .sessionStatus:
@@ -560,6 +622,7 @@ final class RemoteControlManager {
             if status.status == "ready" {
                 sendInitialState()
             } else {
+                cancelPendingOutputFlush()
                 clearRemoteRealtimeDrainSubscription()
             }
             refreshPairedDevices()
@@ -616,6 +679,7 @@ final class RemoteControlManager {
         let selectionChanged = remoteSelectedTabUUID != uuid
         remoteSelectedTabUUID = uuid
         if selectionChanged {
+            cancelPendingOutputFlush()
             logger.info("Remote: subscribed terminal stream for tab \(payload.tabID, privacy: .public)")
         } else {
             logger.debug("Remote: refreshed terminal stream for tab \(payload.tabID, privacy: .public)")
@@ -1609,6 +1673,11 @@ final class RemoteControlManager {
         gridSnapshotFlushTask?.cancel()
         gridSnapshotFlushTask = nil
         pendingGridSnapshotTabID = nil
+        pendingGridSnapshotForce = false
+        gridSnapshotEpoch &+= 1
+        gridSnapshotGeneration = 0
+        gridSnapshotScope = nil
+        gridSnapshotWorker.reset()
     }
 
     /// Announces a tab's live PTY dimensions, but only when they changed.
@@ -1648,9 +1717,11 @@ final class RemoteControlManager {
             guard let self, !Task.isCancelled else { return }
             gridSnapshotFlushTask = nil
             guard let pendingTabID = pendingGridSnapshotTabID else { return }
+            let force = pendingGridSnapshotForce
             pendingGridSnapshotTabID = nil
+            pendingGridSnapshotForce = false
             guard pendingTabID == selectedRemoteTabID() else { return }
-            sendGridSnapshot(for: pendingTabID)
+            sendGridSnapshot(for: pendingTabID, force: force)
         }
     }
 
@@ -1682,7 +1753,7 @@ final class RemoteControlManager {
             }
             FeatureProfiler.shared.end(token)
             if RemoteTerminalStreamingPolicy.sendsGridCheckpointAfterOutput(for: connectedTerminalPresentation) {
-                sendGridSnapshot(for: tabID)
+                scheduleGridSnapshot(for: tabID)
             }
         }
     }

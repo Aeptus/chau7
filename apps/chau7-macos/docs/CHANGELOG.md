@@ -9,10 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Short main-thread freezes now trigger diagnostic sampling after two seconds, with a 60-second cooldown preserved across watchdog replacements. History adoption logs identify changed fields, and history/routing timings attribute slow UI work.
+- Repeated identical terminal state and AI identity updates skip unnecessary callbacks and routing invalidation; history adoption batches observer callbacks without delaying ordinary lifecycle changes.
+- Remote terminal snapshots capture dirty rows and assemble/encode owned bytes on a background queue. Unchanged frames are suppressed, pending captures are coalesced, and reconnect/tab/pane changes reject stale frames while preserving the existing wire format and legacy backend fallback.
+
 - Copying from AI TUIs and alternate-screen apps automatically joins displayed lines and removes screen indentation, preserving tokens split across unspaced boundaries and separating indented argument continuations. This also flattens intentional multiline TUI content; ordinary shell copies retain their original formatting.
 - Dedicated Home/End keys and click positioning follow application cursor mode. Automatic clicks position within the live logical input line, including soft wraps and Unicode characters, without navigating history from output rows or scrollback. Native TUI mouse reporting is unchanged.
 
 ### Changed
+
+- Regenerable terminal caches have a 64 MiB global target in addition to the per-tab limit, preserving selected panes and authoritative terminal/restoration state. The remote viewport cache is bounded to 4 MiB and reports retained bytes separately.
+- The existing Swift test suite enforces encoding and main-queue responsiveness budgets under a 19-viewport workload. End-to-end release validation is documented in `PERFORMANCE.md`; these component checks do not establish installed-app typing latency.
 
 - The iOS session picker shows only the active tab title and uses compact padding to leave more space for terminal output while retaining its 44-point touch target.
 
