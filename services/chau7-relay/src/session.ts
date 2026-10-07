@@ -107,7 +107,7 @@ export class SessionDO {
     }
     if (route === 'pending' && parts.length === 2) {
       if (request.method === 'GET') {
-        return this.handlePendingState();
+        return this.handlePendingState(request);
       }
       if (request.method === 'POST') {
         return this.handlePendingSync(request);
@@ -127,8 +127,9 @@ export class SessionDO {
     if (role !== 'mac' && role !== 'ios') {
       return new Response('Missing role', { status: 400 });
     }
-    if (!(await this.consumeNonce(request))) {
-      return new Response('Token already used', { status: 409 });
+    const nonceFailure = await this.consumeNonce(request);
+    if (nonceFailure) {
+      return nonceFailure;
     }
 
     // Replace any existing socket for this role.
@@ -222,52 +223,55 @@ export class SessionDO {
 
   // --- Replay defense -------------------------------------------------------
 
-  /**
-   * Enforce single-use of a token's nonce. The Worker has already verified the
-   * token's signature/scope/expiry; here we only guarantee it is not reused.
-   * Returns false if the nonce was already seen (replay). When no token is
-   * present (open/unauthenticated mode), there is nothing to enforce.
-   */
-  private async consumeNonce(request: Request): Promise<boolean> {
+  /** Atomically retain every live nonce; a full budget fails closed. */
+  private async consumeNonce(request: Request): Promise<Response | null> {
     const header = request.headers.get('Authorization') ?? '';
     if (!header.startsWith('Bearer ')) {
-      return true;
+      return null;
     }
     const parsed = parseToken(header.slice('Bearer '.length).trim());
     if (!parsed) {
-      return true;
+      return null; // Only reachable in explicitly configured open mode.
     }
     const now = Date.now();
     const expiresAt = (parsed.ts + TOKEN_TTL_SECONDS) * 1000;
-    const seen = (await this.state.storage.get<Record<string, number>>(SEEN_NONCES_KEY)) ?? {};
-
-    if (seen[parsed.nonce] && seen[parsed.nonce] > now) {
-      return false;
-    }
-
-    // Prune expired entries, then bound the map size defensively.
-    for (const [nonce, exp] of Object.entries(seen)) {
-      if (exp <= now) {
-        delete seen[nonce];
+    const result = await this.state.storage.transaction(async (transaction) => {
+      const stored = (await transaction.get<Record<string, number>>(SEEN_NONCES_KEY)) ?? {};
+      // Client-controlled names must never invoke Object.prototype setters.
+      const seen: Record<string, number> = Object.create(null);
+      for (const [nonce, expiry] of Object.entries(stored)) {
+        if (Number.isFinite(expiry) && expiry > now) {
+          seen[nonce] = expiry;
+        }
       }
+      if (Object.hasOwn(seen, parsed.nonce)) {
+        return 'replay';
+      }
+      if (Object.keys(seen).length >= MAX_SEEN_NONCES) {
+        return 'full';
+      }
+      seen[parsed.nonce] = expiresAt;
+      await transaction.put(SEEN_NONCES_KEY, seen);
+      return 'accepted';
+    });
+    if (result === 'replay') {
+      return new Response('Token already used', { status: 409 });
     }
-    seen[parsed.nonce] = expiresAt;
-    const keys = Object.keys(seen);
-    if (keys.length > MAX_SEEN_NONCES) {
-      keys
-        .sort((a, b) => seen[a] - seen[b])
-        .slice(0, keys.length - MAX_SEEN_NONCES)
-        .forEach((nonce) => delete seen[nonce]);
+    if (result === 'full') {
+      return new Response('Replay budget exhausted', {
+        status: 429,
+        headers: { 'Retry-After': String(TOKEN_TTL_SECONDS) }
+      });
     }
-    await this.state.storage.put(SEEN_NONCES_KEY, seen);
-    return true;
+    return null;
   }
 
   // --- Push registration ----------------------------------------------------
 
   private async handlePushRegister(request: Request): Promise<Response> {
-    if (!(await this.consumeNonce(request))) {
-      return new Response('Token already used', { status: 409 });
+    const nonceFailure = await this.consumeNonce(request);
+    if (nonceFailure) {
+      return nonceFailure;
     }
     const parsed = await readJsonBody(request);
     if (!parsed.ok) {
@@ -305,8 +309,9 @@ export class SessionDO {
   }
 
   private async handlePushNotify(request: Request): Promise<Response> {
-    if (!(await this.consumeNonce(request))) {
-      return new Response('Token already used', { status: 409 });
+    const nonceFailure = await this.consumeNonce(request);
+    if (nonceFailure) {
+      return nonceFailure;
     }
     const parsed = await readJsonBody(request);
     if (!parsed.ok) {
@@ -358,9 +363,9 @@ export class SessionDO {
   }
 
   private async loadRegistrations(): Promise<Record<string, PushRegistration>> {
-    return (
-      (await this.state.storage.get<Record<string, PushRegistration>>(REGISTRATIONS_KEY)) ?? {}
-    );
+    const stored =
+      await this.state.storage.get<Record<string, PushRegistration>>(REGISTRATIONS_KEY);
+    return Object.assign(Object.create(null), stored ?? {});
   }
 
   private async saveRegistrations(registrations: Record<string, PushRegistration>): Promise<void> {
@@ -379,14 +384,19 @@ export class SessionDO {
     );
   }
 
-  private async handlePendingState(): Promise<Response> {
+  private async handlePendingState(request: Request): Promise<Response> {
+    const nonceFailure = await this.consumeNonce(request);
+    if (nonceFailure) {
+      return nonceFailure;
+    }
     const state = await this.loadPendingState();
     return Response.json(state);
   }
 
   private async handlePendingSync(request: Request): Promise<Response> {
-    if (!(await this.consumeNonce(request))) {
-      return new Response('Token already used', { status: 409 });
+    const nonceFailure = await this.consumeNonce(request);
+    if (nonceFailure) {
+      return nonceFailure;
     }
     const parsed = await readJsonBody(request);
     if (!parsed.ok) {

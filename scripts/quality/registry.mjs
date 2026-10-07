@@ -874,7 +874,7 @@ export const gates = [
     wave: "tests",
     tags: ["frontend", "relay"],
     cacheable: true,
-    inputs: ["services/chau7-relay/src", "services/chau7-relay/test", "services/chau7-relay/package.json", "services/chau7-relay/package-lock.json", "services/chau7-relay/tsconfig.json"],
+    inputs: ["services/chau7-relay/src", "services/chau7-relay/test", "services/chau7-relay/package.json", "services/chau7-relay/package-lock.json", "services/chau7-relay/tsconfig.json", "services/chau7-relay/vitest.config.ts"],
     applies: (context) => classifyFrontendImpact(context.changedFiles).apps.includes("relay"),
     rerun: "pnpm quality:prepush --include=relay-typecheck-test-build",
     run: async (context) => {

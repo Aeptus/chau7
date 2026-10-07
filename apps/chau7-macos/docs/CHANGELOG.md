@@ -23,6 +23,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Repository stats TTL/dirty-refresh tests now wait for the published snapshot rather than the background loader counter, avoiding a request-order race in the native validation gate.
 
+- Relay replay protection handles property-name nonces safely and fails closed at its live-entry limit; push registrations retain those names. Concurrent APNs provider-token requests share one mint, with real Workers-runtime regressions covering replay, routing, storage, WebSocket replacement, backoff and recovery.
+
 - Short main-thread freezes now trigger diagnostic sampling after two seconds, with a 60-second cooldown preserved across watchdog replacements. History adoption logs identify changed fields, and history/routing timings attribute slow UI work.
 - Repeated identical terminal state and AI identity updates skip unnecessary callbacks and routing invalidation; history adoption batches observer callbacks without delaying ordinary lifecycle changes.
 - Remote terminal snapshots capture dirty rows and assemble/encode owned bytes on a background queue. Unchanged frames are suppressed, pending captures are coalesced, and reconnect/tab/pane changes reject stale frames while preserving the existing wire format and legacy backend fallback.
