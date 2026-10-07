@@ -21,6 +21,7 @@ const BACKOFF_STORAGE_KEY = 'provider-token-backoff-until';
 export class APNSTokenBrokerDO {
   private cachedToken?: CachedAPNSToken;
   private cachedSigningKey?: CryptoKey;
+  private tokenResolution?: Promise<Awaited<ReturnType<typeof resolveAPNSToken>>>;
 
   constructor(
     private readonly state: DurableObjectState,
@@ -54,15 +55,32 @@ export class APNSTokenBrokerDO {
       );
     }
 
-    const { token, entry, source } = await resolveAPNSToken({
-      memory: this.cachedToken,
-      readStored: () => this.state.storage.get<CachedAPNSToken>(TOKEN_STORAGE_KEY),
-      writeStored: (value: CachedAPNSToken) => this.state.storage.put(TOKEN_STORAGE_KEY, value),
-      mint: () => this.createAPNSToken(APNS_TEAM_ID, APNS_KEY_ID, APNS_PRIVATE_KEY),
-      now
-    });
-    this.cachedToken = entry;
-    return Response.json({ token, source, expires_at: entry.expiresAt, key_id: APNS_KEY_ID });
+    // Signing yields outside the storage input gate. Share one resolution across
+    // those requests instead of minting a JWT per concurrent device push.
+    if (!this.tokenResolution) {
+      this.tokenResolution = (async () => {
+        const result = await resolveAPNSToken({
+          memory: this.cachedToken,
+          readStored: () => this.state.storage.get<CachedAPNSToken>(TOKEN_STORAGE_KEY),
+          writeStored: (value: CachedAPNSToken) => this.state.storage.put(TOKEN_STORAGE_KEY, value),
+          mint: () => this.createAPNSToken(APNS_TEAM_ID, APNS_KEY_ID, APNS_PRIVATE_KEY),
+          now
+        });
+        this.cachedToken = result.entry;
+        return result;
+      })();
+    }
+    const resolution = this.tokenResolution;
+    try {
+      const { token, entry, source } = await resolution;
+      return Response.json({ token, source, expires_at: entry.expiresAt, key_id: APNS_KEY_ID });
+    } catch {
+      return Response.json({ error: 'apns_provider_token_unavailable' }, { status: 503 });
+    } finally {
+      if (this.tokenResolution === resolution) {
+        this.tokenResolution = undefined;
+      }
+    }
   }
 
   private async handleProviderUpdateRateLimit(): Promise<Response> {
