@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Remote identity storage fails closed on unavailable machine identity or invalid wrapped keys, preserving the state file and explaining recovery instead of silently replacing identity or saving keys in plaintext.
+
 - Short main-thread freezes now trigger diagnostic sampling after two seconds, with a 60-second cooldown preserved across watchdog replacements. History adoption logs identify changed fields, and history/routing timings attribute slow UI work.
 - Repeated identical terminal state and AI identity updates skip unnecessary callbacks and routing invalidation; history adoption batches observer callbacks without delaying ordinary lifecycle changes.
 - Remote terminal snapshots capture dirty rows and assemble/encode owned bytes on a background queue. Unchanged frames are suppressed, pending captures are coalesced, and reconnect/tab/pane changes reject stale frames while preserving the existing wire format and legacy backend fallback.
