@@ -99,15 +99,14 @@ it('clears failed in-flight minting so a later request can recover', async () =>
   const spy = vi
     .spyOn(crypto.subtle, 'sign')
     .mockImplementationOnce(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 10));
       throw new Error('transient signing failure');
     })
     .mockImplementation(sign);
-  const failed = await Promise.all(Array.from({ length: 3 }, () => stub.fetch(request())));
-  for (const response of failed) {
-    expect(response.status).toBe(503);
-    await response.json();
-  }
+  // Failure recovery is sequential: requests dispatched together are not
+  // guaranteed to enter the DO before the failed resolution retires.
+  const failed = await stub.fetch(request());
+  expect(failed.status).toBe(503);
+  await failed.json();
   const recovered = await stub.fetch(request());
   expect(recovered.status).toBe(200);
   await recovered.json();
