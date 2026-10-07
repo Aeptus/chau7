@@ -15,6 +15,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Maintenance
 
+- Affected-file relay and issue-worker quality gates install their locked Node dependencies before validation, so fresh CI checkouts do not depend on previously installed local tools. Failed installation or package checks still fail the gate.
+
 - Update terminal, Markdown and CLI Rust dependencies together, regenerate their compatible lockfile and preserve integer terminal exit status across the Alacritty API change.
 
 - Quality-runner Swift manifest checks use temporary scratch directories so concurrent native builds cannot hold their package lock and exhaust the manifest timeout. The real Core and full-app graphs remain validated.
