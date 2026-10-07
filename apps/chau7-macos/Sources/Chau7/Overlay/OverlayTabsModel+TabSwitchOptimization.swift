@@ -195,40 +195,26 @@ extension OverlayTabsModel {
         return count
     }
 
-    /// Show confirmation dialog before closing tab. Returns true if user confirms.
-    /// - Parameters:
-    ///   - runningProcessCount: Number of running processes in the tab
-    ///   - isLastTab: Whether this is the last tab (will be replaced, not closed)
-    ///   - willCloseWindow: Whether closing will close the window entirely
-    ///   - isAlwaysWarnMode: Whether we're warning due to "always warn" setting (shows suppression option)
-    /// Ask the user whether to also close the window when closing the last tab.
-    /// Returns true if the user wants to close the window.
-    func confirmCloseLastTab() -> Bool {
-        // Modal dialogs must never block a headless test process. Whether
-        // runModal returns immediately without a window server is
-        // machine-state dependent (it started blocking once another app
-        // session held activation), so the guard makes it deterministic:
-        // tests get the safe default (keep the window open).
-        guard !RuntimeIsolation.isIsolatedTestMode() else { return false }
+    private func makeLastTabCloseAlert(runningProcessCount: Int) -> NSAlert {
         let alert = NSAlert()
         alert.messageText = L("alert.closeLastTab.title", "This is the last tab")
         alert.informativeText = L("alert.closeLastTab.message", "Do you want to close the window, or keep it open with a new tab?")
         alert.alertStyle = .informational
         alert.addButton(withTitle: L("alert.closeLastTab.closeWindow", "Close Window"))
         alert.addButton(withTitle: L("alert.closeLastTab.newTab", "New Tab"))
-        return alert.runModal() == .alertFirstButtonReturn
+        if runningProcessCount > 0 {
+            alert.informativeText += "\n\n\(runningProcessCount) running processes will be terminated."
+        }
+        alert.addButton(withTitle: L("button.cancel", "Cancel"))
+        return alert
     }
 
-    func confirmTabClose(
+    private func makeTabCloseAlert(
         runningProcessCount: Int,
         isLastTab: Bool,
         willCloseWindow: Bool,
         isAlwaysWarnMode: Bool
-    ) -> Bool {
-        // Same headless-test guard as confirmCloseLastTab: default to
-        // proceeding with the close, which is what every existing test
-        // (running with warnings disabled) already expects.
-        guard !RuntimeIsolation.isIsolatedTestMode() else { return true }
+    ) -> NSAlert {
         let alert = NSAlert()
         let hasRunningProcess = runningProcessCount > 0
 
@@ -312,14 +298,62 @@ extension OverlayTabsModel {
             alert.suppressionButton?.title = L("alert.closeTab.dontAskAgain", "Don't ask again")
         }
 
-        let result = alert.runModal()
+        return alert
+    }
 
-        // If user checked "Don't ask again", disable the setting
-        if alert.suppressionButton?.state == .on {
-            FeatureSettings.shared.alwaysWarnOnTabClose = false
+    private func presentTabCloseConfirmation(
+        _ alert: NSAlert,
+        headlessResponse: NSApplication.ModalResponse,
+        completion: @escaping @MainActor (NSApplication.ModalResponse) -> Void
+    ) {
+        guard tabClosePresentation == nil else { return }
+        let presentation = ConfirmationSheetPresentation(alert: alert, timeout: tabCloseConfirmationTimeout) { [weak self] response in
+            self?.tabClosePresentation = nil
+            completion(response)
         }
+        tabClosePresentation = presentation
+        if let presenter = tabCloseConfirmationPresenter {
+            presenter(alert) { [weak presentation] response in presentation?.resolve(response) }
+        } else if RuntimeIsolation.isIsolatedTestMode() {
+            presentation.resolve(headlessResponse)
+        } else {
+            // This model owns one window. Never show a close decision in a
+            // different window when the owner has disappeared.
+            _ = presentation.present(in: overlayWindow?.parent ?? overlayWindow)
+        }
+    }
 
-        return result == .alertFirstButtonReturn
+    func closeTab(id: UUID, skipWarning: Bool = false) {
+        dispatchPrecondition(condition: .onQueue(.main))
+        guard tabClosePresentation == nil,
+              let initialIndex = tabs.firstIndex(where: { $0.id == id }) else { return }
+        let tab = tabs[initialIndex]
+        let sessions = tab.splitController.root.allSessions.map(\.tabIdentifier)
+        let processCount = countRunningProcesses(in: tab)
+        let wasLast = tabs.count == 1
+        let settings = FeatureSettings.shared
+        let warnForProcess = settings.warnOnCloseWithRunningProcess && processCount > 0
+        let needsDecision = !skipWarning && (wasLast || warnForProcess || settings.alwaysWarnOnTabClose)
+        guard needsDecision else {
+            performCloseTab(id: id, initialIndex: initialIndex, closeWindow: false)
+            return
+        }
+        let alert = wasLast ? makeLastTabCloseAlert(runningProcessCount: processCount) : makeTabCloseAlert(
+            runningProcessCount: processCount, isLastTab: false, willCloseWindow: false,
+            isAlwaysWarnMode: settings.alwaysWarnOnTabClose && !warnForProcess
+        )
+        presentTabCloseConfirmation(alert, headlessResponse: wasLast ? .alertSecondButtonReturn : .alertFirstButtonReturn) { [weak self] response in
+            guard let self,
+                  response == .alertFirstButtonReturn || (wasLast && response == .alertSecondButtonReturn),
+                  let current = tabs.first(where: { $0.id == id }),
+                  current.splitController.root.allSessions.map(\.tabIdentifier) == sessions,
+                  (self.tabs.count == 1) == wasLast,
+                  countRunningProcesses(in: current) <= processCount else { return }
+            if alert.suppressionButton?.state == .on {
+                FeatureSettings.shared.alwaysWarnOnTabClose = false
+            }
+            performCloseTab(id: id, initialIndex: initialIndex, closeWindow: wasLast && response == .alertFirstButtonReturn)
+        }
     }
 
     /// Releases per-tab resources that otherwise outlive the closed tab for
@@ -334,24 +368,14 @@ extension OverlayTabsModel {
         persistedRestoreFallbackStatesByTabID.removeValue(forKey: tabID)
     }
 
-    func closeTab(id: UUID, skipWarning: Bool = false) {
+    private func performCloseTab(id: UUID, initialIndex: Int, closeWindow: Bool) {
         dispatchPrecondition(condition: .onQueue(.main))
         dismissHoverCard()
-        Log.info("closeTab called with id=\(id). tabs.count=\(tabs.count)")
-        guard let initialIndex = tabs.firstIndex(where: { $0.id == id }) else {
-            Log.warn("closeTab: tab with id=\(id) not found!")
-            return
-        }
-
-        let tab = tabs[initialIndex]
-        let settings = FeatureSettings.shared
-        let runningProcessCount = countRunningProcesses(in: tab)
-        let hasRunningProcess = runningProcessCount > 0
+        guard tabs.contains(where: { $0.id == id }) else { return }
         let isLastTab = tabs.count == 1
 
         // Handle last tab: prompt user or silently replace (skipWarning)
         if isLastTab {
-            let closeWindow = skipWarning ? false : confirmCloseLastTab()
             guard let idx = tabs.firstIndex(where: { $0.id == id }) else { return }
             let aiSessionID = tabs[idx].session?.effectiveAISessionId
             MainActor.assumeIsolated {
@@ -387,27 +411,8 @@ extension OverlayTabsModel {
             return
         }
 
-        // Non-last tabs: check if we need a warning dialog
-        let warnForProcess = settings.warnOnCloseWithRunningProcess && hasRunningProcess
-        let warnAlways = settings.alwaysWarnOnTabClose
-        let shouldWarn = !skipWarning && (warnForProcess || warnAlways)
-
-        if shouldWarn {
-            let confirmed = confirmTabClose(
-                runningProcessCount: runningProcessCount,
-                isLastTab: false,
-                willCloseWindow: false,
-                isAlwaysWarnMode: warnAlways && !warnForProcess
-            )
-            guard confirmed else {
-                Log.info("closeTab: user cancelled close for tab \(id)")
-                return
-            }
-        }
-
-        // Re-validate after modal: tabs may have changed while dialog was shown
         guard let index = tabs.firstIndex(where: { $0.id == id }) else {
-            Log.warn("closeTab: tab \(id) no longer exists after confirmation dialog")
+            Log.warn("closeTab: tab \(id) no longer exists after confirmation")
             return
         }
         let isLastTabNow = tabs.count == 1
@@ -554,9 +559,14 @@ extension OverlayTabsModel {
     }
 
     func closeOtherTabs() {
-        guard tabs.count > 1 else { return }
+        dispatchPrecondition(condition: .onQueue(.main))
+        guard tabClosePresentation == nil, tabs.count > 1 else { return }
         let currentID = selectedTabID
         let otherTabs = tabs.filter { $0.id != currentID }
+        let targetSessions = Dictionary(uniqueKeysWithValues: otherTabs.map {
+            ($0.id, $0.splitController.root.allSessions.map(\.tabIdentifier))
+        })
+        let targetProcessCounts = Dictionary(uniqueKeysWithValues: otherTabs.map { ($0.id, countRunningProcesses(in: $0)) })
         let settings = FeatureSettings.shared
 
         // Count tabs and total processes
@@ -613,31 +623,23 @@ extension OverlayTabsModel {
                 alert.suppressionButton?.title = L("alert.closeTab.dontAskAgain", "Don't ask again")
             }
 
-            let result = alert.runModal()
-
-            // If user checked "Don't ask again", disable the setting
-            if alert.suppressionButton?.state == .on {
-                FeatureSettings.shared.alwaysWarnOnTabClose = false
+            presentTabCloseConfirmation(alert, headlessResponse: .alertFirstButtonReturn) { [weak self] response in
+                guard response == .alertFirstButtonReturn else { return }
+                self?.performCloseOtherTabs(keeping: currentID, targetSessions: targetSessions, targetProcessCounts: targetProcessCounts, suppressWarning: alert.suppressionButton?.state == .on)
             }
-
-            guard result == .alertFirstButtonReturn else {
-                Log.info("closeOtherTabs: user cancelled")
-                return
-            }
+        } else {
+            performCloseOtherTabs(keeping: currentID, targetSessions: targetSessions, targetProcessCounts: targetProcessCounts, suppressWarning: false)
         }
+    }
 
-        // Re-validate after modal: tabs may have changed while dialog was shown
-        guard tabs.contains(where: { $0.id == currentID }) else {
-            Log.warn("closeOtherTabs: selected tab \(currentID) no longer exists after confirmation dialog")
-            return
-        }
-
-        // Re-compute other tabs based on current state
-        let currentOtherTabs = tabs.filter { $0.id != currentID }
-        guard !currentOtherTabs.isEmpty else {
-            Log.info("closeOtherTabs: no other tabs to close after re-validation")
-            return
-        }
+    private func performCloseOtherTabs(keeping currentID: UUID, targetSessions: [UUID: [String]], targetProcessCounts: [UUID: Int], suppressWarning: Bool) {
+        guard selectedTabID == currentID, tabs.contains(where: { $0.id == currentID }) else { return }
+        let currentOtherTabs = tabs.filter { targetSessions[$0.id] != nil }
+        guard !currentOtherTabs.isEmpty, currentOtherTabs.allSatisfy({
+            $0.splitController.root.allSessions.map(\.tabIdentifier) == targetSessions[$0.id] &&
+                countRunningProcesses(in: $0) <= (targetProcessCounts[$0.id] ?? 0)
+        }) else { return }
+        if suppressWarning { FeatureSettings.shared.alwaysWarnOnTabClose = false }
 
         // Snapshot each tab BEFORE killing its shell (reverse order so
         // Cmd+Shift+T restores the rightmost closed tab first)
@@ -647,16 +649,26 @@ extension OverlayTabsModel {
             }
         }
 
-        // Close all sessions in all tabs except current one
         for tab in currentOtherTabs {
-            if let sessionID = tab.session?.tabIdentifier {
-                CTORuntimeMonitor.shared.untrackSession(sessionID)
+            if let session = tab.session {
+                CommandHistoryManager.shared.removeTab(session.ownerTabID?.uuidString ?? session.tabIdentifier)
+                CTOFlagManager.removeFlag(sessionID: session.tabIdentifier)
+                CTORuntimeMonitor.shared.untrackSession(session.tabIdentifier)
             }
+            NotificationServices.current?.executor.cancelPendingStyleWork(tabID: tab.id, sessionID: tab.session?.effectiveAISessionId)
             tab.splitController.root.closeAllSessions()
+            purgeClosedTabResources(tabID: tab.id)
+            cleanupRepoGroupingForTab(tab.id)
         }
-
-        tabs = tabs.filter { $0.id == currentID }
-        Log.info("Closed all other tabs, keeping \(currentID)")
+        let closedIDs = Set(currentOtherTabs.map(\.id))
+        tabs.removeAll { closedIDs.contains($0.id) }
+        lastReportedRenderedCount = -1
+        lastPreferenceUpdateTime = Date()
+        forceSelectedTabRevealLive(tabID: selectedTabID)
+        focusSelected()
+        updateSuspensionState()
+        updateSnippetContextForSelection()
+        if isSearchVisible { refreshSearch() }
     }
 
     /// Reopens the most recently closed tab, restoring its title, color, directory,

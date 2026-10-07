@@ -68,4 +68,13 @@ final class MCPCommandApprovalPresentationTests: XCTestCase {
         lateResponse?(.alwaysAllow)
         XCTAssertTrue(service.pendingApprovalSummaries().isEmpty)
     }
+
+    func testSharedSheetOwnerFailsClosedWithoutWindowAndIgnoresLateClose() {
+        var decisions: [NSApplication.ModalResponse] = []
+        let presentation = ConfirmationSheetPresentation(alert: NSAlert()) { decisions.append($0) }
+        XCTAssertFalse(presentation.present(in: nil))
+        presentation.resolve(.alertFirstButtonReturn)
+        XCTAssertEqual(decisions, [.abort])
+    }
+
 }
