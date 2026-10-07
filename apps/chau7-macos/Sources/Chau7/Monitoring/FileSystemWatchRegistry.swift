@@ -93,14 +93,7 @@ final class FileSystemWatchRegistry {
             let entry = Entry(source: source, subscribers: [id: subscriber])
             source.setEventHandler { [weak entry] in
                 guard let entry else { return }
-                let flags = source.data
-                for subscriber in entry.subscribers.values {
-                    let matchingFlags = flags.intersection(subscriber.eventMask)
-                    guard !matchingFlags.isEmpty else { continue }
-                    subscriber.callbackQueue.async {
-                        subscriber.handler(matchingFlags)
-                    }
-                }
+                Self.deliver(source.data, to: entry)
             }
             source.setCancelHandler {
                 Darwin.close(descriptor)
@@ -108,6 +101,28 @@ final class FileSystemWatchRegistry {
             entries[key] = entry
             source.resume()
             return Subscription(registry: self, key: key, id: id)
+        }
+    }
+
+    private static func deliver(_ flags: DispatchSource.FileSystemEvent, to entry: Entry) {
+        for subscriber in entry.subscribers.values {
+            let matchingFlags = flags.intersection(subscriber.eventMask)
+            guard !matchingFlags.isEmpty else { continue }
+            subscriber.callbackQueue.async { subscriber.handler(matchingFlags) }
+        }
+    }
+
+    /// Test seams use the same delivery path and registry owner as dispatch events.
+    func deliverForTesting(url: URL, flags: DispatchSource.FileSystemEvent) {
+        queue.sync {
+            guard let entry = entries[WatchKey(path: Self.canonicalPath(for: url))] else { return }
+            Self.deliver(flags, to: entry)
+        }
+    }
+
+    func watchIdentityForTesting(url: URL) -> AnyObject? {
+        queue.sync {
+            entries[WatchKey(path: Self.canonicalPath(for: url))]
         }
     }
 
