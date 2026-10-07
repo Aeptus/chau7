@@ -82,6 +82,18 @@ export async function readJsonBody(request, maxBytes = MAX_BODY_BYTES) {
   }
 }
 
+function isUnsignedInteger(value, max = Number.MAX_SAFE_INTEGER) {
+  return Number.isSafeInteger(value) && value >= 0 && value <= max;
+}
+
+function copyPushText(input, output, fields) {
+  for (const field of fields) {
+    const cap = field === 'push_body' ? PUSH_CAPS.body : PUSH_CAPS.title;
+    const value = clampString(input[field], cap);
+    if (value !== undefined) output[field] = value;
+  }
+}
+
 function sanitizeApproval(input) {
   if (!input || typeof input !== 'object') {
     return null;
@@ -90,6 +102,7 @@ function sanitizeApproval(input) {
   if (!requestId) {
     return null;
   }
+  if (input.spine_seq != null && !isUnsignedInteger(input.spine_seq)) return null;
   const out = {
     request_id: requestId,
     command: clampRequiredString(input.command, FIELD_CAPS.long),
@@ -104,13 +117,16 @@ function sanitizeApproval(input) {
     'current_directory',
     'recent_command',
     'context_note',
-    'session_id'
+    'session_id',
+    'severity'
   ]) {
     const value = clampString(input[field], FIELD_CAPS.medium);
     if (value !== undefined) {
       out[field] = value;
     }
   }
+  copyPushText(input, out, ['push_title', 'push_subtitle', 'push_body']);
+  if (input.spine_seq != null) out.spine_seq = input.spine_seq;
   return out;
 }
 
@@ -141,13 +157,26 @@ function sanitizeInteractivePrompt(input) {
   if (!id) {
     return null;
   }
+  if (input.tab_id != null && !isUnsignedInteger(input.tab_id, 0xffffffff)) return null;
+  if (
+    input.detected_at != null &&
+    (typeof input.detected_at !== 'number' || !Number.isFinite(input.detected_at))
+  )
+    return null;
+  if (
+    input.pane_id != null &&
+    (typeof input.pane_id !== 'string' ||
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(input.pane_id))
+  )
+    return null;
+  if (input.multi_select != null && typeof input.multi_select !== 'boolean') return null;
   const out = {
     id,
-    tab_id: Number.isFinite(input.tab_id) ? input.tab_id : 0,
+    tab_id: input.tab_id ?? 0,
     tab_title: clampRequiredString(input.tab_title, FIELD_CAPS.short),
     tool_name: clampRequiredString(input.tool_name, FIELD_CAPS.short),
     prompt: clampRequiredString(input.prompt, FIELD_CAPS.long),
-    detected_at: clampRequiredString(input.detected_at, FIELD_CAPS.short),
+    detected_at: input.detected_at ?? 0,
     options: Array.isArray(input.options)
       ? input.options
           .slice(0, MAX_PROMPT_OPTIONS)
@@ -161,6 +190,9 @@ function sanitizeInteractivePrompt(input) {
       out[field] = value;
     }
   }
+  copyPushText(input, out, ['push_title', 'push_subtitle']);
+  if (input.pane_id != null) out.pane_id = input.pane_id;
+  if (input.multi_select != null) out.multi_select = input.multi_select;
   return out;
 }
 
@@ -182,7 +214,40 @@ export function sanitizePendingState(payload) {
         .map(sanitizeInteractivePrompt)
         .filter((p) => p !== null)
     : [];
-  return { approvals, interactive_prompts };
+  const out = { approvals, interactive_prompts };
+  if (
+    typeof source.session_epoch === 'string' &&
+    /^[A-Za-z0-9_-]{1,128}$/.test(source.session_epoch) &&
+    isUnsignedInteger(source.state_version)
+  ) {
+    out.session_epoch = source.session_epoch;
+    out.state_version = source.state_version;
+  }
+  return out;
+}
+
+/**
+ * Reject broken ordering metadata before storage. Dropping a malformed version
+ * would turn a versioned snapshot into a legacy one and weaken arbitration.
+ * JSON numbers must remain exact across JS, Go and Swift.
+ * @returns {{ok: true, value: ReturnType<typeof sanitizePendingState>} | {ok: false, message: string}}
+ */
+export function validatePendingState(payload) {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload))
+    return { ok: false, message: 'Invalid pending state' };
+  if (payload.session_epoch != null || payload.state_version != null) {
+    if (
+      typeof payload.session_epoch !== 'string' ||
+      !/^[A-Za-z0-9_-]{1,128}$/.test(payload.session_epoch) ||
+      !isUnsignedInteger(payload.state_version)
+    ) {
+      return {
+        ok: false,
+        message: 'Pending state requires a bounded session_epoch and exact unsigned state_version'
+      };
+    }
+  }
+  return { ok: true, value: sanitizePendingState(payload) };
 }
 
 /**

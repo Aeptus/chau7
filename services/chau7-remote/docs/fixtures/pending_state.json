@@ -7,7 +7,12 @@
       "timestamp": "2026-07-01T12:05:00Z",
       "tab_title": "deploy",
       "tool_name": "Codex",
-      "session_id": "sess-def"
+      "session_id": "sess-def",
+      "push_title": "Codex needs approval",
+      "push_subtitle": "deploy",
+      "push_body": "git push --force",
+      "spine_seq": 41,
+      "severity": "destructive"
     }
   ],
   "interactive_prompts": [
@@ -34,7 +39,8 @@
       "detected_at": 804600000,
       "push_title": "Claude Code is waiting",
       "push_subtitle": "migrate \u00b7 Mockup",
-      "multi_select": true
+      "multi_select": true,
+      "pane_id": "11111111-1111-4111-8111-111111111111"
     }
   ],
   "session_epoch": "a1b2c3d4e5f60718",
