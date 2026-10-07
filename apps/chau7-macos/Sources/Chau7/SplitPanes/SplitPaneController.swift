@@ -1348,7 +1348,8 @@ final class SplitPaneController {
         ]
         for session in candidateSessions.compactMap({ $0 }) {
             if let root = session.displayGitRootPath?.trimmingCharacters(in: .whitespacesAndNewlines),
-               !root.isEmpty {
+               !root.isEmpty,
+               SessionNoteFileStore.isRepositoryRoot(root) {
                 return URL(fileURLWithPath: root).standardized.path
             }
         }

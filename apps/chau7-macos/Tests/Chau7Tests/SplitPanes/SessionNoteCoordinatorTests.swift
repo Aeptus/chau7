@@ -38,14 +38,14 @@ final class SessionNoteCoordinatorTests: XCTestCase {
         defer { try? FileManager.default.removeItem(atPath: repoRoot) }
         let coord = SessionNoteCoordinator(tabID: UUID(), repoRoot: repoRoot)
 
-        let path1 = coord.prepareNoteFile()
+        let path1 = try XCTUnwrap(coord.prepareNoteFile())
         XCTAssertTrue(FileManager.default.fileExists(atPath: path1))
         XCTAssertEqual(try String(contentsOfFile: path1, encoding: .utf8), "")
 
         // Write some content directly — a second prepare() must not stomp it.
         try "user-written content\n".write(toFile: path1, atomically: true, encoding: .utf8)
 
-        let path2 = coord.prepareNoteFile()
+        let path2 = try XCTUnwrap(coord.prepareNoteFile())
         XCTAssertEqual(path1, path2)
         XCTAssertEqual(
             try String(contentsOfFile: path2, encoding: .utf8),
@@ -68,12 +68,23 @@ final class SessionNoteCoordinatorTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: chau7Dir))
     }
 
+    func testDeletedRepositoryIsNotRecreatedByNotePreparation() throws {
+        let repoRoot = makeTemporaryDirectory(prefix: "coord-deleted")
+        let coordinator = SessionNoteCoordinator(tabID: UUID(), repoRoot: repoRoot)
+        try FileManager.default.removeItem(atPath: repoRoot)
+        defer { try? FileManager.default.removeItem(atPath: repoRoot) }
+
+        XCTAssertNil(coordinator.prepareNoteFile())
+        XCTAssertFalse(FileManager.default.fileExists(atPath: repoRoot))
+    }
+
     // MARK: - Helpers
 
     private func makeTemporaryDirectory(prefix: String) -> String {
         let url = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent("\(prefix)-\(UUID().uuidString)", isDirectory: true)
         try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        try? FileManager.default.createDirectory(at: url.appendingPathComponent(".git"), withIntermediateDirectories: false)
         return url.path
     }
 }
