@@ -852,3 +852,58 @@ func TestClearPendingApprovalRemovesItFromRelayState(t *testing.T) {
 		t.Fatalf("expected cleared approvals, got %d", len(got.Approvals))
 	}
 }
+
+func TestConfirmPendingPairPreservesTrustWhenSaveFails(t *testing.T) {
+	a, iosPub := makePairTestAgent(t)
+	a.setPendingPair("Unsaved Phone", iosPub)
+	a.currentIOSPub = iosPub
+	// A directory cannot be atomically replaced by the state file.
+	a.statePath = t.TempDir()
+	before, err := json.Marshal(a.state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a.confirmPendingPair()
+	after, err := json.Marshal(a.state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(before, after) {
+		t.Fatalf("failed persistence changed trusted state: %s", after)
+	}
+	if a.currentPeerID != "" {
+		t.Fatal("failed persistence selected a trusted peer")
+	}
+	if a.isPairRequestAuthorized(PairRequestPayload{IOSPub: iosPub}, time.Now()) {
+		t.Fatal("unsaved identity became authorized")
+	}
+}
+
+func TestKnownPeerRepairDoesNotRequireWritableState(t *testing.T) {
+	a, iosPub := makePairTestAgent(t)
+	a.setPendingPair("Known Phone", iosPub)
+	a.currentIOSPub = iosPub
+	if !a.confirmPendingPair() {
+		t.Fatal("initial pairing failed")
+	}
+	trusted, err := json.Marshal(a.state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a.statePath = t.TempDir()
+	a.currentPeerID = ""
+	a.setPendingPair("Changed Name", iosPub)
+	if !a.confirmPendingPair() {
+		t.Fatal("already trusted repair must not require a new state write")
+	}
+	after, err := json.Marshal(a.state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(trusted, after) {
+		t.Fatal("repair mutated trusted state before persistence")
+	}
+	if a.currentPeerID == "" {
+		t.Fatal("repair did not recover the trusted peer")
+	}
+}
