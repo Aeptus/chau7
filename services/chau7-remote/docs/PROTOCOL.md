@@ -582,7 +582,6 @@ sequence monotonic even across Mac app restarts); syncs without a Mac seq —
 iOS-triggered clears, older Macs — fall back to a strictly-increasing local
 increment, so the stream never regresses either way.
 
-
 ### Pending REST validation
 
 The relay preserves canonical session epoch/version metadata, approval push text,

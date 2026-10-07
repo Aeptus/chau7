@@ -13,11 +13,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Core-only Swift package graph checks retain isolated scratch paths and all graph assertions, allow up to two minutes for a cold toolchain under concurrent native CI, and report process timeout/signal failures explicitly.
+
 - Review setup stays open until asynchronous launch succeeds, preserves configuration on denial or failure, displays errors in the sheet, and prevents duplicate launches while consent is pending.
 
 - Keep scripting tab creation and Dashboard agent/review launches off the main thread so approval sheets remain available and responsive.
 
 ### Maintenance
+
+- Affected-file relay and issue-worker quality gates install their locked Node dependencies before validation, so fresh CI checkouts do not depend on previously installed local tools. Failed installation or package checks still fail the gate.
 
 - Update terminal, Markdown and CLI Rust dependencies together, regenerate their compatible lockfile and preserve integer terminal exit status across the Alacritty API change.
 
