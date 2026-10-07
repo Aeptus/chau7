@@ -50,7 +50,9 @@ final class TerminalControlServiceTests: XCTestCase {
         var resolve: ((MCPApprovalResult) -> Void)?
         service.tabApprovalPresenter = { _, completion in
             XCTAssertTrue(Thread.isMainThread)
-            resolve = completion; presented.fulfill(); return true
+            resolve = completion
+            presented.fulfill()
+            return true
         }
         let request = Task.detached { ControlPlaneService.shared.call(name: "tab_request_control", arguments: ["tab_id": tabID]) }
         await fulfillment(of: [presented], timeout: 2)
@@ -71,7 +73,9 @@ final class TerminalControlServiceTests: XCTestCase {
         let presented = expectation(description: "Consent presented")
         var resolve: ((MCPApprovalResult) -> Void)?
         service.tabApprovalPresenter = { _, completion in
-            resolve = completion; presented.fulfill(); return true
+            resolve = completion
+            presented.fulfill()
+            return true
         }
         let request = Task.detached { service.requestMCPControl(tabID: tabID) }
         await fulfillment(of: [presented], timeout: 2)
@@ -86,12 +90,14 @@ final class TerminalControlServiceTests: XCTestCase {
 
     func testAdoptionConsentExpiresClosedAndRejectsLateDecision() async throws {
         let service = TerminalControlService.shared
-        let tabID = service.controlPlaneTabID(for: try XCTUnwrap(overlayModel.tabs.first).id)
+        let tabID = try service.controlPlaneTabID(for: XCTUnwrap(overlayModel.tabs.first).id)
         service.tabApprovalTimeout = 0.05
         let presented = expectation(description: "Consent presented")
         var resolve: ((MCPApprovalResult) -> Void)?
         service.tabApprovalPresenter = { _, completion in
-            resolve = completion; presented.fulfill(); return true
+            resolve = completion
+            presented.fulfill()
+            return true
         }
         let request = Task.detached { service.requestMCPControl(tabID: tabID) }
         await fulfillment(of: [presented], timeout: 2)
@@ -104,11 +110,13 @@ final class TerminalControlServiceTests: XCTestCase {
 
     func testAdoptionConsentCannotGrantAnUnregisteredTab() async throws {
         let service = TerminalControlService.shared
-        let tabID = service.controlPlaneTabID(for: try XCTUnwrap(overlayModel.tabs.first).id)
+        let tabID = try service.controlPlaneTabID(for: XCTUnwrap(overlayModel.tabs.first).id)
         let presented = expectation(description: "Consent presented")
         var resolve: ((MCPApprovalResult) -> Void)?
         service.tabApprovalPresenter = { _, completion in
-            resolve = completion; presented.fulfill(); return true
+            resolve = completion
+            presented.fulfill()
+            return true
         }
         let request = Task.detached { service.requestMCPControl(tabID: tabID) }
         await fulfillment(of: [presented], timeout: 2)
@@ -125,11 +133,13 @@ final class TerminalControlServiceTests: XCTestCase {
         let originalLimit = FeatureSettings.shared.mcpMaxTabs
         defer { FeatureSettings.shared.mcpMaxTabs = originalLimit }
         FeatureSettings.shared.mcpMaxTabs = 1
-        let tabID = service.controlPlaneTabID(for: try XCTUnwrap(overlayModel.tabs.first).id)
+        let tabID = try service.controlPlaneTabID(for: XCTUnwrap(overlayModel.tabs.first).id)
         let presented = expectation(description: "Consent presented")
         var resolve: ((MCPApprovalResult) -> Void)?
         service.tabApprovalPresenter = { _, completion in
-            resolve = completion; presented.fulfill(); return true
+            resolve = completion
+            presented.fulfill()
+            return true
         }
         let request = Task.detached { service.requestMCPControl(tabID: tabID) }
         await fulfillment(of: [presented], timeout: 2)
@@ -149,7 +159,9 @@ final class TerminalControlServiceTests: XCTestCase {
         let presented = expectation(description: "Creation consent presented")
         var resolve: ((MCPApprovalResult) -> Void)?
         service.tabApprovalPresenter = { _, completion in
-            resolve = completion; presented.fulfill(); return true
+            resolve = completion
+            presented.fulfill()
+            return true
         }
         let request = Task.detached {
             ControlPlaneService.shared.call(name: "tab_create", arguments: ["window_id": windowID])
@@ -171,7 +183,9 @@ final class TerminalControlServiceTests: XCTestCase {
         let presented = expectation(description: "Creation consent presented")
         var resolve: ((MCPApprovalResult) -> Void)?
         service.tabApprovalPresenter = { _, completion in
-            resolve = completion; presented.fulfill(); return true
+            resolve = completion
+            presented.fulfill()
+            return true
         }
         let request = Task.detached { service.createTab(directory: nil, windowID: windowID) }
         await fulfillment(of: [presented], timeout: 2)
@@ -185,8 +199,10 @@ final class TerminalControlServiceTests: XCTestCase {
 
     func testMainThreadConsentFailsClosedWithoutShowingModal() throws {
         let service = TerminalControlService.shared
-        let tabID = service.controlPlaneTabID(for: try XCTUnwrap(overlayModel.tabs.first).id)
-        service.tabApprovalPresenter = { _, _ in XCTFail("Cannot wait on main for consent"); return true }
+        let tabID = try service.controlPlaneTabID(for: XCTUnwrap(overlayModel.tabs.first).id)
+        service.tabApprovalPresenter = { _, _ in XCTFail("Cannot wait on main for consent")
+            return true
+        }
         XCTAssertEqual(parseJSONObject(service.requestMCPControl(tabID: tabID))?["error"] as? String, "Tab control denied by user.")
     }
 

@@ -1081,7 +1081,7 @@ final class TerminalControlService {
         for index in 0 ..< clampedCount {
             // 1. Open the tab.
             guard let tabID = decodeJSONObject(
-                self.createTab(directory: directory, windowID: windowID, context: "agent_launch")
+                createTab(directory: directory, windowID: windowID, context: "agent_launch")
             )?["tab_id"] as? String else {
                 agents.append([
                     "index": index, "status": "failed", "stage": "create",
