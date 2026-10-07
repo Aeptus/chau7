@@ -7,15 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Updated the relay and issue-intake Workers dependency groups together, including Wrangler 4.145.0 and matching Worker types. Both tooling graphs pin sharp 0.35.5 to remove the newly reported librsvg vulnerability without downgrading Wrangler.
+
+### Fixed
+
 - Remote pairing repair for an already persisted peer no longer depends on a new state write or changes its trusted metadata.
-
-### Fixed
-
 - New remote pairing trust and session readiness are adopted only after the paired identity is durably saved. A wrapping or file-write failure preserves trusted state and reports pairing failure instead of authorizing an unsaved phone.
-
-### Fixed
-
 - Remote identity storage fails closed on unavailable machine identity or invalid wrapped keys, preserving the state file and explaining recovery instead of silently replacing identity or saving keys in plaintext.
+- Queued parent-directory events preserve the recovered target watch, preventing unnecessary source replacement and observation gaps. File observation also includes size-change events for in-place appends; recovery remains bounded without restoring idle polling.
 
 - Short main-thread freezes now trigger diagnostic sampling after two seconds, with a 60-second cooldown preserved across watchdog replacements. History adoption logs identify changed fields, and history/routing timings attribute slow UI work.
 - Repeated identical terminal state and AI identity updates skip unnecessary callbacks and routing invalidation; history adoption batches observer callbacks without delaying ordinary lifecycle changes.
