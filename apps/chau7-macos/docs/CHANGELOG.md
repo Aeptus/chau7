@@ -9,13 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Quality-runner Swift manifest checks use temporary scratch directories so concurrent native builds cannot hold their package lock and exhaust the manifest timeout. The real Core and full-app graphs remain validated.
 
+- Tab and bulk-close confirmations use asynchronous, main-owned sheets with a five-minute expiry. Late or stale decisions fail closed; new tabs created while a bulk decision is pending survive, and warning suppression only changes after approval.
+
 - Published a dated, deduplicated Swift concurrency diagnostic inventory and component ownership plan; historical counts remain labeled and warning promotion stays gated on resolved boundaries.
+
+- Remote grid scheduling, one-job/latest-pending admission and delivery epochs now have one main-owned coordinator. The existing worker, owned-byte capture boundary and wire format are preserved.
 
 ### Changed
 
 - Updated the relay and issue-intake Workers dependency groups together, including Wrangler 4.145.0 and matching Worker types. Both tooling graphs pin sharp 0.35.5 to remove the newly reported librsvg vulnerability without downgrading Wrangler.
 
 ### Fixed
+
+- Session notes no longer recreate deleted repository/worktree roots. Preparation and restoration require an existing Git root, create descendants relative to its open directory, reject symlink escapes and report unavailable notes on failure while preserving existing contents. Focus precedence prevents an unavailable repository from redirecting notes into another split; symlinked Git markers remain supported.
 
 - Queued parent-directory events preserve the recovered target watch, preventing unnecessary source replacement and observation gaps. File observation also includes size-change events for in-place appends; recovery remains bounded without restoring idle polling.
 - Both Go modules now run race-enabled tests and an uncached, pinned govulncheck audit during PR/pre-push validation. Security/context/body-ownership linters are enabled; relay I/O inherits shutdown cancellation, wire lengths are checked before conversion, and proxy diagnostic output escapes injected control characters. Swift advisory coverage and reviewed trust-boundary exclusions are documented explicitly.
