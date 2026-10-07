@@ -15,6 +15,14 @@ public enum SessionNoteFileStore {
         return true
     }
 
+    /// Select by focus precedence before checking availability. A stale focused
+    /// root must not redirect a note into another split's repository.
+    public static func repositoryRoot(from candidates: [String?]) -> String? {
+        guard let selected = candidates.compactMap({ $0?.trimmingCharacters(in: .whitespacesAndNewlines) })
+            .first(where: { !$0.isEmpty }), isRepositoryRoot(selected) else { return nil }
+        return URL(fileURLWithPath: selected).standardized.path
+    }
+
     public static func prepare(repoRoot: String, tabID: UUID) -> String? {
         prepare(repoRoot: repoRoot, tabID: tabID, beforeCreatingDirectories: {})
     }
@@ -115,7 +123,7 @@ public enum SessionNoteFileStore {
 
     private static func hasGitMarker(_ root: Int32) -> Bool {
         var marker = stat()
-        guard fstatat(root, ".git", &marker, AT_SYMLINK_NOFOLLOW) == 0 else { return false }
+        guard fstatat(root, ".git", &marker, 0) == 0 else { return false }
         let kind = marker.st_mode & mode_t(S_IFMT)
         return kind == mode_t(S_IFDIR) || kind == mode_t(S_IFREG)
     }

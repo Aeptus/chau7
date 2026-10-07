@@ -127,6 +127,33 @@ final class SessionNoteFileStoreTests: XCTestCase {
         XCTAssertNil(SessionNoteFileStore.existing(repoRoot: root.path, tabID: tab))
     }
 
+    func testUnavailableFocusedRootDoesNotFallBackToAnotherRepository() throws {
+        let focused = try makeRepository()
+        let primary = try makeRepository()
+        defer { try? FileManager.default.removeItem(at: primary) }
+        try FileManager.default.removeItem(at: focused)
+        XCTAssertNil(SessionNoteFileStore.repositoryRoot(from: [focused.path, primary.path]))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: primary.appendingPathComponent(".chau7").path))
+    }
+
+    func testMissingFocusedRootUsesNextKnownCandidate() throws {
+        let root = try makeRepository()
+        defer { try? FileManager.default.removeItem(at: root) }
+        XCTAssertEqual(SessionNoteFileStore.repositoryRoot(from: [nil, "  ", root.path]), root.standardized.path)
+    }
+
+    func testSymlinkedGitMarkerIsAcceptedButBrokenMarkerIsUnavailable() throws {
+        let root = try makeRepository()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let marker = root.appendingPathComponent(".git")
+        let target = root.appendingPathComponent("git-metadata")
+        try FileManager.default.moveItem(at: marker, to: target)
+        try FileManager.default.createSymbolicLink(at: marker, withDestinationURL: target)
+        XCTAssertNotNil(SessionNoteFileStore.prepare(repoRoot: root.path, tabID: UUID()))
+        try FileManager.default.removeItem(at: target)
+        XCTAssertNil(SessionNoteFileStore.prepare(repoRoot: root.path, tabID: UUID()))
+    }
+
     private func makeRepository(worktree: Bool = false) throws -> URL {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("note-store-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: false)
