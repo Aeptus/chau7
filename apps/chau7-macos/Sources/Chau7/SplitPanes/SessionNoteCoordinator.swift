@@ -24,21 +24,13 @@ struct SessionNoteCoordinator {
     /// Returns the note path only when the file is already on disk. Used
     /// by restore-on-relaunch to decide whether to reopen an editor pane.
     var existingNotePath: String? {
-        let path = attachedNotePath
-        return FileManager.default.fileExists(atPath: path) ? path : nil
+        SessionNoteFileStore.existing(repoRoot: repoRoot, tabID: tabID)
     }
 
-    /// Ensures the parent directory and a (possibly empty) note file exist
-    /// on disk so an editor can load against a real path. Idempotent — the
-    /// directory and file are only created when missing.
+    /// Prepares a note only below a still-existing repository. Missing roots,
+    /// symlink escapes and failed creation report an unavailable note.
     @discardableResult
-    func prepareNoteFile() -> String {
-        let path = attachedNotePath
-        let url = URL(fileURLWithPath: path)
-        FileOperations.createDirectory(at: url.deletingLastPathComponent())
-        if !FileManager.default.fileExists(atPath: url.path) {
-            _ = FileOperations.writeString("", to: url.path)
-        }
-        return path
+    func prepareNoteFile() -> String? {
+        SessionNoteFileStore.prepare(repoRoot: repoRoot, tabID: tabID)
     }
 }

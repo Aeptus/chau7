@@ -21,6 +21,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Session notes no longer recreate deleted repository/worktree roots. Preparation and restoration require an existing Git root, create descendants relative to its open directory, reject symlink escapes and report unavailable notes on failure while preserving existing contents. Focus precedence prevents an unavailable repository from redirecting notes into another split; symlinked Git markers remain supported.
+
 - Queued parent-directory events preserve the recovered target watch, preventing unnecessary source replacement and observation gaps. File observation also includes size-change events for in-place appends; recovery remains bounded without restoring idle polling.
 
 ### Fixed
