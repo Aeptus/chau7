@@ -1346,13 +1346,7 @@ final class SplitPaneController {
             presentationSession,
             primarySession
         ]
-        for session in candidateSessions.compactMap({ $0 }) {
-            if let root = session.displayGitRootPath?.trimmingCharacters(in: .whitespacesAndNewlines),
-               !root.isEmpty {
-                return URL(fileURLWithPath: root).standardized.path
-            }
-        }
-        return nil
+        return SessionNoteFileStore.repositoryRoot(from: candidateSessions.map { $0?.displayGitRootPath })
     }
 
     private func resolvedTextEditorFilePath(_ filePath: String?) -> String? {
