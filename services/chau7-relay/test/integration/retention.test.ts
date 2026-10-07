@@ -88,15 +88,21 @@ it('runs idle cleanup and retains the next live registration alarm', async () =>
 
 it('preserves replay entries through their final accepted second', async () => {
   const device = crypto.randomUUID();
-  await runInDurableObject(stub(device), async (_, state) => {
-    const finalSecond = Date.now() - 500;
-    await state.storage.put('seen_nonces', { retained: finalSecond, expired: Date.now() - 2000 });
-    await state.storage.setAlarm(Date.now() + 60_000);
-  });
-  await runDurableObjectAlarm(stub(device));
-  await runInDurableObject(stub(device), async (_, state) => {
-    expect(Object.keys((await state.storage.get('seen_nonces')) as object)).toEqual(['retained']);
-    expect(await state.storage.getAlarm()).toBeGreaterThan(Date.now());
+  await runInDurableObject(stub(device), async (instance, state) => {
+    const now = Date.now();
+    const originalNow = Date.now;
+    Date.now = () => now;
+    try {
+      await state.storage.put('seen_nonces', { retained: now - 500, expired: now - 2000 });
+      // Pin the verification boundary while executing the real cleanup handler;
+      // slow storage or CI scheduling must not consume the remaining 500 ms.
+      if (!instance.alarm) throw new Error('Expected SessionDO alarm handler');
+      await instance.alarm();
+      expect(Object.keys((await state.storage.get('seen_nonces')) as object)).toEqual(['retained']);
+      expect(await state.storage.getAlarm()).toBe(now + 500);
+    } finally {
+      Date.now = originalNow;
+    }
   });
 });
 
