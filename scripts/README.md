@@ -85,3 +85,9 @@ Developer setup uses the pinned [mise.toml](../mise.toml) baseline; see
 `prepare` in repository clones/worktrees. `pnpm setup:check` verifies tools and
 hooks without compiling or launching the app. `pnpm test` runs the Node and both
 Python suites; `pnpm test:node` is the narrower Node-only command.
+
+PR CI keeps the checked-out snapshot in the index and temporarily moves only
+HEAD to the PR base before running the ordinary staged gates. This makes the
+changed-file selection and indexed docs checks inspect the actual PR. CI verifies
+that gates preserve the original snapshot and restores HEAD even on failure.
+This sequence runs only in the disposable GitHub checkout.

@@ -11,7 +11,7 @@ import (
 // PricingTableVersion records when the built-in pricing table was last updated.
 // If you see fallback warnings in logs, consider updating this table or adding
 // overrides to ~/.chau7/pricing.json.
-const PricingTableVersion = "2026-04-07"
+const PricingTableVersion = "2026-10-03-accounting-v2"
 
 // ModelPricing contains the pricing information for a model
 type ModelPricing struct {
@@ -232,9 +232,20 @@ func CalculateCostForCall(provider Provider, model string, inputTokens, outputTo
 // CalculateFullCostForCall computes the cost including cache and reasoning tokens
 func CalculateFullCostForCall(provider Provider, model string, meta ResponseMetadata) float64 {
 	pricing := GetPricing(provider, model)
+	input, output := meta.InputTokens, meta.OutputTokens
+	// OpenAI/Gemini cached counters are subsets of total prompt tokens.
+	// OpenAI reasoning is a subset of output; Gemini thoughts are separate.
+	// https://developers.openai.com/api/docs/guides/prompt-caching
+	// https://ai.google.dev/api/generate-content#UsageMetadata
+	if provider == ProviderOpenAI || provider == ProviderGemini {
+		input = max(0, input-max(0, meta.CacheReadInputTokens))
+	}
+	if provider == ProviderOpenAI {
+		output = max(0, output-max(0, meta.ReasoningOutputTokens))
+	}
 	return pricing.CalculateFullCost(
-		meta.InputTokens,
-		meta.OutputTokens,
+		input,
+		output,
 		meta.CacheCreationInputTokens,
 		meta.CacheReadInputTokens,
 		meta.ReasoningOutputTokens,

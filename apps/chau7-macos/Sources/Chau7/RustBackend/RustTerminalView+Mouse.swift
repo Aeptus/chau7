@@ -39,9 +39,14 @@ extension RustTerminalView {
         return false
     }
 
+    /// Includes full-screen TUIs that are not recognized AI tools.
+    var hostsLiveTerminalUI: Bool {
+        hostsTUIApp || (rustTerminal?.isAlternateScreenActive() ?? false)
+    }
+
     /// Get selected text (alias for protocol conformance)
     func getSelectedText() -> String? {
-        getSelection()
+        getSelection().map { TerminalClipboard.copiedText($0, fromTUI: hostsLiveTerminalUI) }
     }
 
     // MARK: - Auto-Scroll During Selection
@@ -507,8 +512,7 @@ extension RustTerminalView {
             let noActiveSelection = !hasSelection
             let clickEnabled = FeatureSettings.shared.isClickToPositionEnabled
 
-            let shellReady = isAtPrompt?() ?? false
-            if isSingleClick, noModifiers, noActiveSelection, clickEnabled, shellReady {
+            if isSingleClick, noModifiers, noActiveSelection, clickEnabled {
                 if handleClickToPosition(at: clickLocation) {
                     Log.trace("RustTerminalView[\(viewId)]: Click-to-position handled")
                     return event
@@ -765,33 +769,51 @@ extension RustTerminalView {
 
     func handleClickToPosition(at point: NSPoint) -> Bool {
         guard let rust = rustTerminal else { return false }
-        guard bounds.height > 0, bounds.width > 0 else { return false }
-        guard cols > 0, rows > 0 else { return false }
+        guard bounds.height > 0, bounds.width > 0, bounds.contains(point) else { return false }
+        guard cols > 0, rows > 0, rust.displayOffset == 0 else { return false }
 
-        // Use the shared render geometry, not raw bounds, so terminal inset
-        // and fractional row/column remainders match the renderer.
         let cell = pointToCell(point)
-        let clickedRow = Int(cell.row)
-        let clickedCol = Int(cell.col)
         let cursor = rust.cursorPosition
-        let rowDiff = clickedRow - Int(cursor.row)
-        let colDiff = clickedCol - Int(cursor.col)
-
-        // Limit vertical movement to nearby rows (within 5) to avoid jumping
-        // deep into scrollback when the user intended to select text.
-        guard abs(rowDiff) <= 5 else { return false }
-
-        var sequences = ""
-        if rowDiff > 0 { sequences += String(repeating: "\u{1b}[B", count: rowDiff) }
-        else if rowDiff < 0 { sequences += String(repeating: "\u{1b}[A", count: -rowDiff) }
-        if colDiff > 0 { sequences += String(repeating: "\u{1b}[C", count: colDiff) }
-        else if colDiff < 0 { sequences += String(repeating: "\u{1b}[D", count: -colDiff) }
-        if !sequences.isEmpty {
-            send(txt: sequences)
-            Log.trace("RustTerminalView[\(viewId)]: Click-to-position - moved cursor by row=\(rowDiff), col=\(colDiff)")
-            return true
+        let clickedLine = rust.getLogicalLineHit(row: Int(cell.row), column: Int(cell.col))
+        let cursorLine = rust.getLogicalLineHit(row: Int(cursor.row), column: Int(cursor.col))
+        let sameLine: Bool
+        let characterDelta: Int
+        if let clickedLine, let cursorLine {
+            sameLine = clickedLine.startRow == cursorLine.startRow && clickedLine.text == cursorLine.text
+            guard let delta = TerminalCursorInputPolicy.characterDelta(
+                in: cursorLine.text,
+                fromUTF16: cursorLine.clickedUTF16Offset,
+                toUTF16: clickedLine.clickedUTF16Offset
+            ) else { return false }
+            characterDelta = delta
+        } else {
+            // Older backends cannot identify soft wraps. Restrict their
+            // fallback to the cursor's physical row instead of sending
+            // Up/Down into history from an unrelated output row.
+            sameLine = cell.row == Int32(cursor.row)
+            characterDelta = Int(cell.col) - Int(cursor.col)
         }
-        return false
+        guard TerminalCursorInputPolicy.permitsClick(
+            isAtPrompt: isAtPrompt?() ?? false,
+            hostsTUIApp: hostsLiveTerminalUI,
+            isOnCursorLine: sameLine,
+            displayOffset: rust.displayOffset
+        ) else { return false }
+
+        return sendCursorMovement(rowDiff: 0, colDiff: characterDelta)
+    }
+
+    /// Cursor-key encoding must follow DECCKM for mouse positioning too.
+    private func sendCursorMovement(rowDiff: Int, colDiff: Int) -> Bool {
+        var sequences = ""
+        for (delta, negative, positive) in [(rowDiff, "up", "down"), (colDiff, "left", "right")] where delta != 0 {
+            guard let key = try? TerminalKeyPress(key: delta < 0 ? negative : positive),
+                  let encoded = try? key.encode(applicationCursorMode: applicationCursorMode) else { return false }
+            sequences += String(repeating: String(decoding: encoded.bytes, as: UTF8.self), count: abs(delta))
+        }
+        guard !sequences.isEmpty else { return false }
+        send(txt: sequences)
+        return true
     }
 
     // MARK: - Option+Click Cursor Positioning
@@ -809,17 +831,7 @@ extension RustTerminalView {
         let cursor = rust.cursorPosition
         let rowDiff = clickedRow - Int(cursor.row)
         let colDiff = clickedCol - Int(cursor.col)
-        var sequences = ""
-        if rowDiff > 0 { sequences += String(repeating: "\u{1b}[B", count: rowDiff) }
-        else if rowDiff < 0 { sequences += String(repeating: "\u{1b}[A", count: -rowDiff) }
-        if colDiff > 0 { sequences += String(repeating: "\u{1b}[C", count: colDiff) }
-        else if colDiff < 0 { sequences += String(repeating: "\u{1b}[D", count: -colDiff) }
-        if !sequences.isEmpty {
-            send(txt: sequences)
-            Log.trace("RustTerminalView[\(viewId)]: Option+click - moved cursor by row=\(rowDiff), col=\(colDiff)")
-            return true
-        }
-        return false
+        return sendCursorMovement(rowDiff: rowDiff, colDiff: colDiff)
     }
 
     // MARK: - Path/URL Detection Helpers
