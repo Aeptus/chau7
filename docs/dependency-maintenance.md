@@ -52,6 +52,8 @@ is evidence for the checked source/toolchain and current database; it is not a
 claim that every required but unreachable module is advisory-free. Run with
 `-show verbose` when reviewing an upstream module advisory.
 
+Both Go modules require Go 1.27.1 or newer. CI and release setup read this patched minimum from the remote module manifest; they must not select the unpatched Go 1.26.0 compiler. The live audit covers the standard library of the compiler actually used.
+
 SwiftPM has **no automated vulnerability-advisory scanner in this repository**.
 Shared-pin validation and native builds/tests establish consistency and
 compatibility, not advisory coverage. Swift dependency updates must include a
