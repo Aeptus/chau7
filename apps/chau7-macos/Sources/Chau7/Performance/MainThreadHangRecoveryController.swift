@@ -37,6 +37,11 @@ private struct MainThreadHeartbeat: Codable {
     }
 }
 
+private struct MainThreadHangSampleCooldown: Codable {
+    let parentPID: Int32
+    let sampledAtUptime: TimeInterval
+}
+
 private struct MainThreadHangSampleManifest: Codable {
     let schemaVersion: Int
     let detectedAt: Date
@@ -310,6 +315,15 @@ enum MainThreadHangWatchdogRunner {
         let outputDirectoryURL = URL(fileURLWithPath: command.outputDirectoryPath, isDirectory: true)
         let policy = MainThreadHangMonitorPolicy()
         var state: MainThreadHangMonitorState?
+        let cooldownURL = outputDirectoryURL.appendingPathComponent("last-sample.json")
+        let previousSample = (try? Data(contentsOf: cooldownURL)).flatMap {
+            try? JSONDecoder().decode(MainThreadHangSampleCooldown.self, from: $0)
+        }
+        let lastSampleAt = previousSample.flatMap { record -> TimeInterval? in
+            guard record.parentPID == command.parentPID,
+                  record.sampledAtUptime <= ProcessInfo.processInfo.systemUptime else { return nil }
+            return record.sampledAtUptime
+        }
         var lifetime = MainThreadHangWatchdogLifetime(startedAt: ProcessInfo.processInfo.systemUptime)
 
         while parentIsAlive(command.parentPID) {
@@ -331,7 +345,8 @@ enum MainThreadHangWatchdogRunner {
                 if state == nil {
                     state = MainThreadHangMonitorState(
                         initialProgressToken: heartbeat.progressToken,
-                        now: min(now, heartbeat.observedUptime ?? now)
+                        now: min(now, heartbeat.observedUptime ?? now),
+                        lastSampleAt: lastSampleAt
                     )
                 }
                 guard var currentState = state else {
@@ -346,6 +361,12 @@ enum MainThreadHangWatchdogRunner {
                 state = currentState
                 healthy = observation.phase == .healthy
                 if observation.shouldSample {
+                    // Persist before sampling: the child exits on recovery, but
+                    // the 60-second diagnostic budget must survive its replacement.
+                    let cooldown = MainThreadHangSampleCooldown(parentPID: command.parentPID, sampledAtUptime: now)
+                    if let encoded = try? JSONEncoder().encode(cooldown) {
+                        try? encoded.write(to: cooldownURL, options: .atomic)
+                    }
                     captureSample(
                         parentPID: command.parentPID,
                         staleFor: observation.staleFor,

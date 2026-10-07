@@ -46,6 +46,11 @@ final class TerminalMemoryReclaimer: MemoryReclaimable {
             overrideMB: UserDefaults.standard.object(forKey: "terminal.perTabCacheBudgetMB") as? Int,
             defaultBytes: TerminalMemoryBudgetPolicy.defaultPerTabRegenerableCacheBytes
         )
+        let globalBudget = TerminalMemoryBudgetPolicy.normalizedBudgetBytes(
+            overrideMB: UserDefaults.standard.object(forKey: "terminal.totalCacheBudgetMB") as? Int,
+            defaultBytes: TerminalMemoryBudgetPolicy.defaultGlobalRegenerableCacheBytes
+        )
+        var cacheCandidates: [(session: TerminalSessionModel, view: RustTerminalView?, bytes: Int, protected: Bool)] = []
         var clearedCaches = 0
         var evictedWindows = 0
         var evictedBytes = 0
@@ -55,14 +60,16 @@ final class TerminalMemoryReclaimer: MemoryReclaimable {
             for tab in model.tabs {
                 for (_, session) in tab.splitController.terminalSessions {
                     let view = session.rustTerminalView
-                    let cacheBytes = (session.cachedBufferData?.count ?? 0)
+                    var cacheBytes = (session.cachedBufferData?.count ?? 0)
                         + (view?.cachedBufferLinesEstimatedBytes ?? 0)
                     if TerminalMemoryBudgetPolicy.exceedsBudget(bytes: cacheBytes, budgetBytes: cacheBudget) {
                         session.cachedBufferData = nil
                         view?.cachedBufferLines = nil
                         view?.cachedBufferLinesEstimatedBytes = 0
                         clearedCaches += 1
+                        cacheBytes = 0
                     }
+                    cacheCandidates.append((session, view, cacheBytes, tab.id == model.selectedTabID))
 
                     if let coordinator = session.windowMetalCoordinator,
                        seenCoordinators.insert(ObjectIdentifier(coordinator)).inserted {
@@ -75,6 +82,23 @@ final class TerminalMemoryReclaimer: MemoryReclaimable {
                 }
             }
         }
+
+        let protectedIndices = Set(cacheCandidates.indices.filter { cacheCandidates[$0].protected })
+        let evictions = TerminalMemoryBudgetPolicy.evictionIndices(
+            cacheBytes: cacheCandidates.map(\.bytes), protectedIndices: protectedIndices, budgetBytes: globalBudget
+        )
+        for index in evictions {
+            let entry = cacheCandidates[index]
+            entry.session.cachedBufferData = nil
+            entry.view?.cachedBufferLines = nil
+            entry.view?.cachedBufferLinesEstimatedBytes = 0
+            clearedCaches += 1
+        }
+        PerformanceTelemetryWriter.shared.record(category: "terminal_cache_budget", fields: [
+            "estimated_bytes_before_global_eviction": cacheCandidates.reduce(0) { $0 + $1.bytes },
+            "global_budget_bytes": globalBudget,
+            "cold_caches_evicted": evictions.count
+        ])
 
         guard clearedCaches > 0 || evictedWindows > 0 else { return }
         Log.info(

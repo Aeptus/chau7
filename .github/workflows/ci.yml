@@ -82,9 +82,11 @@ jobs:
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
-          git read-tree "$BASE_SHA"
-          git add -A
+          # The checkout is the PR snapshot. Move only HEAD to its base so
+          # git diff --cached sees that snapshot instead of an empty diff.
+          echo "CHAU7_CI_HEAD=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
           expected_tree="$(git rev-parse 'HEAD^{tree}')"
+          git reset --soft "$BASE_SHA"
           staged_tree="$(git write-tree)"
           if [ "$staged_tree" != "$expected_tree" ]; then
             echo "Staging the pull request diff did not reproduce the checked-out tree." >&2
@@ -98,13 +100,17 @@ jobs:
 
       - name: Verify staged gates did not rewrite the pull request
         run: |
-          expected_tree="$(git rev-parse 'HEAD^{tree}')"
+          expected_tree="$(git rev-parse "${CHAU7_CI_HEAD}^{tree}")"
           staged_tree="$(git write-tree)"
           if [ "$staged_tree" != "$expected_tree" ]; then
             echo "A staged quality gate rewrote the pull request. Commit its formatting changes and rerun CI." >&2
             exit 1
           fi
           git diff --exit-code
+
+      - name: Restore the checked-out commit after staged gates
+        if: always() && env.CHAU7_CI_HEAD != ''
+        run: git reset --soft "$CHAU7_CI_HEAD"
 
       - name: Show quality diagnostics on failure
         if: failure()

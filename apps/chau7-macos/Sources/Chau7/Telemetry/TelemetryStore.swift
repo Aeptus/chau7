@@ -1100,27 +1100,29 @@ final class TelemetryStore: @unchecked Sendable {
     }
 
     /// Aggregate run statistics for a repository.
-    func runStatsForRepo(repoPath: String, providerFilterKey: String? = nil) -> (totalRuns: Int, totalTokens: Int, totalCost: Double, totalTurns: Int, lastRunAt: Date?) {
+    func runStatsForRepo(repoPath: String, providerFilterKey: String? = nil) -> RepositoryRunStatistics {
         queue.sync {
-            guard let db else { return (0, 0, 0, 0, nil) }
+            guard let db else { return RepositoryRunStatistics() }
             let sql = """
                 SELECT provider,
                        COUNT(*) as cnt,
-                       COALESCE(SUM(total_input_tokens + total_cached_input_tokens + total_output_tokens + total_reasoning_output_tokens), 0) as tokens,
+                       COALESCE(SUM(COALESCE(total_input_tokens, 0) + COALESCE(total_cached_input_tokens, 0) + COALESCE(total_output_tokens, 0) + COALESCE(total_reasoning_output_tokens, 0)), 0) as tokens,
                        COALESCE(SUM(cost_usd), 0) as cost,
                        COALESCE(SUM(turn_count), 0) as turns,
-                       MAX(started_at) as last_run
+                       MAX(started_at) as last_run,
+                       COALESCE(SUM(CASE WHEN token_usage_source = 'proxy' THEN cost_usd ELSE 0 END), 0) as attributed_proxy_cost
                 FROM runs WHERE repo_path = ?
                 GROUP BY provider
             """
             var stmt: OpaquePointer?
-            guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return (0, 0, 0, 0, nil) }
+            guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return RepositoryRunStatistics() }
             defer { sqlite3_finalize(stmt) }
             bindText(stmt, 1, repoPath)
 
             var totalRuns = 0
             var totalTokens = 0
             var totalCost = 0.0
+            var attributedProxyCost = 0.0
             var totalTurns = 0
             var lastRunAt: Date?
 
@@ -1131,6 +1133,7 @@ final class TelemetryStore: @unchecked Sendable {
                 totalRuns += Int(sqlite3_column_int(stmt, 1))
                 totalTokens += Int(sqlite3_column_int64(stmt, 2))
                 totalCost += sqlite3_column_double(stmt, 3)
+                attributedProxyCost += sqlite3_column_double(stmt, 6)
                 totalTurns += Int(sqlite3_column_int(stmt, 4))
                 if sqlite3_column_type(stmt, 5) != SQLITE_NULL,
                    let text = sqlite3_column_text(stmt, 5),
@@ -1140,7 +1143,7 @@ final class TelemetryStore: @unchecked Sendable {
                 }
             }
 
-            return (totalRuns, totalTokens, totalCost, totalTurns, lastRunAt)
+            return RepositoryRunStatistics(totalRuns: totalRuns, totalTokens: totalTokens, totalCost: totalCost, totalTurns: totalTurns, lastRunAt: lastRunAt, attributedProxyCost: attributedProxyCost)
         }
     }
 
