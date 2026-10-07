@@ -529,3 +529,32 @@ test("iOS tests cover simulator preparation and shared CI configuration changes"
   assert.equal(ios.applies({ changedFiles: ["services/chau7-remote/go.mod"] }), false);
   assert.ok(ios.inputs.includes("scripts/quality/ios-simulator.mjs"));
 });
+
+for (const id of ["go-proxy-static-tests", "go-remote-static-tests"]) {
+  test(`${id} executes the race detector`, async () => {
+    const calls = [];
+    const result = await gate(id).run({ changedFiles: [], exec: async (command, args, options) => {
+      calls.push({ command, args, options });
+      return { status: "passed", output: "" };
+    }});
+    assert.equal(result.status, "passed");
+    assert.ok(calls.some(({command, args}) => command === "go" && args.join(" ") === "test -race ./..."));
+  });
+}
+
+test("Go audit visits both modules live and fails closed on scanner errors", async () => {
+  const audit = gate("go-dependency-audit");
+  assert.equal(audit.cacheable, false);
+  assert.ok(audit.modes.includes("prepush"));
+  assert.ok(audit.modes.includes("prepush-full"));
+  const calls = [];
+  const context = {exec: async (command,args,options) => { calls.push({command,args,options});return {status:"passed"}; }};
+  assert.equal((await audit.run(context)).status,"passed");
+  assert.deepEqual(calls.map(x=>x.options.cwd),["apps/chau7-macos/chau7-proxy","services/chau7-remote"]);
+  assert.ok(calls.every(x=>x.command === "go" && x.args.includes("golang.org/x/vuln/cmd/govulncheck@v1.8.0")));
+  for (const cwd of calls.map(x=>x.options.cwd)) {
+    const result = await audit.run({exec: async (_,__,options) => options.cwd === cwd ? {status:"failed",summary:"database unavailable"} : {status:"passed"}});
+    assert.equal(result.status,"failed");
+    assert.match(result.summary,/cannot be skipped/);
+  }
+});

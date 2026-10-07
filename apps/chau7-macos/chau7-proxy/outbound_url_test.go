@@ -23,7 +23,7 @@ func TestNormalizeServiceBaseURL(t *testing.T) {
 		{name: "reject non-loopback http", input: "http://example.com", wantErr: true},
 		{name: "reject non-loopback ip", input: "https://10.0.0.5", wantErr: true},
 		{name: "reject query", input: "https://api.example.com?x=1", wantErr: true},
-		{name: "reject userinfo", input: "https://user:pass@example.com", wantErr: true},
+		{name: "reject userinfo", input: "https://user:pass@example.com", wantErr: true}, // #nosec G101 -- deliberately rejected placeholder credentials
 	}
 
 	for _, tc := range tests {

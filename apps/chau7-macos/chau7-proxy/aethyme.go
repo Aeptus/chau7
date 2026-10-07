@@ -254,7 +254,7 @@ func (c *AethymeClient) ListContextPacks(repoID string) ([]*ContextPack, error) 
 
 // doRequest performs an HTTP request with authentication
 func (c *AethymeClient) doRequest(method, url string) (*http.Response, error) {
-	req, err := http.NewRequest(method, url, nil)
+	req, err := http.NewRequest(method, url, nil) // #nosec G704 -- URL is built from the normalized configured service base; newRestrictedHTTPClient checks DNS, dial addresses and redirects
 	if err != nil {
 		return nil, err
 	}
@@ -264,7 +264,7 @@ func (c *AethymeClient) doRequest(method, url string) (*http.Response, error) {
 		req.Header.Set("Authorization", "Bearer "+c.apiKey)
 	}
 
-	return c.httpClient.Do(req)
+	return c.httpClient.Do(req) // #nosec G704 -- restricted client rejects private/reserved resolved addresses and unsafe redirects
 }
 
 // Health checks if the Aethyme service is available

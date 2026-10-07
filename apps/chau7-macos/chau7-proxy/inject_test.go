@@ -14,7 +14,7 @@ func writeRulesFile(t *testing.T, dir string, rules []InjectionRule) string {
 	if err != nil {
 		t.Fatalf("marshal rules: %v", err)
 	}
-	if err := os.WriteFile(path, data, 0644); err != nil {
+	if err := os.WriteFile(path, data, 0600); err != nil {
 		t.Fatalf("write rules file: %v", err)
 	}
 	return path
@@ -90,11 +90,11 @@ func TestInjectContent_RepoLocalRule(t *testing.T) {
 	// Set up a fake repo with .chau7/injection.json
 	repoDir := t.TempDir()
 	chau7Dir := filepath.Join(repoDir, ".chau7")
-	if err := os.MkdirAll(chau7Dir, 0755); err != nil {
+	if err := os.MkdirAll(chau7Dir, 0700); err != nil {
 		t.Fatal(err)
 	}
 	ruleData := []byte(`{"content":"REPO LOCAL","position":"prepend"}`)
-	if err := os.WriteFile(filepath.Join(chau7Dir, "injection.json"), ruleData, 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(chau7Dir, "injection.json"), ruleData, 0600); err != nil {
 		t.Fatal(err)
 	}
 

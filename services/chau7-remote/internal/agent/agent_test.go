@@ -3,6 +3,7 @@ package agent
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -208,7 +209,7 @@ func TestHandlePairRequestChangesPeerAndWaitsForFreshIOSHello(t *testing.T) {
 		t.Fatalf("marshal pair request: %v", err)
 	}
 
-	a.handlePairRequest(payload)
+	a.handlePairRequest(context.Background(), payload)
 
 	if a.crypto != nil {
 		t.Fatal("expected stale session crypto to be cleared before repair handshake")
@@ -260,7 +261,7 @@ func TestPairRequestAloneNeverPersistsIdentity(t *testing.T) {
 	if err != nil {
 		t.Fatalf("marshal pair request: %v", err)
 	}
-	a.handlePairRequest(payload)
+	a.handlePairRequest(context.Background(), payload)
 
 	if a.state.FindPairedDeviceByPublicKey(iosPub) != nil {
 		t.Fatal("identity was persisted from an unproven pair request")
@@ -328,7 +329,7 @@ func TestHandleHelloRekeysStaleSessionForFreshIOSNonce(t *testing.T) {
 		t.Fatalf("marshal hello: %v", err)
 	}
 
-	a.handleHello(payload)
+	a.handleHello(context.Background(), payload)
 
 	if bytes.Equal(oldNonce, a.iosNonce) || !bytes.Equal(a.iosNonce, newNonce) {
 		t.Fatal("fresh iOS HELLO must replace the stale client nonce")
@@ -361,7 +362,7 @@ func TestHandleHelloIsIdempotentForSameIOSNonce(t *testing.T) {
 		t.Fatalf("marshal hello: %v", err)
 	}
 
-	a.handleHello(payload)
+	a.handleHello(context.Background(), payload)
 
 	if a.crypto != originalCrypto {
 		t.Fatal("duplicate HELLO must retain the active crypto instance")
@@ -387,7 +388,7 @@ func TestHandleHelloCannotDisplaceTrustedPeerWithUnknownIdentity(t *testing.T) {
 		t.Fatalf("marshal hello: %v", err)
 	}
 
-	a.handleHello(payload)
+	a.handleHello(context.Background(), payload)
 
 	if a.crypto != originalCrypto || !bytes.Equal(a.iosNonce, iosNonce) {
 		t.Fatal("an unknown identity must not invalidate the trusted peer epoch")
@@ -402,7 +403,7 @@ func TestSessionReadyRequiresEncryptedIOSConfirmation(t *testing.T) {
 		t.Fatalf("marshal session ready: %v", err)
 	}
 
-	a.handleRelayFrame(&protocol.Frame{
+	a.handleRelayFrame(context.Background(), &protocol.Frame{
 		Version: 1,
 		Type:    protocol.TypeSessionReady,
 		Seq:     1,
@@ -423,7 +424,7 @@ func TestSessionReadyRequiresEncryptedIOSConfirmation(t *testing.T) {
 		Seq:     2,
 		Payload: payload,
 	}, iosCrypto)
-	a.handleRelayFrame(encrypted)
+	a.handleRelayFrame(context.Background(), encrypted)
 	if !a.sessionReady {
 		t.Fatal("encrypted iOS SESSION_READY must confirm the crypto epoch")
 	}
@@ -600,7 +601,11 @@ func TestAgentEncryptRelayFrameUsesAgentOwnedSequence(t *testing.T) {
 	}
 
 	for _, encrypted := range []*protocol.Frame{first, second} {
-		header := encrypted.HeaderBytes(uint32(len(encrypted.Payload)))
+		payloadLength, lengthErr := protocol.PayloadLength(len(encrypted.Payload), 0)
+		if lengthErr != nil {
+			t.Fatal(lengthErr)
+		}
+		header := encrypted.HeaderBytes(payloadLength)
 		plaintext, err := crypto.aead.Open(
 			nil,
 			makeNonce(crypto.sendNoncePrefix, encrypted.Seq),
@@ -653,7 +658,11 @@ func TestEncryptRelayFramePreservesPlaintextInput(t *testing.T) {
 	}
 
 	nonce := makeNonce(crypto.sendNoncePrefix, encrypted.Seq)
-	header := encrypted.HeaderBytes(uint32(len(encrypted.Payload)))
+	payloadLength, lengthErr := protocol.PayloadLength(len(encrypted.Payload), 0)
+	if lengthErr != nil {
+		t.Fatal(lengthErr)
+	}
+	header := encrypted.HeaderBytes(payloadLength)
 	decrypted, err := crypto.aead.Open(nil, nonce, encrypted.Payload, header)
 	if err != nil {
 		t.Fatalf("decrypt encrypted frame: %v", err)
@@ -698,7 +707,7 @@ func TestUpdatePendingApprovalSyncsRelayState(t *testing.T) {
 		t.Fatalf("marshal approval payload: %v", err)
 	}
 
-	a.updatePendingApproval(payload)
+	a.updatePendingApproval(context.Background(), payload)
 
 	if len(got.Approvals) != 1 {
 		t.Fatalf("expected 1 approval, got %d", len(got.Approvals))
@@ -741,17 +750,17 @@ func TestFailedPushStaysEligibleForRetry(t *testing.T) {
 		FlaggedCommand: "git push",
 	}
 
-	a.emitApprovalPush(approval)
+	a.emitApprovalPush(context.Background(), approval)
 	if attempts != 1 {
 		t.Fatalf("expected first push attempt, got %d", attempts)
 	}
 	// The failed attempt must not poison the dedup set: a flush retries it.
-	a.emitApprovalPush(approval)
+	a.emitApprovalPush(context.Background(), approval)
 	if attempts != 2 {
 		t.Fatalf("failed push must stay eligible for retry, attempts=%d", attempts)
 	}
 	// Once delivered, further emits dedup.
-	a.emitApprovalPush(approval)
+	a.emitApprovalPush(context.Background(), approval)
 	if attempts != 2 {
 		t.Fatalf("delivered push must dedup, attempts=%d", attempts)
 	}
@@ -789,14 +798,14 @@ func TestStateVersionAdoptsMacSpineSeq(t *testing.T) {
 	if err != nil {
 		t.Fatalf("marshal approval payload: %v", err)
 	}
-	a.updatePendingApproval(payload)
+	a.updatePendingApproval(context.Background(), payload)
 	if got.StateVersion != 4200 {
 		t.Fatalf("state_version should adopt the Mac spine seq, got %d", got.StateVersion)
 	}
 
 	// A seq-less sync (e.g. an iOS-triggered clear) must still move the
 	// version strictly forward.
-	a.clearPendingApproval("req-1")
+	a.clearPendingApproval(context.Background(), "req-1")
 	if got.StateVersion != 4201 {
 		t.Fatalf("seq-less sync must fall back to increment, got %d", got.StateVersion)
 	}
@@ -812,7 +821,7 @@ func TestStateVersionAdoptsMacSpineSeq(t *testing.T) {
 	if err != nil {
 		t.Fatalf("marshal stale payload: %v", err)
 	}
-	a.updatePendingApproval(payload)
+	a.updatePendingApproval(context.Background(), payload)
 	if got.StateVersion != 4202 {
 		t.Fatalf("stale spine seq must not regress the version, got %d", got.StateVersion)
 	}
@@ -841,7 +850,7 @@ func TestClearPendingApprovalRemovesItFromRelayState(t *testing.T) {
 		pendingPrompts: map[string]RemoteInteractivePrompt{},
 	}
 
-	a.clearPendingApproval("req-1")
+	a.clearPendingApproval(context.Background(), "req-1")
 
 	if len(got.Approvals) != 0 {
 		t.Fatalf("expected cleared approvals, got %d", len(got.Approvals))
