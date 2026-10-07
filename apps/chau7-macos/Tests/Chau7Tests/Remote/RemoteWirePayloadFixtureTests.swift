@@ -74,6 +74,24 @@ final class RemoteWirePayloadFixtureTests: XCTestCase {
         try assertRoundTrip(RemotePendingStatePayload.self, fixture: "pending_state.json")
     }
 
+    func testPendingFixtureSupportsArbitrationAndExactMultiSelectPane() throws {
+        let payload = try JSONDecoder().decode(RemotePendingStatePayload.self, from: fixtureData("pending_state.json"))
+        var reconciler = PendingStateReconciler()
+        XCTAssertTrue(reconciler.admitSnapshot(epoch: payload.sessionEpoch, version: payload.stateVersion))
+        XCTAssertFalse(reconciler.admitSnapshot(epoch: payload.sessionEpoch, version: 41))
+        let prompt = try XCTUnwrap(payload.interactivePrompts.first)
+        let pane = try XCTUnwrap(prompt.paneID)
+        XCTAssertEqual(prompt.isMultiSelect, true)
+        XCTAssertEqual(prompt.detectedAt.timeIntervalSinceReferenceDate, 804_600_000)
+        let toggle = RemotePromptResponse(promptID: prompt.id, paneID: pane, action: .toggle, optionID: "yes")
+        XCTAssertEqual(toggle.responseText(for: prompt, tabID: prompt.tabID, availablePaneIDs: [pane]), "y")
+        XCTAssertNil(toggle.responseText(for: prompt, tabID: prompt.tabID, availablePaneIDs: [UUID()]))
+        let submit = RemotePromptResponse(promptID: prompt.id, paneID: pane, action: .submit)
+        XCTAssertEqual(submit.responseText(for: prompt, tabID: prompt.tabID, availablePaneIDs: [pane]), "\r")
+        XCTAssertEqual(payload.approvals.first?.severity, "destructive")
+        XCTAssertEqual(payload.approvals.first?.spineSeq, 41)
+    }
+
     func testRemoteErrorFixture() throws {
         try assertRoundTrip(RemoteErrorPayload.self, fixture: "remote_error.json")
     }

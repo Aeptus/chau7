@@ -9,11 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Core-only Swift package graph checks retain isolated scratch paths and all graph assertions, allow up to two minutes for a cold toolchain under concurrent native CI, and report process timeout/signal failures explicitly.
+
 - Review setup stays open until asynchronous launch succeeds, preserves configuration on denial or failure, displays errors in the sheet, and prevents duplicate launches while consent is pending.
 
 - Keep scripting tab creation and Dashboard agent/review launches off the main thread so approval sheets remain available and responsive.
 
 ### Maintenance
+
+- Affected-file relay and issue-worker quality gates install their locked Node dependencies before validation, so fresh CI checkouts do not depend on previously installed local tools. Failed installation or package checks still fail the gate.
 
 - Update terminal, Markdown and CLI Rust dependencies together, regenerate their compatible lockfile and preserve integer terminal exit status across the Alacritty API change.
 
@@ -43,6 +47,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - iOS terminal glyphs use UIKit line origins instead of baselines, keeping TUI prompt text inside its background and cursor row in both grid drawing paths. Both canvas paths and the UIKit bitmap tests share the same draw function, covered at four text sizes with regular and bold fonts.
+- iOS terminal output has a visible Select Text action and a frozen native selection view. Grid copying preserves graphemes, indentation, interior blank lines and logical wraps while omitting empty viewport-tail rows; clipboard paste remains editable, including a single newline, while keyboard Return retains the configured send behavior. Hidden cells stay masked, and delayed UIKit paste insertion publishes the editable composer contents without submitting them.
 
 - Remote pairing repair for an already persisted peer no longer depends on a new state write or changes its trusted metadata.
 - New remote pairing trust and session readiness are adopted only after the paired identity is durably saved. A wrapping or file-write failure preserves trusted state and reports pairing failure instead of authorizing an unsaved phone.
@@ -58,6 +63,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Repository stats TTL/dirty-refresh tests now wait for the published snapshot rather than the background loader counter, avoiding a request-order race in the native validation gate.
+
+- Pending relay snapshots preserve session ordering, numeric prompt dates, pane targets, multi-select mode, approval severity and preformatted push text. Malformed ordering metadata is rejected before storage; invalid target fields cannot silently become unscoped prompts.
 
 - Relay replay protection handles property-name nonces safely and fails closed at its live-entry limit; push registrations retain those names. Concurrent APNs provider-token requests share one mint, with real Workers-runtime regressions covering replay, routing, storage, WebSocket replacement, backoff and recovery.
 

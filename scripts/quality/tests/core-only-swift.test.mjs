@@ -15,10 +15,14 @@ function packageGraph(coreOnly, packageRoot = path.join(root, "apps/chau7-macos"
   if (coreOnly) env.CHAU7_CORE_TESTS_ONLY = "1";
   const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "chau7-package-graph-"));
   try {
+    // A fresh Xcode toolchain can compile its first manifest alongside native/iOS CI.
+    // Keep a finite deadline, but allow cold startup without changing any graph assertion.
     const result = spawnSync("swift", ["package", "--package-path", packageRoot, "--scratch-path", scratch, "--manifest-cache", "none", "dump-package"], {
-      env, encoding: "utf8", timeout: 30000,
+      env, encoding: "utf8", timeout: 120000,
     });
-    assert.equal(result.status, 0, result.stderr);
+    const diagnostics = [result.error?.message, result.signal && `signal: ${result.signal}`, result.stderr].filter(Boolean).join("\n");
+    assert.equal(result.error, undefined, diagnostics);
+    assert.equal(result.status, 0, diagnostics);
     return JSON.parse(result.stdout);
   } finally {
     fs.rmSync(scratch, { recursive: true, force: true });

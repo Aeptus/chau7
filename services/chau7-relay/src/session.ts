@@ -15,7 +15,7 @@
  */
 import {
   readJsonBody,
-  sanitizePendingState,
+  validatePendingState,
   validatePushNotify,
   validatePushRegister
 } from './validation.js';
@@ -525,9 +525,12 @@ export class SessionDO {
     if (!parsed.ok) {
       return new Response(parsed.message, { status: parsed.status });
     }
-    const sanitized = sanitizePendingState(parsed.value);
+    const validation = validatePendingState(parsed.value);
+    if (!validation.ok) {
+      return new Response(validation.message, { status: 400 });
+    }
     const nextState: PendingStatePayload = {
-      ...sanitized,
+      ...validation.value,
       updated_at: new Date().toISOString()
     };
     await this.state.storage.transaction(async (storage) => {
