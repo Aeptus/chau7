@@ -497,6 +497,11 @@ export const gates = [
         filesByPackage.get(pkg).push(path.relative(pkg, file).replaceAll(path.sep, "/"));
       }
       for (const [pkg, files] of filesByPackage) {
+        // Full-suite mode can bypass affected-package builds on a fresh runner.
+        if (!packageBin(context, pkg, "prettier")) {
+          const installation = await runLockedNpmChecks(context, pkg, []);
+          if (installation.status !== "passed") return installation;
+        }
         let result = await runPackageBin(context, pkg, "prettier", ["--write", ...files]);
         if (result.status !== "passed") return result;
         await context.exec("git", ["add", "--", ...files.map((file) => path.join(pkg, file).replaceAll(path.sep, "/"))], {

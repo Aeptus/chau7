@@ -11,6 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Relay admission now uses provisioned device/role credentials and v3 key IDs, with bounded rotation and namespace revocation. Remote startup fails closed without an owner-only matching bundle. The secure pairing QR contains only the iOS role credential; displayed/copied device details omit credentials. Identity and paired-device trust survive provisioning and rotation. Legacy pairing metadata can still decode, but requires a newly provisioned v3 QR before connecting; no global-secret fallback is used. Credential readers reject named pipes before waiting for a writer, keeping invalid provisioning paths from blocking startup.
 
+### Maintenance
+
+- Staged Worker formatting installs locked package tools when missing, including fresh full-suite CI runners that bypass affected-file Worker builds. Installation and formatter errors still fail the gate; already installed formatters retain the normal write/check and staged-tree verification.
+
 ### Fixed
 
 - Core-only Swift package graph checks retain isolated scratch paths and all graph assertions, allow up to two minutes for a cold toolchain under concurrent native CI, and report process timeout/signal failures explicitly.

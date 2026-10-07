@@ -613,3 +613,55 @@ for (const [id, cwd, checks] of [
     assert.equal(calls.length, 2);
   });
 }
+
+
+for (const pkg of ["services/chau7-relay", "services/chau7-issues"]) {
+  for (const scenario of ["fresh", "existing", "installation fails", "installation leaves tool missing"]) {
+    test(`staged formatter: ${pkg} ${scenario}`, async () => {
+      const root = fs.mkdtempSync(path.join(os.tmpdir(), "chau7-formatter-bootstrap-"));
+      const bin = path.join(root, pkg, "node_modules", ".bin", "prettier");
+      const install = () => {
+        fs.mkdirSync(path.dirname(bin), { recursive: true });
+        fs.writeFileSync(bin, "fixture tool");
+      };
+      const calls = [];
+      if (scenario === "existing") install();
+      try {
+        const result = await gate("staged-js-format").run({
+          root,
+          stagedFiles: [`${pkg}/src/worker.js`],
+          exec: async (command, args, options) => {
+            calls.push({ command, args, options });
+            if (command === "npm") {
+              assert.deepEqual(args, ["ci", "--no-audit", "--no-fund"]);
+              assert.equal(options.cwd, pkg);
+              if (scenario === "installation fails") return { status: "failed", summary: "locked install failed" };
+              if (scenario === "fresh") install();
+            } else if (command !== "git") {
+              assert.equal(command, bin);
+              assert.ok(fs.existsSync(bin), "formatting must use an installed package tool");
+            }
+            return { status: "passed" };
+          },
+        });
+        if (scenario === "installation fails") {
+          assert.equal(result.status, "failed");
+          assert.equal(result.summary, "locked install failed");
+          assert.deepEqual(calls.map(x => x.command), ["npm"]);
+        } else if (scenario === "installation leaves tool missing") {
+          assert.equal(result.status, "failed");
+          assert.match(result.summary, /prettier is not installed/);
+          assert.deepEqual(calls.map(x => x.command), ["npm"]);
+        } else {
+          assert.equal(result.status, "passed", result.summary);
+          const formatting = calls.filter(x => x.command === bin);
+          assert.deepEqual(formatting.map(x => x.args), [["--write", "src/worker.js"], ["--check", "src/worker.js"]]);
+          assert.ok(calls.some(x => x.command === "git" && x.args[0] === "add"));
+          assert.equal(calls.filter(x => x.command === "npm").length, scenario === "fresh" ? 1 : 0);
+        }
+      } finally {
+        fs.rmSync(root, { recursive: true, force: true });
+      }
+    });
+  }
+}
