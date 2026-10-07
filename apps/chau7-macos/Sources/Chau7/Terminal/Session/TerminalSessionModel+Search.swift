@@ -161,6 +161,21 @@ extension TerminalSessionModel {
         )
     }
 
+    func captureRemoteGridUpdate(since generation: UInt64) -> RemoteGridUpdate? {
+        if let view = activeTerminalView as? RustTerminalView {
+            return view.captureRemoteGridUpdate(since: generation)
+        }
+        guard let payload = activeTerminalView?.captureRemoteGridSnapshotPayload(),
+              let snapshot = try? RemoteTerminalGridSnapshot.decode(from: payload) else { return nil }
+        return RemoteGridUpdate(
+            baseGeneration: 0,
+            generation: 0,
+            fullRefresh: true,
+            rowIndices: Array(0 ..< snapshot.rows),
+            snapshot: snapshot
+        )
+    }
+
     func captureRemoteGridSnapshot() -> Data? {
         activeTerminalView?.captureRemoteGridSnapshotPayload()
     }

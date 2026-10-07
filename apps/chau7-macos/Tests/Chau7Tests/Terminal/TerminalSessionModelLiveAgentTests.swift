@@ -75,6 +75,42 @@ final class TerminalSessionModelLiveAgentTests: XCTestCase {
         XCTAssertNil(session.lastAISessionId)
     }
 
+    func testUnchangedSessionPropertiesDoNotNotifyObservers() {
+        let session = TerminalSessionModel(appModel: AppModel())
+        session.activeAppName = "Claude"
+        var fires = 0
+        session.onSessionStateChanged = { fires += 1 }
+        let title = session.title
+        let directory = session.currentDirectory
+        let status = session.status
+        let atPrompt = session.isAtPrompt
+        for _ in 0 ..< 1000 {
+            session.activeAppName = "Claude"
+            session.title = title
+            session.currentDirectory = directory
+            session.status = status
+            session.isAtPrompt = atPrompt
+        }
+        XCTAssertEqual(fires, 0)
+        session.activeAppName = nil
+        XCTAssertEqual(fires, 1, "real lifecycle changes remain immediate")
+    }
+
+    func testHistoryAdoptionBatchesItsNotificationsAndRepeatedIdentityIsQuiet() throws {
+        let session = TerminalSessionModel(appModel: AppModel())
+        let request = try XCTUnwrap(HistorySessionAdoptionRequest(
+            toolName: "Codex", sessionId: "performance-session", directory: "/tmp",
+            tabID: nil, observedAt: Date(), state: .active, reason: .stateChange
+        ))
+        var fires = 0
+        session.onSessionStateChanged = { fires += 1 }
+        XCTAssertTrue(session.adoptAIHistorySession(request))
+        XCTAssertEqual(fires, 1)
+        fires = 0
+        XCTAssertFalse(session.adoptAIHistorySession(request))
+        XCTAssertEqual(fires, 0)
+    }
+
     // MARK: - isAIRunning (logo opacity contract)
 
     /// Regression: post-b39a863a, output detection is gated on corroboration

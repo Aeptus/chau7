@@ -8,6 +8,14 @@ final class MainThreadHangMonitorTests: XCTestCase {
         sampleCooldown: 60
     )
 
+    func testDefaultPolicySamplesTheObservedShortFreeze() {
+        var state = MainThreadHangMonitorState(initialProgressToken: 1, now: 0)
+        let observation = state.observe(progressToken: 1, now: 2.01)
+        XCTAssertTrue(observation.enteredStall)
+        XCTAssertTrue(observation.shouldSample)
+        XCTAssertEqual(MainThreadHangMonitorPolicy().sampleCooldown, 60)
+    }
+
     func testProgressKeepsMonitorHealthy() {
         var state = MainThreadHangMonitorState(initialProgressToken: 1, now: 100)
 
@@ -52,6 +60,13 @@ final class MainThreadHangMonitorTests: XCTestCase {
 
         XCTAssertFalse(state.observe(progressToken: 2, now: 63, policy: policy).shouldSample)
         XCTAssertTrue(state.observe(progressToken: 2, now: 64, policy: policy).shouldSample)
+    }
+
+    func testSamplingBudgetSurvivesWatchdogReplacement() {
+        var state = MainThreadHangMonitorState(initialProgressToken: 1, now: 20, lastSampleAt: 10)
+        XCTAssertFalse(state.observe(progressToken: 1, now: 22).shouldSample)
+        XCTAssertFalse(state.observe(progressToken: 1, now: 69.9).shouldSample)
+        XCTAssertTrue(state.observe(progressToken: 1, now: 70).shouldSample)
     }
 
     func testClockRollbackDoesNotCreateNegativeStaleness() {
