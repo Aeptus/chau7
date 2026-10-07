@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Maintenance
+
+- Update terminal, Markdown and CLI Rust dependencies together, regenerate their compatible lockfile and preserve integer terminal exit status across the Alacritty API change.
+
 - Quality-runner Swift manifest checks use temporary scratch directories so concurrent native builds cannot hold their package lock and exhaust the manifest timeout. The real Core and full-app graphs remain validated.
 
 - Tab and bulk-close confirmations use asynchronous, main-owned sheets with a five-minute expiry. Late or stale decisions fail closed; new tabs created while a bulk decision is pending survive, and warning suppression only changes after approval.
