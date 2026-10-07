@@ -111,7 +111,7 @@ public enum TelemetryProxyAttribution {
 
         mutating func add(_ evidence: UsageEvidence) {
             requestCount += 1
-            if let value = evidence.inputTokens {
+            if let value = evidence.accountingInputTokens {
                 inputTokens += value
                 hasInput = true
             }
@@ -123,7 +123,7 @@ public enum TelemetryProxyAttribution {
                 cacheReadInputTokens += value
                 hasCacheRead = true
             }
-            if let value = evidence.outputTokens {
+            if let value = evidence.accountingOutputTokens {
                 outputTokens += value
                 hasOutput = true
             }

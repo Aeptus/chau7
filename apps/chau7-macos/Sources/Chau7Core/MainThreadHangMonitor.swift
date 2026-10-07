@@ -1,7 +1,7 @@
 import Foundation
 
 /// Timing thresholds shared by the in-process main-thread monitor and the
-/// independent watchdog process. The circuit breaker opens before sampling so
+/// independent watchdog process. The circuit breaker opens no later than sampling so
 /// a recovering event loop can drain queued input before accepting more paint
 /// work.
 public struct MainThreadHangMonitorPolicy: Equatable, Sendable {
@@ -11,7 +11,7 @@ public struct MainThreadHangMonitorPolicy: Equatable, Sendable {
 
     public init(
         stallThreshold: TimeInterval = 2,
-        sampleThreshold: TimeInterval = 4,
+        sampleThreshold: TimeInterval = 2,
         sampleCooldown: TimeInterval = 60
     ) {
         precondition(stallThreshold > 0)
@@ -47,9 +47,10 @@ public struct MainThreadHangMonitorState: Equatable, Sendable {
     private var lastSampleAt: TimeInterval?
     private var sampledCurrentStall = false
 
-    public init(initialProgressToken: UInt64, now: TimeInterval) {
+    public init(initialProgressToken: UInt64, now: TimeInterval, lastSampleAt: TimeInterval? = nil) {
         self.progressToken = initialProgressToken
         self.lastProgressAt = now
+        self.lastSampleAt = lastSampleAt
     }
 
     public mutating func observe(

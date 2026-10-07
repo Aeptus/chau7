@@ -42,6 +42,16 @@ final class TerminalKeyPressTests: XCTestCase {
         XCTAssertEqual(encoded.bytes, Array("\u{1B}OA".utf8))
     }
 
+    func testHomeAndEndRespectApplicationCursorMode() throws {
+        for (key, suffix) in [("home", "H"), ("end", "F")] {
+            let press = try TerminalKeyPress(key: key)
+            XCTAssertEqual(try press.encode().bytes, Array("\u{1b}[\(suffix)".utf8))
+            XCTAssertEqual(try press.encode(applicationCursorMode: true).bytes, Array("\u{1b}O\(suffix)".utf8))
+            let modified = try TerminalKeyPress(key: key, modifiers: ["shift"])
+            XCTAssertEqual(try modified.encode(applicationCursorMode: true).bytes, Array("\u{1b}[1;2\(suffix)".utf8))
+        }
+    }
+
     func testEncodeControlBackspaceUsesBS() throws {
         let keyPress = try TerminalKeyPress(key: "backspace", modifiers: ["control"])
         let encoded = try keyPress.encode()

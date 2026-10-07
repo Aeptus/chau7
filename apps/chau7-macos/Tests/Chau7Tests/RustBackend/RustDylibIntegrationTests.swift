@@ -1,5 +1,6 @@
 import XCTest
 @testable import Chau7
+import Chau7Core
 
 /// End-to-end contract test against the actually-built dylib: dlopen, ABI
 /// version handshake, struct-layout probes, symbol binding, PTY spawn with
@@ -20,6 +21,7 @@ final class RustDylibIntegrationTests: XCTestCase {
             .path
     }
 
+    @MainActor
     func testCreateFeedAndDrainAgainstBuiltDylib() throws {
         let path = Self.dylibPath
         try XCTSkipUnless(
@@ -75,5 +77,18 @@ final class RustDylibIntegrationTests: XCTestCase {
         XCTAssertEqual(grid.snapshot.pointee.cols, 80)
         XCTAssertEqual(grid.snapshot.pointee.rows, 24)
         XCTAssertNotNil(grid.snapshot.pointee.cells)
+
+        // Exercise the new streaming path against real Rust allocations and
+        // verify its assembled wire frame preserves backend dimensions/content.
+        let view = RustTerminalView(frame: .zero)
+        view.rustTerminal = terminal
+        let update = try XCTUnwrap(view.captureRemoteGridUpdate(since: 0))
+        var cache = RemoteGridSnapshotCache()
+        let payload = try XCTUnwrap(cache.encode(update))
+        let remote = try RemoteTerminalGridSnapshot.decode(from: payload)
+        XCTAssertEqual(remote.cols, 80)
+        XCTAssertEqual(remote.rows, 24)
+        XCTAssertTrue(remote.isValid)
+        XCTAssertTrue(String(decoding: remote.clusters, as: UTF8.self).contains("CHAU7_FFI_ROUNDTRIP_OK"))
     }
 }

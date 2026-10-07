@@ -62,17 +62,17 @@ public struct APICallEvent: Identifiable, Codable, Equatable, Sendable {
 
     /// Total including cache and reasoning — actual billable usage.
     public var totalBillableTokens: Int {
-        inputTokens + cacheCreationInputTokens + cacheReadInputTokens + outputTokens + reasoningOutputTokens
+        tokenUsage.totalBillableTokens
     }
 
     public var tokenUsage: TokenUsage {
-        TokenUsage(
-            inputTokens: inputTokens,
-            cacheCreationInputTokens: cacheCreationInputTokens,
-            cacheReadInputTokens: cacheReadInputTokens,
-            cachedInputTokens: cacheCreationInputTokens + cacheReadInputTokens,
-            outputTokens: outputTokens,
-            reasoningOutputTokens: reasoningOutputTokens
+        ProviderTokenAccounting.tokenUsage(
+            provider: provider.rawValue,
+            input: observedInputTokens,
+            output: observedOutputTokens,
+            cacheCreation: observedCacheCreationInputTokens,
+            cacheRead: observedCacheReadInputTokens,
+            reasoning: observedReasoningOutputTokens
         )
     }
 
@@ -266,11 +266,12 @@ public struct APICallStats: Equatable, Sendable {
     public static func from(_ events: [APICallEvent]) -> APICallStats {
         guard !events.isEmpty else { return APICallStats() }
 
-        let totalInput = events.reduce(0) { $0 + $1.inputTokens }
-        let totalOutput = events.reduce(0) { $0 + $1.outputTokens }
-        let totalCacheCreation = events.reduce(0) { $0 + $1.cacheCreationInputTokens }
-        let totalCacheRead = events.reduce(0) { $0 + $1.cacheReadInputTokens }
-        let totalReasoning = events.reduce(0) { $0 + $1.reasoningOutputTokens }
+        let usages = events.map(\.tokenUsage)
+        let totalInput = usages.reduce(0) { $0 + $1.inputTokens }
+        let totalOutput = usages.reduce(0) { $0 + $1.outputTokens }
+        let totalCacheCreation = usages.reduce(0) { $0 + $1.cacheCreationInputTokens }
+        let totalCacheRead = usages.reduce(0) { $0 + $1.cacheReadInputTokens }
+        let totalReasoning = usages.reduce(0) { $0 + $1.reasoningOutputTokens }
         let totalCost = events.reduce(0) { $0 + $1.costUSD }
         let avgLatency = Double(events.reduce(0) { $0 + $1.latencyMs }) / Double(events.count)
 

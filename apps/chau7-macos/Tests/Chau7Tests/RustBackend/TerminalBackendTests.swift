@@ -46,6 +46,9 @@ final class FakeTerminalBackend: TerminalBackend {
     private(set) var lastResize: (cols: UInt16, rows: UInt16)?
     var nextOutput: Data?
     var applicationCursorMode = false
+    var alternateScreenActive = false
+    var selectionText: String?
+    var logicalLineHitProvider: ((Int, Int) -> RustTerminalFFI.LogicalLineHit?)?
     var backendReadDelay: TimeInterval = 0
     private(set) var lastOutputReadOnMainThread: Bool?
     private(set) var cursorModeReadOnMainThread: Bool?
@@ -78,8 +81,19 @@ final class FakeTerminalBackend: TerminalBackend {
 
     // MARK: Grid / Rows
 
+    var gridProvider: (() -> (snapshot: UnsafeMutablePointer<RustGridSnapshot>, free: () -> Void)?)?
+    var gridDeltaProvider: ((UInt64) -> (snapshot: UnsafeMutablePointer<RustGridDeltaSnapshot>, free: () -> Void)?)?
+    private(set) var fullGridReadCount = 0
+    private(set) var gridDeltaRequests: [UInt64] = []
+
     func getGrid() -> (snapshot: UnsafeMutablePointer<RustGridSnapshot>, free: () -> Void)? {
-        nil
+        fullGridReadCount += 1
+        return gridProvider?()
+    }
+
+    func getGridDelta(since generation: UInt64) -> (snapshot: UnsafeMutablePointer<RustGridDeltaSnapshot>, free: () -> Void)? {
+        gridDeltaRequests.append(generation)
+        return gridDeltaProvider?(generation)
     }
 
     func getLineText(row: Int) -> String? {
@@ -87,17 +101,15 @@ final class FakeTerminalBackend: TerminalBackend {
     }
 
     func getLogicalLineHit(row: Int, column: Int) -> RustTerminalFFI.LogicalLineHit? {
-        nil
+        logicalLineHitProvider?(row, column)
     }
 
-    var cursorPosition: (col: UInt16, row: UInt16) {
-        (0, 0)
-    }
+    var cursorPosition: (col: UInt16, row: UInt16) = (0, 0)
 
     // MARK: Selection
 
     func getSelectionText() -> String? {
-        nil
+        selectionText
     }
 
     func clearSelection() {}
@@ -113,9 +125,7 @@ final class FakeTerminalBackend: TerminalBackend {
 
     func scrollTo(position: Double) {}
     func scrollLines(_ lines: Int32) {}
-    var displayOffset: UInt32 {
-        0
-    }
+    var displayOffset: UInt32 = 0
 
     // MARK: Polling
 
@@ -159,7 +169,7 @@ final class FakeTerminalBackend: TerminalBackend {
     }
 
     func isAlternateScreenActive() -> Bool {
-        false
+        alternateScreenActive
     }
 
     func isApplicationCursorMode() -> Bool {
