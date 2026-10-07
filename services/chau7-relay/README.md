@@ -1,7 +1,7 @@
 # Chau7 Relay (Cloudflare Workers + Durable Objects)
 
 Forwards encrypted frames between macOS and iOS clients and handles APNs push
-notifications for offline devices. The relay does not inspect or store payloads.
+notifications for offline devices. WebSocket frames stay opaque and are not persistently stored. The separate pending-state REST and APNs paths carry server-readable metadata with bounded retention (below).
 
 ## Authentication
 
@@ -41,6 +41,7 @@ applies WebSocket backpressure (dropping/closing slow receivers).
 | POST | `/push/notify/:deviceId` | mac | push |
 | GET | `/pending/:deviceId` | ios | pending |
 | POST | `/pending/:deviceId` | mac | pending |
+| DELETE | `/pending/:deviceId` | mac | pending |
 
 ## Source Files
 
@@ -86,3 +87,28 @@ Workers > chau7-ios-relay > Settings > Domains & Routes > Custom Domain.
 
 See [`../chau7-remote/docs/PROTOCOL.md`](../chau7-remote/docs/PROTOCOL.md) for the frame format,
 encryption scheme, and pairing flow.
+
+## Remote data and retention
+
+WebSocket terminal/control frames are end-to-end encrypted between the paired
+Mac and iPhone. The relay forwards their ciphertext and does not persist frames.
+The separate `/pending` REST snapshot is **server-readable**, protected in transit
+by HTTPS and device/role-scoped authentication. It can contain approval commands,
+prompt text, directory paths, and project/tab metadata. APNs registration tokens
+and notification titles/bodies are also visible to the relay and Apple for delivery.
+
+| Stored record | Lifetime and deletion |
+|---|---|
+| Pending snapshot | Four hours after the latest accepted POST. GET deletes expired state and returns empty arrays with the epoch timestamp; it never returns an expired snapshot. Authenticated mac-role DELETE removes it immediately. |
+| Push registration | Thirty days after the latest registration. Re-registering refreshes that lifetime; an explicit `notifications_authorized: false` registration revokes it immediately, as does an APNs invalid-token response. Expired registrations are not notified. |
+| Replay nonce | Through the end of the token's final accepted second (120-second TTL, plus up to 30 seconds of future clock skew). Cleanup never drops a nonce while that token can still authenticate. A full live nonce budget rejects new admission. |
+
+One Durable Object alarm tracks the earliest retained deadline. Alarm cleanup,
+expiry reads, and writes use storage transactions and survive eviction; idle
+objects with newly stored records have a scheduled cleanup. Legacy records are
+adopted on their next activation: invalid or expired timestamps are deleted then.
+Existing dormant legacy objects without an alarm are not retroactively awakened
+by a code change; a deployment must arrange their activation/removal if immediate
+legacy cleanup is required. No production rollout is implied by these source tests.
+An alarm can execute late during a platform outage, so expiry is also enforced
+on reads and before push delivery. Empty keys and unused alarms are removed.

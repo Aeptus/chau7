@@ -575,7 +575,6 @@ sequence monotonic even across Mac app restarts); syncs without a Mac seq —
 iOS-triggered clears, older Macs — fall back to a strictly-increasing local
 increment, so the stream never regresses either way.
 
-
 ### Pending REST validation
 
 The relay preserves canonical session epoch/version metadata, approval push text,
@@ -591,3 +590,16 @@ versions are rejected with 400 rather than rounded or converted into legacy
 unversioned snapshots. Approval `spine_seq` uses that same exact range. Snapshots
 without either ordering field remain compatible with older agents. Invalid
 ordering metadata returns 400 and leaves the prior stored snapshot intact.
+
+### Pending REST retention and deletion
+
+WebSocket encryption does not encrypt the pending-state REST snapshot. HTTPS
+protects transport; the relay can read and persist the sanitized approval/prompt
+metadata for four hours after its latest POST. Expired GET returns empty
+`approvals`/`interactive_prompts` with the epoch `updated_at` and deletes the
+stored snapshot. `DELETE /pending/:deviceId` requires a mac-role, pending-scope,
+single-use bearer token and returns 204; iOS read credentials cannot delete it.
+Deletion does not remove live replay entries or push registrations. APNs
+registrations last thirty days from registration unless explicitly revoked or
+rejected as invalid; their lifetime is separate from pending state. The relay
+README defines alarm, legacy activation and platform-delay behavior.

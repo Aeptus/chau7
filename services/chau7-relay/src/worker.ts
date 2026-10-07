@@ -179,8 +179,8 @@ export default {
 
     if (action === 'pending' && parts.length === 2) {
       const targetDeviceID = parts[1];
-      if (request.method !== 'GET' && request.method !== 'POST') {
-        return methodNotAllowed('GET, POST');
+      if (request.method !== 'GET' && request.method !== 'POST' && request.method !== 'DELETE') {
+        return methodNotAllowed('GET, POST, DELETE');
       }
       const role: Role = request.method === 'GET' ? 'ios' : 'mac';
       const authFailure = await authenticateRequest(request, env, targetDeviceID, role, 'pending');
