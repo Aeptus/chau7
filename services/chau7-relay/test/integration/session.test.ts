@@ -150,7 +150,7 @@ it('persists and revokes a registration whose id is an object property name', as
   const revoked = (await runInDurableObject(stub(device), async (_instance, state) =>
     state.storage.get('push_registrations')
   )) as object;
-  expect(Object.keys(revoked)).toEqual([]);
+  expect(revoked).toBeUndefined();
 });
 
 it('relays opaque WebSocket data and replaces only the reconnecting role', async () => {
