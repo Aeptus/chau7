@@ -27,6 +27,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Repository stats TTL/dirty-refresh tests now wait for the published snapshot rather than the background loader counter, avoiding a request-order race in the native validation gate.
 
+- Pending relay snapshots preserve session ordering, numeric prompt dates, pane targets, multi-select mode, approval severity and preformatted push text. Malformed ordering metadata is rejected before storage; invalid target fields cannot silently become unscoped prompts.
+
 - Relay replay protection handles property-name nonces safely and fails closed at its live-entry limit; push registrations retain those names. Concurrent APNs provider-token requests share one mint, with real Workers-runtime regressions covering replay, routing, storage, WebSocket replacement, backoff and recovery.
 
 - Short main-thread freezes now trigger diagnostic sampling after two seconds, with a 60-second cooldown preserved across watchdog replacements. History adoption logs identify changed fields, and history/routing timings attribute slow UI work.
