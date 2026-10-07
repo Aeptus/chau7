@@ -340,7 +340,7 @@ func (inj *Injector) loadRepoRule(project string) *InjectionRule {
 	inj.mu.RUnlock()
 
 	path := filepath.Join(project, ".chau7", "injection.json")
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(path) // #nosec G304 -- intentional per-project .chau7/injection.json read; the local application supplies project paths
 	if err != nil {
 		inj.mu.Lock()
 		inj.repoCache[project] = repoRuleEntry{rule: nil, loadedAt: time.Now()}

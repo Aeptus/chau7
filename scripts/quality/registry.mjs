@@ -773,7 +773,7 @@ export const gates = [
         ["gofmt", ["-l"], "format"],
         ["go", ["vet", "./..."]],
         ["golangci-lint", ["run", "./..."]],
-        ["go", ["test", "./..."]],
+        ["go", ["test", "-race", "./..."]],
       ]) {
         if (command[2] === "format") {
           const files = changedFileList(context, (file) => file.startsWith("apps/chau7-macos/chau7-proxy/") && file.endsWith(".go"));
@@ -814,7 +814,7 @@ export const gates = [
       for (const command of [
         ["go", ["vet", "./..."]],
         ["golangci-lint", ["run", "./..."]],
-        ["go", ["test", "./..."]],
+        ["go", ["test", "-race", "./..."]],
       ]) {
         const result = await context.exec(command[0], command[1], { cwd: "services/chau7-remote" });
         if (result.status !== "passed") return result;
@@ -958,6 +958,24 @@ export const gates = [
     rerun: "pnpm quality:local --include=quality-runner-tests",
     run: async (context) =>
       execWithoutHookGitEnv(context, "pnpm", ["test"]),
+  },
+  {
+    id: "go-dependency-audit",
+    modes: PREPUSH.concat(FULL),
+    scope: "repo",
+    wave: "audit",
+    tags: ["go", "dependencies", "security", "audit"],
+    cacheable: false,
+    inputs: [],
+    applies: () => true,
+    rerun: "pnpm quality:prepush --include=go-dependency-audit",
+    run: async (context) => {
+      for (const dir of ["apps/chau7-macos/chau7-proxy", "services/chau7-remote"]) {
+        const result = await context.exec("go", ["run", "golang.org/x/vuln/cmd/govulncheck@v1.8.0", "./..."], { cwd: dir });
+        if (result.status !== "passed") return { ...result, summary: `${result.summary}\nFix the Go advisory or scanner/toolchain/database failure; this live audit cannot be skipped.` };
+      }
+      return { status: "passed", summary: "Both Go modules pass live, call-graph-aware govulncheck v1.8.0" };
+    },
   },
   {
     id: "full-js-dependency-audit",

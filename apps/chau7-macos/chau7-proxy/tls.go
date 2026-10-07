@@ -61,7 +61,7 @@ func ensureSelfSignedCert(certPath, keyPath string) error {
 	}
 
 	// Write certificate PEM
-	certFile, err := os.Create(certPath)
+	certFile, err := os.Create(certPath) // #nosec G304 -- operator-configured local TLS certificate output, not request data
 	if err != nil {
 		return fmt.Errorf("create cert file: %w", err)
 	}
@@ -72,7 +72,7 @@ func ensureSelfSignedCert(certPath, keyPath string) error {
 	}
 
 	// Write private key PEM
-	keyFile, err := os.OpenFile(keyPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
+	keyFile, err := os.OpenFile(keyPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600) // #nosec G304 -- operator-configured local TLS private key output with owner-only permissions
 	if err != nil {
 		return fmt.Errorf("create key file: %w", err)
 	}

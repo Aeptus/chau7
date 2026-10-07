@@ -72,7 +72,7 @@ ci_gofmt_check_dir() {
 ci_go_test_dir() {
   local dir="$1"
   local label="$2"
-  ci_run_in "$label" "$dir" go test ./...
+  ci_run_in "$label" "$dir" go test -race ./...
 }
 
 ci_go_vet_dir() {

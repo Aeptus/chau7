@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -431,7 +432,7 @@ func TestDatabase_ConcurrentWrites(t *testing.T) {
 			time.Sleep(time.Duration(idx) * time.Millisecond)
 
 			record := &APICallRecord{
-				SessionID:  "concurrent-" + string(rune('0'+idx)),
+				SessionID:  fmt.Sprintf("concurrent-%d", idx),
 				Provider:   ProviderOpenAI,
 				Model:      "gpt-4o-mini",
 				Endpoint:   "/v1/chat/completions",

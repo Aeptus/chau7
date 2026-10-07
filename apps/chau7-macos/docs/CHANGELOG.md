@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Queued parent-directory events preserve the recovered target watch, preventing unnecessary source replacement and observation gaps. File observation also includes size-change events for in-place appends; recovery remains bounded without restoring idle polling.
+- Both Go modules now run race-enabled tests and an uncached, pinned govulncheck audit during PR/pre-push validation. Security/context/body-ownership linters are enabled; relay I/O inherits shutdown cancellation, wire lengths are checked before conversion, and proxy diagnostic output escapes injected control characters. Swift advisory coverage and reviewed trust-boundary exclusions are documented explicitly.
 
 ### Fixed
 

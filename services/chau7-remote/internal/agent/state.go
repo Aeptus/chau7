@@ -103,7 +103,7 @@ func unwrapKey(encoded string, wrappingKey []byte) ([]byte, error) {
 }
 
 func LoadState(path string) (*State, error) {
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(path) // #nosec G304 -- caller-configured local state file, never a relay-supplied path
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return &State{}, nil
