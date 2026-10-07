@@ -13,11 +13,16 @@ function packageGraph(coreOnly, packageRoot = path.join(root, "apps/chau7-macos"
   const env = { ...process.env };
   delete env.CHAU7_CORE_TESTS_ONLY;
   if (coreOnly) env.CHAU7_CORE_TESTS_ONLY = "1";
-  const result = spawnSync("swift", ["package", "--package-path", packageRoot, "--manifest-cache", "none", "dump-package"], {
-    env, encoding: "utf8", timeout: 30000,
-  });
-  assert.equal(result.status, 0, result.stderr);
-  return JSON.parse(result.stdout);
+  const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "chau7-package-graph-"));
+  try {
+    const result = spawnSync("swift", ["package", "--package-path", packageRoot, "--scratch-path", scratch, "--manifest-cache", "none", "dump-package"], {
+      env, encoding: "utf8", timeout: 30000,
+    });
+    assert.equal(result.status, 0, result.stderr);
+    return JSON.parse(result.stdout);
+  } finally {
+    fs.rmSync(scratch, { recursive: true, force: true });
+  }
 }
 
 test("Core-only graph excludes the app and keeps only pure Core target dependencies", () => {
