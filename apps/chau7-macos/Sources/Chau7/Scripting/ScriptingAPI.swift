@@ -52,6 +52,10 @@ final class ScriptingAPI {
     private var healthCheckSource: DispatchSourceTimer?
     @ObservationIgnored
     private let controlPlane = ControlPlaneService.shared
+    @ObservationIgnored
+    var tabCreationExecutor: ([String: Any]) -> String = { arguments in
+        ControlPlaneService.shared.call(name: "tab_create", arguments: arguments)
+    }
 
     /// Timestamp when the server was started, used for uptime calculation.
     @ObservationIgnored
@@ -248,7 +252,7 @@ final class ScriptingAPI {
         case "get_output":
             return handleGetOutput(params)
         case "create_tab":
-            return handleCreateTab(params)
+            return await handleCreateTab(params)
         case "send_input":
             return handleSendInput(params)
         case "press_key":
@@ -325,7 +329,7 @@ final class ScriptingAPI {
         return controlPlaneCall(name: "tab_output", arguments: arguments) ?? ["error": "output failed"]
     }
 
-    private func handleCreateTab(_ params: [String: Any]) -> [String: Any] {
+    private func handleCreateTab(_ params: [String: Any]) async -> [String: Any] {
         var arguments: [String: Any] = [:]
         if let directory = params["directory"] as? String {
             arguments["directory"] = directory
@@ -333,7 +337,14 @@ final class ScriptingAPI {
         if let windowID = params["window_id"] as? Int {
             arguments["window_id"] = windowID
         }
-        return controlPlaneCall(name: "tab_create", arguments: arguments) ?? ["error": "create failed"]
+        let executor = tabCreationExecutor
+        // Consent waits on this worker; suspending the actor keeps the sheet responsive.
+        let response = await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                continuation.resume(returning: executor(arguments))
+            }
+        }
+        return parseJSONResponse(response) ?? ["error": "create failed"]
     }
 
     private func handleSendInput(_ params: [String: Any]) -> [String: Any] {

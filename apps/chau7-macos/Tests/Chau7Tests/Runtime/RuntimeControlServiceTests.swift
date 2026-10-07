@@ -125,6 +125,37 @@ final class RuntimeControlServiceTests: XCTestCase {
         )
     }
 
+    func testRuntimeSessionCreatePresentsConsentFromWorker() async throws {
+        let service = TerminalControlService.shared
+        let previous = FeatureSettings.shared.mcpRequiresApproval
+        FeatureSettings.shared.mcpRequiresApproval = true
+        defer {
+            FeatureSettings.shared.mcpRequiresApproval = previous
+            service.tabApprovalPresenter = nil
+        }
+        let presented = expectation(description: "Runtime creation consent presented")
+        var resolve: ((MCPApprovalResult) -> Void)?
+        service.tabApprovalPresenter = { _, completion in
+            XCTAssertTrue(Thread.isMainThread)
+            resolve = completion
+            presented.fulfill()
+            return true
+        }
+        let directory = makeTempDir("runtime-consent")
+        let count = overlayModel.tabs.count
+        let request = Task.detached {
+            RuntimeControlService.shared.handleToolCall(name: "runtime_session_create", arguments: ["backend": "shell", "directory": directory])
+        }
+        await fulfillment(of: [presented], timeout: 2)
+        XCTAssertEqual(overlayModel.tabs.count, count)
+        resolve?(.allowedOnce)
+        let response = await request.value
+        let json = try XCTUnwrap(parseJSONObject(response))
+        XCTAssertNotNil(json["session_id"])
+        XCTAssertNil(json["error"])
+        XCTAssertEqual(overlayModel.tabs.count, count + 1)
+    }
+
     func testRuntimeSessionCreateStartsReadySession() throws {
         let response = RuntimeControlService.shared.handleToolCall(
             name: "runtime_session_create",

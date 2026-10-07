@@ -2,7 +2,6 @@ package main
 
 import (
 	"encoding/json"
-	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -174,17 +173,17 @@ func LoadCustomPricing() {
 		return
 	}
 	path := filepath.Join(home, ".chau7", "pricing.json")
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(path) // #nosec G304 -- fixed .chau7/pricing.json under the current user home
 	if err != nil {
 		return // file missing — normal
 	}
 	var overrides map[string]ModelPricing
 	if err := json.Unmarshal(data, &overrides); err != nil {
-		log.Printf("pricing: failed to parse %s: %v", path, err)
+		diagnosticLogf("pricing: failed to parse %s: %v", path, err)
 		return
 	}
 	CustomPricingOverrides = overrides
-	log.Printf("pricing: loaded %d custom overrides from %s", len(overrides), path)
+	diagnosticLogf("pricing: loaded %d custom overrides from %s", len(overrides), path)
 }
 
 // GetPricing returns the pricing for a model, with fallback to estimated pricing.
@@ -210,7 +209,7 @@ func GetPricing(provider Provider, model string) ModelPricing {
 
 	// Fallback to provider defaults (conservative estimates).
 	// Log a warning so users can add the model to ~/.chau7/pricing.json.
-	log.Printf("pricing: using %s fallback for unknown model %q (table version %s)", provider, model, PricingTableVersion)
+	diagnosticLogf("pricing: using %s fallback for unknown model %q (table version %s)", provider, model, PricingTableVersion)
 	switch provider {
 	case ProviderAnthropic:
 		return ModelPricing{InputPerMillion: 3.00, OutputPerMillion: 15.00} // Sonnet pricing

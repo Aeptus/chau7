@@ -397,6 +397,7 @@ final class AgentDashboardModel: Identifiable {
     var showStartAgentSheet = false
     var showReviewSheet = false
     var reviewError: String?
+    var isLaunchingReview = false
 
     // MARK: - Actions
 
@@ -517,7 +518,10 @@ final class AgentDashboardModel: Identifiable {
         if let prompt, !prompt.isEmpty { args["initial_prompt"] = prompt }
         if autoApprove { args["auto_approve"] = true }
 
-        _ = sessionController.startSession(arguments: args)
+        let controller = sessionController
+        DispatchQueue.global(qos: .userInitiated).async {
+            _ = controller.startSession(arguments: args)
+        }
         // The new session will appear in the next 2s poll refresh
     }
 
@@ -527,16 +531,23 @@ final class AgentDashboardModel: Identifiable {
         parentSessionID: String?,
         model: String?,
         extraInstructions: String?,
-        autoApprove: Bool
+        autoApprove: Bool,
+        completion: ((Bool) -> Void)? = nil
     ) {
+        guard !isLaunchingReview else {
+            completion?(false)
+            return
+        }
         let base = baseCommit.trimmingCharacters(in: .whitespacesAndNewlines)
         let head = headCommit.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !base.isEmpty, !head.isEmpty else {
             reviewError = "Base and head commits are required."
+            completion?(false)
             return
         }
 
         reviewError = nil
+        isLaunchingReview = true
         var args: [String: Any] = [
             "backend": "codex",
             "directory": repoGroupID,
@@ -571,9 +582,20 @@ final class AgentDashboardModel: Identifiable {
             args["auto_approve"] = true
         }
 
-        let response = sessionController.startSession(arguments: args)
-        if let json = parseJSONObject(response), let error = json["error"] as? String {
-            reviewError = error
+        let controller = sessionController
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let response = controller.startSession(arguments: args)
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                isLaunchingReview = false
+                if let json = parseJSONObject(response), let error = json["error"] as? String {
+                    reviewError = error
+                    completion?(false)
+                } else {
+                    showReviewSheet = false
+                    completion?(true)
+                }
+            }
         }
     }
 

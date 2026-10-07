@@ -72,6 +72,23 @@ still readable and is wrapped on its next successful save. State files use mode
 hardware UUID; this is not a claim of protection against an attacker with access
 to that identifier and the state file.
 
+## Identity storage and recovery
+
+The agent wraps its private identity key before writing state. A wrapped-key
+load failure stops startup with an actionable error; it does not clear the keys
+or generate a replacement identity. If the machine identity service is
+unavailable, retry after it recovers. If the wrapped key is damaged or belongs to
+another Mac, preserve the file and restore a valid backup for the original Mac.
+Do not delete state as an automatic recovery step: losing it breaks existing
+pairings. An intentional identity reset requires pairing the devices again.
+
+Saving also fails when the machine identity cannot be read, leaving the previous
+file unchanged rather than falling back to plaintext. Legacy plaintext state is
+still readable and is wrapped on its next successful save. State files use mode
+0600 and are replaced atomically. The wrapping key is derived from the Mac's
+hardware UUID; this is not a claim of protection against an attacker with access
+to that identifier and the state file.
+
 ## Protocol
 
 See [`docs/PROTOCOL.md`](docs/PROTOCOL.md) for the frame format, encryption, nonce

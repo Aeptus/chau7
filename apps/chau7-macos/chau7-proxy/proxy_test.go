@@ -576,7 +576,9 @@ func TestProxyHandlerFlushesStreamingChunkBeforeUpstreamCompletes(t *testing.T) 
 	downstream := httptest.NewServer(proxy)
 	defer downstream.Close()
 
-	req, err := http.NewRequest("POST", downstream.URL+"/v1/messages",
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, "POST", downstream.URL+"/v1/messages",
 		bytes.NewBufferString(`{"model":"claude-opus-5","messages":[],"stream" : true}`))
 	if err != nil {
 		t.Fatalf("create request: %v", err)
@@ -587,10 +589,16 @@ func TestProxyHandlerFlushesStreamingChunkBeforeUpstreamCompletes(t *testing.T) 
 		response *http.Response
 		err      error
 	}
-	responseReady := make(chan responseResult, 1)
+	responseReady := make(chan responseResult)
 	go func() {
-		response, requestErr := http.DefaultClient.Do(req)
-		responseReady <- responseResult{response: response, err: requestErr}
+		response, requestErr := http.DefaultClient.Do(req) //nolint:bodyclose // body ownership transfers to the receiver; cancelled test closes a late response
+		select {
+		case responseReady <- responseResult{response: response, err: requestErr}:
+		case <-ctx.Done():
+			if response != nil {
+				_ = response.Body.Close()
+			}
+		}
 	}()
 
 	select {

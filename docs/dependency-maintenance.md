@@ -36,3 +36,27 @@ unbacked work prevents retirement. Use the broker representation scan/record and
 cleanup plan for finished broker-owned worktrees; never force cleanup or rewrite
 public history. No pre-existing refs, worktrees or stashes are retired by this
 source cleanup. The local review config is not deleted from the developer checkout.
+
+## Live security checks and coverage
+
+Both Go modules run `go test -race ./...` in affected pre-push/PR gates and full
+local CI. `.golangci.yml` enables bodyclose, contextcheck and gosec alongside the
+standard linters. Narrow inline exclusions explain reviewed ownership or trust
+boundaries; whole linters and security classes are not disabled.
+
+Every pre-push/PR validation also runs uncached, call-graph-aware
+`go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...` in both modules. This uses
+the selected Go toolchain and current vulnerability database. Missing tooling,
+download/database failures, and reachable advisories fail the gate. A clean scan
+is evidence for the checked source/toolchain and current database; it is not a
+claim that every required but unreachable module is advisory-free. Run with
+`-show verbose` when reviewing an upstream module advisory.
+
+Both Go modules require Go 1.27.1 or newer. CI and release setup read this patched minimum from the remote module manifest; they must not select the unpatched Go 1.26.0 compiler. The live audit covers the standard library of the compiler actually used.
+
+SwiftPM has **no automated vulnerability-advisory scanner in this repository**.
+Shared-pin validation and native builds/tests establish consistency and
+compatibility, not advisory coverage. Swift dependency updates must include a
+manual review of upstream security advisories and release notes for the exact
+macOS/iOS revisions in the PR. Track any unreviewed revision or new dependency
+explicitly; do not describe the Rust/npm/Python/Go audits as Swift coverage.

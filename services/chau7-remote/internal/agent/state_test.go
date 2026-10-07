@@ -19,7 +19,7 @@ func TestStateWrappedRoundTripPreservesIdentityAndInput(t *testing.T) {
 	if err := saveState(path, original, fixtureUUID); err != nil {
 		t.Fatal(err)
 	}
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(path) // #nosec G304 -- path is owned by t.TempDir(), never external input
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -64,7 +64,7 @@ func TestStateUnwrapFailuresNeverEraseOrReplaceIdentity(t *testing.T) {
 				lookup = func() (string, error) { return "", errors.New("identity service unavailable") }
 			}
 			if mode == "tampered" || mode == "missing-wrapped-key" {
-				data, _ := os.ReadFile(path)
+				data, _ := os.ReadFile(path) // #nosec G304 -- path is owned by t.TempDir(), never external input
 				var stored State
 				if err := json.Unmarshal(data, &stored); err != nil {
 					t.Fatal(err)
@@ -79,7 +79,7 @@ func TestStateUnwrapFailuresNeverEraseOrReplaceIdentity(t *testing.T) {
 				}
 				lookup = fixtureUUID
 			}
-			before, err := os.ReadFile(path)
+			before, err := os.ReadFile(path) // #nosec G304 -- path is owned by t.TempDir(), never external input
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -90,7 +90,7 @@ func TestStateUnwrapFailuresNeverEraseOrReplaceIdentity(t *testing.T) {
 			if !strings.Contains(err.Error(), "state") {
 				t.Fatalf("error must explain recovery context: %v", err)
 			}
-			after, _ := os.ReadFile(path)
+			after, _ := os.ReadFile(path) // #nosec G304 -- path is owned by t.TempDir(), never external input
 			if !bytes.Equal(before, after) {
 				t.Fatal("failed load changed persisted identity")
 			}
@@ -109,7 +109,7 @@ func TestStateSaveFailsClosedWithoutMachineIdentity(t *testing.T) {
 	if err == nil {
 		t.Fatal("must not fall back to plaintext key storage")
 	}
-	after, _ := os.ReadFile(path)
+	after, _ := os.ReadFile(path) // #nosec G304 -- path is owned by t.TempDir(), never external input
 	if !bytes.Equal(before, after) {
 		t.Fatal("failed save overwrote existing state")
 	}
@@ -145,7 +145,7 @@ func TestStateLoadMissingMalformedAndLegacy(t *testing.T) {
 	if err := saveState(path, loaded, fixtureUUID); err != nil {
 		t.Fatal(err)
 	}
-	stored, _ := os.ReadFile(path)
+	stored, _ := os.ReadFile(path) // #nosec G304 -- path is owned by t.TempDir(), never external input
 	var wrapped State
 	if err := json.Unmarshal(stored, &wrapped); err != nil {
 		t.Fatal(err)

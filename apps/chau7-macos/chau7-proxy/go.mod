@@ -1,6 +1,6 @@
 module github.com/chau7/chau7-proxy
 
-go 1.26.0
+go 1.27.1
 
 require modernc.org/sqlite v1.60.1
 

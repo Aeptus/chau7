@@ -51,14 +51,14 @@ func TestRelayCredentialsAreDeviceAndRoleScoped(t *testing.T) {
 func TestRelayStartupFailsClosedWithoutProvisioningOrIdentity(t *testing.T) {
 	t.Setenv("CHAU7_REMOTE_CREDENTIALS", "")
 	path, _ := testRelayIdentity(t)
-	before, err := os.ReadFile(path)
+	before, err := os.ReadFile(path) // #nosec G304 -- path comes from testRelayIdentity and is owned by t.TempDir(), never external input
 	if err != nil {
 		t.Fatal(err)
 	}
 	if _, err := NewAgent("", "", "", path); err == nil || !strings.Contains(err.Error(), "provision") {
 		t.Fatalf("expected provisioning guidance, got %v", err)
 	}
-	after, _ := os.ReadFile(path)
+	after, _ := os.ReadFile(path) // #nosec G304 -- path comes from testRelayIdentity and is owned by t.TempDir(), never external input
 	if !bytes.Equal(before, after) {
 		t.Fatal("startup rewrote the existing identity")
 	}
@@ -73,7 +73,7 @@ func TestRelayStartupFailsClosedWithoutProvisioningOrIdentity(t *testing.T) {
 func TestProvisioningAndRotationPreserveIdentityAndReloadOnReconnect(t *testing.T) {
 	t.Setenv("CHAU7_REMOTE_CREDENTIALS", "")
 	path, state := testRelayIdentity(t)
-	before, _ := os.ReadFile(path)
+	before, _ := os.ReadFile(path) // #nosec G304 -- path comes from testRelayIdentity and is owned by t.TempDir(), never external input
 	bundle := filepath.Join(t.TempDir(), "bundle.json")
 	credentials := testRelayCredentials(t, state.DeviceID)
 	if err := WritePrivateRelayJSON(bundle, credentials, false); err != nil {
@@ -105,7 +105,7 @@ func TestProvisioningAndRotationPreserveIdentityAndReloadOnReconnect(t *testing.
 	if !strings.Contains(first.HTTPHeader.Get("Authorization"), "v3.test-key.") || !strings.Contains(next.HTTPHeader.Get("Authorization"), "v3.rotated-key.") {
 		t.Fatal("reconnect did not reload the rotated credential")
 	}
-	after, _ := os.ReadFile(path)
+	after, _ := os.ReadFile(path) // #nosec G304 -- path comes from testRelayIdentity and is owned by t.TempDir(), never external input
 	if !bytes.Equal(before, after) {
 		t.Fatal("provisioning/rotation rewrote private identity or trust")
 	}
@@ -123,6 +123,7 @@ func TestRelayCredentialFilesRejectWeakPermissionsSymlinksAndTrailingJSON(t *tes
 	if err := WritePrivateRelayJSON(path, credentials, false); err != nil {
 		t.Fatal(err)
 	}
+	// #nosec G302 -- deliberately weaken an isolated fixture to verify rejection of public permissions
 	if err := os.Chmod(path, 0o644); err != nil {
 		t.Fatal(err)
 	}

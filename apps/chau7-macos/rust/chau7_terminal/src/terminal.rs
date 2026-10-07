@@ -32,6 +32,23 @@ use crate::types::{
     underline_style,
 };
 
+/// Preserve the C ABI integer result after Alacritty started delivering an
+/// ExitStatus. Unix signal exits use the shell convention; unknown statuses
+/// are failures, never the -1 sentinel meaning "no pending exit".
+fn terminal_exit_code(status: std::process::ExitStatus) -> i32 {
+    if let Some(code) = status.code() {
+        return code;
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::ExitStatusExt;
+        if let Some(signal) = status.signal() {
+            return 128 + signal;
+        }
+    }
+    1
+}
+
 /// Static counter for terminal IDs (for logging)
 static TERMINAL_COUNTER: AtomicU64 = AtomicU64::new(0);
 pub const POLL_EVENT_GRID_CHANGED: u32 = 1 << 0;
@@ -1261,7 +1278,8 @@ impl Chau7Terminal {
                     *self.pending_title.lock() = Some(title);
                     self.has_pending_title.store(true, Ordering::Release);
                 }
-                Event::ChildExit(code) => {
+                Event::ChildExit(status) => {
+                    let code = terminal_exit_code(status);
                     debug!("[terminal-{}] Child exit with code: {}", self.id, code);
                     *self.pending_exit_code.lock() = Some(code);
                 }
@@ -3462,6 +3480,58 @@ impl Drop for Chau7Terminal {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(unix)]
+    #[test]
+    fn child_exit_status_preserves_normal_codes() {
+        use std::os::unix::process::ExitStatusExt;
+        for code in [0, 1, 42, 255] {
+            assert_eq!(
+                terminal_exit_code(std::process::ExitStatus::from_raw(code << 8)),
+                code
+            );
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn child_exit_status_preserves_signal_failure() {
+        use std::os::unix::process::ExitStatusExt;
+        for signal in [libc::SIGTERM, libc::SIGKILL, libc::SIGINT] {
+            assert_eq!(
+                terminal_exit_code(std::process::ExitStatus::from_raw(signal)),
+                128 + signal
+            );
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn child_exit_status_never_turns_unknown_status_into_success_or_absence() {
+        use std::os::unix::process::ExitStatusExt;
+        let stopped = std::process::ExitStatus::from_raw((libc::SIGSTOP << 8) | 0x7f);
+        assert_eq!(terminal_exit_code(stopped), 1);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn child_exit_event_publishes_integer_status_to_ffi_consumer() {
+        use std::os::unix::process::ExitStatusExt;
+        let mut term = Chau7Terminal::new_headless(80, 24).expect("headless terminal");
+        let (sender, receiver) = crossbeam_channel::unbounded();
+        term.event_rx = receiver;
+        sender
+            .send(Event::ChildExit(std::process::ExitStatus::from_raw(
+                libc::SIGTERM,
+            )))
+            .unwrap();
+        let _ = term.poll_events(0);
+        assert_eq!(
+            term.pending_exit_code.lock().take(),
+            Some(128 + libc::SIGTERM)
+        );
+        assert_eq!(term.pending_exit_code.lock().take(), None);
+    }
 
     /// The fold must produce display rows a narrow client can paint directly:
     /// folded on *logical* lines, trailing padding trimmed, and never splitting a
