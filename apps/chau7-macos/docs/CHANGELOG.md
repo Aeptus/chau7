@@ -15,6 +15,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Remote grid scheduling, one-job/latest-pending admission and delivery epochs now have one main-owned coordinator. The existing worker, owned-byte capture boundary and wire format are preserved.
 
+- Late APNs invalid-token feedback only removes the registration version that failed, preserving concurrent refreshes and revocations.
+
+- Relay pending snapshots expire after four hours, push registrations after thirty days, and authenticated pending deletion preserves replay protection. Transactional alarms and stale-read checks bound storage; privacy documentation distinguishes server-readable REST/APNs metadata from encrypted WebSocket frames.
+
 ### Changed
 
 - Updated the relay and issue-intake Workers dependency groups together, including Wrangler 4.145.0 and matching Worker types. Both tooling graphs pin sharp 0.35.5 to remove the newly reported librsvg vulnerability without downgrading Wrangler.

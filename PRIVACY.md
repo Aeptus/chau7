@@ -22,7 +22,7 @@ Everything, by default:
 When you use the in-app bug reporter (Option+Cmd+I):
 
 1. **You choose what to include.** All diagnostic sections (logs, terminal state, session data) are off by default. You toggle on only what you want to share.
-2. **Your report is sent via HTTPS** through a Cloudflare Worker relay ([`services/chau7-relay/src/worker.ts`](services/chau7-relay/src/worker.ts)) to a [private GitHub repository](https://github.com/aeptus/chau7-issue-intake) that only project maintainers can access.
+2. **Your report is sent via HTTPS** through a Cloudflare Worker relay ([`services/chau7-issues/src/worker.js`](services/chau7-issues/src/worker.js)) to a [private GitHub repository](https://github.com/aeptus/chau7-issue-intake) that only project maintainers can access.
 3. **No data is sent until you hit Submit.** The report is composed locally and you can preview the full markdown content before sending.
 4. **Rate limited.** The relay enforces a maximum of 5 reports per hour per IP to prevent abuse.
 
@@ -53,6 +53,20 @@ Source: [`apps/chau7-macos/chau7-proxy/`](apps/chau7-macos/chau7-proxy/)
 
 The remote control feature (iOS companion app) relays encrypted frames between your Mac and iPhone through a Cloudflare Worker. The relay does not inspect or store frame payloads — it forwards opaque encrypted data. Encryption uses ChaCha20-Poly1305 with keys derived from a Curve25519 key exchange.
 
+The separate pending-state REST path uses HTTPS and authenticated device/role
+access, but its approval commands, prompt text, directory paths and tab/project
+metadata are readable by Cloudflare. The latest snapshot is retained for four
+hours; stale GETs delete it and return an empty snapshot, and an authenticated
+Mac can explicitly delete it. APNs device tokens are retained for thirty days
+from registration and removed on explicit revocation, expiry, or a provider
+invalid-token response. Notification titles/bodies are shared with Cloudflare
+and Apple to deliver the requested alerts. Replay-protection entries remain
+until the token's final accepted second ends (120-second TTL plus permitted
+future clock skew). Alarms clean idle storage; expired reads and push delivery
+also enforce expiry. Legacy records are cleaned on activation, and no immediate
+cleanup of a dormant pre-upgrade object is claimed. These remote-control records
+are separate from the bug-report sub-processor table above.
+
 Source: [`services/chau7-relay/`](services/chau7-relay/) and [`services/chau7-remote/`](services/chau7-remote/)
 
 Protocol: [`services/chau7-remote/docs/PROTOCOL.md`](services/chau7-remote/docs/PROTOCOL.md)
@@ -68,5 +82,5 @@ Source: [`apps/chau7-macos/Sources/Chau7/MCP/`](apps/chau7-macos/Sources/Chau7/M
 - Phone home. No analytics endpoints, no heartbeats, no "anonymous" usage data.
 - Store API keys. The proxy forwards them in-flight. Nothing is persisted.
 - Run background daemons after you quit (unless you configure start-at-login).
-- Send terminal output anywhere. Your scrollback stays on your disk.
+- Send terminal output without your opt-in to remote control or an explicitly submitted diagnostic report.
 - Use cookies, fingerprinting, or tracking of any kind.
