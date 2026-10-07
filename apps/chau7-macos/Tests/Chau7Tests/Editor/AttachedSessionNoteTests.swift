@@ -319,10 +319,28 @@ final class AttachedSessionNoteTests: XCTestCase {
         XCTAssertEqual(restoredTab.splitController.focusedTerminalSessionID(), paneID)
     }
 
+    func testDeletedRepositoryDoesNotAttachOrRecreateNote() throws {
+        let appModel = AppModel()
+        let controller = SplitPaneController(appModel: appModel)
+        controller.ownerTabID = UUID()
+        let root = makeTemporaryDirectory(named: "attached-note-deleted")
+        let session = try XCTUnwrap(controller.terminalSessions.first?.1)
+        session.updateCurrentDirectory(root.path)
+        session.handleShellRepoRootReport(root.path)
+        try FileManager.default.removeItem(at: root)
+        controller.splitWithTextEditor(direction: .horizontal)
+        let editor = try XCTUnwrap(controller.root.findFirstEditor())
+        editor.updateContent("unsaved note")
+        XCTAssertNil(editor.filePath)
+        XCTAssertFalse(editor.saveUntitledIfPossible())
+        XCTAssertFalse(FileManager.default.fileExists(atPath: root.path))
+    }
+
     private func makeTemporaryDirectory(named prefix: String) -> URL {
         let url = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent("\(prefix)-\(UUID().uuidString)", isDirectory: true)
         try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        try? FileManager.default.createDirectory(at: url.appendingPathComponent(".git"), withIntermediateDirectories: false)
         return url
     }
 

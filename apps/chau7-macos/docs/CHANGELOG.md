@@ -11,7 +11,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Keep scripting tab creation and Dashboard agent/review launches off the main thread so approval sheets remain available and responsive.
 
+- Quality-runner Swift manifest checks use temporary scratch directories so concurrent native builds cannot hold their package lock and exhaust the manifest timeout. The real Core and full-app graphs remain validated.
+
+- Tab and bulk-close confirmations use asynchronous, main-owned sheets with a five-minute expiry. Late or stale decisions fail closed; new tabs created while a bulk decision is pending survive, and warning suppression only changes after approval.
+
 - Published a dated, deduplicated Swift concurrency diagnostic inventory and component ownership plan; historical counts remain labeled and warning promotion stays gated on resolved boundaries.
+
+- Remote grid scheduling, one-job/latest-pending admission and delivery epochs now have one main-owned coordinator. The existing worker, owned-byte capture boundary and wire format are preserved.
 
 ### Changed
 
@@ -21,6 +27,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - MCP tab creation and adoption now wait for asynchronous consent on the requesting worker, keep the AppKit event loop responsive, expire denied, and revalidate the exact tab or window before granting control. Consent defaults to a five-minute deadline; synchronous main-thread consent requests fail closed.
 
 ### Fixed
+
+- Session notes no longer recreate deleted repository/worktree roots. Preparation and restoration require an existing Git root, create descendants relative to its open directory, reject symlink escapes and report unavailable notes on failure while preserving existing contents. Focus precedence prevents an unavailable repository from redirecting notes into another split; symlinked Git markers remain supported.
 
 - Queued parent-directory events preserve the recovered target watch, preventing unnecessary source replacement and observation gaps. File observation also includes size-change events for in-place appends; recovery remains bounded without restoring idle polling.
 
