@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "MCP server exposing pentest tooling — Claude Code / Codex CLI drives, PentAGI's sandbox container executes."
 requires-python = ">=3.10"
 dependencies = [
-    "mcp[cli]>=1.2.0",
+    "mcp>=2.3.0,<3",
     "defusedxml>=0.7.1",
 ]
 

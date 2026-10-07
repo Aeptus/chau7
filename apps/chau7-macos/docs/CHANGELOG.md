@@ -13,6 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Published a dated, deduplicated Swift concurrency diagnostic inventory and component ownership plan; historical counts remain labeled and warning promotion stays gated on resolved boundaries.
 
+- Python MCP tooling now uses the SDK v2 MCPServer API and pins the tested SDK/transitive graph. Pydantic retains its required exact core pairing; real SDK tool discovery and invocation are covered without scanning a target.
+
 - Remote grid scheduling, one-job/latest-pending admission and delivery epochs now have one main-owned coordinator. The existing worker, owned-byte capture boundary and wire format are preserved.
 
 ### Changed

@@ -13,15 +13,15 @@ import argparse
 import json
 import sys
 
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer
 
 from . import state
 
-mcp = FastMCP("pentagi-mcp")
+mcp = MCPServer("pentagi-mcp")
 
-# Importing `tools` registers every @mcp.tool() with the FastMCP instance above.
+# Importing `tools` registers every @mcp.tool() with the MCPServer instance above.
 # Done after `mcp` is constructed to avoid a circular import.
-from . import tools  # noqa: E402,F401
+from . import tools  # noqa: E402
 
 
 def main() -> None:
