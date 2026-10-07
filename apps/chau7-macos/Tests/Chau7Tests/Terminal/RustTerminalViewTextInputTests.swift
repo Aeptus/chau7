@@ -202,4 +202,103 @@ final class RustTerminalViewTextInputTests: XCTestCase {
         )
         XCTAssertEqual(view.currentRenderLoopMode, "background_drain")
     }
+
+    func testCopyJoinsTUILinesThroughBothSelectionPaths() {
+        let view = RustTerminalView(frame: .zero)
+        let backend = FakeTerminalBackend()
+        backend.selectionText = "echo hello\n    --flag value"
+        view.rustTerminal = backend
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+
+        for alternateScreen in [false, true] {
+            view.hostsTUIApp = !alternateScreen
+            backend.alternateScreenActive = alternateScreen
+            XCTAssertEqual(view.getSelectedText(), "echo hello --flag value")
+            XCTAssertTrue(view.writeSelectionToPasteboard(pasteboard, types: [.string]))
+            XCTAssertEqual(pasteboard.string(forType: .string), "echo hello --flag value")
+        }
+
+        view.hostsTUIApp = false
+        backend.alternateScreenActive = false
+        XCTAssertEqual(view.getSelectedText(), backend.selectionText)
+        XCTAssertTrue(view.writeSelectionToPasteboard(pasteboard, types: [.string]))
+        XCTAssertEqual(pasteboard.string(forType: .string), backend.selectionText)
+    }
+
+    func testWhitespaceTUISelectionStillCountsAsSelection() {
+        let view = RustTerminalView(frame: .zero)
+        let backend = FakeTerminalBackend()
+        backend.selectionText = "  \n  "
+        view.rustTerminal = backend
+        view.hostsTUIApp = true
+        XCTAssertTrue(view.hasSelection)
+        XCTAssertEqual(view.getSelectedText(), "")
+    }
+
+    func testBusyTUIClickUsesApplicationCursorMode() throws {
+        let view = RustTerminalView(frame: NSRect(x: 0, y: 0, width: 400, height: 200))
+        let backend = FakeTerminalBackend()
+        view.rustTerminal = backend
+        view.hostsTUIApp = true
+        view.isAtPrompt = { false }
+        view.setApplicationCursorMode(true)
+        let rect = try XCTUnwrap(view.currentRenderGeometry.cellRect(col: 3, row: 0))
+        XCTAssertTrue(view.handleClickToPosition(at: NSPoint(x: rect.midX, y: rect.midY)))
+        XCTAssertEqual(backend.sentText, [String(repeating: "\u{1b}OC", count: 3)])
+    }
+
+    func testClickRejectsOutputRowsAndScrollback() throws {
+        let view = RustTerminalView(frame: NSRect(x: 0, y: 0, width: 400, height: 200))
+        let backend = FakeTerminalBackend()
+        view.rustTerminal = backend
+        view.hostsTUIApp = true
+        view.isAtPrompt = { true }
+        let output = try XCTUnwrap(view.currentRenderGeometry.cellRect(col: 3, row: 1))
+        XCTAssertFalse(view.handleClickToPosition(at: NSPoint(x: output.midX, y: output.midY)))
+        backend.displayOffset = 1
+        let input = try XCTUnwrap(view.currentRenderGeometry.cellRect(col: 3, row: 0))
+        XCTAssertFalse(view.handleClickToPosition(at: NSPoint(x: input.midX, y: input.midY)))
+        XCTAssertTrue(backend.sentText.isEmpty)
+    }
+
+    func testClickAcrossSoftWrapSendsOnlyHorizontalCharacterMovement() throws {
+        let view = RustTerminalView(frame: NSRect(x: 0, y: 0, width: 400, height: 200))
+        let backend = FakeTerminalBackend()
+        backend.cursorPosition = (4, 1)
+        backend.logicalLineHitProvider = { row, _ in
+            RustTerminalFFI.LogicalLineHit(text: "abcdefghijklmnop", startRow: 0, clickedUTF16Offset: row == 1 ? 15 : 5)
+        }
+        view.rustTerminal = backend
+        view.hostsTUIApp = true
+        view.setApplicationCursorMode(true)
+        let rect = try XCTUnwrap(view.currentRenderGeometry.cellRect(col: 5, row: 0))
+        XCTAssertTrue(view.handleClickToPosition(at: NSPoint(x: rect.midX, y: rect.midY)))
+        XCTAssertEqual(backend.sentText, [String(repeating: "\u{1b}OD", count: 10)])
+    }
+
+    func testClickCountsUnicodeCharactersInsteadOfCellsOrUTF16() throws {
+        let view = RustTerminalView(frame: NSRect(x: 0, y: 0, width: 400, height: 200))
+        let backend = FakeTerminalBackend()
+        backend.cursorPosition = (4, 0)
+        backend.logicalLineHitProvider = { _, column in
+            RustTerminalFFI.LogicalLineHit(text: "a😀bz", startRow: 0, clickedUTF16Offset: column == 4 ? 4 : 1)
+        }
+        view.rustTerminal = backend
+        view.isAtPrompt = { true }
+        let rect = try XCTUnwrap(view.currentRenderGeometry.cellRect(col: 1, row: 0))
+        XCTAssertTrue(view.handleClickToPosition(at: NSPoint(x: rect.midX, y: rect.midY)))
+        XCTAssertEqual(backend.sentText, [String(repeating: "\u{1b}[D", count: 2)])
+    }
+
+    func testOptionClickUsesApplicationCursorMode() throws {
+        let view = RustTerminalView(frame: NSRect(x: 0, y: 0, width: 400, height: 200))
+        let backend = FakeTerminalBackend()
+        view.rustTerminal = backend
+        view.setApplicationCursorMode(true)
+        let rect = try XCTUnwrap(view.currentRenderGeometry.cellRect(col: 2, row: 1))
+        XCTAssertTrue(view.handleOptionClick(at: NSPoint(x: rect.midX, y: rect.midY)))
+        XCTAssertEqual(backend.sentText, ["\u{1b}OB\u{1b}OC\u{1b}OC"])
+    }
+
 }

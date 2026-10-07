@@ -133,15 +133,16 @@ final class TerminalSessionModel {
     }
 
     var title = "Shell" {
-        didSet { onSessionStateChanged?() }
+        didSet { if title != oldValue { notifySessionStateChanged() } }
     }
 
     var currentDirectory: String = TerminalSessionModel.defaultStartDirectory() {
         didSet {
+            guard currentDirectory != oldValue else { return }
             MainActorBridge.run {
                 TerminalControlService.shared.invalidateRoutingIndex(reason: "session_directory")
             }
-            onSessionStateChanged?()
+            notifySessionStateChanged()
             // Notify repo-grouping (OverlayTabsModel) so the tab's repoGroupID
             // can re-evaluate against the new cwd directly, without waiting
             // for the async refreshGitStatus → gitRootPath.didSet chain that
@@ -204,6 +205,33 @@ final class TerminalSessionModel {
     /// Callback invoked when session state changes, for non-SwiftUI observers
     /// (e.g. RemoteControlManager). Replaces the old objectWillChange.sink pattern.
     @ObservationIgnored var onSessionStateChanged: (() -> Void)?
+    @ObservationIgnored private let sessionStateNotificationLock = NSLock()
+    @ObservationIgnored private var sessionStateNotificationDepth = 0
+    @ObservationIgnored private var sessionStateNotificationPending = false
+
+    private func notifySessionStateChanged() {
+        sessionStateNotificationLock.lock()
+        let batched = sessionStateNotificationDepth > 0
+        if batched { sessionStateNotificationPending = true }
+        sessionStateNotificationLock.unlock()
+        if !batched { onSessionStateChanged?() }
+    }
+
+    private func beginSessionStateNotificationBatch() {
+        sessionStateNotificationLock.lock()
+        sessionStateNotificationDepth += 1
+        sessionStateNotificationLock.unlock()
+    }
+
+    private func finishSessionStateNotificationBatch() {
+        sessionStateNotificationLock.lock()
+        sessionStateNotificationDepth -= 1
+        let shouldNotify = sessionStateNotificationDepth == 0 && sessionStateNotificationPending
+        if shouldNotify { sessionStateNotificationPending = false }
+        sessionStateNotificationLock.unlock()
+        // Never call observers while holding the batching lock.
+        if shouldNotify { onSessionStateChanged?() }
+    }
 
     /// The owning tab's UUID, set by OverlayTabsModel at tab creation time.
     /// Propagated to ShellEventDetector so emitted events carry a deterministic tabID
@@ -217,7 +245,8 @@ final class TerminalSessionModel {
 
     var status: CommandStatus = .idle {
         didSet {
-            onSessionStateChanged?()
+            guard status != oldValue else { return }
+            notifySessionStateChanged()
             if status != oldValue {
                 if Self.shouldAutoRevealInteractivePrompt(from: oldValue, to: status) {
                     scheduleInteractivePromptReveal()
@@ -261,6 +290,7 @@ final class TerminalSessionModel {
 
     var activeAppName: String? {
         didSet {
+            guard activeAppName != oldValue else { return }
             // Process-tree polls re-assign `activeAppName` to the same value
             // many times per second. Skip the recalc unless the value
             // actually changed, mirroring the `liveAgentName.didSet` guard.
@@ -278,7 +308,7 @@ final class TerminalSessionModel {
                     TerminalControlService.shared.invalidateRoutingIndex(reason: "active_app")
                 }
             }
-            onSessionStateChanged?()
+            notifySessionStateChanged()
         }
     }
 
@@ -300,7 +330,7 @@ final class TerminalSessionModel {
             // flag remains the generic source of truth; this closes the short
             // window before a newly detected agent flips terminal modes.
             activeRustTerminalView?.hostsTUIApp = shouldProtectTerminalUIState
-            onSessionStateChanged?()
+            notifySessionStateChanged()
             postRuntimeReadinessChange(source: "live_agent")
             NotificationCenter.default.post(
                 name: .terminalSessionRenderSuspensionStateChanged,
@@ -514,7 +544,8 @@ final class TerminalSessionModel {
     /// Whether the shell is at a prompt (not running a command). Used by history key monitor.
     var isAtPrompt = true {
         didSet {
-            onSessionStateChanged?()
+            guard isAtPrompt != oldValue else { return }
+            notifySessionStateChanged()
             if isAtPrompt != oldValue {
                 postRuntimeReadinessChange(source: "prompt")
             }
@@ -590,7 +621,7 @@ final class TerminalSessionModel {
     var restoreBootstrapPhase: RestoreBootstrapPhase = .inactive {
         didSet {
             guard restoreBootstrapPhase != oldValue else { return }
-            onSessionStateChanged?()
+            notifySessionStateChanged()
             onRestoreBootstrapPhaseChanged?(restoreBootstrapPhase)
         }
     }
@@ -612,6 +643,9 @@ final class TerminalSessionModel {
     var lastAIProvider: String? {
         didSet {
             if lastAIProvider != oldValue {
+                MainActorBridge.run {
+                    TerminalControlService.shared.invalidateRoutingIndex(reason: "ai_provider")
+                }
                 refreshCodexFeedbackMonitorIfNeeded()
             }
         }
@@ -619,8 +653,8 @@ final class TerminalSessionModel {
 
     var lastAISessionId: String? {
         didSet {
-            syncRustTerminalObservabilityScope()
             if lastAISessionId != oldValue {
+                syncRustTerminalObservabilityScope()
                 MainActorBridge.run {
                     TerminalControlService.shared.invalidateRoutingIndex(reason: "ai_session_id")
                 }
@@ -651,12 +685,10 @@ final class TerminalSessionModel {
     /// per-field fanout — consumers still see per-property notifications
     /// but call sites read as a single named operation).
     func applyAgentIdentity(_ record: AgentIdentityRecord) {
-        lastAIProvider = record.provider
-        lastAISessionId = record.sessionId
-        lastAISessionIdentitySource = record.source
-        MainActorBridge.run {
-            TerminalControlService.shared.invalidateRoutingIndex(reason: "agent_identity")
-        }
+        // Equality guards also avoid Swift Observation fanout on repeated history entries.
+        if lastAIProvider != record.provider { lastAIProvider = record.provider }
+        if lastAISessionId != record.sessionId { lastAISessionId = record.sessionId }
+        if lastAISessionIdentitySource != record.source { lastAISessionIdentitySource = record.source }
     }
 
     /// The last app name set by live detection (command or output).
@@ -676,15 +708,12 @@ final class TerminalSessionModel {
     /// Re-detecting the SAME provider (e.g., nil → Codex after restore)
     /// preserves the session so tab restore can resume it.
     func updateLastDetectedApp(_ app: String) {
-        lastDetectedAppName = app
+        if lastDetectedAppName != app { lastDetectedAppName = app }
         guard let newProvider = AIResumeParser.normalizeProviderName(app) else { return }
         let oldProvider = AIResumeParser.normalizeProviderName(lastAIProvider ?? "")
 
         // Always keep lastAIProvider current so persistence is correct
-        lastAIProvider = newProvider
-        MainActorBridge.run {
-            TerminalControlService.shared.invalidateRoutingIndex(reason: "detected_app")
-        }
+        if lastAIProvider != newProvider { lastAIProvider = newProvider }
 
         // Only clear session metadata on an actual provider SWITCH.
         // When oldProvider is nil (after restore or first detection),
@@ -715,6 +744,15 @@ final class TerminalSessionModel {
     /// Tests/Chau7Tests/Runtime/RuntimeSessionManagerAdoptionTests.swift.
     @discardableResult
     func adoptAIHistorySession(_ request: HistorySessionAdoptionRequest) -> Bool {
+        let token = FeatureProfiler.shared.begin(.historyAdoption)
+        beginSessionStateNotificationBatch()
+        defer {
+            finishSessionStateNotificationBatch()
+            FeatureProfiler.shared.end(token)
+            FeatureProfiler.shared.recordMainThreadStallIfNeeded(
+                operation: "historyAdoption", startedAt: token.startTime
+            )
+        }
         let previousProvider = lastAIProvider
         let previousSessionId = lastAISessionId
         let matchedPreviousSession = normalizedStoredAISessionId() == request.sessionId
@@ -746,7 +784,7 @@ final class TerminalSessionModel {
 
         if request.state == .active {
             applyAIDetectionCommand(appName: request.displayName)
-            activeAppName = request.displayName
+            if activeAppName != request.displayName { activeAppName = request.displayName }
         }
 
         let inactiveStateChanged = clearActiveAIStateForInactiveHistorySession(
@@ -754,21 +792,25 @@ final class TerminalSessionModel {
             matchedPreviousSession: matchedPreviousSession
         )
 
-        let changed = previousProvider != lastAIProvider
-            || previousSessionId != lastAISessionId
-            || previousSource != lastAISessionIdentitySource
-            || previousDetectedApp != lastDetectedAppName
-            || previousActiveApp != activeAppName
-            || previousStartedAt != agentStartedAt
-            || previousLaunchCommand != lastAgentLaunchCommand
-            || previousAIRunning != isAIRunning
-            || inactiveStateChanged
+        let comparisons: [(String, Bool)] = [
+            ("provider", previousProvider != lastAIProvider),
+            ("session", previousSessionId != lastAISessionId),
+            ("source", previousSource != lastAISessionIdentitySource),
+            ("detectedApp", previousDetectedApp != lastDetectedAppName),
+            ("activeApp", previousActiveApp != activeAppName),
+            ("startedAt", previousStartedAt != agentStartedAt),
+            ("launchCommand", previousLaunchCommand != lastAgentLaunchCommand),
+            ("running", previousAIRunning != isAIRunning),
+            ("inactive", inactiveStateChanged)
+        ]
+        let changedFields = comparisons.filter(\.1).map(\.0)
+        let changed = !changedFields.isEmpty
 
         if changed {
             Log.info(
-                "Adopted history AI identity tab=\(tabIdentifier) tool=\(request.displayName) session=\(request.sessionId.prefix(8)) reason=\(request.reason.rawValue)"
+                "Adopted history AI identity tab=\(tabIdentifier) tool=\(request.displayName) session=\(request.sessionId.prefix(8)) reason=\(request.reason.rawValue) fields=\(changedFields.joined(separator: ","))"
             )
-            onSessionStateChanged?()
+            notifySessionStateChanged()
         }
 
         return changed
@@ -1107,7 +1149,7 @@ final class TerminalSessionModel {
     @ObservationIgnored var deferredInputApproval = DeferredInputApproval()
     var hasPendingCommandApproval = false {
         didSet {
-            onSessionStateChanged?()
+            notifySessionStateChanged()
             postRuntimeReadinessChange(source: "command_approval")
         }
     }

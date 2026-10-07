@@ -24,6 +24,8 @@ enum FeatureMetric: String, CaseIterable, Identifiable {
     case outputMainThread = "Output Main"
     case promptUpdate = "Prompt Update"
     case devServerDetect = "Dev Server"
+    case historyAdoption = "History Adoption"
+    case routingRebuild = "Routing Rebuild"
     case mainThreadStall = "Main Thread Stall"
 
     var id: String {
@@ -58,6 +60,8 @@ enum FeatureMetric: String, CaseIterable, Identifiable {
         case .outputMainThread: return "OutputMainThread"
         case .promptUpdate: return "PromptUpdate"
         case .devServerDetect: return "DevServerDetect"
+        case .historyAdoption: return "HistoryAdoption"
+        case .routingRebuild: return "RoutingRebuild"
         case .mainThreadStall: return "MainThreadStall"
         }
     }
@@ -196,7 +200,7 @@ final class FeatureProfiler {
     func recordMainThreadStallIfNeeded(
         operation: String,
         startedAt: CFAbsoluteTime,
-        thresholdMs: Double = 200,
+        thresholdMs: Double = 100,
         metadata: String? = nil
     ) {
         let durationMs = (CFAbsoluteTimeGetCurrent() - startedAt) * 1000.0
