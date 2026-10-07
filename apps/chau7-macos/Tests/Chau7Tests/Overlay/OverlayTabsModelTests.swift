@@ -4164,8 +4164,20 @@ final class OverlayTabsModelTests: XCTestCase {
         interceptTabCloseDecision()
         model.tabCloseConfirmationTimeout = 0.01
         model.closeTab(id: model.tabs[0].id)
-        try await Task.sleep(for: .milliseconds(50))
+        XCTAssertEqual(model.tabs.count, 2)
+        let presentation = try XCTUnwrap(model.tabClosePresentation)
+        let expired = expectation(description: "close presentation actually expires")
+        let observer = Task { @MainActor in
+            while !presentation.isResolved {
+                try await Task.sleep(for: .milliseconds(5))
+            }
+            expired.fulfill()
+        }
+        defer { observer.cancel() }
+        await fulfillment(of: [expired], timeout: 3)
+        XCTAssertTrue(presentation.isResolved)
         XCTAssertNil(model.tabClosePresentation)
+        XCTAssertEqual(model.tabs.count, 2)
         heldCloseReply?(.alertFirstButtonReturn)
         XCTAssertEqual(model.tabs.count, 2)
     }
