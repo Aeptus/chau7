@@ -762,9 +762,9 @@ final class TerminalControlService {
             guard !requiresApproval || approved else {
                 return MainActorBridge.read { self.jsonError("Tab creation denied by user.") } ?? MainActorBridge.unresponsiveJSON
             }
-            return MainActorBridge.read {
+            return MainActorBridge.sync {
                 self.createTabAfterConsent(directory: directory, windowID: target, context: context, approvalGranted: approved)
-            } ?? MainActorBridge.unresponsiveJSON
+            }
         }
     }
 
@@ -2564,7 +2564,7 @@ final class TerminalControlService {
             guard requestTabApproval(message: message) else {
                 return MainActorBridge.read { self.jsonError("Tab control denied by user.") } ?? MainActorBridge.unresponsiveJSON
             }
-            return MainActorBridge.read {
+            return MainActorBridge.sync {
                 guard FeatureSettings.shared.mcpEnabled else {
                     return self.jsonError("MCP is disabled in settings.")
                 }
