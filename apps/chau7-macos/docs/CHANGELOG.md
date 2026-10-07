@@ -7,7 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Quality-runner Swift manifest checks use temporary scratch directories so concurrent native builds cannot hold their package lock and exhaust the manifest timeout. The real Core and full-app graphs remain validated.
+
+- Published a dated, deduplicated Swift concurrency diagnostic inventory and component ownership plan; historical counts remain labeled and warning promotion stays gated on resolved boundaries.
+
+### Changed
+
+- Updated the relay and issue-intake Workers dependency groups together, including Wrangler 4.145.0 and matching Worker types. Both tooling graphs pin sharp 0.35.5 to remove the newly reported librsvg vulnerability without downgrading Wrangler.
+
 ### Fixed
+
+- Queued parent-directory events preserve the recovered target watch, preventing unnecessary source replacement and observation gaps. File observation also includes size-change events for in-place appends; recovery remains bounded without restoring idle polling.
+
+### Fixed
+
+- Repository stats TTL/dirty-refresh tests now wait for the published snapshot rather than the background loader counter, avoiding a request-order race in the native validation gate.
 
 - Short main-thread freezes now trigger diagnostic sampling after two seconds, with a 60-second cooldown preserved across watchdog replacements. History adoption logs identify changed fields, and history/routing timings attribute slow UI work.
 - Repeated identical terminal state and AI identity updates skip unnecessary callbacks and routing invalidation; history adoption batches observer callbacks without delaying ordinary lifecycle changes.
