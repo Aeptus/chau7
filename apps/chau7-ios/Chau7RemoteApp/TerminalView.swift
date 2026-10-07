@@ -19,6 +19,7 @@ struct TerminalView: View {
     @AppStorage(AppSettings.terminalFontSizeKey) private var terminalFontSize = AppSettings.terminalFontSizeDefault
 
     @State private var inputText = ""
+    @State private var terminalSelection: RemoteTerminalSelectionSnapshot?
     @State private var showsTabPicker = false
     /// The user hid an auto-surfaced key row for the current waiting episode.
     /// Reset when the active tab's need signal rises again, so the row
@@ -309,6 +310,9 @@ struct TerminalView: View {
         Group {
             if experimentalTerminalRenderer {
                 RemoteTerminalRendererView(client: client)
+                    .contextMenu {
+                        Button("Select Text", systemImage: "text.cursor", action: captureTerminalSelection)
+                    }
             } else {
                 RemoteTerminalTextView(
                     text: renderANSI ? client.outputText : client.strippedOutputText,
@@ -318,6 +322,19 @@ struct TerminalView: View {
                     scrollToBottomToken: scrollToBottomToken
                 )
             }
+        }
+        .overlay(alignment: .topTrailing) {
+            Button(action: captureTerminalSelection) {
+                Image(systemName: "text.cursor")
+                    .font(.system(size: 16, weight: .semibold))
+                    .frame(width: 44, height: 44)
+                    .background(Color(UIColor.secondarySystemBackground), in: Circle())
+            }
+            .accessibilityLabel("Select terminal text to copy")
+            .padding(12)
+        }
+        .sheet(item: $terminalSelection) { snapshot in
+            RemoteTerminalSelectionView(text: snapshot.text, fontSize: CGFloat(terminalFontSize))
         }
         .overlay(alignment: .bottom) {
             if justSent {
@@ -411,6 +428,16 @@ struct TerminalView: View {
 
     // MARK: - Input Bar
 
+    private func captureTerminalSelection() {
+        let text: String
+        if experimentalTerminalRenderer, let grid = client.terminalRenderer.renderState {
+            text = grid.selectableText
+        } else {
+            text = client.strippedOutputText
+        }
+        terminalSelection = RemoteTerminalSelectionSnapshot(text: text)
+    }
+
     private var inputBar: some View {
         HStack(spacing: 8) {
             Button(action: toggleSoftwareKeyboard) {
@@ -431,16 +458,27 @@ struct TerminalView: View {
             .disabled(!client.canSendInput)
             .accessibilityLabel(controlKeyRowRequested ? "Hide terminal shortcut keys" : "Show terminal shortcut keys")
 
-            TextField("Input", text: $inputText, axis: .vertical)
-                .font(.system(.body, design: .monospaced))
-                .lineLimit(1...4)
-                .textFieldStyle(.roundedBorder)
-                .submitLabel(.send)
-                .focused($inputFocused)
-                .onSubmit { if !holdToSend { submitInput(trigger: "submit_label") } }
-                .onChange(of: inputText) { oldValue, newValue in
-                    handleInputChange(from: oldValue, to: newValue)
+            RemoteTerminalComposer(text: $inputText, focused: $inputFocused,
+                                   holdToSend: holdToSend, onSubmit: { submitInput(trigger: "return_key") })
+                .background(Color(UIColor.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 8))
+                .overlay(alignment: .topLeading) {
+                    if inputText.isEmpty {
+                        Text("Input").foregroundStyle(.secondary)
+                            .padding(.horizontal, 8).padding(.vertical, 8)
+                            .allowsHitTesting(false)
+                    }
                 }
+                .onChange(of: inputText) { oldValue, newValue in
+                    logKeystrokeDelta(from: oldValue, to: newValue)
+                }
+
+            PasteButton(payloadType: String.self) { strings in
+                inputText += strings.joined(separator: "\n")
+                inputFocused = true
+            }
+            .labelStyle(.iconOnly)
+            .accessibilityLabel("Paste into terminal input")
+            .accessibilityHint("Review pasted text, then use Send.")
 
             sendButton
         }
@@ -492,22 +530,6 @@ struct TerminalView: View {
             .disabled(inputText.isEmpty || !client.canSendInput)
             .accessibilityLabel("Send")
         }
-    }
-
-    /// Logs each keystroke delta and — for a multiline (`axis: .vertical`)
-    /// field where the Return key inserts a newline instead of firing
-    /// `onSubmit` — treats a trailing newline as a send when hold-to-send is
-    /// off. This is the core fix for "input text isn't actually sent".
-    private func handleInputChange(from oldValue: String, to newValue: String) {
-        logKeystrokeDelta(from: oldValue, to: newValue)
-
-        guard !holdToSend, newValue.hasSuffix("\n") else { return }
-        // Strip every trailing newline the Return key inserted, then submit.
-        var trimmed = newValue
-        while trimmed.hasSuffix("\n") { trimmed.removeLast() }
-        inputText = trimmed
-        guard !trimmed.isEmpty else { return }
-        submitInput(trigger: "return_key")
     }
 
     private func logKeystrokeDelta(from oldValue: String, to newValue: String) {
