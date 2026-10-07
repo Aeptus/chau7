@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Maintenance
+
+- Staged Worker formatting installs locked package tools when missing, including fresh full-suite CI runners that bypass affected-file Worker builds. Installation and formatter errors still fail the gate; already installed formatters retain the normal write/check and staged-tree verification.
+
 ### Fixed
 
 - Core-only Swift package graph checks retain isolated scratch paths and all graph assertions, allow up to two minutes for a cold toolchain under concurrent native CI, and report process timeout/signal failures explicitly.
