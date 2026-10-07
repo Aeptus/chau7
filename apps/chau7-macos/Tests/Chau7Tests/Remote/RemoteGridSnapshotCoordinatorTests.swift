@@ -20,8 +20,12 @@ final class RemoteGridSnapshotCoordinatorTests: XCTestCase {
 
         lazy var owner = RemoteGridSnapshotCoordinator(
             interval: .milliseconds(5),
-            target: { [unowned self] _ in connected && fullStream && eligible ? session : nil },
-            capture: { [unowned self] _, generation in
+            target: { [weak self] _ in
+                guard let self else { return nil }
+                return connected && fullStream && eligible ? session : nil
+            },
+            capture: { [weak self] _, generation in
+                guard let self else { return nil }
                 requestedGenerations.append(generation)
                 onCapture?()
                 return RemoteGridUpdate(
@@ -32,18 +36,22 @@ final class RemoteGridSnapshotCoordinatorTests: XCTestCase {
                     )
                 )
             },
-            context: { [unowned self] _ in
-                RemoteGridSnapshotCoordinator.Context(
+            context: { [weak self] _ in
+                guard let self else { return .init(isConnected: false, streamsTerminal: false, selectedTab: nil, sessionID: nil) }
+                return RemoteGridSnapshotCoordinator.Context(
                     isConnected: connected,
                     streamsTerminal: fullStream,
                     selectedTab: selected,
                     sessionID: session
                 )
             },
-            deliver: { [unowned self] _, data in delivered.append(data)
+            deliver: { [weak self] _, data in
+                guard let self else { return }
+                delivered.append(data)
                 onDeliver?()
             },
-            encodeForTesting: { [unowned self] _, scope, completion in
+            encodeForTesting: { [weak self] _, scope, completion in
+                guard let self else { return }
                 XCTAssertTrue(Thread.isMainThread)
                 encodedScopes.append(scope)
                 completions.append(completion)
