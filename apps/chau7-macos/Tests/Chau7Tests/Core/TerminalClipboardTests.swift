@@ -44,4 +44,37 @@ final class TerminalClipboardTests: XCTestCase {
         XCTAssertEqual(TerminalClipboard.singleLine("first\r\nsecond"), "firstsecond")
     }
 
+    func testGridCopyPreservesIndentationAndHardLineBreaks() {
+        XCTAssertEqual(TerminalClipboard.gridText(
+            rows: ["  echo hi  ", "    next  ", ""],
+            softWrappedRows: []
+        ), "  echo hi\n    next")
+    }
+
+    func testGridCopyJoinsSoftWrapsWithoutLosingArgumentSpaces() {
+        XCTAssertEqual(TerminalClipboard.gridText(
+            rows: ["echo ", "hello  "],
+            softWrappedRows: [1]
+        ), "echo hello")
+        XCTAssertEqual(TerminalClipboard.gridText(
+            rows: ["/tmp/long", "path"],
+            softWrappedRows: [1]
+        ), "/tmp/longpath")
+    }
+
+    func testGridCopyRetainsInteriorBlankLinesAndUnicode() {
+        XCTAssertEqual(TerminalClipboard.gridText(
+            rows: ["café 😀", "", "  next", "", ""],
+            softWrappedRows: []
+        ), "café 😀\n\n  next")
+        XCTAssertEqual(TerminalClipboard.gridText(rows: [], softWrappedRows: [0, 1]), "")
+        XCTAssertEqual(TerminalClipboard.gridText(rows: ["", " "], softWrappedRows: []), "")
+    }
+
+    func testGridCopyIgnoresInvalidWrapIndices() {
+        XCTAssertEqual(TerminalClipboard.gridText(
+            rows: ["one", "two"],
+            softWrappedRows: [-1, 0, 100]
+        ), "one\ntwo")
+    }
 }

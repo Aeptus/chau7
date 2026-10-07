@@ -46,6 +46,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- iOS terminal glyphs use UIKit line origins instead of baselines, keeping TUI prompt text inside its background and cursor row in both grid drawing paths. Both canvas paths and the UIKit bitmap tests share the same draw function, covered at four text sizes with regular and bold fonts.
+- iOS terminal output has a visible Select Text action and a frozen native selection view. Grid copying preserves graphemes, indentation, interior blank lines and logical wraps while omitting empty viewport-tail rows; clipboard paste remains editable, including a single newline, while keyboard Return retains the configured send behavior. Hidden cells stay masked, and delayed UIKit paste insertion publishes the editable composer contents without submitting them.
+
 - Remote pairing repair for an already persisted peer no longer depends on a new state write or changes its trusted metadata.
 - New remote pairing trust and session readiness are adopted only after the paired identity is durably saved. A wrapping or file-write failure preserves trusted state and reports pairing failure instead of authorizing an unsaved phone.
 - Remote identity storage fails closed on unavailable machine identity or invalid wrapped keys, preserving the state file and explaining recovery instead of silently replacing identity or saving keys in plaintext.

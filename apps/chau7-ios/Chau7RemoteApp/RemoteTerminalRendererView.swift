@@ -617,12 +617,6 @@ private final class RemoteTerminalCanvasView: UIView {
 
         let cellW = metrics.cellWidth
         let cellH = metrics.cellHeight
-        // Baseline derived from the same font as the cell, not from
-        // `UIFont.lineHeight` (a different metric than the CTFont line box the
-        // cell is built from, which produced a negative offset and stacked
-        // every line into the row above it).
-        let baselineOffset = metrics.baselineOffset
-
         // The engine holds the source grid (Mac PTY width); this canvas holds
         // phone-width rows. Each source row is re-wrapped across as many
         // phone-width rows as it needs, so the content reads top-to-bottom on a
@@ -642,7 +636,6 @@ private final class RemoteTerminalCanvasView: UIView {
                 context: context,
                 cellW: cellW,
                 cellH: cellH,
-                baselineOffset: baselineOffset,
                 backgroundColorKey: backgroundColorKey,
                 visibleRect: visibleRect
             )
@@ -744,10 +737,9 @@ private final class RemoteTerminalCanvasView: UIView {
                 let fgKey = colorCache.foregroundKey(for: cell)
                 let fg = colorCache.foreground(forKey: fgKey)
                 let font = resolvedFont(for: cell)
-                let str = clusterStr as NSString
-                str.draw(
-                    at: CGPoint(x: CGFloat(offset) * cellW, y: y + baselineOffset),
-                    withAttributes: colorCache.textAttributes(font: font, colorKey: fgKey, color: fg)
+                metrics.drawGlyph(
+                    clusterStr, at: CGPoint(x: CGFloat(offset) * cellW, y: y), font: font,
+                    attributes: colorCache.textAttributes(font: font, colorKey: fgKey, color: fg)
                 )
 
                 let x = CGFloat(offset) * cellW
@@ -843,7 +835,6 @@ private final class RemoteTerminalCanvasView: UIView {
         context: CGContext,
         cellW: CGFloat,
         cellH: CGFloat,
-        baselineOffset: CGFloat,
         backgroundColorKey: UInt32,
         visibleRect: CGRect
     ) {
@@ -890,9 +881,10 @@ private final class RemoteTerminalCanvasView: UIView {
                 let x = CGFloat(column) * cellW
                 let fgKey = colorCache.foregroundKey(for: cell)
                 let fg = colorCache.foreground(forKey: fgKey)
-                (cluster as NSString).draw(
-                    at: CGPoint(x: x, y: y + baselineOffset),
-                    withAttributes: colorCache.textAttributes(font: resolvedFont(for: cell), colorKey: fgKey, color: fg)
+                let font = resolvedFont(for: cell)
+                metrics.drawGlyph(
+                    cluster, at: CGPoint(x: x, y: y), font: font,
+                    attributes: colorCache.textAttributes(font: font, colorKey: fgKey, color: fg)
                 )
                 if cell.flags & rustCellFlagUnderline != 0 {
                     fg.setStroke()
