@@ -103,6 +103,10 @@ func unwrapKey(encoded string, wrappingKey []byte) ([]byte, error) {
 }
 
 func LoadState(path string) (*State, error) {
+	return loadState(path, machineUUID)
+}
+
+func loadState(path string, lookupUUID func() (string, error)) (*State, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -115,21 +119,17 @@ func LoadState(path string) (*State, error) {
 		return nil, err
 	}
 	state.migrateLegacyPairedDevice()
-	if state.KeyEncrypted && state.MacPrivateKey != "" {
-		uuid, err := machineUUID()
-		if err != nil {
-			state.MacPrivateKey = ""
-			state.MacPublicKey = ""
-			state.KeyEncrypted = false
-			return &state, nil
+	if state.KeyEncrypted {
+		if state.MacPrivateKey == "" {
+			return nil, errors.New("remote state marks a wrapped identity but has no private key; preserve the state file and restore a valid backup")
 		}
-		wk := deriveWrappingKey(uuid)
-		plainB64, err := unwrapKey(state.MacPrivateKey, wk)
+		uuid, err := lookupUUID()
+		if err != nil || uuid == "" {
+			return nil, fmt.Errorf("cannot unlock remote state: machine identity unavailable (%v); preserve the state file and retry when the identity service is available", err)
+		}
+		plainB64, err := unwrapKey(state.MacPrivateKey, deriveWrappingKey(uuid))
 		if err != nil {
-			state.MacPrivateKey = ""
-			state.MacPublicKey = ""
-			state.KeyEncrypted = false
-			return &state, nil
+			return nil, fmt.Errorf("cannot unlock remote state private key: %w; preserve the state file and restore a valid backup for this Mac", err)
 		}
 		state.MacPrivateKey = string(plainB64)
 		state.KeyEncrypted = false
@@ -138,21 +138,32 @@ func LoadState(path string) (*State, error) {
 }
 
 func SaveState(path string, state *State) error {
-	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return err
+	return saveState(path, state, machineUUID)
+}
+
+func saveState(path string, state *State, lookupUUID func() (string, error)) error {
+	if state == nil {
+		return errors.New("cannot save nil remote state")
+	}
+	if state.KeyEncrypted {
+		return errors.New("cannot save remote state before its wrapped identity has been unlocked")
 	}
 	toSave := *state
 	if toSave.MacPrivateKey != "" {
-		uuid, err := machineUUID()
-		if err == nil {
-			wk := deriveWrappingKey(uuid)
-			wrapped, err := wrapKey([]byte(toSave.MacPrivateKey), wk)
-			if err == nil {
-				toSave.MacPrivateKey = wrapped
-				toSave.KeyEncrypted = true
-			}
+		uuid, err := lookupUUID()
+		if err != nil || uuid == "" {
+			return fmt.Errorf("cannot protect remote state: machine identity unavailable (%v); existing state has not been changed", err)
 		}
+		wrapped, err := wrapKey([]byte(toSave.MacPrivateKey), deriveWrappingKey(uuid))
+		if err != nil {
+			return fmt.Errorf("cannot protect remote state private key: %w", err)
+		}
+		toSave.MacPrivateKey = wrapped
+		toSave.KeyEncrypted = true
+	}
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return err
 	}
 	data, err := json.MarshalIndent(&toSave, "", "  ")
 	if err != nil {
