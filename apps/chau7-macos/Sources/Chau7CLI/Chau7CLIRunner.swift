@@ -421,8 +421,7 @@ public struct Chau7CLIRunner {
             guard values?.isDirectory == true else { return nil }
             return url.lastPathComponent
         }
-        let preferred = ["chau7-magi", "chau7-mcp"].filter { ids.contains($0) }
-        return preferred + ids.sorted().filter { !preferred.contains($0) }
+        return ids.sorted()
     }
 
     private func installPlan(

@@ -94,6 +94,16 @@ final class TerminalKeyEncoderTests: XCTestCase {
         XCTAssertEqual(sequence(kVK_End, [.shift, .control]), Array("\u{1b}[1;6F".utf8))
     }
 
+    func testHomeAndEndRespectApplicationCursorMode() {
+        XCTAssertEqual(sequence(kVK_Home, applicationCursorMode: true), Array("\u{1b}OH".utf8))
+        XCTAssertEqual(sequence(kVK_End, applicationCursorMode: true), Array("\u{1b}OF".utf8))
+    }
+
+    func testModifiedHomeAndEndUseCSIEvenInApplicationCursorMode() {
+        XCTAssertEqual(sequence(kVK_Home, .shift, applicationCursorMode: true), Array("\u{1b}[1;2H".utf8))
+        XCTAssertEqual(sequence(kVK_End, .control, applicationCursorMode: true), Array("\u{1b}[1;5F".utf8))
+    }
+
     func testPageUpAndPageDown() {
         XCTAssertEqual(sequence(kVK_PageUp), Array("\u{1b}[5~".utf8))
         XCTAssertEqual(sequence(kVK_PageDown), Array("\u{1b}[6~".utf8))

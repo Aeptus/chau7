@@ -2,10 +2,6 @@ import XCTest
 @testable import Chau7Core
 
 final class Chau7SkillBuiltInSkillsTests: XCTestCase {
-    func testBundledMagiSkillValidates() {
-        XCTAssertEqual(validateBuiltInSkill("chau7-magi"), [])
-    }
-
     func testBundledMCPSkillValidates() {
         XCTAssertEqual(validateBuiltInSkill("chau7-mcp"), [])
     }
@@ -15,26 +11,13 @@ final class Chau7SkillBuiltInSkillsTests: XCTestCase {
     }
 
     func testBuiltInSkillsValidateAgainstSharedAgentSkillsContract() {
-        for skillID in ["chau7-magi", "chau7-mcp", "chau7-build"] {
+        for skillID in ["chau7-mcp", "chau7-build"] {
             XCTAssertEqual(
                 validateBuiltInSkill(skillID),
                 [],
                 "\(skillID) should be a valid Agent Skill"
             )
         }
-    }
-
-    func testBuiltInMagiSkillContainsRequiredOperatingGuidance() throws {
-        let content = try skillMarkdown("chau7-magi")
-
-        XCTAssertTrue(content.contains("Use MAGI when"))
-        XCTAssertTrue(content.contains("magi ask"))
-        XCTAssertTrue(content.contains("Never fake council output"))
-        XCTAssertTrue(content.contains("direct answer"))
-        XCTAssertTrue(content.contains("magi replay <run-id>"))
-        XCTAssertTrue(content.contains("magi share <run-id>"))
-        XCTAssertTrue(content.contains("decision.json"))
-        XCTAssertTrue(content.contains("technical.jsonl"))
     }
 
     func testBuiltInMCPSkillContainsRequiredSafetyGuidance() throws {
