@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Review setup stays open until asynchronous launch succeeds, preserves configuration on denial or failure, displays errors in the sheet, and prevents duplicate launches while consent is pending.
+
 - Keep scripting tab creation and Dashboard agent/review launches off the main thread so approval sheets remain available and responsive.
 
 - Quality-runner Swift manifest checks use temporary scratch directories so concurrent native builds cannot hold their package lock and exhaust the manifest timeout. The real Core and full-app graphs remain validated.
