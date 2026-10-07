@@ -14,7 +14,7 @@ reporting routes or `GITHUB_ISSUE_*` secrets to the remote relay Worker.
 | POST | `/` or `/issue` | Create an authenticated GitHub issue via the private intake repo |
 
 Issue creation is a native-app endpoint and does not enable CORS. Each POST
-must include an `Authorization: Bearer` token in the relay's v2 HMAC format,
+must include an `Authorization: Bearer` token in the relay's v3 device/role credential format,
 plus `X-Chau7-Device-ID` and `X-Chau7-Role` (`mac` or `ios`). Tokens must use
 the `issues` scope and are single-use. Browser preflights are rejected.
 
@@ -44,8 +44,8 @@ GITHUB_ISSUE_REPO="owner/private-intake-repo" \
 npm run cutover
 ```
 
-Before cutover, provision `RELAY_SECRET` on `chau7-issues` through the
-Cloudflare dashboard or Wrangler. It must exactly match the secret configured
+Before cutover, provision `RELAY_AUTH_KEYS` on `chau7-issues` through the
+Cloudflare dashboard or Wrangler. It must exactly match the root keyring configured
 on `chau7-relay`; the cutover script does not accept or upload this secret.
 
 The cutover script:
@@ -66,13 +66,15 @@ the legacy Worker while deleting only its stale issue secrets.
 |--------|---------|
 | `GITHUB_ISSUE_PAT` | Fine-grained GitHub PAT (Issues: Read & Write) |
 | `GITHUB_ISSUE_REPO` | Target repo in `owner/repo` format |
-| `RELAY_SECRET` | Shared HMAC key used by paired clients to mint scoped issue tokens; must match `chau7-relay` |
+| `RELAY_AUTH_KEYS` | Server-only root keyring; must match the relay key IDs, roots and bounded rotation window |
+| `RELAY_REVOKED_DEVICES` | Optional revoked Mac namespace IDs; apply consistently to both Workers |
 
 Optionally set `GITHUB_ISSUE_ALLOWED_LABELS` to a comma-separated allowlist.
 Labels outside that list, malformed labels, and requests with more than five
 labels are rejected. If unset, the endpoint accepts no caller-supplied labels.
 
-Paired clients need a pairing payload that contains `relay_secret`. Older
+Paired iOS clients need a fresh secure QR containing the derived iOS `relay_secret`
+and `relay_key_id`. Mac issue reporting uses its separate owner-only Mac credential. Older
 pairing payloads without it cannot submit directly; the macOS reporter can
 still save the report locally, and the iOS reporter offers file export.
 

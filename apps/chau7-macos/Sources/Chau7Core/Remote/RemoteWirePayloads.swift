@@ -21,10 +21,10 @@ public struct RemotePairingPayload: Codable, Equatable, Sendable {
     public let macPub: String
     public let pairingCode: String
     public let expiresAt: String
-    /// Shared HMAC secret used to mint relay auth tokens. Optional so older
-    /// pairing payloads (no secret) still decode and the client falls back to
-    /// unauthenticated connects.
+    /// Derived iOS role credential. Legacy payloads decode for migration,
+    /// but cannot connect until replaced by a provisioned v3 pairing.
     public var relaySecret: String?
+    public var relayKeyID: String?
 
     public init(
         relayURL: String,
@@ -32,7 +32,8 @@ public struct RemotePairingPayload: Codable, Equatable, Sendable {
         macPub: String,
         pairingCode: String,
         expiresAt: String,
-        relaySecret: String? = nil
+        relaySecret: String? = nil,
+        relayKeyID: String? = nil
     ) {
         self.relayURL = relayURL
         self.deviceID = deviceID
@@ -40,6 +41,7 @@ public struct RemotePairingPayload: Codable, Equatable, Sendable {
         self.pairingCode = pairingCode
         self.expiresAt = expiresAt
         self.relaySecret = relaySecret
+        self.relayKeyID = relayKeyID
     }
 
     enum CodingKeys: String, CodingKey {
@@ -49,6 +51,7 @@ public struct RemotePairingPayload: Codable, Equatable, Sendable {
         case pairingCode = "pairing_code"
         case expiresAt = "expires_at"
         case relaySecret = "relay_secret"
+        case relayKeyID = "relay_key_id"
     }
 }
 

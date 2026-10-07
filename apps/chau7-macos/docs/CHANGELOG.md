@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- Relay admission now uses provisioned device/role credentials and v3 key IDs, with bounded rotation and namespace revocation. Remote startup fails closed without an owner-only matching bundle. The secure pairing QR contains only the iOS role credential; displayed/copied device details omit credentials. Identity and paired-device trust survive provisioning and rotation.
+
 - Published a dated, deduplicated Swift concurrency diagnostic inventory and component ownership plan; historical counts remain labeled and warning promotion stays gated on resolved boundaries.
 
 ### Changed

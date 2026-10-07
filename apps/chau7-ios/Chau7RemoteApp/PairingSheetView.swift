@@ -1,5 +1,6 @@
 import Chau7Core
 import SwiftUI
+import Chau7Core
 
 /// Modal sheet for pairing with the macOS app. Supports scanning the pairing QR
 /// code shown by Chau7 on the Mac, a one-tap "Paste & Pair" from the clipboard,
@@ -22,7 +23,7 @@ struct PairingSheetView: View {
     var body: some View {
         NavigationStack {
             VStack(alignment: .leading, spacing: 16) {
-                Text("Open Chau7 on your Mac, enable Remote, and scan the pairing code — or paste it here.")
+                Text("Open Chau7 on your Mac, enable Remote, and scan the secure QR code. You can also enter a securely supplied pairing payload.")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
 
@@ -134,7 +135,7 @@ struct PairingSheetView: View {
 
     private func pasteAndPair() {
         guard let text = UIPasteboard.general.string, !text.isEmpty else {
-            feedback = .error("Your clipboard is empty. Copy the pairing text from Chau7 on your Mac first.")
+            feedback = .error("Your clipboard is empty. Scan the secure QR on your Mac, or enter a securely supplied pairing payload.")
             return
         }
         draftPayload = text
@@ -174,7 +175,7 @@ enum PairingPayloadValidator {
         }
         guard let data = trimmed.data(using: .utf8),
               let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            return .failure("That doesn't look like a Chau7 pairing code. Copy it from the Remote panel on your Mac.")
+            return .failure("That doesn't look like a Chau7 pairing code. Scan a fresh secure QR from the Remote panel on your Mac.")
         }
 
         let requiredFields: [(key: String, label: String)] = [
@@ -200,6 +201,9 @@ enum PairingPayloadValidator {
             return .failure("Relay URL must use wss:// (encrypted transport). Generate a fresh code on your Mac.")
         }
 
+        guard RelayToken.make(pairing: info, role: "ios", scope: "connect") != nil else {
+            return .failure("This pairing needs a provisioned relay credential. Scan a fresh QR code from your Mac.")
+        }
         return .success(info)
     }
 

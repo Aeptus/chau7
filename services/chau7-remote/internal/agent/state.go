@@ -37,7 +37,6 @@ type State struct {
 	IOSName       string         `json:"ios_name,omitempty"`
 	PairedDevices []PairedDevice `json:"paired_devices,omitempty"`
 	KeyEncrypted  bool           `json:"key_encrypted,omitempty"`
-	RelaySecret   string         `json:"relay_secret,omitempty"`
 }
 
 func machineUUID() (string, error) {

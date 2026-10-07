@@ -1,9 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import issueWorker, { IssueRateLimitDO } from "../src/worker.js";
-import { mintToken } from "../../chau7-relay/src/token.js";
+import { bytesToBase64url, mintToken } from "../../chau7-relay/src/token.js";
+import { deriveRoleCredential } from "../../chau7-relay/src/auth.js";
 
-const FIXTURE = "test-only-hmac-material";
+const FIXTURE = bytesToBase64url(
+  Uint8Array.from({ length: 32 }, (_, i) => i + 1),
+);
+const KEY_ID = "issue-tests";
 const DEVICE_ID = "11111111-2222-3333-4444-555555555555";
 const NOW = 1_700_000_000_000;
 const RATE_WINDOW_MS = 60 * 60 * 1000;
@@ -85,7 +89,9 @@ class MemoryNamespace {
 
 function makeEnv() {
   return {
-    RELAY_SECRET: FIXTURE,
+    RELAY_AUTH_KEYS: JSON.stringify({
+      current: { id: KEY_ID, secret: FIXTURE },
+    }),
     GITHUB_ISSUE_PAT: "test-github-pat",
     GITHUB_ISSUE_REPO: "owner/private-issues",
     GITHUB_ISSUE_ALLOWED_LABELS: "bug,question",
@@ -103,7 +109,15 @@ async function issueRequest(payload, options = {}) {
         deviceId: options.tokenDeviceId ?? deviceId,
         role: options.tokenRole ?? role,
         scope: options.scope ?? "issues",
-        secret: options.secret ?? FIXTURE,
+        keyId: options.keyId ?? KEY_ID,
+        secret:
+          options.secret ??
+          (await deriveRoleCredential(
+            FIXTURE,
+            options.keyId ?? KEY_ID,
+            options.tokenDeviceId ?? deviceId,
+            options.tokenRole ?? role,
+          )),
       },
       Math.floor(Date.now() / 1000),
     ));
@@ -206,7 +220,7 @@ test("rejects cross-origin posts and browser preflights", async (t) => {
   assert.equal(calls.length, 0);
 });
 
-test("a valid v2 issues token creates an issue and forwards only validated fields", async (t) => {
+test("a valid v3 issues token creates an issue and forwards only validated fields", async (t) => {
   freezeTime(t);
   const calls = mockGitHub(t);
   const env = makeEnv();
@@ -235,7 +249,7 @@ test("a valid v2 issues token creates an issue and forwards only validated field
   assert.ok(env.ISSUE_RATE_LIMIT.names.includes(`nonce:${DEVICE_ID}`));
 });
 
-test("the v2 nonce is single use", async (t) => {
+test("the provisioned v3 nonce is single use", async (t) => {
   freezeTime(t);
   const calls = mockGitHub(t);
   const env = makeEnv();
@@ -266,12 +280,12 @@ test("rejects tokens for other scopes, identities, roles, and secrets", async (t
   assert.equal(calls.length, 0);
 });
 
-test("fails closed when the relay secret is missing or a placeholder", async (t) => {
+test("fails closed when the credential keyring is missing or malformed", async (t) => {
   freezeTime(t);
   const calls = mockGitHub(t);
   for (const secret of [undefined, "CHANGE_ME_IN_PRODUCTION"]) {
     const env = makeEnv();
-    env.RELAY_SECRET = secret;
+    env.RELAY_AUTH_KEYS = secret;
     const { request } = await issueRequest();
     const response = await issueWorker.fetch(request, env);
     assert.equal(response.status, 503);
@@ -501,4 +515,40 @@ test("nonce Durable Object rejects replay and expires stored nonces", async (t) 
   advanceTime(NOW + 1001);
   await durableObject.alarm();
   assert.equal(await storage.get(`issue-token:${nonce}`), undefined);
+});
+
+test("v3 issues admission retains replay protection through the last accepted token second", async (t) => {
+  const advanceTime = freezeTime(t);
+  const calls = mockGitHub(t);
+  const env = makeEnv();
+  const signed = await issueRequest();
+  advanceTime(NOW + 120500);
+  assert.equal((await issueWorker.fetch(signed.request, env)).status, 200);
+  const replay = await issueRequest(undefined, { token: signed.token });
+  assert.equal((await issueWorker.fetch(replay.request, env)).status, 403);
+  assert.equal(calls.length, 1);
+  advanceTime(NOW + 121000);
+  const expired = await issueRequest(undefined, { token: signed.token });
+  assert.equal((await issueWorker.fetch(expired.request, env)).status, 403);
+});
+
+test("v3 issues admission accepts the exact permitted future clock skew", async (t) => {
+  freezeTime(t);
+  mockGitHub(t);
+  const secret = await deriveRoleCredential(FIXTURE, KEY_ID, DEVICE_ID, "mac");
+  const token = await mintToken(
+    {
+      deviceId: DEVICE_ID,
+      role: "mac",
+      scope: "issues",
+      keyId: KEY_ID,
+      secret,
+    },
+    NOW / 1000 + 30,
+  );
+  const signed = await issueRequest(undefined, { token });
+  assert.equal(
+    (await issueWorker.fetch(signed.request, makeEnv())).status,
+    200,
+  );
 });

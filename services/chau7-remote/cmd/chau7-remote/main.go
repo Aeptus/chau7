@@ -45,6 +45,12 @@ func watchParentProcess() {
 }
 
 func main() {
+	if len(os.Args) > 1 {
+		if err := runManagementCommand(os.Args[1:], os.Stdout); err != nil {
+			log.Fatalf("remote configuration: %v", err)
+		}
+		return
+	}
 	go watchParentProcess()
 
 	socketPath := os.Getenv("CHAU7_REMOTE_SOCKET")

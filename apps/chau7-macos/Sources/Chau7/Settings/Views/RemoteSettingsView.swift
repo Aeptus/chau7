@@ -119,7 +119,8 @@ struct RemoteSettingsView: View {
     private var pairingView: some View {
         if let info = remote.pairingInfo {
             let payload = info.pairingJSONString()
-            let prettyPayload = info.pairingJSONString(prettyPrinted: true)
+            let prettyPayload = info.pairingJSONString(prettyPrinted: true, includeCredential: false)
+            let publicPayload = info.pairingJSONString(includeCredential: false)
             HStack(alignment: .top, spacing: Chau7Style.Settings.looseControlSpacing) {
                 VStack(alignment: .leading, spacing: Chau7Style.Settings.inlineControlSpacing) {
                     Text(String(format: L("remote.deviceId", "Device ID: %@"), info.deviceID))
@@ -148,11 +149,11 @@ struct RemoteSettingsView: View {
                     }
 
                     SettingsButtonRow(buttons: [
-                        .init(title: L("Copy Pairing JSON", "Copy Pairing JSON"), icon: "doc.on.doc") {
-                            guard let payload else { return }
+                        .init(title: L("Copy Device Details", "Copy Device Details"), icon: "doc.on.doc") {
+                            guard let publicPayload else { return }
                             let pasteboard = NSPasteboard.general
                             pasteboard.clearContents()
-                            pasteboard.setString(payload, forType: .string)
+                            pasteboard.setString(publicPayload, forType: .string)
                         },
                         .init(title: L("Copy Pairing Code", "Copy Pairing Code"), icon: "number.square") {
                             let pasteboard = NSPasteboard.general

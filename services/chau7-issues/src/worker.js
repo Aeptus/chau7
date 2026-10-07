@@ -3,14 +3,16 @@
  *
  * Routes:
  *   GET  /              Landing page (HTML)
- *   POST / or /issue    Create a GitHub issue using a scoped v2 bearer token
+ *   POST / or /issue    Create a GitHub issue using a device/role-scoped v3 bearer token
  */
 
-import { isRelaySecretConfigured } from "../../chau7-relay/src/auth.js";
+import {
+  resolveAuthMode,
+  verifyCredentialToken,
+} from "../../chau7-relay/src/auth.js";
 import {
   TOKEN_FUTURE_SKEW_SECONDS,
   TOKEN_TTL_SECONDS,
-  verifyToken,
 } from "../../chau7-relay/src/token.js";
 
 const LANDING_HTML = `<!DOCTYPE html>
@@ -46,7 +48,7 @@ const NONCE_PATTERN = /^[A-Za-z0-9_-]{22}$/;
 const RESERVATION_ID_PATTERN = /^[A-Za-z0-9_-]{16,64}$/;
 const NONCE_KEY_PREFIX = "issue-token:";
 const MAX_TOKEN_LIFETIME_MS =
-  (TOKEN_TTL_SECONDS + TOKEN_FUTURE_SKEW_SECONDS) * 1000;
+  (TOKEN_TTL_SECONDS + TOKEN_FUTURE_SKEW_SECONDS + 1) * 1000;
 
 export class IssueRateLimitDO {
   constructor(state) {
@@ -344,9 +346,9 @@ async function authenticateIssueRequest(request, env) {
     };
   }
 
-  if (!isRelaySecretConfigured(env.RELAY_SECRET)) {
+  if (resolveAuthMode(env).mode !== "enforce") {
     console.error(
-      "Issue intake rejecting request: RELAY_SECRET is not configured.",
+      "Issue intake rejecting request: relay credential keyring is missing or invalid.",
     );
     return {
       response: jsonResponse(
@@ -375,12 +377,11 @@ async function authenticateIssueRequest(request, env) {
 
   let verification;
   try {
-    verification = await verifyToken(match[1], {
-      deviceId,
-      role,
-      scope: "issues",
-      secret: env.RELAY_SECRET.trim(),
-    });
+    verification = await verifyCredentialToken(
+      match[1],
+      { deviceId, role, scope: "issues" },
+      env,
+    );
   } catch (error) {
     console.error("Issue intake token verification failed:", error);
     return {
@@ -408,7 +409,8 @@ async function authenticateIssueRequest(request, env) {
         method: "POST",
         body: JSON.stringify({
           nonce: verification.nonce,
-          expiresAt: verification.expiresAt,
+          // Verification accepts the complete final integer second.
+          expiresAt: verification.expiresAt + 1000,
         }),
       }),
     );

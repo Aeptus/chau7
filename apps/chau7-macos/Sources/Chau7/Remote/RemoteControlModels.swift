@@ -13,10 +13,9 @@ struct RemotePairingInfo: Codable, Equatable {
     let pairingCode: String
     let expiresAt: String
     let relayURL: String
-    /// Shared HMAC secret the paired iOS device needs to authenticate to the
-    /// relay. Present only when relay auth is configured; carried through to the
-    /// QR/paste payload so iOS can mint tokens.
+    /// Only the device-derived iOS credential is carried by the secure QR.
     var relaySecret: String?
+    var relayKeyID: String? = nil
 
     enum CodingKeys: String, CodingKey {
         case deviceID = "device_id"
@@ -25,6 +24,7 @@ struct RemotePairingInfo: Codable, Equatable {
         case expiresAt = "expires_at"
         case relayURL = "relay_url"
         case relaySecret = "relay_secret"
+        case relayKeyID = "relay_key_id"
     }
 }
 
@@ -44,14 +44,15 @@ struct RemotePairingRegenerationPlan: Equatable {
 }
 
 extension RemotePairingInfo {
-    func pairingJSONString(prettyPrinted: Bool = false) -> String? {
+    func pairingJSONString(prettyPrinted: Bool = false, includeCredential: Bool = true) -> String? {
         let payload = RemoteQRPayload(
             relayURL: relayURL,
             deviceID: deviceID,
             macPub: macPub,
             pairingCode: pairingCode,
             expiresAt: expiresAt,
-            relaySecret: relaySecret
+            relaySecret: includeCredential ? relaySecret : nil,
+            relayKeyID: relayKeyID
         )
         let encoder = JSONEncoder()
         if prettyPrinted {
@@ -105,7 +106,6 @@ struct RemoteAgentStateSnapshot: Codable {
     let iosPublicKey: String?
     let iosName: String?
     let keyEncrypted: Bool?
-    let relaySecret: String?
 
     enum CodingKeys: String, CodingKey {
         case deviceID = "device_id"
@@ -115,7 +115,6 @@ struct RemoteAgentStateSnapshot: Codable {
         case iosPublicKey = "ios_public_key"
         case iosName = "ios_name"
         case keyEncrypted = "key_encrypted"
-        case relaySecret = "relay_secret"
     }
 
     init(from decoder: Decoder) throws {
@@ -127,7 +126,6 @@ struct RemoteAgentStateSnapshot: Codable {
         self.iosPublicKey = try container.decodeIfPresent(String.self, forKey: .iosPublicKey)
         self.iosName = try container.decodeIfPresent(String.self, forKey: .iosName)
         self.keyEncrypted = try container.decodeIfPresent(Bool.self, forKey: .keyEncrypted)
-        self.relaySecret = try container.decodeIfPresent(String.self, forKey: .relaySecret)
         if pairedDevices.isEmpty,
            let iosPublicKey,
            let rawKey = Data(base64Encoded: iosPublicKey) {
@@ -153,7 +151,6 @@ struct RemoteAgentStateSnapshot: Codable {
         try container.encodeIfPresent(pairedDevices.first?.iosPublicKey, forKey: .iosPublicKey)
         try container.encodeIfPresent(pairedDevices.first?.name, forKey: .iosName)
         try container.encodeIfPresent(keyEncrypted, forKey: .keyEncrypted)
-        try container.encodeIfPresent(relaySecret, forKey: .relaySecret)
     }
 
     mutating func removePairedDevice(id: String) {

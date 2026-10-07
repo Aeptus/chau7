@@ -28,6 +28,7 @@ import {
 import { RateLimiter } from './ratelimit.js';
 import { parseToken, TOKEN_TTL_SECONDS } from './token.js';
 import { relayBackpressureAction } from './backpressure.js';
+import { isCredentialAdmissionAllowed, resolveAuthMode } from './auth.js';
 
 interface PushRegistration {
   pairedDeviceId: string;
@@ -55,6 +56,10 @@ interface PendingStatePayload {
 }
 
 interface Env {
+  RELAY_AUTH_KEYS?: string;
+  RELAY_REVOKED_DEVICES?: string;
+  ENVIRONMENT?: string;
+  RELAY_ALLOW_UNAUTHENTICATED?: string;
   APNS_TOKEN_BROKER: DurableObjectNamespace;
   APNS_TEAM_ID?: string;
   APNS_KEY_ID?: string;
@@ -145,12 +150,45 @@ export class SessionDO {
     const server = pair[1];
     // Tag with the role so the message handler can locate the peer after the DO
     // hibernates and is re-instantiated with no in-memory socket references.
+    const deviceId = url.pathname.split('/').filter(Boolean)[1];
+    const bearer = request.headers.get('Authorization')?.replace(/^Bearer /, '');
+    const keyId = bearer ? parseToken(bearer)?.keyId : 'development';
+    server.serializeAttachment({ deviceId, role, keyId });
     this.state.acceptWebSocket(server, [role]);
 
     return new Response(null, { status: 101, webSocket: client });
   }
 
+  private socketIsAuthorized(ws: WebSocket): boolean {
+    try {
+      const metadata = ws.deserializeAttachment() as {
+        deviceId?: string;
+        keyId?: string;
+        role?: string;
+      } | null;
+      if (
+        metadata &&
+        isCredentialAdmissionAllowed(
+          resolveAuthMode(this.env),
+          metadata.deviceId,
+          metadata.keyId,
+          metadata.role
+        )
+      )
+        return true;
+    } catch {
+      /* Missing or malformed legacy attachments fail closed. */
+    }
+    try {
+      ws.close(1008, 'Relay credential expired or revoked');
+    } catch {
+      /* Already closed. */
+    }
+    return false;
+  }
+
   async webSocketMessage(ws: WebSocket, message: ArrayBuffer | string): Promise<void> {
+    if (!this.socketIsAuthorized(ws)) return;
     const tags = this.state.getTags(ws);
     const role: Role | undefined = tags.includes('mac')
       ? 'mac'
@@ -173,6 +211,7 @@ export class SessionDO {
 
     const peerRole: Role = role === 'mac' ? 'ios' : 'mac';
     for (const peer of this.state.getWebSockets(peerRole)) {
+      if (!this.socketIsAuthorized(peer)) continue;
       const buffered = (peer as { bufferedAmount?: number }).bufferedAmount ?? 0;
       const backpressureAction = relayBackpressureAction(buffered, message);
       if (backpressureAction === 'close') {

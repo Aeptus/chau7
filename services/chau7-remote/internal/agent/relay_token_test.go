@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-// TestGenerateRelayTokenFormat locks the v2 token wire format and signature
+// TestGenerateRelayTokenFormat locks the v3 token wire format and signature
 // construction to the contract the Cloudflare relay verifies
 // (services/chau7-relay/src/token.js). If this test and the relay ever drift,
 // authentication breaks in production, so the assertions are deliberately exact.
@@ -19,19 +19,27 @@ func TestGenerateRelayTokenFormat(t *testing.T) {
 		deviceID = "11111111-2222-3333-4444-555555555555"
 		role     = "mac"
 		scope    = "connect"
-		hmacKey  = "unit-test-hmac-key-0001"
+		keyID    = "test-key"
 	)
 
-	token := generateRelayToken(deviceID, role, scope, hmacKey)
+	publicVector := make([]byte, 32)
+	for i := range publicVector {
+		publicVector[i] = byte(i + 1)
+	}
+	hmacKey := base64.RawURLEncoding.EncodeToString(publicVector)
+	token := generateRelayToken(deviceID, role, scope, keyID, hmacKey)
 
 	parts := strings.Split(token, ".")
-	if len(parts) != 5 {
-		t.Fatalf("expected 5 dot-separated parts, got %d: %q", len(parts), token)
+	if len(parts) != 6 {
+		t.Fatalf("expected 6 dot-separated parts, got %d: %q", len(parts), token)
 	}
-	version, ts, nonce, gotScope, sig := parts[0], parts[1], parts[2], parts[3], parts[4]
+	version, gotKeyID, ts, nonce, gotScope, sig := parts[0], parts[1], parts[2], parts[3], parts[4], parts[5]
+	if gotKeyID != keyID {
+		t.Fatalf("wrong key ID: %s", gotKeyID)
+	}
 
-	if version != "v2" {
-		t.Errorf("version = %q, want v2", version)
+	if version != "v3" {
+		t.Errorf("version = %q, want v3", version)
 	}
 	if gotScope != scope {
 		t.Errorf("scope = %q, want %q", gotScope, scope)
@@ -44,7 +52,7 @@ func TestGenerateRelayTokenFormat(t *testing.T) {
 	}
 
 	// Recompute the signature exactly as the relay does and compare.
-	msg := "v2:" + deviceID + ":" + role + ":" + scope + ":" + ts + ":" + nonce
+	msg := "v3:" + keyID + ":" + deviceID + ":" + role + ":" + scope + ":" + ts + ":" + nonce
 	mac := hmac.New(sha256.New, []byte(hmacKey))
 	mac.Write([]byte(msg))
 	want := base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
@@ -54,16 +62,16 @@ func TestGenerateRelayTokenFormat(t *testing.T) {
 }
 
 func TestGenerateRelayTokenNonceIsUnique(t *testing.T) {
-	a := generateRelayToken("d", "mac", "push", "s")
-	b := generateRelayToken("d", "mac", "push", "s")
-	if strings.Split(a, ".")[2] == strings.Split(b, ".")[2] {
+	a := generateRelayToken("d", "mac", "push", "test-key", "s")
+	b := generateRelayToken("d", "mac", "push", "test-key", "s")
+	if strings.Split(a, ".")[3] == strings.Split(b, ".")[3] {
 		t.Error("expected distinct nonces across mints")
 	}
 }
 
 func TestGenerateRelayTokenTimestampIsFresh(t *testing.T) {
-	token := generateRelayToken("d", "ios", "pending", "s")
-	ts, err := strconv.ParseInt(strings.Split(token, ".")[1], 10, 64)
+	token := generateRelayToken("d", "ios", "pending", "test-key", "s")
+	ts, err := strconv.ParseInt(strings.Split(token, ".")[2], 10, 64)
 	if err != nil {
 		t.Fatalf("bad ts: %v", err)
 	}

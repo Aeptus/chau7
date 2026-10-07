@@ -311,6 +311,13 @@ final class RemoteClient {
             return
         }
 
+        guard let token = RelayToken.make(pairing: pairing, role: "ios", scope: "connect") else {
+            disconnect(autoReconnect: false, trigger: .connectionRestart)
+            lastError = "This pairing needs a provisioned relay credential. Scan a fresh QR code from your Mac."
+            status = .error
+            return
+        }
+
         DiagnosticsLog.shared.info(.connection, "Connection requested", [
             "trigger": trigger.rawValue,
             "force_restart": forceRestart ? "true" : "false",
@@ -347,13 +354,9 @@ final class RemoteClient {
             return
         }
 
-        // Carry the connect-scoped auth token in the Authorization header of the
-        // upgrade request (never the query string). When no relay secret is
-        // present, connect unauthenticated for backward compatibility.
+        // Admission always requires the device-derived iOS credential.
         var request = URLRequest(url: url)
-        if let token = RelayToken.make(pairing: pairing, role: "ios", scope: "connect") {
-            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        }
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         transport.open(request: request)
         status = .connecting
         emitTelemetry(
@@ -2089,9 +2092,8 @@ private func handlePairAccept(_ data: Data) {
         request.httpMethod = "GET"
         request.timeoutInterval = 10
         request.cachePolicy = .reloadIgnoringLocalCacheData
-        if let token = RelayToken.make(pairing: pairing, role: "ios", scope: "pending") {
-            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        }
+        guard let token = RelayToken.make(pairing: pairing, role: "ios", scope: "pending") else { return nil }
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         return request
     }
 

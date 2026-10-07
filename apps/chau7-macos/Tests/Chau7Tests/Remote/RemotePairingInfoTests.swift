@@ -42,6 +42,17 @@ final class RemotePairingInfoTests: XCTestCase {
         XCTAssertTrue(json.contains("\"relay_url\""))
     }
 
+    func testPublicDeviceDetailsNeverIncludeRelayCredential() throws {
+        let secret = Data((1 ... 32).map(UInt8.init)).base64EncodedString().replacingOccurrences(of: "=", with: "")
+        let info = RemotePairingInfo(deviceID: "device-123", macPub: "mac-pub", pairingCode: "123456", expiresAt: "e", relayURL: "wss://r", relaySecret: secret, relayKeyID: "test-key")
+        let secureQR = try XCTUnwrap(info.pairingJSONString())
+        let publicDetails = try XCTUnwrap(info.pairingJSONString(prettyPrinted: true, includeCredential: false))
+        XCTAssertTrue(secureQR.contains(secret))
+        XCTAssertFalse(publicDetails.contains(secret))
+        XCTAssertFalse(publicDetails.contains("relay_secret"))
+        XCTAssertTrue(publicDetails.contains("relay_key_id"))
+    }
+
     func testPairingRegenerationPlanStartsAgentWhenRemoteIsEnabled() {
         let plan = RemotePairingRegenerationPlan.make(
             isRemoteEnabled: true,
