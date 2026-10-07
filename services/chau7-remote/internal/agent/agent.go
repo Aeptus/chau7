@@ -205,6 +205,7 @@ type ApprovalNotificationPayload struct {
 	// across Mac app restarts). Pointer so absence (old Macs) is
 	// distinguishable from zero.
 	SpineSeq *uint64 `json:"spine_seq,omitempty"`
+	Severity string  `json:"severity,omitempty"`
 }
 
 type ApprovalResponsePayload struct {
