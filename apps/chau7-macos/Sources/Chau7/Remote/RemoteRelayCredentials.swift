@@ -24,7 +24,7 @@ struct RemoteRelayCredentials: Codable, Equatable {
     }
 
     static func load(from url: URL, deviceID: String) throws -> Self {
-        let descriptor = Darwin.open(url.path, O_RDONLY | O_NOFOLLOW | O_CLOEXEC)
+        let descriptor = Darwin.open(url.path, O_RDONLY | O_NOFOLLOW | O_CLOEXEC | O_NONBLOCK)
         guard descriptor >= 0 else { throw provisioningError }
         let file = FileHandle(fileDescriptor: descriptor, closeOnDealloc: true)
         defer { try? file.close() }

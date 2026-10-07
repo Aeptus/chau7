@@ -131,7 +131,7 @@ func RotateRelayKeyring(previous RelayKeyring, overlap time.Duration, now time.T
 // The opened descriptor, not a racy pathname stat, owns the permission check.
 func readPrivateRelayJSON(path string, value any) error {
 	// #nosec G304 -- operator-selected local key/credential file; no-follow and descriptor ownership/permissions are checked before any bytes are read.
-	file, err := os.OpenFile(filepath.Clean(path), os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_CLOEXEC, 0)
+	file, err := os.OpenFile(filepath.Clean(path), os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_CLOEXEC|syscall.O_NONBLOCK, 0)
 	if err != nil {
 		return fmt.Errorf("open owner-only relay configuration: %w", err)
 	}

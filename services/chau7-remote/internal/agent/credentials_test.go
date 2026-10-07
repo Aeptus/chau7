@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -206,5 +207,29 @@ func TestRelayDerivationMatchesSharedCrossLanguageVector(t *testing.T) {
 	}
 	if credentials.MacSecret != vector["mac_secret"] || credentials.IOSSecret != vector["ios_secret"] {
 		t.Fatal("derivation drifted from cross-language vector")
+	}
+}
+
+func TestRelayCredentialNamedPipeIsRejectedWithoutWaitingForAWriter(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "credentials.json")
+	if err := syscall.Mkfifo(path, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		// Release a pre-fix blocking reader after the timeout; never leave the fixture goroutine stranded.
+		writer, err := syscall.Open(path, syscall.O_WRONLY|syscall.O_NONBLOCK|syscall.O_CLOEXEC, 0)
+		if err == nil {
+			_ = syscall.Close(writer)
+		}
+	}()
+	rejected := make(chan error, 1)
+	go func() { _, err := LoadRelayCredentials(path, "device-a"); rejected <- err }()
+	select {
+	case err := <-rejected:
+		if err == nil {
+			t.Fatal("named pipe credentials accepted")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("credential reader waited for a named pipe writer before validating the descriptor")
 	}
 }
