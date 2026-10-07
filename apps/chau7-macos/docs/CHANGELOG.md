@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- New remote pairing trust and session readiness are adopted only after the paired identity is durably saved. A wrapping or file-write failure preserves trusted state and reports pairing failure instead of authorizing an unsaved phone.
+
+### Fixed
+
 - Remote identity storage fails closed on unavailable machine identity or invalid wrapped keys, preserving the state file and explaining recovery instead of silently replacing identity or saving keys in plaintext.
 
 - Short main-thread freezes now trigger diagnostic sampling after two seconds, with a 60-second cooldown preserved across watchdog replacements. History adoption logs identify changed fields, and history/routing timings attribute slow UI work.

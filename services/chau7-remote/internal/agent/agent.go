@@ -646,13 +646,17 @@ func (a *Agent) handleRelayFrame(frame *protocol.Frame) {
 		if requiresEncryptedRelayFrame(frame.Type) && !wasEncrypted {
 			return
 		}
-		a.sessionMu.Lock()
-		a.sessionReady = true
-		a.sessionMu.Unlock()
 		// This frame decrypted under keys derived from the claimed ios_pub, so
 		// the sender holds the matching private key. Only now is it safe to
 		// make that identity permanently trusted.
-		a.confirmPendingPair()
+		if !a.confirmPendingPair() {
+			a.resetSession()
+			a.sendSessionStatus("pairing_failed")
+			return
+		}
+		a.sessionMu.Lock()
+		a.sessionReady = true
+		a.sessionMu.Unlock()
 		log.Printf("session ready: encrypted epoch confirmed by iOS")
 		a.sendToIPC(&protocol.Frame{
 			Version: 1,
@@ -915,17 +919,17 @@ func (a *Agent) clearPendingPair() {
 // Pairing stays long-lived: after the first confirmation the public key is
 // stored permanently, and later reconnects are authorised by that stored key,
 // so the pairing code is needed exactly once and never re-entered.
-func (a *Agent) confirmPendingPair() {
+func (a *Agent) confirmPendingPair() bool {
 	a.pendingPairMu.Lock()
 	pending := a.pendingPair
 	a.pendingPair = nil
 	a.pendingPairMu.Unlock()
 	if pending == nil {
-		return
+		return true
 	}
 	if time.Since(pending.claimedAt) > pendingPairTTL {
 		log.Printf("pair request: discarding stale provisional identity")
-		return
+		return false
 	}
 	// Only confirm the identity the live session actually proved. If the peer
 	// changed mid-handshake, the proof belongs to the other key.
@@ -934,22 +938,28 @@ func (a *Agent) confirmPendingPair() {
 	a.sessionMu.Unlock()
 	if provedPub != pending.iosPub {
 		log.Printf("pair request: refusing to persist identity not proved by handshake")
-		return
+		return false
 	}
 
 	a.stateMu.Lock()
-	device, err := a.state.UpsertPairedDevice(pending.iosName, pending.iosPub, time.Now())
+	candidate := *a.state
+	candidate.PairedDevices = append([]PairedDevice(nil), a.state.PairedDevices...)
+	device, err := candidate.UpsertPairedDevice(pending.iosName, pending.iosPub, time.Now())
 	if err != nil {
 		a.stateMu.Unlock()
 		log.Printf("pair request: upsert paired device: %v", err)
-		return
+		return false
 	}
-	a.setCurrentPeer(device)
-	if err := SaveState(a.statePath, a.state); err != nil {
+	if err := SaveState(a.statePath, &candidate); err != nil {
+		a.stateMu.Unlock()
 		log.Printf("pair request: save state: %v", err)
+		return false
 	}
+	*a.state = candidate
+	a.setCurrentPeer(device)
 	a.stateMu.Unlock()
 	log.Printf("pair request: trusted iOS identity after encrypted handshake proof")
+	return true
 }
 
 func (a *Agent) setCurrentPeer(device *PairedDevice) {

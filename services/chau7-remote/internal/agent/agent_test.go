@@ -847,3 +847,29 @@ func TestClearPendingApprovalRemovesItFromRelayState(t *testing.T) {
 		t.Fatalf("expected cleared approvals, got %d", len(got.Approvals))
 	}
 }
+
+func TestConfirmPendingPairPreservesTrustWhenSaveFails(t *testing.T) {
+	a, iosPub := makePairTestAgent(t)
+	a.setPendingPair("Unsaved Phone", iosPub)
+	a.currentIOSPub = iosPub
+	// A directory cannot be atomically replaced by the state file.
+	a.statePath = t.TempDir()
+	before, err := json.Marshal(a.state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a.confirmPendingPair()
+	after, err := json.Marshal(a.state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(before, after) {
+		t.Fatalf("failed persistence changed trusted state: %s", after)
+	}
+	if a.currentPeerID != "" {
+		t.Fatal("failed persistence selected a trusted peer")
+	}
+	if a.isPairRequestAuthorized(PairRequestPayload{IOSPub: iosPub}, time.Now()) {
+		t.Fatal("unsaved identity became authorized")
+	}
+}
