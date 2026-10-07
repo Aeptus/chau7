@@ -1188,6 +1188,10 @@ final class OverlayTabsModel {
     @ObservationIgnored var onStartupRestoreWorkDrained: (() -> Void)?
 
     @ObservationIgnored weak var overlayWindow: NSWindow?
+    @ObservationIgnored var tabClosePresentation: ConfirmationSheetPresentation?
+    @ObservationIgnored var tabCloseConfirmationTimeout: TimeInterval = 300
+    /// Test seam retains production decision/expiry ownership without opening UI.
+    @ObservationIgnored var tabCloseConfirmationPresenter: ((NSAlert, @escaping @MainActor (NSApplication.ModalResponse) -> Void) -> Void)?
     @ObservationIgnored var onCloseLastTab: (() -> Void)?
     /// Full saved states for tabs that have not completed an interactive restore.
     /// The scheduler may already have hydrated identity facts for these tabs.
