@@ -14,15 +14,15 @@ final class ControlPlaneService {
         case "tab_list":
             return MainActorBridge.read { self.terminalControl.listTabs() } ?? MainActorBridge.unresponsiveJSON
         case "tab_create":
-            return MainActorBridge.sync { terminalControl.createTab(
+            return terminalControl.createTab(
                 directory: arguments["directory"] as? String,
                 windowID: arguments["window_id"] as? Int
-            ) }
+            )
         case "tab_request_control":
             guard let tabID = arguments["tab_id"] as? String else {
                 return jsonError("tab_id is required")
             }
-            return MainActorBridge.sync { terminalControl.requestMCPControl(tabID: tabID) }
+            return terminalControl.requestMCPControl(tabID: tabID)
         case "tab_release_control":
             guard let tabID = arguments["tab_id"] as? String else {
                 return jsonError("tab_id is required")

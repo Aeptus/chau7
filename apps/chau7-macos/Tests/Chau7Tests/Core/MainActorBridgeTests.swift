@@ -42,6 +42,17 @@ final class MainActorBridgeTests: XCTestCase {
         XCTAssertTrue(result)
     }
 
+    func testSynchronousMutationReturnsCommittedResultAfterReadDeadline() async {
+        let request = Task.detached {
+            MainActorBridge.sync {
+                Thread.sleep(forTimeInterval: MainActorBridge.readTimeout + 0.05)
+                return "committed"
+            }
+        }
+        let result = await request.value
+        XCTAssertEqual(result, "committed")
+    }
+
     func testRunOnMainExecutesInline() {
         var ran = false
         MainActorBridge.run { ran = true }

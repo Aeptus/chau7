@@ -237,11 +237,11 @@ final class RuntimeControlService {
             Log.info("MCP runtime_session_create: attaching to existing tab \(attachStr)")
         } else {
             // Create a new tab via TerminalControlService
-            let tabResult = onMainActor { controlService.createTab(
+            let tabResult = controlService.createTab(
                 directory: directory,
                 windowID: nil,
                 context: "runtime_session_create"
-            ) }
+            )
             guard let data = tabResult.data(using: .utf8),
                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                   let tabIDStr = json["tab_id"] as? String,
