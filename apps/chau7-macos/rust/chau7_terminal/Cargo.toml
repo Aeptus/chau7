@@ -9,7 +9,7 @@ publish = false
 crate-type = ["cdylib", "staticlib"]
 
 [dependencies]
-alacritty_terminal = "0.25"
+alacritty_terminal = "0.26"
 portable-pty = "0.9"
 thiserror = "2"
 libc = "0.2"
