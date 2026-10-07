@@ -51,11 +51,12 @@ final class ProxyAnalyticsStoreRepoSummaryTests: XCTestCase {
         let summary = store.repoSummary(projectPath: "/repo/target", hourlyDays: 1)
 
         XCTAssertEqual(summary.callCount, 2)
-        XCTAssertEqual(summary.totalTokens, 54)
+        XCTAssertEqual(summary.totalTokens, 47)
         XCTAssertEqual(summary.totalCostUSD, 3.2, accuracy: 0.0001)
         XCTAssertEqual(summary.providers, ["anthropic", "openai"])
         XCTAssertEqual(try XCTUnwrap(summary.lastCallAt).timeIntervalSince1970, latestTargetCallAt.timeIntervalSince1970, accuracy: 0.001)
         XCTAssertEqual(summary.hourlyCost.reduce(0) { $0 + $1.callCount }, 2)
+        XCTAssertEqual(summary.hourlyCost.reduce(0) { $0 + $1.totalTokens }, 47)
     }
 
     func testRepoSummaryReturnsEmptyForMissingRepositoryAndFilteredProvider() {
@@ -68,7 +69,7 @@ final class ProxyAnalyticsStoreRepoSummaryTests: XCTestCase {
 
         let openAI = store.repoSummary(projectPath: "/repo/target", providerFilterKey: "openai")
         XCTAssertEqual(openAI.callCount, 1)
-        XCTAssertEqual(openAI.totalTokens, 24)
+        XCTAssertEqual(openAI.totalTokens, 17)
         XCTAssertEqual(openAI.providers, ["openai"])
     }
 }

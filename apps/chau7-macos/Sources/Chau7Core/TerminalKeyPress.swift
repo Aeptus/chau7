@@ -183,10 +183,10 @@ public struct TerminalKeyPress: Equatable, Sendable {
                 text: nil
             )
         case "home":
-            let bytes = hasModifiers ? csiSequenceWithModifier("1", modifierParameter: modifierParameter, terminator: "H") : csiSequence("H")
+            let bytes = arrowKeySequence("H", modifierParameter: modifierParameter, hasModifiers: hasModifiers, applicationCursorMode: applicationCursorMode)
             return EncodedTerminalKeyPress(bytes: bytes, text: nil)
         case "end":
-            let bytes = hasModifiers ? csiSequenceWithModifier("1", modifierParameter: modifierParameter, terminator: "F") : csiSequence("F")
+            let bytes = arrowKeySequence("F", modifierParameter: modifierParameter, hasModifiers: hasModifiers, applicationCursorMode: applicationCursorMode)
             return EncodedTerminalKeyPress(bytes: bytes, text: nil)
         case "page_up":
             let bytes = hasModifiers ? csiSequenceWithModifier("5", modifierParameter: modifierParameter, terminator: "~") : csiSequence("5~")

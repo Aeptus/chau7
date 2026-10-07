@@ -94,6 +94,20 @@ struct ProxyRepoAnalyticsSummary: Sendable {
 final class ProxyAnalyticsStore {
     static let shared = ProxyAnalyticsStore()
 
+    /// Normalize each stored request before SUM, including provider aliases and
+    /// per-row clamping. Raw observations and their pricing version stay intact.
+    private static let canonicalInputSQL = canonicalCounterSQL(
+        counter: "input_tokens", subset: "cache_read_input_tokens", providers: ProviderTokenAccounting.inclusiveInputProviders
+    )
+    private static let canonicalOutputSQL = canonicalCounterSQL(
+        counter: "output_tokens", subset: "reasoning_output_tokens", providers: ProviderTokenAccounting.inclusiveOutputProviders
+    )
+
+    private static func canonicalCounterSQL(counter: String, subset: String, providers: [String]) -> String {
+        let keys = providers.map { "'\($0)'" }.joined(separator: ",")
+        return "CASE WHEN LOWER(TRIM(provider)) IN (\(keys)) THEN MAX(COALESCE(\(counter),0)-MAX(COALESCE(\(subset),0),0),0) ELSE MAX(COALESCE(\(counter),0),0) END"
+    }
+
     private nonisolated(unsafe) static let isoWithFractional = DateFormatters.iso8601
 
     private static var defaultDatabasePath: String {
@@ -150,11 +164,11 @@ final class ProxyAnalyticsStore {
             var sql = """
             SELECT provider,
                    COUNT(*),
-                   COALESCE(SUM(input_tokens), 0),
-                   COALESCE(SUM(output_tokens), 0),
-                   COALESCE(SUM(cache_creation_input_tokens), 0),
-                   COALESCE(SUM(cache_read_input_tokens), 0),
-                   COALESCE(SUM(reasoning_output_tokens), 0),
+                   COALESCE(SUM(\(Self.canonicalInputSQL)), 0),
+                   COALESCE(SUM(\(Self.canonicalOutputSQL)), 0),
+                   COALESCE(SUM(MAX(COALESCE(cache_creation_input_tokens, 0), 0)), 0),
+                   COALESCE(SUM(MAX(COALESCE(cache_read_input_tokens, 0), 0)), 0),
+                   COALESCE(SUM(MAX(COALESCE(reasoning_output_tokens, 0), 0)), 0),
                    COALESCE(SUM(cost_usd), 0),
                    COALESCE(AVG(latency_ms), 0)
             FROM api_calls
@@ -352,10 +366,10 @@ final class ProxyAnalyticsStore {
             SELECT date(datetime(timestamp, 'localtime')) AS day,
                    provider,
                    COUNT(*),
-                   COALESCE(SUM(input_tokens), 0) + COALESCE(SUM(output_tokens), 0)
-                     + COALESCE(SUM(cache_creation_input_tokens), 0)
-                     + COALESCE(SUM(cache_read_input_tokens), 0)
-                     + COALESCE(SUM(reasoning_output_tokens), 0),
+                   COALESCE(SUM(\(Self.canonicalInputSQL)), 0) + COALESCE(SUM(\(Self.canonicalOutputSQL)), 0)
+                     + COALESCE(SUM(MAX(COALESCE(cache_creation_input_tokens, 0), 0)), 0)
+                     + COALESCE(SUM(MAX(COALESCE(cache_read_input_tokens, 0), 0)), 0)
+                     + COALESCE(SUM(MAX(COALESCE(reasoning_output_tokens, 0), 0)), 0),
                    COALESCE(SUM(cost_usd), 0)
             FROM api_calls
             WHERE timestamp >= datetime('now', 'localtime', '-\(clampedDays) days')
@@ -427,20 +441,22 @@ final class ProxyAnalyticsStore {
                     let rawProvider = stmt.columnText(1)
                     guard AnalyticsProvider.matches(rawProvider, filterKey: providerFilterKey) else { continue }
                     let timestamp = stmt.columnText(12).flatMap(isoDate) ?? Date.distantPast
+                    let key = AnalyticsProvider.key(for: rawProvider)
+                    let provider = APICallEvent.Provider(rawValue: key == "google" ? "gemini" : key ?? "") ?? .unknown
                     events.append(
                         APICallEvent(
                             sessionId: stmt.columnText(0) ?? "",
-                            provider: APICallEvent.Provider(rawValue: rawProvider ?? "") ?? .unknown,
+                            provider: provider,
                             model: stmt.columnText(2) ?? "",
                             endpoint: stmt.columnText(3) ?? "",
-                            inputTokens: Int(stmt.columnInt64(4)),
-                            outputTokens: Int(stmt.columnInt64(5)),
-                            cacheCreationInputTokens: Int(stmt.columnInt64(6)),
-                            cacheReadInputTokens: Int(stmt.columnInt64(7)),
-                            reasoningOutputTokens: Int(stmt.columnInt64(8)),
+                            inputTokens: stmt.columnIsNull(4) ? nil : Int(stmt.columnInt64(4)),
+                            outputTokens: stmt.columnIsNull(5) ? nil : Int(stmt.columnInt64(5)),
+                            cacheCreationInputTokens: stmt.columnIsNull(6) ? nil : Int(stmt.columnInt64(6)),
+                            cacheReadInputTokens: stmt.columnIsNull(7) ? nil : Int(stmt.columnInt64(7)),
+                            reasoningOutputTokens: stmt.columnIsNull(8) ? nil : Int(stmt.columnInt64(8)),
                             latencyMs: Int(stmt.columnInt64(9)),
                             statusCode: Int(stmt.columnInt64(10)),
-                            costUSD: stmt.columnDouble(11),
+                            costUSD: stmt.columnIsNull(11) ? nil : stmt.columnDouble(11),
                             timestamp: timestamp,
                             errorMessage: stmt.columnText(13),
                             projectPath: stmt.columnText(14)
@@ -456,11 +472,11 @@ final class ProxyAnalyticsStore {
         withDatabase { db in
             var sql = """
             SELECT provider, model, COUNT(*),
-                   COALESCE(SUM(input_tokens), 0),
-                   COALESCE(SUM(output_tokens), 0),
-                   COALESCE(SUM(cache_creation_input_tokens), 0),
-                   COALESCE(SUM(cache_read_input_tokens), 0),
-                   COALESCE(SUM(reasoning_output_tokens), 0),
+                   COALESCE(SUM(\(Self.canonicalInputSQL)), 0),
+                   COALESCE(SUM(\(Self.canonicalOutputSQL)), 0),
+                   COALESCE(SUM(MAX(COALESCE(cache_creation_input_tokens, 0), 0)), 0),
+                   COALESCE(SUM(MAX(COALESCE(cache_read_input_tokens, 0), 0)), 0),
+                   COALESCE(SUM(MAX(COALESCE(reasoning_output_tokens, 0), 0)), 0),
                    COALESCE(SUM(cost_usd), 0),
                    COALESCE(AVG(latency_ms), 0)
             FROM api_calls
@@ -545,11 +561,11 @@ final class ProxyAnalyticsStore {
             var sql = """
             SELECT provider,
                    COUNT(*),
-                   COALESCE(SUM(input_tokens), 0)
-                     + COALESCE(SUM(output_tokens), 0)
-                     + COALESCE(SUM(cache_creation_input_tokens), 0)
-                     + COALESCE(SUM(cache_read_input_tokens), 0)
-                     + COALESCE(SUM(reasoning_output_tokens), 0),
+                   COALESCE(SUM(\(Self.canonicalInputSQL)), 0)
+                     + COALESCE(SUM(\(Self.canonicalOutputSQL)), 0)
+                     + COALESCE(SUM(MAX(COALESCE(cache_creation_input_tokens, 0), 0)), 0)
+                     + COALESCE(SUM(MAX(COALESCE(cache_read_input_tokens, 0), 0)), 0)
+                     + COALESCE(SUM(MAX(COALESCE(reasoning_output_tokens, 0), 0)), 0),
                    COALESCE(SUM(cost_usd), 0),
                    MAX(timestamp)
             FROM api_calls
@@ -626,10 +642,10 @@ final class ProxyAnalyticsStore {
         SELECT strftime('%Y-%m-%d %H:00', datetime(timestamp, 'localtime')) AS hour,
                provider,
                COUNT(*),
-               COALESCE(SUM(input_tokens), 0) + COALESCE(SUM(output_tokens), 0)
-                 + COALESCE(SUM(cache_creation_input_tokens), 0)
-                 + COALESCE(SUM(cache_read_input_tokens), 0)
-                 + COALESCE(SUM(reasoning_output_tokens), 0),
+               COALESCE(SUM(\(Self.canonicalInputSQL)), 0) + COALESCE(SUM(\(Self.canonicalOutputSQL)), 0)
+                 + COALESCE(SUM(MAX(COALESCE(cache_creation_input_tokens, 0), 0)), 0)
+                 + COALESCE(SUM(MAX(COALESCE(cache_read_input_tokens, 0), 0)), 0)
+                 + COALESCE(SUM(MAX(COALESCE(reasoning_output_tokens, 0), 0)), 0),
                COALESCE(SUM(cost_usd), 0)
         FROM api_calls
         WHERE timestamp >= datetime('now', 'localtime', '-\(clampedDays) days')

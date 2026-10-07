@@ -82,9 +82,9 @@ public enum TerminalKeyEncoder {
             return arrowKeySequence("D", modParam: modParam, hasModifiers: hasModifiers, applicationCursorMode: applicationCursorMode)
         // Navigation keys
         case VirtualKey.home:
-            return hasModifiers ? csiSequenceWithMod("1", modParam: modParam, terminator: "H") : csiSequence("H")
+            return arrowKeySequence("H", modParam: modParam, hasModifiers: hasModifiers, applicationCursorMode: applicationCursorMode)
         case VirtualKey.end:
-            return hasModifiers ? csiSequenceWithMod("1", modParam: modParam, terminator: "F") : csiSequence("F")
+            return arrowKeySequence("F", modParam: modParam, hasModifiers: hasModifiers, applicationCursorMode: applicationCursorMode)
         case VirtualKey.pageUp:
             return hasModifiers ? csiSequenceWithMod("5", modParam: modParam, terminator: "~") : csiSequence("5~")
         case VirtualKey.pageDown:

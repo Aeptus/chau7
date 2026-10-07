@@ -4,6 +4,7 @@ import Chau7Core
 enum TerminalWorkOperation: String, CaseIterable {
     case getLastOutput
     case getGrid
+    case remoteGridEncode
     case cursorModeRead
     case fullBufferCapture
     case tailBufferCapture

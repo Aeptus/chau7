@@ -262,20 +262,15 @@ struct TerminalView: View {
                             .frame(width: 7, height: 7)
                             .accessibilityHidden(true)
                     }
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(activeTabMenuLabel)
-                            .font(.system(.subheadline, design: .rounded).weight(.semibold))
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-                        Text("Switch session · \(client.tabs.count)")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
+                    Text(activeTabMenuLabel)
+                        .font(.system(.subheadline, design: .rounded).weight(.semibold))
+                        .lineLimit(1)
+                        .truncationMode(.middle)
                     Image(systemName: "chevron.down")
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(.secondary)
                 }
-                .padding(.horizontal, 12)
+                .padding(.horizontal, 8)
                 .frame(minHeight: 44)
                 .background(Color(UIColor.secondarySystemBackground))
                 .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
@@ -304,7 +299,7 @@ struct TerminalView: View {
             }
         }
         .padding(.horizontal)
-        .padding(.vertical, 8)
+        .padding(.vertical, 2)
         .background(Color(UIColor.systemBackground))
     }
 
