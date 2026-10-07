@@ -79,6 +79,67 @@ final class FileMonitorTests: XCTestCase {
         monitor.stop()
     }
 
+    func testQueuedParentEventsPreserveRecoveredTargetWatch() throws {
+        let fileURL = tempDir.appendingPathComponent("recovered.txt")
+        let queue = DispatchQueue(label: "com.chau7.tests.queued-parent-events")
+        let registry = FileSystemWatchRegistry(label: "com.chau7.tests.queued-parent-registry")
+        let monitor = FileMonitor(
+            url: fileURL,
+            queue: queue,
+            retryPolicy: FileObservationRetryPolicy(activeRetryDuration: 0),
+            watchRegistry: registry
+        ) {}
+        monitor.start()
+        queue.sync {} // The missing target now has a parent subscription.
+        defer { monitor.stop()
+            queue.sync {}
+        }
+        let parent = try XCTUnwrap(registry.activePathsForTesting().first)
+        XCTAssertNil(registry.watchIdentityForTesting(url: fileURL))
+
+        // Queue both parent callbacks before target recovery cancels the parent.
+        // Compare source ownership between them on the monitor's own queue.
+        queue.suspend()
+        try Data().write(to: fileURL)
+        registry.deliverForTesting(url: URL(fileURLWithPath: parent), flags: .write)
+        let observed = expectation(description: "queued parent events processed")
+        queue.async {
+            let first = registry.watchIdentityForTesting(url: fileURL)
+            XCTAssertNotNil(first)
+            queue.async {
+                XCTAssertTrue(
+                    registry.watchIdentityForTesting(url: fileURL) === first,
+                    "a stale parent event must not replace a live target source"
+                )
+                observed.fulfill()
+            }
+        }
+        registry.deliverForTesting(url: URL(fileURLWithPath: parent), flags: .write)
+        queue.resume()
+        wait(for: [observed], timeout: 3)
+    }
+
+    func testDetectsInPlaceFileGrowth() throws {
+        let fileURL = tempDir.appendingPathComponent("growing.txt")
+        try Data("initial".utf8).write(to: fileURL)
+        let changed = expectation(description: "in-place file growth detected")
+        changed.assertForOverFulfill = false
+        let queue = DispatchQueue(label: "com.chau7.tests.in-place-growth")
+        let monitor = FileMonitor(url: fileURL, queue: queue) { changed.fulfill() }
+        monitor.start()
+        queue.sync {} // Wait for arming, without a scheduling sleep.
+        defer { monitor.stop()
+            queue.sync {}
+        }
+
+        let writer = try FileHandle(forWritingTo: fileURL)
+        defer { try? writer.close() }
+        try writer.seekToEnd()
+        try writer.write(contentsOf: Data(" appended terminal activity".utf8))
+        try writer.synchronize()
+        wait(for: [changed], timeout: 3)
+    }
+
     // MARK: - URL Property
 
     func testURLProperty() {
