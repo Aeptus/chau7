@@ -11,6 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Tab and bulk-close confirmations use asynchronous, main-owned sheets with a five-minute expiry. Late or stale decisions fail closed; new tabs created while a bulk decision is pending survive, and warning suppression only changes after approval.
 
+- Updated Alacritty Terminal to 0.26 and preserved integer child-exit reporting for normal and signaled exits across the unchanged C ABI.
+
 - Published a dated, deduplicated Swift concurrency diagnostic inventory and component ownership plan; historical counts remain labeled and warning promotion stays gated on resolved boundaries.
 
 - Remote grid scheduling, one-job/latest-pending admission and delivery epochs now have one main-owned coordinator. The existing worker, owned-byte capture boundary and wire format are preserved.
