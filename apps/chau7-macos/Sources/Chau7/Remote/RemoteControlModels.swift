@@ -15,7 +15,7 @@ struct RemotePairingInfo: Codable, Equatable {
     let relayURL: String
     /// Only the device-derived iOS credential is carried by the secure QR.
     var relaySecret: String?
-    var relayKeyID: String? = nil
+    var relayKeyID: String?
 
     enum CodingKeys: String, CodingKey {
         case deviceID = "device_id"
