@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Core-only Swift package graph checks retain isolated scratch paths and all graph assertions, allow up to two minutes for a cold toolchain under concurrent native CI, and report process timeout/signal failures explicitly.
+
 - Review setup stays open until asynchronous launch succeeds, preserves configuration on denial or failure, displays errors in the sheet, and prevents duplicate launches while consent is pending.
 
 - Keep scripting tab creation and Dashboard agent/review launches off the main thread so approval sheets remain available and responsive.
