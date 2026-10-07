@@ -229,7 +229,8 @@ final class RemotePureUnitTests: XCTestCase {
 final class RelayTokenTests: XCTestCase {
 
     /// Mirrors the hmacKey vector in Go's relay_token_test.go.
-    private let vectorHMACKey = "unit-test-hmac-key-0001"
+    private let vectorHMACKey = Data((1 ... 32).map(UInt8.init)).base64EncodedString()
+        .replacingOccurrences(of: "+", with: "-").replacingOccurrences(of: "/", with: "_").replacingOccurrences(of: "=", with: "")
 
     func testTokenFormatMatchesRelayContract() throws {
         let pairing = RemotePairingPayload(
@@ -238,24 +239,24 @@ final class RelayTokenTests: XCTestCase {
             macPub: "bWFjLXB1Yg==",
             pairingCode: "123456",
             expiresAt: "2026-07-01T12:30:00Z",
-            relaySecret: vectorHMACKey
+            relaySecret: vectorHMACKey, relayKeyID: "test-key"
         )
         let token = try XCTUnwrap(RelayToken.make(pairing: pairing, role: "ios", scope: "connect"))
         let parts = token.split(separator: ".").map(String.init)
-        XCTAssertEqual(parts.count, 5)
-        XCTAssertEqual(parts[0], "v2")
-        XCTAssertNotNil(Int64(parts[1]), "timestamp must be integer seconds")
-        XCTAssertEqual(parts[3], "connect")
+        XCTAssertEqual(parts.count, 6)
+        XCTAssertEqual(parts[0], "v3")
+        XCTAssertNotNil(Int64(parts[2]), "timestamp must be integer seconds")
+        XCTAssertEqual(parts[4], "connect")
 
         // Recompute the signature exactly as the relay does.
-        let message = "v2:\(pairing.deviceID):ios:connect:\(parts[1]):\(parts[2])"
+        let message = "v3:test-key:\(pairing.deviceID):ios:connect:\(parts[2]):\(parts[3])"
         let key = SymmetricKey(data: Data(vectorHMACKey.utf8))
         let expected = Data(HMAC<SHA256>.authenticationCode(for: Data(message.utf8), using: key))
             .base64EncodedString()
             .replacingOccurrences(of: "+", with: "-")
             .replacingOccurrences(of: "/", with: "_")
             .replacingOccurrences(of: "=", with: "")
-        XCTAssertEqual(parts[4], expected)
+        XCTAssertEqual(parts[5], expected)
     }
 
     func testDeterministicCoreMatchesKnownVector() {
@@ -263,20 +264,56 @@ final class RelayTokenTests: XCTestCase {
         // signature construction fails here before it breaks relay auth.
         let token = RelayToken.make(
             deviceID: "11111111-2222-3333-4444-555555555555",
-            secret: vectorHMACKey,
+            keyID: "test-key", secret: vectorHMACKey,
             role: "mac",
             scope: "connect",
             ts: "1751457600",
             nonce: "AAAAAAAAAAAAAAAAAAAAAA"
         )
-        let message = "v2:11111111-2222-3333-4444-555555555555:mac:connect:1751457600:AAAAAAAAAAAAAAAAAAAAAA"
+        let message = "v3:test-key:11111111-2222-3333-4444-555555555555:mac:connect:1751457600:AAAAAAAAAAAAAAAAAAAAAA"
         let key = SymmetricKey(data: Data(vectorHMACKey.utf8))
         let signature = Data(HMAC<SHA256>.authenticationCode(for: Data(message.utf8), using: key))
             .base64EncodedString()
             .replacingOccurrences(of: "+", with: "-")
             .replacingOccurrences(of: "/", with: "_")
             .replacingOccurrences(of: "=", with: "")
-        XCTAssertEqual(token, "v2.1751457600.AAAAAAAAAAAAAAAAAAAAAA.connect.\(signature)")
+        XCTAssertEqual(token, "v3.test-key.1751457600.AAAAAAAAAAAAAAAAAAAAAA.connect.\(signature)")
+    }
+
+    func testLegacyWeakAndWrongRolePairingsFailClosed() {
+        var pairing = RemotePairingPayload(relayURL: "wss://r", deviceID: "d", macPub: "m", pairingCode: "1", expiresAt: "e", relaySecret: vectorHMACKey)
+        XCTAssertNil(RelayToken.make(pairing: pairing, role: "ios", scope: "connect"))
+        pairing.relayKeyID = "test-key"
+        XCTAssertNil(RelayToken.make(pairing: pairing, role: "mac", scope: "connect"))
+        pairing.relaySecret = "weak"
+        XCTAssertNil(RelayToken.make(pairing: pairing, role: "ios", scope: "connect"))
+        XCTAssertFalse(RelayToken.isStrongCredential(vectorHMACKey + "="))
+        XCTAssertFalse(RelayToken.isValidIdentifier("invalid:key", maximum: 32))
+        XCTAssertFalse(RelayToken.isValidIdentifier("", maximum: 32))
+    }
+
+    func testSharedCrossLanguageV3Vector() throws {
+        let fixture = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().appendingPathComponent("services/chau7-remote/docs/fixtures/relay_credentials_v3.json")
+        let vector = try JSONDecoder().decode([String: String].self, from: Data(contentsOf: fixture))
+        for role in ["mac", "ios"] {
+            let hex = try XCTUnwrap(vector["\(role)_bytes_hex"])
+            let bytes = try stride(from: 0, to: hex.count, by: 2).map { offset in
+                let start = hex.index(hex.startIndex, offsetBy: offset)
+                return try XCTUnwrap(UInt8(hex[start ..< hex.index(start, offsetBy: 2)], radix: 16))
+            }
+            let token = try RelayToken.make(
+                deviceID: XCTUnwrap(vector["device_id"]),
+                keyID: XCTUnwrap(vector["key_id"]),
+                secret: Data(bytes).base64EncodedString()
+                    .replacingOccurrences(of: "+", with: "-").replacingOccurrences(of: "/", with: "_").replacingOccurrences(of: "=", with: ""),
+                role: role,
+                scope: "connect",
+                ts: XCTUnwrap(vector["timestamp"]),
+                nonce: XCTUnwrap(vector["nonce"])
+            )
+            XCTAssertEqual(token, vector["\(role)_token"])
+        }
     }
 
     func testNoSecretReturnsNil() {
@@ -295,24 +332,24 @@ final class RelayTokenTests: XCTestCase {
         let token = try XCTUnwrap(
             RelayToken.make(
                 deviceID: "11111111-2222-3333-4444-555555555555",
-                secret: vectorHMACKey,
+                keyID: "test-key", secret: vectorHMACKey,
                 role: "mac",
                 scope: "issues"
             )
         )
         let parts = token.split(separator: ".").map(String.init)
-        XCTAssertEqual(parts.count, 5)
-        XCTAssertEqual(parts[0], "v2")
-        XCTAssertEqual(parts[3], "issues")
+        XCTAssertEqual(parts.count, 6)
+        XCTAssertEqual(parts[0], "v3")
+        XCTAssertEqual(parts[4], "issues")
     }
 
     func testNoncesAreUniqueAcrossMints() throws {
         let pairing = RemotePairingPayload(
             relayURL: "wss://r", deviceID: "d", macPub: "m",
-            pairingCode: "1", expiresAt: "e", relaySecret: "s"
+            pairingCode: "1", expiresAt: "e", relaySecret: vectorHMACKey, relayKeyID: "test-key"
         )
         let a = try XCTUnwrap(RelayToken.make(pairing: pairing, role: "ios", scope: "push"))
         let b = try XCTUnwrap(RelayToken.make(pairing: pairing, role: "ios", scope: "push"))
-        XCTAssertNotEqual(a.split(separator: ".")[2], b.split(separator: ".")[2])
+        XCTAssertNotEqual(a.split(separator: ".")[3], b.split(separator: ".")[3])
     }
 }

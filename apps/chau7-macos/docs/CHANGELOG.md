@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- Relay admission now uses provisioned device/role credentials and v3 key IDs, with bounded rotation and namespace revocation. Remote startup fails closed without an owner-only matching bundle. The secure pairing QR contains only the iOS role credential; displayed/copied device details omit credentials. Identity and paired-device trust survive provisioning and rotation. Legacy pairing metadata can still decode, but requires a newly provisioned v3 QR before connecting; no global-secret fallback is used. Credential readers reject named pipes before waiting for a writer, keeping invalid provisioning paths from blocking startup.
+
 ### Maintenance
 
 - Staged Worker formatting installs locked package tools when missing, including fresh full-suite CI runners that bypass affected-file Worker builds. Installation and formatter errors still fail the gate; already installed formatters retain the normal write/check and staged-tree verification.
@@ -61,6 +65,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Queued parent-directory events preserve the recovered target watch, preventing unnecessary source replacement and observation gaps. File observation also includes size-change events for in-place appends; recovery remains bounded without restoring idle polling.
 - Both Go modules now run race-enabled tests and an uncached, pinned govulncheck audit during PR/pre-push validation. Security/context/body-ownership linters are enabled; relay I/O inherits shutdown cancellation, wire lengths are checked before conversion, and proxy diagnostic output escapes injected control characters. Swift advisory coverage and reviewed trust-boundary exclusions are documented explicitly.
+
+
 
 
 

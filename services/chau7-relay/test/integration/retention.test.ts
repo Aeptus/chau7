@@ -3,6 +3,7 @@ import { runInDurableObject, runDurableObjectAlarm } from 'cloudflare:test';
 import { expect, it } from 'vitest';
 import worker from '../../src/worker';
 import { mintToken } from '../../src/token.js';
+import { deriveRoleCredential } from '../../src/auth.js';
 import { PENDING_RETENTION_MS, REGISTRATION_RETENTION_MS } from '../../src/session';
 
 const empty = { approvals: [], interactive_prompts: [] };
@@ -15,11 +16,13 @@ async function request(
   body?: unknown,
   role = method === 'GET' ? 'ios' : 'mac'
 ) {
+  const root = JSON.parse(env.RELAY_AUTH_KEYS).current;
   const token = await mintToken({
     deviceId: device,
     role,
     scope: 'pending',
-    secret: env.RELAY_SECRET
+    secret: await deriveRoleCredential(root.secret, root.id, device, role),
+    keyId: root.id
   });
   return new Request(`https://relay.test/pending/${device}`, {
     method,
@@ -141,11 +144,13 @@ it('expires registrations before notifying', async () => {
       }
     });
   });
+  const root = JSON.parse(env.RELAY_AUTH_KEYS).current;
   const token = await mintToken({
     deviceId: device,
     role: 'mac',
     scope: 'push',
-    secret: env.RELAY_SECRET
+    secret: await deriveRoleCredential(root.secret, root.id, device, 'mac'),
+    keyId: root.id
   });
   const response = await worker.fetch(
     new Request(`https://relay.test/push/notify/${device}`, {
@@ -187,14 +192,21 @@ it.each(['refresh', 'revoke', 'unchanged'])(
         push_topic: 'test.topic',
         push_environment: 'development'
       };
-      const pushRequest = async (route: string, body: unknown) =>
-        new Request(`https://relay.test/push/${route}/${device}`, {
+      const pushRequest = async (route: string, body: unknown) => {
+        const root = JSON.parse(env.RELAY_AUTH_KEYS).current;
+        const token = await mintToken({
+          deviceId: device,
+          role: 'mac',
+          scope: 'push',
+          secret: await deriveRoleCredential(root.secret, root.id, device, 'mac'),
+          keyId: root.id
+        });
+        return new Request(`https://relay.test/push/${route}/${device}`, {
           method: 'POST',
-          headers: {
-            Authorization: `Bearer ${await mintToken({ deviceId: device, role: 'mac', scope: 'push', secret: env.RELAY_SECRET })}`
-          },
+          headers: { Authorization: `Bearer ${token}` },
           body: JSON.stringify(body)
         });
+      };
       expect((await instance.fetch(await pushRequest('register', registration))).status).toBe(204);
       let release!: () => void;
       let started!: () => void;

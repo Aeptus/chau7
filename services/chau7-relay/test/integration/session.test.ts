@@ -2,6 +2,7 @@ import { env } from 'cloudflare:workers';
 import { runInDurableObject } from 'cloudflare:test';
 import { expect, it } from 'vitest';
 import worker from '../../src/worker';
+import { deriveRoleCredential } from '../../src/auth.js';
 import { bytesToBase64url, mintToken } from '../../src/token.js';
 
 const empty = { approvals: [], interactive_prompts: [] };
@@ -9,7 +10,14 @@ function stub(device: string) {
   return env.SESSION.get(env.SESSION.idFromName(device));
 }
 async function token(device: string, role = 'mac', scope = 'pending') {
-  return mintToken({ deviceId: device, role, scope, secret: env.RELAY_SECRET });
+  const root = JSON.parse(env.RELAY_AUTH_KEYS).current;
+  return mintToken({
+    deviceId: device,
+    role,
+    scope,
+    keyId: root.id,
+    secret: await deriveRoleCredential(root.secret, root.id, device, role)
+  });
 }
 function pending(device: string, bearer: string, method = 'POST') {
   return new Request(`https://relay.test/pending/${device}`, {
@@ -20,9 +28,11 @@ function pending(device: string, bearer: string, method = 'POST') {
 }
 async function namedNonce(device: string, nonce: string) {
   const ts = Math.floor(Date.now() / 1000);
+  const root = JSON.parse(env.RELAY_AUTH_KEYS).current;
+  const secret = await deriveRoleCredential(root.secret, root.id, device, 'mac');
   const key = await crypto.subtle.importKey(
     'raw',
-    new TextEncoder().encode(env.RELAY_SECRET),
+    new TextEncoder().encode(secret),
     { name: 'HMAC', hash: 'SHA-256' },
     false,
     ['sign']
@@ -30,9 +40,9 @@ async function namedNonce(device: string, nonce: string) {
   const signature = await crypto.subtle.sign(
     'HMAC',
     key,
-    new TextEncoder().encode(`v2:${device}:mac:pending:${ts}:${nonce}`)
+    new TextEncoder().encode(`v3:${root.id}:${device}:mac:pending:${ts}:${nonce}`)
   );
-  return `v2.${ts}.${nonce}.pending.${bytesToBase64url(signature)}`;
+  return `v3.${root.id}.${ts}.${nonce}.pending.${bytesToBase64url(signature)}`;
 }
 
 it('round-trips pending state through authenticated routes and real storage', async () => {
@@ -113,14 +123,25 @@ it('rejects wrong role, scope, device, missing and expired credentials', async (
   expect(
     (await worker.fetch(new Request(`https://relay.test/pending/${device}`), env)).status
   ).toBe(401);
+  const root = JSON.parse(env.RELAY_AUTH_KEYS).current;
   const expired = await mintToken(
-    { deviceId: device, role: 'mac', scope: 'pending', secret: env.RELAY_SECRET },
+    {
+      deviceId: device,
+      role: 'mac',
+      scope: 'pending',
+      keyId: root.id,
+      secret: await deriveRoleCredential(root.secret, root.id, device, 'mac')
+    },
     Date.now() / 1000 - 121
   );
   expect((await worker.fetch(pending(device, expired), env)).status).toBe(403);
   expect(
-    (await worker.fetch(pending(device, await token(device)), { ...env, RELAY_SECRET: undefined }))
-      .status
+    (
+      await worker.fetch(pending(device, await token(device)), {
+        ...env,
+        RELAY_AUTH_KEYS: undefined
+      })
+    ).status
   ).toBe(503);
 });
 

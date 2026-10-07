@@ -1,35 +1,36 @@
 import CryptoKit
 import Foundation
 
-/// Mints scoped, single-use relay auth tokens. The format is a shared
-/// contract between this client, the Go agent (`generateRelayToken`), and the
-/// relay verifier (`services/chau7-relay/src/token.js`):
-///
-///   wire:    v2.{ts}.{nonce}.{scope}.{base64url_sig}
-///   message: v2:{deviceID}:{role}:{scope}:{ts}:{nonce}
-///
-/// `make(pairing:role:scope:)` returns nil when the pairing payload carries no
-/// relay secret, so the client degrades to unauthenticated connects during
-/// rollout.
+/// Mints single-use v3 tokens using a provisioned device/role credential.
+/// wire: v3.{keyID}.{ts}.{nonce}.{scope}.{signature}
+/// message: v3:{keyID}:{deviceID}:{role}:{scope}:{ts}:{nonce}
 public enum RelayToken {
-    public static func make(pairing: RemotePairingPayload, role: String, scope: String) -> String? {
-        guard let secret = pairing.relaySecret, !secret.isEmpty else {
-            return nil
-        }
-        return make(deviceID: pairing.deviceID, secret: secret, role: role, scope: scope)
+    public static func isStrongCredential(_ value: String) -> Bool {
+        guard value.count == 43, value.allSatisfy({ $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "-" || $0 == "_") }),
+              let bytes = Data(base64Encoded: value.replacingOccurrences(of: "-", with: "+").replacingOccurrences(of: "_", with: "/") + "="),
+              bytes.count == 32 else { return false }
+        return bytes.relayBase64URLEncodedString() == value
     }
 
-    /// Mint a token when a local device identity and its configured secret are
-    /// available without a full pairing payload (for example, macOS issue
-    /// reporting while the remote agent is stopped).
-    public static func make(deviceID: String, secret: String, role: String, scope: String) -> String? {
-        guard !deviceID.isEmpty, !secret.isEmpty else { return nil }
+    public static func isValidIdentifier(_ value: String, maximum: Int) -> Bool {
+        !value.isEmpty && value.count <= maximum && value.allSatisfy { $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "-" || $0 == "_") }
+    }
+
+    public static func make(pairing: RemotePairingPayload, role: String, scope: String) -> String? {
+        guard role == "ios", let secret = pairing.relaySecret, let keyID = pairing.relayKeyID else { return nil }
+        return make(deviceID: pairing.deviceID, keyID: keyID, secret: secret, role: role, scope: scope)
+    }
+
+    public static func make(deviceID: String, keyID: String, secret: String, role: String, scope: String) -> String? {
+        guard isValidIdentifier(deviceID, maximum: 128), isValidIdentifier(keyID, maximum: 32), isStrongCredential(secret),
+              ["mac", "ios"].contains(role), ["connect", "push", "pending", "issues"].contains(scope) else { return nil }
         var nonceBytes = [UInt8](repeating: 0, count: 16)
         for index in nonceBytes.indices {
             nonceBytes[index] = UInt8.random(in: UInt8.min ... UInt8.max)
         }
         return make(
             deviceID: deviceID,
+            keyID: keyID,
             secret: secret,
             role: role,
             scope: scope,
@@ -38,29 +39,16 @@ public enum RelayToken {
         )
     }
 
-    /// Deterministic core, exposed for tests that mirror the Go/relay vectors.
-    static func make(
-        deviceID: String,
-        secret: String,
-        role: String,
-        scope: String,
-        ts: String,
-        nonce: String
-    ) -> String {
-        let message = "v2:\(deviceID):\(role):\(scope):\(ts):\(nonce)"
-        let key = SymmetricKey(data: Data(secret.utf8))
-        let signature = HMAC<SHA256>.authenticationCode(for: Data(message.utf8), using: key)
-        let signatureString = Data(signature).relayBase64URLEncodedString()
-        return "v2.\(ts).\(nonce).\(scope).\(signatureString)"
+    /// Deterministic signature core; callers validate credential metadata first.
+    static func make(deviceID: String, keyID: String, secret: String, role: String, scope: String, ts: String, nonce: String) -> String {
+        let message = "v3:\(keyID):\(deviceID):\(role):\(scope):\(ts):\(nonce)"
+        let signature = HMAC<SHA256>.authenticationCode(for: Data(message.utf8), using: SymmetricKey(data: Data(secret.utf8)))
+        return "v3.\(keyID).\(ts).\(nonce).\(scope).\(Data(signature).relayBase64URLEncodedString())"
     }
 }
 
 extension Data {
-    /// Unpadded base64url (RFC 4648 §5), matching the relay's expectations.
     func relayBase64URLEncodedString() -> String {
-        base64EncodedString()
-            .replacingOccurrences(of: "+", with: "-")
-            .replacingOccurrences(of: "/", with: "_")
-            .replacingOccurrences(of: "=", with: "")
+        base64EncodedString().replacingOccurrences(of: "+", with: "-").replacingOccurrences(of: "/", with: "_").replacingOccurrences(of: "=", with: "")
     }
 }

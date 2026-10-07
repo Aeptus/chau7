@@ -59,7 +59,9 @@ type Agent struct {
 	macName      string
 	statePath    string
 
-	state *State
+	state           *State
+	credentialsPath string
+	credentials     *RelayCredentials
 
 	pairingCode    string
 	pairingExpires time.Time
@@ -309,10 +311,10 @@ type PairingInfoPayload struct {
 	MacPub      string `json:"mac_pub"`
 	PairingCode string `json:"pairing_code"`
 	ExpiresAt   string `json:"expires_at"`
-	// RelaySecret is the shared HMAC secret the paired iOS device needs to
-	// authenticate to the relay. Omitted when no secret is configured, so the
-	// pairing payload carries it only when relay auth is in use.
-	RelaySecret string `json:"relay_secret,omitempty"`
+	// RelaySecret carries only the derived iOS role credential for this Mac.
+	// Neither the server root nor the Mac role credential is paired.
+	RelaySecret string `json:"relay_secret"`
+	RelayKeyID  string `json:"relay_key_id"`
 }
 
 type cryptoSession struct {
@@ -363,9 +365,17 @@ func NewAgent(socketPath, relayBaseURL, macName, statePath string) (*Agent, erro
 		pendingApprovals:        map[string]ApprovalNotificationPayload{},
 		pendingPrompts:          map[string]RemoteInteractivePrompt{},
 	}
-	if err := agent.ensureIdentity(); err != nil {
+	if err := validateRelayIdentity(state); err != nil {
 		return nil, err
 	}
+	agent.credentialsPath = os.Getenv("CHAU7_REMOTE_CREDENTIALS")
+	if agent.credentialsPath == "" {
+		agent.credentialsPath = relayCredentialsPath(statePath)
+	}
+	if _, err := agent.currentRelayCredentials(); err != nil {
+		return nil, err
+	}
+
 	agent.refreshPairingCode()
 	return agent, nil
 }
@@ -400,21 +410,6 @@ func (a *Agent) Run(ctx context.Context) error {
 			}
 		}
 	}
-}
-
-func (a *Agent) ensureIdentity() error {
-	if err := a.state.EnsureDeviceID(); err != nil {
-		return err
-	}
-	if a.state.MacPrivateKey == "" || a.state.MacPublicKey == "" {
-		priv, pub, err := generateKeyPair()
-		if err != nil {
-			return err
-		}
-		a.state.MacPrivateKey = base64.StdEncoding.EncodeToString(priv)
-		a.state.MacPublicKey = base64.StdEncoding.EncodeToString(pub)
-	}
-	return SaveState(a.statePath, a.state)
 }
 
 func generateKeyPair() ([]byte, []byte, error) {
@@ -525,8 +520,13 @@ func (a *Agent) relayLoop(ctx context.Context) {
 			return
 		}
 		url := a.relayConnectURL()
-		// websocket.Dial owns/closes the HTTP body, including failed handshakes.
-		conn, _, err := websocket.Dial(ctx, url, a.relayDialOptions()) //nolint:bodyclose // coder/websocket Dial explicitly owns resp.Body
+		options, err := a.relayDialOptions()
+		var conn *websocket.Conn
+		if err == nil {
+			conn, _, err = websocket.Dial(ctx, url, options) //nolint:bodyclose // coder/websocket Dial explicitly owns resp.Body
+		} else {
+			a.sendCredentialError(err)
+		}
 		if err != nil {
 			a.updateRelayStatus("reconnecting", backoff)
 			log.Printf("relay connect: %v (retry in %v)", err, backoff)
@@ -1464,7 +1464,20 @@ func (a *Agent) sendRelayStatus() {
 	})
 }
 
+func (a *Agent) sendCredentialError(err error) {
+	payload, marshalErr := json.Marshal(map[string]string{"code": "relay_credentials_unavailable", "message": err.Error()})
+	if marshalErr != nil {
+		return
+	}
+	a.sendToIPC(&protocol.Frame{Version: 1, Type: protocol.TypeError, Seq: a.nextSeq(), Payload: payload})
+}
+
 func (a *Agent) sendPairingInfo() {
+	credentials, err := a.currentRelayCredentials()
+	if err != nil {
+		a.sendCredentialError(err)
+		return
+	}
 	a.pairingMu.Lock()
 	code := a.pairingCode
 	expires := a.pairingExpires
@@ -1476,7 +1489,8 @@ func (a *Agent) sendPairingInfo() {
 		MacPub:      a.state.MacPublicKey,
 		PairingCode: code,
 		ExpiresAt:   expires.UTC().Format(time.RFC3339),
-		RelaySecret: a.state.RelaySecret,
+		RelaySecret: credentials.IOSSecret,
+		RelayKeyID:  credentials.KeyID,
 	}
 	data, err := json.Marshal(info)
 	if err != nil {
@@ -1554,9 +1568,11 @@ func (a *Agent) relayHTTPPost(ctx context.Context, path, scope string, payload a
 		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	if a.state.RelaySecret != "" {
-		req.Header.Set("Authorization", "Bearer "+generateRelayToken(a.state.DeviceID, "mac", scope, a.state.RelaySecret))
+	authorization, err := a.relayAuthorization(scope)
+	if err != nil {
+		return err
 	}
+	req.Header.Set("Authorization", authorization)
 	ctx, cancel := context.WithTimeout(ctx, relayRequestTimeout)
 	defer cancel()
 	req = req.WithContext(ctx)
@@ -1919,14 +1935,14 @@ func (a *Agent) relayConnectURL() string {
 // relayDialOptions carries the connect-scoped auth token in the Authorization
 // header of the WebSocket upgrade request (never in the query string). Returns
 // nil when no relay secret is configured (unauthenticated rollout mode).
-func (a *Agent) relayDialOptions() *websocket.DialOptions {
-	if a.state.RelaySecret == "" {
-		return nil
+func (a *Agent) relayDialOptions() (*websocket.DialOptions, error) {
+	token, err := a.relayAuthorization("connect")
+	if err != nil {
+		return nil, err
 	}
-	token := generateRelayToken(a.state.DeviceID, "mac", "connect", a.state.RelaySecret)
 	header := http.Header{}
-	header.Set("Authorization", "Bearer "+token)
-	return &websocket.DialOptions{HTTPHeader: header}
+	header.Set("Authorization", token)
+	return &websocket.DialOptions{HTTPHeader: header}, nil
 }
 
 func (a *Agent) refreshPairingCode() {
@@ -1959,18 +1975,22 @@ func (a *Agent) nextSeq() uint64 {
 // The signed message binds the token to one device, role, and scope; the nonce
 // (enforced single-use by the relay) defeats capture-and-replay. Tokens travel
 // only in the Authorization header, never the URL query string.
-func generateRelayToken(deviceID, role, scope, secret string) string {
+func generateRelayToken(deviceID, role, scope, keyID, secret string) string {
 	ts := fmt.Sprintf("%d", time.Now().Unix())
 	nonceBytes := make([]byte, 16)
 	if _, err := rand.Read(nonceBytes); err != nil {
 		log.Fatalf("crypto/rand failed: %v", err)
 	}
 	nonce := base64.RawURLEncoding.EncodeToString(nonceBytes)
-	msg := "v2:" + deviceID + ":" + role + ":" + scope + ":" + ts + ":" + nonce
+	return signRelayToken(deviceID, role, scope, keyID, secret, ts, nonce)
+}
+
+func signRelayToken(deviceID, role, scope, keyID, secret, ts, nonce string) string {
+	msg := "v3:" + keyID + ":" + deviceID + ":" + role + ":" + scope + ":" + ts + ":" + nonce
 	mac := hmac.New(sha256.New, []byte(secret))
 	mac.Write([]byte(msg))
 	sig := base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
-	return "v2." + ts + "." + nonce + "." + scope + "." + sig
+	return "v3." + keyID + "." + ts + "." + nonce + "." + scope + "." + sig
 }
 
 func fingerprint(pubKey string) string {

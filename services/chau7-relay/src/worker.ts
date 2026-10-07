@@ -11,13 +11,13 @@
  *
  * Authentication: scoped, single-use HMAC-SHA256 bearer tokens (see token.js).
  * Tokens are accepted ONLY from the `Authorization: Bearer` header. The Worker
- * fails CLOSED — if RELAY_SECRET is unset and open mode was not explicitly
- * requested, authenticated routes return 503.
+ * fails CLOSED without a valid server-only RELAY_AUTH_KEYS keyring. Explicit
+ * open access is limited to ENVIRONMENT=development; legacy global secrets
+ * never authorize requests.
  */
 import { SessionDO } from './session';
 import { APNSTokenBrokerDO } from './apns-token-broker';
-import { resolveAuthMode } from './auth.js';
-import { verifyToken } from './token.js';
+import { resolveAuthMode, verifyCredentialToken } from './auth.js';
 import { relayRuntimeInfo } from './runtime.js';
 
 export { APNSTokenBrokerDO, SessionDO };
@@ -50,7 +50,9 @@ type Role = 'mac' | 'ios';
 interface Env {
   SESSION: DurableObjectNamespace;
   APNS_TOKEN_BROKER: DurableObjectNamespace;
-  RELAY_SECRET?: string;
+  RELAY_AUTH_KEYS?: string;
+  RELAY_REVOKED_DEVICES?: string;
+  ENVIRONMENT?: string;
   RELAY_ALLOW_UNAUTHENTICATED?: string;
   CF_VERSION_METADATA?: { id?: string; tag?: string; timestamp?: string };
 }
@@ -84,7 +86,9 @@ async function authenticateRequest(
   const auth = resolveAuthMode(env);
 
   if (auth.mode === 'misconfigured') {
-    console.error('Relay rejecting request: RELAY_SECRET is not configured (failing closed).');
+    console.error(
+      'Relay rejecting request: relay credential keyring is missing or invalid (failing closed).'
+    );
     return new Response('Relay not configured', { status: 503 });
   }
 
@@ -92,7 +96,7 @@ async function authenticateRequest(
     if (!openModeWarned) {
       openModeWarned = true;
       console.warn(
-        'Relay running UNAUTHENTICATED (RELAY_ALLOW_UNAUTHENTICATED=true). Set RELAY_SECRET to require auth.'
+        'Relay running UNAUTHENTICATED (RELAY_ALLOW_UNAUTHENTICATED=true). Development access only; provision RELAY_AUTH_KEYS before production.'
       );
     }
     return null;
@@ -102,7 +106,7 @@ async function authenticateRequest(
   if (!token) {
     return new Response('Missing token', { status: 401 });
   }
-  const result = await verifyToken(token, { deviceId, role, scope, secret: auth.secret! });
+  const result = await verifyCredentialToken(token, { deviceId, role, scope }, env);
   if (!result.ok) {
     const status = result.reason === 'malformed' ? 401 : 403;
     return new Response('Invalid token', { status });

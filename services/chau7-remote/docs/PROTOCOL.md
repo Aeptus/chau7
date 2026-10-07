@@ -37,8 +37,12 @@ Pairing payload:
 - `mac_pub` (base64)
 - `pairing_code`
 - `expires_at` (ISO8601)
-- `relay_secret` (optional) — shared HMAC secret the iOS device uses to
-  authenticate to the relay. Present only when relay auth is configured.
+- `relay_secret` — derived iOS-only credential for this Mac device namespace
+- `relay_key_id` — public server key ID; both fields are required for v3 admission
+
+Legacy pairing payloads remain decodable for migration but cannot connect.
+Settings displays/copies public device details without the credential; pair by
+scanning the secure QR. The server root and Mac credential never enter the QR.
 
 Flow:
 
@@ -71,13 +75,13 @@ Both sides connect to relay:
 
 ### Relay authentication
 
-When a `relay_secret` is configured, every relay request carries a scoped,
+Every authenticated relay request requires a provisioned role credential and carries a scoped,
 single-use HMAC-SHA256 token in the `Authorization: Bearer` header (never the
 query string):
 
 ```
-wire:    v2.{ts}.{nonce}.{scope}.{base64url_sig}
-signed:  v2:{device_id}:{role}:{scope}:{ts}:{nonce}
+wire:    v3.{key_id}.{ts}.{nonce}.{scope}.{base64url_sig}
+signed:  v3:{key_id}:{device_id}:{role}:{scope}:{ts}:{nonce}
 ```
 
 - `role` is `mac` or `ios`; `scope` is `connect`, `push`, `pending`, or
@@ -85,7 +89,9 @@ signed:  v2:{device_id}:{role}:{scope}:{ts}:{nonce}
 - `ts` is unix seconds; tokens are valid for 120s (+30s future skew).
 - `nonce` is 16 random bytes (base64url) and is single-use — the relay rejects
   reuse, defeating replay/connection-takeover.
-- The signature uses HMAC-SHA256 over the signed message with `relay_secret`.
+- The signature uses HMAC-SHA256 with the UTF-8 device/role-derived credential.
+- [Credential provisioning and rotation](CREDENTIALS.md) keeps server roots off clients, limits old-key overlap to 24 hours, and rejects revoked device namespaces.
+- v2/global-secret admission is rejected; iOS never opens an unauthenticated connection as a legacy fallback.
 
 Each side then sends `HELLO` (cleartext). They compute:
 
@@ -499,7 +505,8 @@ Local IPC payload:
   "mac_pub": "base64",
   "pairing_code": "123456",
   "expires_at": "ISO8601",
-  "relay_secret": "optional-shared-hmac-secret"
+  "relay_secret": "derived-ios-role-credential",
+  "relay_key_id": "public-key-id"
 }
 ```
 

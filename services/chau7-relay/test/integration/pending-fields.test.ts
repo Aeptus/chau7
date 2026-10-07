@@ -2,15 +2,19 @@ import { env } from 'cloudflare:workers';
 import { expect, it } from 'vitest';
 import worker from '../../src/worker';
 import { mintToken } from '../../src/token.js';
+import { deriveRoleCredential } from '../../src/auth.js';
 import fixture from '../../../chau7-remote/docs/fixtures/pending_state.json';
 
 async function request(device: string, body?: unknown) {
   const method = body === undefined ? 'GET' : 'POST';
+  const role = method === 'GET' ? 'ios' : 'mac';
+  const root = JSON.parse(env.RELAY_AUTH_KEYS).current;
   const bearer = await mintToken({
     deviceId: device,
-    role: method === 'GET' ? 'ios' : 'mac',
+    role,
     scope: 'pending',
-    secret: env.RELAY_SECRET
+    secret: await deriveRoleCredential(root.secret, root.id, device, role),
+    keyId: root.id
   });
   return worker.fetch(
     new Request(`https://relay.test/pending/${device}`, {

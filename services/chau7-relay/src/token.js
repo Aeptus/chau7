@@ -1,8 +1,9 @@
 /**
- * Relay auth token (v2) — mint / parse / verify.
+ * Relay token primitives. v3 binds a provisioned credential key ID; v2 is
+ * retained only for legacy vectors and is rejected by deployed admission.
  *
- * Wire format:  `v2.{ts}.{nonce}.{scope}.{base64url_signature}`
- * Signed message: `v2:{deviceId}:{role}:{scope}:{ts}:{nonce}`
+ * Wire format:  `v3.{key_id}.{ts}.{nonce}.{scope}.{base64url_signature}`
+ * Signed message: `v3:{key_id}:{deviceId}:{role}:{scope}:{ts}:{nonce}`
  *
  * The signed message binds the token to a single device, role, and scope, so a
  * token minted for one endpoint cannot be replayed against another. `nonce` is
@@ -71,8 +72,9 @@ async function importHmacKey(secret, usage) {
   );
 }
 
-function buildMessage(deviceId, role, scope, ts, nonce) {
-  return `${TOKEN_VERSION}:${deviceId}:${role}:${scope}:${ts}:${nonce}`;
+function buildMessage(deviceId, role, scope, ts, nonce, keyId) {
+  const prefix = keyId === undefined ? TOKEN_VERSION : `v3:${keyId}`;
+  return `${prefix}:${deviceId}:${role}:${scope}:${ts}:${nonce}`;
 }
 
 /**
@@ -85,13 +87,13 @@ export function parseToken(token) {
     return null;
   }
   const parts = token.split('.');
-  if (parts.length !== 5) {
-    return null;
-  }
-  const [version, tsRaw, nonce, scope, signature] = parts;
-  if (version !== TOKEN_VERSION) {
-    return null;
-  }
+  const isCredentialToken = parts.length === 6 && parts[0] === 'v3';
+  if (!isCredentialToken && (parts.length !== 5 || parts[0] !== TOKEN_VERSION)) return null;
+  const keyId = isCredentialToken ? parts[1] : undefined;
+  if (isCredentialToken && !/^[A-Za-z0-9_-]{1,32}$/.test(keyId)) return null;
+  const [version, tsRaw, nonce, scope, signature] = isCredentialToken
+    ? [parts[0], ...parts.slice(2)]
+    : parts;
   if (!/^\d{1,15}$/.test(tsRaw)) {
     return null;
   }
@@ -104,7 +106,7 @@ export function parseToken(token) {
   if (!signature || !/^[A-Za-z0-9_-]+$/.test(signature)) {
     return null;
   }
-  return { ts: Number(tsRaw), nonce, scope, signature };
+  return { ts: Number(tsRaw), nonce, scope, signature, ...(keyId === undefined ? {} : { keyId }) };
 }
 
 /**
@@ -118,7 +120,7 @@ export function parseToken(token) {
  */
 export async function verifyToken(
   token,
-  { deviceId, role, scope, secret },
+  { deviceId, role, scope, secret, keyId },
   nowSeconds = Date.now() / 1000
 ) {
   if (!ROLES.includes(role) || !SCOPES.includes(scope)) {
@@ -128,6 +130,7 @@ export async function verifyToken(
   if (!parsed) {
     return { ok: false, reason: 'malformed' };
   }
+  if (parsed.keyId !== keyId) return { ok: false, reason: 'key_mismatch' };
   if (parsed.scope !== scope) {
     return { ok: false, reason: 'scope_mismatch' };
   }
@@ -146,7 +149,7 @@ export async function verifyToken(
   }
 
   const key = await importHmacKey(secret, 'verify');
-  const message = buildMessage(deviceId, role, scope, parsed.ts, parsed.nonce);
+  const message = buildMessage(deviceId, role, scope, parsed.ts, parsed.nonce, keyId);
   // crypto.subtle.verify is constant-time over the raw HMAC bytes.
   const valid = await crypto.subtle.verify('HMAC', key, signatureBytes, encoder.encode(message));
   if (!valid) {
@@ -163,12 +166,16 @@ export async function verifyToken(
  * Mint a token. The relay never calls this in production (clients mint), but it
  * keeps the wire format in one place and lets tests exercise verify() honestly.
  */
-export async function mintToken({ deviceId, role, scope, secret }, nowSeconds = Date.now() / 1000) {
+export async function mintToken(
+  { deviceId, role, scope, secret, keyId },
+  nowSeconds = Date.now() / 1000
+) {
   const ts = Math.floor(nowSeconds);
   const nonceBytes = crypto.getRandomValues(new Uint8Array(16));
   const nonce = bytesToBase64url(nonceBytes);
   const key = await importHmacKey(secret, 'sign');
-  const message = buildMessage(deviceId, role, scope, ts, nonce);
+  const message = buildMessage(deviceId, role, scope, ts, nonce, keyId);
   const signature = await crypto.subtle.sign('HMAC', key, encoder.encode(message));
-  return `${TOKEN_VERSION}.${ts}.${nonce}.${scope}.${bytesToBase64url(signature)}`;
+  const prefix = keyId === undefined ? TOKEN_VERSION : `v3.${keyId}`;
+  return `${prefix}.${ts}.${nonce}.${scope}.${bytesToBase64url(signature)}`;
 }

@@ -1,4 +1,4 @@
-import { generateKeyPairSync } from 'node:crypto';
+import { generateKeyPairSync, randomBytes } from 'node:crypto';
 import { cloudflareTest } from '@cloudflare/vitest-plugin';
 import { defineConfig } from 'vitest/config';
 
@@ -10,7 +10,9 @@ export default defineConfig({
       wrangler: { configPath: './wrangler.toml' },
       miniflare: {
         bindings: {
-          RELAY_SECRET: 'relay-test-only-secret-32-characters',
+          RELAY_AUTH_KEYS: JSON.stringify({
+            current: { id: 'runtime-key', secret: randomBytes(32).toString('base64url') }
+          }),
           APNS_TEAM_ID: 'TEST_TEAM',
           APNS_KEY_ID: 'TEST_KEY',
           APNS_PRIVATE_KEY: fixture.privateKey.export({ type: 'pkcs8', format: 'pem' }).toString(),

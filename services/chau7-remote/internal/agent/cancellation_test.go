@@ -15,7 +15,7 @@ func TestRelayHTTPPostHonorsCancelledOwner(t *testing.T) {
 	var requests atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { requests.Add(1); w.WriteHeader(http.StatusOK) }))
 	defer server.Close()
-	a := &Agent{relayBaseURL: server.URL, state: &State{DeviceID: "test-device"}}
+	a := &Agent{relayBaseURL: server.URL, state: &State{DeviceID: "test-device"}, credentials: testRelayCredentials(t, "test-device")}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	err := a.relayHTTPPost(ctx, "/pending/test-device", "pending", map[string]any{})
@@ -37,7 +37,7 @@ func TestRelayHTTPPostCancelsInFlightRequestWithOwner(t *testing.T) {
 		close(finished)
 	}))
 	defer server.Close()
-	a := &Agent{relayBaseURL: server.URL, state: &State{DeviceID: "test-device"}}
+	a := &Agent{relayBaseURL: server.URL, state: &State{DeviceID: "test-device"}, credentials: testRelayCredentials(t, "test-device")}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	result := make(chan error, 1)

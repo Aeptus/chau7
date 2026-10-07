@@ -29,13 +29,19 @@ an encrypted WebSocket connection to the relay.
 go build ./cmd/chau7-remote
 ```
 
+## Provision before running
+
+Follow [the credential workflow](docs/CREDENTIALS.md). Startup requires an existing
+valid identity and a separate owner-only credential bundle; it cannot silently
+create a replacement identity or fall back to a shared global secret.
+
 ## Run
 
 ```bash
 CHAU7_REMOTE_SOCKET="$HOME/Library/Application Support/Chau7/remote.sock" \
 CHAU7_RELAY_URL="wss://relay.chau7.sh/connect" \
 CHAU7_MAC_NAME="$(scutil --get ComputerName)" \
-CHAU7_REMOTE_STATE="$HOME/Library/Application Support/Chau7/remote-state.json" \
+CHAU7_REMOTE_STATE="$HOME/.chau7/remote/state.json" \
 ./chau7-remote
 ```
 
@@ -46,7 +52,25 @@ CHAU7_REMOTE_STATE="$HOME/Library/Application Support/Chau7/remote-state.json" \
 | `CHAU7_REMOTE_SOCKET` | Unix socket path for IPC with the macOS app |
 | `CHAU7_RELAY_URL` | WebSocket URL of the Cloudflare relay |
 | `CHAU7_MAC_NAME` | Display name for this Mac (sent during pairing) |
-| `CHAU7_REMOTE_STATE` | Path for persistent pairing state JSON |
+| `CHAU7_REMOTE_STATE` | Path for persistent pairing state JSON; defaults to `~/.chau7/remote/state.json` |
+| `CHAU7_REMOTE_CREDENTIALS` | Optional owner-only bundle path; defaults to `credentials.json` beside the state file |
+
+## Identity storage and recovery
+
+The agent wraps its private identity key before writing state. A wrapped-key
+load failure stops startup with an actionable error; it does not clear the keys
+or generate a replacement identity. If the machine identity service is
+unavailable, retry after it recovers. If the wrapped key is damaged or belongs to
+another Mac, preserve the file and restore a valid backup for the original Mac.
+Do not delete state as an automatic recovery step: losing it breaks existing
+pairings. An intentional identity reset requires pairing the devices again.
+
+Saving also fails when the machine identity cannot be read, leaving the previous
+file unchanged rather than falling back to plaintext. Legacy plaintext state is
+still readable and is wrapped on its next successful save. State files use mode
+0600 and are replaced atomically. The wrapping key is derived from the Mac's
+hardware UUID; this is not a claim of protection against an attacker with access
+to that identifier and the state file.
 
 ## Identity storage and recovery
 

@@ -70,6 +70,7 @@ func TestAnnounceIPCConnectionReplaysExistingSessionStatus(t *testing.T) {
 
 			a := &Agent{
 				state:        &State{DeviceID: "mac-device"},
+				credentials:  testRelayCredentials(t, "mac-device"),
 				ipcConn:      client,
 				sessionReady: tt.sessionReady,
 			}
@@ -692,6 +693,7 @@ func TestUpdatePendingApprovalSyncsRelayState(t *testing.T) {
 	a := &Agent{
 		relayBaseURL:     server.URL + "/connect",
 		state:            &State{DeviceID: "device-1"},
+		credentials:      testRelayCredentials(t, "device-1"),
 		pendingApprovals: map[string]ApprovalNotificationPayload{},
 		pendingPrompts:   map[string]RemoteInteractivePrompt{},
 	}
@@ -737,6 +739,7 @@ func TestFailedPushStaysEligibleForRetry(t *testing.T) {
 	a := &Agent{
 		relayBaseURL: server.URL + "/connect",
 		state:        &State{DeviceID: "device-1"},
+		credentials:  testRelayCredentials(t, "device-1"),
 		// Default state is push-eligible (background) — no clientState needed.
 		currentClientAppState: "background",
 		notifiedApprovalIDs:   map[string]time.Time{},
@@ -783,6 +786,7 @@ func TestStateVersionAdoptsMacSpineSeq(t *testing.T) {
 	a := &Agent{
 		relayBaseURL:     server.URL + "/connect",
 		state:            &State{DeviceID: "device-1"},
+		credentials:      testRelayCredentials(t, "device-1"),
 		pendingApprovals: map[string]ApprovalNotificationPayload{},
 		pendingPrompts:   map[string]RemoteInteractivePrompt{},
 	}
@@ -844,6 +848,7 @@ func TestClearPendingApprovalRemovesItFromRelayState(t *testing.T) {
 	a := &Agent{
 		relayBaseURL: server.URL + "/connect",
 		state:        &State{DeviceID: "device-1"},
+		credentials:  testRelayCredentials(t, "device-1"),
 		pendingApprovals: map[string]ApprovalNotificationPayload{
 			"req-1": {RequestID: "req-1", Command: "git push"},
 		},

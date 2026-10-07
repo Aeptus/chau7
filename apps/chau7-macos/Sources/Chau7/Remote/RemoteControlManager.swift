@@ -406,6 +406,21 @@ final class RemoteControlManager {
         let generation = agentStartGeneration
         defer { isAgentStartInFlight = false }
 
+        do {
+            guard let state = try loadAgentState(), let deviceID = state.deviceID else {
+                throw NSError(
+                    domain: "Chau7.RemoteCredentials",
+                    code: 2,
+                    userInfo: [NSLocalizedDescriptionKey: "Remote identity is missing. Run chau7-remote identity before provisioning relay credentials."]
+                )
+            }
+            _ = try RemoteRelayCredentials.load(from: stateFileURL().deletingLastPathComponent().appendingPathComponent("credentials.json"), deviceID: deviceID)
+        } catch {
+            pairingInfo = nil
+            lastError = error.localizedDescription
+            return
+        }
+
         guard let binaryPath = await binaryProvider.resolveBinary() else {
             let error = binaryProvider.lastError ?? lastError ?? "Remote agent binary not found."
             logger.error("\(error, privacy: .public)")
@@ -431,6 +446,8 @@ final class RemoteControlManager {
             return
         }
         env["CHAU7_REMOTE_SOCKET"] = socketPath.path
+        env["CHAU7_REMOTE_STATE"] = stateFileURL().path
+        env["CHAU7_REMOTE_CREDENTIALS"] = stateFileURL().deletingLastPathComponent().appendingPathComponent("credentials.json").path
         let relayURL = FeatureSettings.shared.remoteRelayURL.trimmingCharacters(in: .whitespacesAndNewlines)
         env["CHAU7_RELAY_URL"] = relayURL
         env["CHAU7_MAC_NAME"] = Host.current().localizedName ?? "Mac"
@@ -608,6 +625,9 @@ final class RemoteControlManager {
         case .ping:
             sendFrame(type: .pong, tabID: frame.tabID, payload: frame.payload)
         case .error:
+            if let error = try? JSONDecoder().decode(RemoteErrorPayload.self, from: frame.payload), error.code == "relay_credentials_unavailable" {
+                pairingInfo = nil
+            }
             if let message = String(data: frame.payload, encoding: .utf8) {
                 lastError = message
             }
@@ -2025,10 +2045,11 @@ final class RemoteControlManager {
         do {
             guard let state = try loadAgentState(),
                   let deviceID = state.deviceID,
-                  let secret = state.relaySecret,
+                  let credentials = try? RemoteRelayCredentials.load(from: stateFileURL().deletingLastPathComponent().appendingPathComponent("credentials.json"), deviceID: deviceID),
                   let token = RelayToken.make(
                       deviceID: deviceID,
-                      secret: secret,
+                      keyID: credentials.keyID,
+                      secret: credentials.macSecret,
                       role: "mac",
                       scope: "issues"
                   ) else {

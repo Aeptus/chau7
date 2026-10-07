@@ -5,9 +5,9 @@ compatibility_date = "2025-11-01"
 # Authentication fails CLOSED. Provide the shared secret as a Worker secret
 # (never a plaintext var):
 #
-#   wrangler secret put RELAY_SECRET
+#   wrangler secret put RELAY_AUTH_KEYS
 #
-# If RELAY_SECRET is absent, authenticated routes return 503 unless you
+# If RELAY_AUTH_KEYS is absent, authenticated routes return 503 unless development explicitly
 # explicitly opt into unauthenticated rollout mode by setting the var below to
 # the string "true" (logged as a warning on use):
 #
