@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-10-07
+
+### Highlights
+
+- Improve terminal responsiveness with background repository queries and remote-frame encoding, coalesced state updates, bounded regenerable caches and asynchronous tab/session approval flows.
+- Restore watch registration after a recovered stall and capture shorter main-thread stalls with heartbeat-aware diagnostics.
+- Correct TUI copy/paste line joining, input click positioning and dedicated Home/End keys while preserving native TUI mouse reporting and ordinary shell copy formatting.
+- Preserve multi-window tab restoration through ordered durable bundles and recover newer full bundles after an abrupt exit.
+- Improve the iOS companion's compact tab picker, terminal row alignment, native selection and pasted composer text.
+- Preserve canonical remote pending prompts and bound pending/push-registration retention.
+- Correct measured token, cache and reasoning attribution across providers; retain raw evidence and label partial coverage.
+- Update native/service dependencies and enforce Go race tests, vulnerability checks and real Workers-runtime security regressions.
+
+### Remote migration
+
+- Relay authentication now uses provisioned, device-namespace and role-scoped v3 credentials with bounded rotation and revocation. Updated clients require provisioned bundles and fresh pairing QR codes; coordinate the relay and client rollout using [the credential migration guide](https://github.com/Aeptus/chau7/blob/v0.5.0/services/chau7-remote/docs/CREDENTIALS.md).
+- Startup fails closed when credentials are missing or invalid. Provisioning preserves the existing wrapped identity and paired-device trust. Pairing exposes only the phone role credential; displayed/copied device details omit credentials.
+- Removed the MAGI CLI, protocol, installer and bundled skill. Generic MCP agent launch, events and terminal capabilities remain available.
+
+### Validation and remaining investigations
+
+- Source changes passed native build/tests and applicable iOS, relay, Go race, lint and dependency gates before merge. Distribution verification additionally checks artifact versions, signatures and checksums.
+- Intermittent macOS hangs and installed-workload latency remain under investigation in [#142](https://github.com/Aeptus/chau7/issues/142); this release does not claim that every spinner is eliminated. Physical iOS choice-prompt acceptance remains in [#196](https://github.com/Aeptus/chau7/issues/196).
+
+## [Development history] - through 2026-10-07
+
+The accumulated development entries below preserve the detailed source history leading to 0.5.0.
+
+
 ### Security
 
 - Relay admission now uses provisioned device/role credentials and v3 key IDs, with bounded rotation and namespace revocation. Remote startup fails closed without an owner-only matching bundle. The secure pairing QR contains only the iOS role credential; displayed/copied device details omit credentials. Identity and paired-device trust survive provisioning and rotation. Legacy pairing metadata can still decode, but requires a newly provisioned v3 QR before connecting; no global-secret fallback is used. Credential readers reject named pipes before waiting for a writer, keeping invalid provisioning paths from blocking startup.
