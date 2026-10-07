@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Updated the relay and issue-intake Workers dependency groups together, including Wrangler 4.145.0 and matching Worker types. Both tooling graphs pin sharp 0.35.5 to remove the newly reported librsvg vulnerability without downgrading Wrangler.
+- MCP tab creation and adoption now wait for asynchronous consent on the requesting worker, keep the AppKit event loop responsive, expire denied, and revalidate the exact tab or window before granting control.
 
 ### Fixed
 
