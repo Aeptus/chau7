@@ -67,7 +67,8 @@ final class FileMonitor {
         targetWatch?.cancel()
         targetWatch = watchRegistry.watch(
             url: url,
-            eventMask: [.write, .delete, .rename],
+            // In-place growth can arrive as .extend without .write.
+            eventMask: [.write, .extend, .delete, .rename],
             callbackQueue: queue
         ) { [weak self] flags in
             guard let self, isRunning else { return }
@@ -133,7 +134,9 @@ final class FileMonitor {
             eventMask: [.write, .delete, .rename],
             callbackQueue: queue
         ) { [weak self] flags in
-            guard let self, isRunning else { return }
+            // A cancelled parent subscription can already have queued events.
+            // Once recovered, the live target owns further change observation.
+            guard let self, isRunning, targetWatch == nil else { return }
             if flags.contains(.delete) || flags.contains(.rename) {
                 parentWatch?.cancel()
                 parentWatch = nil
