@@ -1,42 +1,33 @@
 import AppKit
 import Chau7Core
 
-/// All competing local/remote decisions and sheet lifetime belong to main.
+/// Maps the shared one-shot sheet owner onto MCP permission decisions.
 @MainActor
 final class MCPCommandApprovalPresentation {
-    private let alert: NSAlert
-    private let completion: (MCPApprovalResult) -> Void
-    private(set) var isResolved = false
+    private let presentation: ConfirmationSheetPresentation
+    var isResolved: Bool {
+        presentation.isResolved
+    }
 
     init(alert: NSAlert, completion: @escaping (MCPApprovalResult) -> Void) {
-        self.alert = alert
-        self.completion = completion
+        self.presentation = ConfirmationSheetPresentation(alert: alert) { response in
+            switch response {
+            case .alertSecondButtonReturn: completion(.allowedOnce)
+            case .alertThirdButtonReturn: completion(.alwaysAllow)
+            default: completion(.denied)
+            }
+        }
     }
 
     func present(in window: NSWindow?) -> Bool {
-        guard let window, window.attachedSheet == nil else {
-            resolve(.denied)
-            return false
-        }
-        alert.beginSheetModal(for: window) { [weak self] response in
-            let result: MCPApprovalResult
-            switch response {
-            case .alertSecondButtonReturn: result = .allowedOnce
-            case .alertThirdButtonReturn: result = .alwaysAllow
-            default: result = .denied
-            }
-            self?.resolve(result)
-        }
-        return true
+        presentation.present(in: window)
     }
 
     func resolve(_ result: MCPApprovalResult) {
-        guard !isResolved else { return }
-        isResolved = true
-        if let parent = alert.window.sheetParent {
-            parent.endSheet(alert.window)
+        switch result {
+        case .allowedOnce: presentation.resolve(.alertSecondButtonReturn)
+        case .alwaysAllow: presentation.resolve(.alertThirdButtonReturn)
+        case .denied: presentation.resolve(.abort)
         }
-        alert.window.orderOut(nil)
-        completion(result)
     }
 }
