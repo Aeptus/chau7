@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Remote pairing repair for an already persisted peer no longer depends on a new state write or changes its trusted metadata.
+
 ### Fixed
 
 - New remote pairing trust and session readiness are adopted only after the paired identity is durably saved. A wrapping or file-write failure preserves trusted state and reports pairing failure instead of authorizing an unsaved phone.

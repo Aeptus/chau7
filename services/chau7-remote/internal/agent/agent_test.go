@@ -873,3 +873,32 @@ func TestConfirmPendingPairPreservesTrustWhenSaveFails(t *testing.T) {
 		t.Fatal("unsaved identity became authorized")
 	}
 }
+
+func TestKnownPeerRepairDoesNotRequireWritableState(t *testing.T) {
+	a, iosPub := makePairTestAgent(t)
+	a.setPendingPair("Known Phone", iosPub)
+	a.currentIOSPub = iosPub
+	if !a.confirmPendingPair() {
+		t.Fatal("initial pairing failed")
+	}
+	trusted, err := json.Marshal(a.state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a.statePath = t.TempDir()
+	a.currentPeerID = ""
+	a.setPendingPair("Changed Name", iosPub)
+	if !a.confirmPendingPair() {
+		t.Fatal("already trusted repair must not require a new state write")
+	}
+	after, err := json.Marshal(a.state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(trusted, after) {
+		t.Fatal("repair mutated trusted state before persistence")
+	}
+	if a.currentPeerID == "" {
+		t.Fatal("repair did not recover the trusted peer")
+	}
+}

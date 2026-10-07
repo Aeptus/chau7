@@ -942,6 +942,13 @@ func (a *Agent) confirmPendingPair() bool {
 	}
 
 	a.stateMu.Lock()
+	// A repair handshake for a persisted identity grants no new trust. Do not
+	// make reconnect depend on rewriting that identity or its display name.
+	if device := a.state.FindPairedDeviceByPublicKey(pending.iosPub); device != nil {
+		a.setCurrentPeer(device)
+		a.stateMu.Unlock()
+		return true
+	}
 	candidate := *a.state
 	candidate.PairedDevices = append([]PairedDevice(nil), a.state.PairedDevices...)
 	device, err := candidate.UpsertPairedDevice(pending.iosName, pending.iosPub, time.Now())
