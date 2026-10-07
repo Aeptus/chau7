@@ -7,6 +7,18 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		C7A196000000000000000002 /* RemoteTerminalCellMetrics.swift in Sources */ = {isa = PBXBuildFile; fileRef = C7A196000000000000000001 /* RemoteTerminalCellMetrics.swift */; };
+		C7A196000000000000000003 /* RemoteTerminalCellMetrics.swift in Sources */ = {isa = PBXBuildFile; fileRef = C7A196000000000000000001 /* RemoteTerminalCellMetrics.swift */; };
+		C7A196000000000000000005 /* RemoteTerminalCellMetricsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C7A196000000000000000004 /* RemoteTerminalCellMetricsTests.swift */; };
+		1AC49D3D2D8C216A09A01D6A /* RemoteTerminalComposer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 30230377986B3F86FE2AB97E /* RemoteTerminalComposer.swift */; };
+		17304E65A6EACF6CCEC976A0 /* RemoteTerminalComposer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 30230377986B3F86FE2AB97E /* RemoteTerminalComposer.swift */; };
+		BAB213A9A619DE5255471994 /* RemoteTerminalSelectionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9371924D7764270B99EA2AA4 /* RemoteTerminalSelectionView.swift */; };
+		0A5949145AF597AC99B60028 /* RemoteTerminalSelectionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9371924D7764270B99EA2AA4 /* RemoteTerminalSelectionView.swift */; };
+		3857464AB083305C2498B90B /* RemoteTerminalRenderState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51E54633DCE1C36E9E3FDF33 /* RemoteTerminalRenderState.swift */; };
+		1265CBA6876BE095D756244F /* RemoteTerminalRenderState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51E54633DCE1C36E9E3FDF33 /* RemoteTerminalRenderState.swift */; };
+		070E1D28BB4FC2DAF7E4BAB7 /* RemoteTerminalComposerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1E87B8A98EC0E61ADF3826CA /* RemoteTerminalComposerTests.swift */; };
+		CD4DEE3F8036A3C0E076D924 /* RemoteTerminalSelectionViewTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9EFB4648023E4F1FFA1953B /* RemoteTerminalSelectionViewTests.swift */; };
+		FEA3CC6C4E8001BF4AD2C74D /* RemoteTerminalRenderStateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F065B8CDA7A2B5E336704C3F /* RemoteTerminalRenderStateTests.swift */; };
 		C7A098000000000000000002 /* RemoteTabPickerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C7A098000000000000000001 /* RemoteTabPickerView.swift */; };
 		C7A098000000000000000003 /* RemoteTabPickerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C7A098000000000000000001 /* RemoteTabPickerView.swift */; };
 		C7A098000000000000000005 /* RemoteTabPickerViewTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C7A098000000000000000004 /* RemoteTabPickerViewTests.swift */; };
@@ -88,6 +100,14 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		C7A196000000000000000001 /* RemoteTerminalCellMetrics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteTerminalCellMetrics.swift; sourceTree = "<group>"; };
+		C7A196000000000000000004 /* RemoteTerminalCellMetricsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteTerminalCellMetricsTests.swift; sourceTree = "<group>"; };
+		30230377986B3F86FE2AB97E /* RemoteTerminalComposer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteTerminalComposer.swift; sourceTree = "<group>"; };
+		9371924D7764270B99EA2AA4 /* RemoteTerminalSelectionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteTerminalSelectionView.swift; sourceTree = "<group>"; };
+		51E54633DCE1C36E9E3FDF33 /* RemoteTerminalRenderState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteTerminalRenderState.swift; sourceTree = "<group>"; };
+		1E87B8A98EC0E61ADF3826CA /* RemoteTerminalComposerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteTerminalComposerTests.swift; sourceTree = "<group>"; };
+		A9EFB4648023E4F1FFA1953B /* RemoteTerminalSelectionViewTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteTerminalSelectionViewTests.swift; sourceTree = "<group>"; };
+		F065B8CDA7A2B5E336704C3F /* RemoteTerminalRenderStateTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteTerminalRenderStateTests.swift; sourceTree = "<group>"; };
 		C7A098000000000000000001 /* RemoteTabPickerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteTabPickerView.swift; sourceTree = "<group>"; };
 		C7A098000000000000000004 /* RemoteTabPickerViewTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteTabPickerViewTests.swift; sourceTree = "<group>"; };
 		03E6A0C2ED2794AA74FE8FE3 /* ApprovalCoordinator.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ApprovalCoordinator.swift; sourceTree = "<group>"; };
@@ -192,7 +212,11 @@
 				D1A6D1A6D1A6D1A6D1A62003 /* PrivacyInfo.xcprivacy */,
 				84B3034C2F3107BB00A7D19E /* RemoteCrypto.swift */,
 				4A94D77131F2A00100A1B001 /* RemoteModels.swift */,
+				30230377986B3F86FE2AB97E /* RemoteTerminalComposer.swift */,
+				9371924D7764270B99EA2AA4 /* RemoteTerminalSelectionView.swift */,
+				51E54633DCE1C36E9E3FDF33 /* RemoteTerminalRenderState.swift */,
 				4A94D79231F2A00100A1B001 /* RemoteRustTerminalPlayback.swift */,
+				C7A196000000000000000001 /* RemoteTerminalCellMetrics.swift */,
 				4A94D79431F2A00100A1B001 /* RemoteTerminalRendererStore.swift */,
 				4A94D79631F2A00100A1B001 /* RemoteTerminalRendererView.swift */,
 				AA01C0DF31F0A00100A1B001 /* RemoteActivityCard.swift */,
@@ -239,8 +263,12 @@
 		8E5F79E5016F2F5A3706DCED /* Chau7RemoteAppTests */ = {
 			isa = PBXGroup;
 			children = (
+				1E87B8A98EC0E61ADF3826CA /* RemoteTerminalComposerTests.swift */,
+				A9EFB4648023E4F1FFA1953B /* RemoteTerminalSelectionViewTests.swift */,
+				F065B8CDA7A2B5E336704C3F /* RemoteTerminalRenderStateTests.swift */,
 				840F72AE8D478EBA71D05E4D /* RemoteClientCollaboratorTests.swift */,
 				C7A098000000000000000004 /* RemoteTabPickerViewTests.swift */,
+				C7A196000000000000000004 /* RemoteTerminalCellMetricsTests.swift */,
 			);
 			name = Chau7RemoteAppTests;
 			path = ../Chau7RemoteAppTests;
@@ -423,9 +451,17 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				17304E65A6EACF6CCEC976A0 /* RemoteTerminalComposer.swift in Sources */,
+				0A5949145AF597AC99B60028 /* RemoteTerminalSelectionView.swift in Sources */,
+				1265CBA6876BE095D756244F /* RemoteTerminalRenderState.swift in Sources */,
+				070E1D28BB4FC2DAF7E4BAB7 /* RemoteTerminalComposerTests.swift in Sources */,
+				CD4DEE3F8036A3C0E076D924 /* RemoteTerminalSelectionViewTests.swift in Sources */,
+				FEA3CC6C4E8001BF4AD2C74D /* RemoteTerminalRenderStateTests.swift in Sources */,
 				64F5859B561CE7AF7EDB6603 /* RemoteClientCollaboratorTests.swift in Sources */,
 				C7A098000000000000000003 /* RemoteTabPickerView.swift in Sources */,
 				C7A098000000000000000005 /* RemoteTabPickerViewTests.swift in Sources */,
+				C7A196000000000000000003 /* RemoteTerminalCellMetrics.swift in Sources */,
+				C7A196000000000000000005 /* RemoteTerminalCellMetricsTests.swift in Sources */,
 				AFB28EFD06FD3AC670A01E92 /* RemoteTransport.swift in Sources */,
 				E570863FEAD1BF0245EC079F /* RemoteSessionController.swift in Sources */,
 				65E060C5E28959F2B6FA70E9 /* ApprovalCoordinator.swift in Sources */,
@@ -443,7 +479,11 @@
 				4A94D78231F2A00100A1B001 /* RemoteActivityAttributes.swift in Sources */,
 				4A94D78431F2A00100A1B001 /* RemoteLiveActivityManager.swift in Sources */,
 				4A94D77231F2A00100A1B001 /* RemoteModels.swift in Sources */,
+				1AC49D3D2D8C216A09A01D6A /* RemoteTerminalComposer.swift in Sources */,
+				BAB213A9A619DE5255471994 /* RemoteTerminalSelectionView.swift in Sources */,
+				3857464AB083305C2498B90B /* RemoteTerminalRenderState.swift in Sources */,
 				4A94D79131F2A00100A1B001 /* RemoteRustTerminalPlayback.swift in Sources */,
+				C7A196000000000000000002 /* RemoteTerminalCellMetrics.swift in Sources */,
 				4A94D79331F2A00100A1B001 /* RemoteTerminalRendererStore.swift in Sources */,
 				4A94D79531F2A00100A1B001 /* RemoteTerminalRendererView.swift in Sources */,
 				AA01C0DE31F0A00100A1B001 /* RemoteActivityCard.swift in Sources */,

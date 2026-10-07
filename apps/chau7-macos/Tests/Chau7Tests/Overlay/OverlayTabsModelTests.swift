@@ -4094,6 +4094,192 @@ final class OverlayTabsModelTests: XCTestCase {
         XCTAssertEqual(model.selectedTabID, before)
         XCTAssertEqual(model.suspendedTabIDs, suspendedBefore)
     }
+
+    private var heldCloseReply: (@MainActor (NSApplication.ModalResponse) -> Void)?
+    private var heldCloseAlert: NSAlert?
+    private var closeDecisionCount = 0
+
+    private func interceptTabCloseDecision() {
+        FeatureSettings.shared.alwaysWarnOnTabClose = true
+        model.tabCloseConfirmationPresenter = { [weak self] alert, reply in
+            self?.heldCloseAlert = alert
+            self?.heldCloseReply = reply
+            self?.closeDecisionCount += 1
+        }
+    }
+
+    func testCloseConfirmationLeavesMainResponsiveAndWaitsForConsent() async {
+        model.newTab()
+        let target = model.tabs[0].id
+        interceptTabCloseDecision()
+        model.closeTab(id: target)
+        XCTAssertEqual(model.tabs.count, 2)
+        let progressed = expectation(description: "main progresses while close decision is pending")
+        DispatchQueue.main.async { progressed.fulfill() }
+        await fulfillment(of: [progressed], timeout: 2)
+        XCTAssertEqual(model.tabs.count, 2)
+        heldCloseReply?(.alertFirstButtonReturn)
+        XCTAssertFalse(model.tabs.contains { $0.id == target })
+        heldCloseReply?(.alertFirstButtonReturn)
+        XCTAssertEqual(model.tabs.count, 1)
+    }
+
+    func testCancelledCloseDoesNotSuppressWarningsOrCloseTab() {
+        model.newTab()
+        interceptTabCloseDecision()
+        model.closeTab(id: model.tabs[0].id)
+        heldCloseAlert?.suppressionButton?.state = .on
+        heldCloseReply?(.alertSecondButtonReturn)
+        XCTAssertEqual(model.tabs.count, 2)
+        XCTAssertTrue(FeatureSettings.shared.alwaysWarnOnTabClose)
+        XCTAssertNil(model.tabClosePresentation)
+    }
+
+    func testApprovedCloseCanSuppressIdleWarnings() {
+        model.newTab()
+        for tab in model.tabs {
+            tab.session?.status = .idle
+        }
+        interceptTabCloseDecision()
+        model.closeTab(id: model.tabs[0].id)
+        heldCloseAlert?.suppressionButton?.state = .on
+        heldCloseReply?(.alertFirstButtonReturn)
+        XCTAssertEqual(model.tabs.count, 1)
+        XCTAssertFalse(FeatureSettings.shared.alwaysWarnOnTabClose)
+    }
+
+    func testDuplicateCloseDoesNotOpenOrOverwritePendingDecision() {
+        model.newTab()
+        interceptTabCloseDecision()
+        model.closeTab(id: model.tabs[0].id)
+        model.closeTab(id: model.tabs[1].id)
+        model.closeOtherTabs()
+        XCTAssertEqual(closeDecisionCount, 1)
+        heldCloseReply?(.abort)
+        XCTAssertEqual(model.tabs.count, 2)
+    }
+
+    func testExpiredCloseRejectsLateApproval() async throws {
+        model.newTab()
+        interceptTabCloseDecision()
+        model.tabCloseConfirmationTimeout = 0.01
+        model.closeTab(id: model.tabs[0].id)
+        XCTAssertEqual(model.tabs.count, 2)
+        let presentation = try XCTUnwrap(model.tabClosePresentation)
+        let expired = expectation(description: "close presentation actually expires")
+        let observer = Task { @MainActor in
+            while !presentation.isResolved {
+                try await Task.sleep(for: .milliseconds(5))
+            }
+            expired.fulfill()
+        }
+        defer { observer.cancel() }
+        await fulfillment(of: [expired], timeout: 3)
+        XCTAssertTrue(presentation.isResolved)
+        XCTAssertNil(model.tabClosePresentation)
+        XCTAssertEqual(model.tabs.count, 2)
+        heldCloseReply?(.alertFirstButtonReturn)
+        XCTAssertEqual(model.tabs.count, 2)
+    }
+
+    func testCloseDecisionFollowsIdentityAcrossReordering() {
+        model.newTab()
+        model.newTab()
+        let target = model.tabs[0].id
+        interceptTabCloseDecision()
+        model.closeTab(id: target)
+        model.moveTab(id: target, toIndex: 2)
+        heldCloseReply?(.alertFirstButtonReturn)
+        XCTAssertEqual(model.tabs.count, 2)
+        XCTAssertFalse(model.tabs.contains { $0.id == target })
+    }
+
+    func testCloseDecisionRejectsReplacedSessionWithSameTabUUID() {
+        model.newTab()
+        let target = model.tabs[0].id
+        interceptTabCloseDecision()
+        model.closeTab(id: target)
+        model.tabs[0] = OverlayTab(appModel: appModel, splitController: SplitPaneController(appModel: appModel), id: target)
+        heldCloseReply?(.alertFirstButtonReturn)
+        XCTAssertEqual(model.tabs.count, 2)
+        XCTAssertEqual(model.tabs[0].id, target)
+    }
+
+    func testCloseDecisionRejectsTargetThatBecameLastTab() {
+        model.newTab()
+        let target = model.tabs[0].id
+        interceptTabCloseDecision()
+        model.closeTab(id: target)
+        model.tabs.removeLast()
+        heldCloseReply?(.alertFirstButtonReturn)
+        XCTAssertEqual(model.tabs.map(\.id), [target])
+    }
+
+    func testLastTabCancelKeepsOriginalSessionAndWindow() {
+        let original = model.tabs[0].id
+        interceptTabCloseDecision()
+        model.closeTab(id: original)
+        heldCloseReply?(.alertThirdButtonReturn)
+        XCTAssertEqual(model.tabs.map(\.id), [original])
+    }
+
+    func testLastTabNewTabChoiceReplacesOnlyAfterApproval() {
+        let original = model.tabs[0].id
+        interceptTabCloseDecision()
+        model.closeTab(id: original)
+        XCTAssertEqual(model.tabs[0].id, original)
+        heldCloseReply?(.alertSecondButtonReturn)
+        XCTAssertEqual(model.tabs.count, 1)
+        XCTAssertNotEqual(model.tabs[0].id, original)
+    }
+
+    func testLastTabCloseWindowChoiceCallsOwnedCallbackOnce() {
+        interceptTabCloseDecision()
+        var closed = 0
+        model.onCloseLastTab = { closed += 1 }
+        model.closeCurrentTab()
+        heldCloseReply?(.alertFirstButtonReturn)
+        heldCloseReply?(.alertFirstButtonReturn)
+        XCTAssertEqual(closed, 1)
+    }
+
+    func testBulkClosePreservesTabsCreatedWhileDecisionWasPending() {
+        model.newTab()
+        model.newTab()
+        let keep = model.selectedTabID
+        interceptTabCloseDecision()
+        model.closeOtherTabs()
+        model.newTab()
+        let newcomer = model.selectedTabID
+        model.selectTab(id: keep)
+        heldCloseReply?(.alertFirstButtonReturn)
+        XCTAssertEqual(Set(model.tabs.map(\.id)), Set([keep, newcomer]))
+        XCTAssertEqual(model.selectedTabID, keep)
+    }
+
+    func testBulkCloseRejectsChangedSelectionAndWarningSuppression() {
+        model.newTab()
+        model.newTab()
+        interceptTabCloseDecision()
+        model.closeOtherTabs()
+        model.selectTab(id: model.tabs[0].id)
+        heldCloseAlert?.suppressionButton?.state = .on
+        heldCloseReply?(.alertFirstButtonReturn)
+        XCTAssertEqual(model.tabs.count, 3)
+        XCTAssertTrue(FeatureSettings.shared.alwaysWarnOnTabClose)
+    }
+
+    func testCloseDecisionRejectsNewRunningProcessAfterConsentWasRequested() {
+        model.newTab()
+        let target = model.tabs[0]
+        target.session?.status = .idle
+        interceptTabCloseDecision()
+        model.closeTab(id: target.id)
+        target.session?.status = .running
+        heldCloseReply?(.alertFirstButtonReturn)
+        XCTAssertEqual(model.tabs.count, 2)
+    }
+
 }
 
 @MainActor
@@ -4287,6 +4473,7 @@ final class OverlayTabsModelUtilityTests: XCTestCase {
             OverlayTabsModel.scrollbackLinesWithinByteLimit([oversized], maxBytes: 64)
         )
     }
+
 }
 
 // swiftlint:enable type_body_length

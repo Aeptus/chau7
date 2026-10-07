@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -122,7 +121,7 @@ func (p *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	// Log the request (if debug)
 	if p.config.LogLevel == "debug" {
-		log.Printf("[DEBUG] %s %s -> %s (provider: %s, model: %s, task: %s)",
+		diagnosticLogf("[DEBUG] %s %s -> %s (provider: %s, model: %s, task: %s)",
 			r.Method, r.URL.Path, upstreamURL, provider, model, taskID)
 	}
 
@@ -138,7 +137,7 @@ func (p *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	copyHeadersFiltered(r.Header, upstream.Header)
 
 	// Forward the request
-	resp, err := p.client.Do(upstream)
+	resp, err := p.client.Do(upstream) // #nosec G704 -- GetUpstreamURL fixes the origin to the configured provider table or chatgpt.com; incoming path/query cannot select a host
 	if err != nil {
 		p.logError(headers, provider, model, r.URL.Path, err.Error(), startTime)
 		http.Error(w, "Upstream request failed: "+err.Error(), http.StatusBadGateway)
@@ -168,7 +167,7 @@ func (p *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	bytesWritten, err := io.Copy(destination, tee)
 	if err != nil {
-		log.Printf("[WARN] Error copying response: %v", err)
+		diagnosticLogf("[WARN] Error copying response: %v", err)
 	}
 
 	// Calculate latencies
@@ -199,7 +198,7 @@ func (p *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	usedTokenEstimate := false
 	if resp.StatusCode == 200 && IsTokenBillableEndpoint(provider, r.URL.Path) {
 		if model == "" {
-			log.Printf("[WARN] %s %s: model not extracted (streaming=%v, bodyLen=%d)",
+			diagnosticLogf("[WARN] %s %s: model not extracted (streaming=%v, bodyLen=%d)",
 				provider, r.URL.Path, isStreaming, len(respBody))
 		}
 		if respMeta.InputTokens == 0 && respMeta.OutputTokens == 0 {
@@ -218,7 +217,7 @@ func (p *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		key := string(provider) + " " + r.URL.Path
 		if summary, shouldReport := p.tokenUsage.Observe(key, usedTokenEstimate, time.Now()); shouldReport {
-			log.Printf("[WARN] token usage extraction summary: provider=%s endpoint=%s total=%d estimated=%d estimated_pct=%.1f streaming=%v req_bytes=%d resp_bytes=%d",
+			diagnosticLogf("[WARN] token usage extraction summary: provider=%s endpoint=%s total=%d estimated=%d estimated_pct=%.1f streaming=%v req_bytes=%d resp_bytes=%d",
 				provider, r.URL.Path, summary.Total, summary.Estimated, summary.EstimatedPercent(), isStreaming, len(bodyBytes), len(respBody))
 		}
 	}
@@ -258,7 +257,7 @@ func (p *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if p.db != nil {
 			if err := p.db.UpdateModelOutputStats(model, respMeta.OutputTokens); err != nil {
 				if p.config.LogLevel == "debug" {
-					log.Printf("[DEBUG] Failed to update model stats: %v", err)
+					diagnosticLogf("[DEBUG] Failed to update model stats: %v", err)
 				}
 			}
 		}
@@ -304,7 +303,7 @@ func (p *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		// Reached only after the busy retries are exhausted, so this is a real
 		// dropped call: it will be missing from every analytics surface.
-		log.Printf("[WARN] Dropped API call record after retries (%s %s): %v",
+		diagnosticLogf("[WARN] Dropped API call record after retries (%s %s): %v",
 			provider, r.URL.Path, err)
 	} else {
 		p.recordAttribution(headers.Project)
@@ -319,7 +318,7 @@ func (p *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if err := p.ipc.NotifyAPICallWithTask(record, actualTaskID, headers.TabID, headers.Project); err != nil {
 		// Don't log IPC errors too frequently
 		if p.config.LogLevel == "debug" {
-			log.Printf("[DEBUG] IPC notification failed: %v", err)
+			diagnosticLogf("[DEBUG] IPC notification failed: %v", err)
 		}
 	}
 
@@ -327,7 +326,7 @@ func (p *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if p.mockup != nil {
 		if err := p.mockup.SendAPICallEvent(record, actualTaskID, baseline, headers); err != nil {
 			if p.config.LogLevel == "debug" {
-				log.Printf("[DEBUG] Mockup forwarding failed: %v", err)
+				diagnosticLogf("[DEBUG] Mockup forwarding failed: %v", err)
 			}
 		}
 	}
@@ -344,7 +343,7 @@ func (p *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if respMeta.ReasoningOutputTokens > 0 {
 		cacheInfo += fmt.Sprintf(" | reasoning:%d", respMeta.ReasoningOutputTokens)
 	}
-	log.Printf("[INFO] %s %s: %d | %s | in:%d out:%d | %dms (ttft:%dms) | $%.4f | task:%s%s%s",
+	diagnosticLogf("[INFO] %s %s: %d | %s | in:%d out:%d | %dms (ttft:%dms) | $%.4f | task:%s%s%s",
 		r.Method, r.URL.Path, resp.StatusCode, model,
 		respMeta.InputTokens, respMeta.OutputTokens, latencyMs, ttftMs, FloatValue(cost), actualTaskID, cacheInfo, savedInfo)
 
@@ -370,7 +369,7 @@ func (w streamingResponseWriter) Write(chunk []byte) (int, error) {
 
 // logError logs an error and stores it in the database
 func (p *ProxyHandler) logError(headers *CorrelationHeaders, provider Provider, model, endpoint, errMsg string, startTime time.Time) {
-	log.Printf("[ERROR] %s %s: %s", provider, endpoint, errMsg)
+	diagnosticLogf("[ERROR] %s %s: %s", provider, endpoint, errMsg)
 
 	record := &APICallRecord{
 		SessionID:    headers.SessionID,
@@ -384,7 +383,7 @@ func (p *ProxyHandler) logError(headers *CorrelationHeaders, provider Provider, 
 	}
 
 	if _, err := p.db.InsertAPICallWithTask(record, "", headers.TabID, headers.Project); err != nil {
-		log.Printf("[WARN] Failed to log error: %v", err)
+		diagnosticLogf("[WARN] Failed to log error: %v", err)
 	} else {
 		p.recordAttribution(headers.Project)
 	}
@@ -404,9 +403,9 @@ func (p *ProxyHandler) recordAttribution(projectPath string) {
 		snapshot.Ratio()*100,
 	)
 	if snapshot.Unattributed > 0 {
-		log.Printf("[WARN] %s", message)
+		diagnosticLogf("[WARN] %s", message)
 	} else {
-		log.Printf("[INFO] %s", message)
+		diagnosticLogf("[INFO] %s", message)
 	}
 }
 
@@ -516,18 +515,18 @@ func (p *ProxyHandler) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	provider := DetectProvider(r)
 	upstreamURL := GetUpstreamURL(provider, r)
 
-	log.Printf("[INFO] WebSocket upgrade: %s -> %s", r.URL.Path, upstreamURL)
+	diagnosticLogf("[INFO] WebSocket upgrade: %s -> %s", r.URL.Path, upstreamURL)
 
 	// Parse upstream URL to get host:port for TLS dial
 	upstreamParsed, err := url.Parse(upstreamURL)
 	if err != nil {
-		log.Printf("[ERROR] WebSocket: bad upstream URL: %v", err)
+		diagnosticLogf("[ERROR] WebSocket: bad upstream URL: %v", err)
 		http.Error(w, "Bad upstream URL", http.StatusBadGateway)
 		return
 	}
 	upgradeRequest, err := buildWebSocketUpgradeRequest(r, upstreamParsed)
 	if err != nil {
-		log.Printf("[ERROR] WebSocket: failed to build upgrade request: %v", err)
+		diagnosticLogf("[ERROR] WebSocket: failed to build upgrade request: %v", err)
 		http.Error(w, "Failed to build upgrade", http.StatusBadGateway)
 		return
 	}
@@ -545,14 +544,14 @@ func (p *ProxyHandler) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	// Connect to upstream over TLS
 	tlsConn, err := tls.Dial("tcp", host+":"+port, &tls.Config{ServerName: host})
 	if err != nil {
-		log.Printf("[ERROR] WebSocket: TLS dial failed: %v", err)
+		diagnosticLogf("[ERROR] WebSocket: TLS dial failed: %v", err)
 		http.Error(w, "Upstream connection failed", http.StatusBadGateway)
 		return
 	}
 	defer func() { _ = tlsConn.Close() }()
 
 	if _, err := tlsConn.Write(upgradeRequest); err != nil {
-		log.Printf("[ERROR] WebSocket: failed to write upgrade request: %v", err)
+		diagnosticLogf("[ERROR] WebSocket: failed to write upgrade request: %v", err)
 		http.Error(w, "Failed to send upgrade", http.StatusBadGateway)
 		return
 	}
@@ -560,13 +559,13 @@ func (p *ProxyHandler) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	// Hijack the client connection
 	hijacker, ok := w.(http.Hijacker)
 	if !ok {
-		log.Printf("[ERROR] WebSocket: response writer does not support hijacking")
+		diagnosticLogf("[ERROR] WebSocket: response writer does not support hijacking")
 		http.Error(w, "WebSocket not supported", http.StatusInternalServerError)
 		return
 	}
 	clientConn, _, err := hijacker.Hijack()
 	if err != nil {
-		log.Printf("[ERROR] WebSocket: hijack failed: %v", err)
+		diagnosticLogf("[ERROR] WebSocket: hijack failed: %v", err)
 		return
 	}
 	defer func() { _ = clientConn.Close() }()

@@ -7,6 +7,33 @@ public enum TerminalClipboard {
         fromTUI ? singleLine(text) : text
     }
 
+    /// Reconstruct logical text from terminal rows without exposing their padding.
+    /// Preserve spaces at soft wraps: they can separate command arguments.
+    public static func gridText(rows: [String], softWrappedRows: Set<Int>) -> String {
+        var lines: [String] = []
+        for (index, row) in rows.enumerated() {
+            if index > 0, softWrappedRows.contains(index) {
+                lines[lines.count - 1] += row
+            } else {
+                if !lines.isEmpty { lines[lines.count - 1] = trimRowPadding(lines[lines.count - 1]) }
+                lines.append(row)
+            }
+        }
+        if !lines.isEmpty { lines[lines.count - 1] = trimRowPadding(lines[lines.count - 1]) }
+        while lines.last?.isEmpty == true {
+            lines.removeLast()
+        }
+        return lines.joined(separator: "\n")
+    }
+
+    private static func trimRowPadding(_ row: String) -> String {
+        var end = row.endIndex
+        while end > row.startIndex, row[row.index(before: end)] == " " {
+            end = row.index(before: end)
+        }
+        return String(row[..<end])
+    }
+
     static func singleLine(_ text: String) -> String {
         // Treat CRLF as one boundary so its LF is not mistaken for a blank row.
         let lines = text.replacingOccurrences(of: "\r\n", with: "\n").components(separatedBy: .newlines)

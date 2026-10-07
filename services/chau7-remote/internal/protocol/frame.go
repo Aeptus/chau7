@@ -3,6 +3,7 @@ package protocol
 import (
 	"encoding/binary"
 	"errors"
+	"math"
 )
 
 const (
@@ -64,8 +65,11 @@ type Frame struct {
 }
 
 func (f *Frame) Encode() []byte {
-	payloadLen := uint32(len(f.Payload))
-	data := make([]byte, HeaderSize+payloadLen)
+	payloadLen, err := PayloadLength(len(f.Payload), 0)
+	if err != nil {
+		return nil
+	}
+	data := make([]byte, HeaderSize+len(f.Payload))
 	data[0] = f.Version
 	data[1] = f.Type
 	data[2] = f.Flags
@@ -112,4 +116,17 @@ func DecodeFrame(data []byte) (*Frame, error) {
 		Payload:  data[HeaderSize : HeaderSize+payloadLen],
 	}
 	return frame, nil
+}
+
+// PayloadLength checks the wire length before narrowing or adding encryption overhead.
+// Keeping this independent of a buffer also makes overflow boundaries testable.
+func PayloadLength(length, overhead int) (uint32, error) {
+	if length < 0 || overhead < 0 {
+		return 0, ErrInvalidLength
+	}
+	total := uint64(length) + uint64(overhead)
+	if total > math.MaxUint32 || total > uint64(math.MaxInt-HeaderSize) {
+		return 0, ErrInvalidLength
+	}
+	return uint32(total), nil
 }

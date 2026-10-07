@@ -15,7 +15,7 @@
  */
 import {
   readJsonBody,
-  sanitizePendingState,
+  validatePendingState,
   validatePushNotify,
   validatePushRegister
 } from './validation.js';
@@ -37,6 +37,7 @@ interface PushRegistration {
   pushEnvironment: 'development' | 'production';
   notificationsAuthorized: boolean;
   updatedAt: string;
+  revision?: string;
 }
 
 interface PushNotifyPayload {
@@ -64,6 +65,8 @@ interface Env {
 const REGISTRATIONS_KEY = 'push_registrations';
 const PENDING_STATE_KEY = 'pending_state';
 const SEEN_NONCES_KEY = 'seen_nonces';
+export const PENDING_RETENTION_MS = 4 * 60 * 60 * 1000;
+export const REGISTRATION_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
 
 /** Reject relayed frames larger than this (matches the platform WS message limit). */
 const MAX_FRAME_BYTES = 1024 * 1024;
@@ -79,6 +82,11 @@ export class SessionDO {
   constructor(state: DurableObjectState, env: Env) {
     this.state = state;
     this.env = env;
+    // Adopt legacy stored records on activation. This initialization performs
+    // only transactional storage I/O, never network or provider-token signing.
+    this.state.blockConcurrencyWhile(() =>
+      this.state.storage.transaction((storage) => this.expireStoredState(storage, Date.now()))
+    );
   }
 
   async fetch(request: Request): Promise<Response> {
@@ -107,12 +115,18 @@ export class SessionDO {
     }
     if (route === 'pending' && parts.length === 2) {
       if (request.method === 'GET') {
-        return this.handlePendingState();
+        return this.handlePendingState(request);
       }
       if (request.method === 'POST') {
         return this.handlePendingSync(request);
       }
-      return new Response('Method Not Allowed', { status: 405, headers: { Allow: 'GET, POST' } });
+      if (request.method === 'DELETE') {
+        return this.handlePendingDelete(request);
+      }
+      return new Response('Method Not Allowed', {
+        status: 405,
+        headers: { Allow: 'GET, POST, DELETE' }
+      });
     }
     return new Response('Not Found', { status: 404 });
   }
@@ -127,8 +141,9 @@ export class SessionDO {
     if (role !== 'mac' && role !== 'ios') {
       return new Response('Missing role', { status: 400 });
     }
-    if (!(await this.consumeNonce(request))) {
-      return new Response('Token already used', { status: 409 });
+    const nonceFailure = await this.consumeNonce(request);
+    if (nonceFailure) {
+      return nonceFailure;
     }
 
     // Replace any existing socket for this role.
@@ -222,52 +237,57 @@ export class SessionDO {
 
   // --- Replay defense -------------------------------------------------------
 
-  /**
-   * Enforce single-use of a token's nonce. The Worker has already verified the
-   * token's signature/scope/expiry; here we only guarantee it is not reused.
-   * Returns false if the nonce was already seen (replay). When no token is
-   * present (open/unauthenticated mode), there is nothing to enforce.
-   */
-  private async consumeNonce(request: Request): Promise<boolean> {
+  /** Atomically retain every live nonce; a full budget fails closed. */
+  private async consumeNonce(request: Request): Promise<Response | null> {
     const header = request.headers.get('Authorization') ?? '';
     if (!header.startsWith('Bearer ')) {
-      return true;
+      return null;
     }
     const parsed = parseToken(header.slice('Bearer '.length).trim());
     if (!parsed) {
-      return true;
+      return null; // Only reachable in explicitly configured open mode.
     }
     const now = Date.now();
     const expiresAt = (parsed.ts + TOKEN_TTL_SECONDS) * 1000;
-    const seen = (await this.state.storage.get<Record<string, number>>(SEEN_NONCES_KEY)) ?? {};
-
-    if (seen[parsed.nonce] && seen[parsed.nonce] > now) {
-      return false;
-    }
-
-    // Prune expired entries, then bound the map size defensively.
-    for (const [nonce, exp] of Object.entries(seen)) {
-      if (exp <= now) {
-        delete seen[nonce];
+    const result = await this.state.storage.transaction(async (transaction) => {
+      await this.expireStoredState(transaction, now);
+      const stored = (await transaction.get<Record<string, number>>(SEEN_NONCES_KEY)) ?? {};
+      // Client-controlled names must never invoke Object.prototype setters.
+      const seen: Record<string, number> = Object.create(null);
+      for (const [nonce, expiry] of Object.entries(stored)) {
+        if (Number.isFinite(expiry) && expiry + 1000 > now) {
+          seen[nonce] = expiry;
+        }
       }
+      if (Object.hasOwn(seen, parsed.nonce)) {
+        return 'replay';
+      }
+      if (Object.keys(seen).length >= MAX_SEEN_NONCES) {
+        return 'full';
+      }
+      seen[parsed.nonce] = expiresAt;
+      await transaction.put(SEEN_NONCES_KEY, seen);
+      await this.scheduleAlarmEarlier(transaction, expiresAt + 1000);
+      return 'accepted';
+    });
+    if (result === 'replay') {
+      return new Response('Token already used', { status: 409 });
     }
-    seen[parsed.nonce] = expiresAt;
-    const keys = Object.keys(seen);
-    if (keys.length > MAX_SEEN_NONCES) {
-      keys
-        .sort((a, b) => seen[a] - seen[b])
-        .slice(0, keys.length - MAX_SEEN_NONCES)
-        .forEach((nonce) => delete seen[nonce]);
+    if (result === 'full') {
+      return new Response('Replay budget exhausted', {
+        status: 429,
+        headers: { 'Retry-After': String(TOKEN_TTL_SECONDS) }
+      });
     }
-    await this.state.storage.put(SEEN_NONCES_KEY, seen);
-    return true;
+    return null;
   }
 
   // --- Push registration ----------------------------------------------------
 
   private async handlePushRegister(request: Request): Promise<Response> {
-    if (!(await this.consumeNonce(request))) {
-      return new Response('Token already used', { status: 409 });
+    const nonceFailure = await this.consumeNonce(request);
+    if (nonceFailure) {
+      return nonceFailure;
     }
     const parsed = await readJsonBody(request);
     if (!parsed.ok) {
@@ -298,15 +318,17 @@ export class SessionDO {
       pushTopic: payload.push_topic,
       pushEnvironment: payload.push_environment,
       notificationsAuthorized: true,
-      updatedAt: new Date().toISOString()
+      updatedAt: new Date().toISOString(),
+      revision: crypto.randomUUID()
     };
     await this.saveRegistrations(registrations);
     return new Response(null, { status: 204 });
   }
 
   private async handlePushNotify(request: Request): Promise<Response> {
-    if (!(await this.consumeNonce(request))) {
-      return new Response('Token already used', { status: 409 });
+    const nonceFailure = await this.consumeNonce(request);
+    if (nonceFailure) {
+      return nonceFailure;
     }
     const parsed = await readJsonBody(request);
     if (!parsed.ok) {
@@ -336,13 +358,33 @@ export class SessionDO {
     );
     const dead = outcomes
       .filter(({ status, reason }) => shouldRemoveRegistration(status, reason))
-      .map(({ registration }) => registration.pairedDeviceId);
+      .map(({ registration }) => registration);
     if (dead.length > 0) {
-      const next = await this.loadRegistrations();
-      for (const id of dead) {
-        delete next[id];
-      }
-      await this.saveRegistrations(next);
+      await this.state.storage.transaction(async (storage) => {
+        await this.expireStoredState(storage, Date.now());
+        const next = Object.assign(
+          Object.create(null),
+          (await storage.get<Record<string, PushRegistration>>(REGISTRATIONS_KEY)) ?? {}
+        ) as Record<string, PushRegistration>;
+        for (const failed of dead) {
+          const current = next[failed.pairedDeviceId];
+          // Provider feedback belongs to the version actually sent. A refresh
+          // (even with identical token/time) or revocation during network I/O
+          // must survive late feedback. Legacy records have no revision.
+          if (
+            current &&
+            current.revision === failed.revision &&
+            current.updatedAt === failed.updatedAt &&
+            current.pushToken === failed.pushToken &&
+            current.pushTopic === failed.pushTopic &&
+            current.pushEnvironment === failed.pushEnvironment
+          ) {
+            delete next[failed.pairedDeviceId];
+          }
+        }
+        await storage.put(REGISTRATIONS_KEY, next);
+        await this.expireStoredState(storage, Date.now());
+      });
     }
 
     // If not a single registration was delivered to, surface the failure so
@@ -357,47 +399,144 @@ export class SessionDO {
     return new Response(null, { status: 204 });
   }
 
+  /** All expiry reads, deletes and alarm changes share the storage transaction owner. */
+  private async expireStoredState(storage: DurableObjectTransaction, now: number): Promise<void> {
+    const pending = await storage.get<PendingStatePayload>(PENDING_STATE_KEY);
+    const registrations = await storage.get<Record<string, PushRegistration>>(REGISTRATIONS_KEY);
+    const nonces = await storage.get<Record<string, number>>(SEEN_NONCES_KEY);
+    let earliest = Infinity;
+    if (pending) {
+      const expiry = Date.parse(pending.updated_at ?? '') + PENDING_RETENTION_MS;
+      if (!Number.isFinite(expiry) || expiry <= now) {
+        await storage.delete(PENDING_STATE_KEY);
+      } else {
+        earliest = Math.min(earliest, expiry);
+      }
+    }
+    if (registrations) {
+      const retained: Record<string, PushRegistration> = Object.create(null);
+      for (const [id, registration] of Object.entries(registrations)) {
+        const expiry = Date.parse(registration.updatedAt) + REGISTRATION_RETENTION_MS;
+        if (Number.isFinite(expiry) && expiry > now) {
+          retained[id] = registration;
+          earliest = Math.min(earliest, expiry);
+        }
+      }
+      if (Object.keys(retained).length === 0) {
+        await storage.delete(REGISTRATIONS_KEY);
+      } else if (Object.keys(retained).length !== Object.keys(registrations).length) {
+        await storage.put(REGISTRATIONS_KEY, retained);
+      }
+    }
+    if (nonces) {
+      const retained: Record<string, number> = Object.create(null);
+      for (const [nonce, expiry] of Object.entries(nonces)) {
+        // Token validation floors time to seconds and includes ts + TTL.
+        // Retain through the END of that second, including legacy entries.
+        if (Number.isFinite(expiry) && expiry + 1000 > now) {
+          retained[nonce] = expiry;
+          earliest = Math.min(earliest, expiry + 1000);
+        }
+      }
+      if (Object.keys(retained).length === 0) {
+        await storage.delete(SEEN_NONCES_KEY);
+      } else if (Object.keys(retained).length !== Object.keys(nonces).length) {
+        await storage.put(SEEN_NONCES_KEY, retained);
+      }
+    }
+    if (Number.isFinite(earliest)) {
+      await storage.setAlarm(earliest);
+    } else {
+      await storage.deleteAlarm();
+    }
+  }
+
+  private async scheduleAlarmEarlier(
+    storage: DurableObjectTransaction,
+    expiry: number
+  ): Promise<void> {
+    const alarm = await storage.getAlarm();
+    if (alarm === null || expiry < alarm) {
+      await storage.setAlarm(expiry);
+    }
+  }
+
+  async alarm(): Promise<void> {
+    await this.state.storage.transaction((storage) => this.expireStoredState(storage, Date.now()));
+  }
+
   private async loadRegistrations(): Promise<Record<string, PushRegistration>> {
-    return (
-      (await this.state.storage.get<Record<string, PushRegistration>>(REGISTRATIONS_KEY)) ?? {}
-    );
+    return this.state.storage.transaction(async (storage) => {
+      await this.expireStoredState(storage, Date.now());
+      const stored = await storage.get<Record<string, PushRegistration>>(REGISTRATIONS_KEY);
+      return Object.assign(Object.create(null), stored ?? {});
+    });
   }
 
   private async saveRegistrations(registrations: Record<string, PushRegistration>): Promise<void> {
-    await this.state.storage.put(REGISTRATIONS_KEY, registrations);
+    await this.state.storage.transaction(async (storage) => {
+      await storage.put(REGISTRATIONS_KEY, registrations);
+      await this.expireStoredState(storage, Date.now());
+    });
   }
 
   // --- Pending state --------------------------------------------------------
 
   private async loadPendingState(): Promise<PendingStatePayload> {
-    return (
-      (await this.state.storage.get<PendingStatePayload>(PENDING_STATE_KEY)) ?? {
-        approvals: [],
-        interactive_prompts: [],
-        updated_at: new Date(0).toISOString()
-      }
-    );
+    return this.state.storage.transaction(async (storage) => {
+      await this.expireStoredState(storage, Date.now());
+      return (
+        (await storage.get<PendingStatePayload>(PENDING_STATE_KEY)) ?? {
+          approvals: [],
+          interactive_prompts: [],
+          updated_at: new Date(0).toISOString()
+        }
+      );
+    });
   }
 
-  private async handlePendingState(): Promise<Response> {
+  private async handlePendingDelete(request: Request): Promise<Response> {
+    const nonceFailure = await this.consumeNonce(request);
+    if (nonceFailure) {
+      return nonceFailure;
+    }
+    await this.state.storage.transaction(async (storage) => {
+      await storage.delete(PENDING_STATE_KEY);
+      await this.expireStoredState(storage, Date.now());
+    });
+    return new Response(null, { status: 204 });
+  }
+
+  private async handlePendingState(request: Request): Promise<Response> {
+    const nonceFailure = await this.consumeNonce(request);
+    if (nonceFailure) {
+      return nonceFailure;
+    }
     const state = await this.loadPendingState();
     return Response.json(state);
   }
 
   private async handlePendingSync(request: Request): Promise<Response> {
-    if (!(await this.consumeNonce(request))) {
-      return new Response('Token already used', { status: 409 });
+    const nonceFailure = await this.consumeNonce(request);
+    if (nonceFailure) {
+      return nonceFailure;
     }
     const parsed = await readJsonBody(request);
     if (!parsed.ok) {
       return new Response(parsed.message, { status: parsed.status });
     }
-    const sanitized = sanitizePendingState(parsed.value);
+    const validation = validatePendingState(parsed.value);
+    if (!validation.ok) {
+      return new Response(validation.message, { status: 400 });
+    }
     const nextState: PendingStatePayload = {
-      ...sanitized,
+      ...validation.value,
       updated_at: new Date().toISOString()
     };
-    await this.state.storage.put(PENDING_STATE_KEY, nextState);
+    await this.state.storage.transaction(async (storage) => {
+      await storage.put(PENDING_STATE_KEY, nextState);
+      await this.scheduleAlarmEarlier(storage, Date.now() + PENDING_RETENTION_MS);
+    });
     return Response.json(nextState);
   }
 

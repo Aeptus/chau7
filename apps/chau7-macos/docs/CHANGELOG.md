@@ -7,21 +7,66 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Core-only Swift package graph checks retain isolated scratch paths and all graph assertions, allow up to two minutes for a cold toolchain under concurrent native CI, and report process timeout/signal failures explicitly.
+
+- Review setup stays open until asynchronous launch succeeds, preserves configuration on denial or failure, displays errors in the sheet, and prevents duplicate launches while consent is pending.
+
+- Keep scripting tab creation and Dashboard agent/review launches off the main thread so approval sheets remain available and responsive.
+
+### Maintenance
+
+- Affected-file relay and issue-worker quality gates install their locked Node dependencies before validation, so fresh CI checkouts do not depend on previously installed local tools. Failed installation or package checks still fail the gate.
+
+- Update terminal, Markdown and CLI Rust dependencies together, regenerate their compatible lockfile and preserve integer terminal exit status across the Alacritty API change.
+
 - Quality-runner Swift manifest checks use temporary scratch directories so concurrent native builds cannot hold their package lock and exhaust the manifest timeout. The real Core and full-app graphs remain validated.
+
+- Tab and bulk-close confirmations use asynchronous, main-owned sheets with a five-minute expiry. Late or stale decisions fail closed; new tabs created while a bulk decision is pending survive, and warning suppression only changes after approval.
+
+- Updated Alacritty Terminal to 0.26 and preserved integer child-exit reporting for normal and signaled exits across the unchanged C ABI.
 
 - Published a dated, deduplicated Swift concurrency diagnostic inventory and component ownership plan; historical counts remain labeled and warning promotion stays gated on resolved boundaries.
 
+- Python MCP tooling now uses the SDK v2 MCPServer API and pins the tested SDK/transitive graph. Pydantic retains its required exact core pairing; real SDK tool discovery and invocation are covered without scanning a target.
+
+- Remote grid scheduling, one-job/latest-pending admission and delivery epochs now have one main-owned coordinator. The existing worker, owned-byte capture boundary and wire format are preserved.
+
+- Late APNs invalid-token feedback only removes the registration version that failed, preserving concurrent refreshes and revocations.
+
+- Relay pending snapshots expire after four hours, push registrations after thirty days, and authenticated pending deletion preserves replay protection. Transactional alarms and stale-read checks bound storage; privacy documentation distinguishes server-readable REST/APNs metadata from encrypted WebSocket frames.
+
 ### Changed
 
+- Runtime session creation presents tab consent from its worker, and post-consent creation/adoption returns the committed mutation result even when tab construction exceeds the read deadline.
+
 - Updated the relay and issue-intake Workers dependency groups together, including Wrangler 4.145.0 and matching Worker types. Both tooling graphs pin sharp 0.35.5 to remove the newly reported librsvg vulnerability without downgrading Wrangler.
+- MCP tab creation and adoption now wait for asynchronous consent on the requesting worker, keep the AppKit event loop responsive, expire denied, and revalidate the exact tab or window before granting control. Consent defaults to a five-minute deadline; synchronous main-thread consent requests fail closed.
 
 ### Fixed
 
+- iOS terminal glyphs use UIKit line origins instead of baselines, keeping TUI prompt text inside its background and cursor row in both grid drawing paths. Both canvas paths and the UIKit bitmap tests share the same draw function, covered at four text sizes with regular and bold fonts.
+- iOS terminal output has a visible Select Text action and a frozen native selection view. Grid copying preserves graphemes, indentation, interior blank lines and logical wraps while omitting empty viewport-tail rows; clipboard paste remains editable, including a single newline, while keyboard Return retains the configured send behavior. Hidden cells stay masked, and delayed UIKit paste insertion publishes the editable composer contents without submitting them.
+
+- Remote pairing repair for an already persisted peer no longer depends on a new state write or changes its trusted metadata.
+- New remote pairing trust and session readiness are adopted only after the paired identity is durably saved. A wrapping or file-write failure preserves trusted state and reports pairing failure instead of authorizing an unsaved phone.
+- Remote identity storage fails closed on unavailable machine identity or invalid wrapped keys, preserving the state file and explaining recovery instead of silently replacing identity or saving keys in plaintext.
+
+- Session notes no longer recreate deleted repository/worktree roots. Preparation and restoration require an existing Git root, create descendants relative to its open directory, reject symlink escapes and report unavailable notes on failure while preserving existing contents. Focus precedence prevents an unavailable repository from redirecting notes into another split; symlinked Git markers remain supported.
+
 - Queued parent-directory events preserve the recovered target watch, preventing unnecessary source replacement and observation gaps. File observation also includes size-change events for in-place appends; recovery remains bounded without restoring idle polling.
+- Both Go modules now run race-enabled tests and an uncached, pinned govulncheck audit during PR/pre-push validation. Security/context/body-ownership linters are enabled; relay I/O inherits shutdown cancellation, wire lengths are checked before conversion, and proxy diagnostic output escapes injected control characters. Swift advisory coverage and reviewed trust-boundary exclusions are documented explicitly.
+
+
 
 ### Fixed
 
 - Repository stats TTL/dirty-refresh tests now wait for the published snapshot rather than the background loader counter, avoiding a request-order race in the native validation gate.
+
+- Pending relay snapshots preserve session ordering, numeric prompt dates, pane targets, multi-select mode, approval severity and preformatted push text. Malformed ordering metadata is rejected before storage; invalid target fields cannot silently become unscoped prompts.
+
+- Relay replay protection handles property-name nonces safely and fails closed at its live-entry limit; push registrations retain those names. Concurrent APNs provider-token requests share one mint, with real Workers-runtime regressions covering replay, routing, storage, WebSocket replacement, backoff and recovery.
 
 - Short main-thread freezes now trigger diagnostic sampling after two seconds, with a 60-second cooldown preserved across watchdog replacements. History adoption logs identify changed fields, and history/routing timings attribute slow UI work.
 - Repeated identical terminal state and AI identity updates skip unnecessary callbacks and routing invalidation; history adoption batches observer callbacks without delaying ordinary lifecycle changes.

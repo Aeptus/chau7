@@ -671,7 +671,7 @@ private struct StartReviewSheet: View {
                 }
                 .keyboardShortcut(.cancelAction)
 
-                Button("Launch Review") {
+                Button(model.isLaunchingReview ? "Launching…" : "Launch Review") {
                     model.startCodeReview(
                         baseCommit: baseCommit,
                         headCommit: headCommit,
@@ -680,12 +680,16 @@ private struct StartReviewSheet: View {
                         extraInstructions: extraInstructions.isEmpty ? nil : extraInstructions,
                         autoApprove: autoApprove
                     )
-                    if model.reviewError == nil {
-                        model.showReviewSheet = false
-                    }
                 }
                 .keyboardShortcut(.defaultAction)
                 .buttonStyle(.borderedProminent)
+                .disabled(model.isLaunchingReview)
+            }
+
+            if let error = model.reviewError {
+                Text(error)
+                    .font(.system(size: 11))
+                    .foregroundStyle(.red)
             }
         }
         .padding(20)

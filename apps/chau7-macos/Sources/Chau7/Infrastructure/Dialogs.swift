@@ -50,3 +50,49 @@ struct SystemDialogs: Dialogs {
         return url.path
     }
 }
+
+/// One main-owned decision and sheet lifetime. Never enters a nested modal loop.
+@MainActor
+final class ConfirmationSheetPresentation {
+    private let alert: NSAlert
+    private let completion: @MainActor (NSApplication.ModalResponse) -> Void
+    private var timeoutTask: Task<Void, Never>?
+    private(set) var isResolved = false
+
+    init(
+        alert: NSAlert,
+        timeout: TimeInterval? = nil,
+        completion: @escaping @MainActor (NSApplication.ModalResponse) -> Void
+    ) {
+        self.alert = alert
+        self.completion = completion
+        if let timeout {
+            self.timeoutTask = Task { @MainActor [weak self] in
+                do { try await Task.sleep(for: .seconds(max(0, timeout))) }
+                catch { return }
+                self?.resolve(.abort)
+            }
+        }
+    }
+
+    func present(in window: NSWindow?) -> Bool {
+        guard let window, window.attachedSheet == nil else {
+            resolve(.abort)
+            return false
+        }
+        alert.beginSheetModal(for: window) { [weak self] response in
+            self?.resolve(response)
+        }
+        return true
+    }
+
+    func resolve(_ response: NSApplication.ModalResponse) {
+        guard !isResolved else { return }
+        isResolved = true
+        timeoutTask?.cancel()
+        timeoutTask = nil
+        if let parent = alert.window.sheetParent { parent.endSheet(alert.window) }
+        alert.window.orderOut(nil)
+        completion(response)
+    }
+}

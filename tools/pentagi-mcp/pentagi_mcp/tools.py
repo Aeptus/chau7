@@ -1,4 +1,4 @@
-"""All MCP tools. Importing this module registers them on the FastMCP instance.
+"""All MCP tools. Importing this module registers them on the MCPServer instance.
 
 Conventions:
 - Tools that touch a target call `require_scope(target)` first, which raises

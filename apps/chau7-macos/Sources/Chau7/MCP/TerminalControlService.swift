@@ -103,9 +103,22 @@ final class TerminalControlService {
     /// Nil (tests, pre-composition) skips remote forwarding.
     var approvalForwarder: MCPApprovalForwarding?
 
-    /// Test seam for the synchronous, user-visible tab-adoption confirmation.
+    /// Immediate decision seam for tab-adoption tests; production leaves it nil.
     /// Production leaves this nil and uses the Chau7-owned NSAlert.
     var tabControlApprovalHandler: ((String) -> Bool)?
+    var tabApprovalTimeout: TimeInterval = 300
+    var tabApprovalPresenter: ((String, @escaping (MCPApprovalResult) -> Void) -> Bool)?
+    private var tabApprovalPresentations: [String: MCPCommandApprovalPresentation] = [:]
+
+    private enum TabControlPreparation: Sendable {
+        case response(String)
+        case consent(UUID, String, String)
+    }
+
+    private enum TabCreationPreparation: Sendable {
+        case response(String)
+        case target(Int, Bool)
+    }
 
     /// Register an overlay model. Call from AppDelegate for every new window.
     func register(_ model: OverlayTabsModel) {
@@ -723,7 +736,39 @@ final class TerminalControlService {
         }
     }
 
-    func createTab(directory: String?, windowID: Int?, context: String? = nil) -> String {
+    nonisolated func createTab(directory: String?, windowID: Int?, context: String? = nil) -> String {
+        guard let preparation = MainActorBridge.read({ () -> TabCreationPreparation in
+            guard FeatureSettings.shared.mcpEnabled else {
+                return .response(self.jsonError("MCP is disabled in settings."))
+            }
+            let models = self.allModels
+            let entry = windowID.flatMap { id in models.first(where: { $0.windowID == id }) }
+                ?? (windowID == nil ? self.preferredModelEntry(from: models) : nil)
+            guard let entry else {
+                return .response(windowID == nil ? self.noWindowError() : self.jsonError("Invalid window_id"))
+            }
+            let maxTabs = min(FeatureSettings.shared.mcpMaxTabs, Self.absoluteMaxTabs)
+            guard entry.model.tabs.filter(\.isMCPControlled).count < maxTabs else {
+                return .response(self.jsonError("MCP tab limit reached (\(maxTabs)). Close existing MCP tabs first."))
+            }
+            return .target(entry.windowID, FeatureSettings.shared.mcpRequiresApproval)
+        }) else { return MainActorBridge.unresponsiveJSON }
+        switch preparation {
+        case let .response(response): return response
+        case let .target(target, requiresApproval):
+            let approved = requiresApproval && requestTabApproval(
+                message: "MCP client wants to create a new tab\(directory.map { " in \($0)" } ?? "")."
+            )
+            guard !requiresApproval || approved else {
+                return MainActorBridge.read { self.jsonError("Tab creation denied by user.") } ?? MainActorBridge.unresponsiveJSON
+            }
+            return MainActorBridge.sync {
+                self.createTabAfterConsent(directory: directory, windowID: target, context: context, approvalGranted: approved)
+            }
+        }
+    }
+
+    private func createTabAfterConsent(directory: String?, windowID: Int?, context: String?, approvalGranted: Bool) -> String {
         onMain {
             let startedAt = CFAbsoluteTimeGetCurrent()
             defer {
@@ -766,14 +811,9 @@ final class TerminalControlService {
                 return self.jsonError("MCP tab limit reached (\(maxTabs)). Close existing MCP tabs first.")
             }
 
-            // Approval gate
-            if settings.mcpRequiresApproval {
-                let approved = self.requestApproval(
-                    message: "MCP client wants to create a new tab\(directory.map { " in \($0)" } ?? "")."
-                )
-                if !approved {
-                    return self.jsonError("Tab creation denied by user.")
-                }
+            // Settings and window ownership are rechecked after asynchronous consent.
+            guard !settings.mcpRequiresApproval || approvalGranted else {
+                return self.jsonError("Tab creation approval requirement changed; retry the request.")
             }
 
             // Validate directory exists if provided
@@ -1041,7 +1081,7 @@ final class TerminalControlService {
         for index in 0 ..< clampedCount {
             // 1. Open the tab.
             guard let tabID = decodeJSONObject(
-                onMain { self.createTab(directory: directory, windowID: windowID, context: "agent_launch") }
+                createTab(directory: directory, windowID: windowID, context: "agent_launch")
             )?["tab_id"] as? String else {
                 agents.append([
                     "index": index, "status": "failed", "stage": "create",
@@ -2493,56 +2533,61 @@ final class TerminalControlService {
     /// it lasts until release, tab closure, or app termination and is visible
     /// through the tab's MCP indicator. It is deliberately never silent,
     /// regardless of the separate "approve tab creation" setting.
-    func requestMCPControl(tabID: String) -> String {
-        onMain {
+    nonisolated func requestMCPControl(tabID: String) -> String {
+        guard let preparation = MainActorBridge.read({ () -> TabControlPreparation in
             guard FeatureSettings.shared.mcpEnabled else {
-                return self.jsonError("MCP is disabled in settings.")
+                return .response(self.jsonError("MCP is disabled in settings."))
             }
             guard let uuid = self.resolveControlPlaneTabIDLocked(tabID),
                   let model = self.modelForTab(uuid),
                   let index = model.tabs.firstIndex(where: { $0.id == uuid }),
                   let session = model.tabs[index].displaySession ?? model.tabs[index].session else {
-                return self.jsonError("Tab not found: \(tabID)")
+                return .response(self.jsonError("Tab not found: \(tabID)"))
             }
-
             if model.tabs[index].isMCPControlled {
-                return self.encodeAny([
-                    "ok": true,
-                    "tab_id": tabID,
-                    "is_mcp_controlled": true,
-                    "status": "already_controlled"
-                ])
+                return .response(self.encodeAny([
+                    "ok": true, "tab_id": tabID, "is_mcp_controlled": true, "status": "already_controlled"
+                ]))
             }
-
             let maxTabs = min(FeatureSettings.shared.mcpMaxTabs, Self.absoluteMaxTabs)
-            let controlledCount = model.tabs.filter(\.isMCPControlled).count
-            guard controlledCount < maxTabs else {
-                return self.jsonError("MCP tab limit reached (\(maxTabs)). Release or close an MCP-controlled tab first.")
+            guard model.tabs.filter(\.isMCPControlled).count < maxTabs else {
+                return .response(self.jsonError("MCP tab limit reached (\(maxTabs)). Release or close an MCP-controlled tab first."))
             }
-
             let message = "An MCP client wants to control the existing tab “\(model.tabs[index].displayTitle)” " +
                 "in \(session.currentDirectory).\n\nAll connected local MCP clients will be able to send commands and key presses, " +
                 "and close this tab, until control is released, the tab closes, or Chau7 quits."
-            let approved = self.tabControlApprovalHandler?(message) ?? self.requestApproval(message: message)
-            guard approved else {
-                Log.info("MCP: control request denied for \(tabID)")
-                return self.jsonError("Tab control denied by user.")
+            return .consent(uuid, session.tabIdentifier, message)
+        }) else { return MainActorBridge.unresponsiveJSON }
+        switch preparation {
+        case let .response(response): return response
+        case let .consent(uuid, sessionIdentity, message):
+            guard requestTabApproval(message: message) else {
+                return MainActorBridge.read { self.jsonError("Tab control denied by user.") } ?? MainActorBridge.unresponsiveJSON
             }
-
-            model.tabs[index].isMCPControlled = true
-            Log.info("MCP: user granted control of existing tab \(tabID)")
-            Chau7ObservabilityService.shared.recordEvent(
-                type: "tab_control_granted",
-                subsystem: "mcp_approvals",
-                tabID: uuid.uuidString,
-                detail: ["control_plane_tab_id": tabID]
-            )
-            return self.encodeAny([
-                "ok": true,
-                "tab_id": tabID,
-                "is_mcp_controlled": true,
-                "status": "control_granted"
-            ])
+            return MainActorBridge.sync {
+                guard FeatureSettings.shared.mcpEnabled else {
+                    return self.jsonError("MCP is disabled in settings.")
+                }
+                guard let model = self.modelForTab(uuid),
+                      let index = model.tabs.firstIndex(where: { $0.id == uuid }),
+                      let session = model.tabs[index].displaySession ?? model.tabs[index].session,
+                      session.tabIdentifier == sessionIdentity else {
+                    return self.jsonError("Tab changed while approval was pending; retry the request.")
+                }
+                let maxTabs = min(FeatureSettings.shared.mcpMaxTabs, Self.absoluteMaxTabs)
+                guard model.tabs[index].isMCPControlled || model.tabs.filter(\.isMCPControlled).count < maxTabs else {
+                    return self.jsonError("MCP tab limit reached (\(maxTabs)). Release or close an MCP-controlled tab first.")
+                }
+                model.tabs[index].isMCPControlled = true
+                Log.info("MCP: user granted control of existing tab \(tabID)")
+                Chau7ObservabilityService.shared.recordEvent(
+                    type: "tab_control_granted", subsystem: "mcp_approvals", tabID: uuid.uuidString,
+                    detail: ["control_plane_tab_id": tabID]
+                )
+                return self.encodeAny([
+                    "ok": true, "tab_id": tabID, "is_mcp_controlled": true, "status": "control_granted"
+                ])
+            } ?? MainActorBridge.unresponsiveJSON
         }
     }
 
@@ -2852,29 +2897,44 @@ final class TerminalControlService {
         }
     }
 
-    /// Show a modal approval dialog for tab creation. Must be called on main thread.
-    private func requestApproval(message: String) -> Bool {
-        Chau7ObservabilityService.shared.recordEvent(
-            type: "approval_waiting",
-            subsystem: "mcp_approvals",
-            detail: ["kind": "tab_request"]
-        )
-        let alert = NSAlert()
-        alert.messageText = L("mcp.approval.tabRequest.title", "MCP Tab Request")
-        alert.informativeText = message
-        alert.alertStyle = .informational
-        alert.addButton(withTitle: L("mcp.approval.allow", "Allow"))
-        alert.addButton(withTitle: L("mcp.approval.deny", "Deny"))
-        let approved = alert.runModal() == .alertFirstButtonReturn
-        Chau7ObservabilityService.shared.recordEvent(
-            type: "approval_resolved",
-            subsystem: "mcp_approvals",
-            detail: [
-                "kind": "tab_request",
-                "decision": approved ? "approved" : "denied"
-            ]
-        )
-        return approved
+    /// Consent waits on the requesting worker, never in the AppKit event loop.
+    private nonisolated func requestTabApproval(message: String) -> Bool {
+        if let immediate = MainActorBridge.read({ self.tabControlApprovalHandler?(message) }),
+           let immediate { return immediate }
+        guard !Thread.isMainThread,
+              let timeout = MainActorBridge.read({ self.tabApprovalTimeout }) else { return false }
+        let requestID = UUID().uuidString
+        let decision = DeadlineResultLatch<MCPApprovalResult>(timeout: timeout)
+        guard decision.begin() else { return false }
+        defer {
+            MainActorBridge.run {
+                self.tabApprovalPresentations.removeValue(forKey: requestID)?.resolve(.denied)
+            }
+        }
+        guard MainActorBridge.read({
+            let alert = NSAlert()
+            alert.messageText = L("mcp.approval.tabRequest.title", "MCP Tab Request")
+            alert.informativeText = message
+            alert.alertStyle = .informational
+            alert.addButton(withTitle: L("mcp.approval.deny", "Deny"))
+            alert.addButton(withTitle: L("mcp.approval.allow", "Allow"))
+            let presentation = MCPCommandApprovalPresentation(alert: alert) { result in
+                decision.complete(result)
+                self.tabApprovalPresentations.removeValue(forKey: requestID)
+                Chau7ObservabilityService.shared.recordEvent(
+                    type: "approval_resolved", subsystem: "mcp_approvals", sessionID: requestID,
+                    detail: ["kind": "tab_request", "decision": result == .allowedOnce ? "approved" : "denied"]
+                )
+            }
+            self.tabApprovalPresentations[requestID] = presentation
+            Chau7ObservabilityService.shared.recordEvent(
+                type: "approval_waiting", subsystem: "mcp_approvals", sessionID: requestID,
+                detail: ["kind": "tab_request"]
+            )
+            return self.tabApprovalPresenter?(requestID) { presentation.resolve($0) }
+                ?? presentation.present(in: NSApp.keyWindow ?? NSApp.mainWindow)
+        }) == true else { return false }
+        return decision.wait() == .allowedOnce
     }
 
     /// Waits only on the caller's worker; main owns the asynchronous sheet and callbacks.

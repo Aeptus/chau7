@@ -71,6 +71,16 @@ function packageBin(context, packageDir, bin) {
   return fs.existsSync(local) ? local : "";
 }
 
+async function runLockedNpmChecks(context, packageDir, checks) {
+  const installation = await context.exec("npm", ["ci", "--no-audit", "--no-fund"], { cwd: packageDir });
+  if (installation.status !== "passed") return installation;
+  for (const args of checks) {
+    const result = await context.exec("npm", args, { cwd: packageDir });
+    if (result.status !== "passed") return result;
+  }
+  return { status: "passed", summary: "locked dependency installation and package validation passed" };
+}
+
 async function runPackageBin(context, packageDir, bin, args) {
   const resolved = packageBin(context, packageDir, bin);
   if (!resolved) {
@@ -773,7 +783,7 @@ export const gates = [
         ["gofmt", ["-l"], "format"],
         ["go", ["vet", "./..."]],
         ["golangci-lint", ["run", "./..."]],
-        ["go", ["test", "./..."]],
+        ["go", ["test", "-race", "./..."]],
       ]) {
         if (command[2] === "format") {
           const files = changedFileList(context, (file) => file.startsWith("apps/chau7-macos/chau7-proxy/") && file.endsWith(".go"));
@@ -814,7 +824,7 @@ export const gates = [
       for (const command of [
         ["go", ["vet", "./..."]],
         ["golangci-lint", ["run", "./..."]],
-        ["go", ["test", "./..."]],
+        ["go", ["test", "-race", "./..."]],
       ]) {
         const result = await context.exec(command[0], command[1], { cwd: "services/chau7-remote" });
         if (result.status !== "passed") return result;
@@ -874,16 +884,12 @@ export const gates = [
     wave: "tests",
     tags: ["frontend", "relay"],
     cacheable: true,
-    inputs: ["services/chau7-relay/src", "services/chau7-relay/test", "services/chau7-relay/package.json", "services/chau7-relay/package-lock.json", "services/chau7-relay/tsconfig.json"],
+    inputs: ["services/chau7-relay/src", "services/chau7-relay/test", "services/chau7-relay/package.json", "services/chau7-relay/package-lock.json", "services/chau7-relay/tsconfig.json", "services/chau7-relay/vitest.config.ts", "services/chau7-remote/docs/fixtures/pending_state.json"],
     applies: (context) => classifyFrontendImpact(context.changedFiles).apps.includes("relay"),
     rerun: "pnpm quality:prepush --include=relay-typecheck-test-build",
-    run: async (context) => {
-      for (const args of [["run", "typecheck"], ["test"], ["run", "build"]]) {
-        const result = await context.exec("npm", args, { cwd: "services/chau7-relay" });
-        if (result.status !== "passed") return result;
-      }
-      return { status: "passed", summary: "relay typecheck, tests, and dry-run build passed" };
-    },
+    run: async (context) => runLockedNpmChecks(context, "services/chau7-relay", [
+      ["run", "typecheck"], ["test"], ["run", "build"],
+    ]),
   },
   {
     id: "issues-worker-build",
@@ -892,10 +898,10 @@ export const gates = [
     wave: "build",
     tags: ["frontend", "issues"],
     cacheable: true,
-    inputs: ["services/chau7-issues/src", "services/chau7-issues/package.json", "services/chau7-issues/wrangler.toml"],
+    inputs: ["services/chau7-issues/src", "services/chau7-issues/package.json", "services/chau7-issues/package-lock.json", "services/chau7-issues/wrangler.toml"],
     applies: (context) => classifyFrontendImpact(context.changedFiles).apps.includes("issues"),
     rerun: "pnpm quality:prepush --include=issues-worker-build",
-    run: async (context) => context.exec("npm", ["run", "build"], { cwd: "services/chau7-issues" }),
+    run: async (context) => runLockedNpmChecks(context, "services/chau7-issues", [["run", "build"]]),
   },
   {
     id: "scripts-python-ruff",
@@ -958,6 +964,24 @@ export const gates = [
     rerun: "pnpm quality:local --include=quality-runner-tests",
     run: async (context) =>
       execWithoutHookGitEnv(context, "pnpm", ["test"]),
+  },
+  {
+    id: "go-dependency-audit",
+    modes: PREPUSH.concat(FULL),
+    scope: "repo",
+    wave: "audit",
+    tags: ["go", "dependencies", "security", "audit"],
+    cacheable: false,
+    inputs: [],
+    applies: () => true,
+    rerun: "pnpm quality:prepush --include=go-dependency-audit",
+    run: async (context) => {
+      for (const dir of ["apps/chau7-macos/chau7-proxy", "services/chau7-remote"]) {
+        const result = await context.exec("go", ["run", "golang.org/x/vuln/cmd/govulncheck@v1.8.0", "./..."], { cwd: dir });
+        if (result.status !== "passed") return { ...result, summary: `${result.summary}\nFix the Go advisory or scanner/toolchain/database failure; this live audit cannot be skipped.` };
+      }
+      return { status: "passed", summary: "Both Go modules pass live, call-graph-aware govulncheck v1.8.0" };
+    },
   },
   {
     id: "full-js-dependency-audit",

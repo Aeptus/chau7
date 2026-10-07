@@ -205,6 +205,7 @@ type ApprovalNotificationPayload struct {
 	// across Mac app restarts). Pointer so absence (old Macs) is
 	// distinguishable from zero.
 	SpineSeq *uint64 `json:"spine_seq,omitempty"`
+	Severity string  `json:"severity,omitempty"`
 }
 
 type ApprovalResponsePayload struct {
@@ -512,7 +513,7 @@ func (a *Agent) readIPC(ctx context.Context, conn *net.UnixConn) {
 			}
 			return
 		}
-		a.handleIPCFrame(frame)
+		a.handleIPCFrame(ctx, frame)
 	}
 }
 
@@ -524,7 +525,8 @@ func (a *Agent) relayLoop(ctx context.Context) {
 			return
 		}
 		url := a.relayConnectURL()
-		conn, _, err := websocket.Dial(ctx, url, a.relayDialOptions())
+		// websocket.Dial owns/closes the HTTP body, including failed handshakes.
+		conn, _, err := websocket.Dial(ctx, url, a.relayDialOptions()) //nolint:bodyclose // coder/websocket Dial explicitly owns resp.Body
 		if err != nil {
 			a.updateRelayStatus("reconnecting", backoff)
 			log.Printf("relay connect: %v (retry in %v)", err, backoff)
@@ -546,7 +548,7 @@ func (a *Agent) relayLoop(ctx context.Context) {
 		hasPaired := a.state.HasPairedDevices()
 		a.stateMu.Unlock()
 		if hasPaired {
-			if err := a.sendHello(); err != nil {
+			if err := a.sendHello(ctx); err != nil {
 				log.Printf("send hello: %v", err)
 			}
 		}
@@ -577,43 +579,43 @@ func (a *Agent) readRelay(ctx context.Context, conn *websocket.Conn) {
 			log.Printf("decode frame: %v", err)
 			continue
 		}
-		a.handleRelayFrame(frame)
+		a.handleRelayFrame(ctx, frame)
 	}
 }
 
-func (a *Agent) handleIPCFrame(frame *protocol.Frame) {
+func (a *Agent) handleIPCFrame(ctx context.Context, frame *protocol.Frame) {
 	switch frame.Type {
 	case protocol.TypeApprovalRequest:
-		a.updatePendingApproval(frame.Payload)
+		a.updatePendingApproval(ctx, frame.Payload)
 		if a.isSessionReady() {
-			a.sendEncryptedToRelay(frame)
+			a.sendEncryptedToRelay(ctx, frame)
 		}
-		a.handleApprovalRequestForPush(frame.Payload)
+		a.handleApprovalRequestForPush(ctx, frame.Payload)
 	case protocol.TypeInteractivePromptList:
-		a.replacePendingPrompts(frame.Payload)
+		a.replacePendingPrompts(ctx, frame.Payload)
 		if a.isSessionReady() {
-			a.sendEncryptedToRelay(frame)
+			a.sendEncryptedToRelay(ctx, frame)
 		}
-		a.handleInteractivePromptListForPush(frame.Payload)
+		a.handleInteractivePromptListForPush(ctx, frame.Payload)
 	case protocol.TypeNotificationEvent:
 		if a.isSessionReady() {
-			a.sendEncryptedToRelay(frame)
+			a.sendEncryptedToRelay(ctx, frame)
 		}
-		a.handleNotificationEventForPush(frame.Payload)
+		a.handleNotificationEventForPush(ctx, frame.Payload)
 	case protocol.TypeTabList, protocol.TypeOutput, protocol.TypeSnapshot,
 		protocol.TypeTerminalGridSnapshot,
 		protocol.TypeActivityState,
 		protocol.TypeActivityCleared:
 		if a.shouldForwardLiveFrames() {
-			a.sendEncryptedToRelay(frame)
+			a.sendEncryptedToRelay(ctx, frame)
 		}
 	case protocol.TypeCachedTabList:
 		if a.shouldForwardLiveFrames() {
-			a.sendToRelay(frame)
+			a.sendToRelay(ctx, frame)
 		}
 	case protocol.TypePing:
 		if a.isSessionReady() {
-			a.sendEncryptedToRelay(&protocol.Frame{
+			a.sendEncryptedToRelay(ctx, &protocol.Frame{
 				Version: 1,
 				Type:    protocol.TypePong,
 				TabID:   frame.TabID,
@@ -625,7 +627,7 @@ func (a *Agent) handleIPCFrame(frame *protocol.Frame) {
 	}
 }
 
-func (a *Agent) handleRelayFrame(frame *protocol.Frame) {
+func (a *Agent) handleRelayFrame(ctx context.Context, frame *protocol.Frame) {
 	wasEncrypted := frame.Flags&protocol.FlagEncrypted != 0
 	if wasEncrypted {
 		payload, err := a.decryptPayload(frame)
@@ -639,20 +641,24 @@ func (a *Agent) handleRelayFrame(frame *protocol.Frame) {
 
 	switch frame.Type {
 	case protocol.TypeHello:
-		a.handleHello(frame.Payload)
+		a.handleHello(ctx, frame.Payload)
 	case protocol.TypePairRequest:
-		a.handlePairRequest(frame.Payload)
+		a.handlePairRequest(ctx, frame.Payload)
 	case protocol.TypeSessionReady:
 		if requiresEncryptedRelayFrame(frame.Type) && !wasEncrypted {
+			return
+		}
+		// This frame decrypted under keys derived from the claimed ios_pub, so
+		// the sender holds the matching private key. Only now is it safe to
+		// make that identity permanently trusted.
+		if !a.confirmPendingPair() {
+			a.resetSession()
+			a.sendSessionStatus("pairing_failed")
 			return
 		}
 		a.sessionMu.Lock()
 		a.sessionReady = true
 		a.sessionMu.Unlock()
-		// This frame decrypted under keys derived from the claimed ios_pub, so
-		// the sender holds the matching private key. Only now is it safe to
-		// make that identity permanently trusted.
-		a.confirmPendingPair()
 		log.Printf("session ready: encrypted epoch confirmed by iOS")
 		a.sendToIPC(&protocol.Frame{
 			Version: 1,
@@ -665,7 +671,7 @@ func (a *Agent) handleRelayFrame(frame *protocol.Frame) {
 		if requiresEncryptedRelayFrame(frame.Type) && !wasEncrypted {
 			return
 		}
-		a.handleClientStateFrame(frame.Payload)
+		a.handleClientStateFrame(ctx, frame.Payload)
 		a.sendToIPC(frame)
 	case protocol.TypeTabSwitch, protocol.TypeInput, protocol.TypeKeyInput,
 		protocol.TypeCheckpointRequest, protocol.TypeInteractivePromptResponse, protocol.TypePaneInput,
@@ -676,12 +682,12 @@ func (a *Agent) handleRelayFrame(frame *protocol.Frame) {
 		if frame.Type == protocol.TypeApprovalResponse {
 			var response ApprovalResponsePayload
 			if err := json.Unmarshal(frame.Payload, &response); err == nil {
-				a.clearPendingApproval(response.RequestID)
+				a.clearPendingApproval(ctx, response.RequestID)
 			}
 		}
 		a.sendToIPC(frame)
 	case protocol.TypePing:
-		a.sendEncryptedToRelay(&protocol.Frame{
+		a.sendEncryptedToRelay(ctx, &protocol.Frame{
 			Version: 1,
 			Type:    protocol.TypePong,
 			TabID:   frame.TabID,
@@ -710,7 +716,7 @@ func requiresEncryptedRelayFrame(frameType uint8) bool {
 	}
 }
 
-func (a *Agent) handleClientStateFrame(payload []byte) {
+func (a *Agent) handleClientStateFrame(ctx context.Context, payload []byte) {
 	var statePayload RemoteClientStatePayload
 	if err := json.Unmarshal(payload, &statePayload); err != nil {
 		log.Printf("client state: unmarshal: %v", err)
@@ -728,7 +734,7 @@ func (a *Agent) handleClientStateFrame(payload []byte) {
 	// already pending, since no fresh approval or prompt-list frame will arrive
 	// to trigger a push while it sits idle in the background.
 	if nowEligible && !wasEligible {
-		a.flushPendingPushNotifications()
+		a.flushPendingPushNotifications(ctx)
 	}
 
 	a.sessionMu.Lock()
@@ -755,7 +761,7 @@ func (a *Agent) handleClientStateFrame(payload []byte) {
 	}
 	a.stateMu.Unlock()
 
-	a.registerPushToken(pairedDeviceID, deviceName, statePayload)
+	a.registerPushToken(ctx, pairedDeviceID, deviceName, statePayload)
 }
 
 func (a *Agent) shouldForwardLiveFrames() bool {
@@ -779,7 +785,7 @@ func (a *Agent) shouldNotifyClientViaPush() bool {
 	return a.currentClientAppState != "foreground" || a.currentClientStreamMode == "approvals_only"
 }
 
-func (a *Agent) handlePairRequest(payload []byte) {
+func (a *Agent) handlePairRequest(ctx context.Context, payload []byte) {
 	var request PairRequestPayload
 	if err := json.Unmarshal(payload, &request); err != nil {
 		log.Printf("pair request: unmarshal: %v", err)
@@ -789,7 +795,7 @@ func (a *Agent) handlePairRequest(payload []byte) {
 	a.pairingMu.Lock()
 	if time.Now().Before(a.pairingLockoutEnd) {
 		a.pairingMu.Unlock()
-		a.sendPairReject("rate_limited")
+		a.sendPairReject(ctx, "rate_limited")
 		return
 	}
 	a.pairingMu.Unlock()
@@ -803,13 +809,13 @@ func (a *Agent) handlePairRequest(payload []byte) {
 			log.Printf("pair request: too many failures, locked out for 60s")
 		}
 		a.pairingMu.Unlock()
-		a.sendPairReject("invalid_code")
+		a.sendPairReject(ctx, "invalid_code")
 		return
 	}
 
 	if _, err := validatedIOSPublicKey(request.IOSPub); err != nil {
 		log.Printf("pair request: invalid ios public key: %v", err)
-		a.sendPairReject("invalid_ios_pub")
+		a.sendPairReject(ctx, "invalid_ios_pub")
 		return
 	}
 
@@ -856,7 +862,7 @@ func (a *Agent) handlePairRequest(payload []byte) {
 		log.Printf("pair request: marshal accept: %v", err)
 		return
 	}
-	a.sendToRelay(&protocol.Frame{
+	a.sendToRelay(ctx, &protocol.Frame{
 		Version: 1,
 		Type:    protocol.TypePairAccept,
 		Seq:     a.nextSeq(),
@@ -866,17 +872,17 @@ func (a *Agent) handlePairRequest(payload []byte) {
 	// the crypto epoch. Re-send the current Mac nonce instead of rotating it on
 	// every fallback request, making retries idempotent and preserving any
 	// already-matching provisional session.
-	if err := a.sendCurrentHello(); err != nil {
+	if err := a.sendCurrentHello(ctx); err != nil {
 		log.Printf("pair request: send hello: %v", err)
 	}
 	if a.establishSession() {
-		a.sendSessionReadyToRelay()
+		a.sendSessionReadyToRelay(ctx)
 	} else {
 		a.sessionMu.Lock()
 		hasCrypto := a.crypto != nil
 		a.sessionMu.Unlock()
 		if hasCrypto {
-			a.sendSessionReadyToRelay()
+			a.sendSessionReadyToRelay(ctx)
 		}
 	}
 }
@@ -915,17 +921,17 @@ func (a *Agent) clearPendingPair() {
 // Pairing stays long-lived: after the first confirmation the public key is
 // stored permanently, and later reconnects are authorised by that stored key,
 // so the pairing code is needed exactly once and never re-entered.
-func (a *Agent) confirmPendingPair() {
+func (a *Agent) confirmPendingPair() bool {
 	a.pendingPairMu.Lock()
 	pending := a.pendingPair
 	a.pendingPair = nil
 	a.pendingPairMu.Unlock()
 	if pending == nil {
-		return
+		return true
 	}
 	if time.Since(pending.claimedAt) > pendingPairTTL {
 		log.Printf("pair request: discarding stale provisional identity")
-		return
+		return false
 	}
 	// Only confirm the identity the live session actually proved. If the peer
 	// changed mid-handshake, the proof belongs to the other key.
@@ -934,22 +940,35 @@ func (a *Agent) confirmPendingPair() {
 	a.sessionMu.Unlock()
 	if provedPub != pending.iosPub {
 		log.Printf("pair request: refusing to persist identity not proved by handshake")
-		return
+		return false
 	}
 
 	a.stateMu.Lock()
-	device, err := a.state.UpsertPairedDevice(pending.iosName, pending.iosPub, time.Now())
+	// A repair handshake for a persisted identity grants no new trust. Do not
+	// make reconnect depend on rewriting that identity or its display name.
+	if device := a.state.FindPairedDeviceByPublicKey(pending.iosPub); device != nil {
+		a.setCurrentPeer(device)
+		a.stateMu.Unlock()
+		return true
+	}
+	candidate := *a.state
+	candidate.PairedDevices = append([]PairedDevice(nil), a.state.PairedDevices...)
+	device, err := candidate.UpsertPairedDevice(pending.iosName, pending.iosPub, time.Now())
 	if err != nil {
 		a.stateMu.Unlock()
 		log.Printf("pair request: upsert paired device: %v", err)
-		return
+		return false
 	}
-	a.setCurrentPeer(device)
-	if err := SaveState(a.statePath, a.state); err != nil {
+	if err := SaveState(a.statePath, &candidate); err != nil {
+		a.stateMu.Unlock()
 		log.Printf("pair request: save state: %v", err)
+		return false
 	}
+	*a.state = candidate
+	a.setCurrentPeer(device)
 	a.stateMu.Unlock()
 	log.Printf("pair request: trusted iOS identity after encrypted handshake proof")
+	return true
 }
 
 func (a *Agent) setCurrentPeer(device *PairedDevice) {
@@ -977,7 +996,7 @@ func validatedIOSPublicKey(pubKey string) ([]byte, error) {
 	return rawKey, nil
 }
 
-func (a *Agent) handleHello(payload []byte) {
+func (a *Agent) handleHello(ctx context.Context, payload []byte) {
 	var hello HelloPayload
 	if err := json.Unmarshal(payload, &hello); err != nil {
 		log.Printf("hello: unmarshal: %v", err)
@@ -1030,9 +1049,9 @@ func (a *Agent) handleHello(payload []byte) {
 
 	var helloErr error
 	if hasMacNonce {
-		helloErr = a.sendCurrentHello()
+		helloErr = a.sendCurrentHello(ctx)
 	} else {
-		helloErr = a.sendHello()
+		helloErr = a.sendHello(ctx)
 	}
 	if helloErr != nil {
 		log.Printf("hello: send Mac hello: %v", helloErr)
@@ -1042,15 +1061,15 @@ func (a *Agent) handleHello(payload []byte) {
 	if hadCrypto && sameNonce {
 		// The peer may have missed SESSION_READY. Re-sending it is safe and
 		// lets a duplicate HELLO finish the same epoch without rotating keys.
-		a.sendSessionReadyToRelay()
+		a.sendSessionReadyToRelay(ctx)
 		return
 	}
 	if a.establishSession() {
-		a.sendSessionReadyToRelay()
+		a.sendSessionReadyToRelay(ctx)
 	}
 }
 
-func (a *Agent) sendHello() error {
+func (a *Agent) sendHello(ctx context.Context) error {
 	macNonce := make([]byte, 16)
 	if _, err := rand.Read(macNonce); err != nil {
 		return err
@@ -1058,20 +1077,20 @@ func (a *Agent) sendHello() error {
 	a.sessionMu.Lock()
 	a.macNonce = append(a.macNonce[:0], macNonce...)
 	a.sessionMu.Unlock()
-	return a.sendHelloWithNonce(macNonce)
+	return a.sendHelloWithNonce(ctx, macNonce)
 }
 
-func (a *Agent) sendCurrentHello() error {
+func (a *Agent) sendCurrentHello(ctx context.Context) error {
 	a.sessionMu.Lock()
 	macNonce := append([]byte(nil), a.macNonce...)
 	a.sessionMu.Unlock()
 	if len(macNonce) == 0 {
-		return a.sendHello()
+		return a.sendHello(ctx)
 	}
-	return a.sendHelloWithNonce(macNonce)
+	return a.sendHelloWithNonce(ctx, macNonce)
 }
 
-func (a *Agent) sendHelloWithNonce(macNonce []byte) error {
+func (a *Agent) sendHelloWithNonce(ctx context.Context, macNonce []byte) error {
 	fp := fingerprint(a.state.MacPublicKey)
 	payload := HelloPayload{
 		DeviceID:   a.state.DeviceID,
@@ -1085,7 +1104,7 @@ func (a *Agent) sendHelloWithNonce(macNonce []byte) error {
 		return fmt.Errorf("marshal hello: %w", err)
 	}
 
-	a.sendToRelay(&protocol.Frame{
+	a.sendToRelay(ctx, &protocol.Frame{
 		Version: 1,
 		Type:    protocol.TypeHello,
 		Seq:     a.nextSeq(),
@@ -1182,7 +1201,7 @@ func (a *Agent) establishSession() bool {
 	return true
 }
 
-func (a *Agent) sendSessionReadyToRelay() {
+func (a *Agent) sendSessionReadyToRelay(ctx context.Context) {
 	a.sessionMu.Lock()
 	hasCrypto := a.crypto != nil
 	a.sessionMu.Unlock()
@@ -1206,7 +1225,7 @@ func (a *Agent) sendSessionReadyToRelay() {
 		Type:    protocol.TypeSessionReady,
 		Payload: data,
 	}
-	a.sendEncryptedToRelay(frame)
+	a.sendEncryptedToRelay(ctx, frame)
 }
 
 func (a *Agent) resetSession() {
@@ -1308,7 +1327,11 @@ func (a *Agent) decryptPayload(frame *protocol.Frame) ([]byte, error) {
 		return nil, fmt.Errorf("replay detected: seq %d <= %d", frame.Seq, a.maxReceivedSeq)
 	}
 	nonce := makeNonce(a.crypto.recvNoncePrefix, frame.Seq)
-	header := frame.HeaderBytes(uint32(len(frame.Payload)))
+	payloadLen, err := protocol.PayloadLength(len(frame.Payload), 0)
+	if err != nil {
+		return nil, err
+	}
+	header := frame.HeaderBytes(payloadLen)
 	plaintext, err := a.crypto.aead.Open(nil, nonce, frame.Payload, header)
 	if err != nil {
 		return nil, err
@@ -1317,7 +1340,7 @@ func (a *Agent) decryptPayload(frame *protocol.Frame) ([]byte, error) {
 	return plaintext, nil
 }
 
-func (a *Agent) sendEncryptedToRelay(frame *protocol.Frame) {
+func (a *Agent) sendEncryptedToRelay(ctx context.Context, frame *protocol.Frame) {
 	a.encryptedRelaySendMu.Lock()
 	defer a.encryptedRelaySendMu.Unlock()
 
@@ -1331,7 +1354,9 @@ func (a *Agent) sendEncryptedToRelay(frame *protocol.Frame) {
 	}
 	encryptedFrame := a.encryptRelayFrame(frame, crypto)
 	a.sessionMu.Unlock()
-	a.sendToRelay(encryptedFrame)
+	if encryptedFrame != nil {
+		a.sendToRelay(ctx, encryptedFrame)
+	}
 }
 
 // encryptRelayFrame assigns a sequence owned by the agent before encrypting.
@@ -1349,7 +1374,10 @@ func (a *Agent) encryptRelayFrame(frame *protocol.Frame, crypto *cryptoSession) 
 func encryptRelayFrameWithSequence(frame *protocol.Frame, crypto *cryptoSession) *protocol.Frame {
 	encrypted := *frame
 	encrypted.Flags |= protocol.FlagEncrypted
-	payloadLen := uint32(len(frame.Payload) + crypto.aead.Overhead())
+	payloadLen, err := protocol.PayloadLength(len(frame.Payload), crypto.aead.Overhead())
+	if err != nil {
+		return nil
+	}
 	header := encrypted.HeaderBytes(payloadLen)
 	nonce := makeNonce(crypto.sendNoncePrefix, frame.Seq)
 	encrypted.Payload = crypto.aead.Seal(nil, nonce, frame.Payload, header)
@@ -1363,13 +1391,13 @@ func makeNonce(prefix [4]byte, seq uint64) []byte {
 	return nonce
 }
 
-func (a *Agent) sendPairReject(reason string) {
+func (a *Agent) sendPairReject(ctx context.Context, reason string) {
 	payload, err := json.Marshal(PairRejectPayload{Reason: reason})
 	if err != nil {
 		log.Printf("pair reject: marshal: %v", err)
 		return
 	}
-	a.sendToRelay(&protocol.Frame{
+	a.sendToRelay(ctx, &protocol.Frame{
 		Version: 1,
 		Type:    protocol.TypePairReject,
 		Seq:     a.nextSeq(),
@@ -1515,7 +1543,7 @@ func (a *Agent) relayAPIBaseURL() string {
 	return strings.TrimSuffix(parsed.String(), "/")
 }
 
-func (a *Agent) relayHTTPPost(path, scope string, payload any) error {
+func (a *Agent) relayHTTPPost(ctx context.Context, path, scope string, payload any) error {
 	body, err := json.Marshal(payload)
 	if err != nil {
 		return err
@@ -1529,7 +1557,7 @@ func (a *Agent) relayHTTPPost(path, scope string, payload any) error {
 	if a.state.RelaySecret != "" {
 		req.Header.Set("Authorization", "Bearer "+generateRelayToken(a.state.DeviceID, "mac", scope, a.state.RelaySecret))
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), relayRequestTimeout)
+	ctx, cancel := context.WithTimeout(ctx, relayRequestTimeout)
 	defer cancel()
 	req = req.WithContext(ctx)
 	resp, err := http.DefaultClient.Do(req)
@@ -1544,7 +1572,7 @@ func (a *Agent) relayHTTPPost(path, scope string, payload any) error {
 	return nil
 }
 
-func (a *Agent) syncPendingState() {
+func (a *Agent) syncPendingState(ctx context.Context) {
 	a.pendingStateMu.Lock()
 	approvals := make([]ApprovalNotificationPayload, 0, len(a.pendingApprovals))
 	for _, approval := range a.pendingApprovals {
@@ -1579,12 +1607,12 @@ func (a *Agent) syncPendingState() {
 		SessionEpoch:       epoch,
 		StateVersion:       version,
 	}
-	if err := a.relayHTTPPost("/pending/"+a.state.DeviceID, "pending", payload); err != nil {
+	if err := a.relayHTTPPost(ctx, "/pending/"+a.state.DeviceID, "pending", payload); err != nil {
 		log.Printf("pending state sync: %v", err)
 	}
 }
 
-func (a *Agent) updatePendingApproval(payload []byte) {
+func (a *Agent) updatePendingApproval(ctx context.Context, payload []byte) {
 	var approval ApprovalNotificationPayload
 	if err := json.Unmarshal(payload, &approval); err != nil {
 		log.Printf("pending approval sync: unmarshal: %v", err)
@@ -1600,20 +1628,20 @@ func (a *Agent) updatePendingApproval(payload []byte) {
 		a.macSpineSeq = *approval.SpineSeq
 	}
 	a.pendingStateMu.Unlock()
-	a.syncPendingState()
+	a.syncPendingState(ctx)
 }
 
-func (a *Agent) clearPendingApproval(requestID string) {
+func (a *Agent) clearPendingApproval(ctx context.Context, requestID string) {
 	if requestID == "" {
 		return
 	}
 	a.pendingStateMu.Lock()
 	delete(a.pendingApprovals, requestID)
 	a.pendingStateMu.Unlock()
-	a.syncPendingState()
+	a.syncPendingState(ctx)
 }
 
-func (a *Agent) replacePendingPrompts(payload []byte) {
+func (a *Agent) replacePendingPrompts(ctx context.Context, payload []byte) {
 	var promptList InteractivePromptListPayload
 	if err := json.Unmarshal(payload, &promptList); err != nil {
 		log.Printf("pending prompt sync: unmarshal: %v", err)
@@ -1634,10 +1662,10 @@ func (a *Agent) replacePendingPrompts(payload []byte) {
 		a.macSpineSeq = *promptList.SpineSeq
 	}
 	a.pendingStateMu.Unlock()
-	a.syncPendingState()
+	a.syncPendingState(ctx)
 }
 
-func (a *Agent) registerPushToken(pairedDeviceID, deviceName string, statePayload RemoteClientStatePayload) {
+func (a *Agent) registerPushToken(ctx context.Context, pairedDeviceID, deviceName string, statePayload RemoteClientStatePayload) {
 	payload := PushRegistrationPayload{
 		PairedDeviceID:          pairedDeviceID,
 		DeviceName:              deviceName,
@@ -1646,7 +1674,7 @@ func (a *Agent) registerPushToken(pairedDeviceID, deviceName string, statePayloa
 		PushEnvironment:         statePayload.PushEnvironment,
 		NotificationsAuthorized: statePayload.NotificationsAuthorized,
 	}
-	if err := a.relayHTTPPost("/push/register/"+a.state.DeviceID, "push", payload); err != nil {
+	if err := a.relayHTTPPost(ctx, "/push/register/"+a.state.DeviceID, "push", payload); err != nil {
 		log.Printf("push register: %v", err)
 	}
 }
@@ -1655,21 +1683,21 @@ func (a *Agent) registerPushToken(pairedDeviceID, deviceName string, statePayloa
 // accepted. Callers must record dedup state only on success — the relay now
 // fails loudly (502) when nothing was delivered (e.g. APNs unconfigured), and
 // a failed push must stay eligible for the next flush.
-func (a *Agent) notifyPush(payload PushNotifyPayload) bool {
-	if err := a.relayHTTPPost("/push/notify/"+a.state.DeviceID, "push", payload); err != nil {
+func (a *Agent) notifyPush(ctx context.Context, payload PushNotifyPayload) bool {
+	if err := a.relayHTTPPost(ctx, "/push/notify/"+a.state.DeviceID, "push", payload); err != nil {
 		log.Printf("push notify (%s): %v", payload.Kind, err)
 		return false
 	}
 	return true
 }
 
-func (a *Agent) handleApprovalRequestForPush(payload []byte) {
+func (a *Agent) handleApprovalRequestForPush(ctx context.Context, payload []byte) {
 	var approval ApprovalNotificationPayload
 	if err := json.Unmarshal(payload, &approval); err != nil {
 		log.Printf("approval push: unmarshal: %v", err)
 		return
 	}
-	a.emitApprovalPush(approval)
+	a.emitApprovalPush(ctx, approval)
 }
 
 // markPushedOnce reserves id and reports whether this was the first claim.
@@ -1697,7 +1725,7 @@ func (a *Agent) unmarkPushed(seen map[string]time.Time, id string) {
 // emitApprovalPush sends a single approval push if the client is push-eligible
 // and it hasn't already been pushed. Safe to call from the live frame handler
 // or from a bulk flush (see flushPendingPushNotifications).
-func (a *Agent) emitApprovalPush(approval ApprovalNotificationPayload) {
+func (a *Agent) emitApprovalPush(ctx context.Context, approval ApprovalNotificationPayload) {
 	if approval.RequestID == "" || !a.shouldNotifyClientViaPush() {
 		return
 	}
@@ -1722,7 +1750,7 @@ func (a *Agent) emitApprovalPush(approval ApprovalNotificationPayload) {
 	if body == "" {
 		body = headline
 	}
-	if !a.notifyPush(PushNotifyPayload{
+	if !a.notifyPush(ctx, PushNotifyPayload{
 		Kind:          "approval",
 		Title:         title,
 		Subtitle:      subtitle,
@@ -1735,7 +1763,7 @@ func (a *Agent) emitApprovalPush(approval ApprovalNotificationPayload) {
 	}
 }
 
-func (a *Agent) handleInteractivePromptListForPush(payload []byte) {
+func (a *Agent) handleInteractivePromptListForPush(ctx context.Context, payload []byte) {
 	var promptList InteractivePromptListPayload
 	if err := json.Unmarshal(payload, &promptList); err != nil {
 		log.Printf("interactive prompt push: unmarshal: %v", err)
@@ -1747,7 +1775,7 @@ func (a *Agent) handleInteractivePromptListForPush(payload []byte) {
 			continue
 		}
 		current[prompt.ID] = struct{}{}
-		a.emitInteractivePromptPush(prompt)
+		a.emitInteractivePromptPush(ctx, prompt)
 	}
 
 	// Forget prompts the Mac no longer lists so they can push again if they
@@ -1764,7 +1792,7 @@ func (a *Agent) handleInteractivePromptListForPush(payload []byte) {
 // emitInteractivePromptPush sends a single prompt push if the client is
 // push-eligible and it hasn't already been pushed. Safe to call from the live
 // frame handler or from a bulk flush (see flushPendingPushNotifications).
-func (a *Agent) emitInteractivePromptPush(prompt RemoteInteractivePrompt) {
+func (a *Agent) emitInteractivePromptPush(ctx context.Context, prompt RemoteInteractivePrompt) {
 	if prompt.ID == "" || !a.shouldNotifyClientViaPush() {
 		return
 	}
@@ -1782,7 +1810,7 @@ func (a *Agent) emitInteractivePromptPush(prompt RemoteInteractivePrompt) {
 	if subtitle == "" {
 		subtitle = locationSummary(prompt.TabTitle, prompt.ProjectName, prompt.BranchName, prompt.CurrentDirectory)
 	}
-	if !a.notifyPush(PushNotifyPayload{
+	if !a.notifyPush(ctx, PushNotifyPayload{
 		Kind:          "interactive_prompt",
 		Title:         title,
 		Subtitle:      subtitle,
@@ -1804,7 +1832,7 @@ func (a *Agent) emitInteractivePromptPush(prompt RemoteInteractivePrompt) {
 // (frame 0x52) as a push. The Mac decides *whether* and formats the text;
 // the agent applies only its deliverability gate and at-most-once dedup per
 // identity key.
-func (a *Agent) handleNotificationEventForPush(payload []byte) {
+func (a *Agent) handleNotificationEventForPush(ctx context.Context, payload []byte) {
 	var event NotificationEventPayload
 	if err := json.Unmarshal(payload, &event); err != nil {
 		log.Printf("notification event push: unmarshal: %v", err)
@@ -1816,7 +1844,7 @@ func (a *Agent) handleNotificationEventForPush(payload []byte) {
 	if !a.markPushedOnce(a.notifiedEventKeys, event.IdentityKey) {
 		return
 	}
-	if !a.notifyPush(PushNotifyPayload{
+	if !a.notifyPush(ctx, PushNotifyPayload{
 		Kind:          event.Kind,
 		Title:         event.Title,
 		Subtitle:      event.Subtitle,
@@ -1829,7 +1857,7 @@ func (a *Agent) handleNotificationEventForPush(payload []byte) {
 	}
 }
 
-func (a *Agent) flushPendingPushNotifications() {
+func (a *Agent) flushPendingPushNotifications(ctx context.Context) {
 	if !a.shouldNotifyClientViaPush() {
 		return
 	}
@@ -1845,14 +1873,14 @@ func (a *Agent) flushPendingPushNotifications() {
 	a.pendingStateMu.Unlock()
 
 	for _, approval := range approvals {
-		a.emitApprovalPush(approval)
+		a.emitApprovalPush(ctx, approval)
 	}
 	for _, prompt := range prompts {
-		a.emitInteractivePromptPush(prompt)
+		a.emitInteractivePromptPush(ctx, prompt)
 	}
 }
 
-func (a *Agent) sendToRelay(frame *protocol.Frame) {
+func (a *Agent) sendToRelay(ctx context.Context, frame *protocol.Frame) {
 	a.wsMu.Lock()
 	conn := a.wsConn
 	a.wsMu.Unlock()
@@ -1860,7 +1888,11 @@ func (a *Agent) sendToRelay(frame *protocol.Frame) {
 		return
 	}
 	data := frame.Encode()
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	if data == nil {
+		log.Printf("relay write: invalid frame length")
+		return
+	}
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	if err := conn.Write(ctx, websocket.MessageBinary, data); err != nil {
 		log.Printf("relay write: %v", err)
@@ -1968,15 +2000,22 @@ func readIPCFrame(reader *bufio.Reader) (*protocol.Frame, error) {
 
 func writeIPCFrame(conn *net.UnixConn, frame *protocol.Frame) error {
 	payload := frame.Encode()
+	if payload == nil {
+		return protocol.ErrInvalidLength
+	}
 	if len(payload) > maxFrameSize {
 		return errors.New("frame too large")
 	}
 	// Single atomic write: length prefix + payload in one buffer to prevent
 	// interleaving if another goroutine writes concurrently.
 	buf := make([]byte, 4+len(payload))
-	binary.LittleEndian.PutUint32(buf[:4], uint32(len(payload)))
+	wireLength, err := protocol.PayloadLength(len(payload), 0)
+	if err != nil {
+		return err
+	}
+	binary.LittleEndian.PutUint32(buf[:4], wireLength)
 	copy(buf[4:], payload)
-	_, err := conn.Write(buf)
+	_, err = conn.Write(buf)
 	return err
 }
 

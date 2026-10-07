@@ -529,3 +529,87 @@ test("iOS tests cover simulator preparation and shared CI configuration changes"
   assert.equal(ios.applies({ changedFiles: ["services/chau7-remote/go.mod"] }), false);
   assert.ok(ios.inputs.includes("scripts/quality/ios-simulator.mjs"));
 });
+
+for (const id of ["go-proxy-static-tests", "go-remote-static-tests"]) {
+  test(`${id} executes the race detector`, async () => {
+    const calls = [];
+    const result = await gate(id).run({ changedFiles: [], exec: async (command, args, options) => {
+      calls.push({ command, args, options });
+      return { status: "passed", output: "" };
+    }});
+    assert.equal(result.status, "passed");
+    assert.ok(calls.some(({command, args}) => command === "go" && args.join(" ") === "test -race ./..."));
+  });
+}
+
+test("Go audit visits both modules live and fails closed on scanner errors", async () => {
+  const audit = gate("go-dependency-audit");
+  assert.equal(audit.cacheable, false);
+  assert.ok(audit.modes.includes("prepush"));
+  assert.ok(audit.modes.includes("prepush-full"));
+  const calls = [];
+  const context = {exec: async (command,args,options) => { calls.push({command,args,options});return {status:"passed"}; }};
+  assert.equal((await audit.run(context)).status,"passed");
+  assert.deepEqual(calls.map(x=>x.options.cwd),["apps/chau7-macos/chau7-proxy","services/chau7-remote"]);
+  assert.ok(calls.every(x=>x.command === "go" && x.args.includes("golang.org/x/vuln/cmd/govulncheck@v1.8.0")));
+  for (const cwd of calls.map(x=>x.options.cwd)) {
+    const result = await audit.run({exec: async (_,__,options) => options.cwd === cwd ? {status:"failed",summary:"database unavailable"} : {status:"passed"}});
+    assert.equal(result.status,"failed");
+    assert.match(result.summary,/cannot be skipped/);
+  }
+});
+
+for (const [id, cwd, checks] of [
+  ["relay-typecheck-test-build", "services/chau7-relay", [["run", "typecheck"], ["test"], ["run", "build"]]],
+  ["issues-worker-build", "services/chau7-issues", [["run", "build"]]],
+]) {
+  test(`${id} validates a fresh checkout using locked local dependencies`, async () => {
+    let installed = false;
+    const validated = [];
+    const result = await gate(id).run({
+      exec: async (command, args, options) => {
+        assert.equal(command, "npm");
+        assert.equal(options.cwd, cwd);
+        if (args[0] === "ci") {
+          assert.deepEqual(args, ["ci", "--no-audit", "--no-fund"]);
+          installed = true;
+          return { status: "passed" };
+        }
+        if (!installed) return { status: "failed", summary: "local tools absent on fresh checkout" };
+        validated.push(args);
+        return { status: "passed" };
+      },
+    });
+    assert.equal(result.status, "passed", result.summary);
+    assert.deepEqual(validated, checks);
+    assert.ok(gate(id).inputs.includes(`${cwd}/package-lock.json`));
+  });
+
+  test(`${id} fails closed when locked dependency installation fails`, async () => {
+    const calls = [];
+    const result = await gate(id).run({
+      exec: async (_, args) => {
+        calls.push(args);
+        return args[0] === "ci"
+          ? { status: "failed", summary: "lockfile installation failed" }
+          : { status: "passed" };
+      },
+    });
+    assert.equal(result.status, "failed");
+    assert.equal(result.summary, "lockfile installation failed");
+    assert.equal(calls.length, 1, "validation must not use pre-existing tools after failed installation");
+  });
+
+  test(`${id} propagates package validation failure after installation`, async () => {
+    const failed = { status: "failed", summary: "package validation failed" };
+    const calls = [];
+    const result = await gate(id).run({
+      exec: async (_, args) => {
+        calls.push(args);
+        return args[0] === "ci" ? { status: "passed" } : failed;
+      },
+    });
+    assert.equal(result, failed);
+    assert.equal(calls.length, 2);
+  });
+}

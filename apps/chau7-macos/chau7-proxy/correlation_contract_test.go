@@ -29,7 +29,7 @@ func loadCorrelationContract(t *testing.T) correlationContract {
 	t.Helper()
 
 	path := filepath.Join("..", "Contracts", "proxy-correlation.json")
-	raw, err := os.ReadFile(path)
+	raw, err := os.ReadFile(path) // #nosec G304 -- fixed repository test fixture path
 	if err != nil {
 		t.Fatalf("read correlation contract at %s: %v", path, err)
 	}
