@@ -254,3 +254,21 @@ func TestPricingTableHasKnownModels(t *testing.T) {
 		})
 	}
 }
+
+func TestFullPricingNormalizesInclusiveProviderBuckets(t *testing.T) {
+	meta := ResponseMetadata{InputTokens: 125, OutputTokens: 47, CacheReadInputTokens: 80, ReasoningOutputTokens: 19}
+	for _, tc := range []struct {
+		provider      Provider
+		model         string
+		input, output int
+	}{
+		{ProviderOpenAI, "gpt-5", 45, 28},
+		{ProviderGemini, "gemini-2.0-flash", 45, 47},
+		{ProviderAnthropic, "claude-sonnet-4", 125, 47},
+	} {
+		want := GetPricing(tc.provider, tc.model).CalculateFullCost(tc.input, tc.output, 0, 80, 19)
+		if got := CalculateFullCostForCall(tc.provider, tc.model, meta); math.Abs(got-want) > 1e-12 {
+			t.Fatalf("%s: got %v want %v", tc.provider, got, want)
+		}
+	}
+}

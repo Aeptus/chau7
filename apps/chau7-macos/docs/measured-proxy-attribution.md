@@ -28,3 +28,9 @@ on the existing maintenance queue. It only joins retained usage evidence, never
 queries an unrelated user database or reconstructs measurements from token estimates.
 The new baseline table cascades with run retention. Tests use disposable stores,
 synthetic IPC payloads and a local fake-provider/socket fixture.
+
+Proxy analytics normalize each request before SQL aggregation, using the shared
+provider policy. Charts, provider/model summaries and repository/hourly/daily
+metered totals therefore agree with canonical run counters. Recent calls retain
+raw observations and distinguish SQL NULL from a reported zero; their metered
+usage normalizes cache/reasoning subsets without rewriting stored prices.

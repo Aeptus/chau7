@@ -111,7 +111,7 @@ enum PathClickHandler {
         }
 
         guard URL(fileURLWithPath: path).lastPathComponent == path,
-              let repositoryRoot = MagiRepositoryLocator.repositoryRoot(startingAt: workingDir) else {
+              let repositoryRoot = RepositoryRootLocator.repositoryRoot(startingAt: workingDir) else {
             completion(.missing(directPath: directPath))
             return
         }
