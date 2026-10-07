@@ -27,6 +27,21 @@ final class ScriptingAPITests: XCTestCase {
         try await super.tearDown()
     }
 
+    func testCreateTabExecutesOffMainAndAllowsMainActorConsentToProgress() async {
+        let original = api.tabCreationExecutor
+        defer { api.tabCreationExecutor = original }
+        api.tabCreationExecutor = { arguments in
+            XCTAssertFalse(Thread.isMainThread)
+            XCTAssertEqual(arguments["directory"] as? String, "/tmp")
+            XCTAssertEqual(arguments["window_id"] as? Int, 7)
+            return MainActorBridge.sync { "{\"tab_id\":\"approved-tab\"}" }
+        }
+        let response = await api.handleRequest([
+            "method": "create_tab", "params": ["directory": "/tmp", "window_id": 7]
+        ])
+        XCTAssertEqual(response["tab_id"] as? String, "approved-tab")
+    }
+
     // MARK: - Request Parsing
 
     func testMissingMethodReturnsError() async {
