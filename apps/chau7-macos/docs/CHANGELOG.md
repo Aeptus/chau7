@@ -13,6 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Published a dated, deduplicated Swift concurrency diagnostic inventory and component ownership plan; historical counts remain labeled and warning promotion stays gated on resolved boundaries.
 
+- Python MCP tooling now uses the SDK v2 MCPServer API and pins the tested SDK/transitive graph. Pydantic retains its required exact core pairing; real SDK tool discovery and invocation are covered without scanning a target.
+
 - Remote grid scheduling, one-job/latest-pending admission and delivery epochs now have one main-owned coordinator. The existing worker, owned-byte capture boundary and wire format are preserved.
 
 ### Changed
@@ -20,6 +22,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Updated the relay and issue-intake Workers dependency groups together, including Wrangler 4.145.0 and matching Worker types. Both tooling graphs pin sharp 0.35.5 to remove the newly reported librsvg vulnerability without downgrading Wrangler.
 
 ### Fixed
+
+- Session notes no longer recreate deleted repository/worktree roots. Preparation and restoration require an existing Git root, create descendants relative to its open directory, reject symlink escapes and report unavailable notes on failure while preserving existing contents. Focus precedence prevents an unavailable repository from redirecting notes into another split; symlinked Git markers remain supported.
 
 - Queued parent-directory events preserve the recovered target watch, preventing unnecessary source replacement and observation gaps. File observation also includes size-change events for in-place appends; recovery remains bounded without restoring idle polling.
 
