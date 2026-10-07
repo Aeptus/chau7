@@ -57,21 +57,25 @@ final class RepositoryStatsCacheTests: XCTestCase {
             statsTTL: 30,
             statsLoader: { _ in
                 calls.increment()
-                return .empty
+                var snapshot = RepoStats.empty
+                snapshot.attributedProxyCost = Double(calls.value)
+                return snapshot
             },
             now: clock.read
         )
 
         model.refreshStatsIfNeeded()
-        XCTAssertTrue(waitUntil { calls.value == 1 && model.stats != nil })
+        XCTAssertTrue(waitUntil { model.stats?.attributedProxyCost == 1 })
 
         clock.advance(by: 31)
         model.refreshStatsIfNeeded()
-        XCTAssertTrue(waitUntil { calls.value == 2 })
+        XCTAssertTrue(waitUntil { model.stats?.attributedProxyCost == 2 })
 
+        // The loader runs off-main; its counter can advance before adoption.
+        // Wait for the second snapshot before testing a fresh dirty request.
         model.invalidateStats()
         model.refreshStatsIfNeeded()
-        XCTAssertTrue(waitUntil { calls.value == 3 })
+        XCTAssertTrue(waitUntil { model.stats?.attributedProxyCost == 3 })
     }
 
     func testStaleSnapshotSurvivesInFlightAndFailedRefresh() {
