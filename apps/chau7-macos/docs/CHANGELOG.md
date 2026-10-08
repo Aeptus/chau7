@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Make iOS remote connection errors visible and add a direct re-pair action for failed connections.
+
 ## [0.5.0] - 2026-10-07
 
 ### Highlights
