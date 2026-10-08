@@ -90,7 +90,7 @@ jobs:
           path: ${{ runner.temp }}
       - name: Restore built artifacts
         run: tar -xf "$RUNNER_TEMP/release-artifacts.tar" -C apps/chau7-macos
-      - name: Check optional signing configuration
+      - name: Require release signing configuration
         id: signing
         env:
           IDENTITY: ${{ secrets.APPLE_DEVELOPER_ID_APPLICATION }}
@@ -98,8 +98,8 @@ jobs:
           if [ -n "$IDENTITY" ]; then
             echo "available=true" >> "$GITHUB_OUTPUT"
           else
-            echo "available=false" >> "$GITHUB_OUTPUT"
-            echo 'Signing unavailable: release remains ad-hoc signed.' >> "$GITHUB_STEP_SUMMARY"
+            echo '::error::Developer ID signing is required before publishing a release. Configure signing or publish verified local artifacts in a draft release.'
+            exit 1
           fi
       - name: Prepare isolated signing keychain
         if: steps.signing.outputs.available == 'true'
@@ -139,14 +139,9 @@ jobs:
       - name: Extract release notes
         env:
           VERSION: ${{ needs.build.outputs.version }}
-          SIGNED: ${{ steps.signing.outputs.available }}
         run: |
           ./scripts/extract-changelog "$VERSION" > "$RUNNER_TEMP/release-notes.md"
-          if [ "$SIGNED" = true ]; then
-            echo 'Developer ID signed and notarized.' >> "$RUNNER_TEMP/release-notes.md"
-          else
-            echo 'Ad-hoc signed, not notarized. First launch: Control-click Chau7.app, then Open.' >> "$RUNNER_TEMP/release-notes.md"
-          fi
+          echo 'Developer ID signed and notarized.' >> "$RUNNER_TEMP/release-notes.md"
           echo 'Verify the attached SHA256SUMS.txt and provenance with gh attestation verify.' >> "$RUNNER_TEMP/release-notes.md"
       - uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3
         with:

@@ -55,3 +55,23 @@ test("nonpublishing workflow has one read-only build and restores its artifact f
   assert.equal((workflow.match(/timeout-minutes:/g) ?? []).length, 3); assert.match(workflow, /cancel-in-progress: false/);
   for (const match of workflow.matchAll(/uses: (.+)/g)) assert.match(match[1], /@[a-f0-9]{40}(?: |$)/);
 });
+
+for (const identity of ["", "Developer ID Application: Fixture (TESTTEAM)"]) {
+  test(`release signing preflight ${identity ? "accepts a configured identity" : "refuses unsigned publication"}`, (t) => {
+    const workflow = fs.readFileSync(path.join(source, ".github/workflows/release.yml"), "utf8");
+    const preflight = workflow.match(/- name: Require release signing configuration[\s\S]*?run: \|\n([\s\S]*?)(?=      - name:)/)?.[1];
+    assert.ok(preflight, "release publication must check signing before using artifacts");
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "chau7-signing-preflight-"));
+    t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+    const output = path.join(root, "output");
+    const result = spawnSync("/bin/bash", ["-e", "-c", preflight], {
+      env: { ...process.env, IDENTITY: identity, GITHUB_OUTPUT: output }, encoding: "utf8",
+    });
+    assert.equal(result.status, identity ? 0 : 1, result.stderr);
+    if (identity) assert.match(fs.readFileSync(output, "utf8"), /available=true/);
+    else {
+      assert.match(result.stdout, /::error::Developer ID signing is required/);
+      assert.equal(fs.existsSync(output), false, "unsigned builds cannot reach gated publication");
+    }
+  });
+}
