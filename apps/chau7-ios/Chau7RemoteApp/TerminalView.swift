@@ -193,20 +193,47 @@ struct TerminalView: View {
     private var statusBar: some View {
         if let error = client.lastError, !error.isEmpty {
             VStack(spacing: 0) {
-                Button {
-                    withAnimation(.easeInOut(duration: 0.2)) { isErrorExpanded.toggle() }
-                } label: {
-                    HStack(spacing: 4) {
-                        Image(systemName: "exclamationmark.triangle.fill")
-                        Text("Connection issue")
-                        Image(systemName: isErrorExpanded ? "chevron.up" : "chevron.down")
-                            .font(.caption2)
-                        Spacer()
+                HStack(alignment: .center, spacing: 8) {
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.2)) { isErrorExpanded.toggle() }
+                    } label: {
+                        HStack(alignment: .top, spacing: 6) {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .foregroundStyle(.red)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Connection issue")
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(.red)
+                                Text(error)
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                                    .truncationMode(.tail)
+                            }
+                            Spacer(minLength: 0)
+                            Image(systemName: isErrorExpanded ? "chevron.up" : "chevron.down")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .contentShape(Rectangle())
                     }
-                    .font(.caption)
-                    .foregroundStyle(.red)
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Connection issue: \(error)")
+                    .accessibilityHint("Tap to show connection details.")
+
+                    if client.status.offersPairingRecovery {
+                        Button {
+                            isPairingPresented = true
+                            isErrorExpanded = false
+                        } label: {
+                            Label("Re-pair", systemImage: "qrcode.viewfinder")
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                        .accessibilityHint("Scan a fresh pairing QR code from your Mac.")
+                    }
                 }
-                .accessibilityLabel("Connection issue. Tap for details.")
                 .padding(.horizontal)
                 .padding(.vertical, 6)
 

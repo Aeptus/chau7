@@ -464,6 +464,7 @@
 				C7A196000000000000000005 /* RemoteTerminalCellMetricsTests.swift in Sources */,
 				AFB28EFD06FD3AC670A01E92 /* RemoteTransport.swift in Sources */,
 				E570863FEAD1BF0245EC079F /* RemoteSessionController.swift in Sources */,
+				58B00A5CA2C678BDB76285BD /* RemoteConnectionStatus.swift in Sources */,
 				65E060C5E28959F2B6FA70E9 /* ApprovalCoordinator.swift in Sources */,
 				3444751E8047E3029A044EF4 /* RemotePairingStore.swift in Sources */,
 				FC59CDC1416B270F8A34386F /* KeychainStore.swift in Sources */,

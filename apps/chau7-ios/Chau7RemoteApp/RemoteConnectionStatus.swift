@@ -20,6 +20,16 @@ enum RemoteConnectionStatus: Equatable {
     case error
     case backgroundSuspended
 
+    /// Whether the terminal error banner should offer a direct route to scan a replacement pairing QR.
+    var offersPairingRecovery: Bool {
+        switch self {
+        case .connectionFailed, .connectionTimedOut, .pairingRejected, .error:
+            return true
+        default:
+            return false
+        }
+    }
+
     var displayText: String {
         switch self {
         case .disconnected: return "Disconnected"

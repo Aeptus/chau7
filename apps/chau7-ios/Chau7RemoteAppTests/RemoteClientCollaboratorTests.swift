@@ -7,6 +7,39 @@ import XCTest
 /// sources directly (host-less logic tests — the full app makes a poor test
 /// host because it boots the Rust terminal FFI); pure protocol logic lives
 /// in Chau7Core and is covered by the macOS package suite.
+final class RemoteConnectionStatusTests: XCTestCase {
+    func testPairingRecoveryIsOfferedForConnectionFailures() {
+        let failures: [RemoteConnectionStatus] = [
+            .connectionFailed,
+            .connectionTimedOut,
+            .pairingRejected,
+            .error,
+        ]
+
+        for status in failures {
+            XCTAssertTrue(status.offersPairingRecovery, "Expected recovery action for \(status)")
+        }
+    }
+
+    func testPairingRecoveryIsHiddenOutsideConnectionFailures() {
+        let nonFailures: [RemoteConnectionStatus] = [
+            .disconnected,
+            .connecting,
+            .waitingForMac,
+            .sessionReady,
+            .encrypted,
+            .reconnecting(attempt: 1, max: 5),
+            .reconnectingToSendApproval,
+            .approvalQueued,
+            .backgroundSuspended,
+        ]
+
+        for status in nonFailures {
+            XCTAssertFalse(status.offersPairingRecovery, "Unexpected recovery action for \(status)")
+        }
+    }
+}
+
 @MainActor
 final class ApprovalCoordinatorTests: XCTestCase {
     func testQueueAndSendableLifecycle() {
