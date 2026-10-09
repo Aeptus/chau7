@@ -139,9 +139,16 @@ struct EnhancedEditorView: NSViewRepresentable {
 /// lets these delegate methods touch `textView` without a hop.
 @MainActor
 class EditorCoordinator: NSObject, NSTextViewDelegate, NSGestureRecognizerDelegate {
+    private struct PendingTextChange {
+        let range: NSRange
+        let replacement: String?
+        let previouslyTouchedFenceDelimiter: Bool
+    }
+
     let parent: EnhancedEditorView
     weak var textView: NSTextView?
     var syntaxTimer: Timer?
+    private var pendingTextChange: PendingTextChange?
 
     init(parent: EnhancedEditorView) {
         self.parent = parent
@@ -199,17 +206,38 @@ class EditorCoordinator: NSObject, NSTextViewDelegate, NSGestureRecognizerDelega
         guard let textView = textView else { return }
         parent.text = textView.string
 
-        // Debounced syntax highlighting (150ms delay to avoid excessive re-highlighting)
-        syntaxTimer?.invalidate()
-        syntaxTimer = Timer.scheduledTimer(withTimeInterval: 0.15, repeats: false) { [weak self] _ in
-            // `scheduledTimer` adds to the run loop of the thread that
-            // schedules it, and this method is main-actor isolated, so the
-            // timer is a main-run-loop timer and fires on main. The compiler
-            // cannot see that through `Timer`'s `@Sendable` block, hence the
-            // explicit assertion rather than an extra hop that would change
-            // when the highlight lands.
-            MainActor.assumeIsolated {
-                self?.applySyntaxHighlighting()
+        if parent.language.id == "markdown" {
+            syntaxTimer?.invalidate()
+            let change = pendingTextChange
+            pendingTextChange = nil
+            if let change, let replacement = change.replacement, let storage = textView.textStorage {
+                let currentLength = (textView.string as NSString).length
+                let location = min(max(0, change.range.location), currentLength)
+                let length = min(replacement.utf16.count, currentLength - location)
+                MarkdownLiveStyler.apply(
+                    to: storage,
+                    theme: MarkdownLiveStyler.defaultTheme(fontSize: CGFloat(parent.config.fontSize)),
+                    around: NSRange(location: location, length: length),
+                    previouslyTouchedFenceDelimiter: change.previouslyTouchedFenceDelimiter
+                )
+            } else {
+                // Programmatic edits (load, checkbox toggle, undo paths without
+                // a delegate replacement range) are uncommon; style them fully.
+                applySyntaxHighlighting()
+            }
+        } else {
+            pendingTextChange = nil
+            // Debounce heavier language regexes. Markdown uses a bounded
+            // paragraph update above so its rendered text follows the keystroke.
+            syntaxTimer?.invalidate()
+            syntaxTimer = Timer.scheduledTimer(withTimeInterval: 0.15, repeats: false) { [weak self] _ in
+                // `scheduledTimer` adds to the run loop of the thread that
+                // schedules it, and this method is main-actor isolated, so the
+                // timer is a main-run-loop timer and fires on main. The compiler
+                // cannot see that through Timer's `@Sendable` block.
+                MainActor.assumeIsolated {
+                    self?.applySyntaxHighlighting()
+                }
             }
         }
 
@@ -222,6 +250,25 @@ class EditorCoordinator: NSObject, NSTextViewDelegate, NSGestureRecognizerDelega
         if parent.config.bracketMatching {
             highlightMatchingBracket(textView)
         }
+    }
+
+    func textView(
+        _ textView: NSTextView,
+        shouldChangeTextIn affectedCharRange: NSRange,
+        replacementString: String?
+    ) -> Bool {
+        let text = textView.string as NSString
+        let validRange = NSIntersectionRange(
+            affectedCharRange,
+            NSRange(location: 0, length: text.length)
+        )
+        let originalLine = text.lineRange(for: validRange)
+        pendingTextChange = PendingTextChange(
+            range: affectedCharRange,
+            replacement: replacementString,
+            previouslyTouchedFenceDelimiter: MarkdownLiveStyler.containsFenceDelimiter(in: text, range: originalLine)
+        )
+        return true
     }
 
     func textViewDidChangeSelection(_ notification: Notification) {
@@ -265,8 +312,6 @@ class EditorCoordinator: NSObject, NSTextViewDelegate, NSGestureRecognizerDelega
         guard !text.isEmpty else { return }
 
         let storage = textView.textStorage!
-        let fullRange = NSRange(location: 0, length: (text as NSString).length)
-        storage.beginEditing()
 
         // Markdown gets live "light" rendering (heading sizes, bold/italic/code,
         // dimmed markers, …) instead of flat token coloring, so the edit pane reads
@@ -276,9 +321,11 @@ class EditorCoordinator: NSObject, NSTextViewDelegate, NSGestureRecognizerDelega
                 to: storage,
                 theme: MarkdownLiveStyler.defaultTheme(fontSize: CGFloat(parent.config.fontSize))
             )
-            storage.endEditing()
             return
         }
+
+        let fullRange = NSRange(location: 0, length: (text as NSString).length)
+        storage.beginEditing()
 
         // Reset to default style
         let defaultAttrs: [NSAttributedString.Key: Any] = [

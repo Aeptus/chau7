@@ -69,6 +69,13 @@ final class MCPSession {
         cancelSubscription()
     }
 
+    /// Wake the reader through the writer's owned duplicate. Only run() closes
+    /// the original descriptor; closing it here could race fclose and hit a
+    /// newly allocated listener or another client's descriptor.
+    func stop() {
+        writer?.close()
+    }
+
     /// Blocking run loop: reads JSON-RPC messages, dispatches, writes responses.
     /// Note: this takes ownership of fd — the fd is closed when the session ends.
     func run() {

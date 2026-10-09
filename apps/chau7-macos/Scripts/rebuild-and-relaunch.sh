@@ -238,7 +238,7 @@ send_signal_to_chau7() {
 
 quit_chau7() {
   LAST_STEP="quit running app"
-  local initial_pids
+  local initial_pids quit_request_pid=""
   initial_pids="$(running_chau7_pids)"
   if [[ -z "$initial_pids" ]]; then
     log_info "Chau7 is not running. No quit required."
@@ -249,13 +249,31 @@ quit_chau7() {
   if command -v osascript >/dev/null 2>&1; then
     # Both bundle identifiers are supported so a dev instance cannot be left
     # behind while the production bundle is being upgraded.
-    osascript -e 'tell application id "com.chau7.app" to quit' >/dev/null 2>&1 || true
-    osascript -e 'tell application id "com.chau7.app.dev" to quit' >/dev/null 2>&1 || true
+    # AppleScript can itself wait minutes for an unresponsive application.
+    # Keep that request off the timeout path, and never launch an absent app.
+    osascript \
+      -e 'if application id "com.chau7.app" is running then' \
+      -e 'tell application id "com.chau7.app" to quit' \
+      -e 'end if' \
+      -e 'if application id "com.chau7.app.dev" is running then' \
+      -e 'tell application id "com.chau7.app.dev" to quit' \
+      -e 'end if' >/dev/null 2>&1 &
+    quit_request_pid=$!
   else
-    log_warn "osascript is unavailable; using SIGTERM directly."
+    log_warn "osascript is unavailable; waiting for exit before the explicit force guard."
   fi
 
+  local exited_cleanly=0
   if wait_for_chau7_exit "$QUIT_TIMEOUT_SECONDS"; then
+    exited_cleanly=1
+  fi
+  # This is only our AppleScript helper, never an app process. Reap it on
+  # either outcome so a stuck request cannot outlive the recovery command.
+  if [[ -n "$quit_request_pid" ]]; then
+    kill "$quit_request_pid" 2>/dev/null || true
+    wait "$quit_request_pid" 2>/dev/null || true
+  fi
+  if [[ "$exited_cleanly" == "1" ]]; then
     log_ok "Chau7 exited cleanly; persisted state had time to flush."
     return 0
   fi

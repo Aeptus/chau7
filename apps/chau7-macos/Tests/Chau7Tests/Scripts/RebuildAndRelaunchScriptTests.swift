@@ -182,6 +182,50 @@ final class RebuildAndRelaunchScriptTests: XCTestCase {
         )
     }
 
+    func testBlockedAppleScriptRespectsQuitTimeoutWithoutForce() throws {
+        let result = try blockedQuitFixture(force: false)
+        XCTAssertNotEqual(result.status, 0)
+        XCTAssertTrue(result.stdout.contains("Refusing SIGTERM and SIGKILL"), result.stdout + result.stderr)
+        XCTAssertFalse(result.stdout.contains("SIGNAL:"))
+    }
+
+    func testBlockedAppleScriptReachesExplicitForceEscalation() throws {
+        let result = try blockedQuitFixture(force: true)
+        XCTAssertEqual(result.status, 0, result.stdout + result.stderr)
+        XCTAssertTrue(result.stdout.contains("SIGNAL:TERM"))
+        XCTAssertFalse(result.stdout.contains("SIGNAL:KILL"))
+        XCTAssertTrue(result.stdout.contains("exited after forced SIGTERM"))
+    }
+
+    /// The fake helper waits longer than SubprocessRunner's deadline. The
+    /// real quit workflow must bound it; no production PID is signaled.
+    private func blockedQuitFixture(force: Bool) throws -> (status: Int32, stdout: String, stderr: String) {
+        let directory = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let helper = directory.appendingPathComponent("osascript")
+        try "#!/bin/sh\nexec /bin/sleep 30\n".write(to: helper, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: helper.path)
+        let script = try String(contentsOf: repositoryRoot().appendingPathComponent("Scripts/rebuild-and-relaunch.sh"), encoding: .utf8)
+        let start = try XCTUnwrap(script.range(of: "\nwait_for_chau7_exit() {"))
+        let end = try XCTUnwrap(script.range(of: "\ncheck_source_state() {"))
+        let functions = String(script[start.lowerBound ..< end.lowerBound])
+        return try run("/bin/bash", ["-c", """
+        set -euo pipefail
+        QUIT_TIMEOUT_SECONDS=1
+        FORCE_QUIT=\(force ? "1" : "0")
+        stopped=0
+        log_info() { echo "$*"; }
+        log_ok() { echo "$*"; }
+        log_warn() { echo "$*"; }
+        log_error() { echo "$*"; }
+        running_chau7_pids() { if [[ "$stopped" == "0" ]]; then echo 424242; fi; }
+        running_chau7_description() { :; }
+        \(functions)
+        send_signal_to_chau7() { echo "SIGNAL:$1"; stopped=1; }
+        if quit_chau7; then exit 0; else exit 1; fi
+        """], environment: ["PATH": "\(directory.path):/usr/bin:/bin"])
+    }
+
     func testLegacyInstallerDelegatesToGuardedWorkflow() throws {
         let script = try String(
             contentsOf: repositoryRoot()

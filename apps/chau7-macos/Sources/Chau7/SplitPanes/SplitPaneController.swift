@@ -403,7 +403,14 @@ extension SplitNode {
 final class TextEditorModel: Identifiable {
     let id = UUID()
 
-    var content = ""
+    var content = "" {
+        didSet {
+            guard oldValue != content else { return }
+            schedulePlanProgressUpdate(for: content)
+        }
+    }
+
+    private(set) var planProgress = PlanProgress(checked: 0, total: 0)
     var filePath: String?
     var isDirty = false
     var isLoading = false
@@ -413,6 +420,7 @@ final class TextEditorModel: Identifiable {
     var hasSaveConflict = false
     var externalConflictMessage: String?
     var isAutoSaveEnabled = false
+    var isCheckboxWritePending = false
     var scrollToLine: Int? // F03: Line to scroll to after loading (set after content loads)
 
     /// Runbook code-block state machine + sequential runner. Exposed so the
@@ -440,6 +448,17 @@ final class TextEditorModel: Identifiable {
     @ObservationIgnored
     private var isDisposed = false
     @ObservationIgnored
+    private var pendingCheckboxWriteCount = 0
+    @ObservationIgnored
+    private var planProgressTask: Task<Void, Never>?
+    @ObservationIgnored
+    private var planProgressGeneration = UUID()
+    @ObservationIgnored
+    private static let checkboxWriteQueue = DispatchQueue(
+        label: "com.aethyme.chau7.markdown-checkbox-write",
+        qos: .userInitiated
+    )
+    @ObservationIgnored
     var untitledSaveHandler: ((TextEditorModel) -> Bool)?
 
     init(fileWatchRegistry: FileSystemWatchRegistry = .shared) {
@@ -454,10 +473,6 @@ final class TextEditorModel: Identifiable {
         return L("tab.untitled", "Untitled")
     }
 
-    var planProgress: PlanProgress {
-        computePlanProgress(from: content)
-    }
-
     var isCompanionPlan: Bool {
         guard let path = filePath else { return false }
         return Self.shouldAutoEnableAutoSave(for: path)
@@ -468,6 +483,16 @@ final class TextEditorModel: Identifiable {
     ///   - path: Absolute path to the file
     ///   - scrollToLine: Optional line number to scroll to after loading (1-based)
     func loadFile(at path: String, scrollToLine line: Int? = nil) {
+        loadFile(at: path, scrollToLine: line, securityScopedURL: nil)
+    }
+
+    /// Loads a file-picker URL while keeping its security scope active for the
+    /// complete background read.
+    func loadFile(at url: URL, scrollToLine line: Int? = nil) {
+        loadFile(at: url.path, scrollToLine: line, securityScopedURL: url)
+    }
+
+    private func loadFile(at path: String, scrollToLine line: Int?, securityScopedURL: URL?) {
         guard !isDisposed else { return }
         // Create a unique token for this load operation
         let token = UUID()
@@ -486,6 +511,12 @@ final class TextEditorModel: Identifiable {
         // for no benefit. The weak capture happens on the main hop instead,
         // which is the only place that touches model state.
         DispatchQueue.global(qos: .userInitiated).async {
+            let didStartSecurityScope = securityScopedURL?.startAccessingSecurityScopedResource() ?? false
+            defer {
+                if didStartSecurityScope {
+                    securityScopedURL?.stopAccessingSecurityScopedResource()
+                }
+            }
             do {
                 let contents = try String(contentsOfFile: path, encoding: .utf8)
                 let hash = Self.contentHash(contents)
@@ -515,7 +546,8 @@ final class TextEditorModel: Identifiable {
                     guard self?.loadingToken == token else { return }
                     self?.isLoading = false
                     self?.pendingScrollToLine = nil
-                    self?.lastError = "Failed to load file: \(error.localizedDescription)"
+                    let name = URL(fileURLWithPath: path).lastPathComponent
+                    self?.lastError = "Failed to load \(name): \(error.localizedDescription)"
                     Log.error("Failed to load file: \(error.localizedDescription)")
                 }
             }
@@ -544,6 +576,10 @@ final class TextEditorModel: Identifiable {
         lastError = nil
         hasSaveConflict = false
         externalConflictMessage = nil
+        guard !isCheckboxWritePending else {
+            lastError = L("editor.waitForCheckboxSave", "Wait for the Markdown task update to finish before saving.")
+            return false
+        }
         if !canSaveOverCurrentDiskVersion(path: path) {
             hasSaveConflict = true
             hasExternalChangeConflict = true
@@ -604,8 +640,38 @@ final class TextEditorModel: Identifiable {
     }
 
     func reloadFromDisk() {
+        guard !isCheckboxWritePending else {
+            lastError = L("editor.waitForCheckboxSave", "Wait for the Markdown task update to finish before reloading.")
+            return
+        }
         guard let path = filePath else { return }
         loadFile(at: path, scrollToLine: nil)
+    }
+
+    private func schedulePlanProgressUpdate(for content: String) {
+        let generation = UUID()
+        planProgressGeneration = generation
+        planProgressTask?.cancel()
+        if content.isEmpty {
+            planProgress = PlanProgress(checked: 0, total: 0)
+            return
+        }
+        planProgressTask = Task { [weak self] in
+            do {
+                try await Task.sleep(nanoseconds: 100_000_000)
+            } catch {
+                return
+            }
+            guard !Task.isCancelled else { return }
+            let progress = await Task.detached(priority: .utility) {
+                computePlanProgress(from: content)
+            }.value
+            guard let self,
+                  !Task.isCancelled,
+                  planProgressGeneration == generation,
+                  self.content == content else { return }
+            planProgress = progress
+        }
     }
 
     /// Drop unsaved edits, restoring the editor to the last persisted file
@@ -630,12 +696,16 @@ final class TextEditorModel: Identifiable {
             updateContent(toggleCheckboxInContent(content, lineNumber: lineNumber))
             return
         }
-        stopWatchingCurrentFile()
+        if pendingCheckboxWriteCount == 0 {
+            stopWatchingCurrentFile()
+        }
+        pendingCheckboxWriteCount += 1
+        isCheckboxWritePending = true
         // Read-modify-write of the file on disk belongs off the main thread,
         // but it needs nothing from the model — only `path` and the pure
         // `toggleCheckboxInContent` / `contentHash` statics. See `loadContents`
         // for why the weak capture is taken on the main hop instead.
-        DispatchQueue.global(qos: .userInitiated).async {
+        Self.checkboxWriteQueue.async {
             do {
                 let currentDiskContent = try String(contentsOfFile: path, encoding: .utf8)
                 let updated = toggleCheckboxInContent(currentDiskContent, lineNumber: lineNumber)
@@ -649,15 +719,25 @@ final class TextEditorModel: Identifiable {
                     hasExternalChangeConflict = false
                     hasSaveConflict = false
                     externalConflictMessage = nil
+                    lastError = nil
                     setAutoSaveStatusMessage(L("editor.autoSaved", "Auto-saved"))
-                    startWatchingCurrentFile()
+                    finishCheckboxWrite()
                 }
             } catch {
                 DispatchQueue.main.async { [weak self] in
-                    self?.startWatchingCurrentFile()
-                    self?.lastError = "Failed to toggle checkbox: \(error.localizedDescription)"
+                    guard let self else { return }
+                    lastError = "Failed to toggle checkbox: \(error.localizedDescription)"
+                    finishCheckboxWrite()
                 }
             }
+        }
+    }
+
+    private func finishCheckboxWrite() {
+        pendingCheckboxWriteCount = max(0, pendingCheckboxWriteCount - 1)
+        isCheckboxWritePending = pendingCheckboxWriteCount > 0
+        if !isCheckboxWritePending {
+            startWatchingCurrentFile()
         }
     }
 
@@ -1130,6 +1210,10 @@ final class SplitPaneController {
     @ObservationIgnored
     private weak var appModel: AppModel?
 
+    /// Optional test seam; production forwards to the selected session's PTY.
+    @ObservationIgnored
+    var terminalInputSender: ((TerminalSessionModel, String) -> Void)?
+
     /// Modal dialogs (close-confirm, Save As) are injected so headless tests
     /// can drive the close-time decision path without spinning AppKit.
     @ObservationIgnored
@@ -1165,10 +1249,18 @@ final class SplitPaneController {
         }
     }
 
-    /// Send a command to the first terminal session in this split tree (for markdown runbooks).
+    /// Send a Markdown runbook command to the most recently focused terminal.
     func sendCommandToTerminal(_ command: String, sourceEditor: TextEditorModel? = nil, sourceLineNumber: Int? = nil) {
-        guard let session = root.findLeaf({ ($0 as? TerminalPane)?.session }) else { return }
-        session.sendInput(command)
+        guard let sessionID = focusedTerminalSessionID(),
+              let session = root.findSession(id: sessionID) else {
+            sourceEditor?.lastError = L("runbook.noTerminal", "No terminal is available to run this command.")
+            return
+        }
+        if let terminalInputSender {
+            terminalInputSender(session, command)
+        } else {
+            session.sendInput(command)
+        }
         if let sourceEditor, let sourceLineNumber, let tabID = session.ownerTabID?.uuidString {
             sourceEditor.markCodeBlockQueued(command, lineNumber: sourceLineNumber, tabID: tabID)
         }
@@ -1417,8 +1509,34 @@ final class SplitPaneController {
 
     /// Opens a file in the existing text editor, or creates a new split if none exists
     func openFileInEditor(path: String, line: Int? = nil) {
-        if let editor = root.findFirstEditor() {
-            editor.loadFile(at: path, scrollToLine: line)
+        openFileInEditor(path: path, line: line, editor: nil)
+    }
+
+    /// Opens a file in the supplied editor (or the first editor in the tree),
+    /// resolving unsaved work before replacing its current content.
+    func openFileInEditor(path: String, line: Int? = nil, editor requestedEditor: TextEditorModel?) {
+        openFileInEditor(path: path, securityScopedURL: nil, line: line, editor: requestedEditor)
+    }
+
+    func openFileInEditor(url: URL, editor: TextEditorModel) {
+        openFileInEditor(path: url.path, securityScopedURL: url, line: nil, editor: editor)
+    }
+
+    private func openFileInEditor(path: String, securityScopedURL: URL?, line: Int?, editor requestedEditor: TextEditorModel?) {
+        if let editor = requestedEditor ?? root.findFirstEditor() {
+            guard !editor.isCheckboxWritePending else {
+                editor.lastError = L("editor.waitForCheckboxSave", "Wait for the Markdown task update to finish before opening another file.")
+                return
+            }
+            if editor.isDirty,
+               PaneCloseConfirmer(dialogs: dialogs).confirmCloseDirty(editor) == .abort {
+                return
+            }
+            if let securityScopedURL {
+                editor.loadFile(at: securityScopedURL, scrollToLine: line)
+            } else {
+                editor.loadFile(at: path, scrollToLine: line)
+            }
         } else {
             splitWithTextEditor(direction: .horizontal, filePath: path, scrollToLine: line)
         }

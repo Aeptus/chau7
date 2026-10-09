@@ -2,7 +2,7 @@
   {
     "category": "MCP",
     "feature": "Bounded Socket Transport Recovery",
-    "description": "Serial socket owners use complete linear-time framing, queue-inclusive write deadlines and nonblocking reconnect handshakes; bounded async notifications keep slow peers off UI and interrupted requests return errors without replaying uncertain execution",
+    "description": "Serial socket owners use complete linear-time framing, queue-inclusive write deadlines and nonblocking reconnect handshakes; bounded async notifications keep slow peers off UI and interrupted requests return errors without replaying uncertain execution; MCP restart shutdown retains single reader ownership, rejects late disconnects for reused descriptors, and detects closed or replaced listener sockets from kernel state and socket-file identity",
     "status": "Shipped",
     "differentiator": "No"
   },
@@ -4986,7 +4986,7 @@
   {
     "category": "Developer Experience",
     "feature": "Restoration-Safe Chau7 Build Skill",
-    "description": "The bundled chau7-build skill documents and validates the guarded quit/build/install/relaunch workflow, checks source and helper provenance, and keeps session restoration artifacts outside release operations",
+    "description": "The bundled chau7-build skill documents and validates the guarded quit/build/install/relaunch workflow, checks source and helper provenance, and keeps session restoration artifacts outside release operations; the quit deadline includes blocked AppleScript requests without bypassing the explicit force-termination guard",
     "status": "Shipped",
     "differentiator": "Yes"
   },

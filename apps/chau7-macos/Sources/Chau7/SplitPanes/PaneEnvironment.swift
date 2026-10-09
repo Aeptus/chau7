@@ -33,6 +33,10 @@ struct PaneEnvironment {
     /// activated. Nil when the host does not provide click-to-open routing.
     let onFilePathClicked: ((String, Int?, Int?) -> Void)?
 
+    /// Optional: called when an editor pane asks to replace its open file.
+    /// The controller resolves any pending edits before starting the load.
+    let onOpenEditorFile: ((TextEditorModel, URL) -> Void)?
+
     /// Optional: called when a runbook code block requests execution
     /// against the host terminal session.
     let onRunCommand: ((String, Int?, TextEditorModel?) -> Void)?

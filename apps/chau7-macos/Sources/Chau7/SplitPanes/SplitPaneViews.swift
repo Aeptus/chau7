@@ -28,6 +28,9 @@ struct SplitPaneView: View {
             },
             onClosePane: { id in controller.closePane(id: id) },
             onFilePathClicked: controller.onFilePathClicked,
+            onOpenEditorFile: { [weak controller] editor, url in
+                controller?.openFileInEditor(url: url, editor: editor)
+            },
             onRunCommand: { [weak controller] command, lineNumber, editor in
                 controller?.sendCommandToTerminal(command, sourceEditor: editor, sourceLineNumber: lineNumber)
             }
@@ -90,6 +93,7 @@ struct SplitNodeView: View {
                 editor: p.editor,
                 onFocus: { env?.onFocus(p.id) },
                 onClose: { env?.onClosePane(p.id) },
+                onOpenFile: env?.onOpenEditorFile,
                 onRunCommand: env?.onRunCommand
             )
 
@@ -239,6 +243,7 @@ struct TextEditorPaneView: View {
     var editor: TextEditorModel
     let onFocus: () -> Void
     let onClose: () -> Void
+    var onOpenFile: ((TextEditorModel, URL) -> Void)?
     /// Callback to run a command in the terminal (for markdown runbooks)
     var onRunCommand: ((String, Int?, TextEditorModel?) -> Void)?
 
@@ -303,6 +308,7 @@ struct TextEditorPaneView: View {
                                 .foregroundStyle(.orange)
                         }
                         .buttonStyle(.plain)
+                        .disabled(editor.isCheckboxWritePending)
                         .help(editor.externalConflictMessage ?? L("editor.externalChangeConflict", "File changed externally. Reload?"))
                     }
 
@@ -320,6 +326,7 @@ struct TextEditorPaneView: View {
                             .font(.system(size: 11))
                     }
                     .buttonStyle(.plain)
+                    .disabled(editor.isCheckboxWritePending)
                     .help(L("Open File", "Open File"))
 
                     // Save
@@ -334,7 +341,7 @@ struct TextEditorPaneView: View {
                             .font(.system(size: 11))
                     }
                     .buttonStyle(.plain)
-                    .disabled(!editor.isDirty && editor.filePath != nil)
+                    .disabled((!editor.isDirty && editor.filePath != nil) || editor.isCheckboxWritePending)
                     .help(L("Save", "Save"))
 
                     // Markdown Source ⇄ Preview toggle (only for .md files), with a
@@ -347,6 +354,7 @@ struct TextEditorPaneView: View {
                                 .font(.system(size: 11))
                         }
                         .buttonStyle(.plain)
+                        .disabled(editor.isCheckboxWritePending)
                         .keyboardShortcut("p", modifiers: [.command, .shift])
                         .help(isMarkdownMode
                             ? L("pane.showSource", "Show Source (⌘⇧P)")
@@ -367,6 +375,31 @@ struct TextEditorPaneView: View {
             )
 
             Divider()
+
+            if let error = editor.lastError {
+                HStack(alignment: .top, spacing: 7) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.red)
+                    Text(error)
+                        .font(.system(size: 11))
+                        .foregroundStyle(.red)
+                        .textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 0)
+                    Button {
+                        editor.lastError = nil
+                    } label: {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 9))
+                    }
+                    .buttonStyle(.plain)
+                    .help(L("Dismiss error", "Dismiss error"))
+                }
+                .padding(.horizontal, 9)
+                .padding(.vertical, 6)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color.red.opacity(0.08))
+            }
 
             // Editor content — markdown runbook or raw text
             if editor.isLoading {
@@ -416,11 +449,14 @@ struct TextEditorPaneView: View {
             switch result {
             case .success(let urls):
                 if let url = urls.first {
-                    _ = url.startAccessingSecurityScopedResource()
-                    editor.loadFile(at: url.path)
-                    url.stopAccessingSecurityScopedResource()
+                    if let onOpenFile {
+                        onOpenFile(editor, url)
+                    } else {
+                        editor.lastError = L("editor.openUnavailable", "The file could not be opened from this pane.")
+                    }
                 }
             case .failure(let error):
+                editor.lastError = "File picker error: \(error.localizedDescription)"
                 Log.error("File picker error: \(error.localizedDescription)")
             }
         }
@@ -444,12 +480,7 @@ struct TextEditorPaneView: View {
     /// commands and leading to out-of-order execution.
     private func runAllMarkdownBlocks() {
         guard let send = onRunCommand else { return }
-        let blocks = parseMarkdown(editor.content).compactMap { section -> (line: Int, code: String)? in
-            if case .codeBlock(_, let code, let lineNumber) = section.kind {
-                return (line: lineNumber, code: code)
-            }
-            return nil
-        }
+        let blocks = RunbookShellExecution.blocks(in: editor.content)
         editor.runMarkdownBlocksSequentially(blocks) { [editor] command, lineNumber in
             send(command, lineNumber, editor)
         }

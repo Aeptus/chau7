@@ -14,7 +14,7 @@ final class MCPServerManager {
     private static let maxConcurrentClients = 32
 
     private var listener: UnixSocketListener?
-    private var clientSockets: [Int32] = []
+    private let clientConnections = MCPClientConnections()
     private let socketPath: String
     private let queue = DispatchQueue(label: "com.chau7.mcp.server")
     private var isRunning = false
@@ -399,10 +399,7 @@ final class MCPServerManager {
         healthCheckSource = nil
         Chau7ObservabilityService.shared.setTimerActive("mcp_health_check", active: false)
 
-        for client in clientSockets {
-            close(client)
-        }
-        clientSockets.removeAll()
+        clientConnections.stopAll()
 
         Log.info("MCPServer: stopped")
     }
@@ -459,7 +456,7 @@ final class MCPServerManager {
             return
         }
 
-        if clientSockets.count >= Self.maxConcurrentClients {
+        if clientConnections.count >= Self.maxConcurrentClients {
             Log.warn(
                 "MCPServer: refusing client fd=\(clientFD) — at max concurrent clients " +
                     "(\(Self.maxConcurrentClients))"
@@ -468,20 +465,20 @@ final class MCPServerManager {
             return
         }
 
-        clientSockets.append(clientFD)
-        Log.trace("MCPServer: client connected (fd=\(clientFD), active=\(clientSockets.count))")
+        let session = MCPSession(fd: clientFD)
+        clientConnections.insert(session, descriptor: clientFD)
+        Log.trace("MCPServer: client connected (fd=\(clientFD), active=\(clientConnections.count))")
 
         // Handle client on a dedicated queue
         let clientQueue = DispatchQueue(label: "com.chau7.mcp.client.\(clientFD)")
-        let session = MCPSession(fd: clientFD)
 
         clientQueue.async { [weak self] in
             // MCPSession.run() takes ownership of the fd and closes it on return
             session.run()
 
             self?.queue.async { [weak self] in
-                self?.clientSockets.removeAll(where: { $0 == clientFD })
-                Log.trace("MCPServer: client disconnected (fd=\(clientFD), active=\(self?.clientSockets.count ?? 0))")
+                self?.clientConnections.remove(session, descriptor: clientFD)
+                Log.trace("MCPServer: client disconnected (fd=\(clientFD), active=\(self?.clientConnections.count ?? 0))")
             }
         }
     }

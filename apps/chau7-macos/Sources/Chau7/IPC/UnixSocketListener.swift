@@ -59,7 +59,28 @@ final class UnixSocketListener {
     }
 
     var isAccepting: Bool {
-        acceptSource != nil
+        guard acceptSource != nil, socketFD >= 0,
+              let ownedSocketFileIdentity,
+              Self.socketFileIdentity(at: path) == ownedSocketFileIdentity else { return false }
+        // Darwin does not expose SO_ACCEPTCONN for Unix-domain sockets.
+        // Verify this is still our bound, unconnected listener instead of a
+        // closed fd or an accepted client that reused its descriptor number.
+        var address = sockaddr_un()
+        var length = socklen_t(MemoryLayout<sockaddr_un>.size)
+        let boundResult = withUnsafeMutablePointer(to: &address) {
+            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { getsockname(socketFD, $0, &length) }
+        }
+        guard boundResult == 0, address.sun_family == sa_family_t(AF_UNIX) else { return false }
+        let pathCapacity = MemoryLayout.size(ofValue: address.sun_path)
+        let boundPath = withUnsafePointer(to: &address.sun_path) {
+            $0.withMemoryRebound(to: CChar.self, capacity: pathCapacity) { String(cString: $0) }
+        }
+        guard boundPath == path else { return false }
+        length = socklen_t(MemoryLayout<sockaddr_un>.size)
+        let peerResult = withUnsafeMutablePointer(to: &address) {
+            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { getpeername(socketFD, $0, &length) }
+        }
+        return peerResult == -1 && errno == ENOTCONN
     }
 
     init(path: String, queue: DispatchQueue) {
