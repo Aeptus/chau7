@@ -61,7 +61,7 @@ final class TokenRateStoreTests: XCTestCase {
         let store = TokenRateStore()
         let base = Date(timeIntervalSince1970: 100)
 
-        for index in 0..<513 {
+        for index in 0 ..< 513 {
             store.recordStreamEstimate(
                 tabID: "tab-\(index)",
                 provider: "OpenAI",
