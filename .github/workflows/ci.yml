@@ -44,6 +44,12 @@ jobs:
         with:
           go-version-file: services/chau7-remote/go.mod
 
+      - name: Install golangci-lint with the selected Go toolchain
+        run: |
+          mkdir -p "$RUNNER_TEMP/chau7-bin"
+          GOBIN="$RUNNER_TEMP/chau7-bin" go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.14.0
+          echo "$RUNNER_TEMP/chau7-bin" >> "$GITHUB_PATH"
+
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -56,7 +62,7 @@ jobs:
           rustup target add aarch64-apple-ios aarch64-apple-ios-sim x86_64-apple-ios
 
       - name: Install full-suite quality tools
-        run: brew install swiftformat swiftlint gitleaks shellcheck ruff golangci-lint periphery pip-audit
+        run: brew install swiftformat swiftlint gitleaks shellcheck ruff periphery pip-audit
 
       - name: Install cargo-deny
         run: cargo install cargo-deny --locked
