@@ -113,6 +113,7 @@ final class RustMetalDisplayCoordinator: NSObject {
     private var lastLigaturesEnabled: Bool?
     private var lastCursorBlinkEnabled: Bool?
     private var pendingRetryDisplay = false
+    private var retryGeneration: UInt64 = 0
     private var pendingCircuitBreakerRetry = false
     private var retryState = TerminalRenderRetryState()
 
@@ -699,12 +700,28 @@ final class RustMetalDisplayCoordinator: NSObject {
         }
         guard !pendingRetryDisplay else { return }
         pendingRetryDisplay = true
+        retryGeneration &+= 1
+        let scheduledGeneration = retryGeneration
         DispatchQueue.main.asyncAfter(deadline: .now() + decision.delay) { [weak self] in
             guard let self else { return }
+            guard pendingRetryDisplay, retryGeneration == scheduledGeneration else { return }
             pendingRetryDisplay = false
             guard renderRequests.drawRequest() != nil else { return }
             scheduleDisplay()
         }
+    }
+
+    /// A committed command buffer releases the renderer's single in-flight
+    /// resource set. Retry a pending draw then instead of making the user wait
+    /// for the generic 50 ms retry timer.
+    private func retryPendingDrawAfterFrameCompletion() {
+        guard Thread.isMainThread else { return }
+        if pendingRetryDisplay {
+            pendingRetryDisplay = false
+            retryGeneration &+= 1
+        }
+        guard renderRequests.drawRequest() != nil else { return }
+        scheduleDisplay()
     }
 
     /// Called when the terminal is resized.
@@ -1198,29 +1215,29 @@ extension RustMetalDisplayCoordinator: MTKViewDelegate {
             fullRefresh: fullRefresh,
             to: drawable,
             viewportSize: view.bounds.size,
+            viewID: terminalView?.viewId,
             onCompleted: { [weak self, weak presentedView] in
-                DispatchQueue.main.async {
-                    guard let self,
-                          let presentedView,
-                          self.terminalView === presentedView,
-                          self.handoffState.owns(presentedGeneration)
-                    else {
-                        return
-                    }
-
-                    if self.handoffState.commitFirstFrame(generation: presentedGeneration) {
-                        presentedView.isMetalRenderingActive = true
-                        self.metalView.alphaValue = 1
-                        Log.info(
-                            "RustMetalDisplayCoordinator: committed handoff=\(presentedGeneration) " +
-                                "view=\(presentedView.viewId)"
-                        )
-                    }
-
-                    presentedView.noteDisplayFramePresented()
-                    presentedView.onDisplayFramePresented?()
-                    presentedView.onFramePresented?()
+                guard let self else { return }
+                retryPendingDrawAfterFrameCompletion()
+                guard let presentedView,
+                      terminalView === presentedView,
+                      handoffState.owns(presentedGeneration)
+                else {
+                    return
                 }
+
+                if handoffState.commitFirstFrame(generation: presentedGeneration) {
+                    presentedView.isMetalRenderingActive = true
+                    metalView.alphaValue = 1
+                    Log.info(
+                        "RustMetalDisplayCoordinator: committed handoff=\(presentedGeneration) " +
+                            "view=\(presentedView.viewId)"
+                    )
+                }
+
+                presentedView.noteDisplayFramePresented()
+                presentedView.onDisplayFramePresented?()
+                presentedView.onFramePresented?()
             }
         )
         guard didCommit else {

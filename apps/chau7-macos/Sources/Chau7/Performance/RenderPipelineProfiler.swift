@@ -4,6 +4,39 @@ import Chau7Core
 final class RenderPipelineProfiler {
     static let shared = RenderPipelineProfiler()
 
+    struct LatencySnapshot: Equatable {
+        let count: Int
+        let totalMilliseconds: Double
+        let maxMilliseconds: Double
+
+        var averageMilliseconds: Double {
+            totalMilliseconds / Double(max(count, 1))
+        }
+
+        static let empty = LatencySnapshot(count: 0, totalMilliseconds: 0, maxMilliseconds: 0)
+    }
+
+    private struct LatencyAggregate {
+        private(set) var count = 0
+        private(set) var totalMilliseconds = 0.0
+        private(set) var maxMilliseconds = 0.0
+
+        mutating func record(_ milliseconds: Double) {
+            guard milliseconds.isFinite, milliseconds >= 0 else { return }
+            count += 1
+            totalMilliseconds += milliseconds
+            maxMilliseconds = max(maxMilliseconds, milliseconds)
+        }
+
+        var snapshot: LatencySnapshot {
+            LatencySnapshot(
+                count: count,
+                totalMilliseconds: totalMilliseconds,
+                maxMilliseconds: maxMilliseconds
+            )
+        }
+    }
+
     struct LiveViewSnapshot: Equatable {
         let viewID: UInt64
         let tabID: String?
@@ -16,6 +49,9 @@ final class RenderPipelineProfiler {
         let drawCount: Int
         let syncCallCount: Int
         let syncBytes: Int64
+        let eventDispatchWait: LatencySnapshot
+        let gpuCompletion: LatencySnapshot
+        let skippedFrameCount: Int
     }
 
     struct Snapshot {
@@ -40,6 +76,9 @@ final class RenderPipelineProfiler {
         let glyphMisses: Int
         let maxGlyphCacheSize: Int
         let maxLigatureCacheSize: Int
+        let eventDispatchWait: LatencySnapshot
+        let gpuCompletion: LatencySnapshot
+        let skippedFrameCount: Int
 
         static let empty = Snapshot(
             asOf: .distantPast,
@@ -62,7 +101,10 @@ final class RenderPipelineProfiler {
             glyphLookups: 0,
             glyphMisses: 0,
             maxGlyphCacheSize: 0,
-            maxLigatureCacheSize: 0
+            maxLigatureCacheSize: 0,
+            eventDispatchWait: .empty,
+            gpuCompletion: .empty,
+            skippedFrameCount: 0
         )
     }
 
@@ -85,6 +127,9 @@ final class RenderPipelineProfiler {
         var glyphMisses = 0
         var maxGlyphCacheSize = 0
         var maxLigatureCacheSize = 0
+        var eventDispatchWait = LatencyAggregate()
+        var gpuCompletion = LatencyAggregate()
+        var skippedFrameCount = 0
     }
 
     private struct LiveViewState {
@@ -98,6 +143,9 @@ final class RenderPipelineProfiler {
         var drawCount: Int
         var syncCallCount: Int
         var syncBytes: Int64
+        var eventDispatchWait = LatencyAggregate()
+        var gpuCompletion = LatencyAggregate()
+        var skippedFrameCount = 0
         var updatedAt: Date
     }
 
@@ -164,6 +212,9 @@ final class RenderPipelineProfiler {
                     drawCount: existing?.drawCount ?? 0,
                     syncCallCount: existing?.syncCallCount ?? 0,
                     syncBytes: existing?.syncBytes ?? 0,
+                    eventDispatchWait: existing?.eventDispatchWait ?? LatencyAggregate(),
+                    gpuCompletion: existing?.gpuCompletion ?? LatencyAggregate(),
+                    skippedFrameCount: existing?.skippedFrameCount ?? 0,
                     updatedAt: now
                 )
             } else {
@@ -175,18 +226,46 @@ final class RenderPipelineProfiler {
         }
     }
 
-    func recordPoll(viewID: UInt64, changed: Bool) {
+    func recordPoll(viewID: UInt64, changed: Bool, eventDispatchWaitMilliseconds: Double? = nil) {
         guard WakeupControl.isEnabled(.instrumentationEnabled) else { return }
         recordMutation { _ in
             totals.livePollCount += 1
             if changed {
                 totals.changedPollCount += 1
             }
+            if let eventDispatchWaitMilliseconds {
+                totals.eventDispatchWait.record(eventDispatchWaitMilliseconds)
+            }
             if var state = liveViews[viewID] {
                 state.pollCount += 1
+                if let eventDispatchWaitMilliseconds {
+                    state.eventDispatchWait.record(eventDispatchWaitMilliseconds)
+                }
                 if changed {
                     state.changedPollCount += 1
                 }
+                liveViews[viewID] = state
+            }
+        }
+    }
+
+    func recordGPUCompletion(viewID: UInt64?, durationMilliseconds: Double) {
+        guard WakeupControl.isEnabled(.instrumentationEnabled) else { return }
+        recordMutation { _ in
+            totals.gpuCompletion.record(durationMilliseconds)
+            if let viewID, var state = liveViews[viewID] {
+                state.gpuCompletion.record(durationMilliseconds)
+                liveViews[viewID] = state
+            }
+        }
+    }
+
+    func recordSkippedFrame(viewID: UInt64?) {
+        guard WakeupControl.isEnabled(.instrumentationEnabled) else { return }
+        recordMutation { _ in
+            totals.skippedFrameCount += 1
+            if let viewID, var state = liveViews[viewID] {
+                state.skippedFrameCount += 1
                 liveViews[viewID] = state
             }
         }
@@ -292,7 +371,10 @@ final class RenderPipelineProfiler {
             glyphLookups: totals.glyphLookups,
             glyphMisses: totals.glyphMisses,
             maxGlyphCacheSize: totals.maxGlyphCacheSize,
-            maxLigatureCacheSize: totals.maxLigatureCacheSize
+            maxLigatureCacheSize: totals.maxLigatureCacheSize,
+            eventDispatchWait: totals.eventDispatchWait.snapshot,
+            gpuCompletion: totals.gpuCompletion.snapshot,
+            skippedFrameCount: totals.skippedFrameCount
         )
     }
 
@@ -337,6 +419,9 @@ final class RenderPipelineProfiler {
                     drawCount: 0,
                     syncCallCount: 0,
                     syncBytes: 0,
+                    eventDispatchWait: LatencyAggregate(),
+                    gpuCompletion: LatencyAggregate(),
+                    skippedFrameCount: 0,
                     updatedAt: state.updatedAt
                 )
             }
@@ -361,7 +446,14 @@ final class RenderPipelineProfiler {
                 "changed_poll_count": liveView.changedPollCount,
                 "draw_count": liveView.drawCount,
                 "sync_call_count": liveView.syncCallCount,
-                "sync_bytes": liveView.syncBytes
+                "sync_bytes": liveView.syncBytes,
+                "event_to_main_count": liveView.eventDispatchWait.count,
+                "event_to_main_average_ms": liveView.eventDispatchWait.averageMilliseconds,
+                "event_to_main_max_ms": liveView.eventDispatchWait.maxMilliseconds,
+                "gpu_completion_count": liveView.gpuCompletion.count,
+                "gpu_completion_average_ms": liveView.gpuCompletion.averageMilliseconds,
+                "gpu_completion_max_ms": liveView.gpuCompletion.maxMilliseconds,
+                "skipped_frame_count": liveView.skippedFrameCount
             ]
         }
         var fields: [String: Any] = [
@@ -386,6 +478,13 @@ final class RenderPipelineProfiler {
             "glyph_lookups": snapshot.glyphLookups,
             "glyph_misses": snapshot.glyphMisses,
             "glyph_miss_rate_percent": missRate,
+            "event_to_main_count": snapshot.eventDispatchWait.count,
+            "event_to_main_average_ms": snapshot.eventDispatchWait.averageMilliseconds,
+            "event_to_main_max_ms": snapshot.eventDispatchWait.maxMilliseconds,
+            "gpu_completion_count": snapshot.gpuCompletion.count,
+            "gpu_completion_average_ms": snapshot.gpuCompletion.averageMilliseconds,
+            "gpu_completion_max_ms": snapshot.gpuCompletion.maxMilliseconds,
+            "skipped_frame_count": snapshot.skippedFrameCount,
             "live_views": liveViewMetrics
         ]
         if let memorySample {
@@ -417,7 +516,10 @@ final class RenderPipelineProfiler {
                     changedPollCount: state.changedPollCount,
                     drawCount: state.drawCount,
                     syncCallCount: state.syncCallCount,
-                    syncBytes: state.syncBytes
+                    syncBytes: state.syncBytes,
+                    eventDispatchWait: state.eventDispatchWait.snapshot,
+                    gpuCompletion: state.gpuCompletion.snapshot,
+                    skippedFrameCount: state.skippedFrameCount
                 )
             }
             .sorted { lhs, rhs in lhs.viewID < rhs.viewID }
