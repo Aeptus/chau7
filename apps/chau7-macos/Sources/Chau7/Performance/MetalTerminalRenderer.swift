@@ -1079,6 +1079,7 @@ final class MetalTerminalRenderer: NSObject {
         fullRefresh: Bool,
         to drawable: CAMetalDrawable,
         viewportSize: CGSize,
+        viewID: UInt64? = nil,
         onCompleted: (() -> Void)? = nil
     ) -> Bool {
         let renderStartedAt = CFAbsoluteTimeGetCurrent()
@@ -1108,6 +1109,7 @@ final class MetalTerminalRenderer: NSObject {
         // even reported. Skipping is the correct trade: the caller keeps the
         // dirty state, so the next `draw(in:)` re-sends the full frame.
         guard inflightGate.wait(timeout: .now()) == .success else {
+            RenderPipelineProfiler.shared.recordSkippedFrame(viewID: viewID)
             Log.warn("MetalRenderer: previous frame still in flight; skipping frame")
             return false
         }
@@ -1184,7 +1186,15 @@ final class MetalTerminalRenderer: NSObject {
 
         let gate = inflightGate
         let errorCallback = onCommandBufferError
+        let committedAtUptimeNanoseconds = DispatchTime.now().uptimeNanoseconds
         commandBuffer.addCompletedHandler { buffer in
+            let completedAtUptimeNanoseconds = DispatchTime.now().uptimeNanoseconds
+            if completedAtUptimeNanoseconds >= committedAtUptimeNanoseconds {
+                RenderPipelineProfiler.shared.recordGPUCompletion(
+                    viewID: viewID,
+                    durationMilliseconds: Double(completedAtUptimeNanoseconds - committedAtUptimeNanoseconds) / 1_000_000
+                )
+            }
             gate.signal()
             // A GPU fault / device-lost / discarded submission silently drops
             // the frame; without observing it the request generation is marked
