@@ -2310,6 +2310,10 @@ struct UnifiedTabButton: View {
                     titleColor: titleColor
                 )
 
+                if isSelected, let session = tab.splitController.presentationSession {
+                    TokenRateBadge(tabID: session.tabIdentifier)
+                }
+
                 if !isMinimalDisplay {
                     // MCP indicator
                     if tab.isMCPControlled, FeatureSettings.shared.mcpShowTabIndicator {

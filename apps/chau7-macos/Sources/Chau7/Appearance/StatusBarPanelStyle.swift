@@ -22,6 +22,7 @@ enum StatusBarPanelStyle {
         static let timelineTitle = Font.system(size: 11, weight: .medium)
         static let timelineDetail = Font.system(size: 10)
         static let timelineTimestamp = Font.system(size: 9, design: .monospaced)
+        static let tokenRate = Font.system(size: 10, weight: .semibold, design: .monospaced)
     }
 
     enum Colors {
@@ -34,6 +35,8 @@ enum StatusBarPanelStyle {
         static let quiet = Color(nsColor: .systemGreen)
         static let stuck = Color(nsColor: .systemYellow)
         static let success = Color(nsColor: .systemGreen)
+        static let telemetryEstimate = Color(nsColor: .systemOrange)
+        static let telemetryMeasured = Color(nsColor: .systemGreen)
         static let destructive = Color(nsColor: .systemRed)
         static let accent = Color.accentColor
         static let attentionBackground = Color(nsColor: .systemYellow).opacity(0.08)

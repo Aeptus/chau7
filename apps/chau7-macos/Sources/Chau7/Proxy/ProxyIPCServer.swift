@@ -220,6 +220,9 @@ final class ProxyIPCServer {
         case "api_call":
             handleAPICallMessage(message.data)
 
+        case "generation_progress":
+            handleGenerationProgressMessage(message.rawData)
+
         case "task_candidate":
             handleTaskCandidateMessage(message.rawData)
 
@@ -256,7 +259,9 @@ final class ProxyIPCServer {
             pricingVersion: data.pricingVersion,
             timestamp: DateFormatters.parseISO8601(data.timestamp) ?? Date(),
             errorMessage: data.errorMessage.isEmpty ? nil : data.errorMessage,
-            projectPath: data.projectPath
+            projectPath: data.projectPath,
+            ttftMs: data.ttftMs.map(Int.init),
+            outputTokensEstimated: data.outputTokensEstimated
         )
 
         TelemetryStore.shared.insertUsageEvidence(data.usageEvidence(observedAt: event.timestamp))
@@ -264,6 +269,22 @@ final class ProxyIPCServer {
         // Update state on main thread
         Task { @MainActor in
             self.addEvent(event)
+
+            if (200 ..< 300).contains(data.statusCode),
+               let tabID = data.tabId, !tabID.isEmpty {
+                TokenRateStore.shared.record(
+                    tabID: tabID,
+                    provider: event.provider.displayName,
+                    outputTokens: event.outputTokens,
+                    durationMs: data.isStreaming
+                        ? max(1, Int(data.latencyMs) - max(0, Int(data.ttftMs ?? 0)))
+                        : max(1, Int(data.latencyMs)),
+                    source: data.outputTokensEstimated
+                        ? .proxyEstimatedUsage
+                        : (data.isStreaming ? .proxyUsage : .proxyRequestUsage),
+                    updatedAt: Date()
+                )
+            }
 
             // Update task metrics if associated with a task
             if let tabId = data.tabId, !tabId.isEmpty,
@@ -273,6 +294,27 @@ final class ProxyIPCServer {
                 task.totalCostUSD += event.costUSD
                 self.activeTasks[tabId] = task
             }
+        }
+    }
+
+    private func handleGenerationProgressMessage(_ rawData: Data?) {
+        guard let rawData,
+              let message = try? JSONDecoder().decode(ProxyGenerationProgressMessage.self, from: rawData) else {
+            return
+        }
+        let progress = message.data
+        let updatedAt = DateFormatters.parseISO8601(progress.timestamp) ?? Date()
+        let provider = APICallEvent.Provider(rawValue: progress.provider)?.displayName ?? progress.provider
+        let providerName = progress.model.map { "\(provider) · \($0)" } ?? provider
+        Task { @MainActor in
+            TokenRateStore.shared.recordStreamEstimate(
+                tabID: progress.tabId,
+                provider: providerName,
+                outputTokens: progress.outputTokensEstimate,
+                tokensPerSecond: progress.tokensPerSecond,
+                durationMs: Int(progress.durationMs),
+                updatedAt: updatedAt
+            )
         }
     }
 
@@ -435,7 +477,31 @@ final class ProxyIPCServer {
 struct ProxyIPCServerMessage {
     let type: String
     let data: ProxyIPCServerData
-    let rawData: Data? // Raw JSON for task events
+    let rawData: Data? // Raw JSON for non-API events
+}
+
+private struct ProxyGenerationProgressMessage: Decodable {
+    let data: ProxyGenerationProgressData
+}
+
+private struct ProxyGenerationProgressData: Decodable {
+    let tabId: String
+    let provider: String
+    let model: String?
+    let outputTokensEstimate: Int
+    let tokensPerSecond: Double
+    let durationMs: Int64
+    let timestamp: String
+
+    enum CodingKeys: String, CodingKey {
+        case tabId = "tab_id"
+        case provider
+        case model
+        case outputTokensEstimate = "output_tokens_estimate"
+        case tokensPerSecond = "tokens_per_second"
+        case durationMs = "duration_ms"
+        case timestamp
+    }
 }
 
 extension ProxyIPCServerMessage {
@@ -473,10 +539,13 @@ struct ProxyIPCServerData: Decodable {
     let endpoint: String
     let inputTokens: Int?
     let outputTokens: Int?
+    let outputTokensEstimated: Bool
+    let isStreaming: Bool
     let cacheCreationInputTokens: Int?
     let cacheReadInputTokens: Int?
     let reasoningOutputTokens: Int?
     let latencyMs: Int64
+    let ttftMs: Int64?
     let statusCode: Int
     let costUSD: Double?
     let pricingVersion: String?
@@ -489,8 +558,10 @@ struct ProxyIPCServerData: Decodable {
     static let empty = ProxyIPCServerData(
         sessionId: "", provider: "", model: "", endpoint: "",
         inputTokens: nil, outputTokens: nil,
+        outputTokensEstimated: false,
+        isStreaming: false,
         cacheCreationInputTokens: nil, cacheReadInputTokens: nil, reasoningOutputTokens: nil,
-        latencyMs: 0, statusCode: 0,
+        latencyMs: 0, ttftMs: nil, statusCode: 0,
         costUSD: nil, pricingVersion: nil, timestamp: "", errorMessage: "", taskId: nil, tabId: nil, projectPath: nil
     )
 
@@ -502,10 +573,13 @@ struct ProxyIPCServerData: Decodable {
         case endpoint
         case inputTokens = "input_tokens"
         case outputTokens = "output_tokens"
+        case outputTokensEstimated = "output_tokens_estimated"
+        case isStreaming = "is_streaming"
         case cacheCreationInputTokens = "cache_creation_input_tokens"
         case cacheReadInputTokens = "cache_read_input_tokens"
         case reasoningOutputTokens = "reasoning_output_tokens"
         case latencyMs = "latency_ms"
+        case ttftMs = "ttft_ms"
         case statusCode = "status_code"
         case costUSD = "cost_usd"
         case pricingVersion = "pricing_version"
@@ -523,10 +597,13 @@ struct ProxyIPCServerData: Decodable {
         endpoint: String,
         inputTokens: Int?,
         outputTokens: Int?,
+        outputTokensEstimated: Bool = false,
+        isStreaming: Bool = false,
         cacheCreationInputTokens: Int? = nil,
         cacheReadInputTokens: Int? = nil,
         reasoningOutputTokens: Int? = nil,
         latencyMs: Int64,
+        ttftMs: Int64? = nil,
         statusCode: Int,
         costUSD: Double?,
         pricingVersion: String? = nil,
@@ -544,10 +621,13 @@ struct ProxyIPCServerData: Decodable {
         self.endpoint = endpoint
         self.inputTokens = inputTokens
         self.outputTokens = outputTokens
+        self.outputTokensEstimated = outputTokensEstimated
+        self.isStreaming = isStreaming
         self.cacheCreationInputTokens = cacheCreationInputTokens
         self.cacheReadInputTokens = cacheReadInputTokens
         self.reasoningOutputTokens = reasoningOutputTokens
         self.latencyMs = latencyMs
+        self.ttftMs = ttftMs
         self.statusCode = statusCode
         self.costUSD = costUSD
         self.pricingVersion = pricingVersion
@@ -567,10 +647,13 @@ struct ProxyIPCServerData: Decodable {
         self.endpoint = try container.decode(String.self, forKey: .endpoint)
         self.inputTokens = try container.decodeIfPresent(Int.self, forKey: .inputTokens)
         self.outputTokens = try container.decodeIfPresent(Int.self, forKey: .outputTokens)
+        self.outputTokensEstimated = try container.decodeIfPresent(Bool.self, forKey: .outputTokensEstimated) ?? false
+        self.isStreaming = try container.decodeIfPresent(Bool.self, forKey: .isStreaming) ?? false
         self.cacheCreationInputTokens = try container.decodeIfPresent(Int.self, forKey: .cacheCreationInputTokens)
         self.cacheReadInputTokens = try container.decodeIfPresent(Int.self, forKey: .cacheReadInputTokens)
         self.reasoningOutputTokens = try container.decodeIfPresent(Int.self, forKey: .reasoningOutputTokens)
         self.latencyMs = try container.decode(Int64.self, forKey: .latencyMs)
+        self.ttftMs = try container.decodeIfPresent(Int64.self, forKey: .ttftMs)
         self.statusCode = try container.decode(Int.self, forKey: .statusCode)
         self.costUSD = try container.decodeIfPresent(Double.self, forKey: .costUSD)
         self.pricingVersion = try container.decodeIfPresent(String.self, forKey: .pricingVersion)

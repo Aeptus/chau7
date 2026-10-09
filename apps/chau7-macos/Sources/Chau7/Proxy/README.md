@@ -7,7 +7,7 @@ API analytics proxy managing a Go subprocess, Unix socket IPC, and task lifecycl
 | File | Purpose |
 |------|---------|
 | `APICallEvent.swift` | Model for captured API calls with provider, tokens, latency, cost, and status |
-| `ProxyIPCServer.swift` | Unix socket server receiving real-time API call notifications from the proxy |
+| `ProxyIPCServer.swift` | Unix socket server receiving API-call and transient generation-rate notifications from the proxy |
 | `ProxyManager.swift` | Manages the chau7-proxy Go binary lifecycle (start/stop/restart) |
 | `TaskAssessmentView.swift` | Panel for assessing task completion (approve/fail with optional notes) |
 | `TaskCandidate.swift` | Model for pending task candidates detected from API activity |
@@ -18,6 +18,7 @@ API analytics proxy managing a Go subprocess, Unix socket IPC, and task lifecycl
 - `ProxyManager` — singleton managing the chau7-proxy subprocess and port configuration
 - `ProxyIPCServer` — singleton Unix socket server broadcasting API call events
 - `APICallEvent` — Codable model for LLM API usage tracking (tokens, cost, latency)
+- Streaming text deltas produce transient per-tab token-rate estimates; completed calls replace them with rates based on provider usage and response timing when available
 - `TaskCandidate` — model for task lifecycle events with grace period and confidence
 
 ## Dependencies

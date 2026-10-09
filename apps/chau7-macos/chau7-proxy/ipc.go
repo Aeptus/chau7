@@ -58,6 +58,8 @@ func (n *IPCNotifier) NotifyAPICallWithTask(record *APICallRecord, taskID, tabID
 			Endpoint:                 record.Endpoint,
 			InputTokens:              record.InputTokens,
 			OutputTokens:             record.OutputTokens,
+			OutputTokensEstimated:    record.OutputTokensEstimated,
+			IsStreaming:              record.IsStreaming,
 			CacheCreationInputTokens: record.CacheCreationInputTokens,
 			CacheReadInputTokens:     record.CacheReadInputTokens,
 			ReasoningOutputTokens:    record.ReasoningOutputTokens,
@@ -75,6 +77,45 @@ func (n *IPCNotifier) NotifyAPICallWithTask(record *APICallRecord, taskID, tabID
 	}
 
 	return n.sendEvent(msg)
+}
+
+// NotifyGenerationProgress streams a transient, content-free token-rate
+// estimate to Chau7. Unlike API-call events, these high-frequency updates are
+// not written to the proxy analytics database.
+func (n *IPCNotifier) NotifyGenerationProgress(
+	tabID string,
+	provider Provider,
+	model string,
+	outputTokensEstimate int,
+	tokensPerSecond float64,
+	durationMs int64,
+	timestamp time.Time,
+) error {
+	if n.socketPath == "" || tabID == "" || tabID == "default" || outputTokensEstimate <= 0 || tokensPerSecond <= 0 {
+		return nil
+	}
+	message := &IPCEventMessage{
+		SchemaVersion: SchemaVersion,
+		Type:          "generation_progress",
+		Tool:          "proxy",
+		Origin:        "proxy",
+		Timestamp:     timestamp.UTC().Format(time.RFC3339Nano),
+		Data: IPCGenerationProgressData{
+			TabID:                tabID,
+			Provider:             string(provider),
+			Model:                model,
+			OutputTokensEstimate: outputTokensEstimate,
+			TokensPerSecond:      tokensPerSecond,
+			DurationMs:           durationMs,
+			Timestamp:            timestamp.UTC().Format(time.RFC3339Nano),
+		},
+	}
+	data, err := json.Marshal(message)
+	if err != nil {
+		return err
+	}
+	go func() { _ = n.sendBytes(data) }()
+	return nil
 }
 
 // NotifyTaskCandidate sends a task candidate notification
@@ -280,6 +321,8 @@ type IPCAPICallData struct {
 	Endpoint                 string   `json:"endpoint"`
 	InputTokens              *int     `json:"input_tokens"`
 	OutputTokens             *int     `json:"output_tokens"`
+	OutputTokensEstimated    bool     `json:"output_tokens_estimated,omitempty"`
+	IsStreaming              bool     `json:"is_streaming,omitempty"`
 	CacheCreationInputTokens *int     `json:"cache_creation_input_tokens"`
 	CacheReadInputTokens     *int     `json:"cache_read_input_tokens"`
 	ReasoningOutputTokens    *int     `json:"reasoning_output_tokens"`
@@ -293,6 +336,16 @@ type IPCAPICallData struct {
 	TaskID                   string   `json:"task_id,omitempty"`
 	TabID                    string   `json:"tab_id,omitempty"`
 	ProjectPath              string   `json:"project_path,omitempty"`
+}
+
+type IPCGenerationProgressData struct {
+	TabID                string  `json:"tab_id"`
+	Provider             string  `json:"provider"`
+	Model                string  `json:"model,omitempty"`
+	OutputTokensEstimate int     `json:"output_tokens_estimate"`
+	TokensPerSecond      float64 `json:"tokens_per_second"`
+	DurationMs           int64   `json:"duration_ms"`
+	Timestamp            string  `json:"timestamp"`
 }
 
 // IPCTaskCandidateData contains data for a task candidate notification

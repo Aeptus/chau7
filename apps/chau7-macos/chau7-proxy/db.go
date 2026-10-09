@@ -69,6 +69,8 @@ type APICallRecord struct {
 	Endpoint                 string
 	InputTokens              *int
 	OutputTokens             *int
+	OutputTokensEstimated    bool
+	IsStreaming              bool
 	CacheCreationInputTokens *int
 	CacheReadInputTokens     *int
 	ReasoningOutputTokens    *int

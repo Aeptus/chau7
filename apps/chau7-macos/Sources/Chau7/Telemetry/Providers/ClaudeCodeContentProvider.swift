@@ -26,30 +26,8 @@ final class ClaudeCodeContentProvider: RunContentProvider {
     func extractContent(runID: String, sessionID: String?, cwd: String, startedAt: Date, endedAt: Date?) -> ExtractedRunContent? {
         guard let sessionID, !sessionID.isEmpty else { return nil }
 
-        // Resolve the project directory hash from cwd
-        let sessionDir: URL?
-        if let projectDir = resolveProjectDir(cwd: cwd),
-           let matchedSessionDir = findSessionDir(projectDir: projectDir, sessionID: sessionID) {
-            sessionDir = matchedSessionDir
-        } else {
-            sessionDir = findSessionDirGlobally(sessionID: sessionID)
-        }
-        guard let sessionDir else { return nil }
-
-        // Parse JSONL files: try subagents/ first, then session root.
-        // Claude Code versions differ in where they write conversation data.
-        let subagentsDir = sessionDir.appendingPathComponent("subagents")
-        var jsonlFiles = (try? FileManager.default.contentsOfDirectory(
-            at: subagentsDir, includingPropertiesForKeys: nil
-        ).filter { $0.pathExtension == "jsonl" }) ?? []
-
-        // Fallback: check for JSONL files directly in the session directory
-        if jsonlFiles.isEmpty {
-            jsonlFiles = (try? FileManager.default.contentsOfDirectory(
-                at: sessionDir, includingPropertiesForKeys: nil
-            ).filter { $0.pathExtension == "jsonl" }) ?? []
-        }
-
+        guard let sessionDir = resolveSessionDirectory(sessionID: sessionID, cwd: cwd) else { return nil }
+        let jsonlFiles = liveTranscriptFiles(in: sessionDir)
         if jsonlFiles.isEmpty { return nil }
 
         var state = ClaudeTranscriptUsageParser.State()
@@ -91,6 +69,42 @@ final class ClaudeCodeContentProvider: RunContentProvider {
             rawTranscriptRef: sessionDir.path,
             toolCalls: state.toolCalls
         )
+    }
+
+    /// Returns the same active transcript files used for completed-run
+    /// extraction so live token-rate tracking follows Claude's native records.
+    func liveTranscriptFiles(sessionID: String, cwd: String) -> [URL] {
+        guard let sessionDir = resolveSessionDirectory(sessionID: sessionID, cwd: cwd) else { return [] }
+        return liveTranscriptFiles(in: sessionDir)
+    }
+
+    private func resolveSessionDirectory(sessionID: String, cwd: String) -> URL? {
+        guard !sessionID.isEmpty else { return nil }
+        let sessionDir: URL?
+        if let projectDir = resolveProjectDir(cwd: cwd),
+           let matchedSessionDir = findSessionDir(projectDir: projectDir, sessionID: sessionID) {
+            sessionDir = matchedSessionDir
+        } else {
+            sessionDir = findSessionDirGlobally(sessionID: sessionID)
+        }
+        return sessionDir
+    }
+
+    private func liveTranscriptFiles(in sessionDir: URL) -> [URL] {
+        let subagentsDir = sessionDir.appendingPathComponent("subagents")
+        let subagentFiles = (try? FileManager.default.contentsOfDirectory(
+            at: subagentsDir,
+            includingPropertiesForKeys: nil
+        ).filter { $0.pathExtension == "jsonl" }) ?? []
+        if !subagentFiles.isEmpty {
+            return subagentFiles.sorted { $0.lastPathComponent < $1.lastPathComponent }
+        }
+
+        return ((try? FileManager.default.contentsOfDirectory(
+            at: sessionDir,
+            includingPropertiesForKeys: nil
+        ).filter { $0.pathExtension == "jsonl" }) ?? [])
+            .sorted { $0.lastPathComponent < $1.lastPathComponent }
     }
 
     // MARK: - Path Resolution
