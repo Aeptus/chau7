@@ -635,6 +635,25 @@ final class SplitPaneControllerTests: XCTestCase {
         XCTAssertEqual(controller.focusedTerminalSessionID(), secondaryPaneID)
     }
 
+    func testRunbookCommandUsesLastFocusedTerminalWhenEditorHasFocus() throws {
+        controller.splitWithTerminal(direction: .horizontal)
+        let expectedSession = try XCTUnwrap(controller.focusedSession)
+        controller.splitWithTextEditor(direction: .horizontal)
+        let editor = try XCTUnwrap(controller.focusedEditor)
+
+        var deliveredSession: TerminalSessionModel?
+        var deliveredInput: String?
+        controller.terminalInputSender = { session, input in
+            deliveredSession = session
+            deliveredInput = input
+        }
+
+        controller.sendCommandToTerminal("echo second\n", sourceEditor: editor, sourceLineNumber: 4)
+
+        XCTAssertTrue(deliveredSession === expectedSession)
+        XCTAssertEqual(deliveredInput, "echo second\n")
+    }
+
     func testPresentationSessionBranchTracksFocusedTerminal() {
         let primaryPaneID = controller.focusedPaneID
         controller.primarySession?.isGitRepo = true
@@ -763,6 +782,66 @@ final class SplitPaneControllerTests: XCTestCase {
 
         // Should NOT create a new pane
         XCTAssertEqual(controller.root.allPaneIDs.count, 2)
+    }
+
+    func testOpenFileInEditorPreservesDirtyEditsWhenReplacementIsCancelled() throws {
+        let dialogs = FakeDialogs()
+        let appModel = AppModel()
+        let controller = SplitPaneController(appModel: appModel, dialogs: dialogs)
+        let firstURL = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("chau7-open-first-\(UUID().uuidString).md")
+        let secondURL = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("chau7-open-second-\(UUID().uuidString).md")
+        defer {
+            try? FileManager.default.removeItem(at: firstURL)
+            try? FileManager.default.removeItem(at: secondURL)
+        }
+        try "original\n".write(to: firstURL, atomically: true, encoding: .utf8)
+        try "replacement\n".write(to: secondURL, atomically: true, encoding: .utf8)
+
+        controller.splitWithTextEditor(direction: .horizontal)
+        let editor = try XCTUnwrap(controller.root.findFirstEditor())
+        editor.loadFile(at: firstURL.path)
+        waitUntil(timeout: 5) { editor.filePath == firstURL.path && !editor.isLoading }
+        editor.updateContent("unsaved edits\n")
+
+        controller.openFileInEditor(path: secondURL.path, editor: editor)
+
+        XCTAssertEqual(dialogs.confirmCloseCallCount, 1)
+        XCTAssertEqual(editor.filePath, firstURL.path)
+        XCTAssertEqual(editor.content, "unsaved edits\n")
+        XCTAssertTrue(editor.isDirty)
+    }
+
+    func testOpenFileInEditorSavesDirtyEditsBeforeReplacement() throws {
+        let dialogs = FakeDialogs()
+        dialogs.nextCloseDecision = .save
+        let appModel = AppModel()
+        let controller = SplitPaneController(appModel: appModel, dialogs: dialogs)
+        let firstURL = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("chau7-open-save-first-\(UUID().uuidString).md")
+        let secondURL = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("chau7-open-save-second-\(UUID().uuidString).md")
+        defer {
+            try? FileManager.default.removeItem(at: firstURL)
+            try? FileManager.default.removeItem(at: secondURL)
+        }
+        try "original\n".write(to: firstURL, atomically: true, encoding: .utf8)
+        try "replacement\n".write(to: secondURL, atomically: true, encoding: .utf8)
+
+        controller.splitWithTextEditor(direction: .horizontal)
+        let editor = try XCTUnwrap(controller.root.findFirstEditor())
+        editor.loadFile(at: firstURL.path)
+        waitUntil(timeout: 5) { editor.filePath == firstURL.path && !editor.isLoading }
+        editor.updateContent("saved edits\n")
+
+        controller.openFileInEditor(path: secondURL.path, editor: editor)
+
+        XCTAssertEqual(try String(contentsOf: firstURL, encoding: .utf8), "saved edits\n")
+        waitUntil(timeout: 5) {
+            editor.filePath == secondURL.path && editor.content == "replacement\n" && !editor.isLoading
+        }
+        XCTAssertFalse(editor.isDirty)
     }
 
     // MARK: - Init with Existing Session
@@ -924,10 +1003,35 @@ final class TextEditorModelTests: XCTestCase {
         model.loadFile(at: fileURL.path)
 
         waitUntil {
-            model.filePath == fileURL.path && !model.isLoading
+            model.filePath == fileURL.path && !model.isLoading && model.planProgress.total == 1
         }
         XCTAssertTrue(model.isAutoSaveEnabled)
         XCTAssertEqual(model.planProgress, PlanProgress(checked: 0, total: 1))
+    }
+
+    func testLoadFileFromFileImporterURLCompletesRead() throws {
+        let model = TextEditorModel()
+        let fileURL = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("chau7-security-scope-\(UUID().uuidString).md")
+        try "imported markdown\n".write(to: fileURL, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: fileURL) }
+
+        model.loadFile(at: fileURL)
+        waitUntil {
+            model.filePath == fileURL.path && !model.isLoading
+        }
+
+        XCTAssertEqual(model.content, "imported markdown\n")
+    }
+
+    func testPlanProgressRecalculatesAfterContentEdit() {
+        let model = TextEditorModel()
+        model.updateContent("- [ ] first\n- [ ] second\n")
+        waitUntil { model.planProgress == PlanProgress(checked: 0, total: 2) }
+
+        model.updateContent("- [x] first\n- [ ] second\n")
+
+        waitUntil { model.planProgress == PlanProgress(checked: 1, total: 2) }
     }
 
     func testLoadGeneralPlanFileDoesNotEnableAutoSave() throws {
@@ -965,6 +1069,44 @@ final class TextEditorModelTests: XCTestCase {
         }
         let saved = try String(contentsOf: fileURL, encoding: .utf8)
         XCTAssertTrue(saved.contains("[x] Ship fix"))
+    }
+
+    func testRapidCheckboxTogglesPreserveBothUpdates() throws {
+        let model = TextEditorModel()
+        let fileURL = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("chau7-runbook-race-\(UUID().uuidString).md")
+        try "- [ ] First\n- [ ] Second\n".write(to: fileURL, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: fileURL) }
+
+        model.loadFile(at: fileURL.path)
+        waitUntil {
+            model.filePath == fileURL.path && !model.isLoading
+        }
+
+        model.toggleCheckbox(lineNumber: 0)
+        model.toggleCheckbox(lineNumber: 1)
+
+        waitUntil {
+            !model.isCheckboxWritePending && model.content.contains("[x] First") && model.content.contains("[x] Second")
+        }
+        XCTAssertEqual(
+            try String(contentsOf: fileURL, encoding: .utf8),
+            "- [x] First\n- [x] Second\n"
+        )
+    }
+
+    func testFailedFileLoadExposesTargetNameAndKeepsCurrentDocument() {
+        let model = TextEditorModel()
+        model.filePath = "/tmp/current.md"
+        model.content = "current content"
+        let missingPath = "/tmp/missing-\(UUID().uuidString).md"
+
+        model.loadFile(at: missingPath)
+        waitUntil { !model.isLoading && model.lastError != nil }
+
+        XCTAssertEqual(model.filePath, "/tmp/current.md")
+        XCTAssertEqual(model.content, "current content")
+        XCTAssertTrue(model.lastError?.contains(URL(fileURLWithPath: missingPath).lastPathComponent) == true)
     }
 
     func testSaveDetectsExternalConflict() throws {
@@ -1028,6 +1170,9 @@ final class MarkdownRunbookInfrastructureTests: XCTestCase {
         let markdown = """
         - [x] done
         - [ ] next
+        ```md
+        - [x] example only
+        ```
         """
 
         XCTAssertEqual(computePlanProgress(from: markdown), PlanProgress(checked: 1, total: 2))

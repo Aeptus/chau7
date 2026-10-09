@@ -21,7 +21,7 @@ protocol RunbookHost {
     /// Run a single fenced code block against the host terminal session.
     /// `lineNumber` identifies the block's position in the markdown source
     /// so the host can attribute completion back to a UI element.
-    func runBlock(_ code: String, lineNumber: Int)
+    func runBlock(_ code: String, language: String?, lineNumber: Int)
 
     /// Returns the current run state for a tracked block, or nil when the
     /// block has not been queued yet.
@@ -51,7 +51,12 @@ struct RunbookHostAdapter: RunbookHost {
     /// `sendCommandToTerminal` route in production).
     let sendCommand: (String, Int) -> Void
 
-    func runBlock(_ code: String, lineNumber: Int) {
+    func runBlock(_ code: String, language: String?, lineNumber: Int) {
+        guard RunbookShellExecution.supports(language: language) else {
+            let label = language?.split(whereSeparator: { $0.isWhitespace || $0 == "," }).first.map(String.init) ?? "unknown"
+            editor.lastError = L("pane.unsupportedRunbookLanguage", "This code block is labelled \(label) and will not be sent to the shell.")
+            return
+        }
         sendCommand("\(code)\n", lineNumber)
     }
 

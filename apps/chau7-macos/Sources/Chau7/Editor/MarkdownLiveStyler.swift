@@ -55,29 +55,73 @@ enum MarkdownLiveStyler {
 
     // MARK: - Apply
 
-    /// Re-style `storage` over its full range. Safe to call repeatedly (the editor
-    /// calls it debounced on every change).
+    /// Re-style `storage` over its full range. Used for initial loads and edits
+    /// that change fenced-code boundaries.
     static func apply(to storage: NSTextStorage, theme: Theme) {
         let text = storage.string as NSString
         let full = NSRange(location: 0, length: text.length)
-        storage.setAttributes([
-            .font: theme.bodyFont,
-            .foregroundColor: theme.textColor,
-            .paragraphStyle: NSParagraphStyle.default
-        ], range: full)
+        guard full.length > 0 else { return }
+        storage.beginEditing()
+        storage.setAttributes(defaultAttributes(theme: theme), range: full)
         for run in styleRuns(in: text) {
             for (key, value) in attributes(for: run.kind, theme: theme) {
                 storage.addAttribute(key, value: value, range: run.range)
             }
         }
-        applyHangingIndents(to: storage, theme: theme)
+        applyHangingIndents(to: storage, range: full, theme: theme)
+        storage.endEditing()
+    }
+
+    /// Re-style only the lines affected by a text edit. Markdown attributes do
+    /// not change character positions, so updating the changed paragraphs keeps
+    /// typing responsive even when the document is long. Editing a fence marker
+    /// can change the interpretation of every later line, so that rare case
+    /// deliberately falls back to a full pass. The old line is checked as well
+    /// because deleting a closing fence removes the marker from the new text.
+    static func apply(
+        to storage: NSTextStorage,
+        theme: Theme,
+        around changedRange: NSRange,
+        previouslyTouchedFenceDelimiter: Bool = false
+    ) {
+        let text = storage.string as NSString
+        let full = NSRange(location: 0, length: text.length)
+        guard full.length > 0 else { return }
+
+        let editedLine = text.lineRange(for: changedRange)
+        if previouslyTouchedFenceDelimiter || containsFenceDelimiter(in: text, range: editedLine) {
+            apply(to: storage, theme: theme)
+            return
+        }
+
+        let range = expandedLineRange(in: text, around: changedRange)
+        guard range.length > 0 else { return }
+
+        let startsInsideFence = isInsideFence(in: text, before: range.location)
+        storage.beginEditing()
+        storage.setAttributes(defaultAttributes(theme: theme), range: range)
+        for run in styleRuns(in: text, range: range, startsInsideFence: startsInsideFence) {
+            for (key, value) in attributes(for: run.kind, theme: theme) {
+                storage.addAttribute(key, value: value, range: run.range)
+            }
+        }
+        applyHangingIndents(to: storage, range: range, theme: theme)
+        storage.endEditing()
+    }
+
+    private static func defaultAttributes(theme: Theme) -> [NSAttributedString.Key: Any] {
+        [
+            .font: theme.bodyFont,
+            .foregroundColor: theme.textColor,
+            .paragraphStyle: NSParagraphStyle.default
+        ]
     }
 
     /// Wrapped list-item / blockquote lines hang under their text instead of the
     /// marker, via a per-paragraph head indent measured in the body font.
-    private static func applyHangingIndents(to storage: NSTextStorage, theme: Theme) {
+    private static func applyHangingIndents(to storage: NSTextStorage, range: NSRange, theme: Theme) {
         let text = storage.string as NSString
-        text.enumerateSubstrings(in: NSRange(location: 0, length: text.length), options: [.byLines]) { _, lineRange, _, _ in
+        text.enumerateSubstrings(in: range, options: [.byLines]) { _, lineRange, _, _ in
             let line = text.substring(with: lineRange)
             guard let indent = hangingIndent(forLine: line, font: theme.bodyFont) else { return }
             let style = NSMutableParagraphStyle()
@@ -111,10 +155,19 @@ enum MarkdownLiveStyler {
     // MARK: - Parsing (pure / testable)
 
     static func styleRuns(in text: NSString) -> [StyleRun] {
-        var runs: [StyleRun] = []
-        var insideFence = false
+        styleRuns(in: text, range: NSRange(location: 0, length: text.length), startsInsideFence: false)
+    }
 
-        text.enumerateSubstrings(in: NSRange(location: 0, length: text.length), options: [.byLines]) { _, lineRange, _, _ in
+    /// Parses only a line-aligned range, carrying the fenced-code state from the
+    /// preceding text. Exposed internally so incremental styling can be tested.
+    static func styleRuns(in text: NSString, range: NSRange, startsInsideFence: Bool) -> [StyleRun] {
+        var runs: [StyleRun] = []
+        var insideFence = startsInsideFence
+
+        let fullRange = NSRange(location: 0, length: text.length)
+        let boundedRange = NSIntersectionRange(range, fullRange)
+        guard boundedRange.length > 0 else { return runs }
+        text.enumerateSubstrings(in: boundedRange, options: [.byLines]) { _, lineRange, _, _ in
             let line = text.substring(with: lineRange) as NSString
             let trimmed = line.trimmingCharacters(in: .whitespaces)
 
@@ -137,6 +190,52 @@ enum MarkdownLiveStyler {
         }
 
         return runs
+    }
+
+    /// Expands an edit to complete paragraphs plus one neighbor on either side.
+    /// The neighboring lines matter when an inserted/deleted newline splits or
+    /// joins Markdown syntax at a paragraph boundary.
+    static func expandedLineRange(in text: NSString, around range: NSRange) -> NSRange {
+        guard text.length > 0 else { return NSRange(location: 0, length: 0) }
+        let location = min(max(0, range.location), text.length)
+        let end = min(max(location, NSMaxRange(range)), text.length)
+        var expanded = text.lineRange(for: NSRange(location: location, length: end - location))
+
+        if expanded.location > 0 {
+            let previousLine = text.lineRange(for: NSRange(location: expanded.location - 1, length: 0))
+            expanded = NSUnionRange(previousLine, expanded)
+        }
+        if NSMaxRange(expanded) < text.length {
+            let nextLine = text.lineRange(for: NSRange(location: NSMaxRange(expanded), length: 0))
+            expanded = NSUnionRange(expanded, nextLine)
+        }
+        return expanded
+    }
+
+    static func containsFenceDelimiter(in text: NSString, range: NSRange) -> Bool {
+        var found = false
+        text.enumerateSubstrings(in: range, options: [.byLines]) { line, _, _, _ in
+            guard let line else { return }
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if trimmed.hasPrefix("```") || trimmed.hasPrefix("~~~") {
+                found = true
+            }
+        }
+        return found
+    }
+
+    private static func isInsideFence(in text: NSString, before location: Int) -> Bool {
+        guard location > 0 else { return false }
+        let prefixRange = NSRange(location: 0, length: min(location, text.length))
+        var insideFence = false
+        text.enumerateSubstrings(in: prefixRange, options: [.byLines]) { line, _, _, _ in
+            guard let line else { return }
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if trimmed.hasPrefix("```") || trimmed.hasPrefix("~~~") {
+                insideFence.toggle()
+            }
+        }
+        return insideFence
     }
 
     // MARK: - Block constructs
