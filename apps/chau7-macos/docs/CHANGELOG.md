@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Update both Chau7 Go modules to 1.27.2 for upstream standard-library security fixes.
+- Retry live terminal redraws as soon as Metal releases an in-flight frame, and record PTY-to-main/GPU latency plus skipped-frame counts per view.
 - Make iOS remote connection errors visible and add a direct re-pair action for failed connections.
 
 ## [0.5.0] - 2026-10-07

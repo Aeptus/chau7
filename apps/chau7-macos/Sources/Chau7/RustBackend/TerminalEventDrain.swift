@@ -43,6 +43,7 @@ final class TerminalEventDrain {
     private let coalesceLock = NSLock()
     private var hasInFlightHandler = false
     private var pendingFlags = TerminalPollEventFlags()
+    private var pendingGridChangeAtUptimeNanoseconds: UInt64?
 
     /// Start draining PTY events for the given terminal view.
     /// Stops any previous drain first.
@@ -136,11 +137,18 @@ final class TerminalEventDrain {
             // or the timeout elapses. This is the key efficiency win:
             // the thread sleeps in the kernel with zero CPU when idle.
             let flags = rust.pollEvents(timeout: Self.pollTimeoutMs)
+            let gridChangeAt = flags.contains(.gridChanged)
+                ? DispatchTime.now().uptimeNanoseconds
+                : nil
 
             guard isCurrent(generation) else { return }
 
             if !flags.isEmpty {
-                dispatchHandlerIfNotInFlight(view: view, flags: flags)
+                dispatchHandlerIfNotInFlight(
+                    view: view,
+                    flags: flags,
+                    gridChangeAtUptimeNanoseconds: gridChangeAt
+                )
             }
         }
         Log.trace("TerminalEventDrain[\(viewId)]: cancelled, exiting")
@@ -149,29 +157,56 @@ final class TerminalEventDrain {
     /// Dispatches `view.handleEventDrainData(drainFlags:)` to the main queue if no
     /// previous dispatch is still in flight; otherwise drops this wake.
     /// Pure coalescence — see `coalesceLock` doc for the rationale.
-    private func dispatchHandlerIfNotInFlight(view: RustTerminalView, flags: TerminalPollEventFlags) {
+    private func dispatchHandlerIfNotInFlight(
+        view: RustTerminalView,
+        flags: TerminalPollEventFlags,
+        gridChangeAtUptimeNanoseconds: UInt64?
+    ) {
         coalesceLock.lock()
         let alreadyInFlight = hasInFlightHandler
         if !alreadyInFlight {
             hasInFlightHandler = true
         } else {
             pendingFlags.formUnion(flags)
+            if let gridChangeAtUptimeNanoseconds {
+                if let pending = pendingGridChangeAtUptimeNanoseconds {
+                    pendingGridChangeAtUptimeNanoseconds = min(pending, gridChangeAtUptimeNanoseconds)
+                } else {
+                    pendingGridChangeAtUptimeNanoseconds = gridChangeAtUptimeNanoseconds
+                }
+            }
         }
         coalesceLock.unlock()
 
         guard !alreadyInFlight else { return }
 
-        runHandler(view: view, flags: flags)
+        runHandler(
+            view: view,
+            flags: flags,
+            gridChangeAtUptimeNanoseconds: gridChangeAtUptimeNanoseconds
+        )
     }
 
-    private func runHandler(view: RustTerminalView, flags: TerminalPollEventFlags) {
+    private func runHandler(
+        view: RustTerminalView,
+        flags: TerminalPollEventFlags,
+        gridChangeAtUptimeNanoseconds: UInt64?
+    ) {
         DispatchQueue.main.async { [weak self, weak view] in
             guard let self else { return }
             guard let view, !view.isBeingDeallocated else {
                 finishHandler(view: nil)
                 return
             }
-            view.handleEventDrainData(drainFlags: flags)
+            let eventDispatchWaitMilliseconds = gridChangeAtUptimeNanoseconds.map { eventTime in
+                let now = DispatchTime.now().uptimeNanoseconds
+                guard now >= eventTime else { return 0.0 }
+                return Double(now - eventTime) / 1_000_000
+            }
+            view.handleEventDrainData(
+                drainFlags: flags,
+                eventDispatchWaitMilliseconds: eventDispatchWaitMilliseconds
+            )
             finishHandler(view: view)
         }
     }
@@ -179,16 +214,23 @@ final class TerminalEventDrain {
     private func finishHandler(view: RustTerminalView?) {
         coalesceLock.lock()
         let followUpFlags = isRunning && view != nil ? pendingFlags : TerminalPollEventFlags()
+        let followUpGridChangeAt = followUpFlags.isEmpty ? nil : pendingGridChangeAtUptimeNanoseconds
         if !followUpFlags.isEmpty {
             pendingFlags = []
+            pendingGridChangeAtUptimeNanoseconds = nil
         } else {
             hasInFlightHandler = false
             pendingFlags = []
+            pendingGridChangeAtUptimeNanoseconds = nil
         }
         coalesceLock.unlock()
 
         if !followUpFlags.isEmpty, let view {
-            runHandler(view: view, flags: followUpFlags)
+            runHandler(
+                view: view,
+                flags: followUpFlags,
+                gridChangeAtUptimeNanoseconds: followUpGridChangeAt
+            )
         }
     }
 }

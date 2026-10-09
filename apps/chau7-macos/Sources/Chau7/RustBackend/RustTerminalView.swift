@@ -3405,7 +3405,10 @@ final class RustTerminalView: NSView {
 
     /// Called by `TerminalEventDrain` on the main thread when PTY data arrives.
     /// Processes terminal state and triggers rendering.
-    func handleEventDrainData(drainFlags: TerminalPollEventFlags) {
+    func handleEventDrainData(
+        drainFlags: TerminalPollEventFlags,
+        eventDispatchWaitMilliseconds: Double? = nil
+    ) {
         guard !isBeingDeallocated else { return }
         guard let rust = rustTerminal else { return }
 
@@ -3418,7 +3421,8 @@ final class RustTerminalView: NSView {
         let snapshot = extractTerminalDrainSnapshotLocked(
             rust: rust,
             changed: drainFlags.contains(.gridChanged) || followUpFlags.contains(.gridChanged),
-            caller: "eventDrain"
+            caller: "eventDrain",
+            eventDispatchWaitMilliseconds: eventDispatchWaitMilliseconds
         )
         terminalPollAccessLock.unlock()
         noteInitialPTYActivity(activityFlags)
