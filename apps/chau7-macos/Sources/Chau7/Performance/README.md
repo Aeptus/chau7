@@ -21,7 +21,7 @@ attribute phantom subsystems.
 | `MemoryPressureResponder.swift` | OS memory-pressure source + self-imposed footprint ceiling + scrollback budget hook |
 | `MetalTerminalRenderer.swift` | GPU-accelerated terminal renderer with dynamic glyph atlas and instanced drawing |
 | `OptimalMetalView.swift` | MTKView subclass configured for minimal display latency |
-| `RenderPipelineProfiler.swift` | 30s aggregates of sync/commit/draw volume per view |
+| `RenderPipelineProfiler.swift` | 60s aggregates of sync/commit/draw volume, PTY event-to-main queue wait, GPU completion latency, and skipped frames per view |
 | `RustMetalDisplayCoordinator.swift` | Metal rendering coordinator for the Rust terminal backend (per window) |
 | `RustTermBridge.swift` | Converts Rust FFI GridSnapshot cell data into TerminalCell structs for Metal |
 | `SIMDTerminalParser.swift` | SIMD-accelerated byte scanner for escape sequences (16-32 bytes at a time) |

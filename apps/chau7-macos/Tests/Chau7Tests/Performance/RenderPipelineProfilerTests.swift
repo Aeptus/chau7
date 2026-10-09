@@ -21,9 +21,11 @@ final class RenderPipelineProfilerTests: XCTestCase {
             mode: "display_link",
             reasons: "selected,visibleWindow"
         )
-        profiler.recordPoll(viewID: 7, changed: true)
+        profiler.recordPoll(viewID: 7, changed: true, eventDispatchWaitMilliseconds: 2.5)
         profiler.recordPoll(viewID: 7, changed: false)
         profiler.recordDraw(viewID: 7, cellCount: 120)
+        profiler.recordGPUCompletion(viewID: 7, durationMilliseconds: 4.5)
+        profiler.recordSkippedFrame(viewID: 7)
         profiler.recordSync(viewID: 7, rows: 24, cols: 80, syncedRows: 24, syncedCols: 80, mismatched: true, bytesWritten: 4096)
         profiler.recordCommit(dirtyRows: 12, dirtyCells: 960, bytesCopied: 2048, fullRefresh: true)
         profiler.recordInstanceBuffer(
@@ -51,7 +53,18 @@ final class RenderPipelineProfilerTests: XCTestCase {
                 changedPollCount: 1,
                 drawCount: 1,
                 syncCallCount: 1,
-                syncBytes: 4096
+                syncBytes: 4096,
+                eventDispatchWait: RenderPipelineProfiler.LatencySnapshot(
+                    count: 1,
+                    totalMilliseconds: 2.5,
+                    maxMilliseconds: 2.5
+                ),
+                gpuCompletion: RenderPipelineProfiler.LatencySnapshot(
+                    count: 1,
+                    totalMilliseconds: 4.5,
+                    maxMilliseconds: 4.5
+                ),
+                skippedFrameCount: 1
             )]
         )
         XCTAssertEqual(snapshot.livePollCount, 2)
@@ -72,6 +85,10 @@ final class RenderPipelineProfilerTests: XCTestCase {
         XCTAssertEqual(snapshot.glyphMisses, 12)
         XCTAssertEqual(snapshot.maxGlyphCacheSize, 144)
         XCTAssertEqual(snapshot.maxLigatureCacheSize, 9)
+        XCTAssertEqual(snapshot.eventDispatchWait.count, 1)
+        XCTAssertEqual(snapshot.eventDispatchWait.averageMilliseconds, 2.5)
+        XCTAssertEqual(snapshot.gpuCompletion.maxMilliseconds, 4.5)
+        XCTAssertEqual(snapshot.skippedFrameCount, 1)
     }
 
     func testResetClearsState() {
@@ -96,6 +113,9 @@ final class RenderPipelineProfilerTests: XCTestCase {
         XCTAssertEqual(snapshot.syncCallCount, 0)
         XCTAssertEqual(snapshot.commitCount, 0)
         XCTAssertEqual(snapshot.glyphLookups, 0)
+        XCTAssertEqual(snapshot.eventDispatchWait.count, 0)
+        XCTAssertEqual(snapshot.gpuCompletion.count, 0)
+        XCTAssertEqual(snapshot.skippedFrameCount, 0)
     }
 
     func testDeactivatedViewRemainsInSnapshotUntilFlush() {
@@ -147,8 +167,10 @@ final class RenderPipelineProfilerTests: XCTestCase {
             mode: "display_link",
             reasons: "selected"
         )
+        profiler.recordGPUCompletion(viewID: 7, durationMilliseconds: 12)
+        profiler.recordSkippedFrame(viewID: 7)
         clock = clock.addingTimeInterval(60)
-        profiler.recordPoll(viewID: 7, changed: true)
+        profiler.recordPoll(viewID: 7, changed: true, eventDispatchWaitMilliseconds: 8)
 
         let record = try XCTUnwrap(recorder.records.first)
         XCTAssertEqual(record.category, "render_pipeline")
@@ -156,5 +178,11 @@ final class RenderPipelineProfilerTests: XCTestCase {
         let liveViews = try XCTUnwrap(record.fields["live_views"] as? [[String: Any]])
         XCTAssertNil(liveViews[0]["tab_id"])
         XCTAssertNil(liveViews[0]["session_id"])
+        XCTAssertEqual(record.fields["event_to_main_max_ms"] as? Double, 8)
+        XCTAssertEqual(record.fields["gpu_completion_max_ms"] as? Double, 12)
+        XCTAssertEqual(record.fields["skipped_frame_count"] as? Int, 1)
+        XCTAssertEqual(liveViews[0]["event_to_main_max_ms"] as? Double, 8)
+        XCTAssertEqual(liveViews[0]["gpu_completion_max_ms"] as? Double, 12)
+        XCTAssertEqual(liveViews[0]["skipped_frame_count"] as? Int, 1)
     }
 }
