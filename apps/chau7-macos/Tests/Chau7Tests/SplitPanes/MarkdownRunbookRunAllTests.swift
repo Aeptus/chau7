@@ -9,6 +9,27 @@ import XCTest
 @MainActor
 final class MarkdownRunbookRunAllTests: XCTestCase {
 
+    func testRunAllFiltersOutNonShellFences() {
+        let markdown = [
+            "```swift", "print(1)", "```",
+            "```bash", "echo allowed", "```",
+            "```", "pwd", "```",
+            "```python", "print(2)", "```"
+        ].joined(separator: "\n")
+
+        let blocks = RunbookShellExecution.blocks(in: markdown)
+
+        XCTAssertEqual(blocks.map { $0.code }, ["echo allowed", "pwd"])
+    }
+
+    func testShellLanguagePolicyHandlesInfoStringsAndRejectsOtherLanguages() {
+        XCTAssertTrue(RunbookShellExecution.supports(language: nil))
+        XCTAssertTrue(RunbookShellExecution.supports(language: "BASH title=deploy"))
+        XCTAssertTrue(RunbookShellExecution.supports(language: "{.zsh}"))
+        XCTAssertFalse(RunbookShellExecution.supports(language: "python"))
+        XCTAssertFalse(RunbookShellExecution.supports(language: "json"))
+    }
+
     func testRunAllSendsBlocksOnlyAfterEachSettles() {
         let model = TextEditorModel()
         let blocks: [(line: Int, code: String)] = [

@@ -16,11 +16,24 @@ final class RunbookHostAdapterTests: XCTestCase {
             sentCommands.append((command, line))
         }
 
-        adapter.runBlock("echo hi", lineNumber: 12)
+        adapter.runBlock("echo hi", language: "bash", lineNumber: 12)
 
         XCTAssertEqual(sentCommands.count, 1)
         XCTAssertEqual(sentCommands[0].0, "echo hi\n")
         XCTAssertEqual(sentCommands[0].1, 12)
+    }
+
+    func testRunBlockRefusesNonShellCode() {
+        let editor = TextEditorModel()
+        var sentCommands: [String] = []
+        let adapter = RunbookHostAdapter(editor: editor) { command, _ in
+            sentCommands.append(command)
+        }
+
+        adapter.runBlock("print(1)", language: "python", lineNumber: 4)
+
+        XCTAssertTrue(sentCommands.isEmpty)
+        XCTAssertTrue(editor.lastError?.contains("python") == true)
     }
 
     func testCodeBlockStateForwardsToEditorRunbookTracker() {
