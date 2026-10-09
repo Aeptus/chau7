@@ -252,7 +252,7 @@ Chau7 runs an embedded MCP (Model Context Protocol) server — your AI agents ca
 
 - **Protocol**: JSON-RPC 2.0 over Unix domain socket (`~/.chau7/mcp.sock`).
 - **Version negotiation**: The server negotiates the finalized `2025-11-25`, `2025-06-18`, and `2024-11-05` revisions, echoing a supported client revision exactly, and requires `initialize` then `notifications/initialized` before normal tool or resource calls.
-- **Connection behavior**: Idle MCP client sockets stay open long enough for slower eval and manual-debug workflows instead of timing out after short pauses.
+- **Connection behavior**: Idle MCP client sockets stay open long enough for slower eval and manual-debug workflows instead of timing out after short pauses. Server restarts shut down session-owned sockets without closing a reader descriptor twice; late disconnects cannot remove replacement connections. Listener health verifies the bound socket identity and the kernel socket state.
 - **Bridge**: `~/.chau7/bin/chau7-mcp-bridge` (stdio-to-socket bridge for standard MCP clients).
 - **Codex config self-healing**: Codex registration rewrites stale shell-wrapper commands and multi-line `args` arrays to direct bridge execution while preserving per-tool approval subsections.
 - **Session diagnostics**: Initialization emits non-secret client/version/protocol/status/error breadcrumbs, and `chau7_mcp_session_info` exposes the successful connection's negotiated protocol plus resolved bridge and socket paths.
@@ -976,7 +976,7 @@ Legacy `AI_*` and `SMART_OVERLAY_*` environment variables are still supported.
 
 - **Restoration-safe test storage** — XCTest uses process-specific temporary Application Support by default, keeping restore-bundle cleanup away from production session data while honoring explicit test homes.
 
-- **Restoration-safe Chau7 build skill** — the bundled `chau7-build` skill documents the guarded quit/build/install/relaunch workflow, verifies source and helper provenance, and keeps session restoration artifacts outside release operations.
+- **Restoration-safe Chau7 build skill** — the bundled `chau7-build` skill documents the guarded quit/build/install/relaunch workflow, verifies source and helper provenance, and keeps session restoration artifacts outside release operations. The quit timeout also bounds an unresponsive AppleScript helper; app termination signals still require explicit `--force`.
 - **Warnings-as-errors Swift baseline** — asynchronous callbacks use explicit capture ownership, and the macOS format, lint, and strict compiler gates run cleanly before publication.
 - Swift source and focused tests are kept SwiftFormat-clean before managed commits, so release validation fails only on substantive quality issues.
 

@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Preserve MCP socket ownership across server restarts, detect closed/replaced listeners, and honor the guarded rebuild quit deadline even when AppleScript stalls.
 - Update both Chau7 Go modules to 1.27.2 for upstream standard-library security fixes.
 - Retry live terminal redraws as soon as Metal releases an in-flight frame, and record PTY-to-main/GPU latency plus skipped-frame counts per view.
 - Make iOS remote connection errors visible and add a direct re-pair action for failed connections.

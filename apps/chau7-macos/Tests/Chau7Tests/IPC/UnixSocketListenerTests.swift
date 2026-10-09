@@ -162,6 +162,67 @@ final class UnixSocketListenerTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(fcntl(descriptor, F_GETFD), 0)
     }
 
+    func testHealthRejectsClosedListenerDescriptor() throws {
+        let queue = DispatchQueue(label: "test.usl.closed-health")
+        queue.suspend()
+        defer { queue.resume() }
+        let listener = UnixSocketListener(path: makeSocketPath(), queue: queue)
+        try listener.start(backlog: 1, onAccept: { close($0) }, onAcceptFailure: { _ in })
+        let original = listener.fileDescriptor
+        let retained = dup(original)
+        XCTAssertGreaterThanOrEqual(retained, 0)
+        defer {
+            _ = dup2(retained, original)
+            close(retained)
+            listener.stop(removeSocketFile: true)
+        }
+        XCTAssertTrue(listener.isAccepting)
+        close(original)
+        XCTAssertFalse(listener.isAccepting, "An existing DispatchSource cannot prove its descriptor is still listening")
+    }
+
+    func testHealthRejectsDescriptorReusedForConnectedSocket() throws {
+        let queue = DispatchQueue(label: "test.usl.reused-health")
+        queue.suspend()
+        defer { queue.resume() }
+        let listener = UnixSocketListener(path: makeSocketPath(), queue: queue)
+        try listener.start(backlog: 1, onAccept: { close($0) }, onAcceptFailure: { _ in })
+        let original = listener.fileDescriptor
+        let retained = dup(original)
+        let peer = connectClient(to: listener.path)
+        XCTAssertGreaterThanOrEqual(peer, 0)
+        let accepted = accept(original, nil, nil)
+        XCTAssertGreaterThanOrEqual(accepted, 0)
+        defer {
+            _ = dup2(retained, original)
+            close(retained)
+            close(peer)
+            close(accepted)
+            listener.stop(removeSocketFile: true)
+        }
+        XCTAssertTrue(listener.isAccepting)
+        // An accepted client has the same local socket path as its listener.
+        // Checking only getsockname would incorrectly report it as healthy.
+        XCTAssertEqual(dup2(accepted, original), original)
+        XCTAssertFalse(listener.isAccepting, "A reused accepted socket is not the listener")
+    }
+
+    func testHealthRejectsReplacedSocketPath() throws {
+        let path = makeSocketPath()
+        let original = UnixSocketListener(path: path, queue: DispatchQueue(label: "test.usl.original-health"))
+        let replacement = UnixSocketListener(path: path, queue: DispatchQueue(label: "test.usl.replacement-health"))
+        defer {
+            original.stop(removeSocketFile: true)
+            replacement.stop(removeSocketFile: true)
+        }
+        try original.start(backlog: 1, onAccept: { close($0) }, onAcceptFailure: { _ in })
+        XCTAssertTrue(original.isAccepting)
+        unlink(path)
+        try replacement.start(backlog: 1, onAccept: { close($0) }, onAcceptFailure: { _ in })
+        XCTAssertFalse(original.isAccepting, "A replacement path does not belong to this listener")
+        XCTAssertTrue(replacement.isAccepting)
+    }
+
     func testStopClosesListener() throws {
         let path = makeSocketPath()
         let listener = UnixSocketListener(path: path, queue: DispatchQueue(label: "test.usl.stop"))
