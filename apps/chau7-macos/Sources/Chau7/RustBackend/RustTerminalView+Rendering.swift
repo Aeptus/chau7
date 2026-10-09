@@ -157,7 +157,8 @@ extension RustTerminalView {
     func extractTerminalDrainSnapshotLocked(
         rust: any TerminalBackend,
         changed: Bool,
-        caller: String
+        caller: String,
+        eventDispatchWaitMilliseconds: Double? = nil
     ) -> TerminalDrainSnapshot {
         let profileContext = terminalWorkContext(caller: caller)
         let startedAt = CFAbsoluteTimeGetCurrent()
@@ -196,7 +197,11 @@ extension RustTerminalView {
             durationMs: (CFAbsoluteTimeGetCurrent() - startedAt) * 1000.0,
             bytes: outputData?.count ?? 0
         )
-        RenderPipelineProfiler.shared.recordPoll(viewID: viewId, changed: changed)
+        RenderPipelineProfiler.shared.recordPoll(
+            viewID: viewId,
+            changed: changed,
+            eventDispatchWaitMilliseconds: eventDispatchWaitMilliseconds
+        )
         return snapshot
     }
 
