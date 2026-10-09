@@ -1,5 +1,12 @@
 [
   {
+    "category": "API Analytics",
+    "feature": "Live Cross-Provider Token-Rate Overlay",
+    "description": "The selected tab shows tokens per second from Anthropic, OpenAI, and Gemini proxy streams, then uses provider-reported output counts and response timing when available; Claude Code and Codex CLI transcript tailing covers direct sessions with marked estimates and source/timing details",
+    "status": "Shipped",
+    "differentiator": "Yes"
+  },
+  {
     "category": "MCP",
     "feature": "Bounded Socket Transport Recovery",
     "description": "Serial socket owners use complete linear-time framing, queue-inclusive write deadlines and nonblocking reconnect handshakes; bounded async notifications keep slow peers off UI and interrupted requests return errors without replaying uncertain execution; MCP restart shutdown retains single reader ownership, rejects late disconnects for reused descriptors, and detects closed or replaced listener sockets from kernel state and socket-file identity",

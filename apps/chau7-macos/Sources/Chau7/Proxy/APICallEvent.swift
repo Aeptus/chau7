@@ -23,6 +23,8 @@ public struct APICallEvent: Identifiable, Codable, Equatable, Sendable {
     public let observedCacheReadInputTokens: Int?
     public let observedReasoningOutputTokens: Int?
     public let latencyMs: Int
+    public let ttftMs: Int?
+    public let outputTokensEstimated: Bool?
     public let statusCode: Int
     public let observedCostUSD: Double?
     public let pricingVersion: String?
@@ -130,7 +132,9 @@ public struct APICallEvent: Identifiable, Codable, Equatable, Sendable {
         pricingVersion: String? = nil,
         timestamp: Date = Date(),
         errorMessage: String? = nil,
-        projectPath: String? = nil
+        projectPath: String? = nil,
+        ttftMs: Int? = nil,
+        outputTokensEstimated: Bool? = nil
     ) {
         self.id = id
         self.sessionId = sessionId
@@ -143,6 +147,8 @@ public struct APICallEvent: Identifiable, Codable, Equatable, Sendable {
         self.observedCacheReadInputTokens = cacheReadInputTokens
         self.observedReasoningOutputTokens = reasoningOutputTokens
         self.latencyMs = latencyMs
+        self.ttftMs = ttftMs
+        self.outputTokensEstimated = outputTokensEstimated
         self.statusCode = statusCode
         self.observedCostUSD = costUSD
         self.pricingVersion = pricingVersion

@@ -205,6 +205,7 @@ Supported commands (46 parsers):
 ## API Analytics & Token Tracking
 
 - **TLS/WSS proxy** — Go-based `chau7-proxy` intercepts API calls to Claude, OpenAI (Codex), Gemini, Anthropic with TLS and WebSocket support.
+- **Live cross-provider token-rate overlay** — the selected tab shows tokens per second from Anthropic, OpenAI, and Gemini proxy streams, then uses provider-reported output counts and response timing when available. Claude Code and Codex CLI transcript tailing covers direct sessions; estimates carry a `~` marker, and the tooltip explains the source and timing basis.
 - **Unbounded active inference streams** — active provider requests are not capped by a proxy-wide total or response-write deadline, and every SSE chunk is flushed immediately so provider events and keepalives reach the CLI without buffering; requests remain open until completion or originating-client cancellation, while request-read and idle-connection protections remain bounded.
 - **Orphan-proof helpers** — chau7-proxy and chau7-remote exit when the parent app dies (no port-holding orphans after a crash), and the proxy's auto-restart backs off exponentially instead of crash-looping every 2 seconds.
 - **Durable call recording under lock contention** — API call writes that lose SQLite's WAL write lock are retried with backoff rather than discarded, so a checkpoint on a large analytics database cannot silently erase calls from the dashboards. Constraint and disk errors still fail fast, and an exhausted retry budget logs an explicit dropped-record warning.

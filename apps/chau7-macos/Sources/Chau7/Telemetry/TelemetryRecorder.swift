@@ -8,11 +8,11 @@ import Chau7Core
 ///
 /// `@unchecked Sendable` is asserted against two verified locks rather than
 /// assumed. Every mutable field is covered by exactly one of them:
-/// `activeRuns` / `inProgressRuns` under `lock`, and `pendingMetricsFlush` /
+/// `activeRuns` / `inProgressRuns` / `liveTokenRateMonitors` /
+/// `pendingTokenRateMonitorRunIDs` under `lock`, and `pendingMetricsFlush` /
 /// `pendingMetricsRuns` under `metricsLock`; both dictionaries are only ever
 /// read back out under the same lock that wrote them. Everything else is
-/// `let`. The async queues below (`extractionQueue`, `repairQueue`,
-/// `metricsFlushQueue`) only ever receive value snapshots, never a live
+/// `let`. The async queues below only receive value snapshots, never a live
 /// reference to one of those dictionaries.
 final class TelemetryRecorder: @unchecked Sendable {
     static let shared = TelemetryRecorder()
@@ -38,14 +38,18 @@ final class TelemetryRecorder: @unchecked Sendable {
 
     /// Maps tab identifier → in-progress run ID
     private var activeRuns: [String: String] = [:]
+    /// Maps tab identifier → provider transcript observer for that run.
+    private var liveTokenRateMonitors: [String: LiveTokenRateMonitor] = [:]
     /// Maps run ID → run record (for in-progress updates)
     private var inProgressRuns: [String: TelemetryRun] = [:]
     private let lock = NSLock()
     private let repairQueue = DispatchQueue(label: "com.chau7.telemetry.repair", qos: .utility)
     private let extractionQueue = DispatchQueue(label: "com.chau7.telemetry.extraction", qos: .utility)
+    private let tokenRateMonitorQueue = DispatchQueue(label: "com.chau7.telemetry.token-rate-monitor", qos: .utility)
     /// Coalesces updateRunLiveMetrics writes so they flush at most once per 2 seconds.
     private var pendingMetricsFlush: DispatchWorkItem?
     private var pendingMetricsRuns: [String: TelemetryRun] = [:]
+    private var pendingTokenRateMonitorRunIDs: Set<String> = []
     private let metricsLock = NSLock()
     private let metricsFlushQueue = DispatchQueue(label: "com.chau7.telemetry.metrics-flush", qos: .utility)
 
@@ -75,7 +79,10 @@ final class TelemetryRecorder: @unchecked Sendable {
         lock.lock()
         if let previousRunID = activeRuns.removeValue(forKey: tabID),
            var previousRun = inProgressRuns.removeValue(forKey: previousRunID) {
+            let previousMonitor = liveTokenRateMonitors.removeValue(forKey: tabID)
+            pendingTokenRateMonitorRunIDs.remove(previousRunID)
             lock.unlock()
+            previousMonitor?.stop()
             previousRun.endedAt = Date()
             previousRun.exitStatus = nil
             previousRun.durationMs = Int(Date().timeIntervalSince(previousRun.startedAt) * 1000)
@@ -106,6 +113,7 @@ final class TelemetryRecorder: @unchecked Sendable {
 
         store.insertRun(run)
         publishLiveRun(run)
+        startLiveTokenRateMonitorIfNeeded(for: run)
         Chau7ObservabilityService.shared.recordEvent(
             type: "telemetry_run_started",
             subsystem: "telemetry",
@@ -142,7 +150,10 @@ final class TelemetryRecorder: @unchecked Sendable {
             lock.unlock()
             return
         }
+        let monitor = liveTokenRateMonitors.removeValue(forKey: tabID)
+        pendingTokenRateMonitorRunIDs.remove(runID)
         lock.unlock()
+        monitor?.stop()
 
         let endedAt = Date()
         run.endedAt = endedAt
@@ -249,6 +260,7 @@ final class TelemetryRecorder: @unchecked Sendable {
         store.updateRunSessionID(runID, sessionID: sessionID)
         if let liveRun {
             publishLiveRun(liveRun)
+            startLiveTokenRateMonitorIfNeeded(for: liveRun)
         }
         Chau7ObservabilityService.shared.recordEvent(
             type: "telemetry_run_updated",
@@ -285,6 +297,7 @@ final class TelemetryRecorder: @unchecked Sendable {
             store.updateRunSessionID(run.id, sessionID: sessionID)
             if let liveRun {
                 publishLiveRun(liveRun)
+                startLiveTokenRateMonitorIfNeeded(for: liveRun)
             }
             Chau7ObservabilityService.shared.recordEvent(
                 type: "telemetry_run_updated",
@@ -478,6 +491,81 @@ final class TelemetryRecorder: @unchecked Sendable {
         }
 
         return CompletedRunExtractionResult(run: run, turns: turns, toolCalls: toolCalls)
+    }
+
+    private func makeLiveTokenRateMonitor(for run: TelemetryRun) -> LiveTokenRateMonitor? {
+        guard let tabID = run.tabID,
+              let sessionID = run.sessionID, !sessionID.isEmpty else { return nil }
+        let provider = run.provider.lowercased()
+
+        if provider.contains("claude") || provider == "anthropic" {
+            let files = ClaudeCodeContentProvider().liveTranscriptFiles(sessionID: sessionID, cwd: run.cwd)
+            guard !files.isEmpty else { return nil }
+            return LiveTokenRateMonitor(tabID: tabID, provider: .claude, files: files)
+        }
+
+        if provider.contains("codex") || provider == "openai" || provider == "gpt" {
+            guard let file = CodexContentProvider().findRolloutFile(sessionID: sessionID, startedAt: run.startedAt) else {
+                return nil
+            }
+            return LiveTokenRateMonitor(tabID: tabID, provider: .codex, files: [file])
+        }
+
+        return nil
+    }
+
+    private func startLiveTokenRateMonitorIfNeeded(for run: TelemetryRun) {
+        guard let tabID = run.tabID,
+              let sessionID = run.sessionID, !sessionID.isEmpty else { return }
+        lock.lock()
+        guard activeRuns[tabID] == run.id,
+              liveTokenRateMonitors[tabID] == nil,
+              pendingTokenRateMonitorRunIDs.insert(run.id).inserted else {
+            lock.unlock()
+            return
+        }
+        lock.unlock()
+        resolveLiveTokenRateMonitor(for: run, attempt: 0)
+    }
+
+    private func resolveLiveTokenRateMonitor(for run: TelemetryRun, attempt: Int) {
+        tokenRateMonitorQueue.asyncAfter(deadline: .now() + (attempt == 0 ? 0 : 1)) { [weak self] in
+            guard let self, let tabID = run.tabID else { return }
+            lock.lock()
+            let isCurrentRun = activeRuns[tabID] == run.id
+            let alreadyMonitoring = liveTokenRateMonitors[tabID] != nil
+            lock.unlock()
+            guard isCurrentRun, !alreadyMonitoring else {
+                lock.lock()
+                pendingTokenRateMonitorRunIDs.remove(run.id)
+                lock.unlock()
+                return
+            }
+
+            if let monitor = makeLiveTokenRateMonitor(for: run) {
+                lock.lock()
+                guard activeRuns[tabID] == run.id,
+                      liveTokenRateMonitors[tabID] == nil else {
+                    pendingTokenRateMonitorRunIDs.remove(run.id)
+                    lock.unlock()
+                    monitor.stop()
+                    return
+                }
+                liveTokenRateMonitors[tabID] = monitor
+                pendingTokenRateMonitorRunIDs.remove(run.id)
+                lock.unlock()
+                monitor.start()
+                return
+            }
+
+            if attempt < 15 {
+                resolveLiveTokenRateMonitor(for: run, attempt: attempt + 1)
+            } else {
+                lock.lock()
+                pendingTokenRateMonitorRunIDs.remove(run.id)
+                lock.unlock()
+            }
+        }
     }
 
     private func finalizeCompletedRun(

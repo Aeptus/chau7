@@ -149,13 +149,19 @@ func (p *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	copyHeaders(resp.Header, w.Header())
 	w.WriteHeader(resp.StatusCode)
 
-	// Stream response while capturing for metadata extraction.
-	// Wrap in firstByteReader to measure time-to-first-token (TTFT).
-	var responseBuffer bytes.Buffer
-	fbr := &firstByteReader{reader: resp.Body, start: startTime}
-	tee := io.TeeReader(fbr, &responseBuffer)
+	// Stream response while capturing metadata. The observer only counts
+	// generated text deltas; it never stores or forwards response content.
 	isStreaming := IsStreamingRequest(provider, bodyBytes) ||
 		strings.HasPrefix(strings.ToLower(resp.Header.Get("Content-Type")), "text/event-stream")
+	var responseBuffer bytes.Buffer
+	fbr := &firstByteReader{reader: resp.Body, start: startTime}
+	var captureWriters []io.Writer = []io.Writer{&responseBuffer}
+	if isStreaming && headers.TabID != "" && headers.TabID != "default" && p.ipc != nil {
+		captureWriters = append(captureWriters, newStreamingRateObserver(
+			provider, headers.TabID, model, p.ipc,
+		))
+	}
+	tee := io.TeeReader(fbr, io.MultiWriter(captureWriters...))
 
 	// Copy response body to the client. Active SSE responses must flush every
 	// upstream read so provider events and keepalives reach the CLI immediately.
@@ -221,7 +227,6 @@ func (p *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				provider, r.URL.Path, summary.Total, summary.Estimated, summary.EstimatedPercent(), isStreaming, len(bodyBytes), len(respBody))
 		}
 	}
-
 	usagePresent := respMeta.InputTokens > 0 ||
 		respMeta.OutputTokens > 0 ||
 		respMeta.CacheCreationInputTokens > 0 ||
@@ -271,6 +276,8 @@ func (p *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		Endpoint:                 r.URL.Path,
 		InputTokens:              nil,
 		OutputTokens:             nil,
+		OutputTokensEstimated:    usedTokenEstimate,
+		IsStreaming:              isStreaming,
 		CacheCreationInputTokens: nil,
 		CacheReadInputTokens:     nil,
 		ReasoningOutputTokens:    nil,
