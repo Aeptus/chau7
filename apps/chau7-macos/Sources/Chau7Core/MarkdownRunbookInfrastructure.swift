@@ -129,14 +129,14 @@ public func parseMarkdown(_ input: String) -> [MarkdownSection] {
     var sections: [MarkdownSection] = []
     let lines = input.components(separatedBy: "\n")
     var i = 0
-    var textAccum = ""
+    var textLines: [String] = []
 
     func flushText() {
-        let trimmed = textAccum.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmed = textLines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
         if !trimmed.isEmpty {
             sections.append(MarkdownSection(kind: .text(trimmed)))
         }
-        textAccum = ""
+        textLines.removeAll(keepingCapacity: true)
     }
 
     while i < lines.count {
@@ -199,7 +199,7 @@ public func parseMarkdown(_ input: String) -> [MarkdownSection] {
             continue
         }
 
-        textAccum += line + "\n"
+        textLines.append(line)
         i += 1
     }
 
@@ -208,12 +208,20 @@ public func parseMarkdown(_ input: String) -> [MarkdownSection] {
 }
 
 public func computePlanProgress(from content: String) -> PlanProgress {
-    let sections = parseMarkdown(content)
-    let checkboxStates = sections.compactMap { section -> Bool? in
-        guard case let .checkboxItem(checked, _, _) = section.kind else { return nil }
-        return checked
+    var checked = 0
+    var total = 0
+    var insideFence = false
+    for line in content.split(separator: "\n", omittingEmptySubsequences: false) {
+        if line.hasPrefix("```") {
+            insideFence.toggle()
+            continue
+        }
+        guard !insideFence else { continue }
+        guard let isChecked = checkboxState(in: line) else { continue }
+        total += 1
+        if isChecked { checked += 1 }
     }
-    return PlanProgress(checked: checkboxStates.filter { $0 }.count, total: checkboxStates.count)
+    return PlanProgress(checked: checked, total: total)
 }
 
 public func toggleCheckboxInContent(_ content: String, lineNumber: Int) -> String {
@@ -245,6 +253,29 @@ private func parseCheckboxLine(_ line: String) -> (checked: Bool, text: String)?
     guard rest.hasPrefix("] ") else { return nil }
     let text = String(rest.dropFirst(2)).trimmingCharacters(in: .whitespaces)
     return text.isEmpty ? nil : (checked, text)
+}
+
+/// Lightweight checkbox scan for progress updates while the editor is changing.
+/// It mirrors `parseCheckboxLine` without allocating MarkdownSection values or
+/// copying the checkbox text into a String.
+private func checkboxState(in line: Substring) -> Bool? {
+    let trimmed = line.drop(while: { $0 == " " || $0 == "\t" })
+    guard let first = trimmed.first, first == "-" || first == "*" else { return nil }
+    let afterBullet = trimmed.dropFirst()
+    guard afterBullet.hasPrefix(" [") else { return nil }
+    let afterBracket = afterBullet.dropFirst(2)
+    guard let marker = afterBracket.first else { return nil }
+    let checked: Bool
+    switch marker {
+    case "x", "X": checked = true
+    case " ": checked = false
+    default: return nil
+    }
+    let rest = afterBracket.dropFirst()
+    guard rest.hasPrefix("] ") else { return nil }
+    let text = rest.dropFirst(2)
+    guard text.contains(where: { !$0.isWhitespace }) else { return nil }
+    return checked
 }
 
 private func parseBulletLine(_ line: String) -> String? {

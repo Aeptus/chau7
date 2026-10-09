@@ -13,20 +13,13 @@ struct MarkdownRunbookView: View {
     /// `onContentChange`) the caller had to wire individually.
     let host: any RunbookHost
 
-    /// Cached parse output keyed by content. `body` runs on every code-block
-    /// state change (e.g. running → succeeded recolouring borders) so a
-    /// computed-every-time parse re-walks the full markdown on each tick —
-    /// expensive for long runbooks. We refresh the cache via `.task(id:)`
-    /// whenever the underlying content actually changes.
-    @State private var cachedContent: String?
-    @State private var cachedSections: [MarkdownSection] = []
+    /// A reference cache avoids reparsing the same document in both `body` and
+    /// `.task(id:)`, and on run-state-only redraws. The cache is replaced only
+    /// when the source content changes.
+    @State private var sectionCache = MarkdownSectionCache()
 
     private var sections: [MarkdownSection] {
-        if cachedContent == content { return cachedSections }
-        // Cold path on first render — `.task(id: content)` will populate the
-        // cache after this frame so all later renders for the same content
-        // hit the fast path.
-        return parseMarkdown(content)
+        sectionCache.sections(for: content)
     }
 
     var body: some View {
@@ -69,11 +62,7 @@ struct MarkdownRunbookView: View {
         }
         .background(Color(nsColor: .textBackgroundColor))
         .task(id: content) {
-            // `.task(id:)` fires once per distinct content value, including
-            // on initial appearance, so the cache is correct after the first
-            // frame and stays correct across the user's keystrokes.
-            cachedSections = parseMarkdown(content)
-            cachedContent = content
+            _ = sectionCache.sections(for: content)
         }
     }
 
@@ -125,14 +114,20 @@ struct MarkdownRunbookView: View {
                         .foregroundStyle(color(for: state))
                 }
                 Spacer()
-                Button {
-                    host.runBlock(code, lineNumber: lineNumber)
-                } label: {
-                    Label(L("pane.run", "Run"), systemImage: "play.fill")
-                        .font(.system(size: 11))
+                if RunbookShellExecution.supports(language: language) {
+                    Button {
+                        host.runBlock(code, language: language, lineNumber: lineNumber)
+                    } label: {
+                        Label(L("pane.run", "Run"), systemImage: "play.fill")
+                            .font(.system(size: 11))
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                } else {
+                    Label(L("pane.codeBlockDisplayOnly", "Display only"), systemImage: "eye")
+                        .font(.system(size: 10))
+                        .foregroundStyle(.secondary)
                 }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 6)
@@ -223,5 +218,17 @@ struct MarkdownRunbookView: View {
         case .succeeded: return .green
         case .failed: return .red
         }
+    }
+}
+
+private final class MarkdownSectionCache {
+    private var cachedContent: String?
+    private var cachedSections: [MarkdownSection] = []
+
+    func sections(for content: String) -> [MarkdownSection] {
+        guard cachedContent != content else { return cachedSections }
+        cachedSections = parseMarkdown(content)
+        cachedContent = content
+        return cachedSections
     }
 }

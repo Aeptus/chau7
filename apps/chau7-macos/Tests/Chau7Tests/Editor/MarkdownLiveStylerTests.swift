@@ -5,6 +5,7 @@ import XCTest
 /// Covers the pure markdown span parser behind the editor's live "light" rendering.
 /// Asserts on (kind, matched-substring) pairs so the structure is verified without
 /// any AppKit fonts/colors.
+@MainActor
 final class MarkdownLiveStylerTests: XCTestCase {
     private func runs(_ markdown: String) -> [(MarkdownLiveStyler.Kind, String)] {
         let ns = markdown as NSString
@@ -122,5 +123,106 @@ final class MarkdownLiveStylerTests: XCTestCase {
                 "run \(run) out of bounds for length \(ns.length)"
             )
         }
+    }
+
+    func testPartialParsingCarriesFencedCodeState() {
+        let markdown = "before\n**inside code**\nafter"
+        let ns = markdown as NSString
+        let contentRange = ns.range(of: "**inside code**")
+        let lineRange = ns.lineRange(for: contentRange)
+
+        let partialRuns = MarkdownLiveStyler.styleRuns(
+            in: ns,
+            range: lineRange,
+            startsInsideFence: true
+        )
+
+        XCTAssertTrue(partialRuns.contains { $0.kind == .codeFence && NSIntersectionRange($0.range, contentRange).length > 0 })
+        XCTAssertFalse(partialRuns.contains { $0.kind == .bold })
+    }
+
+    func testPartialApplyImmediatelyReplacesOldFormatting() {
+        let storage = NSTextStorage(string: "**bold**")
+        let theme = MarkdownLiveStyler.defaultTheme(fontSize: 13)
+        MarkdownLiveStyler.apply(to: storage, theme: theme)
+        let oldFont = storage.attribute(.font, at: 2, effectiveRange: nil) as? NSFont
+        XCTAssertTrue(oldFont?.fontDescriptor.symbolicTraits.contains(.bold) == true)
+
+        storage.replaceCharacters(in: NSRange(location: 0, length: storage.length), with: "plain")
+        MarkdownLiveStyler.apply(to: storage, theme: theme, around: NSRange(location: 2, length: 1))
+
+        let newFont = storage.attribute(.font, at: 2, effectiveRange: nil) as? NSFont
+        let newColor = storage.attribute(.foregroundColor, at: 2, effectiveRange: nil) as? NSColor
+        XCTAssertFalse(newFont?.fontDescriptor.symbolicTraits.contains(.bold) == true)
+        XCTAssertEqual(newColor, theme.textColor)
+    }
+
+    func testMarkdownEditorAppliesRenderingDuringTheChangeCallback() {
+        let parent = EnhancedEditorView(
+            text: .constant("plain"),
+            selectedRange: .constant(NSRange(location: 0, length: 0)),
+            language: .detect(from: "notes.md"),
+            config: {
+                var config = EditorConfig.default
+                config.autoIndent = false
+                config.bracketMatching = false
+                return config
+            }(),
+            onSave: nil,
+            scrollToLine: nil,
+            onScrollHandled: nil
+        )
+        let textView = NSTextView(frame: .zero)
+        textView.string = "plain"
+        let coordinator = EditorCoordinator(parent: parent)
+        coordinator.textView = textView
+        textView.delegate = coordinator
+
+        XCTAssertTrue(coordinator.textView(
+            textView,
+            shouldChangeTextIn: NSRange(location: 0, length: 5),
+            replacementString: "**bold**"
+        ))
+        textView.string = "**bold**"
+        coordinator.textDidChange(Notification(name: NSText.didChangeNotification, object: textView))
+
+        let font = textView.textStorage?.attribute(.font, at: 2, effectiveRange: nil) as? NSFont
+        XCTAssertTrue(font?.fontDescriptor.symbolicTraits.contains(.bold) == true)
+    }
+
+    func testRemovingMarkdownFenceRestylesEverythingAfterItImmediately() {
+        let markdown = "```\n**inside code**\n```\n**after**"
+        let parent = EnhancedEditorView(
+            text: .constant(markdown),
+            selectedRange: .constant(NSRange(location: 0, length: 0)),
+            language: .detect(from: "notes.md"),
+            config: {
+                var config = EditorConfig.default
+                config.autoIndent = false
+                config.bracketMatching = false
+                return config
+            }(),
+            onSave: nil,
+            scrollToLine: nil,
+            onScrollHandled: nil
+        )
+        let textView = NSTextView(frame: .zero)
+        textView.string = markdown
+        let coordinator = EditorCoordinator(parent: parent)
+        coordinator.textView = textView
+        textView.delegate = coordinator
+        MarkdownLiveStyler.apply(
+            to: textView.textStorage!,
+            theme: MarkdownLiveStyler.defaultTheme(fontSize: 13)
+        )
+
+        let oldFence = (markdown as NSString).range(of: "```", options: .backwards)
+        XCTAssertTrue(coordinator.textView(textView, shouldChangeTextIn: oldFence, replacementString: ""))
+        textView.textStorage?.replaceCharacters(in: oldFence, with: "")
+        coordinator.textDidChange(Notification(name: NSText.didChangeNotification, object: textView))
+
+        let tail = (textView.string as NSString).range(of: "**after**")
+        let font = textView.textStorage?.attribute(.font, at: tail.location, effectiveRange: nil) as? NSFont
+        XCTAssertFalse(font?.fontDescriptor.symbolicTraits.contains(.bold) == true)
     }
 }

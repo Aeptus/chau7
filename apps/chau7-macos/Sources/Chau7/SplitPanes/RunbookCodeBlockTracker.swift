@@ -18,6 +18,31 @@ enum RunbookCodeBlockState {
     case failed
 }
 
+/// Only shell-labelled (or unlabelled) fences are executable. Markdown files
+/// commonly contain Swift, Python, JSON, and transcript examples; sending those
+/// to the user's shell is surprising and potentially destructive.
+enum RunbookShellExecution {
+    private static let supportedLanguages = Set(["bash", "sh", "zsh", "shell"])
+
+    static func supports(language: String?) -> Bool {
+        guard let language else { return true }
+        let firstToken = language.split(whereSeparator: { $0.isWhitespace || $0 == "," }).first
+        guard let firstToken else { return true }
+        let normalized = String(firstToken)
+            .trimmingCharacters(in: CharacterSet(charactersIn: ".{}"))
+            .lowercased()
+        return supportedLanguages.contains(normalized)
+    }
+
+    static func blocks(in content: String) -> [(line: Int, code: String)] {
+        parseMarkdown(content).compactMap { section in
+            guard case let .codeBlock(language, code, line) = section.kind,
+                  supports(language: language) else { return nil }
+            return (line, code)
+        }
+    }
+}
+
 // MARK: - Tracker
 
 /// Owns runbook code-block state and the markdown-runbook sequential runner
