@@ -155,7 +155,7 @@ func (p *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		strings.HasPrefix(strings.ToLower(resp.Header.Get("Content-Type")), "text/event-stream")
 	var responseBuffer bytes.Buffer
 	fbr := &firstByteReader{reader: resp.Body, start: startTime}
-	var captureWriters []io.Writer = []io.Writer{&responseBuffer}
+	captureWriters := []io.Writer{&responseBuffer}
 	if isStreaming && headers.TabID != "" && headers.TabID != "default" && p.ipc != nil {
 		captureWriters = append(captureWriters, newStreamingRateObserver(
 			provider, headers.TabID, model, p.ipc,

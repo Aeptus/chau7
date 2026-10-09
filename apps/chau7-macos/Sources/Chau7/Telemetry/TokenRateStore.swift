@@ -81,13 +81,7 @@ final class TokenRateStore {
             updatedAt: updatedAt
         )
 
-        if readingsByTabID.count > 512 {
-            let retainedIDs = Set(readingsByTabID
-                .sorted { $0.value.updatedAt > $1.value.updatedAt }
-                .prefix(384)
-                .map { $0.key })
-            readingsByTabID = readingsByTabID.filter { retainedIDs.contains($0.key) }
-        }
+        pruneReadingsIfNeeded()
     }
 
     func recordStreamEstimate(
@@ -111,6 +105,16 @@ final class TokenRateStore {
             source: .proxyStreamEstimate,
             updatedAt: updatedAt
         )
+        pruneReadingsIfNeeded()
+    }
+
+    private func pruneReadingsIfNeeded() {
+        guard readingsByTabID.count > 512 else { return }
+        let retainedIDs = Set(readingsByTabID
+            .sorted { $0.value.updatedAt > $1.value.updatedAt }
+            .prefix(384)
+            .map { $0.key })
+        readingsByTabID = readingsByTabID.filter { retainedIDs.contains($0.key) }
     }
 
     private func shouldReplaceReading(for tabID: String, source: TokenRateSource, updatedAt: Date) -> Bool {
