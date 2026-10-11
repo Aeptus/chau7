@@ -187,6 +187,17 @@ pub(super) fn section(ctx: &SectionContext) -> gpui::Div {
 
     let appearance = titled("Tab Appearance", chrome)
         .child(row(
+            "Provider Service Health Border",
+            toggle("provider-health-border", s.show_provider_health_border, chrome, |s, v| {
+                s.tabs.show_provider_health_border = v
+            }),
+            chrome,
+        ))
+        .child(div().text_xs().text_color(chrome.text_muted).child(crate::l10n::l(
+            "settings.tabs.providerHealthBorder.help",
+            "Show a thin orange border for provider degradation and a red border for outages on the focused AI tab",
+        )))
+        .child(row(
             "Last Command Badge",
             toggle("cmd-badge", s.last_command_badge, chrome, |s, v| {
                 s.tabs.last_command_badge = v

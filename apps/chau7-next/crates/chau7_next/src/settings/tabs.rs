@@ -108,6 +108,8 @@ pub struct TabsSettings {
     pub allow_cto_toggle: bool,
     /// `tabs.display.showBroadcastIndicator`, default on.
     pub show_broadcast_indicator: bool,
+    /// `tabs.display.showProviderHealthBorder`, default on.
+    pub show_provider_health_border: bool,
     /// `feature.lastCommandBadge`, default on.
     pub last_command_badge: bool,
 }
@@ -134,6 +136,7 @@ impl Default for TabsSettings {
             show_cto_indicator: true,
             allow_cto_toggle: true,
             show_broadcast_indicator: true,
+            show_provider_health_border: true,
             last_command_badge: true,
         }
     }
@@ -153,7 +156,7 @@ impl TabsSettings {
     }
 
     /// The boolean `[next]` keys, with a getter and a setter each.
-    fn bools() -> [BoolField; 13] {
+    fn bools() -> [BoolField; 14] {
         [
             (
                 "new_tabs_use_current_directory",
@@ -211,6 +214,11 @@ impl TabsSettings {
                 "show_tab_broadcast_indicator",
                 |s| s.show_broadcast_indicator,
                 |s, v| s.show_broadcast_indicator = v,
+            ),
+            (
+                "show_provider_health_border",
+                |s| s.show_provider_health_border,
+                |s, v| s.show_provider_health_border = v,
             ),
         ]
     }
@@ -321,6 +329,7 @@ mod tests {
             show_cto_indicator: false,
             allow_cto_toggle: false,
             show_broadcast_indicator: false,
+            show_provider_health_border: false,
             last_command_badge: false,
         };
         assert_eq!(round_trip(&tabs), tabs);
@@ -341,6 +350,7 @@ mod tests {
         assert!(tabs.always_show_tab_bar);
         assert!(!tabs.always_show_toolbar_in_fullscreen);
         assert!(tabs.new_tabs_use_current_directory);
+        assert!(tabs.show_provider_health_border);
         assert!(!tabs.confirm_close);
         assert_eq!(tabs.repo_grouping, RepoGroupingMode::Off);
     }

@@ -565,6 +565,16 @@ impl SettingsView {
                             d.child(
                                 widgets::button("reset-section", "Reset to Defaults", chrome)
                                     .on_click(move |_, _, cx| {
+                                        if section == SettingsSection::DangerousCommands {
+                                            mine::guard_update(cx, |guard| {
+                                                guard.is_enabled = true;
+                                                guard.clear_allow_list();
+                                                guard.clear_block_list();
+                                            });
+                                        }
+                                        if section == SettingsSection::SnippetsTools {
+                                            crate::repository::reset_discovered_repositories(cx);
+                                        }
                                         update(cx, |s| s.reset_section(section))
                                     }),
                             )

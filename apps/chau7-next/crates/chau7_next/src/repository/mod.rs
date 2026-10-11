@@ -9,7 +9,7 @@
 //!
 //! All access goes through one mutex so the hover card can read from `&App`.
 
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -58,6 +58,7 @@ struct Inner {
     ai: Option<AiStatsProvider>,
     /// Shell OSC9 reports fence filesystem probes captured before them.
     shell_report_generation: u64,
+    history_generation: u64,
 }
 impl Inner {
     fn report_shell_root(&mut self, root: &str, branch: Option<&str>) -> Option<String> {
@@ -89,15 +90,19 @@ impl Inner {
 
 #[derive(Default)]
 struct Jobs {
-    probes: BTreeSet<String>,
+    probes: BTreeMap<String, u64>,
     metadata: BTreeMap<String, RepoMetadata>,
-    recent: Vec<String>,
+    recent: Vec<(u64, String)>,
+    reset_recent: bool,
     writing: bool,
     closed: bool,
 }
 impl Jobs {
     fn is_empty(&self) -> bool {
-        self.probes.is_empty() && self.metadata.is_empty() && self.recent.is_empty()
+        self.probes.is_empty()
+            && self.metadata.is_empty()
+            && self.recent.is_empty()
+            && !self.reset_recent
     }
 }
 
@@ -208,6 +213,11 @@ fn worker(
         let mut state = inner.lock();
         // Shell observations made during disk bootstrap remain authoritative,
         // including an explicit detached-HEAD branch cleared to None.
+        let loaded = if state.history_generation == 0 {
+            loaded
+        } else {
+            KnownRepoIdentities::default()
+        };
         let observed = state.identities.clone();
         let observed_roots = observed.roots();
         state.identities.restore(
@@ -229,7 +239,7 @@ fn worker(
         }
     }
     loop {
-        let (probes, metadata, recent) = {
+        let (probes, metadata, recent, reset_recent) = {
             let mut pending = jobs.0.lock();
             while pending.is_empty() && !pending.closed {
                 jobs.1.wait(&mut pending);
@@ -242,25 +252,47 @@ fn worker(
                 std::mem::take(&mut pending.probes),
                 std::mem::take(&mut pending.metadata),
                 std::mem::take(&mut pending.recent),
+                std::mem::take(&mut pending.reset_recent),
             )
         };
         write_saves(&root, metadata.into_iter().collect());
+        if reset_recent
+            && let Err(error) = repo_metadata::save_recent(&root.recent_repos_file(), &[])
+        {
+            log::warn!("Recent repository reset: {error}");
+        }
         if !recent.is_empty() {
             let mut saved = repo_metadata::load_recent(&root.recent_repos_file());
-            for path in recent {
-                repo_metadata::record_recent(&mut saved, &path);
-                inner
-                    .lock()
-                    .identities
-                    .record(&path, None, Some(Utc::now()), true);
+            let mut changed = false;
+            {
+                let mut state = inner.lock();
+                for (generation, path) in recent {
+                    if generation != state.history_generation {
+                        continue;
+                    }
+                    repo_metadata::record_recent(&mut saved, &path);
+                    state.identities.record(&path, None, Some(Utc::now()), true);
+                    changed = true;
+                }
+                if changed {
+                    identities.save(state.identities.clone());
+                }
             }
-            identities.save(inner.lock().identities.clone());
-            if let Err(error) = repo_metadata::save_recent(&root.recent_repos_file(), &saved) {
+            if changed
+                && let Err(error) = repo_metadata::save_recent(&root.recent_repos_file(), &saved)
+            {
                 log::warn!("Recent repository persistence: {error}");
             }
         }
-        for path in probes {
-            let captured_generation = inner.lock().shell_report_generation;
+        for (path, history_generation) in probes {
+            let captured_generation = {
+                let mut state = inner.lock();
+                if state.history_generation != history_generation {
+                    state.in_flight.remove(&path);
+                    continue;
+                }
+                state.shell_report_generation
+            };
             // Filesystem work runs before acquiring the shared state lock.
             let found = procinfo::git_root(Path::new(&path))
                 .map(|root| root.to_string_lossy().into_owned());
@@ -331,7 +363,10 @@ fn worker(
                 }
             };
             if confirmed && let Some(repo) = found {
-                enqueue_recent(&jobs, repo);
+                let state = inner.lock();
+                if state.accepts_probe(captured_generation) {
+                    enqueue_recent(&jobs, repo, state.history_generation);
+                }
             }
             inner.lock().in_flight.remove(&path);
         }
@@ -350,10 +385,10 @@ fn write_saves(data: &chau7_next_core::data_root::DataRoot, saves: Vec<(String, 
         }
     }
 }
-fn enqueue_recent(jobs: &(Mutex<Jobs>, Condvar), root: String) {
+fn enqueue_recent(jobs: &(Mutex<Jobs>, Condvar), root: String, generation: u64) {
     let mut pending = jobs.0.lock();
-    pending.recent.retain(|path| path != &root);
-    pending.recent.push(root);
+    pending.recent.retain(|(_, path)| path != &root);
+    pending.recent.push((generation, root));
     if pending.recent.len() > known_identity::MAX_IDENTITIES {
         pending.recent.remove(0);
     }
@@ -362,9 +397,33 @@ fn enqueue_recent(jobs: &(Mutex<Jobs>, Condvar), root: String) {
 /// Remember a root on the same serial worker, avoiding concurrent read/write races.
 pub fn record_recent(root: &str, cx: &App) {
     if let Some(registry) = registry(cx) {
-        enqueue_recent(&registry.jobs, root.into());
+        let state = registry.inner.lock();
+        enqueue_recent(&registry.jobs, root.into(), state.history_generation);
     }
 }
+/// Explicit settings reset only: fence queued and in-flight observations while
+/// the existing serial worker clears the owned recent-repository file.
+pub fn reset_discovered_repositories(cx: &App) {
+    if let Some(registry) = registry(cx) {
+        reset_registry(registry);
+    }
+}
+
+fn reset_registry(registry: &Repositories) {
+    let mut state = registry.inner.lock();
+    state.history_generation = state.history_generation.wrapping_add(1);
+    state.shell_report_generation = state.shell_report_generation.wrapping_add(1);
+    state.identities.clear();
+    state.last_probe.clear();
+    state.in_flight.clear();
+    registry.identity_writer.reset();
+    let mut jobs = registry.jobs.0.lock();
+    jobs.recent.clear();
+    jobs.probes.clear();
+    jobs.reset_recent = true;
+    registry.jobs.1.notify_one();
+}
+
 /// Up to fifty durable identities, rather than the twenty-item recent list.
 pub fn known_roots(cx: &App) -> Vec<String> {
     registry(cx)
@@ -429,7 +488,12 @@ pub fn resolve(dir: &Path, cx: &App) -> Option<String> {
             state.last_probe.remove(&oldest);
         }
         state.last_probe.insert(path.clone(), Instant::now());
-        registry.jobs.0.lock().probes.insert(path);
+        registry
+            .jobs
+            .0
+            .lock()
+            .probes
+            .insert(path, state.history_generation);
         registry.jobs.1.notify_one();
     }
     known
@@ -441,8 +505,7 @@ pub fn report_shell_root(root: &str, branch: Option<&str>, cx: &App) -> Option<S
     let mut state = registry.inner.lock();
     let root = state.report_shell_root(root, branch)?;
     registry.identity_writer.save(state.identities.clone());
-    drop(state);
-    enqueue_recent(&registry.jobs, root.clone());
+    enqueue_recent(&registry.jobs, root.clone(), state.history_generation);
     Some(root)
 }
 
@@ -574,7 +637,7 @@ mod identity_tests {
         });
         let probe = |path: String| {
             let mut pending = jobs.0.lock();
-            pending.probes.insert(path);
+            pending.probes.insert(path, 0);
             jobs.1.notify_one();
             while !pending.is_empty() || pending.writing {
                 jobs.1.wait(&mut pending);
@@ -650,6 +713,80 @@ mod identity_tests {
         thread.join().unwrap();
         writer.flush();
         drop(writer);
+        std::fs::remove_dir_all(home).unwrap();
+    }
+    #[test]
+    fn explicit_reset_fences_bootstrap_and_queued_history_then_accepts_new_observations() {
+        let home =
+            std::env::temp_dir().join(format!("c7n-registry-reset-{}", uuid::Uuid::new_v4()));
+        let data = chau7_next_core::data_root::DataRoot::with_home(home.clone(), true);
+        data.ensure_dirs().unwrap();
+        let old_root = home.join("old").to_string_lossy().into_owned();
+        let new_root = home.join("new").to_string_lossy().into_owned();
+        let mut old = KnownRepoIdentities::default();
+        old.record(&old_root, Some("old"), Some(Utc::now()), true);
+        let persisted = IdentityWriter::new(data.clone());
+        persisted.save(old);
+        persisted.flush();
+        drop(persisted);
+        repo_metadata::save_recent(&data.recent_repos_file(), std::slice::from_ref(&old_root))
+            .unwrap();
+        let registry = Repositories {
+            inner: Arc::new(Mutex::new(Inner::default())),
+            jobs: Arc::new((Mutex::new(Jobs::default()), Condvar::new())),
+            identity_writer: Arc::new(IdentityWriter::new(data.clone())),
+            quitting: AtomicBool::new(false),
+        };
+        let before = registry.inner.lock().shell_report_generation;
+        enqueue_recent(&registry.jobs, old_root.clone(), 0);
+        reset_registry(&registry);
+        assert!(!registry.inner.lock().accepts_probe(before));
+        assert!(registry.inner.lock().identities.roots().is_empty());
+        // Emulate a stale batch retained by an in-flight worker before reset.
+        enqueue_recent(&registry.jobs, old_root.clone(), 0);
+        std::fs::create_dir_all(Path::new(&old_root).join(".git")).unwrap();
+        std::fs::write(
+            Path::new(&old_root).join(".git/HEAD"),
+            "ref: refs/heads/stale\n",
+        )
+        .unwrap();
+        registry.jobs.0.lock().probes.insert(old_root.clone(), 0);
+        let inner = registry.inner.clone();
+        let jobs = registry.jobs.clone();
+        let writer = registry.identity_writer.clone();
+        let root = data.clone();
+        let thread = std::thread::spawn(move || worker(root, inner, jobs, writer));
+        let drain = || {
+            let mut pending = registry.jobs.0.lock();
+            while !pending.is_empty() || pending.writing {
+                registry.jobs.1.wait(&mut pending);
+            }
+            drop(pending);
+            registry.identity_writer.flush();
+        };
+        drain();
+        assert!(registry.inner.lock().identities.roots().is_empty());
+        assert!(repo_metadata::load_recent(&data.recent_repos_file()).is_empty());
+        assert!(known_identity::load(&data, &[]).unwrap().roots().is_empty());
+        {
+            let mut state = registry.inner.lock();
+            state.report_shell_root(&new_root, Some("fresh"));
+            registry.identity_writer.save(state.identities.clone());
+            enqueue_recent(&registry.jobs, new_root.clone(), state.history_generation);
+        }
+        drain();
+        assert_eq!(
+            known_identity::load(&data, &[]).unwrap().roots(),
+            vec![new_root.clone()]
+        );
+        assert_eq!(
+            repo_metadata::load_recent(&data.recent_repos_file()),
+            vec![new_root]
+        );
+        registry.jobs.0.lock().closed = true;
+        registry.jobs.1.notify_one();
+        thread.join().unwrap();
+        drop(registry);
         std::fs::remove_dir_all(home).unwrap();
     }
 }

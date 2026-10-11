@@ -2579,12 +2579,28 @@ fn feedback_provider(event: &AiEvent) -> Option<String> {
     chau7_next_core::ai::resume::normalize_provider_name(&event.tool)
         .or_else(|| chau7_next_core::ai::resume::normalize_provider_name(event.source.raw_value()))
 }
+fn feedback_owner_accepts_kind(kind: &str, is_live: bool) -> bool {
+    is_live || matches!(kind, "turn_completed" | "finished")
+}
+fn feedback_target_matches(
+    target: Option<uuid::Uuid>,
+    metadata_uuid: uuid::Uuid,
+    tab: crate::tab_bar::TabId,
+    native_tab_identifier: &str,
+) -> bool {
+    target.is_none_or(|target| {
+        target == metadata_uuid
+            || target == crate::ai::events_out::tab_uuid(tab)
+            || uuid::Uuid::parse_str(native_tab_identifier).ok() == Some(target)
+    })
+}
 fn feedback_owner(
     event: &AiEvent,
     target: Option<uuid::Uuid>,
     exact_only: bool,
     cx: &mut gpui::App,
 ) -> Option<(uuid::Uuid, gpui::Entity<TerminalSession>)> {
+    let kind = feedback_kind(event)?;
     let provider = feedback_provider(event)?;
     let date = chau7_next_core::telemetry::date_codec::parse_iso8601(Some(&event.ts))?;
     let observed_at = date.timestamp_millis() as f64 / 1000.0;
@@ -2598,9 +2614,6 @@ fn feedback_owner(
     for window in crate::mcp::windows::windows(cx) {
         let workspace = window.workspace.read(cx);
         for uuid in workspace.mcp_tab_uuids() {
-            if target.is_some_and(|target| target != uuid) {
-                continue;
-            }
             let Some(tab) = workspace.mcp_find(uuid) else {
                 continue;
             };
@@ -2609,12 +2622,16 @@ fn feedback_owner(
             };
             for (_, entity) in panes.read(cx).pane_sessions(cx) {
                 let session = entity.read(cx);
+                if !feedback_target_matches(target, uuid, tab, &session.tab_identifier) {
+                    continue;
+                }
                 let id = event
                     .session_id
                     .as_deref()
                     .or(session.tracker.ai_session_id())
                     .unwrap_or("unbound");
                 if session.exited.is_some()
+                    || !feedback_owner_accepts_kind(kind, session.is_ai_running())
                     || !session.tracker.can_adopt_observed_ai_identity(
                         &provider,
                         id,
@@ -2662,6 +2679,77 @@ fn feedback_owner(
         }
     }
     unique_claude_owner(exact, unbound)
+}
+
+#[cfg(test)]
+mod feedback_owner_tests {
+    use super::{AiEvent, feedback_kind, feedback_owner_accepts_kind, feedback_target_matches};
+
+    #[test]
+    fn current_publishers_and_native_pane_aliases_match_only_the_actual_tab() {
+        let metadata = uuid::Uuid::new_v4();
+        let native = uuid::Uuid::new_v4();
+        let encoded = crate::ai::events_out::tab_uuid(7);
+        for target in [None, Some(metadata), Some(encoded), Some(native)] {
+            assert!(feedback_target_matches(
+                target,
+                metadata,
+                7,
+                &native.to_string()
+            ));
+        }
+        for target in [uuid::Uuid::new_v4(), crate::ai::events_out::tab_uuid(8)] {
+            assert!(!feedback_target_matches(
+                Some(target),
+                metadata,
+                7,
+                &native.to_string()
+            ));
+        }
+        assert!(!feedback_target_matches(
+            Some(native),
+            metadata,
+            7,
+            "invalid native id"
+        ));
+        assert!(feedback_target_matches(
+            Some(encoded),
+            metadata,
+            7,
+            "invalid native id"
+        ));
+    }
+
+    #[test]
+    fn inactive_exact_owner_only_accepts_completion_not_requests_or_resolutions() {
+        let alias = AiEvent::new(
+            chau7_next_core::ai::event::AiEventSource("codex".into()),
+            "response_complete",
+            "codex",
+            "",
+            "2026-10-11T12:00:00Z",
+        );
+        assert_eq!(feedback_kind(&alias), Some("turn_completed"));
+        assert!(feedback_owner_accepts_kind(
+            feedback_kind(&alias).unwrap(),
+            false
+        ));
+        for kind in ["turn_completed", "finished"] {
+            assert!(feedback_owner_accepts_kind(kind, false), "{kind}");
+        }
+        for kind in [
+            "approval_requested",
+            "permission",
+            "user_input_requested",
+            "waiting_input",
+            "approval_resolved",
+            "permission_resolved",
+            "user_input_resolved",
+        ] {
+            assert!(!feedback_owner_accepts_kind(kind, false), "{kind}");
+            assert!(feedback_owner_accepts_kind(kind, true), "{kind}");
+        }
+    }
 }
 
 /// Final projection authority: preserve the durable raw event, but never apply

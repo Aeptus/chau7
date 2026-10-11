@@ -8,6 +8,7 @@
 pub mod config;
 pub mod diff;
 pub mod language;
+pub mod live_markdown;
 pub mod markdown;
 pub mod output_highlight;
 pub mod semantic;

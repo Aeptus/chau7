@@ -9,6 +9,8 @@
 //! and Run All for `.md` files, close. Closing with unsaved, non-empty text
 //! asks Save / Don't Save / Cancel.
 
+mod live_markdown;
+
 use crate::monitoring::file_monitor::FileMonitor;
 use crate::terminal::session::TerminalSession;
 use futures::StreamExt;
@@ -27,7 +29,7 @@ use gpui::{
 };
 use gpui_kit::base::input::{
     EditorState, Enter, InputEvent, OutdentInline, RangeDecoration, RangeDecorationCollection,
-    RangeDecorationStyle, TabSize,
+    RangeDecorationStyle, TabSize, TextDecorationCollection,
 };
 use gpui_kit::component::input::Editor;
 use gpui_kit::component::{Icon, IconName};
@@ -44,6 +46,8 @@ gpui::actions!(
         SaveEditor,
         /// Move the caret to the bracket matching the one next to it.
         JumpToMatchingBracket,
+        /// Toggle Markdown source / preview inside the focused editor.
+        ToggleMarkdownMode,
     ]
 );
 
@@ -55,11 +59,13 @@ pub fn bind_keys(cx: &mut App) {
     if cfg!(target_os = "macos") {
         cx.bind_keys([
             KeyBinding::new("cmd-s", SaveEditor, Some(CONTEXT)),
+            KeyBinding::new("cmd-shift-p", ToggleMarkdownMode, Some(CONTEXT)),
             KeyBinding::new("cmd-shift-\\", JumpToMatchingBracket, Some(CONTEXT)),
         ]);
     } else {
         cx.bind_keys([
             KeyBinding::new("ctrl-s", SaveEditor, Some(CONTEXT)),
+            KeyBinding::new("ctrl-shift-p", ToggleMarkdownMode, Some(CONTEXT)),
             KeyBinding::new("ctrl-shift-\\", JumpToMatchingBracket, Some(CONTEXT)),
         ]);
     }
@@ -86,6 +92,8 @@ pub struct EditorPane {
     /// Text set by the pane itself (load, append): not a user edit.
     programmatic: bool,
     bracket: Option<RangeDecorationCollection>,
+    markdown_styles: chau7_next_core::editor::live_markdown::Document,
+    markdown_decorations: Option<TextDecorationCollection>,
     bracket_clear: Option<Task<()>>,
     last_cursor: usize,
     /// Settings changed; applied at the next render (it needs the window).
@@ -133,6 +141,7 @@ impl EditorPane {
             cx.subscribe_in(&state, window, |this, _, event: &InputEvent, window, cx| {
                 match event {
                     InputEvent::Change => {
+                        this.refresh_markdown_styles(cx);
                         if !this.programmatic && !this.dirty {
                             this.dirty = true;
                             cx.emit(SidePaneEvent::Changed);
@@ -167,6 +176,8 @@ impl EditorPane {
             load_task: None,
             programmatic: false,
             bracket: None,
+            markdown_styles: Default::default(),
+            markdown_decorations: None,
             bracket_clear: None,
             last_cursor: 0,
             settings_pending: false,
@@ -221,9 +232,35 @@ impl EditorPane {
     }
 
     fn is_markdown_file(&self) -> bool {
-        self.path
-            .as_ref()
-            .is_some_and(|p| p.to_string_lossy().ends_with(".md"))
+        self.language.id == "markdown"
+    }
+
+    /// Attribute-only updates leave EditorState text, selection and history intact.
+    fn refresh_markdown_styles(&mut self, cx: &mut Context<Self>) {
+        if !self.is_markdown_file() {
+            self.markdown_styles = Default::default();
+            if let Some(collection) = &self.markdown_decorations {
+                collection.clear(cx);
+            }
+            return;
+        }
+        let text = self.content(cx);
+        self.markdown_styles.update(&text);
+        let decorations = live_markdown::decorations(&self.markdown_styles, self.palette);
+        if let Some(collection) = &self.markdown_decorations {
+            collection.set(decorations, cx);
+        } else {
+            self.markdown_decorations = Some(self.state.update(cx, |state, cx| {
+                state.create_decorations_collection(decorations, cx)
+            }));
+        }
+    }
+
+    fn toggle_markdown_mode(&mut self, cx: &mut Context<Self>) {
+        if self.is_markdown_file() {
+            self.markdown_mode = !self.markdown_mode;
+            cx.notify();
+        }
     }
 
     // ----- settings ----------------------------------------------------
@@ -247,6 +284,7 @@ impl EditorPane {
             s.set_tab_size(tab_size(&config), cx);
         });
         self.config = config;
+        self.refresh_markdown_styles(cx);
         if changed_colors {
             self.install_highlighter(cx);
         }
@@ -254,12 +292,18 @@ impl EditorPane {
     }
 
     fn install_highlighter(&mut self, cx: &mut Context<Self>) {
-        let factory = highlight::factory(HighlightMode::Language(self.language), self.palette);
-        let id = self.language.id;
+        let language = if self.is_markdown_file() {
+            &PLAIN_TEXT
+        } else {
+            self.language
+        };
+        let factory = highlight::factory(HighlightMode::Language(language), self.palette);
+        let id = language.id;
         self.state.update(cx, |s, cx| {
             s.set_highlighter_factory(factory, cx);
             s.set_highlighter(id, cx);
         });
+        self.refresh_markdown_styles(cx);
     }
 
     // ----- files -------------------------------------------------------
@@ -343,6 +387,7 @@ impl EditorPane {
         let state = self.state.clone();
         state.update(cx, |s, cx| s.set_value(text.clone(), window, cx));
         self.programmatic = false;
+        self.refresh_markdown_styles(cx);
         if let Some(line) = line {
             self.select_line(&text, line, cx);
         }
@@ -837,8 +882,7 @@ impl EditorPane {
                 d.child(
                     header_button("editor-md-toggle", label, chrome, true).on_click(cx.listener(
                         |this, _, _, cx| {
-                            this.markdown_mode = !this.markdown_mode;
-                            cx.notify();
+                            this.toggle_markdown_mode(cx);
                         },
                     )),
                 )
@@ -1106,6 +1150,9 @@ impl Render for EditorPane {
             .on_any_mouse_down(cx.listener(|_, _, _, cx| cx.emit(SidePaneEvent::Focused)))
             .capture_action(cx.listener(Self::on_enter))
             .capture_action(cx.listener(Self::on_outdent))
+            .on_action(cx.listener(|this, _: &ToggleMarkdownMode, _, cx| {
+                this.toggle_markdown_mode(cx);
+            }))
             .on_action(cx.listener(|this, _: &SaveEditor, window, cx| {
                 this.save(window, cx).detach();
             }))
@@ -1158,5 +1205,131 @@ impl Render for EditorPane {
                 },
             )
             .child(div().flex_1().min_h_0().overflow_hidden().child(body))
+    }
+}
+
+#[cfg(test)]
+mod markdown_live_tests {
+    use super::*;
+    use gpui::{
+        AppContext, Bounds, TestAppContext, WindowBounds, WindowHandle, WindowOptions, size,
+    };
+    use gpui_kit::{base::Root, test::TestWindowExt};
+
+    fn editor(cx: &mut TestAppContext) -> (WindowHandle<Root>, Entity<EditorPane>) {
+        cx.update(|cx| {
+            gpui_kit::init(cx);
+            cx.set_global(Settings::default());
+            bind_keys(cx);
+        });
+        cx.update(|cx| {
+            let (handle, pane) = gpui_kit::open_window(
+                WindowOptions {
+                    window_bounds: Some(WindowBounds::Windowed(Bounds::new(
+                        gpui::point(px(0.), px(0.)),
+                        size(px(800.), px(480.)),
+                    ))),
+                    ..Default::default()
+                },
+                cx,
+                |window, cx| {
+                    cx.new(|cx| {
+                        let mut pane = EditorPane::new(window, cx);
+                        pane.path = Some(PathBuf::from("NOTE.MARKDOWN"));
+                        pane.language = EditorLanguage::detect("NOTE.MARKDOWN");
+                        pane.install_highlighter(cx);
+                        pane
+                    })
+                },
+            )
+            .unwrap();
+            (handle.downcast::<Root>().unwrap(), pane)
+        })
+    }
+
+    #[gpui::test]
+    fn live_attributes_leave_selection_and_actual_undo_redo_intact(cx: &mut TestAppContext) {
+        let (handle, pane) = editor(cx);
+        let state = cx.update(|cx| pane.read(cx).state.clone());
+        cx.update_window(handle.into(), |_, window, cx| {
+            window.click(("input", state.entity_id()), cx);
+            window.input("**café**", cx);
+            assert_eq!(state.read(cx).value(), "**café**");
+        })
+        .unwrap();
+        // Emitted InputEvent effects are delivered at the application update boundary.
+        cx.update(|cx| {
+            assert_eq!(pane.read(cx).markdown_styles.text(), "**café**");
+            assert!(
+                !pane
+                    .read(cx)
+                    .markdown_decorations
+                    .as_ref()
+                    .unwrap()
+                    .get_ranges(cx)
+                    .is_empty()
+            );
+        });
+        let (selected, caret) = cx
+            .update_window(handle.into(), |_, window, cx| {
+                window.press("shift-left", cx);
+                window.press("shift-left", cx);
+                let selected = state.read(cx).selected_range();
+                let caret = state.read(cx).cursor();
+                pane.update(cx, |pane, cx| pane.refresh_markdown_styles(cx));
+                assert_eq!(state.read(cx).selected_range(), selected);
+                assert_eq!(state.read(cx).cursor(), caret);
+                window.input("!", cx);
+                assert_eq!(state.read(cx).value(), "**café!");
+                (selected, caret)
+            })
+            .unwrap();
+        cx.update_window(handle.into(), |_, window, cx| {
+            window.press("secondary-z", cx);
+            assert_eq!(state.read(cx).value(), "**café**");
+            assert_eq!(state.read(cx).selected_range(), selected);
+            assert_eq!(state.read(cx).cursor(), caret);
+        })
+        .unwrap();
+        cx.update_window(handle.into(), |_, window, cx| {
+            window.press(
+                if cfg!(target_os = "macos") {
+                    "cmd-shift-z"
+                } else {
+                    "ctrl-y"
+                },
+                cx,
+            );
+            assert_eq!(state.read(cx).value(), "**café!");
+        })
+        .unwrap();
+        cx.update(|cx| assert_eq!(pane.read(cx).markdown_styles.text(), "**café!"));
+    }
+
+    #[gpui::test]
+    fn uppercase_markdown_source_preview_binding_preserves_buffer_history(cx: &mut TestAppContext) {
+        let (handle, pane) = editor(cx);
+        let state = cx.update(|cx| pane.read(cx).state.clone());
+        cx.update_window(handle.into(), |_, window, cx| {
+            window.click(("input", state.entity_id()), cx);
+            window.input("# note", cx);
+            assert!(pane.read(cx).is_markdown_file());
+            assert!(!pane.read(cx).markdown_mode);
+            window.press(
+                if cfg!(target_os = "macos") {
+                    "cmd-shift-p"
+                } else {
+                    "ctrl-shift-p"
+                },
+                cx,
+            );
+            assert!(pane.read(cx).markdown_mode);
+            assert_eq!(state.read(cx).value(), "# note");
+            pane.update(cx, |pane, cx| pane.toggle_markdown_mode(cx));
+            state.update(cx, |state, cx| state.focus(window, cx));
+            window.press("secondary-z", cx);
+            assert_eq!(state.read(cx).value(), "");
+        })
+        .unwrap();
     }
 }
