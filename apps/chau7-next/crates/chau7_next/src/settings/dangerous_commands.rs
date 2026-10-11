@@ -5,6 +5,7 @@
 //! they live in `dangerous_guard.json` (see `crate::guard`), not here.
 
 use chau7_next_core::command_risk::DEFAULT_DANGEROUS_COMMAND_PATTERNS;
+pub use chau7_next_core::command_risk::self_protect::ProtectionLevel;
 use chau7_next_core::config::RawValue;
 
 use super::{ConfigSink, ConfigSource, SettingsDomain};
@@ -49,6 +50,9 @@ pub struct DangerousCommandSettings {
     pub scope: HighlightScope,
     /// `DangerousCommandGuard.isEnabled`: ask before running a risky command.
     pub guard_enabled: bool,
+    pub protect_chau7_enabled: bool,
+    pub protect_chau7_level: ProtectionLevel,
+    pub protected_process_patterns: Vec<String>,
     /// Risky patterns; the Swift defaults until the user edits them.
     pub patterns: Vec<String>,
     /// `terminal.dangerousOutputHighlightLowPowerEnabled`
@@ -73,6 +77,9 @@ impl Default for DangerousCommandSettings {
         Self {
             scope: HighlightScope::AllOutputs,
             guard_enabled: true,
+            protect_chau7_enabled: true,
+            protect_chau7_level: ProtectionLevel::Blocking,
+            protected_process_patterns: vec!["chau7".into(), "chau7-mcp-bridge".into()],
             patterns: default_patterns(),
             highlight_low_power: true,
             highlight_idle_delay_ms: 500,
@@ -114,6 +121,48 @@ fn raw_to_string(v: &RawValue) -> String {
 
 impl SettingsDomain for DangerousCommandSettings {
     fn load(&mut self, src: &ConfigSource) {
+        if let Some(enabled) = src
+            .next("dangerous_protect_chau7_enabled")
+            .and_then(RawValue::as_bool)
+        {
+            self.protect_chau7_enabled = enabled;
+        }
+        if let Some(level) = src
+            .next("dangerous_protect_chau7_level")
+            .and_then(RawValue::as_str)
+            .and_then(ProtectionLevel::from_raw)
+        {
+            self.protect_chau7_level = level;
+        }
+        if let Some(count) = src
+            .next("dangerous_protected_process_count")
+            .and_then(RawValue::as_int)
+        {
+            self.protected_process_patterns = (0..count.clamp(0, 10_000))
+                .filter_map(|i| {
+                    src.next(&format!("dangerous_protected_process_{i}"))
+                        .and_then(RawValue::as_str)
+                })
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(str::to_string)
+                .collect();
+        }
+        // The shared Swift-style raw parser deliberately does not unescape
+        // quoted strings. A JSON-compatible TOML array preserves literal
+        // quotes/backslashes without changing that shared parser contract.
+        if let Some(patterns) = src
+            .next("dangerous_protected_process_patterns")
+            .and_then(RawValue::as_str)
+            .and_then(|text| serde_json::from_str::<Vec<String>>(text).ok())
+        {
+            self.protected_process_patterns = patterns
+                .into_iter()
+                .take(10_000)
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .collect();
+        }
         // Older Chau7 Next files had an on/off key only.
         if let Some(enabled) = src
             .next("highlight_dangerous_commands")
@@ -179,6 +228,24 @@ impl SettingsDomain for DangerousCommandSettings {
 
     fn save(&self, out: &mut ConfigSink) {
         out.set_next(
+            "dangerous_protect_chau7_enabled",
+            self.protect_chau7_enabled,
+        );
+        out.set_next(
+            "dangerous_protect_chau7_level",
+            format!("\"{}\"", self.protect_chau7_level.raw()),
+        );
+        let patterns: Vec<_> = self
+            .protected_process_patterns
+            .iter()
+            .map(|s| s.trim())
+            .filter(|s| !s.is_empty())
+            .collect();
+        out.set_next(
+            "dangerous_protected_process_patterns",
+            serde_json::to_string(&patterns).expect("string list serialization"),
+        );
+        out.set_next(
             "dangerous_highlight_scope",
             format!("\"{}\"", self.scope.raw()),
         );
@@ -224,6 +291,36 @@ mod tests {
         };
         assert_eq!(round_trip(&d), d);
         assert!(!d.patterns.is_empty());
+    }
+
+    #[test]
+    fn current_managed_process_defaults_and_owned_round_trip() {
+        let defaults = DangerousCommandSettings::default();
+        assert!(defaults.protect_chau7_enabled);
+        assert_eq!(defaults.protect_chau7_level, ProtectionLevel::Blocking);
+        assert_eq!(
+            defaults.protected_process_patterns,
+            ["chau7", "chau7-mcp-bridge"]
+        );
+        for level in ProtectionLevel::ALL {
+            let settings = DangerousCommandSettings {
+                protect_chau7_enabled: false,
+                protect_chau7_level: level,
+                protected_process_patterns: vec!["worker \"quoted\"".into(), "path\\helper".into()],
+                ..Default::default()
+            };
+            assert_eq!(round_trip(&settings), settings);
+        }
+        let empty = DangerousCommandSettings {
+            protected_process_patterns: vec![],
+            ..Default::default()
+        };
+        assert_eq!(round_trip(&empty), empty);
+        let invalid: DangerousCommandSettings = load_text(
+            "[next]\ndangerous_protect_chau7_level=\"invalid\"\ndangerous_protected_process_count=2\ndangerous_protected_process_0=\"  helper  \"\ndangerous_protected_process_1=\" \"\n",
+        );
+        assert_eq!(invalid.protect_chau7_level, ProtectionLevel::Blocking);
+        assert_eq!(invalid.protected_process_patterns, ["helper"]);
     }
 
     #[test]

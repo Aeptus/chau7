@@ -100,6 +100,40 @@ impl Snapshot {
         }
         None
     }
+
+    /// Cached self-protection context is built off the UI thread from this
+    /// same native snapshot. Cycles cannot add duplicate or unrelated names.
+    pub fn descendant_names(&self, shell_pid: u32) -> Vec<String> {
+        let mut queue: VecDeque<_> = self
+            .children
+            .get(&shell_pid)
+            .into_iter()
+            .flatten()
+            .copied()
+            .collect();
+        let mut visited = HashSet::from([shell_pid]);
+        let mut names = HashSet::new();
+        while let Some(pid) = queue.pop_front() {
+            if !visited.insert(pid) {
+                continue;
+            }
+            if let Some(row) = self.rows.get(&pid) {
+                let name = row
+                    .command
+                    .rsplit(['/', '\\'])
+                    .next()
+                    .unwrap_or(&row.command)
+                    .trim();
+                if !name.is_empty() {
+                    names.insert(name.to_string());
+                }
+            }
+            queue.extend(self.children.get(&pid).into_iter().flatten().copied());
+        }
+        let mut names: Vec<_> = names.into_iter().collect();
+        names.sort();
+        names
+    }
 }
 fn process_token(token: &str) -> String {
     normalize_token(token.rsplit(['/', '\\']).next().unwrap_or(token))
@@ -158,6 +192,20 @@ mod tests {
             command: command.into(),
             argv: argv.iter().map(|s| s.to_string()).collect(),
         }
+    }
+    #[test]
+    fn observed_descendant_names_exclude_other_shells_and_terminate_cycles() {
+        let snapshot = Snapshot::from_rows([
+            row(1, 3, "zsh", &[]),
+            row(2, 1, "/owned/chau7-next-helper", &[]),
+            row(3, 2, "C:\\owned\\mcp-bridge", &[]),
+            row(5, 9, "unrelated", &[]),
+        ]);
+        assert_eq!(
+            snapshot.descendant_names(1),
+            ["chau7-next-helper", "mcp-bridge"]
+        );
+        assert!(snapshot.descendant_names(0).is_empty());
     }
     #[test]
     fn nearest_agent_wins_over_child_tools_and_cycles_terminate() {
