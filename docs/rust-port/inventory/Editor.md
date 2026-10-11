@@ -26,7 +26,7 @@ Text highlighting and editing building blocks. `SyntaxHighlighter` colors termin
 
 | EDT-013 | Markdown source/live styling retains original text, updates spans without breaking selection/undo and supports session note/runbook headers | `Editor/MarkdownLiveStyler.swift`; `Editor/EnhancedEditorView.swift` |  | chau7_next/src/panes/editor.rs; chau7_next/src/panes/runbook.rs | partial |  |
 
-| EDT-014 | Named editor autosave toggle, 2.5 s debounce, 2 s Auto-saved status and discard cancellation; automatic defaults implemented for Next-owned plans/notes but session note locator/UI remains unported | `SplitPanes/EditorAutoSaver.swift`; `SplitPanes/SplitPaneController.swift` | EditorAutoSaverTests | chau7_next/src/panes/editor.rs; chau7_next_core/src/editor/text.rs | partial |  |
+| EDT-014 | Named editor autosave toggle, 2.5 s debounce, 2 s Auto-saved status and discard cancellation; automatic defaults for Next-owned plans/notes and stable owner-tab session note locator/UI | `SplitPanes/EditorAutoSaver.swift`; `SplitPanes/SplitPaneController.swift` | EditorAutoSaverTests | chau7_next/src/panes/editor.rs; chau7_next_core/src/editor/text.rs | done | 6943290c + coordinator e2cb9f62 complete isolated note attachment; 47 focused editor tests and strict macOS Clippy passed. Native UI acceptance remains unverified. |
 
 | EDT-015 | Detect file modification on disk, reload clean editor; dirty editor warns File changed externally. Reload? and never silently overwrites newer content | `SplitPanes/SplitPaneController.swift`; `SplitPanes/SplitPaneViews.swift` |  | chau7_next/src/panes/editor.rs; chau7_next_core/src/editor/text.rs | done |  |
 
