@@ -9,6 +9,7 @@
 //! (`settings/editor.rs`).
 
 pub mod changed_files;
+pub mod dashboard;
 pub mod diff;
 pub mod editor;
 pub mod highlight;
@@ -27,6 +28,7 @@ use crate::settings::Settings;
 use crate::theme::Chrome;
 use highlight::Palette;
 
+pub use dashboard::DashboardPane;
 pub use diff::DiffPane;
 pub use editor::EditorPane;
 pub use preview::PreviewPane;
@@ -73,6 +75,8 @@ pub enum SidePaneEvent {
         staged: bool,
     },
     PreviewFile(std::path::PathBuf),
+    /// Open an actual companion file in this pane tree.
+    OpenEditor(std::path::PathBuf),
     /// The shown file or its state changed (saved layout, titles).
     Changed,
 }
