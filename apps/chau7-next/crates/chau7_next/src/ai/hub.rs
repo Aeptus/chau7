@@ -17,7 +17,7 @@
 
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use chau7_next_core::ai::detection_state::now_secs;
 use chau7_next_core::ai::event::{AiEvent, AiEventReliability, AiEventSource, parse_line};
@@ -48,7 +48,7 @@ use crate::workspace::AppData;
 #[derive(Default)]
 pub struct AiHub {
     pub claude: ClaudeSessionTracker,
-    pub codex: CodexSessionResolver,
+    codex_candidates: Vec<Candidate>,
     claude_fallbacks: HashMap<String, Task<()>>,
     conflicts: ConflictDetector<TabId>,
     finished_blocks: HashMap<TabId, Vec<FinishedBlock>>,
@@ -67,10 +67,15 @@ struct Flags {
 }
 
 /// The tailers, moved to a background thread for each poll.
+#[derive(Default)]
 struct MonitorIo {
     flags: Option<Flags>,
     claude: Vec<FileTailer>,
     events: Vec<FileTailer>,
+    codex: CodexSessionResolver,
+    codex_history: Vec<(String, f64)>,
+    codex_candidates: Vec<Candidate>,
+    codex_resolved_at: Option<Instant>,
 }
 
 /// What one poll read.
@@ -78,6 +83,8 @@ struct MonitorIo {
 struct Batch {
     claude: Vec<ResolvedClaude>,
     events: Vec<String>,
+    notices: Vec<HistoryNotice>,
+    codex_candidates: Vec<Candidate>,
 }
 
 struct ResolvedClaude {
@@ -147,8 +154,50 @@ impl MonitorIo {
         );
     }
 
-    fn poll(&mut self, tick: u64, home: &std::path::Path) -> Batch {
-        let mut batch = Batch::default();
+    fn poll(
+        &mut self,
+        tick: u64,
+        home: &std::path::Path,
+        history: Vec<(String, f64)>,
+        mut notices: Vec<HistoryNotice>,
+    ) -> Batch {
+        // Resolve history metadata only on this existing background worker.
+        // Missing rollouts can appear after their history record, so retry at
+        // most every two seconds; positive entries use the bounded resolver.
+        if self.codex_history != history
+            || self
+                .codex_resolved_at
+                .is_none_or(|at| at.elapsed() >= Duration::from_secs(2))
+        {
+            self.codex_candidates = history
+                .iter()
+                .filter_map(|(id, timestamp)| {
+                    let mut candidate = self.codex.metadata(home, id, Some(*timestamp))?;
+                    candidate.touched_at = *timestamp;
+                    Some(candidate)
+                })
+                .collect();
+            self.codex_history = history;
+            self.codex_resolved_at = Some(Instant::now());
+        }
+        for notice in &mut notices {
+            if notice
+                .directory
+                .as_ref()
+                .is_none_or(|directory| directory.trim().is_empty())
+                && provider_key(&notice.tool) == "codex"
+            {
+                notice.directory = self
+                    .codex
+                    .metadata(home, &notice.session_id, Some(notice.timestamp))
+                    .map(|candidate| candidate.cwd);
+            }
+        }
+        let mut batch = Batch {
+            notices,
+            codex_candidates: self.codex_candidates.clone(),
+            ..Batch::default()
+        };
         for claude in &mut self.claude {
             for line in claude.poll() {
                 if let Some(event) = ResolvedClaude::from_line(&line, home) {
@@ -198,27 +247,29 @@ pub fn init(cx: &mut App) {
     cx.set_global(AiHub::default());
     let root = cx.global::<AppData>().root.clone();
     cx.spawn(async move |cx| {
-        let mut io = MonitorIo {
-            flags: None,
-            claude: Vec::new(),
-            events: Vec::new(),
-        };
+        let mut io = MonitorIo::default();
         let mut tick: u64 = 0;
         loop {
-            let (current, restart) = cx.update(|cx| {
+            let (current, restart, history, notices) = cx.update(|cx| {
                 let f = flags(&root, cx);
                 MonitoringStatus::update_if_changed(cx, |s| {
                     s.events = f.events.is_some();
                 });
                 let restart = std::mem::take(&mut cx.global_mut::<AiHub>().restart_requested);
-                (f, restart)
+                let history = history_monitor::history_entries("codex", cx)
+                    .into_iter()
+                    .rev()
+                    .take(64)
+                    .map(|entry| (entry.session_id, entry.timestamp))
+                    .collect();
+                (f, restart, history, history_monitor::take_notices(cx))
             });
             let root2 = root.clone();
             let (back, batch) = cx
                 .background_executor()
                 .spawn(async move {
                     io.configure(&root2, current, restart);
-                    let batch = io.poll(tick, root2.home());
+                    let batch = io.poll(tick, root2.home(), history, notices);
                     (io, batch)
                 })
                 .await;
@@ -235,6 +286,7 @@ pub fn init(cx: &mut App) {
 
 fn apply(batch: Batch, cx: &mut App) {
     let now = now_secs();
+    cx.global_mut::<AiHub>().codex_candidates = batch.codex_candidates;
     for record in batch.claude {
         handle_claude_event(record.event, record.transcript_owned, cx);
     }
@@ -274,7 +326,7 @@ fn apply(batch: Batch, cx: &mut App) {
         events_out::publish(event, true, cx);
     }
     // History idle monitor notices (`HistoryIdleMonitor` callbacks).
-    for notice in history_monitor::take_notices(cx) {
+    for notice in batch.notices {
         publish_history_notice(notice, cx);
     }
 }
@@ -382,13 +434,16 @@ fn event_source(tool: &str) -> AiEventSource {
 }
 
 fn history_directory(tool: &str, session: &str, cx: &mut App) -> Option<String> {
-    let root = cx.global::<AppData>().root.clone();
-    let hub = cx.global_mut::<AiHub>();
+    let hub = cx.global::<AiHub>();
     let claude_cwd = hub.claude.sessions.get(session).map(|s| s.cwd.clone());
     let codex_cwd = (provider_key(tool) == "codex")
-        .then(|| hub.codex.metadata(root.home(), session, None))
+        .then(|| {
+            hub.codex_candidates
+                .iter()
+                .find(|candidate| candidate.session_id == session)
+        })
         .flatten()
-        .map(|c| c.cwd);
+        .map(|candidate| candidate.cwd.clone());
     resolve_directory(
         tool,
         Some(session),
@@ -415,7 +470,9 @@ fn history_notice_event(notice: HistoryNotice, directory: Option<String>) -> AiE
         notice.kind,
         notice.tool.clone(),
         notice.message,
-        iso8601::now_iso8601(),
+        chrono::DateTime::from_timestamp_millis((notice.timestamp * 1000.0) as i64)
+            .map(iso8601::format_iso8601)
+            .unwrap_or_else(iso8601::now_iso8601),
     );
     ai.directory = directory;
     ai.session_id = Some(notice.session_id).filter(|s| !s.is_empty());
@@ -443,22 +500,13 @@ pub fn codex_observed_session(
     cx: &App,
 ) -> Option<String> {
     let hub = cx.try_global::<AiHub>()?;
-    let root = cx.global::<AppData>().root.clone();
-    let entries = history_monitor::history_entries("codex", cx);
-    let mut resolver = hub.codex.clone();
-    let candidates: Vec<Candidate> = entries
+    // Already resolved by MonitorIo; this capture/query path never opens
+    // provider files or clones and discards the resolver's cache.
+    let candidates: Vec<Candidate> = hub
+        .codex_candidates
         .iter()
-        .rev()
-        .take(64)
-        .filter_map(|entry| {
-            let meta = resolver.metadata(root.home(), &entry.session_id, Some(entry.timestamp))?;
-            Some(Candidate {
-                session_id: meta.session_id,
-                cwd: meta.cwd,
-                touched_at: entry.timestamp,
-            })
-        })
-        .filter(|c| !claimed.contains(&c.session_id))
+        .filter(|candidate| !claimed.contains(&candidate.session_id))
+        .cloned()
         .collect();
     best_matching_session_id(directory, reference, &candidates)
 }
@@ -567,5 +615,53 @@ mod tests {
         );
         assert!(ResolvedClaude::from_line("invalid-json", &home).is_none());
         std::fs::remove_dir_all(home).unwrap();
+    }
+    #[test]
+    fn codex_background_cache_retries_missing_rollout_and_enriches_notice() {
+        let home =
+            std::env::temp_dir().join(format!("chau7-next-codex-hub-{}", uuid::Uuid::new_v4()));
+        let day = home.join(".codex/sessions/2026/01/01");
+        std::fs::create_dir_all(&day).unwrap();
+        let history = vec![("s1".to_string(), 123.0)];
+        let mut io = MonitorIo::default();
+        assert!(
+            io.poll(1, &home, history.clone(), vec![])
+                .codex_candidates
+                .is_empty()
+        );
+        std::fs::write(
+            day.join("rollout-s1.jsonl"),
+            serde_json::json!({"type":"session_meta","payload":{"id":"s1","cwd":"/owned-repo"}})
+                .to_string(),
+        )
+        .unwrap();
+        // An unchanged history does not rescan every UI refresh.
+        assert!(
+            io.poll(1, &home, history.clone(), vec![])
+                .codex_candidates
+                .is_empty()
+        );
+        io.codex_resolved_at = Instant::now().checked_sub(Duration::from_secs(3));
+        let notice = HistoryNotice {
+            kind: "finished",
+            tool: "Codex".into(),
+            session_id: "s1".into(),
+            message: "finished".into(),
+            directory: None,
+            timestamp: 123.0,
+        };
+        let batch = io.poll(1, &home, history.clone(), vec![notice]);
+        assert_eq!(batch.codex_candidates[0].cwd, "/owned-repo");
+        assert_eq!(batch.codex_candidates[0].touched_at, 123.0);
+        assert_eq!(batch.notices[0].directory.as_deref(), Some("/owned-repo"));
+        let event =
+            history_notice_event(batch.notices[0].clone(), batch.notices[0].directory.clone());
+        assert_eq!(iso8601::parse_iso8601(&event.ts).unwrap().timestamp(), 123);
+        std::fs::remove_dir_all(&home).unwrap();
+        // Queries consume an immutable measured snapshot even after files vanish.
+        assert_eq!(
+            io.poll(1, &home, history, vec![]).codex_candidates[0].session_id,
+            "s1"
+        );
     }
 }
