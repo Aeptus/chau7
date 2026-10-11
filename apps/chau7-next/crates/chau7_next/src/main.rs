@@ -209,10 +209,12 @@ fn main() {
         memory_pressure::start(cx);
         views::launch(cx);
         hang_watchdog::start(cx);
+        permission_center::start(cx);
         performance::start(cx);
 
         cx.on_app_quit(|cx| {
             memory_pressure::stop(cx);
+            permission_center::stop(cx);
             save_session(cx, true);
             repository::flush(cx);
             history::recorder::flush_on_quit();

@@ -145,6 +145,8 @@ pub struct TerminalSession {
     latency: RefCell<LatencyTracker>,
     /// Bytes of output the last refresh processed (output bursts, TRM-055).
     pub last_output_bytes: usize,
+    /// Actual PTY bytes only, bounded to 16 KiB for failing-command permission diagnosis.
+    permission_output_tail: chau7_next_core::permission_center::PermissionOutputTail,
     /// Bookmarks of this session (TRM-057).
     bookmarks: BookmarkList,
     /// Resume command waiting to be typed at the prompt (TRM-010).
@@ -505,6 +507,7 @@ impl TerminalSession {
             pending_input: RefCell::new(Vec::new()),
             latency: RefCell::new(LatencyTracker::new()),
             last_output_bytes: 0,
+            permission_output_tail: Default::default(),
             bookmarks: BookmarkList::new(),
             pending_prefill: None,
             prefill_retries: 0,
@@ -570,6 +573,7 @@ impl TerminalSession {
         };
         let (output, output_at) = std::mem::take(&mut *self.output.lock());
         self.last_output_bytes = output.len();
+        self.permission_output_tail.push(&output);
         if let Some(at) = output_at {
             // Output latency runs from the bytes' arrival to the frame that
             // shows them (`mark_frame_drawn`); a measure no frame closed
@@ -874,6 +878,14 @@ impl TerminalSession {
                         self.schedule_dev_check(check, cx);
                     }
                     if let Some(code) = exit_code {
+                        if code != 0 {
+                            crate::permission_center::report_command_denial(
+                                code,
+                                &self.permission_output_tail.text(),
+                                self.tracker.current_directory(),
+                                cx,
+                            );
+                        }
                         self.last_command = Some(LastCommand {
                             exit_code: code,
                             duration: Duration::from_secs_f64(duration.max(0.0)),

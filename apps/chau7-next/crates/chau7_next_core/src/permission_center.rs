@@ -324,3 +324,143 @@ mod cooldown_tests {
         assert!(!policy.denied_by_cooldown("/root", 40.0));
     }
 }
+
+pub const FDA_ALERT_MIN_INTERVAL: f64 = 300.0;
+pub const DENIAL_MARKERS: [&str; 4] = ["operation not permitted", "os error 1", "eperm", "errno 1"];
+/// Both an EPERM-family marker and a component-matched protected cwd are required.
+pub fn denial_root(output: &str, cwd: &str, protected_roots: &[String]) -> Option<String> {
+    let cwd = cwd.trim().trim_end_matches('/');
+    let root = protected_roots.iter().find(|root| {
+        let base = root.trim().trim_end_matches('/');
+        !base.is_empty()
+            && (cwd == base
+                || cwd
+                    .strip_prefix(base)
+                    .is_some_and(|tail| tail.starts_with('/')))
+    })?;
+    let lowered = output.to_lowercase();
+    DENIAL_MARKERS
+        .iter()
+        .any(|marker| lowered.contains(marker))
+        .then(|| root.to_owned())
+}
+#[derive(Debug, Default)]
+pub struct FullDiskAccessGuard {
+    pub status: FullDiskAccess,
+    last_alert_at: Option<f64>,
+}
+impl FullDiskAccessGuard {
+    /// Reactive ambiguity keeps the last known guard status, while the UI probe
+    /// still reports its actual fresh result separately.
+    pub fn reconcile(&mut self, status: FullDiskAccess, child_denial: bool) {
+        if !child_denial || status != FullDiskAccess::Indeterminate {
+            self.status = status;
+        }
+    }
+    pub fn should_alert(&self, status: FullDiskAccess, child_denial: bool, now: f64) -> bool {
+        let actionable = status == FullDiskAccess::Denied
+            || (child_denial && status == FullDiskAccess::Indeterminate);
+        actionable
+            && self
+                .last_alert_at
+                .is_none_or(|last| now - last >= FDA_ALERT_MIN_INTERVAL)
+    }
+    /// Only record a successfully presented alert, not an attempt without a window.
+    pub fn record_alert(&mut self, now: f64) {
+        self.last_alert_at = Some(now);
+    }
+}
+#[cfg(test)]
+mod guard_tests {
+    use super::*;
+    #[test]
+    fn denial_classifier_requires_two_signals_and_component_boundaries() {
+        let roots = vec![
+            "/Users/test/Downloads".into(),
+            "/Users/test/Documents".into(),
+        ];
+        for marker in DENIAL_MARKERS {
+            assert_eq!(
+                denial_root(
+                    &marker.to_uppercase(),
+                    " /Users/test/Downloads/repo/ ",
+                    &roots
+                ),
+                Some(roots[0].clone())
+            );
+            assert_eq!(
+                denial_root(marker, "/Users/test/Downloads2/repo", &roots),
+                None
+            );
+            assert_eq!(denial_root(marker, "/tmp/repo", &roots), None);
+        }
+        assert_eq!(
+            denial_root("ordinary failure", "/Users/test/Downloads/repo", &roots),
+            None
+        );
+        assert_eq!(
+            denial_root("EPERM", "/Users/test/Documents", &roots),
+            Some(roots[1].clone())
+        );
+        assert_eq!(denial_root("EPERM", "/root", &["".into()]), None);
+    }
+    #[test]
+    fn proactive_unknown_never_alerts_and_reactive_granted_is_not_misattributed() {
+        let mut guard = FullDiskAccessGuard::default();
+        assert!(!guard.should_alert(FullDiskAccess::Indeterminate, false, 1.0));
+        assert!(!guard.should_alert(FullDiskAccess::Granted, true, 1.0));
+        assert!(guard.should_alert(FullDiskAccess::Indeterminate, true, 1.0));
+        guard.reconcile(FullDiskAccess::Denied, false);
+        guard.reconcile(FullDiskAccess::Indeterminate, true);
+        assert_eq!(guard.status, FullDiskAccess::Denied);
+        guard.reconcile(FullDiskAccess::Granted, true);
+        assert_eq!(guard.status, FullDiskAccess::Granted);
+    }
+    #[test]
+    fn throttle_covers_all_sources_and_includes_exact_five_minute_boundary() {
+        let mut guard = FullDiskAccessGuard::default();
+        assert!(guard.should_alert(FullDiskAccess::Denied, false, 10.0));
+        guard.record_alert(10.0);
+        assert!(!guard.should_alert(FullDiskAccess::Denied, true, 309.9));
+        assert!(guard.should_alert(FullDiskAccess::Denied, true, 310.0));
+        assert!(!guard.should_alert(FullDiskAccess::Denied, true, 0.0));
+    }
+}
+
+pub const DENIAL_OUTPUT_TAIL_BYTES: usize = 16 * 1024;
+#[derive(Default)]
+pub struct PermissionOutputTail(std::collections::VecDeque<u8>);
+impl PermissionOutputTail {
+    pub fn push(&mut self, bytes: &[u8]) {
+        if bytes.len() >= DENIAL_OUTPUT_TAIL_BYTES {
+            self.0.clear();
+            self.0
+                .extend(&bytes[bytes.len() - DENIAL_OUTPUT_TAIL_BYTES..]);
+            return;
+        }
+        let excess = (self.0.len() + bytes.len()).saturating_sub(DENIAL_OUTPUT_TAIL_BYTES);
+        self.0.drain(..excess);
+        self.0.extend(bytes);
+    }
+    pub fn text(&self) -> String {
+        String::from_utf8_lossy(&self.0.iter().copied().collect::<Vec<_>>()).into_owned()
+    }
+}
+#[cfg(test)]
+mod tail_tests {
+    use super::*;
+    #[test]
+    fn raw_pty_tail_is_bounded_and_retains_latest_split_marker() {
+        let mut tail = PermissionOutputTail::default();
+        tail.push(&vec![b'x'; DENIAL_OUTPUT_TAIL_BYTES + 100]);
+        assert_eq!(tail.0.len(), DENIAL_OUTPUT_TAIL_BYTES);
+        tail.push(b"\nOperation not ");
+        tail.push(b"permitted\n");
+        assert_eq!(tail.0.len(), DENIAL_OUTPUT_TAIL_BYTES);
+        assert!(tail.text().ends_with("Operation not permitted\n"));
+        tail.push(&vec![b'y'; DENIAL_OUTPUT_TAIL_BYTES]);
+        assert!(!tail.text().contains("Operation not permitted"));
+        tail.push(&[0xff]);
+        assert!(tail.text().ends_with('\u{fffd}'));
+    }
+}

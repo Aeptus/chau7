@@ -13,6 +13,7 @@ pub mod interactive_prompt;
 pub mod models;
 pub mod output_buffering;
 pub mod protection;
+pub mod relay_credentials;
 pub mod tab_registry;
 pub mod viewer;
 pub mod viewer_protocol;
