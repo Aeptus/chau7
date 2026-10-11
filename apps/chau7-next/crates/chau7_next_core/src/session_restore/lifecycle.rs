@@ -7,6 +7,90 @@ pub const SELECTION_QUIET_PERIOD: Duration = Duration::from_millis(450);
 pub const REACTIVATION_COALESCING_DELAY: Duration = Duration::from_millis(50);
 pub const NEARBY_SNAPSHOT_DISTANCE: usize = 2;
 
+/// Swift TerminalRenderGeometry refuses transient collapsed layouts. The
+/// terminal remains at its last authoritative size until both axes recover.
+pub fn surface_dimensions(
+    width: f32,
+    height: f32,
+    cell_width: f32,
+    cell_height: f32,
+) -> Option<(u16, u16)> {
+    fn cells(available: f32, cell: f32) -> f32 {
+        if !available.is_finite() || !cell.is_finite() || available <= 0.0 || cell <= 0.0 {
+            0.0
+        } else {
+            (available / cell).floor()
+        }
+    }
+    let cols = cells(width, cell_width);
+    let rows = cells(height, cell_height);
+    (cols > 1.0 && rows > 1.0).then(|| (cols.min(2000.0) as u16, rows.min(500.0) as u16))
+}
+
+pub const WINSIZE_NUDGE_DELAYS: [Duration; 2] =
+    [Duration::from_millis(700), Duration::from_millis(1800)];
+/// Current Swift AIToolRegistry flags these four display names for terminal
+/// UI heuristics. Live detection, restore bootstrap and busy lifecycle evidence
+/// remain separate from a persisted idle provider label.
+pub fn protects_terminal_ui(
+    names: &[Option<&str>],
+    live: bool,
+    bootstrap: bool,
+    status: crate::shell_session::CommandStatus,
+) -> bool {
+    let known = names.iter().flatten().any(|name| {
+        let name = name.trim().to_lowercase();
+        ["claude", "codex", "gemini", "opencode"]
+            .iter()
+            .any(|tool| name.contains(tool))
+    });
+    known
+        && (live
+            || bootstrap
+            || matches!(
+                status,
+                crate::shell_session::CommandStatus::Running
+                    | crate::shell_session::CommandStatus::WaitingForInput
+                    | crate::shell_session::CommandStatus::ApprovalRequired
+                    | crate::shell_session::CommandStatus::Stuck
+            ))
+}
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WinsizeNudgeDecision {
+    Keep,
+    Cancel,
+    Schedule,
+}
+#[derive(Debug, Clone, Copy, Default)]
+pub struct WinsizeNudgeState {
+    visible: bool,
+    hosts_tui: bool,
+    dimensions: Option<(u16, u16)>,
+}
+impl WinsizeNudgeState {
+    pub fn update(
+        &mut self,
+        visible: bool,
+        hosts_tui: bool,
+        dimensions: Option<(u16, u16)>,
+    ) -> WinsizeNudgeDecision {
+        let reveal = visible && hosts_tui && (!self.visible || !self.hosts_tui);
+        let resized = dimensions.is_some_and(|size| Some(size) != self.dimensions);
+        self.visible = visible;
+        self.hosts_tui = hosts_tui;
+        if dimensions.is_some() {
+            self.dimensions = dimensions;
+        }
+        if !visible {
+            WinsizeNudgeDecision::Cancel
+        } else if resized || reveal {
+            WinsizeNudgeDecision::Schedule
+        } else {
+            WinsizeNudgeDecision::Keep
+        }
+    }
+}
+
 pub const PREWARM_DURATION: Duration = Duration::from_secs(2);
 pub const PREWARM_EXIT_GRACE: Duration = Duration::from_millis(500);
 /// Prewarm is presentation work only. It never changes selection, visibility,
@@ -273,6 +357,67 @@ impl RestorePrefillIntent {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn surface_geometry_preserves_terminal_during_collapsed_or_invalid_layouts() {
+        for (width, height) in [
+            (0.0, 0.0),
+            (7.9, 32.0),
+            (16.0, 31.9),
+            (-1.0, 32.0),
+            (f32::NAN, 32.0),
+            (16.0, f32::INFINITY),
+        ] {
+            assert_eq!(surface_dimensions(width, height, 8.0, 16.0), None);
+        }
+        assert_eq!(surface_dimensions(16.0, 32.0, 8.0, 16.0), Some((2, 2)));
+        assert_eq!(surface_dimensions(647.9, 401.9, 8.0, 16.0), Some((80, 25)));
+        assert_eq!(
+            surface_dimensions(1e30, 1e30, 0.001, 0.001),
+            Some((2000, 500))
+        );
+        for cell in [0.0, -1.0, f32::NAN, f32::INFINITY] {
+            assert_eq!(surface_dimensions(640.0, 400.0, cell, 16.0), None);
+        }
+    }
+    #[test]
+    fn nudge_policy_coalesces_resize_reveal_and_late_tui_identity() {
+        use WinsizeNudgeDecision::*;
+        let mut state = WinsizeNudgeState::default();
+        assert_eq!(state.update(true, false, Some((80, 24))), Schedule);
+        assert_eq!(state.update(true, false, Some((80, 24))), Keep);
+        assert_eq!(state.update(true, true, None), Schedule);
+        assert_eq!(state.update(true, true, None), Keep);
+        assert_eq!(state.update(false, true, None), Cancel);
+        assert_eq!(state.update(true, true, Some((80, 24))), Schedule);
+        assert_eq!(state.update(true, true, Some((100, 24))), Schedule);
+        assert_eq!(state.update(true, true, Some((100, 24))), Keep);
+        assert_eq!(
+            WINSIZE_NUDGE_DELAYS,
+            [Duration::from_millis(700), Duration::from_millis(1800)]
+        );
+    }
+    #[test]
+    fn tui_protection_matches_current_swift_evidence_and_tools() {
+        use crate::shell_session::CommandStatus::*;
+        for tool in ["Claude Code", "Codex CLI", "Gemini", "OpenCode"] {
+            for status in [Running, WaitingForInput, ApprovalRequired, Stuck] {
+                assert!(protects_terminal_ui(
+                    &[None, Some(tool)],
+                    false,
+                    false,
+                    status
+                ));
+            }
+            for status in [Idle, Done, Exited] {
+                assert!(!protects_terminal_ui(&[Some(tool)], false, false, status));
+                assert!(protects_terminal_ui(&[Some(tool)], true, false, status));
+                assert!(protects_terminal_ui(&[Some(tool)], false, true, status));
+            }
+        }
+        for tool in ["", "aider", "amp", "shell"] {
+            assert!(!protects_terminal_ui(&[Some(tool)], true, true, Running));
+        }
+    }
     #[test]
     fn selected_precedes_quiet_period() {
         assert_eq!(
