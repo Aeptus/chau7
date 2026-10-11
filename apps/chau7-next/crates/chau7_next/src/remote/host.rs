@@ -243,6 +243,7 @@ fn project_name(pane: &PaneInfo) -> Option<String> {
 
 fn context_note(pane: &PaneInfo) -> Option<String> {
     match pane.status {
+        CommandStatus::ApprovalRequired => Some("Approval required".into()),
         CommandStatus::WaitingForInput => Some(if pane.at_prompt {
             "Waiting at prompt".into()
         } else {
@@ -250,7 +251,7 @@ fn context_note(pane: &PaneInfo) -> Option<String> {
         }),
         CommandStatus::Running => Some("Command is running".into()),
         CommandStatus::Stuck => Some("No output for a while".into()),
-        CommandStatus::Idle | CommandStatus::Exited => None,
+        CommandStatus::Idle | CommandStatus::Done | CommandStatus::Exited => None,
     }
 }
 
@@ -997,6 +998,10 @@ impl RemoteHost {
                     continue;
                 }
                 let (status, detail) = match pane.status {
+                    CommandStatus::ApprovalRequired => (
+                        RemoteActivityStatus::WaitingInput,
+                        Some("Approval required".into()),
+                    ),
                     CommandStatus::WaitingForInput => (
                         RemoteActivityStatus::WaitingInput,
                         pane.at_prompt.then(|| "Waiting at prompt".to_string()),
@@ -1006,7 +1011,7 @@ impl RemoteHost {
                         RemoteActivityStatus::Running,
                         Some("No output for a while".to_string()),
                     ),
-                    CommandStatus::Idle | CommandStatus::Exited => {
+                    CommandStatus::Idle | CommandStatus::Done | CommandStatus::Exited => {
                         match recent_completion(tab, now) {
                             Some(outcome) => outcome,
                             None => continue,
@@ -1044,7 +1049,10 @@ impl RemoteHost {
                 continue;
             };
             for pane in &tab.panes {
-                if pane.status != CommandStatus::WaitingForInput {
+                if !matches!(
+                    pane.status,
+                    CommandStatus::WaitingForInput | CommandStatus::ApprovalRequired
+                ) {
                     continue;
                 }
                 let tool = tool_name(pane, tab);

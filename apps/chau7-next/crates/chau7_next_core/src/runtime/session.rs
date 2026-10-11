@@ -226,11 +226,21 @@ impl RuntimeSession {
         self.lock().pending_initial_prompt = None;
         self.readiness_changed.notify_all();
     }
-    /// Sleeps without polling until real readiness, cancellation, or terminal state.
-    /// Prompt is cleared atomically by start_turn, so a concurrent manual turn wins safely.
+    /// Wait for real readiness or a terminal state. A manual turn cancels the queued prompt.
     pub fn wait_for_pending_initial_prompt(&self) -> Result<Option<String>, State> {
+        self.wait_for_pending_initial_prompt_unless(|| false)
+    }
+    /// Check caller cancellation while waiting, without a fixed backend startup deadline.
+    pub fn wait_for_pending_initial_prompt_unless(
+        &self,
+        cancelled: impl Fn() -> bool,
+    ) -> Result<Option<String>, State> {
         let mut inner = self.lock();
         loop {
+            if cancelled() {
+                inner.pending_initial_prompt = None;
+                return Ok(None);
+            }
             if inner.pending_initial_prompt.is_none() {
                 return Ok(None);
             }
@@ -244,8 +254,9 @@ impl RuntimeSession {
             }
             inner = self
                 .readiness_changed
-                .wait(inner)
-                .unwrap_or_else(|e| e.into_inner());
+                .wait_timeout(inner, std::time::Duration::from_millis(500))
+                .unwrap_or_else(|e| e.into_inner())
+                .0;
         }
     }
 
@@ -821,6 +832,18 @@ mod tests {
             .into_iter()
             .map(|e| e.event_type)
             .collect()
+    }
+
+    #[test]
+    fn disconnected_initial_prompt_is_cleared_before_readiness() {
+        let s = session();
+        s.queue_initial_prompt("do not send".into());
+        assert_eq!(s.wait_for_pending_initial_prompt_unless(|| true), Ok(None));
+        assert!(s.pending_initial_prompt().is_none());
+        s.transition(Trigger::BackendReady);
+        s.queue_initial_prompt("still do not send".into());
+        assert_eq!(s.wait_for_pending_initial_prompt_unless(|| true), Ok(None));
+        assert!(s.pending_initial_prompt().is_none());
     }
 
     #[test]

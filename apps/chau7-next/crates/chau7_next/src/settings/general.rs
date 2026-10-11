@@ -6,6 +6,7 @@
 //! there; the rest only Chau7 Next reads, under `[next]`.
 
 use chau7_next_core::config::RawValue;
+use chau7_next_core::l10n::numbers::RegionalNumberFormat;
 
 use super::{ConfigSink, ConfigSource, SettingsDomain};
 
@@ -16,15 +17,17 @@ pub enum AppLanguage {
     System,
     English,
     French,
+    Spanish,
     Arabic,
     Hebrew,
 }
 
 impl AppLanguage {
-    pub const ALL: [AppLanguage; 5] = [
+    pub const ALL: [AppLanguage; 6] = [
         AppLanguage::System,
         AppLanguage::English,
         AppLanguage::French,
+        AppLanguage::Spanish,
         AppLanguage::Arabic,
         AppLanguage::Hebrew,
     ];
@@ -35,6 +38,7 @@ impl AppLanguage {
             AppLanguage::System => "system",
             AppLanguage::English => "en",
             AppLanguage::French => "fr",
+            AppLanguage::Spanish => "es",
             AppLanguage::Arabic => "ar",
             AppLanguage::Hebrew => "he",
         }
@@ -49,6 +53,7 @@ impl AppLanguage {
             AppLanguage::System => "System Default",
             AppLanguage::English => "English",
             AppLanguage::French => "Français",
+            AppLanguage::Spanish => "Español",
             AppLanguage::Arabic => "العربية",
             AppLanguage::Hebrew => "עברית",
         }
@@ -67,6 +72,13 @@ pub struct GeneralSettings {
     /// `app.language` (`[next] app_language`). Stored and applied by the
     /// Localization module; the interface strings are English until then.
     pub app_language: AppLanguage,
+    /// usage.regionalNumberFormat: numeric display independent of language.
+    pub regional_number_format: RegionalNumberFormat,
+    pub usage_monitoring: bool,
+    pub claude_quota_capture: bool,
+    pub usage_quota_warnings: bool,
+    /// Explicitly enabled retention only. Existing profiles keep history forever.
+    pub telemetry_retention_days: i64,
     /// `app.launchAtLogin` (`[next] launch_at_login`). The login item itself
     /// is registered with the OS (`platform::login_item`).
     pub launch_at_login: bool,
@@ -93,6 +105,11 @@ impl Default for GeneralSettings {
         Self {
             default_directory: None,
             app_language: AppLanguage::System,
+            regional_number_format: RegionalNumberFormat::default(),
+            usage_monitoring: false,
+            claude_quota_capture: false,
+            usage_quota_warnings: false,
+            telemetry_retention_days: 0,
             launch_at_login: false,
             load_config_files: true,
             icloud_sync: false,
@@ -162,6 +179,29 @@ impl SettingsDomain for GeneralSettings {
         {
             self.app_language = language;
         }
+        if let Some(days) = src
+            .next("telemetry_retention_days")
+            .and_then(RawValue::as_int)
+        {
+            self.telemetry_retention_days =
+                chau7_next_core::telemetry::retention::normalize_days(days);
+        }
+        if let Some(v) = src.next("usage_monitoring").and_then(RawValue::as_bool) {
+            self.usage_monitoring = v;
+        }
+        if let Some(v) = src.next("claude_quota_capture").and_then(RawValue::as_bool) {
+            self.claude_quota_capture = v;
+        }
+        if let Some(v) = src.next("usage_quota_warnings").and_then(RawValue::as_bool) {
+            self.usage_quota_warnings = v;
+        }
+        if let Some(format) = src
+            .next("regional_number_format")
+            .and_then(RawValue::as_str)
+            .and_then(RegionalNumberFormat::from_id)
+        {
+            self.regional_number_format = format;
+        }
         if let Some(v) = src.next("launch_at_login").and_then(RawValue::as_bool) {
             self.launch_at_login = v;
         }
@@ -199,7 +239,24 @@ impl SettingsDomain for GeneralSettings {
     fn save(&self, out: &mut ConfigSink) {
         let general = out.file.general.get_or_insert_with(Default::default);
         general.default_directory = Some(self.default_directory.clone().unwrap_or_default());
+        out.set_next(
+            "telemetry_retention_days",
+            self.telemetry_retention_days.to_string(),
+        );
+        out.set_next("usage_monitoring", self.usage_monitoring.to_string());
+        out.set_next(
+            "claude_quota_capture",
+            self.claude_quota_capture.to_string(),
+        );
+        out.set_next(
+            "usage_quota_warnings",
+            self.usage_quota_warnings.to_string(),
+        );
         out.set_next("app_language", format!("\"{}\"", self.app_language.id()));
+        out.set_next(
+            "regional_number_format",
+            format!("\"{}\"", self.regional_number_format.id()),
+        );
         out.set_next("launch_at_login", self.launch_at_login);
         out.set_next("load_config_files", self.load_config_files);
         out.set_next("icloud_sync", self.icloud_sync);
@@ -236,6 +293,14 @@ mod tests {
     }
 
     #[test]
+    fn retention_defaults_to_keep_forever_for_existing_profiles() {
+        assert_eq!(GeneralSettings::default().telemetry_retention_days, 0);
+        assert_eq!(
+            round_trip(&GeneralSettings::default()).telemetry_retention_days,
+            0
+        );
+    }
+    #[test]
     fn round_trips() {
         assert_eq!(
             round_trip(&GeneralSettings::default()),
@@ -244,6 +309,11 @@ mod tests {
         let changed = GeneralSettings {
             default_directory: None,
             app_language: AppLanguage::French,
+            regional_number_format: RegionalNumberFormat::European,
+            usage_monitoring: true,
+            claude_quota_capture: true,
+            usage_quota_warnings: true,
+            telemetry_retention_days: 90,
             launch_at_login: true,
             load_config_files: false,
             icloud_sync: true,
@@ -277,6 +347,33 @@ mod tests {
         assert!(d.load_config_files);
         assert!(!d.icloud_sync);
         assert!(d.allow_protected_folder_access);
+    }
+
+    #[test]
+    fn number_format_defaults_and_persistence_match_swift() {
+        assert_eq!(
+            GeneralSettings::default().regional_number_format,
+            RegionalNumberFormat::French
+        );
+        for format in RegionalNumberFormat::ALL {
+            let settings = GeneralSettings {
+                regional_number_format: format,
+                ..Default::default()
+            };
+            assert_eq!(round_trip(&settings).regional_number_format, format);
+        }
+    }
+
+    #[test]
+    fn spanish_is_selectable_and_persisted() {
+        assert!(AppLanguage::ALL.contains(&AppLanguage::Spanish));
+        assert_eq!(AppLanguage::from_id("es"), Some(AppLanguage::Spanish));
+        assert_eq!(AppLanguage::Spanish.display_name(), "Español");
+        let settings = GeneralSettings {
+            app_language: AppLanguage::Spanish,
+            ..Default::default()
+        };
+        assert_eq!(round_trip(&settings).app_language, AppLanguage::Spanish);
     }
 
     #[test]

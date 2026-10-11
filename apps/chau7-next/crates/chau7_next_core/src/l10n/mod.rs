@@ -4,7 +4,7 @@
 //! by the same keys, with the English default from the code as the fallback.
 //!
 //! - [`Lang`] is a resolved interface language; [`resolve`] maps the
-//!   `app.language` setting ("system", "en", "fr", "ar", "he") and the OS
+//!   `app.language` setting ("system", "en", "fr", "es", "ar", "he") and the OS
 //!   preferred languages to one (L10-001).
 //! - [`l`] / [`lf`] are `L(key, default)`; [`tr`] translates a literal English
 //!   UI string by finding the key whose English text it is (L10-005).
@@ -18,6 +18,8 @@ use std::sync::atomic::{AtomicU8, Ordering};
 
 pub mod format;
 pub mod formatters;
+pub mod numbers;
+mod plural;
 
 pub use format::{Arg, format_printf};
 
@@ -26,18 +28,20 @@ pub use format::{Arg, format_printf};
 pub enum Lang {
     En,
     Fr,
+    Es,
     Ar,
     He,
 }
 
 impl Lang {
-    pub const ALL: [Lang; 4] = [Lang::En, Lang::Fr, Lang::Ar, Lang::He];
+    pub const ALL: [Lang; 5] = [Lang::En, Lang::Fr, Lang::Ar, Lang::He, Lang::Es];
 
     /// The language code (`en.lproj`, `fr.lproj`, ...).
     pub fn code(self) -> &'static str {
         match self {
             Lang::En => "en",
             Lang::Fr => "fr",
+            Lang::Es => "es",
             Lang::Ar => "ar",
             Lang::He => "he",
         }
@@ -54,6 +58,7 @@ impl Lang {
         match primary.as_str() {
             "en" => Some(Lang::En),
             "fr" => Some(Lang::Fr),
+            "es" => Some(Lang::Es),
             "ar" => Some(Lang::Ar),
             "he" | "iw" => Some(Lang::He),
             _ => None,
@@ -71,6 +76,7 @@ impl Lang {
             Lang::Fr => 1,
             Lang::Ar => 2,
             Lang::He => 3,
+            Lang::Es => 4,
         }
     }
 
@@ -79,6 +85,7 @@ impl Lang {
             1 => Lang::Fr,
             2 => Lang::Ar,
             3 => Lang::He,
+            4 => Lang::Es,
             _ => Lang::En,
         }
     }
@@ -97,7 +104,7 @@ pub fn system_language(preferred: &[String]) -> Lang {
 /// value) follows the OS preferred languages.
 pub fn resolve(setting: &str, preferred: &[String]) -> Lang {
     match setting {
-        "en" | "fr" | "ar" | "he" => Lang::from_tag(setting).unwrap_or(Lang::En),
+        "en" | "fr" | "es" | "ar" | "he" => Lang::from_tag(setting).unwrap_or(Lang::En),
         _ => system_language(preferred),
     }
 }
@@ -186,6 +193,7 @@ pub fn parse_strings(text: &str) -> Table {
 }
 
 const EN: &str = include_str!("strings/en.strings");
+const ES: &str = include_str!("strings/es.strings");
 const FR: &str = include_str!("strings/fr.strings");
 const AR: &str = include_str!("strings/ar.strings");
 const HE: &str = include_str!("strings/he.strings");
@@ -195,6 +203,7 @@ pub fn table_source(lang: Lang) -> &'static str {
     match lang {
         Lang::En => EN,
         Lang::Fr => FR,
+        Lang::Es => ES,
         Lang::Ar => AR,
         Lang::He => HE,
     }
@@ -202,7 +211,7 @@ pub fn table_source(lang: Lang) -> &'static str {
 
 /// The translation table of a language.
 pub fn table(lang: Lang) -> &'static Table {
-    static TABLES: OnceLock<[Table; 4]> = OnceLock::new();
+    static TABLES: OnceLock<[Table; 5]> = OnceLock::new();
     let tables = TABLES.get_or_init(|| Lang::ALL.map(|lang| parse_strings(table_source(lang))));
     &tables[lang.index() as usize]
 }
@@ -230,7 +239,13 @@ pub fn l(key: &str, default: &str) -> String {
 /// `L(key, default, args...)`: the localized format string filled with
 /// `args` (`%@`, `%d`, `%1$@`, `%.1f`, ...).
 pub fn lf(key: &str, default: &str, args: &[Arg]) -> String {
-    format_printf(&l(key, default), args)
+    localized_format(current(), key, default, args)
+}
+
+/// Localized formatting with the same plural resources as Swift.
+pub fn localized_format(lang: Lang, key: &str, default: &str, args: &[Arg]) -> String {
+    plural::format(lang, key, args)
+        .unwrap_or_else(|| format_printf(&localized(lang, key, default), args))
 }
 
 fn normalize(text: &str) -> String {

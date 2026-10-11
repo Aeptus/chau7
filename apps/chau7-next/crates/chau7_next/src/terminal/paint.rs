@@ -11,6 +11,7 @@
 //! `view.rs` builds a [`FrameInputs`] in `render`, [`prepaint`] turns it
 //! into a [`PaintState`] once the bounds are known, and [`paint_grid`] draws.
 
+use std::collections::HashMap;
 use std::ops::Range;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -283,6 +284,7 @@ pub struct PaintState {
     cols: u16,
     rows: u16,
     cells: Vec<OwnedCell>,
+    clusters: HashMap<usize, String>,
     cursor: Option<(u16, u16)>,
     exited: bool,
     /// Rows holding a dangerous command (`CommandRiskDetection`), tinted red.
@@ -362,7 +364,15 @@ pub fn prepaint(
     } else {
         Vec::new()
     };
+    let mut clusters = grid.clusters.clone();
+    for &(col, row, _) in &inputs.local_echo {
+        let row = row + offset;
+        if col >= 0 && col < grid.cols as i32 && row >= 0 {
+            clusters.remove(&(row as usize * grid.cols as usize + col as usize));
+        }
+    }
     PaintState {
+        clusters,
         cols: grid.cols,
         rows: grid.rows,
         cells: with_local_echo(grid.cells.clone(), grid.cols, offset, &inputs.local_echo),
@@ -394,6 +404,44 @@ pub fn with_local_echo(
         }
     }
     cells
+}
+
+/// Keep ASCII runs batched, but anchor each full or wide grapheme at its
+/// actual terminal column. GPUI's forced width counts shaped base glyphs,
+/// which need not equal terminal columns for emoji or combining sequences.
+fn text_chunks(
+    cells: &[OwnedCell],
+    clusters: &HashMap<usize, String>,
+    start: usize,
+) -> Vec<Range<usize>> {
+    let mut chunks = Vec::new();
+    let mut col = 0;
+    while col < cells.len() {
+        if cells[col].continuation {
+            col += 1;
+            continue;
+        }
+        let first = col;
+        col += 1;
+        if cells[first].width <= 1 && !clusters.contains_key(&(start + first)) {
+            while col < cells.len()
+                && !cells[col].continuation
+                && cells[col].width <= 1
+                && !clusters.contains_key(&(start + col))
+            {
+                col += 1;
+            }
+        }
+        chunks.push(first..col);
+    }
+    chunks
+}
+
+fn cell_text(cell: &OwnedCell, cluster: Option<&String>) -> String {
+    cluster.cloned().unwrap_or_else(|| match cell.character {
+        '\0' => " ".to_string(),
+        c => c.to_string(),
+    })
 }
 
 fn cell_colors(cell: &OwnedCell) -> ((u8, u8, u8), (u8, u8, u8)) {
@@ -536,90 +584,94 @@ fn paint_grid_inner(bounds: Bounds<Pixels>, state: PaintState, window: &mut Wind
         }
 
         // Text runs.
-        let mut text = String::with_capacity(cols);
-        let mut runs: Vec<TextRun> = Vec::new();
         let mut decorations: Vec<Decoration> = Vec::new();
-        let mut any_visible = false;
-        for (col, cell) in row_cells.iter().enumerate() {
-            let ch = if cell.character == '\0' {
-                ' '
-            } else {
-                cell.character
-            };
-            let (fg, bg) = cell_colors(cell);
-            let mut color = rgb_tuple(if cell.flags & CELL_FLAG_HIDDEN != 0 {
-                bg
-            } else {
-                fg
-            });
-            if cell.flags & CELL_FLAG_DIM != 0 {
-                color.a *= 0.6;
-            }
-            let mut run_font = m.font.clone();
-            if cell.flags & CELL_FLAG_BOLD != 0 {
-                run_font.weight = FontWeight(run_font.weight.0.max(FontWeight::BOLD.0));
-            }
-            if cell.flags & CELL_FLAG_ITALIC != 0 {
-                run_font.style = FontStyle::Italic;
-            }
-            let (underline, hand_drawn) = underline_for(cell, color, inputs.link_color);
-            if hand_drawn != 0 {
-                match decorations.last_mut() {
-                    Some(d)
-                        if d.style == hand_drawn && d.color == color && d.col + d.len == col =>
-                    {
-                        d.len += 1
+        for chunk in text_chunks(row_cells, &state.clusters, start) {
+            let mut text = String::with_capacity(chunk.len());
+            let mut runs: Vec<TextRun> = Vec::new();
+            let mut any_visible = false;
+            for col in chunk.clone() {
+                let cell = &row_cells[col];
+                let contents = cell_text(cell, state.clusters.get(&(start + col)));
+                let (fg, bg) = cell_colors(cell);
+                let mut color = rgb_tuple(if cell.flags & CELL_FLAG_HIDDEN != 0 {
+                    bg
+                } else {
+                    fg
+                });
+                if cell.flags & CELL_FLAG_DIM != 0 {
+                    color.a *= 0.6;
+                }
+                let mut run_font = m.font.clone();
+                if cell.flags & CELL_FLAG_BOLD != 0 {
+                    run_font.weight = FontWeight(run_font.weight.0.max(FontWeight::BOLD.0));
+                }
+                if cell.flags & CELL_FLAG_ITALIC != 0 {
+                    run_font.style = FontStyle::Italic;
+                }
+                let (underline, hand_drawn) = underline_for(cell, color, inputs.link_color);
+                if hand_drawn != 0 {
+                    match decorations.last_mut() {
+                        Some(d)
+                            if d.style == hand_drawn
+                                && d.color == color
+                                && d.col + d.len == col =>
+                        {
+                            d.len += usize::from(cell.width.max(1))
+                        }
+                        _ => decorations.push(Decoration {
+                            col,
+                            len: usize::from(cell.width.max(1)),
+                            style: hand_drawn,
+                            color,
+                        }),
                     }
-                    _ => decorations.push(Decoration {
-                        col,
-                        len: 1,
-                        style: hand_drawn,
+                }
+                let strikethrough =
+                    (cell.flags & CELL_FLAG_STRIKETHROUGH != 0).then(|| StrikethroughStyle {
+                        thickness: px(1.0),
+                        color: Some(color),
+                    });
+                let len = contents.len();
+                any_visible |= contents != " " || underline.is_some() || strikethrough.is_some();
+                text.push_str(&contents);
+                match runs.last_mut() {
+                    Some(last)
+                        if last.color == color
+                            && last.font == run_font
+                            && last.underline == underline
+                            && last.strikethrough == strikethrough =>
+                    {
+                        last.len += len;
+                    }
+                    _ => runs.push(TextRun {
+                        len,
+                        font: run_font,
                         color,
+                        background_color: None,
+                        underline,
+                        strikethrough,
                     }),
                 }
             }
-            let strikethrough =
-                (cell.flags & CELL_FLAG_STRIKETHROUGH != 0).then(|| StrikethroughStyle {
-                    thickness: px(1.0),
-                    color: Some(color),
-                });
-            let len = ch.len_utf8();
-            any_visible |= ch != ' ' || underline.is_some() || strikethrough.is_some();
-            text.push(ch);
-            match runs.last_mut() {
-                Some(last)
-                    if last.color == color
-                        && last.font == run_font
-                        && last.underline == underline
-                        && last.strikethrough == strikethrough =>
-                {
-                    last.len += len;
-                }
-                _ => runs.push(TextRun {
-                    len,
-                    font: run_font,
-                    color,
-                    background_color: None,
-                    underline,
-                    strikethrough,
-                }),
+            if any_visible {
+                let line = window.text_system().shape_line(
+                    text.into(),
+                    m.font_size,
+                    &runs,
+                    // Full clusters are shaped naturally, independently of the
+                    // next chunk's position. Normal runs keep the fast grid layout.
+                    (chunk.len() > 1 || !state.clusters.contains_key(&(start + chunk.start)))
+                        .then_some(m.cell_width),
+                );
+                let _ = line.paint(
+                    point(bounds.left() + m.cell_width * chunk.start as f32, y),
+                    m.line_height,
+                    gpui::TextAlign::Left,
+                    None,
+                    window,
+                    cx,
+                );
             }
-        }
-        if any_visible {
-            let line = window.text_system().shape_line(
-                text.into(),
-                m.font_size,
-                &runs,
-                Some(m.cell_width),
-            );
-            let _ = line.paint(
-                point(bounds.left(), y),
-                m.line_height,
-                gpui::TextAlign::Left,
-                None,
-                window,
-                cx,
-            );
         }
         for d in decorations {
             paint_decoration(&d, bounds.left(), y, m, window);
@@ -756,7 +808,9 @@ fn paint_cursor(bounds: Bounds<Pixels>, state: &PaintState, window: &mut Window,
         bounds.left() + m.cell_width * col as f32,
         bounds.top() + m.line_height * row as f32,
     );
-    let cell_bounds = Bounds::new(origin, size(m.cell_width, m.line_height));
+    let index = row as usize * cols + col as usize;
+    let width = state.cells.get(index).map_or(1, |cell| cell.width.max(1));
+    let cell_bounds = Bounds::new(origin, size(m.cell_width * f32::from(width), m.line_height));
     if !inputs.focused {
         window.paint_quad(outline(
             cell_bounds,
@@ -776,7 +830,7 @@ fn paint_cursor(bounds: Bounds<Pixels>, state: &PaintState, window: &mut Window,
                     if cell.flags & CELL_FLAG_BOLD != 0 {
                         f.weight = FontWeight(f.weight.0.max(FontWeight::BOLD.0));
                     }
-                    let s: SharedString = cell.character.to_string().into();
+                    let s: SharedString = cell_text(cell, state.clusters.get(&index)).into();
                     let run = TextRun {
                         len: s.len(),
                         font: f,
@@ -808,7 +862,7 @@ fn paint_cursor(bounds: Bounds<Pixels>, state: &PaintState, window: &mut Window,
                 window.paint_quad(fill(
                     Bounds::new(
                         point(origin.x, origin.y + m.line_height - px(2.0)),
-                        size(m.cell_width, px(2.0)),
+                        size(m.cell_width * f32::from(width), px(2.0)),
                     ),
                     inputs.cursor_color,
                 ));
@@ -852,6 +906,49 @@ fn paint_cursor(bounds: Bounds<Pixels>, state: &PaintState, window: &mut Window,
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn full_graphemes_are_anchored_to_grid_columns() {
+        let mut cells = vec![OwnedCell::default(); 7];
+        cells[0].character = 'a';
+        cells[1].character = 'e';
+        cells[2].character = '👩';
+        cells[2].width = 2;
+        cells[3].continuation = true;
+        cells[3].width = 0;
+        cells[4].character = '中';
+        cells[4].width = 2;
+        cells[5].continuation = true;
+        cells[5].width = 0;
+        cells[6].character = 'z';
+        let clusters = HashMap::from([(8, "e\u{301}".to_string()), (9, "👩‍💻".to_string())]);
+        assert_eq!(
+            text_chunks(&cells, &clusters, 7),
+            vec![0..1, 1..2, 2..3, 4..5, 6..7]
+        );
+        assert_eq!(cell_text(&cells[1], clusters.get(&8)), "e\u{301}");
+        assert_eq!(cell_text(&cells[2], clusters.get(&9)), "👩‍💻");
+    }
+
+    #[test]
+    fn painter_consumes_the_terminal_snapshot_clusters() {
+        let term = chau7_terminal::Chau7Terminal::new_headless(30, 1).unwrap();
+        term.inject_output("❤\u{fe0f}👩‍💻🇫🇷a\u{20dd}z".as_bytes());
+        let grid = term.grid_copy();
+        let mut painted = String::new();
+        for chunk in text_chunks(&grid.cells, &grid.clusters, 0) {
+            for index in chunk {
+                painted.push_str(&cell_text(&grid.cells[index], grid.clusters.get(&index)));
+            }
+        }
+        assert!(painted.starts_with("❤\u{fe0f}👩‍💻🇫🇷a\u{20dd}z"), "{painted}");
+    }
+
+    #[test]
+    fn ascii_rows_still_shape_in_one_batch() {
+        let cells = vec![OwnedCell::default(); 80];
+        assert_eq!(text_chunks(&cells, &HashMap::new(), 0), vec![0..80]);
+    }
 
     #[test]
     fn font_weights_follow_ns_font_manager() {

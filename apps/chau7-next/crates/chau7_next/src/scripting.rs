@@ -234,7 +234,7 @@ struct AppScriptingHost {
 impl AppScriptingHost {
     fn tab_tool(&self, name: &str, args: Value) -> String {
         let args = args.as_object().cloned().unwrap_or_default();
-        tabs::call(name, &args, &ToolContext { main: &self.main })
+        tabs::call(name, &args, &ToolContext::internal(&self.main))
             .unwrap_or_else(|| chau7_next_core::mcp::output::json_error("unknown tool"))
     }
 

@@ -191,6 +191,41 @@ impl Workspace {
             .collect()
     }
 
+    /// Numeric measurements for every terminal pane, without copying terminal text.
+    pub fn performance_terminals(&self, window_index: usize, cx: &App) -> Vec<serde_json::Value> {
+        let mut terminals = Vec::new();
+        for meta in self.state.tabs() {
+            let Some(entry) = self.entries.get(&meta.id) else {
+                continue;
+            };
+            for (pane_id, entity) in entry.panes.read(cx).pane_sessions(cx) {
+                let session = entity.read(cx);
+                let latency = session.latency();
+                let lag = latency
+                    .timeline()
+                    .iter()
+                    .rev()
+                    .take(16)
+                    .map(|event| {
+                        serde_json::json!({"kind": event.kind.as_str(),
+                        "elapsed_ms": event.elapsed_ms, "average_ms": event.average_ms,
+                        "p50_ms": event.p50, "p95_ms": event.p95,
+                        "sample_count": event.sample_count, "at_monotonic_seconds": event.at})
+                    })
+                    .collect::<Vec<_>>();
+                terminals.push(serde_json::json!({
+                    "tab_id": meta.id.to_string(), "pane_id": pane_id.to_string(),
+                    "window_id": window_index, "selected": self.state.selected() == Some(meta.id),
+                    "render_suspended": session.is_render_suspended(),
+                    "input": latency.statistics(LagKind::Input),
+                    "output": latency.statistics(LagKind::Output),
+                    "highlight": latency.statistics(LagKind::Highlight), "lag_events": lag
+                }));
+            }
+        }
+        terminals
+    }
+
     /// The window is the key window (the Debug Console shows this window's
     /// tabs while it is in front).
     pub fn is_window_active(&self) -> bool {

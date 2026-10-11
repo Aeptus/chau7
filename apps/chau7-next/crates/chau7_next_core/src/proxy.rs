@@ -290,7 +290,7 @@ impl ApiCallEvent {
             provider: self.provider.raw_value().to_string(),
             model: self.model.clone(),
             total_tokens: self.total_tokens(),
-            formatted_cost: self.formatted_cost(),
+            formatted_cost: crate::l10n::numbers::cost_precise(self.cost_usd),
             formatted_latency: self.formatted_latency(),
         }
     }
@@ -481,6 +481,12 @@ pub enum ProxyMessage {
         event: ApiCallEvent,
         tab_id: Option<String>,
         project_path: Option<String>,
+        token_rate: Option<crate::telemetry::token_rate::TokenRateReading>,
+        evidence: Box<crate::telemetry::evidence::UsageEvidence>,
+    },
+    GenerationProgress {
+        tab_id: String,
+        reading: crate::telemetry::token_rate::TokenRateReading,
     },
     TaskCandidate(TaskCandidate),
     TaskStarted(TrackedTask),
@@ -494,15 +500,31 @@ pub enum ProxyMessage {
 
 #[derive(Deserialize)]
 struct ApiCallData {
+    #[serde(default)]
+    request_id: Option<String>,
+    #[serde(default)]
+    cache_creation_input_tokens: Option<i64>,
+    #[serde(default)]
+    cache_read_input_tokens: Option<i64>,
+    #[serde(default)]
+    reasoning_output_tokens: Option<i64>,
+    #[serde(default)]
+    pricing_version: Option<String>,
     session_id: String,
     provider: String,
     model: String,
     endpoint: String,
-    input_tokens: i64,
-    output_tokens: i64,
+    input_tokens: Option<i64>,
+    output_tokens: Option<i64>,
+    #[serde(default)]
+    ttft_ms: i64,
+    #[serde(default)]
+    is_streaming: bool,
+    #[serde(default)]
+    output_tokens_estimated: bool,
     latency_ms: i64,
     status_code: i64,
-    cost_usd: f64,
+    cost_usd: Option<f64>,
     timestamp: String,
     #[serde(default)]
     error_message: Option<String>,
@@ -580,6 +602,55 @@ pub fn parse_message(line: &str, now: DateTime<Utc>) -> Result<ProxyMessage, Str
     Ok(match kind.as_str() {
         "api_call" => {
             let d: ApiCallData = decode(data)?;
+            let mut rate_store = crate::telemetry::token_rate::TokenRateStore::default();
+            let source = if d.output_tokens_estimated {
+                crate::telemetry::token_rate::TokenRateSource::ProxyEstimatedUsage
+            } else if d.is_streaming {
+                crate::telemetry::token_rate::TokenRateSource::ProxyUsage
+            } else {
+                crate::telemetry::token_rate::TokenRateSource::ProxyRequestUsage
+            };
+            if (200..300).contains(&d.status_code) {
+                rate_store.record(
+                    d.tab_id.as_deref().unwrap_or(""),
+                    &d.provider,
+                    d.output_tokens.unwrap_or(0),
+                    if d.is_streaming {
+                        (d.latency_ms - d.ttft_ms.max(0)).max(1)
+                    } else {
+                        d.latency_ms.max(1)
+                    },
+                    source,
+                    now,
+                );
+            }
+            let token_rate = rate_store
+                .reading(d.tab_id.as_deref().unwrap_or(""))
+                .cloned();
+            let mut evidence = crate::telemetry::evidence::UsageEvidence::empty(
+                &d.provider,
+                crate::telemetry::evidence::SourceKind::Proxy,
+                parse_time(&d.timestamp).unwrap_or(now),
+            );
+            evidence.session_id = Some(d.session_id.clone());
+            evidence.model = Some(d.model.clone());
+            evidence.endpoint = Some(d.endpoint.clone());
+            evidence.project_path = d.project_path.clone();
+            evidence.input_tokens = d.input_tokens;
+            evidence.output_tokens = d.output_tokens;
+            evidence.cache_creation_input_tokens = d.cache_creation_input_tokens;
+            evidence.cache_read_input_tokens = d.cache_read_input_tokens;
+            evidence.reasoning_output_tokens = d.reasoning_output_tokens;
+            evidence.cost_usd = d.cost_usd;
+            evidence.pricing_version = d.pricing_version.clone();
+            if let Some(tab) = &d.tab_id {
+                evidence.metadata.insert("tab_id".into(), tab.clone());
+            }
+            evidence.finish_proxy_identity(d.request_id.as_deref());
+            if d.output_tokens_estimated {
+                evidence.token_usage_state =
+                    crate::telemetry::token_metrics::TelemetryMetricState::Estimated;
+            }
             let error = d.error_message.filter(|m| !m.is_empty());
             ProxyMessage::ApiCall {
                 event: ApiCallEvent {
@@ -588,16 +659,41 @@ pub fn parse_message(line: &str, now: DateTime<Utc>) -> Result<ProxyMessage, Str
                     provider: Provider::from_raw(&d.provider),
                     model: d.model,
                     endpoint: d.endpoint,
-                    input_tokens: d.input_tokens,
-                    output_tokens: d.output_tokens,
+                    input_tokens: d.input_tokens.unwrap_or(0),
+                    output_tokens: d.output_tokens.unwrap_or(0),
                     latency_ms: d.latency_ms,
                     status_code: d.status_code,
-                    cost_usd: d.cost_usd,
+                    cost_usd: d.cost_usd.unwrap_or(0.0),
                     timestamp: parse_time(&d.timestamp).unwrap_or(now),
                     error_message: error,
                 },
                 tab_id: d.tab_id.filter(|t| !t.is_empty()),
                 project_path: d.project_path.filter(|p| !p.is_empty()),
+                token_rate,
+                evidence: Box::new(evidence),
+            }
+        }
+        "generation_progress" => {
+            let tab = text(&data, "tab_id").unwrap_or_default();
+            let provider = text(&data, "provider").unwrap_or_default();
+            let mut store = crate::telemetry::token_rate::TokenRateStore::default();
+            store.record_rate(
+                &tab,
+                &provider,
+                float(&data, "tokens_per_second"),
+                int(&data, "output_tokens_estimate"),
+                int(&data, "duration_ms"),
+                crate::telemetry::token_rate::TokenRateSource::ProxyStreamEstimate,
+                text(&data, "timestamp")
+                    .and_then(|s| parse_time(&s))
+                    .unwrap_or(now),
+            );
+            match store.reading(&tab).cloned() {
+                Some(reading) => ProxyMessage::GenerationProgress {
+                    tab_id: tab,
+                    reading,
+                },
+                None => ProxyMessage::Unknown(kind),
             }
         }
         "task_candidate" => {
@@ -941,6 +1037,100 @@ impl<'a> ProxyAnalyticsStore<'a> {
         f(&conn).unwrap_or(fallback)
     }
 
+    /// Bounded cursor walk over retained requests, including optional columns
+    /// added by newer Go proxies. Historical missing values remain unknown.
+    pub fn evidence_batch(
+        &self,
+        after_id: i64,
+        limit: usize,
+    ) -> Vec<(i64, crate::telemetry::evidence::UsageEvidence)> {
+        use crate::telemetry::evidence::{SourceKind, UsageEvidence};
+        self.with(vec![], |conn| {
+            let mut stmt =
+                conn.prepare("SELECT * FROM api_calls WHERE id>?1 ORDER BY id LIMIT ?2")?;
+            let rows = stmt.query_map(params![after_id, limit.clamp(1, 500) as i64], |row| {
+                fn field<T: rusqlite::types::FromSql>(
+                    row: &rusqlite::Row<'_>,
+                    name: &str,
+                ) -> Option<T> {
+                    row.get::<_, Option<T>>(name).ok().flatten()
+                }
+                let id: i64 = row.get("id")?;
+                let provider: String = row.get("provider")?;
+                let timestamp: String = row.get("timestamp")?;
+                let at = parse_time(&timestamp).ok_or(rusqlite::Error::InvalidQuery)?;
+                let mut e = UsageEvidence::empty(&provider, SourceKind::Proxy, at);
+                e.session_id = field(row, "session_id");
+                e.model = field(row, "model");
+                e.endpoint = field(row, "endpoint");
+                e.project_path = field(row, "project_path");
+                e.input_tokens = field(row, "input_tokens");
+                e.output_tokens = field(row, "output_tokens");
+                e.cache_creation_input_tokens = field(row, "cache_creation_input_tokens");
+                e.cache_read_input_tokens = field(row, "cache_read_input_tokens");
+                e.reasoning_output_tokens = field(row, "reasoning_output_tokens");
+                e.cost_usd = field(row, "cost_usd");
+                e.pricing_version = field(row, "pricing_version");
+                if let Some(tab) = field::<String>(row, "tab_id").filter(|s| !s.is_empty()) {
+                    e.metadata.insert("tab_id".into(), tab);
+                }
+                let request: Option<String> = field(row, "request_id");
+                e.finish_proxy_identity(request.as_deref());
+                // Persist a cursor for failed rows too, but preserve failure evidence as unknown.
+                if !field::<i64>(row, "status_code").is_some_and(|s| (200..300).contains(&s)) {
+                    e.metadata.insert(
+                        "request_status".into(),
+                        field::<i64>(row, "status_code").unwrap_or(0).to_string(),
+                    );
+                }
+                Ok((id, e))
+            })?;
+            rows.collect()
+        })
+    }
+
+    pub fn activity_samples(
+        &self,
+        after: Option<DateTime<Utc>>,
+    ) -> Vec<crate::telemetry::latency::ActivitySample> {
+        self.with(vec![],|conn| {
+            let mut stmt=conn.prepare("SELECT provider,endpoint,timestamp FROM api_calls WHERE status_code>=200 AND status_code<300 AND (?1 IS NULL OR timestamp >= ?1) ORDER BY timestamp,id")?;
+            let rows=stmt.query_map([after.map(|at|at.format("%Y-%m-%dT%H:%M:%S%.3fZ").to_string())],|row|{
+                let provider:String=row.get(0)?;let endpoint:String=row.get(1)?;let at:String=row.get(2)?;
+                if !crate::telemetry::latency::relevant_endpoint(&provider,&endpoint){return Ok(None);}
+                Ok(crate::telemetry::date_codec::parse_iso8601(Some(&at)).map(|timestamp|crate::telemetry::latency::ActivitySample{provider:provider.to_lowercase(),timestamp}))
+            })?;
+            rows.filter_map(|r|r.transpose()).collect()
+        })
+    }
+
+    /// Successful generation requests only. Prefer observed TTFT; old schemas
+    /// without TTFT keep their request latency instead of inventing a value.
+    pub fn latency_samples(
+        &self,
+        after: Option<DateTime<Utc>>,
+    ) -> Vec<crate::telemetry::latency::LatencySample> {
+        use crate::telemetry::latency::{
+            LatencySample, MetricKind, preferred_api_latency, relevant_endpoint,
+        };
+        self.with(vec![], |conn| {
+            let mut columns=conn.prepare("PRAGMA table_info(api_calls)")?;
+            let has_ttft=columns.query_map([],|row|row.get::<_,String>(1))?.filter_map(Result::ok).any(|name|name=="ttft_ms");
+            let sql=format!("SELECT id,provider,model,session_id,endpoint,latency_ms,{},timestamp FROM api_calls WHERE status_code >= 200 AND status_code < 300 AND (?1 IS NULL OR timestamp >= ?1) ORDER BY timestamp,id",if has_ttft {"ttft_ms"}else{"NULL"});
+            let mut stmt=conn.prepare(&sql)?;
+            let rows=stmt.query_map([after.map(|at|at.format("%Y-%m-%dT%H:%M:%S%.3fZ").to_string())], |row| {
+                let provider:String=row.get(1)?;let endpoint:String=row.get(4)?;
+                let latency=preferred_api_latency(row.get(5)?,row.get(6)?);
+                let timestamp:String=row.get(7)?;
+                if !relevant_endpoint(&provider,&endpoint) {return Ok(None);}
+                let Some(latency_ms)=latency else {return Ok(None);};
+                let Some(timestamp)=crate::telemetry::date_codec::parse_iso8601(Some(&timestamp)) else {return Ok(None);};
+                Ok(Some(LatencySample{id:format!("proxy|{}",row.get::<_,i64>(0)?),provider:provider.to_lowercase(),metric_kind:MetricKind::ApiRequest,latency_ms,timestamp,model:row.get(2)?,session_id:row.get(3)?,run_id:None,round_index:None,project_path:None,source_kind:"proxy_request".into()}))
+            })?;
+            rows.filter_map(|r|r.transpose()).collect::<rusqlite::Result<Vec<_>>>()
+        })
+    }
+
     /// Calls, tokens, cost and average latency, since `after` when given.
     pub fn overall_stats(&self, after: Option<DateTime<Utc>>) -> ProxyStats {
         let after = after.map(|d| crate::telemetry::date_codec::format_iso8601_fractional(&d));
@@ -1201,6 +1391,46 @@ mod tests {
     }
 
     #[test]
+    fn generation_progress_and_optional_usage_preserve_confidence() {
+        let now = now();
+        let line = r#"{"type":"generation_progress","data":{"tab_id":"tab","provider":"claude","output_tokens_estimate":50,"tokens_per_second":25.0,"duration_ms":2000,"timestamp":"2026-04-01T10:00:00Z"}}"#;
+        let ProxyMessage::GenerationProgress { tab_id, reading } =
+            parse_message(line, now).unwrap()
+        else {
+            panic!("progress")
+        };
+        assert_eq!(tab_id, "tab");
+        assert_eq!(reading.formatted(), "~25 t/s");
+        let line = r#"{"type":"api_call","data":{"session_id":"s","tab_id":"tab","provider":"claude","model":"m","endpoint":"/v1/messages","input_tokens":null,"output_tokens":50,"cost_usd":null,"latency_ms":3000,"ttft_ms":1000,"is_streaming":true,"status_code":200,"timestamp":"2026-04-01T10:00:00Z"}}"#;
+        let ProxyMessage::ApiCall {
+            token_rate: Some(reading),
+            event,
+            ..
+        } = parse_message(line, now).unwrap()
+        else {
+            panic!("call")
+        };
+        assert_eq!(event.input_tokens, 0);
+        assert_eq!(reading.formatted(), "25 t/s");
+        assert_eq!(reading.duration_ms, 2000);
+        let line = line.replace("\"is_streaming\":true", "\"is_streaming\":false");
+        let ProxyMessage::ApiCall {
+            token_rate: Some(reading),
+            ..
+        } = parse_message(&line, now).unwrap()
+        else {
+            panic!("request")
+        };
+        assert!(reading.source.estimated());
+        assert_eq!(reading.duration_ms, 3000);
+        let line = line.replace("\"output_tokens\":50", "\"output_tokens\":null");
+        let ProxyMessage::ApiCall { token_rate, .. } = parse_message(&line, now).unwrap() else {
+            panic!("missing")
+        };
+        assert!(token_rate.is_none());
+    }
+
+    #[test]
     fn line_buffer_splits_on_newlines() {
         let mut b = LineBuffer::default();
         assert!(b.push(b"{\"a\":").is_empty());
@@ -1320,5 +1550,28 @@ mod tests {
         assert!(recent[0].timestamp > DateTime::<Utc>::MIN_UTC);
         assert!(!recent[0].debug_call().formatted_latency.is_empty());
         let _ = std::fs::remove_dir_all(dir);
+    }
+    #[test]
+    fn request_latency_filters_errors_and_prefers_ttft_on_new_and_legacy_schemas() {
+        for ttft in [true, false] {
+            let dir = std::env::temp_dir().join(format!(
+                "chau7-next-latency-db-{}-{ttft}",
+                std::process::id()
+            ));
+            let _ = std::fs::remove_dir_all(&dir);
+            std::fs::create_dir_all(&dir).unwrap();
+            let path = dir.join("db");
+            let conn = Connection::open(&path).unwrap();
+            conn.execute_batch(&format!("CREATE TABLE api_calls (id INTEGER PRIMARY KEY,provider TEXT,model TEXT,session_id TEXT,endpoint TEXT,latency_ms INTEGER,{}status_code INTEGER,timestamp TEXT);INSERT INTO api_calls(id,provider,endpoint,latency_ms,status_code,timestamp) VALUES (1,'openai','/v1/responses',500,200,'2026-10-11T10:00:00Z'),(2,'openai','/v1/models',50,200,'2026-10-11T10:00:00Z'),(3,'anthropic','/v1/messages',40,500,'2026-10-11T10:00:00Z');",if ttft {"ttft_ms INTEGER,"}else{""})).unwrap();
+            if ttft {
+                conn.execute("UPDATE api_calls SET ttft_ms=100 WHERE id=1", [])
+                    .unwrap();
+            }
+            drop(conn);
+            let samples = ProxyAnalyticsStore::new(&path).latency_samples(None);
+            assert_eq!(samples.len(), 1);
+            assert_eq!(samples[0].latency_ms, if ttft { 100 } else { 500 });
+            let _ = std::fs::remove_dir_all(dir);
+        }
     }
 }

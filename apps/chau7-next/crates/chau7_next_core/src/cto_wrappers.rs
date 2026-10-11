@@ -207,7 +207,7 @@ fi
 
 fn flag_test(paths: &CtoPaths) -> String {
     format!(
-        r#"[ -z "$CHAU7_CTO_SESSION" ] || [ ! -f {} ]"#,
+        r#"[ -n "$CHAU7_CTO_OPTIM_ACTIVE" ] || [ -z "$CHAU7_CTO_SESSION" ] || [ ! -f {} ]"#,
         flag_path_word(paths)
     )
 }
@@ -1111,6 +1111,35 @@ mod tests {
                 String::from_utf8_lossy(&out.stdout).trim().to_string(),
                 fs::read_to_string(&log).unwrap_or_default(),
             )
+        }
+
+        #[test]
+        fn optimizer_recursion_sentinel_bypasses_every_wrapper() {
+            let (dir, paths, real_dir) = setup("run-sentinel");
+            create_flag(&paths, "S1");
+            for command in ["git", "cat", "sed"] {
+                write_executable(&real_dir.join(command), b"#!/bin/sh\necho real \"$@\"\n")
+                    .unwrap();
+                let path = format!("{}:/usr/bin:/bin", real_dir.display());
+                install_wrapper(command, &paths, &path).unwrap();
+                let out = Command::new(paths.wrapper_dir.join(command))
+                    .arg("file.md")
+                    .env_clear()
+                    .env("PATH", path)
+                    .env("CHAU7_CTO_SESSION", "S1")
+                    .env("CHAU7_CTO_OPTIM_ACTIVE", "1")
+                    .env("CHAU7_CTO_LOG", paths.command_log())
+                    .output()
+                    .unwrap();
+                assert!(out.status.success(), "{command}");
+                assert_eq!(
+                    String::from_utf8_lossy(&out.stdout).trim(),
+                    "real file.md",
+                    "{command}"
+                );
+            }
+            assert!(!paths.command_log().exists());
+            let _ = fs::remove_dir_all(dir);
         }
 
         #[test]

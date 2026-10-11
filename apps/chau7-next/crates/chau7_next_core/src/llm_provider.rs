@@ -376,7 +376,7 @@ mod tests {
 
     #[test]
     fn test_keychain_service_uses_isolation_prefix_when_configured() {
-        let e = env(&[("CHAU7_KEYCHAIN_SERVICE_PREFIX", "com.chau7.isolated")]);
+        let e = env(&[("CHAU7_KEYCHAIN_SERVICE_PREFIX", "com.chau7.isolated")]); // gitleaks:allow - Keychain namespace fixture, not an API key
         let service = keychain_service_name("com.chau7.llm.anthropic.apikey", &e);
         assert_eq!(service, "com.chau7.isolated.com.chau7.llm.anthropic.apikey");
     }

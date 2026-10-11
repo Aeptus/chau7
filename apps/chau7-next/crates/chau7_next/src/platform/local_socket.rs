@@ -20,6 +20,7 @@ pub trait Connection: Read + Write + Send {
     fn try_clone_box(&self) -> std::io::Result<Box<dyn Connection>>;
     /// Close both directions.
     fn shutdown(&self);
+    fn set_write_timeout(&self, timeout: Option<std::time::Duration>) -> std::io::Result<()>;
 }
 
 pub struct Listener {
@@ -35,6 +36,9 @@ impl Connection for std::os::unix::net::UnixStream {
 
     fn shutdown(&self) {
         let _ = std::os::unix::net::UnixStream::shutdown(self, std::net::Shutdown::Both);
+    }
+    fn set_write_timeout(&self, timeout: Option<std::time::Duration>) -> std::io::Result<()> {
+        std::os::unix::net::UnixStream::set_write_timeout(self, timeout)
     }
 }
 

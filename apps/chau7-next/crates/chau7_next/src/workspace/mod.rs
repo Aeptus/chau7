@@ -30,6 +30,7 @@ mod ai;
 mod app_data;
 mod bookmarks;
 mod command_center;
+mod dashboard;
 mod debug;
 mod drag;
 mod find;
@@ -143,6 +144,7 @@ pub struct Workspace {
     timeline_panel: Option<timeline::TimelinePanel>,
     /// API analytics task panel (PRX-014).
     task_ui: tasks::TaskUi,
+    dashboard: dashboard::DashboardUi,
     next_bookmark_id: u64,
     /// Split layout, scrollback and AI sessions of the closed tabs, by tab
     /// UUID, for Reopen Closed Tab (`captureClosedTabSnapshot`).
@@ -153,6 +155,8 @@ pub struct Workspace {
     panel_drag: Option<panel::PanelDrag>,
     /// Bumped when a panel opens, to replay its slide-in animation.
     panel_generation: usize,
+    /// Recent identity roots cached for cwd fallback; refreshed with settings.
+    known_repo_roots: Vec<String>,
 }
 
 impl Focusable for Workspace {
@@ -207,11 +211,15 @@ impl Workspace {
             bookmarks_panel: None,
             timeline_panel: None,
             task_ui: tasks::TaskUi::default(),
+            dashboard: dashboard::DashboardUi::default(),
             next_bookmark_id: 1,
             closed_snapshots: HashMap::new(),
             last_visual_state: None,
             panel_drag: None,
             panel_generation: 0,
+            known_repo_roots: chau7_next_core::repo_metadata::load_recent(
+                &cx.global::<AppData>().root.recent_repos_file(),
+            ),
         }
     }
 
@@ -219,11 +227,17 @@ impl Workspace {
         let mut this = Self::new_empty(window, cx);
         match saved {
             Some(saved) if !saved.tabs.is_empty() => {
-                for tab in &saved.tabs {
-                    this.add_tab(Some(tab.clone()), false, window, cx);
+                let selected_index = saved.selected.min(saved.tabs.len().saturating_sub(1));
+                let mut selected_id = None;
+                for (index, tab) in saved.tabs.iter().enumerate() {
+                    let id = this.add_tab(Some(tab.clone()), false, window, cx);
+                    if index == selected_index {
+                        selected_id = Some(id);
+                    }
                 }
-                let index = saved.selected.min(this.state.len().saturating_sub(1));
-                if let Some(id) = this.state.tabs().get(index).map(|t| t.id) {
+                // Seeding/coalescing groups can reorder tabs during hydration.
+                // Select the restored identity, not its former array position.
+                if let Some(id) = selected_id {
                     this.state.select(id);
                 }
             }
@@ -248,7 +262,13 @@ impl Workspace {
             Some(saved) => saved.cwd.clone(),
             None => self.inherited_start_directory(cx),
         };
-        self.add_tab_with(saved, cwd, select, false, window, cx)
+        self.add_tab_with(saved, cwd, select, (false, true), window, cx)
+    }
+
+    /// The plus button opens at the configured default directory, without
+    /// inheriting the selected tab's directory, group or insertion position.
+    fn add_default_tab(&mut self, window: &mut Window, cx: &mut Context<Self>) -> TabId {
+        self.add_tab_with(None, None, true, (false, false), window, cx)
     }
 
     /// `newTab(at:selectNewTab:)`: a new tab started in `directory` (or the
@@ -262,7 +282,7 @@ impl Workspace {
         cx: &mut Context<Self>,
     ) -> TabId {
         let at_directory = directory.is_some();
-        let id = self.add_tab_with(None, directory, select, at_directory, window, cx);
+        let id = self.add_tab_with(None, directory, select, (at_directory, true), window, cx);
         if select {
             self.focus_selected(window, cx);
         }
@@ -293,18 +313,21 @@ impl Workspace {
         saved: Option<SavedTab>,
         cwd: Option<PathBuf>,
         select: bool,
-        at_directory: bool,
+        origin: (bool, bool),
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> TabId {
+        let (at_directory, inherit_group) = origin;
         let id = AppData::next_tab_id(cx);
         let panes = cx.new(|cx| PaneTree::from_saved(saved.as_ref(), cwd.clone(), window, cx));
         let mut meta = TabMeta::new(id, self.state.next_color());
         meta.last_activity = AppData::now(cx);
         meta.created_at = meta.last_activity;
-        meta.git_root = cwd
-            .as_deref()
-            .and_then(procinfo::git_root)
+        meta.git_root = panes
+            .read(cx)
+            .focused_session(cx)
+            .and_then(|session| session.read(cx).git_root.clone())
+            .or_else(|| cwd.as_deref().and_then(procinfo::git_root))
             .map(|p| p.to_string_lossy().to_string());
         if let Some(saved) = &saved {
             if let Some(uuid) = saved.uuid {
@@ -323,13 +346,35 @@ impl Workspace {
                 meta.created_at = meta.last_activity - (unix_now() - created).max(0.0);
             }
         }
-        self.insert_entry(id, panes, cx);
+        panes.update(cx, |tree, cx| tree.set_owner_tab(meta.uuid, window, cx));
+        self.insert_entry(id, panes.clone(), cx);
         let restored_override = meta.token_opt_override;
-        if saved.is_some() {
+        if saved.is_some() || !inherit_group {
             self.state.push(meta, select);
         } else {
-            self.state.add(meta, select);
+            let directory = panes
+                .read(cx)
+                .focused_session(cx)
+                .and_then(|session| session.read(cx).cwd.clone())
+                .or_else(|| cwd.clone());
+            if let Some(directory) = directory {
+                self.state.add_in_directory(meta, &directory, select);
+            } else {
+                self.state.push(meta, select);
+            }
         }
+        if let Some(root) = self.state.get(id).and_then(|tab| tab.git_root.clone())
+            && !self.known_repo_roots.contains(&root)
+        {
+            crate::settings_window::record_recent_repo(&root, cx);
+            self.known_repo_roots.push(root);
+        }
+        let directory = panes
+            .read(cx)
+            .focused_session(cx)
+            .and_then(|session| session.read(cx).cwd.clone());
+        self.state
+            .setup_repo_group_in_directory(id, directory.as_deref(), &self.known_repo_roots);
         // A saved token optimizer override goes to the tab's shells (the
         // flag is created at their first prompt).
         if restored_override != chau7_next_core::token_optimization::TabTokenOptOverride::Default {
@@ -387,8 +432,20 @@ impl Workspace {
                     && this.state.get(id).and_then(|t| t.git_root.as_ref()) != Some(root)
                 {
                     crate::settings_window::record_recent_repo(root, cx);
+                    if !this.known_repo_roots.contains(root) {
+                        this.known_repo_roots.push(root.clone());
+                    }
                 }
-                this.state.set_git_root(id, root);
+                let directory = session
+                    .as_ref()
+                    .and_then(|session| session.read(cx).cwd.clone());
+
+                this.state.set_git_root_in_directory(
+                    id,
+                    root,
+                    directory.as_deref(),
+                    &this.known_repo_roots,
+                );
                 // `updateAutoColor`: color the tab after the AI tool it runs.
                 let app = session.and_then(|s| s.read(cx).ai_app.clone());
                 if let Some(entry) = this.entries.get_mut(&id)
@@ -576,6 +633,8 @@ impl Workspace {
     }
 
     pub fn select_tab(&mut self, id: TabId, window: &mut Window, cx: &mut Context<Self>) {
+        self.dashboard.dismiss();
+        cx.notify();
         let previous = self.state.selected().and_then(|p| self.state.index_of(p));
         if self.state.select(id) {
             // The incoming terminal slides 30 pt in from the side of travel
@@ -746,6 +805,7 @@ impl Workspace {
             .as_deref()
             .and_then(procinfo::git_root)
             .map(|p| p.to_string_lossy().to_string());
+        panes.update(cx, |tree, cx| tree.set_owner_tab(meta.uuid, window, cx));
         self.entries.remove(&id);
         self.insert_entry(new_id, panes, cx);
         self.state.replace(id, meta);
@@ -785,12 +845,16 @@ impl Workspace {
         }
         let cwd = self.entries.get(&id).and_then(|e| e.panes.read(cx).cwd(cx));
         let snapshot = self.closed_tab_snapshot(id, cwd.clone(), cx);
+        let closed_uuid = self.state.get(id).map(|meta| meta.uuid);
         match self
             .state
             .close(id, cwd.map(|p| p.to_string_lossy().to_string()))
         {
             CloseOutcome::NotFound => {}
             CloseOutcome::Closed => {
+                if let Some(uuid) = closed_uuid {
+                    crate::mcp::control::forget_closed_tab(&uuid.to_string());
+                }
                 if let Some((uuid, snapshot)) = snapshot {
                     self.closed_snapshots.insert(uuid, snapshot);
                     let kept: std::collections::HashSet<uuid::Uuid> = self
@@ -897,6 +961,9 @@ impl Workspace {
         let snapshot = self.closed_snapshots.remove(&entry.meta.uuid);
         let cwd = entry.directory.map(PathBuf::from);
         let panes = cx.new(|cx| PaneTree::from_saved(snapshot.as_ref(), cwd, window, cx));
+        if let Some(meta) = self.state.get(new_id) {
+            panes.update(cx, |tree, cx| tree.set_owner_tab(meta.uuid, window, cx));
+        }
         self.insert_entry(new_id, panes, cx);
         self.focus_selected(window, cx);
         cx.notify();
@@ -1004,35 +1071,28 @@ impl Workspace {
         self.focus_selected(window, cx);
     }
 
-    /// Title as `TabSessionContent.resolvedTitle`: custom title, then the AI
-    /// tool, then "Editor" for a tab with no terminal, then "Shell".
+    /// Current TabTitleFormatter: custom, AI, Vite, localized fallback.
     pub fn tab_title(&self, id: TabId, cx: &App) -> String {
         let Some(meta) = self.state.get(id) else {
             return String::new();
         };
-        if let Some(title) = meta.custom_title.as_ref().filter(|t| !t.trim().is_empty()) {
-            return title.clone();
-        }
         let panes = self.entries.get(&id).map(|entry| entry.panes.read(cx));
         let session = panes.and_then(|p| p.focused_session(cx));
-        if let Some(app) = session
+        let ai = session.as_ref().and_then(|s| s.read(cx).ai_app.clone());
+        let dev_server = session
             .as_ref()
-            .and_then(|session| session.read(cx).ai_app.clone())
-            .filter(|name| !name.is_empty())
-        {
-            return app;
-        }
-        // A Vite dev server names the tab (`displayTitle`).
-        if session
-            .and_then(|s| s.read(cx).dev_server().map(|d| d.name.clone()))
-            .is_some_and(|name| name.eq_ignore_ascii_case("Vite"))
-        {
-            return "Vite".into();
-        }
-        if panes.is_some_and(|p| !p.has_terminal()) {
-            return "Editor".into();
-        }
-        "Shell".into()
+            .and_then(|s| s.read(cx).dev_server().map(|d| d.name.clone()));
+        let fallback = crate::l10n::tr(if panes.is_some_and(|p| !p.has_terminal()) {
+            "Editor"
+        } else {
+            "Shell"
+        });
+        chau7_next_core::tab_bar_text::resolved_title(
+            meta.custom_title.as_deref(),
+            ai.as_deref(),
+            dev_server.as_deref(),
+            &fallback,
+        )
     }
 
     // ----- notification styles -----------------------------------------
@@ -1148,7 +1208,26 @@ impl Workspace {
         self.state.new_tab_position = settings.tabs.new_tab_position;
         self.state.idle_threshold_secs = settings.tabs.idle_threshold_minutes as f64 * 60.0;
         self.state.group_idle_tabs = settings.tabs.group_idle_tabs;
-        self.state.auto_repo_grouping = settings.tabs.auto_repo_grouping();
+        let directories = self
+            .entries
+            .iter()
+            .filter_map(|(id, entry)| {
+                entry
+                    .panes
+                    .read(cx)
+                    .focused_session(cx)
+                    .and_then(|session| session.read(cx).cwd.clone())
+                    .map(|directory| (*id, directory))
+            })
+            .collect::<Vec<_>>();
+        self.known_repo_roots = chau7_next_core::repo_metadata::load_recent(
+            &cx.global::<AppData>().root.recent_repos_file(),
+        );
+        self.state.set_auto_repo_grouping_in_directories(
+            settings.tabs.auto_repo_grouping(),
+            &directories,
+            &self.known_repo_roots,
+        );
         self.font_size = settings.appearance.zoomed_font_size();
         for entry in self.entries.values() {
             entry.panes.update(cx, |p, cx| p.reload_settings(cx));
@@ -1271,6 +1350,7 @@ impl Render for Workspace {
         let bookmarks = self.render_bookmarks(chrome, cx);
         let timeline = self.render_timeline(chrome, cx);
         let tasks = self.render_tasks(chrome, window, cx);
+        let dashboard = self.render_dashboard(chrome, window, cx);
         let picker = self.render_picker(chrome, cx);
         let shortcut_hint = self.render_shortcut_hint(chrome, cx);
         let drag_listener = self.drag_listener(cx);
@@ -1342,7 +1422,8 @@ impl Render for Workspace {
                     .children(bookmarks)
                     .children(explain)
                     .children(tasks)
-                    .children(timeline),
+                    .children(timeline)
+                    .children(dashboard),
             )
             .children(hover_card)
             .children(idle_popover)

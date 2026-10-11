@@ -1,6 +1,27 @@
 //! Text shown by the tab bar, the idle tabs popover and the hover card:
 //! durations, sizes, CPU, relative ages and middle truncation.
 
+/// Current TabTitleFormatter.swift priority. A custom title always wins;
+/// shell-controlled OSC titles never enter tab chrome. Minimal display is a
+/// chip setting, independent of this text resolver.
+pub fn resolved_title(
+    custom: Option<&str>,
+    ai: Option<&str>,
+    dev_server: Option<&str>,
+    fallback: &str,
+) -> String {
+    let nonempty = |value: Option<&str>| {
+        value
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string)
+    };
+    nonempty(custom)
+        .or_else(|| nonempty(ai))
+        .or_else(|| nonempty(dev_server).filter(|name| name.eq_ignore_ascii_case("Vite")))
+        .unwrap_or_else(|| fallback.to_string())
+}
+
 /// `LastCommandInfo.durationString`: "340ms", "1.2s", "3m 5s", "1h 2m".
 pub fn command_duration(seconds: f64) -> String {
     let d = seconds.max(0.0);
@@ -107,6 +128,32 @@ pub fn truncate_middle(text: &str, max_chars: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn titles_follow_current_swift_priority_and_trim() {
+        assert_eq!(
+            resolved_title(
+                Some("  Build review\n"),
+                Some("Codex"),
+                Some("Vite"),
+                "Shell"
+            ),
+            "Build review"
+        );
+        assert_eq!(
+            resolved_title(Some(" \n"), Some(" Claude Code "), Some("Vite"), "Shell"),
+            "Claude Code"
+        );
+        assert_eq!(
+            resolved_title(None, Some(" "), Some("  vItE  "), "Shell"),
+            "vItE"
+        );
+        assert_eq!(
+            resolved_title(None, None, Some("npm"), "Terminal"),
+            "Terminal"
+        );
+        assert_eq!(resolved_title(None, None, None, "Editor"), "Editor");
+    }
 
     #[test]
     fn durations_follow_last_command_info() {

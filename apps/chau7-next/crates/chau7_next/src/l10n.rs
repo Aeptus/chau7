@@ -19,6 +19,28 @@ pub fn lf(key: &str, default: &str, args: &[Arg]) -> String {
     l10n::lf(key, default, args)
 }
 
+/// A counted UI label, formatted with the matching Swift stringsdict rule.
+pub fn count(key: &str, default: &str, value: impl Into<Arg>) -> String {
+    lf(key, default, &[value.into()])
+}
+
+/// Localized precision and availability for AI run costs.
+pub fn run_cost_label(cost: f64, priced: i64, missing: i64) -> String {
+    if priced == 0 {
+        return tr(if missing > 0 {
+            "cost unavailable"
+        } else {
+            "no cost data"
+        });
+    }
+    let value = l10n::numbers::cost_precise(cost);
+    if missing > 0 {
+        format!("{} {}", value, tr("partial"))
+    } else {
+        value
+    }
+}
+
 /// Translate a literal English UI string (see `l10n::translate`).
 pub fn tr(text: &str) -> String {
     l10n::tr(text)
@@ -61,7 +83,9 @@ pub fn apply_setting(setting: AppLanguage) -> bool {
 /// Called whenever settings are applied: follows `app.language`; a change
 /// rebuilds the menu bar (the Swift app needs a restart for it).
 pub fn settings_applied(cx: &mut App) {
-    let setting = Settings::get(cx).general.app_language;
+    let general = &Settings::get(cx).general;
+    l10n::numbers::set_current(general.regional_number_format);
+    let setting = general.app_language;
     if apply_setting(setting) {
         let titles = cx
             .try_global::<crate::workspace::AppData>()
@@ -117,8 +141,9 @@ mod tests {
     /// literal in the sources exists in the English table.
     #[test]
     fn every_key_used_in_rust_exists_in_the_english_table() {
-        let re = regex::Regex::new(r#"\b(?:l10n::)?(?:l|lf)\(\s*"([A-Za-z][A-Za-z0-9_.]*)"\s*,"#)
-            .unwrap();
+        let re =
+            regex::Regex::new(r#"\b(?:l10n::)?(?:l|lf|count)\(\s*"([A-Za-z][A-Za-z0-9_.]*)"\s*,"#)
+                .unwrap();
         let en = l10n::table(Lang::En);
         let mut seen = 0;
         let mut stack = vec![Path::new(env!("CARGO_MANIFEST_DIR")).join("src")];
@@ -150,6 +175,7 @@ mod tests {
     #[test]
     fn language_choice_resolves() {
         assert_eq!(language_for(AppLanguage::French), Lang::Fr);
+        assert_eq!(language_for(AppLanguage::Spanish), Lang::Es);
         assert_eq!(language_for(AppLanguage::Hebrew), Lang::He);
         assert!(language_for(AppLanguage::Arabic).is_rtl());
         // "System Default" always lands on a supported language.

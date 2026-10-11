@@ -47,7 +47,15 @@ pub fn manager() -> &'static RuntimeSessionManager {
 pub fn init(cx: &mut App) {
     let projects = cx.global::<AppData>().root.claude_projects_dir();
     let _ = MANAGER.set(RuntimeSessionManager::new(Some(projects)));
+    let timer = crate::observability::register_timer(
+        cx,
+        "runtime.cleanup",
+        "Runtime session cleanup",
+        "runtime",
+        CLEANUP_INTERVAL_SECONDS * 1000,
+    );
     cx.spawn(async move |cx| {
+        let _timer = timer;
         loop {
             cx.background_executor()
                 .timer(Duration::from_secs(CLEANUP_INTERVAL_SECONDS))
@@ -64,7 +72,15 @@ pub fn init(cx: &mut App) {
 }
 
 fn start_readiness_monitor(cx: &mut App) {
+    let timer = crate::observability::register_timer(
+        cx,
+        "runtime.readiness",
+        "Runtime launch and turn readiness",
+        "runtime",
+        500,
+    );
     cx.spawn(async move |cx| {
+        let _timer = timer;
         loop {
             cx.background_executor()
                 .timer(Duration::from_millis(500))

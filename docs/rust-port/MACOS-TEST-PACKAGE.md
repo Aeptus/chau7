@@ -1,8 +1,8 @@
 # Chau7 Next macOS test package
 
-Current milestone: an Apple Silicon macOS test app called **Chau7 Next**,
-installed beside Chau7. Current Swift feature parity remains in the handoff
-backlog. This is an ad-hoc signed test package, not a notarized release.
+Package identity: an Apple Silicon macOS test app called **Chau7 Next**,
+installed beside Chau7. The user has now requested full current Swift parity;
+track that active work in [PARITY.md](PARITY.md) and [HANDOFF.md](HANDOFF.md). This is an ad-hoc signed test package, not a notarized release.
 
 ## Migration evidence
 
@@ -93,3 +93,28 @@ remains open: keyboard/IME, dragging and splits, restoration across complex
 sessions, accessibility, notifications, Keychain/login, helper registration
 in real AI CLI configs, TLS trust and production relay pairing. The isolated
 startup check does not establish full feature parity or production readiness.
+
+
+## Current parity batch validation
+
+Committed app source `20f9eed5` passed 2,196 local macOS workspace tests
+(261 app, 1,935 core), with two ignored tests/examples. The final combined
+source also passes strict workspace/all-target Clippy and the parity schema
+check. This batch includes current repository grouping, grapheme painting,
+Spanish/plural backend, CTO sentinel, macOS file-watcher recovery and numeric
+performance exports. Full current parity remains active and incomplete.
+
+A separately identified local diagnostic app was assembled from the committed
+new app/bridge binaries and the previously verified CI helpers. This is an
+isolated runtime check, not a replacement for the complete CI bundle build.
+The user's running Next and Swift apps remain untouched.
+
+
+The owned diagnostic app passed native launch, MCP initialization and all 32
+tool registrations. `chau7_runtime_info` returned its actual source SHA,
+unique test bundle ID and PID. Live and persisted snapshots contained real
+CPU/RSS, main-thread timer delay and nonempty feature timings, and excluded
+commands and terminal content. Automatic sampling and graceful owned-app
+quit/session save passed. Diagnostic profile: `/private/tmp/c7perf-5af6659b5d`.
+The performance reports path is `~/.chau7-next/reports/performance`, through
+`DataRoot::reports_dir`, rather than the main log's App Support location.

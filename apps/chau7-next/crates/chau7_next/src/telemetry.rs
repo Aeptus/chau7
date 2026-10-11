@@ -8,6 +8,9 @@
 //! tools, repository stats (hover card), Data Explorer, Debug Console
 //! Analytics and the iOS client events of remote control.
 
+#[path = "usage.rs"]
+pub mod usage;
+
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -36,19 +39,196 @@ const REPAIR_LIMIT: i64 = 500;
 const PTY_LOG_DRAIN: std::time::Duration = std::time::Duration::from_millis(500);
 
 struct TelemetryGlobal(Arc<TelemetryRecorder>);
+struct PromptTimings(Mutex<chau7_next_core::telemetry::latency::PromptTiming>);
+impl Global for PromptTimings {}
+struct TokenRates(Arc<Mutex<chau7_next_core::telemetry::token_rate::TokenRateStore>>);
+impl Global for TokenRates {}
+/// Current observed reading only. Absence remains absence, never a zero rate.
+pub fn token_rate(
+    tab: &str,
+    cx: &App,
+) -> Option<chau7_next_core::telemetry::token_rate::TokenRateReading> {
+    cx.try_global::<TokenRates>()?
+        .0
+        .lock()
+        .reading(tab)
+        .cloned()
+}
+pub fn token_rates(
+    cx: &App,
+) -> std::collections::HashMap<String, chau7_next_core::telemetry::token_rate::TokenRateReading> {
+    cx.try_global::<TokenRates>()
+        .map(|g| g.0.lock().snapshot())
+        .unwrap_or_default()
+}
+pub fn record_token_rate(
+    tab: &str,
+    reading: chau7_next_core::telemetry::token_rate::TokenRateReading,
+    cx: &App,
+) {
+    let previous = token_rate(tab, cx);
+    if let Some(store) = cx.try_global::<TokenRates>() {
+        store.0.lock().record_rate(
+            tab,
+            &reading.provider,
+            reading.tokens_per_second,
+            reading.output_tokens,
+            reading.duration_ms,
+            reading.source,
+            reading.updated_at,
+        );
+    }
+    if previous.as_ref() != Some(&reading) {
+        log::debug!(
+            "Token rate tab={tab} source={:?} rate={:.2} output={} duration_ms={}",
+            reading.source,
+            reading.tokens_per_second,
+            reading.output_tokens,
+            reading.duration_ms
+        );
+    }
+}
+
 impl Global for TelemetryGlobal {}
 
 /// Open the store (Chau7 Next's own file) and set up the recorder.
 pub fn init(cx: &mut App) {
+    cx.set_global(PromptTimings(Mutex::new(Default::default())));
+    usage::init(cx);
     let root = cx.global::<AppData>().root.clone();
     let store = Arc::new(TelemetryStore::open(&root.telemetry_db()));
     let recorder = TelemetryRecorder::new(store, default_providers(root.home()));
-    cx.set_global(TelemetryGlobal(Arc::new(recorder)));
+    let recorder = Arc::new(recorder);
+    let rates = Arc::new(Mutex::new(
+        chau7_next_core::telemetry::token_rate::TokenRateStore::default(),
+    ));
+    cx.set_global(TelemetryGlobal(recorder.clone()));
+    cx.set_global(TokenRates(rates.clone()));
+    usage::init_latency(cx);
+    let home = root.home().to_owned();
+    let rate_executor = cx.background_executor().clone();
+    let timer = crate::observability::register_background_timer(
+        cx,
+        "telemetry.transcript_rate",
+        "Transcript token rate observations",
+        "telemetry",
+        200,
+    );
+    cx.background_executor()
+        .spawn(async move {
+            let _timer = timer;
+            use chau7_next_core::telemetry::{
+                jsonl_tail::JsonlTail, token_rate::TranscriptRateState,
+            };
+            let claude =
+                chau7_next_core::telemetry::providers::ClaudeCodeContentProvider::new(&home);
+            let codex = chau7_next_core::telemetry::providers::CodexContentProvider::new(&home);
+            let mut files: std::collections::HashMap<
+                (String, PathBuf),
+                (JsonlTail, TranscriptRateState),
+            > = std::collections::HashMap::new();
+            let mut paths_cache: std::collections::HashMap<
+                String,
+                (String, std::time::Instant, Vec<PathBuf>),
+            > = std::collections::HashMap::new();
+            loop {
+                rate_executor
+                    .timer(std::time::Duration::from_millis(200))
+                    .await;
+                let runs = recorder.all_active_runs();
+                let active: std::collections::HashSet<_> =
+                    runs.iter().filter_map(|r| r.tab_id.clone()).collect();
+                files.retain(|(tab, _), _| active.contains(tab));
+                paths_cache.retain(|tab, _| active.contains(tab));
+                for run in runs {
+                    let (Some(tab), Some(session)) = (run.tab_id, run.session_id) else {
+                        continue;
+                    };
+                    let cached = paths_cache
+                        .get(&tab)
+                        .filter(|(id, at, _)| {
+                            id == &session && at.elapsed() < std::time::Duration::from_secs(2)
+                        })
+                        .map(|(_, _, paths)| paths.clone());
+                    let paths = if let Some(paths) = cached {
+                        paths
+                    } else {
+                        let discovered = if matches!(run.provider.as_str(), "claude" | "anthropic")
+                        {
+                            claude.transcript_files(&run.cwd, &session)
+                        } else if matches!(run.provider.as_str(), "codex" | "openai") {
+                            codex
+                                .find_rollout(&session, run.started_at)
+                                .into_iter()
+                                .collect()
+                        } else {
+                            vec![]
+                        };
+                        paths_cache.insert(
+                            tab.clone(),
+                            (
+                                session.clone(),
+                                std::time::Instant::now(),
+                                discovered.clone(),
+                            ),
+                        );
+                        discovered
+                    };
+                    for path in paths {
+                        let state = files.entry((tab.clone(), path.clone())).or_default();
+                        if let Ok(text) = state.0.read(&path) {
+                            for line in text.lines() {
+                                if let Some(r) = state.1.consume(&run.provider, line)
+                                    && r.updated_at >= run.started_at
+                                {
+                                    rates.lock().record_rate(
+                                        &tab,
+                                        &r.provider,
+                                        r.tokens_per_second,
+                                        r.output_tokens,
+                                        r.duration_ms,
+                                        r.source,
+                                        r.updated_at,
+                                    );
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        })
+        .detach();
 }
 
 /// The shared recorder (and through it the store).
 pub fn recorder(cx: &App) -> Option<Arc<TelemetryRecorder>> {
     cx.try_global::<TelemetryGlobal>().map(|g| g.0.clone())
+}
+
+/// Arm first-response timing after a submitted prompt. Call with the submitted
+/// command line, not every keypress. Actual session ID matches recorder tabs.
+pub fn note_prompt(tab: &str, cx: &App) {
+    let Some(run) = recorder(cx).and_then(|r| r.active_run_for_tab(tab)) else {
+        return;
+    };
+    if let Some(timing) = cx.try_global::<PromptTimings>() {
+        timing.0.lock().prompt(tab, run, chrono::Utc::now());
+    }
+}
+/// Observe delivered PTY bytes. ANSI controls and spinner-only updates are
+/// ignored; consume one prompt only, expire after 120 seconds. SQLite runs
+/// off the UI thread and authoritative transcript rounds later replace it.
+pub fn note_output(tab: &str, bytes: &[u8], cx: &App) {
+    let sample = cx
+        .try_global::<PromptTimings>()
+        .and_then(|t| t.0.lock().output(tab, bytes, chrono::Utc::now()));
+    if let (Some(sample), Some(recorder)) = (sample, recorder(cx)) {
+        cx.background_executor()
+            .spawn(async move {
+                recorder.store().insert_latency_sample(&sample);
+            })
+            .detach();
+    }
 }
 
 /// TEL-001: an AI CLI was detected in a terminal session.
@@ -89,6 +269,9 @@ pub fn run_ended(
             .is_some_and(|r| r.session_id.is_none())
     {
         recorder.update_session_id(tab_id, session);
+    }
+    if let Some(timing) = cx.try_global::<PromptTimings>() {
+        timing.0.lock().clear(tab_id);
     }
     let Some(run) = recorder.run_ended(tab_id, exit_status.map(i64::from)) else {
         return;
@@ -282,14 +465,42 @@ struct McpTelemetry(Arc<TelemetryRecorder>);
 
 impl mcp_sources::TelemetrySource for McpTelemetry {
     fn run(&self, run_id: &str) -> Option<TelemetryRun> {
-        self.0
-            .all_active_runs()
-            .into_iter()
-            .find(|r| r.id == run_id)
-            .or_else(|| self.0.store().get_run(run_id))
+        self.0.store().get_run(run_id).or_else(|| {
+            self.0
+                .all_active_runs()
+                .into_iter()
+                .find(|r| r.id == run_id)
+        })
     }
     fn runs(&self, filter: &TelemetryRunFilter) -> Vec<TelemetryRun> {
-        self.0.store().list_runs(filter)
+        let active: Vec<_> = self
+            .active_runs()
+            .into_iter()
+            .filter(|r| {
+                filter
+                    .session_id
+                    .as_ref()
+                    .is_none_or(|id| r.session_id.as_ref() == Some(id))
+                    && filter
+                        .repo_path
+                        .as_ref()
+                        .is_none_or(|p| r.repo_path.as_ref() == Some(p))
+                    && filter.provider.as_ref().is_none_or(|p| &r.provider == p)
+                    && filter.after.is_none_or(|at| r.started_at >= at)
+                    && filter.before.is_none_or(|at| r.started_at <= at)
+            })
+            .collect();
+        let offset = filter.offset.unwrap_or(0).max(0) as usize;
+        let limit = filter.limit.map(|n| n.max(0) as usize);
+        let mut stored_filter = filter.clone();
+        stored_filter.offset = None;
+        stored_filter.limit = limit.map(|n| n.saturating_add(offset).min(i64::MAX as usize) as i64);
+        chau7_next_core::telemetry::query_projection::merge_runs(
+            active,
+            self.0.store().list_runs(&stored_filter),
+            offset,
+            limit,
+        )
     }
     fn tool_calls(&self, run_id: &str) -> Vec<TelemetryToolCall> {
         self.0.store().get_tool_calls(run_id)
@@ -307,10 +518,16 @@ impl mcp_sources::TelemetrySource for McpTelemetry {
         self.0.store().list_sessions(repo_path)
     }
     fn active_runs(&self) -> Vec<TelemetryRun> {
-        self.0.all_active_runs()
+        self.0
+            .all_active_runs()
+            .into_iter()
+            .map(|r| self.0.store().get_run(&r.id).unwrap_or(r))
+            .collect()
     }
     fn active_run_for_tab(&self, tab_id: &str) -> Option<TelemetryRun> {
-        self.0.active_run_for_tab(tab_id)
+        self.0
+            .active_run_for_tab(tab_id)
+            .map(|r| self.0.store().get_run(&r.id).unwrap_or(r))
     }
 }
 

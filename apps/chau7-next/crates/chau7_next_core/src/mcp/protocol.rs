@@ -1,226 +1,342 @@
-//! The MCP JSON-RPC 2.0 session (`MCP/MCPSession.swift`).
-//!
-//! Transport: newline-delimited JSON, one message per line both ways. Each
-//! line read is trimmed, empty lines are skipped, and each answer is one
-//! line. Methods: `initialize`, `notifications/initialized`, `tools/list`,
-//! `tools/call`, `resources/list`, `resources/read`, `ping`.
-//!
-//! Tool calls always succeed at the JSON-RPC level: the tool's result (or
-//! `{"error":"..."}`) is a JSON string in `content[0].text`.
-//!
-//! Differences with Swift, on purpose: `serverInfo.name` is `chau7-next`
-//! (the name it is registered under), and no notification gets an answer
-//! (Swift answered "Method not found" with `id: null` to every notification
-//! but `notifications/initialized`, which JSON-RPC forbids).
-
+//! Stateful MCP JSON-RPC session. Each transport connection owns its handshake.
+use super::handshake::{Handshake, PREFERRED_VERSION, ProtocolError};
 use serde_json::{Map, Value, json};
-
-/// `initialize` result.
-pub const PROTOCOL_VERSION: &str = "2024-11-05";
+pub const PROTOCOL_VERSION: &str = PREFERRED_VERSION;
 pub const SERVER_VERSION: &str = "1.1.0";
 
-/// What the session asks the app for.
 pub trait McpHost {
-    /// `tools/list` entries (`name`, `description`, `inputSchema`).
+    fn handshake(&mut self) -> &mut Handshake;
     fn tool_definitions(&self) -> Vec<Value>;
-    /// Run a tool; returns its JSON text (a result or `{"error":...}`).
     fn call_tool(&mut self, name: &str, arguments: &Map<String, Value>) -> String;
-    /// `resources/list` entries.
+    fn call_tool_result(
+        &mut self,
+        name: &str,
+        arguments: &Map<String, Value>,
+    ) -> Result<String, ProtocolError> {
+        Ok(self.call_tool(name, arguments))
+    }
     fn resource_definitions(&self) -> Vec<Value>;
-    /// `resources/read` text for a URI.
     fn read_resource(&mut self, uri: &str) -> String;
 }
-
 fn result(id: Value, result: Value) -> String {
-    json!({"jsonrpc": "2.0", "id": id, "result": result}).to_string()
+    json!({"jsonrpc":"2.0","id":id,"result":result}).to_string()
 }
-
-fn error(id: Value, code: i64, message: &str) -> String {
-    json!({"jsonrpc": "2.0", "id": id, "error": {"code": code, "message": message}}).to_string()
+fn error(id: Value, error: ProtocolError) -> String {
+    let mut body = json!({"code":error.code,"message":error.message});
+    if let Some(data) = error.data {
+        body["data"] = data;
+    }
+    json!({"jsonrpc":"2.0","id":id,"error":body}).to_string()
 }
-
-/// The parse error line (`-32700`).
 pub fn parse_error() -> String {
-    error(Value::Null, -32700, "Parse error")
+    error(Value::Null, ProtocolError::new(-32700, "Parse error"))
 }
 
-/// Handle one line from the client. Returns the line to send back (without
-/// the newline), or `None` for blank lines and notifications.
 pub fn handle_line(line: &str, server_name: &str, host: &mut dyn McpHost) -> Option<String> {
     let line = line.trim();
     if line.is_empty() {
         return None;
     }
-    let Ok(Value::Object(message)) = serde_json::from_str::<Value>(line) else {
-        return Some(parse_error());
+    let message = match serde_json::from_str::<Value>(line) {
+        Ok(Value::Object(message)) => message,
+        Ok(_) => {
+            return Some(error(
+                Value::Null,
+                ProtocolError::new(-32600, "Invalid Request"),
+            ));
+        }
+        Err(_) => return Some(parse_error()),
     };
-    let method = message
-        .get("method")
-        .and_then(Value::as_str)
-        .unwrap_or_default();
-    let is_notification = !message.contains_key("id");
+    let notification = !message.contains_key("id");
     let id = message.get("id").cloned().unwrap_or(Value::Null);
-    let empty = Map::new();
-    let params = message
-        .get("params")
-        .and_then(Value::as_object)
-        .unwrap_or(&empty);
-    if method.starts_with("notifications/") || (is_notification && !method.is_empty()) {
+    let method = message.get("method").and_then(Value::as_str);
+    if message.get("jsonrpc") != Some(&json!("2.0"))
+        || method.is_none()
+        || !(id.is_null() || id.is_string() || id.is_number())
+    {
+        return (!notification)
+            .then(|| error(Value::Null, ProtocolError::new(-32600, "Invalid Request")));
+    }
+    let method = method.unwrap();
+    if method == "notifications/initialized" {
+        host.handshake().initialized();
         return None;
     }
-    Some(match method {
-        "initialize" => result(
-            id,
-            json!({
-                "protocolVersion": PROTOCOL_VERSION,
-                "capabilities": {
-                    "tools": {"listChanged": false},
-                    "resources": {"subscribe": false, "listChanged": false}
-                },
-                "serverInfo": {"name": server_name, "version": SERVER_VERSION}
-            }),
-        ),
-        "tools/list" => result(id, json!({"tools": host.tool_definitions()})),
+    if notification && method != "initialize" {
+        return None;
+    }
+    let empty = Map::new();
+    let params = match message.get("params") {
+        None => &empty,
+        Some(Value::Object(params)) => params,
+        _ => {
+            return (!notification).then(|| {
+                error(
+                    id,
+                    ProtocolError::new(-32602, "Invalid params: expected an object"),
+                )
+            });
+        }
+    };
+    let outcome: Result<Value, ProtocolError> = (|| match method {
+        "initialize" => {
+            let version = host.handshake().initialize(params)?;
+            Ok(
+                json!({"protocolVersion":version,"capabilities":{"tools":{"listChanged":false},"resources":{"subscribe":false,"listChanged":false}},"serverInfo":{"name":server_name,"version":SERVER_VERSION}}),
+            )
+        }
+        "tools/list" => {
+            host.handshake().require_ready(method)?;
+            Ok(json!({"tools":host.tool_definitions()}))
+        }
         "tools/call" => {
+            host.handshake().require_ready(method)?;
             let name = params
                 .get("name")
                 .and_then(Value::as_str)
-                .unwrap_or_default();
-            let arguments = params
-                .get("arguments")
-                .and_then(Value::as_object)
-                .unwrap_or(&empty);
-            let text = host.call_tool(name, arguments);
-            result(id, json!({"content": [{"type": "text", "text": text}]}))
+                .filter(|s| !s.is_empty())
+                .ok_or_else(|| ProtocolError::new(-32602, "Invalid params: name is required"))?;
+            let arguments = match params.get("arguments") {
+                None => &empty,
+                Some(Value::Object(arguments)) => arguments,
+                _ => {
+                    return Err(ProtocolError::new(
+                        -32602,
+                        "Invalid params: arguments must be an object",
+                    ));
+                }
+            };
+            let definitions = host.tool_definitions();
+            let definition = definitions
+                .iter()
+                .find(|entry| entry["name"] == name)
+                .ok_or_else(|| ProtocolError::new(-32602, format!("Unknown tool: {name}")))?;
+            if let Some(schema) = definition.get("inputSchema") {
+                let violations = crate::runtime::structured_result::validate(
+                    &Value::Object(arguments.clone()),
+                    schema,
+                );
+                if !violations.is_empty() {
+                    return Err(ProtocolError::new(
+                        -32602,
+                        format!("Invalid params: {}", violations.join("; ")),
+                    ));
+                }
+            }
+            let text = host.call_tool_result(name, arguments)?;
+            let is_error = serde_json::from_str::<Value>(&text)
+                .ok()
+                .is_some_and(|v| v.get("error").is_some());
+            let mut result = json!({"content":[{"type":"text","text":text}],"isError":is_error});
+            if let Ok(Value::Object(content)) = serde_json::from_str::<Value>(&text) {
+                result["structuredContent"] = Value::Object(content);
+            }
+            Ok(result)
         }
-        "resources/list" => result(id, json!({"resources": host.resource_definitions()})),
+        "resources/list" => {
+            host.handshake().require_ready(method)?;
+            Ok(json!({"resources":host.resource_definitions()}))
+        }
         "resources/read" => {
+            host.handshake().require_ready(method)?;
             let uri = params
                 .get("uri")
                 .and_then(Value::as_str)
-                .unwrap_or_default();
+                .filter(|s| !s.is_empty())
+                .ok_or_else(|| ProtocolError::new(-32602, "Invalid params: uri is required"))?;
             let text = host.read_resource(uri);
-            result(
-                id,
-                json!({"contents": [{"uri": uri, "mimeType": "application/json", "text": text}]}),
-            )
+            Ok(json!({"contents":[{"uri":uri,"mimeType":"application/json","text":text}]}))
         }
-        "ping" => result(id, json!({})),
-        other => error(id, -32601, &format!("Method not found: {other}")),
+        "ping" => Ok(json!({})),
+        other => Err(ProtocolError::new(
+            -32601,
+            format!("Method not found: {other}"),
+        )),
+    })();
+    (!notification).then(|| match outcome {
+        Ok(value) => result(id, value),
+        Err(failure) => error(id, failure),
     })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-
+    #[derive(Default)]
     struct Host {
-        calls: Vec<(String, Map<String, Value>)>,
+        handshake: Handshake,
+        calls: Vec<String>,
     }
-
     impl McpHost for Host {
-        fn tool_definitions(&self) -> Vec<Value> {
-            vec![json!({"name": "tab_list"})]
+        fn handshake(&mut self) -> &mut Handshake {
+            &mut self.handshake
         }
-        fn call_tool(&mut self, name: &str, arguments: &Map<String, Value>) -> String {
-            self.calls.push((name.to_string(), arguments.clone()));
-            r#"{"ok":true}"#.to_string()
+        fn tool_definitions(&self) -> Vec<Value> {
+            vec![
+                json!({"name":"tab_list","inputSchema":{"type":"object","additionalProperties":false}}),
+                json!({"name":"tab_exec","inputSchema":{"type":"object","required":["tab_id","command"],"properties":{"tab_id":{"type":"string"},"command":{"type":"string"}},"additionalProperties":false}}),
+            ]
+        }
+        fn call_tool(&mut self, name: &str, _: &Map<String, Value>) -> String {
+            self.calls.push(name.into());
+            if name == "tab_exec" {
+                r#"{"error":"denied"}"#.into()
+            } else {
+                r#"{"ok":true}"#.into()
+            }
         }
         fn resource_definitions(&self) -> Vec<Value> {
-            vec![json!({"uri": "chau7://telemetry/runs"})]
+            vec![json!({"uri":"chau7://telemetry/runs"})]
         }
         fn read_resource(&mut self, uri: &str) -> String {
-            format!("[\"{uri}\"]")
+            json!([uri]).to_string()
         }
     }
-
-    fn run(line: &str) -> (Option<Value>, Host) {
-        let mut host = Host { calls: Vec::new() };
-        let out = handle_line(line, "chau7-next", &mut host);
-        (out.map(|s| serde_json::from_str(&s).unwrap()), host)
+    fn request(host: &mut Host, method: &str, params: Value) -> Value {
+        serde_json::from_str(
+            &handle_line(
+                &json!({"jsonrpc":"2.0","id":1,"method":method,"params":params}).to_string(),
+                "chau7-next",
+                host,
+            )
+            .unwrap(),
+        )
+        .unwrap()
     }
-
-    #[test]
-    fn initialize() {
-        let (v, _) = run(r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}"#);
-        let v = v.unwrap();
-        assert_eq!(v["id"], 1);
-        assert_eq!(v["result"]["protocolVersion"], "2024-11-05");
-        assert_eq!(v["result"]["serverInfo"]["name"], "chau7-next");
-        assert_eq!(v["result"]["serverInfo"]["version"], "1.1.0");
-        assert_eq!(v["result"]["capabilities"]["tools"]["listChanged"], false);
-        assert_eq!(v["result"]["capabilities"]["resources"]["subscribe"], false);
-    }
-
-    #[test]
-    fn notifications_and_blank_lines_get_no_answer() {
-        assert!(
-            run(r#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#)
-                .0
-                .is_none()
+    fn ready() -> Host {
+        let mut host = Host::default();
+        let result = request(
+            &mut host,
+            "initialize",
+            json!({"protocolVersion":PROTOCOL_VERSION}),
         );
-        assert!(
-            run(r#"{"jsonrpc":"2.0","method":"notifications/cancelled","params":{}}"#)
-                .0
-                .is_none()
+        assert_eq!(result["result"]["protocolVersion"], PROTOCOL_VERSION);
+        handle_line(
+            r#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#,
+            "chau7-next",
+            &mut host,
         );
-        assert!(run("   ").0.is_none());
+        host
     }
-
     #[test]
-    fn parse_errors() {
-        let (v, _) = run("{nope");
+    fn lifecycle_gate_and_supported_protocol_are_connection_specific() {
+        let mut host = Host::default();
         assert_eq!(
-            v.unwrap(),
-            json!({"jsonrpc":"2.0","id":null,"error":{"code":-32700,"message":"Parse error"}})
+            request(&mut host, "tools/list", json!({}))["error"]["code"],
+            -32002
         );
-        let (v, _) = run("[1,2]");
-        assert_eq!(v.unwrap()["error"]["code"], -32700);
-    }
-
-    #[test]
-    fn unknown_method() {
-        let (v, _) = run(r#"{"jsonrpc":"2.0","id":"x","method":"foo/bar"}"#);
-        let v = v.unwrap();
-        assert_eq!(v["id"], "x");
-        assert_eq!(v["error"]["code"], -32601);
-        assert_eq!(v["error"]["message"], "Method not found: foo/bar");
-    }
-
-    #[test]
-    fn tools_list_and_call() {
-        let (v, _) = run(r#"{"jsonrpc":"2.0","id":2,"method":"tools/list"}"#);
-        assert_eq!(v.unwrap()["result"]["tools"][0]["name"], "tab_list");
-        let (v, host) = run(
-            r#"{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"tab_exec","arguments":{"tab_id":"A","command":"ls"}}}"#,
+        let result = request(
+            &mut host,
+            "initialize",
+            json!({"protocolVersion":"2024-11-05"}),
         );
-        let v = v.unwrap();
-        assert_eq!(v["result"]["content"][0]["type"], "text");
-        assert_eq!(v["result"]["content"][0]["text"], r#"{"ok":true}"#);
-        assert_eq!(host.calls[0].0, "tab_exec");
-        assert_eq!(host.calls[0].1["command"], "ls");
-        // Missing arguments: an empty object.
-        let (_, host) =
-            run(r#"{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"tab_list"}}"#);
-        assert!(host.calls[0].1.is_empty());
-    }
-
-    #[test]
-    fn resources_and_ping() {
-        let (v, _) = run(r#"{"jsonrpc":"2.0","id":5,"method":"resources/list"}"#);
+        assert_eq!(result["result"]["protocolVersion"], "2024-11-05");
         assert_eq!(
-            v.unwrap()["result"]["resources"][0]["uri"],
+            request(&mut host, "tools/list", json!({}))["error"]["code"],
+            -32002
+        );
+        handle_line(
+            r#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#,
+            "chau7-next",
+            &mut host,
+        );
+        assert!(request(&mut host, "tools/list", json!({}))["result"]["tools"].is_array());
+        assert_eq!(
+            request(
+                &mut host,
+                "initialize",
+                json!({"protocolVersion":PROTOCOL_VERSION})
+            )["error"]["code"],
+            -32600
+        );
+        assert!(!Host::default().handshake.is_ready());
+    }
+    #[test]
+    fn malformed_and_missing_initialization_do_not_enable_tools() {
+        let mut host = Host::default();
+        for params in [
+            json!({}),
+            json!({"protocolVersion":42}),
+            json!({"protocolVersion":"2099-01-01"}),
+            json!([]),
+        ] {
+            assert_eq!(
+                request(&mut host, "initialize", params)["error"]["code"],
+                -32602
+            );
+            assert!(!host.handshake.is_ready());
+        }
+        assert_eq!(request(&mut host, "ping", json!({}))["result"], json!({}));
+        assert_eq!(
+            request(&mut host, "foo/bar", json!({}))["error"]["code"],
+            -32601
+        );
+    }
+    #[test]
+    fn tool_schema_validates_before_dispatch_and_tool_errors_are_flagged() {
+        let mut host = ready();
+        for params in [
+            json!({"name":"tab_exec","arguments":{"tab_id":"A"}}),
+            json!({"name":"tab_exec","arguments":{"tab_id":"A","command":42}}),
+            json!({"name":"tab_list","arguments":{"extra":true}}),
+            json!({"name":"tab_list","arguments":[]}),
+            json!({"name":"missing"}),
+        ] {
+            assert_eq!(
+                request(&mut host, "tools/call", params)["error"]["code"],
+                -32602
+            );
+        }
+        assert!(host.calls.is_empty());
+        let result = request(
+            &mut host,
+            "tools/call",
+            json!({"name":"tab_exec","arguments":{"tab_id":"A","command":"ls"}}),
+        );
+        assert_eq!(result["result"]["isError"], true);
+        assert_eq!(
+            request(&mut host, "tools/call", json!({"name":"tab_list"}))["result"]["isError"],
+            false
+        );
+        assert_eq!(host.calls, vec!["tab_exec", "tab_list"]);
+    }
+    #[test]
+    fn notifications_are_silent_and_resources_require_ready() {
+        let mut host = ready();
+        for line in [
+            " ",
+            r#"{"jsonrpc":"2.0","method":"notifications/cancelled"}"#,
+            r#"{"jsonrpc":"2.0","method":"unknown"}"#,
+        ] {
+            assert!(handle_line(line, "chau7-next", &mut host).is_none());
+        }
+        assert_eq!(
+            request(&mut host, "resources/list", json!({}))["result"]["resources"][0]["uri"],
             "chau7://telemetry/runs"
         );
-        let (v, _) = run(
-            r#"{"jsonrpc":"2.0","id":6,"method":"resources/read","params":{"uri":"chau7://telemetry/sessions"}}"#,
+        let result = request(
+            &mut host,
+            "resources/read",
+            json!({"uri":"chau7://telemetry/runs"}),
         );
-        let v = v.unwrap();
-        let content = &v["result"]["contents"][0];
-        assert_eq!(content["uri"], "chau7://telemetry/sessions");
-        assert_eq!(content["mimeType"], "application/json");
-        assert_eq!(content["text"], "[\"chau7://telemetry/sessions\"]");
-        let (v, _) = run(r#"{"jsonrpc":"2.0","id":7,"method":"ping"}"#);
-        assert_eq!(v.unwrap()["result"], json!({}));
+        assert_eq!(
+            result["result"]["contents"][0]["mimeType"],
+            "application/json"
+        );
+    }
+    #[test]
+    fn invalid_frames_are_not_tool_calls() {
+        let mut host = ready();
+        for (line, code) in [
+            ("{nope", -32700),
+            ("[1,2]", -32600),
+            (r#"{"id":1,"method":"tools/list"}"#, -32600),
+            (r#"{"jsonrpc":"2.0","id":true,"method":"ping"}"#, -32600),
+        ] {
+            let value: Value =
+                serde_json::from_str(&handle_line(line, "next", &mut host).unwrap()).unwrap();
+            assert_eq!(value["error"]["code"], code);
+        }
+        assert!(host.calls.is_empty());
     }
 }
