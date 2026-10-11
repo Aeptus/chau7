@@ -282,6 +282,7 @@ fn handle_claude_event(event: ClaudeCodeEvent, cx: &mut App) {
     ai.directory = Some(event.cwd.clone()).filter(|d| !d.is_empty());
     ai.session_id = Some(event.session_id.clone()).filter(|s| !s.is_empty());
     ai.tab_id = crate::runtime::notification_tab_for_claude_session(&event.session_id, cx);
+    crate::remote::ingest_claude_event(&event, ai.tab_id.and_then(events_out::tab_from_uuid), cx);
     ai.producer = Some("claude_code_monitor".into());
     ai.reliability = AiEventReliability::Authoritative;
     events_out::publish(ai, true, cx);

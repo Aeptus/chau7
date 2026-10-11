@@ -4,6 +4,7 @@
 //! so both apps behave the same. Each module names the Swift file it mirrors;
 //! when the two disagree, the Swift file is the source of truth.
 
+pub mod aethyme_delivery;
 pub mod ai;
 pub mod ansi_log;
 pub mod app_icon;
@@ -105,8 +106,12 @@ pub mod tab_target;
 pub mod tabs_state;
 pub mod telemetry;
 pub mod terminal_analytics;
+pub mod terminal_clipboard;
 pub mod terminal_import;
 pub mod terminal_key_press;
 pub mod terminal_prompt_notification;
+pub mod terminal_title;
 pub mod token_optimization;
 pub mod welcome;
+
+pub mod work_profiler;

@@ -6,6 +6,7 @@ use std::collections::{HashMap, VecDeque};
 use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
 
+use chau7_next_core::work_profiler::{self, Key, Queue};
 use gpui::{
     AnyWindowHandle, App, Bounds, Corners, DevicePixels, Global, Hsla, PaintQuad, Pixels,
     PlatformTextSystem, Point, RenderGlyphParams, RenderImage, ShapedLine, TextRun, Window, point,
@@ -23,6 +24,11 @@ struct CpuText {
 }
 struct CpuTextGlobal(Arc<CpuText>);
 impl Global for CpuTextGlobal {}
+
+pub(crate) fn glyph_cache_entries(cx: &App) -> Option<usize> {
+    cx.try_global::<CpuTextGlobal>()
+        .map(|text| text.0.glyphs.lock().items.len())
+}
 
 pub(crate) fn glyph_cache_bytes(cx: &App) -> Option<u64> {
     cx.try_global::<CpuTextGlobal>()
@@ -77,10 +83,30 @@ impl GlyphCache {
     }
 }
 impl CpuText {
-    fn raster(&self, params: &RenderGlyphParams) -> anyhow::Result<Arc<Raster>> {
+    fn raster(
+        &self,
+        params: &RenderGlyphParams,
+        visibility: &'static str,
+    ) -> anyhow::Result<Arc<Raster>> {
+        let mut lookup = work_profiler::begin(Key::work(
+            "glyph_lookup",
+            "draw",
+            visibility,
+            "cpu_renderer",
+            Queue::Main,
+        ));
         if let Some(raster) = self.glyphs.lock().items.get(params).cloned() {
+            lookup.items(1);
             return Ok(raster);
         }
+        drop(lookup);
+        let mut rasterization = work_profiler::begin(Key::work(
+            "glyph_rasterize",
+            "draw",
+            visibility,
+            "cpu_renderer",
+            Queue::Main,
+        ));
         let bounds = self.platform.glyph_raster_bounds(params)?;
         let (size, bytes) = if bounds.size.width.0 <= 0 || bounds.size.height.0 <= 0 {
             (size(DevicePixels(0), DevicePixels(0)), Vec::new())
@@ -93,6 +119,8 @@ impl CpuText {
             height: size.height.0.max(0) as usize,
             bytes,
         });
+        rasterization.bytes(raster.bytes.len());
+        rasterization.items(1);
         self.glyphs.lock().insert(params.clone(), raster.clone());
         Ok(raster)
     }
@@ -337,6 +365,7 @@ pub(super) struct GridCanvas<'a> {
     surface: Option<Surface>,
     text: Option<Arc<CpuText>>,
     cache: Arc<Mutex<FrameCache>>,
+    visibility: &'static str,
 }
 impl<'a> GridCanvas<'a> {
     pub fn new(
@@ -344,6 +373,7 @@ impl<'a> GridCanvas<'a> {
         bounds: Bounds<Pixels>,
         gpu: bool,
         cache: Arc<Mutex<FrameCache>>,
+        visibility: &'static str,
         cx: &mut App,
     ) -> Self {
         let text = (!gpu)
@@ -362,6 +392,7 @@ impl<'a> GridCanvas<'a> {
             text,
             window,
             cache,
+            visibility,
         }
     }
 
@@ -399,8 +430,23 @@ impl<'a> GridCanvas<'a> {
         cx: &mut App,
     ) -> anyhow::Result<()> {
         let Some(surface) = self.surface.as_mut() else {
+            let _submission = work_profiler::begin(Key::work(
+                "gpu_text_submit",
+                "draw",
+                self.visibility,
+                "terminal_painter",
+                Queue::Main,
+            ));
             return line.paint(origin, height, gpui::TextAlign::Left, None, self.window, cx);
         };
+        let mut draw = work_profiler::begin(Key::work(
+            "cpu_line_draw",
+            "draw",
+            self.visibility,
+            "terminal_painter",
+            Queue::Main,
+        ));
+        draw.items(line.runs.iter().map(|run| run.glyphs.len()).sum());
         let text = self
             .text
             .as_ref()
@@ -436,7 +482,7 @@ impl<'a> GridCanvas<'a> {
                         text.platform.glyph_dilation_for_color(color)
                     },
                 };
-                let raster = text.raster(&params)?;
+                let raster = text.raster(&params, self.visibility)?;
                 surface.glyph(&raster, integer_origin, color, glyph.is_emoji);
             }
         }
@@ -500,6 +546,15 @@ impl<'a> GridCanvas<'a> {
         let Some(surface) = self.surface.take() else {
             return;
         };
+        let mut submission = work_profiler::begin(Key::work(
+            "bitmap_image_submit",
+            "draw",
+            self.visibility,
+            "terminal_painter",
+            Queue::Main,
+        ));
+        submission.bytes(surface.bytes.len());
+        submission.items(1);
         let mut cache = self.cache.lock();
         let unchanged = cache.frame.as_ref().is_some_and(|frame| {
             frame.window == self.window.window_handle()
@@ -668,11 +723,28 @@ mod tests {
             platform: platform.clone(),
             glyphs: Mutex::default(),
         };
-        assert!(text.raster(&params(0)).unwrap().bytes.is_empty());
+        assert!(text.raster(&params(0), "test").unwrap().bytes.is_empty());
         assert_eq!(platform.calls.load(std::sync::atomic::Ordering::Relaxed), 0);
-        let first = text.raster(&params(1)).unwrap();
-        assert!(Arc::ptr_eq(&first, &text.raster(&params(1)).unwrap()));
+        let first = text.raster(&params(1), "test").unwrap();
+        assert!(Arc::ptr_eq(
+            &first,
+            &text.raster(&params(1), "test").unwrap()
+        ));
         assert_eq!(platform.calls.load(std::sync::atomic::Ordering::Relaxed), 1);
+        let measurements = work_profiler::snapshot();
+        if measurements["instrumentation_enabled"] == true {
+            let entries = measurements["entries"].as_array().unwrap();
+            for operation in ["glyph_lookup", "glyph_rasterize"] {
+                let actual = entries
+                    .iter()
+                    .find(|entry| entry["operation"] == operation && entry["visibility"] == "test")
+                    .expect("actual renderer call must be profiled");
+                assert_eq!(actual["queue"], "main");
+                assert!(actual["lifetime"]["sample_count"].as_u64().unwrap() > 0);
+                assert!(actual["lifetime"]["total_ms"].as_f64().unwrap() >= 0.0);
+            }
+            assert!(measurements["gpu_completion_ms"].is_null());
+        }
     }
     #[test]
     fn glyph_cache_has_a_hard_count_and_byte_bound() {

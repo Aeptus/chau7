@@ -8,11 +8,16 @@ pub mod activity_state;
 pub mod agent_state;
 pub mod frame;
 pub mod frame_parser;
+pub mod grid_cache;
+pub mod grid_delivery;
 pub mod grid_snapshot;
 pub mod interactive_prompt;
 pub mod models;
 pub mod output_buffering;
+pub mod prompt_response;
 pub mod protection;
+pub mod relay_credentials;
+pub mod structured_prompt;
 pub mod tab_registry;
 pub mod viewer;
 pub mod viewer_protocol;
@@ -90,3 +95,7 @@ pub(crate) mod apple_date {
         }
     }
 }
+
+pub mod key_input;
+
+pub mod push_composition;

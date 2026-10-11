@@ -165,4 +165,7 @@ all current edge cases. The new delta rows intentionally remain partial or
 missing until implementation and caller wiring are verified. The Mac checklist
 still covers actual platform behaviour (IME/AZERTY, multiple displays, Keychain,
 notifications, accessibility and real AI sessions). PRF-002 remains partial:
-GPUI has no supported CPU fallback and the user has not dropped that feature.
+terminal CPU rasterization and the renderer switch are implemented, but GPUI
+window composition still requires a platform graphics device. Graphics-device
+startup fallback remains open. Native composed-emoji acceptance now passes
+on e8f32e6014b0; see inventory/Performance.md.

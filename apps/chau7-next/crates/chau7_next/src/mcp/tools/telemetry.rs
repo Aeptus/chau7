@@ -9,7 +9,8 @@ use std::collections::HashSet;
 
 use chau7_next_core::mcp::output::{encode_sorted, json_error};
 use chau7_next_core::telemetry::date_codec::parse_iso8601;
-use chau7_next_core::telemetry::run::{TelemetryRun, TelemetryRunFilter};
+use chau7_next_core::telemetry::query_projection::{project_run, query_window};
+use chau7_next_core::telemetry::run::TelemetryRunFilter;
 use serde_json::{Map, Value, json};
 
 use super::{arg_bool, arg_int, arg_str, arg_str_list, tool};
@@ -35,11 +36,12 @@ pub fn definitions() -> Vec<Value> {
                     "session_id": {"type": "string"},
                     "repo_path": {"type": "string"},
                     "provider": {"type": "string"},
+                    "parent_run_id": {"type": "string"},
                     "after": {"type": "string", "description": "ISO 8601 datetime"},
                     "before": {"type": "string", "description": "ISO 8601 datetime"},
                     "tags": {"type": "array", "items": {"type": "string"}},
-                    "limit": {"type": "integer"},
-                    "offset": {"type": "integer"}
+                    "limit": {"type": "integer", "minimum": 0, "maximum": 1000},
+                    "offset": {"type": "integer", "minimum": 0, "maximum": 10000}
                 }
             }),
         ),
@@ -54,7 +56,7 @@ pub fn definitions() -> Vec<Value> {
         ),
         tool(
             "run_transcript",
-            "Get the full conversation transcript (turns) for a run",
+            "Get stored conversation turns, or a bounded partial transcript for an active run",
             json!({
                 "type": "object",
                 "properties": {"run_id": {"type": "string"}},
@@ -135,7 +137,15 @@ pub fn call(name: &str, args: &Map<String, Value>) -> Option<String> {
         "run_latest_for_repo" => match arg_str(args, "repo_path") {
             Some(repo) => {
                 match sources::telemetry().latest_run_for_repo(repo, arg_str(args, "provider")) {
-                    Some(run) => encode(&run),
+                    Some(run) => {
+                        let source = sources::telemetry();
+                        let active = source.active_runs().iter().any(|r| r.id == run.id);
+                        encode_sorted(&project_run(
+                            &run,
+                            active,
+                            active && !source.turns(&run.id).is_empty(),
+                        ))
+                    }
                     None => json_error("No runs found for repo"),
                 }
             }
@@ -145,7 +155,7 @@ pub fn call(name: &str, args: &Map<String, Value>) -> Option<String> {
             arg_str(args, "repo_path"),
             arg_bool(args, "active_only").unwrap_or(false),
         ),
-        "session_current" => encode(&sources::telemetry().active_runs()),
+        "session_current" => current_runs(),
         _ => return None,
     })
 }
@@ -153,19 +163,27 @@ pub fn call(name: &str, args: &Map<String, Value>) -> Option<String> {
 /// `getRun`: runs in progress first, then the store.
 fn get_run(run_id: &str) -> String {
     let source = sources::telemetry();
-    if let Some(run) = source.active_runs().into_iter().find(|r| r.id == run_id) {
-        return encode(&run);
-    }
-    match source.run(run_id) {
-        Some(run) => encode(&run),
+    let active = source.active_runs();
+    match active
+        .iter()
+        .find(|r| r.id == run_id)
+        .cloned()
+        .or_else(|| source.run(run_id))
+    {
+        Some(run) => encode_sorted(&project_run(
+            &run,
+            active.iter().any(|r| r.id == run_id),
+            active.iter().any(|r| r.id == run_id) && !source.turns(run_id).is_empty(),
+        )),
         None => json_error("Run not found"),
     }
 }
 
-/// `listRuns`: stored runs, with the matching runs in progress first unless
-/// `after` excludes them.
+/// The source performs filtering and active/stored merge before pagination.
+/// Applying a second merge here previously duplicated and bypassed the limit.
 fn list_runs(args: &Map<String, Value>) -> String {
-    let filter = TelemetryRunFilter {
+    let mut filter = TelemetryRunFilter {
+        parent_run_id: arg_str(args, "parent_run_id").map(str::to_string),
         session_id: arg_str(args, "session_id").map(str::to_string),
         repo_path: arg_str(args, "repo_path").map(str::to_string),
         provider: arg_str(args, "provider").map(str::to_string),
@@ -175,37 +193,37 @@ fn list_runs(args: &Map<String, Value>) -> String {
         limit: Some(arg_int(args, "limit").unwrap_or(50)),
         offset: arg_int(args, "offset"),
     };
+    let (offset, limit) = query_window(&filter);
+    filter.offset = Some(offset as i64);
+    filter.limit = Some(limit as i64);
     let source = sources::telemetry();
-    let stored = source.runs(&filter);
-    let runs = merge_active(&filter, source.active_runs(), stored, chrono::Utc::now());
-    encode(&runs)
+    let active: HashSet<_> = source.active_runs().into_iter().map(|r| r.id).collect();
+    let runs = source
+        .runs(&filter)
+        .into_iter()
+        .take(limit)
+        .map(|run| {
+            let live = active.contains(&run.id);
+            project_run(&run, live, live && !source.turns(&run.id).is_empty())
+        })
+        .collect::<Vec<_>>();
+    encode_sorted(&Value::Array(runs))
 }
 
-fn merge_active(
-    filter: &TelemetryRunFilter,
-    active: Vec<TelemetryRun>,
-    stored: Vec<TelemetryRun>,
-    now: chrono::DateTime<chrono::Utc>,
-) -> Vec<TelemetryRun> {
-    if filter.after.is_some_and(|after| after >= now) {
-        return stored;
-    }
-    let mut out: Vec<TelemetryRun> = active
-        .into_iter()
-        .filter(|run| {
-            filter
-                .session_id
-                .as_ref()
-                .is_none_or(|s| run.session_id.as_ref() == Some(s))
-                && filter
-                    .repo_path
-                    .as_ref()
-                    .is_none_or(|r| run.repo_path.as_ref() == Some(r))
-                && filter.provider.as_ref().is_none_or(|p| &run.provider == p)
-        })
-        .collect();
-    out.extend(stored);
-    out
+fn current_runs() -> String {
+    let source = sources::telemetry();
+    let mut active = source.active_runs();
+    active.sort_by(|a, b| {
+        b.started_at
+            .cmp(&a.started_at)
+            .then_with(|| b.id.cmp(&a.id))
+    });
+    encode_sorted(&Value::Array(
+        active
+            .into_iter()
+            .map(|r| project_run(&r, true, !source.turns(&r.id).is_empty()))
+            .collect(),
+    ))
 }
 
 /// `listSessions(repoPath:activeOnly:)`.
@@ -260,7 +278,7 @@ pub fn read_resource(uri: &str) -> String {
             list_runs(&args)
         }
         "chau7://telemetry/sessions" => list_sessions(None, false),
-        "chau7://telemetry/sessions/current" => encode(&sources::telemetry().active_runs()),
+        "chau7://telemetry/sessions/current" => current_runs(),
         _ => match uri.strip_prefix("chau7://telemetry/runs/") {
             Some(run_id) => get_run(run_id),
             None => json_error(&format!("Unknown resource: {uri}")),
@@ -271,34 +289,6 @@ pub fn read_resource(uri: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn run(provider: &str, session: Option<&str>) -> TelemetryRun {
-        let mut run = TelemetryRun::new(provider, "/tmp");
-        run.session_id = session.map(str::to_string);
-        run
-    }
-
-    #[test]
-    fn active_runs_come_first_when_they_match() {
-        let filter = TelemetryRunFilter {
-            provider: Some("claude".into()),
-            ..Default::default()
-        };
-        let active = vec![run("claude", None), run("codex", None)];
-        let stored = vec![run("claude", Some("s"))];
-        let merged = merge_active(&filter, active.clone(), stored.clone(), chrono::Utc::now());
-        assert_eq!(merged.len(), 2);
-        assert_eq!(merged[0].id, active[0].id);
-        assert_eq!(merged[1].id, stored[0].id);
-        let future = TelemetryRunFilter {
-            after: Some(chrono::Utc::now() + chrono::Duration::hours(1)),
-            ..Default::default()
-        };
-        assert_eq!(
-            merge_active(&future, active, stored, chrono::Utc::now()).len(),
-            1
-        );
-    }
 
     #[test]
     fn empty_store_answers() {

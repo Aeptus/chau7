@@ -175,6 +175,7 @@ fn main() {
         app_actions::apply_menu_bar_only_mode(cx);
         // MCP server for AI agents (`MCPServerManager.shared.start()`).
         mcp::start(cx);
+        monitoring::aethyme_delivery::start(cx);
         // Agent runtime sessions driven through MCP (`RuntimeSessionManager`).
         runtime::init(cx);
         // Scripting socket, when "Enable Scripting API" is on.
@@ -210,14 +211,17 @@ fn main() {
         views::launch(cx);
         permission_center::start(cx);
         hang_watchdog::start(cx);
+        permission_center::start(cx);
         performance::start(cx);
 
         cx.on_app_quit(|cx| {
             permission_center::stop(cx);
             memory_pressure::stop(cx);
+            permission_center::stop(cx);
             save_session(cx, true);
             repository::flush(cx);
             history::recorder::flush_on_quit();
+            monitoring::aethyme_delivery::stop(cx);
             mcp::stop(cx);
             scripting::stop(cx);
             // Token optimizer: no flags or wrappers outlive the app.

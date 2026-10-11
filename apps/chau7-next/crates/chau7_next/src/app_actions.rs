@@ -8,7 +8,6 @@
 //! `handleChau7URL`) and the standard app menu items.
 
 use std::cell::Cell;
-use std::sync::OnceLock;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::time::Duration;
 
@@ -63,27 +62,10 @@ fn bring_all_to_front(cx: &mut App) {
     }
 }
 
-// ----- hidden preferences --------------------------------------------------
-
-/// Preferences with no settings UI, set with `defaults write`
-/// (`window.menuBarOnlyMode`); read once at launch. `window.floating` is
-/// `appearance.window_floating`, applied live by `workspace/window.rs`.
-#[derive(Debug, Clone, Copy, Default)]
-pub struct HiddenPrefs {
-    pub menu_bar_only: bool,
-}
-
-pub fn hidden_prefs() -> HiddenPrefs {
-    static PREFS: OnceLock<HiddenPrefs> = OnceLock::new();
-    *PREFS.get_or_init(|| HiddenPrefs {
-        menu_bar_only: platform::defaults::app_bool("window.menuBarOnlyMode").unwrap_or(false),
-    })
-}
-
 /// Menu bar only mode: no Dock icon, the app lives in its menu bar item (the
 /// command center, `status_bar`).
-pub fn apply_menu_bar_only_mode(_cx: &mut App) {
-    if !hidden_prefs().menu_bar_only {
+pub fn apply_menu_bar_only_mode(cx: &mut App) {
+    if !crate::settings::Settings::get(cx).appearance.menu_bar_only {
         return;
     }
     if let Err(err) = platform::attention::set_dock_icon_visible(false) {
@@ -305,7 +287,10 @@ pub fn running_process_names(cx: &App) -> Vec<String> {
 
 /// Cmd+Q: ask first when processes run in any tab, then save and quit.
 pub fn request_quit(cx: &mut App) {
-    let Some((title, detail)) = app_shell::quit_confirmation(&running_process_names(cx)) else {
+    let Some((title, detail)) = app_shell::quit_confirmation_localized(
+        &running_process_names(cx),
+        chau7_next_core::l10n::current(),
+    ) else {
         quit_now(cx);
         return;
     };

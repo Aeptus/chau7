@@ -33,6 +33,9 @@ pub const WAITING_INPUT_FALLBACK_DELAY: f64 = 0.75;
 #[derive(Debug, Clone, PartialEq)]
 pub struct ClaudeCodeEvent {
     pub event_type: EventType,
+    pub raw_type: String,
+    pub tool_use_id: String,
+    pub tool_input_json: Option<String>,
     pub hook: String,
     pub session_id: String,
     pub transcript_path: String,
@@ -100,6 +103,17 @@ pub fn parse_event_line(line: &str, now: f64) -> Option<ClaudeCodeEvent> {
     let timestamp = string("timestamp").and_then(parse_date).unwrap_or(now);
     Some(ClaudeCodeEvent {
         event_type,
+        raw_type: string("type").unwrap_or("unknown").to_string(),
+        tool_use_id: string("toolUseID")
+            .or_else(|| string("tool_use_id"))
+            .unwrap_or_default()
+            .to_string(),
+        tool_input_json: obj
+            .get("toolInput")
+            .or_else(|| obj.get("tool_input"))
+            .filter(|input| input.is_object() || input.is_array())
+            .and_then(|input| serde_json::to_string(input).ok())
+            .or_else(|| string("toolInputJSON").map(str::to_string)),
         hook: owned("hook"),
         session_id: owned("sessionId"),
         transcript_path: owned("transcriptPath"),

@@ -113,6 +113,45 @@ impl Default for GraphicsOptions {
     }
 }
 
+/// Current Swift focused-tab refresh policy. DisplayNative leaves GPUI's
+/// display cadence uncapped; explicit caps apply to UI refresh only.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ActivePollingRateCap {
+    #[default]
+    DisplayNative,
+    Hz60,
+    Hz30,
+}
+impl ActivePollingRateCap {
+    pub const ALL: [Self; 3] = [Self::DisplayNative, Self::Hz60, Self::Hz30];
+    pub fn raw(self) -> &'static str {
+        match self {
+            Self::DisplayNative => "displayNative",
+            Self::Hz60 => "hz60",
+            Self::Hz30 => "hz30",
+        }
+    }
+    pub fn from_raw(raw: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|cap| cap.raw() == raw)
+    }
+    pub fn cap_hz(self) -> Option<u32> {
+        match self {
+            Self::DisplayNative => None,
+            Self::Hz60 => Some(60),
+            Self::Hz30 => Some(30),
+        }
+    }
+    pub fn label(self) -> String {
+        match self {
+            Self::DisplayNative => {
+                crate::l10n::l("activePollingRateCap.displayNative", "Display Native")
+            }
+            Self::Hz60 => crate::l10n::l("activePollingRateCap.hz60", "60 Hz"),
+            Self::Hz30 => crate::l10n::l("activePollingRateCap.hz30", "30 Hz"),
+        }
+    }
+}
+
 /// Rendering options (`ScrollbackPerfSettingsView.swift`).
 #[derive(Debug, Clone, PartialEq)]
 pub struct RenderingOptions {
@@ -124,6 +163,9 @@ pub struct RenderingOptions {
     pub suspend_background: bool,
     /// `suspendRenderDelaySeconds` (5): time a tab stays live after it is hidden.
     pub suspend_delay_secs: f32,
+    pub active_polling_rate_cap: ActivePollingRateCap,
+    /// Visible unfocused terminal views; 1 to 120 fps, current default 42.
+    pub inactive_view_max_fps: u32,
 }
 
 impl Default for RenderingOptions {
@@ -132,6 +174,8 @@ impl Default for RenderingOptions {
             gpu_renderer: true,
             suspend_background: false,
             suspend_delay_secs: 5.0,
+            active_polling_rate_cap: ActivePollingRateCap::DisplayNative,
+            inactive_view_max_fps: 42,
         }
     }
 }
@@ -168,6 +212,10 @@ pub struct AppearanceSettings {
     pub app_theme: AppTheme,
     /// `window.floating`: windows stay above other apps.
     pub window_floating: bool,
+    /// Current Windows page: menu bar only takes effect after restart.
+    pub menu_bar_only: bool,
+    /// Current independent window material toggle, enabled by default.
+    pub window_blur_enabled: bool,
     pub display: DisplayOptions,
     pub graphics: GraphicsOptions,
     pub rendering: RenderingOptions,
@@ -193,6 +241,8 @@ impl Default for AppearanceSettings {
             cursor_blink_rate: None,
             app_theme: AppTheme::System,
             window_floating: false,
+            menu_bar_only: false,
+            window_blur_enabled: true,
             display: DisplayOptions::default(),
             graphics: GraphicsOptions::default(),
             rendering: RenderingOptions::default(),
@@ -319,6 +369,14 @@ impl SettingsDomain for AppearanceSettings {
         if let Some(v) = flag("window_floating") {
             self.window_floating = v;
         }
+        if let Some(v) = flag("menu_bar_only")
+            .or_else(|| crate::platform::defaults::app_bool("window.menuBarOnlyMode"))
+        {
+            self.menu_bar_only = v;
+        }
+        if let Some(v) = flag("window_blur_enabled") {
+            self.window_blur_enabled = v;
+        }
         let d = &mut self.display;
         if let Some(v) = flag("syntax_highlight") {
             d.syntax_highlight = v;
@@ -346,6 +404,14 @@ impl SettingsDomain for AppearanceSettings {
         }
         if let Some(v) = flag("suspend_background_rendering") {
             self.rendering.suspend_background = v;
+        }
+        if let Some(v) =
+            text("active_polling_rate_cap").and_then(|v| ActivePollingRateCap::from_raw(&v))
+        {
+            self.rendering.active_polling_rate_cap = v;
+        }
+        if let Some(v) = num("inactive_view_max_fps") {
+            self.rendering.inactive_view_max_fps = (v as i64).clamp(1, 120) as u32;
         }
         if let Some(v) = num("suspend_render_delay_seconds") {
             self.rendering.suspend_delay_secs = (v as f32).max(0.0);
@@ -385,6 +451,8 @@ impl SettingsDomain for AppearanceSettings {
         }
         out.set_next("app_theme", literal(self.app_theme.raw()));
         out.set_next("window_floating", self.window_floating);
+        out.set_next("menu_bar_only", self.menu_bar_only);
+        out.set_next("window_blur_enabled", self.window_blur_enabled);
         let d = &self.display;
         out.set_next("syntax_highlight", d.syntax_highlight);
         out.set_next("clickable_urls", d.clickable_urls);
@@ -395,6 +463,14 @@ impl SettingsDomain for AppearanceSettings {
         out.set_next("kitty_cache_limit_mb", self.graphics.kitty_cache_limit_mb);
         let r = &self.rendering;
         out.set_next("use_metal_renderer", r.gpu_renderer);
+        out.set_next(
+            "active_polling_rate_cap",
+            literal(r.active_polling_rate_cap.raw()),
+        );
+        out.set_next(
+            "inactive_view_max_fps",
+            r.inactive_view_max_fps.clamp(1, 120),
+        );
         out.set_next("suspend_background_rendering", r.suspend_background);
         out.set_next(
             "suspend_render_delay_seconds",
@@ -427,6 +503,8 @@ mod tests {
             cursor_blink_rate: Some(0.8),
             app_theme: AppTheme::Light,
             window_floating: true,
+            menu_bar_only: true,
+            window_blur_enabled: false,
             display: DisplayOptions {
                 syntax_highlight: false,
                 clickable_urls: false,
@@ -444,10 +522,39 @@ mod tests {
                 gpu_renderer: false,
                 suspend_background: true,
                 suspend_delay_secs: 2.5,
+                active_polling_rate_cap: ActivePollingRateCap::Hz30,
+                inactive_view_max_fps: 17,
             },
             ..Default::default()
         };
         assert_eq!(round_trip(&appearance), appearance);
+    }
+
+    #[test]
+    fn refresh_caps_default_parse_and_bounds_match_current_swift() {
+        assert_eq!(
+            RenderingOptions::default().active_polling_rate_cap.cap_hz(),
+            None
+        );
+        assert_eq!(RenderingOptions::default().inactive_view_max_fps, 42);
+        assert_eq!(ActivePollingRateCap::Hz60.cap_hz(), Some(60));
+        assert_eq!(ActivePollingRateCap::Hz30.cap_hz(), Some(30));
+        assert_eq!(ActivePollingRateCap::from_raw("invalid"), None);
+        let low: AppearanceSettings =
+            load_text("[next]\nactive_polling_rate_cap = 'hz30'\ninactive_view_max_fps = -1\n");
+        assert_eq!(
+            low.rendering.active_polling_rate_cap,
+            ActivePollingRateCap::Hz30
+        );
+        assert_eq!(low.rendering.inactive_view_max_fps, 1);
+        let high: AppearanceSettings = load_text(
+            "[next]\nactive_polling_rate_cap = 'invalid'\ninactive_view_max_fps = 1000\n",
+        );
+        assert_eq!(
+            high.rendering.active_polling_rate_cap,
+            ActivePollingRateCap::DisplayNative
+        );
+        assert_eq!(high.rendering.inactive_view_max_fps, 120);
     }
 
     #[test]

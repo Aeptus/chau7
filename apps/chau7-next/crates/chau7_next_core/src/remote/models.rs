@@ -58,6 +58,8 @@ pub struct RemoteTabDescriptor {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RemoteTabListPayload {
     pub tabs: Vec<RemoteTabDescriptor>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub capabilities: Vec<String>,
 }
 
 /// `TAB_SWITCH` (0x11), from the phone.
@@ -204,6 +206,7 @@ mod tests {
     #[test]
     fn tab_list_omits_missing_optionals() {
         let payload = RemoteTabListPayload {
+            capabilities: Vec::new(),
             tabs: vec![RemoteTabDescriptor {
                 tab_id: 1,
                 title: "Shell".into(),

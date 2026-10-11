@@ -279,6 +279,20 @@ fn list_tabs(cx: &mut App) -> String {
 }
 
 /// What `tab_create` checks before asking or creating.
+#[derive(Debug, PartialEq, Eq)]
+struct CreationRules {
+    enabled: bool,
+    limit: Option<usize>,
+    ask: bool,
+}
+fn creation_rules(settings: &crate::settings::mcp::McpSettings, internal: bool) -> CreationRules {
+    CreationRules {
+        enabled: internal || settings.enabled,
+        limit: (!internal).then(|| settings.tab_limit()),
+        ask: !internal && settings.requires_approval,
+    }
+}
+
 enum CreatePlan {
     Error(String),
     Ready {
@@ -293,12 +307,13 @@ pub(crate) fn create_tab(
     window_id: Option<i64>,
     ctx: &ToolContext,
 ) -> String {
+    let internal = ctx.is_internal();
     let plan = ctx.main.call(move |cx| {
-        let settings = &Settings::get(cx).mcp;
-        if !settings.enabled {
+        let rules = creation_rules(&Settings::get(cx).mcp, internal);
+        if !rules.enabled {
             return CreatePlan::Error(json_error("MCP is disabled in settings."));
         }
-        let (limit, ask) = (settings.tab_limit(), settings.requires_approval);
+        let ask = rules.ask;
         let windows = windows(cx);
         if windows.is_empty() {
             return CreatePlan::Error(no_window());
@@ -314,9 +329,21 @@ pub(crate) fn create_tab(
                     )));
                 }
             },
-            None => windows[0].clone(),
+            None => {
+                if internal {
+                    windows
+                        .iter()
+                        .find(|window| Some(window.handle) == cx.active_window())
+                        .unwrap_or(&windows[0])
+                        .clone()
+                } else {
+                    windows[0].clone()
+                }
+            }
         };
-        if window.workspace.read(cx).mcp_tab_count() >= limit {
+        if let Some(limit) = rules.limit
+            && window.workspace.read(cx).mcp_tab_count() >= limit
+        {
             return CreatePlan::Error(json_error(&format!(
                 "MCP tab limit reached ({limit}). Close existing MCP tabs first."
             )));
@@ -349,7 +376,8 @@ pub(crate) fn create_tab(
     let owner = (!ctx.is_internal()).then(|| ctx.client_id.to_string());
     ctx.main
         .call(move |cx| {
-            if !Settings::get(cx).mcp.enabled {
+            let rules = creation_rules(&Settings::get(cx).mcp, internal);
+            if !rules.enabled {
                 return Some(json_error("MCP is disabled in settings."));
             }
             if owner
@@ -362,8 +390,9 @@ pub(crate) fn create_tab(
                 .into_iter()
                 .find(|w| w.handle == handle)
                 .map(|w| w.workspace)?;
-            let limit = Settings::get(cx).mcp.tab_limit();
-            if workspace.read(cx).mcp_tab_count() >= limit {
+            if let Some(limit) = rules.limit
+                && workspace.read(cx).mcp_tab_count() >= limit
+            {
                 return Some(json_error(&format!(
                     "MCP tab limit reached ({limit}). Close existing MCP tabs first."
                 )));
@@ -371,7 +400,11 @@ pub(crate) fn create_tab(
             let uuid = handle
                 .update(cx, |_, window, cx| {
                     workspace.update(cx, |ws, cx| {
-                        ws.mcp_create_tab(directory.clone().map(PathBuf::from), window, cx)
+                        if internal {
+                            ws.runtime_create_tab(directory.clone().map(PathBuf::from), window, cx)
+                        } else {
+                            ws.mcp_create_tab(directory.clone().map(PathBuf::from), window, cx)
+                        }
                     })
                 })
                 .ok()
@@ -821,4 +854,51 @@ fn rename(tab_id: &str, title: &str, cx: &mut App) -> String {
         .workspace
         .update(cx, |ws, cx| ws.mcp_rename(tab.tab, title, cx));
     encode_sorted(&json!({"ok": true, "title": title}))
+}
+
+#[cfg(test)]
+mod creation_tests {
+    use super::*;
+    #[test]
+    fn trusted_ui_creation_is_independent_of_external_mcp_settings() {
+        let settings = crate::settings::mcp::McpSettings {
+            enabled: false,
+            requires_approval: true,
+            max_tabs: 1,
+            ..Default::default()
+        };
+        assert_eq!(
+            creation_rules(&settings, true),
+            CreationRules {
+                enabled: true,
+                limit: None,
+                ask: false
+            }
+        );
+        assert_eq!(
+            creation_rules(&settings, false),
+            CreationRules {
+                enabled: false,
+                limit: Some(1),
+                ask: true
+            }
+        );
+    }
+    #[test]
+    fn external_creation_keeps_limit_and_explicit_approval() {
+        let settings = crate::settings::mcp::McpSettings {
+            enabled: true,
+            requires_approval: true,
+            max_tabs: 50,
+            ..Default::default()
+        };
+        assert_eq!(
+            creation_rules(&settings, false),
+            CreationRules {
+                enabled: true,
+                limit: Some(50),
+                ask: true
+            }
+        );
+    }
 }

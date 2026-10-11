@@ -79,11 +79,40 @@ pub struct RemoteStatus {
     pub viewer: RemoteViewerMode,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct GridContext {
+    connected: bool,
+    streams_terminal: bool,
+    tab: Option<u32>,
+    session: Option<u64>,
+}
+
+fn advance_grid_context(
+    current: &mut Option<GridContext>,
+    epoch: &mut u64,
+    next: GridContext,
+) -> bool {
+    if *current == Some(next) {
+        return false;
+    }
+    *current = Some(next);
+    *epoch = epoch.wrapping_add(1);
+    true
+}
+
 pub struct RemoteControl {
     root: DataRoot,
     host: RemoteHost,
+    grid_worker: snapshot::GridSnapshotWorker,
+    grid_epoch: u64,
+    grid_context: Option<GridContext>,
     ipc: Option<IpcServer>,
     agent: Option<AgentProcess>,
+    start_generation: u64,
+    start_pending: bool,
+    shutting_down: bool,
+    devices_refreshing: bool,
+    devices_refresh_again: bool,
     /// Settings the agent runs with (enabled, relay URL).
     applied: Option<(bool, String)>,
     focus_window: Option<AnyWindowHandle>,
@@ -108,8 +137,16 @@ pub fn init(cx: &mut App) {
     let entity = cx.new(|_| RemoteControl {
         root,
         host: RemoteHost::new(),
+        grid_worker: snapshot::GridSnapshotWorker::default(),
+        grid_epoch: 0,
+        grid_context: None,
         ipc: None,
         agent: None,
+        start_generation: 0,
+        start_pending: false,
+        shutting_down: false,
+        devices_refreshing: false,
+        devices_refresh_again: false,
         applied: None,
         focus_window: None,
         devices: Vec::new(),
@@ -138,6 +175,18 @@ pub fn init(cx: &mut App) {
     .detach();
 }
 
+/// Measured native remote capture data. No frame has been captured until the
+/// lazy worker starts; timing/row samples remain null until an actual capture.
+pub fn grid_diagnostics(cx: &App) -> Option<serde_json::Value> {
+    let entity = handle(cx)?;
+    let rc = entity.read(cx);
+    let mut value = rc.grid_worker.diagnostics();
+    value["connection_epoch"] = serde_json::json!(rc.grid_epoch);
+    value["selected_tab"] = serde_json::json!(rc.grid_context.and_then(|c| c.tab));
+    value["selected_session"] = serde_json::json!(rc.grid_context.and_then(|c| c.session));
+    Some(value)
+}
+
 /// `CHAU7_NEXT_REMOTE_OUTPUT_BATCH=0` (or `CHAU7_REMOTE_OUTPUT_BATCH`) sends
 /// each chunk at once instead of every timer tick (`remoteOutputBatchingEnabled`).
 fn output_batching_enabled() -> bool {
@@ -154,6 +203,19 @@ fn output_batching_enabled() -> bool {
 /// the session parses. Only the selected tab's output is kept. Batches go
 /// out on the remote timer (33 ms) or as soon as 32 KB are pending, which
 /// matches Swift's per-tab batching (50 ms or 256 KB, then the relay limit).
+pub fn ingest_claude_event(
+    event: &chau7_next_core::monitoring::claude_code::ClaudeCodeEvent,
+    tab: Option<u64>,
+    cx: &mut App,
+) {
+    let Some(entity) = handle(cx) else {
+        return;
+    };
+    entity.update(cx, |rc, _| {
+        rc.host.ingest_claude_event(event, tab, chrono::Utc::now())
+    });
+}
+
 pub fn record_output(session: u64, data: &[u8], cx: &mut App) {
     let Some(entity) = handle(cx) else { return };
     let full = entity.update(cx, |rc, _| {
@@ -322,9 +384,29 @@ impl RemoteControl {
         f: impl FnOnce(&mut RemoteHost, &mut GpuiEnv, &mut IpcSink) -> R,
     ) -> R {
         let (result, resolved, telemetry) = {
-            let mut env = GpuiEnv::new(cx, &mut self.focus_window);
+            let mut env = GpuiEnv::new(
+                cx,
+                &mut self.focus_window,
+                &mut self.grid_worker,
+                self.grid_epoch,
+            );
             let mut sink = IpcSink(self.ipc.as_ref());
             let result = f(&mut self.host, &mut env, &mut sink);
+            let scope = self.host.grid_capture_scope(&mut env, 0);
+            let context = GridContext {
+                connected: self.host.ipc_connected,
+                streams_terminal: self.host.streams_terminal(),
+                tab: scope.map(|s| s.tab),
+                session: scope.map(|s| s.session),
+            };
+            if advance_grid_context(&mut self.grid_context, &mut self.grid_epoch, context) {
+                env.reset_grid_epoch(self.grid_epoch);
+                self.host.capture_selected_grid(&mut env, true);
+            }
+            if let Some(frame) = env.take_grid_result() {
+                self.host
+                    .deliver_grid_result(&mut env, &mut sink, self.grid_epoch, frame);
+            }
             (result, env.resolved, env.telemetry)
         };
         for (id, approved) in resolved {
@@ -343,6 +425,12 @@ impl RemoteControl {
     }
 
     fn tick(&mut self, cx: &mut Context<Self>) -> Duration {
+        let mut wake =
+            chau7_next_core::work_profiler::begin(chau7_next_core::work_profiler::Key::wakeup(
+                "remote_timer",
+                "app",
+                chau7_next_core::work_profiler::Queue::Main,
+            ));
         let settings = Settings::get(cx).remote.clone();
         self.apply_settings(&settings, cx);
 
@@ -358,9 +446,13 @@ impl RemoteControl {
         }
 
         let events = self.ipc.as_ref().map(IpcServer::drain).unwrap_or_default();
+        wake.idle(
+            events.is_empty() && !self.host.has_pending_output() && !self.grid_worker.has_result(),
+        );
         for event in events {
             match event {
                 IpcEvent::Connected => {
+                    self.invalidate_grid();
                     self.with_host(cx, |host, env, sink| host.on_connected(env, sink));
                     // A restarted agent learns the share code again.
                     if self.viewer.is_sharing {
@@ -371,7 +463,10 @@ impl RemoteControl {
                 IpcEvent::Frame(frame) => {
                     self.with_host(cx, |host, env, sink| host.handle_frame(frame, env, sink));
                 }
-                IpcEvent::Disconnected => self.host.on_disconnected(),
+                IpcEvent::Disconnected => {
+                    self.invalidate_grid();
+                    self.host.on_disconnected();
+                }
             }
         }
 
@@ -396,9 +491,12 @@ impl RemoteControl {
             self.last_refresh = Instant::now();
             self.with_host(cx, |host, env, sink| host.refresh(env, sink));
         }
+        if self.grid_worker.has_result() {
+            self.with_host(cx, |_, _, _| ());
+        }
         if self.host.devices_dirty {
             self.host.devices_dirty = false;
-            self.refresh_devices();
+            self.refresh_devices(cx);
         }
 
         let status = self.status();
@@ -434,7 +532,7 @@ impl RemoteControl {
             if wanted.0 {
                 self.start_agent(cx);
             }
-            self.refresh_devices();
+            self.refresh_devices(cx);
             return;
         };
         if applied == wanted {
@@ -451,47 +549,106 @@ impl RemoteControl {
     }
 
     fn start_agent(&mut self, cx: &mut Context<Self>) {
-        if self.agent.is_some() {
+        if self.agent.is_some() || self.start_pending || self.shutting_down {
             return;
         }
-        if self.ipc.is_none() {
-            match IpcServer::start(&self.root.remote_socket()) {
-                Ok(server) => self.ipc = Some(server),
-                Err(err) => {
-                    log::error!("Remote IPC: cannot listen: {err}");
-                    self.host.last_error = Some(format!("Cannot start remote agent: {err}"));
-                    return;
-                }
-            }
-        }
-        let binary = match agent::binary_path(&self.root) {
-            Ok(path) => path,
-            Err(err) => {
-                log::error!("{err}");
-                self.host.last_error = Some(err);
-                return;
-            }
-        };
+        self.start_generation = self.start_generation.wrapping_add(1);
+        let generation = self.start_generation;
+        self.start_pending = true;
+        let root = self.root.clone();
         let relay = self
             .applied
             .as_ref()
             .map(|(_, url)| url.clone())
             .unwrap_or_else(|| Settings::get(cx).remote.relay_url.clone());
-        let host_name = crate::platform::system::host_name();
-        match AgentProcess::spawn(&binary, &self.root, &relay, host_name) {
-            Ok(process) => {
-                self.agent = Some(process);
-                self.host.last_error = None;
-                self.refresh_devices();
-            }
-            Err(err) => {
-                log::error!("{err}");
-                self.host.last_error = Some(err);
-            }
-        }
+        let preparation = cx.background_executor().spawn(async move {
+            let binary = agent::binary_path(&root)?;
+            agent::prepare_credentials(&binary, &root)?;
+            Ok::<_, String>((binary, root, relay, crate::platform::system::host_name()))
+        });
+        cx.spawn(async move |weak, cx| {
+            let prepared = preparation.await;
+            let job = weak
+                .update(cx, |rc, cx| {
+                    if !rc.accepts_start(generation) {
+                        return None;
+                    }
+                    let (binary, root, relay, name) = match prepared {
+                        Ok(prepared) => prepared,
+                        Err(error) => {
+                            rc.start_pending = false;
+                            rc.host.last_error = Some(error);
+                            cx.refresh_windows();
+                            return None;
+                        }
+                    };
+                    // Binding a Unix socket is small. Expensive binary sync, identity
+                    // preparation and process startup are delegated to workers.
+                    if rc.ipc.is_none() {
+                        match IpcServer::start(&rc.root.remote_socket()) {
+                            Ok(server) => rc.ipc = Some(server),
+                            Err(error) => {
+                                rc.start_pending = false;
+                                rc.host.last_error =
+                                    Some(format!("Cannot start remote agent: {error}"));
+                                return None;
+                            }
+                        }
+                    }
+                    Some(
+                        cx.background_executor().spawn(async move {
+                            AgentProcess::spawn(&binary, &root, &relay, name)
+                        }),
+                    )
+                })
+                .ok()
+                .flatten();
+            let Some(job) = job else { return };
+            let result = job.await;
+            let _ = weak.update(cx, |rc, cx| {
+                if !rc.accepts_start(generation) {
+                    // AgentProcess owns an asynchronous reaper, including stale completions.
+                    drop(result);
+                    return;
+                }
+                rc.start_pending = false;
+                match result {
+                    Ok(process) => {
+                        rc.agent = Some(process);
+                        rc.host.last_error = None;
+                    }
+                    Err(error) => {
+                        rc.host.last_error = Some(error);
+                    }
+                }
+                rc.refresh_devices(cx);
+                cx.refresh_windows();
+            });
+        })
+        .detach();
+    }
+
+    fn accepts_start(&self, generation: u64) -> bool {
+        start_is_current(
+            generation,
+            self.start_generation,
+            self.start_pending,
+            self.shutting_down,
+            self.applied.as_ref().is_some_and(|(enabled, _)| *enabled),
+        )
+    }
+
+    fn invalidate_grid(&mut self) {
+        self.grid_epoch = self.grid_epoch.wrapping_add(1);
+        self.grid_context = None;
+        self.grid_worker.invalidate();
     }
 
     fn stop_agent(&mut self) {
+        self.invalidate_grid();
+        self.grid_worker.stop();
+        self.start_generation = self.start_generation.wrapping_add(1);
+        self.start_pending = false;
         if let Some(agent) = self.agent.take() {
             agent.stop();
         }
@@ -505,32 +662,63 @@ impl RemoteControl {
     }
 
     fn restart_agent_if_running(&mut self, cx: &mut Context<Self>) {
-        if self.agent.is_none() {
+        if !self.applied.as_ref().is_some_and(|(enabled, _)| *enabled) {
             return;
         }
-        if let Some(agent) = self.agent.take() {
-            agent.stop();
-        }
-        self.host.on_agent_stopped();
+        self.stop_agent();
         self.start_agent(cx);
     }
 
     fn shutdown(&mut self) {
+        self.shutting_down = true;
         self.stop_agent();
     }
 
-    fn refresh_devices(&mut self) {
+    fn refresh_devices(&mut self, cx: &mut Context<Self>) {
+        if self.shutting_down {
+            return;
+        }
+        if self.devices_refreshing {
+            self.devices_refresh_again = true;
+            return;
+        }
+        self.devices_refreshing = true;
         let path = self.root.remote_state_file();
-        self.devices = match std::fs::read_to_string(&path) {
-            Ok(text) => match agent_state::paired_devices(&text) {
-                Ok(devices) => devices,
-                Err(err) => {
-                    log::warn!("Failed to refresh paired devices: {err}");
+        let read = cx.background_executor().spawn(async move {
+            use std::io::Read;
+            match std::fs::File::open(path) {
+                Ok(file) => {
+                    let mut text = String::new();
+                    file.take(1024 * 1024 + 1)
+                        .read_to_string(&mut text)
+                        .map_err(|_| ())?;
+                    if text.len() > 1024 * 1024 {
+                        return Err(());
+                    }
+                    agent_state::paired_devices(&text).map_err(|_| ())
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(Vec::new()),
+                Err(_) => Err(()),
+            }
+        });
+        cx.spawn(async move |weak, cx| {
+            let result = read.await;
+            let _ = weak.update(cx, |rc, cx| {
+                rc.devices_refreshing = false;
+                if rc.shutting_down {
                     return;
                 }
-            },
-            Err(_) => Vec::new(),
-        };
+                match result {
+                    Ok(devices) => rc.devices = devices,
+                    Err(()) => log::warn!("Failed to read bounded remote paired-device state"),
+                }
+                if std::mem::take(&mut rc.devices_refresh_again) {
+                    rc.refresh_devices(cx);
+                }
+                cx.refresh_windows();
+            });
+        })
+        .detach();
     }
 
     fn revoke(&mut self, id: &str, cx: &mut Context<Self>) {
@@ -545,7 +733,7 @@ impl RemoteControl {
         match result {
             Ok(()) => {
                 self.host.on_device_revoked(id);
-                self.refresh_devices();
+                self.refresh_devices(cx);
                 self.restart_agent_if_running(cx);
             }
             Err(err) => {
@@ -573,3 +761,64 @@ fn write_private(path: &std::path::Path, text: &str) -> std::io::Result<()> {
 
 #[cfg(all(test, unix))]
 mod e2e_tests;
+
+/// A disabled setting, changed relay or app quit invalidates all late completions.
+fn start_is_current(
+    requested: u64,
+    current: u64,
+    pending: bool,
+    shutting_down: bool,
+    enabled: bool,
+) -> bool {
+    requested == current && pending && !shutting_down && enabled
+}
+
+#[cfg(test)]
+mod startup_tests {
+    use super::*;
+    #[test]
+    fn grid_epoch_changes_on_connection_mode_tab_and_pane_session_transitions() {
+        let initial = GridContext {
+            connected: true,
+            streams_terminal: true,
+            tab: Some(1),
+            session: Some(100),
+        };
+        let mut current = None;
+        let mut epoch = 0;
+        assert!(advance_grid_context(&mut current, &mut epoch, initial));
+        assert_eq!(epoch, 1);
+        assert!(!advance_grid_context(&mut current, &mut epoch, initial));
+        for next in [
+            GridContext {
+                connected: false,
+                ..initial
+            },
+            GridContext {
+                streams_terminal: false,
+                ..initial
+            },
+            GridContext {
+                tab: Some(2),
+                ..initial
+            },
+            GridContext {
+                session: Some(200),
+                ..initial
+            },
+            initial,
+        ] {
+            let previous = epoch;
+            assert!(advance_grid_context(&mut current, &mut epoch, next));
+            assert_eq!(epoch, previous + 1);
+        }
+    }
+    #[test]
+    fn only_current_enabled_pending_start_can_publish() {
+        assert!(start_is_current(5, 5, true, false, true));
+        assert!(!start_is_current(5, 6, true, false, true));
+        assert!(!start_is_current(5, 5, false, false, true));
+        assert!(!start_is_current(5, 5, true, true, true));
+        assert!(!start_is_current(5, 5, true, false, false));
+    }
+}

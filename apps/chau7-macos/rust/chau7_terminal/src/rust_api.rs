@@ -8,11 +8,79 @@
 
 use std::collections::HashMap;
 use std::sync::atomic::Ordering;
+use std::time::Duration;
+
+use crate::pty::PtyMessage;
+use crossbeam_channel::{Receiver, Select, Sender, bounded};
 
 use crate::graphics::{DecodedImage, ShellIntegrationEvent};
 use crate::pool::get_cell_buffer_pool;
 use crate::terminal::Chau7Terminal;
 use crate::types::CellData;
+
+/// Non-consuming PTY readiness for Rust callers. Waiting owns no terminal,
+/// parser, poll or PTY writer lock and does not keep a terminal alive.
+/// Readiness is a hint: another consumer can drain output before `poll(0)`.
+pub struct OutputReadiness {
+    output: Option<Receiver<PtyMessage>>,
+    interrupt: Receiver<()>,
+    // Keep the interrupt channel connected if the caller drops its wake handle.
+    // This owns only the bounded channel, never the terminal or PTY.
+    _interrupt_keepalive: Sender<()>,
+}
+
+/// A coalesced wakeup for input, focus changes and shutdown. At most one
+/// pending interrupt is retained; shutdown state remains the caller's atomic.
+#[derive(Clone)]
+pub struct OutputInterrupt(Sender<()>);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OutputReady {
+    /// Output or disconnection is ready. Only the existing parser dequeues it.
+    Output,
+    Interrupted,
+    Timeout,
+}
+
+impl OutputReadiness {
+    fn new(output: Option<Receiver<PtyMessage>>) -> (Self, OutputInterrupt) {
+        let (sender, interrupt) = bounded(1);
+        (
+            Self {
+                output,
+                interrupt,
+                _interrupt_keepalive: sender.clone(),
+            },
+            OutputInterrupt(sender),
+        )
+    }
+
+    /// Wait until output or an interrupt is ready. This never removes PTY
+    /// messages, including the closed message and disconnection notification.
+    /// A headless terminal returns immediately so its caller can observe close.
+    pub fn wait(&self, timeout: Duration) -> OutputReady {
+        let Some(output) = &self.output else {
+            return OutputReady::Output;
+        };
+        let mut select = Select::new();
+        let output_index = select.recv(output);
+        select.recv(&self.interrupt);
+        match select.ready_timeout(timeout) {
+            Ok(index) if index == output_index => OutputReady::Output,
+            Ok(_) => {
+                let _ = self.interrupt.try_recv();
+                OutputReady::Interrupted
+            }
+            Err(_) => OutputReady::Timeout,
+        }
+    }
+}
+impl OutputInterrupt {
+    pub fn wake(&self) {
+        // Full means an existing wake already covers this input/focus/stop.
+        let _ = self.0.try_send(());
+    }
+}
 
 /// An owned copy of the visible grid.
 #[derive(Debug, Clone, Default)]
@@ -94,6 +162,13 @@ impl OwnedCell {
 }
 
 impl Chau7Terminal {
+    /// Rust-only output readiness, independent of terminal ownership and all
+    /// locks. The clone observes readiness but never consumes PTY messages;
+    /// `poll(0)` keeps the sole ordered receive/parse/publish transaction.
+    pub fn output_readiness(&self) -> (OutputReadiness, OutputInterrupt) {
+        OutputReadiness::new(self.pty_rx.clone())
+    }
+
     /// Copy of the visible grid. Mirrors `chau7_terminal_get_grid` followed by
     /// `chau7_terminal_free_grid` (the cell buffer goes back to the pool).
     pub fn grid_copy(&self) -> GridCopy {
@@ -433,6 +508,114 @@ mod tests {
         assert_eq!(images.len(), 1);
         assert_eq!(images[0].args, "File=name=eA==;inline=1");
         assert_eq!(images[0].rgba, b"aGk=");
+    }
+
+    #[test]
+    fn output_readiness_never_consumes_data_or_close() {
+        let (tx, rx) = crossbeam_channel::unbounded();
+        let (ready, _wake) = OutputReadiness::new(Some(rx.clone()));
+        tx.send(PtyMessage::Data(b"first".to_vec())).unwrap();
+        tx.send(PtyMessage::Closed).unwrap();
+        for _ in 0..4 {
+            assert_eq!(ready.wait(Duration::ZERO), OutputReady::Output);
+        }
+        assert!(matches!(rx.try_recv(), Ok(PtyMessage::Data(bytes)) if bytes == b"first"));
+        assert_eq!(ready.wait(Duration::ZERO), OutputReady::Output);
+        assert!(matches!(rx.try_recv(), Ok(PtyMessage::Closed)));
+        assert_eq!(ready.wait(Duration::ZERO), OutputReady::Timeout);
+        drop(tx);
+        assert_eq!(ready.wait(Duration::ZERO), OutputReady::Output);
+        assert!(rx.try_recv().is_err());
+    }
+
+    #[test]
+    fn output_arriving_during_wait_and_at_transition_is_not_lost() {
+        let (tx, rx) = crossbeam_channel::unbounded();
+        let (ready, _wake) = OutputReadiness::new(Some(rx.clone()));
+        let producer = std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(10));
+            tx.send(PtyMessage::Data(b"later".to_vec())).unwrap();
+            tx
+        });
+        assert_eq!(ready.wait(Duration::from_secs(1)), OutputReady::Output);
+        let tx = producer.join().unwrap();
+        assert!(matches!(rx.try_recv(), Ok(PtyMessage::Data(bytes)) if bytes == b"later"));
+        assert_eq!(ready.wait(Duration::ZERO), OutputReady::Timeout);
+        // Output becomes available immediately after the empty observation.
+        tx.send(PtyMessage::Data(b"transition".to_vec())).unwrap();
+        assert_eq!(ready.wait(Duration::from_secs(1)), OutputReady::Output);
+        assert!(matches!(rx.try_recv(), Ok(PtyMessage::Data(bytes)) if bytes == b"transition"));
+    }
+
+    #[test]
+    fn interrupts_coalesce_and_do_not_hide_shutdown_state() {
+        let (_tx, rx) = crossbeam_channel::unbounded();
+        let (ready, wake) = OutputReadiness::new(Some(rx));
+        for _ in 0..1000 {
+            wake.wake();
+        }
+        assert_eq!(ready.interrupt.len(), 1);
+        assert_eq!(ready.wait(Duration::from_secs(1)), OutputReady::Interrupted);
+        assert_eq!(ready.wait(Duration::ZERO), OutputReady::Timeout);
+        let stopped = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let flag = stopped.clone();
+        let producer = std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(10));
+            flag.store(true, Ordering::Release);
+            wake.wake();
+        });
+        assert_eq!(ready.wait(Duration::from_secs(1)), OutputReady::Interrupted);
+        assert!(stopped.load(Ordering::Acquire));
+        producer.join().unwrap();
+    }
+
+    #[test]
+    fn dropping_interrupt_handle_does_not_create_disconnected_busy_loop() {
+        let (_tx, rx) = crossbeam_channel::unbounded();
+        let (ready, wake) = OutputReadiness::new(Some(rx));
+        drop(wake);
+        assert_eq!(ready.wait(Duration::from_millis(1)), OutputReady::Timeout);
+        assert_eq!(ready.wait(Duration::ZERO), OutputReady::Timeout);
+    }
+
+    #[test]
+    fn readiness_does_not_own_terminal_or_delay_headless_close() {
+        let term = std::sync::Arc::new(Chau7Terminal::new_headless(10, 3).unwrap());
+        let weak = std::sync::Arc::downgrade(&term);
+        let (ready, wake) = term.output_readiness();
+        assert_eq!(std::sync::Arc::strong_count(&term), 1);
+        assert_eq!(ready.wait(Duration::from_secs(1)), OutputReady::Output);
+        drop(term);
+        assert!(weak.upgrade().is_none());
+        wake.wake();
+        assert_eq!(ready.wait(Duration::ZERO), OutputReady::Output);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn real_pty_readiness_wakes_without_consuming_parser_output() {
+        let term = Chau7Terminal::new_with_args_env_in_dir(
+            40,
+            5,
+            "/bin/sh",
+            &["-c", "sleep 0.05; printf readiness-marker"],
+            &[],
+            None,
+        )
+        .unwrap();
+        let (ready, _wake) = term.output_readiness();
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        let mut output = Vec::new();
+        while std::time::Instant::now() < deadline {
+            assert_ne!(ready.wait(Duration::from_secs(1)), OutputReady::Interrupted);
+            let _ = term.poll(0);
+            output.extend_from_slice(&term.get_last_output());
+            if term.is_pty_closed() {
+                break;
+            }
+        }
+        assert!(String::from_utf8_lossy(&output).contains("readiness-marker"));
+        assert!(term.is_pty_closed());
     }
 
     #[test]

@@ -126,15 +126,18 @@ pub fn panel_model(cx: &App) -> PanelModel {
         .map(|nc| nc.history.recent(8))
         .unwrap_or_default();
     let events = crate::notifications::recent_events(cx);
-    cc::build_panel(cc::PanelInputs {
-        sessions,
-        history: &history,
-        recent_events: &events,
-        pinned: pinned_snippets(cx),
-        monitoring: monitoring(cx),
-        version: &bundle_version(),
-        now: chrono::Utc::now(),
-    })
+    cc::build_panel_localized(
+        cc::PanelInputs {
+            sessions,
+            history: &history,
+            recent_events: &events,
+            pinned: pinned_snippets(cx),
+            monitoring: monitoring(cx),
+            version: &bundle_version(),
+            now: chrono::Utc::now(),
+        },
+        chau7_next_core::l10n::current(),
+    )
 }
 
 /// Recount the sessions and redraw the icon (`refreshSessions`).

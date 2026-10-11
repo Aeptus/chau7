@@ -38,7 +38,9 @@ use chau7_next_core::settings_search::SettingsSection;
 use gpui::{App, Global};
 
 pub use ai::{AiSettings, CustomAiRule};
-pub use appearance::{AppTheme, AppearanceSettings, CursorShape, fallback_fonts};
+pub use appearance::{
+    ActivePollingRateCap, AppTheme, AppearanceSettings, CursorShape, fallback_fonts,
+};
 #[allow(unused_imports)]
 pub use dangerous_commands::{DangerousCommandSettings, HighlightScope};
 pub use editor::EditorSettings;
@@ -235,8 +237,8 @@ impl Settings {
 
     /// Put the settings of one window section back to their defaults
     /// (`resetToDefaults` of each Swift settings view). Sections whose
-    /// settings live in other modules are left alone. Font & Colors and
-    /// Display share the appearance domain, so they reset it together.
+    /// settings live in other modules are left alone. Current appearance
+    /// pages reset their own values without resetting unrelated domains.
     pub fn reset_section(&mut self, section: SettingsSection) {
         use SettingsSection as S;
         match section {
@@ -248,9 +250,56 @@ impl Settings {
                 self.general.default_directory = directory;
                 self.general.restore_bug_report_fields(contact);
             }
-            S::FontColors | S::Display => self.appearance = AppearanceSettings::default(),
+            S::Windows => {
+                self.appearance.app_theme = AppTheme::System;
+                self.appearance.menu_bar_only = false;
+                self.appearance.window_floating = false;
+                self.appearance.opacity = 1.0;
+                self.appearance.window_blur_enabled = true;
+                self.tabs.always_show_toolbar_in_fullscreen = false;
+                self.terminal.split_panes_enabled = true;
+            }
+            S::FontColors => {
+                let defaults = AppearanceSettings::default();
+                self.appearance.font_family = defaults.font_family;
+                self.appearance.font_weight = defaults.font_weight;
+                self.appearance.font_size = defaults.font_size;
+                self.appearance.custom_font_family = defaults.custom_font_family;
+                self.appearance.default_zoom_percent = defaults.default_zoom_percent;
+                self.appearance.color_scheme = defaults.color_scheme;
+                self.appearance.custom_color_scheme = defaults.custom_color_scheme;
+                self.appearance.ligatures = false;
+            }
+            S::Display => self.appearance.display = appearance::DisplayOptions::default(),
             S::Tabs => self.tabs = TabsSettings::default(),
-            S::Shell | S::ScrollbackPerf => self.terminal = TerminalSettings::default(),
+            S::Shell | S::ScrollbackPerf => {
+                // Both current Swift pages call resetTerminalToDefaults.
+                // Split panes belongs to Windows; smart scroll and rendering
+                // selection/suspension are outside TerminalBehaviorStore.
+                let splits = self.terminal.split_panes_enabled;
+                let smart_scroll = self.terminal.smart_scroll;
+                self.terminal = TerminalSettings::default();
+                self.terminal.split_panes_enabled = splits;
+                self.terminal.smart_scroll = smart_scroll;
+                let appearance = AppearanceSettings::default();
+                self.appearance.cursor_shape = appearance.cursor_shape;
+                self.appearance.cursor_blink = appearance.cursor_blink;
+                self.appearance.cursor_blink_rate = appearance.cursor_blink_rate;
+                self.appearance.cursor_color = appearance.cursor_color;
+                self.appearance.rendering.active_polling_rate_cap =
+                    appearance.rendering.active_polling_rate_cap;
+                self.appearance.rendering.inactive_view_max_fps =
+                    appearance.rendering.inactive_view_max_fps;
+                let general = GeneralSettings::default();
+                self.general.default_directory = general.default_directory;
+                self.general.usage_monitoring = general.usage_monitoring;
+                self.general.claude_quota_capture = general.claude_quota_capture;
+                self.general.usage_quota_warnings = general.usage_quota_warnings;
+                self.general.regional_number_format = general.regional_number_format;
+                let guard_enabled = self.dangerous_commands.guard_enabled;
+                self.dangerous_commands = DangerousCommandSettings::default();
+                self.dangerous_commands.guard_enabled = guard_enabled;
+            }
             S::DangerousCommands => self.dangerous_commands = DangerousCommandSettings::default(),
             S::KeyboardMouse => self.input = InputSettings::default(),
             S::SnippetsTools => self.productivity = ProductivitySettings::default(),
@@ -262,12 +311,13 @@ impl Settings {
     }
 
     /// Whether [`Settings::reset_section`] resets something for `section`
-    /// (the window shows a reset button for those; General has Reset All).
+    /// (the window shows a reset button for those; Sync & Backup has Reset All).
     pub fn can_reset_section(section: SettingsSection) -> bool {
         use SettingsSection as S;
         matches!(
             section,
-            S::FontColors
+            S::Windows
+                | S::FontColors
                 | S::Display
                 | S::Tabs
                 | S::Shell
@@ -281,10 +331,8 @@ impl Settings {
 
     /// Every setting back to its default ("Reset All Settings").
     pub fn reset_all(&mut self) {
-        let directory = self.general.default_directory.take();
         let contact = self.general.remembered_bug_report_fields();
         *self = Settings::default();
-        self.general.default_directory = directory;
         self.general.restore_bug_report_fields(contact);
     }
 }
@@ -394,5 +442,109 @@ mod tests {
     fn defaults_survive_a_save() {
         let text = Settings::default().to_text("");
         assert_eq!(Settings::from_text(&text), Settings::default());
+    }
+    #[test]
+    fn shell_and_performance_reset_the_current_shared_terminal_domain() {
+        for section in [SettingsSection::Shell, SettingsSection::ScrollbackPerf] {
+            let mut s = Settings::default();
+            s.terminal.scrollback_lines = 333;
+            s.terminal.startup_command = "echo custom".into();
+            s.terminal.split_panes_enabled = false;
+            s.terminal.smart_scroll = false;
+            s.appearance.font_size = 25.;
+            s.appearance.menu_bar_only = true;
+            s.appearance.cursor_shape = CursorShape::Bar;
+            s.appearance.cursor_blink = false;
+            s.appearance.cursor_color = "#abcdef".into();
+            s.appearance.rendering.gpu_renderer = false;
+            s.appearance.rendering.suspend_background = true;
+            s.appearance.rendering.active_polling_rate_cap = appearance::ActivePollingRateCap::Hz30;
+            s.appearance.rendering.inactive_view_max_fps = 10;
+            s.general.default_directory = Some("/custom".into());
+            s.general.usage_monitoring = true;
+            s.general.claude_quota_capture = true;
+            s.general.usage_quota_warnings = true;
+            s.general.launch_at_login = true;
+            s.dangerous_commands.guard_enabled = false;
+            s.dangerous_commands.patterns.clear();
+            s.reset_section(section);
+            let defaults = Settings::default();
+            assert_eq!(
+                s.terminal.scrollback_lines,
+                defaults.terminal.scrollback_lines
+            );
+            assert!(s.terminal.startup_command.is_empty());
+            assert_eq!(s.appearance.cursor_shape, defaults.appearance.cursor_shape);
+            assert_eq!(s.appearance.cursor_blink, defaults.appearance.cursor_blink);
+            assert_eq!(s.appearance.cursor_color, defaults.appearance.cursor_color);
+            assert_eq!(
+                s.appearance.rendering.active_polling_rate_cap,
+                defaults.appearance.rendering.active_polling_rate_cap
+            );
+            assert_eq!(s.appearance.rendering.inactive_view_max_fps, 42);
+            assert_eq!(s.general.default_directory, None);
+            assert_eq!(
+                s.general.usage_monitoring,
+                defaults.general.usage_monitoring
+            );
+            assert_eq!(
+                s.general.claude_quota_capture,
+                defaults.general.claude_quota_capture
+            );
+            assert_eq!(
+                s.general.usage_quota_warnings,
+                defaults.general.usage_quota_warnings
+            );
+            assert_eq!(
+                s.dangerous_commands.patterns,
+                defaults.dangerous_commands.patterns
+            );
+            assert!(!s.terminal.split_panes_enabled);
+            assert!(!s.terminal.smart_scroll);
+            assert!(!s.appearance.rendering.gpu_renderer);
+            assert!(s.appearance.rendering.suspend_background);
+            assert_eq!(s.appearance.font_size, 25.);
+            assert!(s.appearance.menu_bar_only);
+            assert!(s.general.launch_at_login);
+            assert!(!s.dangerous_commands.guard_enabled);
+        }
+    }
+
+    #[test]
+    fn current_appearance_pages_reset_only_their_own_values() {
+        assert!(Settings::can_reset_section(SettingsSection::Windows));
+        let mut settings = Settings::default();
+        settings.appearance.font_size = 22.;
+        settings.appearance.menu_bar_only = true;
+        settings.appearance.window_blur_enabled = false;
+        settings.appearance.window_floating = true;
+        settings.appearance.opacity = 0.65;
+        settings.appearance.rendering.gpu_renderer = false;
+        settings.appearance.display.syntax_highlight = false;
+        settings.reset_section(SettingsSection::FontColors);
+        assert_eq!(
+            settings.appearance.font_size,
+            Settings::default().appearance.font_size
+        );
+        assert!(settings.appearance.menu_bar_only);
+        assert!(!settings.appearance.window_blur_enabled);
+        assert!(!settings.appearance.rendering.gpu_renderer);
+        assert!(!settings.appearance.display.syntax_highlight);
+        settings.reset_section(SettingsSection::Display);
+        assert!(settings.appearance.display.syntax_highlight);
+        assert!(settings.appearance.menu_bar_only);
+        assert!(settings.appearance.window_floating);
+        settings.appearance.font_size = 19.;
+        settings.tabs.always_show_toolbar_in_fullscreen = true;
+        settings.terminal.split_panes_enabled = false;
+        settings.reset_section(SettingsSection::Windows);
+        assert!(!settings.appearance.menu_bar_only);
+        assert!(settings.appearance.window_blur_enabled);
+        assert!(!settings.appearance.window_floating);
+        assert_eq!(settings.appearance.opacity, 1.);
+        assert_eq!(settings.appearance.font_size, 19.);
+        assert!(!settings.appearance.rendering.gpu_renderer);
+        assert!(!settings.tabs.always_show_toolbar_in_fullscreen);
+        assert!(settings.terminal.split_panes_enabled);
     }
 }

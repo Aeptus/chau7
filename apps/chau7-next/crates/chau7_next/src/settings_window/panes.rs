@@ -6,6 +6,20 @@ use gpui::{div, prelude::*};
 use super::SectionContext;
 use super::widgets::{row, section as titled, stepper, toggle};
 
+pub(super) fn splits(ctx: &SectionContext) -> gpui::Div {
+    let chrome = ctx.chrome;
+    titled("Split Panes", chrome).child(row(
+        "Enable Split Panes",
+        toggle(
+            "split-panes",
+            ctx.settings.terminal.split_panes_enabled,
+            chrome,
+            |s, v| s.terminal.split_panes_enabled = v,
+        ),
+        chrome,
+    ))
+}
+
 pub(super) fn section(ctx: &SectionContext) -> gpui::Div {
     let chrome = ctx.chrome;
     let s = &ctx.settings.terminal;
@@ -14,11 +28,24 @@ pub(super) fn section(ctx: &SectionContext) -> gpui::Div {
     } else {
         format!("{} lines", s.restored_scrollback_lines)
     };
-    titled("Panes and restore", chrome)
+    titled("Scrollback", chrome)
         .child(row(
-            "Enable split panes",
-            toggle("split-panes", s.split_panes_enabled, chrome, |s, v| {
-                s.terminal.split_panes_enabled = v
+            "Scrollback lines",
+            stepper(
+                "scrollback",
+                format!("{}", s.scrollback_lines),
+                chrome,
+                |s, d| {
+                    s.terminal.scrollback_lines =
+                        super::shell::scrollback_step(s.terminal.scrollback_lines, d)
+                },
+            ),
+            chrome,
+        ))
+        .child(row(
+            "Smart scroll",
+            toggle("smart-scroll", s.smart_scroll, chrome, |s, v| {
+                s.terminal.smart_scroll = v
             }),
             chrome,
         ))

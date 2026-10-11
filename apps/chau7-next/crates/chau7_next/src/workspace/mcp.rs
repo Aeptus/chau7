@@ -165,10 +165,29 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Option<Uuid> {
+        self.create_automation_tab(directory, true, window, cx)
+    }
+
+    /// Explicit trusted UI agent launch creates an ordinary tab.
+    pub(crate) fn runtime_create_tab(
+        &mut self,
+        directory: Option<PathBuf>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Option<Uuid> {
+        self.create_automation_tab(directory, false, window, cx)
+    }
+    fn create_automation_tab(
+        &mut self,
+        directory: Option<PathBuf>,
+        controlled: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Option<Uuid> {
         let directory = directory.or_else(|| self.inherited_start_directory(cx));
         let id = self.new_tab_at(directory, false, window, cx);
         let meta = self.state.get_mut(id)?;
-        meta.mcp_controlled = true;
+        meta.mcp_controlled = controlled;
         let group = meta.repo_group_id.clone().or_else(|| meta.git_root.clone());
         meta.repo_group_id = group.clone();
         let uuid = meta.uuid;

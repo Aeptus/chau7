@@ -16,7 +16,7 @@ use std::cell::RefCell;
 use std::collections::{BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 use chau7_next_core::ai::detection_state::now_secs;
@@ -35,17 +35,50 @@ use chau7_next_core::shell_restore;
 use chau7_next_core::shell_session::{
     CommandStatus, ShellContext, ShellMark, ShellSession, ShellSessionConfig, ShellSessionEvent,
 };
+use chau7_next_core::work_profiler::{self, Key as WorkKey, Kind as WorkKind, Queue as WorkQueue};
 use chau7_next_core::{shell_env, shell_integration, shell_tips};
-use chau7_terminal::{Chau7Terminal, GridCopy, graphics::ShellIntegrationEvent};
-use futures::StreamExt;
+use chau7_terminal::{Chau7Terminal, GridCopy, OutputInterrupt, graphics::ShellIntegrationEvent};
 use futures::channel::mpsc;
+use futures::{FutureExt, StreamExt};
 use gpui::{AppContext, Context, EventEmitter, Global, Task};
 use parking_lot::{Mutex, RwLock};
 
 use super::pty_writer::{CloseMode, PtyWriter, Signal, signal_group};
 use crate::monitoring::session::{SessionMonitor, shell_ai_event};
 use crate::platform::process as procinfo;
-use crate::settings::{BellSound, Settings};
+use crate::settings::{ActivePollingRateCap, BellSound, Settings};
+
+const PTY_READINESS_MAX_WAIT_MS: u64 = 200;
+
+#[derive(Clone, Copy)]
+enum RefreshWake {
+    Output,
+    Cadence,
+}
+
+fn refresh_interval(
+    interactive: bool,
+    active: ActivePollingRateCap,
+    inactive_fps: u32,
+) -> Duration {
+    let fps = if interactive {
+        active.cap_hz()
+    } else {
+        Some(inactive_fps.clamp(1, 120))
+    };
+    fps.map_or(Duration::ZERO, |fps| {
+        Duration::from_secs_f64(1.0 / f64::from(fps))
+    })
+}
+
+fn refresh_wait(interval: Duration, suspended: bool, elapsed: Duration) -> Duration {
+    let interval = if suspended {
+        Duration::from_millis(500)
+    } else {
+        interval
+    };
+    interval.saturating_sub(elapsed)
+}
 
 static NEXT_SESSION_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
 
@@ -138,6 +171,8 @@ pub struct TerminalSession {
     memory: Arc<crate::memory_pressure::SessionMemory>,
     writer: PtyWriter,
     stop: Arc<AtomicBool>,
+    poll_interrupt: OutputInterrupt,
+    poll_interactive: AtomicBool,
     /// Raw output collected by the poll thread since the last refresh, and
     /// when the first of it arrived (latency).
     output: Arc<Mutex<(Vec<u8>, Option<Instant>)>>,
@@ -175,6 +210,8 @@ pub struct TerminalSession {
     /// set, output is still parsed but the grid is refreshed at most every
     /// 500 ms (Swift `startBackgroundDrain`).
     render_suspended: Arc<AtomicBool>,
+    refresh_interval_ns: Arc<AtomicU64>,
+    refresh_wake: mpsc::UnboundedSender<RefreshWake>,
     /// Shell state machine (status, typed lines, AI tool, command blocks).
     tracker: ShellSession,
     shell_context: EnvContext,
@@ -432,26 +469,83 @@ impl TerminalSession {
         let echo_fd = term.echo_fd();
         let has_pty = term.has_pty();
         let pid = term.shell_pid() as i32;
+        let (readiness, poll_interrupt) = term.output_readiness();
         let term = Arc::new(RwLock::new(term));
         let stop = Arc::new(AtomicBool::new(false));
         let output = Arc::new(Mutex::new((Vec::new(), None)));
-        let (tx, mut rx) = mpsc::unbounded::<()>();
+        let (tx, mut rx) = mpsc::unbounded::<RefreshWake>();
+        let refresh_wake = tx.clone();
         let id = NEXT_SESSION_ID.fetch_add(1, Ordering::Relaxed);
+        // The poll thread observes the actual retention phase without owning
+        // the session or altering construction/teardown order.
+        let profile_memory = Arc::new(std::sync::OnceLock::<
+            std::sync::Weak<crate::memory_pressure::SessionMemory>,
+        >::new());
 
         {
             let term = term.clone();
             let stop = stop.clone();
             let output = output.clone();
+            let profile_memory = profile_memory.clone();
             std::thread::Builder::new()
                 .name("chau7-next-poll".into())
                 .spawn(move || {
                     while !stop.load(Ordering::Acquire) {
+                        // Reader-channel readiness never dequeues output and owns
+                        // no terminal/parser lock. Input/focus/stop interrupts are
+                        // coalesced; PTY arrival wakes this wait immediately.
+                        let wait_visibility = profile_memory
+                            .get()
+                            .and_then(std::sync::Weak::upgrade)
+                            .map_or("unobserved", |memory| memory.profiling_phase());
+                        let wait_key = WorkKey::work(
+                            "pty_readiness_wait",
+                            "readiness",
+                            wait_visibility,
+                            "pty_poll",
+                            WorkQueue::Background,
+                        );
+                        let _ready = work_profiler::measure(wait_key, || {
+                            readiness.wait(Duration::from_millis(PTY_READINESS_MAX_WAIT_MS))
+                        });
+                        if stop.load(Ordering::Acquire) {
+                            break;
+                        }
+                        let visibility = profile_memory
+                            .get()
+                            .and_then(std::sync::Weak::upgrade)
+                            .map_or("unobserved", |memory| memory.profiling_phase());
+                        let mut wake = work_profiler::begin(WorkKey::wakeup(
+                            "pty_poll",
+                            visibility,
+                            WorkQueue::Background,
+                        ));
                         let (had_data, closed, bytes) = {
                             let term = term.read();
-                            let had = term.poll(16);
-                            (had, term.is_pty_closed(), term.get_last_output())
+                            let had = work_profiler::measure(
+                                WorkKey::work(
+                                    "native_poll_and_parse",
+                                    "drain",
+                                    visibility,
+                                    "pty_poll",
+                                    WorkQueue::Background,
+                                ),
+                                || term.poll(0),
+                            );
+                            let mut extraction = work_profiler::begin(WorkKey::work(
+                                "get_last_output",
+                                "drain",
+                                visibility,
+                                "pty_poll",
+                                WorkQueue::Background,
+                            ));
+                            let bytes = term.get_last_output();
+                            extraction.bytes(bytes.len());
+                            (had, term.is_pty_closed(), bytes)
                         };
                         let got_bytes = !bytes.is_empty();
+                        wake.bytes(bytes.len());
+                        wake.idle(!had_data && !closed && !got_bytes);
                         if got_bytes {
                             super::pty_capture::record(&bytes, "read");
                             crate::history::recorder::output(id, &bytes);
@@ -459,7 +553,9 @@ impl TerminalSession {
                             out.0.extend_from_slice(&bytes);
                             out.1.get_or_insert_with(Instant::now);
                         }
-                        if (had_data || closed || got_bytes) && tx.unbounded_send(()).is_err() {
+                        if (had_data || closed || got_bytes)
+                            && tx.unbounded_send(RefreshWake::Output).is_err()
+                        {
                             break;
                         }
                         if closed {
@@ -473,17 +569,44 @@ impl TerminalSession {
         // Coalesce wakeups: one UI refresh per batch of output.
         let render_suspended = Arc::new(AtomicBool::new(false));
         let suspended = render_suspended.clone();
+        let refresh_interval_ns = Arc::new(AtomicU64::new(0));
+        let pacing = refresh_interval_ns.clone();
         let pump = cx.spawn(async move |this, cx| {
-            while rx.next().await.is_some() {
-                while rx.try_recv().is_ok() {}
-                if this.update(cx, |this, cx| this.refresh(cx)).is_err() {
-                    break;
+            let mut last_refresh: Option<Instant> = None;
+            'pump: while let Some(first) = rx.next().await {
+                let mut notifications = usize::from(matches!(first, RefreshWake::Output));
+                while let Ok(next) = rx.try_recv() {
+                    notifications += usize::from(matches!(next, RefreshWake::Output));
                 }
-                if suspended.load(Ordering::Relaxed) {
-                    cx.background_executor()
-                        .timer(Duration::from_millis(500))
-                        .await;
+                // Focus/settings changes only interrupt a pending deadline.
+                // They do not invent output or reset session activity.
+                if notifications == 0 { continue; }
+                loop {
+                    let wait = last_refresh.map_or(Duration::ZERO, |at| refresh_wait(
+                        Duration::from_nanos(pacing.load(Ordering::Relaxed)),
+                        suspended.load(Ordering::Relaxed), at.elapsed()));
+                    if wait.is_zero() { break; }
+                    let delay = cx.background_executor().timer(wait).fuse();
+                    let next = rx.next().fuse();
+                    futures::pin_mut!(delay, next);
+                    futures::select_biased! {
+                        event = next => match event {
+                            Some(event) => notifications += usize::from(matches!(event, RefreshWake::Output)),
+                            None => break 'pump,
+                        },
+                        _ = delay => {},
+                    }
                 }
+                while let Ok(next) = rx.try_recv() {
+                    notifications += usize::from(matches!(next, RefreshWake::Output));
+                }
+                if this.update(cx, |this, cx| {
+                    let mut wake = work_profiler::begin(WorkKey::wakeup(
+                        "output_dispatch", this.profiling_phase(), WorkQueue::Main));
+                    wake.items(notifications);
+                    this.refresh(cx);
+                }).is_err() { break; }
+                last_refresh = Some(Instant::now());
             }
         });
         // Once a second: idle/stuck timers, startup notice, cwd and branch.
@@ -532,12 +655,15 @@ impl TerminalSession {
             .try_global::<Settings>()
             .map_or(10_000, |settings| settings.terminal.scrollback_lines);
         let memory = crate::memory_pressure::register(id, &term, &root, lines);
+        let _ = profile_memory.set(Arc::downgrade(&memory));
         Self {
             id,
             term,
             memory,
             writer,
             stop,
+            poll_interrupt,
+            poll_interactive: AtomicBool::new(true),
             output,
             pending_input: RefCell::new(Vec::new()),
             latency: RefCell::new(LatencyTracker::new()),
@@ -562,6 +688,8 @@ impl TerminalSession {
             command_running: false,
             started_at: now,
             render_suspended,
+            refresh_interval_ns,
+            refresh_wake,
             tracker: ShellSession::new(config, &directory, now_secs()),
             shell_context: EnvContext {
                 search_path: std::env::var("PATH").ok(),
@@ -589,15 +717,94 @@ impl TerminalSession {
     }
 
     /// Pull everything new from the terminal and notify observers.
+    /// On-demand retained capacities and native estimates, never terminal text.
+    /// Native debug_state uses O(1) row counters rather than walking history.
+    pub fn allocation_snapshot(&self) -> serde_json::Value {
+        let native = self.term.read().debug_state();
+        let output = self.output.lock();
+        let pending = self.pending_input.borrow();
+        let grid_cells = self
+            .grid
+            .cells
+            .capacity()
+            .saturating_mul(std::mem::size_of::<chau7_terminal::OwnedCell>());
+        let clusters = self
+            .grid
+            .clusters
+            .values()
+            .map(String::capacity)
+            .sum::<usize>();
+        let pending_input = pending
+            .iter()
+            .map(|(bytes, _)| bytes.capacity())
+            .sum::<usize>();
+        let output_capacity = output.0.capacity();
+        let preview = self.memory.restoration_preview_capacity_bytes();
+        serde_json::json!({
+            "session_id":self.id, "render_phase":self.profiling_phase(),
+            "grid_cols":native.cols, "grid_rows":native.rows,
+            "history_rows":native.history_size, "alternate_screen_active":native.alternate_screen != 0,
+            "native_ring_estimated_bytes":native.estimated_grid_bytes,
+            "ui_grid_cells_capacity_bytes":grid_cells, "ui_grid_cluster_string_capacity_bytes":clusters,
+            "pending_output_bytes":output.0.len(), "pending_output_capacity_bytes":output_capacity,
+            "pending_input_capacity_bytes":pending_input, "restoration_preview_capacity_bytes":preview,
+            "known_session_capacity_bytes":grid_cells.saturating_add(clusters).saturating_add(output_capacity).saturating_add(pending_input).saturating_add(preview),
+            "refresh_cap_interval_ms":self.refresh_interval_ns.load(Ordering::Relaxed) as f64 / 1_000_000.0,
+            "display_native_refresh":self.refresh_interval_ns.load(Ordering::Relaxed) == 0,
+            "refresh_interactive":self.poll_interactive.load(Ordering::Relaxed),
+            "pty_readiness_max_wait_ms":PTY_READINESS_MAX_WAIT_MS,
+            "render_suspended":self.is_render_suspended(),
+            "native_pending_image_bytes":serde_json::Value::Null,
+            "unavailable_reason":"Native pending images and private GPUI GPU resources expose no allocation accessor; native ring bytes are estimated. Known capacities exclude allocator/HashMap overhead."
+        })
+    }
+
+    pub fn profiling_phase(&self) -> &'static str {
+        self.memory.profiling_phase()
+    }
+
     pub fn refresh(&mut self, cx: &mut Context<Self>) {
+        let mut processing = work_profiler::begin(WorkKey::work(
+            "output_processing",
+            "drain",
+            self.profiling_phase(),
+            "session_refresh",
+            WorkQueue::Main,
+        ));
         let started = Instant::now();
         self.memory.set_tui(self.ai_app.is_some());
         let mut metadata_changed = self.retry_resize();
         let (grid, cursor, title, closed, events, bell, clipboard, clipboard_load) = {
             let term = self.term.read();
             (
-                term.grid_copy(),
-                term.cursor_position(),
+                {
+                    let mut capture = work_profiler::begin(WorkKey::work(
+                        "get_grid",
+                        "drain",
+                        self.profiling_phase(),
+                        "session_refresh",
+                        WorkQueue::Main,
+                    ));
+                    let grid = term.grid_copy();
+                    capture.items(grid.cells.len());
+                    capture.bytes(
+                        grid.cells
+                            .len()
+                            .saturating_mul(std::mem::size_of::<chau7_terminal::OwnedCell>())
+                            .saturating_add(grid.clusters.values().map(String::len).sum::<usize>()),
+                    );
+                    grid
+                },
+                work_profiler::measure(
+                    WorkKey::work(
+                        "cursor_mode_read",
+                        "drain",
+                        self.profiling_phase(),
+                        "session_refresh",
+                        WorkQueue::Main,
+                    ),
+                    || term.cursor_position(),
+                ),
                 term.take_pending_title(),
                 term.is_pty_closed(),
                 term.take_shell_events(),
@@ -608,8 +815,25 @@ impl TerminalSession {
         };
         let (output, output_at) = std::mem::take(&mut *self.output.lock());
         self.last_output_bytes = output.len();
+        processing.bytes(output.len());
+        processing.idle(output.is_empty());
         self.permission_output_tail.push(&output);
         if let Some(at) = output_at {
+            let mut key = WorkKey::work(
+                "event_dispatch_wait",
+                "drain",
+                self.profiling_phase(),
+                "output_dispatch",
+                WorkQueue::Main,
+            );
+            key.kind = WorkKind::Latency;
+            work_profiler::record(
+                key,
+                at.elapsed().as_secs_f64() * 1000.0,
+                output.len(),
+                1,
+                false,
+            );
             // Output latency runs from the bytes' arrival to the frame that
             // shows them (`mark_frame_drawn`); a measure no frame closed
             // within 0.2 s (hidden tab) is dropped first.
@@ -628,8 +852,12 @@ impl TerminalSession {
         let now = now_secs();
 
         if let Some(title) = title {
-            self.title = Some(title).filter(|t| !t.trim().is_empty());
-            metadata_changed = true;
+            let stable = chau7_next_core::terminal_title::stable_display_title(&title);
+            let next = (!stable.is_empty()).then(|| stable.to_string());
+            if next != self.title {
+                self.title = next;
+                metadata_changed = true;
+            }
         }
 
         // Typed input first (the command line), then the marks, then the
@@ -1011,6 +1239,12 @@ impl TerminalSession {
 
     /// Once a second.
     fn tick(&mut self, cx: &mut Context<Self>) {
+        let mut wake = work_profiler::begin(WorkKey::wakeup(
+            "session_timer",
+            self.profiling_phase(),
+            WorkQueue::Main,
+        ));
+        wake.idle(self.last_activity.elapsed() >= Duration::from_secs(1));
         if self.exited.is_some() {
             return;
         }
@@ -1147,6 +1381,11 @@ impl TerminalSession {
             self.tracker.ai_session_id(),
             cx,
         );
+        crate::telemetry::register_live_log(
+            &self.tab_identifier,
+            self.monitor.ai_log.last_log_path.clone(),
+            cx,
+        );
     }
 
     /// TRM-046: the AI CLI exited (`finishAILogging`): the run ends with the
@@ -1168,6 +1407,11 @@ impl TerminalSession {
             pty_log,
             cx,
         );
+    }
+
+    /// A worker receives only the native terminal handle, never this GPUI entity.
+    pub(crate) fn remote_terminal(&self) -> Arc<RwLock<Chau7Terminal>> {
+        self.term.clone()
     }
 
     /// PTY log of the current or last AI run (`lastPTYLogPath`).
@@ -1466,6 +1710,9 @@ impl TerminalSession {
     /// Raw bytes for the program (key and mouse reports, replies). Written
     /// in order on the writer thread.
     pub fn write(&self, bytes: &[u8]) {
+        if !bytes.is_empty() {
+            self.poll_interrupt.wake();
+        }
         self.writer.write(bytes.to_vec());
     }
 
@@ -1509,8 +1756,11 @@ impl TerminalSession {
     }
 
     /// Answer an OSC 52 clipboard read (RBK-012).
+    pub fn has_pending_clipboard_response(&self) -> bool {
+        self.writer.has_pending_clipboard_response()
+    }
     pub fn respond_clipboard(&self, text: &str) {
-        self.writer.respond_clipboard(text.to_string());
+        self.writer.respond_clipboard(text);
     }
 
     pub fn resize(&mut self, cols: u16, rows: u16) {
@@ -1573,7 +1823,7 @@ impl TerminalSession {
     }
 
     pub fn selection_text(&self) -> Option<String> {
-        self.term.read().selection_text().filter(|t| !t.is_empty())
+        clipboard_selection(&self.term.read(), self.tracker.is_ai_running())
     }
 
     pub fn clear_scrollback(&self) {
@@ -1638,7 +1888,16 @@ impl TerminalSession {
     }
 
     pub fn buffer_text(&self) -> String {
-        self.term.read().full_buffer_text()
+        let mut capture = work_profiler::begin(WorkKey::work(
+            "full_buffer_text",
+            "capture",
+            self.profiling_phase(),
+            "session",
+            WorkQueue::Main,
+        ));
+        let text = self.term.read().full_buffer_text();
+        capture.bytes(text.len());
+        text
     }
 
     pub fn display_offset(&self) -> usize {
@@ -1670,8 +1929,29 @@ impl TerminalSession {
 
     /// Suspend Background Rendering for a hidden tab (see `render_suspended`).
     pub fn set_render_suspended(&self, suspended: bool) {
-        self.render_suspended.store(suspended, Ordering::Relaxed);
+        if self.render_suspended.swap(suspended, Ordering::Relaxed) != suspended {
+            self.poll_interrupt.wake();
+            let _ = self.refresh_wake.unbounded_send(RefreshWake::Cadence);
+        }
         self.memory.set_tui(self.ai_app.is_some());
+    }
+
+    /// Actual view/window focus supplies interactive state. A zero interval
+    /// leaves display-native presentation to GPUI's display scheduling.
+    pub fn set_refresh_pacing(
+        &self,
+        interactive: bool,
+        active: ActivePollingRateCap,
+        inactive_fps: u32,
+    ) {
+        let interval = refresh_interval(interactive, active, inactive_fps);
+        let ns = interval.as_nanos().min(u128::from(u64::MAX)) as u64;
+        let focus_changed =
+            self.poll_interactive.swap(interactive, Ordering::Relaxed) != interactive;
+        if self.refresh_interval_ns.swap(ns, Ordering::Relaxed) != ns || focus_changed {
+            self.poll_interrupt.wake();
+            let _ = self.refresh_wake.unbounded_send(RefreshWake::Cadence);
+        }
     }
 
     pub fn is_render_suspended(&self) -> bool {
@@ -1734,6 +2014,14 @@ impl TerminalSession {
         self.tracker.blocks()
     }
 
+    /// Automation must never overwrite a typed fragment or queued restore.
+    pub(crate) fn has_pending_automation_input(&self) -> bool {
+        !self.pending_input.borrow().is_empty()
+            || self.pending_prefill.is_some()
+            || self.tracker.prefill_pending
+            || self.tracker.has_pending_input()
+    }
+
     /// Shell state (AI provider and session id, prompt, integration).
     pub fn shell(&self) -> &ShellSession {
         &self.tracker
@@ -1764,6 +2052,7 @@ impl TerminalSession {
             return;
         }
         self.close_requested = true;
+        self.poll_interrupt.wake();
         unregister_shell(self.id);
         let mode = if APP_QUITTING.load(Ordering::Acquire) {
             CloseMode::AppQuit
@@ -1827,6 +2116,7 @@ impl Drop for TerminalSession {
         }
         self.close();
         self.stop.store(true, Ordering::Release);
+        self.poll_interrupt.wake();
     }
 }
 
@@ -1938,5 +2228,127 @@ pub(crate) fn apply_agent_feedback(event: &AiEvent, cx: &mut gpui::App) {
     }
     for session in sessions {
         session.update(cx, |session, cx| session.handle_agent_feedback(event, cx));
+    }
+}
+
+/// Shared by all UI and MCP selection callers; native selection joins soft wraps.
+fn clipboard_selection(terminal: &Chau7Terminal, live_ai: bool) -> Option<String> {
+    terminal
+        .selection_text()
+        .map(|text| {
+            chau7_next_core::terminal_clipboard::copied_text(
+                &text,
+                live_ai || terminal.is_alt_screen(),
+            )
+            .into_owned()
+        })
+        .filter(|text| !text.is_empty())
+}
+
+#[cfg(test)]
+mod clipboard_tests {
+    use super::*;
+    #[test]
+    fn actual_native_selection_preserves_soft_wrap_spaces_and_trims_padding() {
+        let term = Chau7Terminal::new_headless(5, 2).unwrap();
+        term.inject_output(b"echo hello");
+        term.selection_start(0, 0, 0);
+        term.selection_update(4, 1);
+        let native = term.selection_text().unwrap();
+        assert_eq!(native.trim_end_matches('\n'), "echo hello");
+        assert_eq!(clipboard_selection(&term, false).unwrap(), native);
+        assert_eq!(clipboard_selection(&term, true).unwrap(), "echo hello");
+    }
+    #[test]
+    fn actual_tui_hard_wrapped_path_and_argument_selection() {
+        for (raw, end, expected) in [
+            (
+                &b"cat /tmp/very\r\nlongpath"[..],
+                7,
+                "cat /tmp/verylongpath",
+            ),
+            (&b"echo hello\r\n    --flag"[..], 9, "echo hello --flag"),
+        ] {
+            let term = Chau7Terminal::new_headless(40, 2).unwrap();
+            term.inject_output(raw);
+            term.selection_start(0, 0, 0);
+            term.selection_update(end, 1);
+            assert_eq!(clipboard_selection(&term, true).unwrap(), expected);
+            assert_eq!(
+                clipboard_selection(&term, false).unwrap(),
+                term.selection_text().unwrap()
+            );
+        }
+    }
+    #[test]
+    fn actual_alternate_screen_is_tui_without_detected_ai() {
+        let term = Chau7Terminal::new_headless(40, 2).unwrap();
+        term.inject_output(b"\x1b[?1049hecho hello\r\n    --flag");
+        assert!(term.is_alt_screen());
+        term.selection_start(0, 0, 0);
+        term.selection_update(9, 1);
+        assert_eq!(
+            clipboard_selection(&term, false).unwrap(),
+            "echo hello --flag"
+        );
+        term.selection_clear();
+        assert_eq!(clipboard_selection(&term, false), None);
+    }
+}
+
+#[cfg(test)]
+mod refresh_pacing_tests {
+    use super::*;
+    #[test]
+    fn actual_focus_rate_options_and_inactive_bounds_have_real_deadlines() {
+        assert_eq!(
+            refresh_interval(true, ActivePollingRateCap::DisplayNative, 42),
+            Duration::ZERO
+        );
+        for (cap, fps) in [
+            (ActivePollingRateCap::Hz60, 60.0),
+            (ActivePollingRateCap::Hz30, 30.0),
+        ] {
+            assert_eq!(
+                refresh_interval(true, cap, 42),
+                Duration::from_secs_f64(1.0 / fps)
+            );
+        }
+        assert_eq!(
+            refresh_interval(false, ActivePollingRateCap::Hz30, 42),
+            Duration::from_secs_f64(1.0 / 42.0)
+        );
+        assert_eq!(
+            refresh_interval(false, ActivePollingRateCap::DisplayNative, 0),
+            Duration::from_secs(1)
+        );
+        assert_eq!(
+            refresh_interval(false, ActivePollingRateCap::Hz60, u32::MAX),
+            Duration::from_secs_f64(1.0 / 120.0)
+        );
+    }
+    #[test]
+    fn coalesced_output_deadline_does_not_restart_and_resume_cancels_suspension() {
+        let cap = refresh_interval(true, ActivePollingRateCap::Hz30, 42);
+        assert_eq!(
+            refresh_wait(cap, false, Duration::from_millis(10)),
+            cap - Duration::from_millis(10)
+        );
+        assert_eq!(
+            refresh_wait(cap, false, Duration::from_millis(40)),
+            Duration::ZERO
+        );
+        assert_eq!(
+            refresh_wait(Duration::ZERO, true, Duration::from_millis(10)),
+            Duration::from_millis(490)
+        );
+        assert_eq!(
+            refresh_wait(Duration::ZERO, false, Duration::from_millis(10)),
+            Duration::ZERO
+        );
+        assert_eq!(
+            refresh_wait(Duration::from_secs(1), true, Duration::from_millis(10)),
+            Duration::from_millis(490)
+        );
     }
 }

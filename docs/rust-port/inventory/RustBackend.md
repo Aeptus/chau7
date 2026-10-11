@@ -77,9 +77,9 @@ lives here.
 | RBK-059 | Dim sequence patcher | `RustBackend/RustDimPatcher.swift` | | | n/a | |
 | RBK-060 | CPU grid sync optimizations: dirty-row diff, partial redraw, 120 fps cap, skip unchanged frames | `RustBackend/RustTerminalView.swift` (`syncGridToRenderer`, `cellsEqual`) | | | n/a | |
 
-| RBK-061 | GPUI painter uses complete grapheme clusters and cell width/continuation for text, combining accents and emoji sequences including wide cursor placement | `RustBackend/RustTerminalView+Rendering.swift`; `Performance/MetalTerminalRenderer.swift` |  | chau7_next/src/terminal/paint.rs; chau7_terminal/src/rust_api.rs | partial |  |
+| RBK-061 | GPUI painter uses complete grapheme clusters and cell width/continuation for text, combining accents and emoji sequences including wide cursor placement | `RustBackend/RustTerminalView+Rendering.swift`; `Performance/MetalTerminalRenderer.swift` | GridCopy paint fixtures; isolated native macOS CPU/GPU-requested acceptance e8f32e6014b0 | chau7_next/src/terminal/paint.rs; chau7_terminal/src/rust_api.rs | done |  |
 
-| RBK-062 | OSC52 clipboard replies queued once, kept in input order and refuse payloads over 1 MB with empty reply instead of blocking UI or returning truncated secrets | `Chau7Core/TerminalWriteQueue.swift`; `RustBackend/RustTerminalView+Input.swift` | TerminalWriteQueueTests | chau7_next/src/terminal/pty_writer.rs | partial |  |
+| RBK-062 | OSC52 clipboard replies queued once, kept in input order and refuse payloads over 1 MB with empty reply instead of blocking UI or returning truncated secrets | `Chau7Core/TerminalWriteQueue.swift`; `RustBackend/RustTerminalView+Input.swift` | 6 actual ordered PTY writer regressions | chau7_next/src/terminal/{pty_writer,session,view}.rs | done |  |
 
 ## Notes
 

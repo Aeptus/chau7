@@ -17,8 +17,8 @@ the rows below keep the user-visible effects.
 | ID | Feature | Swift source | Tests | Rust | Status | macOS API |
 |---|---|---|---|---|---|---|
 | PRF-001 | Terminal text and backgrounds drawn on the GPU | `Performance/RustMetalDisplayCoordinator.swift`, `Performance/MetalTerminalRenderer.swift` | | `chau7_next/src/terminal/view.rs` (GPUI `paint_quad`, `shape_line`) | done | Metal |
-| PRF-002 | "Metal Renderer" switches terminal text, backgrounds, decorations and images between GPUI GPU drawing and a bounded CPU BGRA surface; existing tabs refresh font metrics. GPUI window composition still needs a platform graphics device, so startup without one remains unsupported | `Performance/RustMetalDisplayCoordinator.swift` (`init?`), `Settings/Views/ScrollbackPerfSettingsView.swift` | CPU raster/cache tests; native styled-text fixture | chau7_next/src/terminal/cpu_renderer.rs; chau7_next/src/terminal/paint.rs; chau7_next/src/terminal/view.rs | partial | CoreText, Metal |
-| PRF-003 | Fallback fonts, double-width/bold/italic glyphs and complete multi-character grapheme clusters with continuation-cell spacing | `Performance/MetalTerminalRenderer.swift`; `RustBackend/RustTerminalView+Rendering.swift` |  | `chau7_next/src/terminal/view.rs` (`CellMetrics`, `fallback_fonts`) | partial | CoreText |
+| PRF-002 | "Metal Renderer" selects GPU or CPU terminal-grid drawing. Swift also automatically keeps its CoreGraphics terminal path if Metal device/renderer creation fails; Next has the CPU grid switch but its GPUI macOS window still requires a compatible Metal device, so that unavailable-Metal fallback remains unsupported | `Settings/Views/ScrollbackPerfSettingsView.swift:65`; `RustBackend/RustTerminalView.swift:335`; `Overlay/OverlayTabsModel+Refresh.swift:181`; `Performance/RustMetalDisplayCoordinator.swift:167` | CPU raster/cache tests; native styled-text fixture; actual-backend native acceptance pending initial-view registration fix | chau7_next/src/terminal/cpu_renderer.rs; chau7_next/src/terminal/paint.rs; chau7_next/src/terminal/view.rs | partial | CoreText, Metal |
+| PRF-003 | Fallback fonts, double-width/bold/italic glyphs and complete multi-character grapheme clusters with continuation-cell spacing | `Performance/MetalTerminalRenderer.swift`; `RustBackend/RustTerminalView+Rendering.swift` | 17 native GridCopy paint fixtures; isolated macOS CPU/GPU-requested screenshots at e8f32e6014b0 | chau7_next/src/terminal/paint.rs; chau7_next/src/terminal/view.rs | done | CoreText |
 | PRF-004 | Crisp text on Retina and when a window moves between screens with different scale factors | `Performance/RustMetalDisplayCoordinator.swift` (`configureFont`), `RustBackend/RustTerminalView.swift` (`viewDidMoveToWindow`) | | GPUI | done | |
 | PRF-005 | Rendering paced to the display refresh rate (ProMotion 120 Hz), vsync on, three drawables in flight | `Performance/OptimalMetalView.swift` (`configureForLowLatency`), `RustBackend/RustTerminalView.swift` (`displayRefreshInterval`) | | GPUI | done | CAMetalLayer, CVDisplayLink |
 | PRF-006 | Cursor blinks every 500 ms but stays solid for 1 s after typing or output; blink timer paused for suspended tabs | `Performance/RustMetalDisplayCoordinator.swift` (`handleBlinkTick`, `pauseBlinkTimer`, `setNeedsSync`) |  | `chau7_next/src/terminal/view.rs` (`blink_tick`), `chau7_next/src/terminal/paint.rs` (`Overlays::blink_hold`) | done |  |
@@ -31,7 +31,7 @@ the rows below keep the user-visible effects.
 | PRF-013 | Glyph atlas bookkeeping: shared shader pipelines, ASCII pre-rasterization, atlas reset when full, atlas PNG dump for debugging | `Performance/MetalTerminalRenderer.swift` (`setupPipelines`, `prerasterizeASCII`, `resetAtlas`, `dumpAtlasToPNG`) | | | n/a | Metal |
 
 | PRF-014 | (dev) Bounded sampled performance JSONL file separate from operational logs, schema_version/timestamp/category/metrics, 8 MB rotation and flush | `Performance/PerformanceTelemetryWriter.swift` | PerformanceTelemetryWriterTests; Next rotation/envelope tests | chau7_next/src/performance.rs (bounded queue, 8 MiB rotation, background quit drain) | done |  |
-| PRF-015 | (dev) Render pipeline, terminal work and wakeup aggregate profiling with stage counters/durations, callback/timer sources and idle costs | `Performance/RenderPipelineProfiler.swift`; `Performance/TerminalWorkProfiler.swift`; `Performance/WakeupProfiler.swift` | RenderPipelineProfilerTests | chau7_next_core/src/feature_profiler.rs | partial |  |
+| PRF-015 | (dev) Render pipeline, terminal work and wakeup aggregate profiling with stage counters/durations, callback/timer sources and idle costs | `Performance/RenderPipelineProfiler.swift`; `Performance/TerminalWorkProfiler.swift`; `Performance/WakeupProfiler.swift` | 4 bounded work aggregation regressions; actual stage caller/native delta tests | chau7_next_core/src/work_profiler.rs; chau7_next/src/performance.rs; chau7_next/src/terminal/{session,view,paint,cpu_renderer}.rs | done |  |
 | PRF-016 | Main-thread hang heartbeat/watchdog captures diagnostic evidence, writes breadcrumbs and attempts bounded render recovery; lifetime stops on app shutdown | `Chau7Core/MainThreadHangMonitor.swift`; `Chau7Core/MainThreadHangWatchdogLifetime.swift`; `Performance/MainThreadHangRecoveryController.swift`; `Chau7Core/HangSampleEvidence.swift` | MainThreadHangMonitorTests; MainThreadHangWatchdogLifetimeTests; HangSampleEvidenceTests; native helper acceptance | chau7_next_core/src/hang_monitor.rs; chau7_next/src/hang_watchdog.rs | done |  |
 | PRF-017 | Memory pressure coordinator/reclaimer budgets active/warm/hidden scrollback, trims caches under warning/critical pressure and records reclaimed memory | `Performance/MemoryPressureCoordinator.swift`; `Performance/MemoryPressureResponder.swift`; `Performance/TerminalMemoryReclaimer.swift`; `Terminal/ScrollbackMemoryManager.swift`; `Chau7Core/TerminalMemoryBudgetPolicy.swift` | TerminalMemoryBudgetPolicyTests; RenderMemoryPressurePolicyTests; ScrollbackMemoryManagerTests | chau7_next_core/src/memory_pressure.rs; chau7_next/src/memory_pressure.rs; chau7_next/src/terminal/cpu_renderer.rs | done | Dispatch memory pressure, mach task metrics |
 | PRF-018 | Hidden/warm scrollback retention flushes to disk, reloads on activation, bounds trackers/configured lines and avoids stale TUI content on restore | `Chau7Core/ScrollbackRetentionPolicy.swift`; `Terminal/ScrollbackMemoryManager.swift`; `Chau7Core/ScrollbackRestoreFilter.swift` | ScrollbackMemoryManagerTests; TerminalSystemRestoreTests | chau7_next_core/src/scrollback_cache.rs; chau7_next_core/src/session_restore.rs; chau7_next/src/memory_pressure.rs; chau7_next/src/restore.rs | done |  |
@@ -47,15 +47,27 @@ the rows below keep the user-visible effects.
   `CTFontGetUnderlinePosition`.
 - PRF-002: CPU rasterization is implemented, with 64 MiB/8192-pixel surface
   bounds, 32 MiB/4096-glyph cache bounds and release on renderer/window changes.
-  GPUI still composes the resulting surface in its platform graphics pipeline.
-  The source switch works; automatic app startup without a graphics device is
-  the remaining partial facet. The earlier claim that off only disabled
-  ligatures is obsolete.
-- PRF-003: a native macOS fixture on `175fd1ee3b1e` confirms colors, bold,
-  italic, underlines, combining accents and CJK spacing. It also reveals that
-  ZWJ family/profession emoji and skin tone modifiers are split across shapes.
-  The buffer preserves all scalars; native complete-cluster acceptance fails.
-  Keep this row partial until the corrected painter passes that fixture.
+  The Swift preference controls terminal-grid drawing, not CPU rendering of
+  the entire window: its off path is `RustGridView.draw` using CGContext, while
+  its AppKit view remains layer-backed. GPU composition of Next's CPU bitmap
+  does not itself violate that preference. The source switch works; the earlier
+  claim that off only disabled ligatures is obsolete.
+  The concrete remaining facet is Swift's advertised automatic fallback when
+  Metal is unavailable. Its optional `RustMetalDisplayCoordinator` returns nil
+  on missing device/renderer and leaves the CPU grid active; the current GPUI
+  macOS renderer exits if no compatible Metal device exists, before Next's grid
+  setting can help. No native unavailable-device test was performed. Existing
+  e8 screenshots recorded requested settings; native `actual_renderer` CPU/GPU
+  evidence follows the initial-view weak-registration fix (`5a4789bb`).
+- PRF-003: native macOS acceptance on `e8f32e6014b0` passes colors,
+  bold/italic/underline, combining accents, composed woman-technologist skin
+  tone, one family glyph, French flag and CJK. The fix reconstructs extended
+  grapheme clusters across native cells before shaping; following text retains
+  its grid-column position. Both CPU-off/GPU-on settings were checked in an
+  isolated test bundle/profile, with screenshots preserved in the parity
+  recovery evidence. The earlier `175fd1ee3b1e` split-emoji failure is fixed.
+  That build predates actual-backend diagnostics; settings are recorded as
+  requested backend, with no inferred claim about a silent fallback.
 - PRF-014: history records use schema_version/timestamp/category/metrics,
   with 8 MiB live and archive bounds and a 1 MiB record bound. The latest
   snapshot keeps the live MCP/UI shape. Accepted records drain on the quit
@@ -93,3 +105,15 @@ the rows below keep the user-visible effects.
 - n/a rows: PRF-010 has no caller (the coordinator keeps the view paused and
   calls `draw()` itself); PRF-011 and PRF-013 are Metal pipeline plumbing that
   GPUI replaces; PRF-012 has no caller outside its tests.
+
+### Actual work and wakeup measurements
+
+PRF-015 records actual PTY poll/parse, output extraction and UI dispatch latency,
+grid/cursor capture, shape/prepaint/draw, CPU glyph/cache/raster/line rendering,
+remote delta/copy/encoding and memory save/replay/persist work. The
+`work_profile` performance snapshot exposes lifetime and 10/60-second windows,
+queue/context and idle wakeup costs. Retention is bounded to 256 contexts and
+120 time buckets. Overlapping stages are explicitly identified. GPUI-private
+GPU completion and CPU-time values remain unavailable, rather than being
+inferred from command submission duration. Native idle comparisons are separate
+acceptance evidence, not universal benchmark claims.
