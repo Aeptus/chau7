@@ -1,0 +1,711 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>alert.quit.message</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>%#@processes@ se detendrán: %2$@</string>
+        <key>processes</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>d</string>
+            <key>one</key>
+            <string>%d proceso en curso</string>
+            <key>other</key>
+            <string>%d procesos en curso</string>
+        </dict>
+    </dict>
+
+    <key>panel.changedFiles.fileCount</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>%#@files@</string>
+        <key>files</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>d</string>
+            <key>one</key>
+            <string>%d archivo</string>
+            <key>other</key>
+            <string>%d archivos</string>
+        </dict>
+    </dict>
+
+    <key>statusBar.session.plural</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>%#@sessions@</string>
+        <key>sessions</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>d</string>
+            <key>one</key>
+            <string>1 sesión</string>
+            <key>other</key>
+            <string>%d sesiones</string>
+        </dict>
+    </dict>
+
+    <key>statusBar.attention.plural</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>%#@sessions@</string>
+        <key>sessions</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>d</string>
+            <key>one</key>
+            <string>1 sesión necesita tu atención</string>
+            <key>other</key>
+            <string>%d sesiones necesitan tu atención</string>
+        </dict>
+    </dict>
+
+    <key>explorer.sessions.runs</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>%#@runs@</string>
+        <key>runs</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>d</string>
+            <key>one</key>
+            <string>1 ejecución</string>
+            <key>other</key>
+            <string>%d ejecuciones</string>
+        </dict>
+    </dict>
+
+    <key>explorer.runs.count</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>%#@runs@</string>
+        <key>runs</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>d</string>
+            <key>one</key>
+            <string>1 ejecución</string>
+            <key>other</key>
+            <string>%d ejecuciones</string>
+        </dict>
+    </dict>
+
+    <key>snippets.count</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>%#@snippets@</string>
+        <key>snippets</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>d</string>
+            <key>one</key>
+            <string>%d extracto</string>
+            <key>other</key>
+            <string>%d extractos</string>
+        </dict>
+    </dict>
+
+    <key>context.closeGroup</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>Cerrar grupo (%#@tabs@)</string>
+        <key>tabs</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>d</string>
+            <key>one</key>
+            <string>%d pestaña</string>
+            <key>other</key>
+            <string>%d pestañas</string>
+        </dict>
+    </dict>
+
+    <key>repo.commitStaged</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>Confirmar (%#@staged@)</string>
+        <key>staged</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>d</string>
+            <key>one</key>
+            <string>%d preparado</string>
+            <key>other</key>
+            <string>%d preparados</string>
+        </dict>
+    </dict>
+
+    <key>notifications.overrideCount</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>%#@overrides@</string>
+        <key>overrides</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>d</string>
+            <key>one</key>
+            <string>%d anulación</string>
+            <key>other</key>
+            <string>%d anulaciones</string>
+        </dict>
+    </dict>
+
+    <!-- Tiempo relativo -->
+    <key>time.seconds.ago</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>%#@count@</string>
+        <key>count</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>d</string>
+            <key>one</key>
+            <string>%d segundo</string>
+            <key>other</key>
+            <string>%d segundos</string>
+        </dict>
+    </dict>
+
+    <key>time.minutes.ago</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>%#@count@</string>
+        <key>count</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>d</string>
+            <key>one</key>
+            <string>%d minuto</string>
+            <key>other</key>
+            <string>%d minutos</string>
+        </dict>
+    </dict>
+
+    <key>time.hours.ago</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>%#@count@</string>
+        <key>count</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>d</string>
+            <key>one</key>
+            <string>%d hora</string>
+            <key>other</key>
+            <string>%d horas</string>
+        </dict>
+    </dict>
+
+    <key>time.days.ago</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>%#@count@</string>
+        <key>count</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>d</string>
+            <key>one</key>
+            <string>%d día</string>
+            <key>other</key>
+            <string>%d días</string>
+        </dict>
+    </dict>
+
+    <key>time.weeks.ago</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>%#@count@</string>
+        <key>count</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>d</string>
+            <key>one</key>
+            <string>%d semana</string>
+            <key>other</key>
+            <string>%d semanas</string>
+        </dict>
+    </dict>
+
+    <key>time.months.ago</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>%#@count@</string>
+        <key>count</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>d</string>
+            <key>one</key>
+            <string>%d mes</string>
+            <key>other</key>
+            <string>%d meses</string>
+        </dict>
+    </dict>
+
+    <!-- Unidades -->
+    <key>unit.lines</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>%#@count@</string>
+        <key>count</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>d</string>
+            <key>one</key>
+            <string>%d línea</string>
+            <key>other</key>
+            <string>%d líneas</string>
+        </dict>
+    </dict>
+
+    <key>unit.items</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>%#@count@</string>
+        <key>count</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>d</string>
+            <key>one</key>
+            <string>%d elemento</string>
+            <key>other</key>
+            <string>%d elementos</string>
+        </dict>
+    </dict>
+
+    <!-- Comandos/Búsqueda -->
+    <key>command.count</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>%#@count@</string>
+        <key>count</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>d</string>
+            <key>one</key>
+            <string>%d comando</string>
+            <key>other</key>
+            <string>%d comandos</string>
+        </dict>
+    </dict>
+
+    <key>command.count.available</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>%#@count@</string>
+        <key>count</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>d</string>
+            <key>one</key>
+            <string>%d comando disponible</string>
+            <key>other</key>
+            <string>%d comandos disponibles</string>
+        </dict>
+    </dict>
+
+    <key>search.matches</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>%#@count@</string>
+        <key>count</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>d</string>
+            <key>one</key>
+            <string>%d resultado</string>
+            <key>other</key>
+            <string>%d resultados</string>
+        </dict>
+    </dict>
+
+    <key>search.matches.found</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>%#@count@</string>
+        <key>count</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>d</string>
+            <key>one</key>
+            <string>%d resultado encontrado</string>
+            <key>other</key>
+            <string>%d resultados encontrados</string>
+        </dict>
+    </dict>
+
+    <!-- Tareas -->
+    <key>task.calls</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>%#@count@</string>
+        <key>count</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>d</string>
+            <key>one</key>
+            <string>%d llamada</string>
+            <key>other</key>
+            <string>%d llamadas</string>
+        </dict>
+    </dict>
+
+    <key>task.tokens</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>%#@count@</string>
+        <key>count</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>d</string>
+            <key>one</key>
+            <string>%d token</string>
+            <key>other</key>
+            <string>%d tokens</string>
+        </dict>
+    </dict>
+
+    <key>task.candidate.auto_confirm</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>%#@count@</string>
+        <key>count</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>d</string>
+            <key>one</key>
+            <string>Confirmación automática en %d segundo</string>
+            <key>other</key>
+            <string>Confirmación automática en %d segundos</string>
+        </dict>
+    </dict>
+
+    <!-- Extractos -->
+    <key>productivity.snippets.count</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>%#@count@</string>
+        <key>count</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>d</string>
+            <key>one</key>
+            <string>%d extracto disponible</string>
+            <key>other</key>
+            <string>%d extractos disponibles</string>
+        </dict>
+    </dict>
+
+    <key>settings.productivity.snippets.count</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>%#@count@</string>
+        <key>count</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>d</string>
+            <key>one</key>
+            <string>%d extracto</string>
+            <key>other</key>
+            <string>%d extractos</string>
+        </dict>
+    </dict>
+
+    <key>snippets.import.success</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>%#@count@</string>
+        <key>count</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>d</string>
+            <key>one</key>
+            <string>%d extracto importado</string>
+            <key>other</key>
+            <string>%d extractos importados</string>
+        </dict>
+    </dict>
+
+    <key>snippets.export.success</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>%#@count@</string>
+        <key>count</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>d</string>
+            <key>one</key>
+            <string>%d extracto exportado</string>
+            <key>other</key>
+            <string>%d extractos exportados</string>
+        </dict>
+    </dict>
+
+    <!-- Explorador -->
+    <key>explorer.sessions.cmds</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>%#@count@</string>
+        <key>count</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>d</string>
+            <key>one</key>
+            <string>%d cmd</string>
+            <key>other</key>
+            <string>%d cmds</string>
+        </dict>
+    </dict>
+
+    <key>explorer.runs.withTokens</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>%#@count@</string>
+        <key>count</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>d</string>
+            <key>one</key>
+            <string>%d con datos de tokens</string>
+            <key>other</key>
+            <string>%d con datos de tokens</string>
+        </dict>
+    </dict>
+
+    <key>explorer.history.totalRecords</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>%#@count@</string>
+        <key>count</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>d</string>
+            <key>one</key>
+            <string>%d registro en total</string>
+            <key>other</key>
+            <string>%d registros en total</string>
+        </dict>
+    </dict>
+
+    <!-- Migración -->
+    <key>migration.foundProfiles</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>%#@count@</string>
+        <key>count</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>d</string>
+            <key>one</key>
+            <string>%d perfil encontrado</string>
+            <key>other</key>
+            <string>%d perfiles encontrados</string>
+        </dict>
+    </dict>
+
+    <key>migration.importButton</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>%#@count@</string>
+        <key>count</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>d</string>
+            <key>one</key>
+            <string>Importar %d perfil</string>
+            <key>other</key>
+            <string>Importar %d perfiles</string>
+        </dict>
+    </dict>
+
+    <key>migration.importing</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>%#@count@</string>
+        <key>count</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>d</string>
+            <key>one</key>
+            <string>Importando %d perfil...</string>
+            <key>other</key>
+            <string>Importando %d perfiles...</string>
+        </dict>
+    </dict>
+
+    <key>migration.selectedCount</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>%#@count@</string>
+        <key>count</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>d</string>
+            <key>one</key>
+            <string>%d seleccionado</string>
+            <key>other</key>
+            <string>%d seleccionados</string>
+        </dict>
+    </dict>
+
+    <!-- Tarjeta emergente/Otros -->
+    <key>hovercard.moreConflicts</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>%#@count@</string>
+        <key>count</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>d</string>
+            <key>one</key>
+            <string>+%d más</string>
+            <key>other</key>
+            <string>+%d más</string>
+        </dict>
+    </dict>
+
+    <key>hovercard.moreProcesses</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>%#@count@</string>
+        <key>count</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>d</string>
+            <key>one</key>
+            <string>+%d más</string>
+            <key>other</key>
+            <string>+%d más</string>
+        </dict>
+    </dict>
+
+    <key>hovercard.turns</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>%#@count@</string>
+        <key>count</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>d</string>
+            <key>one</key>
+            <string>%d turno</string>
+            <key>other</key>
+            <string>%d turnos</string>
+        </dict>
+    </dict>
+
+    <key>ssh.importAll.confirm</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>%#@count@</string>
+        <key>count</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>d</string>
+            <key>one</key>
+            <string>Esto importará %d host SSH en Chau7.</string>
+            <key>other</key>
+            <string>Esto importará %d hosts SSH en Chau7.</string>
+        </dict>
+    </dict>
+
+    <!-- Búsqueda en ajustes -->
+    <key>settings.searchResults</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>%#@count@ para "%2$@"</string>
+        <key>count</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>d</string>
+            <key>one</key>
+            <string>%d ajuste encontrado</string>
+            <key>other</key>
+            <string>%d ajustes encontrados</string>
+        </dict>
+    </dict>
+</dict>
+</plist>

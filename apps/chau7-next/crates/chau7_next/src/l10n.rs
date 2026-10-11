@@ -150,6 +150,7 @@ mod tests {
     #[test]
     fn language_choice_resolves() {
         assert_eq!(language_for(AppLanguage::French), Lang::Fr);
+        assert_eq!(language_for(AppLanguage::Spanish), Lang::Es);
         assert_eq!(language_for(AppLanguage::Hebrew), Lang::He);
         assert!(language_for(AppLanguage::Arabic).is_rtl());
         // "System Default" always lands on a supported language.
