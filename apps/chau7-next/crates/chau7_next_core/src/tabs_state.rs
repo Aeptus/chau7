@@ -1185,14 +1185,16 @@ mod tests {
 
     #[test]
     fn known_root_fallback_prefers_existing_enclosing_root_then_most_specific_recent_root() {
+        let repo = Path::new("/repo").components().collect::<PathBuf>();
+        let nested = Path::new("/repo/nested").components().collect::<PathBuf>();
         let roots = vec!["/repo".into(), "/repo/nested".into()];
         assert_eq!(
             known_repo_root(Path::new("/repo/nested/src"), None, &roots).as_deref(),
-            Some("/repo/nested")
+            nested.to_str()
         );
         assert_eq!(
             known_repo_root(Path::new("/repo/nested/src"), Some("/repo"), &roots).as_deref(),
-            Some("/repo")
+            repo.to_str()
         );
         assert_eq!(
             known_repo_root(Path::new("/repository"), Some("/repo"), &roots),
@@ -1206,6 +1208,8 @@ mod tests {
 
     #[test]
     fn automatic_mode_uses_known_roots_without_falsifying_live_git_metadata() {
+        let repo = Path::new("/repo").components().collect::<PathBuf>();
+        let nested = Path::new("/repo/nested").components().collect::<PathBuf>();
         let mut s = state_with(2);
         s.get_mut(1).unwrap().repo_group_id = Some("/repo".into());
         let directories = vec![
@@ -1213,11 +1217,8 @@ mod tests {
             (2, PathBuf::from("/repo/nested/test")),
         ];
         s.set_auto_repo_grouping_in_directories(true, &directories, &["/repo/nested".into()]);
-        assert_eq!(s.get(1).unwrap().repo_group_id.as_deref(), Some("/repo"));
-        assert_eq!(
-            s.get(2).unwrap().repo_group_id.as_deref(),
-            Some("/repo/nested")
-        );
+        assert_eq!(s.get(1).unwrap().repo_group_id.as_deref(), repo.to_str());
+        assert_eq!(s.get(2).unwrap().repo_group_id.as_deref(), nested.to_str());
         assert_eq!(s.get(1).unwrap().git_root, None);
         s.set_git_root_in_directory(1, None, Some(Path::new("/different")), &[]);
         assert_eq!(s.get(1).unwrap().repo_group_id, None);
