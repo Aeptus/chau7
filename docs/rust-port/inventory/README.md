@@ -71,16 +71,13 @@ command are implemented now (`terminal/input.rs`, `terminal/pty_writer.rs`,
 Current gaps have explicit delta rows. No `missing` or `partial` row may be
 silently excluded from a full-parity claim. In particular:
 
-- OVL-043 / OVL-120: ordinary UI and restored tabs fail repository seeding;
-  Automatic mode must regroup existing known roots. Default remains Off as
-  in Swift; the regression is independent of that saved preference.
+- OVL-043 / OVL-120: repository seeding and regrouping were fixed in e78f2790 and remain regression checks. Default remains Off as in Swift.
 - PRF-002: GPU-only GPUI remains an explicit renderer limitation.
 - MCP-053 to MCP-063 / OBS-001 to OBS-005: current MCP observation, control
   ownership, readiness and repository event contracts.
 - PRF-014 to PRF-018 / DBG-026: durable performance and memory diagnostics,
   hang detection and recovery, scrollback budget behaviour.
-- SPL-016 / SPL-017: current runbooks restrict executable fences to shell
-  and sequence commands by completion, not a fixed elapsed delay.
+- SPL-016 / SPL-017: shell fence filtering and completion-driven sequencing were ported in b23ce32b and remain regression checks.
 
 New modules: Dashboard (DSH), Usage (USG), Skills (SKL), CLI (CLI),
 Observability (OBS). These are current Swift surfaces, separate from the

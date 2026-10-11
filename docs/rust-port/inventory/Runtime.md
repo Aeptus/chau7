@@ -45,6 +45,8 @@ The agent runtime lets one AI agent drive others: through MCP an orchestrator st
 | RUN-031 | Launch readiness waits for matching provider process/active run and shell completion before initial prompt; code_review has explicit startup exception | `Chau7Core/Runtime/RuntimeLaunchReadiness.swift`; `Runtime/RuntimeControlService.swift` | RuntimeLaunchReadinessTests | chau7_next/src/runtime/; chau7_next_core/src/runtime/ | done | Provider/process/run readiness and code-review exception; owned pending prompt wakes on readiness/cancellation/terminal transitions; source eb73a7f5 +8ad9aa95 integrated by coordinator; 107 focused runtime tests, combined source 2,258 tests. Real-provider macOS startup acceptance remains unverified. |
 | RUN-032 | Codex backend structured feedback/approval/usage lifecycle reaches same runtime states as Claude; adoption cooldown prevents repeated false sessions | `Runtime/Backends/CodexBackend.swift`; `Runtime/RuntimeSessionManager.swift` | RuntimeSessionManagerAdoptionCooldownTests; AISessionBindingPolicyTests | chau7_next/src/runtime/; chau7_next_core/src/runtime/ | done | Bound native Codex rollout lifecycle, observed usage deltas/results, debounced feedback, optional App Server ingestion, retry cooldown and live-provider-safe adoption; fb81d911 integrated with coordinator authoritative terminal projection; 106 focused runtime tests. Actual provider/App Server manual acceptance remains unverified. |
 
+| RUN-033 | Completed turn snapshot retains tools, ordinary/reasoning/cache token categories, observed duration and optional model-priced cost; cumulative active duration and visible-token averages do not fabricate unknown usage | `Chau7Core/Runtime/RuntimeSession.swift`; `Chau7Core/Runtime/TurnStats.swift`; `Runtime/Backends/CodexBackend.swift` | RuntimeSessionTests; TurnStatsTests | chau7_next_core/src/runtime/session.rs; chau7_next_core/src/runtime/turn_stats.rs; chau7_next/src/runtime/codex_feedback.rs | done | 94192871 integrated as be6dbbd8; 115 focused runtime tests and strict macOS all-target Clippy passed. Real provider/native UI acceptance remains unverified. |
+
 ## Notes
 
 - Rust layout: pure logic in `chau7_next_core::runtime` (`backends`, `session`,
@@ -97,5 +99,4 @@ The agent runtime lets one AI agent drive others: through MCP an orchestrator st
 - `directory` defaults to the app's current directory when omitted (Swift
   `FileManager.currentDirectoryPath`), which is usually `/`.
 - Sessions live in memory only; nothing is persisted across restarts.
-- `markReady` is called right after the launch command is sent, not when the
-  CLI is actually up; the initial prompt retry hides that.
+- Readiness follows the matching live provider, active run or explicit code-review startup exception. An owned pending initial prompt waits for readiness and terminal/cancellation transitions without a fixed startup deadline.
