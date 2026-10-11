@@ -204,6 +204,10 @@ pub struct TerminalSession {
     pub exited: Option<Option<i32>>,
     pub last_activity: Instant,
     pub last_command: Option<LastCommand>,
+    /// OSC9 prompt status is metadata, not a second command completion.
+    pub last_prompt_exit_code: Option<i32>,
+    pub last_prompt_exit_at: Option<Instant>,
+    osc9: chau7_next_core::osc9::Parser,
     pub command_running: bool,
     pub started_at: Instant,
     /// Suspend Background Rendering (`paint.rs`, view blink timer): while
@@ -685,6 +689,9 @@ impl TerminalSession {
             exited: None,
             last_activity: now,
             last_command: None,
+            last_prompt_exit_code: None,
+            last_prompt_exit_at: None,
+            osc9: Default::default(),
             command_running: false,
             started_at: now,
             render_suspended,
@@ -926,6 +933,7 @@ impl TerminalSession {
         }
         metadata_changed |= self.drain_tracker_events(cx);
         if !output.is_empty() {
+            metadata_changed |= self.handle_osc9(&output, cx);
             crate::telemetry::note_output(&self.tab_identifier, &output, cx);
         }
 
@@ -1318,6 +1326,91 @@ impl TerminalSession {
             cx.emit(SessionEvent::MetadataChanged);
             cx.notify();
         }
+    }
+
+    fn handle_osc9(&mut self, output: &[u8], cx: &mut Context<Self>) -> bool {
+        use chau7_next_core::osc9::Event;
+        let mut changed = false;
+        for event in self.osc9.ingest(output) {
+            match event {
+                Event::Chau7 { key, value } => match key.as_str() {
+                    "exit" => {
+                        if let Ok(code) = value.parse::<i32>() {
+                            self.last_prompt_exit_code = Some(code);
+                            self.last_prompt_exit_at = Some(Instant::now());
+                            changed = true;
+                        }
+                    }
+                    "repo-root" => {
+                        let previous = self.git_root.as_deref().map(|root| root.to_string_lossy());
+                        let normalized = Path::new(value.trim())
+                            .is_absolute()
+                            .then(|| {
+                                chau7_next_core::repository::known_identity::normalize_root(
+                                    value.trim(),
+                                )
+                            })
+                            .flatten();
+                        if let Some(root) = normalized {
+                            let branch = if previous.as_deref().is_none_or(|old| old == root) {
+                                self.git_branch.clone()
+                            } else {
+                                None
+                            };
+                            if let Some(root) =
+                                crate::repository::report_shell_root(&root, branch.as_deref(), cx)
+                            {
+                                changed |= self.git_root.as_deref() != Some(Path::new(&root));
+                                self.git_root = Some(root.into());
+                                changed |= self.adopt_reported_branch(branch, cx);
+                            }
+                        }
+                    }
+                    "branch" => {
+                        let branch =
+                            chau7_next_core::repository::known_identity::branch_name(Some(&value));
+                        if let Some(root) = &self.git_root {
+                            crate::repository::report_shell_root(
+                                &root.to_string_lossy(),
+                                Some(&value),
+                                cx,
+                            );
+                        }
+                        changed |= self.adopt_reported_branch(branch, cx);
+                    }
+                    _ => {}
+                },
+                Event::Foreign { message } => {
+                    let provider = self.tracker.effective_provider();
+                    if let Some(event) = chau7_next_core::osc9::foreign_event(
+                        &message,
+                        provider.as_deref(),
+                        self.ai_app.as_deref().or(self.tracker.active_app()),
+                        self.tracker.current_directory(),
+                        self.tracker.ai_session_id(),
+                        &chau7_next_core::iso8601::now_iso8601(),
+                    ) {
+                        self.emit_ai(event, true, cx);
+                    }
+                }
+            }
+        }
+        changed
+    }
+
+    fn adopt_reported_branch(&mut self, branch: Option<String>, cx: &mut Context<Self>) -> bool {
+        if self.git_branch == branch {
+            return false;
+        }
+        let events = self
+            .monitor
+            .shell_events
+            .git_branch_changed(branch.as_deref());
+        self.git_branch = branch;
+        for event in events {
+            self.emit_ai(shell_ai_event(event), true, cx);
+        }
+        true
     }
 
     fn emit_ai(&self, event: AiEvent, notify: bool, cx: &mut Context<Self>) {
