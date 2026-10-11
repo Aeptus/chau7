@@ -35,6 +35,53 @@ fn parse_handles_comments_and_escapes() {
     assert_eq!(t.len(), 2);
 }
 
+// Explicit supplemental status keys only. Every original Swift key/value must
+// remain identical. Unknown extras still fail the exact resource-sync test.
+// Source evidence: current Settings/Views/StartHereSettingsView.swift, except
+// fullDiskAccess also comes from ProductivitySettingsView.swift.
+const NEXT_STATUS_DEFAULTS: &[(&str, &str)] = &[
+    ("settings.profileBar.defaultSettings", "Default Settings"),
+    ("settings.startHere.operationalState", "Operational State"),
+    ("settings.startHere.activeProfile", "Active Profile"),
+    ("settings.startHere.mcp.detail", "Max tabs: %d"),
+    ("settings.productivity.permissions.fda.granted", "Granted"),
+    (
+        "settings.productivity.permissions.fda.granted.detail",
+        "Child processes (codex, claude, shells) can reach protected folders like ~/Downloads.",
+    ),
+    ("settings.productivity.permissions.fda.denied", "Denied"),
+    (
+        "settings.productivity.permissions.fda.denied.detail",
+        "Grant Full Disk Access to Chau7 Next so child processes can reach protected folders.",
+    ),
+    ("settings.productivity.permissions.fda.unknown", "Unknown"),
+    (
+        "settings.productivity.permissions.fda.unknown.detail",
+        "Full Disk Access status could not be determined.",
+    ),
+    ("settings.startHere.protectedFolders.none", "None tracked"),
+    ("settings.startHere.protectedFolders.ready", "Ready"),
+    (
+        "settings.startHere.protectedFolders.needsAccess",
+        "%d need access",
+    ),
+    ("settings.startHere.permissions", "Permissions"),
+    ("settings.startHere.protectedFolders", "Protected Folders"),
+    (
+        "settings.startHere.protectedFolders.detail",
+        "%d protected roots tracked",
+    ),
+    ("settings.startHere.paths", "Paths"),
+    (
+        "settings.startHere.hint",
+        "Use the sidebar or search to change any setting shown here. This page summarizes current state only.",
+    ),
+    (
+        "settings.productivity.permissions.fullDiskAccess",
+        "Full Disk Access",
+    ),
+];
+
 #[test]
 fn tables_match_the_swift_resources() {
     let base = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -45,11 +92,39 @@ fn tables_match_the_swift_resources() {
     for lang in Lang::ALL {
         let path = base.join(format!("{}.lproj/Localizable.strings", lang.code()));
         let swift = std::fs::read_to_string(&path).unwrap();
+        let swift_table = parse_strings(&swift);
+        let mut next_base = table(lang).clone();
+        for (key, _) in NEXT_STATUS_DEFAULTS {
+            if !swift_table.contains_key(*key) {
+                assert!(
+                    next_base.remove(*key).is_some(),
+                    "{} missing declared status key {key}",
+                    lang.code()
+                );
+            }
+        }
+        for (key, value) in &swift_table {
+            assert_eq!(
+                next_base.get(key),
+                Some(value),
+                "{} original Swift key differs: {key}",
+                lang.code()
+            );
+        }
+        let unknown: Vec<_> = next_base
+            .keys()
+            .filter(|key| !swift_table.contains_key(*key))
+            .collect();
+        assert!(
+            unknown.is_empty(),
+            "{} undeclared extra keys (first 20): {:?}",
+            lang.code(),
+            unknown.iter().take(20).collect::<Vec<_>>()
+        );
         assert_eq!(
-            parse_strings(&swift),
-            *table(lang),
-            "{}: copy src/l10n/strings/{}.strings from Swift",
-            path.display(),
+            next_base.len(),
+            swift_table.len(),
+            "{} original Swift key count",
             lang.code()
         );
     }
@@ -271,4 +346,26 @@ fn spanish_resolution_and_formatting() {
     assert_eq!(f::percent(Lang::Es, 0.5), "50\u{00A0}%");
     assert_eq!(f::long_date(Lang::Es, when()), "12 de enero de 2024");
     assert_eq!(f::short_time(Lang::Es, when()), "15:45");
+}
+
+#[test]
+fn next_status_defaults_have_current_swift_source_evidence() {
+    let start_here = include_str!(
+        "../../../../../chau7-macos/Sources/Chau7/Settings/Views/StartHereSettingsView.swift"
+    );
+    let productivity = include_str!(
+        "../../../../../chau7-macos/Sources/Chau7/Settings/Views/ProductivitySettingsView.swift"
+    );
+    for (key, default) in NEXT_STATUS_DEFAULTS {
+        assert!(
+            start_here.contains(key) || productivity.contains(key),
+            "supplemental key lacks Swift source evidence: {key}"
+        );
+        assert_eq!(
+            table(Lang::En)[*key],
+            *default,
+            "supplemental English default: {key}"
+        );
+    }
+    assert_eq!(NEXT_STATUS_DEFAULTS.len(), 19);
 }
