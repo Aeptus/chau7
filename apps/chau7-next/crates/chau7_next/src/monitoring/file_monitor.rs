@@ -9,7 +9,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use notify::{EventKind, RecommendedWatcher, RecursiveMode, Watcher};
+use super::watch_registry::{self, Change, Flags, Subscription};
 
 type Callback = Arc<dyn Fn() + Send + Sync>;
 const REARM_DELAY: Duration = Duration::from_millis(200);
@@ -17,7 +17,7 @@ const REARM_DELAY: Duration = Duration::from_millis(200);
 pub struct FileMonitor {
     url: PathBuf,
     on_change: Callback,
-    watcher: Arc<Mutex<Option<RecommendedWatcher>>>,
+    watcher: Arc<Mutex<Option<Subscription>>>,
     generation: Arc<AtomicU64>,
     arm_revision: Arc<AtomicU64>,
 }
@@ -90,7 +90,7 @@ fn canonical_target(url: &Path) -> Option<PathBuf> {
 fn arm(
     url: &Path,
     on_change: &Callback,
-    slot: &Arc<Mutex<Option<RecommendedWatcher>>>,
+    slot: &Arc<Mutex<Option<Subscription>>>,
     epoch: &Arc<AtomicU64>,
     revision: &Arc<AtomicU64>,
     generation: u64,
@@ -120,18 +120,11 @@ fn arm(
     let rearm_callback = on_change.clone();
     let pending = Arc::new(AtomicBool::new(false));
     let target_path = target.clone();
-    let handler = move |result: notify::Result<notify::Event>| {
+    let handler = move |event: Change| {
         let Some(epoch) = rearm_epoch.upgrade() else {
             return;
         };
         if epoch.load(Ordering::SeqCst) != generation {
-            return;
-        }
-        let Ok(event) = result else { return };
-        if !matches!(
-            event.kind,
-            EventKind::Any | EventKind::Modify(_) | EventKind::Remove(_) | EventKind::Create(_)
-        ) {
             return;
         }
         let relevant = event.paths.iter().any(|path| {
@@ -147,12 +140,9 @@ fn arm(
         if relevant {
             callback();
         }
-        let replacement = matches!(
-            event.kind,
-            EventKind::Remove(_)
-                | EventKind::Create(_)
-                | EventKind::Modify(notify::event::ModifyKind::Name(_))
-        );
+        let replacement = event
+            .flags
+            .intersects(Flags::DELETE.union(Flags::CREATE).union(Flags::RENAME));
         if (ancestor || replacement) && !pending.swap(true, Ordering::SeqCst) {
             let url = rearm_url.clone();
             let slot = rearm_slot.clone();
@@ -176,12 +166,8 @@ fn arm(
             });
         }
     };
-    match notify::recommended_watcher(handler) {
-        Ok(mut watcher) => {
-            if let Err(error) = watcher.watch(&watched, RecursiveMode::NonRecursive) {
-                log::debug!("FileMonitor: cannot watch {}: {error}", watched.display());
-                return false;
-            }
+    match watch_registry::subscribe(&watched, Flags::ALL, handler) {
+        Ok(watcher) => {
             if let Ok(mut current) = slot.lock()
                 && epoch.load(Ordering::SeqCst) == generation
             {
