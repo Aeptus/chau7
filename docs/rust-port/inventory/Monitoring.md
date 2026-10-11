@@ -36,6 +36,7 @@ Watches what happens in and around the tabs and turns it into events and live st
 | MON-022 | Aethyme delivery poll discovers repository inbox and waits for launch/readiness, delivers prompt once with retry/failed acknowledgments | `Monitoring/AethymeDeliveryMonitor.swift`; `Chau7Core/AethymeDelivery.swift` |  |  | missing |  |
 
 | MON-023 | Quarantine stale provider/session sources after ownership mismatch, coalesce suppressed diagnostics and do not route another session approval to current tab | `Chau7Core/StaleSessionSourceQuarantine.swift`; `Monitoring/HistorySessionAdoption.swift` | StaleSessionSourceQuarantineTests | chau7_next/src/monitoring/session.rs | partial |  |
+| MON-024 | Single-file watch survives initial missing target, deleted/recreated file and atomic replacement; parent watch recovers missing hierarchy and stopped generation never resurrects | `Monitoring/FileMonitor.swift`; `Chau7Core/FileObservationRetryPolicy.swift` | monitoring::file_monitor::tests | chau7_next/src/monitoring/file_monitor.rs | done | kqueue on macOS |
 
 ## Notes
 
