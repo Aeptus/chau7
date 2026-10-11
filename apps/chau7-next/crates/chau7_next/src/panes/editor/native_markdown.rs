@@ -14,10 +14,11 @@ use objc2::{
     DefinedClass, MainThreadMarker, MainThreadOnly, define_class, msg_send,
     rc::{Retained, Weak},
     runtime::AnyObject,
+    sel,
 };
 use objc2_app_kit::{
-    NSAutoresizingMaskOptions, NSClipView, NSColor, NSEvent, NSEventModifierFlags, NSFont,
-    NSFontAttributeName, NSForegroundColorAttributeName, NSMenuItem, NSRulerOrientation,
+    NSApplication, NSAutoresizingMaskOptions, NSClipView, NSColor, NSEvent, NSEventModifierFlags,
+    NSFont, NSFontAttributeName, NSForegroundColorAttributeName, NSMenuItem, NSRulerOrientation,
     NSRulerView, NSScrollView, NSStringDrawing, NSTextInputClient, NSTextView, NSView,
 };
 use objc2_foundation::{
@@ -38,9 +39,26 @@ enum Action {
 #[derive(Default)]
 struct Pending {
     text: Option<String>,
-    selection: NSRange,
+    selection: Option<NSRange>,
     focused: bool,
     actions: Vec<Action>,
+}
+impl Pending {
+    fn clear_for_load(&mut self) {
+        *self = Self::default();
+    }
+}
+
+#[derive(Clone, Copy)]
+pub(super) enum MenuCommand {
+    Cut,
+    Copy,
+    Paste,
+    SelectAll,
+    Find,
+    FindNext,
+    FindPrevious,
+    UseSelectionForFind,
 }
 struct Shared {
     document: RefCell<Document>,
@@ -81,7 +99,7 @@ impl Shared {
             self.pending.borrow_mut().text = Some(text);
         }
         let mut pending = self.pending.borrow_mut();
-        pending.selection = view.selectedRange();
+        pending.selection = Some(view.selectedRange());
         drop(pending);
         self.signal();
     }
@@ -524,14 +542,13 @@ impl NativeMarkdown {
                             this.schedule_autosave(cx);
                             cx.emit(super::SidePaneEvent::Changed);
                         }
-                        let text = this.content(cx);
-                        let start = utf16_to_byte(&text, pending.selection.location);
-                        let end = utf16_to_byte(
-                            &text,
-                            pending.selection.location + pending.selection.length,
-                        );
-                        this.state
-                            .update(cx, |s, cx| s.set_selected_range(start..end, cx));
+                        if let Some(selection) = pending.selection {
+                            let text = this.content(cx);
+                            let start = utf16_to_byte(&text, selection.location);
+                            let end = utf16_to_byte(&text, selection.location + selection.length);
+                            this.state
+                                .update(cx, |s, cx| s.set_selected_range(start..end, cx));
+                        }
                         if pending.focused {
                             window.focus(&this.focus_handle, cx);
                             cx.emit(super::SidePaneEvent::Focused);
@@ -560,8 +577,31 @@ impl NativeMarkdown {
         .detach();
         Some(result)
     }
+    pub(super) fn has_pending_edits(&self) -> bool {
+        self.shared.pending.borrow().text.is_some()
+    }
+
+    /// A completed explicit load supersedes queued input from the old document,
+    /// even when the new file happens to contain identical text.
+    pub(super) fn loaded(
+        &self,
+        text: &str,
+        config: &EditorConfig,
+        selection: std::ops::Range<usize>,
+    ) {
+        self.shared.pending.borrow_mut().clear_for_load();
+        self.sync_inner(text, config, true);
+        self.shared.mirroring.set(true);
+        self.text.setSelectedRange(bytes_to_range(text, selection));
+        self.text.scrollRangeToVisible(self.text.selectedRange());
+        self.shared.mirroring.set(false);
+    }
+
     pub(super) fn sync(&self, text: &str, config: &EditorConfig) {
-        if self.shared.pending.borrow().text.is_some() {
+        self.sync_inner(text, config, false);
+    }
+    fn sync_inner(&self, text: &str, config: &EditorConfig, loaded: bool) {
+        if !loaded && self.has_pending_edits() {
             return;
         }
         let size = config.font_size as f64;
@@ -572,6 +612,12 @@ impl NativeMarkdown {
         *self.shared.config.borrow_mut() = config.clone();
         self.scroll.setHasVerticalRuler(config.show_line_numbers);
         self.scroll.setRulersVisible(config.show_line_numbers);
+        let caret_color = if config.highlight_current_line {
+            NSColor::controlAccentColor()
+        } else {
+            NSColor::textColor()
+        };
+        self.text.setInsertionPointColor(Some(&caret_color));
         self.text.setHorizontallyResizable(!config.word_wrap);
         self.text.setAutoresizingMask(if config.word_wrap {
             NSAutoresizingMaskOptions::ViewWidthSizable
@@ -586,7 +632,7 @@ impl NativeMarkdown {
             }
         }
         let same = self.shared.document.borrow().text() == text;
-        if !same {
+        if !same || loaded {
             *self.shared.line_starts.borrow_mut() = line_starts(text);
             if let Some(ruler) = self.shared.ruler.borrow().as_ref().and_then(Weak::load) {
                 ruler.resize(self.shared.line_starts.borrow().len());
@@ -602,7 +648,7 @@ impl NativeMarkdown {
         }
         let mut doc = self.shared.document.borrow_mut();
         doc.update(text);
-        let range = if size_changed {
+        let range = if size_changed || loaded {
             0..text.len()
         } else {
             doc.restyled_range()
@@ -611,6 +657,57 @@ impl NativeMarkdown {
             self.shared.theme.borrow().apply(&storage, &doc, range);
         }
     }
+    /// GPUI application menu items use Chau7 actions rather than AppKit's
+    /// responder selectors. Route them only when this native surface owns focus.
+    pub(super) fn menu_command(&self, command: MenuCommand) -> bool {
+        if self.scroll.isHidden() {
+            return false;
+        }
+        let Some(responder) = self.scroll.window().and_then(|w| w.firstResponder()) else {
+            return false;
+        };
+        if !responder
+            .downcast_ref::<NSView>()
+            .is_some_and(|v| v.isDescendantOf(&self.scroll))
+        {
+            return false;
+        }
+        let find_tag = match command {
+            MenuCommand::Find => Some(1),
+            MenuCommand::FindNext => Some(2),
+            MenuCommand::FindPrevious => Some(3),
+            MenuCommand::UseSelectionForFind => Some(7),
+            _ => None,
+        };
+        if let Some(tag) = find_tag {
+            let item = NSMenuItem::new(self.text.mtm());
+            item.setTag(tag);
+            unsafe {
+                self.text.performFindPanelAction(Some(&item));
+            }
+            return true;
+        }
+        let selector = match command {
+            MenuCommand::Cut => sel!(cut:),
+            MenuCommand::Copy => sel!(copy:),
+            MenuCommand::Paste => sel!(paste:),
+            MenuCommand::SelectAll => sel!(selectAll:),
+            _ => unreachable!(),
+        };
+        if !responder.respondsToSelector(selector) {
+            return false;
+        }
+        // SAFETY: these are standard single-sender AppKit edit selectors and
+        // the actual native first responder confirmed it implements the selector.
+        unsafe {
+            NSApplication::sharedApplication(self.text.mtm()).sendAction_to_from(
+                selector,
+                Some(&responder),
+                None,
+            )
+        }
+    }
+
     pub(super) fn jump(&self) {
         let text = self.text.string().to_string();
         let cursor = utf16_to_byte(&text, self.text.selectedRange().location);
@@ -789,6 +886,29 @@ impl Element for NativeSource {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn document_load_discards_old_queued_text_actions_and_selection() {
+        let mut pending = Pending {
+            text: Some("old file edit".into()),
+            selection: Some(NSRange::new(4, 3)),
+            focused: true,
+            actions: vec![Action::Save],
+        };
+        pending.clear_for_load();
+        // Draining the already queued notification cannot modify the new file.
+        assert!(pending.text.is_none());
+        assert!(pending.selection.is_none());
+        assert!(!pending.focused);
+        assert!(pending.actions.is_empty());
+        // New input can coalesce into that notification without being lost.
+        pending.text = Some("new file edit".into());
+        pending.selection = Some(NSRange::new(13, 0));
+        let drained = std::mem::take(&mut pending);
+        assert_eq!(drained.text.as_deref(), Some("new file edit"));
+        assert_eq!(drained.selection, Some(NSRange::new(13, 0)));
+        assert!(pending.text.is_none());
+    }
+
     #[test]
     fn native_indices_and_cached_line_starts_handle_surrogates_and_all_newlines() {
         let text = "é👩🏽‍💻\r\n漢\u{2028}z\n";
