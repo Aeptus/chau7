@@ -1,6 +1,26 @@
 //! Native model edits preserve the user's selection, viewport and edit history.
+use objc2::{MainThreadMarker, rc::Retained};
 use objc2_app_kit::{NSTextInputClient, NSTextView};
-use objc2_foundation::{NSRange, NSString};
+use objc2_foundation::{NSRange, NSString, NSUndoManager};
+
+/// A source owns its history independently of the window and sibling editors.
+/// The owning NativeMarkdown explicitly clears it before releasing the view.
+pub(super) struct SourceHistory {
+    manager: Retained<NSUndoManager>,
+}
+impl SourceHistory {
+    pub(super) fn new(mtm: MainThreadMarker) -> Self {
+        Self {
+            manager: NSUndoManager::new(mtm),
+        }
+    }
+    pub(super) fn manager(&self) -> Retained<NSUndoManager> {
+        self.manager.clone()
+    }
+    pub(super) fn clear(&self) {
+        self.manager.removeAllActions();
+    }
+}
 
 fn restore_surface(view: &NSTextView, selection: NSRange, visible: objc2_foundation::NSRect) {
     if selection.location.saturating_add(selection.length) <= view.string().length() {
