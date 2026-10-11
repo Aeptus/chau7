@@ -262,53 +262,28 @@ impl AiEvent {
             }
             _ => name.to_string(),
         };
-        let suffix = match self.event_type.to_lowercase().as_str() {
-            "needs_validation" => "Needs review",
-            "idle" | "waiting_input" => "Waiting for input",
-            "attention_required" => "Needs attention",
-            "finished" => "Finished",
-            "failed" => "Failed",
-            "permission" => "Permission needed",
-            "error" => "Error",
-            "context_limit" => "Context limit reached",
-            "file_conflict" => "File conflict",
-            "tool_called" => "Tool called",
-            "file_edited" => "File edited",
-            "token_threshold" => "Token threshold",
-            "cost_threshold" => "Cost threshold",
-            _ => "Update",
-        };
+        let suffix = crate::notifications::vocabulary::entry(&self.event_type)
+            .and_then(|entry| entry.title)
+            .map(|(key, fallback)| crate::l10n::l(key, fallback))
+            .unwrap_or_else(|| crate::l10n::l("aiEvent.title.update", "Update"));
         format!("{prefix}: {suffix}")
     }
 
     /// Returns the notification body for this event.
     pub fn notification_body(&self) -> String {
-        let message = &self.message;
-        let or_default = |default: &str| {
-            if message.is_empty() {
-                default.to_string()
+        if let Some((key, fallback)) =
+            crate::notifications::vocabulary::entry(&self.event_type).and_then(|entry| entry.body)
+        {
+            return if self.message.is_empty() {
+                crate::l10n::l(key, fallback)
             } else {
-                message.clone()
-            }
-        };
-        match self.event_type.to_lowercase().as_str() {
-            "needs_validation" => or_default("Your input is required."),
-            "idle" => or_default("No new history entries for a while."),
-            "waiting_input" => or_default("Ready for your input."),
-            "attention_required" => or_default("Needs your attention."),
-            "finished" => or_default("Done."),
-            "failed" => or_default("Check the logs."),
-            "permission" => or_default("Needs your permission to continue."),
-            "error" => or_default("An error occurred."),
-            "context_limit" => or_default("Approaching context window limit."),
-            "token_threshold" | "cost_threshold" => or_default("Usage threshold exceeded."),
-            _ => {
-                if message.is_empty() {
-                    self.event_type.clone()
-                } else {
-                    format!("{}: {}", self.event_type, message)
-                }
-            }
+                self.message.clone()
+            };
+        }
+        if self.message.is_empty() {
+            self.event_type.clone()
+        } else {
+            format!("{}: {}", self.event_type, self.message)
         }
     }
 
@@ -696,6 +671,42 @@ mod tests {
             event.notification_title_with(Some("  "), Some("Claude")),
             "Claude: Update"
         );
+    }
+
+    #[test]
+    fn current_vocabulary_content_defaults_preserve_provider_messages_and_fields() {
+        for (kind, title, body) in [
+            (
+                "script_succeeded",
+                "Script succeeded",
+                "The shell script completed successfully.",
+            ),
+            (
+                "script_failed",
+                "Script failed",
+                "The shell script exited with an error.",
+            ),
+            (
+                "dev_server_started",
+                "Dev server started",
+                "The development server is ready.",
+            ),
+        ] {
+            let mut event = ev("Claude");
+            event.event_type = kind.into();
+            event.raw_type = Some("Raw Provider Type".into());
+            event.repo_path = Some("/repo".into());
+            let before_fields = (
+                event.raw_type.clone(),
+                event.repo_path.clone(),
+                event.ts.clone(),
+            );
+            assert_eq!(event.notification_title(), format!("Claude: {title}"));
+            assert_eq!(event.notification_body(), body);
+            event.message = "exact provider message".into();
+            assert_eq!(event.notification_body(), event.message);
+            assert_eq!((event.raw_type, event.repo_path, event.ts), before_fields);
+        }
     }
 
     #[test]
