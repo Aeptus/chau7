@@ -41,7 +41,8 @@ Never renumber IDs. New features found later get the next free number.
 | History | HIS | Proxy | PRX | Terminal | TRM |
 | | | Remote | RMT | TokenOptimization | TOK |
 | | | | | Utilities | UTL |
-| | | | | Views | VWS |
+| Dashboard | DSH | Usage | USG | Skills | SKL |
+| CLI | CLI | Observability | OBS | Views | VWS |
 
 ## Waves
 
@@ -56,23 +57,34 @@ Modules in the same wave are independent and can be ported in parallel.
 | 4 | Extra panes | Editor, DataExplorer, SplitPanes (editor, diff, preview, runbook panes) |
 | 5 | macOS integration and shipping | StatusBar, Debug, Logging, Views, Localization, Migration; Developer ID signing, notarization, updates |
 
-## Historical fix-first list
+## Current baseline and regression priorities
 
-This list was written during the April port and has become stale. The row
-status and the current-source audit are authoritative; this section is retained
-only while its entries are re-checked against the current baseline.
+Compare official main `7733b1f0c4440c0193915b036c38d5b83f31a1b3` with Next
+`3e1639a85fe9bb7a4cc9873996b8fade14525ac4`, then verify each integrated batch.
+The historical fix-first list is removed: source inspection confirms Cmd+C
+interrupt fallback, background PTY writer, Option punctuation routing, split
+shortcut mapping, last-tab dialog, quit confirmation, Ctrl+Tab and startup
+command are implemented now (`terminal/input.rs`, `terminal/pty_writer.rs`,
+`actions/keymap.rs`, `workspace/mod.rs`, `app_actions.rs`,
+`terminal/session.rs`). These remain regression checks, not open rows.
 
-| Row | Issue |
-|---|---|
-| KBD-035, RBK-021 | Cmd+C with no selection should send Ctrl-C (interrupt); Chau7 Next does nothing |
-| RBK-052 | Typed and pasted input is written to the PTY on the UI thread; a program that stops reading input freezes the window. Swift writes on a background queue |
-| KBD-013 | Option key: Swift sends ESC+key for Option+letter and types the character for Option+printable non-letter, with no setting. Chau7 Next's `option_as_meta` is all or nothing and off by default |
-| Keyboard.md notes | Custom `[keybindings]`: `splitHorizontal` and `splitVertical` are swapped in `action_for_swift_name` (Swift: horizontal = side by side) |
-| App.md notes | Default shortcuts differ: Swift Cmd+Shift+D = Data Explorer, Cmd+Shift+S = Export Text, Cmd+Opt+W = Close Other Tabs, Cmd+K = Clear Screen (Ctrl+L), Ctrl+Cmd+W = Close Pane. Chau7 Next binds Split Down, Snippets, Close Pane and Clear Scrollback |
-| OVL-083, SET-044 | Closing the last tab: Swift asks "Close Window / New Tab"; Chau7 Next closes the window |
-| APP-006 | Cmd+Q: Swift asks when processes are running; Chau7 Next quits |
-| APP-075 | Ctrl+Tab and Ctrl+Shift+Tab are not bound on macOS |
-| SET-062 | Startup command is parsed but never run |
+Current gaps have explicit delta rows. No `missing` or `partial` row may be
+silently excluded from a full-parity claim. In particular:
+
+- OVL-043 / OVL-120: ordinary UI and restored tabs fail repository seeding;
+  Automatic mode must regroup existing known roots. Default remains Off as
+  in Swift; the regression is independent of that saved preference.
+- PRF-002: GPU-only GPUI remains an explicit renderer limitation.
+- MCP-053 to MCP-063 / OBS-001 to OBS-005: current MCP observation, control
+  ownership, readiness and repository event contracts.
+- PRF-014 to PRF-018 / DBG-026: durable performance and memory diagnostics,
+  hang detection and recovery, scrollback budget behaviour.
+- SPL-016 / SPL-017: current runbooks restrict executable fences to shell
+  and sequence commands by completion, not a fixed elapsed delay.
+
+New modules: Dashboard (DSH), Usage (USG), Skills (SKL), CLI (CLI),
+Observability (OBS). These are current Swift surfaces, separate from the
+existing Analytics, Telemetry, MCP and Notifications equivalents.
 
 ## Coexistence rules for wave 3
 

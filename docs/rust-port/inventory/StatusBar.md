@@ -31,6 +31,8 @@ window (sidebar, search, profile bar) that every settings pane sits in.
 | STB-015 | Settings profile bar at the top of the settings window to switch settings profiles | `StatusBar/MainPanelView.swift` (`ProfileSelectorBar` in `SettingsRootView`) |  | chau7_next/src/settings_window/ | done |  |
 | STB-016 | Legacy menu bar panel (stream picker for history, TTY and verbose logs, quick toggles, Reveal Log) | `StatusBar/MainPanelView.swift` (`MenuBarPanelView`, `StreamView`) | `StatusBarControllerTests` | | n/a | |
 
+| STB-017 | Command Center panel session summary and timeline show current provider/token/cost/approval state with tab focus and actions | `StatusBar/CommandCenterSessionSummary.swift`; `StatusBar/CommandCenterTimeline.swift` |  | chau7_next/src/status_bar/popover.rs; chau7_next/src/workspace/command_center.rs | partial |  |
+
 ## Notes
 
 - STB-016 is n/a: `MenuBarPanelView` is no longer shown anywhere (the status

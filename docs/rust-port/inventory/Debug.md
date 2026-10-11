@@ -37,6 +37,9 @@ The Debug Console is a separate window with nine tabs that shows live app state,
 | DBG-024 | Last-command badge on the tab: "..." while running, then "✓ 1.2s" or "✗ 340ms" (ms, s, m s, h m); hover card shows the command text and exit code; setting to hide the badge | `Debug/LastCommandInfo.swift`, `Overlay/OverlayTabsModel.swift`, `Overlay/TabHoverCard.swift` |  | chau7_next/src/workspace/ (command_badge, hover_card.rs), chau7_next/src/terminal/session.rs (LastCommand) | done |  |
 | DBG-025 | Changed Files panel (`showChangedFiles` action, no default key): floating list of files the last AI command changed, filter box, git diff stats, file icons, context menu Open Diff / Preview File / Copy Path / Copy All Paths, Copy All button | `Debug/ChangedFilesPanel.swift`, `App/AppDelegate.swift` |  | chau7_next/src/panes/changed_files.rs | done | NSPanel |
 
+| DBG-026 | (dev) Memory tab reports per-terminal grid/history/image/render allocations and shared process memory; refresh/export diagnostic snapshot | `Debug/DebugConsoleMemoryTabView.swift`; `Debug/TerminalMemoryReport.swift`; `Debug/TerminalDiagnostics.swift` | TerminalRenderSurfaceReportTests |  | missing |  |
+| DBG-027 | (dev) Usage tab exposes quota/latency dashboard and capture status; existing Analytics and CTO tabs retained | `Debug/DebugUsageTabView.swift` | ProviderQuotaEvaluatorTests | chau7_next/src/debug/tabs/analytics.rs; chau7_next/src/debug/tabs/cto.rs | partial |  |
+
 ## Notes
 
 - The console lives in `chau7_next/src/debug/` (`mod.rs` documents the
