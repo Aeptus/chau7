@@ -110,3 +110,5 @@ pub mod terminal_key_press;
 pub mod terminal_prompt_notification;
 pub mod token_optimization;
 pub mod welcome;
+
+pub mod work_profiler;

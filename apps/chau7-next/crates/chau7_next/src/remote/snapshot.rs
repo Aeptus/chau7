@@ -6,6 +6,7 @@
 use chau7_next_core::remote::grid_snapshot::{
     RemoteTerminalGridSnapshot, RemoteTerminalGridSnapshotLayout,
 };
+use chau7_next_core::work_profiler::{self, Key, Queue};
 #[cfg(test)]
 use chau7_terminal::{GridCopy, OwnedCell};
 
@@ -99,12 +100,26 @@ pub(crate) fn capture_update(
     let (native, cursor) = {
         // Parser polling, resize and cursor metadata share this brief guard.
         // Native owns all returned buffers, so copying/encoding needs no lock.
+        let _native = work_profiler::begin(Key::work(
+            "get_grid_delta",
+            "capture",
+            "unobserved",
+            "remote_grid_worker",
+            Queue::Background,
+        ));
         let terminal = terminal.write();
         (
             NativeDelta(Some(Box::new(terminal.get_grid_delta_snapshot(generation)))),
             terminal.cursor_position(),
         )
     };
+    let mut copy = work_profiler::begin(Key::work(
+        "copy_grid_delta",
+        "capture",
+        "unobserved",
+        "remote_grid_worker",
+        Queue::Background,
+    ));
     let snapshot = native.0.as_ref()?;
     let count = usize::try_from(snapshot.row_count)
         .ok()?
@@ -118,6 +133,12 @@ pub(crate) fn capture_update(
     {
         return None;
     }
+    copy.items(snapshot.row_count as usize);
+    copy.bytes(
+        count
+            .saturating_mul(20)
+            .saturating_add(snapshot.clusters_len),
+    );
     let cells = if count == 0 {
         &[][..]
     } else {
@@ -351,6 +372,11 @@ fn run_worker(shared: Arc<Shared>) {
             state.in_flight = true;
             (request, state.version)
         };
+        let mut wake = work_profiler::begin(Key::wakeup(
+            "remote_grid_worker",
+            "unobserved",
+            Queue::Background,
+        ));
         if scope != Some(request.scope) {
             cache.reset();
             scope = Some(request.scope);
@@ -361,12 +387,27 @@ fn run_worker(shared: Arc<Shared>) {
         let row_count = update.as_ref().map(|u| u.row_indices.len());
         let full = update.as_ref().map(|u| u.full_refresh);
         let payload = match update {
-            Some(update) => cache.encode(&update),
+            Some(update) => {
+                let mut encode = work_profiler::begin(Key::work(
+                    "remote_grid_encode",
+                    "encode",
+                    "unobserved",
+                    "remote_grid_worker",
+                    Queue::Background,
+                ));
+                encode.items(update.row_indices.len());
+                let payload = cache.encode(&update);
+                encode.bytes(payload.as_ref().map_or(0, Vec::len));
+                payload
+            }
             None => {
                 cache.reset();
                 None
             }
         };
+        wake.items(row_count.unwrap_or(0));
+        wake.bytes(payload.as_ref().map_or(0, Vec::len));
+        wake.idle(payload.is_none());
         let result = GridCaptureResult {
             scope: request.scope,
             generation: cache.generation(),
@@ -411,6 +452,19 @@ mod tests {
         );
         let update = capture_update(&term, 0).unwrap();
         assert!(update.full_refresh);
+        let measurements = work_profiler::snapshot();
+        if measurements["instrumentation_enabled"] == true {
+            let entries = measurements["entries"].as_array().unwrap();
+            for operation in ["get_grid_delta", "copy_grid_delta"] {
+                let actual = entries
+                    .iter()
+                    .find(|entry| entry["operation"] == operation)
+                    .expect("native capture must record actual stages");
+                assert_eq!(actual["queue"], "background");
+                assert!(actual["lifetime"]["sample_count"].as_u64().unwrap() > 0);
+            }
+        }
+
         assert_eq!(update.row_indices.len(), 3);
         let mut cache = RemoteGridSnapshotCache::default();
         let bytes = cache.encode(&update).unwrap();

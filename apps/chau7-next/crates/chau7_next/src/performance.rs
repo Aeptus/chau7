@@ -114,6 +114,7 @@ pub fn capture(cx: &App) -> Value {
         "process": process, "hang_watchdog":crate::hang_watchdog::snapshot(cx),
         "memory_retention": crate::memory_pressure::diagnostics(cx),
         "remote_grid": crate::remote::grid_diagnostics(cx),
+        "work_profile": chau7_next_core::work_profiler::snapshot(),
         "main_thread": {"timer_delay_ms": heartbeat.and_then(|h| h.last_delay_ms),
             "max_timer_delay_ms": heartbeat.map(|h| h.max_delay_ms),
             "sample_count": heartbeat.map(|h| h.sample_count),
