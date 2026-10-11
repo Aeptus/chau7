@@ -44,6 +44,7 @@ mod palette_window;
 mod panel;
 mod panes;
 mod pickers;
+mod provider_health;
 mod remote_hooks;
 mod rename;
 mod restore_lifecycle;
@@ -1435,6 +1436,7 @@ impl Render for Workspace {
         let picker = self.render_picker(chrome, cx);
         let shortcut_hint = self.render_shortcut_hint(chrome, cx);
         let drag_listener = self.drag_listener(cx);
+        let provider_health_border = self.provider_health_border(cx);
 
         div()
             .id("workspace")
@@ -1504,7 +1506,8 @@ impl Render for Workspace {
                     .children(explain)
                     .children(tasks)
                     .children(timeline)
-                    .children(dashboard),
+                    .children(dashboard)
+                    .children(provider_health_border),
             )
             .children(hover_card)
             .children(idle_popover)
