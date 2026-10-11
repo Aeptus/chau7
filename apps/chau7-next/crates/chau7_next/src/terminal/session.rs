@@ -1140,6 +1140,11 @@ impl TerminalSession {
         );
     }
 
+    /// A worker receives only the native terminal handle, never this GPUI entity.
+    pub(crate) fn remote_terminal(&self) -> Arc<RwLock<Chau7Terminal>> {
+        self.term.clone()
+    }
+
     /// PTY log of the current or last AI run (`lastPTYLogPath`).
     #[allow(dead_code)]
     pub fn last_ai_log_path(&self) -> Option<&Path> {

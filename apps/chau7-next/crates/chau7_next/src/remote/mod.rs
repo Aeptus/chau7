@@ -79,9 +79,33 @@ pub struct RemoteStatus {
     pub viewer: RemoteViewerMode,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct GridContext {
+    connected: bool,
+    streams_terminal: bool,
+    tab: Option<u32>,
+    session: Option<u64>,
+}
+
+fn advance_grid_context(
+    current: &mut Option<GridContext>,
+    epoch: &mut u64,
+    next: GridContext,
+) -> bool {
+    if *current == Some(next) {
+        return false;
+    }
+    *current = Some(next);
+    *epoch = epoch.wrapping_add(1);
+    true
+}
+
 pub struct RemoteControl {
     root: DataRoot,
     host: RemoteHost,
+    grid_worker: snapshot::GridSnapshotWorker,
+    grid_epoch: u64,
+    grid_context: Option<GridContext>,
     ipc: Option<IpcServer>,
     agent: Option<AgentProcess>,
     start_generation: u64,
@@ -113,6 +137,9 @@ pub fn init(cx: &mut App) {
     let entity = cx.new(|_| RemoteControl {
         root,
         host: RemoteHost::new(),
+        grid_worker: snapshot::GridSnapshotWorker::default(),
+        grid_epoch: 0,
+        grid_context: None,
         ipc: None,
         agent: None,
         start_generation: 0,
@@ -146,6 +173,18 @@ pub fn init(cx: &mut App) {
         async {}
     })
     .detach();
+}
+
+/// Measured native remote capture data. No frame has been captured until the
+/// lazy worker starts; timing/row samples remain null until an actual capture.
+pub fn grid_diagnostics(cx: &App) -> Option<serde_json::Value> {
+    let entity = handle(cx)?;
+    let rc = entity.read(cx);
+    let mut value = rc.grid_worker.diagnostics();
+    value["connection_epoch"] = serde_json::json!(rc.grid_epoch);
+    value["selected_tab"] = serde_json::json!(rc.grid_context.and_then(|c| c.tab));
+    value["selected_session"] = serde_json::json!(rc.grid_context.and_then(|c| c.session));
+    Some(value)
 }
 
 /// `CHAU7_NEXT_REMOTE_OUTPUT_BATCH=0` (or `CHAU7_REMOTE_OUTPUT_BATCH`) sends
@@ -345,9 +384,29 @@ impl RemoteControl {
         f: impl FnOnce(&mut RemoteHost, &mut GpuiEnv, &mut IpcSink) -> R,
     ) -> R {
         let (result, resolved, telemetry) = {
-            let mut env = GpuiEnv::new(cx, &mut self.focus_window);
+            let mut env = GpuiEnv::new(
+                cx,
+                &mut self.focus_window,
+                &mut self.grid_worker,
+                self.grid_epoch,
+            );
             let mut sink = IpcSink(self.ipc.as_ref());
             let result = f(&mut self.host, &mut env, &mut sink);
+            let scope = self.host.grid_capture_scope(&mut env, 0);
+            let context = GridContext {
+                connected: self.host.ipc_connected,
+                streams_terminal: self.host.streams_terminal(),
+                tab: scope.map(|s| s.tab),
+                session: scope.map(|s| s.session),
+            };
+            if advance_grid_context(&mut self.grid_context, &mut self.grid_epoch, context) {
+                env.reset_grid_epoch(self.grid_epoch);
+                self.host.capture_selected_grid(&mut env, true);
+            }
+            if let Some(frame) = env.take_grid_result() {
+                self.host
+                    .deliver_grid_result(&mut env, &mut sink, self.grid_epoch, frame);
+            }
             (result, env.resolved, env.telemetry)
         };
         for (id, approved) in resolved {
@@ -384,6 +443,7 @@ impl RemoteControl {
         for event in events {
             match event {
                 IpcEvent::Connected => {
+                    self.invalidate_grid();
                     self.with_host(cx, |host, env, sink| host.on_connected(env, sink));
                     // A restarted agent learns the share code again.
                     if self.viewer.is_sharing {
@@ -394,7 +454,10 @@ impl RemoteControl {
                 IpcEvent::Frame(frame) => {
                     self.with_host(cx, |host, env, sink| host.handle_frame(frame, env, sink));
                 }
-                IpcEvent::Disconnected => self.host.on_disconnected(),
+                IpcEvent::Disconnected => {
+                    self.invalidate_grid();
+                    self.host.on_disconnected();
+                }
             }
         }
 
@@ -418,6 +481,9 @@ impl RemoteControl {
         if self.host.ipc_connected && self.last_refresh.elapsed() >= REFRESH_EVERY {
             self.last_refresh = Instant::now();
             self.with_host(cx, |host, env, sink| host.refresh(env, sink));
+        }
+        if self.grid_worker.has_result() {
+            self.with_host(cx, |_, _, _| ());
         }
         if self.host.devices_dirty {
             self.host.devices_dirty = false;
@@ -563,7 +629,15 @@ impl RemoteControl {
         )
     }
 
+    fn invalidate_grid(&mut self) {
+        self.grid_epoch = self.grid_epoch.wrapping_add(1);
+        self.grid_context = None;
+        self.grid_worker.invalidate();
+    }
+
     fn stop_agent(&mut self) {
+        self.invalidate_grid();
+        self.grid_worker.stop();
         self.start_generation = self.start_generation.wrapping_add(1);
         self.start_pending = false;
         if let Some(agent) = self.agent.take() {
@@ -693,6 +767,43 @@ fn start_is_current(
 #[cfg(test)]
 mod startup_tests {
     use super::*;
+    #[test]
+    fn grid_epoch_changes_on_connection_mode_tab_and_pane_session_transitions() {
+        let initial = GridContext {
+            connected: true,
+            streams_terminal: true,
+            tab: Some(1),
+            session: Some(100),
+        };
+        let mut current = None;
+        let mut epoch = 0;
+        assert!(advance_grid_context(&mut current, &mut epoch, initial));
+        assert_eq!(epoch, 1);
+        assert!(!advance_grid_context(&mut current, &mut epoch, initial));
+        for next in [
+            GridContext {
+                connected: false,
+                ..initial
+            },
+            GridContext {
+                streams_terminal: false,
+                ..initial
+            },
+            GridContext {
+                tab: Some(2),
+                ..initial
+            },
+            GridContext {
+                session: Some(200),
+                ..initial
+            },
+            initial,
+        ] {
+            let previous = epoch;
+            assert!(advance_grid_context(&mut current, &mut epoch, next));
+            assert_eq!(epoch, previous + 1);
+        }
+    }
     #[test]
     fn only_current_enabled_pending_start_can_publish() {
         assert!(start_is_current(5, 5, true, false, true));
