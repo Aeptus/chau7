@@ -62,6 +62,7 @@ pub mod proxy;
 pub mod remote;
 pub mod repo_metadata;
 pub mod repository;
+pub mod repository_pane;
 pub mod runtime;
 pub mod scripting;
 pub mod scrollback_search;
