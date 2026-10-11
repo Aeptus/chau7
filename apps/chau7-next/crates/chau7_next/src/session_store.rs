@@ -473,6 +473,56 @@ fn recover_legacy_windows(root: &DataRoot, session: &mut SavedSession, paths: &[
     }
 }
 
+/// Primary restore identities used by owned shell-history maintenance. No
+/// archive hydration or provider lookup is necessary for this read-only query.
+pub(crate) fn restorable_tab_ids(root: &DataRoot) -> std::collections::HashSet<uuid::Uuid> {
+    let mut ids = std::collections::HashSet::new();
+    let mut collect = |session: SavedSession| {
+        ids.extend(
+            session
+                .windows
+                .into_iter()
+                .flat_map(|window| window.tabs)
+                .filter_map(|tab| tab.uuid),
+        );
+    };
+    if let Some(index) = parse_index(&root.session_file()) {
+        collect(index.session);
+    } else if let Ok(bytes) = read_bounded(&root.session_file(), MAX_MANIFEST_BYTES) {
+        // Historical single-window primary manifests have no top-level
+        // windows. Only UUIDs are needed; never hydrate terminal sidecars.
+        #[derive(Deserialize)]
+        struct IdentityTab {
+            #[serde(default)]
+            uuid: Option<uuid::Uuid>,
+        }
+        #[derive(Deserialize)]
+        struct IdentityWindow {
+            tabs: Vec<IdentityTab>,
+        }
+        if let Ok(window) = serde_json::from_slice::<IdentityWindow>(&bytes) {
+            collect(SavedSession {
+                version: 1,
+                windows: vec![SavedWindow {
+                    tabs: window
+                        .tabs
+                        .into_iter()
+                        .map(|tab| SavedTab {
+                            uuid: tab.uuid,
+                            ..Default::default()
+                        })
+                        .collect(),
+                    ..Default::default()
+                }],
+            });
+        }
+    }
+    if let Some(bundle) = parse_bundle(&bundle_file(root)) {
+        collect(bundle.session);
+    }
+    ids
+}
+
 pub fn load(root: &DataRoot) -> Option<SavedSession> {
     let index = parse_index(&root.session_file());
     let bundle = parse_bundle(&bundle_file(root));
@@ -910,6 +960,44 @@ mod tests {
                 ..Default::default()
             }],
         }
+    }
+    #[test]
+    fn history_protection_reads_only_primary_index_and_bundle_without_sidecars() {
+        let root = isolated_root();
+        save(&root, &one_tab(1, "archived")).unwrap();
+        save_for(&root, &one_tab(2, "primary"), true).unwrap();
+        // Older archive UUIDs are not permanently protected. Sidecars are
+        // irrelevant to this bounded identity-only read.
+        assert_eq!(
+            restorable_tab_ids(&root),
+            [uuid::Uuid::from_u128(2)].into_iter().collect()
+        );
+        std::fs::write(
+            root.session_file(),
+            serde_json::to_vec(&one_tab(3, "legacy-single-window")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            restorable_tab_ids(&root),
+            [uuid::Uuid::from_u128(2), uuid::Uuid::from_u128(3)]
+                .into_iter()
+                .collect()
+        );
+        std::fs::write(bundle_file(&root), "malformed").unwrap();
+        assert_eq!(
+            restorable_tab_ids(&root),
+            [uuid::Uuid::from_u128(3)].into_iter().collect()
+        );
+        std::fs::write(
+            root.session_file(),
+            serde_json::to_vec(&one_tab(4, "legacy").windows[0]).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            restorable_tab_ids(&root),
+            [uuid::Uuid::from_u128(4)].into_iter().collect()
+        );
+        std::fs::remove_dir_all(root.home()).unwrap();
     }
     #[test]
     fn interrupted_bundle_commit_recovers_newer_source_but_not_stale_bundle() {

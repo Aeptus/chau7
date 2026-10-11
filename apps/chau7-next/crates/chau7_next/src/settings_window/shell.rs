@@ -16,6 +16,7 @@ pub(crate) struct ShellInputs {
     custom_shell: Entity<InputState>,
     startup_command: Entity<InputState>,
     default_directory: Entity<InputState>,
+    shell_history_max_lines: Entity<InputState>,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -50,6 +51,12 @@ impl ShellInputs {
             window,
             cx,
         );
+        let shell_history_max_lines = field(
+            settings.terminal.shell_history_max_lines.to_string(),
+            "1000",
+            window,
+            cx,
+        );
         let on_commit = |apply: fn(&mut Settings, String)| {
             move |_: &mut SettingsView,
                   input: Entity<InputState>,
@@ -62,6 +69,29 @@ impl ShellInputs {
             }
         };
         let subscriptions = vec![
+            cx.subscribe_in(
+                &shell_history_max_lines,
+                window,
+                |_, input, event: &InputEvent, window, cx| {
+                    if matches!(event, InputEvent::PressEnter { .. } | InputEvent::Blur) {
+                        let raw = input.read(cx).value().trim().to_string();
+                        if let Ok(value) = raw.parse::<i64>() {
+                            update(cx, |s| {
+                                s.terminal.shell_history_max_lines = value
+                                    .clamp(0, chau7_next_core::shell_histories::MAX_LINES as i64)
+                                    as usize
+                            });
+                        }
+                        let actual = Settings::get(cx)
+                            .terminal
+                            .shell_history_max_lines
+                            .to_string();
+                        if raw != actual {
+                            input.update(cx, |s, cx| s.set_value(actual, window, cx));
+                        }
+                    }
+                },
+            ),
             cx.subscribe(
                 &custom_shell,
                 on_commit(|s, v| {
@@ -82,6 +112,7 @@ impl ShellInputs {
             custom_shell,
             startup_command,
             default_directory,
+            shell_history_max_lines,
             _subscriptions: subscriptions,
         }
     }
@@ -151,6 +182,24 @@ pub(super) fn section(ctx: &SectionContext) -> gpui::Div {
         .on_click(move |_, _, cx| update(cx, |s| s.terminal.bell_sound = sound))
     });
     titled("Shell", chrome)
+        .child(
+            titled("settings.terminal.shellHistory", chrome)
+                .child(row(
+                    "settings.terminal.shellHistoryMaxLines",
+                    div()
+                        .w(px(140.0))
+                        .child(Input::new(&inputs.shell_history_max_lines)),
+                    chrome,
+                ))
+                .child(
+                    div()
+                        .text_xs()
+                        .text_color(chrome.text_muted)
+                        .child(crate::l10n::tr(
+                            "settings.terminal.shellHistoryMaxLines.help",
+                        )),
+                ),
+        )
         .child(
             div()
                 .flex()

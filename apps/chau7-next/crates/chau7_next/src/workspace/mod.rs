@@ -357,18 +357,27 @@ impl Workspace {
     ) -> TabId {
         let (at_directory, inherit_group) = origin;
         let id = AppData::next_tab_id(cx);
+        let mut meta = TabMeta::new(id, self.state.next_color());
+        if let Some(uuid) = saved.as_ref().and_then(|saved| saved.uuid) {
+            meta.set_uuid(uuid);
+        }
         let deferred = self.restore_lifecycle.startup && saved.is_some();
         let panes = cx.new(|cx| {
             if deferred {
-                PaneTree::from_saved_deferred(saved.as_ref(), cwd.clone(), window, cx)
+                PaneTree::from_saved_deferred_with_owner(
+                    saved.as_ref(),
+                    cwd.clone(),
+                    meta.uuid,
+                    window,
+                    cx,
+                )
             } else {
-                PaneTree::from_saved(saved.as_ref(), cwd.clone(), window, cx)
+                PaneTree::from_saved_with_owner(saved.as_ref(), cwd.clone(), meta.uuid, window, cx)
             }
         });
         if deferred {
             self.restore_lifecycle.pending_identity.push(id);
         }
-        let mut meta = TabMeta::new(id, self.state.next_color());
         meta.last_activity = AppData::now(cx);
         meta.created_at = meta.last_activity;
         meta.git_root = panes
@@ -895,8 +904,8 @@ impl Workspace {
         }
         let cwd = self.inherited_start_directory(cx);
         let new_id = AppData::next_tab_id(cx);
-        let panes = cx.new(|cx| PaneTree::new(cwd.clone(), window, cx));
         let mut meta = TabMeta::new(new_id, TabColor::ALL[0]);
+        let panes = cx.new(|cx| PaneTree::new_with_owner(cwd.clone(), meta.uuid, window, cx));
         meta.last_activity = AppData::now(cx);
         meta.git_root = cwd.as_deref().and_then(|dir| {
             crate::repository::resolve(dir, cx).or_else(|| {
@@ -1058,7 +1067,9 @@ impl Workspace {
         }
         let snapshot = self.closed_snapshots.remove(&entry.meta.uuid);
         let cwd = entry.directory.map(PathBuf::from);
-        let panes = cx.new(|cx| PaneTree::from_saved(snapshot.as_ref(), cwd, window, cx));
+        let panes = cx.new(|cx| {
+            PaneTree::from_saved_with_owner(snapshot.as_ref(), cwd, entry.meta.uuid, window, cx)
+        });
         if let Some(meta) = self.state.get(new_id) {
             panes.update(cx, |tree, cx| tree.set_owner_tab(meta.uuid, window, cx));
         }
