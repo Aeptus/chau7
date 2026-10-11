@@ -23,6 +23,75 @@ use crate::mcp::MainThread;
 use crate::mcp::tools::{ToolContext, arg_bool, arg_str, arg_str_list, tabs};
 use crate::mcp::windows::parse_tab_id;
 
+/// Capture the private caller origin before dispatching deferred work. The
+/// connection identity is supplied by the transport, never by tool arguments.
+#[derive(Clone)]
+struct CallOrigin {
+    internal: bool,
+    client_id: String,
+}
+impl CallOrigin {
+    fn capture(ctx: &ToolContext) -> Self {
+        Self {
+            internal: ctx.is_internal(),
+            client_id: ctx.client_id.to_string(),
+        }
+    }
+    fn context<'a>(&'a self, main: &'a MainThread) -> ToolContext<'a> {
+        if self.internal {
+            ToolContext::internal(main)
+        } else {
+            ToolContext::connection(main, &self.client_id)
+        }
+    }
+    fn authorize(&self, tab: &str, cx: &mut gpui::App) -> Result<(), String> {
+        if self.internal {
+            Ok(())
+        } else {
+            crate::mcp::control::authorize_mutation_on_main(tab, &self.client_id, cx)
+        }
+    }
+}
+fn connected(ctx: &ToolContext) -> Result<(), String> {
+    if ctx.is_internal() || crate::mcp::control::is_connected(ctx.client_id) {
+        Ok(())
+    } else {
+        Err(json_error("MCP client connection is closed"))
+    }
+}
+fn with_authorized_tab<T: Send + 'static>(
+    tab: &str,
+    ctx: &ToolContext,
+    action: impl FnOnce(&mut gpui::App) -> T + Send + 'static,
+) -> Result<T, String> {
+    connected(ctx)?;
+    let tab = tab.to_string();
+    let origin = CallOrigin::capture(ctx);
+    ctx.main
+        .call(move |cx| {
+            origin.authorize(&tab, cx)?;
+            Ok(action(cx))
+        })
+        .unwrap_or_else(|| Err(json_error("Chau7 Next main thread unavailable")))
+}
+fn authorize_tab(tab: &str, ctx: &ToolContext) -> Result<(), String> {
+    if ctx.is_internal() {
+        return Ok(());
+    }
+    with_authorized_tab(tab, ctx, |_| ())
+}
+fn delivery_error(response: &str) -> Option<String> {
+    match serde_json::from_str::<Value>(response) {
+        Ok(value)
+            if value.get("error").is_none() && value.get("ok") == Some(&Value::Bool(true)) =>
+        {
+            None
+        }
+        Ok(value) if value.get("error").is_some() => Some(response.to_string()),
+        _ => Some(json_error("Terminal did not confirm input delivery")),
+    }
+}
+
 /// `handleToolCall`.
 pub fn handle_tool_call(name: &str, args: &Map<String, Value>, ctx: &ToolContext) -> String {
     match name {
@@ -145,7 +214,7 @@ fn create_session(args: &Map<String, Value>, ctx: &ToolContext) -> String {
     if let Some(error) = policy.validate_start(1, 0, delegation_depth) {
         return json_error(&error);
     }
-    if let Some(parent) = parent
+    if let Some(parent) = &parent
         && let Some(error) = parent.config.policy.validate_child(delegation_depth)
     {
         return json_error(&error);
@@ -219,6 +288,15 @@ fn create_session(args: &Map<String, Value>, ctx: &ToolContext) -> String {
         return json_error(&msg);
     }
 
+    if let Some(parent) = &parent
+        && let Err(error) = authorize_tab(&parent.tab_id, ctx)
+    {
+        return error;
+    }
+    if let Err(error) = connected(ctx) {
+        return error;
+    }
+
     let config = SessionConfig {
         directory: directory.clone(),
         provider: backend_name.clone(),
@@ -241,10 +319,20 @@ fn create_session(args: &Map<String, Value>, ctx: &ToolContext) -> String {
     let tab_id = match attach.as_deref().and_then(parse_tab_id) {
         Some(uuid) => {
             log::info!("MCP runtime_session_create: attaching to existing tab {uuid}");
-            crate::workspace::mcp::uuid_string(uuid)
+            let tab = crate::workspace::mcp::uuid_string(uuid);
+            if let Err(error) = authorize_tab(&tab, ctx) {
+                return error;
+            }
+            tab
         }
         None => {
-            let result = tabs::create_tab(Some(directory.clone()), None, ctx);
+            let result = if ctx.is_internal() {
+                tabs::create_tab(Some(directory.clone()), None, ctx)
+            } else {
+                let create = json!({"directory": directory}).as_object().unwrap().clone();
+                crate::mcp::control::call("tab_create", &create, ctx.client_id, ctx)
+                    .unwrap_or_else(|| json_error("Tab creation is unavailable"))
+            };
             let created = serde_json::from_str::<Value>(&result)
                 .ok()
                 .and_then(|v| v.get("tab_id").and_then(Value::as_str).map(str::to_string))
@@ -263,18 +351,35 @@ fn create_session(args: &Map<String, Value>, ctx: &ToolContext) -> String {
     };
 
     let launch = backend.launch_command(&config);
-    let session = if attach.is_some() {
-        manager().adopt_session_with_config(&tab_id, backend, config)
-    } else {
-        manager().create_session(&tab_id, backend, config, auto_approve)
+    let session_tab = tab_id.clone();
+    let adopting = attach.is_some();
+    let session = match with_authorized_tab(&tab_id, ctx, move |_| {
+        if adopting {
+            manager().adopt_session_with_config(&session_tab, backend, config)
+        } else {
+            manager().create_session(&session_tab, backend, config, auto_approve)
+        }
+    }) {
+        Ok(session) => session,
+        Err(error) => return error,
     };
     if !launch.is_empty() && attach.is_none() {
         log::info!("MCP runtime_session_create: launching command: {launch}");
-        let _ = tabs::exec(&tab_id, &launch, ctx);
+        if let Some(error) = delivery_error(&tabs::exec(&tab_id, &launch, ctx)) {
+            let failed = session.clone();
+            let _ = with_authorized_tab(&tab_id, ctx, move |_| manager().stop_session(&failed.id));
+            sync_owned_tabs(ctx.main);
+            return error;
+        }
     }
     sync_owned_tabs(ctx.main);
     if let Some(prompt) = initial_prompt {
-        schedule_initial_prompt(session.clone(), prompt, ctx.main.clone());
+        schedule_initial_prompt(
+            session.clone(),
+            prompt,
+            ctx.main.clone(),
+            CallOrigin::capture(ctx),
+        );
     }
     log::info!(
         "MCP runtime_session_create: session {} created (state={})",
@@ -289,15 +394,15 @@ fn sync_owned_tabs(main: &MainThread) {
 }
 
 /// Keep the prompt pending until a real backend readiness transition; no fixed retry deadline.
-fn schedule_initial_prompt(session: Arc<RuntimeSession>, prompt: String, main: MainThread) {
+fn schedule_initial_prompt(session: Arc<RuntimeSession>, prompt: String, main: MainThread, origin: CallOrigin) {
     session.queue_initial_prompt(prompt);
     let pending = session.clone();
     let spawned = std::thread::Builder::new()
         .name("chau7-next-runtime-prompt".into())
         .stack_size(512 * 1024)
         .spawn(move || {
-            let ctx = ToolContext::internal(&main);
-            match pending.wait_for_pending_initial_prompt() {
+            let ctx = origin.context(&main);
+            match pending.wait_for_pending_initial_prompt_unless(|| connected(&ctx).is_err()) {
                 Ok(Some(prompt)) => {
                     let result = send_turn_internal(&pending, &prompt, None, &ctx);
                     if result.contains("\"error\"") {
@@ -347,13 +452,26 @@ fn stop_session(args: &Map<String, Value>, ctx: &ToolContext) -> String {
         "MCP runtime_session_stop: session={id} state={} force={force} closeTab={close_tab}",
         session.state().raw_value()
     );
-    if force || matches!(session.state(), State::Busy | State::AwaitingApproval) {
-        let _ = tabs::send_input(&session.tab_id, "\u{3}", ctx);
+    if let Err(error) = authorize_tab(&session.tab_id, ctx) {
+        return error;
     }
-    let stopped = manager().stop_session(id);
-    if close_tab {
-        let tab = session.tab_id.clone();
-        let _ = ctx.main.call(move |cx| tabs::close_tab(&tab, true, cx));
+    if (force || matches!(session.state(), State::Busy | State::AwaitingApproval))
+        && let Some(error) = delivery_error(&tabs::send_input(&session.tab_id, "\u{3}", ctx))
+    {
+        return error;
+    }
+    let owned = session.clone();
+    let result = with_authorized_tab(&session.tab_id, ctx, move |cx| {
+        let stopped = manager().stop_session(&owned.id);
+        let closed = close_tab.then(|| tabs::close_tab(&owned.tab_id, true, cx));
+        (stopped, closed)
+    });
+    let (stopped, closed) = match result {
+        Ok(result) => result,
+        Err(error) => return error,
+    };
+    if let Some(error) = closed.as_deref().and_then(delivery_error) {
+        return error;
     }
     sync_owned_tabs(ctx.main);
     encode_sorted(&json!({
@@ -399,6 +517,9 @@ fn send_turn_with_schema(
     schema: Option<Value>,
     ctx: &ToolContext,
 ) -> String {
+    if let Err(error) = authorize_tab(&session.tab_id, ctx) {
+        return error;
+    }
     if let Some(error) = session.policy_error_for_next_turn() {
         session.record_policy_block("turn_submission", &error);
         return json_error(&error);
@@ -422,7 +543,12 @@ fn send_turn_with_schema(
                     session.config.purpose.as_deref(),
                 )
             {
-                manager().mark_ready(&session.id);
+                let id = session.id.clone();
+                if let Err(error) =
+                    with_authorized_tab(&session.tab_id, ctx, move |_| manager().mark_ready(&id))
+                {
+                    return error;
+                }
             }
         }
     }
@@ -438,7 +564,18 @@ fn send_turn_with_schema(
             session.state().raw_value()
         ));
     }
-    let Some(turn_id) = session.start_turn_with_schema(prompt, schema) else {
+    let owned = match manager().session(&session.id) {
+        Some(session) => session,
+        None => return json_error("Session no longer exists"),
+    };
+    let submitted_prompt = prompt.to_string();
+    let turn = match with_authorized_tab(&session.tab_id, ctx, move |_| {
+        owned.start_turn_with_schema(&submitted_prompt, schema)
+    }) {
+        Ok(turn) => turn,
+        Err(error) => return error,
+    };
+    let Some(turn_id) = turn else {
         log::error!(
             "MCP runtime_turn_send: startTurn failed for session {}",
             session.id
@@ -453,15 +590,9 @@ fn send_turn_with_schema(
         input.chars().count(),
         result.chars().take(100).collect::<String>()
     );
-    if serde_json::from_str::<Value>(&result)
-        .ok()
-        .is_none_or(|value| value.get("error").is_some())
-    {
+    if let Some(error) = delivery_error(&result) {
         session.fail_turn("send_input_failed");
-        return json_error(&format!(
-            "Failed to deliver input to session {}",
-            session.id
-        ));
+        return error;
     }
     encode_sorted(&json!({
         "turn_id": turn_id,
@@ -547,7 +678,15 @@ fn cancel_children(args: &Map<String, Value>, ctx: &ToolContext) -> String {
     let Some(id) = arg_str(args, "session_id") else {
         return json_error("session_id is required");
     };
+    let parent = match session_arg(args) {
+        Ok(session) => session,
+        Err(error) => return error,
+    };
+    if let Err(error) = authorize_tab(&parent.tab_id, ctx) {
+        return error;
+    }
     let mut stopped = Vec::new();
+    let mut failures = Vec::new();
     for session in manager().descendant_sessions(id, false) {
         let mut stop_args = Map::new();
         stop_args.insert("session_id".into(), json!(session.id));
@@ -565,10 +704,12 @@ fn cancel_children(args: &Map<String, Value>, ctx: &ToolContext) -> String {
             .is_some_and(|value| value["ok"] == true)
         {
             stopped.push(session.id.clone());
+        } else {
+            failures.push(json!({"session_id":session.id,"response":serde_json::from_str::<Value>(&response).unwrap_or_else(|_| json!(response))}));
         }
     }
     encode_sorted(
-        &json!({"ok":true,"session_id":id,"count":stopped.len(),"stopped_session_ids":stopped}),
+        &json!({"ok":failures.is_empty(),"session_id":id,"count":stopped.len(),"stopped_session_ids":stopped,"failures":failures}),
     )
 }
 fn retry_session(args: &Map<String, Value>, ctx: &ToolContext) -> String {
@@ -576,6 +717,9 @@ fn retry_session(args: &Map<String, Value>, ctx: &ToolContext) -> String {
         Ok(session) => session,
         Err(error) => return error,
     };
+    if let Err(error) = authorize_tab(&session.tab_id, ctx) {
+        return error;
+    }
     let config = &session.config;
     let mut retry = json!({"backend":config.provider,"directory":config.directory,"env":config.environment,"backend_args":config.args,
         "auto_approve":config.auto_approve,"delegation_depth":config.delegation_depth,"policy":config.policy.summary(),"task_metadata":config.task_metadata}).as_object().unwrap().clone();
@@ -740,25 +884,134 @@ fn respond_to_approval(args: &Map<String, Value>, ctx: &ToolContext) -> String {
     if session.pending_approval().map(|a| a.id).as_deref() != Some(approval_id) {
         return json_error(&format!("No pending approval with id {approval_id}"));
     }
-    let _ = tabs::send_input(&session.tab_id, if approved { "y\n" } else { "n\n" }, ctx);
-    if session.resolve_approval(approval_id, approved, reason) {
-        let tab = session.tab_id.clone();
-        let _ = ctx.main.call(move |cx| {
-            let Some(found) = crate::mcp::windows::find_tab(&tab, cx) else {
-                return;
-            };
-            found
-                .window
-                .workspace
-                .update(cx, |ws, cx| ws.clear_persistent_style(found.tab, cx));
-        });
+    if let Err(error) = authorize_tab(&session.tab_id, ctx) {
+        return error;
     }
-    encode_sorted(&json!({"ok": true, "approved": approved}))
+    if let Some(error) = delivery_error(&tabs::send_input(
+        &session.tab_id,
+        if approved { "y\n" } else { "n\n" },
+        ctx,
+    )) {
+        return error;
+    }
+    let tab = session.tab_id.clone();
+    let owned = session.clone();
+    let approval_id = approval_id.to_string();
+    let reason = reason.to_string();
+    let resolved = with_authorized_tab(&session.tab_id, ctx, move |cx| {
+        if !owned.resolve_approval(&approval_id, approved, &reason) {
+            return false;
+        }
+
+        let Some(found) = crate::mcp::windows::find_tab(&tab, cx) else {
+            return true;
+        };
+        found
+            .window
+            .workspace
+            .update(cx, |ws, cx| ws.clear_persistent_style(found.tab, cx));
+        true
+    });
+    match resolved {
+        Ok(true) => encode_sorted(&json!({"ok": true, "approved": approved})),
+        Ok(false) => json_error("Approval changed before the response was applied"),
+        Err(error) => error,
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn deferred_context_retains_private_origin_and_transport_identity() {
+        let (tx, _rx) = futures::channel::mpsc::unbounded();
+        let main = MainThread::for_tests(tx);
+        let external = ToolContext::connection(&main, "runtime-origin-fixture");
+        let origin = CallOrigin::capture(&external);
+        let deferred = origin.context(&main);
+        assert!(!deferred.is_internal());
+        assert_eq!(deferred.client_id, external.client_id);
+        assert!(connected(&deferred).is_err());
+        let internal = CallOrigin::capture(&ToolContext::internal(&main));
+        assert!(internal.context(&main).is_internal());
+        assert!(connected(&internal.context(&main)).is_ok());
+    }
+
+    #[test]
+    fn delivery_requires_explicit_terminal_confirmation() {
+        assert!(delivery_error(r#"{"ok":true,"queued":true}"#).is_none());
+        assert!(delivery_error(r#"{"ok":false}"#).is_some());
+        assert!(delivery_error(r#"{"queued":false}"#).is_some());
+        assert!(delivery_error("not-json").is_some());
+        assert_eq!(
+            delivery_error(r#"{"error":"denied"}"#).as_deref(),
+            Some(r#"{"error":"denied"}"#)
+        );
+    }
+
+    #[test]
+    fn disconnected_runtime_client_cannot_mutate_or_attach_sessions() {
+        let (tx, mut rx) = futures::channel::mpsc::unbounded();
+        let main = MainThread::for_tests(tx);
+        let ctx = ToolContext::connection(&main, "runtime-disconnected-fixture");
+        let session = manager().adopt_session(
+            "00000000-0000-0000-0000-00000000AABB",
+            backend_named("shell").unwrap(),
+            "/tmp",
+        );
+        let before = session.summary();
+        for (name, args) in [
+            (
+                "runtime_turn_send",
+                json!({"session_id":session.id,"prompt":"do not send"}),
+            ),
+            (
+                "runtime_session_stop",
+                json!({"session_id":session.id,"force":true,"close_tab":true}),
+            ),
+            ("runtime_session_retry", json!({"session_id":session.id})),
+            (
+                "runtime_session_cancel_children",
+                json!({"session_id":session.id}),
+            ),
+            (
+                "runtime_session_create",
+                json!({"backend":"shell","attach_tab_id":session.tab_id}),
+            ),
+            (
+                "runtime_session_create",
+                json!({"backend":"shell","parent_session_id":session.id}),
+            ),
+        ] {
+            let response: Value =
+                serde_json::from_str(&handle_tool_call(name, args.as_object().unwrap(), &ctx))
+                    .unwrap();
+            assert_eq!(
+                response["error"], "MCP client connection is closed",
+                "{name}"
+            );
+            assert_eq!(session.summary(), before);
+        }
+        session.start_turn("fixture turn").unwrap();
+        let approval = session
+            .request_approval("fixture tool", "fixture approval")
+            .unwrap();
+        let pending = session.summary();
+        let args = json!({"session_id":session.id,"approval_id":approval.id,"approved":true});
+        let response: Value = serde_json::from_str(&handle_tool_call(
+            "runtime_approval_respond",
+            args.as_object().unwrap(),
+            &ctx,
+        ))
+        .unwrap();
+        assert_eq!(response["error"], "MCP client connection is closed");
+        assert_eq!(session.summary(), pending);
+        assert_eq!(session.pending_approval().unwrap().id, approval.id);
+        // A denied caller never even queues work on the main thread.
+        assert!(rx.try_recv().is_err());
+        manager().stop_session(&session.id);
+    }
 
     #[test]
     fn env_needs_string_values() {
