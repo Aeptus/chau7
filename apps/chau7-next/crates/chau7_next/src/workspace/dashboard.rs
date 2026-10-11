@@ -531,7 +531,7 @@ impl Workspace {
     fn dashboard_call(&mut self, name: &'static str, args: Value, cx: &mut Context<Self>) {
         self.dashboard_work(
             move |bridge| {
-                let context = crate::mcp::tools::ToolContext { main: bridge };
+                let context = crate::mcp::tools::ToolContext::internal(bridge);
                 let result = crate::runtime::control::handle_tool_call(
                     name,
                     args.as_object().unwrap_or(&serde_json::Map::new()),
@@ -561,7 +561,7 @@ impl Workspace {
         let agents = self.dashboard.agents.clone();
         self.dashboard_work(
             move |bridge| {
-                let context = crate::mcp::tools::ToolContext { main: bridge };
+                let context = crate::mcp::tools::ToolContext::internal(bridge);
                 let mut errors = Vec::new();
                 for agent in agents {
                     if crate::runtime::manager().session(&agent.id).is_some() {

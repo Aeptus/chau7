@@ -70,14 +70,31 @@ pub fn runtime_info() -> Value {
     })
 }
 
-/// Capture all windows and panes. Missing measurements are JSON null, never zero.
-pub fn capture(cx: &App) -> Value {
+/// Process measurements remain available from a client thread during UI stalls.
+fn process_snapshot() -> Value {
     static CPU: Mutex<CpuSampler> = Mutex::new(CpuSampler { previous: None });
     let usage = process::process_usage(std::process::id());
     let cpu = CPU
         .lock()
         .unwrap_or_else(|e| e.into_inner())
         .sample(Instant::now(), usage.map(|u| u.cpu_time));
+    json!({"cpu_percent":cpu,
+        "cpu_percent_basis":"one logical CPU = 100 percent; app process only",
+        "cpu_time_seconds":usage.map(|u|u.cpu_time.as_secs_f64()),
+        "resident_bytes":usage.map(|u|u.resident_bytes)})
+}
+pub fn unresponsive_snapshot() -> Value {
+    json!({"schema_version":1,"captured_at":chrono::Utc::now().to_rfc3339(),
+        "runtime":runtime_info(),"uptime_seconds":identity().started.elapsed().as_secs_f64(),
+        "process":process_snapshot(),"partial":true,
+        "error":"main_thread_unresponsive","retryable":true,"timeout_ms":1000,
+        "main_thread":{"status":"unresponsive","timer_delay_ms":null,"sample_count":null},
+        "window_count":null,"terminal_count":null,"terminals":null,"features":null})
+}
+
+/// Capture all windows and panes. Missing measurements are JSON null, never zero.
+pub fn capture(cx: &App) -> Value {
+    let process = process_snapshot();
     let live = AppData::live(cx);
     let mut terminals = Vec::new();
     let mut terminal_count = 0;
@@ -93,9 +110,7 @@ pub fn capture(cx: &App) -> Value {
     let heartbeat = cx.try_global::<Heartbeat>();
     json!({"schema_version": 1, "captured_at": chrono::Utc::now().to_rfc3339(),
         "runtime": runtime_info(), "uptime_seconds": identity().started.elapsed().as_secs_f64(),
-        "process": {"cpu_percent": cpu, "cpu_percent_basis": "one logical CPU = 100 percent; app process only",
-            "cpu_time_seconds": usage.map(|u| u.cpu_time.as_secs_f64()),
-            "resident_bytes": usage.map(|u| u.resident_bytes)},
+        "process": process,
         "main_thread": {"timer_delay_ms": heartbeat.and_then(|h| h.last_delay_ms),
             "max_timer_delay_ms": heartbeat.map(|h| h.max_delay_ms),
             "sample_count": heartbeat.map(|h| h.sample_count),

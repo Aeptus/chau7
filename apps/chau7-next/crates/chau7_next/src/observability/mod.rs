@@ -25,6 +25,12 @@ impl Journal {
     pub fn latest_seq(&self) -> u64 {
         self.spine.latest_cursor()
     }
+    pub fn oldest_seq(&self) -> u64 {
+        self.spine.oldest_cursor()
+    }
+    pub fn replay(&self, cursor: u64, limit: usize) -> chau7_next_core::events::Replay {
+        self.spine.replay(cursor, limit)
+    }
     /// Called on a client/background thread, never on the GPUI thread.
     pub fn persisted_events(&self, after: u64, limit: usize) -> Result<Vec<EventEnvelope>, String> {
         let Some(store) = &self.store else {
@@ -246,8 +252,44 @@ pub fn register_timer(
     subsystem: &str,
     interval_ms: u64,
 ) -> TimerGuard {
+    register_task_timer(
+        cx,
+        id,
+        label,
+        subsystem,
+        interval_ms,
+        "gpui_task",
+        "gpui-main",
+    )
+}
+pub fn register_background_timer(
+    cx: &App,
+    id: &str,
+    label: &str,
+    subsystem: &str,
+    interval_ms: u64,
+) -> TimerGuard {
+    register_task_timer(
+        cx,
+        id,
+        label,
+        subsystem,
+        interval_ms,
+        "background_task",
+        "gpui-background-executor",
+    )
+}
+fn register_task_timer(
+    cx: &App,
+    id: &str,
+    label: &str,
+    subsystem: &str,
+    interval_ms: u64,
+    kind: &str,
+    queue: &str,
+) -> TimerGuard {
     let host = cx.global::<Observability>();
-    let timer = json!({"id":id,"label":label,"kind":"gpui_task","subsystem":subsystem,"queue_label":"gpui-main","interval_ms":interval_ms,"leeway_ms":null,"active":true});
+    let timer = json!({"id":id,"label":label,"kind":kind,"subsystem":subsystem,"queue_label":queue,"interval_ms":interval_ms,"leeway_ms":null,"active":true});
     host.timers
         .lock()
         .unwrap_or_else(|e| e.into_inner())
@@ -340,7 +382,7 @@ pub fn runtime_events(since: i64, limit: usize, cx: &App) -> Value {
         .collect::<Vec<_>>();
     json!({"events":events.into_iter().rev().take(limit).collect::<Vec<_>>().into_iter().rev().collect::<Vec<_>>(), "latest_seq":host.journal.latest_seq()})
 }
-fn runtime_projection(envelope: &EventEnvelope) -> Value {
+pub fn runtime_projection(envelope: &EventEnvelope) -> Value {
     let (kind, subsystem, tab, session, run, repo, detail) = match &envelope.payload {
         EventPayload::Ai(event) => (
             "ai_event",

@@ -296,7 +296,7 @@ fn schedule_initial_prompt(session: Arc<RuntimeSession>, prompt: String, main: M
         .name("chau7-next-runtime-prompt".into())
         .stack_size(512 * 1024)
         .spawn(move || {
-            let ctx = ToolContext { main: &main };
+            let ctx = ToolContext::internal(&main);
             match pending.wait_for_pending_initial_prompt() {
                 Ok(Some(prompt)) => {
                     let result = send_turn_internal(&pending, &prompt, None, &ctx);
@@ -799,7 +799,7 @@ mod tests {
     fn tools_validate_arguments_before_reaching_tabs() {
         let (tx, _rx) = futures::channel::mpsc::unbounded();
         let main = MainThread::for_tests(tx);
-        let ctx = ToolContext { main: &main };
+        let ctx = ToolContext::internal(&main);
         let call = |name: &str, args: Value| {
             let v: Value =
                 serde_json::from_str(&handle_tool_call(name, args.as_object().unwrap(), &ctx))

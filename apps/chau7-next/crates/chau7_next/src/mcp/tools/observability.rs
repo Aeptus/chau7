@@ -38,7 +38,7 @@ pub fn call(name: &str, args: &Map<String, Value>, ctx: &ToolContext) -> Option<
     match name {
         "chau7_runtime_info" => Some(
             ctx.main
-                .call(|cx| {
+                .read(|cx| {
                     let mut info = crate::performance::runtime_info();
                     info["codex_feedback"] =
                         serde_json::to_value(crate::runtime::codex_feedback::health(cx))
@@ -48,35 +48,48 @@ pub fn call(name: &str, args: &Map<String, Value>, ctx: &ToolContext) -> Option<
                         .unwrap_or(Value::Null);
                     encode_sorted(&info)
                 })
-                .unwrap_or_else(|| json_error("App is shutting down")),
+                .unwrap_or_else(|error| {
+                    let mut info = crate::performance::runtime_info();
+                    info["main_thread"] = error.payload();
+                    info["codex_feedback"] = Value::Null;
+                    info["event_journal"] = Value::Null;
+                    encode_sorted(&info)
+                }),
         ),
         "chau7_performance_snapshot" => Some(
             ctx.main
-                .call(|cx| crate::performance::capture(cx))
+                .read(|cx| crate::performance::capture(cx))
                 .map(|value| encode_sorted(&value))
-                .unwrap_or_else(|| json_error("App is shutting down")),
+                .unwrap_or_else(|error| {
+                    encode_sorted(&match error {
+                        crate::mcp::ReadError::TimedOut => {
+                            crate::performance::unresponsive_snapshot()
+                        }
+                        crate::mcp::ReadError::Closed => error.payload(),
+                    })
+                }),
         ),
         "chau7_runtime_events" => {
             let since = arg_int(args, "since_millis").unwrap_or(i64::MIN);
             let limit = arg_int(args, "limit").unwrap_or(200).clamp(1, 500) as usize;
             Some(
                 ctx.main
-                    .call(move |cx| {
+                    .read(move |cx| {
                         encode_sorted(&crate::observability::runtime_events(since, limit, cx))
                     })
-                    .unwrap_or_else(|| json_error("App is shutting down")),
+                    .unwrap_or_else(|error| encode_sorted(&error.payload())),
             )
         }
         "chau7_timer_inventory" => Some(
             ctx.main
-                .call(|cx| encode_sorted(&crate::observability::timer_inventory(cx)))
-                .unwrap_or_else(|| json_error("App is shutting down")),
+                .read(|cx| encode_sorted(&crate::observability::timer_inventory(cx)))
+                .unwrap_or_else(|error| encode_sorted(&error.payload())),
         ),
         "repo_get_events" => {
             if arg_str(args, "repo_path").is_none() {
                 return Some(json_error("repo_path is required"));
             }
-            let state = ctx.main.call(|cx| {
+            let state = ctx.main.read(|cx| {
                 let journal = crate::observability::journal(cx);
                 let mut aliases = std::collections::HashMap::new();
                 for window in crate::mcp::windows::windows(cx) {
@@ -90,12 +103,13 @@ pub fn call(name: &str, args: &Map<String, Value>, ctx: &ToolContext) -> Option<
                 (journal, aliases)
             });
             Some(match state {
-                Some((Some(journal), aliases)) => match journal.persisted_events(0, 50_000) {
+                Ok((Some(journal), aliases)) => match journal.persisted_events(0, 50_000) {
                     Ok(events) => {
                         encode_sorted(&crate::observability::repo_events(&events, args, &aliases))
                     }
                     Err(error) => json_error(&error),
                 },
+                Err(error) => encode_sorted(&error.payload()),
                 _ => json_error("Event journal is unavailable"),
             })
         }

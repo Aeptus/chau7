@@ -76,6 +76,44 @@ impl MainThread {
         })
     }
 
+    /// Enqueue a main-thread job without blocking the caller during teardown.
+    pub fn dispatch(&self, f: impl FnOnce(&mut App) + Send + 'static) -> bool {
+        self.jobs.unbounded_send(Box::new(f)).is_ok()
+    }
+
+    /// Bounded read-only query. Timed-out queued queries are cancelled; this
+    /// never limits an approval dialog or turns a late mutation into a retry.
+    pub fn read_timeout<T: Send + 'static>(
+        &self,
+        timeout: std::time::Duration,
+        f: impl FnOnce(&mut App) -> T + Send + 'static,
+    ) -> Result<T, ReadError> {
+        let (sender, receiver) = std::sync::mpsc::sync_channel(1);
+        let cancelled = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let cancelled_job = cancelled.clone();
+        if !self.dispatch(move |cx| {
+            if !cancelled_job.load(std::sync::atomic::Ordering::Acquire) {
+                let _ = sender.send(f(cx));
+            }
+        }) {
+            return Err(ReadError::Closed);
+        }
+        match receiver.recv_timeout(timeout) {
+            Ok(value) => Ok(value),
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                cancelled.store(true, std::sync::atomic::Ordering::Release);
+                Err(ReadError::TimedOut)
+            }
+            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => Err(ReadError::Closed),
+        }
+    }
+    pub fn read<T: Send + 'static>(
+        &self,
+        f: impl FnOnce(&mut App) -> T + Send + 'static,
+    ) -> Result<T, ReadError> {
+        self.read_timeout(std::time::Duration::from_secs(1), f)
+    }
+
     /// Like [`Self::call`], for work that answers later (a dialog): `f` gets
     /// the reply sender and may hand it to a task.
     pub fn call_async<T: Send + 'static>(
@@ -87,6 +125,41 @@ impl MainThread {
             .unbounded_send(Box::new(move |cx| f(cx, tx)))
             .ok()?;
         futures::executor::block_on(rx).ok()
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReadError {
+    TimedOut,
+    Closed,
+}
+impl ReadError {
+    pub fn payload(self) -> serde_json::Value {
+        match self {
+            Self::TimedOut => {
+                serde_json::json!({"error":"main_thread_unresponsive","retryable":true,"timeout_ms":1000})
+            }
+            Self::Closed => serde_json::json!({"error":"App is shutting down","retryable":false}),
+        }
+    }
+}
+
+#[cfg(test)]
+mod main_thread_tests {
+    use super::*;
+    #[test]
+    fn queued_read_is_bounded_and_closed_channel_is_distinguished() {
+        let (jobs, mut receiver) = mpsc::unbounded();
+        let main = MainThread::for_tests(jobs);
+        let started = std::time::Instant::now();
+        assert_eq!(
+            main.read_timeout(std::time::Duration::from_millis(10), |_| 42),
+            Err(ReadError::TimedOut)
+        );
+        assert!(started.elapsed() < std::time::Duration::from_secs(2));
+        assert!(receiver.try_recv().is_ok());
+        drop(receiver);
+        assert_eq!(main.read(|_| 42), Err(ReadError::Closed));
     }
 }
 

@@ -6,6 +6,7 @@ use std::io::{BufRead, BufReader, Read, Write};
 use std::path::PathBuf;
 
 use chau7_next_core::data_root::MCP_SERVER_NAME;
+use chau7_next_core::mcp::handshake::Handshake;
 use chau7_next_core::mcp::protocol::{McpHost, handle_line};
 use serde_json::{Map, Value};
 
@@ -59,15 +60,24 @@ pub(super) fn spawn(socket: PathBuf, main: MainThread) {
 /// The app side of one client session.
 struct Session {
     main: MainThread,
+    client_id: String,
+    handshake: Handshake,
 }
 
 impl McpHost for Session {
+    fn handshake(&mut self) -> &mut Handshake {
+        &mut self.handshake
+    }
     fn tool_definitions(&self) -> Vec<Value> {
         tools::definitions()
     }
 
     fn call_tool(&mut self, name: &str, arguments: &Map<String, Value>) -> String {
-        tools::call(name, arguments, &ToolContext { main: &self.main })
+        tools::call(
+            name,
+            arguments,
+            &ToolContext::connection(&self.main, &self.client_id),
+        )
     }
 
     fn resource_definitions(&self) -> Vec<Value> {
@@ -113,7 +123,16 @@ fn run_session(conn: Box<dyn Connection>, main: MainThread) {
         }
     };
     let mut reader = BufReader::new(conn);
-    let mut session = Session { main };
+    let client_id = uuid::Uuid::new_v4().to_string();
+    if super::control::connect(&client_id).is_err() {
+        writer.shutdown();
+        return;
+    }
+    let mut session = Session {
+        main,
+        client_id,
+        handshake: Handshake::default(),
+    };
     let mut line = Vec::new();
     loop {
         match read_capped_line(&mut reader, &mut line, MAX_LINE_BYTES) {
@@ -135,6 +154,7 @@ fn run_session(conn: Box<dyn Connection>, main: MainThread) {
             break;
         }
     }
+    super::control::disconnect(&session.client_id, &session.main);
     writer.shutdown();
 }
 

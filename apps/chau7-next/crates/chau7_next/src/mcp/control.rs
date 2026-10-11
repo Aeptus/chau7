@@ -95,7 +95,7 @@ pub fn is_connected(owner: &str) -> bool {
 /// Connection teardown revokes only that client's process-local capabilities.
 pub fn disconnect(owner: &str, main: &MainThread) {
     let removed = lock_controls().grants.disconnect(owner);
-    let _ = main.call(move |cx| {
+    let _ = main.dispatch(move |cx| {
         for uuid in removed {
             // A locally confirmed transfer may have happened after teardown.
             if lock_controls().grants.has_tab(uuid) {
