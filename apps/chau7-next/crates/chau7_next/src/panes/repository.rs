@@ -96,7 +96,15 @@ impl RepositoryPane {
             }),
             cx.subscribe(&search, |_, _, _: &InputEvent, cx| cx.notify()),
         ];
+        let timer = crate::observability::register_timer(
+            cx,
+            &format!("repository.pane.{}", cx.entity_id()),
+            "Repository pane refresh",
+            "repository",
+            2000,
+        );
         let refresh_task = cx.spawn_in(window, async move |this, cx| {
+            let _timer = timer;
             loop {
                 cx.background_executor().timer(Duration::from_secs(2)).await;
                 let result = this.update_in(cx, |this, window, cx| {
