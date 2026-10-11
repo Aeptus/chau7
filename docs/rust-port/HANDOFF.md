@@ -50,7 +50,7 @@ Last updated 2026-10-11.
 
 ## 4. Next work, in order
 
-1. **Get a Mac build and hand test it** (section 6). Fix what breaks.
+1. **Hand test the macOS test package** (section 6). A build is now available; fix packaging or launch issues before expanding parity work.
 2. **Inventory delta.** The Swift app grew a lot since April (124 new core
    files, Overlay split, settings stores and Permission Center, repository
    pane, hook installers, skills installer, usage and dashboard, event spine,
@@ -115,11 +115,13 @@ nothing new appears under `~/.chau7` or `~/Library/Application Support/Chau7`.
 
 ```text
 Read docs/rust-port/HANDOFF.md, then AGENT-PLAYBOOK.md and
-REBASE-ON-AEPTUS.md, on branch feat/chau7-next. Goal: Chau7 Next at full
-parity with the CURRENT Swift app on macOS, running side by side with it.
-Step 1: check CI on feat/chau7-next and fix any macOS build failure.
-Step 2: do the inventory delta against the current Swift sources
-(REBASE-ON-AEPTUS.md section 5), new rows at the end of each inventory
-file, then port them in batches of parallel agents as in the playbook.
+REBASE-ON-AEPTUS.md, on branch feat/chau7-next. Current milestone: an
+isolated macOS test app named Chau7 Next, running beside the Swift app.
+Step 1: check the latest CI package and the validation record in
+MACOS-TEST-PACKAGE.md. Fix any packaging or launch failure.
+Step 2: complete the Mac hand-test checklist and record actual results.
+The inventory delta against current Swift sources and full parity are later
+work; use REBASE-ON-AEPTUS.md section 5 and AGENT-PLAYBOOK.md when that
+milestone is requested.
 Follow CLAUDE.md (Aethyme broker, commit format). No em dashes.
 ```

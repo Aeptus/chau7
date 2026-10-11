@@ -44,15 +44,26 @@ its one-line BGRA conversion fix retains the same behavior.
 
 ## Final CI package checked
 
-Code revision `adda113b105a8fb540266e9b34066f6d774b01f7` passed Next's
-format, Clippy and workspace tests on macOS and Linux and produced the
+Code revision `f5da7da54240821222e5613c0886ad4c0130ab29` passed Next's
+format, Clippy and workspace tests on all three platforms and produced the
 `Chau7-Next-macOS-arm64` artifact:
-[CI run 38122553605](https://github.com/Aeptus/chau7/actions/runs/38122553605).
-Windows passed format and Clippy but failed seven core tests after the first
-CTO assertion was corrected. The remaining assertions assumed Unix path
-strings; a binary lookup fixture used POSIX PATH semantics with Windows
-drive letters. Corrections are pending CI validation. Runtime behavior is
-unchanged by these test corrections.
+[CI run 38124303567](https://github.com/Aeptus/chau7/actions/runs/38124303567).
+
+| Platform | Passing tests | Ignored tests/examples |
+|---|---:|---:|
+| macOS | 2,167 | 2 |
+| Linux | 2,184 | 2 |
+| Windows | 2,141 | 1 |
+
+Earlier Windows runs exposed path assertions that assumed Unix strings and a
+binary lookup fixture that used POSIX PATH semantics with Windows drive
+letters. These test corrections leave runtime behavior unchanged.
+
+The corrected release core suite at `f5da7da5` passed all 1,917 tests on the
+local Mac, including the Swift-path isolation audit. Shell generation tests
+use POSIX fixtures; the POSIX PATH/executable lookup test remains enabled on
+Unix and is excluded on Windows. Other expectations use native path joins.
+
 Broker branch pushes are checked when their PR opens, avoiding duplicate
 matrix runs, and failed jobs retain dependency caches for later corrections.
 
@@ -61,7 +72,7 @@ plist identity and source SHA, all executable signatures, and bundle signature
 passed. Isolated startup, MCP initialization/tool list, an actual `tab_list`
 response containing one tab, normal quit and saved session all passed.
 The final app, ZIP and SHA-256 file are available locally in
-`~/Downloads/Chau7-Next-CI-adda113b/`.
+`~/Downloads/Chau7-Next-CI-f5da7da5/`.
 
 ## Obtain a package
 
