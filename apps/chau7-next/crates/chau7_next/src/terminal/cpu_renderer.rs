@@ -24,6 +24,11 @@ struct CpuText {
 struct CpuTextGlobal(Arc<CpuText>);
 impl Global for CpuTextGlobal {}
 
+pub(crate) fn glyph_cache_bytes(cx: &App) -> Option<u64> {
+    cx.try_global::<CpuTextGlobal>()
+        .map(|text| text.0.glyphs.lock().bytes as u64)
+}
+
 pub(crate) fn release_glyph_cache(cx: &App) -> u64 {
     let Some(text) = cx.try_global::<CpuTextGlobal>() else {
         return 0;
@@ -100,8 +105,13 @@ struct CachedFrame {
 #[derive(Default)]
 pub(super) struct FrameCache {
     frame: Option<CachedFrame>,
+    last_backend: Option<(bool, bool, std::time::Instant)>,
 }
 impl FrameCache {
+    pub fn diagnostics(&self) -> serde_json::Value {
+        let mode = |gpu: bool| if gpu { "gpu" } else { "cpu" };
+        serde_json::json!({"requested_renderer":self.last_backend.map(|(requested,_,_)|mode(requested)),"actual_renderer":self.last_backend.map(|(_,actual,_)|mode(actual)),"last_paint_age_seconds":self.last_backend.map(|(_,_,at)|at.elapsed().as_secs_f64()),"fallback_reason":self.last_backend.and_then(|(requested,actual,_)|(!requested&&actual).then_some("cpu_text_system_unavailable")),"cached_cpu_bitmap_bytes":self.bytes()})
+    }
     pub fn bytes(&self) -> u64 {
         self.frame
             .as_ref()
@@ -336,16 +346,25 @@ impl<'a> GridCanvas<'a> {
         cache: Arc<Mutex<FrameCache>>,
         cx: &mut App,
     ) -> Self {
-        if gpu {
+        let text = (!gpu)
+            .then(|| {
+                cx.try_global::<CpuTextGlobal>()
+                    .map(|global| global.0.clone())
+            })
+            .flatten();
+        let actual_gpu = gpu || text.is_none();
+        if actual_gpu {
             cache.lock().drop_previous(window, cx);
         }
+        cache.lock().last_backend = Some((gpu, actual_gpu, std::time::Instant::now()));
         Self {
-            surface: (!gpu).then(|| Surface::new(bounds, window.scale_factor())),
-            text: (!gpu).then(|| cx.global::<CpuTextGlobal>().0.clone()),
+            surface: (!actual_gpu).then(|| Surface::new(bounds, window.scale_factor())),
+            text,
             window,
             cache,
         }
     }
+
     pub fn paint_quad(&mut self, quad: PaintQuad) {
         let Some(surface) = self.surface.as_mut() else {
             self.window.paint_quad(quad);
@@ -621,6 +640,24 @@ mod tests {
             dilation: 0,
         }
     }
+    #[test]
+    fn renderer_diagnostics_report_observed_path_without_faking_unpainted_values() {
+        let mut cache = FrameCache::default();
+        let empty = cache.diagnostics();
+        assert!(empty["actual_renderer"].is_null());
+        assert!(empty["last_paint_age_seconds"].is_null());
+        assert_eq!(empty["cached_cpu_bitmap_bytes"], 0);
+        cache.last_backend = Some((false, true, std::time::Instant::now()));
+        let fallback = cache.diagnostics();
+        assert_eq!(fallback["requested_renderer"], "cpu");
+        assert_eq!(fallback["actual_renderer"], "gpu");
+        assert_eq!(fallback["fallback_reason"], "cpu_text_system_unavailable");
+        cache.last_backend = Some((false, false, std::time::Instant::now()));
+        let cpu = cache.diagnostics();
+        assert_eq!(cpu["actual_renderer"], "cpu");
+        assert!(cpu["fallback_reason"].is_null());
+    }
+
     #[test]
     fn empty_glyphs_are_skipped_and_repeated_glyphs_use_the_cpu_cache() {
         let platform = Arc::new(RecordingText {
