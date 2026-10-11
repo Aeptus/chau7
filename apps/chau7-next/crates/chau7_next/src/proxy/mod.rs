@@ -288,6 +288,7 @@ impl ProxyManager {
                 self.recent.truncate(MAX_RECENT_CALLS);
                 Some(event)
             }
+            ProxyMessage::GenerationProgress { .. } => None,
             ProxyMessage::TaskCandidate(candidate) => {
                 log::info!("Task candidate received: {}", candidate.suggested_name);
                 self.pending_candidates
@@ -368,7 +369,20 @@ fn tick(cx: &mut App) {
         .map(|ipc| ipc.messages.try_iter().collect())
         .unwrap_or_default();
     let mut calls = Vec::new();
+    let mut rates = Vec::new();
     for message in messages {
+        match &message {
+            ProxyMessage::ApiCall {
+                tab_id: Some(tab),
+                token_rate: Some(reading),
+                ..
+            }
+            | ProxyMessage::GenerationProgress {
+                tab_id: tab,
+                reading,
+            } => rates.push((tab.clone(), reading.clone())),
+            _ => {}
+        }
         changed = true;
         if let Some(call) = m.handle(message) {
             calls.push(call);
@@ -385,6 +399,9 @@ fn tick(cx: &mut App) {
         m.last_stats = Some(Instant::now());
         m.port
     });
+    for (tab, reading) in rates {
+        crate::telemetry::record_token_rate(&tab, reading, cx);
+    }
     if let Some(port) = stats_port {
         cx.spawn(async move |cx| {
             let fetched = cx

@@ -344,7 +344,7 @@ fn repos_page(data: &AnalyticsData, chrome: Chrome) -> gpui::Div {
                 div()
                     .font_family("Menlo")
                     .text_color(ui::tone_color(Tone::Warn, chrome))
-                    .child(format!("${:.2}", repo.total_cost)),
+                    .child(numbers::currency(repo.total_cost)),
             );
         }
         stats = stats.child(div().flex_1());
@@ -454,9 +454,30 @@ impl DebugConsole {
             }
             AnalyticsMode::Repos => repos_page(&data, chrome),
         };
+        let mut live = ui::group("Live generation speed", chrome);
+        let mut readings: Vec<_> = crate::telemetry::token_rates(cx).into_iter().collect();
+        readings.sort_by(|(a, _), (b, _)| a.cmp(b));
+        if readings.is_empty() {
+            live = live.child(ui::caption("No observed generation speed yet.", chrome));
+        }
+        for (tab, reading) in readings {
+            live = live
+                .child(detail_row(
+                    format!("{} · {}", tab, reading.provider),
+                    vec![(reading.formatted(), Some(Tone::Info))],
+                    chrome,
+                ))
+                .child(ui::caption(reading.detail(), chrome));
+        }
         ui::page(
             "analytics-page",
-            div().flex().flex_col().gap_3().child(picker).child(page),
+            div()
+                .flex()
+                .flex_col()
+                .gap_3()
+                .child(picker)
+                .child(live)
+                .child(page),
         )
         .into_any_element()
     }
