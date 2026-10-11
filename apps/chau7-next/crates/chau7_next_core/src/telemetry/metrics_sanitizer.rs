@@ -14,9 +14,11 @@ pub fn sanitize(
 ) -> (ExtractedRunContent, Option<String>) {
     let mut sanitized = content.clone();
 
-    let usage = TokenUsage::new(
+    let usage = TokenUsage::canonical(
         sanitized.total_input_tokens.unwrap_or(0),
         sanitized.total_cached_input_tokens.unwrap_or(0),
+        sanitized.total_cache_creation_input_tokens.unwrap_or(0),
+        sanitized.total_cache_read_input_tokens.unwrap_or(0),
         sanitized.total_output_tokens.unwrap_or(0),
         sanitized.total_reasoning_output_tokens.unwrap_or(0),
     );
@@ -24,12 +26,16 @@ pub fn sanitize(
     if !usage.has_any_tokens() {
         sanitized.total_input_tokens = None;
         sanitized.total_cached_input_tokens = None;
+        sanitized.total_cache_creation_input_tokens = None;
+        sanitized.total_cache_read_input_tokens = None;
         sanitized.total_output_tokens = None;
         sanitized.total_reasoning_output_tokens = None;
         sanitized.token_usage_state = TelemetryMetricState::Missing;
     } else if is_implausible(&usage) {
         sanitized.total_input_tokens = None;
         sanitized.total_cached_input_tokens = None;
+        sanitized.total_cache_creation_input_tokens = None;
+        sanitized.total_cache_read_input_tokens = None;
         sanitized.total_output_tokens = None;
         sanitized.total_reasoning_output_tokens = None;
         sanitized.cost_usd = None;

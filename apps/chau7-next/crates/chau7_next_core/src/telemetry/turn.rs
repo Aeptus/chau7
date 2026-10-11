@@ -44,6 +44,10 @@ pub struct TelemetryTurn {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cached_input_tokens: Option<i64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cache_creation_input_tokens: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cache_read_input_tokens: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub output_tokens: Option<i64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reasoning_output_tokens: Option<i64>,
@@ -69,6 +73,8 @@ impl TelemetryTurn {
             content: None,
             input_tokens: None,
             cached_input_tokens: None,
+            cache_creation_input_tokens: None,
+            cache_read_input_tokens: None,
             output_tokens: None,
             reasoning_output_tokens: None,
             tool_calls: Vec::new(),
@@ -78,9 +84,11 @@ impl TelemetryTurn {
     }
 
     pub fn token_usage(&self) -> TokenUsage {
-        TokenUsage::new(
+        TokenUsage::canonical(
             self.input_tokens.unwrap_or(0),
             self.cached_input_tokens.unwrap_or(0),
+            self.cache_creation_input_tokens.unwrap_or(0),
+            self.cache_read_input_tokens.unwrap_or(0),
             self.output_tokens.unwrap_or(0),
             self.reasoning_output_tokens.unwrap_or(0),
         )
