@@ -502,6 +502,51 @@ impl DebugConsole {
                 chrome,
             ));
         }
+        body = body
+            .child(ui::state_row(
+                "Deferred cancellations",
+                runtime.deferred_cancel_count.to_string(),
+                chrome,
+            ))
+            .child(ui::state_row(
+                "Eligible deferrals",
+                runtime.deferred_eligible_count().to_string(),
+                chrome,
+            ));
+        if let Some(paths) = crate::cto::paths() {
+            body = body.child(ui::state_row(
+                "Diagnostic state file",
+                paths.state_file().display().to_string(),
+                chrome,
+            ));
+        }
+        if let Some(gain) = &runtime.gain_stats {
+            body = body.child(ui::state_row(
+                "Last observed gain",
+                format!(
+                    "{} commands; {} tokens saved ({:.1}%)",
+                    gain.commands, gain.saved_tokens, gain.savings_pct
+                ),
+                chrome,
+            ));
+        }
+        if let Some(sample) = runtime.gain_stats_last_sampled_at {
+            body = body.child(ui::state_row(
+                "Gain sample age",
+                format_uptime(
+                    (chau7_next_core::token_optimization::reference_now() - sample).max(0.0) as i64,
+                ),
+                chrome,
+            ));
+        }
+        if !runtime.trigger_breakdown.is_empty() {
+            let mut triggers: Vec<_> = runtime.trigger_breakdown.iter().collect();
+            triggers.sort();
+            body = body.child(ui::caption("Decision Triggers", chrome));
+            for (trigger, count) in triggers {
+                body = body.child(ui::state_row(trigger.clone(), count.to_string(), chrome));
+            }
+        }
         if !runtime.reason_breakdown.is_empty() {
             let total: i64 = runtime.reason_breakdown.values().sum();
             let mut reasons: Vec<_> = runtime.reason_breakdown.iter().collect();

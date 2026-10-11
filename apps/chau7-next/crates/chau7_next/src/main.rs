@@ -227,6 +227,7 @@ fn main() {
             scripting::stop(cx);
             // Token optimizer: no flags or wrappers outlive the app.
             cto::teardown();
+            let cto_worker = cto::shutdown_state_writer();
             // Shells get SIGTERM at once (`closeSessionForTermination`).
             terminal::session::terminate_all_for_quit();
             logging::flush();
@@ -241,6 +242,9 @@ fn main() {
                     let _ = worker.join();
                 }
                 if let Some(worker) = worker {
+                    let _ = worker.join();
+                }
+                if let Some(worker) = cto_worker {
                     let _ = worker.join();
                 }
                 incidents::shutdown();
