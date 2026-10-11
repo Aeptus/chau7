@@ -23,7 +23,7 @@ use objc2_app_kit::{
     NSRulerView, NSScrollView, NSStringDrawing, NSTextInputClient, NSTextView, NSView,
 };
 use objc2_foundation::{
-    NSDictionary, NSObjectProtocol, NSPoint, NSRange, NSRect, NSSize, NSString,
+    NSDictionary, NSObjectProtocol, NSPoint, NSRange, NSRect, NSSize, NSString, NSUndoManager,
 };
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 use std::{
@@ -129,6 +129,7 @@ impl Shared {
 }
 struct SourceIvars {
     shared: Rc<Shared>,
+    history: editing::SourceHistory,
 }
 define_class!(
     #[unsafe(super = NSTextView)]
@@ -138,6 +139,10 @@ define_class!(
     struct SourceTextView;
     unsafe impl NSObjectProtocol for SourceTextView {}
     impl SourceTextView {
+        #[unsafe(method_id(undoManager))]
+        fn source_undo_manager(&self) -> Option<Retained<NSUndoManager>> {
+            Some(self.ivars().history.manager())
+        }
         #[unsafe(method(didChangeText))]
         fn changed(&self) {
             // SAFETY: exact NSTextView superclass selector and signature.
@@ -287,7 +292,10 @@ impl SourceTextView {
     }
 
     fn new(mtm: MainThreadMarker, shared: Rc<Shared>) -> Retained<Self> {
-        let this = Self::alloc(mtm).set_ivars(SourceIvars { shared });
+        let this = Self::alloc(mtm).set_ivars(SourceIvars {
+            shared,
+            history: editing::SourceHistory::new(mtm),
+        });
         unsafe {
             msg_send![super(this),initWithFrame:NSRect::new(NSPoint::new(0.,0.),NSSize::new(400.,400.))]
         }
@@ -813,6 +821,9 @@ fn bytes_to_range(text: &str, range: std::ops::Range<usize>) -> NSRange {
 
 impl Drop for NativeMarkdown {
     fn drop(&mut self) {
+        // Clear the owned manager even if the NSScrollView was already detached.
+        // This neither depends on a live window nor clears a sibling's history.
+        self.text.ivars().history.clear();
         self.detach();
     }
 }

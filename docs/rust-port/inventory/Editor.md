@@ -58,6 +58,11 @@ Text highlighting and editing building blocks. `SyntaxHighlighter` colors termin
   selection/visible rect and preceding undo history; the production-helper
   fixture also passes append Undo/Redo, stale-document rejection, replacement
   history and explicit-load history reset assertions.
+  Each native source now owns its own undo manager, independent of its window.
+  Closing the source clears that manager even after detachment; preview
+  detachment retains its history. The isolated AppKit fixture proves both
+  source views are released after deferred callbacks, the closed history is
+  empty and the sibling source retains working Undo/Redo.
   File loads now open source by default, preserving
   the chosen preview mode on same-file reload. Explicit loads cancel stale
   native queued input, reset native undo even for identical file content and
