@@ -51,6 +51,14 @@ pub struct InstanceGuard {
     owner: Owner,
     continuity_path: PathBuf,
 }
+impl Drop for InstanceGuard {
+    fn drop(&mut self) {
+        // A transient fork or duplicated descriptor may still reference the
+        // same open file description. Release the owner's lock explicitly
+        // rather than waiting for the last inherited descriptor to close.
+        let _ = self._file.unlock();
+    }
+}
 impl InstanceGuard {
     pub fn acquire(lock_path: &Path, continuity_path: PathBuf) -> io::Result<Acquisition> {
         fs::create_dir_all(
@@ -172,6 +180,23 @@ mod tests {
         assert!(f.0.join("app-instance.lock").exists());
         let next = guard(f.acquire());
         assert_ne!(next.owner().launch_token, token);
+    }
+    #[test]
+    fn owner_drop_releases_lock_even_while_a_duplicate_descriptor_survives() {
+        let fixture = Fixture::new();
+        let owner = guard(fixture.acquire());
+        let duplicate = owner._file.try_clone().unwrap();
+        assert!(matches!(fixture.acquire(), Acquisition::AlreadyRunning(_)));
+        drop(owner);
+        let next = guard(fixture.acquire());
+        let token = next.owner().launch_token;
+        drop(duplicate);
+        match fixture.acquire() {
+            Acquisition::AlreadyRunning(Some(owner)) => assert_eq!(owner.launch_token, token),
+            _ => panic!("closing the retired duplicate released the new owner's lock"),
+        }
+        drop(next);
+        assert!(matches!(fixture.acquire(), Acquisition::Acquired(_)));
     }
     #[test]
     fn unknown_clean_and_abrupt_outcomes_do_not_invent_a_crash() {
