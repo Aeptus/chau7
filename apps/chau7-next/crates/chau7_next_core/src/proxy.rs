@@ -1094,7 +1094,13 @@ mod tests {
             "CHAU7_TLS_KEY",
             "CHAU7_INJECTION_RULES",
         ] {
-            assert!(get(key).starts_with("/home/u/.chau7-next"), "{key}");
+            let path = PathBuf::from(get(key));
+            let home = PathBuf::from("/home/u");
+            assert!(
+                path.starts_with(home.join(".chau7-next"))
+                    || path.starts_with(home.join(".chau7-next-state")),
+                "{key}"
+            );
         }
         assert_eq!(get("CHAU7_PARENT_PID"), std::process::id().to_string());
         let shell = shell_env(18090, true, "TERM", "TAB", "/p");

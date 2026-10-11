@@ -650,7 +650,9 @@ mod tests {
         let root = DataRoot::with_home(PathBuf::from("/tmp/chau7-isolated-home"), true);
         assert_eq!(
             root.expand_tilde("~/project"),
-            "/tmp/chau7-isolated-home/project"
+            PathBuf::from("/tmp/chau7-isolated-home")
+                .join("project")
+                .to_string_lossy()
         );
         assert_eq!(root.expand_tilde("/abs/path"), "/abs/path");
         assert_eq!(root.expand_tilde("~user/x"), "~user/x");

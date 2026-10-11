@@ -765,6 +765,17 @@ mod tests {
         CtoPaths::from_root(&root)
     }
 
+    // Shell generation uses POSIX paths even when its pure tests run on Windows.
+    fn posix_paths() -> CtoPaths {
+        CtoPaths {
+            wrapper_dir: PathBuf::from("/h/.chau7-next/cto_bin"),
+            flag_dir: PathBuf::from("/h/.chau7-next/cto_active"),
+            bin_dir: PathBuf::from("/h/.chau7-next/bin"),
+            data_dir: PathBuf::from("/h/.chau7-next/cto_data"),
+            swift_wrapper_dir: PathBuf::from("/h/.chau7/cto_bin"),
+        }
+    }
+
     #[test]
     fn paths_are_chau7_next_folders() {
         let root = DataRoot::with_home(PathBuf::from("/Users/me"), false);
@@ -793,7 +804,8 @@ mod tests {
         let root = DataRoot::with_home(PathBuf::from("/h"), false);
         let paths = CtoPaths::from_root(&root);
         let once = paths.prepended_path("/usr/bin:/bin");
-        assert_eq!(once, "/h/.chau7-next/cto_bin:/usr/bin:/bin");
+        let wrapper = PathBuf::from("/h").join(".chau7-next").join("cto_bin");
+        assert_eq!(once, format!("{}:/usr/bin:/bin", wrapper.display()));
         assert_eq!(paths.prepended_path(&once), once);
     }
 
@@ -805,14 +817,15 @@ mod tests {
 
     #[test]
     fn generic_script_routes_through_the_optimizer() {
-        let paths = paths_in(Path::new("/h"));
+        let paths = posix_paths();
         let script = wrapper_script("ls", Some("/bin/ls"), &paths);
         assert!(script.starts_with("#!/bin/bash"));
         assert!(script.contains("\"/h/.chau7-next/cto_active/$CHAU7_CTO_SESSION\""));
         assert!(script.contains("exec \"/bin/ls\" \"$@\""));
         assert!(script.contains("\"$_CHAU7_OPTIM\" ls \"$@\""));
         assert!(script.contains("CHAU7_CTO_BIN_DIR='/h/.chau7-next/cto_bin'"));
-        assert!(script.contains("RTK_DB_PATH='/h/.chau7-next/cto_data/history.db'"));
+        let database = paths.data_dir.join("history.db");
+        assert!(script.contains(&format!("RTK_DB_PATH={}", sq(&database.to_string_lossy()))));
         assert!(script.contains("|ls|$_rc|optimized"));
         assert!(!script.contains("[ ! -t 0 ]"));
     }
@@ -839,8 +852,7 @@ mod tests {
 
     #[test]
     fn runtime_scan_skips_both_wrapper_folders() {
-        let root = DataRoot::with_home(PathBuf::from("/h"), false);
-        let paths = CtoPaths::from_root(&root);
+        let paths = posix_paths();
         let script = wrapper_script("git", None, &paths);
         assert!(script.contains("[ \"$_dir\" = \"/h/.chau7-next/cto_bin\" ] && continue"));
         let swift = format!(
@@ -854,9 +866,10 @@ mod tests {
 
     #[test]
     fn cat_script_renders_markdown_and_routes_reads() {
-        let paths = paths_in(Path::new("/h"));
+        let paths = posix_paths();
         let script = wrapper_script("cat", Some("/bin/cat"), &paths);
-        assert!(script.contains("_CHAU7_MD=\"/h/.chau7-next/bin/chau7-md\""));
+        let renderer = paths.bin_dir.join("chau7-md");
+        assert!(script.contains(&format!("_CHAU7_MD={}", dq(&renderer.to_string_lossy()))));
         assert!(script.contains("\"$_CHAU7_OPTIM\" read \"$@\""));
         assert!(script.contains("[ \"$#\" -eq 0 ]"));
         assert!(script.contains("md|markdown"));
@@ -926,6 +939,8 @@ mod tests {
         let _ = fs::remove_dir_all(dir);
     }
 
+    // The resolver consumes a POSIX PATH and executable shell files.
+    #[cfg(unix)]
     #[test]
     fn real_binary_lookup_skips_wrapper_folders() {
         let dir = temp_dir("resolve");

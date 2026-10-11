@@ -44,11 +44,15 @@ its one-line BGRA conversion fix retains the same behavior.
 
 ## Final CI package checked
 
-The final code revision `adda113b105a8fb540266e9b34066f6d774b01f7`
-passes Next's format, Clippy and workspace tests on macOS, Linux and Windows:
+Code revision `adda113b105a8fb540266e9b34066f6d774b01f7` passed Next's
+format, Clippy and workspace tests on macOS and Linux and produced the
+`Chau7-Next-macOS-arm64` artifact:
 [CI run 38122553605](https://github.com/Aeptus/chau7/actions/runs/38122553605).
-It also produces `Chau7-Next-macOS-arm64` on macOS. The Windows correction
-uses native path joins in an existing CTO test; runtime behavior is unchanged.
+Windows passed format and Clippy but failed seven core tests after the first
+CTO assertion was corrected. The remaining assertions assumed Unix path
+strings; a binary lookup fixture used POSIX PATH semantics with Windows
+drive letters. Corrections are pending CI validation. Runtime behavior is
+unchanged by these test corrections.
 Broker branch pushes are checked when their PR opens, avoiding duplicate
 matrix runs, and failed jobs retain dependency caches for later corrections.
 
