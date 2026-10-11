@@ -137,6 +137,8 @@ struct Orphan {
     path: PathBuf,
     tab: Uuid,
     metadata: Metadata,
+    #[cfg(windows)]
+    identity: crate::file_identity::FileIdentity,
     modified: SystemTime,
     lines: usize,
     retained: bool,
@@ -149,6 +151,20 @@ fn tab_from_path(path: &Path) -> Option<Uuid> {
     let tab = Uuid::parse_str(id).ok()?;
     id.eq_ignore_ascii_case(&tab.to_string()).then_some(tab)
 }
+fn matches_open_snapshot(file: &File, orphan: &Orphan) -> io::Result<bool> {
+    let valid = same_file(&file.metadata()?, &orphan.metadata);
+    #[cfg(windows)]
+    let valid = valid && crate::file_identity::for_file(file)? == orphan.identity;
+    Ok(valid)
+}
+
+fn matches_path_snapshot(orphan: &Orphan) -> io::Result<bool> {
+    let valid = same_file(&fs::symlink_metadata(&orphan.path)?, &orphan.metadata);
+    #[cfg(windows)]
+    let valid = valid && crate::file_identity::for_path(&orphan.path)? == orphan.identity;
+    Ok(valid)
+}
+
 fn count_lines(file: &mut File) -> io::Result<usize> {
     if file.metadata()?.len() > MAX_FILE_BYTES {
         return Err(io::Error::other(
@@ -174,7 +190,7 @@ fn count_lines(file: &mut File) -> io::Result<usize> {
 }
 fn trim(orphan: &mut Orphan) -> io::Result<()> {
     let mut file = open_regular(&orphan.path, false, false)?;
-    if !same_file(&file.metadata()?, &orphan.metadata) {
+    if !matches_open_snapshot(&file, orphan)? {
         return Err(io::Error::other("shell history changed before trimming"));
     }
     let mut bytes = Vec::new();
@@ -210,11 +226,15 @@ fn trim(orphan: &mut Orphan) -> io::Result<()> {
         let mut out = options.open(&temp)?;
         out.write_all(retained.as_bytes())?;
         out.sync_all()?;
-        if !same_file(&fs::symlink_metadata(&orphan.path)?, &orphan.metadata) {
+        if !matches_path_snapshot(orphan)? {
             return Err(io::Error::other("shell history changed during trimming"));
         }
         fs::rename(&temp, &orphan.path)?;
         orphan.metadata = fs::symlink_metadata(&orphan.path)?;
+        #[cfg(windows)]
+        {
+            orphan.identity = crate::file_identity::for_file(&out)?;
+        }
         orphan.lines = retained.bytes().filter(|&b| b == b'\n').count();
         Ok(())
     })();
@@ -256,6 +276,14 @@ pub fn prune(
             report.failed_operations += 1;
             continue;
         };
+        #[cfg(windows)]
+        let identity = match crate::file_identity::for_file(&file) {
+            Ok(identity) => identity,
+            Err(_) => {
+                report.failed_operations += 1;
+                continue;
+            }
+        };
         let metadata = file.metadata()?;
         let Ok(lines) = count_lines(&mut file) else {
             report.failed_operations += 1;
@@ -267,6 +295,8 @@ pub fn prune(
             path,
             tab,
             metadata,
+            #[cfg(windows)]
+            identity,
             modified,
             lines,
             retained: true,
@@ -312,8 +342,7 @@ pub fn prune(
             report.protected_files += 1;
             continue;
         }
-        if fs::symlink_metadata(&orphan.path).is_ok_and(|m| same_file(&m, &orphan.metadata))
-            && fs::remove_file(&orphan.path).is_ok()
+        if matches_path_snapshot(&orphan).unwrap_or(false) && fs::remove_file(&orphan.path).is_ok()
         {
             report.retained_lines -= orphan.lines;
             report.removed_files += 1;
@@ -338,6 +367,41 @@ fn windows_history_handle_rejects_same_size_path_replacement() {
     assert!(!same_named_handle(&handle, &path).unwrap());
     drop(handle);
     fs::remove_dir_all(dir).unwrap();
+}
+
+#[cfg(all(test, windows))]
+#[test]
+fn windows_maintenance_preserves_equal_metadata_replacement_after_scanning() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    let home = std::env::temp_dir().join(format!("c7n-history-snapshot-{}", Uuid::new_v4()));
+    let root = DataRoot::with_home(home.clone(), true);
+    root.ensure_dirs().unwrap();
+    let tab = Uuid::new_v4();
+    let path = prepare(&root, tab, "bash").unwrap().unwrap();
+    fs::write(&path, b"old\n".repeat(10)).unwrap();
+    let original = fs::metadata(&path).unwrap();
+    let replacement = b"new\n".repeat(10);
+    let checks = AtomicUsize::new(0);
+    let report = prune(&root, &HashSet::new(), 0, |_| {
+        if checks.fetch_add(1, Ordering::SeqCst) == 1 {
+            fs::rename(&path, root.shell_histories_dir().join("retained-original")).unwrap();
+            fs::write(&path, &replacement).unwrap();
+            let file = File::options().write(true).open(&path).unwrap();
+            file.set_times(fs::FileTimes::new().set_modified(original.modified().unwrap()))
+                .unwrap();
+            assert!(
+                same_file(&original, &file.metadata().unwrap()),
+                "Fixture must collide under the previous metadata-only comparison"
+            );
+        }
+        false
+    })
+    .unwrap();
+    assert_eq!(report.trimmed_files, 0);
+    assert_eq!(report.removed_files, 0);
+    assert_eq!(report.failed_operations, 2);
+    assert_eq!(fs::read(&path).unwrap(), replacement);
+    fs::remove_dir_all(home).unwrap();
 }
 
 #[cfg(test)]
