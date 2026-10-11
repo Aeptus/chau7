@@ -1,7 +1,8 @@
 # Parity inventory
 
 What "full parity on macOS" means for Chau7 Next, feature by feature. One file
-per Swift module (format: [FORMAT.md](FORMAT.md)), 1,175 rows in total. The
+per Swift module (format: [FORMAT.md](FORMAT.md)). The original April baseline
+has 1,175 rows; current-source delta rows are appended without renumbering. The
 summary with counts per module is generated into
 [`../PARITY.md`](../PARITY.md).
 
@@ -55,10 +56,11 @@ Modules in the same wave are independent and can be ported in parallel.
 | 4 | Extra panes | Editor, DataExplorer, SplitPanes (editor, diff, preview, runbook panes) |
 | 5 | macOS integration and shipping | StatusBar, Debug, Logging, Views, Localization, Migration; Developer ID signing, notarization, updates |
 
-## Fix first
+## Historical fix-first list
 
-Differences between what Chau7 Next already ships and the Swift app, checked
-against both sources. These come before new features.
+This list was written during the April port and has become stale. The row
+status and the current-source audit are authoritative; this section is retained
+only while its entries are re-checked against the current baseline.
 
 | Row | Issue |
 |---|---|
