@@ -190,7 +190,7 @@ mod tests {
     }
     #[test]
     fn prompt_composition_preserves_pane_multi_select_and_options() {
-        let original = json!({"prompts":[{"id":"q","tab_id":1,"tab_title":"Shell","tool_name":"Claude","prompt":"Choose","options":[{"id":"1","label":"Keep","response":"1\r","is_destructive":false}],"detected_at":0.0,"pane_id":"00000000-0000-0000-0000-000000000003","is_multi_select":true}]});
+        let original = json!({"prompts":[{"id":"q","tab_id":1,"tab_title":"Shell","tool_name":"Claude","prompt":"Choose","options":[{"id":"1","label":"Keep","response":"1\r","is_destructive":false}],"detected_at":0,"pane_id":"00000000-0000-0000-0000-000000000003","is_multi_select":true}]});
         let payload: RemoteInteractivePromptListPayload =
             serde_json::from_value(original.clone()).unwrap();
         let wire = compose_prompt_list(&payload);
