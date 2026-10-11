@@ -32,6 +32,149 @@ pub struct UsageView {
     pub capture_installed: bool,
     pub refreshing: bool,
 }
+#[derive(Default)]
+struct ProviderHealth {
+    snapshots: std::collections::HashMap<
+        String,
+        chau7_next_core::telemetry::provider_health::HealthSnapshot,
+    >,
+    failures: u32,
+    next_allowed: Option<DateTime<Utc>>,
+}
+struct HealthGlobal(Arc<Mutex<ProviderHealth>>);
+impl Global for HealthGlobal {}
+pub fn provider_health(
+    cx: &App,
+) -> Vec<chau7_next_core::telemetry::provider_health::HealthSnapshot> {
+    let now = Utc::now();
+    cx.try_global::<HealthGlobal>()
+        .map(|g| {
+            g.0.lock()
+                .snapshots
+                .values()
+                .filter(|s| {
+                    let age = now.signed_duration_since(s.checked_at).num_seconds();
+                    (0..=300).contains(&age)
+                })
+                .cloned()
+                .collect()
+        })
+        .unwrap_or_default()
+}
+fn init_health(cx: &mut App) {
+    let state = Arc::new(Mutex::new(ProviderHealth::default()));
+    cx.set_global(HealthGlobal(state.clone()));
+    let executor = cx.background_executor().clone();
+    cx.background_executor()
+        .spawn(async move {
+            loop {
+                let now = Utc::now();
+                if state.lock().next_allowed.is_none_or(|at| now >= at) {
+                    let fetched = std::thread::scope(|scope| {
+                        let handles: Vec<_> = [
+                            (
+                                "anthropic",
+                                "https://status.claude.com/api/v2/summary.json",
+                                vec!["Claude API", "Claude Code"],
+                            ),
+                            (
+                                "openai",
+                                "https://status.openai.com/api/v2/summary.json",
+                                vec![
+                                    "Responses",
+                                    "Codex API",
+                                    "VS Code extension",
+                                    "Codex in ChatGPT Desktop",
+                                ],
+                            ),
+                            (
+                                "github",
+                                "https://www.githubstatus.com/api/v2/summary.json",
+                                vec!["Copilot", "Copilot AI Model Providers"],
+                            ),
+                            (
+                                "google",
+                                "https://status.cloud.google.com/incidents.json",
+                                vec![],
+                            ),
+                        ]
+                        .into_iter()
+                        .map(|(provider, url, fragments)| {
+                            scope.spawn(move || {
+                                let output = std::process::Command::new("curl")
+                                    .args([
+                                        "--fail",
+                                        "--silent",
+                                        "--show-error",
+                                        "--location",
+                                        "--max-time",
+                                        "10",
+                                        "--max-filesize",
+                                        "1048576",
+                                        url,
+                                    ])
+                                    .output()
+                                    .map_err(|e| e.to_string())?;
+                                if !output.status.success() {
+                                    return Err(format!("{provider} status fetch failed"));
+                                }
+                                let value: Value = serde_json::from_slice(&output.stdout)
+                                    .map_err(|e| e.to_string())?;
+                                if provider == "google" {
+                                    chau7_next_core::telemetry::provider_health::google_cloud(
+                                        &value, url, now,
+                                    )
+                                } else {
+                                    chau7_next_core::telemetry::provider_health::status_page(
+                                        &value, provider, &fragments, url, now,
+                                    )
+                                }
+                            })
+                        })
+                        .collect();
+                        handles
+                            .into_iter()
+                            .map(|h| {
+                                h.join().unwrap_or_else(|_| {
+                                    Err("Provider status worker stopped".into())
+                                })
+                            })
+                            .collect::<Vec<_>>()
+                    });
+                    let mut state = state.lock();
+                    let mut successes = 0;
+                    for result in fetched {
+                        match result {
+                            Ok(snapshot) => {
+                                successes += 1;
+                                state.snapshots.insert(snapshot.provider.clone(), snapshot);
+                            }
+                            Err(e) => log::debug!("Provider status unavailable: {e}"),
+                        }
+                    }
+                    if successes == 0 {
+                        state.failures += 1;
+                        state.next_allowed = Some(
+                            now + chrono::Duration::seconds(
+                                chau7_next_core::telemetry::provider_health::retry_delay(
+                                    state.failures,
+                                ),
+                            ),
+                        );
+                    } else {
+                        state.failures = 0;
+                        state.next_allowed = None;
+                    }
+                    state.snapshots.retain(|_, s| {
+                        now.signed_duration_since(s.checked_at).num_seconds() <= 300
+                    });
+                }
+                executor.timer(std::time::Duration::from_secs(60)).await;
+            }
+        })
+        .detach();
+}
+
 struct UsageState {
     root: DataRoot,
     history: Option<QuotaHistory>,
@@ -65,6 +208,7 @@ fn installed(root: &DataRoot) -> bool {
         .is_some_and(|s| s == helper(root).to_string_lossy())
 }
 pub fn init(cx: &mut App) {
+    init_health(cx);
     let root = cx.global::<AppData>().root.clone();
     let mut state = UsageState {
         root,

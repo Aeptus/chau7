@@ -18,5 +18,6 @@ pub mod turn;
 
 pub mod jsonl_tail;
 pub mod pricing;
+pub mod provider_health;
 pub mod quota;
 pub mod token_rate;
