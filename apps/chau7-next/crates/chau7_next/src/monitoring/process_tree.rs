@@ -13,6 +13,19 @@ use std::{
 use uuid::Uuid;
 
 const INTERVAL: Duration = Duration::from_millis(1500);
+const WORKER_THREAD: &str = "chau7-next-process-tree";
+fn register_process_timer(
+    registry: &crate::observability::TimerRegistry,
+) -> crate::observability::TimerGuard {
+    registry.register(
+        "monitor.process_tree",
+        "Shared native process tree",
+        "monitoring",
+        INTERVAL.as_millis() as u64,
+        "background_thread",
+        WORKER_THREAD,
+    )
+}
 #[derive(Default)]
 struct Schedule {
     immediate: bool,
@@ -105,7 +118,7 @@ pub fn subscribe(
         let worker = shared.clone();
         let main = MainThread::start(cx);
         std::thread::Builder::new()
-            .name("chau7-next-process-tree".into())
+            .name(WORKER_THREAD.into())
             .spawn(move || run(worker, main))
             .expect("process snapshot worker");
         cx.set_global(Service(shared));
@@ -114,14 +127,10 @@ pub fn subscribe(
     let id = Uuid::new_v4();
     {
         let mut state = shared.state.lock();
-        if state.subscribers.is_empty() && crate::observability::timer_registry(cx).is_some() {
-            state.timer = Some(crate::observability::register_background_timer(
-                cx,
-                "monitor.process_tree",
-                "Shared native process tree",
-                "monitoring",
-                1500,
-            ));
+        if state.subscribers.is_empty()
+            && let Some(registry) = crate::observability::timer_registry(cx)
+        {
+            state.timer = Some(register_process_timer(&registry));
         }
         state.subscribers.insert(id, Subscriber { pid, session });
         state.schedule.request(Instant::now(), false);
@@ -448,6 +457,21 @@ mod tests {
             .recv_timeout(Duration::from_secs(1))
             .expect("idle worker cancelled");
         thread.join().unwrap();
+    }
+
+    #[test]
+    fn process_timer_reports_actual_thread_and_lifetime() {
+        let registry = crate::observability::isolated_timer_registry();
+        let guard = register_process_timer(&registry);
+        let inventory = registry.inventory();
+        let timer = &inventory["timers"][0];
+        assert_eq!(timer["id"], "monitor.process_tree");
+        assert_eq!(timer["kind"], "background_thread");
+        assert_eq!(timer["queue_label"], WORKER_THREAD);
+        assert_eq!(timer["interval_ms"], INTERVAL.as_millis() as u64);
+        assert_eq!(timer["active"], true);
+        drop(guard);
+        assert_eq!(registry.inventory()["timers"][0]["active"], false);
     }
 
     #[cfg(unix)]
