@@ -15,7 +15,6 @@ use super::config_files::ConfigFiles;
 use super::export;
 use crate::platform::defaults;
 use crate::platform::icloud;
-use crate::settings::Settings;
 use crate::workspace::AppData;
 
 /// Wait after the last change before uploading (`iCloudSyncDebounceInterval`).
@@ -240,6 +239,7 @@ pub fn tick(cx: &mut App) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::settings::Settings;
 
     #[test]
     fn push_waits_for_the_debounce() {
