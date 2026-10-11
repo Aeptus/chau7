@@ -1001,6 +1001,48 @@ impl<'a> ProxyAnalyticsStore<'a> {
         f(&conn).unwrap_or(fallback)
     }
 
+    pub fn activity_samples(
+        &self,
+        after: Option<DateTime<Utc>>,
+    ) -> Vec<crate::telemetry::latency::ActivitySample> {
+        self.with(vec![],|conn| {
+            let mut stmt=conn.prepare("SELECT provider,endpoint,timestamp FROM api_calls WHERE status_code>=200 AND status_code<300 AND (?1 IS NULL OR timestamp >= ?1) ORDER BY timestamp,id")?;
+            let rows=stmt.query_map([after.map(|at|at.format("%Y-%m-%dT%H:%M:%S%.3fZ").to_string())],|row|{
+                let provider:String=row.get(0)?;let endpoint:String=row.get(1)?;let at:String=row.get(2)?;
+                if !crate::telemetry::latency::relevant_endpoint(&provider,&endpoint){return Ok(None);}
+                Ok(crate::telemetry::date_codec::parse_iso8601(Some(&at)).map(|timestamp|crate::telemetry::latency::ActivitySample{provider:provider.to_lowercase(),timestamp}))
+            })?;
+            rows.filter_map(|r|r.transpose()).collect()
+        })
+    }
+
+    /// Successful generation requests only. Prefer observed TTFT; old schemas
+    /// without TTFT keep their request latency instead of inventing a value.
+    pub fn latency_samples(
+        &self,
+        after: Option<DateTime<Utc>>,
+    ) -> Vec<crate::telemetry::latency::LatencySample> {
+        use crate::telemetry::latency::{
+            LatencySample, MetricKind, preferred_api_latency, relevant_endpoint,
+        };
+        self.with(vec![], |conn| {
+            let mut columns=conn.prepare("PRAGMA table_info(api_calls)")?;
+            let has_ttft=columns.query_map([],|row|row.get::<_,String>(1))?.filter_map(Result::ok).any(|name|name=="ttft_ms");
+            let sql=format!("SELECT id,provider,model,session_id,endpoint,latency_ms,{},timestamp FROM api_calls WHERE status_code >= 200 AND status_code < 300 AND (?1 IS NULL OR timestamp >= ?1) ORDER BY timestamp,id",if has_ttft {"ttft_ms"}else{"NULL"});
+            let mut stmt=conn.prepare(&sql)?;
+            let rows=stmt.query_map([after.map(|at|at.format("%Y-%m-%dT%H:%M:%S%.3fZ").to_string())], |row| {
+                let provider:String=row.get(1)?;let endpoint:String=row.get(4)?;
+                let latency=preferred_api_latency(row.get(5)?,row.get(6)?);
+                let timestamp:String=row.get(7)?;
+                if !relevant_endpoint(&provider,&endpoint) {return Ok(None);}
+                let Some(latency_ms)=latency else {return Ok(None);};
+                let Some(timestamp)=crate::telemetry::date_codec::parse_iso8601(Some(&timestamp)) else {return Ok(None);};
+                Ok(Some(LatencySample{id:format!("proxy|{}",row.get::<_,i64>(0)?),provider:provider.to_lowercase(),metric_kind:MetricKind::ApiRequest,latency_ms,timestamp,model:row.get(2)?,session_id:row.get(3)?,run_id:None,round_index:None,project_path:None,source_kind:"proxy_request".into()}))
+            })?;
+            rows.filter_map(|r|r.transpose()).collect::<rusqlite::Result<Vec<_>>>()
+        })
+    }
+
     /// Calls, tokens, cost and average latency, since `after` when given.
     pub fn overall_stats(&self, after: Option<DateTime<Utc>>) -> ProxyStats {
         let after = after.map(|d| crate::telemetry::date_codec::format_iso8601_fractional(&d));
@@ -1420,5 +1462,28 @@ mod tests {
         assert!(recent[0].timestamp > DateTime::<Utc>::MIN_UTC);
         assert!(!recent[0].debug_call().formatted_latency.is_empty());
         let _ = std::fs::remove_dir_all(dir);
+    }
+    #[test]
+    fn request_latency_filters_errors_and_prefers_ttft_on_new_and_legacy_schemas() {
+        for ttft in [true, false] {
+            let dir = std::env::temp_dir().join(format!(
+                "chau7-next-latency-db-{}-{ttft}",
+                std::process::id()
+            ));
+            let _ = std::fs::remove_dir_all(&dir);
+            std::fs::create_dir_all(&dir).unwrap();
+            let path = dir.join("db");
+            let conn = Connection::open(&path).unwrap();
+            conn.execute_batch(&format!("CREATE TABLE api_calls (id INTEGER PRIMARY KEY,provider TEXT,model TEXT,session_id TEXT,endpoint TEXT,latency_ms INTEGER,{}status_code INTEGER,timestamp TEXT);INSERT INTO api_calls(id,provider,endpoint,latency_ms,status_code,timestamp) VALUES (1,'openai','/v1/responses',500,200,'2026-10-11T10:00:00Z'),(2,'openai','/v1/models',50,200,'2026-10-11T10:00:00Z'),(3,'anthropic','/v1/messages',40,500,'2026-10-11T10:00:00Z');",if ttft {"ttft_ms INTEGER,"}else{""})).unwrap();
+            if ttft {
+                conn.execute("UPDATE api_calls SET ttft_ms=100 WHERE id=1", [])
+                    .unwrap();
+            }
+            drop(conn);
+            let samples = ProxyAnalyticsStore::new(&path).latency_samples(None);
+            assert_eq!(samples.len(), 1);
+            assert_eq!(samples[0].latency_ms, if ttft { 100 } else { 500 });
+            let _ = std::fs::remove_dir_all(dir);
+        }
     }
 }

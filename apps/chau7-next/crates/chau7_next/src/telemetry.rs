@@ -39,6 +39,8 @@ const REPAIR_LIMIT: i64 = 500;
 const PTY_LOG_DRAIN: std::time::Duration = std::time::Duration::from_millis(500);
 
 struct TelemetryGlobal(Arc<TelemetryRecorder>);
+struct PromptTimings(Mutex<chau7_next_core::telemetry::latency::PromptTiming>);
+impl Global for PromptTimings {}
 struct TokenRates(Arc<Mutex<chau7_next_core::telemetry::token_rate::TokenRateStore>>);
 impl Global for TokenRates {}
 /// Current observed reading only. Absence remains absence, never a zero rate.
@@ -91,6 +93,7 @@ impl Global for TelemetryGlobal {}
 
 /// Open the store (Chau7 Next's own file) and set up the recorder.
 pub fn init(cx: &mut App) {
+    cx.set_global(PromptTimings(Mutex::new(Default::default())));
     usage::init(cx);
     let root = cx.global::<AppData>().root.clone();
     let store = Arc::new(TelemetryStore::open(&root.telemetry_db()));
@@ -101,6 +104,7 @@ pub fn init(cx: &mut App) {
     ));
     cx.set_global(TelemetryGlobal(recorder.clone()));
     cx.set_global(TokenRates(rates.clone()));
+    usage::init_latency(cx);
     let home = root.home().to_owned();
     let rate_executor = cx.background_executor().clone();
     cx.background_executor()
@@ -193,6 +197,32 @@ pub fn recorder(cx: &App) -> Option<Arc<TelemetryRecorder>> {
     cx.try_global::<TelemetryGlobal>().map(|g| g.0.clone())
 }
 
+/// Arm first-response timing after a submitted prompt. Call with the submitted
+/// command line, not every keypress. Actual session ID matches recorder tabs.
+pub fn note_prompt(tab: &str, cx: &App) {
+    let Some(run) = recorder(cx).and_then(|r| r.active_run_for_tab(tab)) else {
+        return;
+    };
+    if let Some(timing) = cx.try_global::<PromptTimings>() {
+        timing.0.lock().prompt(tab, run, chrono::Utc::now());
+    }
+}
+/// Observe delivered PTY bytes. ANSI controls and spinner-only updates are
+/// ignored; consume one prompt only, expire after 120 seconds. SQLite runs
+/// off the UI thread and authoritative transcript rounds later replace it.
+pub fn note_output(tab: &str, bytes: &[u8], cx: &App) {
+    let sample = cx
+        .try_global::<PromptTimings>()
+        .and_then(|t| t.0.lock().output(tab, bytes, chrono::Utc::now()));
+    if let (Some(sample), Some(recorder)) = (sample, recorder(cx)) {
+        cx.background_executor()
+            .spawn(async move {
+                recorder.store().insert_latency_sample(&sample);
+            })
+            .detach();
+    }
+}
+
 /// TEL-001: an AI CLI was detected in a terminal session.
 pub fn run_started(
     tab_id: &str,
@@ -231,6 +261,9 @@ pub fn run_ended(
             .is_some_and(|r| r.session_id.is_none())
     {
         recorder.update_session_id(tab_id, session);
+    }
+    if let Some(timing) = cx.try_global::<PromptTimings>() {
+        timing.0.lock().clear(tab_id);
     }
     let Some(run) = recorder.run_ended(tab_id, exit_status.map(i64::from)) else {
         return;

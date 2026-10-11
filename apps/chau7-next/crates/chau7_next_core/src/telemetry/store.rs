@@ -112,6 +112,23 @@ CREATE TABLE IF NOT EXISTS tool_calls (
 CREATE INDEX IF NOT EXISTS idx_tool_calls_run ON tool_calls(run_id);
 CREATE INDEX IF NOT EXISTS idx_tool_calls_name ON tool_calls(tool_name);
 
+CREATE TABLE IF NOT EXISTS provider_latency_samples (
+    ingest_seq INTEGER PRIMARY KEY AUTOINCREMENT,
+    sample_id TEXT NOT NULL UNIQUE,
+    provider TEXT NOT NULL,
+    metric_kind TEXT NOT NULL,
+    latency_ms INTEGER NOT NULL,
+    model TEXT,
+    session_id TEXT,
+    run_id TEXT,
+    round_index INTEGER,
+    project_path TEXT,
+    source_kind TEXT NOT NULL,
+    observed_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_provider_latency_samples_time ON provider_latency_samples(observed_at);
+CREATE INDEX IF NOT EXISTS idx_provider_latency_samples_provider ON provider_latency_samples(provider,metric_kind,observed_at);
+CREATE TABLE IF NOT EXISTS maintenance_state (name TEXT PRIMARY KEY, cursor TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS schema_version (
     version INTEGER PRIMARY KEY,
     applied_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
@@ -231,6 +248,28 @@ fn encode_json<T: Serialize>(value: &T) -> Option<String> {
 
 fn decode_json<T: DeserializeOwned>(text: Option<String>) -> Option<T> {
     serde_json::from_str(&text?).ok()
+}
+
+fn insert_latency(
+    conn: &Connection,
+    sample: &super::latency::LatencySample,
+) -> rusqlite::Result<()> {
+    if sample.latency_ms < 0 || sample.provider.is_empty() {
+        return Ok(());
+    }
+    conn.execute("INSERT INTO provider_latency_samples (sample_id,provider,metric_kind,latency_ms,model,session_id,run_id,round_index,project_path,source_kind,observed_at) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11) ON CONFLICT(sample_id) DO UPDATE SET provider=excluded.provider,metric_kind=excluded.metric_kind,latency_ms=excluded.latency_ms,model=excluded.model,session_id=excluded.session_id,run_id=excluded.run_id,round_index=excluded.round_index,project_path=excluded.project_path,source_kind=excluded.source_kind,observed_at=excluded.observed_at", params![sample.id,sample.provider,match sample.metric_kind {super::latency::MetricKind::ApiRequest=>"api_request",super::latency::MetricKind::FirstResponse=>"first_response"},sample.latency_ms,sample.model,sample.session_id,sample.run_id,sample.round_index,sample.project_path,sample.source_kind,iso(&sample.timestamp)])?;
+    Ok(())
+}
+fn replace_completed_latency(
+    conn: &Connection,
+    run: &TelemetryRun,
+    turns: &[TelemetryTurn],
+) -> rusqlite::Result<()> {
+    conn.execute("DELETE FROM provider_latency_samples WHERE run_id=?1 AND source_kind='completed_run_turns'",[&run.id])?;
+    for sample in super::latency::completed_samples(run, turns) {
+        insert_latency(conn, &sample)?;
+    }
+    Ok(())
 }
 
 /// A column by name, `None` when absent or NULL.
@@ -452,6 +491,63 @@ impl TelemetryStore {
 
     /// Finish a run: update its row and add its turns and tool calls in one
     /// transaction (UPDATE, never delete and insert, so children survive).
+    /// Latency writes are idempotent and preserve the original ingest order.
+    pub fn insert_latency_sample(&self, sample: &super::latency::LatencySample) {
+        self.with((), |conn| insert_latency(conn, sample));
+    }
+    /// Resume historical latency reconstruction in bounded batches. The
+    /// checkpoint and resulting samples commit together; interrupted work
+    /// repeats safely, and skipped fallback transcripts advance the cursor.
+    pub fn backfill_latency_batch(&self, limit: usize) -> usize {
+        self.with(0, |conn| {
+            let cursor:Option<String>=conn.query_row("SELECT cursor FROM maintenance_state WHERE name='completed_latency_v1'",[],|r|r.get(0)).optional()?;
+            let mut stmt=conn.prepare("SELECT * FROM runs WHERE ended_at IS NOT NULL AND (?1 IS NULL OR started_at || '|' || run_id > ?1) ORDER BY started_at,run_id LIMIT ?2")?;
+            let runs:Vec<_>=stmt.query_map(params![cursor,limit.clamp(1,500) as i64], |row|Ok(parse_run(row)))?.filter_map(|r|r.transpose()).collect::<rusqlite::Result<Vec<_>>>()?;
+            if runs.is_empty(){return Ok(0);}
+            let tx=conn.unchecked_transaction()?;
+            for run in &runs {
+                let mut turns=tx.prepare("SELECT * FROM turns WHERE run_id=? ORDER BY turn_index")?;
+                let turns:Vec<_>=turns.query_map([&run.id], |row|Ok(parse_turn(row)))?.filter_map(|r|r.transpose()).collect::<rusqlite::Result<Vec<_>>>()?;
+                replace_completed_latency(&tx,run,&turns)?;
+            }
+            let last=runs.last().unwrap();
+            tx.execute("INSERT INTO maintenance_state(name,cursor) VALUES ('completed_latency_v1',?1) ON CONFLICT(name) DO UPDATE SET cursor=excluded.cursor",[format!("{}|{}",iso(&last.started_at),last.id)])?;
+            tx.commit()?;Ok(runs.len())
+        })
+    }
+    pub fn activity_samples(
+        &self,
+        after: Option<DateTime<Utc>>,
+    ) -> Vec<super::latency::ActivitySample> {
+        self.with(vec![],|conn| {
+            // Match Swift's all-time completed-run cap; bounded ranges keep all observations.
+            let mut stmt=conn.prepare("SELECT provider,started_at FROM runs WHERE ended_at IS NOT NULL AND (?1 IS NULL OR started_at >= ?1) ORDER BY started_at DESC LIMIT ?2")?;
+            let rows=stmt.query_map(params![after.as_ref().map(iso),if after.is_none(){2000_i64}else{-1_i64}],|row|{let provider:String=row.get(0)?;let at:String=row.get(1)?;Ok(parse_date(Some(at)).map(|timestamp|super::latency::ActivitySample{provider,timestamp}))})?;
+            rows.filter_map(|r|r.transpose()).collect()
+        })
+    }
+    /// Ordered history, including live terminal measurements and authoritative transcript replacements.
+    pub fn latency_samples(
+        &self,
+        after: Option<DateTime<Utc>>,
+    ) -> Vec<super::latency::LatencySample> {
+        self.with(vec![], |conn| {
+            let mut statement = conn.prepare("SELECT * FROM provider_latency_samples WHERE (?1 IS NULL OR observed_at >= ?1) ORDER BY observed_at, ingest_seq")?;
+            let rows = statement.query_map([after.as_ref().map(iso)], |row| {
+                let metric: String = row.get("metric_kind")?;
+                let timestamp: String = row.get("observed_at")?;
+                let metric_kind = match metric.as_str() { "api_request" => super::latency::MetricKind::ApiRequest, "first_response" => super::latency::MetricKind::FirstResponse, _ => return Err(rusqlite::Error::InvalidQuery) };
+                Ok(super::latency::LatencySample {
+                    id: row.get("sample_id")?, provider: row.get("provider")?, metric_kind,
+                    latency_ms: row.get("latency_ms")?, timestamp: parse_date(Some(timestamp)).ok_or(rusqlite::Error::InvalidQuery)?,
+                    model: row.get("model")?, session_id: row.get("session_id")?, run_id: row.get("run_id")?,
+                    round_index: row.get("round_index")?, project_path: row.get("project_path")?, source_kind: row.get("source_kind")?,
+                })
+            })?;
+            rows.collect()
+        })
+    }
+
     pub fn finalize_run(
         &self,
         run: &TelemetryRun,
@@ -495,6 +591,7 @@ impl TelemetryStore {
             for call in tool_calls {
                 insert_tool_call(&tx, call);
             }
+            replace_completed_latency(&tx, run, turns)?;
             tx.commit()
         });
     }
@@ -554,6 +651,7 @@ impl TelemetryStore {
             for call in tool_calls {
                 insert_tool_call(&tx, call);
             }
+            replace_completed_latency(&tx, run, turns)?;
             tx.commit()
         });
     }
@@ -1413,5 +1511,37 @@ mod tests {
         let again = TelemetryStore::open(&path);
         assert_eq!(again.run_count(), 1);
         let _ = std::fs::remove_dir_all(dir);
+    }
+    #[test]
+    fn latency_history_repair_preserves_live_evidence_and_resumes_backfill() {
+        let store = TelemetryStore::in_memory();
+        let now = Utc::now();
+        let mut run = TelemetryRun::new("claude", "/repo");
+        run.started_at = now;
+        run.ended_at = Some(now + chrono::Duration::seconds(5));
+        run.raw_transcript_ref = Some("/transcript.jsonl".into());
+        store.insert_run(&run);
+        let mut turn = TelemetryTurn::new(&run.id, 0, super::super::turn::TurnRole::Assistant);
+        turn.timestamp = Some(now + chrono::Duration::seconds(1));
+        store.insert_turns(&[turn.clone()]);
+        assert_eq!(store.backfill_latency_batch(1), 1);
+        assert_eq!(store.backfill_latency_batch(1), 0);
+        let mut live = super::super::latency::completed_samples(&run, &[turn.clone()])[0].clone();
+        live.id = "live".into();
+        live.source_kind = "terminal_first_output".into();
+        live.latency_ms = 10;
+        store.insert_latency_sample(&live);
+        store.insert_latency_sample(&live);
+        assert_eq!(store.latency_samples(None).len(), 2);
+        turn.timestamp = Some(now + chrono::Duration::seconds(2));
+        store.rewrite_completed_run(&run, &[turn], &[]);
+        let all = store.latency_samples(None);
+        assert_eq!(all.len(), 2);
+        assert_eq!(super::super::latency::canonical(&all)[0].latency_ms, 2000);
+        assert!(
+            store
+                .latency_samples(Some(now + chrono::Duration::minutes(1)))
+                .is_empty()
+        );
     }
 }
