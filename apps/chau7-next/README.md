@@ -1,5 +1,7 @@
 # Chau7 Next
 
+Picking this up? Start with [`docs/rust-port/HANDOFF.md`](../../docs/rust-port/HANDOFF.md).
+
 The Rust/GPUI port of Chau7. It runs **next to** the Swift app (bundle id
 `com.chau7.next`, its own data folders), so both can be installed and used at
 the same time while the port reaches parity. See
