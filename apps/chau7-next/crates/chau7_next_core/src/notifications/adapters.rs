@@ -16,7 +16,8 @@ use super::canonical::{
     NotificationProviderAdapterResult, NotificationProviderEvent, NotificationSemanticKind,
 };
 use crate::ai::event::{AiEvent, AiEventReliability, AiEventSource};
-use crate::iso8601::{format_iso8601, parse_iso8601};
+use crate::iso8601::parse_iso8601;
+use crate::monitoring::codex_feedback;
 
 /// Registry decision (`NotificationProviderAdapterRegistry.Decision`).
 #[derive(Debug, Clone, PartialEq)]
@@ -56,8 +57,8 @@ fn drop(reason: String) -> AdapterDecision {
 pub fn adapt(event: &AiEvent) -> AdapterDecision {
     match event.source.raw_value() {
         AiEventSource::CLAUDE_CODE => adapt_claude_code_event(event),
+        AiEventSource::CODEX => adapt_codex_event(event),
         AiEventSource::RUNTIME
-        | AiEventSource::CODEX
         | AiEventSource::CURSOR
         | AiEventSource::WINDSURF
         | AiEventSource::COPILOT
@@ -79,17 +80,42 @@ fn adapt_claude_code_event(event: &AiEvent) -> AdapterDecision {
     let provider_event = provider_event(event);
     match ClaudeCodeNotificationAdapter.adapt(&provider_event) {
         NotificationProviderAdapterResult::Emit(canonical) => AdapterDecision::Emit {
-            event: as_ai_event(
-                &canonical,
-                &event.source,
-                event.producer.clone(),
-                None,
-                None,
-            ),
+            event: as_ai_event(&canonical, event, None, None),
             canonical,
         },
         NotificationProviderAdapterResult::Drop { reason }
         | NotificationProviderAdapterResult::DeferToFallback { reason } => drop(reason),
+    }
+}
+
+/// Native Codex events distinguish authoritative prompts from inferred proposals.
+fn adapt_codex_event(event: &AiEvent) -> AdapterDecision {
+    use AiEventReliability as R;
+    use NotificationSemanticKind as K;
+    let raw = normalized_raw_type(event);
+    let (kind, reliability) = match raw.as_str() {
+        "agent_turn_complete" | "agentturncomplete" => {
+            if codex_feedback::assess(&event.message).is_some_and(|a| a.should_request_attention())
+            {
+                (K::WaitingForInput, R::Heuristic)
+            } else {
+                (K::TaskFinished, R::Authoritative)
+            }
+        }
+        "approval_requested" | "approvalrequested" => (K::PermissionRequired, R::Authoritative),
+        "user_input_requested" | "userinputrequested" => (K::WaitingForInput, R::Authoritative),
+        _ => (
+            canonical::kind(Some(&raw), event.notification_type.as_deref()),
+            event.reliability,
+        ),
+    };
+    if kind == K::Unknown {
+        return drop(format!("Unsupported Codex raw event {raw}"));
+    }
+    let canonical = provider_event(event).canonical_event(kind, reliability);
+    AdapterDecision::Emit {
+        event: as_ai_event(&canonical, event, None, None),
+        canonical,
     }
 }
 
@@ -248,13 +274,7 @@ fn emit_canonicalized_event(
 ) -> AdapterDecision {
     let canonical = provider_event(event).canonical_event(kind, reliability);
     AdapterDecision::Emit {
-        event: as_ai_event(
-            &canonical,
-            &event.source,
-            event.producer.clone(),
-            Some(preserved_type),
-            raw_type,
-        ),
+        event: as_ai_event(&canonical, event, Some(preserved_type), raw_type),
         canonical,
     }
 }
@@ -384,33 +404,20 @@ fn shared_trigger_type(canonical: &CanonicalNotificationEvent) -> String {
     .to_string()
 }
 
-/// `CanonicalNotificationEvent.asAIEvent(...)`.
+/// Preserve ingress identity, attribution and raw timestamp while enriching semantics.
 fn as_ai_event(
     canonical: &CanonicalNotificationEvent,
-    source: &AiEventSource,
-    producer: Option<String>,
+    original: &AiEvent,
     shared_type_override: Option<&str>,
     raw_type_override: Option<String>,
 ) -> AiEvent {
-    AiEvent {
-        id: canonical.id,
-        source: source.clone(),
-        event_type: shared_type_override
-            .map(str::to_string)
-            .unwrap_or_else(|| shared_trigger_type(canonical)),
-        raw_type: raw_type_override.or_else(|| canonical.raw_type.clone()),
-        tool: canonical.provider_name.clone(),
-        title: canonical.title.clone(),
-        message: canonical.message.clone(),
-        notification_type: canonical.notification_type.clone(),
-        ts: format_iso8601(canonical.timestamp),
-        directory: canonical.directory.clone(),
-        repo_path: None,
-        tab_id: canonical.tab_id,
-        session_id: canonical.session_id.clone(),
-        producer,
-        reliability: canonical.reliability,
-    }
+    let mut event = original.clone();
+    event.event_type = shared_type_override
+        .map(str::to_string)
+        .unwrap_or_else(|| shared_trigger_type(canonical));
+    event.raw_type = raw_type_override.or_else(|| canonical.raw_type.clone());
+    event.reliability = canonical.reliability;
+    event
 }
 
 // MARK: - Ingress
@@ -475,6 +482,83 @@ mod tests {
         e.producer = Some("claude_code_monitor".into());
         e.reliability = AiEventReliability::Authoritative;
         e
+    }
+
+    #[test]
+    fn codex_native_completion_routes_medium_and_high_actionability_with_heuristic_evidence() {
+        for message in [
+            "1. Alpha\n2. Beta\nTell me which option to apply.",
+            "Should I apply it to the remaining workspaces?",
+        ] {
+            let mut e = event(AiEventSource::codex(), "agent-turn-complete", "Codex");
+            e.message = message.into();
+            e.raw_type = Some("Agent-Turn-Complete".into());
+            e.repo_path = Some("/repo/project".into());
+            e.directory = Some("/repo/project/subdir".into());
+            e.tab_id = Some(Uuid::new_v4());
+            e.session_id = Some("session-1".into());
+            e.producer = Some("codex_notify".into());
+            e.ts = "2026-10-11T00:00:00.123456+02:00".into();
+            let (adapted, canonical) = emit(adapt(&e));
+            assert_eq!(canonical.kind, K::WaitingForInput);
+            assert_eq!(canonical.reliability, AiEventReliability::Heuristic);
+            let mut expected = e.clone();
+            expected.event_type = "waiting_input".into();
+            expected.reliability = AiEventReliability::Heuristic;
+            assert_eq!(adapted, expected);
+        }
+    }
+
+    #[test]
+    fn codex_low_confidence_or_completed_answer_remains_authoritative_finished() {
+        for message in [
+            "Done.",
+            "Does that explanation make sense?",
+            "1. Improve testing\n2. Improve docs",
+        ] {
+            let mut e = event(AiEventSource::codex(), "agentturncomplete", "Codex");
+            e.message = message.into();
+            let (adapted, canonical) = emit(adapt(&e));
+            assert_eq!(canonical.kind, K::TaskFinished);
+            assert_eq!(adapted.event_type, "finished");
+            assert_eq!(adapted.raw_type.as_deref(), Some("agentturncomplete"));
+            assert_eq!(adapted.reliability, AiEventReliability::Authoritative);
+        }
+    }
+
+    #[test]
+    fn codex_authoritative_prompt_aliases_fallback_and_unsupported_match_swift() {
+        for (raw, kind, shared) in [
+            ("approval-requested", K::PermissionRequired, "permission"),
+            ("ApprovalRequested", K::PermissionRequired, "permission"),
+            ("user-input-requested", K::WaitingForInput, "waiting_input"),
+            ("UserInputRequested", K::WaitingForInput, "waiting_input"),
+        ] {
+            let e = event(AiEventSource::codex(), raw, "Codex");
+            let (adapted, canonical) = emit(adapt(&e));
+            assert_eq!(canonical.kind, kind);
+            assert_eq!(adapted.event_type, shared);
+            assert_eq!(adapted.raw_type.as_deref(), Some(raw));
+            assert_eq!(adapted.reliability, AiEventReliability::Authoritative);
+        }
+        let mut e = event(AiEventSource::codex(), "idle", "Codex");
+        e.reliability = AiEventReliability::Fallback;
+        assert_eq!(emit(adapt(&e)).0.reliability, AiEventReliability::Fallback);
+        e.event_type = "provider_internal_state".into();
+        assert!(dropped(adapt(&e)).contains("Unsupported Codex raw event"));
+    }
+
+    #[test]
+    fn enrichment_preserves_raw_attribution_for_claude_and_generic_events() {
+        for source in [AiEventSource::claude_code(), AiEventSource::runtime()] {
+            let mut e = event(source, "finished", "Agent");
+            e.repo_path = Some("/repo/project".into());
+            e.ts = "raw-invalid-timestamp".into();
+            let (adapted, _) = emit(adapt(&e));
+            assert_eq!(adapted.repo_path, e.repo_path);
+            assert_eq!(adapted.ts, e.ts);
+            assert_eq!(adapted.id, e.id);
+        }
     }
 
     // NotificationProviderAdapterRegistryTests

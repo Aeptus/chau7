@@ -984,6 +984,12 @@ fn history(ctx: &SectionContext) -> gpui::Div {
         if !e.notes.is_empty() {
             lines.push(e.notes.join(" | "));
         }
+        if let Some(confidence) = &e.classification_confidence {
+            lines.push(format!(
+                "Codex proposal: {confidence} confidence ({})",
+                e.classification_evidence.join(", ")
+            ));
+        }
         block = block.child(
             div()
                 .id(SharedString::from(format!("notif-history-{i}")))
