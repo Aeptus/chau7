@@ -74,7 +74,7 @@ impl Default for DangerousCommandSettings {
             scope: HighlightScope::AllOutputs,
             guard_enabled: true,
             patterns: default_patterns(),
-            highlight_low_power: false,
+            highlight_low_power: true,
             highlight_idle_delay_ms: 500,
             highlight_max_interval_ms: 2000,
         }
@@ -229,11 +229,11 @@ mod tests {
     #[test]
     fn highlight_tuning_round_trips_and_clamps() {
         let d = DangerousCommandSettings::default();
-        assert!(!d.highlight_low_power);
+        assert!(d.highlight_low_power);
         assert_eq!(d.highlight_idle_delay_ms, 500);
         assert_eq!(d.highlight_max_interval_ms, 2000);
         let tuned = DangerousCommandSettings {
-            highlight_low_power: true,
+            highlight_low_power: false,
             highlight_idle_delay_ms: 1200,
             highlight_max_interval_ms: 4000,
             ..Default::default()
