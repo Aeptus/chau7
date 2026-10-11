@@ -36,12 +36,15 @@ cp "$BIN" "$APP/Contents/MacOS/Chau7 Next"
 cp "$BRIDGE" "$APP/Contents/MacOS/chau7-next-mcp-bridge"
 cp "$ROOT/../chau7-macos/Resources/AppDockIcon.icns" "$APP/Contents/Resources/AppIcon.icns"
 
-# Token optimizer (apps/chau7-macos/rust), next to the app binary. The app
-# installs it into ~/.chau7-next/bin; the wrappers pass CHAU7_CTO_BIN_DIR so it
-# also strips Chau7 Next's wrapper folder from PATH.
+# Token optimizer and markdown renderer (the apps/chau7-macos/rust
+# workspace), next to the app binary. The app installs them into
+# ~/.chau7-next/bin; the wrappers pass CHAU7_CTO_BIN_DIR so chau7-optim also
+# strips Chau7 Next's wrapper folder from PATH. That workspace pins its own
+# toolchain (rust-toolchain.toml), which may lack the target's standard library.
 OPTIM_DIR="$ROOT/../chau7-macos/rust"
 if [ -d "$OPTIM_DIR" ]; then
-  (cd "$OPTIM_DIR" && cargo build --release --target "$TARGET" -p chau7_optim -p chau7_md)
+  (cd "$OPTIM_DIR" && { rustup target add "$TARGET" >/dev/null 2>&1 || true; } \
+    && cargo build --release --target "$TARGET" -p chau7_optim -p chau7_md)
   OPTIM_OUT="${OPTIM_TARGET_DIR:-${CARGO_TARGET_DIR:-$OPTIM_DIR/target}}/$TARGET/release"
   for tool in chau7-optim chau7-md; do
     if [ ! -f "$OPTIM_OUT/$tool" ]; then
