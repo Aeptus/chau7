@@ -405,6 +405,7 @@ fn as_ai_event(
         notification_type: canonical.notification_type.clone(),
         ts: format_iso8601(canonical.timestamp),
         directory: canonical.directory.clone(),
+        repo_path: None,
         tab_id: canonical.tab_id,
         session_id: canonical.session_id.clone(),
         producer,

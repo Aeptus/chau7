@@ -12,6 +12,7 @@
 //!
 //! Results are JSON text with sorted keys; errors are `{"error":"..."}`.
 
+pub mod observability;
 pub mod repo;
 pub mod runtime;
 pub mod tabs;
@@ -25,12 +26,40 @@ use chau7_next_core::mcp::output::json_error;
 /// What a tool call can use.
 pub struct ToolContext<'a> {
     pub main: &'a MainThread,
+    pub client_id: &'a str,
+    origin: Origin,
+}
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Origin {
+    Connection,
+    Internal,
+}
+impl<'a> ToolContext<'a> {
+    pub fn connection(main: &'a MainThread, client_id: &'a str) -> Self {
+        Self {
+            main,
+            client_id,
+            origin: Origin::Connection,
+        }
+    }
+    pub fn internal(main: &'a MainThread) -> Self {
+        Self {
+            main,
+            client_id: "internal",
+            origin: Origin::Internal,
+        }
+    }
+    pub fn is_internal(&self) -> bool {
+        self.origin == Origin::Internal
+    }
 }
 
 /// Every tool, in the Swift order.
 pub fn definitions() -> Vec<Value> {
     let mut all = telemetry::definitions();
+    all.extend(observability::definitions());
     all.extend(tabs::definitions());
+    all.extend(super::control::definitions());
     all.extend(repo::definitions());
     all.extend(runtime::definitions());
     all
@@ -38,7 +67,16 @@ pub fn definitions() -> Vec<Value> {
 
 /// Run a tool by name.
 pub fn call(name: &str, args: &Map<String, Value>, ctx: &ToolContext) -> String {
+    if !ctx.is_internal() {
+        if !super::control::is_connected(ctx.client_id) {
+            return json_error("MCP connection is closed");
+        }
+        if let Some(result) = super::control::call(name, args, ctx.client_id, ctx) {
+            return result;
+        }
+    }
     if let Some(result) = telemetry::call(name, args)
+        .or_else(|| observability::call(name, args, ctx))
         .or_else(|| tabs::call(name, args, ctx))
         .or_else(|| repo::call(name, args))
     {
@@ -107,6 +145,15 @@ mod tests {
                 "run_latest_for_repo",
                 "session_list",
                 "session_current",
+                "chau7_mcp_session_info",
+                "chau7_state_snapshot",
+                "chau7_subscribe",
+                "chau7_unsubscribe",
+                "chau7_runtime_info",
+                "chau7_performance_snapshot",
+                "chau7_runtime_events",
+                "chau7_timer_inventory",
+                "repo_get_events",
                 "tab_list",
                 "tab_create",
                 "tab_exec",
@@ -118,6 +165,10 @@ mod tests {
                 "tab_output",
                 "tab_set_cto",
                 "tab_rename",
+                "tab_request_control",
+                "tab_release_control",
+                "tab_wait_ready",
+                "agent_launch",
                 "repo_get_metadata",
                 "repo_set_metadata",
                 "repo_frequent_commands",
@@ -129,6 +180,11 @@ mod tests {
                 "runtime_turn_status",
                 "runtime_events_poll",
                 "runtime_approval_respond",
+                "runtime_session_children",
+                "runtime_session_cancel_children",
+                "runtime_session_retry",
+                "runtime_turn_result",
+                "runtime_turn_wait",
             ]
         );
         for tool in definitions() {

@@ -58,6 +58,8 @@ CREATE TABLE IF NOT EXISTS runs (
     exit_status INTEGER,
     total_input_tokens INTEGER,
     total_cached_input_tokens INTEGER,
+    total_cache_creation_input_tokens INTEGER,
+    total_cache_read_input_tokens INTEGER,
     total_output_tokens INTEGER,
     total_reasoning_output_tokens INTEGER,
     cost_usd REAL,
@@ -88,6 +90,8 @@ CREATE TABLE IF NOT EXISTS turns (
     content TEXT,
     input_tokens INTEGER,
     cached_input_tokens INTEGER,
+    cache_creation_input_tokens INTEGER,
+    cache_read_input_tokens INTEGER,
     output_tokens INTEGER,
     reasoning_output_tokens INTEGER,
     tool_calls TEXT,
@@ -112,6 +116,31 @@ CREATE TABLE IF NOT EXISTS tool_calls (
 CREATE INDEX IF NOT EXISTS idx_tool_calls_run ON tool_calls(run_id);
 CREATE INDEX IF NOT EXISTS idx_tool_calls_name ON tool_calls(tool_name);
 
+CREATE TABLE IF NOT EXISTS provider_latency_samples (
+    ingest_seq INTEGER PRIMARY KEY AUTOINCREMENT,
+    sample_id TEXT NOT NULL UNIQUE,
+    provider TEXT NOT NULL,
+    metric_kind TEXT NOT NULL,
+    latency_ms INTEGER NOT NULL,
+    model TEXT,
+    session_id TEXT,
+    run_id TEXT,
+    round_index INTEGER,
+    project_path TEXT,
+    source_kind TEXT NOT NULL,
+    observed_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_provider_latency_samples_time ON provider_latency_samples(observed_at);
+CREATE INDEX IF NOT EXISTS idx_provider_latency_samples_provider ON provider_latency_samples(provider,metric_kind,observed_at);
+CREATE TABLE IF NOT EXISTS proxy_run_baselines (run_id TEXT PRIMARY KEY REFERENCES runs(run_id) ON DELETE CASCADE,snapshot TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS usage_evidence (
+ ingest_seq INTEGER PRIMARY KEY AUTOINCREMENT,evidence_id TEXT NOT NULL UNIQUE,unique_event_key TEXT NOT NULL UNIQUE,reconciliation_key TEXT NOT NULL,source_kind TEXT NOT NULL,provider TEXT NOT NULL,model TEXT,session_id TEXT,run_id TEXT,endpoint TEXT,project_path TEXT,input_tokens INTEGER,cache_creation_input_tokens INTEGER,cache_read_input_tokens INTEGER,output_tokens INTEGER,reasoning_output_tokens INTEGER,cost_usd REAL,token_usage_source TEXT,token_usage_state TEXT NOT NULL,cost_source TEXT,cost_state TEXT NOT NULL,pricing_version TEXT,source_ref TEXT,metadata TEXT,observed_at TEXT NOT NULL,payload TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_usage_evidence_provider ON usage_evidence(provider,observed_at);
+CREATE INDEX IF NOT EXISTS idx_usage_evidence_reconciliation ON usage_evidence(reconciliation_key,source_kind);
+CREATE INDEX IF NOT EXISTS idx_usage_evidence_run ON usage_evidence(run_id);
+CREATE INDEX IF NOT EXISTS idx_usage_evidence_observed ON usage_evidence(observed_at);
+CREATE TABLE IF NOT EXISTS maintenance_state (name TEXT PRIMARY KEY, cursor TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS schema_version (
     version INTEGER PRIMARY KEY,
     applied_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
@@ -169,7 +198,7 @@ cost_source = COALESCE(cost_source,
 const INVALIDATE_IMPLAUSIBLE: &str = "
 UPDATE runs
 SET total_input_tokens = NULL,
-    total_cached_input_tokens = NULL,
+    total_cached_input_tokens = NULL, total_cache_creation_input_tokens = NULL, total_cache_read_input_tokens = NULL,
     total_output_tokens = NULL,
     total_reasoning_output_tokens = NULL,
     cost_usd = NULL,
@@ -195,6 +224,15 @@ pub struct RepoRunStats {
     pub total_runs: i64,
     pub total_tokens: i64,
     pub total_cost: f64,
+    pub raw_run_cost: f64,
+    pub retained_proxy_cost: f64,
+    pub attributed_proxy_cost: f64,
+    pub priced_run_count: i64,
+    pub estimated_run_count: i64,
+    pub missing_cost_run_count: i64,
+    pub partial_run_count: i64,
+    pub priced_proxy_request_count: i64,
+    pub missing_cost_proxy_request_count: i64,
     pub total_turns: i64,
     pub last_run_at: Option<DateTime<Utc>>,
 }
@@ -233,6 +271,125 @@ fn decode_json<T: DeserializeOwned>(text: Option<String>) -> Option<T> {
     serde_json::from_str(&text?).ok()
 }
 
+fn insert_latency(
+    conn: &Connection,
+    sample: &super::latency::LatencySample,
+) -> rusqlite::Result<()> {
+    if sample.latency_ms < 0 || sample.provider.is_empty() {
+        return Ok(());
+    }
+    conn.execute("INSERT INTO provider_latency_samples (sample_id,provider,metric_kind,latency_ms,model,session_id,run_id,round_index,project_path,source_kind,observed_at) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11) ON CONFLICT(sample_id) DO UPDATE SET provider=excluded.provider,metric_kind=excluded.metric_kind,latency_ms=excluded.latency_ms,model=excluded.model,session_id=excluded.session_id,run_id=excluded.run_id,round_index=excluded.round_index,project_path=excluded.project_path,source_kind=excluded.source_kind,observed_at=excluded.observed_at", params![sample.id,sample.provider,match sample.metric_kind {super::latency::MetricKind::ApiRequest=>"api_request",super::latency::MetricKind::FirstResponse=>"first_response"},sample.latency_ms,sample.model,sample.session_id,sample.run_id,sample.round_index,sample.project_path,sample.source_kind,iso(&sample.timestamp)])?;
+    Ok(())
+}
+fn replace_completed_latency(
+    conn: &Connection,
+    run: &TelemetryRun,
+    turns: &[TelemetryTurn],
+) -> rusqlite::Result<()> {
+    conn.execute("DELETE FROM provider_latency_samples WHERE run_id=?1 AND source_kind='completed_run_turns'",[&run.id])?;
+    for sample in super::latency::completed_samples(run, turns) {
+        insert_latency(conn, &sample)?;
+    }
+    Ok(())
+}
+
+fn insert_evidence(conn: &Connection, e: &super::evidence::UsageEvidence) -> rusqlite::Result<()> {
+    conn.execute("INSERT INTO usage_evidence(evidence_id,unique_event_key,reconciliation_key,source_kind,provider,model,session_id,run_id,endpoint,project_path,input_tokens,cache_creation_input_tokens,cache_read_input_tokens,output_tokens,reasoning_output_tokens,cost_usd,token_usage_source,token_usage_state,cost_source,cost_state,pricing_version,source_ref,metadata,observed_at,payload) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20,?21,?22,?23,?24,?25) ON CONFLICT(unique_event_key) DO UPDATE SET reconciliation_key=excluded.reconciliation_key,source_kind=excluded.source_kind,provider=excluded.provider,model=excluded.model,session_id=excluded.session_id,run_id=excluded.run_id,endpoint=excluded.endpoint,project_path=excluded.project_path,input_tokens=excluded.input_tokens,cache_creation_input_tokens=excluded.cache_creation_input_tokens,cache_read_input_tokens=excluded.cache_read_input_tokens,output_tokens=excluded.output_tokens,reasoning_output_tokens=excluded.reasoning_output_tokens,cost_usd=excluded.cost_usd,token_usage_source=excluded.token_usage_source,token_usage_state=excluded.token_usage_state,cost_source=excluded.cost_source,cost_state=excluded.cost_state,pricing_version=excluded.pricing_version,source_ref=excluded.source_ref,metadata=excluded.metadata,observed_at=excluded.observed_at,payload=excluded.payload",params![e.id,e.unique_event_key,e.reconciliation_key,raw(&e.source_kind),e.provider,e.model,e.session_id,e.run_id,e.endpoint,e.project_path,e.input_tokens,e.cache_creation_input_tokens,e.cache_read_input_tokens,e.output_tokens,e.reasoning_output_tokens,e.cost_usd,e.token_usage_source.as_ref().and_then(raw),raw(&e.token_usage_state),e.cost_source.as_ref().and_then(raw),raw(&e.cost_state),e.pricing_version,e.source_ref,encode_json(&e.metadata),iso(&e.observed_at),encode_json(e)])?;
+    Ok(())
+}
+fn update_run_usage(conn: &Connection, run: &TelemetryRun) -> rusqlite::Result<()> {
+    conn.execute("UPDATE runs SET total_input_tokens=?1,total_cached_input_tokens=?2,total_cache_creation_input_tokens=?3,total_cache_read_input_tokens=?4,total_output_tokens=?5,total_reasoning_output_tokens=?6,cost_usd=?7,token_usage_source=?8,token_usage_state=?9,cost_source=?10,cost_state=?11,metadata=?12 WHERE run_id=?13",params![run.total_input_tokens,run.total_cached_input_tokens,run.total_cache_creation_input_tokens,run.total_cache_read_input_tokens,run.total_output_tokens,run.total_reasoning_output_tokens,run.cost_usd,run.token_usage_source.as_ref().and_then(raw),raw(&run.token_usage_state),run.cost_source.as_ref().and_then(raw),raw(&run.cost_state),encode_json(&run.metadata),run.id])?;
+    insert_evidence(conn, &super::evidence::UsageEvidence::run_summary(run))
+}
+fn restore_baseline(mut run: TelemetryRun, baseline: TelemetryRun) -> TelemetryRun {
+    run.total_input_tokens = baseline.total_input_tokens;
+    run.total_cached_input_tokens = baseline.total_cached_input_tokens;
+    run.total_cache_creation_input_tokens = baseline.total_cache_creation_input_tokens;
+    run.total_cache_read_input_tokens = baseline.total_cache_read_input_tokens;
+    run.total_output_tokens = baseline.total_output_tokens;
+    run.total_reasoning_output_tokens = baseline.total_reasoning_output_tokens;
+    run.cost_usd = baseline.cost_usd;
+    run.token_usage_source = baseline.token_usage_source;
+    run.token_usage_state = baseline.token_usage_state;
+    run.cost_source = baseline.cost_source;
+    run.cost_state = baseline.cost_state;
+    run.metadata.retain(|key, _| !key.starts_with("proxy_"));
+    run
+}
+fn reconcile_proxy_window(conn: &Connection, at: DateTime<Utc>) -> rusqlite::Result<bool> {
+    use super::evidence::{apply_attribution, attributed};
+    fn runs(
+        conn: &Connection,
+        start: DateTime<Utc>,
+        end: DateTime<Utc>,
+    ) -> rusqlite::Result<Vec<TelemetryRun>> {
+        let mut stmt=conn.prepare("SELECT * FROM runs WHERE julianday(started_at)<=julianday(?1) AND (ended_at IS NULL OR julianday(ended_at)>=julianday(?2)) LIMIT 501")?;
+        let rows = stmt.query_map(
+            params![
+                iso(&(end + chrono::Duration::seconds(1))),
+                iso(&(start - chrono::Duration::seconds(1)))
+            ],
+            |row| Ok(parse_run(row)),
+        )?;
+        rows.filter_map(|r| r.transpose()).collect()
+    }
+    let candidates = runs(conn, at, at)?;
+    if candidates.is_empty() {
+        return Ok(true);
+    }
+    if candidates.len() > 500 {
+        return Ok(false);
+    }
+    let start = candidates.iter().map(|r| r.started_at).min().unwrap();
+    let end = candidates
+        .iter()
+        .map(|r| r.ended_at.unwrap_or_else(Utc::now))
+        .max()
+        .unwrap();
+    let candidates = runs(conn, start, end)?;
+    if candidates.len() > 500 {
+        return Ok(false);
+    }
+    let mut stmt=conn.prepare("SELECT payload FROM usage_evidence WHERE source_kind='proxy' AND unique_event_key NOT LIKE 'run|%' AND julianday(observed_at)>=julianday(?1) AND julianday(observed_at)<=julianday(?2) ORDER BY observed_at,ingest_seq LIMIT 5001")?;
+    let observations: Vec<_> = stmt
+        .query_map(
+            params![
+                iso(&(start - chrono::Duration::seconds(1))),
+                iso(&(end + chrono::Duration::seconds(1)))
+            ],
+            |row| {
+                let json: String = row.get(0)?;
+                Ok(serde_json::from_str::<super::evidence::UsageEvidence>(&json).ok())
+            },
+        )?
+        .filter_map(|r| r.transpose())
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    if observations.len() > 5000 {
+        return Ok(false);
+    }
+    let attributed = attributed(&observations, &candidates);
+    for run in candidates {
+        if let Some(a) = attributed.get(&run.id) {
+            if run.token_usage_source != Some(super::token_metrics::TokenUsageSource::Proxy) {
+                conn.execute("INSERT INTO proxy_run_baselines(run_id,snapshot) VALUES (?1,?2) ON CONFLICT(run_id) DO UPDATE SET snapshot=excluded.snapshot",params![run.id,encode_json(&run)])?;
+            }
+            update_run_usage(conn, &apply_attribution(&run, a))?;
+        } else if run.token_usage_source == Some(super::token_metrics::TokenUsageSource::Proxy) {
+            let json: Option<String> = conn
+                .query_row(
+                    "SELECT snapshot FROM proxy_run_baselines WHERE run_id=?1",
+                    [&run.id],
+                    |r| r.get(0),
+                )
+                .optional()?;
+            let baseline = json
+                .and_then(|j| serde_json::from_str(&j).ok())
+                .unwrap_or_else(|| TelemetryRun::new(&run.provider, &run.cwd));
+            update_run_usage(conn, &restore_baseline(run, baseline))?;
+        }
+    }
+    Ok(true)
+}
 /// A column by name, `None` when absent or NULL.
 fn col<T: rusqlite::types::FromSql>(row: &Row, name: &str) -> Option<T> {
     row.get::<_, Option<T>>(name).ok().flatten()
@@ -255,6 +412,8 @@ fn parse_run(row: &Row) -> Option<TelemetryRun> {
     run.exit_status = col(row, "exit_status");
     run.total_input_tokens = col(row, "total_input_tokens");
     run.total_cached_input_tokens = col(row, "total_cached_input_tokens");
+    run.total_cache_creation_input_tokens = col(row, "total_cache_creation_input_tokens");
+    run.total_cache_read_input_tokens = col(row, "total_cache_read_input_tokens");
     run.total_output_tokens = col(row, "total_output_tokens");
     run.total_reasoning_output_tokens = col(row, "total_reasoning_output_tokens");
     run.cost_usd = col(row, "cost_usd");
@@ -281,6 +440,8 @@ fn parse_turn(row: &Row) -> Option<TelemetryTurn> {
     turn.content = col(row, "content");
     turn.input_tokens = col(row, "input_tokens");
     turn.cached_input_tokens = col(row, "cached_input_tokens");
+    turn.cache_creation_input_tokens = col(row, "cache_creation_input_tokens");
+    turn.cache_read_input_tokens = col(row, "cache_read_input_tokens");
     turn.output_tokens = col(row, "output_tokens");
     turn.reasoning_output_tokens = col(row, "reasoning_output_tokens");
     turn.tool_calls = decode_json(col(row, "tool_calls")).unwrap_or_default();
@@ -404,19 +565,49 @@ impl TelemetryStore {
         }
     }
 
+    /// Read-only preview for an explicit retention choice. Zero keeps forever.
+    pub fn retention_preview(
+        &self,
+        days: i64,
+        protected: &[String],
+        now: DateTime<Utc>,
+    ) -> rusqlite::Result<super::retention::RetentionPreview> {
+        let guard = self.conn.lock();
+        let conn = guard.as_ref().ok_or(rusqlite::Error::InvalidQuery)?;
+        super::retention::preview(conn, days, protected, now)
+    }
+    pub fn prune_retained(
+        &self,
+        days: i64,
+        protected: &[String],
+        limit: usize,
+        now: DateTime<Utc>,
+    ) -> rusqlite::Result<super::retention::PruneReport> {
+        let guard = self.conn.lock();
+        let conn = guard.as_ref().ok_or(rusqlite::Error::InvalidQuery)?;
+        super::retention::prune(conn, days, protected, limit, now)
+    }
+    /// Only called following the user's separate compaction confirmation.
+    pub fn compact_confirmed(&self) -> rusqlite::Result<()> {
+        let guard = self.conn.lock();
+        let conn = guard.as_ref().ok_or(rusqlite::Error::InvalidQuery)?;
+        conn.execute_batch("VACUUM")
+    }
+
     // MARK: write
 
     /// Insert a new run (`INSERT OR IGNORE`: safe to call twice).
     pub fn insert_run(&self, run: &TelemetryRun) {
         self.with((), |c| {
-            c.execute(
+            let tx=c.unchecked_transaction()?;
+            tx.execute(
                 "INSERT OR IGNORE INTO runs
                 (run_id, session_id, tab_id, provider, model, cwd, repo_path,
                  started_at, ended_at, duration_ms, exit_status,
-                 total_input_tokens, total_cached_input_tokens, total_output_tokens, total_reasoning_output_tokens,
+                 total_input_tokens, total_cached_input_tokens, total_cache_creation_input_tokens, total_cache_read_input_tokens, total_output_tokens, total_reasoning_output_tokens,
                  cost_usd, token_usage_source, token_usage_state, cost_source, cost_state,
                  turn_count, tags, metadata, raw_transcript_ref, parent_run_id, error_message)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 params![
                     run.id,
                     run.session_id,
@@ -431,6 +622,8 @@ impl TelemetryStore {
                     run.exit_status,
                     run.total_input_tokens,
                     run.total_cached_input_tokens,
+                    run.total_cache_creation_input_tokens,
+                    run.total_cache_read_input_tokens,
                     run.total_output_tokens,
                     run.total_reasoning_output_tokens,
                     run.cost_usd,
@@ -445,13 +638,134 @@ impl TelemetryStore {
                     run.parent_run_id,
                     run.error_message,
                 ],
-            )
-            .map(|_| ())
+            )?;
+            insert_evidence(&tx,&super::evidence::UsageEvidence::run_summary(run))?;
+            reconcile_proxy_window(&tx,run.started_at)?;
+            tx.commit()
         });
     }
 
     /// Finish a run: update its row and add its turns and tool calls in one
     /// transaction (UPDATE, never delete and insert, so children survive).
+    pub fn evidence_cursor(&self) -> i64 {
+        self.with(0, |conn| {
+            let cursor: Option<String> = conn
+                .query_row(
+                    "SELECT cursor FROM maintenance_state WHERE name='proxy_evidence_v1'",
+                    [],
+                    |r| r.get(0),
+                )
+                .optional()?;
+            Ok(cursor.and_then(|s| s.parse().ok()).unwrap_or(0))
+        })
+    }
+    /// Cursor and observations commit atomically; a crash safely repeats IDs.
+    pub fn ingest_evidence_batch(&self, rows: &[(i64, super::evidence::UsageEvidence)]) {
+        if rows.is_empty() {
+            return;
+        }
+        self.with((),|conn|{let tx=conn.unchecked_transaction()?;for (_,e) in rows {insert_evidence(&tx,e)?;}let oldest=rows.iter().map(|(_,e)|e.observed_at).min().unwrap();let newest=rows.iter().map(|(_,e)|e.observed_at).max().unwrap();reconcile_proxy_window(&tx,oldest)?;if newest!=oldest{reconcile_proxy_window(&tx,newest)?;}tx.execute("INSERT INTO maintenance_state(name,cursor) VALUES ('proxy_evidence_v1',?1) ON CONFLICT(name) DO UPDATE SET cursor=excluded.cursor",[rows.iter().map(|(id,_)|*id).max().unwrap().to_string()])?;tx.commit()});
+    }
+    /// Request-scoped retained observations are independent from run projections.
+    pub fn record_usage_evidence(&self, e: &super::evidence::UsageEvidence) {
+        self.with((), |conn| {
+            let tx = conn.unchecked_transaction()?;
+            insert_evidence(&tx, e)?;
+            if !reconcile_proxy_window(&tx, e.observed_at)? {
+                log::warn!(
+                    "Proxy usage reconciliation deferred: retained window exceeds query budget"
+                );
+            }
+            tx.commit()
+        });
+    }
+    pub fn usage_evidence(
+        &self,
+        after: Option<DateTime<Utc>>,
+        limit: usize,
+    ) -> Vec<super::evidence::UsageEvidence> {
+        self.with(vec![],|conn|{let mut stmt=conn.prepare("SELECT payload FROM usage_evidence WHERE (?1 IS NULL OR observed_at>=?1) ORDER BY observed_at,ingest_seq LIMIT ?2")?;let rows=stmt.query_map(params![after.as_ref().map(iso),limit.clamp(1,100_000) as i64],|row|{let json:String=row.get(0)?;Ok(serde_json::from_str(&json).ok())})?;rows.filter_map(|r|r.transpose()).collect()})
+    }
+
+    /// Latency writes are idempotent and preserve the original ingest order.
+    pub fn insert_latency_sample(&self, sample: &super::latency::LatencySample) {
+        self.with((), |conn| insert_latency(conn, sample));
+    }
+    /// Resume historical latency reconstruction in bounded batches. The
+    /// checkpoint and resulting samples commit together; interrupted work
+    /// repeats safely, and skipped fallback transcripts advance the cursor.
+    pub fn backfill_latency_batch(&self, limit: usize) -> usize {
+        self.with(0, |conn| {
+            let cursor:Option<String>=conn.query_row("SELECT cursor FROM maintenance_state WHERE name='completed_latency_v1'",[],|r|r.get(0)).optional()?;
+            let mut stmt=conn.prepare("SELECT * FROM runs WHERE ended_at IS NOT NULL AND (?1 IS NULL OR started_at || '|' || run_id > ?1) ORDER BY started_at,run_id LIMIT ?2")?;
+            let runs:Vec<_>=stmt.query_map(params![cursor,limit.clamp(1,500) as i64], |row|Ok(parse_run(row)))?.filter_map(|r|r.transpose()).collect::<rusqlite::Result<Vec<_>>>()?;
+            if runs.is_empty(){return Ok(0);}
+            let tx=conn.unchecked_transaction()?;
+            for run in &runs {
+                let mut turns=tx.prepare("SELECT * FROM turns WHERE run_id=? ORDER BY turn_index")?;
+                let turns:Vec<_>=turns.query_map([&run.id], |row|Ok(parse_turn(row)))?.filter_map(|r|r.transpose()).collect::<rusqlite::Result<Vec<_>>>()?;
+                replace_completed_latency(&tx,run,&turns)?;
+            }
+            let last=runs.last().unwrap();
+            tx.execute("INSERT INTO maintenance_state(name,cursor) VALUES ('completed_latency_v1',?1) ON CONFLICT(name) DO UPDATE SET cursor=excluded.cursor",[format!("{}|{}",iso(&last.started_at),last.id)])?;
+            tx.commit()?;Ok(runs.len())
+        })
+    }
+    pub fn activity_samples(
+        &self,
+        after: Option<DateTime<Utc>>,
+    ) -> Vec<super::latency::ActivitySample> {
+        self.with(vec![],|conn| {
+            // Match Swift's all-time completed-run cap; bounded ranges keep all observations.
+            let mut stmt=conn.prepare("SELECT provider,started_at FROM runs WHERE ended_at IS NOT NULL AND (?1 IS NULL OR started_at >= ?1) ORDER BY started_at DESC LIMIT ?2")?;
+            let rows=stmt.query_map(params![after.as_ref().map(iso),if after.is_none(){2000_i64}else{-1_i64}],|row|{let provider:String=row.get(0)?;let at:String=row.get(1)?;Ok(parse_date(Some(at)).map(|timestamp|super::latency::ActivitySample{provider,timestamp}))})?;
+            rows.filter_map(|r|r.transpose()).collect()
+        })
+    }
+    /// Versioned resumable historical cost estimation. Observed provider
+    /// costs and invalid token totals are never overwritten by estimates.
+    pub fn backfill_cost_batch(&self, limit: usize) -> usize {
+        self.with(0,|conn| {
+            let key=format!("pricing_{}",super::pricing::VERSION);
+            let cursor:Option<String>=conn.query_row("SELECT cursor FROM maintenance_state WHERE name=?1",[&key],|r|r.get(0)).optional()?;
+            let mut stmt=conn.prepare("SELECT * FROM runs WHERE ended_at IS NOT NULL AND (?1 IS NULL OR started_at || '|' || run_id > ?1) ORDER BY started_at,run_id LIMIT ?2")?;
+            let runs:Vec<_>=stmt.query_map(params![cursor,limit.clamp(1,500) as i64],|r|Ok(parse_run(r)))?.filter_map(|r|r.transpose()).collect::<rusqlite::Result<Vec<_>>>()?;
+            if runs.is_empty(){return Ok(0);}
+            let tx=conn.unchecked_transaction()?;
+            for run in &runs {
+                if run.token_usage_state==TelemetryMetricState::Invalid || run.cost_usd.is_some()&&run.cost_source!=Some(super::token_metrics::CostSource::Estimated) {continue;}
+                let usage=run.token_usage();if !usage.has_any_tokens(){continue;}
+                let Some(price)=super::pricing::pricing(run.model.as_deref(),Some(&run.provider)) else {continue;};
+                let mut metadata=run.metadata.clone();metadata.insert("pricing_catalog_version".into(),super::pricing::VERSION.into());
+                tx.execute("UPDATE runs SET cost_usd=?1,cost_source='estimated',cost_state='estimated',metadata=?2 WHERE run_id=?3 AND (cost_usd IS NULL OR cost_source='estimated')",params![price.estimate(&usage),encode_json(&metadata),run.id])?;
+                let mut priced=run.clone();priced.cost_usd=Some(price.estimate(&usage));priced.cost_source=Some(super::token_metrics::CostSource::Estimated);priced.cost_state=TelemetryMetricState::Estimated;priced.metadata=metadata;insert_evidence(&tx,&super::evidence::UsageEvidence::run_summary(&priced))?;
+            }
+            let last=runs.last().unwrap();tx.execute("INSERT INTO maintenance_state(name,cursor) VALUES (?1,?2) ON CONFLICT(name) DO UPDATE SET cursor=excluded.cursor",params![key,format!("{}|{}",iso(&last.started_at),last.id)])?;
+            tx.commit()?;Ok(runs.len())
+        })
+    }
+    /// Ordered history, including live terminal measurements and authoritative transcript replacements.
+    pub fn latency_samples(
+        &self,
+        after: Option<DateTime<Utc>>,
+    ) -> Vec<super::latency::LatencySample> {
+        self.with(vec![], |conn| {
+            let mut statement = conn.prepare("SELECT * FROM provider_latency_samples WHERE (?1 IS NULL OR observed_at >= ?1) ORDER BY observed_at, ingest_seq")?;
+            let rows = statement.query_map([after.as_ref().map(iso)], |row| {
+                let metric: String = row.get("metric_kind")?;
+                let timestamp: String = row.get("observed_at")?;
+                let metric_kind = match metric.as_str() { "api_request" => super::latency::MetricKind::ApiRequest, "first_response" => super::latency::MetricKind::FirstResponse, _ => return Err(rusqlite::Error::InvalidQuery) };
+                Ok(super::latency::LatencySample {
+                    id: row.get("sample_id")?, provider: row.get("provider")?, metric_kind,
+                    latency_ms: row.get("latency_ms")?, timestamp: parse_date(Some(timestamp)).ok_or(rusqlite::Error::InvalidQuery)?,
+                    model: row.get("model")?, session_id: row.get("session_id")?, run_id: row.get("run_id")?,
+                    round_index: row.get("round_index")?, project_path: row.get("project_path")?, source_kind: row.get("source_kind")?,
+                })
+            })?;
+            rows.collect()
+        })
+    }
+
     pub fn finalize_run(
         &self,
         run: &TelemetryRun,
@@ -463,7 +777,7 @@ impl TelemetryStore {
             tx.execute(
                 "UPDATE runs SET
                     session_id = ?, model = ?, ended_at = ?, duration_ms = ?, exit_status = ?,
-                    total_input_tokens = ?, total_cached_input_tokens = ?, total_output_tokens = ?,
+                    total_input_tokens = ?, total_cached_input_tokens = ?, total_cache_creation_input_tokens = ?, total_cache_read_input_tokens = ?, total_output_tokens = ?,
                     total_reasoning_output_tokens = ?, cost_usd = ?, token_usage_source = ?,
                     token_usage_state = ?, cost_source = ?, cost_state = ?,
                     turn_count = ?, raw_transcript_ref = ?, error_message = ?
@@ -476,6 +790,8 @@ impl TelemetryStore {
                     run.exit_status,
                     run.total_input_tokens,
                     run.total_cached_input_tokens,
+                    run.total_cache_creation_input_tokens,
+                    run.total_cache_read_input_tokens,
                     run.total_output_tokens,
                     run.total_reasoning_output_tokens,
                     run.cost_usd,
@@ -495,6 +811,9 @@ impl TelemetryStore {
             for call in tool_calls {
                 insert_tool_call(&tx, call);
             }
+            replace_completed_latency(&tx, run, turns)?;
+            insert_evidence(&tx,&super::evidence::UsageEvidence::run_summary(run))?;
+            reconcile_proxy_window(&tx,run.started_at)?;
             tx.commit()
         });
     }
@@ -514,7 +833,7 @@ impl TelemetryStore {
                 "UPDATE runs SET
                     session_id = ?, tab_id = ?, provider = ?, model = ?, cwd = ?, repo_path = ?,
                     started_at = ?, ended_at = ?, duration_ms = ?, exit_status = ?,
-                    total_input_tokens = ?, total_cached_input_tokens = ?, total_output_tokens = ?,
+                    total_input_tokens = ?, total_cached_input_tokens = ?, total_cache_creation_input_tokens = ?, total_cache_read_input_tokens = ?, total_output_tokens = ?,
                     total_reasoning_output_tokens = ?, cost_usd = ?, token_usage_source = ?,
                     token_usage_state = ?, cost_source = ?, cost_state = ?, turn_count = ?,
                     tags = ?, metadata = ?, raw_transcript_ref = ?, parent_run_id = ?, error_message = ?
@@ -532,6 +851,8 @@ impl TelemetryStore {
                     run.exit_status,
                     run.total_input_tokens,
                     run.total_cached_input_tokens,
+                    run.total_cache_creation_input_tokens,
+                    run.total_cache_read_input_tokens,
                     run.total_output_tokens,
                     run.total_reasoning_output_tokens,
                     run.cost_usd,
@@ -554,6 +875,9 @@ impl TelemetryStore {
             for call in tool_calls {
                 insert_tool_call(&tx, call);
             }
+            replace_completed_latency(&tx, run, turns)?;
+            insert_evidence(&tx,&super::evidence::UsageEvidence::run_summary(run))?;
+            reconcile_proxy_window(&tx,run.started_at)?;
             tx.commit()
         });
     }
@@ -561,10 +885,11 @@ impl TelemetryStore {
     /// Clear a run's tokens and cost and mark them invalid.
     pub fn invalidate_run_metrics(&self, run_id: &str, reason: Option<&str>) {
         self.with((), |c| {
-            c.execute(
+            let tx=c.unchecked_transaction()?;
+            tx.execute(
                 "UPDATE runs
                 SET total_input_tokens = NULL,
-                    total_cached_input_tokens = NULL,
+                    total_cached_input_tokens = NULL, total_cache_creation_input_tokens = NULL, total_cache_read_input_tokens = NULL,
                     total_output_tokens = NULL,
                     total_reasoning_output_tokens = NULL,
                     cost_usd = NULL,
@@ -575,8 +900,10 @@ impl TelemetryStore {
                     error_message = COALESCE(?, error_message)
                 WHERE run_id = ?",
                 params![reason, run_id],
-            )
-            .map(|_| ())
+            )?;
+            let run:Option<TelemetryRun>=tx.query_row("SELECT * FROM runs WHERE run_id=?1",[run_id],|row|Ok(parse_run(row))).optional()?.flatten();
+            if let Some(run)=run {insert_evidence(&tx,&super::evidence::UsageEvidence::run_summary(&run))?;tx.execute("DELETE FROM proxy_run_baselines WHERE run_id=?1",[run_id])?;}
+            tx.commit()
         });
     }
 
@@ -599,12 +926,23 @@ impl TelemetryStore {
     }
 
     pub fn update_run_session_id(&self, run_id: &str, session_id: &str) {
-        self.with((), |c| {
-            c.execute(
-                "UPDATE runs SET session_id = ? WHERE run_id = ?",
+        self.with((), |conn| {
+            let tx = conn.unchecked_transaction()?;
+            tx.execute(
+                "UPDATE runs SET session_id=?1 WHERE run_id=?2",
                 params![session_id, run_id],
-            )
-            .map(|_| ())
+            )?;
+            let run: Option<TelemetryRun> = tx
+                .query_row("SELECT * FROM runs WHERE run_id=?1", [run_id], |row| {
+                    Ok(parse_run(row))
+                })
+                .optional()?
+                .flatten();
+            if let Some(run) = run {
+                insert_evidence(&tx, &super::evidence::UsageEvidence::run_summary(&run))?;
+                reconcile_proxy_window(&tx, run.started_at)?;
+            }
+            tx.commit()
         });
     }
 
@@ -744,24 +1082,18 @@ impl TelemetryStore {
     /// `runStatsForRepo`.
     pub fn run_stats_for_repo(&self, repo_path: &str) -> RepoRunStats {
         self.with(RepoRunStats::default(), |c| {
+            let (proxy_cost,priced_proxy,missing_proxy):(f64,i64,i64)=c.query_row("SELECT COALESCE(SUM(cost_usd),0),COALESCE(SUM(cost_usd IS NOT NULL),0),COALESCE(SUM(cost_usd IS NULL),0) FROM usage_evidence WHERE project_path=?1 AND source_kind='proxy' AND unique_event_key NOT LIKE 'run|%'",[repo_path],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?)))?;
             c.query_row(
                 "SELECT COUNT(*),
-                        COALESCE(SUM(total_input_tokens + total_output_tokens), 0),
-                        COALESCE(SUM(cost_usd), 0),
-                        COALESCE(SUM(turn_count), 0),
-                        MAX(started_at)
-                 FROM runs WHERE repo_path = ?",
-                [repo_path],
-                |r| {
-                    Ok(RepoRunStats {
-                        total_runs: r.get(0)?,
-                        total_tokens: r.get(1)?,
-                        total_cost: r.get(2)?,
-                        total_turns: r.get(3)?,
-                        last_run_at: parse_date(r.get(4)?),
-                    })
-                },
-            )
+                  COALESCE(SUM(COALESCE(total_input_tokens,0)+COALESCE(total_cached_input_tokens,0)+COALESCE(total_output_tokens,0)+COALESCE(total_reasoning_output_tokens,0)),0),
+                  COALESCE(SUM(cost_usd),0),COALESCE(SUM(turn_count),0),MAX(started_at),
+                  COALESCE(SUM(CASE WHEN token_usage_source='proxy' THEN cost_usd ELSE 0 END),0),
+                  COALESCE(SUM(cost_usd IS NOT NULL),0),COALESCE(SUM(cost_source='estimated'),0),COALESCE(SUM(cost_usd IS NULL),0),
+                  COALESCE(SUM(token_usage_state='partial' OR cost_state='partial'),0)
+                 FROM runs WHERE repo_path=?1",[repo_path],|r| {
+                    let raw_run_cost:f64=r.get(2)?;let attributed_proxy_cost:f64=r.get(5)?;
+                    Ok(RepoRunStats {total_runs:r.get(0)?,total_tokens:r.get(1)?,total_cost:super::query_projection::combined_repository_cost(raw_run_cost,proxy_cost,attributed_proxy_cost),raw_run_cost,retained_proxy_cost:proxy_cost,attributed_proxy_cost,priced_run_count:r.get(6)?,estimated_run_count:r.get(7)?,missing_cost_run_count:r.get(8)?,partial_run_count:r.get(9)?,priced_proxy_request_count:priced_proxy,missing_cost_proxy_request_count:missing_proxy,total_turns:r.get(3)?,last_run_at:parse_date(r.get(4)?)})
+                })
         })
     }
 
@@ -1072,12 +1404,16 @@ fn setup(conn: &Connection) {
 fn migrate(conn: &Connection) {
     for (table, name, definition) in [
         ("runs", "total_cached_input_tokens", "INTEGER"),
+        ("runs", "total_cache_creation_input_tokens", "INTEGER"),
+        ("runs", "total_cache_read_input_tokens", "INTEGER"),
         ("runs", "total_reasoning_output_tokens", "INTEGER"),
         ("runs", "token_usage_source", "TEXT"),
         ("runs", "token_usage_state", "TEXT"),
         ("runs", "cost_source", "TEXT"),
         ("runs", "cost_state", "TEXT"),
         ("turns", "cached_input_tokens", "INTEGER"),
+        ("turns", "cache_creation_input_tokens", "INTEGER"),
+        ("turns", "cache_read_input_tokens", "INTEGER"),
         ("turns", "reasoning_output_tokens", "INTEGER"),
     ] {
         ensure_column(conn, table, name, definition);
@@ -1108,9 +1444,9 @@ fn ensure_column(conn: &Connection, table: &str, name: &str, definition: &str) {
 fn insert_turn(conn: &Connection, turn: &TelemetryTurn) {
     if let Err(err) = conn.execute(
         "INSERT OR IGNORE INTO turns
-        (turn_id, run_id, turn_index, role, content, input_tokens, cached_input_tokens, output_tokens,
+        (turn_id, run_id, turn_index, role, content, input_tokens, cached_input_tokens, cache_creation_input_tokens, cache_read_input_tokens, output_tokens,
          reasoning_output_tokens, tool_calls, timestamp, duration_ms)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
         params![
             turn.id,
             turn.run_id,
@@ -1119,6 +1455,8 @@ fn insert_turn(conn: &Connection, turn: &TelemetryTurn) {
             turn.content,
             turn.input_tokens,
             turn.cached_input_tokens,
+            turn.cache_creation_input_tokens,
+            turn.cache_read_input_tokens,
             turn.output_tokens,
             turn.reasoning_output_tokens,
             encode_json(&turn.tool_calls),
@@ -1413,5 +1751,193 @@ mod tests {
         let again = TelemetryStore::open(&path);
         assert_eq!(again.run_count(), 1);
         let _ = std::fs::remove_dir_all(dir);
+    }
+    #[test]
+    fn latency_history_repair_preserves_live_evidence_and_resumes_backfill() {
+        let store = TelemetryStore::in_memory();
+        let now = Utc::now();
+        let mut run = TelemetryRun::new("claude", "/repo");
+        run.started_at = now;
+        run.ended_at = Some(now + chrono::Duration::seconds(5));
+        run.raw_transcript_ref = Some("/transcript.jsonl".into());
+        store.insert_run(&run);
+        let mut turn = TelemetryTurn::new(&run.id, 0, super::super::turn::TurnRole::Assistant);
+        turn.timestamp = Some(now + chrono::Duration::seconds(1));
+        store.insert_turns(&[turn.clone()]);
+        assert_eq!(store.backfill_latency_batch(1), 1);
+        assert_eq!(store.backfill_latency_batch(1), 0);
+        let mut live = super::super::latency::completed_samples(&run, &[turn.clone()])[0].clone();
+        live.id = "live".into();
+        live.source_kind = "terminal_first_output".into();
+        live.latency_ms = 10;
+        store.insert_latency_sample(&live);
+        store.insert_latency_sample(&live);
+        assert_eq!(store.latency_samples(None).len(), 2);
+        turn.timestamp = Some(now + chrono::Duration::seconds(2));
+        store.rewrite_completed_run(&run, &[turn], &[]);
+        let all = store.latency_samples(None);
+        assert_eq!(all.len(), 2);
+        assert_eq!(super::super::latency::canonical(&all)[0].latency_ms, 2000);
+        assert!(
+            store
+                .latency_samples(Some(now + chrono::Duration::minutes(1)))
+                .is_empty()
+        );
+    }
+    #[test]
+    fn canonical_cache_categories_survive_upgrade_finalize_and_repair() {
+        for legacy in [true, false] {
+            let store = TelemetryStore::in_memory();
+            if legacy {
+                store.execute_raw("ALTER TABLE runs DROP COLUMN total_cache_creation_input_tokens; ALTER TABLE runs DROP COLUMN total_cache_read_input_tokens; ALTER TABLE turns DROP COLUMN cache_creation_input_tokens; ALTER TABLE turns DROP COLUMN cache_read_input_tokens;");
+                store.reapply_migrations();
+            }
+            let mut r = run("claude", None, None);
+            r.model = Some("claude-sonnet-4".into());
+            r.total_input_tokens = Some(100);
+            r.total_cached_input_tokens = Some(30);
+            r.total_cache_creation_input_tokens = Some(20);
+            r.total_cache_read_input_tokens = Some(10);
+            r.total_output_tokens = Some(50);
+            store.insert_run(&r);
+            assert_eq!(store.get_run(&r.id).unwrap().token_usage(), r.token_usage());
+            let mut turn = TelemetryTurn::new(&r.id, 0, TurnRole::Assistant);
+            turn.input_tokens = r.total_input_tokens;
+            turn.cached_input_tokens = r.total_cached_input_tokens;
+            turn.cache_creation_input_tokens = r.total_cache_creation_input_tokens;
+            turn.cache_read_input_tokens = r.total_cache_read_input_tokens;
+            turn.output_tokens = r.total_output_tokens;
+            r.ended_at = Some(Utc::now());
+            store.finalize_run(&r, &[turn.clone()], &[]);
+            let persisted = store.get_turns(&r.id);
+            assert_eq!(persisted[0].token_usage(), r.token_usage());
+            let price = super::super::pricing::pricing(r.model.as_deref(), Some("claude")).unwrap();
+            assert_eq!(
+                price.estimate(&store.get_run(&r.id).unwrap().token_usage()),
+                price.estimate(&r.token_usage())
+            );
+            r.total_cache_creation_input_tokens = Some(25);
+            r.total_cached_input_tokens = Some(35);
+            turn.cache_creation_input_tokens = Some(25);
+            turn.cached_input_tokens = Some(35);
+            store.rewrite_completed_run(&r, &[turn], &[]);
+            assert_eq!(store.get_run(&r.id).unwrap().token_usage(), r.token_usage());
+            assert_eq!(store.get_turns(&r.id)[0].token_usage(), r.token_usage());
+            store.invalidate_run_metrics(&r.id, None);
+            let invalid = store.get_run(&r.id).unwrap();
+            assert!(invalid.total_cache_creation_input_tokens.is_none());
+            assert!(invalid.total_cache_read_input_tokens.is_none());
+        }
+    }
+    #[test]
+    fn versioned_cost_backfill_is_resumable_and_preserves_observed_prices() {
+        let store = TelemetryStore::in_memory();
+        let mut a = run("claude", None, None);
+        a.ended_at = Some(Utc::now());
+        a.model = Some("claude-sonnet-4".into());
+        a.total_input_tokens = Some(1000);
+        a.token_usage_state = TelemetryMetricState::Complete;
+        let mut b = a.clone();
+        b.id = "observed".into();
+        b.started_at += chrono::Duration::seconds(1);
+        b.cost_usd = Some(42.);
+        b.cost_source = Some(CostSource::Observed);
+        b.cost_state = TelemetryMetricState::Complete;
+        store.insert_run(&a);
+        store.insert_run(&b);
+        assert_eq!(store.backfill_cost_batch(1), 1);
+        let estimated = store.get_run(&a.id).unwrap();
+        assert!(estimated.cost_usd.unwrap() > 0.);
+        assert_eq!(estimated.cost_state, TelemetryMetricState::Estimated);
+        assert_eq!(
+            estimated.metadata["pricing_catalog_version"],
+            super::super::pricing::VERSION
+        );
+        assert_eq!(store.backfill_cost_batch(1), 1);
+        assert_eq!(store.backfill_cost_batch(1), 0);
+        assert_eq!(store.get_run(&b.id).unwrap().cost_usd, Some(42.));
+    }
+    #[test]
+    fn scoped_evidence_revokes_ambiguous_projection_and_restores_baseline() {
+        use super::super::evidence::{SourceKind, UsageEvidence};
+        let store = TelemetryStore::in_memory();
+        let now = Utc::now();
+        let mut r = run("claude", None, None);
+        r.started_at = now - chrono::Duration::seconds(1);
+        r.session_id = Some("s".into());
+        r.total_input_tokens = Some(900);
+        r.cost_usd = Some(5.);
+        r.cost_source = Some(CostSource::Estimated);
+        r.cost_state = TelemetryMetricState::Estimated;
+        store.insert_run(&r);
+        let mut e = UsageEvidence::empty("anthropic", SourceKind::Proxy, now);
+        e.session_id = Some("s".into());
+        e.input_tokens = Some(10);
+        e.output_tokens = Some(20);
+        e.cost_usd = Some(1.);
+        e.finish_proxy_identity(Some("request"));
+        store.record_usage_evidence(&e);
+        store.record_usage_evidence(&e);
+        let measured = store.get_run(&r.id).unwrap();
+        assert_eq!(measured.total_input_tokens, Some(10));
+        assert_eq!(measured.token_usage_state, TelemetryMetricState::Partial);
+        assert_eq!(store.usage_evidence(None, 100).len(), 2);
+        let mut overlapping = r.clone();
+        overlapping.id = "overlap".into();
+        store.insert_run(&overlapping);
+        let restored = store.get_run(&r.id).unwrap();
+        assert_eq!(restored.total_input_tokens, Some(900));
+        assert_eq!(restored.cost_usd, Some(5.));
+        assert!(!restored.metadata.contains_key("proxy_coverage"));
+        let mut scoped = e.clone();
+        scoped.run_id = Some(r.id.clone());
+        scoped.unique_event_key = "request2".into();
+        scoped.id = "request2".into();
+        store.record_usage_evidence(&scoped);
+        assert_eq!(store.get_run(&r.id).unwrap().total_input_tokens, Some(10));
+        store.ingest_evidence_batch(&[(4, scoped)]);
+        assert_eq!(store.evidence_cursor(), 4);
+    }
+    #[test]
+    fn repository_cost_removes_only_retained_overlap_and_keeps_missing_quality() {
+        use super::super::evidence::{SourceKind, UsageEvidence};
+        let store = TelemetryStore::in_memory();
+        let now = Utc::now();
+        let mut r = run("claude", Some("/repo"), None);
+        r.started_at = now - chrono::Duration::seconds(1);
+        r.cost_usd = Some(5.);
+        r.cost_source = Some(CostSource::Estimated);
+        store.insert_run(&r);
+        let mut e = UsageEvidence::empty("anthropic", SourceKind::Proxy, now);
+        e.project_path = Some("/repo".into());
+        e.input_tokens = Some(10);
+        e.output_tokens = Some(20);
+        e.cost_usd = Some(2.);
+        e.run_id = Some("wrong".into());
+        e.finish_proxy_identity(Some("unassigned"));
+        store.record_usage_evidence(&e);
+        assert_eq!(store.run_stats_for_repo("/repo").total_cost, 7.);
+        e.run_id = Some(r.id.clone());
+        e.cost_usd = Some(1.);
+        e.cache_creation_input_tokens = Some(2);
+        e.cache_read_input_tokens = Some(3);
+        e.reasoning_output_tokens = Some(4);
+        e.finish_proxy_identity(Some("assigned"));
+        store.record_usage_evidence(&e);
+        let mut missing = run("codex", Some("/repo"), None);
+        missing.started_at += chrono::Duration::seconds(2);
+        missing.total_input_tokens = Some(50);
+        missing.total_output_tokens = None;
+        missing.cost_usd = None;
+        store.insert_run(&missing);
+        let totals = store.run_stats_for_repo("/repo");
+        assert_eq!(totals.total_cost, 3.);
+        assert_eq!(totals.raw_run_cost, 1.);
+        assert_eq!(totals.retained_proxy_cost, 3.);
+        assert_eq!(totals.attributed_proxy_cost, 1.);
+        assert_eq!(totals.total_tokens, 89);
+        assert_eq!(totals.partial_run_count, 1);
+        assert_eq!(totals.missing_cost_run_count, 1);
+        assert_eq!(totals.priced_proxy_request_count, 2);
     }
 }

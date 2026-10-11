@@ -53,6 +53,10 @@ pub struct TelemetryRun {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub total_cached_input_tokens: Option<i64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub total_cache_creation_input_tokens: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub total_cache_read_input_tokens: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub total_output_tokens: Option<i64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub total_reasoning_output_tokens: Option<i64>,
@@ -99,6 +103,8 @@ impl TelemetryRun {
             exit_status: None,
             total_input_tokens: None,
             total_cached_input_tokens: None,
+            total_cache_creation_input_tokens: None,
+            total_cache_read_input_tokens: None,
             total_output_tokens: None,
             total_reasoning_output_tokens: None,
             cost_usd: None,
@@ -116,9 +122,11 @@ impl TelemetryRun {
     }
 
     pub fn token_usage(&self) -> TokenUsage {
-        TokenUsage::new(
+        TokenUsage::canonical(
             self.total_input_tokens.unwrap_or(0),
             self.total_cached_input_tokens.unwrap_or(0),
+            self.total_cache_creation_input_tokens.unwrap_or(0),
+            self.total_cache_read_input_tokens.unwrap_or(0),
             self.total_output_tokens.unwrap_or(0),
             self.total_reasoning_output_tokens.unwrap_or(0),
         )

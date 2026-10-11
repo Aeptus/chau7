@@ -13,6 +13,7 @@ pub struct TerminalPromptNotificationContext {
     pub runtime_owns_tab: bool,
     pub provider_id: Option<String>,
     pub provider_is_restored: bool,
+    pub provider_has_authoritative_notifications: bool,
     pub has_pending_prefill_input: bool,
     pub suppress_until_next_user_command: bool,
     pub has_recent_system_resume_prefill: bool,
@@ -21,7 +22,7 @@ pub struct TerminalPromptNotificationContext {
     pub session_id: Option<String>,
 }
 
-const SUPPORTED_STATUSES: [&str; 3] = ["running", "stuck", "waitingForInput"];
+const SUPPORTED_STATUSES: [&str; 4] = ["running", "stuck", "waitingForInput", "approvalRequired"];
 const FALLBACK_EXCLUDED_PROVIDERS: [&str; 1] = ["claude"];
 
 fn normalized_provider_id(value: Option<&str>) -> Option<String> {
@@ -40,7 +41,9 @@ pub fn should_emit_waiting_input(context: &TerminalPromptNotificationContext) ->
     let Some(provider_id) = normalized_provider_id(context.provider_id.as_deref()) else {
         return false;
     };
-    if FALLBACK_EXCLUDED_PROVIDERS.contains(&provider_id.as_str()) {
+    if FALLBACK_EXCLUDED_PROVIDERS.contains(&provider_id.as_str())
+        || (provider_id == "codex" && context.provider_has_authoritative_notifications)
+    {
         return false;
     }
     if context.has_pending_prefill_input
@@ -64,6 +67,7 @@ mod tests {
             runtime_owns_tab: false,
             provider_id: Some("codex".into()),
             provider_is_restored: false,
+            provider_has_authoritative_notifications: false,
             has_pending_prefill_input: false,
             suppress_until_next_user_command: false,
             has_recent_system_resume_prefill: false,
@@ -71,6 +75,15 @@ mod tests {
             observed_ai_round_trip: true,
             session_id: Some("session-1".into()),
         }
+    }
+
+    #[test]
+    fn current_codex_authoritative_feedback_suppresses_duplicate_prompt_fallback() {
+        let mut context = base();
+        context.previous_status = "approvalRequired".into();
+        assert!(should_emit_waiting_input(&context));
+        context.provider_has_authoritative_notifications = true;
+        assert!(!should_emit_waiting_input(&context));
     }
 
     #[test]

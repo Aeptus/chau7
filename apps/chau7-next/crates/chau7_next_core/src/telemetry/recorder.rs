@@ -124,6 +124,9 @@ impl TelemetryRecorder {
                     run.model = content.model.clone().or(run.model);
                     run.total_input_tokens = content.total_input_tokens;
                     run.total_cached_input_tokens = content.total_cached_input_tokens;
+                    run.total_cache_creation_input_tokens =
+                        content.total_cache_creation_input_tokens;
+                    run.total_cache_read_input_tokens = content.total_cache_read_input_tokens;
                     run.total_output_tokens = content.total_output_tokens;
                     run.total_reasoning_output_tokens = content.total_reasoning_output_tokens;
                     run.cost_usd = content.cost_usd;
@@ -131,6 +134,12 @@ impl TelemetryRecorder {
                     run.token_usage_state = content.token_usage_state;
                     run.cost_source = content.cost_source;
                     run.cost_state = content.cost_state;
+                    if run.cost_source == Some(super::token_metrics::CostSource::Estimated) {
+                        run.metadata.insert(
+                            "pricing_catalog_version".into(),
+                            super::pricing::VERSION.into(),
+                        );
+                    }
                     run.raw_transcript_ref = content.raw_transcript_ref.clone();
                     run.turn_count = content.turns.len() as i64;
                     if content.token_usage_state == TelemetryMetricState::Invalid {
@@ -300,13 +309,32 @@ impl TelemetryRecorder {
             run.model = repaired.model.clone().or(run.model);
             run.total_input_tokens = repaired.total_input_tokens;
             run.total_cached_input_tokens = repaired.total_cached_input_tokens;
+            run.total_cache_creation_input_tokens = repaired.total_cache_creation_input_tokens;
+            run.total_cache_read_input_tokens = repaired.total_cache_read_input_tokens;
             run.total_output_tokens = repaired.total_output_tokens;
             run.total_reasoning_output_tokens = repaired.total_reasoning_output_tokens;
-            run.cost_usd = repaired.cost_usd;
+            let observed_cost = if run.cost_source
+                == Some(super::token_metrics::CostSource::Observed)
+                && repaired.token_usage_state != TelemetryMetricState::Invalid
+            {
+                run.cost_usd
+            } else {
+                None
+            };
+            run.cost_usd = observed_cost.or(repaired.cost_usd);
             run.token_usage_source = repaired.token_usage_source;
             run.token_usage_state = repaired.token_usage_state;
             run.cost_source = repaired.cost_source;
             run.cost_state = repaired.cost_state;
+            if observed_cost.is_some() {
+                run.cost_source = Some(super::token_metrics::CostSource::Observed);
+                run.cost_state = TelemetryMetricState::Complete;
+            } else if run.cost_source == Some(super::token_metrics::CostSource::Estimated) {
+                run.metadata.insert(
+                    "pricing_catalog_version".into(),
+                    super::pricing::VERSION.into(),
+                );
+            }
             run.raw_transcript_ref = repaired.raw_transcript_ref.clone();
             run.turn_count = repaired.turns.len() as i64;
             let invalid = repaired.token_usage_state == TelemetryMetricState::Invalid;

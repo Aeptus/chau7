@@ -34,6 +34,9 @@ Depends on: Terminal (shell environment, first prompt, input lines), AI (AI CLI 
 | TOK-021 | MCP control: `tab_set_cto` sets a tab's override (refused when mode is Off); tab status reports `cto_active` and `cto_override` | `MCP/TerminalControlService.swift` |  | chau7_next/src/workspace/mcp.rs | done |  |
 | TOK-022 | Legacy RTK folders `rtk_bin`, `rtk_data`, `rtk_active` renamed to `cto_*` on setup; legacy keys `rtk.mode`, `feature.rtkPrefix` migrated | `TokenOptimization/CTOManager.swift`, `Settings/FeatureSettings.swift` | | | n/a | |
 
+| TOK-023 | CTO wrappers honor CHAU7_CTO_OPTIM_ACTIVE before invoking optimizer to prevent recursion, while keeping isolated wrapper PATH | `TokenOptimization/CTOManager.swift`; `rust/chau7_optim/src/main.rs` |  | chau7_next_core/src/cto_wrappers.rs | done |  |
+| TOK-024 | CTO runtime state JSON exposes per-tab overrides/session activation to wrappers, monitors and external clients without writing Swift state | `TokenOptimization/CTORuntimeMonitor.swift`; `TokenOptimization/CTOStateFile.swift` |  | chau7_next/src/cto/mod.rs; chau7_next_core/src/cto_wrappers.rs | partial |  |
+
 ## Notes
 
 **Paths are hardcoded in shell code.** The generated wrappers contain literal `$HOME/.chau7/cto_bin`, `$HOME/.chau7/cto_active/$CHAU7_CTO_SESSION` and `$HOME/.chau7/bin/chau7-optim` / `chau7-md`, and `chau7-optim` strips only `$HOME/.chau7/cto_bin` from PATH before running real commands (`rust/chau7_optim/src/main.rs`). Chau7 Next must generate wrappers with its own data root (`~/.chau7-next/cto_bin`, `cto_active`, `cto_data`, `bin`) and must make the optimizer strip that folder too (pass the folder in an env var, or patch `main.rs`), otherwise the optimizer finds the Next wrapper for `git`/`ls`, which calls the optimizer again: infinite recursion. All of these are DataRoot paths; add them to `data_root.rs`.

@@ -36,6 +36,8 @@ pub struct TurnStats {
     tool_tallies: HashMap<String, ToolTally>,
     input_tokens: i64,
     output_tokens: i64,
+    #[serde(default)]
+    reasoning_output_tokens: i64,
     cache_creation_tokens: i64,
     cache_read_tokens: i64,
 }
@@ -65,17 +67,28 @@ impl TurnStats {
         self.cache_read_tokens
     }
 
+    pub fn reasoning_output_tokens(&self) -> i64 {
+        self.reasoning_output_tokens
+    }
+    pub fn total_billable_tokens(&self) -> i64 {
+        self.total_tokens()
+            + self.cache_creation_tokens
+            + self.cache_read_tokens
+            + self.reasoning_output_tokens
+    }
     /// Input + output.
     pub fn total_tokens(&self) -> i64 {
         self.input_tokens + self.output_tokens
     }
 
     pub fn token_usage(&self) -> TokenUsage {
-        TokenUsage::new(
+        TokenUsage::canonical(
             self.input_tokens,
             self.cache_creation_tokens + self.cache_read_tokens,
+            self.cache_creation_tokens,
+            self.cache_read_tokens,
             self.output_tokens,
-            0,
+            self.reasoning_output_tokens,
         )
     }
 
@@ -96,10 +109,21 @@ impl TurnStats {
 
     /// Add token counts (cumulative: call once per API response chunk).
     pub fn add_tokens(&mut self, input: i64, output: i64, cache_creation: i64, cache_read: i64) {
-        self.input_tokens += input;
-        self.output_tokens += output;
-        self.cache_creation_tokens += cache_creation;
-        self.cache_read_tokens += cache_read;
+        self.add_tokens_with_reasoning(input, output, cache_creation, cache_read, 0);
+    }
+    pub fn add_tokens_with_reasoning(
+        &mut self,
+        input: i64,
+        output: i64,
+        cache_creation: i64,
+        cache_read: i64,
+        reasoning: i64,
+    ) {
+        self.reasoning_output_tokens += reasoning.max(0);
+        self.input_tokens += input.max(0);
+        self.output_tokens += output.max(0);
+        self.cache_creation_tokens += cache_creation.max(0);
+        self.cache_read_tokens += cache_read.max(0);
     }
 
     /// Flat map suitable for `RuntimeEvent.data`. Keys are part of the MCP API.
@@ -128,6 +152,14 @@ impl TurnStats {
                 self.cache_read_tokens.to_string(),
             ),
             ("total_tokens".to_string(), self.total_tokens().to_string()),
+            (
+                "total_billable_tokens".to_string(),
+                self.total_billable_tokens().to_string(),
+            ),
+            (
+                "reasoning_output_tokens".to_string(),
+                self.reasoning_output_tokens.to_string(),
+            ),
             ("files_touched".to_string(), unique_files.len().to_string()),
         ])
     }
@@ -185,7 +217,10 @@ mod tests {
         assert_eq!(stats.cache_creation_tokens(), 15);
         assert_eq!(stats.cache_read_tokens(), 35);
         assert_eq!(stats.total_tokens(), 450); // input + output
-        assert_eq!(stats.token_usage(), TokenUsage::new(300, 50, 150, 0));
+        assert_eq!(
+            stats.token_usage(),
+            TokenUsage::canonical(300, 50, 15, 35, 150, 0)
+        );
     }
 
     // MARK: Summary

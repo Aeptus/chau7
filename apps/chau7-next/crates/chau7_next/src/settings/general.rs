@@ -77,6 +77,8 @@ pub struct GeneralSettings {
     pub usage_monitoring: bool,
     pub claude_quota_capture: bool,
     pub usage_quota_warnings: bool,
+    /// Explicitly enabled retention only. Existing profiles keep history forever.
+    pub telemetry_retention_days: i64,
     /// `app.launchAtLogin` (`[next] launch_at_login`). The login item itself
     /// is registered with the OS (`platform::login_item`).
     pub launch_at_login: bool,
@@ -107,6 +109,7 @@ impl Default for GeneralSettings {
             usage_monitoring: false,
             claude_quota_capture: false,
             usage_quota_warnings: false,
+            telemetry_retention_days: 0,
             launch_at_login: false,
             load_config_files: true,
             icloud_sync: false,
@@ -176,6 +179,13 @@ impl SettingsDomain for GeneralSettings {
         {
             self.app_language = language;
         }
+        if let Some(days) = src
+            .next("telemetry_retention_days")
+            .and_then(RawValue::as_int)
+        {
+            self.telemetry_retention_days =
+                chau7_next_core::telemetry::retention::normalize_days(days);
+        }
         if let Some(v) = src.next("usage_monitoring").and_then(RawValue::as_bool) {
             self.usage_monitoring = v;
         }
@@ -229,6 +239,10 @@ impl SettingsDomain for GeneralSettings {
     fn save(&self, out: &mut ConfigSink) {
         let general = out.file.general.get_or_insert_with(Default::default);
         general.default_directory = Some(self.default_directory.clone().unwrap_or_default());
+        out.set_next(
+            "telemetry_retention_days",
+            self.telemetry_retention_days.to_string(),
+        );
         out.set_next("usage_monitoring", self.usage_monitoring.to_string());
         out.set_next(
             "claude_quota_capture",
@@ -279,6 +293,14 @@ mod tests {
     }
 
     #[test]
+    fn retention_defaults_to_keep_forever_for_existing_profiles() {
+        assert_eq!(GeneralSettings::default().telemetry_retention_days, 0);
+        assert_eq!(
+            round_trip(&GeneralSettings::default()).telemetry_retention_days,
+            0
+        );
+    }
+    #[test]
     fn round_trips() {
         assert_eq!(
             round_trip(&GeneralSettings::default()),
@@ -291,6 +313,7 @@ mod tests {
             usage_monitoring: true,
             claude_quota_capture: true,
             usage_quota_warnings: true,
+            telemetry_retention_days: 90,
             launch_at_login: true,
             load_config_files: false,
             icloud_sync: true,

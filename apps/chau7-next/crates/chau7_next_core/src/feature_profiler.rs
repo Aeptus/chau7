@@ -115,6 +115,35 @@ pub struct Snapshot {
 }
 
 impl Snapshot {
+    /// Numeric diagnostics, without caller metadata or terminal content.
+    pub fn to_json(&self, event_limit: usize) -> serde_json::Value {
+        let totals = |window: &HashMap<Feature, Totals>| {
+            Feature::ALL
+                .into_iter()
+                .filter_map(|feature| {
+                    let stats = window.get(&feature)?;
+                    Some(serde_json::json!({
+                        "feature": feature.label(), "sample_count": stats.count,
+                        "total_ms": stats.total_ms, "average_ms": stats.average_ms(),
+                        "max_ms": stats.max_ms, "total_bytes": stats.total_bytes
+                    }))
+                })
+                .collect::<Vec<_>>()
+        };
+        let recent = self
+            .recent
+            .iter()
+            .take(event_limit.min(EVENT_CAPACITY))
+            .map(|event| {
+                serde_json::json!({"feature": event.feature.label(),
+                "duration_ms": event.duration_ms, "bytes": event.bytes,
+                "at_unix_seconds": event.second})
+            })
+            .collect::<Vec<_>>();
+        serde_json::json!({"last_10s": totals(&self.last_10s),
+            "last_60s": totals(&self.last_60s), "recent_events": recent})
+    }
+
     /// A plain-text table (feature, count, average, max over 10 s and 60 s).
     pub fn report(&self) -> String {
         let mut out =
@@ -158,6 +187,9 @@ impl Profiler {
         bytes: usize,
         metadata: Option<String>,
     ) {
+        if !ms.is_finite() || ms < 0.0 {
+            return;
+        }
         match self.buckets.back_mut() {
             Some((s, totals)) if *s == second => totals.entry(feature).or_default().add(ms, bytes),
             _ => {
@@ -265,6 +297,39 @@ mod tests {
         assert_eq!(s.last_60s[&Feature::OutputProcessing].total_bytes, 512);
         assert_eq!(s.recent[0].feature, Feature::OutputProcessing);
         assert!(s.report().contains("Render"));
+    }
+
+    #[test]
+    fn json_diagnostics_are_numeric_bounded_and_exclude_metadata() {
+        let mut profiler = Profiler::default();
+        profiler.record_at(
+            100,
+            Feature::TerminalRender,
+            2.5,
+            64,
+            Some("private command".into()),
+        );
+        profiler.record_at(100, Feature::TerminalRender, 3.5, 128, None);
+        let value = profiler.snapshot_at(100).to_json(1);
+        assert_eq!(value["last_10s"][0]["sample_count"], 2);
+        assert_eq!(value["last_10s"][0]["average_ms"], 3.0);
+        assert_eq!(value["recent_events"].as_array().unwrap().len(), 1);
+        assert!(!value.to_string().contains("private command"));
+        assert!(
+            profiler.snapshot_at(100).to_json(0)["recent_events"]
+                .as_array()
+                .unwrap()
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn invalid_durations_do_not_corrupt_diagnostics() {
+        let mut profiler = Profiler::default();
+        for ms in [f64::NAN, f64::INFINITY, -1.0] {
+            profiler.record_at(100, Feature::TerminalRender, ms, 0, None);
+        }
+        assert!(profiler.snapshot_at(100).last_10s.is_empty());
     }
 
     #[test]

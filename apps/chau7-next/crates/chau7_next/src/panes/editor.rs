@@ -102,6 +102,7 @@ pub struct EditorPane {
     run_task: Option<Task<()>>,
     run_generation: u64,
     run_states: HashMap<(usize, String), super::runbook::BlockStatus>,
+    note_attachment_pending: Option<PathBuf>,
 }
 
 impl EventEmitter<SidePaneEvent> for EditorPane {}
@@ -181,7 +182,25 @@ impl EditorPane {
             run_task: None,
             run_generation: 0,
             run_states: HashMap::new(),
+            note_attachment_pending: None,
         }
+    }
+
+    pub fn is_loading(&self) -> bool {
+        self.loading
+    }
+    /// Only attach an untitled buffer; pending typed text is merged after the background read.
+    pub fn attach_session_note(
+        &mut self,
+        path: PathBuf,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.path.is_some() {
+            return;
+        }
+        self.note_attachment_pending = Some(path.clone());
+        self.load_file(path, None, window, cx);
     }
 
     pub fn path(&self) -> Option<&Path> {
@@ -290,23 +309,33 @@ impl EditorPane {
     fn finish_load(
         &mut self,
         path: PathBuf,
-        text: String,
+        mut text: String,
         line: Option<usize>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        let merge_untitled = self
+            .note_attachment_pending
+            .take()
+            .is_some_and(|target| target == path)
+            && self.path.is_none();
+        let untitled = merge_untitled
+            .then(|| self.content(cx))
+            .filter(|text| !text.trim().is_empty());
         let different_file = self.path.as_ref() != Some(&path);
         self.loaded_hash = Some(edtext::content_hash(text.as_bytes()));
+        if let Some(untitled) = &untitled {
+            text = edtext::append_text(&text, untitled).unwrap_or(text);
+        }
         self.error = None;
         if different_file {
-            self.autosave = edtext::default_autosave(
-                &path,
-                chau7_next_core::data_root::DataRoot::from_env().config_dir(),
-            );
+            let root = chau7_next_core::data_root::DataRoot::from_env();
+            self.autosave = edtext::default_autosave(&path, root.config_dir())
+                || edtext::default_autosave(&path, root.state_dir());
         }
         self.language = EditorLanguage::detect(&path.to_string_lossy());
         self.path = Some(path.clone());
-        self.dirty = false;
+        self.dirty = untitled.is_some();
         // A markdown file opens as a runbook (`isMarkdownMode` follows the path).
         self.markdown_mode = self.is_markdown_file();
         self.install_highlighter(cx);
@@ -318,6 +347,7 @@ impl EditorPane {
             self.select_line(&text, line, cx);
         }
         self.watch_file(path.clone(), window, cx);
+        self.schedule_autosave(cx);
         log::info!("Loaded file: {}", path.display());
         cx.emit(SidePaneEvent::Changed);
     }
@@ -501,10 +531,9 @@ impl EditorPane {
             this.update_in(cx, |this, window, cx| {
                 let saved = this.write_to(path.clone(), cx);
                 if saved {
-                    this.autosave |= edtext::default_autosave(
-                        &path,
-                        chau7_next_core::data_root::DataRoot::from_env().config_dir(),
-                    );
+                    let root = chau7_next_core::data_root::DataRoot::from_env();
+                    this.autosave |= edtext::default_autosave(&path, root.config_dir())
+                        || edtext::default_autosave(&path, root.state_dir());
                     this.watch_file(path, window, cx);
                 }
                 saved

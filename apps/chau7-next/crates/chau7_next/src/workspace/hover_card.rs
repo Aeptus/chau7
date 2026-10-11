@@ -257,6 +257,8 @@ impl Workspace {
                 CommandStatus::Stuck => ("Stuck", color(StyleColor::Red)),
                 CommandStatus::Exited => ("Exited", muted),
                 CommandStatus::Idle => ("Idle", muted),
+                CommandStatus::Done => ("Done", muted),
+                CommandStatus::ApprovalRequired => ("Approval required", color(StyleColor::Orange)),
             }
         };
         let leading = match ai_app.as_deref().and_then(ai_logo) {

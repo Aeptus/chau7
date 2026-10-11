@@ -56,6 +56,26 @@ pub fn publish(mut event: AiEvent, notify: bool, cx: &mut App) {
         &event.message,
         escape_sanitizer::DEFAULT_LOG_MAX_LENGTH,
     );
+    if event.repo_path.is_none()
+        && let Some(tab) = event.tab_id.and_then(tab_from_uuid)
+    {
+        for window in crate::mcp::windows::windows(cx) {
+            let summary = window.workspace.read(cx).mcp_summary(tab, cx);
+            if let Some(root) = summary.get("repo_root").and_then(serde_json::Value::as_str) {
+                event.repo_path = Some(root.to_string());
+                break;
+            }
+        }
+    }
+    if crate::observability::publish(event.clone(), notify, cx) {
+        return;
+    }
+    project(event, notify, cx);
+}
+
+/// The sole spine pump calls this after ordered ingestion.
+pub(crate) fn project(event: AiEvent, notify: bool, cx: &mut App) {
+    crate::terminal::session::apply_agent_feedback(&event, cx);
     if matches!(
         event.event_type.as_str(),
         "process_started" | "process_ended"

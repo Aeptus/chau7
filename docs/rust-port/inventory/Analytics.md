@@ -19,6 +19,8 @@ Command-usage dashboard (total commands, success rate, average duration, most us
 | ANL-006 | Hovering a block shows a tooltip with the command, its duration and "exit N" (green for 0, red otherwise) | `Analytics/TimelineScrubberView.swift` |  | chau7_next/src/workspace/timeline.rs | done |  |
 | ANL-007 | Timeline accessibility: adjustable element (VoiceOver increment/decrement moves 5%), labels per block ("Command: x, succeeded / failed with exit code N / running"). Chau7 Next: GPUI's AccessKit API; the track is a slider ("Timeline scrubber", value = elapsed time) whose Increment and Decrement actions move 5%, each block a label, the recording dot, play/pause and speed chips are labeled as in Swift; Left and Right arrows also move 5% | `Analytics/TimelineScrubberView.swift` |  | chau7_next/src/workspace/timeline.rs | done |  |
 
+| ANL-008 | API charts include provider/model, time series, latency and token/cost evidence consistent with repository and usage views | `Analytics/APIAnalyticsCharts.swift`; `Analytics/AnalyticsDashboardView.swift` | AnalyticsProviderTests | chau7_next/src/analytics.rs; chau7_next/src/debug/tabs/analytics.rs | partial |  |
+
 ## Notes
 
 **Not reachable in the Swift app.** Before porting, ask the user whether these rows should be ported (and where they would be opened from) or marked `dropped`. The module README claims the dashboard shows AI API usage and is used by Settings and StatusBar; the code does neither.

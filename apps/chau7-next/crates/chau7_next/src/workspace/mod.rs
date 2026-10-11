@@ -346,6 +346,7 @@ impl Workspace {
                 meta.created_at = meta.last_activity - (unix_now() - created).max(0.0);
             }
         }
+        panes.update(cx, |tree, cx| tree.set_owner_tab(meta.uuid, window, cx));
         self.insert_entry(id, panes.clone(), cx);
         let restored_override = meta.token_opt_override;
         if saved.is_some() || !inherit_group {
@@ -804,6 +805,7 @@ impl Workspace {
             .as_deref()
             .and_then(procinfo::git_root)
             .map(|p| p.to_string_lossy().to_string());
+        panes.update(cx, |tree, cx| tree.set_owner_tab(meta.uuid, window, cx));
         self.entries.remove(&id);
         self.insert_entry(new_id, panes, cx);
         self.state.replace(id, meta);
@@ -843,12 +845,16 @@ impl Workspace {
         }
         let cwd = self.entries.get(&id).and_then(|e| e.panes.read(cx).cwd(cx));
         let snapshot = self.closed_tab_snapshot(id, cwd.clone(), cx);
+        let closed_uuid = self.state.get(id).map(|meta| meta.uuid);
         match self
             .state
             .close(id, cwd.map(|p| p.to_string_lossy().to_string()))
         {
             CloseOutcome::NotFound => {}
             CloseOutcome::Closed => {
+                if let Some(uuid) = closed_uuid {
+                    crate::mcp::control::forget_closed_tab(&uuid.to_string());
+                }
                 if let Some((uuid, snapshot)) = snapshot {
                     self.closed_snapshots.insert(uuid, snapshot);
                     let kept: std::collections::HashSet<uuid::Uuid> = self
@@ -955,6 +961,9 @@ impl Workspace {
         let snapshot = self.closed_snapshots.remove(&entry.meta.uuid);
         let cwd = entry.directory.map(PathBuf::from);
         let panes = cx.new(|cx| PaneTree::from_saved(snapshot.as_ref(), cwd, window, cx));
+        if let Some(meta) = self.state.get(new_id) {
+            panes.update(cx, |tree, cx| tree.set_owner_tab(meta.uuid, window, cx));
+        }
         self.insert_entry(new_id, panes, cx);
         self.focus_selected(window, cx);
         cx.notify();

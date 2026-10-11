@@ -370,7 +370,15 @@ fn tick(cx: &mut App) {
         .unwrap_or_default();
     let mut calls = Vec::new();
     let mut rates = Vec::new();
+    let mut observations = Vec::new();
     for message in messages {
+        if let ProxyMessage::ApiCall {
+            event, evidence, ..
+        } = &message
+            && (200..300).contains(&event.status_code)
+        {
+            observations.push((**evidence).clone());
+        }
         match &message {
             ProxyMessage::ApiCall {
                 tab_id: Some(tab),
@@ -399,6 +407,17 @@ fn tick(cx: &mut App) {
         m.last_stats = Some(Instant::now());
         m.port
     });
+    if !observations.is_empty()
+        && let Some(recorder) = crate::telemetry::recorder(cx)
+    {
+        cx.background_executor()
+            .spawn(async move {
+                for observation in observations {
+                    recorder.store().record_usage_evidence(&observation);
+                }
+            })
+            .detach();
+    }
     for (tab, reading) in rates {
         crate::telemetry::record_token_rate(&tab, reading, cx);
     }

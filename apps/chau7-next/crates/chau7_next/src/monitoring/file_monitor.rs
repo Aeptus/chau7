@@ -19,6 +19,7 @@ pub struct FileMonitor {
     on_change: Callback,
     watcher: Arc<Mutex<Option<RecommendedWatcher>>>,
     generation: Arc<AtomicU64>,
+    arm_revision: Arc<AtomicU64>,
 }
 
 impl FileMonitor {
@@ -28,6 +29,7 @@ impl FileMonitor {
             on_change: Arc::new(on_change),
             watcher: Arc::new(Mutex::new(None)),
             generation: Arc::new(AtomicU64::new(0)),
+            arm_revision: Arc::new(AtomicU64::new(0)),
         }
     }
 
@@ -37,13 +39,16 @@ impl FileMonitor {
 
     pub fn start(&self) {
         let generation = self.generation.fetch_add(1, Ordering::SeqCst) + 1;
-        arm(
+        if arm(
             &self.url,
             &self.on_change,
             &self.watcher,
             &self.generation,
+            &self.arm_revision,
             generation,
-        );
+        ) {
+            self.arm_revision.fetch_add(1, Ordering::SeqCst);
+        }
     }
 
     pub fn stop(&self) {
@@ -87,13 +92,14 @@ fn arm(
     on_change: &Callback,
     slot: &Arc<Mutex<Option<RecommendedWatcher>>>,
     epoch: &Arc<AtomicU64>,
+    revision: &Arc<AtomicU64>,
     generation: u64,
-) {
+) -> bool {
     if epoch.load(Ordering::SeqCst) != generation {
-        return;
+        return false;
     }
     let Some(target) = canonical_target(url) else {
-        return;
+        return false;
     };
     let is_directory = target.is_dir();
     // On macOS use notify's kqueue backend, matching Swift's vnode source.
@@ -102,7 +108,7 @@ fn arm(
     let mut watched = target.clone();
     while !watched.exists() {
         let Some(parent) = watched.parent() else {
-            return;
+            return false;
         };
         watched = parent.to_path_buf();
     }
@@ -110,6 +116,7 @@ fn arm(
     let rearm_url = url.to_path_buf();
     let rearm_slot = Arc::downgrade(slot);
     let rearm_epoch = Arc::downgrade(epoch);
+    let rearm_revision = Arc::downgrade(revision);
     let rearm_callback = on_change.clone();
     let pending = Arc::new(AtomicBool::new(false));
     let target_path = target.clone();
@@ -151,11 +158,19 @@ fn arm(
             let slot = rearm_slot.clone();
             let epoch = rearm_epoch.clone();
             let callback = rearm_callback.clone();
+            let revision = rearm_revision.clone();
             let pending = pending.clone();
             std::thread::spawn(move || {
                 std::thread::sleep(REARM_DELAY);
-                if let (Some(slot), Some(epoch)) = (slot.upgrade(), epoch.upgrade()) {
-                    arm(&url, &callback, &slot, &epoch, generation);
+                if let (Some(slot), Some(epoch), Some(revision)) =
+                    (slot.upgrade(), epoch.upgrade(), revision.upgrade())
+                    && arm(&url, &callback, &slot, &epoch, &revision, generation)
+                    && epoch.load(Ordering::SeqCst) == generation
+                {
+                    // Reload after recovery as well: writes during the rearm gap
+                    // must be visible even when their native events were missed.
+                    callback();
+                    revision.fetch_add(1, Ordering::SeqCst);
                 }
                 pending.store(false, Ordering::SeqCst);
             });
@@ -165,16 +180,18 @@ fn arm(
         Ok(mut watcher) => {
             if let Err(error) = watcher.watch(&watched, RecursiveMode::NonRecursive) {
                 log::debug!("FileMonitor: cannot watch {}: {error}", watched.display());
-                return;
+                return false;
             }
             if let Ok(mut current) = slot.lock()
                 && epoch.load(Ordering::SeqCst) == generation
             {
                 *current = Some(watcher);
+                return true;
             }
         }
         Err(error) => log::debug!("FileMonitor: {error}"),
     }
+    false
 }
 
 #[cfg(test)]
@@ -236,6 +253,19 @@ mod tests {
         );
     }
 
+    fn wait_for_rearm(monitor: &FileMonitor) {
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        while monitor.arm_revision.load(Ordering::SeqCst) < 2
+            && std::time::Instant::now() < deadline
+        {
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        assert!(
+            monitor.arm_revision.load(Ordering::SeqCst) >= 2,
+            "file observer did not rearm"
+        );
+    }
+
     #[test]
     fn initially_missing_target_recovers_and_observes_later_writes() {
         let dir = temp_dir("missing");
@@ -249,7 +279,7 @@ mod tests {
         std::thread::sleep(Duration::from_millis(100));
         std::fs::write(&file, "created").unwrap();
         wait_for_change(&count);
-        std::thread::sleep(REARM_DELAY * 3);
+        wait_for_rearm(&monitor);
         count.store(0, Ordering::SeqCst);
         std::fs::write(&file, "updated after recovery").unwrap();
         wait_for_change(&count);
@@ -272,10 +302,34 @@ mod tests {
         std::fs::write(&replacement, "replacement").unwrap();
         std::fs::rename(&replacement, &file).unwrap();
         wait_for_change(&count);
-        std::thread::sleep(REARM_DELAY * 3);
+        wait_for_rearm(&monitor);
         count.store(0, Ordering::SeqCst);
         std::fs::write(&file, "new inode updated").unwrap();
         wait_for_change(&count);
+        monitor.stop();
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn recovery_reloads_writes_that_happen_before_the_new_inode_is_watched() {
+        let dir = temp_dir("rearm-gap");
+        let file = dir.join("file.txt");
+        std::fs::write(&file, "original").unwrap();
+        let latest = Arc::new(Mutex::new(String::new()));
+        let seen = latest.clone();
+        let observed = file.clone();
+        let monitor = FileMonitor::new(&file, move || {
+            if let Ok(text) = std::fs::read_to_string(&observed) {
+                *seen.lock().unwrap() = text;
+            }
+        });
+        monitor.start();
+        let replacement = dir.join("replacement.txt");
+        std::fs::write(&replacement, "replacement").unwrap();
+        std::fs::rename(replacement, &file).unwrap();
+        std::fs::write(&file, "latest content during recovery").unwrap();
+        wait_for_rearm(&monitor);
+        assert_eq!(*latest.lock().unwrap(), "latest content during recovery");
         monitor.stop();
         let _ = std::fs::remove_dir_all(dir);
     }
@@ -292,7 +346,7 @@ mod tests {
         monitor.start();
         std::fs::create_dir_all(file.parent().unwrap()).unwrap();
         std::fs::write(&file, "created").unwrap();
-        std::thread::sleep(REARM_DELAY * 4);
+        wait_for_rearm(&monitor);
         std::fs::write(&file, "written after hierarchy recovery").unwrap();
         wait_for_change(&count);
         monitor.stop();

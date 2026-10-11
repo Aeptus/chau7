@@ -92,13 +92,6 @@ fn delivery_error(response: &str) -> Option<String> {
     }
 }
 
-/// Initial prompt tries (`scheduleInitialPrompt`): 0.3 s twice, then 0.5 s.
-const INITIAL_PROMPT_ATTEMPTS: u32 = 120;
-
-fn initial_prompt_delay(attempt: u32) -> Duration {
-    Duration::from_millis(if attempt <= 2 { 300 } else { 500 })
-}
-
 /// `handleToolCall`.
 pub fn handle_tool_call(name: &str, args: &Map<String, Value>, ctx: &ToolContext) -> String {
     match name {
@@ -400,66 +393,53 @@ fn sync_owned_tabs(main: &MainThread) {
     let _ = main.call(super::sync_runtime_owned_tabs);
 }
 
-/// Wait for readiness within the bounded launch window, retaining the caller.
+/// Keep the prompt pending until a real backend readiness transition; no fixed retry deadline.
 fn schedule_initial_prompt(
     session: Arc<RuntimeSession>,
     prompt: String,
     main: MainThread,
     origin: CallOrigin,
 ) {
+    session.queue_initial_prompt(prompt);
+    let pending = session.clone();
     let spawned = std::thread::Builder::new()
         .name("chau7-next-runtime-prompt".into())
+        .stack_size(512 * 1024)
         .spawn(move || {
             let ctx = origin.context(&main);
-            for attempt in 1..=INITIAL_PROMPT_ATTEMPTS {
-                std::thread::sleep(initial_prompt_delay(attempt));
-                if connected(&ctx).is_err() { return; }
-                if session.is_terminal() {
-                    log::warn!(
-                        "MCP initial_prompt: session {} reached terminal state before prompt could be sent (state={})",
-                        session.id,
-                        session.state().raw_value()
-                    );
-                    session.record(
+            match pending.wait_for_pending_initial_prompt_unless(|| connected(&ctx).is_err()) {
+                Ok(Some(prompt)) => {
+                    let result = send_turn_internal(&pending, &prompt, None, &ctx);
+                    if result.contains("\"error\"") {
+                        pending.record(
+                            None,
+                            "initial_prompt_failed",
+                            [("reason".into(), "dispatch_failed".into())].into(),
+                        );
+                        pending.clear_pending_initial_prompt();
+                        log::warn!(
+                            "Pending runtime prompt dispatch failed for session {}",
+                            pending.id
+                        );
+                    }
+                }
+                Err(state) => {
+                    pending.record(
                         None,
                         "initial_prompt_failed",
                         [
-                            ("reason".to_string(), "session_terminated".to_string()),
-                            ("state".to_string(), session.state().raw_value().to_string()),
+                            ("reason".into(), "session_terminated".into()),
+                            ("state".into(), state.raw_value().into()),
                         ]
                         .into(),
                     );
-                    return;
                 }
-                if session.can_accept_turn() {
-                    log::info!(
-                        "MCP initial_prompt: sending to session {} (attempt {attempt})",
-                        session.id
-                    );
-                    let result = send_turn_internal(&session, &prompt, None, &ctx);
-                    if result.contains("\"error\"") {
-                        log::warn!("MCP initial_prompt: sendTurn failed - {result}");
-                    }
-                    return;
-                }
+                Ok(None) => (),
             }
-            log::warn!(
-                "MCP initial_prompt: giving up after {INITIAL_PROMPT_ATTEMPTS} attempts, session state={}",
-                session.state().raw_value()
-            );
-            session.record(
-                None,
-                "initial_prompt_failed",
-                [
-                    ("reason".to_string(), "timeout".to_string()),
-                    ("state".to_string(), session.state().raw_value().to_string()),
-                    ("attempts".to_string(), INITIAL_PROMPT_ATTEMPTS.to_string()),
-                ]
-                .into(),
-            );
         });
     if let Err(err) = spawned {
-        log::error!("MCP initial_prompt: thread: {err}");
+        session.clear_pending_initial_prompt();
+        log::error!("MCP initial_prompt thread: {err}");
     }
 }
 
@@ -1036,14 +1016,6 @@ mod tests {
         // A denied caller never even queues work on the main thread.
         assert!(rx.try_recv().is_err());
         manager().stop_session(&session.id);
-    }
-
-    #[test]
-    fn initial_prompt_wait_is_bounded_while_readiness_is_observed() {
-        let total: Duration = (1..=INITIAL_PROMPT_ATTEMPTS)
-            .map(initial_prompt_delay)
-            .sum();
-        assert_eq!(total, Duration::from_millis(59600));
     }
 
     #[test]

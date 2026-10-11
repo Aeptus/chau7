@@ -64,6 +64,18 @@ Chau7 runs an MCP server on a Unix socket so AI agents (Claude Code, Codex, Curs
 | MCP-051 | Stable `window_id` per window (0, 1, 2...) that does not shift when a window closes; tab lookups search all windows | `MCP/TerminalControlService.swift` | `TerminalControlServiceTests` | `chau7_next/src/mcp/windows.rs` | done |  |
 | MCP-052 | MCP actions are logged (tab created, exec, input, key press, close, blocked/allowed commands) | `MCP/TerminalControlService.swift` |  | `chau7_next/src/mcp/tools/tabs.rs`, `chau7_next/src/mcp/approval.rs` | done |  |
 
+| MCP-053 | chau7_runtime_info and chau7_mcp_session_info: runtime identity/build/protocol/features plus client connection metadata | `MCP/MCPSession.swift` | MCPProtocolCompatibilityTests; MCPSessionTests |  | missing |  |
+| MCP-054 | chau7_state_snapshot: coherent windows/tabs/runtime/services/permissions snapshot from immutable projection | `MCP/Chau7StateSnapshotService.swift`; `MCP/MCPSession.swift` | Chau7ObservabilityServiceTests |  | missing |  |
+| MCP-055 | chau7_runtime_events and chau7_timer_inventory expose canonical recent events and actual running timers | `MCP/MCPSession.swift`; `Observability/Chau7ObservabilityService.swift` | Chau7ObservabilityServiceTests |  | missing |  |
+| MCP-056 | chau7_subscribe/unsubscribe: connection-scoped topic filters, cursors and change delivery without leaking cross-client subscriptions | `MCP/MCPSession.swift`; `MCP/MCPClientConnections.swift` | MCPClientConnectionsTests |  | missing |  |
+| MCP-057 | tab_request_control/release_control: explicit control ownership and client identity; reject conflicting mutation, release on disconnect | `MCP/MCPSession.swift`; `MCP/TerminalControlService.swift` | TerminalControlServiceTests; MCPSessionTransportTests |  | missing |  |
+| MCP-058 | tab_wait_ready: wait for shell/interactive readiness with bounded timeout and useful diagnostics | `MCP/MCPSession.swift`; `MCP/TerminalControlService.swift` | TerminalControlServiceTests |  | missing |  |
+| MCP-059 | agent_launch: provider/model/prompt/environment launch readiness, optional existing tab and shell-safe command construction | `MCP/MCPSession.swift`; `MCP/TerminalControlService.swift` | TerminalControlServiceTests |  | missing |  |
+| MCP-060 | repo_get_events: repository-scoped chronological events from sessions/AI/journal with query limit and cursor semantics | `MCP/MCPRepositoryQueryService.swift`; `MCP/MCPSession.swift` | MCPRepositoryQueryServiceTests; RepoEventQueryTests |  | missing |  |
+| MCP-061 | runtime_session_children/cancel_children/retry and runtime_turn_result/wait with current schemas, statuses, timeout and structured results | `MCP/MCPSession.swift`; `Runtime/RuntimeControlService.swift` | RuntimeControlServiceTests |  | missing |  |
+| MCP-062 | Per-tool bounded rate limits, client connection lifetime, handshake diagnostics and stable unique tab IDs across windows/restores | `Chau7Core/MCPToolRateLimiter.swift`; `Chau7Core/MCPConnectionLifetimePolicy.swift`; `Chau7Core/MCPHandshakeDiagnostic.swift`; `Chau7Core/MCPTabIDAllocator.swift` | MCPToolRateLimiterTests; MCPConnectionLifetimePolicyTests; MCPTabIDAllocatorTests |  | missing |  |
+| MCP-063 | Codex MCP config formatter preserves unrelated TOML/comments/other servers and idempotently updates only Next registration | `MCP/CodexMCPConfigFormatter.swift` | CodexMCPConfigFormatterTests |  | missing |  |
+
 ## Notes
 
 ### Chau7 Next isolation (DUAL-SHIP.md)

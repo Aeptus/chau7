@@ -116,3 +116,53 @@ files, +123,926 / -30,060 lines. By module (added / removed lines, files):
 
 Rendering (-109), Migration (-103), Appearance and Profiles shrank or were
 folded into the modules above.
+
+## 6. Current-source inventory audit (2026-10-11)
+
+The April result is superseded for current parity tracking. Comparison source is
+official main `7733b1f0c4440c0193915b036c38d5b83f31a1b3`; Next audit baseline
+is `3e1639a85fe9bb7a4cc9873996b8fade14525ac4`. The audit appended 126 current
+behaviour rows and reopened five historical rows whose behaviour changed or
+whose implementation claim did not hold. IDs are unchanged. `PARITY.md` is
+regenerated from the current inventory, including missing/partial deltas.
+
+The source manifest `inventory/audit/current-swift-sources.tsv` records all 652
+current Swift source files, their content hash, April change class and explicit
+row citations. A file without a direct citation is a module-level review input;
+its placement in the manifest does not assert equivalent implementation or a
+passing test. File splits, stores and platform helper classes need equivalent
+behaviour, not identical Rust type names. Tests listed on new rows were checked
+against tracked Swift test files; absent coverage is left blank.
+
+### Implementation batches and seams
+
+Use existing Next modules before introducing a new service. This table scopes
+cohesive batches and points at source, destination seams and validation. The
+inventory rows carry detailed behaviours and current defaults.
+
+| Batch | Rows | Swift source of truth | Next seam / work | Validation |
+|---|---|---|---|---|
+| Tab identity/grouping | OVL-043, OVL-044, OVL-045, OVL-120 | `Overlay/OverlayTabsModel+RepoGrouping.swift`, `Chau7Core/RepoGroupInheritance.swift`, `Chau7Core/TabTitleFormatter.swift` | `tabs_state.rs`, `tab_bar.rs`, `workspace/mod.rs`: seed ordinary/restored roots, retain manual intent, regroup on mode change; default Off stays Off | Root-aware grouping tests, restored roots, directory component boundaries, cross-window moves, real grouped strip |
+| Graphemes/locales/CTO sentinel | PRF-003, RBK-061, L10-001, L10-007, L10-008, TOK-023 | Renderer plus `Localization.swift`, language strings/dicts, `CTOManager.swift` | `terminal/paint.rs`, `l10n/`, `settings/general.rs`, `cto_wrappers.rs`; GPUI renderer limitation remains PRF-002 | Combining accents/emoji/CJK cells, plural fixtures for all languages, wrapper recursion; regional format is separate L10-009 |
+| Performance and observation access | PRF-014 to PRF-018, DBG-026, LOG-029, OBS-001 to OBS-005, MCP-053 to MCP-056 | Performance profilers/writer, `MainThreadHangMonitor.swift`, `Chau7ObservabilityService.swift`, event spine | Keep existing Perf/Lag sources; add bounded numeric persistent sink, snapshots and access via UI/MCP; timer inventory must reflect actual scheduled tasks | Schema/rotation/limits, flush/restart, p50/p95 consistency, no terminal content by default, app identity/settings/process data |
+| Editor/runbook current behaviour | SPL-016, SPL-017, EDT-013 to EDT-015 | `RunbookCodeBlockTracker.swift`, `EditorAutoSaver.swift`, `TextEditorModel` in `SplitPaneController.swift` | `panes/editor.rs`, `panes/runbook.rs`, `editor/markdown.rs`: shell fence eligibility, command completion sequencing, block status, debounce autosave and external conflicts | Swift Run All/Tracker/AutoSaver fixtures; mixed-language Markdown, slow/failing/no-status command, clean/dirty external edits, save/discard races |
+| Repository and session notes | REP-011 to REP-019, SPL-024, SPL-025 | `RepositoryPaneModel/View.swift`, draft store, session files/note tracker | Existing repository metadata/diff/editor retained; add typed Git pane/model with background operations and protected access; register pane factory/restore tags | Porcelain/diff parsers, staging/commit draft/stash index race, dirty repo write errors, session-vs-other files, note persistence |
+| Runtime delegation/results | RUN-025 to RUN-032, MCP-061 | `DelegatedTask.swift`, `StructuredResultExtractor.swift`, `RuntimeLaunchReadiness.swift`, control service | Extend `runtime/{manager,session,control}.rs` and core runtime; register current tools and propagate parent/run/schema/limits; FS/network flags remain advisory | Delegation depth/turn/duration, children/retry/cancel, schema invalid/missing/available, settle timeout, late initial prompt and Codex feedback |
+| Quotas, t/s and cost evidence | TEL-016 to TEL-024, USG-001 to USG-008, ANL-008, DBG-027 | Token-rate monitor/store/badge; quota/latency/accounting/pricing/evidence sources | Existing run extraction/CTO totals retained; add live rates and evidence reconciliation, pricing/backfill, quota snapshots and provider health; separate measured/estimated sources | No duplicate proxy/transcript totals, cached/reasoning inclusivity, measured rate priority, quota reset/warnings, bounded tail/rotation, latency fixtures |
+| Dashboard | DSH-001 to DSH-008 | `Dashboard/AgentDashboard*`, session files tracker | New repository agent dashboard built on runtime, telemetry and Git pane; keep historical Analytics dashboard | Runtime and passive CLI cards, parent hierarchy, conflict severities, timeline cursors, start/stop/commit/review actions, plans |
+| Hooks, routing and delivery | NOT-040 to NOT-044, MON-018 to MON-023, TRM-065, PRX-021 | Hook/status-line/notify configuration, feedback/resolver/process snapshot, Aethyme delivery | Own helpers/config ownership and paths via DataRoot, shared incremental watches, ready-state delivery; preserve other app hooks | Install/uninstall idempotence, foreign settings, old session quarantine, coalesced process snapshot, recipient readiness/ack/retry; no production file mutation |
+| Settings and permissions | SET-136 to SET-140, L10-009 | `SettingsRootView`, `SettingsNavigationModel`, Permission Center, Full Disk Access guard | Extend existing settings sections/search and protected paths; new domain keys included in import/export/reset; independent regional locale | Search anchor/navigation, current defaults, notification/grant/cooldown errors, config round trips, formatter invalidation |
+| Prompt rules | REP-017, REP-018, PRX-022 | Injection store/trigger policy and settings page | Rule editor plus own JSON state fed into existing Go proxy; TUI gate is currently a Swift TODO returning false, so operational Swift parity cannot claim working terminal injection | Local > repo > global priority, trigger/default/import fixtures, content not auto-submitted |
+| Skills and CLI | SKL-001 to SKL-006, CLI-001 to CLI-003 | Skill validator/planner/installer and `Chau7CLIRunner.swift` | New pure managed installer/CLI surface with Next manifest/state names, bundle own skills; do not replace `chau7` executable or overwrite user edits | Frontmatter/schema/hashes/provider target, unmanaged conflict and forced update backup, rollback, commands/exit codes and CHAU7_NEXT_HOME relocation |
+| Restore and retention | OVL-117 to OVL-119, OVL-121, PRF-018, TEL-024, LOG-030 | Source arbiter, transaction/window planner, deferred scheduling, resume ownership, retention policies | Extend own session store/restore; equivalent transaction and dedup protection, selected-first restoration and bounded disk caches without reading production restore data | Corrupt/missing bundle/index, backup freshness, duplicate tabs/windows, rapid selection, no auto-executed resume, pressure/reload and retention bounds |
+| Remote current protocol | RMT-030 to RMT-033 | Credentials, CHG2 cache/delivery, structured prompt/replay/push/backoff | Retain isolated shared Go agent and current wire format; validate owned credentials and actionable provisioning instructions, generation deltas and resync, prompt identity guards | Owner/symlink/size/identity validation, unchanged-frame suppression and full resync, duplicate prompt/response, reconnect/replay and push payloads |
+
+### Validation limits
+
+The audit establishes a current feature backlog. Existing `done` rows retain
+implementation evidence from the earlier port; they are not a blanket proof of
+all current edge cases. The new delta rows intentionally remain partial or
+missing until implementation and caller wiring are verified. The Mac checklist
+still covers actual platform behaviour (IME/AZERTY, multiple displays, Keychain,
+notifications, accessibility and real AI sessions). PRF-002 remains partial:
+GPUI has no supported CPU fallback and the user has not dropped that feature.

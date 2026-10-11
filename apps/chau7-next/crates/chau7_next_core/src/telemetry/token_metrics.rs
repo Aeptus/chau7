@@ -8,14 +8,16 @@ use serde::{Deserialize, Serialize};
 pub enum TelemetryMetricState {
     Complete,
     Estimated,
+    Partial,
     Missing,
     Invalid,
 }
 
 impl TelemetryMetricState {
-    pub const ALL: [Self; 4] = [
+    pub const ALL: [Self; 5] = [
         Self::Complete,
         Self::Estimated,
+        Self::Partial,
         Self::Missing,
         Self::Invalid,
     ];
@@ -89,6 +91,24 @@ impl TokenUsage {
         }
     }
 
+    /// Already canonical counters from persistence. Preserve uncategorized
+    /// legacy cache without subtracting inclusive input a second time.
+    pub fn canonical(
+        input: i64,
+        cached: i64,
+        creation: i64,
+        read: i64,
+        output: i64,
+        reasoning: i64,
+    ) -> Self {
+        let mut usage = Self::new(input, cached, output, reasoning);
+        usage.cache_creation_input_tokens = creation.max(0);
+        usage.cache_read_input_tokens = read.max(0);
+        usage.cached_input_tokens = usage
+            .cached_input_tokens
+            .max(usage.cache_creation_input_tokens + usage.cache_read_input_tokens);
+        usage
+    }
     pub fn provider(
         provider: &str,
         input: Option<i64>,

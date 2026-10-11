@@ -166,6 +166,7 @@ pub fn definitions() -> Vec<Value> {
 pub fn call(name: &str, args: &Map<String, Value>, ctx: &ToolContext) -> Option<String> {
     let tab_id = arg_str(args, "tab_id").map(str::to_string);
     let main = ctx.main;
+    let owner = (!ctx.is_internal()).then(|| ctx.client_id.to_string());
     Some(match name {
         "tab_list" => main.call(list_tabs).unwrap_or_else(no_window),
         "tab_create" => create_tab(
@@ -199,8 +200,13 @@ pub fn call(name: &str, args: &Map<String, Value>, ctx: &ToolContext) -> Option<
         "tab_close" => match tab_id {
             Some(tab_id) => {
                 let force = arg_bool(args, "force").unwrap_or(false);
-                main.call(move |cx| close_tab(&tab_id, force, cx))
-                    .unwrap_or_else(no_window)
+                main.call(move |cx| {
+                    if let Err(error) = authorize(&tab_id, owner.as_deref(), cx) {
+                        return error;
+                    }
+                    close_tab(&tab_id, force, cx)
+                })
+                .unwrap_or_else(no_window)
             }
             None => json_error("tab_id is required"),
         },
@@ -217,16 +223,26 @@ pub fn call(name: &str, args: &Map<String, Value>, ctx: &ToolContext) -> Option<
         "tab_set_cto" => match (tab_id, arg_str(args, "override")) {
             (Some(tab_id), Some(value)) => {
                 let value = value.to_string();
-                main.call(move |cx| set_cto(&tab_id, &value, cx))
-                    .unwrap_or_else(no_window)
+                main.call(move |cx| {
+                    if let Err(error) = authorize(&tab_id, owner.as_deref(), cx) {
+                        return error;
+                    }
+                    set_cto(&tab_id, &value, cx)
+                })
+                .unwrap_or_else(no_window)
             }
             _ => json_error("tab_id and override are required"),
         },
         "tab_rename" => match (tab_id, arg_str(args, "title")) {
             (Some(tab_id), Some(title)) => {
                 let title = title.to_string();
-                main.call(move |cx| rename(&tab_id, &title, cx))
-                    .unwrap_or_else(no_window)
+                main.call(move |cx| {
+                    if let Err(error) = authorize(&tab_id, owner.as_deref(), cx) {
+                        return error;
+                    }
+                    rename(&tab_id, &title, cx)
+                })
+                .unwrap_or_else(no_window)
             }
             _ => json_error("tab_id and title are required"),
         },
@@ -330,12 +346,28 @@ pub(crate) fn create_tab(
     {
         return json_error(&format!("Directory does not exist: {dir}"));
     }
+    let owner = (!ctx.is_internal()).then(|| ctx.client_id.to_string());
     ctx.main
         .call(move |cx| {
+            if !Settings::get(cx).mcp.enabled {
+                return Some(json_error("MCP is disabled in settings."));
+            }
+            if owner
+                .as_deref()
+                .is_some_and(|owner| !crate::mcp::control::is_connected(owner))
+            {
+                return Some(json_error("MCP connection is closed"));
+            }
             let workspace = windows(cx)
                 .into_iter()
                 .find(|w| w.handle == handle)
                 .map(|w| w.workspace)?;
+            let limit = Settings::get(cx).mcp.tab_limit();
+            if workspace.read(cx).mcp_tab_count() >= limit {
+                return Some(json_error(&format!(
+                    "MCP tab limit reached ({limit}). Close existing MCP tabs first."
+                )));
+            }
             let uuid = handle
                 .update(cx, |_, window, cx| {
                     workspace.update(cx, |ws, cx| {
@@ -413,7 +445,28 @@ fn send_to_tab(tab: &McpTab, bytes: &[u8], cx: &mut App) -> bool {
     true
 }
 
+fn authorize(tab_id: &str, owner: Option<&str>, cx: &mut App) -> Result<(), String> {
+    match owner {
+        Some(owner) => crate::mcp::control::authorize_mutation_on_main(tab_id, owner, cx),
+        None => Ok(()),
+    }
+}
+fn preflight(tab_id: &str, ctx: &ToolContext) -> Result<(), String> {
+    if ctx.is_internal() {
+        return Ok(());
+    }
+    let tab = tab_id.to_string();
+    let owner = ctx.client_id.to_string();
+    ctx.main
+        .call(move |cx| authorize(&tab, Some(&owner), cx))
+        .unwrap_or_else(|| Err(no_window()))
+}
+
 pub(crate) fn exec(tab_id: &str, command: &str, ctx: &ToolContext) -> String {
+    if let Err(error) = preflight(tab_id, ctx) {
+        return error;
+    }
+    let owner = (!ctx.is_internal()).then(|| ctx.client_id.to_string());
     let Some((permissions, window)) = permissions_for(tab_id, ctx) else {
         return no_window();
     };
@@ -425,6 +478,7 @@ pub(crate) fn exec(tab_id: &str, command: &str, ctx: &ToolContext) -> String {
         command,
         &format!("tab {tab_id}"),
         window,
+        tab_id,
     ) {
         return err;
     }
@@ -432,6 +486,7 @@ pub(crate) fn exec(tab_id: &str, command: &str, ctx: &ToolContext) -> String {
     let command = command.to_string();
     ctx.main
         .call(move |cx| {
+            if let Err(error) = authorize(&tab_id, owner.as_deref(), cx) { return error; }
             let Some(tab) = find_tab(&tab_id, cx) else {
                 return not_found(&tab_id);
             };
@@ -462,6 +517,10 @@ pub(crate) fn exec(tab_id: &str, command: &str, ctx: &ToolContext) -> String {
 }
 
 pub(crate) fn send_input(tab_id: &str, input: &str, ctx: &ToolContext) -> String {
+    if let Err(error) = preflight(tab_id, ctx) {
+        return error;
+    }
+    let owner = (!ctx.is_internal()).then(|| ctx.client_id.to_string());
     let Some((permissions, window)) = permissions_for(tab_id, ctx) else {
         return no_window();
     };
@@ -473,6 +532,7 @@ pub(crate) fn send_input(tab_id: &str, input: &str, ctx: &ToolContext) -> String
         input,
         &format!("tab {tab_id}"),
         window,
+        tab_id,
     ) {
         return err;
     }
@@ -480,6 +540,9 @@ pub(crate) fn send_input(tab_id: &str, input: &str, ctx: &ToolContext) -> String
     let input = input.to_string();
     ctx.main
         .call(move |cx| {
+            if let Err(error) = authorize(&tab_id, owner.as_deref(), cx) {
+                return error;
+            }
             let Some(tab) = find_tab(&tab_id, cx) else {
                 return not_found(&tab_id);
             };
@@ -494,6 +557,7 @@ pub(crate) fn send_input(tab_id: &str, input: &str, ctx: &ToolContext) -> String
 }
 
 fn press_key(tab_id: &str, key: &str, modifiers: &[String], ctx: &ToolContext) -> String {
+    let owner = (!ctx.is_internal()).then(|| ctx.client_id.to_string());
     let modifiers: Vec<&str> = modifiers.iter().map(String::as_str).collect();
     let press = match TerminalKeyPress::new(key, &modifiers) {
         Ok(press) => press,
@@ -505,6 +569,9 @@ fn press_key(tab_id: &str, key: &str, modifiers: &[String], ctx: &ToolContext) -
     let tab_id = tab_id.to_string();
     ctx.main
         .call(move |cx| {
+            if let Err(error) = authorize(&tab_id, owner.as_deref(), cx) {
+                return error;
+            }
             let Some(tab) = find_tab(&tab_id, cx) else {
                 return not_found(&tab_id);
             };
@@ -596,7 +663,12 @@ pub(crate) fn close_tab(tab_id: &str, force: bool, cx: &mut App) -> String {
             .read(cx)
             .mcp_session(tab.tab, cx)
             .map(|s| s.read(cx).status());
-        if let Some(status @ (CommandStatus::Running | CommandStatus::WaitingForInput)) = status {
+        if let Some(
+            status @ (CommandStatus::Running
+            | CommandStatus::WaitingForInput
+            | CommandStatus::ApprovalRequired),
+        ) = status
+        {
             return json_error(&format!(
                 "Tab has a running process (status: {}). Use force=true to close anyway.",
                 status.as_str()

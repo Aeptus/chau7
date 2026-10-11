@@ -5,6 +5,7 @@
 pub mod claude_transcript;
 pub mod codex_rollout;
 pub mod date_codec;
+pub mod evidence;
 pub mod metrics_sanitizer;
 pub mod providers;
 pub mod recorder;
@@ -17,6 +18,11 @@ mod transcript_util;
 pub mod turn;
 
 pub mod jsonl_tail;
+pub mod latency;
 pub mod pricing;
+pub mod provider_health;
+pub mod query_projection;
 pub mod quota;
 pub mod token_rate;
+
+pub mod retention;

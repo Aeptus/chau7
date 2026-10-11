@@ -302,6 +302,11 @@ impl DataRoot {
         self.state_dir.join("scrollback")
     }
 
+    /// Ordered durable events owned by Chau7 Next, independent of Swift's journal.
+    pub fn event_journal_file(&self) -> PathBuf {
+        self.config_dir.join("events").join("spine-journal.db")
+    }
+
     /// Local bug reports (`chau7-bug-report-<ts>.md`; Swift: `~/.chau7/reports`).
     pub fn reports_dir(&self) -> PathBuf {
         self.config_dir.join("reports")

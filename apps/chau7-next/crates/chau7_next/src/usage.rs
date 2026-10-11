@@ -32,6 +32,157 @@ pub struct UsageView {
     pub capture_installed: bool,
     pub refreshing: bool,
 }
+#[derive(Default)]
+struct ProviderHealth {
+    snapshots: std::collections::HashMap<
+        String,
+        chau7_next_core::telemetry::provider_health::HealthSnapshot,
+    >,
+    failures: u32,
+    next_allowed: Option<DateTime<Utc>>,
+}
+struct HealthGlobal(Arc<Mutex<ProviderHealth>>);
+impl Global for HealthGlobal {}
+pub fn provider_health(
+    cx: &App,
+) -> Vec<chau7_next_core::telemetry::provider_health::HealthSnapshot> {
+    let now = Utc::now();
+    cx.try_global::<HealthGlobal>()
+        .map(|g| {
+            g.0.lock()
+                .snapshots
+                .values()
+                .filter(|s| {
+                    let age = now.signed_duration_since(s.checked_at).num_seconds();
+                    (0..=300).contains(&age)
+                })
+                .cloned()
+                .collect()
+        })
+        .unwrap_or_default()
+}
+fn init_health(cx: &mut App) {
+    let state = Arc::new(Mutex::new(ProviderHealth::default()));
+    cx.set_global(HealthGlobal(state.clone()));
+    let executor = cx.background_executor().clone();
+    let timer = crate::observability::register_background_timer(
+        cx,
+        "usage.provider_health",
+        "Official provider health",
+        "usage",
+        60_000,
+    );
+    cx.background_executor()
+        .spawn(async move {
+            let _timer = timer;
+            loop {
+                let now = Utc::now();
+                if state.lock().next_allowed.is_none_or(|at| now >= at) {
+                    let fetched = std::thread::scope(|scope| {
+                        let handles: Vec<_> = [
+                            (
+                                "anthropic",
+                                "https://status.claude.com/api/v2/summary.json",
+                                vec!["Claude API", "Claude Code"],
+                            ),
+                            (
+                                "openai",
+                                "https://status.openai.com/api/v2/summary.json",
+                                vec![
+                                    "Responses",
+                                    "Codex API",
+                                    "VS Code extension",
+                                    "Codex in ChatGPT Desktop",
+                                ],
+                            ),
+                            (
+                                "github",
+                                "https://www.githubstatus.com/api/v2/summary.json",
+                                vec!["Copilot", "Copilot AI Model Providers"],
+                            ),
+                            (
+                                "google",
+                                "https://status.cloud.google.com/incidents.json",
+                                vec![],
+                            ),
+                        ]
+                        .into_iter()
+                        .map(|(provider, url, fragments)| {
+                            scope.spawn(move || {
+                                let output = std::process::Command::new("curl")
+                                    .args([
+                                        "--fail",
+                                        "--silent",
+                                        "--show-error",
+                                        "--location",
+                                        "--max-time",
+                                        "10",
+                                        "--max-filesize",
+                                        "1048576",
+                                        url,
+                                    ])
+                                    .output()
+                                    .map_err(|e| e.to_string())?;
+                                if !output.status.success() {
+                                    return Err(format!("{provider} status fetch failed"));
+                                }
+                                let value: Value = serde_json::from_slice(&output.stdout)
+                                    .map_err(|e| e.to_string())?;
+                                if provider == "google" {
+                                    chau7_next_core::telemetry::provider_health::google_cloud(
+                                        &value, url, now,
+                                    )
+                                } else {
+                                    chau7_next_core::telemetry::provider_health::status_page(
+                                        &value, provider, &fragments, url, now,
+                                    )
+                                }
+                            })
+                        })
+                        .collect();
+                        handles
+                            .into_iter()
+                            .map(|h| {
+                                h.join().unwrap_or_else(|_| {
+                                    Err("Provider status worker stopped".into())
+                                })
+                            })
+                            .collect::<Vec<_>>()
+                    });
+                    let mut state = state.lock();
+                    let mut successes = 0;
+                    for result in fetched {
+                        match result {
+                            Ok(snapshot) => {
+                                successes += 1;
+                                state.snapshots.insert(snapshot.provider.clone(), snapshot);
+                            }
+                            Err(e) => log::debug!("Provider status unavailable: {e}"),
+                        }
+                    }
+                    if successes == 0 {
+                        state.failures += 1;
+                        state.next_allowed = Some(
+                            now + chrono::Duration::seconds(
+                                chau7_next_core::telemetry::provider_health::retry_delay(
+                                    state.failures,
+                                ),
+                            ),
+                        );
+                    } else {
+                        state.failures = 0;
+                        state.next_allowed = None;
+                    }
+                    state.snapshots.retain(|_, s| {
+                        now.signed_duration_since(s.checked_at).num_seconds() <= 300
+                    });
+                }
+                executor.timer(std::time::Duration::from_secs(60)).await;
+            }
+        })
+        .detach();
+}
+
 struct UsageState {
     root: DataRoot,
     history: Option<QuotaHistory>,
@@ -65,6 +216,7 @@ fn installed(root: &DataRoot) -> bool {
         .is_some_and(|s| s == helper(root).to_string_lossy())
 }
 pub fn init(cx: &mut App) {
+    init_health(cx);
     let root = cx.global::<AppData>().root.clone();
     let mut state = UsageState {
         root,
@@ -78,7 +230,15 @@ pub fn init(cx: &mut App) {
     cx.set_global(UsageGlobal(Arc::new(Mutex::new(state))));
     crate::debug::usage::register(cx);
     refresh(cx);
+    let timer = crate::observability::register_timer(
+        cx,
+        "usage.quota",
+        "Quota evidence refresh",
+        "usage",
+        30_000,
+    );
     cx.spawn(async move |cx| {
+        let _timer = timer;
         loop {
             cx.background_executor()
                 .timer(std::time::Duration::from_secs(30))
@@ -475,4 +635,423 @@ mod tests {
         assert_eq!(std::fs::read(&p).unwrap(), changed);
         std::fs::remove_dir_all(root.home()).unwrap();
     }
+}
+
+/// Cached latency read model. History reads and aggregation stay off the UI thread.
+#[derive(Debug, Clone, Serialize)]
+pub struct EvidenceDiagnostics {
+    pub retained_records: usize,
+    pub reconciled_groups: usize,
+    pub priced_groups: usize,
+    pub missing_cost_groups: usize,
+    pub unassigned_requests: Option<usize>,
+    pub total_cost_usd: Option<f64>,
+    pub token_groups: usize,
+    pub token_usage: chau7_next_core::telemetry::token_metrics::TokenUsage,
+    pub incomplete_window: bool,
+    pub groups: Vec<EvidenceGroup>,
+}
+#[derive(Debug, Clone, Serialize)]
+pub struct EvidenceGroup {
+    pub provider: String,
+    pub scope: String,
+    pub source: String,
+    pub confidence: String,
+    pub tokens: Option<i64>,
+    pub cost_usd: Option<f64>,
+    pub alternatives: usize,
+}
+#[derive(Debug, Clone, Serialize)]
+pub struct LatencyView {
+    pub range: chau7_next_core::telemetry::latency::TimeRange,
+    pub bucket: chau7_next_core::telemetry::latency::BucketKind,
+    pub metric: chau7_next_core::telemetry::latency::MetricKind,
+    pub selected_provider: Option<String>,
+    pub providers: Vec<String>,
+    pub dashboard: Option<chau7_next_core::telemetry::latency::LatencyDashboard>,
+    pub refreshed_at: Option<DateTime<Utc>>,
+    pub refreshing: bool,
+    pub evidence: Option<EvidenceDiagnostics>,
+    generation: u64,
+}
+impl Default for LatencyView {
+    fn default() -> Self {
+        Self {
+            range: chau7_next_core::telemetry::latency::TimeRange::Week,
+            bucket: chau7_next_core::telemetry::latency::BucketKind::Day,
+            metric: chau7_next_core::telemetry::latency::MetricKind::FirstResponse,
+            selected_provider: None,
+            providers: vec![],
+            dashboard: None,
+            refreshed_at: None,
+            refreshing: false,
+            generation: 0,
+            evidence: None,
+        }
+    }
+}
+struct LatencyGlobal(Arc<Mutex<LatencyView>>);
+impl Global for LatencyGlobal {}
+pub fn latency_view(cx: &App) -> LatencyView {
+    cx.try_global::<LatencyGlobal>()
+        .map(|g| g.0.lock().clone())
+        .unwrap_or_default()
+}
+pub fn init_latency(cx: &mut App) {
+    cx.set_global(RetentionGlobal(Arc::new(Mutex::new(RetentionView {
+        selected_days: Settings::get(cx).general.telemetry_retention_days,
+        ..Default::default()
+    }))));
+    cx.set_global(LatencyGlobal(Arc::new(Mutex::new(LatencyView::default()))));
+    refresh_latency(cx);
+    let timer = crate::observability::register_timer(
+        cx,
+        "usage.latency",
+        "Latency and activity history refresh",
+        "usage",
+        30_000,
+    );
+    cx.spawn(async move |cx| {
+        let _timer = timer;
+        loop {
+            cx.background_executor()
+                .timer(std::time::Duration::from_secs(30))
+                .await;
+            cx.update(refresh_latency);
+        }
+    })
+    .detach();
+}
+pub fn select_latency(
+    range: Option<chau7_next_core::telemetry::latency::TimeRange>,
+    bucket: Option<chau7_next_core::telemetry::latency::BucketKind>,
+    metric: Option<chau7_next_core::telemetry::latency::MetricKind>,
+    provider: Option<String>,
+    cx: &mut App,
+) {
+    if let Some(global) = cx.try_global::<LatencyGlobal>() {
+        let mut s = global.0.lock();
+        if let Some(r) = range {
+            s.range = r;
+        }
+        if let Some(b) = bucket {
+            s.bucket = b;
+        }
+        if let Some(m) = metric {
+            s.metric = m;
+        }
+        if let Some(p) = provider {
+            s.selected_provider = Some(p);
+        }
+    }
+    refresh_latency(cx);
+}
+pub fn refresh_latency(cx: &mut App) {
+    let (Some(global), Some(recorder)) = (
+        cx.try_global::<LatencyGlobal>(),
+        crate::telemetry::recorder(cx),
+    ) else {
+        return;
+    };
+    let shared = global.0.clone();
+    let selection = {
+        let mut s = shared.lock();
+        s.refreshing = true;
+        s.generation += 1;
+        s.clone()
+    };
+    let root = cx.global::<AppData>().root.clone();
+    let retention_days = Settings::get(cx).general.telemetry_retention_days;
+    cx.background_executor()
+        .spawn(async move {
+            let now = Utc::now();
+            let start = selection.range.start(now);
+            let retained = chau7_next_core::proxy::ProxyAnalyticsStore::new(&root.proxy_db())
+                .evidence_batch(recorder.store().evidence_cursor(), 100);
+            recorder.store().ingest_evidence_batch(&retained);
+            if retention_days > 0 {
+                let protected = recorder
+                    .all_active_runs()
+                    .into_iter()
+                    .map(|r| r.id)
+                    .collect::<Vec<_>>();
+                match recorder
+                    .store()
+                    .prune_retained(retention_days, &protected, 100, now)
+                {
+                    Ok(report) if report.rows() > 0 => log::info!(
+                        "Opt-in telemetry retention: removed {} runs and {} independent records",
+                        report.runs,
+                        report.rows() - report.runs
+                    ),
+                    Err(error) => log::warn!("Opt-in telemetry retention failed: {error}"),
+                    _ => {}
+                }
+            }
+            recorder.store().backfill_latency_batch(100);
+            recorder.store().backfill_cost_batch(100);
+            let mut samples = recorder.store().latency_samples(start);
+            samples.extend(
+                chau7_next_core::proxy::ProxyAnalyticsStore::new(&root.proxy_db())
+                    .latency_samples(start),
+            );
+            let mut activity = recorder.store().activity_samples(start);
+            activity.extend(
+                chau7_next_core::proxy::ProxyAnalyticsStore::new(&root.proxy_db())
+                    .activity_samples(start),
+            );
+            let mut providers: Vec<_> = samples
+                .iter()
+                .map(|s| s.provider.clone())
+                .chain(activity.iter().map(|s| s.provider.clone()))
+                .collect();
+            providers.sort();
+            providers.dedup();
+            let selected = selection
+                .selected_provider
+                .filter(|p| providers.contains(p))
+                .or_else(|| {
+                    ["codex", "claude", "anthropic", "openai", "gemini"]
+                        .into_iter()
+                        .find(|p| providers.iter().any(|s| s == p))
+                        .map(str::to_string)
+                })
+                .or_else(|| providers.first().cloned());
+            let dashboard = selected.as_ref().map(|p| {
+                chau7_next_core::telemetry::latency::dashboard(
+                    &samples,
+                    &activity,
+                    p,
+                    selection.metric,
+                    selection.bucket,
+                    selection.range,
+                    now,
+                )
+            });
+            let retained = recorder.store().usage_evidence(start, 5001);
+            let incomplete = retained.len() > 5000;
+            let selected_records: Vec<_> = retained
+                .iter()
+                .take(5000)
+                .filter(|e| selected.as_ref().is_none_or(|p| e.provider == *p))
+                .cloned()
+                .collect();
+            let report = chau7_next_core::telemetry::evidence::reconcile(&selected_records);
+            let runs =
+                recorder
+                    .store()
+                    .list_runs(&chau7_next_core::telemetry::run::TelemetryRunFilter {
+                        limit: Some(501),
+                        ..Default::default()
+                    });
+            let attributed =
+                chau7_next_core::telemetry::evidence::attributed(&selected_records, &runs);
+            let assigned: HashSet<_> = attributed
+                .values()
+                .flat_map(|a| a.evidence_ids.iter().cloned())
+                .collect();
+            let unassigned = selected_records
+                .iter()
+                .filter(|e| {
+                    e.source_kind == chau7_next_core::telemetry::evidence::SourceKind::Proxy
+                        && !e.unique_event_key.starts_with("run|")
+                        && !assigned.contains(&e.id)
+                })
+                .count();
+            let priced_groups = report
+                .groups
+                .iter()
+                .filter(|g| g.selected.evidence.cost_usd.is_some())
+                .count();
+            let evidence = EvidenceDiagnostics {
+                retained_records: selected_records.len(),
+                reconciled_groups: report.groups.len(),
+                priced_groups,
+                missing_cost_groups: report.groups.len() - priced_groups,
+                unassigned_requests: (runs.len() <= 500).then_some(unassigned),
+                token_groups: report
+                    .groups
+                    .iter()
+                    .filter(|g| g.selected.evidence.has_tokens())
+                    .count(),
+                total_cost_usd: (priced_groups > 0).then_some(report.total_cost_usd),
+                token_usage: report.total_token_usage,
+                incomplete_window: incomplete || runs.len() > 500,
+                groups: report
+                    .groups
+                    .iter()
+                    .take(32)
+                    .map(|g| EvidenceGroup {
+                        provider: g.provider.clone(),
+                        scope: g.reconciliation_key.clone(),
+                        source: format!("{:?}", g.selected.evidence.source_kind),
+                        confidence: g.confidence.clone(),
+                        tokens: g
+                            .selected
+                            .evidence
+                            .has_tokens()
+                            .then_some(g.selected.usage().total_billable_tokens()),
+                        cost_usd: g.selected.evidence.cost_usd,
+                        alternatives: g.alternatives.len(),
+                    })
+                    .collect(),
+            };
+            let mut s = shared.lock();
+            if s.generation != selection.generation {
+                return;
+            }
+            s.providers = providers;
+            s.selected_provider = selected;
+            s.dashboard = dashboard;
+            s.evidence = Some(evidence);
+            s.refreshed_at = Some(now);
+            s.refreshing = false;
+        })
+        .detach();
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct RetentionView {
+    pub selected_days: i64,
+    pub preview: Option<chau7_next_core::telemetry::retention::RetentionPreview>,
+    pub previewed_at: Option<DateTime<Utc>>,
+    pub working: bool,
+    pub error: Option<String>,
+    pub compact_confirmation: bool,
+    pub compacted_at: Option<DateTime<Utc>>,
+    generation: u64,
+}
+struct RetentionGlobal(Arc<Mutex<RetentionView>>);
+impl Global for RetentionGlobal {}
+pub fn retention_state(cx: &App) -> Option<Arc<Mutex<RetentionView>>> {
+    cx.try_global::<RetentionGlobal>().map(|s| s.0.clone())
+}
+pub fn retention_view(cx: &App) -> RetentionView {
+    cx.try_global::<RetentionGlobal>()
+        .map(|s| s.0.lock().clone())
+        .unwrap_or_default()
+}
+/// Selecting an expiry only previews its effects. No setting or data is changed.
+pub fn preview_retention(days: i64, cx: &mut App) {
+    let (Some(global), Some(recorder)) = (
+        cx.try_global::<RetentionGlobal>(),
+        crate::telemetry::recorder(cx),
+    ) else {
+        return;
+    };
+    let days = chau7_next_core::telemetry::retention::normalize_days(days);
+    let shared = global.0.clone();
+    let generation = {
+        let mut s = shared.lock();
+        s.selected_days = days;
+        s.preview = None;
+        s.previewed_at = None;
+        s.error = None;
+        s.working = true;
+        s.generation += 1;
+        s.generation
+    };
+    cx.spawn(async move |cx| {
+        let result = cx
+            .background_executor()
+            .spawn(async move {
+                let protected = recorder
+                    .all_active_runs()
+                    .into_iter()
+                    .map(|r| r.id)
+                    .collect::<Vec<_>>();
+                recorder
+                    .store()
+                    .retention_preview(days, &protected, Utc::now())
+                    .map_err(|e| e.to_string())
+            })
+            .await;
+        cx.update(|cx| {
+            let mut s = shared.lock();
+            if s.generation != generation {
+                return;
+            }
+            s.working = false;
+            match result {
+                Ok(preview) => {
+                    s.preview = Some(preview);
+                    s.previewed_at = Some(Utc::now());
+                }
+                Err(error) => s.error = Some(error),
+            }
+            cx.refresh_windows();
+        });
+    })
+    .detach();
+}
+/// This separate click is required after the read-only preview completes.
+pub fn apply_retention(cx: &mut App) {
+    let view = retention_view(cx);
+    if view.working
+        || view.preview.is_none()
+        || view
+            .previewed_at
+            .is_none_or(|at| Utc::now().signed_duration_since(at).num_seconds() > 300)
+    {
+        return;
+    }
+    crate::settings_window::update(cx, |s| {
+        s.general.telemetry_retention_days = view.selected_days
+    });
+    refresh_latency(cx);
+}
+pub fn request_compaction(cx: &mut App) {
+    if let Some(global) = cx.try_global::<RetentionGlobal>() {
+        let mut s = global.0.lock();
+        if !s.working {
+            s.compact_confirmation = true;
+        }
+    }
+    cx.refresh_windows();
+}
+pub fn cancel_compaction(cx: &mut App) {
+    if let Some(global) = cx.try_global::<RetentionGlobal>() {
+        global.0.lock().compact_confirmation = false;
+    }
+    cx.refresh_windows();
+}
+/// No automatic VACUUM. The user explicitly confirms this separate operation.
+pub fn compact_confirmed(cx: &mut App) {
+    let (Some(global), Some(recorder)) = (
+        cx.try_global::<RetentionGlobal>(),
+        crate::telemetry::recorder(cx),
+    ) else {
+        return;
+    };
+    let shared = global.0.clone();
+    {
+        let mut s = shared.lock();
+        if !s.compact_confirmation || s.working {
+            return;
+        }
+        s.compact_confirmation = false;
+        s.working = true;
+        s.error = None;
+    }
+    cx.spawn(async move |cx| {
+        let result = cx
+            .background_executor()
+            .spawn(async move {
+                recorder
+                    .store()
+                    .compact_confirmed()
+                    .map_err(|e| e.to_string())
+            })
+            .await;
+        cx.update(|cx| {
+            let mut s = shared.lock();
+            s.working = false;
+            match result {
+                Ok(()) => s.compacted_at = Some(Utc::now()),
+                Err(e) => s.error = Some(e),
+            }
+            cx.refresh_windows();
+        });
+    })
+    .detach();
 }

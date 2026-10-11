@@ -138,6 +138,8 @@ pub fn ingest(jsonl: &str, run_id: &str, started_at: DateTime<Utc>, state: &mut 
         if should_count_usage {
             turn.input_tokens = Some(turn_usage.input_tokens);
             turn.cached_input_tokens = Some(turn_usage.cached_input_tokens);
+            turn.cache_creation_input_tokens = Some(turn_usage.cache_creation_input_tokens);
+            turn.cache_read_input_tokens = Some(turn_usage.cache_read_input_tokens);
             turn.output_tokens = Some(turn_usage.output_tokens);
             turn.reasoning_output_tokens = Some(turn_usage.reasoning_output_tokens);
         }
@@ -217,6 +219,8 @@ mod tests {
         assert_eq!(state.token_usage.output_tokens, 20);
         assert_eq!(state.token_usage.reasoning_output_tokens, 7);
         assert_eq!(state.turns[0].input_tokens, Some(100));
+        assert_eq!(state.turns[0].cache_creation_input_tokens, Some(10));
+        assert_eq!(state.turns[0].cache_read_input_tokens, Some(5));
         assert_eq!(
             state.turns[1].input_tokens, None,
             "duplicate assistant fragment should not count usage twice"
