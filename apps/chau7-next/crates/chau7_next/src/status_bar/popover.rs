@@ -1,11 +1,11 @@
-//! The command center popover (`StatusBarPanelView`): a 400 by 520 pt
+//! The command center popover (`StatusBarPanelView`): a 380 by 520 pt
 //! window under the menu bar icon. It closes when it loses the focus (a
 //! click in another window or app) or on Escape, and redraws every second.
 
 use std::time::Duration;
 
 use chau7_next_core::command_center::{
-    self as cc, Hero, POPOVER_HEIGHT, POPOVER_WIDTH, PanelCommand, PanelModel, QuickCommand,
+    self as cc, HeroKind, POPOVER_HEIGHT, POPOVER_WIDTH, PanelCommand, PanelModel, QuickCommand,
     REFRESH_SECS, SessionSummary, TimelineEntry, Tone,
 };
 use gpui::{
@@ -49,6 +49,8 @@ pub fn open(x: f32, y: f32, model: PanelModel, cx: &mut App) -> Option<AnyWindow
 struct PopoverView {
     model: PanelModel,
     quit_confirm: bool,
+    activity_expanded: bool,
+    copied_snippet_id: Option<String>,
     /// The window was active once: only then does losing it close the popover.
     was_active: bool,
     focus: gpui::FocusHandle,
@@ -85,6 +87,8 @@ impl PopoverView {
         Self {
             model,
             quit_confirm: false,
+            activity_expanded: false,
+            copied_snippet_id: None,
             was_active: false,
             focus: cx.focus_handle(),
             _refresh: refresh,
@@ -93,8 +97,23 @@ impl PopoverView {
     }
 
     fn command(&mut self, command: PanelCommand, cx: &mut Context<Self>) {
-        // Run after this window's update: the command may close the window.
-        cx.defer(move |cx| crate::status_bar::run(command, cx));
+        // Defer commands that can close the window. Clipboard fallback keeps
+        // the panel open and displays explicit copy feedback.
+        if let PanelCommand::RunSnippet(id) = command {
+            let this = cx.entity().downgrade();
+            cx.defer(move |cx| match super::run_snippet(&id, cx) {
+                super::SnippetOutcome::Inserted => crate::status_bar::close_popover(cx),
+                super::SnippetOutcome::Copied => {
+                    let _ = this.update(cx, |view, cx| {
+                        view.copied_snippet_id = Some(id);
+                        cx.notify();
+                    });
+                }
+                super::SnippetOutcome::Unavailable => {}
+            });
+        } else {
+            cx.defer(move |cx| crate::status_bar::run(command, cx));
+        }
     }
 }
 
@@ -115,7 +134,8 @@ fn tone_color(tone: Tone, chrome: Chrome) -> Hsla {
 /// A plain character for an SF Symbol of the model.
 fn glyph(symbol: &str) -> &'static str {
     match symbol {
-        "gearshape.2" => "\u{2699}",
+        "hand.raised" | "hand.raised.fill" => "!",
+        "wrench.and.screwdriver" | "gearshape.2" => "\u{2699}",
         "bubble.left.and.exclamationmark.bubble.right" | "exclamationmark.circle" => "!",
         "exclamationmark.triangle" => "\u{25B2}",
         "text.bubble" | "doc.text" => "\u{25A4}",
@@ -164,8 +184,8 @@ impl Render for PopoverView {
             .flex_col()
             .gap(px(12.0))
             .child(self.live_sessions(chrome, cx))
-            .child(self.activity(chrome))
-            .child(self.quick_commands(chrome, cx));
+            .child(self.quick_commands(chrome, cx))
+            .child(self.activity(chrome, cx));
         div()
             .id("command-center")
             .track_focus(&self.focus)
@@ -192,134 +212,79 @@ impl Render for PopoverView {
 }
 
 impl PopoverView {
-    /// `HeroZoneView`.
+    /// Current Swift hero states, including direct controls when monitoring is paused.
     fn hero(&self, chrome: Chrome, cx: &mut Context<Self>) -> gpui::Div {
-        match &self.model.hero {
-            Hero::Attention { summary, sessions } => {
-                let yellow = tone_color(Tone::Yellow, chrome);
-                let rows = sessions.iter().enumerate().map(|(i, session)| {
-                    let tab_id = session.tab_id;
-                    div()
-                        .flex()
-                        .items_center()
-                        .gap(px(8.0))
-                        .child(
-                            div()
-                                .size(px(6.0))
-                                .rounded_full()
-                                .bg(tone_color(Tone::Blue, chrome)),
-                        )
-                        .child(
-                            div()
-                                .max_w(px(220.0))
-                                .overflow_hidden()
-                                .text_ellipsis()
-                                .whitespace_nowrap()
-                                .text_size(px(11.0))
-                                .font_weight(FontWeight::MEDIUM)
-                                .child(session.title.clone()),
-                        )
-                        .child(
-                            div()
-                                .text_size(px(10.0))
-                                .text_color(chrome.text_muted)
-                                .child(crate::l10n::tr("Input")),
-                        )
-                        .child(div().flex_1())
-                        .child(
-                            div()
-                                .id(SharedString::from(format!("go-{i}")))
-                                .px(px(10.0))
-                                .py(px(3.0))
-                                .rounded_md()
-                                .cursor_pointer()
-                                .text_size(px(11.0))
-                                .text_color(gpui::white())
-                                .bg(chrome.accent)
-                                .hover(|d| d.opacity(0.85))
-                                .child(crate::l10n::tr("Go"))
-                                .on_click(cx.listener(move |this, _, _, cx| {
-                                    this.command(PanelCommand::FocusSession { tab_id }, cx)
-                                })),
-                        )
-                });
+        let (symbol, tone) = match self.model.hero.kind {
+            HeroKind::ApprovalRequired => ("!", Tone::Red),
+            HeroKind::WaitingForInput => ("\u{2328}", Tone::Orange),
+            HeroKind::MonitoringPaused => ("\u{25CC}", Tone::Gray),
+            HeroKind::Running => ("\u{25CF}", Tone::Blue),
+            HeroKind::Quiet => ("\u{2713}", Tone::Green),
+        };
+        div()
+            .p(px(12.0))
+            .flex()
+            .items_center()
+            .gap(px(8.0))
+            .child(div().text_color(tone_color(tone, chrome)).child(symbol))
+            .child(
                 div()
-                    .p(px(12.0))
+                    .flex_1()
+                    .min_w_0()
                     .flex()
                     .flex_col()
-                    .gap(px(8.0))
-                    .bg(yellow.opacity(0.12))
+                    .gap(px(2.0))
                     .child(
                         div()
-                            .flex()
-                            .items_center()
-                            .gap(px(6.0))
-                            .child(div().text_color(yellow).child("\u{25B2}"))
-                            .child(
-                                div()
-                                    .text_size(px(13.0))
-                                    .font_weight(FontWeight::SEMIBOLD)
-                                    .child(summary.clone()),
-                            ),
+                            .text_size(px(13.0))
+                            .font_weight(FontWeight::SEMIBOLD)
+                            .child(self.model.hero.title.clone()),
                     )
-                    .children(rows)
-            }
-            Hero::AllClear {
-                sessions,
-                monitoring,
-                state,
-            } => div()
-                .p(px(12.0))
-                .flex()
-                .items_center()
-                .gap(px(8.0))
-                .child(
-                    div()
-                        .text_color(tone_color(Tone::Green, chrome))
-                        .child("\u{2713}"),
-                )
-                .child(
-                    div()
-                        .text_size(px(13.0))
-                        .font_weight(FontWeight::MEDIUM)
-                        .child(crate::l10n::tr("All clear")),
-                )
-                .when(!sessions.is_empty(), |d| {
-                    d.child(
+                    .child(
                         div()
                             .text_size(px(11.0))
                             .text_color(chrome.text_muted)
-                            .child(sessions.clone()),
-                    )
-                })
-                .child(div().flex_1())
+                            .child(self.model.hero.detail.clone()),
+                    ),
+            )
+            .when(self.model.hero.kind == HeroKind::MonitoringPaused, |d| {
+                d.child(
+                    div()
+                        .id("resume-monitoring")
+                        .px(px(8.0))
+                        .py(px(4.0))
+                        .rounded_md()
+                        .cursor_pointer()
+                        .bg(chrome.accent)
+                        .text_color(gpui::white())
+                        .text_size(px(11.0))
+                        .child(crate::l10n::tr("Resume"))
+                        .on_click(cx.listener(|this, _, _, cx| {
+                            this.command(PanelCommand::SetMonitoring(true), cx);
+                        })),
+                )
                 .child(
                     div()
-                        .flex()
-                        .items_center()
-                        .gap(px(4.0))
-                        .child(div().size(px(6.0)).rounded_full().bg(if *monitoring {
-                            tone_color(Tone::Green, chrome)
-                        } else {
-                            tone_color(Tone::Gray, chrome)
-                        }))
-                        .child(
-                            div()
-                                .text_size(px(10.0))
-                                .text_color(chrome.text_muted)
-                                .child(*state),
-                        ),
-                ),
-        }
+                        .id("monitoring-settings")
+                        .px(px(6.0))
+                        .py(px(4.0))
+                        .cursor_pointer()
+                        .text_size(px(11.0))
+                        .child(crate::l10n::tr("Monitoring"))
+                        .on_click(cx.listener(|this, _, _, cx| {
+                            this.command(PanelCommand::OpenMonitoringSettings, cx);
+                        })),
+                )
+            })
     }
 
     /// The Live Sessions box; nothing without sessions.
     fn live_sessions(&self, chrome: Chrome, cx: &mut Context<Self>) -> gpui::Div {
-        if self.model.live_sessions.is_empty() {
+        if self.model.action_sessions.is_empty() {
             return div();
         }
         let mut cards = Vec::new();
-        for (i, session) in self.model.live_sessions.iter().enumerate() {
+        for (i, session) in self.model.action_sessions.iter().enumerate() {
             cards.push(self.session_card(i, session, chrome, cx));
         }
         div()
@@ -331,7 +296,7 @@ impl PopoverView {
             .bg(chrome.accent.opacity(0.08))
             .border_1()
             .border_color(chrome.accent.opacity(0.2))
-            .child(box_label("Live Sessions", chrome))
+            .child(box_label("Action list", chrome))
             .children(cards)
     }
 
@@ -437,123 +402,80 @@ impl PopoverView {
             }))
     }
 
-    /// The Activity box.
-    fn activity(&self, chrome: Chrome) -> gpui::Div {
-        let rows = self
-            .model
-            .timeline
-            .iter()
-            .map(|entry| timeline_row(entry, chrome));
-        let mut boxed = div()
+    /// Recent activity begins collapsed, retaining expansion across refreshes.
+    fn activity(&self, chrome: Chrome, cx: &mut Context<Self>) -> gpui::Div {
+        if self.model.timeline.is_empty() {
+            return div();
+        }
+        let expanded = self.activity_expanded;
+        let boxed = div()
             .p(px(10.0))
             .flex()
             .flex_col()
             .gap(px(8.0))
             .rounded_lg()
             .bg(chrome.tab_bg.opacity(0.5))
-            .child(box_label("Activity", chrome));
-        if self.model.timeline.is_empty() {
-            boxed = boxed.child(
+            .child(
                 div()
-                    .py(px(4.0))
-                    .text_size(px(12.0))
-                    .text_color(chrome.text_muted)
-                    .child(crate::l10n::tr("No recent activity")),
+                    .id("recent-activity-disclosure")
+                    .flex()
+                    .items_center()
+                    .cursor_pointer()
+                    .gap(px(6.0))
+                    .child(if expanded { "\u{2304}" } else { "\u{203A}" })
+                    .child(box_label("Recent activity", chrome))
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.activity_expanded = !this.activity_expanded;
+                        cx.notify();
+                    })),
             );
+        if expanded {
+            boxed.children(
+                self.model
+                    .timeline
+                    .iter()
+                    .map(|entry| timeline_row(entry, chrome)),
+            )
         } else {
-            boxed = boxed.children(rows);
+            boxed
         }
-        boxed
     }
 
-    /// The Quick Commands box: pinned snippets, the Monitoring switch and
-    /// All Settings.
+    /// The first five pinned snippets and their direct settings anchor.
     fn quick_commands(&self, chrome: Chrome, cx: &mut Context<Self>) -> gpui::Div {
-        let mut snippets = Vec::new();
-        for (i, command) in self.model.quick_commands.iter().enumerate() {
-            snippets.push(self.snippet_row(i, command, chrome, cx));
+        if self.model.quick_commands.is_empty() {
+            return div();
         }
-        let monitoring = self.model.monitoring;
-        let mut boxed = div()
+        div()
             .p(px(10.0))
             .flex()
             .flex_col()
-            .gap(px(10.0))
+            .gap(px(8.0))
             .rounded_lg()
             .bg(chrome.tab_bg.opacity(0.3))
-            .child(box_label("Quick Commands", chrome))
-            .children(snippets);
-        if !self.model.quick_commands.is_empty() {
-            boxed = boxed.child(div().h(px(1.0)).bg(chrome.border));
-        }
-        boxed
             .child(
                 div()
-                    .id("monitoring-toggle")
-                    .px(px(8.0))
-                    .py(px(6.0))
-                    .rounded_md()
                     .flex()
                     .items_center()
-                    .gap(px(6.0))
-                    .cursor_pointer()
-                    .when(monitoring, |d| d.bg(chrome.accent.opacity(0.1)))
-                    .hover(|d| d.bg(chrome.tab_hover_bg))
+                    .justify_between()
+                    .child(box_label("Pinned snippets", chrome))
                     .child(
                         div()
-                            .w(px(16.0))
+                            .id("snippet-settings")
+                            .cursor_pointer()
                             .text_size(px(11.0))
-                            .text_color(if monitoring {
-                                chrome.text
-                            } else {
-                                chrome.text_muted
-                            })
-                            .child("\u{25C9}"),
-                    )
-                    .child(
-                        div()
-                            .flex_1()
-                            .text_size(px(11.0))
-                            .text_color(if monitoring {
-                                chrome.text
-                            } else {
-                                chrome.text_muted
-                            })
-                            .child(crate::l10n::tr("Monitoring")),
-                    )
-                    .child(div().text_size(px(12.0)).child(if monitoring {
-                        div()
-                            .text_color(tone_color(Tone::Green, chrome))
-                            .child("\u{25CF}")
-                    } else {
-                        div()
-                            .text_color(tone_color(Tone::Gray, chrome))
-                            .child("\u{25CB}")
-                    }))
-                    .on_click(cx.listener(move |this, _, _, cx| {
-                        this.model.monitoring = !monitoring;
-                        this.command(PanelCommand::SetMonitoring(!monitoring), cx);
-                        cx.notify();
-                    })),
+                            .child(crate::l10n::tr("Snippet settings"))
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                this.command(PanelCommand::OpenSnippetSettings, cx);
+                            })),
+                    ),
             )
-            .child(
-                div().flex().justify_end().child(
-                    div()
-                        .id("all-settings")
-                        .px(px(10.0))
-                        .py(px(4.0))
-                        .rounded_md()
-                        .cursor_pointer()
-                        .text_size(px(11.0))
-                        .border_1()
-                        .border_color(chrome.border)
-                        .bg(chrome.tab_bg)
-                        .hover(|d| d.bg(chrome.tab_hover_bg))
-                        .child("\u{2699} All Settings")
-                        .on_click(cx.listener(|this, _, _, cx| {
-                            this.command(PanelCommand::OpenSettings, cx)
-                        })),
-                ),
+            .children(
+                self.model
+                    .quick_commands
+                    .iter()
+                    .enumerate()
+                    .map(|(i, command)| self.snippet_row(i, command, chrome, cx)),
             )
     }
 
@@ -591,7 +513,13 @@ impl PopoverView {
                     .whitespace_nowrap()
                     .text_size(px(11.0))
                     .font_weight(FontWeight::MEDIUM)
-                    .child(command.title.clone()),
+                    .child(
+                        if self.copied_snippet_id.as_deref() == Some(command.id.as_str()) {
+                            format!("{}: {}", command.title, crate::l10n::tr("Copied"))
+                        } else {
+                            command.title.clone()
+                        },
+                    ),
             )
             .child(
                 div()
@@ -671,6 +599,18 @@ impl PopoverView {
             .items_center()
             .justify_between()
             .bg(chrome.tab_bg)
+            .when(!confirm, |d| {
+                d.child(
+                    div()
+                        .id("default-settings")
+                        .cursor_pointer()
+                        .text_size(px(11.0))
+                        .child(crate::l10n::tr("Settings"))
+                        .on_click(cx.listener(|this, _, _, cx| {
+                            this.command(PanelCommand::OpenSettings, cx);
+                        })),
+                )
+            })
             .child(
                 div()
                     .text_size(px(10.0))

@@ -536,6 +536,14 @@ pub(super) fn runtime(ctx: &SectionContext) -> gpui::Div {
         ))
         .child(stat("Deferred skips", snap.deferred_skip_count.to_string()))
         .child(stat(
+            "Deferred cancellations",
+            snap.deferred_cancel_count.to_string(),
+        ))
+        .child(stat(
+            "Eligible deferrals",
+            snap.deferred_eligible_count().to_string(),
+        ))
+        .child(stat(
             "Deferred delay samples",
             snap.deferred_flush_delay_count.to_string(),
         ))
@@ -552,6 +560,37 @@ pub(super) fn runtime(ctx: &SectionContext) -> gpui::Div {
                 delay(snap.deferred_flush_delay_last_ms),
             ),
         ));
+    if let Some(paths) = crate::cto::paths() {
+        block=block.child(stat("Diagnostic state file",paths.state_file().display().to_string())).child(description("Five-minute heartbeat while enabled. Removed when CTO is off. Flag files remain the wrapper hot path.",chrome));
+    }
+    if let Some(gain) = &snap.gain_stats {
+        block = block.child(stat(
+            "Last observed gain",
+            format!(
+                "{} commands; {} tokens saved ({:.1}%)",
+                gain.commands, gain.saved_tokens, gain.savings_pct
+            ),
+        ));
+    }
+    if let Some(sample) = snap.gain_stats_last_sampled_at {
+        block = block.child(stat(
+            "Gain sample age",
+            duration(
+                (chau7_next_core::token_optimization::reference_now() - sample).max(0.0) as i64,
+            ),
+        ));
+    }
+    if !snap.trigger_breakdown.is_empty() {
+        let mut triggers: Vec<_> = snap.trigger_breakdown.iter().collect();
+        triggers.sort();
+        block = block
+            .child(description("Decision triggers", chrome))
+            .children(
+                triggers
+                    .into_iter()
+                    .map(|(trigger, count)| info_row(trigger.clone(), count.to_string(), chrome)),
+            );
+    }
     if !snap.reason_breakdown.is_empty() {
         let total: i64 = snap.reason_breakdown.values().sum();
         let mut reasons: Vec<(&String, &i64)> = snap.reason_breakdown.iter().collect();
