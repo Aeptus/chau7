@@ -178,10 +178,36 @@ impl Workspace {
         state.auto_repo_grouping = settings.tabs.auto_repo_grouping();
         // Refresh idle state and the window title once a second.
         Self::hide_on_close(window, cx);
-        cx.observe_window_activation(window, |_, window, cx| {
+        cx.observe_window_activation(window, |this, window, cx| {
+            this.sync_restore_surfaces(window, cx);
             if window.is_window_active() {
                 crate::permission_center::recheck(cx);
+                this.queue_surface_reactivation(
+                    chau7_next_core::session_restore::lifecycle::SurfaceEvents {
+                        key: true,
+                        main: true,
+                        ..Default::default()
+                    },
+                    window,
+                    cx,
+                );
             }
+        })
+        .detach();
+        cx.observe_window_visibility(window, |this, _, window, cx| {
+            this.sync_restore_surfaces(window, cx);
+            if window.is_visible() {
+                this.queue_surface_reactivation(
+                    chau7_next_core::session_restore::lifecycle::SurfaceEvents {
+                        visible: true,
+                        deminiaturized: true,
+                        ..Default::default()
+                    },
+                    window,
+                    cx,
+                );
+            }
+            cx.notify();
         })
         .detach();
         let ticker = cx.spawn(async move |this, cx| {
@@ -665,13 +691,7 @@ impl Workspace {
 
     fn focus_selected(&mut self, window: &mut Window, cx: &mut App) {
         self.record_restore_selection();
-        for (id, entry) in &self.entries {
-            let selected = self.state.selected() == Some(*id);
-            entry
-                .panes
-                .read(cx)
-                .set_restore_surface(selected, window.is_visible(), cx);
-        }
+        self.sync_restore_surfaces(window, cx);
         if let Some(panes) = self.selected_panes() {
             if let Some(meta) = self.state.selected().and_then(|id| self.state.get(id)) {
                 panes.update(cx, |tree, _| {
@@ -692,6 +712,11 @@ impl Workspace {
                 }
             }
         }
+        self.reveal_selected_surface(
+            chau7_next_core::session_restore::lifecycle::RevealTrigger::Selection,
+            window,
+            cx,
+        );
     }
 
     pub fn select_tab(&mut self, id: TabId, window: &mut Window, cx: &mut Context<Self>) {
@@ -1365,13 +1390,7 @@ fn register_tab_actions(div: Stateful<Div>, cx: &mut Context<Workspace>) -> Stat
 impl Render for Workspace {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.screen_bounds = global_bounds(window, cx);
-        for (id, entry) in &self.entries {
-            entry.panes.read(cx).set_restore_surface(
-                self.state.selected() == Some(*id),
-                window.is_visible(),
-                cx,
-            );
-        }
+        self.sync_restore_surfaces(window, cx);
         self.window_active = window.is_window_active();
         // (dev) A trace line whenever the tabs or the open panel change.
         let picker = self.picker.as_ref().map(|p| p.kind);

@@ -7,6 +7,17 @@ pub const SELECTION_QUIET_PERIOD: Duration = Duration::from_millis(450);
 pub const REACTIVATION_COALESCING_DELAY: Duration = Duration::from_millis(50);
 pub const NEARBY_SNAPSHOT_DISTANCE: usize = 2;
 
+/// Visibility comes from selected pane/window ownership, never a paint timer.
+/// A stationary visible terminal remains live even with cursor blink disabled.
+pub fn suspend_hidden_surface(
+    visible: bool,
+    hidden_for: Option<Duration>,
+    enabled: bool,
+    delay: Duration,
+) -> bool {
+    enabled && !visible && hidden_for.is_some_and(|age| age >= delay)
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RestorePriority {
     Selected,
@@ -403,5 +414,32 @@ mod tests {
             i.decision(&s),
             PrefillDecision::Reject(PrefillRejection::InvalidCommand)
         );
+    }
+}
+
+#[cfg(test)]
+mod surface_visibility_tests {
+    use super::*;
+    #[test]
+    fn stationary_visible_surface_never_suspends() {
+        assert!(!suspend_hidden_surface(
+            true,
+            Some(Duration::from_secs(3600)),
+            true,
+            Duration::ZERO
+        ));
+    }
+    #[test]
+    fn actual_hidden_duration_controls_suspension_and_disabled_is_honored() {
+        let delay = Duration::from_secs(5);
+        assert!(!suspend_hidden_surface(false, None, true, delay));
+        assert!(!suspend_hidden_surface(
+            false,
+            Some(Duration::from_millis(4999)),
+            true,
+            delay
+        ));
+        assert!(suspend_hidden_surface(false, Some(delay), true, delay));
+        assert!(!suspend_hidden_surface(false, Some(delay), false, delay));
     }
 }

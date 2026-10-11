@@ -199,6 +199,7 @@ pub struct TerminalSession {
     restore_presented: Cell<bool>,
     restore_selected: Cell<bool>,
     restore_window_visible: Cell<bool>,
+    restore_hidden_since: Cell<Option<Instant>>,
     pending_prefill: Option<String>,
     prefill_retries: u32,
     prefill_scheduled: bool,
@@ -698,6 +699,7 @@ impl TerminalSession {
             restore_presented: Cell::new(false),
             restore_selected: Cell::new(false),
             restore_window_visible: Cell::new(false),
+            restore_hidden_since: Cell::new(Some(Instant::now())),
             pending_prefill: None,
             prefill_retries: 0,
             prefill_scheduled: false,
@@ -1642,9 +1644,21 @@ impl TerminalSession {
     }
     pub(crate) fn set_restore_selected(&self, selected: bool) {
         self.restore_selected.set(selected);
+        self.sync_surface_clock();
     }
     pub(crate) fn mark_restore_surface(&self, visible: bool) {
         self.restore_window_visible.set(visible);
+        self.sync_surface_clock();
+    }
+    fn sync_surface_clock(&self) {
+        if self.restore_surface_visible() {
+            self.restore_hidden_since.set(None);
+        } else if self.restore_hidden_since.get().is_none() {
+            self.restore_hidden_since.set(Some(Instant::now()));
+        }
+    }
+    pub(crate) fn surface_hidden_for(&self) -> Option<Duration> {
+        self.restore_hidden_since.get().map(|at| at.elapsed())
     }
     pub(crate) fn restore_surface_visible(&self) -> bool {
         self.restore_selected.get() && self.restore_window_visible.get()
@@ -1652,6 +1666,13 @@ impl TerminalSession {
     pub(crate) fn mark_restore_presented(&self) {
         self.restore_presented.set(true);
     }
+    pub(crate) fn surface_has_live_frame(&self) -> bool {
+        self.restore_presented.get()
+    }
+    pub(crate) fn request_surface_frame(&self) {
+        self.restore_presented.set(false);
+    }
+
     fn flush_restored_resume(&mut self, _cx: &mut Context<Self>) {
         use chau7_next_core::session_restore::lifecycle::{PrefillDecision, PrefillSnapshot};
         let Some(intent) = self.restore_intent.as_ref() else {
