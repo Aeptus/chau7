@@ -4,6 +4,10 @@ name: Chau7 Next
 
 on:
   push:
+    # Broker branches are checked by pull_request when their draft PR opens.
+    # The official import branch still builds on every relevant push.
+    branches-ignore:
+      - "agent/**"
     paths:
       - "apps/chau7-next/**"
       - "apps/chau7-macos/rust/**"
@@ -57,6 +61,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: apps/chau7-next
+          cache-on-failure: true
 
       - name: Linux system libraries
         if: runner.os == 'Linux'

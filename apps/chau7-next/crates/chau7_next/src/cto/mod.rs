@@ -680,16 +680,15 @@ mod tests {
                 .find(|(key, _)| key == k)
                 .map(|(_, v)| v.as_str())
         };
-        assert_eq!(get("PATH"), Some("/h/.chau7-next/cto_bin:/usr/bin:/bin"));
+        let config = PathBuf::from("/h").join(".chau7-next");
+        let bin = config.join("cto_bin");
+        let log = config.join("cto_data").join("commands.log");
+        let database = config.join("cto_data").join("history.db");
+        let expected_path = format!("{}:/usr/bin:/bin", bin.display());
+        assert_eq!(get("PATH"), Some(expected_path.as_str()));
         assert_eq!(get("CHAU7_CTO_SESSION"), Some("SID"));
-        assert_eq!(
-            get("CHAU7_CTO_LOG"),
-            Some("/h/.chau7-next/cto_data/commands.log")
-        );
-        assert_eq!(get(CTO_BIN_DIR_ENV), Some("/h/.chau7-next/cto_bin"));
-        assert_eq!(
-            get(OPTIMIZER_DB_ENV),
-            Some("/h/.chau7-next/cto_data/history.db")
-        );
+        assert_eq!(get("CHAU7_CTO_LOG"), log.to_str());
+        assert_eq!(get(CTO_BIN_DIR_ENV), bin.to_str());
+        assert_eq!(get(OPTIMIZER_DB_ENV), database.to_str());
     }
 }
