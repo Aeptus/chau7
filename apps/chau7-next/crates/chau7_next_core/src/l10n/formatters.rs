@@ -1,5 +1,5 @@
 //! `LocalizedFormatters`: dates, numbers, percentages and file sizes for the
-//! four interface languages (CLDR conventions for en, fr, ar and he; Arabic
+//! five interface languages (CLDR conventions for en, fr, es, ar and he; Arabic
 //! uses Arabic-Indic digits). Every function takes the language, so callers
 //! pass `l10n::current()` and tests pass any.
 
@@ -32,6 +32,7 @@ fn separators(lang: Lang) -> (&'static str, &'static str) {
     match lang {
         Lang::En | Lang::He => (",", "."),
         Lang::Fr => ("\u{202F}", ","),
+        Lang::Es => (".", ","),
         Lang::Ar => ("٬", "٫"),
     }
 }
@@ -62,7 +63,13 @@ pub fn decimal(lang: Lang, value: f64, max_fraction: usize) -> String {
     if negative && (!int_part.trim_matches('0').is_empty() || !frac.is_empty()) {
         out.push('-');
     }
-    out.push_str(&group(&int_part, sep));
+    // Foundation's Spanish locale groups only numbers of five or more
+    // digits (1234,5; 10.000,5), unlike English and French.
+    if lang == Lang::Es && int_part.len() < 5 {
+        out.push_str(&int_part);
+    } else {
+        out.push_str(&group(&int_part, sep));
+    }
     if !frac.is_empty() {
         out.push_str(dec);
         out.push_str(&frac);
@@ -82,6 +89,7 @@ pub fn percent(lang: Lang, fraction: f64) -> String {
     match lang {
         Lang::En | Lang::He => format!("{number}%"),
         Lang::Fr => format!("{number}{NNBSP}%"),
+        Lang::Es => format!("{number}\u{00A0}%"),
         Lang::Ar => format!("{number}\u{066A}\u{061C}"),
     }
 }
@@ -90,15 +98,15 @@ pub fn percent(lang: Lang, fraction: f64) -> String {
 /// writes it: "512 bytes", "12.3 KB", "150 KB", "1.5 MB", "2 Ko".
 pub fn file_size(lang: Lang, bytes: u64) -> String {
     let units: [&str; 5] = match lang {
-        Lang::En => ["KB", "MB", "GB", "TB", "PB"],
+        Lang::En | Lang::Es => ["KB", "MB", "GB", "TB", "PB"],
         Lang::Fr => ["Ko", "Mo", "Go", "To", "Po"],
         Lang::Ar => ["ك.ب", "م.ب", "ج.ب", "ت.ب", "ب.ب"],
         Lang::He => ["ק״ב", "מ״ב", "ג״ב", "ט״ב", "פ״ב"],
     };
     if bytes < 1000 {
         let word = match (lang, bytes) {
-            (Lang::En, 1) => "byte",
-            (Lang::En, _) => "bytes",
+            (Lang::En | Lang::Es, 1) => "byte",
+            (Lang::En | Lang::Es, _) => "bytes",
             (Lang::Fr, _) => "octets",
             (Lang::Ar, _) => "بايت",
             (Lang::He, _) => "בייטים",
@@ -152,6 +160,23 @@ fn months(lang: Lang, short: bool) -> [&'static str; 12] {
             "janv.", "févr.", "mars", "avr.", "mai", "juin", "juil.", "août", "sept.", "oct.",
             "nov.", "déc.",
         ],
+        (Lang::Es, false) => [
+            "enero",
+            "febrero",
+            "marzo",
+            "abril",
+            "mayo",
+            "junio",
+            "julio",
+            "agosto",
+            "septiembre",
+            "octubre",
+            "noviembre",
+            "diciembre",
+        ],
+        (Lang::Es, true) => [
+            "ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sept", "oct", "nov", "dic",
+        ],
         (Lang::Ar, _) => [
             "يناير",
             "فبراير",
@@ -193,6 +218,7 @@ pub fn short_date(lang: Lang, t: NaiveDateTime) -> String {
     let text = match lang {
         Lang::En => format!("{m}/{d}/{:02}", y.rem_euclid(100)),
         Lang::Fr => format!("{d:02}/{m:02}/{y}"),
+        Lang::Es => format!("{d}/{m}/{:02}", y.rem_euclid(100)),
         Lang::Ar => format!("{d}\u{200F}/{m}\u{200F}/{y}"),
         Lang::He => format!("{d}.{m}.{y}"),
     };
@@ -205,7 +231,7 @@ pub fn medium_date(lang: Lang, t: NaiveDateTime) -> String {
     let (y, d) = (t.year(), t.day());
     let text = match lang {
         Lang::En => format!("{month} {d}, {y}"),
-        Lang::Fr | Lang::Ar => format!("{d} {month} {y}"),
+        Lang::Fr | Lang::Ar | Lang::Es => format!("{d} {month} {y}"),
         Lang::He => format!("{d} ב{month} {y}"),
     };
     digits(lang, text)
@@ -218,6 +244,7 @@ pub fn long_date(lang: Lang, t: NaiveDateTime) -> String {
     let text = match lang {
         Lang::En => format!("{month} {d}, {y}"),
         Lang::Fr | Lang::Ar => format!("{d} {month} {y}"),
+        Lang::Es => format!("{d} de {month} de {y}"),
         Lang::He => format!("{d} ב{month} {y}"),
     };
     digits(lang, text)
@@ -250,7 +277,7 @@ fn clock(lang: Lang, t: NaiveDateTime, seconds: bool) -> String {
                 format!("{h:02}:{m:02}")
             }
         }
-        Lang::He => {
+        Lang::He | Lang::Es => {
             if seconds {
                 format!("{h}:{m:02}:{s:02}")
             } else {

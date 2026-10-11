@@ -16,15 +16,17 @@ pub enum AppLanguage {
     System,
     English,
     French,
+    Spanish,
     Arabic,
     Hebrew,
 }
 
 impl AppLanguage {
-    pub const ALL: [AppLanguage; 5] = [
+    pub const ALL: [AppLanguage; 6] = [
         AppLanguage::System,
         AppLanguage::English,
         AppLanguage::French,
+        AppLanguage::Spanish,
         AppLanguage::Arabic,
         AppLanguage::Hebrew,
     ];
@@ -35,6 +37,7 @@ impl AppLanguage {
             AppLanguage::System => "system",
             AppLanguage::English => "en",
             AppLanguage::French => "fr",
+            AppLanguage::Spanish => "es",
             AppLanguage::Arabic => "ar",
             AppLanguage::Hebrew => "he",
         }
@@ -49,6 +52,7 @@ impl AppLanguage {
             AppLanguage::System => "System Default",
             AppLanguage::English => "English",
             AppLanguage::French => "Français",
+            AppLanguage::Spanish => "Español",
             AppLanguage::Arabic => "العربية",
             AppLanguage::Hebrew => "עברית",
         }
@@ -277,6 +281,18 @@ mod tests {
         assert!(d.load_config_files);
         assert!(!d.icloud_sync);
         assert!(d.allow_protected_folder_access);
+    }
+
+    #[test]
+    fn spanish_is_selectable_and_persisted() {
+        assert!(AppLanguage::ALL.contains(&AppLanguage::Spanish));
+        assert_eq!(AppLanguage::from_id("es"), Some(AppLanguage::Spanish));
+        assert_eq!(AppLanguage::Spanish.display_name(), "Español");
+        let settings = GeneralSettings {
+            app_language: AppLanguage::Spanish,
+            ..Default::default()
+        };
+        assert_eq!(round_trip(&settings).app_language, AppLanguage::Spanish);
     }
 
     #[test]
