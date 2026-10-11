@@ -561,11 +561,13 @@ fn prune_diagnostics(directory: &Path) {
             .2
             .max(meta.modified().unwrap_or(std::time::UNIX_EPOCH));
     }
-    let mut groups: Vec<_> = groups.into_values().collect();
-    groups.sort_by_key(|group| std::cmp::Reverse(group.2));
+    let mut groups: Vec<_> = groups.into_iter().collect();
+    groups.sort_by(|(left_key, left), (right_key, right)| {
+        right.2.cmp(&left.2).then_with(|| right_key.cmp(left_key))
+    });
     let mut count = 0;
     let mut bytes = 0_u64;
-    for (paths, size, modified) in groups {
+    for (_, (paths, size, modified)) in groups {
         let old = std::time::SystemTime::now()
             .duration_since(modified)
             .is_ok_and(|age| age > Duration::from_secs(7 * 86400));
@@ -665,15 +667,27 @@ mod tests {
         fs::create_dir(&dir).unwrap();
         fs::write(dir.join("unrelated.json"), b"keep").unwrap();
         fs::write(dir.join("main-thread-heartbeat.json"), b"keep").unwrap();
+        let modified = std::time::SystemTime::now();
         for i in 0..45 {
-            fs::write(dir.join(format!("hang-{i}.json")), b"{}").unwrap();
-            fs::write(dir.join(format!("hang-{i}.sample.txt")), b"sample").unwrap();
+            for (suffix, text) in [("json", "{}"), ("sample.txt", "sample")] {
+                let path = dir.join(format!("hang-{i:02}.{suffix}"));
+                fs::write(&path, text).unwrap();
+                OpenOptions::new()
+                    .write(true)
+                    .open(path)
+                    .unwrap()
+                    .set_times(std::fs::FileTimes::new().set_modified(modified))
+                    .unwrap();
+            }
         }
         prune_diagnostics(&dir);
         assert!(
             dir.join("unrelated.json").exists() && dir.join("main-thread-heartbeat.json").exists()
         );
         assert_eq!(fs::read_dir(&dir).unwrap().count(), 82);
+        assert!(!dir.join("hang-04.json").exists());
+        assert!(dir.join("hang-05.json").exists());
+        assert!(dir.join("hang-44.sample.txt").exists());
         fs::remove_dir_all(dir).unwrap();
     }
 }
