@@ -58,11 +58,39 @@ struct Service {
     stop: Arc<AtomicBool>,
     _task: Task<()>,
     _native: native::Source,
-    views: Vec<gpui::WeakEntity<crate::terminal::view::TerminalView>>,
+    views: ViewRegistrations<gpui::WeakEntity<crate::terminal::view::TerminalView>>,
     reclaimed_cache_bytes: u64,
     last_critical_reclaim: Option<Instant>,
 }
 impl Global for Service {}
+/// Restored windows can construct their terminal views before the lifecycle
+/// service starts. Keep those weak registrations rather than losing their
+/// renderer accounting and cache reclamation for the rest of the app lifetime.
+struct ViewRegistrations<V> {
+    entries: Vec<V>,
+}
+impl<V> Default for ViewRegistrations<V> {
+    fn default() -> Self {
+        Self {
+            entries: Vec::new(),
+        }
+    }
+}
+impl<V> ViewRegistrations<V> {
+    fn register(&mut self, view: V) {
+        self.entries.push(view);
+    }
+    fn take_for_start(&mut self) -> Self {
+        std::mem::take(self)
+    }
+    fn clear(&mut self) {
+        self.entries.clear();
+    }
+}
+#[derive(Default)]
+struct PendingViews(ViewRegistrations<gpui::WeakEntity<crate::terminal::view::TerminalView>>);
+impl Global for PendingViews {}
+
 impl Drop for Service {
     fn drop(&mut self) {
         self.stop.store(true, Ordering::Release);
@@ -432,6 +460,11 @@ pub fn start(cx: &mut App) {
             cx.update(tick);
         }
     });
+    let views = if cx.try_global::<PendingViews>().is_some() {
+        cx.remove_global::<PendingViews>().0.take_for_start()
+    } else {
+        ViewRegistrations::default()
+    };
     cx.set_global(Service {
         sender,
         pressure,
@@ -439,7 +472,7 @@ pub fn start(cx: &mut App) {
         stop,
         _task: task,
         _native: native,
-        views: Vec::new(),
+        views,
         reclaimed_cache_bytes: 0,
         last_critical_reclaim: None,
     });
@@ -449,12 +482,23 @@ pub(crate) fn register_view(
     cx: &mut App,
 ) {
     if cx.try_global::<Service>().is_some() {
-        cx.global_mut::<Service>().views.push(view);
+        cx.global_mut::<Service>().views.register(view);
+    } else {
+        if cx.try_global::<PendingViews>().is_none() {
+            cx.set_global(PendingViews::default());
+        }
+        cx.global_mut::<PendingViews>().0.register(view);
     }
 }
 pub fn stop(cx: &mut App) {
     if cx.try_global::<Service>().is_some() {
-        drop(cx.remove_global::<Service>());
+        let mut service = cx.remove_global::<Service>();
+        service.views.clear();
+        drop(service);
+    }
+    // Also clean up registrations if shutdown precedes service initialization.
+    if cx.try_global::<PendingViews>().is_some() {
+        cx.remove_global::<PendingViews>().0.clear();
     }
 }
 fn selected(cx: &mut App) -> HashMap<u64, bool> {
@@ -587,6 +631,7 @@ fn reclaim_caches(selected: &HashSet<u64>, pressure: bool, cx: &mut App) {
         (
             service
                 .views
+                .entries
                 .iter()
                 .filter_map(gpui::WeakEntity::upgrade)
                 .collect::<Vec<_>>(),
@@ -631,7 +676,10 @@ fn reclaim_caches(selected: &HashSet<u64>, pressure: bool, cx: &mut App) {
         reclaimed += crate::terminal::paint::release_glyph_cache(cx);
     }
     let service = cx.global_mut::<Service>();
-    service.views.retain(|view| view.upgrade().is_some());
+    service
+        .views
+        .entries
+        .retain(|view| view.upgrade().is_some());
     service.reclaimed_cache_bytes += reclaimed;
     if critical {
         service.last_critical_reclaim = Some(Instant::now());
@@ -660,7 +708,7 @@ pub fn diagnostics(cx: &App) -> Value {
         let metrics = memory.metrics.lock();
         sessions.push(json!({"session_id":memory.id,"phase":state.phase,"retained_on_disk":state.flushed.is_some(),"configured_lines":state.configured,"flushes":metrics.flushes,"reloads":metrics.reloads,"failures":metrics.failures,"reclaimed_grid_bytes":metrics.reclaimed_bytes,"last_error":metrics.last_error}));
     }
-    let renderers:Vec<Value>=service.views.iter().filter_map(gpui::WeakEntity::upgrade).map(|view|json!({"session_id":view.read(cx).memory_session_id(cx),"renderer":view.read(cx).overlays.renderer_diagnostics()})).collect();
+    let renderers:Vec<Value>=service.views.entries.iter().filter_map(gpui::WeakEntity::upgrade).map(|view|json!({"session_id":view.read(cx).memory_session_id(cx),"renderer":view.read(cx).overlays.renderer_diagnostics()})).collect();
     json!({"configured_renderer":if crate::settings::Settings::get(cx).appearance.rendering.gpu_renderer {"gpu"}else{"cpu"},"renderer_samples":renderers,"cpu_glyph_cache_bytes":crate::terminal::paint::glyph_cache_bytes(cx),"cpu_glyph_cache_entries":crate::terminal::paint::glyph_cache_entries(cx),"regenerable_cache_scope":"CPU terminal bitmap and glyph pixels","available":true,"native_pressure_source":service._native.available(),"under_pressure":service.pressure.lock().is_under_pressure(service.epoch.elapsed()),"shed_best_effort":service.pressure.lock().should_shed_best_effort(service.epoch.elapsed()),"regenerable_cache_bytes_released": service.reclaimed_cache_bytes,"sessions":sessions})
 }
 
@@ -859,6 +907,47 @@ mod native {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn initial_view_registrations_survive_start_without_retaining_views() {
+        let first = Arc::new(());
+        let restored = Arc::new(());
+        let mut pending = ViewRegistrations::default();
+        pending.register(Arc::downgrade(&first));
+        pending.register(Arc::downgrade(&restored));
+        assert_eq!(Arc::strong_count(&first), 1);
+        assert_eq!(Arc::strong_count(&restored), 1);
+
+        let mut running = pending.take_for_start();
+        assert!(pending.entries.is_empty());
+        assert_eq!(running.entries.len(), 2);
+        assert!(running.entries.iter().all(|view| view.upgrade().is_some()));
+        // Registration remains weak across service startup and later additions.
+        let later = Arc::new(());
+        running.register(Arc::downgrade(&later));
+        assert_eq!(Arc::strong_count(&later), 1);
+        drop(restored);
+        assert!(running.entries[1].upgrade().is_none());
+
+        running.clear();
+        assert!(running.entries.is_empty());
+        assert_eq!(Arc::weak_count(&first), 0);
+        assert_eq!(Arc::weak_count(&later), 0);
+        assert_eq!(Arc::strong_count(&first), 1);
+        assert_eq!(Arc::strong_count(&later), 1);
+    }
+
+    #[test]
+    fn stop_before_start_clears_early_weak_registrations() {
+        let view = Arc::new(());
+        let mut pending = ViewRegistrations::default();
+        pending.register(Arc::downgrade(&view));
+        pending.clear();
+        assert!(pending.take_for_start().entries.is_empty());
+        assert_eq!(Arc::weak_count(&view), 0);
+        assert_eq!(Arc::strong_count(&view), 1);
+    }
+
     struct Fixture {
         root: PathBuf,
         terminal: Arc<RwLock<Chau7Terminal>>,
