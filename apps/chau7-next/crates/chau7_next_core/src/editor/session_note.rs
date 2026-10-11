@@ -227,7 +227,7 @@ mod tests {
         std::fs::write(&note, "original").unwrap();
         assert_eq!(prepare(&root, &repo, tab), Some(note.clone()));
         assert_eq!(std::fs::read_to_string(&note).unwrap(), "original");
-        assert!(!repo.join(".chau7").exists());
+        assert!(!DataRoot::repo_metadata_file(&repo).parent().unwrap().exists());
         assert!(note.starts_with(root.state_dir()));
         std::fs::remove_dir_all(home).unwrap();
     }
