@@ -25,7 +25,7 @@ use chau7_next_core::monitoring::claude_code::ClaudeCodeEvent;
 use chau7_next_core::runtime::manager::{
     CLEANUP_INTERVAL_SECONDS, RuntimeHost, RuntimeNotification, RuntimeSessionManager,
 };
-use gpui::App;
+use gpui::{App, AppContext};
 use uuid::Uuid;
 
 use crate::ai::events_out;
@@ -54,6 +54,93 @@ pub fn init(cx: &mut App) {
             cx.update(|cx| {
                 manager().cleanup(chrono::Utc::now(), &mut AppHost { cx });
                 sync_runtime_owned_tabs(cx);
+            });
+        }
+    })
+    .detach();
+    start_readiness_monitor(cx);
+}
+
+fn start_readiness_monitor(cx: &mut App) {
+    cx.spawn(async move |cx| {
+        loop {
+            cx.background_executor()
+                .timer(Duration::from_millis(500))
+                .await;
+            let snapshots = cx.update(|cx| {
+                manager()
+                    .all_sessions(false)
+                    .into_iter()
+                    .filter(|session| {
+                        matches!(
+                            session.state(),
+                            chau7_next_core::runtime::session_state::State::Starting
+                                | chau7_next_core::runtime::session_state::State::Busy
+                                | chau7_next_core::runtime::session_state::State::Ready
+                        )
+                    })
+                    .filter_map(|session| {
+                        launch_snapshot(&session, cx)
+                            .map(|(snapshot, pid)| (session, snapshot, pid))
+                    })
+                    .collect::<Vec<_>>()
+            });
+            if snapshots.is_empty() {
+                continue;
+            }
+            let snapshots = cx
+                .background_spawn(async move {
+                    snapshots
+                        .into_iter()
+                        .map(|(session, mut snapshot, pid)| {
+                            if session.state()
+                                == chau7_next_core::runtime::session_state::State::Starting
+                                && snapshot.ai_provider.is_none()
+                                && snapshot.active_run_provider.is_none()
+                            {
+                                snapshot.process_names =
+                                    crate::platform::process::process_tree(pid)
+                                        .into_iter()
+                                        .filter_map(crate::platform::process::process_name)
+                                        .collect();
+                            }
+                            (session, snapshot)
+                        })
+                        .collect::<Vec<_>>()
+                })
+                .await;
+            cx.update(|cx| {
+                use chau7_next_core::runtime::{launch_readiness, session_state::State};
+                for (session, snapshot) in snapshots {
+                    session.observe_terminal_status(&snapshot.effective_status);
+                    if session.state() == State::Starting
+                        && (session.backend.name() == "shell"
+                            && !snapshot.shell_loading
+                            && snapshot.is_at_prompt
+                            || launch_readiness::is_ready(
+                                &snapshot,
+                                session.backend.name(),
+                                session.config.purpose.as_deref(),
+                            ))
+                    {
+                        manager().mark_ready(&session.id);
+                    } else if session.state() == State::Busy {
+                        let fresh = snapshot
+                            .status_observed_at
+                            .zip(session.last_turn_submitted_at())
+                            .is_none_or(|(observed, submitted)| {
+                                observed.timestamp_millis() >= submitted.timestamp_millis()
+                            });
+                        if fresh && launch_readiness::is_settled(&snapshot, session.backend.name())
+                        {
+                            manager().reconcile_settled_turn(
+                                &session.id,
+                                "terminal_settled:monitor",
+                                &mut AppHost { cx },
+                            );
+                        }
+                    }
+                }
             });
         }
     })
@@ -169,4 +256,57 @@ impl RuntimeHost for AppHost<'_> {
         event.reliability = AiEventReliability::Authoritative;
         events_out::publish(event, true, self.cx);
     }
+}
+
+/// Cheap main-thread snapshot; process enumeration belongs on a worker.
+pub fn launch_snapshot(
+    session: &chau7_next_core::runtime::session::RuntimeSession,
+    cx: &mut App,
+) -> Option<(
+    chau7_next_core::runtime::launch_readiness::LaunchSnapshot,
+    u32,
+)> {
+    use chau7_next_core::history_monitor::{
+        latest_session_status, resolve_effective_prompt_state, resolve_effective_status,
+    };
+    use chau7_next_core::shell_session::display_name_from_provider;
+    let tab = find_tab(&session.tab_id, cx)?;
+    let terminal = tab.window.workspace.read(cx).mcp_session(tab.tab, cx)?;
+    let terminal = terminal.read(cx);
+    let shell = terminal.shell();
+    let provider = shell.effective_provider();
+    let statuses = crate::history::monitor::session_statuses(cx);
+    let matched = provider.as_ref().and_then(|provider| {
+        let tool = display_name_from_provider(Some(provider)).unwrap_or_else(|| provider.clone());
+        latest_session_status(&statuses, &tool, shell.ai_session_id()?)
+            .map(|status| (status.state, status.last_seen))
+    });
+    let effective_status = matched.map_or(terminal.status(), |(state, _)| {
+        resolve_effective_status(state, terminal.status())
+    });
+    let is_at_prompt = matched.map_or(terminal.is_at_prompt(), |(state, _)| {
+        resolve_effective_prompt_state(state, terminal.is_at_prompt())
+    });
+    let active_run_provider = crate::telemetry::recorder(cx).and_then(|recorder| {
+        recorder
+            .active_run_for_tab(&terminal.tab_identifier)
+            .map(|run| run.provider)
+    });
+    Some((
+        chau7_next_core::runtime::launch_readiness::LaunchSnapshot {
+            shell_loading: terminal.is_loading(),
+            is_at_prompt,
+            effective_status: effective_status.as_str().into(),
+            raw_status: terminal.status().as_str().into(),
+            active_app: terminal.ai_app.clone(),
+            raw_active_app: terminal.ai_app.clone(),
+            ai_provider: provider,
+            active_run_provider,
+            process_names: Vec::new(),
+            status_observed_at: matched.and_then(|(_, seen)| {
+                chrono::DateTime::from_timestamp_millis((seen * 1000.0) as i64)
+            }),
+        },
+        terminal.shell_pid() as u32,
+    ))
 }

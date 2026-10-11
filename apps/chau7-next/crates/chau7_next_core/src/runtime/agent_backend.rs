@@ -50,6 +50,28 @@ pub struct SessionConfig {
     pub args: Vec<String>,
     /// When true, the backend should skip its own permission prompts.
     pub auto_approve: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub purpose: Option<String>,
+    #[serde(
+        default,
+        rename = "parentSessionID",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub parent_session_id: Option<String>,
+    #[serde(
+        default,
+        rename = "parentRunID",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub parent_run_id: Option<String>,
+    #[serde(default)]
+    pub task_metadata: HashMap<String, String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub result_schema: Option<serde_json::Value>,
+    #[serde(default)]
+    pub delegation_depth: u32,
+    #[serde(default)]
+    pub policy: super::delegated_task::DelegationPolicy,
 }
 
 impl SessionConfig {
@@ -64,6 +86,13 @@ impl SessionConfig {
             environment: HashMap::new(),
             args: Vec::new(),
             auto_approve: false,
+            purpose: None,
+            parent_session_id: None,
+            parent_run_id: None,
+            task_metadata: HashMap::new(),
+            result_schema: None,
+            delegation_depth: 0,
+            policy: Default::default(),
         }
     }
 }

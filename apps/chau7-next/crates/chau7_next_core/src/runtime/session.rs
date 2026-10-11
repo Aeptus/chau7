@@ -12,12 +12,14 @@ use chrono::{DateTime, Utc};
 use serde_json::{Map, Value, json};
 
 use super::agent_backend::{AgentBackend, SessionConfig};
+use super::delegated_task::TurnResult;
 use super::event_journal::EventJournal;
 use super::exit_classifier::{TurnExitReason, classify};
 use super::runtime_event::RuntimeEventType;
 use super::session_state::{RuntimeSessionStateMachine, State, Trigger};
 use super::turn_stats::TurnStats;
 use crate::telemetry::date_codec::format_iso8601_fractional;
+use crate::telemetry::token_metrics::TokenUsage;
 
 /// A pending tool permission request (`PendingApproval`).
 #[derive(Debug, Clone, PartialEq)]
@@ -54,6 +56,19 @@ struct Inner {
     was_interrupted: bool,
     last_exit_reason: Option<TurnExitReason>,
     last_turn_submitted_at: Option<DateTime<Utc>>,
+    last_turn_completed_at: Option<DateTime<Utc>>,
+    last_completed_turn_id: Option<String>,
+    last_prompt: Option<String>,
+    current_result_schema: Option<Value>,
+    turn_results: HashMap<String, TurnResult>,
+    cumulative_tokens: TokenUsage,
+    cumulative_cache_creation: i64,
+    cumulative_cache_read: i64,
+    observed_turn_activity: bool,
+    previous_terminal_status: Option<String>,
+    current_usage_evidence: bool,
+    usage_known_turns: u64,
+    completed_turn_count: u64,
 }
 
 /// One runtime session.
@@ -163,6 +178,82 @@ impl RuntimeSession {
         self.lock().last_turn_submitted_at
     }
 
+    pub fn observe_terminal_status(&self, status: &str) {
+        let mut inner = self.lock();
+        if inner.machine.state() == State::Busy
+            && status == "running"
+            && inner
+                .previous_terminal_status
+                .as_deref()
+                .is_some_and(|previous| previous != "running")
+        {
+            inner.observed_turn_activity = true;
+        }
+        inner.previous_terminal_status = Some(status.to_string());
+    }
+    pub fn mark_turn_activity(&self) {
+        self.lock().observed_turn_activity = true;
+    }
+    pub fn has_observed_turn_activity(&self) -> bool {
+        self.lock().observed_turn_activity
+    }
+    pub fn completed_turn_count(&self) -> u64 {
+        self.lock().completed_turn_count
+    }
+    pub fn has_token_usage_evidence(&self) -> bool {
+        self.lock().usage_known_turns > 0
+    }
+    pub fn token_usage_state(&self) -> crate::telemetry::token_metrics::TelemetryMetricState {
+        let inner = self.lock();
+        if inner.usage_known_turns == 0 {
+            crate::telemetry::token_metrics::TelemetryMetricState::Missing
+        } else if inner.usage_known_turns == inner.completed_turn_count {
+            crate::telemetry::token_metrics::TelemetryMetricState::Complete
+        } else {
+            crate::telemetry::token_metrics::TelemetryMetricState::Estimated
+        }
+    }
+    pub fn cumulative_token_usage(&self) -> TokenUsage {
+        self.lock().cumulative_tokens
+    }
+    pub fn cumulative_cache_creation_tokens(&self) -> i64 {
+        self.lock().cumulative_cache_creation
+    }
+    pub fn cumulative_cache_read_tokens(&self) -> i64 {
+        self.lock().cumulative_cache_read
+    }
+    pub fn last_prompt(&self) -> Option<String> {
+        self.lock().last_prompt.clone()
+    }
+    pub fn last_completed_turn_id(&self) -> Option<String> {
+        self.lock().last_completed_turn_id.clone()
+    }
+    pub fn last_turn_completed_at(&self) -> Option<DateTime<Utc>> {
+        self.lock().last_turn_completed_at
+    }
+    pub fn latest_turn_result(&self) -> Option<TurnResult> {
+        self.turn_result(None)
+    }
+    pub fn turn_result(&self, turn: Option<&str>) -> Option<TurnResult> {
+        let inner = self.lock();
+        let id = turn.or(inner.last_completed_turn_id.as_deref())?;
+        inner.turn_results.get(id).cloned()
+    }
+    pub fn policy_error_for_next_turn(&self) -> Option<String> {
+        self.config.policy.validate_start(
+            self.turn_count().saturating_add(1),
+            (Utc::now() - self.created_at).num_milliseconds(),
+            self.config.delegation_depth,
+        )
+    }
+    pub fn record_policy_block(&self, tool: &str, reason: &str) {
+        self.record(
+            self.current_turn_id().as_deref(),
+            "policy_blocked",
+            data(&[("tool", tool.into()), ("reason", reason.into())]),
+        );
+    }
+
     /// Apply a trigger; journals `state_changed` when accepted.
     pub fn transition(&self, trigger: Trigger) -> bool {
         let (previous, accepted, next, turn) = {
@@ -197,6 +288,14 @@ impl RuntimeSession {
 
     /// Start a turn (`t_<n>`), only from `ready`; moves to `busy`.
     pub fn start_turn(&self, prompt: &str) -> Option<String> {
+        self.start_turn_with_schema(prompt, None)
+    }
+
+    pub fn start_turn_with_schema(&self, prompt: &str, schema: Option<Value>) -> Option<String> {
+        if let Some(reason) = self.policy_error_for_next_turn() {
+            self.record_policy_block("turn_submission", &reason);
+            return None;
+        }
         let (turn_id, next) = {
             let mut inner = self.lock();
             if !inner.machine.can_accept_turn() {
@@ -215,6 +314,10 @@ impl RuntimeSession {
             let turn_id = format!("t_{}", inner.turn_count);
             inner.current_turn_id = Some(turn_id.clone());
             inner.last_turn_submitted_at = Some(Utc::now());
+            inner.last_prompt = Some(prompt.to_string());
+            inner.current_result_schema = schema.or_else(|| self.config.result_schema.clone());
+            inner.observed_turn_activity = false;
+            inner.current_usage_evidence = false;
             inner.current_stats = TurnStats::new();
             inner.last_denied_approval = false;
             inner.was_interrupted = false;
@@ -244,15 +347,31 @@ impl RuntimeSession {
         terminal_output: Option<&str>,
     ) -> TurnCompletion {
         let (turn, stats, denied, interrupted, state) = {
-            let inner = self.lock();
+            let mut inner = self.lock();
             (
-                inner.current_turn_id.clone(),
+                inner.current_turn_id.take(),
                 inner.current_stats.clone(),
                 inner.last_denied_approval,
                 inner.was_interrupted,
                 inner.machine.state(),
             )
         };
+        if turn.is_none() {
+            return TurnCompletion {
+                stats,
+                exit_reason: classify(state, denied, terminal_output, interrupted),
+            };
+        }
+        let result_schema = self.lock().current_result_schema.clone();
+        let structured = turn.as_deref().and_then(|turn| {
+            super::structured_result::capture(
+                &self.id,
+                turn,
+                summary,
+                terminal_output,
+                result_schema.as_ref(),
+            )
+        });
         let exit_reason = classify(state, denied, terminal_output, interrupted);
         let mut payload: HashMap<String, String> = stats.summary().into_iter().collect();
         payload.insert("exit_reason".into(), exit_reason.raw_value().into());
@@ -275,6 +394,37 @@ impl RuntimeSession {
             let mut inner = self.lock();
             inner.current_turn_id = None;
             inner.last_exit_reason = Some(exit_reason);
+            if let Some(turn) = turn.as_ref() {
+                inner.completed_turn_count += 1;
+                if inner.current_usage_evidence {
+                    inner.usage_known_turns += 1;
+                }
+                inner.cumulative_tokens.add(&stats.token_usage());
+                inner.cumulative_cache_creation += stats.cache_creation_tokens();
+                inner.cumulative_cache_read += stats.cache_read_tokens();
+                inner.last_completed_turn_id = Some(turn.clone());
+                inner.last_turn_completed_at = Some(Utc::now());
+                if let Some(result) = structured.as_ref() {
+                    inner.turn_results.insert(turn.clone(), result.clone());
+                }
+            }
+        }
+        if let Some(result) = structured {
+            self.record(
+                Some(&result.turn_id),
+                "turn_result_captured",
+                data(&[
+                    (
+                        "status",
+                        serde_json::to_value(&result.status)
+                            .unwrap()
+                            .as_str()
+                            .unwrap()
+                            .to_string(),
+                    ),
+                    ("source", result.source.clone()),
+                ]),
+            );
         }
         TurnCompletion { stats, exit_reason }
     }
@@ -301,7 +451,9 @@ impl RuntimeSession {
     }
 
     pub fn add_tokens(&self, input: i64, output: i64, cache_creation: i64, cache_read: i64) {
-        self.lock()
+        let mut inner = self.lock();
+        inner.current_usage_evidence = true;
+        inner
             .current_stats
             .add_tokens(input, output, cache_creation, cache_read);
     }
@@ -406,6 +558,44 @@ impl RuntimeSession {
             json!(format_iso8601_fractional(&self.created_at)),
         );
         out.insert("cursor".into(), json!(self.journal.latest_cursor()));
+        out.insert("token_usage".into(), json!(self.cumulative_token_usage()));
+        out.insert("token_usage_state".into(), json!(self.token_usage_state()));
+        out.insert(
+            "completed_turn_count".into(),
+            json!(self.completed_turn_count()),
+        );
+        out.insert(
+            "delegation_depth".into(),
+            json!(self.config.delegation_depth),
+        );
+        out.insert("policy".into(), self.config.policy.summary());
+        for (key, value) in [
+            ("purpose", &self.config.purpose),
+            ("parent_session_id", &self.config.parent_session_id),
+            ("parent_run_id", &self.config.parent_run_id),
+        ] {
+            if let Some(value) = value {
+                out.insert(key.into(), json!(value));
+            }
+        }
+        if !self.config.task_metadata.is_empty() {
+            out.insert("task_metadata".into(), json!(self.config.task_metadata));
+        }
+        if let Some(schema) = &self.config.result_schema {
+            out.insert("result_schema".into(), schema.clone());
+        }
+        if let Some(result) = self.latest_turn_result() {
+            out.insert("latest_turn_result".into(), json!(result));
+        }
+        if let Some(turn) = self.last_completed_turn_id() {
+            out.insert("last_completed_turn_id".into(), json!(turn));
+        }
+        if let Some(time) = self.last_turn_completed_at() {
+            out.insert(
+                "last_turn_completed_at".into(),
+                json!(format_iso8601_fractional(&time)),
+            );
+        }
         if let Some(turn) = turn {
             out.insert("current_turn_id".into(), json!(turn));
         }
@@ -438,6 +628,52 @@ mod tests {
             .into_iter()
             .map(|e| e.event_type)
             .collect()
+    }
+
+    #[test]
+    fn no_observed_usage_is_missing_and_existing_running_cli_is_not_new_turn_activity() {
+        let s = session();
+        s.transition(Trigger::BackendReady);
+        s.observe_terminal_status("running");
+        s.start_turn("task");
+        s.observe_terminal_status("running");
+        assert!(!s.has_observed_turn_activity());
+        s.observe_terminal_status("waitingForInput");
+        s.observe_terminal_status("running");
+        assert!(s.has_observed_turn_activity());
+        s.complete_turn(None, None);
+        assert!(!s.has_token_usage_evidence());
+        assert_eq!(
+            s.token_usage_state(),
+            crate::telemetry::token_metrics::TelemetryMetricState::Missing
+        );
+        assert_eq!(s.completed_turn_count(), 1);
+    }
+    #[test]
+    fn cumulative_tokens_and_structured_results_survive_next_turn() {
+        let s = session();
+        s.transition(Trigger::BackendReady);
+        assert_eq!(
+            s.start_turn_with_schema("task", Some(json!({"type":"object","required":["ok"]})))
+                .as_deref(),
+            Some("t_1")
+        );
+        s.add_tokens(10, 5, 2, 3);
+        s.complete_turn(Some("{\"ok\":true}"), None);
+        assert_eq!(s.cumulative_token_usage().total_visible_tokens(), 15);
+        assert_eq!(
+            s.token_usage_state(),
+            crate::telemetry::token_metrics::TelemetryMetricState::Complete
+        );
+        assert_eq!(s.latest_turn_result().unwrap().turn_id, "t_1");
+        s.complete_turn(Some("duplicate"), None);
+        assert_eq!(s.cumulative_token_usage().total_visible_tokens(), 15);
+        s.start_turn("next");
+        assert_eq!(s.cumulative_token_usage().total_visible_tokens(), 15);
+        assert_eq!(
+            s.turn_result(Some("t_1")).unwrap().value.unwrap()["ok"],
+            true
+        );
     }
 
     #[test]

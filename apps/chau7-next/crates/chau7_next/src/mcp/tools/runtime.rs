@@ -23,9 +23,12 @@ pub fn definitions() -> Vec<Value> {
                     "resume_session_id": {"type": "string", "description": "Resume an existing agent session by ID"},
                     "env": {"type": "object", "description": "Extra environment variables"},
                     "backend_args": {"type": "array", "items": {"type": "string"}, "description": "Additional CLI arguments"},
-                    "initial_prompt": {"type": "string", "description": "Prompt to send immediately after backend starts. Delivered with retry (up to ~4s) to handle backend startup time."},
+                    "initial_prompt": {"type": "string", "description": "Prompt to send immediately after backend starts. Delivered with retry (up to ~60s) to handle backend startup time."},
                     "auto_approve": {"type": "boolean", "description": "Auto-approve safe tool use requests. For claude: --dangerously-skip-permissions. For codex: --full-auto."},
-                    "attach_tab_id": {"type": "string", "description": "Attach to existing tab instead of creating new one"}
+                    "attach_tab_id": {"type": "string", "description": "Attach to existing tab instead of creating new one"},
+                    "purpose": {"type":"string"}, "parent_session_id": {"type":"string"}, "parent_run_id": {"type":"string"},
+                    "task_metadata": {"type":"object","additionalProperties":{"type":"string"}}, "result_schema": {"type":"object"},
+                    "delegation_depth": {"type":"integer","minimum":0}, "policy": {"type":"object","description":"Owned turn/duration/depth/tool limits; network and file-write flags are advisory."}
                 }
             }),
         ),
@@ -71,7 +74,8 @@ pub fn definitions() -> Vec<Value> {
                 "properties": {
                     "session_id": {"type": "string", "description": "Runtime session ID"},
                     "prompt": {"type": "string", "description": "The prompt to send to the agent"},
-                    "context": {"type": "string", "description": "Optional context prepended to the prompt"}
+                    "context": {"type": "string", "description": "Optional context prepended to the prompt"},
+                    "result_schema": {"type":"object"}
                 },
                 "required": ["session_id", "prompt"]
             }),
@@ -114,6 +118,31 @@ pub fn definitions() -> Vec<Value> {
                 },
                 "required": ["session_id", "approval_id", "approved"]
             }),
+        ),
+        tool(
+            "runtime_session_children",
+            "List immediate or recursive delegated children.",
+            json!({"type":"object","properties":{"session_id":{"type":"string"},"recursive":{"type":"boolean"},"include_stopped":{"type":"boolean"}},"required":["session_id"]}),
+        ),
+        tool(
+            "runtime_session_cancel_children",
+            "Stop descendant sessions, optionally interrupt and close tabs.",
+            json!({"type":"object","properties":{"session_id":{"type":"string"},"force":{"type":"boolean"},"close_tabs":{"type":"boolean"}},"required":["session_id"]}),
+        ),
+        tool(
+            "runtime_session_retry",
+            "Retry a task preserving parent attribution, policy, schema and last prompt.",
+            json!({"type":"object","properties":{"session_id":{"type":"string"},"prompt":{"type":"string"}},"required":["session_id"]}),
+        ),
+        tool(
+            "runtime_turn_result",
+            "Read a structured result, including available/invalid/missing status and schema errors.",
+            json!({"type":"object","properties":{"session_id":{"type":"string"},"turn_id":{"type":"string"}},"required":["session_id"]}),
+        ),
+        tool(
+            "runtime_turn_wait",
+            "Wait for a settled turn with a bounded timeout and report actual state/result.",
+            json!({"type":"object","properties":{"session_id":{"type":"string"},"turn_id":{"type":"string"},"timeout_ms":{"type":"integer","minimum":100,"maximum":3600000}},"required":["session_id"]}),
         ),
     ]
 }

@@ -158,7 +158,23 @@ impl RuntimeSessionManager {
         cwd: &str,
     ) -> Arc<RuntimeSession> {
         let config = SessionConfig::new(cwd, backend.name());
-        let session = Arc::new(RuntimeSession::new(tab_id, backend, config, false, true));
+        self.adopt_session_with_config(tab_id, backend, config)
+    }
+
+    pub fn adopt_session_with_config(
+        &self,
+        tab_id: &str,
+        backend: Box<dyn AgentBackend>,
+        config: SessionConfig,
+    ) -> Arc<RuntimeSession> {
+        let auto_approve = config.auto_approve;
+        let session = Arc::new(RuntimeSession::new(
+            tab_id,
+            backend,
+            config,
+            auto_approve,
+            true,
+        ));
         session.transition(Trigger::BackendReady);
         self.register(&session);
         session.record(
@@ -206,6 +222,35 @@ impl RuntimeSessionManager {
         let mut out: Vec<_> = maps.sessions.values().cloned().collect();
         if include_stopped {
             out.extend(maps.recently_stopped.values().map(|(s, _)| s.clone()));
+        }
+        out.sort_by(|a, b| a.created_at.cmp(&b.created_at).then(a.id.cmp(&b.id)));
+        out
+    }
+
+    pub fn child_sessions(&self, parent: &str, include_stopped: bool) -> Vec<Arc<RuntimeSession>> {
+        self.all_sessions(include_stopped)
+            .into_iter()
+            .filter(|session| session.config.parent_session_id.as_deref() == Some(parent))
+            .collect()
+    }
+    pub fn descendant_sessions(
+        &self,
+        parent: &str,
+        include_stopped: bool,
+    ) -> Vec<Arc<RuntimeSession>> {
+        let all = self.all_sessions(include_stopped);
+        let mut seen = HashSet::from([parent.to_string()]);
+        let mut out = Vec::new();
+        let mut frontier = vec![parent.to_string()];
+        while let Some(parent) = frontier.pop() {
+            for session in &all {
+                if session.config.parent_session_id.as_deref() == Some(&parent)
+                    && seen.insert(session.id.clone())
+                {
+                    frontier.push(session.id.clone());
+                    out.push(session.clone());
+                }
+            }
         }
         out.sort_by(|a, b| a.created_at.cmp(&b.created_at).then(a.id.cmp(&b.id)));
         out
@@ -295,6 +340,33 @@ impl RuntimeSessionManager {
         }
     }
 
+    /// Terminal/history evidence can settle an interactive backend without
+    /// a Claude hook, after actual activity has been observed for this turn.
+    pub fn reconcile_settled_turn(
+        &self,
+        id: &str,
+        source: &str,
+        host: &mut dyn RuntimeHost,
+    ) -> bool {
+        let Some(session) = self.session(id) else {
+            return false;
+        };
+        if session.state() != State::Busy
+            || !session.has_observed_turn_activity()
+            || session.current_turn_id().is_none()
+        {
+            return false;
+        }
+        let output = host.tab_output(&session.tab_id, CAPTURE_LINES);
+        session.complete_turn(None, output.as_deref());
+        session.record(
+            session.last_completed_turn_id().as_deref(),
+            "turn_reconciled",
+            one("source", source),
+        );
+        true
+    }
+
     // ----- Claude Code hook events -------------------------------------------
 
     /// Drive sessions from a Claude Code hook event (`handleClaudeEvent`);
@@ -319,6 +391,7 @@ impl RuntimeSessionManager {
         match event.event_type {
             EventType::ToolStart => {
                 start_turn_if_idle(&session);
+                session.mark_turn_activity();
                 let file = extract_file_path(&event.message);
                 session.record_tool_use(&event.tool_name, file.as_deref());
                 session.record(
@@ -343,7 +416,13 @@ impl RuntimeSessionManager {
                 start_turn_if_idle(&session);
                 if turn_active(&session) {
                     let owns_notifications = session.backend.name().eq_ignore_ascii_case("claude");
-                    if session.auto_approve {
+                    if let Some(reason) = session.config.policy.validate_tool(&event.tool_name) {
+                        host.send_input(&session.tab_id, "n\n");
+                        session.record_policy_block(&event.tool_name, &reason);
+                        if !owns_notifications {
+                            self.emit(&session, "policy_blocked", &reason, host);
+                        }
+                    } else if session.auto_approve {
                         // Layer 2: answer what the CLI flag (layer 1) let through.
                         host.send_input(&session.tab_id, "y\n");
                         log::info!(
@@ -408,6 +487,7 @@ impl RuntimeSessionManager {
             }
             EventType::UserPrompt => {
                 start_turn_if_idle(&session);
+                session.mark_turn_activity();
                 session.record(
                     session.current_turn_id().as_deref(),
                     RuntimeEventType::AGENT_RESPONDING.raw_value(),
@@ -585,6 +665,24 @@ mod tests {
     use super::*;
     use crate::runtime::backends::GenericShellBackend;
 
+    #[test]
+    fn children_and_descendants_keep_parent_attribution_after_stop() {
+        let manager = RuntimeSessionManager::new(None);
+        let parent = manager.adopt_session("p", Box::new(GenericShellBackend), "/p");
+        let mut config = SessionConfig::new("/p", "shell");
+        config.parent_session_id = Some(parent.id.clone());
+        config.delegation_depth = 1;
+        let child = manager.create_session("c", Box::new(GenericShellBackend), config, false);
+        let mut config = SessionConfig::new("/p", "shell");
+        config.parent_session_id = Some(child.id.clone());
+        config.delegation_depth = 2;
+        let grandchild = manager.create_session("g", Box::new(GenericShellBackend), config, false);
+        assert_eq!(manager.child_sessions(&parent.id, false).len(), 1);
+        assert_eq!(manager.descendant_sessions(&parent.id, false).len(), 2);
+        manager.stop_session(&grandchild.id);
+        assert_eq!(manager.descendant_sessions(&parent.id, true).len(), 2);
+        assert_eq!(manager.descendant_sessions(&parent.id, false).len(), 1);
+    }
     #[derive(Default)]
     struct FakeHost {
         inputs: Vec<(String, String)>,
