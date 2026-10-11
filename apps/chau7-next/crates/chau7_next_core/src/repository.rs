@@ -11,6 +11,8 @@
 //! ([`RepositoryCache::take_due_saves`]); the save is atomic and removes the
 //! file when the metadata is empty ([`crate::repo_metadata::save`]).
 
+pub mod known_identity;
+
 use std::collections::{HashMap, HashSet};
 use std::time::{Duration, Instant};
 
@@ -348,6 +350,33 @@ pub fn normalize_path(path: &str) -> String {
 impl RepositoryCache {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Restore identity-only models without touching protected repositories.
+    pub fn adopt_known_identities(&mut self, identities: &known_identity::KnownRepoIdentities) {
+        for item in identities.all() {
+            self.models
+                .entry(item.root_path.clone())
+                .or_insert_with(|| RepoModel::new(&item.root_path, item.last_known_branch.clone()));
+        }
+        self.reset_negative_cache();
+    }
+
+    /// A freshly observed root can replace a stale positive or negative result.
+    pub fn forget_path_resolution(&mut self, path: &str) {
+        let path = normalize_path(path);
+        self.resolved.remove(&path);
+        self.non_git.remove(&path);
+    }
+
+    /// Immediate identity-only lookup. Live probes may later discover nested roots.
+    pub fn cached_root(&self, path: &str) -> Option<String> {
+        let path = known_identity::normalize_root(path)?;
+        self.models
+            .keys()
+            .filter(|root| std::path::Path::new(&path).starts_with(root))
+            .max_by_key(|root| root.len())
+            .cloned()
     }
 
     /// The model of the repository containing `path`, creating it the first
@@ -692,6 +721,21 @@ mod tests {
         assert!(!cache.has_pending_saves());
         cache.model_mut("/r").unwrap().add_label("y", t);
         assert_eq!(cache.take_all_saves().len(), 1);
+    }
+
+    #[test]
+    fn restored_known_roots_resolve_without_filesystem_probes() {
+        let mut cache = RepositoryCache::new();
+        let mut known = known_identity::KnownRepoIdentities::default();
+        known.record("/saved/repo", Some("last-branch"), None, true);
+        known.record("/saved/repo/nested", Some("nested"), None, true);
+        cache.adopt_known_identities(&known);
+        assert_eq!(
+            cache.cached_root("/saved/repo/nested/sub"),
+            Some("/saved/repo/nested".into())
+        );
+        assert_eq!(cache.cached_root("/saved/repository"), None);
+        assert_eq!(cache.branch("/saved/repo").as_deref(), Some("last-branch"));
     }
 
     #[test]

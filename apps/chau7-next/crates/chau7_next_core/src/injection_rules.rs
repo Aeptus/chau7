@@ -188,8 +188,7 @@ pub fn load_local(root: &DataRoot, repo: &Path) -> Result<LocalRule, String> {
         overridden: false,
     })
 }
-fn atomic_json<T: Serialize>(path: &Path, anchor: &Path, value: &T) -> Result<(), String> {
-    let parent = path.parent().ok_or("Missing rules directory")?;
+pub(crate) fn validate_owned_path(path: &Path, anchor: &Path) -> Result<(), String> {
     if !path.starts_with(anchor) {
         return Err("Rule path is outside Next storage".into());
     }
@@ -207,6 +206,15 @@ fn atomic_json<T: Serialize>(path: &Path, anchor: &Path, value: &T) -> Result<()
             }
         }
     }
+    Ok(())
+}
+pub(crate) fn atomic_json<T: Serialize + ?Sized>(
+    path: &Path,
+    anchor: &Path,
+    value: &T,
+) -> Result<(), String> {
+    let parent = path.parent().ok_or("Missing storage directory")?;
+    validate_owned_path(path, anchor)?;
     let mut builder = std::fs::DirBuilder::new();
     builder.recursive(true);
     #[cfg(unix)]
