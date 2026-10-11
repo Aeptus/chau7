@@ -200,6 +200,7 @@ pub struct TerminalSession {
     restore_selected: Cell<bool>,
     restore_window_visible: Cell<bool>,
     restore_hidden_since: Cell<Option<Instant>>,
+    surface_prewarm: Cell<chau7_next_core::session_restore::lifecycle::SurfacePrewarm>,
     pending_prefill: Option<String>,
     prefill_retries: u32,
     prefill_scheduled: bool,
@@ -721,6 +722,7 @@ impl TerminalSession {
             restore_selected: Cell::new(false),
             restore_window_visible: Cell::new(false),
             restore_hidden_since: Cell::new(Some(Instant::now())),
+            surface_prewarm: Cell::new(Default::default()),
             pending_prefill: None,
             prefill_retries: 0,
             prefill_scheduled: false,
@@ -1665,6 +1667,11 @@ impl TerminalSession {
     }
     pub(crate) fn set_restore_selected(&self, selected: bool) {
         self.restore_selected.set(selected);
+        if selected {
+            let mut prewarm = self.surface_prewarm.get();
+            prewarm.clear();
+            self.surface_prewarm.set(prewarm);
+        }
         self.sync_surface_clock();
     }
     pub(crate) fn mark_restore_surface(&self, visible: bool) {
@@ -1677,6 +1684,26 @@ impl TerminalSession {
         } else if self.restore_hidden_since.get().is_none() {
             self.restore_hidden_since.set(Some(Instant::now()));
         }
+    }
+    pub(crate) fn prewarm_surface(&mut self, hovered: bool, cx: &mut Context<Self>) {
+        if self.restore_selected.get() {
+            return;
+        }
+        let mut prewarm = self.surface_prewarm.get();
+        let refresh = if hovered {
+            prewarm.begin(Instant::now())
+        } else {
+            prewarm.end(Instant::now());
+            false
+        };
+        self.surface_prewarm.set(prewarm);
+        self.set_render_suspended(false);
+        if refresh {
+            self.refresh(cx);
+        }
+    }
+    pub(crate) fn surface_prewarm_remaining(&self) -> Option<Duration> {
+        self.surface_prewarm.get().remaining(Instant::now())
     }
     pub(crate) fn surface_hidden_for(&self) -> Option<Duration> {
         self.restore_hidden_since.get().map(|at| at.elapsed())
