@@ -149,8 +149,10 @@ impl ImageLayer {
                 natural: (w, h),
                 rgba: Arc::new(rgba),
                 args,
-                anchor_line: image.history_size as i64 + image.anchor_row as i64,
-                anchor_col: image.anchor_col,
+                // Where the image arrived in the stream (the C API's
+                // `anchor_*` is the cursor after the whole output chunk).
+                anchor_line: image.history_size as i64 + image.arrival_row as i64,
+                anchor_col: image.arrival_col,
             });
         }
         self.enforce_limit(graphics.kitty_cache_limit_mb as usize * 1024 * 1024);
@@ -377,6 +379,8 @@ mod tests {
             anchor_col: 2,
             protocol: ImageProtocol::ITerm2,
             args: args.into(),
+            arrival_row: row,
+            arrival_col: 2,
             history_size: history,
         }
     }
@@ -430,6 +434,8 @@ mod tests {
             anchor_col: 0,
             protocol: ImageProtocol::Sixel,
             args: String::new(),
+            arrival_row: 0,
+            arrival_col: 0,
             history_size: 0,
         };
         layer.ingest(vec![sixel()], &settings);

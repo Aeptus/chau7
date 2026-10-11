@@ -1,13 +1,17 @@
 //! Binary terminal grid snapshot for remote clients (`TERMINAL_GRID_SNAPSHOT`, 0x23).
 //!
-//! Port of `RemoteTerminalGridSnapshot.swift` (`apps/chau7-macos/Sources/Chau7Core`).
+//! Port of `RemoteTerminalGridSnapshot.swift` (`apps/chau7-macos/Sources/Chau7Core`),
+//! the grapheme-cluster-aware "CHG2" format.
 //!
-//! Layout (little endian), 29 byte header then cells:
-//! `"CHG1" | version u8 | cols u16 | rows u16 | cursor_col u16 | cursor_row u16 |
+//! Layout (little endian), 33 byte header, cells, then cluster bytes:
+//! `"CHG2" | version u8 (2) | cols u16 | rows u16 | cursor_col u16 | cursor_row u16 |
 //! cursor_visible u8 | 3 zero bytes | scrollback_rows u32 | display_offset u32 |
-//! cells_byte_count u32 | cells (16 bytes each)`.
-//! The Go relay client forwards this frame type untouched, so only Swift and iOS
-//! interpret the layout.
+//! cells_byte_count u32 | clusters_byte_count u32 | cells (20 bytes each) | clusters`.
+//! A cell is the emulator's C `CellData`: `cluster_offset u32 | fg rgb | bg rgb |
+//! cluster_len u16 | width u8 | continuation u8 | flags u8 | underline_style u8 |
+//! link_id u16 | 2 padding bytes`; `cluster_offset` points into the cluster
+//! bytes (UTF-8). The Go relay client forwards this frame type untouched, so
+//! only the apps and iOS interpret the layout.
 
 use std::fmt;
 
@@ -33,11 +37,11 @@ impl std::error::Error for RemoteTerminalGridSnapshotError {}
 pub struct RemoteTerminalGridSnapshotLayout;
 
 impl RemoteTerminalGridSnapshotLayout {
-    pub const MAGIC: [u8; 4] = *b"CHG1";
-    pub const VERSION: u8 = 1;
-    pub const HEADER_SIZE: usize = 29;
-    /// Matches the stride of the Rust terminal's cell struct (14 bytes padded to 16).
-    pub const CELL_STRIDE: usize = 16;
+    pub const MAGIC: [u8; 4] = *b"CHG2";
+    pub const VERSION: u8 = 2;
+    pub const HEADER_SIZE: usize = 33;
+    /// Stride of the emulator's C `CellData` (18 bytes padded to 20).
+    pub const CELL_STRIDE: usize = 20;
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -50,6 +54,8 @@ pub struct RemoteTerminalGridSnapshot {
     pub scrollback_rows: u32,
     pub display_offset: u32,
     pub cells: Vec<u8>,
+    /// UTF-8 grapheme cluster bytes referenced by each cell's `cluster_offset`.
+    pub clusters: Vec<u8>,
 }
 
 impl RemoteTerminalGridSnapshot {
@@ -61,14 +67,16 @@ impl RemoteTerminalGridSnapshot {
         self.cells.len() == self.cell_count() * RemoteTerminalGridSnapshotLayout::CELL_STRIDE
     }
 
-    /// `None` when the cell buffer does not match `cols * rows * 16`.
+    /// `None` when the cell buffer does not match `cols * rows * 20`.
     pub fn encode(&self) -> Option<Vec<u8>> {
         if !self.is_valid() {
             return None;
         }
         let cells_len = u32::try_from(self.cells.len()).ok()?;
-        let mut data =
-            Vec::with_capacity(RemoteTerminalGridSnapshotLayout::HEADER_SIZE + self.cells.len());
+        let clusters_len = u32::try_from(self.clusters.len()).ok()?;
+        let mut data = Vec::with_capacity(
+            RemoteTerminalGridSnapshotLayout::HEADER_SIZE + self.cells.len() + self.clusters.len(),
+        );
         data.extend_from_slice(&RemoteTerminalGridSnapshotLayout::MAGIC);
         data.push(RemoteTerminalGridSnapshotLayout::VERSION);
         data.extend_from_slice(&self.cols.to_le_bytes());
@@ -80,7 +88,9 @@ impl RemoteTerminalGridSnapshot {
         data.extend_from_slice(&self.scrollback_rows.to_le_bytes());
         data.extend_from_slice(&self.display_offset.to_le_bytes());
         data.extend_from_slice(&cells_len.to_le_bytes());
+        data.extend_from_slice(&clusters_len.to_le_bytes());
         data.extend_from_slice(&self.cells);
+        data.extend_from_slice(&self.clusters);
         Some(data)
     }
 
@@ -106,11 +116,13 @@ impl RemoteTerminalGridSnapshot {
         let cols = u16_at(5);
         let rows = u16_at(7);
         let cells_byte_count = u32_at(25) as usize;
+        let clusters_byte_count = u32_at(29) as usize;
         let expected = usize::from(cols) * usize::from(rows) * L::CELL_STRIDE;
         if cells_byte_count != expected {
             return Err(E::InvalidLength);
         }
-        let total = L::HEADER_SIZE + cells_byte_count;
+        let cells_end = L::HEADER_SIZE + cells_byte_count;
+        let total = cells_end + clusters_byte_count;
         if data.len() < total {
             return Err(E::InvalidLength);
         }
@@ -122,7 +134,8 @@ impl RemoteTerminalGridSnapshot {
             cursor_visible: data[13] != 0,
             scrollback_rows: u32_at(17),
             display_offset: u32_at(21),
-            cells: data[L::HEADER_SIZE..total].to_vec(),
+            cells: data[L::HEADER_SIZE..cells_end].to_vec(),
+            clusters: data[cells_end..total].to_vec(),
         })
     }
 }
@@ -131,21 +144,37 @@ impl RemoteTerminalGridSnapshot {
 mod tests {
     use super::*;
 
-    #[test]
-    fn round_trip_preserves_metadata_and_cells() {
-        let snapshot = RemoteTerminalGridSnapshot {
-            cols: 2,
-            rows: 1,
-            cursor_col: 1,
+    fn snapshot(
+        cols: u16,
+        rows: u16,
+        cells: Vec<u8>,
+        clusters: Vec<u8>,
+    ) -> RemoteTerminalGridSnapshot {
+        RemoteTerminalGridSnapshot {
+            cols,
+            rows,
+            cursor_col: 0,
             cursor_row: 0,
-            cursor_visible: true,
-            scrollback_rows: 42,
-            display_offset: 3,
-            cells: (0u8..32).collect(),
-        };
-        let encoded = snapshot.encode().unwrap();
-        let decoded = RemoteTerminalGridSnapshot::decode(&encoded).unwrap();
-        assert_eq!(decoded, snapshot);
+            cursor_visible: false,
+            scrollback_rows: 0,
+            display_offset: 0,
+            cells,
+            clusters,
+        }
+    }
+
+    #[test]
+    fn round_trip_preserves_metadata_cells_and_clusters() {
+        let mut original = snapshot(2, 1, (0u8..40).collect(), b"ab".to_vec());
+        original.cursor_col = 1;
+        original.cursor_visible = true;
+        original.scrollback_rows = 42;
+        original.display_offset = 3;
+        let encoded = original.encode().unwrap();
+        assert_eq!(
+            RemoteTerminalGridSnapshot::decode(&encoded).unwrap(),
+            original
+        );
     }
 
     #[test]
@@ -162,6 +191,7 @@ mod tests {
         invalid.extend_from_slice(&0u32.to_le_bytes());
         invalid.extend_from_slice(&0u32.to_le_bytes());
         invalid.extend_from_slice(&1u32.to_le_bytes());
+        invalid.extend_from_slice(&0u32.to_le_bytes());
         invalid.push(0);
 
         assert_eq!(
@@ -180,11 +210,12 @@ mod tests {
             cursor_visible: true,
             scrollback_rows: 0x0A0B_0C0D,
             display_offset: 0x0000_0005,
-            cells: (0xA0u8..0xB0).collect(),
+            cells: (0xA0u8..0xB4).collect(),
+            clusters: vec![b'x'],
         };
         let mut expected: Vec<u8> = vec![
-            b'C', b'H', b'G', b'1', // magic
-            0x01, // version
+            b'C', b'H', b'G', b'2', // magic
+            0x02, // version
             0x01, 0x00, // cols
             0x01, 0x00, // rows
             0x02, 0x01, // cursor col
@@ -193,13 +224,15 @@ mod tests {
             0x00, 0x00, 0x00, // reserved
             0x0D, 0x0C, 0x0B, 0x0A, // scrollback rows
             0x05, 0x00, 0x00, 0x00, // display offset
-            0x10, 0x00, 0x00, 0x00, // cells byte count
+            0x14, 0x00, 0x00, 0x00, // cells byte count
+            0x01, 0x00, 0x00, 0x00, // clusters byte count
         ];
         assert_eq!(
             expected.len(),
             RemoteTerminalGridSnapshotLayout::HEADER_SIZE
         );
-        expected.extend(0xA0u8..0xB0);
+        expected.extend(0xA0u8..0xB4);
+        expected.push(b'x');
         assert_eq!(snapshot.encode().unwrap(), expected);
         assert_eq!(
             RemoteTerminalGridSnapshot::decode(&expected).unwrap(),
@@ -209,33 +242,14 @@ mod tests {
 
     #[test]
     fn encode_returns_none_for_invalid_cell_buffer() {
-        let snapshot = RemoteTerminalGridSnapshot {
-            cols: 2,
-            rows: 2,
-            cursor_col: 0,
-            cursor_row: 0,
-            cursor_visible: false,
-            scrollback_rows: 0,
-            display_offset: 0,
-            cells: vec![0; 10],
-        };
-        assert!(!snapshot.is_valid());
-        assert!(snapshot.encode().is_none());
+        let invalid = snapshot(2, 2, vec![0; 10], Vec::new());
+        assert!(!invalid.is_valid());
+        assert!(invalid.encode().is_none());
     }
 
     #[test]
     fn decode_rejects_bad_magic_version_and_short_data() {
-        let snapshot = RemoteTerminalGridSnapshot {
-            cols: 0,
-            rows: 0,
-            cursor_col: 0,
-            cursor_row: 0,
-            cursor_visible: false,
-            scrollback_rows: 0,
-            display_offset: 0,
-            cells: vec![],
-        };
-        let good = snapshot.encode().unwrap();
+        let good = snapshot(0, 0, vec![], vec![]).encode().unwrap();
         assert_eq!(good.len(), RemoteTerminalGridSnapshotLayout::HEADER_SIZE);
         assert!(RemoteTerminalGridSnapshot::decode(&good).is_ok());
 
@@ -246,30 +260,22 @@ mod tests {
             Err(RemoteTerminalGridSnapshotError::InvalidMagic)
         );
         let mut bad_version = good.clone();
-        bad_version[4] = 2;
+        bad_version[4] = 1;
         assert_eq!(
             RemoteTerminalGridSnapshot::decode(&bad_version),
-            Err(RemoteTerminalGridSnapshotError::UnsupportedVersion(2))
+            Err(RemoteTerminalGridSnapshotError::UnsupportedVersion(1))
         );
         assert_eq!(
-            RemoteTerminalGridSnapshot::decode(&good[..28]),
+            RemoteTerminalGridSnapshot::decode(&good[..32]),
             Err(RemoteTerminalGridSnapshotError::InvalidLength)
         );
     }
 
     #[test]
-    fn decode_rejects_truncated_cells() {
-        let snapshot = RemoteTerminalGridSnapshot {
-            cols: 1,
-            rows: 1,
-            cursor_col: 0,
-            cursor_row: 0,
-            cursor_visible: false,
-            scrollback_rows: 0,
-            display_offset: 0,
-            cells: vec![7; 16],
-        };
-        let encoded = snapshot.encode().unwrap();
+    fn decode_rejects_truncated_cells_or_clusters() {
+        let encoded = snapshot(1, 1, vec![7; 20], b"xy".to_vec())
+            .encode()
+            .unwrap();
         assert_eq!(
             RemoteTerminalGridSnapshot::decode(&encoded[..encoded.len() - 1]),
             Err(RemoteTerminalGridSnapshotError::InvalidLength)

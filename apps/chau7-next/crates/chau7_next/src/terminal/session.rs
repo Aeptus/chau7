@@ -1400,7 +1400,7 @@ impl TerminalSession {
         let Some((cols, rows)) = self.pending_resize else {
             return false;
         };
-        let Some(mut term) = self.term.try_write_for(Duration::from_millis(50)) else {
+        let Some(term) = self.term.try_write_for(Duration::from_millis(50)) else {
             return false;
         };
         term.resize(cols, rows);
