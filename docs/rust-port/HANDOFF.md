@@ -7,7 +7,7 @@ Last updated 2026-10-11.
 
 | What | Where |
 |---|---|
-| Code, on the current Aeptus base | branch `feat/chau7-next-aeptus` in `schiste/chau7` (commit `cffc75dd` plus this handoff), to be copied to `Aeptus/chau7` as `feat/chau7-next` (section 2) |
+| Code, on the current Aeptus base | `Aeptus/chau7`, branch `feat/chau7-next`. Source branch `schiste/chau7:feat/chau7-next-aeptus` was copied at `25c3acde` with all 14 commits preserved |
 | The app | `apps/chau7-next/` (`crates/chau7_next` GPUI app, `crates/chau7_next_core` pure logic, MCP bridge crate, `scripts/`) |
 | Plan for running both apps side by side | `docs/rust-port/DUAL-SHIP.md` |
 | Feature inventory and status | `docs/rust-port/inventory/` (one file per Swift module), summary `docs/rust-port/PARITY.md` |
@@ -17,11 +17,10 @@ Last updated 2026-10-11.
 
 ## 2. First steps
 
-1. Copy the branch into the real repository (from a clone of `Aeptus/chau7`):
-   ```bash
-   git fetch https://github.com/schiste/chau7 feat/chau7-next-aeptus
-   git push origin FETCH_HEAD:refs/heads/feat/chau7-next
-   ```
+1. The branch is now in the official repository: check out
+   `Aeptus/chau7:feat/chau7-next`. The current milestone is a macOS test
+   package called **Chau7 Next**, running beside Chau7. Full parity work
+   remains a later milestone. See [MACOS-TEST-PACKAGE.md](MACOS-TEST-PACKAGE.md).
 2. The push starts `.github/workflows/chau7-next.yml` (macOS, Linux,
    Windows). The macOS job uploads `Chau7-Next-macOS-arm64`. To run it:
    unzip, `xattr -dr com.apple.quarantine "Chau7 Next.app"`, open.
@@ -44,7 +43,10 @@ Last updated 2026-10-11.
   agent (`-race`, golangci-lint), relay (`npm test`). macOS code type-checks
   (`scripts/dev/mac-typecheck.sh`). Three tests fail on Linux exactly as on
   untouched `aeptus/main` (a `/private/tmp` path, two need macOS `ioreg`).
-- **Never run on a Mac yet.** No macOS build has been produced or launched.
+- **A macOS Apple Silicon test bundle has now been built and launched.**
+  Bundle/helper signatures, isolated startup, MCP initialization/tool list,
+  graceful quit and session save passed on macOS 27.2. The full hand-test
+  checklist below remains open. See [MACOS-TEST-PACKAGE.md](MACOS-TEST-PACKAGE.md).
 
 ## 4. Next work, in order
 
