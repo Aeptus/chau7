@@ -14,6 +14,7 @@
 //!   [`notification_tab_for_claude_session`] (Claude notifications of a
 //!   runtime session go to its tab, RUN-023).
 
+pub mod codex_feedback;
 pub mod control;
 
 use std::sync::OnceLock;
@@ -59,6 +60,7 @@ pub fn init(cx: &mut App) {
     })
     .detach();
     start_readiness_monitor(cx);
+    codex_feedback::start(cx);
 }
 
 fn start_readiness_monitor(cx: &mut App) {
@@ -235,6 +237,64 @@ impl RuntimeHost for AppHost<'_> {
             }
         }
         None
+    }
+
+    fn live_ai_identity(&mut self, tab_id: &str) -> Option<(String, Option<String>)> {
+        let tab = find_tab(tab_id, self.cx)?;
+        let terminal = tab
+            .window
+            .workspace
+            .read(self.cx)
+            .mcp_session(tab.tab, self.cx)?;
+        let shell = terminal.read(self.cx).shell();
+        Some((
+            shell.effective_provider()?,
+            shell.ai_session_id().map(str::to_string),
+        ))
+    }
+
+    fn tab_for_claude_event(&mut self, cwd: &str, native_id: Option<&str>) -> Option<String> {
+        let mut unbound = Vec::new();
+        let mut matched = Vec::new();
+        for window in windows(self.cx) {
+            let ws = window.workspace.read(self.cx);
+            for uuid in ws.mcp_tab_uuids() {
+                let Some(id) = ws.mcp_find(uuid) else {
+                    continue;
+                };
+                let Some(terminal) = ws.mcp_session(id, self.cx) else {
+                    continue;
+                };
+                let terminal = terminal.read(self.cx);
+                let shell = terminal.shell();
+                if !shell
+                    .effective_provider()
+                    .is_some_and(|p| p.eq_ignore_ascii_case("claude"))
+                {
+                    continue;
+                }
+                if native_id
+                    .zip(shell.ai_session_id())
+                    .is_some_and(|(incoming, current)| incoming.eq_ignore_ascii_case(current))
+                {
+                    matched.push(uuid_string(uuid));
+                } else if shell.ai_session_id().is_none()
+                    && terminal
+                        .cwd
+                        .as_ref()
+                        .is_some_and(|p| p.to_string_lossy() == cwd)
+                {
+                    unbound.push(uuid_string(uuid));
+                }
+            }
+        }
+        if matched.len() == 1 {
+            matched.pop()
+        } else if matched.is_empty() && unbound.len() == 1 {
+            unbound.pop()
+        } else {
+            None
+        }
     }
 
     fn tab_exists(&mut self, tab_id: &str) -> bool {
