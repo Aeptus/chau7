@@ -19,72 +19,15 @@ use std::time::{Duration, SystemTime};
 use chau7_next_core::data_root::DataRoot;
 use chau7_next_core::session_restore::transaction::{ContextRef, SourceDecision, source_decision};
 use chau7_next_core::session_restore::{
-    MAX_SCROLLBACK_BYTES, SavedSplitNode, build_ai_resume_command,
-    resolve_resume_metadata_from_saved,
+    MAX_SCROLLBACK_BYTES, build_ai_resume_command, resolve_resume_metadata_from_saved,
 };
-use chau7_next_core::token_optimization::TabTokenOptOverride;
+#[cfg(test)]
+use chau7_next_core::{session_restore::SavedSplitNode, token_optimization::TabTokenOptOverride};
 use serde::{Deserialize, Serialize};
 
-/// What is saved for one terminal pane (`SavedTerminalPaneState`). The
-/// scrollback text itself lives in `DataRoot::scrollback_dir()/<id>.txt`.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
-pub struct SavedPane {
-    pub id: u64,
-    pub directory: Option<String>,
-    /// A scrollback file exists for this pane.
-    #[serde(default)]
-    pub scrollback: bool,
-    pub ai_provider: Option<String>,
-    pub ai_session_id: Option<String>,
-    /// `claude --resume <id>` or `codex resume <id>`, typed into the prompt
-    /// (not run) after the restore.
-    pub ai_resume_command: Option<String>,
-}
-
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
-pub struct SavedTab {
-    /// Stable tab identity (`OverlayTab.id`), the same after relaunch.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub uuid: Option<uuid::Uuid>,
-    pub cwd: Option<PathBuf>,
-    pub custom_title: Option<String>,
-    pub color: Option<String>,
-    pub repo_group_id: Option<String>,
-    /// Per-tab token optimization override (`tokenOptOverride`), absent for "default".
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub token_opt_override: Option<TabTokenOptOverride>,
-    /// When the tab was created, Unix seconds (`createdAt`).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub created_at: Option<f64>,
-    /// The color was picked by hand (beats the automatic AI color).
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub manual_color: bool,
-    /// Split layout of the tab (`splitLayout`); `None` for a single shell
-    /// started in `cwd` (sessions saved by older versions).
-    #[serde(default)]
-    pub layout: Option<SavedSplitNode>,
-    /// Focused terminal pane (`focusedPaneID`).
-    #[serde(default)]
-    pub focused_pane: Option<u64>,
-    #[serde(default)]
-    pub panes: Vec<SavedPane>,
-}
-
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
-pub struct SavedWindow {
-    pub tabs: Vec<SavedTab>,
-    pub selected: usize,
-    pub x: f32,
-    pub y: f32,
-    pub width: f32,
-    pub height: f32,
-}
-
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
-pub struct SavedSession {
-    pub version: u32,
-    pub windows: Vec<SavedWindow>,
-}
+pub use chau7_next_core::session_restore::models::{
+    SavedPane, SavedSession, SavedTab, SavedWindow,
+};
 
 /// Archive at most every five minutes, with current Swift count/byte bounds.
 const ARCHIVE_INTERVAL: Duration = Duration::from_secs(300);
@@ -920,6 +863,7 @@ mod tests {
                         ai_provider: Some("claude".into()),
                         ai_session_id: Some("abc".into()),
                         ai_resume_command: Some("claude --resume abc".into()),
+                        ..Default::default()
                     }],
                 }],
                 selected: 0,

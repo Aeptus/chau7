@@ -4,17 +4,17 @@
 //! each pane is a text file in the Chau7 Next state folder
 //! (`DataRoot::scrollback_dir`); `PaneTree::from_saved` replays it.
 
+pub(crate) use chau7_next_core::session_restore::preparation;
+
 use std::collections::{HashMap, HashSet};
 use std::hash::{Hash, Hasher};
 use std::path::PathBuf;
 use std::sync::Mutex;
-use std::time::{SystemTime, UNIX_EPOCH};
 
-use chau7_next_core::command_detection::detect_app_from_output;
 use chau7_next_core::data_root::DataRoot;
 use chau7_next_core::session_restore::{
     REPLAY_FILE_PREFIX, SavedSplitNode, build_ai_resume_command, capture_styled_scrollback,
-    resolve_ai_resume_metadata, strip_restore_commands,
+    strip_restore_commands,
 };
 use gpui::{App, Entity};
 
@@ -36,13 +36,6 @@ static LAST_WRITTEN: Mutex<Option<HashMap<PaneId, u64>>> = Mutex::new(None);
 
 pub fn scrollback_file(root: &DataRoot, pane: PaneId) -> PathBuf {
     root.scrollback_dir().join(format!("{pane}.txt"))
-}
-
-fn unix_now() -> f64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_secs_f64())
-        .unwrap_or(0.0)
 }
 
 fn text_hash(text: &str) -> u64 {
@@ -97,7 +90,10 @@ pub fn capture_tab(
     if let Some(saved) = tree.deferred_saved() {
         for pane in &saved.panes {
             if let Some(id) = &pane.ai_session_id {
-                claimed.insert(id.clone());
+                claimed.insert(format!(
+                    "{}:{id}",
+                    pane.ai_provider.as_deref().unwrap_or_default()
+                ));
             }
         }
         return TabCapture {
@@ -112,13 +108,19 @@ pub fn capture_tab(
         // was loaded instead of saving the still empty terminal.
         if let Some(pending) = tree.pending_restore(id) {
             if let Some(session_id) = &pending.ai_session_id {
-                claimed.insert(session_id.clone());
+                claimed.insert(format!(
+                    "{}:{session_id}",
+                    pending.ai_provider.as_deref().unwrap_or_default()
+                ));
             }
             saved.push(pending.clone());
             continue;
         }
         let session = session.read(cx);
-        let directory = crate::pane::live_cwd(session).map(|p| p.to_string_lossy().to_string());
+        let directory = session
+            .cwd
+            .as_ref()
+            .map(|p| p.to_string_lossy().to_string());
         let scrollback = if max_lines > 0 {
             let styled = session.styled_buffer_for_restore();
             let styled = strip_restore_commands(&styled);
@@ -132,74 +134,66 @@ pub fn capture_tab(
         };
         let has_file = store_scrollback(root, id, scrollback.as_deref());
 
-        // The tool running in the pane, or the one its output shows.
-        let app_name = session
-            .ai_app
-            .clone()
-            .or_else(|| scrollback.as_deref().and_then(detect_app_from_output));
-        let reference = unix_now() - session.last_activity.elapsed().as_secs_f64();
-        // The session id the shell tracker saw first, then the newest
-        // matching session on disk, then what was restored into the pane.
-        let tracked = session
+        // Persistence uses already captured identity only. Transcript validation
+        // and directory discovery happen once, off UI, during restore preparation.
+        let available = |provider: &str, id: &str| !claimed.contains(&format!("{provider}:{id}"));
+        let meta = session
             .shell()
             .ai_provider()
             .zip(session.shell().ai_session_id())
-            .map(|(p, id)| (p.to_string(), id.to_string()))
-            .filter(|(_, id)| !claimed.contains(id));
-        // Claude sessions seen by the hook monitor come first
-        // (`findClaudeSessionId` uses `ClaudeCodeMonitor`), then the files.
-        let from_hooks = || {
-            let dir = directory.as_deref()?;
-            let provider = app_name
-                .as_deref()
-                .and_then(chau7_next_core::ai::resume::normalize_provider_name)?;
-            if provider != "claude" {
-                return None;
-            }
-            let candidates: Vec<chau7_next_core::ai::resume::SessionCandidate> =
-                crate::ai::hub::claude_session_candidates(dir, cx)
-                    .into_iter()
-                    .filter(|(id, _)| !claimed.contains(id))
-                    .map(
-                        |(session_id, touched_at)| chau7_next_core::ai::resume::SessionCandidate {
-                            session_id,
-                            touched_at,
-                        },
-                    )
-                    .collect();
-            chau7_next_core::ai::resume::best_session_match(&candidates, Some(reference))
-                .map(|id| (provider, id))
-        };
-        let meta = tracked
-            .or_else(from_hooks)
+            .filter(|(provider, id)| available(provider, id))
+            .map(|(provider, id)| (provider.to_owned(), id.to_owned()))
             .or_else(|| {
-                directory.as_deref().and_then(|dir| {
-                    resolve_ai_resume_metadata(
-                        root.home(),
-                        app_name.as_deref(),
-                        dir,
-                        Some(reference),
-                        claimed,
-                    )
-                    .map(|m| (m.provider, m.session_id))
-                })
+                tree.resume_meta(id)
+                    .filter(|(provider, id)| available(provider, id))
             })
             .or_else(|| {
-                // Codex sessions seen in its history (`codexHistoryEntries`).
-                let provider = app_name
-                    .as_deref()
-                    .and_then(chau7_next_core::ai::resume::normalize_provider_name)
-                    .or_else(|| session.shell().ai_provider().map(str::to_string))?;
-                if provider != "codex" {
+                // These are in-memory hook/history observations populated by
+                // MonitorIo, never a provider-directory scan on the UI thread.
+                if !session.is_ai_running() {
                     return None;
                 }
+                let provider = session.shell().ai_provider()?;
                 let dir = directory.as_deref()?;
-                crate::ai::hub::codex_observed_session(dir, Some(reference), claimed, cx)
-                    .map(|id| (provider, id))
+                let reference = Some(
+                    session
+                        .shell()
+                        .last_input_at()
+                        .max(session.shell().last_output_at()),
+                );
+                let id = match provider {
+                    "claude" => {
+                        let candidates: Vec<_> = crate::ai::hub::claude_session_candidates(dir, cx)
+                            .into_iter()
+                            .filter(|(id, _)| available(provider, id))
+                            .map(|(session_id, touched_at)| {
+                                chau7_next_core::ai::resume::SessionCandidate {
+                                    session_id,
+                                    touched_at,
+                                }
+                            })
+                            .collect();
+                        chau7_next_core::ai::resume::best_session_match(&candidates, reference)
+                    }
+                    "codex" => {
+                        let raw_claims = claimed
+                            .iter()
+                            .filter_map(|id| id.strip_prefix("codex:").map(str::to_owned))
+                            .collect();
+                        crate::ai::hub::codex_observed_session(dir, reference, &raw_claims, cx)
+                    }
+                    _ => None,
+                }?;
+                Some((provider.to_owned(), id))
+            });
+        let inherited = tree.restored_metadata(id).filter(|pane| {
+            meta.as_ref().is_some_and(|(provider, id)| {
+                pane.ai_provider.as_deref() == Some(provider)
+                    && pane.ai_session_id.as_deref() == Some(id)
             })
-            .or_else(|| tree.resume_meta(id));
-        if let Some((_, session_id)) = &meta {
-            claimed.insert(session_id.clone());
+        });
+        if let Some((provider, session_id)) = &meta {
+            claimed.insert(format!("{provider}:{session_id}"));
         }
         saved.push(SavedPane {
             id,
@@ -209,30 +203,42 @@ pub fn capture_tab(
                 meta.as_ref().map(|m| m.0.as_str()),
                 meta.as_ref().map(|m| m.1.as_str()),
             ),
-            ai_provider: meta.as_ref().map(|m| m.0.clone()),
+            ai_provider: meta
+                .as_ref()
+                .map(|m| m.0.clone())
+                .or_else(|| session.shell().ai_provider().map(str::to_owned)),
             ai_session_id: meta.map(|m| m.1),
+            ai_session_id_source: inherited.and_then(|pane| pane.ai_session_id_source.clone()),
+            last_input_at: Some(session.shell().last_input_at()),
+            last_output_at: Some(session.shell().last_output_at()),
+            known_repo_root: session
+                .git_root
+                .as_ref()
+                .map(|p| p.to_string_lossy().into_owned()),
+            known_git_branch: session.git_branch.clone(),
+            last_status: Some(session.status().as_str().into()),
+            agent_launch_command: session
+                .is_ai_running()
+                .then(|| session.shell().pending_command().map(str::to_owned))
+                .flatten(),
+            agent_started_at: session
+                .is_ai_running()
+                .then(|| session.shell().command_started_at()),
+            last_exit_code: session
+                .last_command
+                .as_ref()
+                .map(|command| command.exit_code),
+            last_exit_at: session.blocks().blocks().iter().rev().find_map(|block| {
+                block
+                    .end_time
+                    .map(|time| time.timestamp_millis() as f64 / 1000.0)
+            }),
         });
     }
     TabCapture {
         layout: tree.export_layout(cx),
         focused: tree.focused_pane_id(),
         panes: saved,
-    }
-}
-
-/// Copy a pane's saved scrollback to a short-lived file for the shell to
-/// `cat` and delete, so the next autosave cannot overwrite it mid-replay.
-pub fn replay_copy(root: &DataRoot, pane: PaneId, token: &str) -> Option<PathBuf> {
-    let source = scrollback_file(root, pane);
-    let copy = root
-        .scrollback_dir()
-        .join(format!("{REPLAY_FILE_PREFIX}{token}-{pane}.txt"));
-    match std::fs::copy(&source, &copy) {
-        Ok(_) => Some(copy),
-        Err(err) => {
-            log::warn!("scrollback of pane {pane} not available: {err}");
-            None
-        }
     }
 }
 
@@ -302,13 +308,24 @@ mod tests {
     }
 
     #[test]
-    fn replay_copy_is_separate_from_the_saved_file() {
-        let root = temp_root("scrollback-copy");
+    fn direct_restore_reads_owned_context_without_creating_replay_files() {
+        let root = temp_root("scrollback-direct-restore");
         assert!(store_scrollback(&root, 21, Some("kept")));
-        let copy = replay_copy(&root, 21, "tok").unwrap();
-        assert_ne!(copy, scrollback_file(&root, 21));
-        assert_eq!(std::fs::read_to_string(&copy).unwrap(), "kept");
-        assert!(replay_copy(&root, 22, "tok").is_none());
+        let saved = crate::session_store::SavedTab {
+            panes: vec![SavedPane {
+                id: 21,
+                scrollback: true,
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        let prepared = preparation::prepare(&root, saved, None);
+        assert_eq!(prepared.panes[&21].context.as_deref(), Some("kept"));
+        assert_eq!(
+            std::fs::read_to_string(scrollback_file(&root, 21)).unwrap(),
+            "kept"
+        );
+        assert_eq!(std::fs::read_dir(root.scrollback_dir()).unwrap().count(), 1);
         let _ = std::fs::remove_dir_all(root.home());
     }
 

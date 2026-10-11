@@ -225,6 +225,9 @@ impl TerminalView {
     }
 
     fn update_refresh_pacing(&mut self, window: &Window, cx: &App) {
+        self.session
+            .read(cx)
+            .mark_restore_surface(window.is_visible());
         self.refresh_interactive = window.is_visible()
             && window.is_window_active()
             && self.focus_handle.is_focused(window);
@@ -508,6 +511,7 @@ impl Render for TerminalView {
                             cx,
                         );
                         paint::paint_grid(bounds, state, window, cx);
+                        view.read(cx).session.read(cx).mark_restore_presented();
                     },
                 )
                 .size_full(),

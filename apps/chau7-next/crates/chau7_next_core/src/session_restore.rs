@@ -9,6 +9,8 @@
 //! `SplitPanes/SplitPaneController.swift` (`SavedSplitNode`).
 
 pub mod lifecycle;
+pub mod models;
+pub mod preparation;
 pub mod transaction;
 
 use std::path::{Path, PathBuf};
@@ -21,7 +23,6 @@ use crate::ai::resume::{
     normalize_provider_name,
 };
 use crate::ai::tool_registry::AI_TOOLS;
-use crate::path_rank::bidirectional_prefix_rank;
 
 // ----- saved split layout ------------------------------------------------
 
@@ -582,64 +583,16 @@ pub(crate) fn numeric_children(dir: &Path) -> Vec<PathBuf> {
     names.into_iter().map(|n| dir.join(n)).collect()
 }
 
-/// Codex sessions started in `directory` (or inside it, or above it): scans
-/// the 7 most recent day folders of `~/.codex/sessions`, at most 30 files
-/// (`findCodexSessionId`). Only the closest directory match is kept.
+/// Restore discovery shares the current Swift 14-day resolver. Exact native-ID
+/// validation searches every known day independently of this directory limit.
 pub fn codex_session_candidates(home: &Path, directory: &str) -> Vec<SessionCandidate> {
-    let sessions = home.join(".codex").join("sessions");
-    let mut day_dirs = Vec::new();
-    for year in numeric_children(&sessions) {
-        for month in numeric_children(&year) {
-            day_dirs.extend(numeric_children(&month));
-        }
-    }
-    let mut reads = 0;
-    let mut matches: Vec<(SessionCandidate, u8)> = Vec::new();
-    'days: for day in day_dirs.into_iter().take(7) {
-        let mut files: Vec<String> = std::fs::read_dir(&day)
-            .map(|rd| {
-                rd.flatten()
-                    .filter_map(|e| e.file_name().into_string().ok())
-                    .filter(|n| n.ends_with(".jsonl"))
-                    .collect()
-            })
-            .unwrap_or_default();
-        files.sort();
-        files.reverse();
-        for file in files {
-            if reads >= 30 {
-                break 'days;
-            }
-            reads += 1;
-            let path = day.join(&file);
-            let Some(line) = read_first_line(&path) else {
-                continue;
-            };
-            let Some((cwd, id)) = parse_codex_session_meta(&line) else {
-                continue;
-            };
-            let Some(rank) = bidirectional_prefix_rank(directory, &cwd) else {
-                continue;
-            };
-            matches.push((
-                SessionCandidate {
-                    session_id: id,
-                    touched_at: modified_secs(&path),
-                },
-                rank,
-            ));
-        }
-    }
-    let Some(best) = matches.iter().map(|(_, r)| *r).min() else {
-        return Vec::new();
-    };
-    let mut out: Vec<SessionCandidate> = matches
+    crate::monitoring::codex_sessions::session_candidates_with_limit(home, directory, None, 14)
         .into_iter()
-        .filter(|(_, r)| *r == best)
-        .map(|(c, _)| c)
-        .collect();
-    out.sort_by(|a, b| b.touched_at.total_cmp(&a.touched_at));
-    out
+        .map(|(session_id, touched_at)| SessionCandidate {
+            session_id,
+            touched_at,
+        })
+        .collect()
 }
 
 /// Session id of the AI tool `provider` ("claude" or "codex") that ran in
@@ -656,7 +609,18 @@ pub fn find_ai_resume_session_id(
 ) -> Option<String> {
     let candidates = match provider {
         "claude" => claude_session_candidates(home, directory),
-        "codex" => codex_session_candidates(home, directory),
+        "codex" => crate::monitoring::codex_sessions::session_candidates_with_limit(
+            home,
+            directory,
+            reference_date,
+            14,
+        )
+        .into_iter()
+        .map(|(session_id, touched_at)| SessionCandidate {
+            session_id,
+            touched_at,
+        })
+        .collect(),
         _ => return None,
     };
     let candidates: Vec<SessionCandidate> = candidates
