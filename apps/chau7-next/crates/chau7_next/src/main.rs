@@ -198,9 +198,11 @@ fn main() {
 
         // The welcome screen the first time, else the splash.
         views::launch(cx);
+        permission_center::start(cx);
         performance::start(cx);
 
         cx.on_app_quit(|cx| {
+            permission_center::stop(cx);
             save_session(cx, true);
             repository::flush(cx);
             history::recorder::flush_on_quit();
