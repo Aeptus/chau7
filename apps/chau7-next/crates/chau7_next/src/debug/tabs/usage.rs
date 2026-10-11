@@ -20,6 +20,7 @@ fn render(cx: &mut App) -> AnyElement {
     let chrome = Chrome::get(cx);
     let view = usage::view(cx);
     let settings = Settings::get(cx).general.clone();
+    let latency = usage::latency_view(cx);
     let mut page = div().flex().flex_col().gap_3();
     page = page.child(
         div()
@@ -35,7 +36,10 @@ fn render(cx: &mut App) -> AnyElement {
                     },
                     chrome,
                 )
-                .on_click(|_, _, cx| usage::refresh(cx)),
+                .on_click(|_, _, cx| {
+                    usage::refresh(cx);
+                    usage::refresh_latency(cx);
+                }),
             )
             .child(
                 ui::button(
@@ -126,6 +130,176 @@ fn render(cx: &mut App) -> AnyElement {
         );
     }
     page = page.child(health);
+    let mut timing = ui::group("Provider response latency", chrome);
+    let mut ranges = div().flex().flex_wrap().gap_2();
+    for range in chau7_next_core::telemetry::latency::TimeRange::ALL {
+        ranges = ranges.child(
+            ui::button(
+                format!("latency-range-{:?}", range),
+                format!(
+                    "{}{}",
+                    if range == latency.range { "✓ " } else { "" },
+                    range.label()
+                ),
+                chrome,
+            )
+            .on_click(move |_, _, cx| usage::select_latency(Some(range), None, None, None, cx)),
+        );
+    }
+    timing = timing.child(ranges);
+    let mut controls = div().flex().flex_wrap().gap_2();
+    for metric in [
+        chau7_next_core::telemetry::latency::MetricKind::ApiRequest,
+        chau7_next_core::telemetry::latency::MetricKind::FirstResponse,
+    ] {
+        controls = controls.child(
+            ui::button(
+                format!("latency-metric-{:?}", metric),
+                format!(
+                    "{}{}",
+                    if metric == latency.metric { "✓ " } else { "" },
+                    metric.label()
+                ),
+                chrome,
+            )
+            .on_click(move |_, _, cx| usage::select_latency(None, None, Some(metric), None, cx)),
+        );
+    }
+    for bucket in chau7_next_core::telemetry::latency::BucketKind::ALL {
+        controls = controls.child(
+            ui::button(
+                format!("latency-bucket-{:?}", bucket),
+                format!(
+                    "{}{}",
+                    if bucket == latency.bucket { "✓ " } else { "" },
+                    bucket.label()
+                ),
+                chrome,
+            )
+            .on_click(move |_, _, cx| usage::select_latency(None, Some(bucket), None, None, cx)),
+        );
+    }
+    timing = timing.child(controls);
+    let mut providers = div().flex().flex_wrap().gap_2();
+    for provider in &latency.providers {
+        let provider = provider.clone();
+        let selected = latency.selected_provider.as_ref() == Some(&provider);
+        providers = providers.child(
+            ui::button(
+                format!("latency-provider-{provider}"),
+                format!("{}{provider}", if selected { "✓ " } else { "" }),
+                chrome,
+            )
+            .on_click(move |_, _, cx| {
+                usage::select_latency(None, None, None, Some(provider.clone()), cx)
+            }),
+        );
+    }
+    timing = timing.child(providers);
+    if let Some(dashboard) = latency.dashboard {
+        timing = timing.child(ui::caption(
+            format!(
+                "{} interactions · {}",
+                numbers::integer(dashboard.interaction_count as i64),
+                dashboard.metric_kind.label()
+            ),
+            chrome,
+        ));
+        if let Some(a) = dashboard.aggregate {
+            timing = timing.child(ui::caption(
+                format!(
+                    "{} samples · Avg {} · P50 {} · P95 {} · Min {} · Max {}",
+                    numbers::integer(a.count as i64),
+                    chau7_next_core::proxy::format_latency(a.average_latency_ms.round() as i64),
+                    chau7_next_core::proxy::format_latency(a.p50_latency_ms),
+                    chau7_next_core::proxy::format_latency(a.p95_latency_ms),
+                    chau7_next_core::proxy::format_latency(a.min_latency_ms),
+                    chau7_next_core::proxy::format_latency(a.max_latency_ms)
+                ),
+                chrome,
+            ));
+        } else {
+            timing = timing.child(ui::caption(
+                "Latency unavailable for this metric and range.",
+                chrome,
+            ));
+        }
+        let max_latency = dashboard
+            .buckets
+            .iter()
+            .filter_map(|b| b.aggregate.as_ref().map(|a| a.average_latency_ms))
+            .fold(0_f64, f64::max);
+        let max_interactions = dashboard
+            .buckets
+            .iter()
+            .map(|b| b.interactions)
+            .max()
+            .unwrap_or(0);
+        for bucket in dashboard.buckets {
+            let latency_width = bucket
+                .aggregate
+                .as_ref()
+                .map(|a| {
+                    if max_latency > 0. {
+                        180. * a.average_latency_ms / max_latency
+                    } else {
+                        0.
+                    }
+                })
+                .unwrap_or(0.);
+            let activity_width = if max_interactions > 0 {
+                180. * bucket.interactions as f64 / max_interactions as f64
+            } else {
+                0.
+            };
+            timing = timing.child(
+                div()
+                    .flex()
+                    .gap_2()
+                    .child(
+                        div()
+                            .h(gpui::px(4.))
+                            .w(gpui::px(latency_width as f32))
+                            .bg(chrome.accent),
+                    )
+                    .child(
+                        div()
+                            .h(gpui::px(4.))
+                            .w(gpui::px(activity_width as f32))
+                            .bg(chrome.text_muted),
+                    ),
+            );
+
+            let value = bucket
+                .aggregate
+                .map(|a| {
+                    format!(
+                        "{} · P95 {} ({} samples)",
+                        chau7_next_core::proxy::format_latency(a.average_latency_ms.round() as i64),
+                        chau7_next_core::proxy::format_latency(a.p95_latency_ms),
+                        numbers::integer(a.count as i64)
+                    )
+                })
+                .unwrap_or_else(|| "Latency unavailable".into());
+            timing = timing.child(
+                div()
+                    .flex()
+                    .justify_between()
+                    .text_xs()
+                    .child(bucket.label)
+                    .child(format!(
+                        "{} interactions · {value}",
+                        numbers::integer(bucket.interactions as i64)
+                    )),
+            );
+        }
+    } else {
+        timing = timing.child(ui::caption("No observed response latency yet.", chrome));
+    }
+    if let Some(at) = latency.refreshed_at {
+        timing=timing.child(ui::caption(format!("Updated {} · Terminal timing is an estimate; transcript rounds replace it. API response uses TTFT when observed.",at.with_timezone(&chrono::Local).format("%H:%M:%S")),chrome));
+    }
+    page = page.child(timing);
     if view.providers.is_empty() {
         page=page.child(ui::empty_note("No provider quota snapshot yet. Enable monitoring for Codex or install Claude capture. Unknown quota remains unavailable.",chrome));
     }

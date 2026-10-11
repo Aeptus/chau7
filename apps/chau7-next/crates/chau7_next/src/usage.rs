@@ -620,3 +620,146 @@ mod tests {
         std::fs::remove_dir_all(root.home()).unwrap();
     }
 }
+
+/// Cached latency read model. History reads and aggregation stay off the UI thread.
+#[derive(Debug, Clone, Serialize)]
+pub struct LatencyView {
+    pub range: chau7_next_core::telemetry::latency::TimeRange,
+    pub bucket: chau7_next_core::telemetry::latency::BucketKind,
+    pub metric: chau7_next_core::telemetry::latency::MetricKind,
+    pub selected_provider: Option<String>,
+    pub providers: Vec<String>,
+    pub dashboard: Option<chau7_next_core::telemetry::latency::LatencyDashboard>,
+    pub refreshed_at: Option<DateTime<Utc>>,
+    pub refreshing: bool,
+    generation: u64,
+}
+impl Default for LatencyView {
+    fn default() -> Self {
+        Self {
+            range: chau7_next_core::telemetry::latency::TimeRange::Week,
+            bucket: chau7_next_core::telemetry::latency::BucketKind::Day,
+            metric: chau7_next_core::telemetry::latency::MetricKind::FirstResponse,
+            selected_provider: None,
+            providers: vec![],
+            dashboard: None,
+            refreshed_at: None,
+            refreshing: false,
+            generation: 0,
+        }
+    }
+}
+struct LatencyGlobal(Arc<Mutex<LatencyView>>);
+impl Global for LatencyGlobal {}
+pub fn latency_view(cx: &App) -> LatencyView {
+    cx.try_global::<LatencyGlobal>()
+        .map(|g| g.0.lock().clone())
+        .unwrap_or_default()
+}
+pub fn init_latency(cx: &mut App) {
+    cx.set_global(LatencyGlobal(Arc::new(Mutex::new(LatencyView::default()))));
+    refresh_latency(cx);
+    cx.spawn(async move |cx| {
+        loop {
+            cx.background_executor()
+                .timer(std::time::Duration::from_secs(30))
+                .await;
+            cx.update(refresh_latency);
+        }
+    })
+    .detach();
+}
+pub fn select_latency(
+    range: Option<chau7_next_core::telemetry::latency::TimeRange>,
+    bucket: Option<chau7_next_core::telemetry::latency::BucketKind>,
+    metric: Option<chau7_next_core::telemetry::latency::MetricKind>,
+    provider: Option<String>,
+    cx: &mut App,
+) {
+    if let Some(global) = cx.try_global::<LatencyGlobal>() {
+        let mut s = global.0.lock();
+        if let Some(r) = range {
+            s.range = r;
+        }
+        if let Some(b) = bucket {
+            s.bucket = b;
+        }
+        if let Some(m) = metric {
+            s.metric = m;
+        }
+        if let Some(p) = provider {
+            s.selected_provider = Some(p);
+        }
+    }
+    refresh_latency(cx);
+}
+pub fn refresh_latency(cx: &mut App) {
+    let (Some(global), Some(recorder)) = (
+        cx.try_global::<LatencyGlobal>(),
+        crate::telemetry::recorder(cx),
+    ) else {
+        return;
+    };
+    let shared = global.0.clone();
+    let selection = {
+        let mut s = shared.lock();
+        s.refreshing = true;
+        s.generation += 1;
+        s.clone()
+    };
+    let root = cx.global::<AppData>().root.clone();
+    cx.background_executor()
+        .spawn(async move {
+            let now = Utc::now();
+            let start = selection.range.start(now);
+            recorder.store().backfill_latency_batch(100);
+            let mut samples = recorder.store().latency_samples(start);
+            samples.extend(
+                chau7_next_core::proxy::ProxyAnalyticsStore::new(&root.proxy_db())
+                    .latency_samples(start),
+            );
+            let mut activity = recorder.store().activity_samples(start);
+            activity.extend(
+                chau7_next_core::proxy::ProxyAnalyticsStore::new(&root.proxy_db())
+                    .activity_samples(start),
+            );
+            let mut providers: Vec<_> = samples
+                .iter()
+                .map(|s| s.provider.clone())
+                .chain(activity.iter().map(|s| s.provider.clone()))
+                .collect();
+            providers.sort();
+            providers.dedup();
+            let selected = selection
+                .selected_provider
+                .filter(|p| providers.contains(p))
+                .or_else(|| {
+                    ["codex", "claude", "anthropic", "openai", "gemini"]
+                        .into_iter()
+                        .find(|p| providers.iter().any(|s| s == p))
+                        .map(str::to_string)
+                })
+                .or_else(|| providers.first().cloned());
+            let dashboard = selected.as_ref().map(|p| {
+                chau7_next_core::telemetry::latency::dashboard(
+                    &samples,
+                    &activity,
+                    p,
+                    selection.metric,
+                    selection.bucket,
+                    selection.range,
+                    now,
+                )
+            });
+            let mut s = shared.lock();
+            if s.generation != selection.generation {
+                return;
+            }
+            s.providers = providers;
+            s.selected_provider = selected;
+            s.dashboard = dashboard;
+            s.refreshed_at = Some(now);
+            s.refreshing = false;
+        })
+        .detach();
+}

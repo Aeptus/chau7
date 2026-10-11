@@ -17,6 +17,7 @@ mod transcript_util;
 pub mod turn;
 
 pub mod jsonl_tail;
+pub mod latency;
 pub mod pricing;
 pub mod provider_health;
 pub mod quota;
