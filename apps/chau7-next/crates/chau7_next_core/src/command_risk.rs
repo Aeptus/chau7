@@ -15,6 +15,7 @@
 
 use std::collections::{HashMap, HashSet};
 
+pub mod admission;
 pub mod self_protect;
 
 /// The ordinary verdict plus observed self-protection detail. Keeping detail

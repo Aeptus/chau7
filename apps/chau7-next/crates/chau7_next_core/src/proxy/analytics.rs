@@ -1,6 +1,8 @@
 //! Read-only API charts. Normalize each request before aggregation and retain
 //! nullable measurement coverage rather than converting missing evidence to zero.
-use chrono::{DateTime, Days, Local, TimeZone, Utc};
+mod calendar;
+
+use chrono::{DateTime, Local, TimeZone, Utc};
 use rusqlite::{Connection, OpenFlags, Row, params};
 use serde::{Deserialize, Serialize};
 use std::{collections::HashSet, path::Path, time::Instant};
@@ -45,16 +47,9 @@ impl AnalyticsRange {
     }
     pub fn after<Tz: TimeZone>(self, now: DateTime<Tz>) -> Option<DateTime<Utc>> {
         match self {
-            Self::Today => now
-                .date_naive()
-                .and_hms_opt(0, 0, 0)?
-                .and_local_timezone(now.timezone())
-                .earliest()
-                .map(|d| d.with_timezone(&Utc)),
+            Self::Today => calendar::start_of_day(now),
             Self::AllTime => None,
-            _ => now
-                .checked_sub_days(Days::new(self.chart_days()))
-                .map(|d| d.with_timezone(&Utc)),
+            _ => calendar::subtract_days(now, self.chart_days()),
         }
     }
 }
@@ -339,6 +334,11 @@ fn load_connection(
     now: DateTime<Utc>,
     after: Option<DateTime<Utc>>,
 ) -> rusqlite::Result<Dashboard> {
+    // Only All Time intentionally has no lower bound. A failed calendar
+    // conversion must never silently turn a bounded KPI into all-time data.
+    if range != AnalyticsRange::AllTime && after.is_none() {
+        return Err(rusqlite::Error::InvalidQuery);
+    }
     let began = Instant::now();
     let tx = conn.transaction()?;
     let sql = SqlMetrics::new(&tx)?;
@@ -353,10 +353,8 @@ fn load_connection(
     let (models, model_dimensions_truncated) = query_breakdown(&tx, &sql, after.as_deref(), true)?;
     // Swift's dailyTrend(days:) is a rolling 1/7/14/30/90-day chart,
     // separate from the Today KPI's local-midnight boundary.
-    let chart_after = now
-        .with_timezone(&Local)
-        .checked_sub_days(Days::new(range.chart_days()))
-        .map(|d| d.with_timezone(&Utc).to_rfc3339())
+    let chart_after = calendar::subtract_days(now.with_timezone(&Local), range.chart_days())
+        .map(|d| d.to_rfc3339())
         .ok_or(rusqlite::Error::InvalidQuery)?;
     let day = "date(datetime(timestamp,'localtime'))";
     let query = format!(
@@ -457,6 +455,13 @@ mod tests {
     }
     fn dashboard(c: &mut Connection) -> Dashboard {
         load_connection(c, AnalyticsRange::AllTime, now(), None).unwrap()
+    }
+    #[test]
+    fn bounded_range_cannot_silently_become_all_time() {
+        let mut connection = modern();
+        let result = load_connection(&mut connection, AnalyticsRange::Week, now(), None);
+        assert!(matches!(result, Err(rusqlite::Error::InvalidQuery)));
+        assert!(load_connection(&mut connection, AnalyticsRange::AllTime, now(), None).is_ok());
     }
     #[test]
     fn missing_values_are_distinct_from_observed_zero_and_partial_coverage() {

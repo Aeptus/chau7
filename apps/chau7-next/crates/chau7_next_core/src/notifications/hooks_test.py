@@ -1,9 +1,12 @@
 import json
 import os
 import pathlib
+import runpy
 import subprocess
+import sys
 import tempfile
 import unittest
+from unittest import mock
 
 SRC = pathlib.Path(os.environ["NEXT_TEST_SOURCE"])
 TAB = "550e8400-e29b-41d4-a716-446655440000"
@@ -57,11 +60,7 @@ class Hooks(unittest.TestCase):
         )
 
     def events(self):
-        return (
-            [json.loads(s) for s in self.log.read_text().splitlines()]
-            if self.log.exists()
-            else []
-        )
+        return [json.loads(s) for s in self.log.read_text().splitlines()] if self.log.exists() else []
 
     def test_actual_codex_shim_captures_with_proxy_disabled_and_tls_fallback(self):
         own = self.root / "owned-bin"
@@ -176,9 +175,7 @@ class Hooks(unittest.TestCase):
             {"CHAU7_NEXT_TAB_ID": "bad"},
         ]:
             env = dict(self.env, **changes)
-            self.assertEqual(
-                self.run_py(self.claude, input="{}", env=env).returncode, 0
-            )
+            self.assertEqual(self.run_py(self.claude, input="{}", env=env).returncode, 0)
         self.assertFalse(self.log.exists())
 
     def test_foreign_transcript_and_component_neighbor_rejected(self):
@@ -189,9 +186,7 @@ class Hooks(unittest.TestCase):
             self.assertEqual(
                 self.run_py(
                     self.claude,
-                    input=json.dumps(
-                        {"hook_event_name": "Stop", "transcript_path": str(path)}
-                    ),
+                    input=json.dumps({"hook_event_name": "Stop", "transcript_path": str(path)}),
                 ).returncode,
                 0,
             )
@@ -237,9 +232,7 @@ class Hooks(unittest.TestCase):
     def test_permission_notification(self):
         self.run_py(
             self.claude,
-            input=json.dumps(
-                {"hook_event_name": "Notification", "message": "Waiting for APPROVAL"}
-            ),
+            input=json.dumps({"hook_event_name": "Notification", "message": "Waiting for APPROVAL"}),
         )
         self.assertEqual(self.events()[0]["type"], "permission_request")
 
@@ -269,9 +262,7 @@ class Hooks(unittest.TestCase):
 
     def test_codex_foreign_session_no_writes(self):
         self.assertEqual(
-            self.run_py(
-                self.codex, "{}", env=dict(self.env, TERM_PROGRAM="Other")
-            ).returncode,
+            self.run_py(self.codex, "{}", env=dict(self.env, TERM_PROGRAM="Other")).returncode,
             0,
         )
         self.assertFalse(self.log.exists())
@@ -279,16 +270,12 @@ class Hooks(unittest.TestCase):
     def test_codex_literal_chain_no_shell_and_bad_hook_nonblocking(self):
         resultfile = self.root / "chain.json"
         script = self.root / "chain.py"
-        script.write_text(
-            'import json,sys\nopen(sys.argv[1],"w").write(json.dumps(sys.argv[2:]))\n'
-        )
+        script.write_text('import json,sys\nopen(sys.argv[1],"w").write(json.dumps(sys.argv[2:]))\n')
         malicious = "$(touch " + str(self.root / "unexpected") + ")"
         raw = json.dumps({"type": "agent-turn-complete"})
         env = dict(
             self.env,
-            CHAU7_NEXT_CODEX_NOTIFY_CHAIN=json.dumps(
-                ["python3", str(script), str(resultfile), malicious]
-            ),
+            CHAU7_NEXT_CODEX_NOTIFY_CHAIN=json.dumps(["python3", str(script), str(resultfile), malicious]),
         )
         self.assertEqual(self.run_py(self.codex, raw, env=env).returncode, 0)
         self.assertEqual(json.loads(resultfile.read_text()), [malicious, raw])
@@ -307,9 +294,7 @@ class Hooks(unittest.TestCase):
     def test_codex_wrap_preserves_config_bytes_and_explicit_notify_argv(self):
         config = pathlib.Path(self.env["CODEX_HOME"]) / "config.toml"
         config.parent.mkdir()
-        config.write_text(
-            'notify = ["third-party", "literal arg"]\n[tui]\nother = true\n'
-        )
+        config.write_text('notify = ["third-party", "literal arg"]\n[tui]\nother = true\n')
         before = config.read_bytes()
         result = self.run_py(
             self.codex,
@@ -371,15 +356,25 @@ class Hooks(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(json.loads(json.loads(result.stdout)["chain"]), [])
 
-    def test_codex_array_parser_handles_literal_unicode_comments_multiline(self):
-        import runpy
+    def test_codex_config_fallback_without_tomllib_preserves_literal_argv(self):
+        config = self.root / "codex" / "config.toml"
+        config.parent.mkdir()
+        text = 'notify = ["third-party", \'literal $(arg)\', "\\u00e9"]\n[tui]\nnotify = ["unrelated"]\n'
+        config.write_text(text)
+        with mock.patch.dict(sys.modules, {"tomllib": None}), mock.patch.dict(os.environ, self.env):
+            api = runpy.run_path(str(self.codex))
+            self.assertIsNone(api["tomllib"])
+            self.assertEqual(api["configured_notify"](), ["third-party", "literal $(arg)", "é"])
+            config.write_text('[tui]\nnotify = ["unrelated"]\n')
+            self.assertEqual(api["configured_notify"](), [])
+        config.write_text(text)
+        self.assertEqual(config.read_text(), text)
 
+    def test_codex_array_parser_handles_literal_unicode_comments_multiline(self):
         api = runpy.run_path(str(self.codex))
         parse = api["read_array"]
         self.assertEqual(
-            parse(
-                '[\n "a#b", # comment\n \'C:\\folder\\file\', "\\u00e9", "\\U0001F600",\n]'
-            ),
+            parse('[\n "a#b", # comment\n \'C:\\folder\\file\', "\\u00e9", "\\U0001F600",\n]'),
             ["a#b", "C:\\folder\\file", "é", "😀"],
         )
         self.assertEqual(
@@ -390,9 +385,7 @@ class Hooks(unittest.TestCase):
             self.assertRaises(ValueError, parse, invalid)
 
     def test_claude_wrapper_merges_explicit_settings_and_hook_arrays(self):
-        self.overlay.write_text(
-            json.dumps({"hooks": {"Stop": [{"hooks": [{"command": "owned-helper"}]}]}})
-        )
+        self.overlay.write_text(json.dumps({"hooks": {"Stop": [{"hooks": [{"command": "owned-helper"}]}]}}))
         settings = self.root / "user.json"
         settings.write_text(
             json.dumps(
@@ -423,12 +416,8 @@ class Hooks(unittest.TestCase):
 
     def test_claude_wrapper_inline_and_equals_and_admin_passthrough(self):
         self.overlay.write_text('{"hooks":{"Stop":[]}}')
-        result = self.run_py(
-            self.wrapper, str(self.fake()), '--settings={"model":"inline"}', "prompt"
-        )
-        self.assertEqual(
-            json.loads(json.loads(result.stdout)["args"][1])["model"], "inline"
-        )
+        result = self.run_py(self.wrapper, str(self.fake()), '--settings={"model":"inline"}', "prompt")
+        self.assertEqual(json.loads(json.loads(result.stdout)["args"][1])["model"], "inline")
         for args in [
             ("auth", "status"),
             ("--version",),

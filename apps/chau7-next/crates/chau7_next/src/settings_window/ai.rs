@@ -37,6 +37,15 @@ pub(crate) struct AiInputs {
 
 impl AiInputs {
     pub(crate) fn new(window: &mut Window, cx: &mut Context<SettingsView>) -> Self {
+        let key = llm::api_key(Settings::get(cx).ai.llm_provider);
+        Self::new_with_api_key(window, cx, key)
+    }
+
+    pub(super) fn new_with_api_key(
+        window: &mut Window,
+        cx: &mut Context<SettingsView>,
+        key: String,
+    ) -> Self {
         let ai = Settings::get(cx).ai.clone();
         let provider = ai.llm_provider;
         let field = |value: String,
@@ -51,11 +60,7 @@ impl AiInputs {
         };
         let pattern = field(String::new(), "Pattern".into(), window, cx);
         let name = field(String::new(), "Name".into(), window, cx);
-        let api_key = cx.new(|cx| {
-            InputState::new(window, cx)
-                .masked(true)
-                .default_value(llm::api_key(provider))
-        });
+        let api_key = cx.new(|cx| InputState::new(window, cx).masked(true).default_value(key));
         let endpoint = field(
             ai.llm_endpoint.clone(),
             provider.default_endpoint().into(),
@@ -234,6 +239,78 @@ fn dot(color: TabColor, size: f32) -> gpui::Div {
         .bg(tab_color(color))
 }
 
+pub(super) fn telemetry_history(ctx: &SectionContext) -> gpui::Div {
+    let chrome = ctx.chrome;
+    let inputs = &ctx.view.ai_inputs;
+    let retention = inputs
+        .retention
+        .as_ref()
+        .map(|s| s.lock().clone())
+        .unwrap_or_default();
+    let retention_choices = [
+        (0, "Keep forever"),
+        (7, "7 days"),
+        (30, "30 days"),
+        (90, "90 days"),
+        (365, "1 year"),
+    ]
+    .into_iter()
+    .map(|(days, label)| {
+        chip(
+            SharedString::from(format!("retention-{days}")),
+            label,
+            retention.selected_days == days,
+            chrome,
+        )
+        .on_click(move |_, _, cx| crate::telemetry::usage::preview_retention(days, cx))
+    });
+    let enabled = ctx.settings.general.telemetry_retention_days;
+    let mut retention_block=titled("Telemetry History",chrome)
+        .child(description(if enabled==0 {"Current policy: keep forever. Selecting an expiry previews its effects; enabling it deletes older history in bounded batches.".to_string()} else {format!("Current policy: retain {enabled} days. Older completed runs and related history are deleted in bounded batches.")},chrome))
+        .child(div().flex().flex_wrap().gap_1().children(retention_choices));
+    if retention.working {
+        retention_block = retention_block.child(description("Working in the background…", chrome));
+    }
+    if let Some(preview) = retention.preview.as_ref() {
+        retention_block=retention_block.child(description(format!("Preview: {} completed runs, {} turns, {} tool calls, {} usage records, {} latency records, {} remote events. Active runs are protected. Full transcripts stored here are included; provider transcript files are untouched.",preview.runs,preview.turns,preview.tool_calls,preview.run_evidence+preview.usage_evidence,preview.latency_samples,preview.remote_events),chrome));
+        if !retention.working {
+            retention_block = retention_block.child(
+                button(
+                    "apply-retention",
+                    if retention.selected_days == 0 {
+                        "Apply keep forever"
+                    } else {
+                        "Enable selected retention policy"
+                    },
+                    chrome,
+                )
+                .on_click(|_, _, cx| crate::telemetry::usage::apply_retention(cx)),
+            );
+        }
+    }
+    if let Some(error) = retention.error {
+        retention_block = retention_block.child(description(format!("Error: {error}"), chrome));
+    }
+    if retention.compact_confirmation {
+        retention_block=retention_block.child(description("Compact the telemetry database now? This rewrites the database to recover free space and can take time. Retained history stays intact.",chrome))
+            .child(div().flex().gap_1().child(button("confirm-compact","Confirm compaction",chrome).on_click(|_,_,cx|crate::telemetry::usage::compact_confirmed(cx)))
+            .child(button("cancel-compact","Cancel",chrome).on_click(|_,_,cx|crate::telemetry::usage::cancel_compaction(cx))));
+    } else if !retention.working {
+        retention_block = retention_block.child(
+            button("request-compact", "Recover database space…", chrome)
+                .on_click(|_, _, cx| crate::telemetry::usage::request_compaction(cx)),
+        );
+    }
+    if let Some(at) = retention.compacted_at {
+        retention_block = retention_block.child(description(
+            format!("Last compaction: {}", at.to_rfc3339()),
+            chrome,
+        ));
+    }
+
+    retention_block
+}
+
 pub(super) fn section(ctx: &SectionContext) -> gpui::Div {
     let chrome = ctx.chrome;
     let ai = &ctx.settings.ai;
@@ -341,72 +418,6 @@ pub(super) fn section(ctx: &SectionContext) -> gpui::Div {
             div().flex().flex_wrap().gap_1().children(formats), chrome))
         .child(description(crate::l10n::tr(
             "Controls token, cost, and dashboard number formatting independently from app language."), chrome));
-
-    let retention = inputs
-        .retention
-        .as_ref()
-        .map(|s| s.lock().clone())
-        .unwrap_or_default();
-    let retention_choices = [
-        (0, "Keep forever"),
-        (7, "7 days"),
-        (30, "30 days"),
-        (90, "90 days"),
-        (365, "1 year"),
-    ]
-    .into_iter()
-    .map(|(days, label)| {
-        chip(
-            SharedString::from(format!("retention-{days}")),
-            label,
-            retention.selected_days == days,
-            chrome,
-        )
-        .on_click(move |_, _, cx| crate::telemetry::usage::preview_retention(days, cx))
-    });
-    let enabled = ctx.settings.general.telemetry_retention_days;
-    let mut retention_block=titled("Telemetry History",chrome)
-        .child(description(if enabled==0 {"Current policy: keep forever. Selecting an expiry previews its effects; enabling it deletes older history in bounded batches.".to_string()} else {format!("Current policy: retain {enabled} days. Older completed runs and related history are deleted in bounded batches.")},chrome))
-        .child(div().flex().flex_wrap().gap_1().children(retention_choices));
-    if retention.working {
-        retention_block = retention_block.child(description("Working in the background…", chrome));
-    }
-    if let Some(preview) = retention.preview.as_ref() {
-        retention_block=retention_block.child(description(format!("Preview: {} completed runs, {} turns, {} tool calls, {} usage records, {} latency records, {} remote events. Active runs are protected. Full transcripts stored here are included; provider transcript files are untouched.",preview.runs,preview.turns,preview.tool_calls,preview.run_evidence+preview.usage_evidence,preview.latency_samples,preview.remote_events),chrome));
-        if !retention.working {
-            retention_block = retention_block.child(
-                button(
-                    "apply-retention",
-                    if retention.selected_days == 0 {
-                        "Apply keep forever"
-                    } else {
-                        "Enable selected retention policy"
-                    },
-                    chrome,
-                )
-                .on_click(|_, _, cx| crate::telemetry::usage::apply_retention(cx)),
-            );
-        }
-    }
-    if let Some(error) = retention.error {
-        retention_block = retention_block.child(description(format!("Error: {error}"), chrome));
-    }
-    if retention.compact_confirmation {
-        retention_block=retention_block.child(description("Compact the telemetry database now? This rewrites the database to recover free space and can take time. Retained history stays intact.",chrome))
-            .child(div().flex().gap_1().child(button("confirm-compact","Confirm compaction",chrome).on_click(|_,_,cx|crate::telemetry::usage::compact_confirmed(cx)))
-            .child(button("cancel-compact","Cancel",chrome).on_click(|_,_,cx|crate::telemetry::usage::cancel_compaction(cx))));
-    } else if !retention.working {
-        retention_block = retention_block.child(
-            button("request-compact", "Recover database space…", chrome)
-                .on_click(|_, _, cx| crate::telemetry::usage::request_compaction(cx)),
-        );
-    }
-    if let Some(at) = retention.compacted_at {
-        retention_block = retention_block.child(description(
-            format!("Last compaction: {}", at.to_rfc3339()),
-            chrome,
-        ));
-    }
 
     // LLM provider.
     let providers = LLMProviderType::ALL.into_iter().map(|provider| {
@@ -533,6 +544,16 @@ pub(super) fn section(ctx: &SectionContext) -> gpui::Div {
         ));
 
     let built_in = titled("Built-in AI CLI Detection", chrome)
+        .child(row(
+            "Auto Tab Themes",
+            toggle(
+                "auto-tab-theme-ai",
+                ctx.settings.tabs.auto_tab_theme,
+                chrome,
+                |s, value| s.tabs.auto_tab_theme = value,
+            ),
+            chrome,
+        ))
         .child(description(
             "Chau7 automatically detects these AI CLIs and applies appropriate theming:",
             chrome,
@@ -559,7 +580,6 @@ pub(super) fn section(ctx: &SectionContext) -> gpui::Div {
         .flex_col()
         .child(rules_block)
         .child(usage_display)
-        .child(retention_block)
         .child(llm_block)
         .child(explain_block)
         .child(built_in)

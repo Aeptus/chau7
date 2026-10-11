@@ -15,6 +15,7 @@
 pub mod monitor;
 pub mod recorder;
 pub mod shell_file;
+pub mod shell_histories;
 
 use std::sync::Arc;
 use std::sync::mpsc::{Sender, channel};

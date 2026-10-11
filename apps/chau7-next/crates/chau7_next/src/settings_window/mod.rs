@@ -110,7 +110,7 @@ fn renderers(section: SettingsSection) -> &'static [Section] {
     match section {
         S::StartHere => &[start_here::section],
         S::Windows => &[windows::section],
-        S::History => &[logs::history],
+        S::History => &[logs::history, ai::telemetry_history],
         S::SshProfiles => &[mine::profiles::ssh_sync],
         S::General => &[general::section, files::section],
         S::ProfilesBackup => &[
@@ -123,10 +123,10 @@ fn renderers(section: SettingsSection) -> &'static [Section] {
         S::Display => &[display::section],
         S::Tabs => &[tabs::section],
         S::HoverCard => &[hover_card::section],
-        S::Repositories => &[repositories::section],
+        S::Repositories => &[repository_settings],
         S::LogsHistory => &[logs::section],
         S::MinimalMode => &[minimal_mode::section],
-        S::Shell => &[shell::section],
+        S::Shell => &[shell::section, text::cursor],
         S::ScrollbackPerf => &[panes::section, rendering::section],
         S::Graphics => &[graphics::section],
         S::DangerousCommands => &[mine::dangerous::section],
@@ -151,6 +151,10 @@ fn renderers(section: SettingsSection) -> &'static [Section] {
             token_optimization::how_it_works,
         ],
     }
+}
+
+fn repository_settings(ctx: &SectionContext) -> gpui::Div {
+    anchors::target("repositoryMetadata", repositories::section(ctx))
 }
 
 fn permissions(ctx: &SectionContext) -> gpui::Div {
@@ -286,6 +290,10 @@ pub struct SettingsView {
 
 impl SettingsView {
     fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
+        Self::new_inner(window, cx, None)
+    }
+
+    fn new_inner(window: &mut Window, cx: &mut Context<Self>, api_key: Option<String>) -> Self {
         let appearance = Settings::get(cx).appearance.clone();
         let installed_fonts = window.text_system().all_font_names();
         let font_input = cx.new(|cx| {
@@ -379,7 +387,10 @@ impl SettingsView {
             entity: cx.entity().downgrade(),
             shell_inputs: shell::ShellInputs::new(window, cx),
             repo_inputs: repositories::RepoInputs::new(window, cx),
-            ai_inputs: ai::AiInputs::new(window, cx),
+            ai_inputs: match api_key {
+                Some(key) => ai::AiInputs::new_with_api_key(window, cx, key),
+                None => ai::AiInputs::new(window, cx),
+            },
             logs_inputs: logs::LogsInputs::new(window, cx),
             remote_inputs: remote::RemoteInputs::new(window, cx),
             proxy_inputs: proxy::ProxyInputs::new(window, cx),
@@ -398,6 +409,10 @@ impl SettingsView {
         cx: &mut Context<Self>,
     ) {
         self.navigation.focus_search_result(setting);
+        if setting.section == SettingsSection::Notifications {
+            self.notif.focus_search_target(setting.anchor_id);
+        }
+
         if self.navigation.selection == SettingsSection::StartHere {
             crate::permission_center::refresh(cx);
         }
@@ -712,3 +727,6 @@ impl Render for SettingsView {
             )
     }
 }
+
+#[cfg(test)]
+mod rendered_targets_test;

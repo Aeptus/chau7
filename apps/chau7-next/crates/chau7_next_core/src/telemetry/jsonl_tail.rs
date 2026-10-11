@@ -29,7 +29,7 @@ impl JsonlTail {
             Some((metadata.dev(), metadata.ino()))
         };
         #[cfg(windows)]
-        let identity = Some(windows_file_identity(&file)?);
+        let identity = Some(crate::file_identity::for_file(&file)?);
         #[cfg(not(any(unix, windows)))]
         let identity = None;
         let reset = self.path != path
@@ -75,28 +75,6 @@ impl JsonlTail {
         }
         Ok(result)
     }
-}
-// Read identity from the same handle as metadata and contents, so a replacement
-// between opening and reading cannot pair the new file with the old offset.
-#[cfg(windows)]
-fn windows_file_identity(file: &File) -> std::io::Result<(u64, u64)> {
-    use std::os::windows::io::AsRawHandle;
-    use windows_sys::Win32::Storage::FileSystem::{
-        BY_HANDLE_FILE_INFORMATION, GetFileInformationByHandle,
-    };
-    let mut info = std::mem::MaybeUninit::<BY_HANDLE_FILE_INFORMATION>::uninit();
-    // SAFETY: File owns a live handle throughout the call, and info points to a
-    // writable buffer with exactly the layout required by the Windows API.
-    let success = unsafe { GetFileInformationByHandle(file.as_raw_handle(), info.as_mut_ptr()) };
-    if success == 0 {
-        return Err(std::io::Error::last_os_error());
-    }
-    // SAFETY: A successful call initializes all fields of the output structure.
-    let info = unsafe { info.assume_init() };
-    Ok((
-        u64::from(info.dwVolumeSerialNumber),
-        u64::from(info.nFileIndexHigh) << 32 | u64::from(info.nFileIndexLow),
-    ))
 }
 #[cfg(test)]
 mod tests {

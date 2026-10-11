@@ -9,6 +9,11 @@ import subprocess
 import sys
 import uuid
 
+try:
+    import tomllib
+except ImportError:  # Python before 3.11 keeps the dependency-free fallback.
+    tomllib = None
+
 EVENTS_FILE = "__CHAU7_NEXT_EVENTS_FILE__"
 CHAIN_ENV = "CHAU7_NEXT_CODEX_NOTIFY_CHAIN"
 
@@ -120,9 +125,7 @@ def configured_notify():
         return []
     if len(content.encode("utf-8")) > 2097152:
         raise ValueError("Codex config exceeds 2 MiB")
-    try:
-        import tomllib
-    except ImportError:
+    if tomllib is None:
         # The current Swift installer uses only the top-level notify key.
         # Stop at a TOML table header; never consume an unrelated table's key.
         match = re.search(r'(?m)^\s*(?:notify|"notify"|\'notify\')\s*=\s*', content)
@@ -138,8 +141,7 @@ def own_or_swift_notify(argv):
         return False
     index = (
         1
-        if os.path.basename(argv[0])
-        in ("python", "python3", "python3.11", "python3.12", "python3.13", "python3.14")
+        if os.path.basename(argv[0]) in ("python", "python3", "python3.11", "python3.12", "python3.13", "python3.14")
         else 0
     )
     if index >= len(argv):
@@ -222,16 +224,14 @@ def event_for(payload):
             "idle_prompt",
         ),
     }
-    title, default, subtype = metadata.get(
-        raw_type, (None, "Codex emitted a notification event.", None)
-    )
+    title, default, subtype = metadata.get(raw_type, (None, "Codex emitted a notification event.", None))
     event = {
         "source": "codex",
         "type": raw_type,
         "rawType": raw_type,
         "tool": "Codex",
         "message": message or default,
-        "ts": datetime.datetime.now(datetime.timezone.utc)
+        "ts": datetime.datetime.now(datetime.timezone.utc)  # noqa: UP017 - Python 3.9 macOS compatibility
         .isoformat()
         .replace("+00:00", "Z"),
         "directory": first(payload.get("cwd"), os.environ.get("CHAU7_NEXT_PROJECT")),

@@ -64,6 +64,7 @@ fn consider_directory(dir: &Path, best: &mut Option<(PathBuf, SystemTime)>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chrono::TimeZone;
     fn write(path: &Path, at: DateTime<Utc>) {
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
         std::fs::write(path, b"{}\n").unwrap();
@@ -77,7 +78,13 @@ mod tests {
     #[test]
     fn today_scan_detects_new_sessions_without_rewalking_history() {
         let root = std::env::temp_dir().join(format!("chau7-locator-{}", uuid::Uuid::new_v4()));
-        let now = Utc::now();
+        // The scenario advances 700s. A real clock near midnight changes the
+        // directory correctly searched by the locator, invalidating this fixture.
+        let now = Local
+            .with_ymd_and_hms(2026, 10, 11, 12, 0, 0)
+            .single()
+            .expect("unambiguous local noon")
+            .with_timezone(&Utc);
         let local = now.with_timezone(&Local);
         let yesterday = root.join(
             (local - chrono::Duration::days(1))

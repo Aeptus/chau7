@@ -175,6 +175,7 @@ pub struct TerminalSession {
     /// This terminal's identity for the analytics proxy and AI run
     /// telemetry (`tabIdentifier`, `CHAU7_NEXT_TAB_ID`): a UUID per session.
     pub tab_identifier: String,
+    _shell_history_owner: Option<crate::history::shell_histories::Registration>,
     term: Arc<RwLock<Chau7Terminal>>,
     memory: Arc<crate::memory_pressure::SessionMemory>,
     writer: PtyWriter,
@@ -347,16 +348,19 @@ fn unregister_shell(id: u64) {
 
 impl TerminalSession {
     /// Start a shell in `cwd` (or the configured/default directory).
-    pub fn spawn(
+    pub fn spawn_with_owner(
         cols: u16,
         rows: u16,
         cwd: Option<PathBuf>,
         settings: &Settings,
         root: &DataRoot,
+        history_owner: uuid::Uuid,
         cx: &mut Context<Self>,
     ) -> anyhow::Result<Self> {
         super::pty_capture::init(&root.pty_capture_file());
         let shell_path = settings.terminal.resolved_shell();
+        let (history_registration, history_env) =
+            crate::history::shell_histories::prepare_shell(root, history_owner, &shell_path);
         let home = root.home().to_string_lossy().to_string();
         let mut env =
             shell_env::shell_environment(Some(&home), std::env::var("PATH").ok().as_deref());
@@ -367,6 +371,7 @@ impl TerminalSession {
             &root.history_file(),
             |key| std::env::var(key).ok(),
         ));
+        env.extend(history_env);
         let start_dir = start_directory(cwd.as_deref(), settings, &home);
         let session_id = uuid::Uuid::new_v4().to_string().to_uppercase();
         env.extend(shell_env::session_environment(
@@ -467,6 +472,7 @@ impl TerminalSession {
                 .is_empty();
         let mut session = Self::from_terminal(term, Some(start_dir), cx);
         session.tab_identifier = tab_identifier;
+        session._shell_history_owner = history_registration;
         session.has_hooks = has_hooks;
         session.shell_name = Path::new(&shell_path)
             .file_name()
@@ -488,6 +494,27 @@ impl TerminalSession {
         cwd: Option<PathBuf>,
         cx: &mut Context<Self>,
     ) -> Self {
+        Self::from_terminal_driving(term, cwd, true, cx)
+    }
+
+    /// Real fixture PTYs use the production model and writer, while their
+    /// deterministic GPUI tests manually drive input instead of permitting
+    /// external native threads to wake the mock foreground scheduler.
+    #[cfg(all(test, unix))]
+    pub(crate) fn from_terminal_manually_driven(
+        term: Chau7Terminal,
+        cwd: Option<PathBuf>,
+        cx: &mut Context<Self>,
+    ) -> Self {
+        Self::from_terminal_driving(term, cwd, false, cx)
+    }
+
+    fn from_terminal_driving(
+        term: Chau7Terminal,
+        cwd: Option<PathBuf>,
+        start_external_workers: bool,
+        cx: &mut Context<Self>,
+    ) -> Self {
         let echo_fd = term.echo_fd();
         let has_pty = term.has_pty();
         let pid = term.shell_pid() as i32;
@@ -504,7 +531,7 @@ impl TerminalSession {
             std::sync::Weak<crate::memory_pressure::SessionMemory>,
         >::new());
 
-        {
+        if start_external_workers {
             let term = term.clone();
             let stop = stop.clone();
             let output = output.clone();
@@ -680,7 +707,7 @@ impl TerminalSession {
             .map_or(10_000, |settings| settings.terminal.scrollback_lines);
         let memory = crate::memory_pressure::register(id, &term, &root, lines);
         let _ = profile_memory.set(Arc::downgrade(&memory));
-        let process_subscription = (has_pty && pid > 0).then(|| {
+        let process_subscription = (start_external_workers && has_pty && pid > 0).then(|| {
             crate::monitoring::process_tree::subscribe(pid as u32, cx.entity().downgrade(), cx)
         });
         Self {
@@ -748,6 +775,7 @@ impl TerminalSession {
             pending_resize: None,
             monitor: SessionMonitor::new(id, &root, shell_events),
             tab_identifier: uuid::Uuid::new_v4().to_string().to_uppercase(),
+            _shell_history_owner: None,
             dev_checks: None,
             mouse_reporting_enabled: std::cell::Cell::new(false),
             _pump: pump,
@@ -2067,6 +2095,24 @@ impl TerminalSession {
 
     /// Bytes typed or pasted by the user: written like [`Self::write`] and
     /// given to the command tracker (typed lines, history, AI detection).
+    /// Immediate user-input revision; independent of delayed tracker processing.
+    pub fn input_revision(&self) -> u64 {
+        self.restore_input_generation.get()
+    }
+
+    /// Rebuild the current line from cached tracker state and not-yet-processed
+    /// user fragments. No PTY read or native process scan runs here.
+    pub fn reviewed_input_prefix(&self) -> String {
+        let pending = self.pending_input.borrow();
+        chau7_next_core::command_risk::admission::pending_prefix(
+            self.tracker.pending_input_text(),
+            pending
+                .iter()
+                .filter(|(_, secret)| !secret)
+                .map(|(bytes, _)| String::from_utf8_lossy(bytes)),
+        )
+    }
+
     pub fn write_input(&self, bytes: &[u8]) {
         if bytes.is_empty() {
             return;

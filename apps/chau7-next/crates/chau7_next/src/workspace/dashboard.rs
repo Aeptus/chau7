@@ -12,6 +12,11 @@ pub(super) struct DashboardUi {
     subscription: Option<Subscription>,
 }
 impl DashboardUi {
+    #[cfg(target_os = "macos")]
+    pub(super) fn is_open(&self) -> bool {
+        self.view.is_some()
+    }
+
     pub(super) fn dismiss(&mut self) {
         self.root = None;
         self.subscription = None;

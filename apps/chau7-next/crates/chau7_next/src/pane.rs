@@ -227,8 +227,14 @@ impl PaneTree {
         }
     }
 
-    pub fn new(cwd: Option<PathBuf>, window: &mut Window, cx: &mut Context<Self>) -> Self {
+    pub fn new_with_owner(
+        cwd: Option<PathBuf>,
+        owner: uuid::Uuid,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Self {
         let mut this = Self::empty();
+        this.owner_tab = Some(owner);
         let view = this.create_terminal(cwd, new_pane_id(), DEFAULT_SIZE, window, cx);
         this.focused = Some(view.entity_id());
         this.presentation_terminal = this.focused;
@@ -244,15 +250,20 @@ impl PaneTree {
     }
 
     /// Startup placeholders retain the complete payload without a hidden shell.
-    pub fn from_saved_deferred(
+    pub fn from_saved_deferred_with_owner(
         saved: Option<&SavedTab>,
         cwd: Option<PathBuf>,
+        owner: uuid::Uuid,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
         match saved {
-            Some(saved) => Self::park_saved(saved.clone(), cwd),
-            None => Self::new(cwd, window, cx),
+            Some(saved) => {
+                let mut this = Self::park_saved(saved.clone(), cwd);
+                this.owner_tab = Some(owner);
+                this
+            }
+            None => Self::new_with_owner(cwd, owner, window, cx),
         }
     }
     pub fn deferred_saved(&self) -> Option<&SavedTab> {
@@ -295,7 +306,8 @@ impl PaneTree {
 
             let token_override = self.restore_override;
             let cwd = self.deferred_cwd.clone().or_else(|| saved.cwd.clone());
-            let mut active = Self::from_saved_prepared(Some(&prepared.saved), cwd, window, cx);
+            let mut active =
+                Self::from_saved_prepared(Some(&prepared.saved), cwd, owner, window, cx);
             active.restore_selected.set(true);
             active.restore_release_registered = self.restore_release_registered;
             active.restored_metadata = prepared
@@ -383,21 +395,27 @@ impl PaneTree {
 
     /// The panes of a tab: restored from its saved split layout when it has
     /// one (`buildRestorableController`), else one shell in `cwd`.
-    pub fn from_saved(
+    pub fn from_saved_with_owner(
         saved: Option<&SavedTab>,
         cwd: Option<PathBuf>,
+        owner: uuid::Uuid,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
         match saved {
-            Some(saved) => Self::park_saved(saved.clone(), cwd),
-            None => Self::new(cwd, window, cx),
+            Some(saved) => {
+                let mut this = Self::park_saved(saved.clone(), cwd);
+                this.owner_tab = Some(owner);
+                this
+            }
+            None => Self::new_with_owner(cwd, owner, window, cx),
         }
     }
 
     fn from_saved_prepared(
         saved: Option<&SavedTab>,
         cwd: Option<PathBuf>,
+        owner: Option<uuid::Uuid>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
@@ -412,9 +430,10 @@ impl PaneTree {
             })
             .and_then(SavedSplitNode::normalized);
         let (Some(saved), Some(layout)) = (saved, layout) else {
-            return Self::new(cwd, window, cx);
+            return Self::new_with_owner(cwd, owner.unwrap_or_else(uuid::Uuid::new_v4), window, cx);
         };
         let mut this = Self::empty();
+        this.owner_tab = owner;
         this.deferred_cwd = cwd;
         let states: HashMap<PaneId, &SavedPane> = saved.panes.iter().map(|p| (p.id, p)).collect();
         let root = this.build_node(&layout, &states, window, cx);
@@ -539,7 +558,15 @@ impl PaneTree {
         let settings = Settings::get(cx).clone();
         let root = cx.global::<AppData>().root.clone();
         let session = cx.new(|cx| {
-            match TerminalSession::spawn(cols, rows, cwd.clone(), &settings, &root, cx) {
+            match TerminalSession::spawn_with_owner(
+                cols,
+                rows,
+                cwd.clone(),
+                &settings,
+                &root,
+                self.owner_tab.unwrap_or_else(uuid::Uuid::new_v4),
+                cx,
+            ) {
                 Ok(session) => session,
                 Err(err) => {
                     log::error!("{err}");
@@ -1460,10 +1487,11 @@ impl PaneTree {
     }
 
     /// Send input to the focused pane of `panes` without re-broadcasting it.
-    pub fn send_input(panes: &Entity<PaneTree>, bytes: &[u8], cx: &mut App) {
-        if let Some(view) = panes.read(cx).focused_view() {
-            view.update(cx, |v, cx| v.write_without_broadcast(bytes, cx));
-        }
+    pub fn send_input(panes: &Entity<PaneTree>, bytes: &[u8], cx: &mut App) -> bool {
+        panes
+            .read(cx)
+            .focused_view()
+            .is_some_and(|view| view.update(cx, |v, cx| v.write_without_broadcast(bytes, cx)))
     }
 
     /// A synthesized key press (MCP `tab_press_key`, KBD-017) to the focused
@@ -1481,8 +1509,7 @@ impl PaneTree {
         let Ok(encoded) = press.encode(app_cursor) else {
             return false;
         };
-        view.update(cx, |v, cx| v.write_without_broadcast(&encoded.bytes, cx));
-        true
+        view.update(cx, |v, cx| v.write_without_broadcast(&encoded.bytes, cx))
     }
 
     pub fn set_font_size(&mut self, size: f32, cx: &mut Context<Self>) {

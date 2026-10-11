@@ -34,6 +34,7 @@ pub(super) fn section(ctx: &SectionContext) -> gpui::Div {
         ),
         chrome,
     ));
+    startup = startup.child(super::shell::default_directory(ctx));
     startup = startup.child(description(
         "Automatically start Chau7 Next when you log in to your Mac",
         chrome,

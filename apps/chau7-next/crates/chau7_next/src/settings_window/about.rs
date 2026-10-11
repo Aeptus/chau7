@@ -14,7 +14,7 @@ use crate::platform::system;
 use crate::theme::Chrome;
 use crate::workspace::AppData;
 
-const GITHUB: &str = "https://github.com/anthropics/chau7";
+const GITHUB: &str = "https://github.com/Aeptus/chau7";
 
 /// "1.2 (45)" from the bundle, else the crate version for a development build.
 pub(crate) fn version_text() -> String {
@@ -75,6 +75,25 @@ fn link(
     button(id, label, chrome).on_click(move |_, _, cx| cx.open_url(url))
 }
 
+fn support_info(root: &chau7_next_core::data_root::DataRoot) -> String {
+    [
+        format!("Chau7 Next {}", version_text()),
+        "Application: Chau7 Next".to_string(),
+        format!(
+            "Bundle ID: {}",
+            system::bundle_string("CFBundleIdentifier").unwrap_or_else(|| "Not bundled".into())
+        ),
+        format!("Built: {}", build_date()),
+        format!("Operating system: {}", system::os_version()),
+        format!(
+            "Architecture: {}",
+            architecture_label(std::env::consts::ARCH)
+        ),
+        format!("Log: {}", crate::log_file_path(root).display()),
+    ]
+    .join("\n")
+}
+
 pub(super) fn section(ctx: &SectionContext) -> gpui::Div {
     let chrome = ctx.chrome;
     let bundle_id = system::bundle_string("CFBundleIdentifier").unwrap_or("Not bundled".into());
@@ -125,13 +144,13 @@ pub(super) fn section(ctx: &SectionContext) -> gpui::Div {
             .child(link(
                 "link-issues",
                 "Report Issue",
-                "https://github.com/anthropics/chau7/issues",
+                "https://github.com/Aeptus/chau7/issues",
                 chrome,
             ))
             .child(link(
                 "link-docs",
                 "Documentation",
-                "https://github.com/anthropics/chau7/blob/main/README.md",
+                "https://github.com/Aeptus/chau7/blob/main/README.md",
                 chrome,
             )),
     );
@@ -146,13 +165,24 @@ pub(super) fn section(ctx: &SectionContext) -> gpui::Div {
             div()
                 .flex()
                 .gap_2()
+                .child(super::anchors::target(
+                    "aboutSupportInfo",
+                    button("copy-support-info", "Copy Support Info", chrome).on_click(
+                        |_, _, cx| {
+                            let root = &cx.global::<AppData>().root;
+                            let text = support_info(root);
+                            cx.write_to_clipboard(gpui::ClipboardItem::new_string(text));
+                            super::set_message(cx, "Support info copied.".into(), false);
+                        },
+                    ),
+                ))
                 .child(
                     button("log-reveal", "Reveal in Finder", chrome)
                         .on_click(move |_, _, cx| cx.reveal_path(&reveal)),
                 )
                 .child(
-                    button("log-console", "Debug Console", chrome).on_click(|_, window, cx| {
-                        window.dispatch_action(Box::new(crate::actions::ToggleDebugConsole), cx)
+                    button("log-console", "Diagnostics", chrome).on_click(|_, _, cx| {
+                        crate::debug::open_console(Some(crate::debug::Tab::Health), cx)
                     }),
                 ),
         );
@@ -169,7 +199,7 @@ pub(super) fn section(ctx: &SectionContext) -> gpui::Div {
                 }),
             ),
         )
-        .child(description("Copyright © 2024-2026. All rights reserved.", chrome));
+        .child(description("Copyright © 2024-2026 Aeptus. Licensed under AGPL 3.0.", chrome));
 
     div()
         .flex()

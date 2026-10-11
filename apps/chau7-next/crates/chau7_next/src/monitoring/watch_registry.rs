@@ -104,22 +104,14 @@ impl Dispatcher {
 }
 #[derive(Clone, PartialEq, Eq)]
 struct Identity {
-    #[cfg(unix)]
-    dev: u64,
-    #[cfg(unix)]
-    inode: u64,
+    file: chau7_next_core::file_identity::FileIdentity,
     created: Option<std::time::SystemTime>,
     directory: bool,
 }
 fn identity(path: &Path) -> Option<Identity> {
     let metadata = std::fs::metadata(path).ok()?;
-    #[cfg(unix)]
-    use std::os::unix::fs::MetadataExt;
     Some(Identity {
-        #[cfg(unix)]
-        dev: metadata.dev(),
-        #[cfg(unix)]
-        inode: metadata.ino(),
+        file: chau7_next_core::file_identity::for_path(path).ok()?,
         created: metadata.created().ok(),
         directory: metadata.is_dir(),
     })
@@ -197,7 +189,7 @@ impl Registry {
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .get(&path)
-            .is_some_and(|entry| entry.identity == current_identity);
+            .is_some_and(|entry| current_identity.is_some() && entry.identity == current_identity);
         if !reusable {
             let generation = self.next.fetch_add(1, Ordering::Relaxed);
             let weak = Arc::downgrade(self);
