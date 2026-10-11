@@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize};
 use crate::iso8601::format_iso8601;
 
 /// Repository the prefilled issue is opened in.
-pub const GITHUB_ISSUE_OWNER: &str = "anthropics";
+pub const GITHUB_ISSUE_OWNER: &str = "Aeptus";
 pub const GITHUB_ISSUE_REPO: &str = "chau7";
 
 /// Shown in the report when the user typed nothing.
@@ -241,7 +241,7 @@ pub fn percent_encode(text: &str) -> String {
 /// Longest prefilled URL GitHub reliably accepts.
 pub const MAX_ISSUE_URL_LEN: usize = 7500;
 
-/// `https://github.com/anthropics/chau7/issues/new?title=..&body=..`. A body
+/// `https://github.com/Aeptus/chau7/issues/new?title=..&body=..`. A body
 /// that would make the link too long for GitHub is cut, with a note.
 pub fn prefilled_issue_url(title: &str, body: &str) -> String {
     let base = format!(
@@ -909,7 +909,7 @@ mod tests {
         let url = prefilled_issue_url("Bug report from Chau7 1.0", "a b&c\n# x");
         assert_eq!(
             url,
-            "https://github.com/anthropics/chau7/issues/new?title=Bug%20report%20from%20Chau7%201.0&body=a%20b%26c%0A%23%20x"
+            "https://github.com/Aeptus/chau7/issues/new?title=Bug%20report%20from%20Chau7%201.0&body=a%20b%26c%0A%23%20x"
         );
         let long = "x".repeat(20_000);
         let url = prefilled_issue_url("t", &long);
