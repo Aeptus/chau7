@@ -30,11 +30,21 @@ use crate::workspace::AppData;
 /// Random, so it can also name a terminal pane's scrollback file.
 pub type PaneId = u64;
 
-/// Directory of a pane's shell right now (the session's own value is only
-/// refreshed when output arrives).
+/// Authoritative cached directory, maintained by OSC7 and the off-UI
+/// process-directory fallback. Saved-state capture never probes a process.
 pub fn live_cwd(session: &TerminalSession) -> Option<PathBuf> {
-    crate::platform::process::process_cwd(session.shell_pid() as u32)
-        .or_else(|| session.cwd.clone())
+    session.cwd.clone()
+}
+
+fn close_warning_status(status: chau7_next_core::shell_session::CommandStatus) -> bool {
+    use chau7_next_core::shell_session::CommandStatus;
+    matches!(
+        status,
+        CommandStatus::Running
+            | CommandStatus::WaitingForInput
+            | CommandStatus::ApprovalRequired
+            | CommandStatus::Stuck
+    )
 }
 
 fn new_pane_id() -> PaneId {
@@ -1417,18 +1427,14 @@ impl PaneTree {
     }
 
     /// Whether any pane has a command running (close confirmation).
-    /// Processes still running under the shells of this tab
-    /// (`countRunningProcesses` in Swift).
+    /// Current Swift `countRunningProcesses` counts busy pane statuses,
+    /// rather than scanning the operating system from a close dialog.
     pub fn running_process_count(&self, cx: &App) -> usize {
         self.views()
             .iter()
             .map(|v| {
                 let session = v.read(cx).session.read(cx);
-                if session.exited.is_some() {
-                    0
-                } else {
-                    crate::platform::process::child_process_count(session.shell_pid() as u32)
-                }
+                usize::from(session.exited.is_none() && close_warning_status(session.status()))
             })
             .sum()
     }
@@ -1442,11 +1448,10 @@ impl PaneTree {
             if session.exited.is_some() {
                 continue;
             }
-            for child in crate::platform::process::child_pids(session.shell_pid() as u32) {
-                if let Some(name) = crate::platform::process::process_name(child) {
-                    names.push(name);
-                }
-            }
+            names.extend(crate::monitoring::process_tree::observed_names(
+                session.shell_pid() as u32,
+                cx,
+            ));
         }
         names
     }
@@ -1826,6 +1831,16 @@ impl Focusable for PaneTree {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn close_counts_match_all_current_swift_statuses() {
+        use chau7_next_core::shell_session::CommandStatus::*;
+        for status in [Running, WaitingForInput, ApprovalRequired, Stuck] {
+            assert!(super::close_warning_status(status));
+        }
+        for status in [Idle, Done, Exited] {
+            assert!(!super::close_warning_status(status));
+        }
+    }
     #[test]
     fn deferred_restore_preserves_full_payload_without_constructing_panes() {
         let saved = crate::session_store::SavedTab {

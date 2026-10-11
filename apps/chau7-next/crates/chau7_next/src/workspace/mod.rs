@@ -73,7 +73,6 @@ use gpui_kit::component::TitleBar;
 
 use crate::actions::*;
 use crate::pane::{PaneEvent, PaneTree};
-use crate::platform::process as procinfo;
 use crate::session_store::{SavedTab, SavedWindow};
 use crate::settings::Settings;
 use crate::tab_bar::{NotificationStyle, TabAnimations, TabDrag, TabId};
@@ -388,7 +387,17 @@ impl Workspace {
                         })
                         .map(PathBuf::from)
                 } else {
-                    cwd.as_deref().and_then(procinfo::git_root)
+                    cwd.as_deref().and_then(|dir| {
+                        crate::repository::resolve(dir, cx)
+                            .or_else(|| {
+                                chau7_next_core::tabs_state::known_repo_root(
+                                    dir,
+                                    saved.as_ref().and_then(|s| s.repo_group_id.as_deref()),
+                                    &self.known_repo_roots,
+                                )
+                            })
+                            .map(PathBuf::from)
+                    })
                 }
             })
             .map(|p| p.to_string_lossy().to_string());
@@ -889,10 +898,11 @@ impl Workspace {
         let panes = cx.new(|cx| PaneTree::new(cwd.clone(), window, cx));
         let mut meta = TabMeta::new(new_id, TabColor::ALL[0]);
         meta.last_activity = AppData::now(cx);
-        meta.git_root = cwd
-            .as_deref()
-            .and_then(procinfo::git_root)
-            .map(|p| p.to_string_lossy().to_string());
+        meta.git_root = cwd.as_deref().and_then(|dir| {
+            crate::repository::resolve(dir, cx).or_else(|| {
+                chau7_next_core::tabs_state::known_repo_root(dir, None, &self.known_repo_roots)
+            })
+        });
         panes.update(cx, |tree, cx| tree.set_owner_tab(meta.uuid, window, cx));
         self.entries.remove(&id);
         self.insert_entry(new_id, panes, cx);
