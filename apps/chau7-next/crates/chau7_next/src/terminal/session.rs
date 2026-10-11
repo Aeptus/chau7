@@ -16,7 +16,7 @@ use std::cell::RefCell;
 use std::collections::{BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 use chau7_next_core::ai::detection_state::now_secs;
@@ -38,15 +38,45 @@ use chau7_next_core::shell_session::{
 use chau7_next_core::work_profiler::{self, Key as WorkKey, Kind as WorkKind, Queue as WorkQueue};
 use chau7_next_core::{shell_env, shell_integration, shell_tips};
 use chau7_terminal::{Chau7Terminal, GridCopy, graphics::ShellIntegrationEvent};
-use futures::StreamExt;
 use futures::channel::mpsc;
+use futures::{FutureExt, StreamExt};
 use gpui::{AppContext, Context, EventEmitter, Global, Task};
 use parking_lot::{Mutex, RwLock};
 
 use super::pty_writer::{CloseMode, PtyWriter, Signal, signal_group};
 use crate::monitoring::session::{SessionMonitor, shell_ai_event};
 use crate::platform::process as procinfo;
-use crate::settings::{BellSound, Settings};
+use crate::settings::{ActivePollingRateCap, BellSound, Settings};
+
+#[derive(Clone, Copy)]
+enum RefreshWake {
+    Output,
+    Cadence,
+}
+
+fn refresh_interval(
+    interactive: bool,
+    active: ActivePollingRateCap,
+    inactive_fps: u32,
+) -> Duration {
+    let fps = if interactive {
+        active.cap_hz()
+    } else {
+        Some(inactive_fps.clamp(1, 120))
+    };
+    fps.map_or(Duration::ZERO, |fps| {
+        Duration::from_secs_f64(1.0 / f64::from(fps))
+    })
+}
+
+fn refresh_wait(interval: Duration, suspended: bool, elapsed: Duration) -> Duration {
+    let interval = if suspended {
+        Duration::from_millis(500)
+    } else {
+        interval
+    };
+    interval.saturating_sub(elapsed)
+}
 
 static NEXT_SESSION_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
 
@@ -176,6 +206,8 @@ pub struct TerminalSession {
     /// set, output is still parsed but the grid is refreshed at most every
     /// 500 ms (Swift `startBackgroundDrain`).
     render_suspended: Arc<AtomicBool>,
+    refresh_interval_ns: Arc<AtomicU64>,
+    refresh_wake: mpsc::UnboundedSender<RefreshWake>,
     /// Shell state machine (status, typed lines, AI tool, command blocks).
     tracker: ShellSession,
     shell_context: EnvContext,
@@ -401,7 +433,8 @@ impl TerminalSession {
         let term = Arc::new(RwLock::new(term));
         let stop = Arc::new(AtomicBool::new(false));
         let output = Arc::new(Mutex::new((Vec::new(), None)));
-        let (tx, mut rx) = mpsc::unbounded::<()>();
+        let (tx, mut rx) = mpsc::unbounded::<RefreshWake>();
+        let refresh_wake = tx.clone();
         let id = NEXT_SESSION_ID.fetch_add(1, Ordering::Relaxed);
         // The poll thread observes the actual retention phase without owning
         // the session or altering construction/teardown order.
@@ -460,7 +493,9 @@ impl TerminalSession {
                             out.0.extend_from_slice(&bytes);
                             out.1.get_or_insert_with(Instant::now);
                         }
-                        if (had_data || closed || got_bytes) && tx.unbounded_send(()).is_err() {
+                        if (had_data || closed || got_bytes)
+                            && tx.unbounded_send(RefreshWake::Output).is_err()
+                        {
                             break;
                         }
                         if closed {
@@ -474,31 +509,44 @@ impl TerminalSession {
         // Coalesce wakeups: one UI refresh per batch of output.
         let render_suspended = Arc::new(AtomicBool::new(false));
         let suspended = render_suspended.clone();
+        let refresh_interval_ns = Arc::new(AtomicU64::new(0));
+        let pacing = refresh_interval_ns.clone();
         let pump = cx.spawn(async move |this, cx| {
-            while rx.next().await.is_some() {
-                let mut notifications = 1;
-                while rx.try_recv().is_ok() {
-                    notifications += 1;
+            let mut last_refresh: Option<Instant> = None;
+            'pump: while let Some(first) = rx.next().await {
+                let mut notifications = usize::from(matches!(first, RefreshWake::Output));
+                while let Ok(next) = rx.try_recv() {
+                    notifications += usize::from(matches!(next, RefreshWake::Output));
                 }
-                if this
-                    .update(cx, |this, cx| {
-                        let mut wake = work_profiler::begin(WorkKey::wakeup(
-                            "output_dispatch",
-                            this.profiling_phase(),
-                            WorkQueue::Main,
-                        ));
-                        wake.items(notifications);
-                        this.refresh(cx);
-                    })
-                    .is_err()
-                {
-                    break;
+                // Focus/settings changes only interrupt a pending deadline.
+                // They do not invent output or reset session activity.
+                if notifications == 0 { continue; }
+                loop {
+                    let wait = last_refresh.map_or(Duration::ZERO, |at| refresh_wait(
+                        Duration::from_nanos(pacing.load(Ordering::Relaxed)),
+                        suspended.load(Ordering::Relaxed), at.elapsed()));
+                    if wait.is_zero() { break; }
+                    let delay = cx.background_executor().timer(wait).fuse();
+                    let next = rx.next().fuse();
+                    futures::pin_mut!(delay, next);
+                    futures::select_biased! {
+                        event = next => match event {
+                            Some(event) => notifications += usize::from(matches!(event, RefreshWake::Output)),
+                            None => break 'pump,
+                        },
+                        _ = delay => {},
+                    }
                 }
-                if suspended.load(Ordering::Relaxed) {
-                    cx.background_executor()
-                        .timer(Duration::from_millis(500))
-                        .await;
+                while let Ok(next) = rx.try_recv() {
+                    notifications += usize::from(matches!(next, RefreshWake::Output));
                 }
+                if this.update(cx, |this, cx| {
+                    let mut wake = work_profiler::begin(WorkKey::wakeup(
+                        "output_dispatch", this.profiling_phase(), WorkQueue::Main));
+                    wake.items(notifications);
+                    this.refresh(cx);
+                }).is_err() { break; }
+                last_refresh = Some(Instant::now());
             }
         });
         // Once a second: idle/stuck timers, startup notice, cwd and branch.
@@ -578,6 +626,8 @@ impl TerminalSession {
             command_running: false,
             started_at: now,
             render_suspended,
+            refresh_interval_ns,
+            refresh_wake,
             tracker: ShellSession::new(config, &directory, now_secs()),
             shell_context: EnvContext {
                 search_path: std::env::var("PATH").ok(),
@@ -1768,8 +1818,25 @@ impl TerminalSession {
 
     /// Suspend Background Rendering for a hidden tab (see `render_suspended`).
     pub fn set_render_suspended(&self, suspended: bool) {
-        self.render_suspended.store(suspended, Ordering::Relaxed);
+        if self.render_suspended.swap(suspended, Ordering::Relaxed) != suspended {
+            let _ = self.refresh_wake.unbounded_send(RefreshWake::Cadence);
+        }
         self.memory.set_tui(self.ai_app.is_some());
+    }
+
+    /// Actual view/window focus supplies interactive state. A zero interval
+    /// leaves display-native presentation to GPUI's display scheduling.
+    pub fn set_refresh_pacing(
+        &self,
+        interactive: bool,
+        active: ActivePollingRateCap,
+        inactive_fps: u32,
+    ) {
+        let interval = refresh_interval(interactive, active, inactive_fps);
+        let ns = interval.as_nanos().min(u128::from(u64::MAX)) as u64;
+        if self.refresh_interval_ns.swap(ns, Ordering::Relaxed) != ns {
+            let _ = self.refresh_wake.unbounded_send(RefreshWake::Cadence);
+        }
     }
 
     pub fn is_render_suspended(&self) -> bool {
@@ -2036,5 +2103,62 @@ pub(crate) fn apply_agent_feedback(event: &AiEvent, cx: &mut gpui::App) {
     }
     for session in sessions {
         session.update(cx, |session, cx| session.handle_agent_feedback(event, cx));
+    }
+}
+
+#[cfg(test)]
+mod refresh_pacing_tests {
+    use super::*;
+    #[test]
+    fn actual_focus_rate_options_and_inactive_bounds_have_real_deadlines() {
+        assert_eq!(
+            refresh_interval(true, ActivePollingRateCap::DisplayNative, 42),
+            Duration::ZERO
+        );
+        for (cap, fps) in [
+            (ActivePollingRateCap::Hz60, 60.0),
+            (ActivePollingRateCap::Hz30, 30.0),
+        ] {
+            assert_eq!(
+                refresh_interval(true, cap, 42),
+                Duration::from_secs_f64(1.0 / fps)
+            );
+        }
+        assert_eq!(
+            refresh_interval(false, ActivePollingRateCap::Hz30, 42),
+            Duration::from_secs_f64(1.0 / 42.0)
+        );
+        assert_eq!(
+            refresh_interval(false, ActivePollingRateCap::DisplayNative, 0),
+            Duration::from_secs(1)
+        );
+        assert_eq!(
+            refresh_interval(false, ActivePollingRateCap::Hz60, u32::MAX),
+            Duration::from_secs_f64(1.0 / 120.0)
+        );
+    }
+    #[test]
+    fn coalesced_output_deadline_does_not_restart_and_resume_cancels_suspension() {
+        let cap = refresh_interval(true, ActivePollingRateCap::Hz30, 42);
+        assert_eq!(
+            refresh_wait(cap, false, Duration::from_millis(10)),
+            cap - Duration::from_millis(10)
+        );
+        assert_eq!(
+            refresh_wait(cap, false, Duration::from_millis(40)),
+            Duration::ZERO
+        );
+        assert_eq!(
+            refresh_wait(Duration::ZERO, true, Duration::from_millis(10)),
+            Duration::from_millis(490)
+        );
+        assert_eq!(
+            refresh_wait(Duration::ZERO, false, Duration::from_millis(10)),
+            Duration::ZERO
+        );
+        assert_eq!(
+            refresh_wait(Duration::from_secs(1), true, Duration::from_millis(10)),
+            Duration::from_millis(490)
+        );
     }
 }
