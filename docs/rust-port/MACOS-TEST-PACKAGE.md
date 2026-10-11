@@ -42,6 +42,23 @@ profile. The failing macro release build passed after the correction.
 The first CI run also exposed a new Rust 1.99 Clippy constant-chunk lint;
 its one-line BGRA conversion fix retains the same behavior.
 
+## Final CI package checked
+
+The final code revision `adda113b105a8fb540266e9b34066f6d774b01f7`
+passes Next's format, Clippy and workspace tests on macOS, Linux and Windows:
+[CI run 38122553605](https://github.com/Aeptus/chau7/actions/runs/38122553605).
+It also produces `Chau7-Next-macOS-arm64` on macOS. The Windows correction
+uses native path joins in an existing CTO test; runtime behavior is unchanged.
+Broker branch pushes are checked when their PR opens, avoiding duplicate
+matrix runs, and failed jobs retain dependency caches for later corrections.
+
+The final GitHub artifact was downloaded and extracted on the same Mac:
+plist identity and source SHA, all executable signatures, and bundle signature
+passed. Isolated startup, MCP initialization/tool list, an actual `tab_list`
+response containing one tab, normal quit and saved session all passed.
+The final app, ZIP and SHA-256 file are available locally in
+`~/Downloads/Chau7-Next-CI-adda113b/`.
+
 ## Obtain a package
 
 Open the latest successful **Chau7 Next** workflow on `feat/chau7-next`:
