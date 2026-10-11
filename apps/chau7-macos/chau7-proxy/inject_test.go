@@ -1,9 +1,11 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -912,5 +914,68 @@ func mustUnmarshal(t *testing.T, data []byte, v interface{}) {
 	t.Helper()
 	if err := json.Unmarshal(data, v); err != nil {
 		t.Fatalf("json.Unmarshal: %v\nbody: %s", err, data)
+	}
+}
+
+func TestNextRepoOverrideKeysMatchRust(t *testing.T) {
+	cases := map[string]string{
+		"/repos/alpha":                      "alpha-0603e67faf2ed4f8",
+		"/repos/alpha/":                     "alpha-0603e67faf2ed4f8",
+		"/repos/même dépôt":                 "m_me_d_p_t-26f0f64996509479",
+		"/repos/" + strings.Repeat("x", 45): strings.Repeat("x", 40) + "-e3d442adcc9dc7f4",
+	}
+	for path, want := range cases {
+		if got := repoOverrideKey(path); got != want {
+			t.Errorf("key %q = %q, want %q", path, got, want)
+		}
+	}
+}
+
+func TestNextRepoOverridesPreserveSharedLocalAndDisableFallsBack(t *testing.T) {
+	repo := t.TempDir()
+	shared := filepath.Join(repo, ".chau7", "injection.json")
+	if err := os.MkdirAll(filepath.Dir(shared), 0700); err != nil {
+		t.Fatal(err)
+	}
+	original := []byte(`{"repository":"repo","content":"SHARED"}`)
+	if err := os.WriteFile(shared, original, 0600); err != nil {
+		t.Fatal(err)
+	}
+	global := writeRulesFile(t, t.TempDir(), []InjectionRule{{Repository: "*", Content: "GLOBAL"}})
+	overlayRoot := t.TempDir()
+	overlay := filepath.Join(overlayRoot, repoOverrideKey(repo), "injection.json")
+	if err := os.MkdirAll(filepath.Dir(overlay), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(overlay, []byte(`{"repository":"repo","content":"NEXT"}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	next := NewInjector(global, overlayRoot)
+	if got := next.loadRepoRule(repo); got == nil || got.Content != "NEXT" {
+		t.Fatalf("missing own override: %#v", got)
+	}
+	swift := NewInjector(global)
+	if got := swift.loadRepoRule(repo); got == nil || got.Content != "SHARED" {
+		t.Fatalf("default changed: %#v", got)
+	}
+	if err := os.WriteFile(overlay, []byte(`{"disabled":true,"repository":"repo","content":""}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	next = NewInjector(global, overlayRoot)
+	if next.loadRepoRule(repo) != nil {
+		t.Fatal("disabled override must suppress shared local rule")
+	}
+	body := mustJSON(t, map[string]interface{}{"model": "gpt-4o", "input": "Hello"})
+	if got := string(next.InjectContent(ProviderOpenAI, body, repo, nil)); !strings.Contains(got, "GLOBAL") || strings.Contains(got, "SHARED") {
+		t.Fatal("disabled local did not fall back to global")
+	}
+	if got, err := os.ReadFile(shared); err != nil || !bytes.Equal(got, original) {
+		t.Fatal("shared original changed")
+	}
+	if err := os.WriteFile(overlay, []byte(`broken`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if NewInjector(global, overlayRoot).loadRepoRule(repo) != nil {
+		t.Fatal("invalid override must not read original")
 	}
 }

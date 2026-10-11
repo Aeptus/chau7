@@ -70,6 +70,11 @@ pub fn proxy_env(root: &DataRoot, port: u16, log_prompts: bool) -> Vec<(String, 
             "CHAU7_INJECTION_RULES".into(),
             path(root.proxy_injection_rules_file()),
         ),
+        // Only Next enables owned local-rule overrides; Swift keeps its default lookup.
+        (
+            "CHAU7_INJECTION_REPO_OVERRIDES".into(),
+            path(root.repo_overlays_dir()),
+        ),
         // The proxy exits when this process goes away.
         ("CHAU7_PARENT_PID".into(), std::process::id().to_string()),
     ]
@@ -1283,6 +1288,7 @@ mod tests {
             "CHAU7_TLS_CERT",
             "CHAU7_TLS_KEY",
             "CHAU7_INJECTION_RULES",
+            "CHAU7_INJECTION_REPO_OVERRIDES",
         ] {
             let path = PathBuf::from(get(key));
             let home = PathBuf::from("/home/u");
