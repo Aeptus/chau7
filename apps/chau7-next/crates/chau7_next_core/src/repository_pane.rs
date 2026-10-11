@@ -632,7 +632,12 @@ mod tests {
             );
             std::thread::sleep(Duration::from_millis(5));
         }
-        assert!(!DataRoot::repo_metadata_file(&directory).parent().unwrap().exists());
+        assert!(
+            !DataRoot::repo_metadata_file(&directory)
+                .parent()
+                .unwrap()
+                .exists()
+        );
         save_draft(&root, &directory, "").unwrap();
         assert_eq!(load_draft(&root, &directory), "");
         std::fs::remove_dir_all(home).unwrap();
