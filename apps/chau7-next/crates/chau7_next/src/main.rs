@@ -105,7 +105,9 @@ fn main() {
     let restored = session_store::load(&root);
 
     // The bundled icons (find bar, side pane headers, palette rows).
-    let app = gpui_kit::application().with_assets(assets::AppAssets);
+    let platform = gpui_kit::platform::current_platform(false);
+    let terminal_text_system = platform.text_system();
+    let app = gpui::Application::with_platform(platform).with_assets(assets::AppAssets);
     // macOS: clicking the Dock icon with no window open brings the hidden
     // window back (or opens one).
     app.on_reopen(|cx| {
@@ -117,6 +119,7 @@ fn main() {
     // from its timer (`app_actions::poll`).
     app.on_open_urls(app_actions::queue_open_urls);
     app.run(move |cx: &mut App| {
+        terminal::paint::init_cpu_text_system(terminal_text_system, cx);
         gpui_kit::init(cx);
         cx.set_app_identity("com.chau7.next", "Chau7 Next");
         app_icon::apply();

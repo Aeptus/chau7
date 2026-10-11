@@ -41,7 +41,7 @@ pub(super) fn section(ctx: &SectionContext) -> gpui::Div {
             chrome,
         ))
         .child(div().text_xs().text_color(chrome.text_muted).child(
-            "Chau7 Next always draws with the GPU (Metal on macOS). Turning this off \
-             draws like Chau7's CPU renderer: no font ligatures.",
+            "Turning this off draws the terminal text, backgrounds and images on the CPU. \
+             Font ligatures are disabled. The window still uses GPU composition.",
         ))
 }
