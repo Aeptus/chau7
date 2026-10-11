@@ -22,6 +22,8 @@ pub enum NotificationSemanticKind {
     TaskFinished,
     #[serde(rename = "task_failed")]
     TaskFailed,
+    #[serde(rename = "tool_failed")]
+    ToolFailed,
     #[serde(rename = "permission_required")]
     PermissionRequired,
     #[serde(rename = "waiting_for_input")]
@@ -39,9 +41,10 @@ pub enum NotificationSemanticKind {
 }
 
 impl NotificationSemanticKind {
-    pub const ALL: [Self; 9] = [
+    pub const ALL: [Self; 10] = [
         Self::TaskFinished,
         Self::TaskFailed,
+        Self::ToolFailed,
         Self::PermissionRequired,
         Self::WaitingForInput,
         Self::AttentionRequired,
@@ -55,6 +58,7 @@ impl NotificationSemanticKind {
         match self {
             Self::TaskFinished => "task_finished",
             Self::TaskFailed => "task_failed",
+            Self::ToolFailed => "tool_failed",
             Self::PermissionRequired => "permission_required",
             Self::WaitingForInput => "waiting_for_input",
             Self::AttentionRequired => "attention_required",
@@ -228,6 +232,40 @@ pub fn kind(raw_type: Option<&str>, notification_type: Option<&str>) -> Notifica
     NotificationSemanticKind::Unknown
 }
 
+/// Prefer the adapter's canonical trigger vocabulary while retaining raw provenance.
+pub fn kind_with_canonical_type(
+    raw_type: Option<&str>,
+    notification_type: Option<&str>,
+    canonical_type: Option<&str>,
+) -> NotificationSemanticKind {
+    if let Some(mapped) = notification_type.and_then(kind_for_notification_type) {
+        return mapped;
+    }
+    let raw_kind = raw_type
+        .and_then(kind_for_raw_type)
+        .unwrap_or(NotificationSemanticKind::Unknown);
+    if let Some(canonical_type) = canonical_type {
+        let is_canonical = matches!(
+            normalize(canonical_type).as_str(),
+            "finished"
+                | "failed"
+                | "tool_failed"
+                | "permission"
+                | "waiting_input"
+                | "attention_required"
+                | "authentication_succeeded"
+                | "info"
+                | "idle"
+        );
+        if let Some(canonical_kind) = kind_for_raw_type(canonical_type)
+            && (raw_kind == NotificationSemanticKind::Unknown || is_canonical)
+        {
+            return canonical_kind;
+        }
+    }
+    raw_kind
+}
+
 /// `kind(forNotificationType:)`.
 pub fn kind_for_notification_type(value: &str) -> Option<NotificationSemanticKind> {
     use NotificationSemanticKind as K;
@@ -257,18 +295,57 @@ pub fn kind_for_raw_type(value: &str) -> Option<NotificationSemanticKind> {
         | "task_finished"
         | "taskfinished"
         | "agent_turn_complete"
-        | "agentturncomplete" => K::TaskFinished,
-        "failed" | "error" | "context_limit" | "contextlimit" | "exit_failed" | "exitfailed" => {
-            K::TaskFailed
+        | "agentturncomplete"
+        | "script_succeeded"
+        | "scriptsucceeded" => K::TaskFinished,
+        "failed" | "error" | "context_limit" | "contextlimit" | "exit_failed" | "exitfailed"
+        | "response_failed" | "responsefailed" | "script_failed" | "scriptfailed" => K::TaskFailed,
+        "tool_failed" | "toolfailed" => K::ToolFailed,
+        "permission" | "permission_request" | "permissionrequest" | "approval_requested"
+        | "approvalrequested" => K::PermissionRequired,
+        "waiting_input"
+        | "waitinginput"
+        | "idle_prompt"
+        | "idleprompt"
+        | "user_input_requested"
+        | "userinputrequested" => K::WaitingForInput,
+        "attention_required" | "attentionrequired" | "notification" | "elicitation" => {
+            K::AttentionRequired
         }
-        "permission" | "permission_request" | "permissionrequest" => K::PermissionRequired,
-        "waiting_input" | "waitinginput" | "idle_prompt" | "idleprompt" => K::WaitingForInput,
-        "attention_required" | "attentionrequired" | "notification" => K::AttentionRequired,
         "auth_success" | "authsuccess" => K::AuthenticationSucceeded,
         "idle" => K::Idle,
-        "informational" | "info" => K::Informational,
+        "informational" | "info" | "dev_server_started" | "devserverstarted" => K::Informational,
         _ => return None,
     })
+}
+
+/// Current Swift idle events are actionable only when explicitly input-like.
+pub fn is_input_prompt_like(
+    title: Option<&str>,
+    message: &str,
+    notification_type: Option<&str>,
+) -> bool {
+    if notification_type.and_then(kind_for_notification_type)
+        == Some(NotificationSemanticKind::WaitingForInput)
+    {
+        return true;
+    }
+    let haystack = [title, Some(message)]
+        .into_iter()
+        .flatten()
+        .map(|s| s.trim().to_lowercase())
+        .collect::<Vec<_>>()
+        .join(" ");
+    [
+        "waiting for input",
+        "waiting for your input",
+        "needs your input",
+        "input requested",
+        "question requested",
+        "ready for your input",
+    ]
+    .iter()
+    .any(|p| haystack.contains(p))
 }
 
 /// Trim, lower-case, `-` to space, then whitespace runs to `_`.
@@ -286,6 +363,50 @@ pub fn normalize(value: &str) -> String {
 mod tests {
     use super::*;
     use NotificationSemanticKind as K;
+
+    #[test]
+    fn current_raw_aliases_match_swift_and_tool_failure_is_distinct() {
+        for (raw, expected) in [
+            ("script-succeeded", K::TaskFinished),
+            ("ScriptSucceeded", K::TaskFinished),
+            ("response-failed", K::TaskFailed),
+            ("script-failed", K::TaskFailed),
+            ("tool-failed", K::ToolFailed),
+            ("ToolFailed", K::ToolFailed),
+            ("approval-requested", K::PermissionRequired),
+            ("user-input-requested", K::WaitingForInput),
+            ("elicitation", K::AttentionRequired),
+            ("dev-server-started", K::Informational),
+        ] {
+            assert_eq!(kind(Some(raw), None), expected);
+        }
+        assert_eq!(K::ToolFailed.raw_value(), "tool_failed");
+        assert!(!K::ToolFailed.is_attention_seeking());
+    }
+
+    #[test]
+    fn canonical_trigger_precedence_preserves_subtype_and_noncanonical_raw_semantics() {
+        assert_eq!(
+            kind_with_canonical_type(Some("agent-turn-complete"), None, Some("waiting_input")),
+            K::WaitingForInput
+        );
+        assert_eq!(
+            kind_with_canonical_type(Some("unknown"), None, Some("script-succeeded")),
+            K::TaskFinished
+        );
+        assert_eq!(
+            kind_with_canonical_type(Some("finished"), None, Some("response_failed")),
+            K::TaskFinished
+        );
+        assert_eq!(
+            kind_with_canonical_type(
+                Some("agent-turn-complete"),
+                Some("permission_prompt"),
+                Some("waiting_input")
+            ),
+            K::PermissionRequired
+        );
+    }
 
     // CanonicalNotificationMappingTests
 
@@ -347,6 +468,7 @@ mod tests {
     fn attention_seeking_kinds() {
         assert!(K::TaskFinished.is_attention_seeking());
         assert!(K::TaskFailed.is_attention_seeking());
+        assert!(!K::ToolFailed.is_attention_seeking());
         assert!(K::PermissionRequired.is_attention_seeking());
         assert!(K::WaitingForInput.is_attention_seeking());
         assert!(!K::AuthenticationSucceeded.is_attention_seeking());

@@ -4,7 +4,7 @@
 //! buckets (120 kept), and the last 300 events.
 
 use std::collections::{HashMap, VecDeque};
-use std::sync::Mutex;
+use std::sync::{Mutex, OnceLock};
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 /// `FeatureMetric`.
@@ -23,10 +23,23 @@ pub enum Feature {
     OutputMainThread,
     PromptUpdate,
     DevServerDetect,
+    TerminalPoll,
+    MetalDrawStage,
+    TripleBufferSync,
+    TripleBufferCommit,
+    MetalInstanceBuffer,
+    MetalGlyphLookup,
+    DangerousHighlightRefresh,
+    DebugRefresh,
+    DebugAnalyticsRefresh,
+    RestorePipeline,
+    HistoryAdoption,
+    RoutingRebuild,
+    MainThreadStall,
 }
 
 impl Feature {
-    pub const ALL: [Feature; 13] = [
+    pub const ALL: [Feature; 26] = [
         Feature::OutputProcessing,
         Feature::TerminalRender,
         Feature::HighlightDraw,
@@ -40,6 +53,19 @@ impl Feature {
         Feature::OutputMainThread,
         Feature::PromptUpdate,
         Feature::DevServerDetect,
+        Feature::TerminalPoll,
+        Feature::MetalDrawStage,
+        Feature::TripleBufferSync,
+        Feature::TripleBufferCommit,
+        Feature::MetalInstanceBuffer,
+        Feature::MetalGlyphLookup,
+        Feature::DangerousHighlightRefresh,
+        Feature::DebugRefresh,
+        Feature::DebugAnalyticsRefresh,
+        Feature::RestorePipeline,
+        Feature::HistoryAdoption,
+        Feature::RoutingRebuild,
+        Feature::MainThreadStall,
     ];
 
     /// Display name (Swift raw value).
@@ -58,6 +84,19 @@ impl Feature {
             Feature::OutputMainThread => "Output Main",
             Feature::PromptUpdate => "Prompt Update",
             Feature::DevServerDetect => "Dev Server",
+            Feature::TerminalPoll => "Poll",
+            Feature::MetalDrawStage => "Metal Draw",
+            Feature::TripleBufferSync => "Triple Sync",
+            Feature::TripleBufferCommit => "Triple Commit",
+            Feature::MetalInstanceBuffer => "Instance Buffer",
+            Feature::MetalGlyphLookup => "Glyph Lookup",
+            Feature::DangerousHighlightRefresh => "Danger Highlight",
+            Feature::DebugRefresh => "Debug Refresh",
+            Feature::DebugAnalyticsRefresh => "Debug Analytics",
+            Feature::RestorePipeline => "Restore",
+            Feature::HistoryAdoption => "History Adoption",
+            Feature::RoutingRebuild => "Routing Rebuild",
+            Feature::MainThreadStall => "Main Thread Stall",
         }
     }
 }
@@ -260,12 +299,58 @@ pub fn record(feature: Feature, ms: f64, bytes: usize) {
     }
 }
 
-/// Time `f` as `feature`.
+/// Optional native interval observer. Callbacks run without the profiler mutex.
+/// The pure core remains usable without any platform dependency.
+#[derive(Clone, Copy)]
+pub struct IntervalObserver {
+    pub begin: fn(Feature) -> u64,
+    pub end: fn(Feature, u64),
+}
+static INTERVAL_OBSERVER: OnceLock<IntervalObserver> = OnceLock::new();
+pub fn install_interval_observer(observer: IntervalObserver) -> bool {
+    INTERVAL_OBSERVER.set(observer).is_ok()
+}
+
+/// A measured scope ends exactly once, including an early return or unwind.
+pub struct Span {
+    feature: Feature,
+    bytes: usize,
+    start: Instant,
+    observer: Option<IntervalObserver>,
+    native_id: u64,
+}
+impl Span {
+    fn new(feature: Feature, bytes: usize, observer: Option<IntervalObserver>) -> Self {
+        let start = Instant::now();
+        let native_id = observer.map_or(0, |observer| (observer.begin)(feature));
+        Self {
+            feature,
+            bytes,
+            start,
+            observer,
+            native_id,
+        }
+    }
+}
+impl Drop for Span {
+    fn drop(&mut self) {
+        if let Some(observer) = self.observer {
+            (observer.end)(self.feature, self.native_id);
+        }
+        record(
+            self.feature,
+            self.start.elapsed().as_secs_f64() * 1000.0,
+            self.bytes,
+        );
+    }
+}
+pub fn begin(feature: Feature, bytes: usize) -> Span {
+    Span::new(feature, bytes, INTERVAL_OBSERVER.get().copied())
+}
+/// Time `f` as `feature`, with a real native interval when installed.
 pub fn measure<T>(feature: Feature, bytes: usize, f: impl FnOnce() -> T) -> T {
-    let start = Instant::now();
-    let out = f();
-    record(feature, start.elapsed().as_secs_f64() * 1000.0, bytes);
-    out
+    let _span = begin(feature, bytes);
+    f()
 }
 
 /// Totals and recent events of the shared profiler.
@@ -280,6 +365,45 @@ pub fn snapshot() -> Snapshot {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn native_interval_scope_pairs_identical_feature_and_id_on_unwind() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        static ENDED: AtomicUsize = AtomicUsize::new(0);
+        fn start(feature: Feature) -> u64 {
+            assert_eq!(feature, Feature::TerminalPoll);
+            42
+        }
+        fn end(feature: Feature, id: u64) {
+            assert_eq!(feature, Feature::TerminalPoll);
+            assert_eq!(id, 42);
+            ENDED.fetch_add(1, Ordering::SeqCst);
+        }
+        let observer = Some(IntervalObserver { begin: start, end });
+        {
+            let _span = Span::new(Feature::TerminalPoll, 0, observer);
+        }
+        assert_eq!(ENDED.load(Ordering::SeqCst), 1);
+        let _ = std::panic::catch_unwind(|| {
+            let _span = Span::new(Feature::TerminalPoll, 0, observer);
+            panic!("owned interval test");
+        });
+        assert_eq!(ENDED.load(Ordering::SeqCst), 2);
+    }
+    #[test]
+    fn current_source_feature_catalog_has_unique_labels() {
+        let labels: std::collections::HashSet<_> = Feature::ALL.iter().map(|f| f.label()).collect();
+        assert_eq!(labels.len(), Feature::ALL.len());
+        for label in [
+            "Poll",
+            "Restore",
+            "Debug Analytics",
+            "Routing Rebuild",
+            "Main Thread Stall",
+        ] {
+            assert!(labels.contains(label));
+        }
+    }
 
     #[test]
     fn windows_sum_buckets() {

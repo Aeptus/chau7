@@ -13,7 +13,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use chau7_next_core::command_detection::detect_app_from_output;
 use chau7_next_core::data_root::DataRoot;
 use chau7_next_core::session_restore::{
-    REPLAY_FILE_PREFIX, SavedSplitNode, build_ai_resume_command, capture_scrollback,
+    REPLAY_FILE_PREFIX, SavedSplitNode, build_ai_resume_command, capture_styled_scrollback,
     resolve_ai_resume_metadata, strip_restore_commands,
 };
 use gpui::{App, Entity};
@@ -108,7 +108,13 @@ pub fn capture_tab(
         let session = session.read(cx);
         let directory = crate::pane::live_cwd(session).map(|p| p.to_string_lossy().to_string());
         let scrollback = if max_lines > 0 {
-            capture_scrollback(&strip_restore_commands(&session.buffer_text()), max_lines)
+            let styled = session.styled_buffer_for_restore();
+            let styled = strip_restore_commands(&styled);
+            capture_styled_scrollback(
+                Some(&styled),
+                || strip_restore_commands(&session.buffer_text()),
+                max_lines,
+            )
         } else {
             None
         };
