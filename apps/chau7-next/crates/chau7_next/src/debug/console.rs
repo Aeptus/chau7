@@ -130,6 +130,7 @@ pub struct DebugConsole {
     pub(super) events_all: bool,
     pub(super) lag_all: bool,
     pub(super) perf_slow_only: bool,
+    pub(super) perf_export_status: Option<String>,
     pub(super) log_filter: LogFilter,
     pub(super) log_input: Entity<InputState>,
     /// Newest first (`logs`).
@@ -162,6 +163,7 @@ impl DebugConsole {
             events_all: true,
             lag_all: false,
             perf_slow_only: true,
+            perf_export_status: None,
             log_filter: LogFilter::default(),
             log_input,
             log_lines: Vec::new(),

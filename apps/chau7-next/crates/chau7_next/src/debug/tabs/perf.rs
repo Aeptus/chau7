@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use chau7_next_core::debug_console::Tone;
 use chau7_next_core::feature_profiler::{self, Feature, Totals};
 use chrono::{Local, TimeZone};
-use gpui::{AnyElement, Context, IntoElement, SharedString, div, prelude::*};
+use gpui::{AnyElement, ClipboardItem, Context, IntoElement, SharedString, div, prelude::*};
 
 use crate::debug::console::DebugConsole;
 use crate::debug::ui;
@@ -161,10 +161,31 @@ impl DebugConsole {
             );
         }
 
+        let access = ui::group("Diagnostic Access", chrome)
+            .child(div().flex().flex_wrap().gap_2()
+                .child(ui::button("perf-copy", "Copy Performance JSON", chrome).on_click(|_, _, cx| {
+                    if let Ok(json) = serde_json::to_string_pretty(&crate::performance::capture(cx)) {
+                        cx.write_to_clipboard(ClipboardItem::new_string(json));
+                    }
+                }))
+                .child(ui::button("perf-save", "Save Latest Snapshot", chrome).on_click(cx.listener(|this, _, _, cx| {
+                    this.perf_export_status = Some(if crate::performance::persist(crate::performance::capture(cx), cx) {
+                        "Snapshot queued. Open the performance folder to inspect latest.json."
+                    } else {
+                        "Performance writer is busy or unavailable. Try again."
+                    }.to_string());
+                    cx.notify();
+                })))
+                .child(ui::button("perf-folder", "Open Performance Folder", chrome).on_click(|_, _, cx| {
+                    cx.open_url(&format!("file://{}", crate::performance::directory(cx).display()));
+                })))
+            .when_some(self.perf_export_status.clone(), |group, status| group.child(ui::caption(status, chrome)))
+            .child(ui::caption("Numeric snapshots are saved every 5 seconds. MCP: chau7_performance_snapshot. Commands and terminal content are excluded.", chrome));
         let body = div()
             .flex()
             .flex_col()
             .gap_3()
+            .child(access)
             .child(summary_section("Last 10s", &snapshot.last_10s, chrome))
             .child(summary_section("Last 60s", &snapshot.last_60s, chrome))
             .child(recent);

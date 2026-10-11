@@ -24,6 +24,7 @@ mod monitoring_status;
 mod notifications;
 mod pane;
 mod panes;
+mod performance;
 mod platform;
 mod profiles;
 mod protected_paths;
@@ -190,6 +191,7 @@ fn main() {
 
         // The welcome screen the first time, else the splash.
         views::launch(cx);
+        performance::start(cx);
 
         cx.on_app_quit(|cx| {
             save_session(cx, true);

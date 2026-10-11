@@ -23,6 +23,7 @@ use chau7_next_core::ai::detection_state::now_secs;
 use chau7_next_core::ai::event::{AiEvent, AiEventReliability, AiEventSource};
 use chau7_next_core::command_block::{CommandBlockList, git_changes};
 use chau7_next_core::data_root::DataRoot;
+use chau7_next_core::feature_profiler::{self, Feature};
 use chau7_next_core::monitoring::dev_server::{
     BURST_CHECKS, BURST_FIRST_DELAY, BURST_INTERVAL, CheckRequest, DevServerInfo,
     should_stop_burst_checks,
@@ -542,6 +543,7 @@ impl TerminalSession {
 
     /// Pull everything new from the terminal and notify observers.
     pub fn refresh(&mut self, cx: &mut Context<Self>) {
+        let started = Instant::now();
         let mut metadata_changed = self.retry_resize();
         let (grid, cursor, title, closed, events, bell, clipboard, clipboard_load) = {
             let term = self.term.read();
@@ -616,8 +618,13 @@ impl TerminalSession {
                 }
             }
             let ctx = &self.shell_context;
-            self.tracker.handle_output(&output, ctx, now);
-            let (events, dev_changed, check, ai_exit) = self.monitor.output(&output, now);
+            feature_profiler::measure(Feature::Semantic, output.len(), || {
+                self.tracker.handle_output(&output, ctx, now);
+            });
+            let (events, dev_changed, check, ai_exit) =
+                feature_profiler::measure(Feature::AiDetect, output.len(), || {
+                    self.monitor.output(&output, now)
+                });
             for event in events {
                 self.emit_ai(shell_ai_event(event), true, cx);
             }
@@ -629,7 +636,9 @@ impl TerminalSession {
                 self.finish_ai_run(Some(code), cx);
             }
             // Remote control: the selected tab's output goes to the phone.
-            crate::remote::record_output(self.id, &output, cx);
+            feature_profiler::measure(Feature::RemoteOutput, output.len(), || {
+                crate::remote::record_output(self.id, &output, cx);
+            });
             // Smart scroll off: new output brings the view back down.
             if !Settings::get(cx).terminal.smart_scroll
                 && (display_offset_before > 0 || self.grid.display_offset > 0)
@@ -694,6 +703,11 @@ impl TerminalSession {
         }
         cx.emit(SessionEvent::Output);
         cx.notify();
+        feature_profiler::record(
+            Feature::OutputProcessing,
+            started.elapsed().as_secs_f64() * 1000.0,
+            output.len(),
+        );
     }
 
     fn process_pending_input(&mut self, now: f64) {

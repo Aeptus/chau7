@@ -12,6 +12,7 @@
 //!
 //! Results are JSON text with sorted keys; errors are `{"error":"..."}`.
 
+pub mod observability;
 pub mod repo;
 pub mod runtime;
 pub mod tabs;
@@ -30,6 +31,7 @@ pub struct ToolContext<'a> {
 /// Every tool, in the Swift order.
 pub fn definitions() -> Vec<Value> {
     let mut all = telemetry::definitions();
+    all.extend(observability::definitions());
     all.extend(tabs::definitions());
     all.extend(repo::definitions());
     all.extend(runtime::definitions());
@@ -39,6 +41,7 @@ pub fn definitions() -> Vec<Value> {
 /// Run a tool by name.
 pub fn call(name: &str, args: &Map<String, Value>, ctx: &ToolContext) -> String {
     if let Some(result) = telemetry::call(name, args)
+        .or_else(|| observability::call(name, args, ctx))
         .or_else(|| tabs::call(name, args, ctx))
         .or_else(|| repo::call(name, args))
     {
@@ -107,6 +110,8 @@ mod tests {
                 "run_latest_for_repo",
                 "session_list",
                 "session_current",
+                "chau7_runtime_info",
+                "chau7_performance_snapshot",
                 "tab_list",
                 "tab_create",
                 "tab_exec",
