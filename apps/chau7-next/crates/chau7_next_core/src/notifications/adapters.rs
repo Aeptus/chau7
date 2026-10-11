@@ -78,7 +78,11 @@ pub fn adapt(event: &AiEvent) -> AdapterDecision {
 
 fn adapt_claude_code_event(event: &AiEvent) -> AdapterDecision {
     let provider_event = provider_event(event);
-    match ClaudeCodeNotificationAdapter.adapt(&provider_event) {
+    match (ClaudeCodeNotificationAdapter {
+        reliability: event.reliability,
+    })
+    .adapt(&provider_event)
+    {
         NotificationProviderAdapterResult::Emit(canonical) => AdapterDecision::Emit {
             event: as_ai_event(&canonical, event, None, None),
             canonical,
@@ -280,7 +284,9 @@ fn emit_canonicalized_event(
 }
 
 /// `ClaudeCodeNotificationAdapter`.
-struct ClaudeCodeNotificationAdapter;
+struct ClaudeCodeNotificationAdapter {
+    reliability: AiEventReliability,
+}
 
 impl NotificationProviderAdapter for ClaudeCodeNotificationAdapter {
     fn provider_id(&self) -> &str {
@@ -309,10 +315,19 @@ impl NotificationProviderAdapter for ClaudeCodeNotificationAdapter {
             "permission_request" | "permissionrequest" => {
                 authoritative(NotificationSemanticKind::PermissionRequired)
             }
+            "response_failed" | "responsefailed" => authoritative(NotificationSemanticKind::TaskFailed),
+            "tool_failed" | "toolfailed" => authoritative(NotificationSemanticKind::ToolFailed),
+            "elicitation" => authoritative(NotificationSemanticKind::AttentionRequired),
+            "idle" => {
+                let kind = if canonical::is_input_prompt_like(event.title.as_deref(), &event.message, event.notification_type.as_deref()) {
+                    NotificationSemanticKind::WaitingForInput
+                } else { NotificationSemanticKind::Idle };
+                R::Emit(event.canonical_event(kind, self.reliability))
+            }
             "response_complete" | "responsecomplete" => R::Drop {
                 reason: "Claude response_complete is state-only; Notification hook owns user-facing delivery".into(),
             },
-            "user_prompt" | "userprompt" | "tool_start" | "toolstart" | "tool_complete"
+            "user_prompt" | "userprompt" | "session_start" | "sessionstart" | "tool_start" | "toolstart" | "tool_complete"
             | "toolcomplete" | "session_end" | "sessionend" => R::Drop {
                 reason: format!("Claude raw event {raw_type} is not user-facing"),
             },
@@ -323,7 +338,7 @@ impl NotificationProviderAdapter for ClaudeCodeNotificationAdapter {
                         reason: format!("Unsupported Claude raw event {raw_type}"),
                     };
                 }
-                authoritative(kind)
+                R::Emit(event.canonical_event(kind, self.reliability))
             }
         }
     }
@@ -388,6 +403,7 @@ fn shared_trigger_type(canonical: &CanonicalNotificationEvent) -> String {
     match canonical.kind {
         K::TaskFinished => "finished",
         K::TaskFailed => "failed",
+        K::ToolFailed => "tool_failed",
         K::PermissionRequired => "permission",
         K::WaitingForInput => "waiting_input",
         K::AttentionRequired => "attention_required",
@@ -561,6 +577,78 @@ mod tests {
         }
     }
 
+    #[test]
+    fn claude_tool_failure_has_own_default_off_trigger_and_never_becomes_task_failure() {
+        for raw in ["tool_failed", "toolfailed", "tool-failed"] {
+            let e = event(AiEventSource::claude_code(), raw, "Claude");
+            let (adapted, canonical) = emit(adapt(&e));
+            assert_eq!(canonical.kind, K::ToolFailed);
+            assert!(!canonical.kind.is_attention_seeking());
+            assert_eq!(adapted.event_type, "tool_failed");
+            assert_eq!(adapted.reliability, AiEventReliability::Authoritative);
+            let trigger = super::super::triggers::trigger_for_event(&adapted).unwrap();
+            assert_eq!(trigger.id, "claude_code.tool_failed");
+            assert!(!trigger.default_enabled);
+        }
+    }
+
+    #[test]
+    fn claude_failure_elicitation_and_state_only_aliases_match_current_swift() {
+        for (raw, kind, shared) in [
+            ("response_failed", K::TaskFailed, "failed"),
+            ("responsefailed", K::TaskFailed, "failed"),
+            ("elicitation", K::AttentionRequired, "attention_required"),
+        ] {
+            let e = event(AiEventSource::claude_code(), raw, "Claude");
+            let (adapted, canonical) = emit(adapt(&e));
+            assert_eq!(canonical.kind, kind);
+            assert_eq!(adapted.event_type, shared);
+            assert_eq!(adapted.raw_type.as_deref(), Some(raw));
+            assert_eq!(adapted.reliability, AiEventReliability::Authoritative);
+        }
+        for raw in [
+            "session_start",
+            "sessionstart",
+            "session-start",
+            "response-complete",
+            "user-prompt",
+            "tool-start",
+            "tool-complete",
+            "session-end",
+        ] {
+            assert!(matches!(
+                adapt(&event(AiEventSource::claude_code(), raw, "Claude")),
+                AdapterDecision::Drop { .. }
+            ));
+        }
+    }
+
+    #[test]
+    fn claude_idle_input_detection_and_default_mapping_preserve_reliability() {
+        let mut e = event(AiEventSource::claude_code(), "idle", "Claude");
+        e.reliability = AiEventReliability::Fallback;
+        for message in [
+            "Waiting for input",
+            "Waiting for your input",
+            "Needs your input",
+            "Input requested",
+            "Question requested",
+            "Ready for your input",
+        ] {
+            e.message = message.into();
+            let (adapted, canonical) = emit(adapt(&e));
+            assert_eq!(canonical.kind, K::WaitingForInput);
+            assert_eq!(adapted.reliability, AiEventReliability::Fallback);
+        }
+        e.message = "Agent is idle".into();
+        assert_eq!(emit(adapt(&e)).1.kind, K::Idle);
+        e.notification_type = Some("idle_prompt".into());
+        assert_eq!(emit(adapt(&e)).1.kind, K::WaitingForInput);
+        e.notification_type = None;
+        e.event_type = "finished".into();
+        assert_eq!(emit(adapt(&e)).0.reliability, AiEventReliability::Fallback);
+    }
+
     // NotificationProviderAdapterRegistryTests
 
     #[test]
@@ -622,7 +710,7 @@ mod tests {
         let (adapted, canonical) = emit(adapt(&finished));
         assert_eq!(canonical.kind, K::TaskFinished);
         assert_eq!(adapted.event_type, "finished");
-        assert_eq!(canonical.reliability, AiEventReliability::Authoritative);
+        assert_eq!(canonical.reliability, finished.reliability);
     }
 
     #[test]
