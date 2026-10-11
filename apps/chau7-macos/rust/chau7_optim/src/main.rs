@@ -895,7 +895,7 @@ fn strip_path_entries(path: &str, dirs: &[String]) -> String {
 /// Remove the CTO wrapper dirs (`~/.chau7/cto_bin`, plus `CHAU7_CTO_BIN_DIR`)
 /// from the process `PATH` so child processes the optimizer spawns resolve the
 /// real binary rather than the wrapper. Tolerant of a trailing slash on the
-/// PATH entry and of an unset `HOME` (falls back to `dirs::home_dir`) — a
+/// PATH entry and of an unset `HOME` (falls back to `dirs::home_dir`): a
 /// missed strip reintroduces the recursion loop for executable commands, so
 /// the match must not be brittle.
 fn strip_cto_wrapper_dir_from_path() {
