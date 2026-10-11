@@ -4,6 +4,7 @@
 //! so both apps behave the same. Each module names the Swift file it mirrors;
 //! when the two disagree, the Swift file is the source of truth.
 
+pub mod aethyme_delivery;
 pub mod ai;
 pub mod ansi_log;
 pub mod app_icon;

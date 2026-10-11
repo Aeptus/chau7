@@ -347,6 +347,11 @@ impl ShellSession {
         self.last_ai_provider.as_deref()
     }
 
+    /// Unsubmitted user fragment, separate from completed command history.
+    pub fn has_pending_input(&self) -> bool {
+        !self.input_buffer.is_empty()
+    }
+
     pub fn ai_session_id(&self) -> Option<&str> {
         self.last_ai_session_id.as_deref()
     }
@@ -1122,6 +1127,22 @@ mod tests {
 
     fn session() -> ShellSession {
         ShellSession::new(ShellSessionConfig::default(), "/home/me", 0.0)
+    }
+
+    #[test]
+    fn pending_input_guard_tracks_fragments_editing_and_submission() {
+        let mut s = session();
+        assert!(!s.has_pending_input());
+        s.handle_input("draft", false, &Ctx, 0.0);
+        assert!(s.has_pending_input());
+        s.handle_input("\u{15}", false, &Ctx, 0.1);
+        assert!(!s.has_pending_input());
+        s.handle_input("complete\rnext", false, &Ctx, 0.2);
+        assert!(s.has_pending_input());
+        s.handle_input("\u{3}", false, &Ctx, 0.3);
+        assert!(!s.has_pending_input());
+        s.handle_input("submitted\r", false, &Ctx, 0.4);
+        assert!(!s.has_pending_input());
     }
 
     #[test]
