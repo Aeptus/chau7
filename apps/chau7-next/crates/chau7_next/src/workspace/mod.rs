@@ -665,7 +665,20 @@ impl Workspace {
 
     fn focus_selected(&mut self, window: &mut Window, cx: &mut App) {
         self.record_restore_selection();
+        for (id, entry) in &self.entries {
+            let selected = self.state.selected() == Some(*id);
+            entry
+                .panes
+                .read(cx)
+                .set_restore_surface(selected, window.is_visible(), cx);
+        }
         if let Some(panes) = self.selected_panes() {
+            if let Some(meta) = self.state.selected().and_then(|id| self.state.get(id)) {
+                panes.update(cx, |tree, _| {
+                    tree.set_restore_override(meta.token_opt_override)
+                });
+            }
+
             let deferred = panes.read(cx).is_deferred();
             PaneTree::focus_entity(&panes, window, cx);
             // Parked tabs had no shells when overrides were first restored.
@@ -1129,7 +1142,17 @@ impl Workspace {
         let session = panes.and_then(|p| p.focused_session(cx));
         let ai = session
             .as_ref()
-            .and_then(|s| s.read(cx).ai_display_app_name());
+            .and_then(|s| s.read(cx).ai_display_app_name())
+            .or_else(|| {
+                panes
+                    .and_then(|tree| tree.deferred_saved())
+                    .and_then(|saved| saved.focused_terminal())
+                    .and_then(|pane| {
+                        chau7_next_core::shell_session::display_name_from_provider(
+                            pane.ai_provider.as_deref(),
+                        )
+                    })
+            });
         let dev_server = session
             .as_ref()
             .and_then(|s| s.read(cx).dev_server().map(|d| d.name.clone()));
@@ -1342,6 +1365,13 @@ fn register_tab_actions(div: Stateful<Div>, cx: &mut Context<Workspace>) -> Stat
 impl Render for Workspace {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.screen_bounds = global_bounds(window, cx);
+        for (id, entry) in &self.entries {
+            entry.panes.read(cx).set_restore_surface(
+                self.state.selected() == Some(*id),
+                window.is_visible(),
+                cx,
+            );
+        }
         self.window_active = window.is_window_active();
         // (dev) A trace line whenever the tabs or the open panel change.
         let picker = self.picker.as_ref().map(|p| p.kind);
