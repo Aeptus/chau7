@@ -136,6 +136,7 @@ impl TelemetryRun {
 /// Filter criteria for querying runs.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct TelemetryRunFilter {
+    pub parent_run_id: Option<String>,
     pub session_id: Option<String>,
     pub repo_path: Option<String>,
     pub provider: Option<String>,

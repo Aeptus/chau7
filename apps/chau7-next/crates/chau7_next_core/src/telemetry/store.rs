@@ -1011,6 +1011,10 @@ impl TelemetryStore {
     pub fn list_runs(&self, filter: &TelemetryRunFilter) -> Vec<TelemetryRun> {
         let mut clauses = Vec::new();
         let mut values: Vec<String> = Vec::new();
+        if let Some(v) = &filter.parent_run_id {
+            clauses.push("parent_run_id = ?");
+            values.push(v.clone());
+        }
         if let Some(v) = &filter.session_id {
             clauses.push("session_id = ?");
             values.push(v.clone());
