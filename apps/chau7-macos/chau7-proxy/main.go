@@ -102,7 +102,7 @@ func main() {
 	}
 
 	// Initialize content injector
-	injector := NewInjector(config.InjectionRulesPath)
+	injector := NewInjector(config.InjectionRulesPath, config.InjectionRepoOverridesDir)
 
 	// Create proxy handler
 	proxy := NewProxyHandler(config, db, ipc, taskManager, baselineEstimator, mockupClient, injector)
