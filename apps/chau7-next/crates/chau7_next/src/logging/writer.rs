@@ -85,24 +85,12 @@ impl FailureLimiter {
     }
 }
 fn same_file(handle: &File, path: &Path) -> bool {
-    let (Ok(open), Ok(current)) = (handle.metadata(), std::fs::metadata(path)) else {
-        return false;
-    };
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::MetadataExt;
-        open.dev() == current.dev() && open.ino() == current.ino()
-    }
-    #[cfg(not(unix))]
-    {
-        // Windows creation timestamps are stable across appends and differ
-        // when a filename is replaced. Unknown identity requests a reopen.
-        open.created()
-            .ok()
-            .zip(current.created().ok())
-            .is_some_and(|(a, b)| a == b)
-    }
+    chau7_next_core::file_identity::for_file(handle)
+        .ok()
+        .zip(chau7_next_core::file_identity::for_path(path).ok())
+        .is_some_and(|(open, current)| open == current)
 }
+
 fn run(rx: Receiver<Msg>, path: PathBuf, max_bytes: u64) {
     let mut file = open(&path);
     let mut failures = FailureLimiter::default();

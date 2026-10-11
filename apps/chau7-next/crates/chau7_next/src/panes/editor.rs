@@ -10,6 +10,8 @@
 //! asks Save / Don't Save / Cancel.
 
 mod live_markdown;
+#[cfg(target_os = "macos")]
+mod native_markdown;
 
 use crate::monitoring::file_monitor::FileMonitor;
 use crate::terminal::session::TerminalSession;
@@ -24,8 +26,9 @@ use chau7_next_core::editor::language::{EditorLanguage, PLAIN_TEXT};
 use chau7_next_core::editor::markdown;
 use chau7_next_core::editor::text as edtext;
 use gpui::{
-    App, ClipboardItem, Context, Entity, EventEmitter, FocusHandle, Focusable, KeyBinding,
-    PathPromptOptions, PromptLevel, Render, Subscription, Task, Window, div, prelude::*, px,
+    AnyWindowHandle, App, ClipboardItem, Context, Entity, EventEmitter, FocusHandle, Focusable,
+    KeyBinding, PathPromptOptions, PromptLevel, Render, Subscription, Task, Window, div,
+    prelude::*, px,
 };
 use gpui_kit::base::input::{
     EditorState, Enter, InputEvent, OutdentInline, RangeDecoration, RangeDecorationCollection,
@@ -76,11 +79,14 @@ const DEFAULT_FILENAME: &str = "untitled.txt";
 
 pub struct EditorPane {
     state: Entity<EditorState>,
+    window_handle: AnyWindowHandle,
+    #[cfg(target_os = "macos")]
+    native_pending: Rc<std::cell::RefCell<native_markdown::Pending>>,
     path: Option<PathBuf>,
     dirty: bool,
     loading: bool,
     error: Option<String>,
-    /// Rendered runbook instead of the source (`.md` files open rendered).
+    /// Rendered runbook instead of the source; files open in source mode.
     markdown_mode: bool,
     copied_until: Option<Instant>,
     language: &'static EditorLanguage,
@@ -94,6 +100,10 @@ pub struct EditorPane {
     bracket: Option<RangeDecorationCollection>,
     markdown_styles: chau7_next_core::editor::live_markdown::Document,
     markdown_decorations: Option<TextDecorationCollection>,
+    #[cfg(target_os = "macos")]
+    native_markdown: Option<Rc<native_markdown::NativeMarkdown>>,
+    #[cfg(target_os = "macos")]
+    native_guard_subscriptions: Vec<Subscription>,
     bracket_clear: Option<Task<()>>,
     last_cursor: usize,
     /// Settings changed; applied at the next render (it needs the window).
@@ -163,6 +173,9 @@ impl EditorPane {
         let focus_handle = cx.focus_handle();
         Self {
             state,
+            window_handle: window.window_handle(),
+            #[cfg(target_os = "macos")]
+            native_pending: Default::default(),
             path: None,
             dirty: false,
             loading: false,
@@ -178,6 +191,10 @@ impl EditorPane {
             bracket: None,
             markdown_styles: Default::default(),
             markdown_decorations: None,
+            #[cfg(target_os = "macos")]
+            native_markdown: None,
+            #[cfg(target_os = "macos")]
+            native_guard_subscriptions: Vec::new(),
             bracket_clear: None,
             last_cursor: 0,
             settings_pending: false,
@@ -219,7 +236,7 @@ impl EditorPane {
     }
 
     pub fn is_dirty(&self) -> bool {
-        self.dirty
+        self.dirty || self.has_pending_native_edits()
     }
 
     /// `fileName`: the file name or "Untitled".
@@ -228,6 +245,10 @@ impl EditorPane {
     }
 
     pub fn content(&self, cx: &App) -> String {
+        #[cfg(target_os = "macos")]
+        if let Some(text) = self.native_pending.borrow().text() {
+            return text.to_string();
+        }
         self.state.read(cx).value().to_string()
     }
 
@@ -256,7 +277,77 @@ impl EditorPane {
         }
     }
 
-    fn toggle_markdown_mode(&mut self, cx: &mut Context<Self>) {
+    fn has_pending_native_edits(&self) -> bool {
+        #[cfg(target_os = "macos")]
+        {
+            self.native_pending.borrow().text().is_some()
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            false
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    fn mirror_native_edits(
+        &mut self,
+        text: Option<String>,
+        selection: Option<std::ops::Range<usize>>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        let changed = text.is_some();
+        if let Some(text) = text {
+            self.state
+                .update(cx, |state, cx| state.set_value(text, window, cx));
+            self.refresh_markdown_styles(cx);
+            self.dirty = true;
+            cx.emit(SidePaneEvent::Changed);
+        }
+        if let Some(selection) = selection {
+            self.state
+                .update(cx, |state, cx| state.set_selected_range(selection, cx));
+        }
+        changed
+    }
+
+    /// Programmatic consumers must see native edits before mutating the mirror.
+    /// Keep the coalesced signal/actions queued; it will now find no stale text.
+    fn flush_native_edits(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> bool {
+        #[cfg(target_os = "macos")]
+        {
+            let (text, selection) = self
+                .native_pending
+                .borrow_mut()
+                .take_edits(&self.state.read(_cx).value());
+            self.mirror_native_edits(text, selection, _window, _cx)
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            false
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    fn native_menu_command(
+        &mut self,
+        command: native_markdown::MenuCommand,
+        cx: &mut Context<Self>,
+    ) {
+        if !self.markdown_mode
+            && self
+                .native_markdown
+                .as_ref()
+                .is_some_and(|native| native.menu_command(command))
+        {
+            cx.stop_propagation();
+        }
+    }
+
+    fn toggle_markdown_mode(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.flush_native_edits(window, cx) {
+            self.schedule_autosave(cx);
+        }
         if self.is_markdown_file() {
             self.markdown_mode = !self.markdown_mode;
             cx.notify();
@@ -371,6 +462,8 @@ impl EditorPane {
         if let Some(untitled) = &untitled {
             text = edtext::append_text(&text, untitled).unwrap_or(text);
         }
+        #[cfg(target_os = "macos")]
+        self.native_pending.borrow_mut().clear_for_load();
         self.error = None;
         if different_file {
             let root = chau7_next_core::data_root::DataRoot::from_env();
@@ -380,8 +473,11 @@ impl EditorPane {
         self.language = EditorLanguage::detect(&path.to_string_lossy());
         self.path = Some(path.clone());
         self.dirty = untitled.is_some();
-        // A markdown file opens as a runbook (`isMarkdownMode` follows the path).
-        self.markdown_mode = self.is_markdown_file();
+        // Swift resets the preview when the file path changes, while a reload
+        // of the same Markdown file preserves the chosen source/preview mode.
+        if different_file || !self.is_markdown_file() {
+            self.markdown_mode = false;
+        }
         self.install_highlighter(cx);
         self.programmatic = true;
         let state = self.state.clone();
@@ -390,6 +486,10 @@ impl EditorPane {
         self.refresh_markdown_styles(cx);
         if let Some(line) = line {
             self.select_line(&text, line, cx);
+        }
+        #[cfg(target_os = "macos")]
+        if let Some(native) = &self.native_markdown {
+            native.loaded(&text, &self.config, self.state.read(cx).selected_range());
         }
         self.watch_file(path.clone(), window, cx);
         self.schedule_autosave(cx);
@@ -402,17 +502,20 @@ impl EditorPane {
         if !self.autosave || self.path.is_none() || !self.dirty {
             return;
         }
+        let window_handle = self.window_handle;
         self.autosave_task = Some(cx.spawn(async move |this, cx| {
             cx.background_executor()
                 .timer(Duration::from_millis(2500))
                 .await;
-            let _ = this.update(cx, |this, cx| {
-                if this.autosave
-                    && this.dirty
-                    && let Some(path) = this.path.clone()
-                {
-                    this.write_to(path, cx);
-                }
+            let _ = cx.update_window(window_handle, |_, window, cx| {
+                this.update(cx, |this, cx| {
+                    if this.autosave
+                        && this.is_dirty()
+                        && let Some(path) = this.path.clone()
+                    {
+                        this.write_to(path, window, cx);
+                    }
+                })
             });
             cx.background_executor().timer(Duration::from_secs(2)).await;
             let _ = this.update(cx, |_, cx| cx.notify());
@@ -444,7 +547,8 @@ impl EditorPane {
                     let Ok(bytes) = bytes else {
                         return;
                     };
-                    match edtext::external_change(this.loaded_hash, &bytes, this.dirty) {
+                    let dirty = this.dirty || this.has_pending_native_edits();
+                    match edtext::external_change(this.loaded_hash, &bytes, dirty) {
                         edtext::ExternalChange::Unchanged => {}
                         edtext::ExternalChange::Conflict => {
                             this.autosave_task = None;
@@ -456,6 +560,10 @@ impl EditorPane {
                         edtext::ExternalChange::Reload => match String::from_utf8(bytes) {
                             Ok(text) => {
                                 this.loaded_hash = Some(edtext::content_hash(text.as_bytes()));
+                                #[cfg(target_os = "macos")]
+                                if let Some(native) = &this.native_markdown {
+                                    native.loaded(&text, &this.config, 0..0);
+                                }
                                 this.programmatic = true;
                                 this.state
                                     .update(cx, |state, cx| state.set_value(text, window, cx));
@@ -498,7 +606,8 @@ impl EditorPane {
     }
 
     /// Write the text to `path` (`saveAs(to:)`). Returns success.
-    fn write_to(&mut self, path: PathBuf, cx: &mut Context<Self>) -> bool {
+    fn write_to(&mut self, path: PathBuf, window: &mut Window, cx: &mut Context<Self>) -> bool {
+        self.flush_native_edits(window, cx);
         let expected = (self.path.as_ref() == Some(&path))
             .then_some(self.loaded_hash)
             .flatten();
@@ -555,7 +664,7 @@ impl EditorPane {
     /// The task resolves to whether the text was saved.
     pub fn save(&mut self, window: &mut Window, cx: &mut Context<Self>) -> Task<bool> {
         match self.path.clone() {
-            Some(path) => Task::ready(self.write_to(path, cx)),
+            Some(path) => Task::ready(self.write_to(path, window, cx)),
             None => self.save_as(window, cx),
         }
     }
@@ -574,7 +683,7 @@ impl EditorPane {
                 return false;
             };
             this.update_in(cx, |this, window, cx| {
-                let saved = this.write_to(path.clone(), cx);
+                let saved = this.write_to(path.clone(), window, cx);
                 if saved {
                     let root = chau7_next_core::data_root::DataRoot::from_env();
                     this.autosave |= edtext::default_autosave(&path, root.config_dir())
@@ -610,11 +719,24 @@ impl EditorPane {
     /// `appendText`: the trimmed text on a new line at the end; marks the
     /// editor unsaved.
     pub fn append_text(&mut self, text: &str, window: &mut Window, cx: &mut Context<Self>) {
+        self.flush_native_edits(window, cx);
         let content = self.content(cx);
         let Some(updated) = edtext::append_text(&content, text) else {
             return;
         };
         let addition = updated[content.len()..].to_string();
+        #[cfg(target_os = "macos")]
+        if self.is_markdown_file()
+            && let Some(native) = &self.native_markdown
+            && native.append(&content, &addition)
+        {
+            self.flush_native_edits(window, cx);
+            self.dirty = true;
+            self.schedule_autosave(cx);
+            cx.emit(SidePaneEvent::Changed);
+            cx.notify();
+            return;
+        }
         self.programmatic = true;
         let state = self.state.clone();
         state.update(cx, |s, cx| {
@@ -638,6 +760,7 @@ impl EditorPane {
     /// Close button (`attemptClose`): asks first when the text is unsaved
     /// and not blank. Resolves to whether the pane may close.
     pub fn confirm_close(&mut self, window: &mut Window, cx: &mut Context<Self>) -> Task<bool> {
+        self.flush_native_edits(window, cx);
         if !self.dirty || self.content(cx).trim().is_empty() {
             return Task::ready(true);
         }
@@ -724,6 +847,14 @@ impl EditorPane {
     }
 
     fn jump_to_matching_bracket(&mut self, cx: &mut Context<Self>) {
+        #[cfg(target_os = "macos")]
+        if self.is_markdown_file()
+            && !self.markdown_mode
+            && let Some(native) = &self.native_markdown
+        {
+            native.jump();
+            return;
+        }
         let (text, cursor) = {
             let s = self.state.read(cx);
             (s.text().to_string(), s.cursor())
@@ -802,7 +933,7 @@ impl EditorPane {
     fn render_header(&self, chrome: Chrome, cx: &mut Context<Self>) -> gpui::Div {
         let copied = self.copied_until.is_some_and(|t| t > Instant::now());
         let markdown = self.is_markdown_file();
-        let can_save = self.dirty || self.path.is_none();
+        let can_save = self.is_dirty() || self.path.is_none();
         header(chrome)
             .child(
                 Icon::new(IconName::FileText)
@@ -881,8 +1012,8 @@ impl EditorPane {
                 };
                 d.child(
                     header_button("editor-md-toggle", label, chrome, true).on_click(cx.listener(
-                        |this, _, _, cx| {
-                            this.toggle_markdown_mode(cx);
+                        |this, _, window, cx| {
+                            this.toggle_markdown_mode(window, cx);
                         },
                     )),
                 )
@@ -1095,51 +1226,121 @@ impl Render for EditorPane {
         if std::mem::take(&mut self.settings_pending) {
             self.apply_settings(window, cx);
         }
+        #[cfg(target_os = "macos")]
+        if self.is_markdown_file() && !self.markdown_mode && !self.loading {
+            if self.native_markdown.is_none() {
+                self.native_markdown = native_markdown::NativeMarkdown::create(
+                    window,
+                    cx,
+                    self.native_pending.clone(),
+                );
+            }
+            if let Some(native) = &self.native_markdown {
+                native.sync(&self.content(cx), &self.config);
+            }
+            if self.native_markdown.is_some()
+                && self.native_guard_subscriptions.is_empty()
+                && let Some(Some(root)) = window.root::<gpui_kit::base::Root>()
+            {
+                if let Ok(workspace) = root
+                    .read(cx)
+                    .view()
+                    .clone()
+                    .downcast::<crate::workspace::Workspace>()
+                {
+                    self.native_guard_subscriptions.push(cx.observe_in(
+                        &workspace,
+                        window,
+                        |this, workspace, _, cx| {
+                            if !workspace.read(cx).native_editor_allowed(cx)
+                                && let Some(native) = &this.native_markdown
+                            {
+                                native.detach();
+                            }
+                            cx.notify();
+                        },
+                    ));
+                }
+                self.native_guard_subscriptions.push(cx.on_focus_out(
+                    &self.focus_handle,
+                    window,
+                    |this, _, window, cx| {
+                        if window
+                            .context_stack()
+                            .iter()
+                            .any(|c| c.contains("PopupMenu"))
+                            && let Some(native) = &this.native_markdown
+                        {
+                            native.detach();
+                        }
+                        cx.notify();
+                    },
+                ));
+                self.native_guard_subscriptions.push(cx.observe_in(
+                    &root,
+                    window,
+                    |this, _, window, cx| {
+                        use gpui_kit::component::WindowExt;
+                        if (window.has_active_dialog(cx) || window.has_active_sheet(cx))
+                            && let Some(native) = &this.native_markdown
+                        {
+                            native.detach();
+                        }
+                        cx.notify();
+                    },
+                ));
+            }
+        }
         let chrome = Chrome::get(cx);
         let palette = self.palette;
         let header = self.render_header(chrome, cx);
-        let body =
-            if self.loading {
-                loading(chrome).into_any_element()
-            } else if let Some(error) = self.error.clone().filter(|_| self.path.is_none()) {
-                placeholder(IconName::TriangleAlert, None, error, None, chrome).into_any_element()
-            } else if self.markdown_mode && self.is_markdown_file() {
-                let content = self.content(cx);
-                super::runbook::render(
-                    &content,
-                    &self.run_states,
-                    chrome,
-                    super::text_background(palette, cx),
-                    super::mono_family(window, cx),
-                    cx.listener(|this, code: &(usize, String), _, cx| {
-                        this.run_block(code.clone(), cx)
-                    }),
-                    cx.listener(|this, line: &usize, window, cx| {
-                        this.toggle_checkbox(*line, window, cx)
-                    }),
-                )
-                .into_any_element()
+        let body = if self.loading {
+            loading(chrome).into_any_element()
+        } else if let Some(error) = self.error.clone().filter(|_| self.path.is_none()) {
+            placeholder(IconName::TriangleAlert, None, error, None, chrome).into_any_element()
+        } else if self.markdown_mode && self.is_markdown_file() {
+            let content = self.content(cx);
+            super::runbook::render(
+                &content,
+                &self.run_states,
+                chrome,
+                super::text_background(palette, cx),
+                super::mono_family(window, cx),
+                cx.listener(|this, code: &(usize, String), _, cx| this.run_block(code.clone(), cx)),
+                cx.listener(|this, line: &usize, window, cx| {
+                    this.toggle_checkbox(*line, window, cx)
+                }),
+            )
+            .into_any_element()
+        } else {
+            let style = super::editor_style(palette, self.config.highlight_current_line, cx);
+            let editor = Editor::new(&self.state)
+                .appearance(false)
+                .h_full()
+                .font_family(super::mono_family(window, cx))
+                .text_size(px(self.config.font_size as f32));
+            let minimap = self
+                .config
+                .show_minimap
+                .then(|| self.render_minimap(palette, cx));
+            let editor =
+                super::style_override::with_style(editor, &self.state, style).into_any_element();
+            #[cfg(target_os = "macos")]
+            let editor = if self.is_markdown_file()
+                && let Some(native) = &self.native_markdown
+            {
+                native_markdown::element(native.clone(), editor).into_any_element()
             } else {
-                let style = super::editor_style(palette, self.config.highlight_current_line, cx);
-                let editor = Editor::new(&self.state)
-                    .appearance(false)
-                    .h_full()
-                    .font_family(super::mono_family(window, cx))
-                    .text_size(px(self.config.font_size as f32));
-                let minimap = self
-                    .config
-                    .show_minimap
-                    .then(|| self.render_minimap(palette, cx));
-                div()
-                    .size_full()
-                    .flex()
-                    .bg(super::text_background(palette, cx))
-                    .child(div().flex_1().min_w_0().h_full().child(
-                        super::style_override::with_style(editor, &self.state, style),
-                    ))
-                    .children(minimap)
-                    .into_any_element()
+                editor
             };
+            div()
+                .size_full()
+                .flex()
+                .bg(super::text_background(palette, cx))
+                .child(div().flex_1().min_w_0().h_full().child(editor))
+                .children(minimap)
+                .into_any_element()
+        };
         div()
             .id("editor-pane")
             .key_context(CONTEXT)
@@ -1150,8 +1351,46 @@ impl Render for EditorPane {
             .on_any_mouse_down(cx.listener(|_, _, _, cx| cx.emit(SidePaneEvent::Focused)))
             .capture_action(cx.listener(Self::on_enter))
             .capture_action(cx.listener(Self::on_outdent))
-            .on_action(cx.listener(|this, _: &ToggleMarkdownMode, _, cx| {
-                this.toggle_markdown_mode(cx);
+            .map(|pane| {
+                #[cfg(target_os = "macos")]
+                let pane = pane
+                    .on_action(cx.listener(|this, _: &crate::actions::Cut, _, cx| {
+                        this.native_menu_command(native_markdown::MenuCommand::Cut, cx)
+                    }))
+                    .on_action(cx.listener(|this, _: &crate::actions::Copy, _, cx| {
+                        this.native_menu_command(native_markdown::MenuCommand::Copy, cx)
+                    }))
+                    .on_action(cx.listener(|this, _: &crate::actions::Paste, _, cx| {
+                        this.native_menu_command(native_markdown::MenuCommand::Paste, cx)
+                    }))
+                    .on_action(cx.listener(|this, _: &crate::actions::SelectAll, _, cx| {
+                        this.native_menu_command(native_markdown::MenuCommand::SelectAll, cx)
+                    }))
+                    .on_action(
+                        cx.listener(|this, _: &crate::actions::ToggleSearch, _, cx| {
+                            this.native_menu_command(native_markdown::MenuCommand::Find, cx)
+                        }),
+                    )
+                    .on_action(cx.listener(|this, _: &crate::actions::FindNext, _, cx| {
+                        this.native_menu_command(native_markdown::MenuCommand::FindNext, cx)
+                    }))
+                    .on_action(
+                        cx.listener(|this, _: &crate::actions::FindPrevious, _, cx| {
+                            this.native_menu_command(native_markdown::MenuCommand::FindPrevious, cx)
+                        }),
+                    )
+                    .on_action(cx.listener(
+                        |this, _: &crate::actions::UseSelectionForFind, _, cx| {
+                            this.native_menu_command(
+                                native_markdown::MenuCommand::UseSelectionForFind,
+                                cx,
+                            )
+                        },
+                    ));
+                pane
+            })
+            .on_action(cx.listener(|this, _: &ToggleMarkdownMode, window, cx| {
+                this.toggle_markdown_mode(window, cx);
             }))
             .on_action(cx.listener(|this, _: &SaveEditor, window, cx| {
                 this.save(window, cx).detach();
@@ -1306,6 +1545,125 @@ mod markdown_live_tests {
         cx.update(|cx| assert_eq!(pane.read(cx).markdown_styles.text(), "**café!"));
     }
 
+    #[cfg(target_os = "macos")]
+    #[gpui::test]
+    fn pending_native_text_is_saved_before_coalesced_delivery(cx: &mut TestAppContext) {
+        let path = std::env::temp_dir().join(format!(
+            "chau7-next-pending-save-{}.md",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::write(&path, "# old").unwrap();
+        let (handle, pane) = editor(cx);
+        cx.update_window(handle.into(), |_, window, cx| {
+            pane.update(cx, |pane, cx| {
+                pane.finish_load(path.clone(), "# old".into(), None, window, cx);
+                let typed = "# café😀";
+                pane.native_pending.borrow_mut().typed(
+                    typed,
+                    objc2_foundation::NSRange::new(2, typed.encode_utf16().count() - 2),
+                );
+                assert_eq!(pane.state.read(cx).value(), "# old");
+                assert_eq!(pane.content(cx), typed);
+                assert!(pane.is_dirty());
+                assert!(pane.write_to(path.clone(), window, cx));
+                assert_eq!(std::fs::read_to_string(&path).unwrap(), typed);
+                assert_eq!(pane.state.read(cx).value(), typed);
+                assert_eq!(pane.state.read(cx).selected_range(), 2..typed.len());
+                // The signal queued before Save arrives later: there is no old
+                // text left to replace the saved mirror or mark it dirty again.
+                let (text, selection) = pane.native_pending.borrow_mut().take_edits("# old");
+                assert!(!pane.mirror_native_edits(text, selection, window, cx));
+                assert!(!pane.is_dirty());
+                pane.file_monitor = None;
+                pane.file_monitor_task = None;
+            });
+        })
+        .unwrap();
+        cx.update(|cx| assert!(!pane.read(cx).is_dirty()));
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[cfg(target_os = "macos")]
+    #[gpui::test]
+    fn pending_native_text_survives_append_and_preview(cx: &mut TestAppContext) {
+        let (handle, pane) = editor(cx);
+        cx.update_window(handle.into(), |_, window, cx| {
+            pane.update(cx, |pane, cx| {
+                let typed = "# café😀";
+                pane.native_pending
+                    .borrow_mut()
+                    .typed(typed, objc2_foundation::NSRange::new(2, 0));
+                let body = "```sh\nprintf '%s' 'body'\n```";
+                let expected = edtext::append_text(typed, body).unwrap();
+                pane.append_text(body, window, cx);
+                assert_eq!(pane.content(cx), expected);
+                assert_eq!(pane.state.read(cx).selected_range(), 2..2);
+                assert!(pane.is_dirty());
+                let (text, selection) = pane.native_pending.borrow_mut().take_edits(typed);
+                assert!(!pane.mirror_native_edits(text, selection, window, cx));
+                assert_eq!(pane.content(cx), expected);
+                let edited = format!("{expected}\nmore");
+                pane.native_pending.borrow_mut().typed(
+                    &edited,
+                    objc2_foundation::NSRange::new(edited.encode_utf16().count(), 0),
+                );
+                pane.toggle_markdown_mode(window, cx);
+                assert!(pane.markdown_mode);
+                assert_eq!(pane.state.read(cx).value(), edited);
+                assert!(!pane.has_pending_native_edits());
+                assert_eq!(
+                    pane.state.read(cx).selected_range(),
+                    edited.len()..edited.len()
+                );
+                pane.toggle_markdown_mode(window, cx);
+                assert!(!pane.markdown_mode);
+                assert_eq!(pane.content(cx), edited);
+            });
+        })
+        .unwrap();
+    }
+
+    #[gpui::test]
+    fn actual_markdown_load_opens_source_and_preserves_same_file_preview(cx: &mut TestAppContext) {
+        let directory =
+            std::env::temp_dir().join(format!("chau7-next-markdown-load-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir(&directory).unwrap();
+        let first = directory.join("NOTE.MARKDOWN");
+        let second = directory.join("OTHER.md");
+        std::fs::write(&first, "# café\n").unwrap();
+        std::fs::write(&second, "# other\n").unwrap();
+        let (handle, pane) = editor(cx);
+        cx.update_window(handle.into(), |_, window, cx| {
+            pane.update(cx, |pane, cx| {
+                pane.finish_load(first.clone(), "# café\n".into(), None, window, cx);
+                assert!(!pane.markdown_mode);
+                assert!(!pane.dirty);
+                pane.toggle_markdown_mode(window, cx);
+                assert!(pane.markdown_mode);
+                pane.finish_load(first.clone(), "# reloaded\n".into(), None, window, cx);
+                assert!(pane.markdown_mode);
+                assert_eq!(pane.content(cx), "# reloaded\n");
+                assert!(!pane.dirty);
+            });
+        })
+        .unwrap();
+        // Verify the event boundary too: a programmatic load is not a user edit.
+        cx.update(|cx| assert!(!pane.read(cx).dirty));
+        cx.update_window(handle.into(), |_, window, cx| {
+            pane.update(cx, |pane, cx| {
+                pane.finish_load(second, "# other\n".into(), None, window, cx);
+                assert!(!pane.markdown_mode);
+                assert!(!pane.dirty);
+                assert_eq!(pane.markdown_styles.text(), "# other\n");
+                pane.file_monitor = None;
+                pane.file_monitor_task = None;
+            });
+        })
+        .unwrap();
+        cx.update(|cx| assert!(!pane.read(cx).dirty));
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
     #[gpui::test]
     fn uppercase_markdown_source_preview_binding_preserves_buffer_history(cx: &mut TestAppContext) {
         let (handle, pane) = editor(cx);
@@ -1325,7 +1683,7 @@ mod markdown_live_tests {
             );
             assert!(pane.read(cx).markdown_mode);
             assert_eq!(state.read(cx).value(), "# note");
-            pane.update(cx, |pane, cx| pane.toggle_markdown_mode(cx));
+            pane.update(cx, |pane, cx| pane.toggle_markdown_mode(window, cx));
             state.update(cx, |state, cx| state.focus(window, cx));
             window.press("secondary-z", cx);
             assert_eq!(state.read(cx).value(), "");

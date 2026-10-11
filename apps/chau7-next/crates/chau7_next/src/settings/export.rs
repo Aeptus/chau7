@@ -68,6 +68,7 @@ fn default_template(home: &str) -> Map<String, Value> {
             "cursorStyle": "block",
             "cursorBlink": true,
             "scrollbackLines": 10000,
+            "shellHistoryMaxLines": 1000,
             "restoredScrollbackLines": 500,
             "bellEnabled": true,
             "bellSound": "default",
@@ -179,6 +180,7 @@ pub fn export_json(settings: &Settings, home: &str) -> String {
         }
     }
     set("scrollbackLines", json!(t.scrollback_lines));
+    set("shellHistoryMaxLines", json!(t.shell_history_max_lines));
     set("bellEnabled", json!(t.bell_enabled));
     set("bellSound", json!(t.bell_sound.raw_value()));
     set(
@@ -350,6 +352,13 @@ pub fn import_json(settings: &mut Settings, text: &str, home: &str) -> Result<()
         .filter(|v| *v > 0)
     {
         t.scrollback_lines = v as usize;
+    }
+    if let Some(value) = map.get("shellHistoryMaxLines") {
+        if let Some(value) = value.as_i64() {
+            t.shell_history_max_lines = value.clamp(0, 1_000_000) as usize;
+        } else if let Some(value) = value.as_u64() {
+            t.shell_history_max_lines = value.min(1_000_000) as usize;
+        }
     }
     if let Some(v) = bool_of("bellEnabled") {
         t.bell_enabled = v;
@@ -577,6 +586,7 @@ mod tests {
             "cursorStyle",
             "cursorBlink",
             "scrollbackLines",
+            "shellHistoryMaxLines",
             "restoredScrollbackLines",
             "bellEnabled",
             "bellSound",
@@ -625,6 +635,7 @@ mod tests {
         settings.appearance.opacity = 0.8;
         settings.terminal.shell = Some("/bin/fish-custom".into());
         settings.terminal.scrollback_lines = 5000;
+        settings.terminal.shell_history_max_lines = 2345;
         settings.tabs.new_tab_position = NewTabPosition::AfterCurrent;
         settings.appearance.app_theme = AppTheme::Dark;
         settings.general.app_language = AppLanguage::French;
@@ -644,6 +655,7 @@ mod tests {
         assert!((imported.appearance.opacity - 0.8).abs() < 1e-6);
         assert_eq!(imported.terminal.shell.as_deref(), Some("/bin/fish-custom"));
         assert_eq!(imported.terminal.scrollback_lines, 5000);
+        assert_eq!(imported.terminal.shell_history_max_lines, 2345);
         assert_eq!(imported.tabs.new_tab_position, NewTabPosition::AfterCurrent);
         assert_eq!(imported.appearance.app_theme, AppTheme::Dark);
         assert_eq!(imported.general.app_language, AppLanguage::French);
@@ -653,6 +665,43 @@ mod tests {
         assert_eq!(imported.dangerous_commands.patterns, vec!["rm -rf"]);
         assert!(imported.remote.enabled);
         assert_eq!(imported.remote.relay_url, "wss://relay.test/connect");
+    }
+
+    #[test]
+    fn swift_only_shell_history_budget_import_bounds_and_resets() {
+        for (value, expected) in [
+            (json!(-1), 0),
+            (json!(0), 0),
+            (json!(2345), 2345),
+            (json!(2_000_000), 1_000_000),
+            (json!(u64::MAX), 1_000_000),
+            (json!("42"), 77),
+            (json!(true), 77),
+            (json!(1.5), 77),
+            (Value::Null, 77),
+        ] {
+            let mut settings = Settings::default();
+            settings.terminal.shell_history_max_lines = 77;
+            import_json(
+                &mut settings,
+                &json!({"fontFamily": "Menlo", "shellHistoryMaxLines": value}).to_string(),
+                HOME,
+            )
+            .unwrap();
+            assert_eq!(settings.terminal.shell_history_max_lines, expected);
+            for section in [
+                chau7_next_core::settings_search::SettingsSection::Shell,
+                chau7_next_core::settings_search::SettingsSection::ScrollbackPerf,
+            ] {
+                settings.terminal.shell_history_max_lines = 2345;
+                settings.reset_section(section);
+                assert_eq!(settings.terminal.shell_history_max_lines, 1000);
+            }
+        }
+        let mut settings = Settings::default();
+        settings.terminal.shell_history_max_lines = 77;
+        import_json(&mut settings, r#"{"fontFamily":"Menlo"}"#, HOME).unwrap();
+        assert_eq!(settings.terminal.shell_history_max_lines, 77);
     }
 
     #[test]

@@ -777,7 +777,7 @@ mod identity_tests {
         drain();
         assert_eq!(
             known_identity::load(&data, &[]).unwrap().roots(),
-            vec![new_root.clone()]
+            vec![new_root.replace('\\', "/")]
         );
         assert_eq!(
             repo_metadata::load_recent(&data.recent_repos_file()),

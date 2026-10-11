@@ -3,7 +3,9 @@ use gpui::{AppContext, Bounds, TestAppContext, WindowBounds, WindowOptions, size
 use gpui_kit::test::TestWindowExt;
 
 #[gpui::test]
-fn actual_settings_pages_attach_every_current_search_target(cx: &mut TestAppContext) {
+fn actual_settings_pages_attach_every_current_search_target(harness: &mut TestAppContext) {
+    let mut fixture = harness.new_app();
+    let cx = &mut fixture;
     let home =
         std::env::temp_dir().join(format!("chau7-settings-targets-{}", uuid::Uuid::new_v4()));
     let root = DataRoot::with_home(home.clone(), true);
@@ -60,6 +62,13 @@ fn actual_settings_pages_attach_every_current_search_target(cx: &mut TestAppCont
     if let Some(worker) = cx.update(crate::observability::shutdown) {
         worker.join().unwrap();
     }
+    // Finish queued projections while their globals are alive, then drop the
+    // complete owned app to release SQLite handles before Windows cleanup.
+    cx.run_until_parked();
+    cx.quit();
+    drop(view);
+    cx.run_until_parked();
+    drop(fixture);
     std::fs::remove_dir_all(home).unwrap();
     assert!(
         missing.is_empty(),

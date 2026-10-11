@@ -61,6 +61,11 @@ objc2-foundation = { version = "0.3.2", default-features = false, features = [
     "NSString",
     "NSUbiquitousKeyValueStore",
     "NSURL",
+    "NSAttributedString",
+    "NSRange",
+    "NSValue",
+    "NSUndoManager",
+    "NSNotification",
 ] }
 objc2-app-kit = { version = "0.3.2", default-features = false, features = [
     "std",
@@ -96,6 +101,21 @@ objc2-app-kit = { version = "0.3.2", default-features = false, features = [
     "NSView",
     "NSWindow",
     "NSWorkspace",
+    "NSAttributedString",
+    "NSStringDrawing",
+    "NSColor",
+    "NSFontManager",
+    "NSFontDescriptor",
+    "NSParagraphStyle",
+    "NSTextStorage",
+    "NSLayoutManager",
+    "NSTextContainer",
+    "NSScrollView",
+    "NSClipView",
+    "NSScroller",
+    "NSRulerView",
+    "NSEvent",
+    "NSTextInputClient",
 ] }
 objc2-user-notifications = { version = "0.3.2", default-features = false, features = [
     "std",

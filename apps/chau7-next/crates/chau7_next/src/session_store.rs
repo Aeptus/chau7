@@ -91,7 +91,7 @@ fn parse_bundle(path: &Path) -> Option<RestoreBundle> {
 
 /// Temp files are exclusive and private; both content and parent directory
 /// are flushed before publishing the next transaction marker.
-fn atomic_write(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+pub(crate) fn atomic_write(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     use std::io::Write;
     let parent = path
         .parent()
