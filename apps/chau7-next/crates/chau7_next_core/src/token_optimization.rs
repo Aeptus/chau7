@@ -544,7 +544,7 @@ impl TabTokenConsumption {
 }
 
 /// AI token usage aggregated per provider from the telemetry database.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
 pub struct ProviderConsumptionStats {
     pub provider: String,
     pub run_count: i64,

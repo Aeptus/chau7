@@ -246,14 +246,16 @@ impl QuotaHistory {
         let snapshots = match std::fs::File::open(&path) {
             Ok(mut file) => {
                 let size = file.metadata()?.len();
-                let start = size.saturating_sub(8 * 1024 * 1024);
+                let start = size.saturating_sub(512 * 1024);
                 file.seek(SeekFrom::Start(start))?;
                 let mut bytes = Vec::new();
-                file.take(8 * 1024 * 1024).read_to_end(&mut bytes)?;
-                if start > 0
-                    && let Some(i) = bytes.iter().position(|b| *b == b'\n')
-                {
-                    bytes.drain(..=i);
+                file.take(512 * 1024).read_to_end(&mut bytes)?;
+                if start > 0 {
+                    if let Some(i) = bytes.iter().position(|b| *b == b'\n') {
+                        bytes.drain(..=i);
+                    } else {
+                        bytes.clear();
+                    }
                 }
                 String::from_utf8_lossy(&bytes)
                     .lines()
@@ -319,6 +321,38 @@ impl QuotaHistory {
 mod tests {
     use super::*;
     use chrono::Duration;
+    #[test]
+    fn history_reads_only_aligned_recent_512kb_without_changing_the_log() {
+        use std::io::Write;
+        let path = std::env::temp_dir().join(format!("chau7-quota-{}.jsonl", uuid::Uuid::new_v4()));
+        let now = Utc::now();
+        let value = serde_json::json!({"rate_limits":{"five_hour":{"used_percentage":20}}});
+        let old =
+            QuotaSnapshot::parse_claude(&value, now - chrono::Duration::minutes(20), None).unwrap();
+        let latest = QuotaSnapshot::parse_claude(&value, now, None).unwrap();
+        let mut file = std::fs::File::create(&path).unwrap();
+        serde_json::to_writer(&mut file, &old).unwrap();
+        file.write_all(b"\n").unwrap();
+        file.write_all(&vec![b'x'; 600_000]).unwrap();
+        file.write_all(b"\n").unwrap();
+        serde_json::to_writer(&mut file, &latest).unwrap();
+        file.write_all(b"\n").unwrap();
+        drop(file);
+        let before = std::fs::read(&path).unwrap();
+        let history = QuotaHistory::open(path.clone()).unwrap();
+        assert_eq!(history.snapshots, vec![latest]);
+        assert_eq!(std::fs::read(&path).unwrap(), before);
+        let mut oversized = old;
+        oversized.raw_source_ref = Some("x".repeat(600_000));
+        std::fs::write(&path, serde_json::to_vec(&oversized).unwrap()).unwrap();
+        assert!(
+            QuotaHistory::open(path.clone())
+                .unwrap()
+                .snapshots
+                .is_empty()
+        );
+        std::fs::remove_file(path).unwrap();
+    }
     #[test]
     fn history_deduplicates_without_replay_and_reloads() {
         let path = std::env::temp_dir().join(format!("chau7-quota-{}.jsonl", uuid::Uuid::new_v4()));
