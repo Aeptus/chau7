@@ -2,6 +2,7 @@
 //! and its allow and block lists (`DangerousCommandSettingsView.swift`).
 
 use chau7_next_core::command_risk::DangerousCommandGuard;
+use chau7_next_core::command_risk::self_protect::ProtectionLevel;
 use gpui::{SharedString, div, prelude::*, px};
 use gpui_kit::component::input::Input;
 
@@ -127,6 +128,40 @@ pub(in super::super) fn section(ctx: &SectionContext) -> gpui::Div {
         ));
     if d.guard_enabled {
         guard = guard
+            .child(titled("Built-in Protections", chrome)
+                .child(row("Protect Chau7", toggle("protect-chau7", d.protect_chau7_enabled, chrome, |s,v| s.dangerous_commands.protect_chau7_enabled=v), chrome))
+                .child(hint("Detect commands that would terminate Chau7 or its managed helper processes. Regular kill commands remain available.", chrome))
+                .child(row("Response", div().flex().gap_1().children(ProtectionLevel::ALL.into_iter().map(|level| {
+                    chip(SharedString::from(format!("protect-level-{}",level.raw())),level.label(),level==d.protect_chau7_level,chrome)
+                        .when(!d.protect_chau7_enabled, |d| d.opacity(0.45))
+                        .on_click(move |_,_,cx| {
+                            if crate::settings::Settings::get(cx).dangerous_commands.protect_chau7_enabled {
+                                update(cx,|s| s.dangerous_commands.protect_chau7_level=level);
+                            }
+                        })
+                })),chrome))
+                .child(div().text_sm().child(crate::l10n::tr("Protected Targets")))
+                .child(list_box("protected-processes").children(d.protected_process_patterns.iter().enumerate().map(|(i,text)| {
+                    let input=mine.protected_process.clone();
+                    let edit_state=mine.protected_edit.clone();
+                    let edit=text.clone();
+                    let remove=text.clone();
+                    item_row(text.clone()).child(div().flex().gap_1()
+                        .child(small_button(SharedString::from(format!("protected-edit-{i}")),"Edit",chrome).on_click(move |_,window,cx| {
+                            *edit_state.borrow_mut()=Some(edit.clone());
+                            input.update(cx, |state,cx| state.set_value(edit.clone(),window,cx));
+                        }))
+                        .child(small_button(SharedString::from(format!("protected-del-{i}")),"Remove",chrome).on_click(move |_,_,cx| {
+                            update(cx, |s| s.dangerous_commands.protected_process_patterns.retain(|p| *p!=remove));
+                        })))
+                })))
+                .child(div().w(px(320.0)).child(Input::new(&mine.protected_process)))
+                .child(small_button("protected-processes-reset","Reset to Defaults",chrome).on_click(|_,_,cx| update(cx, |s| {
+                    let defaults=DangerousCommandSettings::default();
+                    s.dangerous_commands.protected_process_patterns=defaults.protected_process_patterns;
+                    s.dangerous_commands.protect_chau7_level=defaults.protect_chau7_level;
+                    s.dangerous_commands.protect_chau7_enabled=defaults.protect_chau7_enabled;
+                }))))
             .child(
                 div()
                     .flex()

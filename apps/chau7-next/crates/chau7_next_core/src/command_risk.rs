@@ -15,6 +15,25 @@
 
 use std::collections::{HashMap, HashSet};
 
+pub mod self_protect;
+
+/// The ordinary verdict plus observed self-protection detail. Keeping detail
+/// separate preserves existing allow/block-list APIs and gives the UI a real
+/// explanation for a blocked managed-process command.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GuardVerdict {
+    pub result: CheckResult,
+    pub self_protection: Option<self_protect::Match>,
+}
+impl From<CheckResult> for GuardVerdict {
+    fn from(result: CheckResult) -> Self {
+        Self {
+            result,
+            self_protection: None,
+        }
+    }
+}
+
 /// Default risky command patterns, verbatim from
 /// `FeatureSettings.defaultDangerousCommandPatterns`.
 pub const DEFAULT_DANGEROUS_COMMAND_PATTERNS: &[&str] = &[
@@ -315,22 +334,47 @@ impl DangerousCommandGuard {
     /// `directory` is the terminal's working directory, used for
     /// per-directory allow list matching.
     pub fn check(&self, command_line: &str, directory: Option<&str>) -> CheckResult {
+        self.check_with_self_protection(command_line, directory, None)
+            .result
+    }
+
+    pub fn check_with_self_protection(
+        &self,
+        command_line: &str,
+        directory: Option<&str>,
+        protection: Option<(self_protect::ProtectionLevel, &self_protect::Context)>,
+    ) -> GuardVerdict {
         if !self.is_enabled {
-            return CheckResult::Safe;
+            return CheckResult::Safe.into();
         }
         let trimmed = command_line.trim();
         if trimmed.is_empty() {
-            return CheckResult::Safe;
+            return CheckResult::Safe.into();
         }
 
         if contains_homoglyphs(trimmed) {
-            return needs_confirmation(trimmed, HOMOGLYPH_MATCHED_PATTERN);
+            return needs_confirmation(trimmed, HOMOGLYPH_MATCHED_PATTERN).into();
         }
         if trimmed.contains('\n') {
-            return needs_confirmation(trimmed, MULTILINE_MATCHED_PATTERN);
+            return needs_confirmation(trimmed, MULTILINE_MATCHED_PATTERN).into();
+        }
+        if let Some((level, context)) = protection
+            && let Some(detail) = self_protect::detect(trimmed, context)
+        {
+            let result = match level {
+                self_protect::ProtectionLevel::VerboseLogging => CheckResult::Safe,
+                self_protect::ProtectionLevel::Warning => {
+                    needs_confirmation(trimmed, &format!("Protects Chau7: {}", detail.reason))
+                }
+                self_protect::ProtectionLevel::Blocking => CheckResult::Blocked,
+            };
+            return GuardVerdict {
+                result,
+                self_protection: Some(detail),
+            };
         }
         if self.block_list.contains(trimmed) {
-            return CheckResult::Blocked;
+            return CheckResult::Blocked.into();
         }
         if let Some(dir) = directory {
             let allowed_here = self
@@ -344,17 +388,17 @@ impl DangerousCommandGuard {
                     in_dir && cmds.contains(trimmed)
                 });
             if allowed_here {
-                return CheckResult::Allowed;
+                return CheckResult::Allowed.into();
             }
         }
         if self.allow_list.contains(trimmed) {
-            return CheckResult::Allowed;
+            return CheckResult::Allowed.into();
         }
         if is_risky(trimmed, &self.patterns) {
             let matched = self.find_matched_pattern(trimmed);
-            return needs_confirmation(trimmed, &matched);
+            return needs_confirmation(trimmed, &matched).into();
         }
-        CheckResult::Safe
+        CheckResult::Safe.into()
     }
 
     /// Returns the first pattern that matches `command`, or
@@ -442,6 +486,83 @@ mod tests {
     // none of them need AppKit. Extra tests for homoglyph, multiline and
     // per-directory logic are at the end.
     use super::*;
+
+    #[test]
+    fn self_protection_precedes_all_allowlists_and_preserves_response_detail() {
+        use self_protect::{Context, ProtectionLevel};
+        let context = Context::new([4242], ["chau7".into()]);
+        let mut guard = DangerousCommandGuard::default();
+        guard.add_to_allow_list("kill 4242");
+        guard.add_to_directory_allow_list("kill 4242", "/owned");
+        for level in ProtectionLevel::ALL {
+            let verdict = guard.check_with_self_protection(
+                "kill 4242",
+                Some("/owned/repo"),
+                Some((level, &context)),
+            );
+            assert_eq!(
+                verdict.self_protection.as_ref().unwrap().reason,
+                "would terminate a protected Chau7-managed process"
+            );
+            match level {
+                ProtectionLevel::VerboseLogging => assert_eq!(verdict.result, CheckResult::Safe),
+                ProtectionLevel::Warning => assert!(matches!(
+                    verdict.result,
+                    CheckResult::NeedsConfirmation { .. }
+                )),
+                ProtectionLevel::Blocking => assert_eq!(verdict.result, CheckResult::Blocked),
+            }
+        }
+        assert_eq!(
+            guard
+                .check_with_self_protection(
+                    "kill 9999",
+                    None,
+                    Some((ProtectionLevel::Blocking, &context))
+                )
+                .result,
+            CheckResult::Safe
+        );
+        assert_eq!(
+            guard
+                .check_with_self_protection("kill 4242", None, None)
+                .result,
+            CheckResult::Allowed
+        );
+        guard.is_enabled = false;
+        let verdict = guard.check_with_self_protection(
+            "kill 4242",
+            None,
+            Some((ProtectionLevel::Blocking, &context)),
+        );
+        assert_eq!(verdict.result, CheckResult::Safe);
+        assert!(verdict.self_protection.is_none());
+    }
+
+    #[test]
+    fn current_homoglyph_and_multiline_prechecks_remain_before_self_protection() {
+        let context = self_protect::Context::new([4242], ["chau7".into()]);
+        for command in ["kill 4242\necho next", "kill 4242; echo ａ"] {
+            let verdict = DangerousCommandGuard::default().check_with_self_protection(
+                command,
+                None,
+                Some((self_protect::ProtectionLevel::Blocking, &context)),
+            );
+            assert!(matches!(
+                verdict.result,
+                CheckResult::NeedsConfirmation { .. }
+            ));
+            assert!(verdict.self_protection.is_none());
+        }
+        // A trailing submission terminator is trimmed, so single-command paste
+        // remains subject to managed-process blocking rather than multiline UI.
+        let verdict = DangerousCommandGuard::default().check_with_self_protection(
+            "kill 4242\r\n",
+            None,
+            Some((self_protect::ProtectionLevel::Blocking, &context)),
+        );
+        assert_eq!(verdict.result, CheckResult::Blocked);
+    }
 
     // CommandRiskDetectionTests
 

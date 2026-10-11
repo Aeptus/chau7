@@ -11,6 +11,7 @@ use chau7_next_core::command_risk::DangerousCommandGuard;
 use chau7_next_core::snippet_store;
 use gpui::{App, Context, Entity, SharedString, Subscription, Window, div, prelude::*, px};
 use gpui_kit::component::input::{InputEvent, InputState};
+use std::{cell::RefCell, rc::Rc};
 
 use super::SettingsView;
 use crate::settings::Settings;
@@ -23,6 +24,8 @@ pub(super) struct MineState {
     pub editor: Entity<InputState>,
     pub pattern: Entity<InputState>,
     pub block: Entity<InputState>,
+    pub protected_process: Entity<InputState>,
+    pub protected_edit: Rc<RefCell<Option<String>>>,
     /// Sorted copies of the guard's lists, refreshed on each render.
     pub allow: Vec<String>,
     pub blocked: Vec<String>,
@@ -119,12 +122,33 @@ impl MineState {
         let rule_name = plain("Rule name", window, cx);
         let rule_value = plain("Value", window, cx);
         let rule_value2 = plain("Value", window, cx);
+        let protected_edit = Rc::new(RefCell::new(None::<String>));
+        let edit_state = protected_edit.clone();
+        let (protected_process, sub) = commit_input(
+            String::new(),
+            "Process pattern",
+            window,
+            cx,
+            move |text, cx| {
+                let previous = edit_state.borrow_mut().take();
+                super::update(cx, |s| {
+                    update_protected_pattern(
+                        &mut s.dangerous_commands.protected_process_patterns,
+                        previous.as_deref(),
+                        &text,
+                    );
+                });
+            },
+        );
+        subs.push(sub);
         Self {
             profiles: profiles::ProfilesPane::new(profile_name, rule_name, rule_value, rule_value2),
             repo_path,
             editor,
             pattern,
             block,
+            protected_process,
+            protected_edit,
             allow: Vec::new(),
             blocked: Vec::new(),
             user_snippets: 0,
@@ -145,6 +169,23 @@ impl MineState {
         self.profiles.refresh(cx);
         let root = &cx.global::<AppData>().root;
         self.user_snippets = snippet_store::load_dir(&root.user_snippets_dir()).len();
+    }
+}
+
+/// Editing a target never removes protection before the replacement commits.
+fn update_protected_pattern(patterns: &mut Vec<String>, previous: Option<&str>, text: &str) {
+    let text = text.trim();
+    if let Some(previous) = previous {
+        if let Some(index) = patterns.iter().position(|p| p == previous) {
+            if text.is_empty() {
+                patterns.remove(index);
+            } else {
+                patterns[index] = text.to_string();
+            }
+        }
+        // An independently removed entry is not resurrected by a stale edit.
+    } else if !text.is_empty() && !patterns.iter().any(|p| p.eq_ignore_ascii_case(text)) {
+        patterns.push(text.to_string());
     }
 }
 
@@ -181,4 +222,21 @@ pub(super) fn hint(text: &'static str, chrome: crate::theme::Chrome) -> gpui::Di
         .text_color(chrome.text_muted)
         .max_w(px(480.0))
         .child(text)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::update_protected_pattern;
+    #[test]
+    fn protected_target_edit_commits_atomically_and_never_resurrects_removed_entry() {
+        let mut values = vec!["chau7".into(), "helper".into()];
+        update_protected_pattern(&mut values, Some("helper"), "new-helper");
+        assert_eq!(values, ["chau7", "new-helper"]);
+        update_protected_pattern(&mut values, Some("helper"), "stale-helper");
+        assert_eq!(values, ["chau7", "new-helper"]);
+        update_protected_pattern(&mut values, Some("new-helper"), " ");
+        assert_eq!(values, ["chau7"]);
+        update_protected_pattern(&mut values, None, " CHAU7 ");
+        assert_eq!(values, ["chau7"]);
+    }
 }
