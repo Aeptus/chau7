@@ -68,7 +68,11 @@ fn render(cx: &mut App) -> AnyElement {
                     },
                     chrome,
                 )
-                .on_click(move |_, _, cx| usage::set_capture(!view.capture_installed, cx)),
+                .on_click(move |_, _, cx| {
+                    if !view.capture_working {
+                        usage::set_capture(!view.capture_installed, cx);
+                    }
+                }),
             ),
     );
     page = page.child(
@@ -430,10 +434,7 @@ fn render(cx: &mut App) -> AnyElement {
         ));
         page = page.child(group);
     }
-    if let Some(recorder) = crate::telemetry::recorder(cx) {
-        let stats = recorder
-            .store()
-            .consumption_per_provider(Some(chrono::Utc::now() - chrono::Duration::minutes(10)));
+    if let Some(stats) = view.recent_consumption {
         let mut group = ui::group("Recent run consumption (10 minutes)", chrome);
         for s in stats {
             group = group.child(ui::caption(

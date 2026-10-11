@@ -26,3 +26,5 @@ pub mod quota;
 pub mod token_rate;
 
 pub mod retention;
+
+pub mod quota_discovery;
