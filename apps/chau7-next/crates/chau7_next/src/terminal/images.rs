@@ -297,7 +297,7 @@ pub fn decode_encoded(bytes: &[u8]) -> Option<(Vec<u8>, u32, u32)> {
 /// GPUI wants BGRA frames.
 fn render_image(rgba: &[u8], w: u32, h: u32) -> Arc<RenderImage> {
     let mut bgra = rgba.to_vec();
-    for px in bgra.chunks_exact_mut(4) {
+    for px in bgra.as_chunks_mut::<4>().0 {
         px.swap(0, 2);
     }
     let buffer = image::RgbaImage::from_raw(w, h, bgra).expect("buffer matches size");
