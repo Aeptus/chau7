@@ -31,7 +31,7 @@ the rows below keep the user-visible effects.
 | PRF-013 | Glyph atlas bookkeeping: shared shader pipelines, ASCII pre-rasterization, atlas reset when full, atlas PNG dump for debugging | `Performance/MetalTerminalRenderer.swift` (`setupPipelines`, `prerasterizeASCII`, `resetAtlas`, `dumpAtlasToPNG`) | | | n/a | Metal |
 
 | PRF-014 | (dev) Bounded sampled performance JSONL file separate from operational logs, schema_version/timestamp/category/metrics, 8 MB rotation and flush | `Performance/PerformanceTelemetryWriter.swift` | PerformanceTelemetryWriterTests; Next rotation/envelope tests | chau7_next/src/performance.rs (bounded queue, 8 MiB rotation, background quit drain) | done |  |
-| PRF-015 | (dev) Render pipeline, terminal work and wakeup aggregate profiling with stage counters/durations, callback/timer sources and idle costs | `Performance/RenderPipelineProfiler.swift`; `Performance/TerminalWorkProfiler.swift`; `Performance/WakeupProfiler.swift` | RenderPipelineProfilerTests | chau7_next_core/src/feature_profiler.rs | partial |  |
+| PRF-015 | (dev) Render pipeline, terminal work and wakeup aggregate profiling with stage counters/durations, callback/timer sources and idle costs | `Performance/RenderPipelineProfiler.swift`; `Performance/TerminalWorkProfiler.swift`; `Performance/WakeupProfiler.swift` | 4 bounded work aggregation regressions; actual stage caller/native delta tests | chau7_next_core/src/work_profiler.rs; chau7_next/src/performance.rs; chau7_next/src/terminal/{session,view,paint,cpu_renderer}.rs | done |  |
 | PRF-016 | Main-thread hang heartbeat/watchdog captures diagnostic evidence, writes breadcrumbs and attempts bounded render recovery; lifetime stops on app shutdown | `Chau7Core/MainThreadHangMonitor.swift`; `Chau7Core/MainThreadHangWatchdogLifetime.swift`; `Performance/MainThreadHangRecoveryController.swift`; `Chau7Core/HangSampleEvidence.swift` | MainThreadHangMonitorTests; MainThreadHangWatchdogLifetimeTests; HangSampleEvidenceTests; native helper acceptance | chau7_next_core/src/hang_monitor.rs; chau7_next/src/hang_watchdog.rs | done |  |
 | PRF-017 | Memory pressure coordinator/reclaimer budgets active/warm/hidden scrollback, trims caches under warning/critical pressure and records reclaimed memory | `Performance/MemoryPressureCoordinator.swift`; `Performance/MemoryPressureResponder.swift`; `Performance/TerminalMemoryReclaimer.swift`; `Terminal/ScrollbackMemoryManager.swift`; `Chau7Core/TerminalMemoryBudgetPolicy.swift` | TerminalMemoryBudgetPolicyTests; RenderMemoryPressurePolicyTests; ScrollbackMemoryManagerTests | chau7_next_core/src/memory_pressure.rs; chau7_next/src/memory_pressure.rs; chau7_next/src/terminal/cpu_renderer.rs | done | Dispatch memory pressure, mach task metrics |
 | PRF-018 | Hidden/warm scrollback retention flushes to disk, reloads on activation, bounds trackers/configured lines and avoids stale TUI content on restore | `Chau7Core/ScrollbackRetentionPolicy.swift`; `Terminal/ScrollbackMemoryManager.swift`; `Chau7Core/ScrollbackRestoreFilter.swift` | ScrollbackMemoryManagerTests; TerminalSystemRestoreTests | chau7_next_core/src/scrollback_cache.rs; chau7_next_core/src/session_restore.rs; chau7_next/src/memory_pressure.rs; chau7_next/src/restore.rs | done |  |
@@ -97,3 +97,15 @@ the rows below keep the user-visible effects.
 - n/a rows: PRF-010 has no caller (the coordinator keeps the view paused and
   calls `draw()` itself); PRF-011 and PRF-013 are Metal pipeline plumbing that
   GPUI replaces; PRF-012 has no caller outside its tests.
+
+### Actual work and wakeup measurements
+
+PRF-015 records actual PTY poll/parse, output extraction and UI dispatch latency,
+grid/cursor capture, shape/prepaint/draw, CPU glyph/cache/raster/line rendering,
+remote delta/copy/encoding and memory save/replay/persist work. The
+`work_profile` performance snapshot exposes lifetime and 10/60-second windows,
+queue/context and idle wakeup costs. Retention is bounded to 256 contexts and
+120 time buckets. Overlapping stages are explicitly identified. GPUI-private
+GPU completion and CPU-time values remain unavailable, rather than being
+inferred from command submission duration. Native idle comparisons are separate
+acceptance evidence, not universal benchmark claims.
