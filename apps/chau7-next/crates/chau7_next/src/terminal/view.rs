@@ -83,6 +83,7 @@ pub struct TerminalView {
     danger: danger::DangerState,
     /// Keyboard and mouse state (`input.rs`, `mouse.rs`).
     input: input::InputState,
+    refresh_interactive: bool,
     _blink: Task<()>,
     _subscriptions: Vec<gpui::Subscription>,
 }
@@ -132,7 +133,8 @@ impl TerminalView {
                 this.session.read(cx).respond_clipboard(&text);
             }
         }));
-        let focus_in = cx.on_focus_in(&focus_handle, window, |this, _, cx| {
+        let focus_in = cx.on_focus_in(&focus_handle, window, |this, window, cx| {
+            this.update_refresh_pacing(window, cx);
             // DECSET 1004: tell the program it gained focus.
             let session = this.session.read(cx);
             if session.mouse_mode() & key_encoding::mouse_mode::FOCUS != 0 {
@@ -143,12 +145,23 @@ impl TerminalView {
             cx.notify();
         });
         subscriptions.push(focus_in);
-        subscriptions.push(cx.on_focus_out(&focus_handle, window, |this, _, _, cx| {
-            let session = this.session.read(cx);
-            if session.mouse_mode() & key_encoding::mouse_mode::FOCUS != 0 {
-                session.write(b"\x1b[O");
-            }
-            cx.notify()
+        subscriptions.push(
+            cx.on_focus_out(&focus_handle, window, |this, _, window, cx| {
+                this.update_refresh_pacing(window, cx);
+                let session = this.session.read(cx);
+                if session.mouse_mode() & key_encoding::mouse_mode::FOCUS != 0 {
+                    session.write(b"\x1b[O");
+                }
+                cx.notify()
+            }),
+        );
+        subscriptions.push(cx.observe_window_activation(window, |this, window, cx| {
+            this.update_refresh_pacing(window, cx);
+            cx.notify();
+        }));
+        subscriptions.push(cx.observe_window_visibility(window, |this, _, window, cx| {
+            this.update_refresh_pacing(window, cx);
+            cx.notify();
         }));
         let blink = cx.spawn(async move |this, cx| {
             let mut interval = Duration::from_millis(500);
@@ -183,9 +196,11 @@ impl TerminalView {
             guard_focus: cx.focus_handle(),
             danger: danger::DangerState::new(scrollback),
             input: input::InputState::new(scrollback),
+            refresh_interactive: false,
             _blink: blink,
             _subscriptions: subscriptions,
         };
+        this.update_refresh_pacing(window, cx);
         this.init_input(window, cx);
         this
     }
@@ -207,6 +222,18 @@ impl TerminalView {
 
     pub fn font_size(&self) -> f32 {
         self.font_size
+    }
+
+    fn update_refresh_pacing(&mut self, window: &Window, cx: &App) {
+        self.refresh_interactive = window.is_visible()
+            && window.is_window_active()
+            && self.focus_handle.is_focused(window);
+        let rendering = &Settings::get(cx).appearance.rendering;
+        self.session.read(cx).set_refresh_pacing(
+            self.refresh_interactive,
+            rendering.active_polling_rate_cap,
+            rendering.inactive_view_max_fps,
+        );
     }
 
     /// Cursor blink (`handleBlinkTick`): toggles every blink interval (500 ms
@@ -231,6 +258,11 @@ impl TerminalView {
                 .overlays
                 .recently_painted(Duration::from_secs_f32(rendering.suspend_delay_secs));
         let session = self.session.read(cx);
+        session.set_refresh_pacing(
+            self.refresh_interactive,
+            rendering.active_polling_rate_cap,
+            rendering.inactive_view_max_fps,
+        );
         if session.is_render_suspended() != suspend {
             session.set_render_suspended(suspend);
         }
@@ -383,6 +415,7 @@ fn png_name(name: &str) -> String {
 
 impl Render for TerminalView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        self.update_refresh_pacing(window, cx);
         if window.is_visible() {
             self.session.read(cx).mark_memory_visible(cx);
         }
