@@ -593,7 +593,8 @@ pub fn diagnostics(cx: &App) -> Value {
         let metrics = memory.metrics.lock();
         sessions.push(json!({"session_id":memory.id,"phase":state.phase,"retained_on_disk":state.flushed.is_some(),"configured_lines":state.configured,"flushes":metrics.flushes,"reloads":metrics.reloads,"failures":metrics.failures,"reclaimed_grid_bytes":metrics.reclaimed_bytes,"last_error":metrics.last_error}));
     }
-    json!({"available":true,"native_pressure_source":service._native.available(),"under_pressure":service.pressure.lock().is_under_pressure(service.epoch.elapsed()),"shed_best_effort":service.pressure.lock().should_shed_best_effort(service.epoch.elapsed()),"regenerable_cache_bytes_released": service.reclaimed_cache_bytes,"sessions":sessions})
+    let renderers:Vec<Value>=service.views.iter().filter_map(gpui::WeakEntity::upgrade).map(|view|json!({"session_id":view.read(cx).memory_session_id(cx),"renderer":view.read(cx).overlays.renderer_diagnostics()})).collect();
+    json!({"configured_renderer":if crate::settings::Settings::get(cx).appearance.rendering.gpu_renderer {"gpu"}else{"cpu"},"renderer_samples":renderers,"cpu_glyph_cache_bytes":crate::terminal::paint::glyph_cache_bytes(cx),"regenerable_cache_scope":"CPU terminal bitmap and glyph pixels","available":true,"native_pressure_source":service._native.available(),"under_pressure":service.pressure.lock().is_under_pressure(service.epoch.elapsed()),"shed_best_effort":service.pressure.lock().should_shed_best_effort(service.epoch.elapsed()),"regenerable_cache_bytes_released": service.reclaimed_cache_bytes,"sessions":sessions})
 }
 
 #[cfg(target_os = "macos")]

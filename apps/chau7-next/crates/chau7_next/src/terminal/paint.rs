@@ -15,8 +15,8 @@
 mod cpu_renderer;
 
 pub use cpu_renderer::init as init_cpu_text_system;
-pub(crate) use cpu_renderer::release_glyph_cache;
 use cpu_renderer::{FrameCache, GridCanvas};
+pub(crate) use cpu_renderer::{glyph_cache_bytes, release_glyph_cache};
 use parking_lot::Mutex;
 
 use std::collections::HashMap;
@@ -144,6 +144,9 @@ impl Default for Overlays {
 }
 
 impl Overlays {
+    pub fn renderer_diagnostics(&self) -> serde_json::Value {
+        self.cpu_frame.lock().diagnostics()
+    }
     pub fn cache_bytes(&self) -> u64 {
         self.cpu_frame.lock().bytes()
     }
@@ -471,6 +474,11 @@ fn text_chunks(
         }
         let first_col = spans[first].0;
         let last_col = spans[span].0;
+        if chunks.last().is_some_and(|previous| {
+            previous.columns.start <= first_col && previous.columns.end > last_col
+        }) {
+            continue;
+        }
         let natural = first != span
             || cells[first_col].width > 1
             || clusters.contains_key(&(start + first_col));
@@ -1083,6 +1091,15 @@ mod tests {
         );
     }
 
+    #[test]
+    fn control_boundaries_inside_one_native_cell_do_not_duplicate_its_paint() {
+        let cells = vec![OwnedCell::default()];
+        let clusters = HashMap::from([(0, "a\u{200b}".to_string())]);
+        let chunks = text_chunks(&cells, &clusters, 0);
+        assert_eq!(chunks.len(), 1);
+        assert_eq!(chunks[0].columns, 0..1);
+        assert!(chunks[0].natural);
+    }
     #[test]
     fn ascii_rows_still_shape_in_one_batch() {
         let cells = vec![OwnedCell::default(); 80];
