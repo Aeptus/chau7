@@ -479,7 +479,11 @@ mod tests {
         let instructions = provisioning_instructions(Path::new("/tmp/helper'file"), &root);
         assert!(instructions.contains("identity --state"));
         assert!(instructions.contains("provision --bundle <file> --state"));
-        assert!(instructions.contains(".chau7-next/remote/state.json"));
+        assert!(
+            instructions
+                .replace('\\', "/")
+                .contains(".chau7-next/remote/state.json")
+        );
         assert!(instructions.contains(&shell_argument(&root.remote_state_file())));
         assert!(root.remote_state_file().starts_with(root.config_dir()));
         assert_eq!(shell_argument(Path::new("/tmp/a'b")), "'/tmp/a'\"'\"'b'");
