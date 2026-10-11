@@ -99,6 +99,13 @@ pub(crate) fn register(
     memory
 }
 impl SessionMemory {
+    pub fn restoration_preview_capacity_bytes(&self) -> usize {
+        self.restore_preview
+            .lock()
+            .as_ref()
+            .map_or(0, String::capacity)
+    }
+
     pub fn profiling_phase(&self) -> &'static str {
         match self.state.lock().phase {
             RenderPhase::Active => "active",
@@ -628,6 +635,19 @@ fn reclaim_caches(selected: &HashSet<u64>, pressure: bool, cx: &mut App) {
         service.last_critical_reclaim = Some(Instant::now());
     }
 }
+/// macOS physical footprint is distinct from resident set. Unsupported systems
+/// return unknown rather than relabeling RSS as a physical-footprint value.
+pub fn physical_footprint_bytes() -> Option<u64> {
+    #[cfg(target_os = "macos")]
+    {
+        native::footprint().map(|(used, _)| used)
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        None
+    }
+}
+
 pub fn diagnostics(cx: &App) -> Value {
     let Some(service) = cx.try_global::<Service>() else {
         return json!({"available":false});
@@ -639,7 +659,7 @@ pub fn diagnostics(cx: &App) -> Value {
         sessions.push(json!({"session_id":memory.id,"phase":state.phase,"retained_on_disk":state.flushed.is_some(),"configured_lines":state.configured,"flushes":metrics.flushes,"reloads":metrics.reloads,"failures":metrics.failures,"reclaimed_grid_bytes":metrics.reclaimed_bytes,"last_error":metrics.last_error}));
     }
     let renderers:Vec<Value>=service.views.iter().filter_map(gpui::WeakEntity::upgrade).map(|view|json!({"session_id":view.read(cx).memory_session_id(cx),"renderer":view.read(cx).overlays.renderer_diagnostics()})).collect();
-    json!({"configured_renderer":if crate::settings::Settings::get(cx).appearance.rendering.gpu_renderer {"gpu"}else{"cpu"},"renderer_samples":renderers,"cpu_glyph_cache_bytes":crate::terminal::paint::glyph_cache_bytes(cx),"regenerable_cache_scope":"CPU terminal bitmap and glyph pixels","available":true,"native_pressure_source":service._native.available(),"under_pressure":service.pressure.lock().is_under_pressure(service.epoch.elapsed()),"shed_best_effort":service.pressure.lock().should_shed_best_effort(service.epoch.elapsed()),"regenerable_cache_bytes_released": service.reclaimed_cache_bytes,"sessions":sessions})
+    json!({"configured_renderer":if crate::settings::Settings::get(cx).appearance.rendering.gpu_renderer {"gpu"}else{"cpu"},"renderer_samples":renderers,"cpu_glyph_cache_bytes":crate::terminal::paint::glyph_cache_bytes(cx),"cpu_glyph_cache_entries":crate::terminal::paint::glyph_cache_entries(cx),"regenerable_cache_scope":"CPU terminal bitmap and glyph pixels","available":true,"native_pressure_source":service._native.available(),"under_pressure":service.pressure.lock().is_under_pressure(service.epoch.elapsed()),"shed_best_effort":service.pressure.lock().should_shed_best_effort(service.epoch.elapsed()),"regenerable_cache_bytes_released": service.reclaimed_cache_bytes,"sessions":sessions})
 }
 
 #[cfg(target_os = "macos")]

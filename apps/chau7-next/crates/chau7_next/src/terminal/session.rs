@@ -690,6 +690,46 @@ impl TerminalSession {
     }
 
     /// Pull everything new from the terminal and notify observers.
+    /// On-demand retained capacities and native estimates, never terminal text.
+    /// Native debug_state uses O(1) row counters rather than walking history.
+    pub fn allocation_snapshot(&self) -> serde_json::Value {
+        let native = self.term.read().debug_state();
+        let output = self.output.lock();
+        let pending = self.pending_input.borrow();
+        let grid_cells = self
+            .grid
+            .cells
+            .capacity()
+            .saturating_mul(std::mem::size_of::<chau7_terminal::OwnedCell>());
+        let clusters = self
+            .grid
+            .clusters
+            .values()
+            .map(String::capacity)
+            .sum::<usize>();
+        let pending_input = pending
+            .iter()
+            .map(|(bytes, _)| bytes.capacity())
+            .sum::<usize>();
+        let output_capacity = output.0.capacity();
+        let preview = self.memory.restoration_preview_capacity_bytes();
+        serde_json::json!({
+            "session_id":self.id, "render_phase":self.profiling_phase(),
+            "grid_cols":native.cols, "grid_rows":native.rows,
+            "history_rows":native.history_size, "alternate_screen_active":native.alternate_screen != 0,
+            "native_ring_estimated_bytes":native.estimated_grid_bytes,
+            "ui_grid_cells_capacity_bytes":grid_cells, "ui_grid_cluster_string_capacity_bytes":clusters,
+            "pending_output_bytes":output.0.len(), "pending_output_capacity_bytes":output_capacity,
+            "pending_input_capacity_bytes":pending_input, "restoration_preview_capacity_bytes":preview,
+            "known_session_capacity_bytes":grid_cells.saturating_add(clusters).saturating_add(output_capacity).saturating_add(pending_input).saturating_add(preview),
+            "refresh_cap_interval_ms":self.refresh_interval_ns.load(Ordering::Relaxed) as f64 / 1_000_000.0,
+            "display_native_refresh":self.refresh_interval_ns.load(Ordering::Relaxed) == 0,
+            "render_suspended":self.is_render_suspended(),
+            "native_pending_image_bytes":serde_json::Value::Null,
+            "unavailable_reason":"Native pending images and private GPUI GPU resources expose no allocation accessor; native ring bytes are estimated. Known capacities exclude allocator/HashMap overhead."
+        })
+    }
+
     pub fn profiling_phase(&self) -> &'static str {
         self.memory.profiling_phase()
     }

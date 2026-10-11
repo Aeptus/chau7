@@ -217,6 +217,7 @@ impl Workspace {
                     "tab_id": meta.id.to_string(), "pane_id": pane_id.to_string(),
                     "window_id": window_index, "selected": self.state.selected() == Some(meta.id),
                     "render_suspended": session.is_render_suspended(),
+                    "session_id":session.id, "memory":session.allocation_snapshot(),
                     "input": latency.statistics(LagKind::Input),
                     "output": latency.statistics(LagKind::Output),
                     "highlight": latency.statistics(LagKind::Highlight), "lag_events": lag

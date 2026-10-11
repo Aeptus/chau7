@@ -25,6 +25,11 @@ struct CpuText {
 struct CpuTextGlobal(Arc<CpuText>);
 impl Global for CpuTextGlobal {}
 
+pub(crate) fn glyph_cache_entries(cx: &App) -> Option<usize> {
+    cx.try_global::<CpuTextGlobal>()
+        .map(|text| text.0.glyphs.lock().items.len())
+}
+
 pub(crate) fn glyph_cache_bytes(cx: &App) -> Option<u64> {
     cx.try_global::<CpuTextGlobal>()
         .map(|text| text.0.glyphs.lock().bytes as u64)
