@@ -10,6 +10,7 @@ pub mod control_plane;
 pub mod handshake;
 pub mod output;
 pub mod protocol;
+pub mod rate_limiter;
 
 use std::path::{Path, PathBuf};
 

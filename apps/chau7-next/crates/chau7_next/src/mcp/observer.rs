@@ -16,10 +16,49 @@ use std::time::{Duration, Instant};
 pub const NOTIFICATION_METHOD: &str = "notifications/chau7.event";
 pub type Writer = Arc<Mutex<Box<dyn Connection>>>;
 pub fn write_frame(writer: &Writer, value: &str) -> std::io::Result<()> {
+    write_frame_with_timeout(writer, value, Duration::from_secs(5))
+}
+fn write_frame_with_timeout(
+    writer: &Writer,
+    value: &str,
+    timeout: Duration,
+) -> std::io::Result<()> {
     let mut writer = writer.lock().unwrap_or_else(|e| e.into_inner());
-    writer.write_all(value.as_bytes())?;
-    writer.write_all(b"\n")?;
-    writer.flush()
+    let deadline = Instant::now() + timeout;
+    let result = (|| {
+        for mut remaining in [value.as_bytes(), b"\n".as_slice()] {
+            while !remaining.is_empty() {
+                let budget = deadline
+                    .checked_duration_since(Instant::now())
+                    .filter(|budget| !budget.is_zero())
+                    .ok_or_else(|| {
+                        std::io::Error::new(
+                            std::io::ErrorKind::TimedOut,
+                            "MCP frame write deadline exceeded",
+                        )
+                    })?;
+                writer.set_write_timeout(Some(budget))?;
+                match writer.write(remaining) {
+                    Ok(0) => {
+                        return Err(std::io::Error::new(
+                            std::io::ErrorKind::WriteZero,
+                            "MCP peer stopped reading",
+                        ));
+                    }
+                    Ok(count) => remaining = &remaining[count..],
+                    Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
+                    Err(error) => return Err(error),
+                }
+            }
+        }
+        writer.flush()
+    })();
+    if result.is_err() {
+        // Partial frames cannot be retried on this stream. Wake its reader and
+        // release subscriptions/control rather than leaving a corrupt session.
+        writer.shutdown();
+    }
+    result
 }
 pub fn contract() -> Value {
     json!({"version":1,"snapshot_tool":"chau7_state_snapshot","subscribe_tool":"chau7_subscribe",
@@ -516,5 +555,62 @@ mod tests {
             }
         });
         assert_eq!(reader.join().unwrap().len(), 200);
+    }
+    struct SlowConnection {
+        delay: Duration,
+        zero: bool,
+        stopped: Arc<AtomicBool>,
+    }
+    impl std::io::Read for SlowConnection {
+        fn read(&mut self, _: &mut [u8]) -> std::io::Result<usize> {
+            Ok(0)
+        }
+    }
+    impl std::io::Write for SlowConnection {
+        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+            std::thread::sleep(self.delay);
+            Ok(if self.zero { 0 } else { bytes.len().min(1) })
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+    impl Connection for SlowConnection {
+        fn try_clone_box(&self) -> std::io::Result<Box<dyn Connection>> {
+            Err(std::io::Error::other("test connection has no clone"))
+        }
+        fn shutdown(&self) {
+            self.stopped.store(true, Ordering::Release);
+        }
+        fn set_write_timeout(&self, _: Option<Duration>) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+    #[test]
+    fn slow_dribbling_writes_share_one_total_frame_deadline() {
+        let stopped = Arc::new(AtomicBool::new(false));
+        let writer: Writer = Arc::new(Mutex::new(Box::new(SlowConnection {
+            delay: Duration::from_millis(5),
+            zero: false,
+            stopped: stopped.clone(),
+        })));
+        let started = Instant::now();
+        let error = write_frame_with_timeout(&writer, &"x".repeat(200), Duration::from_millis(40))
+            .unwrap_err();
+        assert_eq!(error.kind(), std::io::ErrorKind::TimedOut);
+        assert!(started.elapsed() < Duration::from_secs(1));
+        assert!(stopped.load(Ordering::Acquire));
+    }
+    #[test]
+    fn zero_write_closes_a_partial_frame_connection() {
+        let stopped = Arc::new(AtomicBool::new(false));
+        let writer: Writer = Arc::new(Mutex::new(Box::new(SlowConnection {
+            delay: Duration::ZERO,
+            zero: true,
+            stopped: stopped.clone(),
+        })));
+        let error = write_frame_with_timeout(&writer, "frame", Duration::from_secs(1)).unwrap_err();
+        assert_eq!(error.kind(), std::io::ErrorKind::WriteZero);
+        assert!(stopped.load(Ordering::Acquire));
     }
 }

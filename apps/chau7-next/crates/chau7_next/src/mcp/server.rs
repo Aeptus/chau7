@@ -3,9 +3,11 @@
 //! JSON-RPC message; each answer is one line, flushed.
 
 use crate::observability::{Journal, TimerRegistry};
+use chau7_next_core::mcp::rate_limiter::{Decision, ToolRateLimiter};
 use std::io::{BufRead, BufReader, Read};
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
+use std::time::Instant;
 
 use chau7_next_core::data_root::MCP_SERVER_NAME;
 use chau7_next_core::mcp::handshake::Handshake;
@@ -15,6 +17,18 @@ use serde_json::{Map, Value};
 use super::MainThread;
 use super::tools::{self, ToolContext};
 use crate::platform::local_socket::{Connection, Listener};
+
+/// The current Swift server shares per-tool budgets across connections. This
+/// prevents reconnecting or adding clients from multiplying creation budgets.
+fn rate_decision(name: &str) -> Decision {
+    static LIMITER: OnceLock<Mutex<(Instant, ToolRateLimiter)>> = OnceLock::new();
+    let mut state = LIMITER
+        .get_or_init(|| Mutex::new((Instant::now(), ToolRateLimiter::default())))
+        .lock()
+        .unwrap_or_else(|error| error.into_inner());
+    let now = state.0.elapsed();
+    state.1.evaluate(name, now)
+}
 
 /// Bind the socket and accept clients on a background thread.
 pub(super) fn spawn(
@@ -111,6 +125,19 @@ impl McpHost for Session {
         name: &str,
         arguments: &Map<String, Value>,
     ) -> Result<String, chau7_next_core::mcp::handshake::ProtocolError> {
+        if let Decision::Limited {
+            retry_after_seconds,
+        } = rate_decision(name)
+        {
+            let mut details = serde_json::json!({
+                "error":"rate_limit_exceeded", "tool":name,
+                "message":format!("Rate limit exceeded for tool '{name}'.")
+            });
+            if let Some(seconds) = retry_after_seconds {
+                details["retry_after_seconds"] = serde_json::json!(seconds);
+            }
+            return Ok(chau7_next_core::mcp::output::encode_sorted(&details));
+        }
         if name == "chau7_unsubscribe" {
             self.observer.validate_unsubscription(arguments)?;
         }
@@ -127,7 +154,7 @@ impl McpHost for Session {
 }
 
 /// Longest request line accepted; a longer one drops the connection.
-const MAX_LINE_BYTES: u64 = 4 * 1024 * 1024;
+const MAX_LINE_BYTES: u64 = 8 * 1024 * 1024;
 
 /// Reads one line into `line` (cleared first). `Ok(false)` at end of input,
 /// an error when the line exceeds `max` bytes.
@@ -166,11 +193,6 @@ fn run_session(
             return;
         }
     };
-    if let Err(error) = writer.set_write_timeout(Some(std::time::Duration::from_secs(2))) {
-        log::warn!("MCPServer: cannot bound socket writes: {error}");
-        writer.shutdown();
-        return;
-    }
     let writer: super::observer::Writer = Arc::new(Mutex::new(writer));
     let mut reader = BufReader::new(conn);
     let client_id = uuid::Uuid::new_v4().to_string();
