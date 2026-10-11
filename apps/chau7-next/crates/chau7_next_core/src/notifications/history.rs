@@ -9,7 +9,8 @@ use chrono::{DateTime, Utc};
 use serde::Serialize;
 use uuid::Uuid;
 
-use crate::ai::event::AiEvent;
+use crate::ai::event::{AiEvent, AiEventSource};
+use crate::monitoring::codex_feedback;
 
 /// `NotificationHistory.DeliveryState`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -67,6 +68,8 @@ pub struct HistoryEntry {
     pub did_dispatch_banner: bool,
     pub did_style_tab: bool,
     pub notes: Vec<String>,
+    pub classification_confidence: Option<String>,
+    pub classification_evidence: Vec<String>,
 }
 
 /// Swift `UUID.uuidString`: upper-case hyphenated.
@@ -141,6 +144,9 @@ impl NotificationHistory {
         if let Some(n) = notification_type {
             notes.push(format!("notificationType:{n}"));
         }
+        let assessment = (event.source.raw_value() == AiEventSource::CODEX)
+            .then(|| codex_feedback::assess(&event.message))
+            .flatten();
         let entry = HistoryEntry {
             id: event.id,
             source: event.source.raw_value().to_string(),
@@ -163,6 +169,10 @@ impl NotificationHistory {
             did_dispatch_banner: false,
             did_style_tab: false,
             notes,
+            classification_confidence: assessment
+                .as_ref()
+                .map(|a| a.confidence.raw_value().to_string()),
+            classification_evidence: assessment.map(|a| a.evidence).unwrap_or_default(),
         };
         self.store(entry);
     }
@@ -301,6 +311,39 @@ impl NotificationHistory {
 mod tests {
     use super::*;
     use crate::ai::event::{AiEventReliability, AiEventSource};
+
+    #[test]
+    fn codex_history_exports_assessment_evidence_without_assessing_other_providers() {
+        let mut history = NotificationHistory::default();
+        let e = AiEvent::new(
+            AiEventSource::codex(),
+            "waiting_input",
+            "Codex",
+            "Should I continue?",
+            "t",
+        );
+        history.begin(
+            &e,
+            Some("waiting_for_input"),
+            Some("agent-turn-complete"),
+            None,
+        );
+        let entry = history.recent(1).remove(0);
+        assert_eq!(entry.classification_confidence.as_deref(), Some("medium"));
+        assert_eq!(entry.classification_evidence, ["direct_terminal_question"]);
+        let json = serde_json::to_value(&entry).unwrap();
+        assert_eq!(json["classificationConfidence"], "medium");
+        assert_eq!(
+            json["classificationEvidence"][0],
+            "direct_terminal_question"
+        );
+        let mut non_codex = e.clone();
+        non_codex.source = AiEventSource::runtime();
+        history.begin(&non_codex, None, None, None);
+        let entry = history.recent(1).remove(0);
+        assert!(entry.classification_confidence.is_none());
+        assert!(entry.classification_evidence.is_empty());
+    }
 
     #[test]
     fn history_tracks_delivery_lifecycle() {
