@@ -2,9 +2,7 @@
 //! selected-surface protection and verified history before ring reduction.
 use crate::workspace::AppData;
 use chau7_next_core::{
-    memory_pressure::{
-        self as policy, FlushKind, FlushRecord, PressureLevel, PressureState, RenderPhase,
-    },
+    memory_pressure::{self as policy, FlushKind, FlushRecord, PressureState, RenderPhase},
     scrollback_cache::{self, ContentKind},
 };
 use chau7_terminal::Chau7Terminal;
@@ -647,6 +645,7 @@ pub fn diagnostics(cx: &App) -> Value {
 #[cfg(target_os = "macos")]
 mod native {
     use super::*;
+    use chau7_next_core::memory_pressure::PressureLevel;
     use std::ffi::c_void;
     unsafe extern "C" {
         static _dispatch_source_type_memorypressure: u8;

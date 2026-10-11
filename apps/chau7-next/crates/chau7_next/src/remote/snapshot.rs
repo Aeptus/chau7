@@ -476,7 +476,10 @@ mod tests {
         // their offsets are immaterial because length is zero. All other cell
         // bytes, Unicode pools and metadata must match the native full frame.
         for cells in [&mut actual.cells, &mut expected.cells] {
-            for cell in cells.chunks_exact_mut(RemoteTerminalGridSnapshotLayout::CELL_STRIDE) {
+            for cell in cells
+                .as_chunks_mut::<{ RemoteTerminalGridSnapshotLayout::CELL_STRIDE }>()
+                .0
+            {
                 if cell[10..12] == [0, 0] {
                     cell[..4].fill(0);
                 }
