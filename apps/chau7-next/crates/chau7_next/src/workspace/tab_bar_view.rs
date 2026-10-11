@@ -516,10 +516,19 @@ impl Workspace {
                 d.child(
                     div()
                         .id(("token-rate", id as usize))
+                        .role(Role::Label)
+                        .aria_label(detail.clone())
                         .flex_shrink_0()
                         .px_1()
                         .rounded_full()
-                        .text_color(chrome.accent)
+                        .text_color(style_color(
+                            if reading.source.estimated() {
+                                crate::tab_bar::StyleColor::Orange
+                            } else {
+                                crate::tab_bar::StyleColor::Green
+                            },
+                            text_primary,
+                        ))
                         .child(reading.formatted())
                         .tooltip(move |window, cx| {
                             gpui_kit::component::tooltip::Tooltip::new(detail.clone())
