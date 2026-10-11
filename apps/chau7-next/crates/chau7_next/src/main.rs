@@ -109,6 +109,8 @@ fn main() {
         log::error!("Cannot record launch continuity: {error}");
         std::process::exit(1);
     }
+    // AI event writers and all tailers/sessions are still quiescent.
+    monitoring::log_compactor::compact_owned_queues(&root);
     platform::oslog::install_feature_intervals();
     logging::ai_pty::purge_large_logs(root.ai_logs_dir());
     protected_paths::init(&root);

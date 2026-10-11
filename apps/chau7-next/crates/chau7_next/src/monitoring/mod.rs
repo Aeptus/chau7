@@ -11,3 +11,5 @@ pub mod processes;
 pub mod session;
 
 pub mod watch_registry;
+
+pub mod log_compactor;
