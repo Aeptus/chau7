@@ -604,7 +604,9 @@ pub fn commit_paths(repository: &str, files: &[String]) -> Result<Vec<String>, S
     let mut paths = BTreeSet::new();
     for file in files {
         let path = Path::new(file);
-        let relative = if path.is_absolute() {
+        // Windows paths may be rooted without a drive (\repo\file).
+        // They still name a root and must be bounded by the repository.
+        let relative = if path.has_root() {
             path.strip_prefix(repository)
                 .map_err(|_| format!("File outside repository: {file}"))?
         } else {
@@ -622,7 +624,15 @@ pub fn commit_paths(repository: &str, files: &[String]) -> Result<Vec<String>, S
         {
             return Err(format!("Invalid repository file: {file}"));
         }
-        paths.insert(relative.to_string_lossy().into_owned());
+        // Git pathspecs use forward slashes on every platform. Joining
+        // components preserves a literal backslash in a Unix filename.
+        paths.insert(
+            relative
+                .components()
+                .map(|component| component.as_os_str().to_string_lossy())
+                .collect::<Vec<_>>()
+                .join("/"),
+        );
     }
     if paths.is_empty() {
         return Err("No files touched by agents.".into());
@@ -979,6 +989,59 @@ mod tests {
         }
         assert!(commit_paths("/repo", &[]).is_err());
         assert!(commit_files("/repo", &["x.rs".into()], " ").is_err());
+    }
+    #[test]
+    fn commit_paths_use_git_separators_for_native_nested_files() {
+        let repository = std::path::PathBuf::from("/repo");
+        let relative = std::path::PathBuf::from("sub").join("file.rs");
+        let full = repository.join(&relative);
+        assert_eq!(
+            commit_paths(
+                repository.to_str().unwrap(),
+                &[
+                    relative.to_string_lossy().into_owned(),
+                    full.to_string_lossy().into_owned()
+                ]
+            )
+            .unwrap(),
+            vec!["sub/file.rs"]
+        );
+    }
+    #[cfg(unix)]
+    #[test]
+    fn commit_paths_preserve_literal_unix_backslashes() {
+        assert_eq!(
+            commit_paths("/repo", &[r"literal\file.rs".into()]).unwrap(),
+            vec![r"literal\file.rs"]
+        );
+    }
+    #[cfg(windows)]
+    #[test]
+    fn commit_paths_bound_windows_drives_and_rooted_paths() {
+        assert_eq!(
+            commit_paths(
+                r"C:\repo",
+                &[r"C:\repo\sub\file.rs".into(), r"sub\file.rs".into()]
+            )
+            .unwrap(),
+            vec!["sub/file.rs"]
+        );
+        assert_eq!(
+            commit_paths(r"\repo", &[r"\repo\sub\file.rs".into()]).unwrap(),
+            vec!["sub/file.rs"]
+        );
+        for outside in [
+            r"D:\repo\file.rs",
+            r"C:\elsewhere\file.rs",
+            r"..\outside",
+            r".git\config",
+            r"C:relative.rs",
+        ] {
+            assert!(
+                commit_paths(r"C:\repo", &[outside.into()]).is_err(),
+                "{outside}"
+            );
+        }
     }
     #[test]
     fn agent_commits_preserve_unrelated_staged_files() {
