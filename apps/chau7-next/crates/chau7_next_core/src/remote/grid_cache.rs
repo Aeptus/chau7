@@ -169,12 +169,18 @@ impl RemoteGridSnapshotCache {
         let bytes = next_rows
             .iter()
             .try_fold(0usize, |sum, row| {
-                sum.checked_add(row.cells.len())?
-                    .checked_add(row.clusters.len())
+                sum.checked_add(row.cells.capacity())?
+                    .checked_add(row.clusters.capacity())
             })
             .ok_or(())?
-            .checked_add(assembled.cells.len())
-            .and_then(|sum| sum.checked_add(assembled.clusters.len()))
+            .checked_add(assembled.cells.capacity())
+            .and_then(|sum| sum.checked_add(assembled.clusters.capacity()))
+            .and_then(|sum| {
+                next_rows
+                    .capacity()
+                    .checked_mul(std::mem::size_of::<Row>())
+                    .and_then(|metadata| sum.checked_add(metadata))
+            })
             .ok_or(())?;
         if bytes <= self.maximum_bytes {
             self.rows = next_rows;
@@ -299,6 +305,19 @@ mod tests {
         let mut bad = update(&["a", "b"], &[0, 1], true, 1, 0);
         bad.snapshot.cells[0] = 255;
         assert!(cache.encode(&bad).is_none());
+    }
+    #[test]
+    fn retained_bound_counts_allocated_capacity_and_row_metadata() {
+        let frame = update(&["a", "b"], &[0, 1], true, 1, 0);
+        let logical_bytes = 2 * (frame.snapshot.cells.len() + frame.snapshot.clusters.len());
+        let mut cache = RemoteGridSnapshotCache::new(logical_bytes);
+        assert!(cache.encode(&frame).is_some());
+        assert_eq!(cache.retained_bytes(), 0);
+        assert_eq!(cache.generation(), 0);
+        let mut cache = RemoteGridSnapshotCache::default();
+        cache.encode(&frame).unwrap();
+        assert!(cache.retained_bytes() > logical_bytes);
+        assert!(cache.retained_bytes() <= 4 * 1024 * 1024);
     }
     #[test]
     fn oversized_is_delivered_without_retaining_allocations() {
