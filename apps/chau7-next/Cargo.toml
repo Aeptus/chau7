@@ -34,6 +34,14 @@ debug = false
 lto = "thin"
 codegen-units = 16
 
+# macOS 27 rejects some stripped proc-macro dylibs at compile time.
+# Build tools do not ship inside the app bundle.
+[profile.release.build-override]
+strip = "none"
+
+[profile.dev.build-override]
+strip = "none"
+
 [profile.dev]
 opt-level = 1
 # Small debug info keeps backtraces readable while keeping test and app

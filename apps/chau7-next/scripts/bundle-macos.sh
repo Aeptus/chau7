@@ -10,6 +10,8 @@ set -euo pipefail
 # minimum macOS as LSMinimumSystemVersion below.
 MIN_MACOS="13.0"
 export MACOSX_DEPLOYMENT_TARGET="$MIN_MACOS"
+# Also protect the shared helper workspace's compile-time proc macros on macOS 27.
+export CARGO_PROFILE_RELEASE_BUILD_OVERRIDE_STRIP="none"
 case "${TARGET:-$(uname -m)}" in
   aarch64-apple-darwin | arm64) TARGET="aarch64-apple-darwin"; GOARCH="arm64" ;;
   x86_64-apple-darwin | x86_64) TARGET="x86_64-apple-darwin"; GOARCH="amd64" ;;
@@ -22,9 +24,10 @@ OUT_DIR="${OUT_DIR:-$ROOT/target/bundle}"
 APP="$OUT_DIR/Chau7 Next.app"
 VERSION="$(grep -m1 '^version' "$ROOT/Cargo.toml" | sed -E 's/.*"(.*)"/\1/')"
 BUILD_NUMBER="${BUILD_NUMBER:-$(date +%Y%m%d%H%M)}"
+SOURCE_REVISION="$(git -C "$ROOT" rev-parse HEAD)"
 
 cd "$ROOT"
-cargo build --release --target "$TARGET" --bin chau7-next --bin chau7-next-mcp-bridge
+cargo build --locked --release --target "$TARGET" --bin chau7-next --bin chau7-next-mcp-bridge
 RELEASE_DIR="${CARGO_TARGET_DIR:-$ROOT/target}/$TARGET/release"
 BIN="$RELEASE_DIR/chau7-next"
 # MCP bridge: the app copies it to ~/.chau7-next/bin on launch.
@@ -44,7 +47,7 @@ cp "$ROOT/../chau7-macos/Resources/AppDockIcon.icns" "$APP/Contents/Resources/Ap
 OPTIM_DIR="$ROOT/../chau7-macos/rust"
 if [ -d "$OPTIM_DIR" ]; then
   (cd "$OPTIM_DIR" && { rustup target add "$TARGET" >/dev/null 2>&1 || true; } \
-    && cargo build --release --target "$TARGET" -p chau7_optim -p chau7_md)
+    && cargo build --locked --release --target "$TARGET" -p chau7_optim -p chau7_md)
   OPTIM_OUT="${OPTIM_TARGET_DIR:-${CARGO_TARGET_DIR:-$OPTIM_DIR/target}}/$TARGET/release"
   for tool in chau7-optim chau7-md; do
     if [ ! -f "$OPTIM_OUT/$tool" ]; then
@@ -96,6 +99,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>${VERSION}</string>
   <key>CFBundleVersion</key><string>${BUILD_NUMBER}</string>
+  <key>Chau7NextSourceRevision</key><string>${SOURCE_REVISION}</string>
   <key>LSMinimumSystemVersion</key><string>${MIN_MACOS}</string>
   <key>LSApplicationCategoryType</key><string>public.app-category.developer-tools</string>
   <key>LSMultipleInstancesProhibited</key><true/>
